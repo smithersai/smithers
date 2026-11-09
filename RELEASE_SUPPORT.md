@@ -118,9 +118,12 @@ Stored action dispatch could lose its declared result and required decoder-servi
 
 Error construction options could become writable in TypeScript declarations after a compiler update; they now retain their readonly contract.
 
+SDK publication could stop for unchanged packages after dependency and feature upgrades; the reviewed declaration baseline now includes those changes.
+
 The declaration review compares actual emitted declarations from the previous
-baseline source with this candidate. Public export maps remain unchanged, but
-existing implementations and callers need these adaptations:
+baseline source with this candidate. Export-map changes from separately reviewed
+features are listed in the [declaration inventory](apps/mvp/docs/decisions/0166-sdk-declaration-upgrade-cost.md).
+Existing implementations and callers need these adaptations:
 
 - Custom `ControlRuntime.Service` implementations must provide `querySignals`
   with bounded ledger queries and the declared errors.
@@ -183,6 +186,8 @@ agent, model and memory libraries remain supported authoring surfaces.
 within the existing host action; omitted timeouts preserve existing behavior.
 
 ## Reviewing changes before publication
+
+The Effect `4.1.1` and VibeLang `0.0.12` upgrade changes public service requirements and inferred schema types. The [reviewed declaration inventory](apps/mvp/docs/decisions/0166-sdk-declaration-upgrade-cost.md) records those upgrade costs separately from subsequent intentional public APIs. Future language conversions compare against the named upgraded tree, with the same API-identity requirement.
 
 After `node .smithers/flows/release/build-release.mjs`, run
 `node .smithers/flows/release/check-api-baseline.mjs`. The baseline includes publication export

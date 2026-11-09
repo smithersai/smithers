@@ -1,0 +1,219 @@
+# Later accepted APIs: stored serialization and durable skills payloads
+# Sources: 151fbdf1d3ab, 6e6148b53f36, 72bc14c0e851, 975ed2b04f4c
+# The separate source repair preserves dispatch result and service types.
+
+# Package: @smthrs/engine
+# Declaration: FlowEngine/Dispatch.d.ts
+--- before/@smthrs/engine/FlowEngine/Dispatch.d.ts
++++ after/@smthrs/engine/FlowEngine/Dispatch.d.ts
+@@ -8,10 +8,6 @@
+  */
+ import { Action, Flow, FlowRuntime } from "@smthrs/flow";
+-import * as Cause from "effect/Cause";
+ import * as Context from "effect/Context";
+ import * as Effect from "effect/Effect";
+-import * as Exit from "effect/Exit";
+-import * as Option from "effect/Option";
+-import * as Result from "effect/Result";
+ import * as Schema from "effect/Schema";
+ import type { Encoded } from "./Encoded.ts";
+@@ -34,3 +30,3 @@
+  * @since 0.1.0
+  */
+-export declare const makeActionExecute: (options: Encoded) => <Success extends Schema.Constraint, Error extends Schema.Constraint, R>(action: Action.Action<Success, Error, R>, attempt: number) => Effect.Effect<Flow.Complete<Success["Type"], Error["Type"]> | Flow.Handoff | Flow.Suspended, [Effect.Effect<Exit.Failure<Success["Type"], Error["Type"]> | Exit.Success<Success["Type"], Error["Type"]>, never, (Error | Schema.Unknown | Success)["DecodingServices"]> | Effect.Effect<Flow.Result<unknown, unknown>, never, FlowRuntime.FlowInstance | import("effect/crypto/Digest").Digest | import("effect/crypto/SecureRandom").SecureRandom> | Effect.Effect<Option.Option<number>, never, FlowRuntime.FlowInstance | import("effect/crypto/Digest").Digest | import("effect/crypto/SecureRandom").SecureRandom> | Effect.Effect<Result.Result<string, Schema.SchemaError>, never, FlowRuntime.FlowInstance | import("effect/crypto/Digest").Digest | import("effect/crypto/SecureRandom").SecureRandom> | Effect.Effect<void, never, never> | Effect.Effect<{ readonly actionState: { count: number; readonly keylessInFlight: Set<string>; readonly latch: import("effect/Latch").Latch; readonly nextOrdinal: (scope: string) => number; readonly snapshots: Map<string, unknown>; }; cause: Cause.Cause<never> | undefined; readonly executionId: string; readonly flow: Flow.Any; handoff: Flow.Handoff | undefined; heartbeat?: Effect.Effect<void> | undefined; interrupted: boolean; readonly lineageDeadline?: Flow.LineageDeadline | undefined; readonly lineageId: string; readonly scope: import("effect/Scope").Closeable; suspended: boolean; waiting: FlowRuntime.WaitingAnnotation | undefined; }, never, FlowRuntime.FlowInstance>] extends [Effect.Effect<infer _A, infer E, infer _R>] ? E : never, ([Effect.Effect<Exit.Failure<Success["Type"], Error["Type"]> | Exit.Success<Success["Type"], Error["Type"]>, never, (Error | Schema.Unknown | Success)["DecodingServices"]> | Effect.Effect<Flow.Result<unknown, unknown>, never, FlowRuntime.FlowInstance | import("effect/crypto/Digest").Digest | import("effect/crypto/SecureRandom").SecureRandom> | Effect.Effect<Option.Option<number>, never, FlowRuntime.FlowInstance | import("effect/crypto/Digest").Digest | import("effect/crypto/SecureRandom").SecureRandom> | Effect.Effect<Result.Result<string, Schema.SchemaError>, never, FlowRuntime.FlowInstance | import("effect/crypto/Digest").Digest | import("effect/crypto/SecureRandom").SecureRandom> | Effect.Effect<void, never, never> | Effect.Effect<{ readonly actionState: { count: number; readonly keylessInFlight: Set<string>; readonly latch: import("effect/Latch").Latch; readonly nextOrdinal: (scope: string) => number; readonly snapshots: Map<string, unknown>; }; cause: Cause.Cause<never> | undefined; readonly executionId: string; readonly flow: Flow.Any; handoff: Flow.Handoff | undefined; heartbeat?: Effect.Effect<void> | undefined; interrupted: boolean; readonly lineageDeadline?: Flow.LineageDeadline | undefined; readonly lineageId: string; readonly scope: import("effect/Scope").Closeable; suspended: boolean; waiting: FlowRuntime.WaitingAnnotation | undefined; }, never, FlowRuntime.FlowInstance>] extends [Effect.Effect<infer _A_1, infer _E, infer R_1>] ? R_1 : never) | FlowRuntime.FlowInstance | import("effect/crypto/Digest").Digest | import("effect/crypto/SecureRandom").SecureRandom>;
++export declare const makeActionExecute: (options: Encoded) => <Success extends Schema.Constraint, Error extends Schema.Constraint, R>(action: Action.Action<Success, Error, R>, attempt: number) => Effect.Effect<Flow.Complete<Success["Type"], Error["Type"]> | Flow.Handoff | Flow.Suspended, never, Error["DecodingServices"] | FlowRuntime.FlowInstance | Success["DecodingServices"] | import("effect/crypto/Digest").Digest | import("effect/crypto/SecureRandom").SecureRandom>;
+
+# Package: @smthrs/engine
+# Declaration: FlowEngine/Encoded.d.ts
+--- before/@smthrs/engine/FlowEngine/Encoded.d.ts
++++ after/@smthrs/engine/FlowEngine/Encoded.d.ts
+@@ -10,6 +10,7 @@
+  *
+  * - `actionExecute` and `deferredResult` return ENCODED values, which
+- *   `makeUnsafe` decodes through the action's `exitSchemaPartial` and the
+- *   deferred's `exitSchema`.
++ *   `makeUnsafe` decodes through the action's exit schemas under the
++ *   driver's `serialization` (`Action.exitSchemasFor`) and the deferred's
++ *   `exitSchema`.
+  * - `deferredDone` and `deferredDoneIfWaiting` receive ENCODED exits, which
+  *   `makeUnsafe` encodes before the call.
+@@ -30,4 +31,5 @@
+ import type * as Exit from "effect/Exit";
+ import type * as Option from "effect/Option";
++import type * as RpcSerialization from "effect/rpc/RpcSerialization";
+ import type * as Schema from "effect/Schema";
+ import type * as Scope from "effect/Scope";
+@@ -153,4 +155,11 @@
+      */
+     readonly encodeEngineError?: ((error: unknown) => Option.Option<unknown>) | undefined;
++    /**
++     * The serializer this driver stores action results with (VIP-44): an
++     * action's `executeEncoded` runs under it, and dispatch decodes a recorded
++     * outcome through `Action.exitSchemasFor(serialization, action)`. Absent,
++     * `RpcSerialization.json`, the codec every action's `exitSchemaPartial` uses.
++     */
++    readonly serialization?: RpcSerialization.RpcSerialization["Service"] | undefined;
+     readonly actionExecute: (options: ActionExecuteOptions) => Effect.Effect<Flow.Result<unknown, unknown>, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowInstance>;
+     /**
+
+# Package: @smthrs/engine-store
+# Declaration: EngineStore.d.ts
+--- before/@smthrs/engine-store/EngineStore.d.ts
++++ after/@smthrs/engine-store/EngineStore.d.ts
+@@ -15,4 +15,5 @@
+ import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store";
+ import { CacheStore } from "@smthrs/step-cache";
++import * as Cause from "effect/Cause";
+ import * as Context from "effect/Context";
+ import type * as EffectDigest from "effect/crypto/Digest";
+@@ -22,4 +23,5 @@
+ import * as Option from "effect/Option";
+ import type * as Schedule from "effect/Schedule";
++import * as Schema from "effect/Schema";
+ import type * as Scope from "effect/Scope";
+ import * as DurableEngineState from "./DurableEngineState.ts";
+@@ -342,4 +344,21 @@
+ }
+ type PublicRequirements = (EffectDigest.Digest | SecureRandom.SecureRandom) | AttemptStore.AttemptStore | CacheStore.CacheStore | DurableEngineState.DurableEngineState | DurableWriter | Jj.Jj | Journal.Journal | OwnerIdentity.OwnerIdentity | RunStore.RunStore | Scope.Scope | StepBoundary.Service;
++declare const UnstorableSerialization_base: Schema.Class<UnstorableSerialization, Schema.TaggedStruct<"@smthrs/engine-store/UnstorableSerialization", { readonly code: Schema.Literal<"unstorable_serialization">; readonly contentType: Schema.String; }>, Cause.YieldableError>;
++/**
++ * The `RpcSerialization` in context cannot store action results here (VIP-44).
++ *
++ * This store keeps every action result as the JSON value its serializer's
++ * `codecFor` encodes, so it holds only a serializer whose `codecFor` is the
++ * JSON codec: `RpcSerialization.json`, `ndjson`, `jsonRpc` and `ndJsonRpc`,
++ * which all store the same bytes. Schema-binary and custom codecs need stored
++ * frames with a recorded content type, which this store does not have yet. The
++ * store is refused when it is built, as a defect, so nothing is stored under a
++ * codec it cannot read back.
++ *
++ * @category errors
++ * @since 1.0.0
++ */
++export declare class UnstorableSerialization extends UnstorableSerialization_base {
++}
+ /**
+  * Constructs the production encoded composition using the ambient `Jj` for
+
+# Package: @smthrs/engine-store
+# Declaration: Errors.d.ts
+--- before/@smthrs/engine-store/Errors.d.ts
++++ after/@smthrs/engine-store/Errors.d.ts
+@@ -17,4 +17,5 @@
+ export { IrreversibleRetryRequiresIdempotencyKey } from "@smthrs/flow/Action";
+ export { FlowCycleDetected } from "@smthrs/flow/FlowRuntime";
++export { UnstorableSerialization } from "./EngineStore.ts";
+ export { AttemptAdmissionRejected, AttemptEvidenceQuarantined, AttemptSuspended, CacheConflictDetected, CacheCorruptionDetected } from "./internal/ActionPersistence.ts";
+ export { RetentionError, RetentionErrorCode } from "./internal/RetentionOps.ts";
+
+# Package: @smthrs/flow
+# Declaration: Action/Context.d.ts
+--- before/@smthrs/flow/Action/Context.d.ts
++++ after/@smthrs/flow/Action/Context.d.ts
+@@ -7,4 +7,5 @@
+ import * as Effect from "effect/Effect";
+ import * as Layer from "effect/Layer";
++import * as RpcSerialization from "effect/rpc/RpcSerialization";
+ import type { CacheEnvironment } from "./CacheEnvironment.ts";
+ /**
+@@ -105,4 +106,20 @@
+ export declare const CurrentInvocationKey: Context.Reference<string | undefined>;
+ /**
++ * Context reference carrying the serializer an action's results are stored
++ * with (VIP-44): `executeEncoded` encodes with its `codecFor`, and the engine
++ * that provides it decodes with `exitSchemasFor` of the same one. Defaults to
++ * `RpcSerialization.json`.
++ *
++ * **When to use**
++ *
++ * An engine provides it around every dispatch. It is a reference of its own,
++ * not the `RpcSerialization` service, so pinning the stored representation
++ * never changes the `RpcSerialization` an action body sees.
++ *
++ * @category serialization
++ * @since 1.0.0
++ */
++export declare const StoredSerialization: Context.Reference<{ readonly codecFor: RpcSerialization.CodecFor; readonly contentType: string; readonly includesFraming: boolean; makeUnsafe(): RpcSerialization.Parser; }>;
++/**
+  * The ownership fence of the attempt an implementation is running under.
+  *
+
+# Package: @smthrs/flow
+# Declaration: Action/make.d.ts
+--- before/@smthrs/flow/Action/make.d.ts
++++ after/@smthrs/flow/Action/make.d.ts
+@@ -7,4 +7,5 @@
+ import * as Context from "effect/Context";
+ import * as Effect from "effect/Effect";
++import * as RpcSerialization from "effect/rpc/RpcSerialization";
+ import type * as Schedule from "effect/Schedule";
+ import * as Schema from "effect/Schema";
+@@ -16,4 +17,30 @@
+ import type { Action, Declared, IdempotencyKey, Tier } from "./Action.ts";
+ import { FileBoundary } from "./FileBoundary.ts";
++/** One schema's stored-value representation. @private */
++type StoredCodec<S extends Schema.Constraint> = Schema.Codec<S["Type"], unknown, S["DecodingServices"], S["EncodingServices"]>;
++/**
++ * The exit schemas an action's stored results encode and decode with under
++ * one serializer: `exitSchema` with a typed defect channel, and
++ * `exitSchemaPartial` with an opaque one. The decoded types and schema
++ * services remain those declared by the action; encoded values are unknown.
++ *
++ * @category models
++ * @since 1.0.0
++ */
++export interface ExitSchemas<Success extends Schema.Constraint = Schema.Constraint, Error extends Schema.Constraint = Schema.Constraint> {
++    readonly exitSchema: Schema.Exit<StoredCodec<Success>, StoredCodec<Error>, Schema.Defect>;
++    readonly exitSchemaPartial: Schema.Exit<StoredCodec<Success>, StoredCodec<Error>, Schema.Unknown>;
++}
++/**
++ * The exit schemas of an action's stored results under `serialization`
++ * (VIP-44): its success and error schemas through `serialization.codecFor`,
++ * the representation Effect's `RpcSerialization` injects. Under
++ * `RpcSerialization.json`, the default, they are the action's own
++ * `exitSchema` and `exitSchemaPartial`.
++ *
++ * @category codecs
++ * @since 1.0.0
++ */
++export declare const exitSchemasFor: <Success extends Schema.Constraint, Error extends Schema.Constraint>(serialization: RpcSerialization.RpcSerialization["Service"], action: { readonly errorSchema: Error; readonly successSchema: Success; }) => ExitSchemas<Success, Error>;
+ /**
+  * The options of a declared action, shared by {@link make}'s declared form and
+
+# Package: @smthrs/flow
+# Declaration: Flow/PayloadIdentity.d.ts
+--- before/@smthrs/flow/Flow/PayloadIdentity.d.ts
++++ after/@smthrs/flow/Flow/PayloadIdentity.d.ts
+@@ -33,6 +33,10 @@
+  * never hash a `Set` or `Map`: RFC 8785 refuses both. So a payload that holds
+  * none keeps the exact preimage it always had, and one that holds any is
+- * hashed as its {@link payloadSnapshot}. Released ids are unchanged, and equal
+- * collections hash equally.
++ * hashed as `["snapshot", payloadSnapshot]`. Released ids are unchanged, and
++ * equal collections hash equally.
++ *
++ * The tag keeps the two forms apart: a flow payload is a struct, so a payload
++ * as written is always an object and never this array. Without it a set and
++ * an array whose written form equals the set's snapshot would share an id.
+  *
+  * @category identity
+
+# Package: @smthrs/targets
+# Declaration: Skills.d.ts
+--- before/@smthrs/targets/Skills.d.ts
++++ after/@smthrs/targets/Skills.d.ts
+@@ -64,0 +65,11 @@
++/**
++ * What the installation action receives: the library, the agents and the
++ * selection. Every member is data with a JSON codec, as a durable payload
++ * needs (VIP-44). A target's `deps` order its graph and never cross the
++ * durable boundary; they are `Target.Target` references, which have no JSON
++ * form.
++ *
++ * @category schemas
++ * @since 1.0.0
++ */
++export declare const InstallPayload: Schema.Struct<{ readonly agents: Schema.$Array<Schema.Literals<readonly ["claude", "codex"]>>; readonly library: Schema.TaggedStruct<"Skills.Library", { readonly root: Schema.NonEmptyString; }>; readonly select: Schema.optional<Schema.$Array<Schema.NonEmptyString>>; }>;
+@@ -70 +81 @@
+-export declare const InstallAction: Action.Declared<"smithers-build/skills-install", Schema.Struct<{ readonly agents: Schema.$Array<Schema.Literals<readonly ["claude", "codex"]>>; readonly deps: Schema.withConstructorDefault<Schema.$Array<Schema.declare<Target.AnyTarget, Target.AnyTarget>>>; readonly library: Schema.TaggedStruct<"Skills.Library", { readonly root: Schema.NonEmptyString; }>; /** Exact skill names; omitted selects every skill in this library. */ readonly select: Schema.optional<Schema.$Array<Schema.NonEmptyString>>; }>, Schema.Struct<{ readonly installed: Schema.$Array<Schema.String>; }>, Schema.TaggedStruct<"SkillsInstallError", { readonly message: Schema.String; }>, Action.Requirement<"smithers-build/skills-install">>;
++export declare const InstallAction: Action.Declared<"smithers-build/skills-install", Schema.Struct<{ readonly agents: Schema.$Array<Schema.Literals<readonly ["claude", "codex"]>>; readonly library: Schema.TaggedStruct<"Skills.Library", { readonly root: Schema.NonEmptyString; }>; readonly select: Schema.optional<Schema.$Array<Schema.NonEmptyString>>; }>, Schema.Struct<{ readonly installed: Schema.$Array<Schema.String>; }>, Schema.TaggedStruct<"SkillsInstallError", { readonly message: Schema.String; }>, Action.Requirement<"smithers-build/skills-install">>;
