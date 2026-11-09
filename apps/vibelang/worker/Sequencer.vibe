@@ -59,7 +59,8 @@ function entryOf(conversation: Conversation, id: string): Entry | undefined {
 }
 
 /** The sequencer over `log`, publishing to its followers and dispatching replies through `dispatch`. */
-export effect function make(log: Log, dispatch: Dispatch) {
+/** `dispatch` is absent for a log that takes no posts, such as the accounts log: nothing starts a flow from it. */
+export effect function make(log: Log, dispatch?: Dispatch) {
   const lock = try Semaphore.make(1)
   const published = try PubSub.unbounded<Event>()
   const loaded = try Ref.make<State | undefined>(undefined)
@@ -92,6 +93,7 @@ export effect function make(log: Log, dispatch: Dispatch) {
 
   /** Starts the running tour's flow, or else the next unanswered post's reply flow, if the agent isn't replying. */
   effect function ensureDispatched() {
+    if (dispatch === undefined) return
     const conversation = (try locked(state())).conversation
     const tour = touring(conversation)
     if (tour !== "") return try dispatch.tour(tour)

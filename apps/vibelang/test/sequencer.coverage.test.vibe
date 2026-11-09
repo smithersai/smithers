@@ -16,6 +16,15 @@ effect function world(events: ReadonlyArray<Event> = []) {
 }
 
 describe("persistent conversation replies", () => {
+  it.effect("records a post and starts no flow when the log has no dispatcher", () => effect {
+    const events = try Ref.make<ReadonlyArray<Event>>([])
+    const s = try Sequencer.make({ read: () => Ref.get(events), write: (event: Event) => Ref.update(events, (all) => [...all, event]) })
+    try s.post("a", "Ada", "first")
+    try s.ensureDispatched()
+    const written = try Ref.get(events)
+    try Effect.try(() => expect(written.map((event) => event.type)).toContain("Posted"))
+  })
+
   it.effect("admits replies in order, reports busy and refuses unknown posts, with idempotent starts", () => effect {
     const w = try world()
     const s = w.sequencer

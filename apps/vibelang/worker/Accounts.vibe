@@ -9,7 +9,7 @@ import { HttpClient } from "effect/http"
 import { Core, GitHub } from "@smthrs/integrations"
 import { WebCryptoCipher } from "@smthrs/control"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { leastRole, roleOf, issuePolicyAction, wikiPolicyAction, type Action as PolicyAction } from "../src/core/conversation.vibe"
@@ -39,12 +39,14 @@ export interface Setup {
   readonly github: GitHub.Auth.GitHubAuth["Service"]
 }
 
+const MutationStep = Schema.Literals(["start", "connect", "callback", "sign-out", "grant", "participation", "device"])
+const ApplyMutation = Action.make("vibelang/account/step", { payload: { step: MutationStep }, success: Schema.Null })
 const Mutation = Flow.make("vibelang/Account", {
   description: "Changes a sign-in session or a project role through one journaled account step.",
   modelInvocable: false,
-  payload: { step: Schema.Literals(["start", "connect", "callback", "sign-out", "grant", "participation", "device"]) },
+  payload: { step: MutationStep },
   success: Schema.Null,
-  body: () => Node.succeed(null),
+  body: Node.capture({}, ({ step }) => ApplyMutation.call({ step })),
 })
 
 /** Host-only configuration: absent credentials disable sign-in without affecting the public factory. */
@@ -103,7 +105,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
   const keys = try Core.CookieKeys.make({ primary: setup.signingSecret }, "primary")
   const broker = setup.broker?.secret === undefined ? undefined : (GitHub.Auth.Broker.site({ origin: setup.origin, brokerOrigin: setup.broker.origin, secret: setup.broker.secret, ...(setup.broker.localDevelopment === undefined ? {} : { localDevelopment: setup.broker.localDevelopment }) }) catch () => undefined)
   const cipher = try Effect.orDie(WebCryptoCipher.make({ key: setup.encryptionKey }))
-  const sequencer = try Sequencer.make(logOver(storage), { start: () => Effect.void, tour: () => Effect.void })
+  const sequencer = try Sequencer.make(logOver(storage))
   const lock = try Semaphore.make(1)
   const issueLock = try Semaphore.make(1)
   const policy: Policy.Shape = {
@@ -159,17 +161,14 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
   effect function mutation<A>(step: typeof Mutation.payloadSchema.Type.step, body: A!!) {
     const executionId = try postExecutionId("account")
     let result: A | undefined
-    const registration = Layer.effectDiscard(effect {
-      const engine = try FlowRuntime.FlowRuntime
-      try engine.register(Mutation, () => withSpan(effect {
-        try Action.make({ name: "vibelang/account/" + step, success: Schema.Null, execute: effect { result = try body; return null } })
-        const status = result !== null && typeof result === "object" && "status" in result ? Number(result.status) : 200
-        const outcome = status >= 400 ? "refused" : "accepted"
-        try Metric.update(Metric.withAttributes(Metric.counter("vibelang_account_steps", { incremental: true }), { step, outcome }), 1)
-        try Effect.logInfo("vibelang.account").pipe(Effect.annotateLogs({ step, outcome }))
-        return null
-      }, "vibelang.account." + step))
-    })
+    const registration = Interpreter.layerWithImplementations(Mutation, ApplyMutation.toLayer(() => withSpan(effect {
+      result = try body
+      const status = result !== null && typeof result === "object" && "status" in result ? Number(result.status) : 200
+      const outcome = status >= 400 ? "refused" : "accepted"
+      try Metric.update(Metric.withAttributes(Metric.counter("vibelang_account_steps", { incremental: true }), { step, outcome }), 1)
+      try Effect.logInfo("vibelang.account").pipe(Effect.annotateLogs({ step, outcome }))
+      return null
+    }, "vibelang.account." + step)))
     const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Mutation._tag }, registration).pipe(Layer.provide(ObjectDatabase.layer(storage)))
     provide runtime {
       try Effect.orDie((try FlowRuntime.FlowRuntime).execute(Mutation, { executionId, payload: { step } }))
