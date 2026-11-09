@@ -25,7 +25,7 @@ import { readInteger, readJsonPath, readString } from "../src/core/JsonPath.ts"
 import { createCodeVerifier, createPkcePair, deriveCodeChallenge } from "../src/core/Pkce.vibe"
 import * as SignalName from "../src/core/SignalName.ts"
 import * as Environment from "../src/Environment.ts"
-import { retryPolicy } from "../src/github/Actions.ts"
+import { retryPolicy } from "../src/github/Actions.vibe"
 import * as GitHubConfig from "../src/github/Config.vibe"
 
 describe("readJsonPath", () => {

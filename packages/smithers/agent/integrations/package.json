@@ -142,8 +142,8 @@
       "default": "./.vibelang/js/src/github.js"
     },
     "./github/Actions": {
-      "types": "./src/github/Actions.ts",
-      "vibelang-source": "./src/github/Actions.ts",
+      "types": "./.vibe/declarations/github/Actions.d.vibe.ts",
+      "vibelang-source": "./src/github/Actions.vibe",
       "default": "./.vibelang/js/src/github/Actions.js"
     },
     "./github/AppAuth": {

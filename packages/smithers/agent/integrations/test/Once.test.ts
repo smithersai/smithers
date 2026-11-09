@@ -11,7 +11,7 @@
 import { Effect, Option } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import type { IntegrationError } from "../src/core/IntegrationError.ts"
-import { RECONCILE_PAGES } from "../src/github/Actions.ts"
+import { RECONCILE_PAGES } from "../src/github/Actions.vibe"
 import * as Commits from "../src/github/Commits.vibe"
 import type { GitHubClient } from "../src/github/GitHubClient.vibe"
 import * as Issues from "../src/github/Issues.vibe"

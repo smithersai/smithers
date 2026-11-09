@@ -10,7 +10,7 @@
  */
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Actions from "../src/github/Actions.ts"
+import * as Actions from "../src/github/Actions.vibe"
 import {
   fullNamePath,
   isOwner,

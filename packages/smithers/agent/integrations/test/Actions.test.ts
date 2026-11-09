@@ -18,7 +18,7 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { afterEach, describe, expect, expectTypeOf, it } from "vitest"
 import { fromIntegrationError, IntegrationFailure, toIntegrationError } from "../src/core/ActionFailure.vibe"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
-import * as GitHubActions from "../src/github/Actions.ts"
+import * as GitHubActions from "../src/github/Actions.vibe"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
 import { gitHubLayer } from "./Http.ts"
 

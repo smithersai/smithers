@@ -14,7 +14,7 @@
  * @category actions
  * @since 1.0.0
  */
-export * as Actions from "./github/Actions.ts"
+export * as Actions from "./github/Actions.vibe"
 
 /**
  * @category services

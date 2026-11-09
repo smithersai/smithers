@@ -47,6 +47,7 @@ import { Action, FlowRuntime, type RetryPolicy } from "@smthrs/flow"
 import { Effect, Layer, Option, Schema } from "effect"
 import { Failure, fromIntegrationError, retryPolicy as stepRetryPolicy } from "../core/ActionFailure.vibe"
 import { IntegrationError } from "../core/IntegrationError.ts"
+import { digestRunKey } from "./Actions.platform.ts"
 import { GitHubClient } from "./GitHubClient.vibe"
 import { withWriteLock } from "./internal/WriteLock.vibe"
 import { IssueNumber, Owner, Repo, requireRepositoryPath } from "./Repository.vibe"
@@ -116,10 +117,10 @@ export const layerCommentOnIssue: Layer.Layer<
   never,
   GitHubClient | FlowRuntime.FlowRuntime
 > = CommentOnIssue.toLayer((payload) =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(payload.owner, payload.repo)
-    return yield* client.request(
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(payload.owner, payload.repo)
+    return try client.request(
       "POST",
       `/repos/${repository}/issues/${payload.issueNumber}/comments`,
       { body: payload.body },
@@ -251,16 +252,16 @@ export const layerAddLabels: Layer.Layer<
   GitHubClient | FlowRuntime.FlowRuntime
 > = AddLabels.toLayer(
   (payload) =>
-    Effect.gen(function*() {
-      const client = yield* GitHubClient
-      const repository = yield* requireRepositoryPath(payload.owner, payload.repo)
+    (effect {
+      const client = try GitHubClient
+      const repository = try requireRepositoryPath(payload.owner, payload.repo)
       const path = `/repos/${repository}/issues/${payload.issueNumber}/labels`
-      const page = yield* client.paginate(path, { maxPages: RECONCILE_PAGES })
-      const current = (yield* decodeItems(Label, page.items, "add-labels")).map((label) => label.name)
+      const page = try client.paginate(path, { maxPages: RECONCILE_PAGES })
+      const current = (try decodeItems(Label, page.items, "add-labels")).map((label) => label.name)
       const present = new Set(current.map((name) => name.toLowerCase()))
       const missing = [...new Set(payload.labels)].filter((name) => !present.has(name.toLowerCase()))
       if (missing.length === 0) return { added: [], labels: current }
-      const labels = yield* client.request("POST", path, { labels: missing }, { schema: Schema.Array(Label) })
+      const labels = try client.request("POST", path, { labels: missing }, { schema: Schema.Array(Label) })
       return { added: missing, labels: labels.map((label) => label.name) }
     }).pipe(Effect.mapError(reconciled)),
   { implementationVersion: "github/add-labels/v1" }
@@ -286,10 +287,10 @@ export const StickyKey = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9._:/-]
  * @since 1.0.0
  */
 export const runKey = (action: string): Effect.Effect<string> =>
-  Effect.gen(function*() {
-    const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
+  effect {
+    const instance = try Effect.serviceOption(FlowRuntime.FlowInstance)
     if (Option.isNone(instance)) {
-      return yield* Effect.die(
+      return try Effect.die(
         new Action.EffectKeyUnavailable({
           name: action,
           message: `${action} ran outside a flow execution with no key. Without one it keys its object by the ` +
@@ -297,12 +298,10 @@ export const runKey = (action: string): Effect.Effect<string> =>
         })
       )
     }
-    const digest = yield* Effect.promise(() =>
-      crypto.subtle.digest("SHA-256", new TextEncoder().encode(`smithers/run-key/v1\n${instance.value.executionId}`))
-    )
+    const digest = try Effect.promise(() => digestRunKey(`smithers/run-key/v1\n${instance.value.executionId}`))
     const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
     return `run:${hex.slice(0, 32)}`
-  })
+  }
 
 /**
  * The hidden first line that marks a sticky comment as `key`'s.
@@ -407,35 +406,33 @@ export const layerUpsertComment: Layer.Layer<
   GitHubClient | FlowRuntime.FlowRuntime
 > = UpsertComment.toLayer(
   (payload) =>
-    Effect.gen(function*() {
-      const client = yield* GitHubClient
-      const repository = yield* requireRepositoryPath(payload.owner, payload.repo)
-      const marker = stickyMarker(payload.key ?? (yield* runKey(UpsertComment.name)))
-      return yield* withWriteLock(
+    (effect {
+      const client = try GitHubClient
+      const repository = try requireRepositoryPath(payload.owner, payload.repo)
+      const marker = stickyMarker(payload.key ?? (try runKey(UpsertComment.name)))
+      return try withWriteLock(
         JSON.stringify(["comment", repository.toLowerCase(), payload.issueNumber, marker]),
-        Effect.gen(function*() {
+        effect {
           const body = `${marker}\n${payload.body}`
-          const page = yield* client.paginate(`/repos/${repository}/issues/${payload.issueNumber}/comments`, {
+          const page = try client.paginate(`/repos/${repository}/issues/${payload.issueNumber}/comments`, {
             maxPages: RECONCILE_PAGES
           })
           // github.com's editor saves CRLF line ends, so a comment a person edited
           // still starts with the marker, followed by `\r\n`.
-          const existing = (yield* decodeItems(ListedComment, page.items, "upsert-comment")).find((comment) =>
+          const existing = (try decodeItems(ListedComment, page.items, "upsert-comment")).find((comment) =>
             comment.body?.split("\n", 1)[0]?.replace(/\r$/, "") === marker &&
             ("login" in payload.author
               ? comment.user?.login.toLowerCase() === payload.author.login.toLowerCase()
               : comment.user?.type === "Bot" && comment.performed_via_github_app?.id === payload.author.appId)
           )
           if (existing === undefined && page.truncated) {
-            return yield* Effect.fail(
-              refused(
-                "upsert-comment",
-                `Issue ${payload.issueNumber} has more comments than ${RECONCILE_PAGES} pages; the sticky comment was not looked for further.`
-              )
+            throw refused(
+              "upsert-comment",
+              `Issue ${payload.issueNumber} has more comments than ${RECONCILE_PAGES} pages; the sticky comment was not looked for further.`
             )
           }
           if (existing === undefined) {
-            const created = yield* client.request(
+            const created = try client.request(
               "POST",
               `/repos/${repository}/issues/${payload.issueNumber}/comments`,
               { body },
@@ -444,14 +441,14 @@ export const layerUpsertComment: Layer.Layer<
             return { ...created, outcome: "created" as const }
           }
           if (existing.body === body) return { id: existing.id, url: existing.url, outcome: "unchanged" as const }
-          const updated = yield* client.request(
+          const updated = try client.request(
             "PATCH",
             `/repos/${repository}/issues/comments/${existing.id}`,
             { body },
             { schema: Comment }
           )
           return { ...updated, outcome: "updated" as const }
-        })
+        }
       )
     }).pipe(Effect.mapError(reconciled)),
   { implementationVersion: "github/upsert-comment/v3" }
@@ -566,14 +563,14 @@ export const layerCheckRun: Layer.Layer<
   GitHubClient | FlowRuntime.FlowRuntime
 > = CheckRun.toLayer(
   (payload) =>
-    Effect.gen(function*() {
-      const client = yield* GitHubClient
-      const repository = yield* requireRepositoryPath(payload.owner, payload.repo)
-      const key = payload.key ?? (yield* runKey(CheckRun.name))
-      return yield* withWriteLock(
+    (effect {
+      const client = try GitHubClient
+      const repository = try requireRepositoryPath(payload.owner, payload.repo)
+      const key = payload.key ?? (try runKey(CheckRun.name))
+      return try withWriteLock(
         JSON.stringify(["check-run", repository.toLowerCase(), payload.headSha, payload.name, payload.appId, key]),
-        Effect.gen(function*() {
-          const listed = yield* client.request(
+        effect {
+          const listed = try client.request(
             "GET",
             `/repos/${repository}/commits/${payload.headSha}/check-runs`,
             undefined,
@@ -582,12 +579,10 @@ export const layerCheckRun: Layer.Layer<
               schema: CheckRuns
             }
           )
-          const runs = yield* decodeItems(ListedCheckRun, listed.check_runs, "check-run")
+          const runs = try decodeItems(ListedCheckRun, listed.check_runs, "check-run")
           const existing = runs.find((run) => run.external_id === key && run.app.id === payload.appId)
           if (existing === undefined && listed.total_count > listed.check_runs.length) {
-            return yield* Effect.fail(
-              refused("check-run", `Commit ${payload.headSha} has more than 100 "${payload.name}" check runs.`)
-            )
+            throw refused("check-run", `Commit ${payload.headSha} has more than 100 "${payload.name}" check runs.`)
           }
           const fields = {
             name: payload.name,
@@ -598,7 +593,7 @@ export const layerCheckRun: Layer.Layer<
             ...(payload.output === undefined ? {} : { output: payload.output })
           }
           const written = existing === undefined
-            ? yield* client.request(
+            ? try client.request(
               "POST",
               `/repos/${repository}/check-runs`,
               { ...fields, head_sha: payload.headSha },
@@ -606,7 +601,7 @@ export const layerCheckRun: Layer.Layer<
                 schema: ListedCheckRun
               }
             )
-            : yield* client.request("PATCH", `/repos/${repository}/check-runs/${existing.id}`, fields, {
+            : try client.request("PATCH", `/repos/${repository}/check-runs/${existing.id}`, fields, {
               schema: ListedCheckRun
             })
           return {
@@ -616,7 +611,7 @@ export const layerCheckRun: Layer.Layer<
             conclusion: written.conclusion,
             created: existing === undefined
           }
-        })
+        }
       )
     }).pipe(Effect.mapError(reconciled)),
   { implementationVersion: "github/check-run/v4" }
@@ -716,23 +711,23 @@ export const layerLinkPullRequest: Layer.Layer<
   GitHubClient | FlowRuntime.FlowRuntime
 > = LinkPullRequest.toLayer(
   (payload) =>
-    Effect.gen(function*() {
-      const client = yield* GitHubClient
-      const repository = yield* requireRepositoryPath(payload.owner, payload.repo)
+    (effect {
+      const client = try GitHubClient
+      const repository = try requireRepositoryPath(payload.owner, payload.repo)
       const issueOwner = payload.issueOwner ?? payload.owner
       const issueRepo = payload.issueRepo ?? payload.repo
-      yield* requireRepositoryPath(issueOwner, issueRepo)
+      try requireRepositoryPath(issueOwner, issueRepo)
       const sameRepository = issueOwner.toLowerCase() === payload.owner.toLowerCase() &&
         issueRepo.toLowerCase() === payload.repo.toLowerCase()
       const reference = sameRepository
         ? `#${payload.issueNumber}`
         : `${issueOwner}/${issueRepo}#${payload.issueNumber}`
       const path = `/repos/${repository}/pulls/${payload.pullNumber}`
-      const pull = yield* client.request("GET", path, undefined, { schema: PullRequest })
+      const pull = try client.request("GET", path, undefined, { schema: PullRequest })
       const linked = { pullNumber: payload.pullNumber, url: pull.html_url, reference }
       // GitHub does not support conditional PATCH here. A second body read
       // would still race with a person's edit; link the objects instead.
-      const targets = yield* client.request("POST", "/graphql", {
+      const targets = try client.request("POST", "/graphql", {
         query:
           "query($owner: String!, $repo: String!, $pull: Int!, $issueOwner: String!, $issueRepo: String!, $issue: Int!) { " +
           "pullRepository: repository(owner: $owner, name: $repo) { pullRequest(number: $pull) { id " +
@@ -748,7 +743,7 @@ export const layerLinkPullRequest: Layer.Layer<
         }
       }, { schema: LinkTargets, retryUnsafeWrites: true })
       if (targets.errors !== undefined && targets.errors.length > 0) {
-        return yield* Effect.fail(refused("link-pr", "GitHub refused to read the closing references."))
+        throw refused("link-pr", "GitHub refused to read the closing references.")
       }
       const targetPull = targets.data.pullRepository.pullRequest
       const issueId = targets.data.issueRepository.issue.id
@@ -756,9 +751,9 @@ export const layerLinkPullRequest: Layer.Layer<
         return { ...linked, updated: false }
       }
       if (targetPull.closingIssuesReferences.pageInfo.hasNextPage) {
-        return yield* Effect.fail(refused("link-pr", "The pull request has more than 100 closing references."))
+        throw refused("link-pr", "The pull request has more than 100 closing references.")
       }
-      const answer = yield* client.request("POST", "/graphql", {
+      const answer = try client.request("POST", "/graphql", {
         query:
           "mutation($input: AddCloseIssueReferencesInput!) { addCloseIssueReferences(input: $input) { issue { id } } }",
         variables: { input: { issueId, pullRequestIds: [targetPull.id] } }
@@ -768,13 +763,11 @@ export const layerLinkPullRequest: Layer.Layer<
         Option.isNone(decoded) || (decoded.value.errors?.length ?? 0) > 0 ||
         decoded.value.data.addCloseIssueReferences.issue.id !== issueId
       ) {
-        return yield* Effect.fail(
-          new IntegrationError("decode-failed", "GitHub did not confirm the closing reference.", {
-            operation: "link-pr",
-            retryable: false,
-            outcomeUnknown: true
-          })
-        )
+        throw new IntegrationError("decode-failed", "GitHub did not confirm the closing reference.", {
+          operation: "link-pr",
+          retryable: false,
+          outcomeUnknown: true
+        })
       }
       return { ...linked, updated: true }
     }).pipe(Effect.mapError(reconciled)),
