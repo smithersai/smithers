@@ -72,8 +72,8 @@
       "default": "./.vibelang/js/src/Checkpointed.js"
     },
     "./ChildFlows": {
-      "types": "./src/ChildFlows.ts",
-      "vibelang-source": "./src/ChildFlows.ts",
+      "types": "./.vibe/declarations/ChildFlows.d.vibe.ts",
+      "vibelang-source": "./src/ChildFlows.vibe",
       "default": "./.vibelang/js/src/ChildFlows.js"
     },
     "./EngineChildren": {

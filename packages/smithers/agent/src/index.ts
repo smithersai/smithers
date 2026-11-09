@@ -82,7 +82,7 @@ export * as AgentSession from "./AgentSession.ts"
  * @category constructors
  * @since 0.1.0
  */
-export * as ChildFlows from "./ChildFlows.ts"
+export * as ChildFlows from "./ChildFlows.vibe"
 
 /**
  * @category constructors

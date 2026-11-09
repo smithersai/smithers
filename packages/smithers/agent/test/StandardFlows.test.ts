@@ -46,7 +46,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { TestContext } from "vitest"
 import { describe, expect, it } from "vitest"
-import * as ChildFlows from "../src/ChildFlows.ts"
+import * as ChildFlows from "../src/ChildFlows.vibe"
 import * as RunawayGuard from "../src/RunawayGuard.vibe"
 import * as StandardFlows from "../src/StandardFlows.ts"
 

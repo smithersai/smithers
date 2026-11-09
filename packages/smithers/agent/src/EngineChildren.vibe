@@ -59,8 +59,8 @@ import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import { ChildError } from "./ChildFlows.ts"
-import * as ChildFlows from "./ChildFlows.ts"
+import { ChildError } from "./ChildFlows.vibe"
+import * as ChildFlows from "./ChildFlows.vibe"
 
 /**
  * How a host wires detached children onto its engine.

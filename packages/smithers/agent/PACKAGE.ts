@@ -246,7 +246,7 @@ const securityReview = Smithers.SecurityReview({
         "A detached child resumed after restart without the parent's attenuated CapabilitySet or budget.",
         "agent/spawn starting a flow not in options.flows."
       ],
-      paths: ["src/EngineChildren.vibe", "src/ChildFlows.ts"]
+      paths: ["src/EngineChildren.vibe", "src/ChildFlows.vibe"]
     },
     {
       id: "sealed-key-integrity",

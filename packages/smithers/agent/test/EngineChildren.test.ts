@@ -48,7 +48,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as ChildFlows from "../src/ChildFlows.ts"
+import * as ChildFlows from "../src/ChildFlows.vibe"
 import * as EngineChildren from "../src/EngineChildren.vibe"
 
 const jj = Jj.make({
