@@ -1,0 +1,41 @@
+import { Core, GitHub } from "@smthrs/integrations"
+import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+const Broker = GitHub.Auth.Broker
+const Step = Flow.make("auth/Broker", {
+  description: "One hosted-site sign-in operation. Credentials never enter the journal.", modelInvocable: false,
+  payload: { step: Schema.String }, success: Schema.Null, body: () => Node.succeed(null),
+})
+
+export effect function make(hostId: string, storage: ObjectDatabase.Storage, setup: {
+  readonly origin: string; readonly sites: ReadonlyArray<GitHub.Auth.Broker.HostedSite>; readonly secret: Redacted.Redacted<string>
+  readonly encryptionKey: Redacted.Redacted<string>; readonly localDevelopment?: boolean
+}, github: GitHub.Auth.GitHubAuth["Service"]) {
+    const keys = try Core.CookieKeys.make({ primary: setup.secret }, "primary")
+    const store = try Effect.orDie(Broker.sqliteStore(storage.sql))
+    const broker = try Effect.orDie(Broker.make({ ...setup, keys, store, github }))
+    const lock = try Semaphore.make(1)
+    return { fetch: effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      const operation = new URL(request.originalUrl).pathname === Broker.START ? "start" : new URL(request.originalUrl).pathname === Broker.EXCHANGE ? "exchange" : "callback"
+      const executionId = "auth-broker/" + (try keys.token)
+      let response = HttpServerResponse.empty({ status: 503, headers: Broker.HEADERS })
+      const registration = Layer.effectDiscard(effect {
+        const runtime = try FlowRuntime.FlowRuntime
+        try runtime.register(Step, () => effect {
+          try Action.make({ name: "auth/broker/" + operation, success: Schema.Null, execute: effect {
+            response = try Broker.serve(broker, setup.origin).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
+            return null
+          } })
+          return null
+        })
+      })
+      provide CloudflareRuntime.layer({ hostId, executionId, flow: Step._tag }, registration).pipe(Layer.provide(ObjectDatabase.layer(storage))) {
+        try Effect.orDie(Semaphore.withPermits(lock, 1)((try FlowRuntime.FlowRuntime).execute(Step, { executionId, payload: { step: operation } })))
+      }
+      return response
+    } }
+}
+

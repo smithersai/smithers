@@ -1,0 +1,316 @@
+import { Tracer } from "effect"
+import { HttpEffect, HttpServerResponse } from "effect/http"
+import { HttpClientRequest, HttpServerRequest } from "effect/http"
+import { expect, it } from "@effect/vitest"
+import { TestClock } from "effect/testing"
+import { Core, GitHub } from "../src/index.ts"
+import * as Broker from "../src/github/AuthBroker.vibe"
+const origin = "https://vibelang.smithers.sh"
+const other = "https://other.smithers.sh"
+const secret = Redacted.make("a".repeat(32))
+const sites = [{ origin, secret }, { origin: other, secret: Redacted.make("b".repeat(32)) }, { origin: "https://factory.example", secret: Redacted.make("c".repeat(32)) }]
+
+effect function fixture(fault: "exchange" | "user" | "identity" | undefined = undefined, suppliedStore?: Broker.Store) {
+  const keys = try Core.CookieKeys.make({ primary: secret }, "primary")
+  const github = GitHub.Auth.GitHubAuth.of({
+    authorizeUrl: ({ state, codeChallenge, redirectUri }) => "https://github.test/authorize?" + new URLSearchParams({ state, code_challenge: codeChallenge, redirect_uri: redirectUri }),
+    exchange: () => fault === "exchange" ? fail(new GitHub.Auth.GitHubRefused({ step: "exchange", reason: "unavailable" })) : succeed({ accessToken: Redacted.make("private-github-token"), refreshToken: null, expiresAt: null }),
+    user: () => fault === "user" ? fail(new GitHub.Auth.GitHubRefused({ step: "user", reason: "unavailable" })) : succeed({ id: fault === "identity" ? 0 : 7, login: "ada" }),
+    refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
+    permission: () => succeed("read"), revoke: () => Effect.void,
+    deviceCode: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
+    deviceToken: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
+  })
+  const store = suppliedStore ?? (try Broker.memoryStore())
+  const broker = try Broker.make({ origin: "https://smithers.sh", sites, keys, store, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), github })
+  const client = try Broker.site({ origin, brokerOrigin: "https://smithers.sh", secret })
+  const pending = try client.begin()
+  const start = try broker.start(origin, pending.returnTo)
+  const state = new URL(start.location).searchParams.get("state")!
+  return { broker, client, pending, start, state, keys, github }
+}
+it.effect("signs origin, nonce and PKCE state and refuses tampering, cross-origin signatures and expiry", () => effect {
+  const { broker, client, pending } = try fixture()
+  const changed = try exit(broker.start(origin, pending.returnTo + "0"))
+  const crossed = try exit(broker.start(other, pending.returnTo))
+  const keys = try Core.CookieKeys.make({ primary: secret }, "primary")
+  const wrong = try exit(broker.start(origin, try keys.sign("session", JSON.stringify(pending.claims))))
+  const stale = try client.begin()
+  try TestClock.adjust("10 minutes")
+  const expired = try exit(broker.start(origin, stale.returnTo))
+  try Effect.try(() => {
+    expect(pending.claims.origin).toBe(origin)
+    expect(pending.claims.nonce.length).toBeGreaterThanOrEqual(43)
+    expect(pending.claims.challenge).not.toBe(pending.verifier)
+    expect([changed, crossed, wrong, expired].every(value => value._tag === "Failure")).toBe(true)
+  })
+})
+it.effect("allows only declared exact HTTPS origins: foreign, lookalike, http, userinfo, port and path tricks fail", () => effect {
+  const bad = ["https://evil.test", "https://undeclared.smithers.sh", "https://vibelang.smithers.sh.evil.test", "https://evilsmithers.sh", "http://vibelang.smithers.sh", origin + "/", origin + "/..", origin + "?next=evil", origin + "#evil", "https://evil.test@vibelang.smithers.sh", origin + ":444", "https://VIBELANG.smithers.sh", origin + "\\@evil.test"]
+  try Effect.try(() => {
+    expect(sites.map(site => Broker.allowedOrigin(site.origin, sites))).toEqual([true, true, true])
+    expect(bad.map(value => Broker.allowedOrigin(value, sites))).toEqual(bad.map(() => false))
+  })
+})
+it.effect("enforces single use concurrently, origin/nonce/PKCE binding and browser CSRF; never sends tokens", () => effect {
+  const { broker, client, pending, start, state } = try fixture()
+  const forged = try exit(broker.callback(state, "unused", start.cookie + "0"))
+  const handoff = try broker.callback(state, "github-code", start.cookie)
+  const replay = try exit(broker.callback(state, "github-code", start.cookie))
+  const restart = try exit(broker.start(origin, pending.returnTo))
+  const fragment = new URLSearchParams(new URL(handoff).hash.slice(1))
+  const code = fragment.get("code")!
+  const request = try client.redemption(pending, code)
+  const foreignClient = try Broker.site({ origin: other, brokerOrigin: "https://smithers.sh", secret: sites[1]!.secret })
+  const crossed = try exit(broker.exchange(other, try foreignClient.redemption(try foreignClient.begin(), code)))
+  const wrongNonce = try exit(broker.exchange(origin, try client.redemption({ ...pending, claims: { ...pending.claims, nonce: "x".repeat(43) } }, code)))
+  const wrongPkce = try exit(broker.exchange(origin, try client.redemption({ ...pending, verifier: "x".repeat(43) }, code)))
+  const outcomes = try.allSettled [broker.exchange(origin, request), broker.exchange(origin, request)]
+  try Effect.try(() => {
+    expect([forged, replay, restart, crossed, wrongNonce, wrongPkce].every(value => value._tag === "Failure")).toBe(true)
+    expect(outcomes.filter(Exit.isSuccess)).toHaveLength(1)
+    expect(outcomes.find(Exit.isSuccess)?.value).toEqual({ id: 7, login: "ada" })
+    expect(new URL(handoff).origin).toBe(origin)
+    expect(fragment.get("state")).toBe(pending.claims.nonce)
+    expect(handoff).not.toMatch(/private-github-token|ada|access_token/)
+    expect(new URL(start.location).searchParams.get("redirect_uri")).toBe("https://smithers.sh/api/auth/callback")
+  })
+})
+it.effect("expires callbacks at ten minutes and codes at sixty seconds", () => effect {
+  const f = try fixture()
+  try TestClock.adjust("10 minutes")
+  const callback = try exit(f.broker.callback(f.state, "code", f.start.cookie))
+  const g = try fixture()
+  const location = try g.broker.callback(g.state, "code", g.start.cookie)
+  const code = new URLSearchParams(new URL(location).hash.slice(1)).get("code")!
+  try TestClock.adjust("60 seconds")
+  const expired = try exit(g.broker.exchange(origin, try g.client.redemption(g.pending, code)))
+  try Effect.try(() => expect([callback, expired].every(value => value._tag === "Failure")).toBe(true))
+})
+
+it.live("refuses an exchange redirect without forwarding the signed redemption", () => effect {
+  const { startFixture, json } = try promise(() => import("./Fixture.ts"))
+  const { FetchHttpClient } = try promise(() => import("effect/http"))
+  const receiver = try promise(() => startFixture((_request, response) => json(response, 200, { id: 7, login: "ada" })))
+  const redirector = try promise(() => startFixture((_request, response) => {
+    response.writeHead(307, { location: receiver.origin })
+    response.end()
+  }))
+  const client = try Broker.site({ origin, brokerOrigin: redirector.origin, secret, localDevelopment: true })
+  const answer = try exit(Effect.provide(client.exchange("signed-redemption-private"), FetchHttpClient.layer))
+  try promise(() => redirector.close())
+  try promise(() => receiver.close())
+  try Effect.try(() => {
+    expect(answer._tag).toBe("Failure")
+    expect(receiver.requests).toHaveLength(0)
+  })
+})
+
+it.effect("SQLite keeps records over reconstruction and conditionally consumes them once", () => effect {
+  const { openBrokerSqlite } = try promise(() => import("./Fixture.ts"))
+  const database = try promise(() => openBrokerSqlite())
+  const store = try Broker.sqliteStore(database.sql)
+  const now = try Clock.currentTimeMillis
+  const inserted = try store.insert("opaque-key", "binding", "ciphertext", now + 1000)
+  const duplicate = try store.insert("opaque-key", "binding", "replacement", now + 1000)
+  const wrongBinding = try store.take("opaque-key", "foreign", now)
+  const reopened = try Broker.sqliteStore(database.sql)
+  const first = try reopened.take("opaque-key", "binding", now)
+  const replayed = try store.take("opaque-key", "binding", now)
+  try store.insert("expired", "binding", "expired-value", now)
+  const expired = try store.take("expired", "binding", now)
+  try store.insert("new", "binding", "new-value", now + 1000)
+  const pruned = try Effect.try(() => database.sql.exec("SELECT key FROM auth_broker_records WHERE key = 'expired'").toArray())
+  try Effect.try(() => database.close())
+  try Effect.try(() => {
+    expect([inserted, duplicate]).toEqual([true, false])
+    expect([wrongBinding, first, replayed, expired]).toEqual([undefined, "ciphertext", undefined, undefined])
+    expect(pruned).toEqual([])
+  })
+})
+
+it.effect("fails closed on bad registry/key configuration, malformed signed claims and faulty GitHub services", () => effect {
+  const f = try fixture()
+  const badSite = try exit(Broker.site({ origin: origin + "/", brokerOrigin: "https://smithers.sh", secret }))
+  const weakKey = try exit(Broker.site({ origin, brokerOrigin: "https://smithers.sh", secret: Redacted.make("short") }))
+  const duplicate = try exit(Broker.make({ origin: "https://smithers.sh", keys: f.keys, store: try Broker.memoryStore(), encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), github: f.github, sites: [{ origin, secret }, { origin: other, secret }] }))
+  const malformed = ["not json", JSON.stringify({ ...f.pending.claims, origin: other }), JSON.stringify({ ...f.pending.claims, nonce: "short" }), JSON.stringify({ ...f.pending.claims, challenge: "short" }), JSON.stringify({ ...f.pending.claims, expires: 600_001 })]
+  for (const value of malformed) {
+    const refused = try exit(f.broker.start(origin, try f.keys.sign("broker_return", value)))
+    try Effect.try(() => expect(refused._tag).toBe("Failure"))
+  }
+  for (const fault of ["exchange", "user", "identity"] as const) {
+    const bad = try fixture(fault)
+    const failed = try exit(bad.broker.callback(bad.state, "code", bad.start.cookie))
+    const repeated = try exit(bad.broker.callback(bad.state, "code", bad.start.cookie))
+    try Effect.try(() => {
+      expect([failed, repeated].every(value => value._tag === "Failure")).toBe(true)
+      expect(JSON.stringify(failed)).not.toMatch(/private-github-token|ada/)
+    })
+  }
+  try Effect.try(() => expect([badSite, weakKey, duplicate].every(value => value._tag === "Failure")).toBe(true))
+})
+
+effect function call(broker: Effect.Success<ReturnType<typeof Broker.make>>, path: string, body?: unknown, cookie = "", home = "https://smithers.sh", method = body === undefined ? "GET" : "POST") {
+  const web = try HttpClientRequest.toWeb(HttpClientRequest.make(method as "GET" | "POST")(home + path).pipe(
+    HttpClientRequest.setHeader("cookie", cookie),
+    request => body === undefined ? request : HttpClientRequest.bodyJsonUnsafe(request, body),
+  ))
+  return try Broker.serve(broker, "https://smithers.sh").pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web)))
+}
+
+it.effect("serves both broker endpoints and its existing callback, bounding inputs and refusing every invalid route", () => effect {
+  const f = try fixture()
+  const next = try f.client.begin()
+  const started = try call(f.broker, Broker.START + "?" + new URLSearchParams({ origin, return_to: next.returnTo }))
+  const state = new URL(started.headers.location!).searchParams.get("state")!
+  const cookie = started.cookies.cookies["__Host-smithers-broker"]!.value
+  const callback = try call(f.broker, Broker.CALLBACK + "?" + new URLSearchParams({ state, code: "github-code" }), undefined, "__Host-smithers-broker=" + cookie)
+  const code = new URLSearchParams(new URL(callback.headers.location!).hash.slice(1)).get("code")!
+  const redeemed = try call(f.broker, Broker.EXCHANGE, { origin, request: try f.client.redemption(next, code) })
+  const wrongHost = try call(f.broker, Broker.START, undefined, "", "https://foreign.test")
+  const invalid = try call(f.broker, Broker.START)
+  const wrongMethod = try call(f.broker, Broker.START, {})
+  const unknown = try call(f.broker, "/no-route")
+  const emptyExchange = try call(f.broker, Broker.EXCHANGE, {})
+  const huge = try call(f.broker, Broker.EXCHANGE, { padding: "x".repeat(9000) })
+  const missingCallback = try call(f.broker, Broker.CALLBACK)
+  try Effect.try(() => {
+    expect([started.status, callback.status, redeemed.status]).toEqual([303, 303, 200])
+    expect([wrongHost.status, invalid.status, wrongMethod.status, unknown.status, emptyExchange.status, huge.status, missingCallback.status]).toEqual([400, 400, 405, 405, 400, 400, 400])
+    expect(redeemed.headers["cache-control"]).toBe("no-store")
+    expect(started.cookies.cookies["__Host-smithers-broker"]!.options).toMatchObject({ httpOnly: true, secure: true, sameSite: "lax", path: "/" })
+  })
+})
+
+it.live("client exchange accepts only valid identities from the configured server and exposes no transport detail", () => effect {
+  const { startFixture, json } = try promise(() => import("./Fixture.ts"))
+  const { FetchHttpClient } = try promise(() => import("effect/http"))
+  let status = 200
+  let answer: unknown = { id: 7, login: "ada" }
+  const server = try promise(() => startFixture((_request, response) => json(response, status, answer)))
+  const client = try Broker.site({ origin, brokerOrigin: server.origin, secret, localDevelopment: true })
+  const good = try Effect.provide(client.exchange("signed-private"), FetchHttpClient.layer)
+  for (const body of [{ id: 0, login: "ada" }, { id: 0.5, login: "ada" }, { id: 7, login: "bad login" }, { id: 7, login: "" }, { login: "ada" }]) {
+    answer = body
+    const refused = try exit(Effect.provide(client.exchange("signed-private"), FetchHttpClient.layer))
+    try Effect.try(() => expect(refused._tag).toBe("Failure"))
+  }
+  status = 503
+  const unavailable = try exit(Effect.provide(client.exchange("signed-private"), FetchHttpClient.layer))
+  try promise(() => server.close())
+  const unreachable = try exit(Effect.provide(client.exchange("signed-private"), FetchHttpClient.layer))
+  try Effect.try(() => {
+    expect(good).toEqual({ id: 7, login: "ada" })
+    expect([unavailable, unreachable].every(value => value._tag === "Failure")).toBe(true)
+    expect(server.requests.every(request => request.method === "POST" && request.url === Broker.EXCHANGE && request.headers.traceparent === undefined && request.headers.b3 === undefined)).toBe(true)
+    expect(JSON.stringify(unreachable)).not.toContain("signed-private")
+  })
+})
+
+it.effect("fails closed on entropy collisions and changed deployment allowlists without creating a handoff", () => effect {
+  const f = try fixture()
+  const store = try Broker.memoryStore()
+  const fixedKeys = { ...f.keys, token: succeed("x".repeat(43)) }
+  const options = { origin: "https://smithers.sh", sites: [...sites], keys: fixedKeys, store, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), github: f.github }
+  const broker = try Broker.make(options)
+  const first = try f.client.begin()
+  const start = try broker.start(origin, first.returnTo)
+  const collision = try exit(broker.start(origin, (try f.client.begin()).returnTo))
+  options.sites.splice(0)
+  const revoked = try exit(broker.callback(Broker.STATE_PREFIX + "x".repeat(43), "code", start.cookie))
+  const codes = try Broker.memoryStore()
+  const faultyStore: Broker.Store = { take: codes.take, insert: (key, binding, value, expires) => key.startsWith("code/")
+    ? succeed(false) : codes.insert(key, binding, value, expires) }
+  const failing = try Broker.make({ ...options, sites, keys: f.keys, store: faultyStore })
+  const second = try f.client.begin()
+  const began = try failing.start(origin, second.returnTo)
+  const noCode = try exit(failing.callback(new URL(began.location).searchParams.get("state")!, "code", began.cookie))
+  const badRequest = try f.keys.sign("broker_exchange", JSON.stringify({ origin: other, nonce: "x".repeat(43), code: "x".repeat(43), verifier: "x".repeat(43), expires: 600_000 }))
+  const foreign = try exit(f.broker.exchange(origin, badRequest))
+  const missing = try f.keys.sign("broker_exchange", JSON.stringify({ origin, nonce: "short", code: "x".repeat(43), verifier: "x".repeat(43), expires: 600_000 }))
+  const badNonce = try exit(f.broker.exchange(origin, missing))
+  const badCode = try f.keys.sign("broker_exchange", JSON.stringify({ origin, nonce: "x".repeat(43), code: "short", verifier: "x".repeat(43), expires: 600_000 }))
+  const invalidCode = try exit(f.broker.exchange(origin, badCode))
+  try Effect.try(() => expect([collision, revoked, noCode, foreign, badNonce, invalidCode].every(value => value._tag === "Failure")).toBe(true))
+})
+
+it.effect("the explicit loopback host uses a separate non-Secure broker cookie", () => effect {
+  const f = try fixture()
+  const options = { origin: "http://localhost:4525", sites, keys: f.keys, store: try Broker.memoryStore(), encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), github: f.github, localDevelopment: true }
+  const broker = try Broker.make(options)
+  const pending = try f.client.begin()
+  const web = try HttpClientRequest.toWeb(HttpClientRequest.get(options.origin + Broker.START + "?" + new URLSearchParams({ origin, return_to: pending.returnTo })))
+  const response = try Broker.serve(broker, options.origin).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web)))
+  try Effect.try(() => expect(response.cookies.cookies["smithers-broker"]!.options).toMatchObject({ secure: false, httpOnly: true }))
+})
+
+it.effect("preserves normal 43-character GitHub state even when it begins with the broker prefix", () => effect {
+  try Effect.try(() => {
+    expect(Broker.handles("/api/auth/broker/start")).toBe(true)
+    expect(Broker.handles("/api/auth/broker/exchange")).toBe(true)
+    expect(Broker.handles("/api/auth/callback?state=broker_" + "x".repeat(43))).toBe(true)
+    expect(Broker.handles("/api/auth/callback?state=broker_" + "x".repeat(36))).toBe(false)
+    expect(Broker.handles("/api/auth/callback?state=broker_x")).toBe(false)
+    expect(Broker.handles("/api/auth/callback?state=regular-github-state")).toBe(false)
+    expect(Broker.handles("/api/auth/sign-in")).toBe(false)
+    expect(Broker.handles("/api/auth/callback")).toBe(false)
+  })
+})
+
+it.effect("malformed provider callbacks leave a valid pending attempt usable", () => effect {
+  const f = try fixture()
+  const empty = try exit(f.broker.callback(f.state, "", f.start.cookie))
+  const huge = try exit(f.broker.callback(f.state, "x".repeat(4097), f.start.cookie))
+  const crossed = try exit(f.broker.callback(f.state, "code", try f.keys.sign("broker_browser", Broker.STATE_PREFIX + "y".repeat(43))))
+  const good = try f.broker.callback(f.state, "code", f.start.cookie)
+  try Effect.try(() => {
+    expect([empty, huge, crossed].every(value => value._tag === "Failure")).toBe(true)
+    expect(new URL(good).origin).toBe(origin)
+  })
+})
+
+it.effect("authenticates audience, nonce, PKCE and expiry inside the encrypted code even if a faulty store bypasses metadata checks", () => effect {
+  for (const fault of ["origin", "nonce", "pkce", "expiry"] as const) {
+    const actual = try Broker.memoryStore()
+    const bindings = try Ref.make(new Map<string, string>())
+    const faulty: Broker.Store = {
+      insert: effect (key, binding, value, expires) => {
+        try Ref.update(bindings, map => new Map(map).set(key, binding))
+        return try actual.insert(key, binding, value, expires)
+      },
+      take: effect (key, binding, now) => {
+        const recorded = (try Ref.get(bindings)).get(key)
+        return try actual.take(key, key.startsWith("code/") ? recorded ?? binding : binding, key.startsWith("code/") ? 0 : now)
+      },
+    }
+    const f = try fixture(undefined, faulty)
+    const handoff = try f.broker.callback(f.state, "code", f.start.cookie)
+    const code = new URLSearchParams(new URL(handoff).hash.slice(1)).get("code")!
+    if (fault === "expiry") try TestClock.adjust("60 seconds")
+    const client = fault === "origin" ? try Broker.site({ origin: other, brokerOrigin: "https://smithers.sh", secret: sites[1]!.secret }) : f.client
+    const pending = fault === "origin" ? try client.begin() : fault === "nonce" ? { ...f.pending, claims: { ...f.pending.claims, nonce: "z".repeat(43) } } : fault === "pkce" ? { ...f.pending, verifier: "z".repeat(43) } : f.pending
+    const result = try exit(f.broker.exchange(fault === "origin" ? other : origin, try client.redemption(pending, code)))
+    try Effect.try(() => expect(result._tag).toBe("Failure"))
+  }
+})
+
+it.live("redacts OAuth state, signed return_to and codes in the real server HTTP spans", () => scoped(effect {
+  const spans: Array<Tracer.NativeSpan> = []
+  const tracer = Tracer.make({ span: options => {
+    const span = new Tracer.NativeSpan(options)
+    spans.push(span)
+    return span
+  } })
+  const app = try acquireRelease(Effect.sync(() => HttpEffect.toWebHandlerLayer(succeed(HttpServerResponse.empty()), Layer.mergeAll(Broker.httpPolicy, Layer.succeed(Tracer.Tracer, tracer)))), app => promise(() => app.dispose()))
+  const request = try HttpClientRequest.toWeb(HttpClientRequest.get("https://smithers.sh/api/auth/broker/start?return_to=private-signature&state=private-state&code=private-code&unexpected=private-value"))
+  const response = try promise(() => app.handler(request))
+  try Effect.yieldNow
+  try Effect.try({ try: () => {
+    expect(response.status).toBe(204)
+    expect(spans.length).toBeGreaterThan(0)
+    const attributes = JSON.stringify(spans.map(span => [...span.attributes.entries()]))
+    expect(attributes).toContain("http.response.status_code")
+    expect(attributes).not.toMatch(/private-signature|private-state|private-code|private-value/)
+  }, catch: error => error })
+}))

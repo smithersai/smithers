@@ -1,3 +1,4 @@
+import { validSessionCookie } from "../core/accountCookies.vibe"
 import { Factory } from "../core/Factory.vibe"
 import { liveHealth, prefersMock } from "../core/protocolDecision.vibe"
 
@@ -41,7 +42,7 @@ export effect function personClient(origin: string, session?: Redacted.Redacted<
   if (session === undefined) return client
   const parsed = try Effect.try({ try: () => JSON.parse(Redacted.value(session)) as unknown, catch: () => new LiveBackendNotDeployed({ message: "Invalid VIBELANG_SESSION." }) })
   const decoded = Schema.decodeUnknownOption(Schema.Struct({ origin: Schema.String, cookie: Schema.String }))(parsed)
-  if (Option.isNone(decoded) || decoded.value.origin !== origin || !/^__Host-vibelang-session=[A-Za-z0-9_.:-]{1,4096}$/.test(decoded.value.cookie)) throw new LiveBackendNotDeployed({ message: "Invalid VIBELANG_SESSION." })
+  if (Option.isNone(decoded) || decoded.value.origin !== origin || !validSessionCookie(origin, decoded.value.cookie)) throw new LiveBackendNotDeployed({ message: "Invalid VIBELANG_SESSION." })
   const credential = decoded.value
   return client.pipe(HttpClient.mapRequest((request) => request.url.startsWith(origin + "/")
     ? request.pipe(HttpClientRequest.setHeader("cookie", credential.cookie), HttpClientRequest.setHeader("origin", origin)) : request))
@@ -59,7 +60,7 @@ return Layer.unwrap(effect {
   const client = Option.isSome(explicit) ? native : HttpClient.mapRequestEffect(native, effect request => {
     if (!request.url.startsWith(origin + "/")) return request
     const stored = Effect.provide(readSession(), captured) catch () => undefined
-    const cookie = stored?.origin === origin && /^__Host-vibelang-session=[A-Za-z0-9_.:-]{1,4096}$/.test(stored.cookie) ? stored.cookie : ""
+    const cookie = stored?.origin === origin && validSessionCookie(origin, stored.cookie) ? stored.cookie : ""
     return request.pipe(HttpClientRequest.setHeader("origin", origin), HttpClientRequest.setHeader("cookie", cookie))
   })
   if (probe) {

@@ -69,7 +69,7 @@ export class ProjectAccounts {
       return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(principal))
     }
     if (url.pathname === "/__fixture/participation") {
-      await runPromise(service.participation(incoming.cookies[Accounts.SESSION]))
+      await runPromise(service.participation(Accounts.cookieOf(incoming)))
       return HttpServerResponse.toWeb(HttpServerResponse.empty())
     }
     return HttpServerResponse.toWeb(await runPromise(service.fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, incoming))))

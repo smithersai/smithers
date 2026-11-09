@@ -1,0 +1,7 @@
+// The host supplies whether the validated origin uses HTTPS.
+//@ verify
+//@ ensures secure ==> \result === "__Host-vibelang-session"
+//@ ensures !secure ==> \result === "vibelang-session"
+export function cookieName(secure: boolean): string {
+  return secure ? "__Host-vibelang-session" : "vibelang-session"
+}

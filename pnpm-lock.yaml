@@ -581,6 +581,9 @@ importers:
       sucrase:
         specifier: 3.35.1
         version: 3.35.1
+      vibelang-runtime:
+        specifier: 0.0.12
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
     devDependencies:
       '@alchemy.run/cloudflare':
         specifier: 2.0.0-beta.85

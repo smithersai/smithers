@@ -1,0 +1,87 @@
+// Unshipped integration host: production handlers and durable storage, with an injected GitHub authorization service.
+import { Core, GitHub } from "@smthrs/integrations"
+import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
+import * as SmithersBroker from "../../../mvp/worker/AuthBrokerHost.vibe"
+import * as Accounts from "../../worker/Accounts.vibe"
+import type { Storage } from "../../worker/Objects.vibe"
+import type { ObjectDatabase } from "@smthrs/platform-cloudflare"
+
+interface State { readonly id: { toString(): string }; readonly storage: Storage }
+const secret = Redacted.make("auth-broker-site-fixture-key-32-characters")
+const encryptionKey = Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+function origins(request: Request) {
+  const url = new URL(request.url)
+  return { site: "http://127.0.0.1:" + url.port, broker: "http://localhost:" + url.port }
+}
+export class HostedBroker {
+  service: Promise<Effect.Success<ReturnType<typeof SmithersBroker.make>>> | undefined
+  constructor(readonly state: State) {}
+  async fetch(request: Request): Promise<Response> {
+    const origin = origins(request)
+    const url = new URL(request.url)
+    const github: GitHub.Auth.GitHubAuth["Service"] = {
+      authorizeUrl: ({ state, codeChallenge, redirectUri }) => origin.broker + "/__github?" + new URLSearchParams({ state, challenge: codeChallenge, redirect_uri: redirectUri }),
+      exchange: effect ({ code, codeVerifier, redirectUri }) => {
+        const key = "github/" + Redacted.value(code)
+        const expected = try promise(() => this.state.storage.get(key)) as { challenge: string; redirectUri: string } | undefined
+        try promise(() => this.state.storage.delete(key))
+        if (expected === undefined || expected.challenge !== (try Effect.orDie(Core.Pkce.deriveCodeChallenge(Redacted.value(codeVerifier)))) || expected.redirectUri !== redirectUri) throw new GitHub.Auth.GitHubRefused({ step: "exchange", reason: "rejected" })
+        return { accessToken: Redacted.make("fixture-token-private"), expiresAt: null, refreshToken: null }
+      },
+      user: () => succeed({ id: 7, login: "ada" }),
+      refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
+      permission: () => succeed("read"), revoke: () => Effect.void,
+      deviceCode: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
+      deviceToken: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
+    }
+    this.service ??= runPromise(SmithersBroker.make(this.state.id.toString(), this.state.storage, {
+      origin: origin.broker, sites: [{ origin: origin.site, secret }], secret: Redacted.make("broker-private-cookie-signing-key-32"), encryptionKey, localDevelopment: true,
+    }, github))
+    const service = await this.service
+    if (url.pathname === "/__github") {
+      const allow = origin.broker + "/__allow?" + url.searchParams
+      return HttpServerResponse.toWeb(HttpServerResponse.text('<!doctype html><title>GitHub fixture</title><a href="' + allow.replaceAll("&", "&amp;") + '">Continue</a>', { contentType: "text/html" }))
+    }
+    if (url.pathname === "/__allow") {
+      const code = await runPromise(Core.Pkce.createCodeVerifier())
+      await this.state.storage.put("github/" + code, { challenge: url.searchParams.get("challenge"), redirectUri: url.searchParams.get("redirect_uri") })
+      return HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 303, headers: { location: origin.broker + GitHub.Auth.Broker.CALLBACK + "?" + new URLSearchParams({ state: url.searchParams.get("state")!, code }) } }))
+    }
+    if (url.pathname === "/__journal") {
+      const rows = this.state.storage.sql.exec("SELECT name FROM sqlite_master WHERE type='table'").toArray()
+      const values: Array<unknown> = []
+      for (const row of rows) {
+        const name = String((row as { name: string }).name)
+        if (/^flows_[a-z_]+$/.test(name)) values.push({ name, rows: this.state.storage.sql.exec('SELECT * FROM "' + name + '"').toArray() })
+      }
+      return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(values))
+    }
+    return HttpServerResponse.toWeb(await runPromise(service.fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)))))
+  }
+}
+export class HostedSite {
+  service: Promise<Effect.Success<ReturnType<typeof Accounts.make>>> | undefined
+  constructor(readonly state: State) {}
+  async fetch(request: Request): Promise<Response> {
+    const origin = origins(request)
+    this.service ??= runPromise(Accounts.make(this.state.id.toString(), this.state.storage, {
+      origin: origin.site, initialMaintainer: "1", signingSecret: Redacted.make("hosted-site-private-cookie-key-32chars"), encryptionKey, clientId: "fixture",
+      github: await runPromise(scoped(GitHub.Auth.GitHubAuth.pipe(Effect.provide(GitHub.Auth.layer({ clientId: "fixture", clientSecret: Redacted.make("unused") }).pipe(Layer.provide(FetchHttpClient.layer)))))),
+      broker: { origin: origin.broker, secret, localDevelopment: true },
+    }).pipe(Effect.provide(FetchHttpClient.layer)))
+    const service = await this.service
+    if (new URL(request.url).pathname === "/") {
+      const incoming = HttpServerRequest.fromWeb(request)
+      const current = await runPromise(service.current(incoming.cookies["vibelang-session"]))
+      return HttpServerResponse.toWeb(HttpServerResponse.text('<!doctype html><title>Hosted site</title>' + (current.id === "" ? '<a href="/api/auth/sign-in">Sign in</a>' : '<p>' + current.login + '</p>'), { contentType: "text/html" }))
+    }
+    return HttpServerResponse.toWeb(await runPromise(service.fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)))))
+  }
+}
+interface Env {
+  readonly BROKER: { getByName(name: string): { fetch(request: Request): Promise<Response> } }
+  readonly SITE: { getByName(name: string): { fetch(request: Request): Promise<Response> } }
+}
+export default { async fetch(request: Request, env: Env): Promise<Response> {
+  return await (new URL(request.url).hostname === "localhost" ? env.BROKER : env.SITE).getByName("auth").fetch(request)
+} }

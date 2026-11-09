@@ -259,6 +259,8 @@ A local `.env` that raises a limit for development, such as `MODEL_DAILY_TOKEN_B
 | `SUMMARY_MODEL` | no | ChatApi | the timeline summaries' model when no admin set one ([model-endpoint.md](features/model-endpoint.md#configuration)) |
 | `MODEL_DAILY_TOKEN_BUDGET`, `MODEL_MAX_OUTPUT_TOKENS`, `MODEL_MAX_MESSAGES`, `MODEL_MAX_REQUEST_BYTES`, `MODEL_RESERVATION_EXPIRY` | no | ChatApi | [model-endpoint.md](features/model-endpoint.md#configuration) |
 | `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | for sign-in | ChatApi | the Smithers GitHub App's client; without them nobody can sign in, so nobody can ask ([sign-in.md](features/sign-in.md#configuration)) |
+| `HOSTED_AUTH_SITES`, `AUTH_BROKER_ENCRYPTION_KEY` | for hosted-site sign-in | ChatApi, HostedAuthBroker | redacted exact-origin/per-site-key registry and base64 32-byte record-encryption key ([sign-in.md](features/sign-in.md#independently-hosted-sites)) |
+| `AUTH_BROKER_ORIGIN` | no | ChatApi, HostedAuthBroker | existing registered callback origin; defaults to HTTPS `APP_DOMAIN` |
 | `GITHUB_REPOSITORY`, `SESSION_MAX_AGE_DAYS`, `ROLE_RECHECK_MINUTES` | no | ChatApi | [sign-in.md](features/sign-in.md#configuration) |
 | `GITHUB_ALLOWED_REPOSITORIES` | no | ChatApi | [issues.md](features/issues.md#configuration) |
 | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY` | for issues | ChatApi, FlowExecution | the Smithers GitHub App's ID and private key; without them nothing syncs or writes to GitHub ([issues.md](features/issues.md#configuration)) |

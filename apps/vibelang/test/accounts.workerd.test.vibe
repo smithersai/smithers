@@ -171,10 +171,11 @@ describe("configured sessions and grants in real workerd storage", () => {
       })
     }
   })
-  it.live("binds OAuth state to its signed cookie and exact callback before any token exchange", () => effect {
+  it.live("binds explicit GitHub connection state to its signed cookie and exact callback before any token exchange", () => effect {
     provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
       const client = try HttpClient.HttpClient
-      const response = try client.get(api.origin + "/api/auth/sign-in")
+      const signed = try issue("7", "ada")
+      const response = try request("/api/auth/github", signed)
       const location = response.headers.location!
       const url = new URL(location)
       const bad = try request("/api/auth/callback?state=forged&code=unused")
@@ -227,9 +228,10 @@ describe("OAuth exchange faults by injected GitHub service", () => {
   it.live("returns a visible sign-in failure and consumes OAuth state once", () => effect {
     provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
       const client = try HttpClient.HttpClient
-      const start = try client.get(faulty.origin + "/api/auth/sign-in")
+      const issued = try (try client.get(faulty.origin + "/__fixture/issue?id=7&login=ada")).json as { readonly cookie: string }
+      const start = try client.execute(HttpClientRequest.get(faulty.origin + "/api/auth/github").pipe(HttpClientRequest.setHeader("cookie", issued.cookie)))
       const state = new URL(start.headers.location!).searchParams.get("state")!
-      const cookie = start.headers["set-cookie"]!.split(";")[0]!
+      const cookie = start.headers["set-cookie"]!.split(";")[0]! + "; " + issued.cookie
       const path = faulty.origin + "/api/auth/callback?state=" + state + "&code=fixture-unused-code"
       const failed = try client.execute(HttpClientRequest.get(path).pipe(HttpClientRequest.setHeader("cookie", cookie)))
       const repeated = try client.execute(HttpClientRequest.get(path).pipe(HttpClientRequest.setHeader("cookie", cookie)))
@@ -274,7 +276,7 @@ describe("the CLI and MCP device sign-in in real workerd storage", () => {
       try Effect.try(() => {
         expect(route).toEqual({ clientId: "Iv1.fixture" })
         expect(issued.status).toBe(200)
-        expect(session).toMatchObject({ id: "7", login: "fixture-person-7", role: "new", agent: true, available: true })
+        expect(session).toMatchObject({ id: "7", login: "fixture-person-7", role: "new", agent: true, available: false })
         expect(refused.status).toBe(401)
         expect(crossOrigin.status).toBe(403)
       })

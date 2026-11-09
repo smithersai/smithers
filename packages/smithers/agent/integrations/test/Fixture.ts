@@ -92,3 +92,16 @@ export const json = (response: ServerResponse, status: number, body: unknown, he
   response.writeHead(status, { "content-type": "application/json", ...headers })
   response.end(JSON.stringify(body))
 }
+
+/** Actual SQLite for the broker's conditional-consumption tests; it implements the workerd SQL port. */
+export const openBrokerSqlite = async () => {
+  const { DatabaseSync } = await import("node:sqlite")
+  const database = new DatabaseSync(":memory:")
+  return {
+    sql: { exec: (query: string, ...bindings: Array<string | number>) => {
+      const rows = database.prepare(query).all(...bindings)
+      return { toArray: () => rows }
+    } },
+    close: () => database.close(),
+  }
+}

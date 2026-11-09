@@ -699,3 +699,24 @@ Tests: `worker/Reauthentication.test.ts`, `worker/SignIn.handoff.test.ts`,
 hold, session-tag continuation and wipe behavior remain step 3.
 
 The deployment role window is captured while the host and request services are built, and travels with their runtime authority service. Losing ambient runtime configuration cannot widen it. A credential publication that cannot persist retains its privacy fence, while another context's queued write-lock acquisition ends on cancellation or after two seconds with retryable `credential_stale`. The caller's existing durable retry policy owns the next attempt; session reads and sign-out remain available.
+
+## Independently hosted sites
+
+`GitHub.Auth.Broker` in `@smthrs/integrations` lets hosted sites use this deployment's existing GitHub callback.
+`HostedAuthBroker` hosts `/api/auth/broker/start`, `/api/auth/broker/exchange`, and only the broker's exact callback
+state format; ordinary sign-in, alias handoff and sessions keep their existing handlers. Every operation is an
+`auth/Broker` step in the object's SQLite journal; only its operation name and null result are journaled.
+
+Configure `HOSTED_AUTH_SITES` as redacted JSON entries `{origin, secret}` for the exact HTTPS origins this deployment
+serves, with distinct keys of at least 32 characters, and `AUTH_BROKER_ENCRYPTION_KEY` as a base64 32-byte key.
+`AUTH_BROKER_ORIGIN` defaults to HTTPS `APP_DOMAIN` and must be the already-registered callback's origin. Existing
+GitHub client credentials and `SESSION_SECRET` remain. A site has only its own registry key and its own session.
+No redirect URL is added. The deployment adds the `HostedAuthBroker` class/binding through Alchemy.
+
+The chosen single-use code and signed-identity alternative, origin/PKCE checks, sixty-second expiry, fragment
+handoff, logging and security review are in [VibeLang decision 0029](../../../vibelang/wiki/decisions/0029-hosted-sign-in-broker.md)
+and [the integrations guide](../../../../packages/smithers/agent/integrations/README.md#hosted-site-sign-in).
+The new Worker modules are VibeLang; the rule scopes include `.vibe` and exempt only their host composition roots
+from the rule against Cloudflare in portable flows. This lane does not deploy the app.
+
+The shared `httpPolicy` is registered through Alchemy `Telemetry.layer` for ChatApi and HostedAuthBroker, so the HTTP tracer redacts query values before exporting spans. Proxy/native access logs must also omit OAuth query values and callback/exchange bodies.

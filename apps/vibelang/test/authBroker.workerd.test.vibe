@@ -1,0 +1,49 @@
+import { expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { serveAuthBroker } from "./support/workerd.vibe"
+import { GitHub } from "@smthrs/integrations"
+
+it.live("runs both apps' durable auth hosts in workerd, binding both browser cookies and consuming the handoff", () => scoped(effect {
+  const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
+  const brokerOrigin = host.origin.replace("127.0.0.1", "localhost")
+  const http = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))))
+  const start = try http.get(host.origin + "/api/auth/sign-in")
+  const pending = start.cookies.cookies["vibelang-sign-in"]!.value
+  const atBroker = try http.get(start.headers.location!)
+  const browser = atBroker.cookies.cookies["smithers-broker"]!.value
+  const github = try http.get(atBroker.headers.location!)
+  const form = try github.text
+  const allow = form.match(/href="([^"]+)"/)![1]!.replaceAll("&amp;", "&")
+  const approved = try http.get(allow)
+  const callback = approved.headers.location!
+  const crossBrowser = try http.get(callback)
+  const identityFree = try http.execute(HttpClientRequest.get(callback).pipe(HttpClientRequest.setHeader("cookie", "smithers-broker=" + browser)))
+  const handoff = identityFree.headers.location!
+  const fragment = new URLSearchParams(new URL(handoff).hash.slice(1))
+  const page = try http.get(host.origin + GitHub.Auth.Broker.CALLBACK)
+  const script = try page.text
+  const submit = (cookie: string, origin = host.origin) => http.execute(HttpClientRequest.post(host.origin + GitHub.Auth.Broker.CALLBACK).pipe(
+    HttpClientRequest.setHeader("origin", origin), HttpClientRequest.setHeader("cookie", "vibelang-sign-in=" + cookie),
+    HttpClientRequest.bodyJsonUnsafe({ code: fragment.get("code"), state: fragment.get("state") }),
+  ))
+  const foreignPost = try submit(pending, brokerOrigin)
+  const wrongBrowser = try submit(pending + "0")
+  const accepted = try submit(pending)
+  const repeated = try submit(pending)
+  const session = accepted.cookies.cookies["vibelang-session"]!.value
+  const who = try (try http.execute(HttpClientRequest.get(host.origin + "/api/auth/session").pipe(HttpClientRequest.setHeader("cookie", "vibelang-session=" + session)))).json
+  const journal = try (try http.get(brokerOrigin + "/__journal")).text
+  try Effect.try(() => {
+    expect([start.status, atBroker.status, approved.status, identityFree.status]).toEqual([302, 303, 303, 303])
+    expect(new URL(callback).origin).toBe(brokerOrigin)
+    expect([crossBrowser.status, foreignPost.status, wrongBrowser.status, repeated.status]).toEqual([400, 403, 400, 400])
+    expect(accepted.status).toBe(200)
+    expect(who).toMatchObject({ id: "7", login: "ada", role: "new" })
+    expect(script.indexOf("history.replaceState")).toBeLessThan(script.indexOf("fetch("))
+    expect(page.headers["referrer-policy"]).toBe("no-referrer")
+    expect(page.headers["content-security-policy"]).toContain("default-src 'none'")
+    expect(journal).toContain("auth/Broker")
+    expect(journal).not.toMatch(/fixture-token|code_verifier|broker_return|ada/)
+    expect(handoff).not.toMatch(/fixture-token|ada/)
+  })
+}), 120_000)

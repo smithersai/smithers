@@ -1,3 +1,4 @@
+import * as AuthBroker from "./AuthBroker.vibe"
 import { withRequestRay } from "./RequestRay.ts"
 // ChatApi's program (worker/ChatApi.ts): everything ChatApi serves and hosts. worker/ChatApi.ts loads this module when
 // the Worker first builds its program, not when Cloudflare starts the Worker, so its modules are evaluated then and
@@ -209,6 +210,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const personalApi = yield* PersonalApi.make(database)
     // Bug reports (docs/features/bugs.md): filing one, the Admins' read and the reports' shape.
     const bugsApi = yield* BugsApi.make(database)
+    const brokerObjects = yield* AuthBroker.HostedAuthBroker
     const signIn = yield* SignIn.make(database, options).pipe(Effect.provide(FetchHttpClient.layer))
     // Repositories (docs/features/repo.md): cloning into Code Storage, the `repositories` shape, reads at a commit,
     // cached in this Worker's Cache API, and what GitHub says of a repository, kept in Postgres for every data center.
@@ -436,6 +438,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           if (Option.isSome(answered)) return answered.value
         }
         const runtime = yield* RuntimeContext
+        const brokerRequest = yield* HttpServerRequest.HttpServerRequest
+        if (AuthBroker.handles(brokerRequest.url)) return yield* brokerObjects.getByName("hosted").fetch(brokerRequest).pipe(Effect.provideService(RuntimeContext, runtime))
         const throttle = Effect.flatMap(
           HttpServerRequest.HttpServerRequest,
           Throttle.make({
@@ -605,6 +609,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       )
     }
   }).pipe(
+    Effect.provide(AuthBroker.live),
     Effect.provide(Executions.live(DatabaseRoutes.route(pools, "FlowExecution"), {
       repositories,
       homeRepository,
@@ -631,7 +636,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         // The gate's run artifacts (`CiArtifacts`), bound only with the gate machine.
         Cloudflare.R2.ReadWriteBucketBinding,
         Cloudflare.RateLimitBinding,
-        Cloudflare.Telemetry({ persist: true })
+        Cloudflare.Telemetry({ persist: true }),
+        AuthBroker.requestTelemetry
       )
     )
   )

@@ -1,3 +1,4 @@
+import { validSessionCookie } from "../core/accountCookies.vibe"
 // Where the CLI and MCP server keep their settings: the app session `login` stores and a pending device flow
 // (decision 0028). The directory is `$XDG_CONFIG_HOME/vibelang-factory` (or `~/.config/vibelang-factory`), mode 0700,
 // and files in it are mode 0600. Nothing here or in its callers logs a cookie or a device code.
@@ -129,7 +130,7 @@ export effect function activeSession() {
   const configured = try Config.option(Config.Redacted("VIBELANG_SESSION"))
   if (Option.isSome(configured) && Redacted.value(configured.value) !== "") {
     const decoded = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ origin: Schema.String, cookie: Schema.String })))(Redacted.value(configured.value)), () => new SessionFailed({ reason: "invalid session" }))
-    if (!/^__Host-vibelang-session=[A-Za-z0-9_.:-]{1,4096}$/.test(decoded.cookie)) throw new SessionFailed({ reason: "invalid session" })
+    if (!validSessionCookie(decoded.origin, decoded.cookie)) throw new SessionFailed({ reason: "invalid session" })
     return { ...decoded, login: "" }
   }
   return try readSession()

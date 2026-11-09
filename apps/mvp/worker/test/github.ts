@@ -97,6 +97,8 @@ export const scriptedGitHub = (): ScriptedGitHub => {
     repositories: [],
     issued: [],
     service: GitHubAuth.of({
+      deviceCode: () => Effect.fail(new GitHubRefused({ step: "device", reason: "unavailable" })),
+      deviceToken: () => Effect.fail(new GitHubRefused({ step: "device", reason: "unavailable" })),
       authorizeUrl: ({ state, codeChallenge, redirectUri }) => {
         authorizations.set(state, { challenge: codeChallenge, redirectUri })
         return Core.AuthorizationUrl.buildAuthorizationUrl({

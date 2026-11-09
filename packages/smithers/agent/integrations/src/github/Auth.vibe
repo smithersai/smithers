@@ -342,3 +342,6 @@ const make = effect (options: {
 export const withUserAgent = <A, E, R>(program: A!E!R) =>
   Effect.provideServiceEffect(program, Client.HttpClient, Effect.map(Client.HttpClient, http =>
     Client.mapRequest(http, request => HttpClientRequest.setHeader(request, "user-agent", GitHubClient.USER_AGENT))))
+
+/** Hosted-site sign-in through this app's registered callback. */
+export * as Broker from "./AuthBroker.vibe"

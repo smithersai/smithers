@@ -31,6 +31,8 @@ describe("routeTemplate", () => {
     expect(routeTemplate("/api/answers/a-1/x/y")).toBe("/api/answers/:id/:id/:id")
     // The runner audit (decision 0148): route words, never a runner's or repository's name.
     expect(routeTemplate("/api/runners/audit")).toBe("/api/runners/audit")
+    expect(routeTemplate("/api/auth/broker/start")).toBe("/api/auth/broker/start")
+    expect(routeTemplate("/api/auth/broker/exchange")).toBe("/api/auth/broker/exchange")
   })
 
   it("keeps every route the app and ChatApi name as they are", () => {

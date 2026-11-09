@@ -11,14 +11,14 @@ import { minimatch } from "minimatch"
 import { describe, expect, it } from "vitest"
 import { importRules, jevRules } from "./PACKAGE.ts"
 
-/** Every `.ts` file under worker/, app-relative with `/`. */
+/** Every TypeScript or VibeLang source under worker/, app-relative with `/`. */
 const workerFiles: ReadonlyArray<string> = readdirSync(new URL("worker", import.meta.url), { recursive: true })
   .map((path) => `worker/${String(path).split("\\").join("/")}`)
-  .filter((path) => path.endsWith(".ts"))
+  .filter((path) => /\.(ts|vibe)$/.test(path) && !path.endsWith(".d.vibe.ts"))
   .sort()
 
 /** A test, or code only tests load: anything under a `test/` directory. */
-const isTest = (path: string) => path.endsWith(".test.ts")
+const isTest = (path: string) => /\.test\.(ts|vibe)$/.test(path)
 const isTestSupport = (path: string) => !isTest(path) && path.split("/").slice(0, -1).includes("test")
 
 const server = workerFiles.filter((path) => !isTest(path) && !isTestSupport(path))
@@ -39,6 +39,12 @@ const scopes = [
 const reads = (files: ReadonlyArray<string>, path: string, matches = matchesGlob) => files.some((glob) => matches(path, glob))
 
 describe("the app's rule scopes", () => {
+  it.each(scopes)("$name: VibeLang Worker sources receive the same guards as TypeScript", ({ files, matches }) => {
+    for (const path of ["worker/AuthBroker.vibe", "worker/AuthBrokerHost.vibe", "worker/nested/Source.vibe"]) {
+      if (reads(files, path.replace(/\.vibe$/, ".ts"), matches)) expect(reads(files, path, matches), path).toBe(true)
+    }
+  })
+
   it("uses Jev's dot-file semantics while import rules keep node:path semantics", () => {
     const jev = scopes.find((scope) => scope.name.startsWith("Jev rule"))!
     const imports = scopes.find((scope) => scope.name.startsWith("import rule"))!

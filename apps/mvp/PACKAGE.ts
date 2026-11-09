@@ -43,14 +43,14 @@ const issueFileTreeSources = Smithers.Filegroup({
  * PACKAGE.test.ts fails if a Worker source escapes them.
  */
 const workerSources = [
-  "worker/!(*.test).ts",
-  "worker/!(test)/!(*.test).ts",
-  "worker/!(test)/!(test)/**/!(*.test).ts"
+  "worker/!(*.test).{ts,vibe}",
+  "worker/!(test)/!(*.test).{ts,vibe}",
+  "worker/!(test)/!(test)/**/!(*.test).{ts,vibe}"
 ]
 
 /** The built-in plugins' sources (decision 0017, `apps/mvp/plugins/<id>/src`), tests left out. */
 function pluginSources() {
-  return ["plugins/*/src/**/!(*.test).ts", "plugins/*/src/**/*.tsx"]
+  return ["plugins/*/src/**/!(*.test).{ts,vibe}", "plugins/*/src/**/*.tsx"]
 }
 
 /**
@@ -58,10 +58,10 @@ function pluginSources() {
  * Each plugin is named in its registry only (decision 0017, "The deletion test").
  */
 const coreSources = [
-  "src/!(test|plugins)/**/!(*.test).ts",
-  "src/!(*.test).ts",
-  "src/plugins/!(builtin|builtinFlows|manifests|*.test).ts",
-  "src/plugins/*/**/!(*.test).ts",
+  "src/!(test|plugins)/**/!(*.test).{ts,vibe}",
+  "src/!(*.test).{ts,vibe}",
+  "src/plugins/!(builtin|builtinFlows|manifests|*.test).{ts,vibe}",
+  "src/plugins/*/**/!(*.test).{ts,vibe}",
   "src/**/!(main).tsx",
   "src/main.tsx",
   ...workerSources
@@ -73,13 +73,13 @@ const coreSources = [
  * the page's host capabilities.
  */
 const appSources = [
-  "src/!(test)/**/!(*.test).ts",
-  "src/!(*.test).ts",
+  "src/!(test)/**/!(*.test).{ts,vibe}",
+  "src/!(*.test).{ts,vibe}",
   "src/**/!(main).tsx",
   ...pluginSources(),
   ...workerSources,
   "db/Database.ts",
-  "db/migrations/*.ts"
+  "db/migrations/*.{ts,vibe}"
 ]
 
 /**
@@ -110,14 +110,14 @@ export const importRules: ReadonlyArray<ImportRule> = [
   },
   {
     kind: "forbid",
-    files: ["plugins/*/src/*.{ts,tsx}"],
+    files: ["plugins/*/src/*.{ts,tsx,vibe}"],
     modules: ["../../**"],
     because: "plugin.public-interface-only: a compiled plugin reaches nothing outside its own folder. See " +
       "apps/mvp/docs/rules.md."
   },
   {
     kind: "forbid",
-    files: ["plugins/*/src/*/**/*.{ts,tsx}"],
+    files: ["plugins/*/src/*/**/*.{ts,tsx,vibe}"],
     modules: ["../../../**"],
     because: "plugin.public-interface-only: a compiled plugin reaches nothing outside its own folder. See " +
       "apps/mvp/docs/rules.md."
@@ -131,7 +131,7 @@ export const importRules: ReadonlyArray<ImportRule> = [
   },
   {
     kind: "forbid",
-    files: ["src/**/*.{ts,mts,cts,js,mjs,cjs}"],
+    files: ["src/**/*.{ts,vibe,mts,cts,js,mjs,cjs}"],
     modules: ["react", "react/**", "@tanstack/react-db", "@tanstack/react-db/**"],
     because: "The state machine is framework-free TypeScript that the web app and the TUI adapt to; React lives " +
       "only in .tsx components. See \"State (flux)\" in apps/mvp/AGENTS.md and apps/mvp/docs/state.md."
@@ -238,7 +238,7 @@ export const importRules: ReadonlyArray<ImportRule> = [
     // The two program boundaries are left out: src/main.tsx hands the browser's fetch to Effect's FetchHttpClient, and
     // the engine worker's entry (src/flows/engine.worker.ts) fetches the SQLite build it hands BrowserRuntime.run.
     files: appSources.map((glob) =>
-      glob === "src/!(test)/**/!(*.test).ts" ? "src/!(test)/**/!(*.test|*.worker).ts" : glob
+      glob === "src/!(test)/**/!(*.test).{ts,vibe}" ? "src/!(test)/**/!(*.test|*.worker).{ts,vibe}" : glob
     ),
     callees: ["fetch", "globalThis.fetch", "window.fetch", "self.fetch"],
     because: "effect.native-api-first: make HTTP requests with Effect HttpClient, not fetch. See apps/mvp/docs/rules.md."
@@ -273,7 +273,7 @@ export const importRules: ReadonlyArray<ImportRule> = [
     files: [
       "src/**",
       "db/**",
-      "worker/!(ChatApi|ChatApiProgram|DevChatApi|index|Executions|ExecutionHost|BranchSandboxes|BranchRooms).ts",
+      "worker/!(ChatApi|ChatApiProgram|DevChatApi|index|Executions|ExecutionHost|BranchSandboxes|BranchRooms|AuthBroker|AuthBrokerHost).{ts,vibe}",
       "worker/*/**",
       "e2e/**",
       "bench/**"
@@ -375,7 +375,7 @@ export const importRules: ReadonlyArray<ImportRule> = [
   },
   {
     kind: "forbid",
-    files: ["src/!(test)/**/!(*.test).ts", "src/!(*.test).ts", "src/**/*.tsx"],
+    files: ["src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}", "src/**/*.tsx"],
     modules: [
       "node:*",
       "node:*/**",
@@ -409,14 +409,14 @@ export const importRules: ReadonlyArray<ImportRule> = [
   },
   {
     kind: "forbidCalls",
-    files: ["**/*.test.ts", "src/test/**", "worker/**/test/**", "db/TestDatabase.ts"],
+    files: ["**/*.test.{ts,vibe}", "src/test/**", "worker/**/test/**", "db/TestDatabase.ts"],
     callees: ["vi.mock", "vi.doMock", "vi.stubGlobal", "jest.mock"],
     because: "test.no-mocks-of-our-code: tests run our real code; only the model provider is a scripted seam. " +
       "See apps/mvp/docs/rules.md."
   },
   {
     kind: "forbidCalls",
-    files: ["**/*.test.ts", "e2e/**"],
+    files: ["**/*.test.{ts,vibe}", "e2e/**"],
     callees: ["setTimeout", "*.waitForTimeout"],
     because: "test.behavioral: wait on a condition or TestClock, never a fixed sleep. See apps/mvp/docs/rules.md."
   }
@@ -431,10 +431,10 @@ export const importRules: ReadonlyArray<ImportRule> = [
 const importRulesTarget = ImportRules({ cwd, rules: importRules })
 
 /** Browser code: the state machine and components, tests and test support left out. */
-const browserSources = ["src/!(test)/**/!(*.test).ts", "src/!(*.test).ts", "src/**/*.tsx"]
+const browserSources = ["src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}", "src/**/*.tsx"]
 
 /** Every test and its support code. */
-const testSources = ["**/*.test.ts", "e2e/**/*.ts", "src/test/**/*.ts", "worker/**/test/**/*.ts", "db/TestDatabase.ts"]
+const testSources = ["**/*.test.{ts,vibe}", "e2e/**/*.{ts,vibe}", "src/test/**/*.{ts,vibe}", "worker/**/test/**/*.{ts,vibe}", "db/TestDatabase.ts"]
 
 /**
  * The judgment rules: Jev answers one yes-or-no question per rule about one file at a time. Each id, question and
@@ -454,7 +454,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "durable.no-hand-rolled-durability",
-    files: [...workerSources, "src/!(test)/**/!(*.test).ts", "src/!(*.test).ts", "db/Database.ts", "db/migrations/*.ts"],
+    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}", "db/Database.ts", "db/migrations/*.{ts,vibe}"],
     lookFor: "Does this file implement its own durability machinery: a retry loop, a backoff schedule, a periodic " +
       "sweep or cron job, a background job runner, re-dispatch of stuck work, attempt counters, leases or fencing, " +
       "or a work queue, instead of leaving that to the durable flow engine?",
@@ -509,7 +509,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "sdk.no-dead-code",
-    files: ["src/**/*.ts", "src/**/*.tsx", "worker/**/*.ts", "db/**/*.ts", "e2e/**/*.ts", "bench/**/*.ts"],
+    files: ["src/**/*.{ts,vibe}", "src/**/*.tsx", "worker/**/*.{ts,vibe}", "db/**/*.{ts,vibe}", "e2e/**/*.{ts,vibe}", "bench/**/*.{ts,vibe}"],
     lookFor: "Treat every export as used: other files may import it. Does this file contain dead or duplicate code: " +
       "commented-out code, an unreachable branch, a local declaration or parameter the file never uses, a " +
       "placeholder or TODO stub, or a second implementation of logic the same file already has?",
@@ -529,7 +529,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "effect.boundary-only",
-    files: [...workerSources, "src/!(test)/**/!(*.test).ts", "src/!(*.test).ts", "src/**/!(main).tsx"],
+    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}", "src/**/!(main).tsx"],
     lookFor: "A DOM listener that must call preventDefault before it returns, and a function a React event handler " +
       "calls to dispatch an action, may run an Effect synchronously. Apart from those, does this file run an Effect, " +
       "with Effect.runPromise, runSync, runFork or runCallback, their ...With forms, a ManagedRuntime or Runtime's " +
@@ -541,7 +541,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "effect.wrap-every-library",
-    files: [...workerSources, "src/!(test)/**/!(*.test).ts", "src/!(*.test).ts", "db/Database.ts", "db/migrations/*.ts"],
+    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}", "db/Database.ts", "db/migrations/*.{ts,vibe}"],
     lookFor: "Does this file call a third-party library's Promise, callback or class API directly in app logic, " +
       "instead of through that library's own Effect API or an Effect wrapper?",
     violation: "App logic calls a third-party library's non-Effect API directly.",
@@ -550,7 +550,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "effect.choices-are-services",
-    files: [...workerSources, "src/!(test)/**/!(*.test).ts", "src/!(*.test).ts", "alchemy.run.ts"],
+    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}", "alchemy.run.ts"],
     lookFor: "Does this file hard-code a deployment choice, such as which model or provider to use, a service URL, a " +
       "limit, a timeout or a credential name, inside a handler or module body, instead of reading it from a service " +
       "provided by a layer or from Effect Config with a named default?",
@@ -608,7 +608,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "config.generic-names",
-    files: [...workerSources, "src/!(test)/**/!(*.test).ts", "src/!(*.test).ts", "db/Database.ts", "alchemy.run.ts",
+    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}", "db/Database.ts", "alchemy.run.ts",
       "playwright.config.ts"],
     lookFor: "Does this file name a configuration setting, such as an environment variable, Config key, option or " +
       "type, after one vendor when the setting is generic, for example CEREBRAS_URL for any OpenAI-compatible " +
@@ -619,7 +619,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "obs.every-action-observed",
-    files: [...workerSources, "src/features/**/!(*.test).ts", "src/!(*.test).ts"],
+    files: [...workerSources, "src/features/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}"],
     lookFor: "Does this file define an action, such as a request handler, a database write, a model call, a " +
       "background program, or what happens when a person does something, that records none of a structured log " +
       "line, a span or a metric for it? A function that only dispatches another action, binds a key or an event to " +
@@ -632,7 +632,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "obs.content-free",
-    files: [...workerSources, "src/!(test)/**/!(*.test).ts", "src/!(*.test).ts"],
+    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}"],
     lookFor: "Does any log line, span attribute, span event, error message, error cause or metric attribute in this " +
       "file carry user content or secrets, such as message text, a question, an answer, a prompt, a provider's " +
       "error text or a credential, instead of only ids, counts, durations, sizes, status codes and error codes?",
@@ -641,7 +641,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "test.e2e-local-and-live",
-    files: ["playwright.config.ts", "e2e/**/*.ts"],
+    files: ["playwright.config.ts", "e2e/**/*.{ts,vibe}"],
     lookFor: "Is this end-to-end code tied to one environment, such as a hard-coded localhost URL or port, " +
       "local-only file paths, or a dev-only fixture, so the tests cannot run against a live deployment?",
     violation: "The e2e code can run in only one environment.",
@@ -669,7 +669,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "test.behavioral",
-    files: ["**/*.test.ts", "e2e/**/*.spec.ts"],
+    files: ["**/*.test.{ts,vibe}", "e2e/**/*.spec.{ts,vibe}"],
     lookFor: "Does this test file contain a test that cannot fail or does not test behavior: an assertion that only " +
       "echoes a constant or the test's own setup, a tautology, a test with no meaningful assertion, a fixed sleep " +
       "instead of waiting on a condition or TestClock, or a check that code was called rather than what it did?",
@@ -679,7 +679,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "test.skip-only-when-absent",
-    files: ["**/*.test.ts", "e2e/**/*.ts"],
+    files: ["**/*.test.{ts,vibe}", "e2e/**/*.{ts,vibe}"],
     lookFor: "Does this test file skip tests on an error other than a required service being unreachable, or skip " +
       "without saying which service is missing, or swallow a setup or migration failure?",
     violation: "A test skips for a reason other than a missing service, skips silently, or hides a setup failure.",

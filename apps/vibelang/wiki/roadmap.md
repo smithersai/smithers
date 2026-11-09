@@ -94,3 +94,6 @@ brick                                   state         proof
 - **Gate 2 addenda (0027, lane vl-gates2): implemented locally.** A+, A and A- pass; B+ refuses. The accepted mock
   starts with A, A, A-, A-; edits keep acceptance and receipts. Both explicit revision policies retain proofs and
   negative controls; memory/workerd, CLI/MCP, scene, fuzz, benchmark and browser cases track keep. Lead deploys.
+
+- **Hosted sign-in broker (0029, lane vl-authbroker): implemented locally.** Shared signed-origin/PKCE handoff through
+  smithers.sh's existing callback; no new redirect URL. Both apps' local checks precede the lead's coordinated deploy.

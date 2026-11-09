@@ -1,0 +1,266 @@
+import * as Policy from "./AuthBrokerPolicy.vibe"
+import type * as Auth from "./Auth.vibe"
+import * as CookieKeys from "../core/CookieKeys.vibe"
+import * as Pkce from "../core/Pkce.ts"
+import { forCredentials } from "../core/CredentialHttp.ts"
+import { WebCryptoCipher } from "@smthrs/control"
+import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse, UrlParams } from "effect/http"
+
+/** Install in the host request context, before the HTTP tracer; query values include CSRF-sensitive state. */
+export const httpPolicy = Layer.succeed(UrlParams.CurrentRedactedNames, [/.*/])
+
+export const START = "/api/auth/broker/start"
+export const EXCHANGE = "/api/auth/broker/exchange"
+export const CALLBACK = "/api/auth/callback"
+export const STATE_PREFIX = "broker_"
+export const HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer" }
+export const REQUEST_TTL = 600_000
+export const CODE_TTL = 60_000
+export error BrokerRefused {}
+export interface HostedSite { readonly origin: string; readonly secret: Redacted.Redacted<string> }
+export type Keys = Effect.Success<ReturnType<typeof CookieKeys.make>>
+/** Atomic, durable host boundary. Values are encrypted; keys and bindings are SHA-256 digests. */
+export interface Store {
+  readonly insert: (key: string, binding: string, value: string, expires: number) => boolean!BrokerRefused
+  readonly take: (key: string, binding: string, now: number) => (string | undefined)!BrokerRefused
+}
+
+/** Exact origins only. Even a real smithers.sh subdomain must appear in the deployment's hosted-site registry. */
+export function canonicalOrigin(value: string, localDevelopment = false): boolean {
+  try {
+    const url = new URL(value)
+    return url.origin === value &&
+      (url.protocol === "https:" || (localDevelopment && url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)))
+  } catch { return false }
+}
+export function allowedOrigin(value: string, sites: ReadonlyArray<HostedSite>, localDevelopment = false): boolean {
+  return canonicalOrigin(value, localDevelopment) && sites.some(site => site.origin === value)
+}
+
+schema Claims {
+  readonly origin: string
+  readonly nonce: string
+  readonly challenge: string
+  readonly expires: number
+}
+schema Redemption {
+  readonly origin: string
+  readonly nonce: string
+  readonly verifier: string
+  readonly code: string
+  readonly expires: number
+}
+schema Attempt { readonly claims: Claims; readonly verifier: string; readonly expires: number }
+export schema Identity { readonly id: number; readonly login: string }
+schema Handoff { readonly claims: Claims; readonly expires: number; readonly person: Identity }
+const decodeClaims = Schema.decodeUnknownEffect(Schema.fromJsonString(Claims))
+const decodeRedemption = Schema.decodeUnknownEffect(Schema.fromJsonString(Redemption))
+const decodeAttempt = Schema.decodeUnknownEffect(Schema.fromJsonString(Attempt))
+const decodeHandoff = Schema.decodeUnknownEffect(Schema.fromJsonString(Handoff))
+const random = /^[A-Za-z0-9_-]{43}$/
+// Digests arbitrary strings through the existing HMAC primitive, with a fixed public domain separator.
+import * as Signature from "../core/Signature.ts"
+const hash = (value: string) => Signature.computeHmacSha256Hex(value, "smithers-auth-broker-digest-v1")
+const binding = (origin: string, nonce: string, challenge: string) => hash(JSON.stringify([origin, nonce, challenge]))
+const refused = () => new BrokerRefused()
+const checked = <A, E, R>(body: A!E!R) => Effect.mapError(body, refused)
+
+/** Every observable field is fixed vocabulary; never record a URL, signature, code, nonce, identity or key. */
+export function observed<A, E, R>(step: string, body: A!E!R) {
+  return withSpan(Effect.tapError(Effect.tap(body, () => record(step, "accepted")), () => record(step, "refused")), "auth.broker." + step)
+}
+effect function record(step: string, outcome: string) {
+  try Metric.update(Metric.withAttributes(Metric.counter("smithers_auth_broker_steps", { incremental: true }), { step, outcome }), 1)
+  try Effect.logInfo("auth.broker").pipe(Effect.annotateLogs({ step, outcome }))
+}
+
+/** Real in-memory atomic store, useful for ephemeral hosts and protocol unit tests. Hosted brokers require durability. */
+export effect function memoryStore(): Store!! {
+  const rows = try Ref.make(new Map<string, { binding: string; value: string; expires: number }>())
+  return {
+    insert: (key, binding, value, expires) => Ref.modify(rows, rows => {
+      if (rows.has(key)) return [false, rows]
+      const next = new Map(rows)
+      next.set(key, { binding, value, expires })
+      return [true, next]
+    }),
+    take: (key, binding, now) => Ref.modify(rows, rows => {
+      const row = rows.get(key)
+      if (row === undefined || !Policy.liveRecord(row.binding, binding, row.expires, now)) return [undefined, rows]
+      const next = new Map(rows)
+      next.delete(key)
+      return [row.value, next]
+    }),
+  }
+}
+
+export effect function site(options: { readonly origin: string; readonly brokerOrigin: string; readonly secret: Redacted.Redacted<string>; readonly localDevelopment?: boolean }) {
+  if (!canonicalOrigin(options.origin, options.localDevelopment) || !canonicalOrigin(options.brokerOrigin, options.localDevelopment) || Redacted.value(options.secret).length < 32) throw refused()
+  const keys = try CookieKeys.make({ primary: options.secret }, "primary")
+  const sign = (purpose: string, claims: unknown) => keys.sign(purpose, JSON.stringify(claims))
+  return {
+    begin: () => observed("site_start", effect {
+      const pair = try checked(Pkce.createPkcePair())
+      const claims: Claims = { origin: options.origin, nonce: try keys.token, challenge: pair.codeChallenge, expires: (try Clock.currentTimeMillis) + REQUEST_TTL }
+      const returnTo = try sign("broker_return", claims)
+      return { claims, verifier: pair.codeVerifier, returnTo, location: options.brokerOrigin + START + "?" + new URLSearchParams({ origin: options.origin, return_to: returnTo }) }
+    }),
+    redemption: (pending: { readonly claims: Claims; readonly verifier: string }, code: string) => sign("broker_exchange", {
+      origin: options.origin, nonce: pending.claims.nonce, verifier: pending.verifier, code, expires: pending.claims.expires,
+    }),
+    exchange: (signed: string) => observed("site_exchange", effect {
+      const ambient = try HttpClient.HttpClient
+      const http = try checked(Effect.try(() => forCredentials(ambient)))
+      const response = try checked(http.execute(HttpClientRequest.post(options.brokerOrigin + EXCHANGE).pipe(
+        HttpClientRequest.bodyJsonUnsafe({ origin: options.origin, request: signed }),
+      )))
+      if (response.status !== 200) throw refused()
+      const identity = try checked(Schema.decodeUnknownEffect(Identity)(try checked(response.json)))
+      if (!Number.isSafeInteger(identity.id) || identity.id <= 0 || !/^[a-zA-Z0-9-]{1,39}$/.test(identity.login)) throw refused()
+      return identity
+    }).pipe(Effect.provideService(HttpClient.TracerDisabledWhen, () => true)),
+  }
+}
+
+/** Protocol only: hosts journal operations and provide the store's atomicity and encrypted-at-rest key. */
+export effect function make(options: {
+  readonly origin: string; readonly sites: ReadonlyArray<HostedSite>; readonly keys: Keys; readonly store: Store
+  readonly encryptionKey: Redacted.Redacted<string>; readonly github: Auth.GitHubAuth["Service"]; readonly localDevelopment?: boolean
+}) {
+  if (!canonicalOrigin(options.origin, options.localDevelopment) || new Set(options.sites.map(site => site.origin)).size !== options.sites.length || new Set(options.sites.map(site => Redacted.value(site.secret))).size !== options.sites.length || options.sites.some(site => !canonicalOrigin(site.origin, options.localDevelopment) || Redacted.value(site.secret).length < 32)) throw refused()
+  const cipher = try checked(WebCryptoCipher.make({ key: options.encryptionKey }))
+  const context = (key: string) => ({ id: key, name: "auth_broker", version: 1 })
+  const seal = effect (key: string, value: unknown) => JSON.stringify(try checked(cipher.seal(Redacted.make(JSON.stringify(value)), context(key))))
+  const open = effect (key: string, value: string) => {
+    const sealed = try checked(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ nonce: Schema.String, ciphertext: Schema.String })))(value))
+    return Redacted.value(try checked(cipher.open(sealed, context(key))))
+  }
+  const fresh = effect (expires: number, ttl: number) => {
+    const now = try Clock.currentTimeMillis
+    if (!Number.isSafeInteger(expires) || !Policy.validDeadline(expires, now, ttl)) throw refused()
+    return now
+  }
+  const verify = effect (origin: string, purpose: string, signed: string) => {
+    if (!allowedOrigin(origin, options.sites, options.localDevelopment) || signed.length > 4096) throw refused()
+    const site = options.sites.find(site => site.origin === origin)!
+    const keys = try CookieKeys.make({ primary: site.secret }, "primary")
+    const verified = try keys.verify(purpose, signed)
+    if (Option.isNone(verified)) throw refused()
+    return verified.value.value
+  }
+  return {
+    start: (origin: string, signed: string) => observed("start", effect {
+      const claims = try checked(decodeClaims(try verify(origin, "broker_return", signed)))
+      const now = try fresh(claims.expires, REQUEST_TTL)
+      if (claims.origin !== origin || !random.test(claims.nonce) || !random.test(claims.challenge)) throw refused()
+      const requestKey = "request/" + (try hash(signed))
+      if (!(try options.store.insert(requestKey, "used", "", claims.expires))) throw refused()
+      const state = STATE_PREFIX + (try options.keys.token)
+      const key = "attempt/" + (try hash(state))
+      const pair = try checked(Pkce.createPkcePair())
+      const expires = Math.min(claims.expires, now + REQUEST_TTL)
+      const stored = try seal(key, { claims, verifier: pair.codeVerifier, expires })
+      if (!(try options.store.insert(key, try hash(state), stored, expires))) throw refused()
+      return { location: options.github.authorizeUrl({ state, codeChallenge: pair.codeChallenge, redirectUri: options.origin + CALLBACK }), cookie: try options.keys.sign("broker_browser", state) }
+    }),
+    callback: (state: string, code: string, cookie: string | undefined) => observed("callback", effect {
+      if (!callbackState(state) || code.length === 0 || code.length > 4096) throw refused()
+      const browser = try options.keys.verify("broker_browser", cookie)
+      if (Option.isNone(browser) || browser.value.value !== state) throw refused()
+      const key = "attempt/" + (try hash(state))
+      const stored = try options.store.take(key, try hash(state), try Clock.currentTimeMillis)
+      if (stored === undefined) throw refused()
+      const pending = try checked(decodeAttempt(try open(key, stored)))
+      try fresh(pending.expires, REQUEST_TTL)
+      if (!allowedOrigin(pending.claims.origin, options.sites, options.localDevelopment)) throw refused()
+      const tokens = try checked(options.github.exchange({ code: Redacted.make(code), codeVerifier: Redacted.make(pending.verifier), redirectUri: options.origin + CALLBACK }))
+      const person = try checked(options.github.user(tokens.accessToken))
+      if (!Number.isSafeInteger(person.id) || person.id <= 0 || !/^[a-zA-Z0-9-]{1,39}$/.test(person.login)) throw refused()
+      const handoff = try options.keys.token
+      const codeKey = "code/" + (try hash(handoff))
+      const expires = (try Clock.currentTimeMillis) + CODE_TTL
+      if (!(try options.store.insert(codeKey, try binding(pending.claims.origin, pending.claims.nonce, pending.claims.challenge), try seal(codeKey, { claims: pending.claims, expires, person: { id: person.id, login: person.login } }), expires))) throw refused()
+      return pending.claims.origin + CALLBACK + "#" + new URLSearchParams({ code: handoff, state: pending.claims.nonce })
+    }),
+    exchange: (origin: string, signed: string) => observed("exchange", effect {
+      const claims = try checked(decodeRedemption(try verify(origin, "broker_exchange", signed)))
+      const now = try fresh(claims.expires, REQUEST_TTL)
+      if (claims.origin !== origin || !random.test(claims.nonce) || !random.test(claims.code)) throw refused()
+      const challenge = try checked(Pkce.deriveCodeChallenge(claims.verifier))
+      const key = "code/" + (try hash(claims.code))
+      const stored = try options.store.take(key, try binding(origin, claims.nonce, challenge), now)
+      if (stored === undefined) throw refused()
+      const handoff = try checked(decodeHandoff(try open(key, stored)))
+      if (handoff.claims.origin !== origin || handoff.claims.nonce !== claims.nonce || handoff.claims.challenge !== challenge) throw refused()
+      try fresh(handoff.expires, CODE_TTL)
+      return handoff.person
+    }),
+  }
+}
+
+/** The fragment never reaches HTTP/access logs; erase it before submitting a same-origin POST. No third-party assets. */
+export const HANDOFF_PAGE = `<!doctype html><meta name="referrer" content="no-referrer"><title>Sign in</title><script>
+const p=new URLSearchParams(location.hash.slice(1));history.replaceState(null,"",location.pathname);
+fetch(location.pathname,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({code:p.get("code"),state:p.get("state")})}).then(r=>{location.replace(r.ok?"/":"/?sign-in=failed")}).catch(()=>location.replace("/?sign-in=failed"));
+</script>`
+
+/** Shared route adapter; the host runs each invocation as a durable step. No redirect from an unverified request. */
+export effect function serve(broker: Effect.Success<ReturnType<typeof make>>, origin: string) {
+  const request = try HttpServerRequest.HttpServerRequest
+  const url = new URL(request.originalUrl, origin)
+  const cookieName = origin.startsWith("https:") ? "__Host-smithers-broker" : "smithers-broker"
+  const bad = () => HttpServerResponse.jsonUnsafe({ error: "sign-in" }, { status: 400, headers: HEADERS })
+  if (url.origin !== origin) return bad()
+  const cookie = (response: HttpServerResponse.HttpServerResponse, value: string, age: number) => HttpServerResponse.setCookieUnsafe(response, cookieName, value, {
+    httpOnly: true, secure: origin.startsWith("https:"), sameSite: "lax", path: "/", maxAge: Duration.millis(age),
+  })
+  return (effect {
+    if (url.pathname === START && request.method === "GET") {
+      const start = try broker.start(url.searchParams.get("origin") ?? "", url.searchParams.get("return_to") ?? "")
+      return cookie(HttpServerResponse.redirect(start.location, { status: 303, headers: HEADERS }), start.cookie, REQUEST_TTL)
+    }
+    if (url.pathname === CALLBACK && request.method === "GET") {
+      const location = try broker.callback(url.searchParams.get("state") ?? "", url.searchParams.get("code") ?? "", request.cookies[cookieName])
+      return cookie(HttpServerResponse.redirect(location, { status: 303, headers: HEADERS }), "", 0)
+    }
+    if (url.pathname === EXCHANGE && request.method === "POST") {
+      if (Number(request.headers["content-length"]) > 8192) return bad()
+      const text = try checked(request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(8192)), Effect.timeout("3 seconds")))
+      const body = try checked(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ origin: Schema.String, request: Schema.String })))(text))
+      return HttpServerResponse.jsonUnsafe(try broker.exchange(body.origin, body.request), { headers: HEADERS })
+    }
+    return HttpServerResponse.empty({ status: 405, headers: HEADERS })
+  } catch () => cookie(bad(), "", 0))
+}
+
+export interface Sql {
+  readonly exec: (query: string, ...bindings: Array<string | number>) => { readonly toArray: () => Array<Record<string, unknown>> }
+}
+/** workerd SQLite's conditional DELETE RETURNING is the single-use linearization point, across object restarts. */
+export effect function sqliteStore(sql: Sql): Store!BrokerRefused {
+  try checked(Effect.try(() => sql.exec("CREATE TABLE IF NOT EXISTS auth_broker_records (key TEXT PRIMARY KEY, binding TEXT NOT NULL, value TEXT NOT NULL, expires INTEGER NOT NULL)")))
+  try checked(Effect.try(() => sql.exec("CREATE INDEX IF NOT EXISTS auth_broker_expiry ON auth_broker_records(expires)")))
+  return {
+    insert: (key, binding, value, expires) => checked(effect {
+      // Prune expired receipts inside the journaled write, never with a background timer or retry loop.
+      const now = try Clock.currentTimeMillis
+      try Effect.try(() => sql.exec("DELETE FROM auth_broker_records WHERE expires <= ?", now))
+      const rows = try Effect.try(() => sql.exec("INSERT INTO auth_broker_records (key,binding,value,expires) VALUES (?,?,?,?) ON CONFLICT(key) DO NOTHING RETURNING key", key, binding, value, expires).toArray())
+      return rows.length === 1
+    }),
+    take: (key, binding, now) => checked(effect {
+      const rows = try Effect.try(() => sql.exec("DELETE FROM auth_broker_records WHERE key = ? AND binding = ? AND expires > ? RETURNING value", key, binding, now).toArray())
+      return rows.length === 1 ? String(rows[0]!.value) : undefined
+    }),
+  }
+}
+
+/** Distinguish the broker's 50-character state from the existing app's 43-character OAuth nonce. */
+export function handles(url: string): boolean {
+  const parsed = new URL(url, "https://broker.invalid")
+  return parsed.pathname === START || parsed.pathname === EXCHANGE || (parsed.pathname === CALLBACK && callbackState(parsed.searchParams.get("state") ?? ""))
+}
+
+function callbackState(state: string): boolean {
+  return /^broker_[A-Za-z0-9_-]{43}$/.test(state)
+}

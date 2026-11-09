@@ -17,7 +17,8 @@ import * as ActionDirectory from "./ActionDirectory.vibe"
 // /api/* for the site Worker and hosts the two Durable Object classes Objects.vibe describes, one per conversation
 // and one per UTC day. Alchemy runs every handler; nothing here runs an Effect itself.
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { RuntimeContext } from "alchemy"
+import { RuntimeContext, Telemetry } from "alchemy"
+import { GitHub } from "@smthrs/integrations"
 import * as Accounts from "./Accounts.vibe"
 import { postName, type Identity } from "../src/core/roles.vibe"
 import { HttpServerRequest } from "effect/http"
@@ -90,7 +91,9 @@ export interface AccountsShape {
 }
 export class ProjectAccounts extends Cloudflare.DurableObject<ProjectAccounts, AccountsShape>()("ProjectAccounts") {}
 
+const authTelemetry = Telemetry.layer(GitHub.Auth.Broker.httpPolicy)
 const AccountsLive = ProjectAccounts.make(effect {
+  try Layer.build(authTelemetry)
   const state = try Cloudflare.DurableObjectState
   const budgets = (try Budget) as Namespace<BudgetShape>
   const model = try Effect.orDie(chatModel())
@@ -380,10 +383,10 @@ const program = effect {
         post: (conversation, body) => effect {
           const object = try objectOf(conversations, conversation, "conversation")
           const account = try objectOf(accounts, "project", "accounts")
-          const identity = try reached(runtime, "accounts", account.current(request.cookies[Accounts.SESSION]))
+          const identity = try reached(runtime, "accounts", account.current(Accounts.cookieOf(request)))
           if (identity.id !== "" && !Accounts.sameOrigin(request)) return "forbidden"
           const refusal = try reached(runtime, "conversation", object.post(body.clientId, postName(identity), body.text, identity.id))
-          if (refusal === null && identity.id !== "") try reached(runtime, "accounts", account.participation(request.cookies[Accounts.SESSION]))
+          if (refusal === null && identity.id !== "") try reached(runtime, "accounts", account.participation(Accounts.cookieOf(request)))
           return refusal
         },
         read: (conversation, after) => effect {
@@ -420,7 +423,7 @@ const program = effect {
         write: effect (name, body) => {
           const object = try objectOf(histories, REPOSITORY, "history")
           const account = try objectOf(accounts, "project", "accounts")
-          const identity = try reached(runtime, "accounts", account.current(request.cookies[Accounts.SESSION]))
+          const identity = try reached(runtime, "accounts", account.current(Accounts.cookieOf(request)))
           if (identity.id !== "" && !Accounts.sameOrigin(request)) return { id: "", folded: 0, refusal: "forbidden" }
           // The person acts, or their agent for them with their role; the history machine refuses agents approve and fold.
           const principal: Principal = identity.id === ""
@@ -470,6 +473,6 @@ const program = effect {
 export default class Api extends Cloudflare.Worker<Api>()(
   "VibelangApi",
   props,
-  program.pipe(Effect.provide(ActionIndexLive), Effect.provide(ConversationLive), Effect.provide(AuthenticatedSandboxes), Effect.provide(AccountsLive), Effect.provide(BudgetLive), Effect.provide(HistoryLive)),
+  program.pipe(Effect.provide(ActionIndexLive), Effect.provide(ConversationLive), Effect.provide(AuthenticatedSandboxes), Effect.provide(AccountsLive), Effect.provide(BudgetLive), Effect.provide(HistoryLive), Effect.provide(authTelemetry)),
 ) {}
 

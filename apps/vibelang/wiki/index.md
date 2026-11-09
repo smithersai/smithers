@@ -49,6 +49,8 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0027 addenda](decisions/0027-acceptance-gates.md#vl-32-addenda-2026-11-09-lane-vl-gates2) | A- or better passes; new specification revisions keep acceptance, with both revision policies proved (lane vl-gates2) |
 | [0028](decisions/0028-cli-and-mcp-sign-in.md) | CLI and MCP sign-in: GitHub device flow; the server names the agent's posts `<login> (agent)`, carries the person's role, and refuses it approve, fold and merge (VL-26) |
 
+| [0029](decisions/0029-hosted-sign-in-broker.md) | Hosted sign-in through smithers.sh's registered callback, exact-origin registry and single-use PKCE-bound codes (VL-33) |
+
 ## Layout
 
 ```
@@ -68,3 +70,4 @@ apps/vibelang/
 
 
 [Benchmark methods and measurements](benchmarks.md).
+

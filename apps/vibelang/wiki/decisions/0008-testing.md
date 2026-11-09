@@ -359,3 +359,7 @@ The complete run's behavioral assertions pass, while its strict coverage qualifi
 
 `packages/lemmascript` adds `ts-morph` 25.0.1, `tsx`, `typescript` and `@types/node` at their monorepo versions to the lockfile for
 this package. `ts-morph` was already this toolchain's dependency through the npm package. All four are awaiting Will's VL-5 approval.
+
+## Tool list: hosted auth broker (0029)
+
+MVP now declares the monorepo's existing `vibelang-runtime` 0.0.12 for its new VibeLang Worker modules. This is awaiting Will's VL-5 approval. VibeLang's app already declares it; this lane adds no dependency or test tool there.
