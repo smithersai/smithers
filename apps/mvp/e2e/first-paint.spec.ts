@@ -29,6 +29,8 @@ const paintRecords = (page: Page) => page.evaluate(() => performance.getEntriesB
 test.afterEach(async ({ page }, info) => {
   const marks = await paintRecords(page)
   await info.attach("first-paint-outcomes", { body: JSON.stringify(marks, null, 2), contentType: "application/json" })
+  // The deployment owns browser telemetry; a zone-injected beacon must not return.
+  await expect(page.locator("script[src^=\"https://static.cloudflareinsights.com/\"]")).toHaveCount(0)
 })
 
 // The About read of a private repository answers 404 for anyone: it reads what GitHub says publicly. WebKit reports a

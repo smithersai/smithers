@@ -214,6 +214,8 @@ A migration runs while older Workers still serve, and a rollback brings them bac
 
 ### Domain
 
+The `BrowserAnalytics` Alchemy Web Analytics resource disables automatic beacon injection on the app domain. The first deployment adopts the existing site with `--adopt`. The app owns its browser telemetry; it does not use the automatically injected beacon or its edge-owned `/cdn-cgi/rum` endpoint. Development and `workers.dev` deployments declare no analytics resource. Deploy smoke continues to reject every browser console error.
+
 `APP_DOMAIN` names the hostname the app serves at, such as `example.com`. A production deploy refuses to run without it (`infra/Domain.ts`), so a deployer who leaves it out can't detach the domain or drop the docs site by accident. `APP_DOMAIN=workers.dev` deploys with no custom domain and no docs site: the app answers only at the site Worker's `workers.dev` URL. Under `alchemy dev` it is ignored.
 
 A repository's own domains, such as vibelang.sh, are Cloudflare for SaaS custom hostnames on `APP_DOMAIN`'s zone, added by its Maintainers in Settings ([domains.md](features/domains.md), decision 0039).
