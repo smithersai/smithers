@@ -196,6 +196,17 @@ describe("updates", () => {
     const shown = open({ data: { ...initialIssues.data, items: [issue(1)] } })
     expect(update(shown, Message.IssuesFailed({ reason: "x" })).model.issues?.status).toBe("ready")
   })
+  it("a role-ledger event that grants nothing advances the ledger and changes no role", () => {
+    // The live client decodes any event the roles stream sends; only a grant changes a role.
+    const signed: Model = { ...signedMaintainer, account: { ...accountOf(signedMaintainer), notice: "kept" } }
+    const seq = accountOf(signed).ledger.conversation.seq
+    const after = update(signed, Message.ReceivedRole({ event: { type: "TourStarted", seq: seq + 1, id: "t1" } }))
+    expect(accountOf(after.model).ledger.conversation.seq).toBe(seq + 1)
+    expect(accountOf(after.model).identity).toEqual(accountOf(signed).identity)
+    expect(accountOf(after.model).notice).toBe("kept")
+    expect(after.model.actions).toEqual(signed.actions)
+    expect(after.commands).toEqual([])
+  })
   it("a tour event before any tour client starts one", () => {
     const after = update(chat, Message.ReceivedTourEvent({ event: { type: "TourStarted", seq: 1, id: "t1" } }))
     expect(after.model.tourClient?.conversation.seq).toBe(1)

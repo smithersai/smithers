@@ -686,7 +686,7 @@ export function walkthroughSession(model: Model) { return model.tutorialSession 
 export function theatreOf(model: Model) { return model.theatre ?? { step: 1, paused: false, sound: false, target: "splash" } }
 function learnMore(model: Model): Update.Return<Model, Message, Factory | Actions> {
   const conversation = `demo-${walkthroughSession(model)}`
-  const step = TourDecision.startedTour({ tour: model.tour, toured: model.toured === true, tourDismissed: model.tourDismissed === true, autoTour: model.autoTour === true, surface: model.surface, palette: model.palette, docs: model.docs, tourError: model.tourError ?? "", conversation: model.conversation, wikiAfter: model.wikiAfter ?? "", wikiStatus: model.wikiStatus ?? "ready", step: theatreOf(model).step, paused: theatreOf(model).paused, target: theatreOf(model).target, epoch: model.epoch, from: model.from, stream: model.stream }, conversation)
+  const step = TourDecision.startedTour({ tour: model.tour, toured: model.toured === true, tourDismissed: model.tourDismissed === true, autoTour: model.autoTour === true, surface: model.surface, palette: model.palette, docs: model.docs, tourError: model.tourError, conversation: model.conversation, wikiAfter: model.wikiAfter ?? "", wikiStatus: model.wikiStatus ?? "ready", step: theatreOf(model).step, paused: theatreOf(model).paused, target: theatreOf(model).target, epoch: model.epoch, from: model.from, stream: model.stream }, conversation)
   if (!step.started) return { model }
   const started = step.state
   return {
