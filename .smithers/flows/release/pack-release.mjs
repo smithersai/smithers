@@ -278,13 +278,20 @@ export const publicationManifest = (manifest) => {
   }
 }
 
+/**
+ * TypeScript's rule for a declaration file: `x.d.ts` or `x.d.<extension>.ts`.
+ * A declaration emits no JavaScript, whether authored or written beside its
+ * module by a compiler (VibeLang writes `x.d.vibe.ts` for `x.vibe`).
+ */
+const isDeclarationFile = (name) => /\.d(?:\.[^.]+)?\.ts$/.test(name)
+
 const sourceFiles = async (directory) => {
   const entries = await readdir(directory, { withFileTypes: true })
   const nested = await Promise.all(entries.map((entry) => {
     const path = join(directory, entry.name)
     return entry.isDirectory()
       ? sourceFiles(path)
-      : entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts") || entry.name.endsWith(".js") || entry.name.endsWith(".vibe") ? [path]
+      : entry.name.endsWith(".ts") && !isDeclarationFile(entry.name) || entry.name.endsWith(".js") || entry.name.endsWith(".vibe") ? [path]
       : []
   }))
   return nested.flat()

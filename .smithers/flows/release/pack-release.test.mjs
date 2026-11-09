@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { chmod, cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
+import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve, sep } from "node:path"
 import test from "node:test"
@@ -1135,6 +1136,36 @@ const staleBuildFixture = async (body) => {
     await rm(directory, { recursive: true, force: true })
   }
 }
+
+// VibeLang writes `x.d.vibe.ts` beside `x.vibe` when it compiles, and that declaration emits no JavaScript of its own.
+test("the built-output check accepts the layout the real VibeLang compiler emits", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "smithers-pack-vibe-layout-"))
+  try {
+    const manifest = {
+      name: "smithers-pack-vibe-fixture", version: "1.0.0", type: "module",
+      publishConfig: { exports: { ".": { types: "./dist/esm/Greeting.d.ts", import: "./dist/esm/Greeting.js" } } }
+    }
+    await mkdir(join(directory, "src"))
+    await writeFile(join(directory, "package.json"), JSON.stringify(manifest))
+    await writeFile(join(directory, "src/Greeting.vibe"), "export const greeting = \"hi\"\n")
+    await writeFile(join(directory, "tsconfig.json"), JSON.stringify({
+      compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", rootDir: "src", outDir: "dist/esm", declaration: true, skipLibCheck: true, types: [] },
+      include: ["src/**/*"]
+    }))
+    const require = createRequire(join(repoRoot, "packages/errors/package.json"))
+    const compiler = join(dirname(require.resolve("vibelang/package.json")), "bin/vibelang")
+    execFileSync(process.execPath, [compiler, "-p", "tsconfig.json"], { cwd: directory, stdio: "pipe" })
+
+    assert.equal(existsSync(join(directory, "src/Greeting.d.vibe.ts")), true)
+    assert.equal(existsSync(join(directory, "dist/esm/Greeting.d.vibe.js")), false)
+    await assertBuilt(directory, manifest, { rebuild: false })
+
+    await rm(join(directory, "dist/esm/Greeting.js"))
+    await assert.rejects(assertBuilt(directory, manifest, { rebuild: false }), /Greeting\.js/)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
 
 test("packing refuses unrecognized modes before writing any artifacts", () => {
   for (const args of [[], [""], ["--built"], ["unused", "--unknown"], ["unused", "--built", "extra"]]) {
