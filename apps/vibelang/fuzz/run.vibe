@@ -2,7 +2,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { Fuzz } from "@smthrs/fuzz"
 import { FuzzCorpus } from "@smthrs/testing"
-import { MAX_TEXT } from "../src/core/conversation.vibe"
+import { MAX_TEXT } from "../src/core/decide.vibe"
 
 export error Finding {
   report: string

@@ -1,17 +1,18 @@
 // Boundary and recovery workloads are measured independently of the unit/property suites.
 import { it, expect } from "@effect/vitest"
 import * as M from "../src/core/conversation.vibe"
+import * as Decide from "../src/core/decide.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
 it("machine transitions, refusal boundaries and client recovery", async ({ bench }) => {
   const result = await workload(bench, "machine-boundaries", "sync", () => {
     let state = M.empty
-    const send = (intent: M.Intent) => {
-      const decision = M.decide(state, intent)
+    const send = (intent: Decide.Intent) => {
+      const decision = Decide.decide(state, intent)
       expect(decision.ok).toBe(true)
       if (decision.ok) state = M.apply(state, decision.event)
     }
-    const refused = (intent: M.Intent, reason: string) => expect(M.decide(state, intent)).toEqual({ ok: false, refusal: reason })
+    const refused = (intent: Decide.Intent, reason: string) => expect(Decide.decide(state, intent)).toEqual({ ok: false, refusal: reason })
     refused({ type: "Post", id: "m", clientId: "c", name: "Ada", text: " " }, "empty")
     refused({ type: "Post", id: "m", clientId: "c", name: "Ada", text: "x".repeat(8001) }, "too-long")
     refused({ type: "Post", id: "", clientId: "", name: "Ada", text: "x" }, "duplicate")

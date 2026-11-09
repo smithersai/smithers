@@ -1,6 +1,7 @@
 import { it } from "@effect/vitest"
 import { Fuzz } from "@smthrs/fuzz"
 import * as M from "../src/core/conversation.vibe"
+import * as Decide from "../src/core/decide.vibe"
 import { EventSchema, RefusalReason } from "../src/core/schemas.vibe"
 import { Int, run, same, Steps } from "./run.vibe"
 
@@ -23,7 +24,7 @@ export function invariant(state: M.Conversation): boolean {
   return new Set(replies).size === replies.length
 }
 
-export function intent(step: typeof Steps.Type[number], state: M.Conversation): M.Intent {
+export function intent(step: typeof Steps.Type[number], state: M.Conversation): Decide.Intent {
   const ids = ["", `m${step.id}`, `r${step.id}`, state.replying]
   const id = step.flag ? ids[step.id % ids.length]! : `e${state.seq + 1}`
   const post = state.entries.filter((entry) => entry.author === "person").at(-1)?.id ?? "missing"
@@ -47,7 +48,7 @@ it.live("conversation/sequences", () => run("conversation/sequences", Steps, (st
   for (const step of steps) {
     const command = intent(step, state)
     if (command.type === "Post") client = M.post(client, command.clientId, command.text)
-    const result = M.decide(state, command)
+    const result = Decide.decide(state, command)
     try Fuzz.observe(result.ok ? `accepted/${result.event.type}` : `refused/${result.refusal}`)
     if (!result.ok) {
       if (!["empty", "too-long", "duplicate", "busy", "not-replying", "forbidden", "full"].includes(result.refusal)) return false
@@ -79,7 +80,7 @@ it.live("conversation/delivery", () => run("conversation/delivery", Schema.Struc
   let state = M.empty
   const events: M.Event[] = []
   for (const step of steps) {
-    const result = M.decide(state, intent(step, state))
+    const result = Decide.decide(state, intent(step, state))
     if (result.ok) { events.push(result.event); state = M.apply(state, result.event) }
   }
   let client = M.newClient
@@ -111,7 +112,7 @@ const BoundaryStep = Schema.Struct({ op: Int, id: Int, text: Schema.String, flag
 /** Schema-shaped pre-states exercise refusal and overflow paths beyond a short reachable command history. */
 it.live("conversation/arbitrary-state-decisions", () => run("conversation/arbitrary-state-decisions", Schema.Struct({ state: ConversationSchema, step: BoundaryStep, edge: Schema.Literals([0, 1, 31, Number.MAX_SAFE_INTEGER - 1, Number.MAX_SAFE_INTEGER]) }), ({ state, step, edge }) => {
   const model = { ...state, seq: edge }
-  const decision = M.decide(model, intent(step, model))
+  const decision = Decide.decide(model, intent(step, model))
   if (!decision.ok) return Schema.is(RefusalReason)(decision.refusal)
   const event = decision.event
   return Schema.is(EventSchema)(event) && event.seq === model.seq + 1 && event.seq <= Number.MAX_SAFE_INTEGER

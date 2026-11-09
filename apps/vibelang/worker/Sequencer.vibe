@@ -5,10 +5,20 @@ import { selectModelTurns } from "../src/core/sequenceDecision.vibe"
 // published to every follower. The Durable Object that hosts it (Objects.vibe) supplies the log and the dispatch; nothing here names
 // Cloudflare.
 import {
-  apply, decide, empty, isReplying, isTouring, replayLog, roleOf,
-  type GrantMode, type Role, type Action,
-  type Conversation, type Entry, type Event, type Intent, type Refusal,
+  apply,
+  empty,
+  isReplying,
+  isTouring,
+  replayLog,
+  roleOf,
+  type GrantMode,
+  type Role,
+  type Action,
+  type Conversation,
+  type Entry,
+  type Event,
 } from "../src/core/conversation.vibe"
+import { decide, type Intent, type Refusal } from "../src/core/decide.vibe"
 import { endsTour, replyIdOf, touring, unanswered } from "../src/core/flows.vibe"
 import { appends, startAnswer } from "../src/core/flowDecision.vibe"
 import { EventSchema, type ReadSnapshot } from "../src/core/schemas.vibe"

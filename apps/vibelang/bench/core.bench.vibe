@@ -1,5 +1,6 @@
 import { it as test, expect } from "@effect/vitest"
-import { apply, decide, empty, newClient, receive, type Event } from "../src/core/conversation.vibe"
+import { apply, empty, newClient, receive, type Event } from "../src/core/conversation.vibe"
+import { decide } from "../src/core/decide.vibe"
 import { EventSchema, ReadSnapshot } from "../src/core/schemas.vibe"
 import { conversationPath, routeOf } from "../src/core/wire.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"

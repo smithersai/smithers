@@ -1,5 +1,6 @@
 import { it } from "@effect/vitest"
-import { apply, decide, empty, type Intent } from "../src/core/conversation.vibe"
+import { apply, empty } from "../src/core/conversation.vibe"
+import { decide, type Intent } from "../src/core/decide.vibe"
 import { Steps, run } from "./run.vibe"
 
 it.live("walkthrough/controls", () => run("walkthrough/controls", Steps, steps => {

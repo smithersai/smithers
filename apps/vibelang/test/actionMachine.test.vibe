@@ -1,6 +1,7 @@
 import { expect, it } from "@effect/vitest"
 import { Arbitrary } from "effect"
-import { apply, decide, empty, mayRun, type Intent, settleRun, stepRun } from "../src/core/conversation.vibe"
+import { apply, empty, mayRun, settleRun, stepRun } from "../src/core/conversation.vibe"
+import { decide, type Intent } from "../src/core/decide.vibe"
 const request: Intent = { type: "RequestAction", id: "a1", flow: "vibelang/Tour", door: "button", actor: "person", at: 0 }
 function begun() {
   const decision = decide(empty, request)

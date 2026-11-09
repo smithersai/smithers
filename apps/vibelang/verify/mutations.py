@@ -149,6 +149,7 @@ contracts=lambda text:[line for line in text.splitlines() if line.lstrip().start
 out.mkdir(parents=True,exist_ok=True)
 manifest={}
 for module,name,fn,old,new,claim in cases:
+    if module=='src/core/conversation.vibe' and fn in {'decide','accepted','refused'}: module='src/core/decide.vibe'
     source=(root.parent/module).read_text()
     if selected and name not in selected: continue
     match=re.search(r'^(?:export )?function '+fn+r'\(',source,re.M)
@@ -163,6 +164,8 @@ for module,name,fn,old,new,claim in cases:
     broken='// Executable mutation: '+claim+'. Contracts are unchanged.\n'+source[:start]+edited+source[end:]
     if contracts(broken)!=contracts(source): raise SystemExit(f'{name}: mutation changed a contract')
     (out/f'{name}.ts').write_text(broken)
+    for spec in re.findall(r'from "\./([^"/]*\.vibe)"',broken):
+        (out/f'{spec}.ts').write_text(((root.parent/module).parent/spec).read_text())
     manifest[name]={'source':module,'function':fn,'claim':claim,'before':old,'after':new}
 (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 print(f'{len(manifest)} executable-only mutations written to {out}')

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { apply, decide, empty, leastRole, may, roleOf, type Conversation, type Intent } from "../src/core/conversation.vibe"
+import { apply, empty, leastRole, may, roleOf, type Conversation } from "../src/core/conversation.vibe"
+import { decide, type Intent } from "../src/core/decide.vibe"
 
 function accepted(state: Conversation, intent: Intent) {
   const decision = decide(state, intent)

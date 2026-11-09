@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { apply, decide, empty } from "../src/core/conversation.vibe"
+import { apply, empty } from "../src/core/conversation.vibe"
+import { decide } from "../src/core/decide.vibe"
 import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 
 describe("walkthrough state", () => {

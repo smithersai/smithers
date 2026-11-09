@@ -16,7 +16,8 @@ import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Digest, SecureRandom } from "effect/crypto"
 import { Action, FlowRuntime } from "@smthrs/flow"
-import { apply, decide, empty, isTouring, type Conversation, type Decision, type Event, type Intent } from "./conversation.vibe"
+import { apply, empty, isTouring, type Conversation, type Event } from "./conversation.vibe"
+import { decide, type Decision, type Intent } from "./decide.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
 import {
   PauseTour, ResumeTour, SeekTour, OpenWiki, openWiki, wikiRegistration, EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, replyIdOf, StartTour, Tour, toured, touring, tourRegistration,

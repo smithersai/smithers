@@ -1,7 +1,8 @@
 // The regression gate counts actual indexed entry reads; wall time is observational on this shared server.
 import { it, expect } from "@effect/vitest"
 import * as NodeServices from "@effect/platform-node/NodeServices"
-import { apply, decide, newClient, receive } from "../src/core/conversation.vibe"
+import { apply, newClient, receive } from "../src/core/conversation.vibe"
+import { decide } from "../src/core/decide.vibe"
 import { transcript } from "./fixtures.vibe"
 import { artifact } from "./artifact.vibe"
 

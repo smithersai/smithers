@@ -1,6 +1,7 @@
 // Wiki behavior through the real product mock and the public tool binding, not invented events or intercepted HTTP.
 import { describe, expect, it } from "@effect/vitest"
-import { apply, decide, empty, receive, newClient } from "../src/core/conversation.vibe"
+import { apply, empty, receive, newClient } from "../src/core/conversation.vibe"
+import { decide } from "../src/core/decide.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { pages, wikiPath, wikiPage, requestedWiki } from "../src/core/wiki.vibe"

@@ -1,5 +1,6 @@
 import { it, expect } from "@effect/vitest"
-import { apply, decide, empty, type Intent } from "../src/core/conversation.vibe"
+import { apply, empty } from "../src/core/conversation.vibe"
+import { decide, type Intent } from "../src/core/decide.vibe"
 import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 it("walkthrough drive, pause, resume and seek preserve the conversation", async ({ bench }) => {

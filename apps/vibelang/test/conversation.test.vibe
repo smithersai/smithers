@@ -5,18 +5,17 @@ import {
   apply,
   type Client,
   type Conversation,
-  decide,
   empty,
   type Event,
   failPost,
-  type Intent,
-  MAX_TEXT,
   newClient,
   post,
   receive,
   resume,
   retryPost,
 } from "../src/core/conversation.vibe"
+import { MAX_TEXT } from "../src/core/decide.vibe"
+import { decide, type Intent } from "../src/core/decide.vibe"
 
 // Small domains, so ids, client ids and texts collide often.
 const Id = Schema.Literals(["", "r1", "r2", "m1", "m2", "t1"])

@@ -3,7 +3,8 @@ import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { WebCrypto } from "@smthrs/crypto"
 import { Digest } from "effect/crypto"
-import { apply, decide, empty, leastRole, roleOf, type Event, type GrantMode, type Role } from "./conversation.vibe"
+import { apply, empty, leastRole, roleOf, type Event, type GrantMode, type Role } from "./conversation.vibe"
+import { decide } from "./decide.vibe"
 import { AccountUnavailable, Denied, type Policy, type Accounts, type Identity, viewer } from "./roles.vibe"
 
 const Change = Flow.make("vibelang/GrantRole", {

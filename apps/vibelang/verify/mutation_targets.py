@@ -318,12 +318,14 @@ POSTCONDITIONS = {'apply-advance': '((res.seq_ == conversation.seq_) || (res.seq
                     'res.commits[j].rank)))'}
 
 # Exact positively verified clauses include person openings as well as guarded agent openings.
-POSTCONDITIONS.update({'apply-pane': '((event.seq_ == (conversation.seq_ + 1)) ==> event.PaneOpened? ==> ((event.id == "") || ((conversation.agent.working? && (conversation.replying == event.id)) && (event.id != ""))) ==> (event.url != "") ==> (((res.pane == event.url) && (res.entries == conversation.entries)) && (res.agent == conversation.agent)))', 'apply-pane-guard': '((res.pane != conversation.pane) ==> ((event.PaneOpened? && ((event.id == "") || (conversation.agent.working? && (conversation.replying == event.id)))) && (event.url != "")))', 'decide-pane-guard': '(res.true_? ==> res.event.PaneOpened? ==> (((res.event.id == "") || ((conversation.agent.working? && (conversation.replying == res.event.id)) && (res.event.id != ""))) && (res.event.url != "")))', 'wiki-person-apply': '((event.seq_ == (conversation.seq_ + 1)) ==> event.PaneOpened? ==> ((event.id == "") || ((conversation.agent.working? && (conversation.replying == event.id)) && (event.id != ""))) ==> (event.url != "") ==> (((res.pane == event.url) && (res.entries == conversation.entries)) && (res.agent == conversation.agent)))'})
+POSTCONDITIONS.update({'apply-pane': '((event.seq_ == (conversation.seq_ + 1)) ==> event.PaneOpened? ==> ((event.id == "") || ((conversation.agent.working? && (conversation.replying == event.id)) && (event.id != ""))) ==> (event.url != "") ==> (((res.pane == event.url) && (res.entries == conversation.entries)) && (res.agent == conversation.agent)))', 'apply-pane-guard': '((res.pane != conversation.pane) ==> ((event.PaneOpened? && ((event.id == "") || (conversation.agent.working? && (conversation.replying == event.id)))) && (event.url != "")))', 'decide-pane-guard': '(decide(conversation, intent).true_? ==> decide(conversation, intent).event.PaneOpened? ==> (((decide(conversation, intent).event.id == "") || ((conversation.agent.working? && (conversation.replying == decide(conversation, intent).event.id)) && (decide(conversation, intent).event.id != ""))) && (decide(conversation, intent).event.url != "")))', 'wiki-person-apply': '((event.seq_ == (conversation.seq_ + 1)) ==> event.PaneOpened? ==> ((event.id == "") || ((conversation.agent.working? && (conversation.replying == event.id)) && (event.id != ""))) ==> (event.url != "") ==> (((res.pane == event.url) && (res.entries == conversation.entries)) && (res.agent == conversation.agent)))'})
 
 def postcondition_line(generated, function, contains):
     import re
     lines=generated.splitlines()
-    start=next((i for i,line in enumerate(lines) if re.match(r'(?:ghost )?(?:method|function) '+re.escape(function)+r'\(',line)),None)
+    # A pure function carries its postconditions on the generated `_ensures` lemma, a method on its own header.
+    start=next((i for i,line in enumerate(lines) if re.match(r'lemma '+re.escape(function)+r'_ensures\(',line)),None)
+    if start is None: start=next((i for i,line in enumerate(lines) if re.match(r'(?:ghost )?(?:method|function) '+re.escape(function)+r'\(',line)),None)
     if start is None: raise ValueError('Missing target function '+function)
     end=next((i for i in range(start+1,len(lines)) if lines[i]=='{'),len(lines))
     matches=[i+1 for i in range(start,end) if lines[i].lstrip().startswith('ensures ') and contains in lines[i]]
@@ -562,12 +564,12 @@ POSTCONDITIONS.update({'apply-action-roles': '(|res.roles| == (|conversation.rol
  'apply-role-viewer': '(|res.roles| == (|conversation.roles| + (if ((((event.seq_ == (conversation.seq_ + '
                       '1)) && event.RoleGranted?) && (event.id != "")) && (!event.role.viewer?)) then 1 else '
                       '0)))',
- 'decide-action-guard': '(res.true_? ==> intent.Authorize? ==> ((intent.action.merge? || '
+ 'decide-action-guard': '(decide(conversation, intent).true_? ==> intent.Authorize? ==> ((intent.action.merge? || '
                         'intent.action.settings?) || intent.action.roles?) ==> ((intent.by_ != "") && exists '
                         'i: int :: (((((0 <= i) && (i < |conversation.roles|)) && (conversation.roles[i].id '
                         '== intent.by_)) && conversation.roles[i].role.maintainer?) && forall j: int :: ((0 '
                         '<= j) ==> (j < i) ==> (conversation.roles[j].id != intent.by_)))))',
- 'decide-role-guard': '(res.true_? ==> intent.GrantRole? ==> ((intent.id != "") && (!intent.role.viewer?)))',
+ 'decide-role-guard': '(decide(conversation, intent).true_? ==> intent.GrantRole? ==> ((intent.id != "") && (!intent.role.viewer?)))',
  'receive-role-head': 'forall i: int :: ((0 <= i) ==> (i < |client.conversation.roles|) ==> '
                       '(res.conversation.roles[(i + (if ((((event.seq_ == (client.conversation.seq_ + 1)) && '
                       'event.RoleGranted?) && (event.id != "")) && (!event.role.viewer?)) then 1 else 0))] '
