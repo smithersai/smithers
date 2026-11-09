@@ -1,0 +1,5 @@
+{
+  "extern-default": "impure",
+  "safe-slice": true,
+  "proof-dir": "proofs"
+}

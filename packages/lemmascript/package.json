@@ -1,0 +1,17 @@
+{
+  "name": "@smthrs/lemmascript",
+  "version": "0.6.6-smthrs.1",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Vendored LemmaScript 0.6.6: generates Dafny or Lean 4 from annotated TypeScript",
+  "engines": { "node": ">=18" },
+  "files": ["tools/dist", "LICENSE", "README.md"],
+  "scripts": {
+    "build": "tsc -p tools/tsconfig.json && chmod +x tools/dist/lsc.js",
+    "typecheck": "tsc -p tools/tsconfig.json --noEmit",
+    "test": "bash tools/test-fixtures.sh"
+  },
+  "dependencies": { "ts-morph": "25.0.1" },
+  "devDependencies": { "@types/node": "26.4.1", "tsx": "4.23.13", "typescript": "5.9.3" }
+}

@@ -27,7 +27,7 @@ runner uses no saved proof artifacts. `python3 verify/mutations.py OUT [NAME ...
 mutants and their `manifest.json`; its case list is the manifest, and a case whose production text no longer matches
 exactly once fails the run until it is updated. Keep executable mutations meaningful and
 never change annotations to make a copy fail. macOS installers support Apple Silicon and Intel but were not run on
-the Linux lane. Versions are LemmaScript 0.6.6 and Dafny 4.11.0; release archives are pinned by SHA-256.
+the Linux lane. Versions are LemmaScript 0.6.6-smthrs.1 (the workspace package `packages/lemmascript`, built by `verify/install.sh`) and Dafny 4.11.0; release archives are pinned by SHA-256.
 
 `verify/fetch.sh` gets the Dafny archive: a copy in the host's shared cache (`VIBELANG_VERIFY_CACHE`, default
 `~/.cache/vibelang-verify`, keyed by SHA-256) is reused when its checksum matches; otherwise it downloads with 6

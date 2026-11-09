@@ -5,7 +5,7 @@ ROOT=$(cd -- "$(dirname -- "$0")" && pwd)
 if [[ ! -x "$ROOT/.tools/bin/lsc" || ! -x "$ROOT/.tools/bin/dafny" ]]; then
   nice -n 10 bash "$ROOT/install.sh"
 fi
-[[ $("$ROOT/.tools/bin/lsc" version) == '0.6.6' ]] || { echo 'Expected LemmaScript 0.6.6; rerun verify/install.sh' >&2; exit 1; }
+[[ $("$ROOT/.tools/bin/lsc" version) == '0.6.6-smthrs.1' ]] || { echo 'Expected LemmaScript 0.6.6-smthrs.1; rerun verify/install.sh' >&2; exit 1; }
 [[ $("$ROOT/.tools/bin/dafny" --version) == 4.11.0+* ]] || { echo 'Expected Dafny 4.11.0; rerun verify/install.sh' >&2; exit 1; }
 export PATH="$ROOT/.tools/bin:$PATH"
 env -u VIBELANG_VERIFY_ROOT python3 "$ROOT/harness_test.py"

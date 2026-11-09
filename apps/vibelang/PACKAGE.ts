@@ -44,6 +44,8 @@ const sources = [
 /** The proof harness and the state machine it proves. */
 const proofs = [
   Smithers.glob("//apps/vibelang/verify/*.{sh,py,cjs,json}"),
+  Smithers.glob("//packages/lemmascript/tools/src/**/*"),
+  Smithers.file("//packages/lemmascript/package.json"),
   Smithers.glob("//apps/vibelang/src/**/*.vibe"),
   Smithers.glob("//apps/vibelang/worker/**/*.vibe"),
   Smithers.glob("//apps/vibelang/scripts/**/*.vibe"),

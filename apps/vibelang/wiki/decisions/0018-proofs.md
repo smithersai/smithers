@@ -3460,3 +3460,23 @@ call site now runs the proved function, with no behavior change. Stale-response 
 epoch reads as zero), issue retries and details, and wiki requests. `slashHighlight` stays inside the menu after the
 menu shrinks. 23 proof units; 49 new mutations reject. `update` itself remains unproved: LemmaScript cannot read the
 Foldkit message match or the Model spreads, so the frame of each arm is covered by tests.
+
+## LemmaScript is a workspace package
+
+`packages/lemmascript` (`@smthrs/lemmascript`) is a copy of LemmaScript 0.6.6 (midspiral/lemmascript, tag `v0.6.6`, commit
+`736fb7ce5ef89555b566bdbcca0c8fe057fbb205`, MIT). `verify/install.sh` builds it and links `verify/.tools/bin/lsc` to it;
+npm no longer supplies the tool. Its 317 upstream unit tests and its Dafny fixtures pass in the package's `test` target.
+
+Local patches, listed in the package README and offered upstream later (Will decides any GitHub contribution):
+
+| Patch | Test |
+| --- | --- |
+| Object spread of a conditional over two object literals | `tools/fixtures/object-spread-conditional.ts` |
+| Object spread of a value holding a strict subset of the base record's fields | `tools/fixtures/object-spread-partial.ts` |
+| An exhaustive `X.match(value, { Tag: arm })` table over a `_tag` union, in return position, read as a `switch` | `tools/fixtures/tagged-match.ts`, `tagged-match-wrong-arm.ts`, `tagged-match-missing-arm.ts` |
+
+The previous note that 0.6.6 could not read Model spreads was too broad: plain and nested record spreads already proved.
+The two spread forms above were the gaps.
+
+VL-5: `ts-morph` 25.0.1 was already this toolchain's dependency through the npm package; it now appears in the pnpm lockfile
+with `tsx`, `typescript` and `@types/node` at monorepo versions. `lemmascript-claimcheck` is dropped: `lsc claimcheck` reports it missing.

@@ -1,4 +1,4 @@
-const {Project, ts} = require('./.tools/npm/node_modules/ts-morph');
+const {Project, ts} = require('../../../packages/lemmascript/node_modules/ts-morph');
 const fs = require('fs');
 const path = require('path');
 const inputs = process.argv.slice(2).map(value => path.resolve(value));

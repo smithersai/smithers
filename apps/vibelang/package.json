@@ -53,6 +53,7 @@
     "vibelang-runtime": "0.0.12"
   },
   "devDependencies": {
+    "@smthrs/lemmascript": "workspace:*",
     "@alchemy.run/cloudflare": "2.0.0-beta.85",
     "@alchemy.run/domain": "2.0.0-beta.85",
     "@alchemy.run/frontend-frameworks": "2.0.0-beta.85",
