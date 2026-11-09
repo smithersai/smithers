@@ -2,6 +2,7 @@
 // that arrives before the optional part of the model exists.
 import { describe, expect, it } from "@effect/vitest"
 import { newClient } from "../src/core/conversation.vibe"
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 import type { IssueRecord as IssueRecordSchema, IssueRequest } from "../src/core/issueSchemas.vibe"
 import { initial as initialActions } from "../src/web/actionModel.vibe"
 import { initialIssues } from "../src/web/issues.vibe"
@@ -214,6 +215,18 @@ describe("the remaining branches a person can reach", () => {
     expect(result.model.theatre?.step).toBe(3)
     expect(result.model.theatre?.target).not.toBe("")
     expect(names(result)).toContain("PresentTour")
+  })
+  it("names the sought stop's own target after an end that couldn't reach the agent", () => {
+    const touring = update(home, Message.ClickedLearnMore()).model
+    const opened = update(touring, Message.ReceivedTourEvent({ event: { type: "TourStarted", id: "t1", seq: 1 } })).model
+    const driven = update(opened, Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", id: "t1", seq: 2, step: 3, target: "stop", at: 0, duration: 1000 } })).model
+    const sought = update(driven, Message.ReceivedTourEvent({ event: { type: "TourSought", id: "t1", seq: 3, at: 1, step: 4 } })).model
+    expect(update(sought, Message.FailedEndTour()).model.theatre).toMatchObject({ step: 4, target: WALKTHROUGH[3]!.target })
+  })
+  it("/sandbox while a sandbox operation runs closes the palette and starts nothing", () => {
+    const result = update({ ...chat, palette: true, sandboxBusy: true, draft: "/sandbox" }, Message.SubmittedDraft())
+    expect(names(result)).toEqual(["ClosePalette"])
+    expect(result.model).toMatchObject({ palette: false, draft: "", sandboxPane: "pane", sandboxBusy: true })
   })
   it("a slash command picks the highlighted action and passes no epoch before one exists", () => {
     const entry = { name: "vibelang/Run", title: "Run", command: "/run", runnable: true, detail: "Run", least: "viewer" as const, input: "text" as const }

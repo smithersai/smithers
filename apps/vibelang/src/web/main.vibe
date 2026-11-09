@@ -427,7 +427,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     MeasuredTheatre: (box) => ({ model: { ...model, theatreBox: box } }),
     RemeasureTheatre: () => ({ model, commands: model.tour ? [MeasureTheatre({ target: model.theatre?.target ?? "splash" })] : [] }),
     ClickedPauseTour: () => tourControl(model, model.theatre?.paused ? "resume" : "pause", 0),
-    ClickedBackStop: () => (model.theatre?.step ?? 1) <= 1 ? { model } : tourControl(model, "seek", (model.theatre?.step ?? 1) - 1),
+    ClickedBackStop: () => { const step = model.theatre?.step ?? 1; return step <= 1 ? { model } : tourControl(model, "seek", step - 1) },
     ClickedSkipStop: () => tourControl(model, "seek", (model.theatre?.step ?? 1) + 1),
     ToggledTourSound: () => ({ model: { ...model, theatre: { ...theatreOf(model), sound: !model.theatre?.sound } }, commands: [PresentTour({ step: model.theatre?.step ?? 1, sound: !model.theatre?.sound, active: model.tour, paused: model.theatre?.paused ?? false })] }),
     ReceivedTourEvent: ({ event }) => receiveTour(model, event),
@@ -623,7 +623,9 @@ function runActions(model: Model, step: ModelDecision.ActionStep): Update.Return
 }
 
 /** A click and a browser deep link request the same durable wiki flow; the event alone moves the pane. */
-function visitWiki(model: Model, page: string): Update.Return<Model, Message, Factory> {
+/** An update the function always gives commands, so its callers need no empty default. */
+type WithCommands<R extends { readonly commands?: unknown }> = R & { readonly commands: NonNullable<R["commands"]> }
+function visitWiki(model: Model, page: string): WithCommands<Update.Return<Model, Message, Factory>> {
   const opening = model.stream !== "open"
   const request = (model.wikiRequest ?? 0) + 1
   return { model: { ...model, wikiEdit: model.wikiEdit?.submission === undefined ? undefined : model.wikiEdit, wikiRequest: request, sandboxPane: model.sandboxPane === "max" ? "pane" : model.sandboxPane ?? "closed", ...(accountOf(model).people === "max" ? { account: { ...accountOf(model), people: "pane" as const } } : {}), surface: "chat", palette: false, wikiQuery: "", wikiRequested: page, wikiStatus: "loading", following: false,
@@ -668,22 +670,21 @@ function receiveTour(model: Model, event: Machine.Event): Update.Return<Model, M
   let next: Update.Return<Model, Message, Factory | Actions> = { model: { ...model, tourClient } }
   const state = tourClient.conversation.walkthrough
   if (!model.tourDismissed && state && (event.type === "WalkthroughDriven" || event.type === "TourPaused" || event.type === "TourResumed" || event.type === "TourSought")) {
-    next = { model: { ...next.model, tour: true, theatre: { step: state.step, target: state.target || theatreOf(model).target, paused: state.paused, sound: theatreOf(model).sound } }, commands: [PresentTour({ step: state.step, sound: theatreOf(model).sound, active: true, paused: state.paused || event.type === "TourSought" })] }
-    if (event.type === "WalkthroughDriven") next = driveWalkthrough(next, state)
+    const presented: WithCommands<Update.Return<Model, Message, Factory | Actions>> = { model: { ...next.model, tour: true, theatre: { step: state.step, target: state.target || theatreOf(model).target, paused: state.paused, sound: theatreOf(model).sound } }, commands: [PresentTour({ step: state.step, sound: theatreOf(model).sound, active: true, paused: state.paused || event.type === "TourSought" })] }
+    next = event.type === "WalkthroughDriven" ? driveWalkthrough(presented, state) : presented
   }
   if (Machine.isTour(tourClient.conversation.entries, event.id) && (event.type === "TourEnded" || event.type === "ReplyFinished" || event.type === "ReplyFailed")) {
-    const ended = endTour(next.model)
-    return { ...ended, commands: [...(next.commands ?? []), ...(ended.commands ?? [])] }
+    return endTour(next.model)
   }
   return next
 }
 
 /** Reapplying the numbered destination is shared by replay and recovery of an unavailable end. */
-function driveWalkthrough(next: Update.Return<Model, Message, Factory | Actions>, state: Machine.Walkthrough): Update.Return<Model, Message, Factory | Actions> {
+function driveWalkthrough(next: WithCommands<Update.Return<Model, Message, Factory | Actions>>, state: Machine.Walkthrough): Update.Return<Model, Message, Factory | Actions> {
   const model = next.model
   // Replay invokes exactly the messages attached to the person's controls. No parsed narration directives.
   let driven: Model = { ...next.model, palette: false, docs: "pane", surface: state.step === 1 ? "splash" : "chat", issues: { ...issueStateOf(model), open: false }, sandboxPane: "closed", actions: { ...actionsOf(model), slash: false, open: false, maximized: false } }
-  const commands = state.step === 10 ? [] : [...(next.commands ?? [])]
+  const commands = state.step === 10 ? [] : [...next.commands]
   const send = (message: Message) => { const result = update(driven, message); driven = result.model; commands.push(...(result.commands ?? [])) }
   if (state.step === 2 && !model.client.conversation.entries.some(entry => entry.clientId === `${walkthroughSession(model)}-walkthrough`)) {
     driven = update(driven, Message.PressedCommandK()).model
@@ -877,8 +878,8 @@ export const EndTourCommand = Command.define("EndTour", {
 })
 
 /** The editor's starting source: the repository-observed overlay, else the build's embedded copy. */
-function knownWikiSource(model: Model, page: string): string | undefined {
-  return model.wikiPages?.find((observed) => observed.id === page)?.source ?? pages.find((entry) => entry.id === page)?.source
+function knownWikiSource(model: Model, page: string): string {
+  return model.wikiPages?.find((observed) => observed.id === page)?.source ?? pages.find((entry) => entry.id === page)!.source
 }
 
 /** Minimal failure text; the request and its flow carry the detail. */
@@ -895,12 +896,11 @@ function beginWikiEdit(model: Model, draft?: string): Update.Return<Model, Messa
   if (draft === undefined ? !Machine.wikiPermission(role, "save") && !Machine.wikiPermission(role, "propose") : !Machine.wikiPermission(role, "draft")) return { model }
   if (!wikiEditable(page)) return { model }
   const source = knownWikiSource(model, page)
-  if (source === undefined) return { model }
   const request = (model.wikiEditRequest ?? 0) + 1
   const editing = { page, base: source, text: source, busy: false, error: "" }
   if (draft === undefined) return { model: { ...model, wikiEdit: editing, wikiEditRequest: request }, commands: [OpenWikiEditor({ page, request })] }
   const visit = visitWiki(model, page)
-  return { model: { ...visit.model, wikiEdit: editing, wikiEditRequest: request }, commands: [...(visit.commands ?? []), OpenWikiEditor({ page, request })] }
+  return { model: { ...visit.model, wikiEdit: editing, wikiEditRequest: request }, commands: [...visit.commands, OpenWikiEditor({ page, request })] }
 }
 
 /** The editor's fresh read: the repository's current source for the page and the person's stored draft. */
