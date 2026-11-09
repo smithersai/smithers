@@ -78,6 +78,7 @@ import { GitWorktree, type Repository } from "./internal/GitWorktree.vibe"
 import { withoutTrailingSlash } from "./internal/Paths.ts"
 import * as Prune from "./internal/Prune.ts"
 import * as StdError from "./StdError.ts"
+import { randomId } from "./Checkpoints.platform.ts"
 import * as TestRunner from "./TestRunner.vibe"
 
 /**
@@ -305,15 +306,15 @@ const namable = /^[A-Za-z0-9][A-Za-z0-9-]*$/
 export const makeGit = (
   options: GitOptions
 ): Effect.Effect<Checkpoints, never, ChildProcessSpawner> =>
-  Effect.gen(function*() {
-    const spawner = yield* ChildProcessSpawner
+  effect {
+    const spawner = try ChildProcessSpawner
     // The host opens the repository before any agent runs. Its `.git` is the
     // agent's to write, so what it names later can never choose another store.
-    const opened = yield* Effect.exit(
+    const opened = try Effect.exit(
       GitWorktree.open(withoutTrailingSlash(options.root)).pipe(Effect.provideService(ChildProcessSpawner, spawner))
     )
     return gitStore(options, spawner, opened)
-  })
+  }
 
 /**
  * The store itself, with the spawner it runs git through already resolved.
@@ -333,19 +334,17 @@ const gitStore = (
   const root = withoutTrailingSlash(options.root)
 
   /** The repository the host opened, refused once the workspace names another. */
-  const repositoryOf = Effect.gen(function*() {
-    const bound = yield* opened
-    const current = yield* GitWorktree.open(root)
+  const repositoryOf = effect {
+    const bound = try opened
+    const current = try GitWorktree.open(root)
     if (
       current.toplevel !== bound.toplevel || current.common !== bound.common || current.index !== bound.index ||
       current.objectFormat !== bound.objectFormat
     ) {
-      return yield* Effect.fail(
-        failed(`${root} now names another git repository than the one this run opened.`, "permission_denied")
-      )
+      throw failed(`${root} now names another git repository than the one this run opened.`, "permission_denied")
     }
     return current
-  })
+  }
   const guestRoot = options.cwd === undefined ? root : withoutTrailingSlash(options.cwd)
   const keyOf = (id: string) => `${configSection}.${id}`
   const baseRefs = options.baseRef === undefined ? [TestRunner.captureBase, "HEAD"] : [options.baseRef]
@@ -359,67 +358,61 @@ const gitStore = (
    * *without* becoming history. See {@link configSection}.
    */
   const commitOf = (repository: Repository, id: string) =>
-    Effect.gen(function*() {
-      if (id === baseId) return (yield* GitWorktree.resolveCommit(root, baseRefs)).commit
-      const found = yield* GitWorktree.config(repository, ["--get", keyOf(id)])
+    effect {
+      if (id === baseId) return (try GitWorktree.resolveCommit(root, baseRefs)).commit
+      const found = try GitWorktree.config(repository, ["--get", keyOf(id)])
       const commit = found.stdout.trim()
       if (found.exitCode !== 0 || commit === "") {
-        return yield* Effect.fail(
-          failed(
-            `No checkpoint is stored under ${id} in ${root}. Take the reading on the live tree instead.`,
-            "not_found"
-          )
+        throw failed(
+          `No checkpoint is stored under ${id} in ${root}. Take the reading on the live tree instead.`,
+          "not_found"
         )
       }
       return commit
-    })
+    }
 
   const capture = (id: string) =>
-    spawn(Effect.gen(function*() {
+    spawn(effect {
       if (!namable.test(id)) {
-        return yield* Effect.fail(
-          failed(`A checkpoint id must match ${namable.source}; ${id} does not.`, "invalid_input")
-        )
+        throw failed(`A checkpoint id must match ${namable.source}; ${id} does not.`, "invalid_input")
       }
-      const repository = yield* repositoryOf
-      const commit = yield* GitWorktree.withShadow(repository, (shadow) =>
-        Effect.gen(function*() {
-          const head = (yield* GitWorktree.resolveCommit(root, ["HEAD"])).commit
-          yield* shadow.adoptIndex
-          const pinned = yield* shadow.git(["update-ref", "--no-deref", "HEAD", head])
+      const repository = try repositoryOf
+      const commit = try GitWorktree.withShadow(repository, (shadow) =>
+        effect {
+          const head = (try GitWorktree.resolveCommit(root, ["HEAD"])).commit
+          try shadow.adoptIndex
+          const pinned = try shadow.git(["update-ref", "--no-deref", "HEAD", head])
           if (pinned.exitCode !== 0) {
-            return yield* Effect.fail(failed(`Could not record the working tree: ${pinned.stderr.trim()}`))
+            throw failed(`Could not record the working tree: ${pinned.stderr.trim()}`)
           }
-          const recorded = yield* shadow.git(["stash", "create", `flows checkpoint ${id}`], root)
+          const recorded = try shadow.git(["stash", "create", `flows checkpoint ${id}`], root)
           if (recorded.exitCode !== 0) {
-            return yield* Effect.fail(failed(`Could not record the working tree: ${recorded.stderr.trim()}`))
+            throw failed(`Could not record the working tree: ${recorded.stderr.trim()}`)
           }
           // Nothing to record means the working tree IS the commit it is on, so
           // that commit is the checkpoint. `stash create` says so by printing
           // nothing, which is not an error and must not be read as one.
           return recorded.stdout.trim() === "" ? head : recorded.stdout.trim()
-        }))
-      const named = yield* GitWorktree.config(repository, [keyOf(id), commit])
+        })
+      const named = try GitWorktree.config(repository, [keyOf(id), commit])
       if (named.exitCode !== 0) {
-        return yield* Effect.fail(failed(`Could not name the checkpoint: ${named.stderr.trim()}`))
+        throw failed(`Could not name the checkpoint: ${named.stderr.trim()}`)
       }
       return new Snapshot({ id, ref: commit })
-    }))
+    })
 
   const materialize = <A, E, R>(
     id: string,
     use: (materialized: Materialized) => Effect.Effect<A, E, R>
   ): Effect.Effect<A, E | StdError.StdError, R> =>
-    Effect.gen(function*() {
+    effect {
       if (!namable.test(id)) {
-        return yield* Effect.fail(
-          failed(`A checkpoint id must match ${namable.source}; ${id} does not.`, "invalid_input")
-        )
+        throw failed(`A checkpoint id must match ${namable.source}; ${id} does not.`, "invalid_input")
       }
-      const repository = yield* spawn(repositoryOf)
-      const commit = yield* spawn(commitOf(repository, id))
-      const context = yield* Effect.context<R>()
-      return yield* GitWorktree.withDetachedWorktree(
+      const repository = try spawn(repositoryOf)
+      const commit = try spawn(commitOf(repository, id))
+      const context = try Effect.context<R>()
+      return try GitWorktree.withDetachedWorktree(
         repository,
         `${scratchDirectory}/${id}`,
         commit,
@@ -428,7 +421,7 @@ const gitStore = (
             Effect.provideContext(context)
           )
       ).pipe(Effect.provideService(ChildProcessSpawner, spawner))
-    })
+    }
 
   return make({ capture, materialize })
 }
@@ -516,9 +509,9 @@ const checkoutScript = [
 export const makeContainer = (
   options: ContainerOptions
 ): Effect.Effect<Checkpoints, never, ChildProcessSpawner | Container.Container> =>
-  Effect.gen(function*() {
-    const spawner = yield* ChildProcessSpawner
-    const transport = yield* Container.Container
+  effect {
+    const spawner = try ChildProcessSpawner
+    const transport = try Container.Container
     const sh = (script: string, args: ReadonlyArray<string>) =>
       transport.exec({
         container: options.container,
@@ -551,7 +544,7 @@ export const makeContainer = (
         ),
       materialize: (id, use) =>
         named(id).pipe(Effect.andThen(Effect.acquireUseRelease(
-          sh(checkoutScript, [id, globalThis.crypto.randomUUID()]),
+          sh(checkoutScript, [id, randomId()]),
           ([root, checkout]) => use({ id, host: checkout!, guest: checkout!, root: root!, guestRoot: root! }),
           ([, checkout]) =>
             sh("rm -rf -- \"$1\"", [checkout!]).pipe(
@@ -563,7 +556,7 @@ export const makeContainer = (
             )
         )))
     })
-  })
+  }
 
 /**
  * Provides {@link makeContainer}.

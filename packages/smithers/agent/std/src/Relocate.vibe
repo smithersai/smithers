@@ -26,7 +26,7 @@
  */
 
 import type { Schema } from "effect"
-import type { Materialized } from "./Checkpoints.ts"
+import type { Materialized } from "./Checkpoints.vibe"
 import { withoutTrailingSlash } from "./internal/Paths.ts"
 
 /**

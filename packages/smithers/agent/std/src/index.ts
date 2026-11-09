@@ -75,7 +75,7 @@ export * as Container from "./Container.vibe"
 export * as TreeFingerprint from "./TreeFingerprint.ts"
 
 /** @category services @since 1.0.0 */
-export * as Checkpoints from "./Checkpoints.ts"
+export * as Checkpoints from "./Checkpoints.vibe"
 
 /** @category conversions @since 1.0.0 */
 export * as Relocate from "./Relocate.vibe"

@@ -38,7 +38,7 @@ import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Bash from "../src/Bash.ts"
-import * as Checkpoints from "../src/Checkpoints.ts"
+import * as Checkpoints from "../src/Checkpoints.vibe"
 import * as Container from "../src/Container.vibe"
 import * as TestRunner from "../src/TestRunner.vibe"
 

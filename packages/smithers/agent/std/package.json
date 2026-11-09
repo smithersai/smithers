@@ -48,8 +48,8 @@
       "default": "./.vibelang/js/src/Bash.js"
     },
     "./Checkpoints": {
-      "types": "./src/Checkpoints.ts",
-      "vibelang-source": "./src/Checkpoints.ts",
+      "types": "./.vibe/declarations/Checkpoints.d.vibe.ts",
+      "vibelang-source": "./src/Checkpoints.vibe",
       "default": "./.vibelang/js/src/Checkpoints.js"
     },
     "./Container": {

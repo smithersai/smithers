@@ -36,5 +36,6 @@ export const withinEnvelope = (declared, path) => {
  *
  * @category conversions
  * @since 1.0.0
+ * @throws {never}
  */
 export const withoutTrailingSlash = (path) => path.replace(/\/+$/, "");

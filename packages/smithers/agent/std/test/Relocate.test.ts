@@ -10,7 +10,7 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Bash from "../src/Bash.ts"
-import type * as Checkpoints from "../src/Checkpoints.ts"
+import type * as Checkpoints from "../src/Checkpoints.vibe"
 import * as Glob from "../src/Glob.vibe"
 import * as Grep from "../src/Grep.vibe"
 import * as Ls from "../src/Ls.ts"
