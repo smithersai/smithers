@@ -15,8 +15,8 @@ import type * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect"
 import type * as AgentEvent from "./AgentEvent.ts"
 import type * as Cell from "./Cell.ts"
-import { HarnessError } from "./HarnessError.ts"
-import type * as Plan from "./Plan.ts"
+import { HarnessError } from "./HarnessError.vibe"
+import type * as Plan from "./Plan.vibe"
 
 /**
  * Stable reasons for parking a harness turn at a safe boundary.

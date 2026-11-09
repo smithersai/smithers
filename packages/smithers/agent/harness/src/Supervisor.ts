@@ -70,7 +70,7 @@ import * as Schema from "effect/Schema"
 import type * as AgentEvent from "./AgentEvent.ts"
 import { answeredBy } from "./internal/decidedBy.ts"
 import * as elide from "./internal/elide.ts"
-import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
+import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.vibe"
 import { untrustedData } from "./internal/untrustedData.ts"
 import * as Judgement from "./Judgement.ts"
 

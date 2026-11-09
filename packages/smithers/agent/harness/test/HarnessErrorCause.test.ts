@@ -6,7 +6,7 @@
 import { ModelError } from "@smthrs/model/ModelError"
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { HarnessError } from "../src/HarnessError.ts"
+import { HarnessError } from "../src/HarnessError.vibe"
 import { SandboxError } from "../src/Sandbox.ts"
 import { TranscriptError } from "../src/Transcript.vibe"
 

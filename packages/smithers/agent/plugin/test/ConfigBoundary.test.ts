@@ -2,7 +2,7 @@ import { Effect, Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 import * as Config from "../src/Config.vibe"
 import * as Boundary from "../src/internal/Boundary.ts"
-import * as Kernel from "../src/Kernel.ts"
+import * as Kernel from "../src/Kernel.vibe"
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
 

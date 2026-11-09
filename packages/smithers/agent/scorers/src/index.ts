@@ -5,7 +5,7 @@
  */
 
 /** @category errors @since 0.1.0 */
-export * as ScorerError from "./ScorerError.ts"
+export * as ScorerError from "./ScorerError.vibe"
 
 /** @category models @since 0.1.0 */
 export * as Scorer from "./Scorer.ts"
@@ -14,7 +14,7 @@ export * as Scorer from "./Scorer.ts"
 export * as Binding from "./Binding.ts"
 
 /** @category sampling @since 0.1.0 */
-export * as Sampling from "./Sampling.ts"
+export * as Sampling from "./Sampling.vibe"
 
 /** @category services @since 0.1.0 */
 export * as ScoreStore from "./ScoreStore.ts"
@@ -26,7 +26,7 @@ export * as SqlScoreStore from "./SqlScoreStore.ts"
 export * as Scoring from "./Scoring.ts"
 
 /** @category migrations @since 0.1.0 */
-export * as Migrations from "./Migrations.ts"
+export * as Migrations from "./Migrations.vibe"
 
 /** @category grading @since 0.1.0 */
 export * as ScoreGate from "./ScoreGate.ts"

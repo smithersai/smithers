@@ -14,7 +14,7 @@ import * as Pricing from "@smthrs/model/Pricing"
 import { Context, Effect, Schema } from "effect"
 import * as Cell from "./Cell.ts"
 import * as EngineLike from "./EngineLike.ts"
-import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
+import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.vibe"
 import * as Sandbox from "./Sandbox.ts"
 
 /**

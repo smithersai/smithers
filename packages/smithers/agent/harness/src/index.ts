@@ -9,7 +9,7 @@
  * @category errors
  * @since 0.1.0
  */
-export * as HarnessError from "./HarnessError.ts"
+export * as HarnessError from "./HarnessError.vibe"
 
 /**
  * @category events
@@ -51,7 +51,7 @@ export * as Relevance from "./Relevance.vibe"
  * @category models
  * @since 0.1.0
  */
-export * as Plan from "./Plan.ts"
+export * as Plan from "./Plan.vibe"
 
 /**
  * @category services
@@ -228,4 +228,4 @@ export * as QuickJSLifecycle from "./QuickJSLifecycle.ts"
  * @since 1.0.0-rc.16
  * @category models
  */
-export * as RealmFlow from "./RealmFlow.ts"
+export * as RealmFlow from "./RealmFlow.vibe"

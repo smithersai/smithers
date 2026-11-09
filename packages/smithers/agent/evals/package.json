@@ -34,19 +34,63 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Baseline": "./src/Baseline.ts",
-    "./CaseExecutor": "./src/CaseExecutor.ts",
-    "./EvalError": "./src/EvalError.ts",
-    "./Gate": "./src/Gate.ts",
-    "./Regression": "./src/Regression.ts",
-    "./Report": "./src/Report.ts",
-    "./Runner": "./src/Runner.ts",
-    "./Suite": "./src/Suite.ts",
-    "./Trials": "./src/Trials.ts",
-    "./index": "./src/index.ts"
+    "./Baseline": {
+      "types": "./src/Baseline.ts",
+      "vibelang-source": "./src/Baseline.ts",
+      "default": "./.vibelang/js/src/Baseline.js"
+    },
+    "./CaseExecutor": {
+      "types": "./src/CaseExecutor.ts",
+      "vibelang-source": "./src/CaseExecutor.ts",
+      "default": "./.vibelang/js/src/CaseExecutor.js"
+    },
+    "./EvalError": {
+      "types": "./.vibe/declarations/src/EvalError.d.vibe.ts",
+      "vibelang-source": "./src/EvalError.vibe",
+      "default": "./.vibelang/js/src/EvalError.js"
+    },
+    "./Gate": {
+      "types": "./src/Gate.ts",
+      "vibelang-source": "./src/Gate.ts",
+      "default": "./.vibelang/js/src/Gate.js"
+    },
+    "./Regression": {
+      "types": "./src/Regression.ts",
+      "vibelang-source": "./src/Regression.ts",
+      "default": "./.vibelang/js/src/Regression.js"
+    },
+    "./Report": {
+      "types": "./src/Report.ts",
+      "vibelang-source": "./src/Report.ts",
+      "default": "./.vibelang/js/src/Report.js"
+    },
+    "./Runner": {
+      "types": "./src/Runner.ts",
+      "vibelang-source": "./src/Runner.ts",
+      "default": "./.vibelang/js/src/Runner.js"
+    },
+    "./Suite": {
+      "types": "./.vibe/declarations/src/Suite.d.vibe.ts",
+      "vibelang-source": "./src/Suite.vibe",
+      "default": "./.vibelang/js/src/Suite.js"
+    },
+    "./Trials": {
+      "types": "./src/Trials.ts",
+      "vibelang-source": "./src/Trials.ts",
+      "default": "./.vibelang/js/src/Trials.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -58,7 +102,10 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    "src/EvalError.vibe",
+    "src/Suite.vibe",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

@@ -3,8 +3,8 @@ import * as Scorer from "@smthrs/scorers/Scorer"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import { EvalError } from "../src/EvalError.ts"
-import * as Suite from "../src/Suite.ts"
+import { EvalError } from "../src/EvalError.vibe"
+import * as Suite from "../src/Suite.vibe"
 
 /** Runs an effect that must fail and returns the typed failure it raised. */
 const failure = (effect: Effect.Effect<unknown, EvalError>): Promise<EvalError> =>

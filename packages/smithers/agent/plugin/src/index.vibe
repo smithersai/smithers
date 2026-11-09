@@ -64,7 +64,7 @@ export * from "./Hooks.vibe"
  * @since 1.0.0-rc.0
  * @category startup
  */
-export * as Kernel from "./Kernel.ts"
+export * as Kernel from "./Kernel.vibe"
 
 /**
  * @since 1.0.0-rc.0

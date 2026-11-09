@@ -7,7 +7,7 @@
  */
 
 import type { Flow } from "@smthrs/core"
-import type { Sampling } from "./Sampling.ts"
+import type { Sampling } from "./Sampling.vibe"
 import type { Scorer } from "./Scorer.ts"
 
 /**

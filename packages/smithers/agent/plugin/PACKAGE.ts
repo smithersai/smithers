@@ -82,7 +82,7 @@ const securityReview = Smithers.SecurityReview({
         "A reserved root key (engine, retry, store, plugins) accepted after a waterfall merge because only the initial snapshot checks it.",
         "admittedConfigs membership granted to a caller-constructed object instead of only to detached admission output."
       ],
-      paths: ["src/Config.vibe", "src/internal/Boundary.ts", "src/Kernel.ts"]
+      paths: ["src/Config.vibe", "src/internal/Boundary.ts", "src/Kernel.vibe"]
     },
     {
       id: "cache-identity-integrity",
@@ -109,7 +109,7 @@ const securityReview = Smithers.SecurityReview({
         "Ordering that lets an enforce or order value from input override the documented pre, normal, post partition.",
         "A PluginError cause or message that embeds handler arguments or config values that may hold secrets."
       ],
-      paths: ["src/Plugins.ts", "src/Kernel.ts", "src/Hooks.vibe", "src/PluginError.vibe"]
+      paths: ["src/Plugins.ts", "src/Kernel.vibe", "src/Hooks.vibe", "src/PluginError.vibe"]
     }
   ]
 })

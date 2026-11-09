@@ -62,7 +62,7 @@ export * as JsonPath from "./core/JsonPath.ts"
  * @category migrations
  * @since 1.0.0
  */
-export * as Migrations from "./core/Migrations.ts"
+export * as Migrations from "./core/Migrations.vibe"
 
 /**
  * @category constructors
@@ -74,7 +74,7 @@ export * as OAuthToken from "./core/OAuthToken.vibe"
  * @category constructors
  * @since 1.0.0
  */
-export * as Pkce from "./core/Pkce.ts"
+export * as Pkce from "./core/Pkce.vibe"
 
 /**
  * @category verification

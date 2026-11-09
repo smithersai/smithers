@@ -23,7 +23,7 @@ import * as Fault from "@smthrs/flow/Fault"
 import { Context, Effect, Exit, Layer, Schema, type Scope } from "effect"
 import * as Cell from "./Cell.ts"
 import * as CellValidation from "./CellValidation.ts"
-import type { HarnessError } from "./HarnessError.ts"
+import type { HarnessError } from "./HarnessError.vibe"
 import { refusal, timedOut } from "./internal/refusal.ts"
 import type * as VariablesPanel from "./VariablesPanel.vibe"
 

@@ -16,7 +16,7 @@ import * as CompletionClaim from "../src/CompletionClaim.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
 import * as EngineLike from "../src/EngineLike.ts"
 import * as FailedCall from "../src/FailedCall.ts"
-import type { HarnessError } from "../src/HarnessError.ts"
+import type { HarnessError } from "../src/HarnessError.vibe"
 import * as Frame from "../src/internal/frame.ts"
 import * as UnfinishedWork from "../src/internal/unfinishedWork.ts"
 

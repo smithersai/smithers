@@ -43,7 +43,7 @@
  */
 
 import { Effect, Schema } from "effect"
-import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
+import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.vibe"
 import * as NarrowedCheck from "./NarrowedCheck.ts"
 
 /**

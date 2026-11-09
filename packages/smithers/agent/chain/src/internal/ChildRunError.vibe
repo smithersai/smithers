@@ -6,7 +6,7 @@
 
 import type { Effect } from "effect"
 import * as Catalog from "../Catalog.vibe"
-import type * as Chain from "../Chain.ts"
+import type * as Chain from "../Chain.vibe"
 
 /**
  * Carries a child run's original typed failure across the catalog boundary.

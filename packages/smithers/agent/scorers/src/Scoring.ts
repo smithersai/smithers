@@ -11,7 +11,7 @@ import * as Effect from "effect/Effect"
 import * as Text from "./internal/text.ts"
 import type { Result as ScorerResult } from "./Scorer.ts"
 import * as Scorer from "./Scorer.ts"
-import { ScorerError } from "./ScorerError.ts"
+import { ScorerError } from "./ScorerError.vibe"
 import { maxReasonBytes, type Observation, type ObservationBase } from "./ScoreStore.ts"
 import * as ScoreStore from "./ScoreStore.ts"
 

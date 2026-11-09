@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Scorer from "../src/Scorer.ts"
-import { ScorerError } from "../src/ScorerError.ts"
+import { ScorerError } from "../src/ScorerError.vibe"
 
 const quality = (overrides: Partial<Scorer.MakeOptions> = {}) =>
   Scorer.make({

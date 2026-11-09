@@ -11,7 +11,7 @@
  */
 import { Effect } from "effect"
 import * as CaseExecutor from "../../../../../packages/smithers/agent/evals/src/CaseExecutor.ts"
-import * as Suite from "../../../../../packages/smithers/agent/evals/src/Suite.ts"
+import * as Suite from "../../../../../packages/smithers/agent/evals/src/Suite.vibe"
 import * as Binding from "../../../../../packages/smithers/agent/scorers/src/Binding.ts"
 import * as Scorer from "../../../../../packages/smithers/agent/scorers/src/Scorer.ts"
 import { discoverDists, readDist, scorers, bannedClaims, type Output } from "./scoring.ts"

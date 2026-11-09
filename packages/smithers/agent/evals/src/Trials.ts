@@ -13,7 +13,7 @@
  * @since 0.1.0
  */
 
-import { EvalError } from "./EvalError.ts"
+import { EvalError } from "./EvalError.vibe"
 
 /**
  * Repeated-run statistics for one case.

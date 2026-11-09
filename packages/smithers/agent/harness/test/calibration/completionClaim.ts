@@ -38,7 +38,7 @@ import { readFileSync, writeFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import type * as AgentEvent from "../../src/AgentEvent.ts"
 import * as CompletionClaim from "../../src/CompletionClaim.ts"
-import { HarnessError } from "../../src/HarnessError.ts"
+import { HarnessError } from "../../src/HarnessError.vibe"
 import { sourceIdentity } from "./sourceIdentity.ts"
 
 /** The corpus this package retains. */

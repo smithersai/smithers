@@ -20,7 +20,7 @@ const securityReview = Smithers.SecurityReview({
         "A sql template in SqlScoreStore.ts that splices a caller string through sql.unsafe, sql.literal, or string concatenation.",
         "A page limit, offset, before, or prune cutoff that reaches LIMIT, OFFSET, or DELETE without the safe-integer validation."
       ],
-      paths: ["src/SqlScoreStore.ts", "src/Migrations.ts", "src/migrations/**"]
+      paths: ["src/SqlScoreStore.ts", "src/Migrations.vibe", "src/migrations/**"]
     },
     {
       id: "observation-redaction",
@@ -89,7 +89,7 @@ const securityReview = Smithers.SecurityReview({
         "scorerKey derived from anything other than Digest over the canonical id, version, and config.",
         "Sampling material() or job identity built by joining parts without length prefixes, so two part lists hash to the same string."
       ],
-      paths: ["src/Scorer.ts", "src/Sampling.ts", "src/Binding.ts", "src/SqlScoreStore.ts"]
+      paths: ["src/Scorer.ts", "src/Sampling.vibe", "src/Binding.ts", "src/SqlScoreStore.ts"]
     }
   ]
 })

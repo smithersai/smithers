@@ -1,7 +1,7 @@
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect, Layer } from "effect"
 import { expectTypeOf } from "vitest"
-import * as Migrations from "../src/core/Migrations.ts"
+import * as Migrations from "../src/core/Migrations.vibe"
 import type { SourceRecord } from "../src/core/SourceRecord.vibe"
 import * as SourceStore from "../src/core/SourceStore.vibe"
 

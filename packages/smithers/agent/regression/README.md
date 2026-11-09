@@ -110,7 +110,7 @@ loop that suspended quietly cannot pass by ending some other way.
 
 | File            | What it is                                                                                                           |
 | --------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `subject.ts`    | The composition under evaluation: the scripted provider, the seat seam, the host, and the two ways to run the agent. |
+| `subject.vibe`  | The composition under evaluation: the scripted provider, the seat seam, the host, and the two ways to run the agent. |
 | `agent.eval.vibe`      | The seventeen scenarios, their declared expectations, the two scorers, and the case executor.                            |
 | `run.vibe`        | The entry point: runs the suite, compares it to the baseline, applies the gate, sets the exit code.                  |
 | `baseline.json` | The committed baseline, in `@smthrs/evals` `Baseline` v1 form. Thirty-four records: seventeen cases times two scorers.          |

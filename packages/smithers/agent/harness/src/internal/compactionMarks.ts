@@ -35,7 +35,7 @@ import * as Judgement from "../Judgement.ts"
 import * as bytes from "./bytes.ts"
 import { pairBoundaries } from "./compactable.ts"
 import * as elide from "./elide.ts"
-import { NonNegativeSafeInt } from "./nonNegativeSafeInt.ts"
+import { NonNegativeSafeInt } from "./nonNegativeSafeInt.vibe"
 
 /**
  * One frame as Jev reads it: its size, the cell it ran, what the model said

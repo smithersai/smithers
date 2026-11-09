@@ -16,7 +16,7 @@ import { Cause, Context, Effect, Exit, Option, Result, Schema } from "effect"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
 import * as FlowBinding from "../src/FlowBinding.ts"
-import { HarnessError } from "../src/HarnessError.ts"
+import { HarnessError } from "../src/HarnessError.vibe"
 
 const Echo = Schema.Struct({ text: Schema.String })
 const Echoed = Schema.Struct({ text: Schema.String, length: Schema.Number })

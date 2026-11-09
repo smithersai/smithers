@@ -10,7 +10,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import { EvalError } from "./EvalError.ts"
+import { EvalError } from "./EvalError.vibe"
 import { CanonicalJson } from "./internal/CanonicalJson.ts"
 import { controlCharacter, flattenControlCharacters } from "./internal/controlCharacters.ts"
 import { tupleKey } from "./internal/tupleKey.ts"

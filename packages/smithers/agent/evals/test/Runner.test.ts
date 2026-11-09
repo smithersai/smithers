@@ -11,10 +11,10 @@ import * as Layer from "effect/Layer"
 import * as Tracer from "effect/Tracer"
 import { describe, expect, it } from "vitest"
 import * as CaseExecutor from "../src/CaseExecutor.ts"
-import { EvalError } from "../src/EvalError.ts"
+import { EvalError } from "../src/EvalError.vibe"
 import * as Report from "../src/Report.ts"
 import * as Runner from "../src/Runner.ts"
-import * as Suite from "../src/Suite.ts"
+import * as Suite from "../src/Suite.vibe"
 
 const target = { name: "target" } as const
 const scorerFlow = Scorer.make({

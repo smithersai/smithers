@@ -7,7 +7,7 @@ import type { Session } from "@smthrs/sandbox/Sandbox"
 import { Effect, Stream } from "effect"
 import * as Rubric from "./Rubric.ts"
 import * as Scorer from "./Scorer.ts"
-import { ScorerError } from "./ScorerError.ts"
+import { ScorerError } from "./ScorerError.vibe"
 
 const invalid = (message: string) => new ScorerError({ code: "invalid_declaration", message })
 const inconclusive = (message: string) => new ScorerError({ code: "inconclusive", message })

@@ -136,7 +136,7 @@ const securityReview = Smithers.SecurityReview({
         "A token endpoint request that follows redirects, or accepts a non-https tokenUrl for a non-loopback host.",
         "A token response body echoed into an error without stripping access_token, refresh_token, or client_secret."
       ],
-      paths: ["src/core/Pkce.ts", "src/core/AuthorizationUrl.ts", "src/core/OAuthToken.vibe", "src/core/AccessToken.vibe"]
+      paths: ["src/core/Pkce.vibe", "src/core/AuthorizationUrl.ts", "src/core/OAuthToken.vibe", "src/core/AccessToken.vibe"]
     },
     {
       id: "source-store-grants",

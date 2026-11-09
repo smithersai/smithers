@@ -48,7 +48,7 @@ import { Effect, Layer, Option, Schema } from "effect"
 import { Failure, fromIntegrationError, retryPolicy as stepRetryPolicy } from "../core/ActionFailure.vibe"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { GitHubClient } from "./GitHubClient.ts"
-import { withWriteLock } from "./internal/WriteLock.ts"
+import { withWriteLock } from "./internal/WriteLock.vibe"
 import { IssueNumber, Owner, Repo, requireRepositoryPath } from "./Repository.vibe"
 
 /**

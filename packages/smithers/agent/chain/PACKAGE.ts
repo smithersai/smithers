@@ -82,7 +82,7 @@ const securityReview = Smithers.SecurityReview({
         "The in-realm copyJson and host jsonBoundary disagreeing on depth, size, holes, -0, or prototype checks.",
         "A key assigned with = instead of Object.defineProperty on a copy that has Object.prototype."
       ],
-      paths: ["src/JsonBoundary.ts", "src/QuickJsRunner.ts", "src/ScriptRunner.ts", "src/Chain.ts"]
+      paths: ["src/JsonBoundary.ts", "src/QuickJsRunner.ts", "src/ScriptRunner.ts", "src/Chain.vibe"]
     },
     {
       id: "authorize-every-live-call",
@@ -96,7 +96,7 @@ const securityReview = Smithers.SecurityReview({
         "An unparseable claim treated as allow, or authorize_unavailable swallowed instead of failing the run.",
         "A sub-chain spawned through the agent entry running without the parent's Authorize service."
       ],
-      paths: ["src/Authorize.ts", "src/Chain.ts", "src/SubChains.vibe", "src/AuthorDeclaration.ts", "src/Catalog.vibe"]
+      paths: ["src/Authorize.ts", "src/Chain.vibe", "src/SubChains.vibe", "src/AuthorDeclaration.ts", "src/Catalog.vibe"]
     },
     {
       id: "replay-identity",
@@ -110,7 +110,7 @@ const securityReview = Smithers.SecurityReview({
         "RegistryCatalog running a Markdown flow without re-checking the declaration digest at call time."
       ],
       paths: [
-        "src/Chain.ts",
+        "src/Chain.vibe",
         "src/CallKey.vibe",
         "src/Event.vibe",
         "src/Outcome.vibe",
@@ -130,7 +130,7 @@ const securityReview = Smithers.SecurityReview({
         "Child scope derivation in SubChains that two slots can map to the same string, or a depth check a crafted slot can bypass.",
         "Chain.append absorbing another writer's events on journal_conflict instead of failing."
       ],
-      paths: ["src/Chain.ts", "src/Event.vibe", "src/SubChains.vibe", "src/Journal.vibe", "src/internal/childRun.ts"]
+      paths: ["src/Chain.vibe", "src/Event.vibe", "src/SubChains.vibe", "src/Journal.vibe", "src/internal/childRun.ts"]
     },
     {
       id: "resource-budgets",
@@ -143,7 +143,7 @@ const securityReview = Smithers.SecurityReview({
         "SubChains maxDepth not counted from derived segments, allowing unbounded nested Chain.run.",
         "An observation, steering, or context string appended to the author prompt without the 8192/32768 truncation."
       ],
-      paths: ["src/QuickJsRunner.ts", "src/Chain.ts", "src/SubChains.vibe", "src/Observation.vibe"]
+      paths: ["src/QuickJsRunner.ts", "src/Chain.vibe", "src/SubChains.vibe", "src/Observation.vibe"]
     },
     {
       id: "prompt-catalog-injection",
@@ -189,7 +189,7 @@ const securityReview = Smithers.SecurityReview({
         "MemoryEntries or ModelAuthor surfacing a store or route implementation error message beyond its code."
       ],
       paths: [
-        "src/Chain.ts",
+        "src/Chain.vibe",
         "src/MemoryEntries.ts",
         "src/ModelAuthor.ts",
         "src/internal/failureCode.ts",

@@ -63,7 +63,7 @@ export * as Catalog from "./Catalog.vibe"
  * @since 0.1.0
  * @slop
  */
-export * as Chain from "./Chain.ts"
+export * as Chain from "./Chain.vibe"
 
 /**
  * The journal event vocabulary and the pure folds over it.

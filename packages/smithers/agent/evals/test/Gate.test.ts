@@ -2,11 +2,11 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { describe, expect, it } from "vitest"
 import * as CaseExecutor from "../src/CaseExecutor.ts"
-import { EvalError } from "../src/EvalError.ts"
+import { EvalError } from "../src/EvalError.vibe"
 import * as Gate from "../src/Gate.ts"
 import * as Regression from "../src/Regression.ts"
 import * as Runner from "../src/Runner.ts"
-import * as Suite from "../src/Suite.ts"
+import * as Suite from "../src/Suite.vibe"
 
 const report = (
   observations: ReadonlyArray<Runner.Observation>

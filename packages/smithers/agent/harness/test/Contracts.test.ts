@@ -9,8 +9,8 @@ import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import * as Cell from "../src/Cell.ts"
 import * as EngineLike from "../src/EngineLike.ts"
-import { HarnessError, HarnessErrorCode } from "../src/HarnessError.ts"
-import * as Plan from "../src/Plan.ts"
+import { HarnessError, HarnessErrorCode } from "../src/HarnessError.vibe"
+import * as Plan from "../src/Plan.vibe"
 
 const assistantMessage = ModelRequest.Message.assistant("done", { stopReason: "stop" })
 const cellSource = Cell.source("return { intent: \"complete\", state: null, output: \"done\" }")

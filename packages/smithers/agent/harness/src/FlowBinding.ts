@@ -51,7 +51,7 @@ import { Effect, Option, Result, Schema, SchemaAST } from "effect"
 import { width as callLedgerWidth } from "./CallLedger.vibe"
 import type * as Cell from "./Cell.ts"
 import { CallResult, failureKind, Failures } from "./Cell.ts"
-import { HarnessError } from "./HarnessError.ts"
+import { HarnessError } from "./HarnessError.vibe"
 import * as elide from "./internal/elide.ts"
 import { refusal, timedOut } from "./internal/refusal.ts"
 

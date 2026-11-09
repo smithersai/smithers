@@ -21,7 +21,7 @@
 
 import * as CallLedger from "./CallLedger.vibe"
 import * as elide from "./internal/elide.ts"
-import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
+import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.vibe"
 
 /**
  * How many names the panel prints before it starts counting instead.

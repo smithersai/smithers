@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
 import * as Baseline from "../src/Baseline.ts"
-import type { EvalError } from "../src/EvalError.ts"
+import type { EvalError } from "../src/EvalError.vibe"
 import * as Regression from "../src/Regression.ts"
 import type * as Runner from "../src/Runner.ts"
 

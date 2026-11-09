@@ -18,7 +18,7 @@ import type * as Flow from "@smthrs/core/Flow"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Json from "./internal/json.ts"
-import { ScorerError } from "./ScorerError.ts"
+import { ScorerError } from "./ScorerError.vibe"
 
 /**
  * Input supplied to a scorer flow.

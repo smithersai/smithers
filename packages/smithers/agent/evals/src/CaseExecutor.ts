@@ -13,8 +13,8 @@ import type { Flow } from "@smthrs/core"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { EvalError } from "./EvalError.ts"
-import type { Case } from "./Suite.ts"
+import { EvalError } from "./EvalError.vibe"
+import type { Case } from "./Suite.vibe"
 
 /**
  * The result of executing one target-flow case.

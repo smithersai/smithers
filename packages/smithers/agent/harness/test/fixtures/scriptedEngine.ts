@@ -3,8 +3,8 @@ import { Model } from "@smthrs/model"
 import { Effect, Layer, Option, Schema, Stream } from "effect"
 import * as Cell from "../../src/Cell.ts"
 import * as EngineLike from "../../src/EngineLike.ts"
-import { HarnessError } from "../../src/HarnessError.ts"
-import * as Plan from "../../src/Plan.ts"
+import { HarnessError } from "../../src/HarnessError.vibe"
+import * as Plan from "../../src/Plan.vibe"
 
 /**
  * One scripted response to `EngineLike.call`.

@@ -8,7 +8,7 @@ const sources = (dir: string, prefix = ""): ReadonlyArray<readonly [string, stri
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
     entry.isDirectory()
       ? sources(join(dir, entry.name), `${prefix}${entry.name}/`)
-      : entry.name.endsWith(".ts")
+      : /\.(?:ts|vibe)$/.test(entry.name)
       ? [[`${prefix}${entry.name}`, readFileSync(join(dir, entry.name), "utf8")] as const]
       : []
   )
@@ -26,7 +26,7 @@ describe("package conventions", () => {
         /Schema\.Int\.check\(\s*\n?\s*Schema\.isGreaterThanOrEqualTo\(0\),\s*\n?\s*Schema\.isLessThanOrEqualTo\(Number\.MAX_SAFE_INTEGER\)/
       )
     ).toEqual([
-      "internal/nonNegativeSafeInt.ts"
+      "internal/nonNegativeSafeInt.vibe"
     ])
   })
 

@@ -22,13 +22,13 @@ import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import { Suite, type Runner as EvalRunner } from "../evals/src/index.ts"
 import { Binding, Scoring as ScorerRunner, Scorer } from "../scorers/src/index.ts"
-import * as Subject from "./subject.ts"
+import * as Subject from "./subject.vibe"
 
 module platform {
   import * as Cause from "effect/Cause"
   import * as Effect from "effect/Effect"
   import { CaseExecutor, EvalError } from "../evals/src/index.ts"
-  import * as Subject from "./subject.ts"
+  import * as Subject from "./subject.vibe"
 
   /**
    * The target every binding applies to.

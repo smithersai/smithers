@@ -72,8 +72,8 @@
       "default": "./.vibelang/js/src/JsonSchema.js"
     },
     "./Kernel": {
-      "types": "./src/Kernel.ts",
-      "vibelang-source": "./src/Kernel.ts",
+      "types": "./.vibe/declarations/src/Kernel.d.vibe.ts",
+      "vibelang-source": "./src/Kernel.vibe",
       "default": "./.vibelang/js/src/Kernel.js"
     },
     "./Keys": {

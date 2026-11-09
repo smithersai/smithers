@@ -50,7 +50,11 @@ describe("package exports", () => {
       "touchedFiles"
     ])
     const manifest = JSON.parse(read("../package.json"))
-    expect(manifest.exports["./Scorers"]).toBe(`./src/${moduleFile("Scorers")}`)
+    expect(manifest.exports["./Scorers"]).toEqual({
+      types: `./src/${moduleFile("Scorers")}`,
+      "vibelang-source": `./src/${moduleFile("Scorers")}`,
+      default: "./.vibelang/js/src/Scorers.js"
+    })
     expect(manifest.publishConfig.exports["./Scorers"]).toEqual({
       import: { types: "./dist/esm/Scorers.d.ts", default: "./dist/esm/Scorers.js" },
       require: { types: "./dist/cjs/Scorers.d.ts", default: "./dist/cjs/Scorers.js" }

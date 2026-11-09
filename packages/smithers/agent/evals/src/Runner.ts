@@ -18,11 +18,11 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { CaseExecutor, type Execution, type Service as CaseExecutorService } from "./CaseExecutor.ts"
-import { EvalError } from "./EvalError.ts"
+import { EvalError } from "./EvalError.vibe"
 import { flattenControlCharacters } from "./internal/controlCharacters.ts"
 import { scorerLabel } from "./internal/scorerLabel.ts"
 import { tupleKey } from "./internal/tupleKey.ts"
-import type { Binding, Case, Suite } from "./Suite.ts"
+import type { Binding, Case, Suite } from "./Suite.vibe"
 import * as Trials from "./Trials.ts"
 
 /**

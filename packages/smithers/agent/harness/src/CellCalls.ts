@@ -36,7 +36,7 @@ import type * as Registry from "@smthrs/registry/Registry"
 import { Effect, Option, Schema } from "effect"
 import * as Cell from "./Cell.ts"
 import type * as FlowBinding from "./FlowBinding.ts"
-import { HarnessError } from "./HarnessError.ts"
+import { HarnessError } from "./HarnessError.vibe"
 import { refusal } from "./internal/refusal.ts"
 
 /**

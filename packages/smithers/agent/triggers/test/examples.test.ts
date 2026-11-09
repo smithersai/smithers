@@ -1,6 +1,6 @@
 import * as Option from "effect/Option"
 import { describe, expect, it } from "vitest"
-import { runQuickstart } from "../examples/quickstart.ts"
+import { runQuickstart } from "../examples/quickstart.vibe"
 
 describe("examples", () => {
   // The quickstart page promises this exact output. The example is the same

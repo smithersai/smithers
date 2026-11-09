@@ -113,7 +113,11 @@ describe("ExternalTranscript", () => {
       const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
         exports: Record<string, unknown>
       }
-      expect(manifest.exports["./ExternalTranscript"]).toBe("./src/ExternalTranscript.ts")
+      expect(manifest.exports["./ExternalTranscript"]).toEqual({
+        types: "./src/ExternalTranscript.ts",
+        "vibelang-source": "./src/ExternalTranscript.ts",
+        default: "./.vibelang/js/src/ExternalTranscript.js"
+      })
       const subpath = await import("../src/ExternalTranscript.ts")
       expect(subpath.decodeCodex).toBe(ExternalTranscript.decodeCodex)
     })

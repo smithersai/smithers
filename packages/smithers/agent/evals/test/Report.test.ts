@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import { createRequire } from "node:module"
 import { describe, expect, it } from "vitest"
-import { EvalError } from "../src/EvalError.ts"
+import { EvalError } from "../src/EvalError.vibe"
 import * as Regression from "../src/Regression.ts"
 import * as Report from "../src/Report.ts"
 import type * as Runner from "../src/Runner.ts"

@@ -26,9 +26,9 @@ import * as Digest from "@smthrs/core/Digest"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Cause, Context, Effect, Option, Result, Schema } from "effect"
-import { HarnessError } from "./HarnessError.ts"
+import { HarnessError } from "./HarnessError.vibe"
 import { cellBlocks } from "./internal/fence.ts"
-import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
+import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.vibe"
 
 /**
  * The source language a cell is written in.

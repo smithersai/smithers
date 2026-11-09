@@ -22,7 +22,7 @@ import {
   toUnauthorized
 } from "../src/core/IntegrationError.ts"
 import { readInteger, readJsonPath, readString } from "../src/core/JsonPath.ts"
-import { createCodeVerifier, createPkcePair, deriveCodeChallenge } from "../src/core/Pkce.ts"
+import { createCodeVerifier, createPkcePair, deriveCodeChallenge } from "../src/core/Pkce.vibe"
 import * as SignalName from "../src/core/SignalName.ts"
 import * as Environment from "../src/Environment.ts"
 import { retryPolicy } from "../src/github/Actions.ts"

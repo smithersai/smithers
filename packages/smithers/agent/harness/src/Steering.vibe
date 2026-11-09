@@ -9,7 +9,7 @@
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Context, Effect, Layer, Schema } from "effect"
 import * as AgentEvent from "./AgentEvent.ts"
-import type { HarnessError } from "./HarnessError.ts"
+import type { HarnessError } from "./HarnessError.vibe"
 import * as compactionMarks from "./internal/compactionMarks.ts"
 import * as Monitor from "./Monitor.vibe"
 

@@ -12,7 +12,7 @@ import { NotificationQueue } from "@smthrs/notifications"
 import type { Notification } from "@smthrs/notifications/Notification"
 import * as SteerPayload from "@smthrs/notifications/SteerPayload"
 import { Effect, Layer, Option } from "effect"
-import { HarnessError } from "./HarnessError.ts"
+import { HarnessError } from "./HarnessError.vibe"
 import * as Steering from "./Steering.vibe"
 
 /**

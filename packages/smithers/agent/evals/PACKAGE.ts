@@ -9,7 +9,7 @@ import * as Input from "@smthrs/targets/Input"
 
 const cwd = "packages/smithers/agent/evals"
 
-const standard = BuildAndCheckTypeScriptPackage({ cwd, sources: Input.glob("{src,examples}/**/*.ts") })
+const standard = BuildAndCheckTypeScriptPackage({ cwd, sources: Input.glob("{src,examples}/**/*.{ts,vibe}") })
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
 
@@ -64,7 +64,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Baseline.ts",
-        "src/Suite.ts",
+        "src/Suite.vibe",
         "src/Regression.ts",
         "src/Gate.ts",
         "src/Runner.ts",
@@ -93,7 +93,7 @@ const securityReview = Smithers.SecurityReview({
         "A decoded record kept by reference, spread with unknown keys, or assigned through __proto__ instead of rebuilt field by field.",
         "Case input or expected that skips validateData, structuredClone and freezeData before reaching an executor or scorer."
       ],
-      paths: ["src/Baseline.ts", "src/Suite.ts"]
+      paths: ["src/Baseline.ts", "src/Suite.vibe"]
     },
     {
       id: "report-serialization-budget",
@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
         "An EvalError cause or message that stringifies a whole case, execution or scorer request.",
         "A span attribute in Runner carrying input or output rather than only the case name."
       ],
-      paths: ["src/Report.ts", "src/Runner.ts", "src/EvalError.ts"]
+      paths: ["src/Report.ts", "src/Runner.ts", "src/EvalError.vibe"]
     },
     {
       id: "gate-fails-closed",

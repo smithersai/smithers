@@ -17,14 +17,14 @@
  * @since 0.1.0
  * @category errors
  */
-export * as EvalError from "./EvalError.ts"
+export * as EvalError from "./EvalError.vibe"
 /**
  * Fixed suite declarations and their JSON Lines fixture format.
  *
  * @since 0.1.0
  * @category suites
  */
-export * as Suite from "./Suite.ts"
+export * as Suite from "./Suite.vibe"
 /**
  * The injectable boundary that executes one case against a target flow.
  *

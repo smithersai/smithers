@@ -1,6 +1,7 @@
 import { build } from "esbuild"
 import { fileURLToPath } from "node:url"
 import { createContext, runInContext } from "node:vm"
+import vibelang from "vibelang-unplugin/esbuild"
 import { describe, expect, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
 import * as CellValidation from "../src/CellValidation.ts"
@@ -121,6 +122,7 @@ describe("portable cell compiler", () => {
   it("bundles and compiles in a host without Node APIs or document hooks", async () => {
     const entry = fileURLToPath(new URL("../src/CellValidation.ts", import.meta.url))
     const result = await build({
+      plugins: [vibelang({ root: fileURLToPath(new URL("../", import.meta.url)) })],
       entryPoints: [entry],
       platform: "browser",
       format: "iife",

@@ -27,7 +27,7 @@
  */
 
 import * as Digest from "@smthrs/core/Digest"
-import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
+import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.vibe"
 
 /**
  * The suffix a flow flags one named payload's truncation with.

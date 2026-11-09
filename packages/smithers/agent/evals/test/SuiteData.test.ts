@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Suite from "../src/Suite.ts"
+import * as Suite from "../src/Suite.vibe"
 
 describe("durable suite data", () => {
   it("round trips cycles, shared records, holes and cloneable primitives without JSON coercion", async () => {

@@ -196,7 +196,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Transcript.vibe",
         "src/EngineLike.ts",
         "src/FlowBinding.ts",
-        "src/HarnessError.ts"
+        "src/HarnessError.vibe"
       ]
     }
   ]

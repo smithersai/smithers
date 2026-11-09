@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
 import { describe, expect, it } from "vitest"
 import * as Rubric from "../src/Rubric.ts"
-import { ScorerError } from "../src/ScorerError.ts"
+import { ScorerError } from "../src/ScorerError.vibe"
 
 const criteria: ReadonlyArray<Rubric.Criterion> = [
   { id: "plain", question: "Is it plain language?", low: "Dense jargon", high: "Anyone could follow it" },

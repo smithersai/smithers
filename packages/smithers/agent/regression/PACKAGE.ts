@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
         "A world tool handler in `world.ts` that touches the real filesystem, spawns a process, or performs a real fetch (e.g. `web_fetch` not answering from `world.data.web`).",
         "The `Workspace.layer(root)` root set to the repository or home directory in a way the QuickJS cell can write through."
       ],
-      paths: ["character/subject.ts", "character/world.ts", "subject.ts"]
+      paths: ["character/subject.ts", "character/world.ts", "subject.vibe"]
     },
     {
       id: "judge-prompt-injection",
@@ -159,11 +159,11 @@ const securityReview = Smithers.SecurityReview({
       title: "The offline suite stays offline and its baseline gate cannot be silently bypassed",
       threat: "A change makes CI's agent eval spend real model calls with a checked-in key, or pass while scores regress.",
       lookFor: [
-        "`subject.ts` or `agent.eval.vibe` resolving a real provider seat, route, or `EgressHttpClient` instead of the scripted `Model` and in-process route.",
+        "`subject.vibe` or `agent.eval.vibe` resolving a real provider seat, route, or `EgressHttpClient` instead of the scripted `Model` and in-process route.",
         "`run.vibe` returning exit 0 when `Regression.compare` reports regressions, missing observations, or a case error.",
         "`--update` writing `baseline.json` in a CI path, or an unbounded budget used outside the offline scripted seat."
       ],
-      paths: ["run.vibe", "subject.ts", "agent.eval.vibe"]
+      paths: ["run.vibe", "subject.vibe", "agent.eval.vibe"]
     },
     {
       id: "example-fixture-secrets",
