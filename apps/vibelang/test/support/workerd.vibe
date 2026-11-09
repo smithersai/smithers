@@ -6,7 +6,7 @@ import { SecureRandom } from "effect/crypto"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
 import vibelang from "vibelang-unplugin/esbuild"
-import { dumpWorkerdCoverage, instrumentBundle } from "./workerdCoverage.ts"
+import { dumpWorkerdCoverage, instrumentModules } from "./workerdCoverage.ts"
 
 /** esbuild or Miniflare failed to bundle or start a Worker. */
 error WorkerdFailed { cause: unknown }
@@ -18,8 +18,8 @@ export const modelKey = Option.getOrUndefined(runSync(Config.option(Config.Strin
 interface Bundle {
   readonly module: string
   readonly wasm: ReadonlyArray<{ readonly name: string; readonly path: string }>
-  /** The bundler's source map when built for the coverage command; undefined otherwise (0017). */
-  readonly bundleMap: Record<string, unknown> | undefined
+  /** Built for the coverage command: the app's own modules carry Istanbul counters (0017). */
+  readonly coverage: boolean
 }
 
 /**
@@ -42,23 +42,17 @@ effect function bundle(relative: string) {
     },
   }
   const coverage = try Config.withDefault(Config.Boolean("BENCH_COVERAGE"), false)
+  const app = try (try Path.Path).fromFileUrl(new URL("../../", import.meta.url))
+  const appSource = (file: string) => file.startsWith(app) && /^(src|worker|infra|scripts)\/.*\.vibe$/.test(file.slice(app.length))
   const result = try tryPromise({
     try: () => build({
       entryPoints: [path], bundle: true, write: false, format: "esm", platform: "browser", target: "es2022",
       conditions: ["workerd", "worker", "browser"], external: ["node:*", "cloudflare:*"], logLevel: "silent",
-      plugins: [vibelang(), wasmModules as never],
-      ...(coverage ? { sourcemap: true, outfile: "worker.js" } : {}),
+      plugins: [coverage ? instrumentModules(vibelang(), appSource) : vibelang(), wasmModules as never],
     }),
     catch: (cause) => new WorkerdFailed({ cause }),
   })
-  if (coverage) {
-    const js = result.outputFiles.find((file) => !file.path.endsWith(".map"))!
-    const map = result.outputFiles.find((file) => file.path.endsWith(".map"))!
-    const instrumented = try Effect.try(() => instrumentBundle(js.text))
-    const instrumentedBundle: Bundle = { module: instrumented, wasm, bundleMap: try Effect.try(() => JSON.parse(map.text)) }
-    return instrumentedBundle
-  }
-  const bundled: Bundle = { module: result.outputFiles[0]!.text, wasm, bundleMap: undefined }
+  const bundled: Bundle = { module: result.outputFiles[0]!.text, wasm, coverage }
   return bundled
 }
 
@@ -79,9 +73,9 @@ export interface Served {
   readonly fetch: (request: Request) => Promise<Response>
 }
 
-effect function listen(config: Record<string, unknown>, port = 0, bundleMap: Record<string, unknown> | undefined = undefined) {
+effect function listen(config: Record<string, unknown>, port = 0, coverage = false) {
   const options = { host: "127.0.0.1", port, workers: [{ config }] } as ConstructorParameters<typeof Miniflare>[0]
-  if (bundleMap !== undefined) options.inspectorPort = 0
+  if (coverage) options.inspectorPort = 0
   const worker = try Effect.try({ try: () => new Miniflare(options), catch: (cause) => new WorkerdFailed({ cause }) })
   const url = try tryPromise({ try: () => worker.ready, catch: (cause) => new WorkerdFailed({ cause }) })
   const name = String(config.name)
@@ -89,7 +83,7 @@ effect function listen(config: Record<string, unknown>, port = 0, bundleMap: Rec
     origin: url.origin,
     dispose: async () => {
       // Coverage mode: the worker's accumulated counters are execution evidence; dump before the isolate is gone.
-      if (bundleMap !== undefined) await dumpWorkerdCoverage(worker, name, bundleMap, "coverage/bench/workerd-raw")
+      if (coverage) await dumpWorkerdCoverage(worker, name, "coverage/bench/workerd-raw")
       await worker.dispose()
     },
     fetch: async (request) => {
@@ -131,7 +125,7 @@ export effect function serveApi(env: Readonly<Record<string, string>> = {}, port
         SandboxLedger: { type: "durable-object", storage: "sqlite" },
         ActionIndex: { type: "durable-object", storage: "sqlite" },
       },
-    }, port, apiBundle.bundleMap)
+    }, port, apiBundle.coverage)
   }
 }
 
@@ -148,7 +142,7 @@ export effect function serveSite(withAssets = false) {
         env: { ASSETS: { type: "assets" } },
       } : {}),
       manifest: { mainModule: "worker.js", modules },
-    }, 0, bundled.bundleMap)
+    }, 0, bundled.coverage)
   }
 }
 
@@ -170,7 +164,7 @@ export effect function serveWikiHost() {
       manifest: { mainModule: "worker.js", modules },
       env: { WIKI: { type: "durable-object", worker: "wiki", exportName: "WikiObject" } },
       exports: { WikiObject: { type: "durable-object", storage: "sqlite" } },
-    }, 0, bundled.bundleMap)
+    }, 0, bundled.coverage)
   }
 }
 
@@ -184,7 +178,7 @@ export effect function serveIssuesHost() {
       manifest: { mainModule: "worker.js", modules },
       env: { ISSUES: { type: "durable-object", worker: "issues", exportName: "IssuesObject" } },
       exports: { IssuesObject: { type: "durable-object", storage: "sqlite" } },
-    }, 0, bundled.bundleMap)
+    }, 0, bundled.coverage)
   }
 }
 
@@ -217,7 +211,7 @@ export effect function serveSandboxObjects() {
         ACCOUNT: { type: "durable-object", worker: "bench-sandbox", exportName: "AccountHost" },
       },
       exports: { MachineHost: { type: "durable-object", storage: "sqlite" }, AccountHost: { type: "durable-object", storage: "sqlite" } },
-    }, 0, bundled.bundleMap)
+    }, 0, bundled.coverage)
   }
 }
 
@@ -235,7 +229,7 @@ export effect function serveApiObjects(bindings: Readonly<Record<string, string>
         ...Object.fromEntries(objects.map((exportName) => [names[exportName]!, { type: "durable-object", worker: "bench-api", exportName }])),
       },
       exports: Object.fromEntries(objects.map((name) => [name, { type: "durable-object", storage: "sqlite" }])),
-    }, 0, bundled.bundleMap)
+    }, 0, bundled.coverage)
   }
 }
 
@@ -249,6 +243,6 @@ export effect function serveDraftsBenchmark(bindings: Readonly<Record<string, st
       manifest: { mainModule: "worker.js", modules },
       env: { ...Object.fromEntries(Object.entries(bindings).map(([name, text]) => [name, { type: "text", value: text }])), DRAFTS: { type: "durable-object", worker: "bench-drafts", exportName: "DraftsObject" } },
       exports: { DraftsObject: { type: "durable-object", storage: "sqlite" } },
-    }, 0, bundled.bundleMap)
+    }, 0, bundled.coverage)
   }
 }

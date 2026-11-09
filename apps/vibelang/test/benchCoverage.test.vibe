@@ -41,6 +41,16 @@ it("incomplete source columns cannot establish cross-runtime execution", () => {
   expect(unionEvidence(base, { ...base, s: { "0": 1 } }).s).toEqual({ "0": 0 })
 })
 
+it("an if without else credits its implicit arm across runtimes, but a partial arm location never does", () => {
+  const taken = { start: { line: 3, column: 2 }, end: { line: 3, column: 40 } }
+  const implicit = { start: {}, end: {} }
+  const base = { ...file, branchMap: { "0": { loc: taken, type: "if", locations: [taken, implicit] } }, b: { "0": [0, 0] } }
+  expect(unionEvidence(base, { ...base, b: { "0": [3, 1] } }).b).toEqual({ "0": [1, 1] })
+  const partial = { start: { line: 3, column: null }, end: {} }
+  const evidence = { ...base, branchMap: { "0": { loc: taken, type: "if", locations: [taken, partial] } }, b: { "0": [3, 1] } }
+  expect(unionEvidence(base, evidence as never).b).toEqual({ "0": [0, 0] })
+})
+
 it("normalizes only the source-map open-ended sentinel to the original UTF-16 line length", () => {
   const open = { start: { line: 1, column: 0 }, end: { line: 1, column: Infinity } }
   const finite = { start: { line: 1, column: 0 }, end: { line: 1, column: 2 } }

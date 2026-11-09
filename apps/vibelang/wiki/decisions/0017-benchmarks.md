@@ -49,18 +49,28 @@ single execution for this command and the built-in runner for timing. It reuses 
 `@vitest/coverage-v8` 5.0.0 (including the repository's native-loader patch) and matching Vitest 5.0.0. Emitted
 surface and script builds retain source maps and V8's subprocess collection is enabled. Workerd is another V8
 isolate whose installed inspector build rejects the Profiler domain (`Profiler is not enabled` on every target,
-probed 2026-11-08), so parent Node coverage cannot count worker execution. In this command the workerd bundles carry
-Istanbul counters (`test/support/workerdCoverage.ts`): esbuild's bundle map chains through the compiler maps, the
-instrumented bundle runs the real Durable Object flows, and each dispose reads `globalThis.__coverage__` from the
-user isolate over the inspector before it exits, writing the dump with both maps under `coverage/bench-workerd/`.
+probed 2026-11-08), so parent Node coverage cannot count worker execution. In this command each app module in a
+workerd bundle (`src/`, `worker/`, `infra/`, `scripts/`) carries Istanbul counters added before bundling
+(`instrumentModules` in `test/support/workerdCoverage.ts`), with the VibeLang compiler's own source map as the input
+map: the same compiled output and map Vitest's V8 remap reads in Node, so both runtimes place a statement at the same
+source range. The bundle runs the real Durable Object flows, and each dispose reads `globalThis.__coverage__` from the
+user isolate over the inspector before it exits, writing the dump under `coverage/bench/workerd-raw/`.
+
+Instrumenting the finished bundle instead (until 2026-11-09) remapped through esbuild's bundle map, which moved
+statement starts (`Effect.runSync` mapped to `runSync`'s column). Whenever Node also loaded a file, the exact-range
+union dropped its workerd hits: `worker/apiObjects.vibe`, which `bench/resources.bench.vibe` loads through
+`worker/Api.vibe`, read 54.92% of lines with both suites against 64.29% with the workerd suite alone. With
+per-module counters it reads 66.84% (`test/workerdCoverageShape.test.ts` guards the column).
 
 **The merged gate.** Vitest's own threshold check is off in this command, because workerd evidence exists only after
-the process exits. `bench/merge-coverage.ts` then remaps each dump (instrumented to bundle to source), unions it
+the process exits. `bench/merge-coverage.ts` then remaps each dump through each module's compiler map, unions it
 with the Vitest map and enforces 100% lines, branches, functions and statements per file across `src/`, `worker/`,
 `infra/` and `scripts/`. A file with no Node-side execution is gated on its workerd-remapped structure. A file
 executed in both keeps its Vitest structure. Cross-runtime credit requires identical complete statement or function
 declaration ranges; branch credit requires the same type and ordered arm ranges. Missing/non-finite columns never
-establish execution. Complementary hits on exactly matching branch arms may combine; different shapes stay uncovered.
+establish execution. The one exception is Istanbul's implicit `else` arm of an `if` without `else`, which has no
+coordinates in either runtime; it matches by its branch's complete range. Before 2026-11-09 it made every such `if`
+uncredited across runtimes (`worker/apiObjects.vibe` branches 37.29% before, 57.63% after, same run). Complementary hits on exactly matching branch arms may combine; different shapes stay uncovered.
 Executable lines are statement start lines, as in Istanbul; a declaration's hit never executes its whole nested body.
 A line no benchmark should run is excluded only with its reason recorded in `merge-coverage.ts` and here:
 `scripts/mythical-seed.vibe` line 103 (`Refused` guard) is unreachable from real input because `intentsOf`

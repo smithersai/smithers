@@ -5,7 +5,7 @@
 // CLI/MCP/script subprocesses. Two other runtimes never enter Vitest's map, because their bundles are compiled again
 // and would union a second statement structure into each shared source: workerd is a separate V8 isolate whose
 // inspector disables the Profiler domain, so its bundles carry Istanbul counters dumped over the inspector
-// (test/support/workerdCoverage.ts); Chromium executes the unminified source-coverage build, dumped with its precise Profiler
+// (test/support/workerdCoverage.ts, per compiled module); Chromium executes the unminified source-coverage build, dumped with its precise Profiler
 // API into coverage/bench/chromium-raw (bench/browser.spec.ts). This script remaps both to source, credits them by
 // location, and enforces 100% lines, branches, functions and statements per file:
 //
@@ -20,6 +20,7 @@ import { dirname, isAbsolute, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parseAstAsync } from "vite"
 import astV8ToIstanbul from "ast-v8-to-istanbul"
+import { sourceCoverage } from "../test/support/workerdCoverage.ts"
 
 const require = createRequire(import.meta.url)
 
@@ -37,32 +38,30 @@ interface FileCoverageJSON {
   path: string
   statementMap: Record<string, { start: Position; end: Position }>
   fnMap: Record<string, { name: string; decl: { start: Position; end: Position }; loc?: { start: Position; end: Position } }>
-  branchMap: Record<string, { loc: { start: Position; end: Position }; type: string; locations: Array<{ start: Position; end: Position }> }>
+  branchMap: Record<string, { loc: { start: Position; end: Position }; type: string; locations: Array<Arm> }>
   s: Record<string, number>
   f: Record<string, number>
   b: Record<string, Array<number>>
 }
 interface Position { line: number; column: number | null }
+/** A branch arm. Istanbul writes an `if` without `else` as an arm with no coordinates at all: `{ start: {}, end: {} }`. */
+interface Arm { start: Partial<Position>; end: Partial<Position> }
 /** Same open-ended sentinel normalization as the coverage lane's patched V8 provider; no hit is changed. */
 export function normalizeEndColumns(json: FileCoverageJSON, source: string): FileCoverageJSON {
   const copy = structuredClone(json)
   const lines = source.split(/\r?\n/)
-  const normalize = (range: { start: Position; end: Position } | undefined) => {
+  const normalize = (range: Arm | undefined) => {
     const position = range?.end
-    if (position?.column === Infinity && lines[position.line - 1] !== undefined) position.column = lines[position.line - 1]!.length
+    if (position?.column === Infinity && position.line !== undefined && lines[position.line - 1] !== undefined) position.column = lines[position.line - 1]!.length
   }
   for (const loc of Object.values(copy.statementMap)) normalize(loc)
   for (const fn of Object.values(copy.fnMap)) { normalize(fn.decl); normalize(fn.loc) }
   for (const branch of Object.values(copy.branchMap)) { normalize(branch.loc); for (const loc of branch.locations) normalize(loc) }
   return copy
 }
-interface SourceMapStore { registerMap(filename: string, map: unknown): void; transformCoverage(map: CoverageMap): Promise<CoverageMap> }
 
 const libCoverage = require("istanbul-lib-coverage") as {
   createCoverageMap(data?: Record<string, unknown>): CoverageMap
-}
-const libSourceMaps = require("istanbul-lib-source-maps") as {
-  createSourceMapStore(): SourceMapStore
 }
 
 const appRoot = process.cwd().replaceAll("\\", "/")
@@ -86,16 +85,14 @@ async function workerdEvidence(): Promise<CoverageMap> {
   const merged = libCoverage.createCoverageMap()
   if (!existsSync(workerdDir)) return merged
   for (const name of readdirSync(workerdDir).filter((name) => name.endsWith(".json"))) {
-    // The counters' locations are already in bundle coordinates, so the bundler's map is the only remap.
-    const dump = JSON.parse(readFileSync(`${workerdDir}/${name}`, "utf8")) as { coverage: Record<string, unknown>; bundleMap: unknown }
-    const store = libSourceMaps.createSourceMapStore()
-    store.registerMap("/bundle/worker.js", dump.bundleMap)
-    const sourceLevel = await store.transformCoverage(libCoverage.createCoverageMap(dump.coverage))
+    // Each module's counters carry the VibeLang compiler's own map, the one Vitest's V8 remap uses (0017).
+    const dump = JSON.parse(readFileSync(`${workerdDir}/${name}`, "utf8")) as { coverage: Record<string, unknown> }
+    const sourceLevel = await sourceCoverage(dump.coverage)
     const filtered = libCoverage.createCoverageMap()
     for (const file of sourceLevel.files()) {
       if (!file.endsWith(".vibe")) continue
       if (!file.startsWith(`${appRoot}/src/`) && !file.startsWith(`${appRoot}/worker/`) && !file.startsWith(`${appRoot}/infra/`) && !file.startsWith(`${appRoot}/scripts/`)) continue
-      filtered.merge({ [file]: normalizeEndColumns(sourceLevel.fileCoverageFor(file).toJSON(), readFileSync(file, "utf8")) })
+      filtered.merge({ [file]: normalizeEndColumns(sourceLevel.fileCoverageFor(file).toJSON() as unknown as FileCoverageJSON, readFileSync(file, "utf8")) })
     }
     merged.merge(filtered)
   }
@@ -202,15 +199,17 @@ export function metrics(json: FileCoverageJSON) {
 /** Credits a Vitest-structured file with evidence for the same source from another runtime, by location. */
 export function unionEvidence(base: FileCoverageJSON, evidence: FileCoverageJSON): FileCoverageJSON {
   const json = JSON.parse(JSON.stringify(base)) as FileCoverageJSON
-  const location = (loc: { start: Position; end: Position }) => {
+  const location = (loc: Arm) => {
     const coordinates = [loc.start.line, loc.start.column, loc.end.line, loc.end.column]
-    if (!coordinates.every(value => value !== null && Number.isSafeInteger(value) && value >= 0)) return undefined
+    if (!coordinates.every(value => typeof value === "number" && Number.isSafeInteger(value) && value >= 0)) return undefined
     return JSON.stringify(coordinates)
   }
   const statements = new Set(Object.entries(evidence.statementMap).filter(([id]) => (evidence.s[id] ?? 0) > 0).map(([, loc]) => location(loc)).filter(key => key !== undefined))
   const evidenceFns = new Set(Object.entries(evidence.fnMap).filter(([id]) => (evidence.f[id] ?? 0) > 0).map(([, fn]) => location(fn.decl)).filter(key => key !== undefined))
   const branchKey = (branch: FileCoverageJSON["branchMap"][string]) => {
-    const loc = location(branch.loc), arms = branch.locations.map(location)
+    // The implicit else arm has no range in either runtime; it is identified by its branch's complete range.
+    const implicit = (arm: Arm) => [arm.start.line, arm.start.column, arm.end.line, arm.end.column].every(value => value === undefined)
+    const loc = location(branch.loc), arms = branch.locations.map(arm => implicit(arm) ? "implicit" : location(arm))
     return loc === undefined || arms.some(key => key === undefined) ? undefined : JSON.stringify([branch.type, loc, arms])
   }
   const evidenceBranches = new Map<string, Array<ReadonlyArray<number>>>()
