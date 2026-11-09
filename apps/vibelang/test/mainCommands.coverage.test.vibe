@@ -1,35 +1,20 @@
 // Each browser Command against the product's real MockFactory and MockActions. Unhappy paths inject a faulty service.
-import { expect, it } from "@effect/vitest"
+import { describe, expect, it } from "@effect/vitest"
 import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
 import { MockActions } from "../src/actions/MockActions.vibe"
 import { Factory, Refused, Unavailable } from "../src/core/Factory.vibe"
+import { overlaid } from "./support/overlaid.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
-import { IssueFailure } from "../src/core/issueSchemas.vibe"
+import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
 import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { AccountUnavailable } from "../src/core/roles.vibe"
 import {
   ActOnIssue, CancelAction, ChooseIdentity, ClosePalette, ControlTourCommand, EndTourCommand, FocusComposer, GrantRole,
   LoadAccount, LoadActions, LoadIssueDetails, LoadIssues, LoadPeople, ObserveMedia, OpenWikiCommand, OpenWikiEditor,
   PostMessage, ReadAction, RefreshIssueProjection, RunAction, SandboxAction, ShowPalette, SignInAccount, SignOutAccount,
-  StartTourCommand, SubmitWikiEdit, PALETTE_ID, PROMPT_ID,
+  StartTourCommand, SubmitWikiEdit, PALETTE_ID, PROMPT_ID, SwitchMode,
 } from "../src/web/main.vibe"
-
-type Overrides = { readonly [K in keyof Factory.Shape]?: Factory.Shape[K] | undefined }
-
-/** The real factory with the named members replaced; `undefined` removes an optional capability. */
-function overlaid(base: Factory.Shape, over: Overrides): Factory.Shape {
-  const chosen = <K extends keyof Factory.Shape>(key: K): Factory.Shape[K] => (key in over ? over[key] : base[key]) as Factory.Shape[K]
-  const optional = <K extends "accounts" | "issues" | "wiki" | "policy" | "controlTour">(key: K) => {
-    const value = chosen(key)
-    return value === undefined ? {} : { [key]: value } as Pick<Factory.Shape, K>
-  }
-  return {
-    mode: chosen("mode"), post: chosen("post"), read: chosen("read"), events: chosen("events"), tour: chosen("tour"), endTour: chosen("endTour"),
-    openWiki: chosen("openWiki"), sandbox: chosen("sandbox"), startSandbox: chosen("startSandbox"), stopSandbox: chosen("stopSandbox"),
-    sandboxCommand: chosen("sandboxCommand"),
-    ...optional("accounts"), ...optional("issues"), ...optional("wiki"), ...optional("policy"), ...optional("controlTour"),
-  }
-}
+import { fullLocation, setLocation } from "./support/browser.ts"
 
 const unavailable = () => Effect.fail(new Unavailable({ reason: "closed" }))
 const refused = (refusal: string) => () => Effect.fail(new Refused({ refusal }))
@@ -366,5 +351,76 @@ it.live("the palette opens and closes a real dialog, docks focus on the composer
     for (const answer of [without, closedNone, focusNone, shown, closed]) expect(answer).toEqual({ _tag: "FocusedPrompt" })
     expect(open).toBe(true)
     expect(after).toEqual({ open: false, active: PROMPT_ID })
+  })
+})
+
+describe("live issue writes keep their way back in the address", () => {
+  const write: IssueRequest = { op: "new", number: 0, parent: 0, title: "t", text: "b", assignee: "", example: "", prior: "", key: "k1" }
+  const resume = "/?issues=1&resume-op=new&resume-key=k1"
+  const state = { seq: 1, items: [] }
+  /** The address while the write runs and after it answers. */
+  effect function addresses(request: IssueRequest, answer: typeof state!IssueFailure) {
+    const factory = try Factory
+    let during = ""
+    const api = { read: () => succeed(state), act: effect () => { during = try sync(fullLocation); return try answer } }
+    try sync(() => setLocation("/?issues=1"))
+    const message = try Effect.provideService(run(() => ActOnIssue({ request })), Factory, overlaid(factory, { mode: "live", issues: api }))
+    return { during, after: try sync(fullLocation), message }
+  }
+  it.effect("a finished write clears its resume address and opens as a viewer without a role", () => effect {
+    provide MockFactory {
+      const { during, after, message } = try addresses(write, succeed(state))
+      try Effect.try(() => {
+        expect(during).toBe(resume)
+        expect(after).toBe("/?issues=1")
+        expect(message).toMatchObject({ _tag: "IssuesLoaded", role: "viewer", created: true })
+      })
+    }
+  })
+  it.effect("a write that may have landed keeps its address; an unwritten one drops it", () => effect {
+    provide MockFactory {
+      const uncertain = try addresses({ ...write, recovery: "r1" }, Effect.fail(new IssueFailure({ reason: "unavailable" })))
+      const unwritten = try addresses(write, Effect.fail(new IssueFailure({ reason: "unavailable", unwritten: true })))
+      try Effect.try(() => {
+        expect(uncertain.during).toBe(`${resume}&resume-recovery=r1`)
+        expect(uncertain.after).toBe(`${resume}&resume-recovery=r1`)
+        expect(unwritten.after).toBe("/?issues=1")
+      })
+    }
+  })
+  it.effect("reads and drafts never touch the address", () => effect {
+    provide MockFactory {
+      for (const op of ["read", "draft"] as const) {
+        const { during, after } = try addresses({ ...write, op }, succeed(state))
+        try Effect.try(() => { expect(during).toBe("/?issues=1"); expect(after).toBe("/?issues=1") })
+      }
+    }
+  })
+  it.effect("loading a finished resume cleans the address; an unfinished one keeps it", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      const load = (saved: { readonly status: "running" | "completed" }, recovered: boolean) => effect {
+        const data = { seq: 1, items: [], saved: { request: write, status: saved.status, unwritten: false, selected: 1 } }
+        const api = { read: () => succeed(data), act: () => succeed(data) }
+        try sync(() => setLocation(resume))
+        const message = try Effect.provideService(run(() => recovered ? LoadIssues({ resumeOp: "new", resumeKey: "k1", resumeRecovery: "r" }) : LoadIssues({ resumeOp: "new", resumeKey: "k1" })), Factory, overlaid(factory, { mode: "live", issues: api }))
+        return { message, after: try sync(fullLocation) }
+      }
+      const finished = try load({ status: "completed" }, false)
+      const running = try load({ status: "running" }, true)
+      try Effect.try(() => {
+        expect(finished.after).toBe("/?issues=1")
+        expect(finished.message).toMatchObject({ _tag: "IssuesLoaded", role: "viewer" })
+        expect(running.after).toBe(resume)
+      })
+    }
+  })
+  it.effect("a wiki read that doesn't include the page names it missing", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      const wiki = factory.wiki!
+      const answer = try Effect.provideService(run(() => OpenWikiEditor({ page: "no-such-page", request: 3 })), Factory, overlaid(factory, { wiki }))
+      try Effect.try(() => expect(answer).toMatchObject({ _tag: "FailedWikiEdit", request: 3, reason: "missing" }))
+    }
   })
 })

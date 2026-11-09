@@ -172,3 +172,59 @@ describe("stale and repeated answers", () => {
     expect(update(stale, Message.SubmittedDraft()).model).toBe(stale)
   })
 })
+
+describe("the remaining branches a person can reach", () => {
+  const person = (role: "new" | "maintainer", id = "1") => ({ id, login: id, role })
+  it("a role that may not use the open dialog closes it", () => {
+    const held: Model = { ...open({ dialog: "split" }), account: { ...accountOf(chat), identity: person("maintainer") } }
+    const result = update(held, Message.AccountLoaded({ identity: person("new") }))
+    expect(result.model.issues?.dialog).toBe("")
+    expect(names(result)).toContain("CloseIssueDialog")
+  })
+  it("the end-tour button ends this tab's tour", () => {
+    const touring: Model = { ...chat, tour: true }
+    expect(names(update(touring, Message.ClickedEndTour()))).toContain("EndTour")
+  })
+  it("an event while reconnecting doesn't claim the connection is back", () => {
+    const reconnecting: Model = { ...chat, stream: "failed", connection: "Reconnecting" }
+    const event = { type: "Posted" as const, seq: 1, id: "p", clientId: "p", name: "Ada", text: "q", at: 0 }
+    expect(update(reconnecting, Message.ReceivedEvent({ event })).model.connection).toBe("Reconnecting")
+  })
+  it("a page event without its own entry keeps the last position while that entry exists", () => {
+    const posted = update(chat, Message.ReceivedEvent({ event: { type: "Posted", seq: 1, id: "p", clientId: "p", name: "Ada", text: "q" } })).model
+    const result = update({ ...posted, wikiAfter: "p" }, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 2, id: "", url: "/wiki/index" } }))
+    expect(result.model.wikiAfter).toBe("p")
+  })
+  it("Learn more from an open palette closes it; on its own conversation it keeps the transcript", () => {
+    const conversation = "demo-u"
+    const client = { ...newClient, conversation: { ...newClient.conversation, seq: 9 } }
+    const result = update({ ...chat, palette: true, conversation, client }, Message.ClickedLearnMore())
+    expect(names(result)[0]).toBe("ClosePalette")
+    expect(result.model.client).toBe(client)
+  })
+  it("an end that couldn't reach the agent gives the chat back when no tour is held here", () => {
+    const away: Model = { ...chat, tour: false, tourClient: newClient }
+    expect(update(away, Message.FailedEndTour()).model.tourDismissed).toBe(true)
+  })
+  it("resumes the tour's numbered stop after an end that couldn't reach the agent", () => {
+    const touring = update(home, Message.ClickedLearnMore()).model
+    const opened = update(touring, Message.ReceivedTourEvent({ event: { type: "TourStarted", id: "t1", seq: 1 } })).model
+    const held = update(opened, Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", id: "t1", seq: 2, step: 3, target: "stop", at: 0, duration: 1000 } })).model
+    const result = update(held, Message.FailedEndTour())
+    expect(result.model.theatre?.step).toBe(3)
+    expect(result.model.theatre?.target).not.toBe("")
+    expect(names(result)).toContain("PresentTour")
+  })
+  it("a slash command picks the highlighted action and passes no epoch before one exists", () => {
+    const entry = { name: "vibelang/Run", title: "Run", command: "/run", runnable: true, detail: "Run", least: "viewer" as const, input: "text" as const }
+    const { epoch: _epoch, ...rest } = { ...initialActions, epoch: 1 }
+    const result = update({ ...chat, draft: "/run now", actions: { ...rest, slash: true, entries: [entry], commands: [entry] } }, Message.SubmittedDraft())
+    expect(result.commands?.[0]).toMatchObject({ name: "RunAction", args: { name: "vibelang/Run", text: "now", door: "slash" } })
+    expect(result.commands?.[0]).not.toHaveProperty("args.epoch")
+  })
+  it("a role reply can carry no actions epoch", () => {
+    const { epoch: _epoch, ...rest } = { ...initialActions, epoch: 1 }
+    const panel: Model = { ...chat, draft: "", actions: rest }
+    expect(names(update(panel, Message.UpdatedDraft({ value: "/" })))).toEqual(["LoadActions"])
+  })
+})

@@ -77,3 +77,5 @@ export function popTo(path: string): void {
   window.dispatchEvent(new PopStateEvent("popstate"))
 }
 export function dispatchWindow(type: string): void { window.dispatchEvent(new Event(type)) }
+export function fullLocation(): string { return `${window.location.pathname}${window.location.search}${window.location.hash}` }
+export function setLocation(path: string): void { window.history.replaceState(null, "", path) }

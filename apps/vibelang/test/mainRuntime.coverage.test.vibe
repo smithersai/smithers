@@ -7,8 +7,11 @@ import type { Actions } from "../src/actions/Actions.vibe"
 import { MockActions } from "../src/actions/MockActions.vibe"
 import type { Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
+import { newClient } from "../src/core/conversation.vibe"
 import { initial as initialActions } from "../src/web/actionModel.vibe"
 import { accountOf, CloseIssueDialog, CloseRoleDialog, FocusAccountMenu, FocusIssueControl, FocusTourControl, FocusWikiEditor, init, MeasureTheatre, type Model, PresentTour, RevealWiki, RunAction, ShowIssueDialog, ShowRoleDialog, WikiLocation } from "../src/web/main.vibe"
+import { Factory as FactoryService, Refused, Unavailable } from "../src/core/Factory.vibe"
+import { overlaid } from "./support/overlaid.vibe"
 import { application } from "./support/application.vibe"
 import { activeIs, addElement, clickLink, container, dispatchWindow, location, popTo, press, remove } from "./support/browser.ts"
 
@@ -17,11 +20,11 @@ type Started = ReturnType<typeof init>
 const quiet = (over: Partial<Model> = {}, commands: () => NonNullable<Started["commands"]> = () => []) => (): Started => ({ model: { ...init(flags).model, surface: "chat", ...over }, commands: commands() })
 
 /** The app starting from `first`; `seen.model` is the latest model it rendered. */
-effect function started(make: () => Started, actions: Layer.Layer<Actions, never, Factory> = MockActions({ actor: "person" })) {
+effect function started(make: () => Started, actions: Layer.Layer<Actions, never, Factory> = MockActions({ actor: "person" }), resources: Layer.Layer<Factory> = MockFactory) {
   const first = try Effect.try(make)
   const seen: { model: Model } = { model: first.model }
   const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
-  const program = try Effect.try(() => application(node, MockFactory, (model) => { seen.model = model }, () => first, actions))
+  const program = try Effect.try(() => application(node, resources, (model) => { seen.model = model }, () => first, actions))
   try acquireRelease(sync(() => Runtime.embed(program, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
   return seen
 }
@@ -150,5 +153,29 @@ describe("the presenter", () => {
   it.live("measures, presents and moves focus through the tour controls", () => scoped(effect {
     const seen = try started(quiet({ tour: true }, () => [PresentTour({ step: 1, sound: false, active: true, paused: false }), MeasureTheatre({ target: "splash" }), FocusTourControl({ backward: false }), FocusTourControl({ backward: true })]))
     try settled(() => expect(seen.model.theatreBox).toBeDefined())
+  }))
+})
+
+describe("a backend that fails", () => {
+  const faulty = (over: Parameters<typeof overlaid>[1]) => Layer.effect(FactoryService, map(FactoryService, (base) => overlaid(base, over))).pipe(Layer.provide(MockFactory))
+  const actions = MockActions({ actor: "person" })
+  it.live("a broken tour stream reports the lost connection", () => scoped(effect {
+    const seen = try started(quiet({ tourClient: newClient }), actions, faulty({ events: () => Stream.fail(new Unavailable({ reason: "closed" })) }))
+    try settled(() => expect(seen.model.tourError).toBe("Connection lost"))
+  }))
+  for (const [label, sandbox, reason] of [
+    ["a refusal by its reason", () => Effect.fail(new Refused({ refusal: "forbidden" })), "forbidden"],
+    ["an outage by its reason", () => Effect.fail(new Unavailable({ reason: "closed" })), "closed"],
+  ] as const) {
+    it.live(`the sandbox poll names ${label}`, () => scoped(effect {
+      const seen = try started(quiet(), actions, faulty({ sandbox }))
+      try settled(() => expect(seen.model.sandboxError).toBe(reason))
+    }))
+  }
+  it.live("a backend without accounts leaves a signed-in person undisturbed", () => scoped(effect {
+    const identity = { id: "1", login: "ada", role: "new" as const }
+    const seen = try started(quiet({ account: { ...accountOf(init(flags).model), identity } }), actions, faulty({ accounts: undefined }))
+    try sleep("50 millis")
+    try Effect.try(() => expect(accountOf(seen.model).identity).toEqual(identity))
   }))
 })
