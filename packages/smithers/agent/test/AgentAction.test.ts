@@ -55,7 +55,7 @@ import * as QuotaPolicy from "../src/QuotaPolicy.vibe"
 import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"
 import * as Seat from "../src/Seat.vibe"
 import * as SeatResolver from "../src/SeatResolver.vibe"
-import * as SeatRouter from "../src/SeatRouter.ts"
+import * as SeatRouter from "../src/SeatRouter.vibe"
 import * as StandardFlows from "../src/StandardFlows.ts"
 import * as Safety from "./Safety.ts"
 

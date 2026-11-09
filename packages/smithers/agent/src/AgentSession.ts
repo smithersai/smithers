@@ -120,7 +120,7 @@ import type * as QuotaPolicy from "./QuotaPolicy.vibe"
 import * as RunawayGuard from "./RunawayGuard.vibe"
 import * as Seat from "./Seat.vibe"
 import { contextWindowResolver, type Routed, SeatResolver } from "./SeatResolver.vibe"
-import * as SeatRouter from "./SeatRouter.ts"
+import * as SeatRouter from "./SeatRouter.vibe"
 import * as StandardFlows from "./StandardFlows.ts"
 import * as WorkspaceObservation from "./WorkspaceObservation.vibe"
 

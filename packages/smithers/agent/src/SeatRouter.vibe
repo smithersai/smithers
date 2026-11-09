@@ -450,7 +450,7 @@ export interface Input {
  * @since 1.0.0-rc.0
  */
 export const route = (input: Input): Effect.Effect<Decision, Seat.SeatUnrouted, Catalog> =>
-  Effect.gen(function*() {
+  effect {
     if (input.declared !== Seat.auto) {
       return {
         seat: input.declared,
@@ -465,15 +465,16 @@ export const route = (input: Input): Effect.Effect<Decision, Seat.SeatUnrouted, 
     }
     const unrouted = (reason: Seat.SeatUnrouted["reason"], message: string) =>
       new Seat.SeatUnrouted({ seat: input.declared, reason, message })
-    const catalog = yield* Catalog
-    const candidates = yield* catalog.candidates.pipe(
+    const catalog = try Catalog
+    const candidates = try catalog.candidates.pipe(
       Effect.mapError((error) => unrouted("unconfigured", error.message))
     )
-    if (candidates.length === 0) return yield* unrouted("no_candidates", "The catalog offers no seat")
+    if (candidates.length === 0) throw unrouted("no_candidates", "The catalog offers no seat")
     const variants = catalog.variants
-    const reading = yield* Judgement.read(
+    const task = try Effect.sync(() => Judgement.task(input.state.task))
+    const reading = try Judgement.read(
       classifierFor(variants, input.phase !== undefined),
-      { ...input.state, task: Judgement.task(input.state.task) }
+      { ...input.state, task }
     ).pipe(Effect.mapError((unjudged) => unrouted(unjudged.reason, unjudged.detail)))
     const read = reading.answers as Readonly<Record<string, Classifier.ChoiceAnswer | Classifier.BooleanAnswer>>
     const choice = (id: string) => (read[id] as Classifier.ChoiceAnswer).value
@@ -486,7 +487,7 @@ export const route = (input: Input): Effect.Effect<Decision, Seat.SeatUnrouted, 
     const planned = plan(answers)
     const routed = fit(input.panel === false ? { seat: planned.seat } : planned, answers.phase, candidates)
     if (routed === undefined) {
-      return yield* unrouted(
+      throw unrouted(
         "no_candidates",
         `None of ${[planned.seat, ...backupsOf(planned.seat, answers.phase)].join(", ")} is available here`
       )
@@ -501,7 +502,7 @@ export const route = (input: Input): Effect.Effect<Decision, Seat.SeatUnrouted, 
       candidates,
       asked
     }
-  })
+  }
 
 /**
  * {@link route} as a sealed step of the running flow: a replay is served the

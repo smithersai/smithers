@@ -18,7 +18,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Seat from "../src/Seat.vibe"
-import * as SeatRouter from "../src/SeatRouter.ts"
+import * as SeatRouter from "../src/SeatRouter.vibe"
 
 type Size = SeatRouter.Answers["size"]
 type Clarity = SeatRouter.Answers["clarity"]

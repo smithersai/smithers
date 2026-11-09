@@ -331,7 +331,7 @@ const securityReview = Smithers.SecurityReview({
         "A system-prompt variant choice that changes capabilities rather than only prompt text.",
         "ScriptedJudge answers reachable in production composition."
       ],
-      paths: ["src/SeatRouter.ts", "src/SeatResolver.vibe", "src/Seat.vibe", "src/AgentAction.ts", "src/ScriptedJudge.vibe"]
+      paths: ["src/SeatRouter.vibe", "src/SeatResolver.vibe", "src/Seat.vibe", "src/AgentAction.ts", "src/ScriptedJudge.vibe"]
     },
     {
       id: "smithers-plugin-ports",

@@ -52,7 +52,7 @@ export * as SeatResolver from "./SeatResolver.vibe"
  * @category services
  * @since 1.0.0-rc.0
  */
-export * as SeatRouter from "./SeatRouter.ts"
+export * as SeatRouter from "./SeatRouter.vibe"
 
 /**
  * @category plugins

@@ -25,7 +25,7 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Seat from "./Seat.vibe"
-import type * as SeatRouter from "./SeatRouter.ts"
+import type * as SeatRouter from "./SeatRouter.vibe"
 
 /**
  * The resolver: one seat string in, one resolved seat out.

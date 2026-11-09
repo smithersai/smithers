@@ -90,7 +90,7 @@ import { failureJson } from "./internal/FailureJson.vibe"
 import * as QuotaPolicy from "./QuotaPolicy.vibe"
 import * as Seat from "./Seat.vibe"
 import { contextWindowResolver, SeatResolver } from "./SeatResolver.vibe"
-import * as SeatRouter from "./SeatRouter.ts"
+import * as SeatRouter from "./SeatRouter.vibe"
 
 /**
  * The host composition every model-backed action in a run shares.

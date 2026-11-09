@@ -147,8 +147,8 @@
       "default": "./.vibelang/js/src/SeatResolver.js"
     },
     "./SeatRouter": {
-      "types": "./src/SeatRouter.ts",
-      "vibelang-source": "./src/SeatRouter.ts",
+      "types": "./.vibe/declarations/SeatRouter.d.vibe.ts",
+      "vibelang-source": "./src/SeatRouter.vibe",
       "default": "./.vibelang/js/src/SeatRouter.js"
     },
     "./SmithersPlugin": {

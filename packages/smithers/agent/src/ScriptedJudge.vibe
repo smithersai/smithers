@@ -20,7 +20,7 @@ import * as Supervisor from "@smthrs/harness/Supervisor"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
-import * as SeatRouter from "./SeatRouter.ts"
+import * as SeatRouter from "./SeatRouter.vibe"
 
 type Answers = Readonly<Record<string, Evaluator.ScriptedAnswer>>
 
