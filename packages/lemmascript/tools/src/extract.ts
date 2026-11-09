@@ -1099,7 +1099,10 @@ function extractTypeDecl(decl: TypeAliasDeclaration, extraDecls?: TypeDeclInfo[]
     const elem = type.getArrayElementTypeOrThrow();
     return { name, typeParams: tpField, kind: "alias", aliasOf: `${typeToString(elem)}[]` };
   }
-  if (type.isObject() || type.isIntersection()) return extractRecord(name, type, decl, undefined, extraDecls);
+  if (type.isObject() || type.isIntersection()) {
+    const record = extractRecord(name, type, decl, undefined, extraDecls);
+    return record && tpField ? { ...record, typeParams: tpField } : record;
+  }
   // Primitive type alias: type TaskId = number → alias
   const tsType = typeToString(type);
   if (tsType !== name) return { name, kind: "alias", aliasOf: tsType };
@@ -1116,7 +1119,10 @@ function extractInterface(decl: InterfaceDeclaration, extraDecls?: TypeDeclInfo[
       if (match) overrides.set(member.getName(), match[1]);
     }
   }
-  return extractRecord(decl.getName(), decl.getType(), decl, overrides, extraDecls);
+  const record = extractRecord(decl.getName(), decl.getType(), decl, overrides, extraDecls);
+  // A generic record keeps its type parameters, as generic unions do.
+  const typeParams = decl.getTypeParameters().map(tp => tp.getName());
+  return record && typeParams.length > 0 ? { ...record, typeParams } : record;
 }
 
 function extractRecord(name: string, type: Type, locationNode: Node, overrides?: Map<string, string>, extraDecls?: TypeDeclInfo[]): TypeDeclInfo | null {
@@ -1193,10 +1199,13 @@ function findDiscriminant(members: Type[]): string | null {
  *  plain reference text is used: inline object literals (containing `{`)
  *  keep the `__type` marker so record synthesis can handle them. */
 function declaredTypeTextIfBetter(propDecl: Node | undefined, tsType: string): string {
-  if (!tsType.includes("__type") || !propDecl) return tsType;
+  if (!propDecl) return tsType;
   const tn = (propDecl as { getTypeNode?: () => Node | undefined }).getTypeNode?.();
   if (!tn) return tsType;
   const text = tn.getText();
+  // The checker erases `type real = number` to `number`, which would model the field as an integer.
+  if (text === "real" && /^(?:undefined \| )?number(?: \| undefined)?$/.test(tsType)) return text;
+  if (!tsType.includes("__type")) return tsType;
   if (text.includes("__type") || text.includes("{")) return tsType;
   return text;
 }
@@ -2764,7 +2773,11 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
     const name = sym?.getName();
     if (name && !name.startsWith("__") && !knownTypes.has(name) && !builtins.has(name) && (t.isObject() || t.isIntersection())) {
       const extra: TypeDeclInfo[] = [];
-      const info = extractRecord(name, t, locationNode, undefined, extra);
+      // A generic interface is declared once over its own parameters, not over this use's type arguments.
+      const declared = sym?.getDeclarations()[0];
+      const info = declared && Node.isInterfaceDeclaration(declared) && declared.getTypeParameters().length > 0
+        ? extractInterface(declared, extra)
+        : extractRecord(name, t, locationNode, undefined, extra);
       if (info) {
         typeDecls.push(...extra); typeDecls.push(info); knownTypes.add(name);
         // Recursively resolve types referenced in this type's fields

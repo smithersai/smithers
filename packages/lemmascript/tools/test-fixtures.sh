@@ -77,7 +77,7 @@ fi
 npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/optional-binder-collisions.ts"
 
 # Object spreads of conditionals and field subsets, and exhaustive tagged-message tables.
-for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread empty-string-union; do
+for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread empty-string-union safe-slice-suffix map-index real-field generic-record; do
   cp "tools/fixtures/$name.ts" "$fixture_dir/$name.ts"
   npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name.ts"
 done
@@ -127,6 +127,22 @@ expect_failure \
   "an imported constant was merged with a local constant of the same name" \
   npx tsx tools/src/lsc.ts gen --backend=dafny "$fixture_dir/imported-const-collision/use.ts"
 
+cp tools/fixtures/safe-slice-suffix-wrong.ts "$fixture_dir/safe-slice-suffix-wrong.ts"
+expect_failure \
+  "a clamped suffix past the end verified as nonempty" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/safe-slice-suffix-wrong.ts"
+cp tools/fixtures/map-index-wrong.ts "$fixture_dir/map-index-wrong.ts"
+expect_failure \
+  "a map callback's index verified as the element" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/map-index-wrong.ts"
+cp tools/fixtures/real-field-wrong.ts "$fixture_dir/real-field-wrong.ts"
+expect_failure \
+  "a real record field verified an integer-only claim" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/real-field-wrong.ts"
+cp tools/fixtures/generic-record-wrong.ts "$fixture_dir/generic-record-wrong.ts"
+expect_failure \
+  "a generic record verified a replaced element as kept" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/generic-record-wrong.ts"
 cp tools/fixtures/tagged-match-missing-arm.ts "$fixture_dir/tagged-match-missing-arm.ts"
 expect_failure \
   "a non-exhaustive handler table was read as a tagged match" \

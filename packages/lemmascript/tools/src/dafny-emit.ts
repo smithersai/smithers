@@ -331,11 +331,19 @@ function emitExpr(e: Expr): string {
         // No-arg slice is a full copy; Dafny seq is an immutable value type, so
         // the copy is just the seq itself (the idiom for "copy then mutate").
         if (e.method === "slice" && args.length === 0) return obj;
-        if (e.method === "slice" && args.length === 1) return `${obj}[${args[0]}..]`;
+        if (e.method === "slice" && args.length === 1) {
+          // Under `//@ safe-slice` a suffix clamps like JavaScript: past the end it is empty.
+          if (_useSafeSlice) {
+            needPreamble("SafeSlice");
+            return `SafeSlice(${obj}, ${args[0]}, |${obj}|)`;
+          }
+          return `${obj}[${args[0]}..]`;
+        }
         if (e.method === "slice" && args.length === 2) {
           // JS slice clamps both bounds; Dafny requires `0 <= lo <= hi <= |s|`.
           // Direct slice is default (matches existing case studies that wrote
-          // bounded calls). Files needing JS clamping opt in via `//@ safe-slice`.
+          // bounded calls). Files needing JS clamping opt in via `//@ safe-slice`, which
+          // also covers one-argument and string slices.
           if (_useSafeSlice) {
             needPreamble("SafeSlice");
             return `SafeSlice(${obj}, ${args[0]}, ${args[1]})`;
@@ -368,10 +376,12 @@ function emitExpr(e: Expr): string {
           const s = bind ? fresh("s_map", taken) : obj;
           const idx = fresh("i_map", n => taken(n) || n === s);
           let core: string;
-          if (lam.kind === "lambda" && lam.params.length === 1 &&
+          if (lam.kind === "lambda" && (lam.params.length === 1 || lam.params.length === 2) &&
               lam.body.length === 1 && lam.body[0].kind === "return") {
             const p = escapeName(lam.params[0].name);
-            core = `var ${p} := ${s}[${idx}]; ${emitExpr(lam.body[0].value)}`;
+            // JavaScript passes the element's index as the callback's second argument.
+            const index = lam.params.length === 2 ? ` var ${escapeName(lam.params[1].name)} := ${idx};` : "";
+            core = `var ${p} := ${s}[${idx}];${index} ${emitExpr(lam.body[0].value)}`;
           } else {
             core = `(${args[0]})(${s}[${idx}])`;
           }
@@ -450,6 +460,11 @@ function emitExpr(e: Expr): string {
         }
         if (e.method === "split")   { needPreamble("StringSplit"); return `StringSplit(${obj}, ${args[0]})`; }
         if (e.method === "slice") {
+          // `//@ safe-slice` gives strings the same JavaScript clamping as arrays, negative bounds included.
+          if (_useSafeSlice) {
+            needPreamble("SafeSlice");
+            return `SafeSlice(${obj}, ${args[0]}, ${args.length === 1 ? `|${obj}|` : args[1]})`;
+          }
           // JS negative index: arr.slice(0, -N) → arr[0..|arr|-N]. Transform
           // folds unary minus on a numeric literal into a negative `num` node,
           // but leaves a negated bigint structural — `exactIntegerLiteral`

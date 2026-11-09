@@ -21,6 +21,10 @@ tests read are unchanged except for the patches listed below.
 | A string-literal union member spelled `""` gets a valid Dafny constructor name, and one spelled `none` stays the union's own constructor rather than Option's `None` | Offered upstream later |
 | A string-literal union value widens where TypeScript allows it: to a `string` slot, and to a union holding all of its members, in arguments, fields, returns and `==` | Offered upstream later |
 | A constant imported by name from another module (`import { LIMIT as L }`) is declared with its value, with the constants its initializer reads; a name that collides with another constant is refused | Offered upstream later |
+| `//@ safe-slice` also clamps one-argument array slices and every string slice like JavaScript (`safe-slice-suffix.ts`) | Offered upstream later |
+| A two-parameter `map` callback binds the element's index (`map-index.ts`) | Offered upstream later |
+| A record field declared `real` (`type real = number`) is a Dafny `real`; it was an integer, which proved false claims about fractional values (`real-field.ts`) | Offered upstream later |
+| A generic interface or object alias keeps its type parameters (`generic-record.ts`) | Offered upstream later |
 
 Each patch is offered back upstream later. Will decides any GitHub contribution.
 
