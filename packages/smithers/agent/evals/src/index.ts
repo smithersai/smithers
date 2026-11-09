@@ -38,21 +38,21 @@ export * as CaseExecutor from "./CaseExecutor.ts"
  * @since 0.1.0
  * @category runners
  */
-export * as Runner from "./Runner.ts"
+export * as Runner from "./Runner.vibe"
 /**
  * Committed baselines: what a suite used to score.
  *
  * @since 0.1.0
  * @category baselines
  */
-export * as Baseline from "./Baseline.ts"
+export * as Baseline from "./Baseline.vibe"
 /**
  * Step-key-aware comparison of a run against a baseline.
  *
  * @since 0.1.0
  * @category regression
  */
-export * as Regression from "./Regression.ts"
+export * as Regression from "./Regression.vibe"
 /**
  * Canonical JSON and Markdown renderings of a comparison.
  *

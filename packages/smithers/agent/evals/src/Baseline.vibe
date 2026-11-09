@@ -14,7 +14,7 @@ import { EvalError } from "./EvalError.vibe"
 import { CanonicalJson } from "./internal/CanonicalJson.ts"
 import { controlCharacter, flattenControlCharacters } from "./internal/controlCharacters.ts"
 import { tupleKey } from "./internal/tupleKey.ts"
-import type { Observation, RunResult } from "./Runner.ts"
+import type { Observation, RunResult } from "./Runner.vibe"
 
 /**
  * Current committed baseline artifact version.
@@ -80,10 +80,9 @@ const diagnosticValue = (value: unknown): string =>
     ? "null"
     : typeof value
 
-const fail = (message: string, path?: string): Effect.Effect<never, EvalError> =>
-  Effect.fail(
-    new EvalError({ code: "invalid_baseline", message, ...(path === undefined ? {} : { path }) })
-  )
+effect function fail(message: string, path?: string): Effect.Effect<never, EvalError> {
+  throw new EvalError({ code: "invalid_baseline", message, ...(path === undefined ? {} : { path }) })
+}
 
 // A committed record is read by a gate whose summary goes to a CI log, so it
 // follows the same control-character rule as a suite name: rejected where it
@@ -98,82 +97,80 @@ const stringField = (value: unknown, field: string, path: string): Effect.Effect
     : fail(`Baseline record field '${field}' must not contain the control character ${control}`, path)
 }
 
-const decodeRecord = (value: unknown, index: number): Effect.Effect<BaselineRecord, EvalError> =>
-  Effect.gen(function*() {
-    const at = `records[${index}]`
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
-      return yield* fail(`Baseline record must be an object, got ${value === null ? "null" : typeof value}`, at)
-    }
-    const source = value as { readonly [key: string]: unknown }
-    const rawSuite = source.suite
-    const rawCase = source.case
-    const rawScorer = source.scorer
-    const rawScorerName = source.scorerName
-    const rawStepKey = source.stepKey
-    const rawScore = source.score
-    const suite = yield* stringField(rawSuite, "suite", `${at}.suite`)
-    const caseName = yield* stringField(rawCase, "case", `${at}.case`)
-    const scorer = yield* stringField(rawScorer, "scorer", `${at}.scorer`)
-    const stepKey = yield* stringField(rawStepKey, "stepKey", `${at}.stepKey`)
-    const score = rawScore
-    if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 1) {
-      return yield* fail(
-        `Baseline record field 'score' must be a finite number in [0, 1], got ${diagnosticValue(score)}`,
-        `${at}.score`
-      )
-    }
-    const scorerName = rawScorerName === undefined
-      ? undefined
-      : yield* stringField(rawScorerName, "scorerName", `${at}.scorerName`)
-    // Every record is rebuilt field by field. Keeping the caller's object would
-    // carry unknown keys, and any getter among them, straight into a committed
-    // artifact.
-    return {
-      suite,
-      case: caseName,
-      scorer,
-      ...(scorerName === undefined ? {} : { scorerName }),
-      stepKey,
-      score: Object.is(score, -0) ? 0 : score
-    }
-  })
+const decodeRecord = effect (value: unknown, index: number): Effect.Effect<BaselineRecord, EvalError> => {
+  const at = `records[${index}]`
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return try fail(`Baseline record must be an object, got ${value === null ? "null" : typeof value}`, at)
+  }
+  const source = value as { readonly [key: string]: unknown }
+  const rawSuite = source.suite
+  const rawCase = source.case
+  const rawScorer = source.scorer
+  const rawScorerName = source.scorerName
+  const rawStepKey = source.stepKey
+  const rawScore = source.score
+  const suite = try stringField(rawSuite, "suite", `${at}.suite`)
+  const caseName = try stringField(rawCase, "case", `${at}.case`)
+  const scorer = try stringField(rawScorer, "scorer", `${at}.scorer`)
+  const stepKey = try stringField(rawStepKey, "stepKey", `${at}.stepKey`)
+  const score = rawScore
+  if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 1) {
+    return try fail(
+      `Baseline record field 'score' must be a finite number in [0, 1], got ${diagnosticValue(score)}`,
+      `${at}.score`
+    )
+  }
+  const scorerName = rawScorerName === undefined
+    ? undefined
+    : try stringField(rawScorerName, "scorerName", `${at}.scorerName`)
+  // Every record is rebuilt field by field. Keeping the caller's object would
+  // carry unknown keys, and any getter among them, straight into a committed
+  // artifact.
+  return {
+    suite,
+    case: caseName,
+    scorer,
+    ...(scorerName === undefined ? {} : { scorerName }),
+    stepKey,
+    score: Object.is(score, -0) ? 0 : score
+  }
+}
 
-const validate = (value: unknown): Effect.Effect<Baseline, EvalError> =>
-  Effect.gen(function*() {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
-      return yield* fail("Baseline must be an object")
+const validate = effect (value: unknown): Effect.Effect<Baseline, EvalError> => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return try fail("Baseline must be an object")
+  }
+  const artifact = value as { readonly version?: unknown; readonly suite?: unknown; readonly records?: unknown }
+  const rawVersion = artifact.version
+  const rawSuite = artifact.suite
+  const rawRecords = artifact.records
+  if (rawVersion !== version) {
+    return try fail(`Baseline version must be ${version}, got ${diagnosticValue(rawVersion)}`, "version")
+  }
+  if (rawSuite !== undefined && typeof rawSuite !== "string") {
+    return try fail(`Baseline field 'suite' must be a string, got ${typeof rawSuite}`, "suite")
+  }
+  const suiteControl = rawSuite === undefined ? undefined : controlCharacter(rawSuite)
+  if (suiteControl !== undefined) {
+    return try fail(`Baseline field 'suite' must not contain the control character ${suiteControl}`, "suite")
+  }
+  if (!Array.isArray(rawRecords)) {
+    return try fail("Baseline records must be an array", "records")
+  }
+  const records = try Effect.forEach(rawRecords, decodeRecord)
+  let suite = rawSuite
+  if (suite === undefined) {
+    const first = records[0]
+    if (first === undefined) {
+      return try fail("Cannot infer baseline suite: legacy artifact has no records", "suite")
     }
-    const artifact = value as { readonly version?: unknown; readonly suite?: unknown; readonly records?: unknown }
-    const rawVersion = artifact.version
-    const rawSuite = artifact.suite
-    const rawRecords = artifact.records
-    if (rawVersion !== version) {
-      return yield* fail(`Baseline version must be ${version}, got ${diagnosticValue(rawVersion)}`, "version")
+    if (records.some((record) => record.suite !== first.suite)) {
+      return try fail("Cannot infer baseline suite: legacy records name multiple suites", "suite")
     }
-    if (rawSuite !== undefined && typeof rawSuite !== "string") {
-      return yield* fail(`Baseline field 'suite' must be a string, got ${typeof rawSuite}`, "suite")
-    }
-    const suiteControl = rawSuite === undefined ? undefined : controlCharacter(rawSuite)
-    if (suiteControl !== undefined) {
-      return yield* fail(`Baseline field 'suite' must not contain the control character ${suiteControl}`, "suite")
-    }
-    if (!Array.isArray(rawRecords)) {
-      return yield* fail("Baseline records must be an array", "records")
-    }
-    const records = yield* Effect.forEach(rawRecords, decodeRecord)
-    let suite = rawSuite
-    if (suite === undefined) {
-      const first = records[0]
-      if (first === undefined) {
-        return yield* fail("Cannot infer baseline suite: legacy artifact has no records", "suite")
-      }
-      if (records.some((record) => record.suite !== first.suite)) {
-        return yield* fail("Cannot infer baseline suite: legacy records name multiple suites", "suite")
-      }
-      suite = first.suite
-    }
-    return { version, suite, records: Object.freeze(records) }
-  })
+    suite = first.suite
+  }
+  return { version, suite, records: Object.freeze(records) }
+}
 
 /**
  * Builds and validates a baseline from a run's successful observations.

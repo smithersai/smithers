@@ -16,5 +16,6 @@
  *
  * @since 0.1.0
  * @private
+ * @throws {never}
  */
 export const tupleKey = (...parts) => JSON.stringify(parts);

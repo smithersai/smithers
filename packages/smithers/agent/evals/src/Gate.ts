@@ -16,7 +16,7 @@ import {
 import * as Effect from "effect/Effect"
 import { flattenControlCharacters } from "./internal/controlCharacters.ts"
 import { scorerLabel } from "./internal/scorerLabel.ts"
-import type { Report } from "./Regression.ts"
+import type { Report } from "./Regression.vibe"
 
 /**
  * Thresholds accepted by a CI score gate.

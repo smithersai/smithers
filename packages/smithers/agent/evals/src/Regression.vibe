@@ -11,12 +11,12 @@
  */
 
 import * as Effect from "effect/Effect"
-import type { Baseline, BaselineRecord } from "./Baseline.ts"
+import type { Baseline, BaselineRecord } from "./Baseline.vibe"
 import { EvalError } from "./EvalError.vibe"
 import { CanonicalJson } from "./internal/CanonicalJson.ts"
 import { flattenControlCharacters } from "./internal/controlCharacters.ts"
 import { tupleKey } from "./internal/tupleKey.ts"
-import type { Observation, RunResult } from "./Runner.ts"
+import type { Observation, RunResult } from "./Runner.vibe"
 
 /**
  * Tolerances used for score comparisons.
@@ -193,7 +193,7 @@ const pairsFor = (
  * @category constructors
  * @since 0.1.0
  */
-export const compare = (
+export const compare = effect (
   baseline: Baseline,
   run: RunResult,
   tolerances: Tolerances = {}
@@ -201,58 +201,48 @@ export const compare = (
   const absolute = tolerances.absolute ?? 0
   const relative = tolerances.relative ?? 0
   if (!validTolerance(absolute)) {
-    return Effect.fail(
-      new EvalError({
-        code: "invalid_tolerance",
-        message: `Regression tolerance 'absolute' must be finite and non-negative, got ${String(absolute)}`,
-        path: "tolerances.absolute"
-      })
-    )
+    throw new EvalError({
+      code: "invalid_tolerance",
+      message: `Regression tolerance 'absolute' must be finite and non-negative, got ${String(absolute)}`,
+      path: "tolerances.absolute"
+    })
   }
   if (!validTolerance(relative)) {
-    return Effect.fail(
-      new EvalError({
-        code: "invalid_tolerance",
-        message: `Regression tolerance 'relative' must be finite and non-negative, got ${String(relative)}`,
-        path: "tolerances.relative"
-      })
-    )
+    throw new EvalError({
+      code: "invalid_tolerance",
+      message: `Regression tolerance 'relative' must be finite and non-negative, got ${String(relative)}`,
+      path: "tolerances.relative"
+    })
   }
   const baselineSuite = baseline.suite
   if (baselineSuite !== run.suite) {
-    return Effect.fail(
-      new EvalError({
-        code: "invalid_baseline",
-        message: flattenControlCharacters(
-          `Baseline belongs to suite '${baselineSuite}', but the run is suite '${run.suite}'`
-        ),
-        path: "baseline.suite"
-      })
-    )
+    throw new EvalError({
+      code: "invalid_baseline",
+      message: flattenControlCharacters(
+        `Baseline belongs to suite '${baselineSuite}', but the run is suite '${run.suite}'`
+      ),
+      path: "baseline.suite"
+    })
   }
   const foreign = [...new Set(baseline.records.filter((record) => record.suite !== run.suite).map((r) => r.suite))]
   if (foreign.length > 0) {
-    return Effect.fail(
-      new EvalError({
-        code: "invalid_baseline",
-        message: flattenControlCharacters(
-          `Baseline holds records for suite ${
-            foreign.map((suite) => `'${suite}'`).join(", ")
-          }, but the run is suite '${run.suite}'`
-        ),
-        path: "baseline.records"
-      })
-    )
+    throw new EvalError({
+      code: "invalid_baseline",
+      message: flattenControlCharacters(
+        `Baseline holds records for suite ${
+          foreign.map((suite) => `'${suite}'`).join(", ")
+        }, but the run is suite '${run.suite}'`
+      ),
+      path: "baseline.records"
+    })
   }
   for (const [index, record] of baseline.records.entries()) {
     if (typeof record.score !== "number" || !Number.isFinite(record.score) || record.score < 0 || record.score > 1) {
-      return Effect.fail(
-        new EvalError({
-          code: "invalid_baseline",
-          message: "Baseline score must be a finite number in [0, 1]",
-          path: `baseline.records[${index}].score`
-        })
-      )
+      throw new EvalError({
+        code: "invalid_baseline",
+        message: "Baseline score must be a finite number in [0, 1]",
+        path: `baseline.records[${index}].score`
+      })
     }
   }
   const actual = run.observations.filter((observation): observation is Score => observation.kind === "score")
@@ -319,7 +309,7 @@ export const compare = (
       }
     }
   }
-  return Effect.succeed({
+  return {
     suite: run.suite,
     baseline,
     run,
@@ -328,5 +318,5 @@ export const compare = (
     missing,
     samples: actual,
     inconclusive
-  })
+  }
 }

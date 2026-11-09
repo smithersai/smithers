@@ -1,9 +1,9 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import * as Baseline from "../src/Baseline.ts"
+import * as Baseline from "../src/Baseline.vibe"
 import type { EvalError } from "../src/EvalError.vibe"
-import * as Regression from "../src/Regression.ts"
-import type * as Runner from "../src/Runner.ts"
+import * as Regression from "../src/Regression.vibe"
+import type * as Runner from "../src/Runner.vibe"
 
 /** Runs an effect that must fail and returns the typed failure it raised. */
 const failure = (effect: Effect.Effect<unknown, EvalError>): Promise<EvalError> =>

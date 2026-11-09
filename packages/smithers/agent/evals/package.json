@@ -42,8 +42,8 @@
     "./internal/*": null,
     "./*/index": null,
     "./Baseline": {
-      "types": "./src/Baseline.ts",
-      "vibelang-source": "./src/Baseline.ts",
+      "types": "./.vibe/declarations/Baseline.d.vibe.ts",
+      "vibelang-source": "./src/Baseline.vibe",
       "default": "./.vibelang/js/src/Baseline.js"
     },
     "./CaseExecutor": {
@@ -62,8 +62,8 @@
       "default": "./.vibelang/js/src/Gate.js"
     },
     "./Regression": {
-      "types": "./src/Regression.ts",
-      "vibelang-source": "./src/Regression.ts",
+      "types": "./.vibe/declarations/Regression.d.vibe.ts",
+      "vibelang-source": "./src/Regression.vibe",
       "default": "./.vibelang/js/src/Regression.js"
     },
     "./Report": {
@@ -72,8 +72,8 @@
       "default": "./.vibelang/js/src/Report.js"
     },
     "./Runner": {
-      "types": "./src/Runner.ts",
-      "vibelang-source": "./src/Runner.ts",
+      "types": "./.vibe/declarations/Runner.d.vibe.ts",
+      "vibelang-source": "./src/Runner.vibe",
       "default": "./.vibelang/js/src/Runner.js"
     },
     "./Suite": {
@@ -106,7 +106,10 @@
     "src/EvalError.vibe",
     "src/Suite.vibe",
     ".vibelang/js",
-    "!.vibelang/js/.loader"
+    "!.vibelang/js/.loader",
+    "src/Baseline.vibe",
+    "src/Regression.vibe",
+    "src/Runner.vibe"
   ],
   "publishConfig": {
     "access": "public",

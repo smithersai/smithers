@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest"
 import * as CaseExecutor from "../src/CaseExecutor.ts"
 import { EvalError } from "../src/EvalError.vibe"
 import * as Report from "../src/Report.ts"
-import * as Runner from "../src/Runner.ts"
+import * as Runner from "../src/Runner.vibe"
 import * as Suite from "../src/Suite.vibe"
 
 const target = { name: "target" } as const

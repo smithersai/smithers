@@ -63,11 +63,11 @@ const securityReview = Smithers.SecurityReview({
         "A gate or runner summary path that bypasses ciGrade's flattening, or a sanitizer that misses C1 controls such as U+009B or bidi overrides."
       ],
       paths: [
-        "src/Baseline.ts",
+        "src/Baseline.vibe",
         "src/Suite.vibe",
-        "src/Regression.ts",
+        "src/Regression.vibe",
         "src/Gate.ts",
-        "src/Runner.ts",
+        "src/Runner.vibe",
         "src/internal/controlCharacters.ts"
       ]
     },
@@ -93,7 +93,7 @@ const securityReview = Smithers.SecurityReview({
         "A decoded record kept by reference, spread with unknown keys, or assigned through __proto__ instead of rebuilt field by field.",
         "Case input or expected that skips validateData, structuredClone and freezeData before reaching an executor or scorer."
       ],
-      paths: ["src/Baseline.ts", "src/Suite.vibe"]
+      paths: ["src/Baseline.vibe", "src/Suite.vibe"]
     },
     {
       id: "report-serialization-budget",
@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
         "An EvalError cause or message that stringifies a whole case, execution or scorer request.",
         "A span attribute in Runner carrying input or output rather than only the case name."
       ],
-      paths: ["src/Report.ts", "src/Runner.ts", "src/EvalError.vibe"]
+      paths: ["src/Report.ts", "src/Runner.vibe", "src/EvalError.vibe"]
     },
     {
       id: "gate-fails-closed",
@@ -130,7 +130,7 @@ const securityReview = Smithers.SecurityReview({
         "A score comparison that treats NaN, a score outside [0, 1] or a scorer-returned non-number as passing.",
         "A baseline record matched by a non-injective key, or a binding matched to a flow by anything other than reference identity."
       ],
-      paths: ["src/Gate.ts", "src/Regression.ts", "src/Runner.ts", "src/Trials.ts", "src/internal/tupleKey.ts"]
+      paths: ["src/Gate.ts", "src/Regression.vibe", "src/Runner.vibe", "src/Trials.ts", "src/internal/tupleKey.ts"]
     }
   ]
 })

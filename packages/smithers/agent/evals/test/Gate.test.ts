@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest"
 import * as CaseExecutor from "../src/CaseExecutor.ts"
 import { EvalError } from "../src/EvalError.vibe"
 import * as Gate from "../src/Gate.ts"
-import * as Regression from "../src/Regression.ts"
-import * as Runner from "../src/Runner.ts"
+import * as Regression from "../src/Regression.vibe"
+import * as Runner from "../src/Runner.vibe"
 import * as Suite from "../src/Suite.vibe"
 
 const report = (

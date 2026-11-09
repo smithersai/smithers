@@ -430,65 +430,64 @@ interface ScoreContext {
   readonly concurrency: number
 }
 
-const buildJobs = (
+const buildJobs = effect (
   cases: ReadonlyArray<CaseResult>,
   suite: Suite,
   { at, runId, sampleId, concurrency }: ScoreContext
 ): Effect.Effect<
   { readonly requests: ReadonlyArray<ScoreRequest>; readonly jobs: ReadonlyArray<ScoreJob> },
   EvalError
-> =>
-  Effect.gen(function*() {
-    // `cases` is the result of one `Effect.forEach` over `suite.cases`, so the
-    // two arrays are index-aligned by construction; nothing here has to look a
-    // case back up by name.
-    const candidates = cases.flatMap((caseResult, index) => {
-      const execution = caseResult.execution
-      if (execution === undefined) return []
-      const suiteCase = suite.cases[index]!
-      return suite.bindings.flatMap((binding, bindingIndex) =>
-        binding.appliesTo === execution.target
-          ? [{ request: requestFor(suiteCase, execution, binding), bindingIndex }]
-          : []
-      )
-    })
-    const sampled = yield* Effect.forEach(
-      candidates,
-      ({ request, bindingIndex }) =>
-        Sampling.decide(
-          request.binding.sampling,
-          request.stepKey,
-          scorerKeyOf(request.binding)
-        ).pipe(
-          Effect.map((selected) => selected ? request : undefined),
-          Effect.mapError((cause) =>
-            new EvalError({
-              code: "invalid_suite",
-              message: `Invalid sampling policy for scorer ${label(request.binding)}`,
-              path: `bindings[${bindingIndex}].sampling`,
-              cause
-            })
-          )
-        ),
-      { concurrency }
+> => {
+  // `cases` is the result of one `Effect.forEach` over `suite.cases`, so the
+  // two arrays are index-aligned by construction; nothing here has to look a
+  // case back up by name.
+  const candidates = cases.flatMap((caseResult, index) => {
+    const execution = caseResult.execution
+    if (execution === undefined) return []
+    const suiteCase = suite.cases[index]!
+    return suite.bindings.flatMap((binding, bindingIndex) =>
+      binding.appliesTo === execution.target
+        ? [{ request: requestFor(suiteCase, execution, binding), bindingIndex }]
+        : []
     )
-    const requests = sampled.filter((request): request is ScoreRequest => request !== undefined)
-    const jobs: Array<ScoreJob> = requests.map((request, index) => ({
-      identity: tupleKey(
-        suite.name,
-        runId,
-        sampleId,
-        request.case,
-        request.stepKey,
-        scorerKeyOf(request.binding),
-        `${index}`
-      ),
-      observation: { targetStepKey: request.stepKey, scorerKey: scorerKeyOf(request.binding) },
-      score: Effect.suspend(() => request.binding.scorer.score(structuredClone(request.input))),
-      at: Date.parse(at)
-    }))
-    return { requests, jobs }
   })
+  const sampled = try Effect.forEach(
+    candidates,
+    ({ request, bindingIndex }) =>
+      Sampling.decide(
+        request.binding.sampling,
+        request.stepKey,
+        scorerKeyOf(request.binding)
+      ).pipe(
+        Effect.map((selected) => selected ? request : undefined),
+        Effect.mapError((cause) =>
+          new EvalError({
+            code: "invalid_suite",
+            message: `Invalid sampling policy for scorer ${label(request.binding)}`,
+            path: `bindings[${bindingIndex}].sampling`,
+            cause
+          })
+        )
+      ),
+    { concurrency }
+  )
+  const requests = sampled.filter((request): request is ScoreRequest => request !== undefined)
+  const jobs: Array<ScoreJob> = requests.map((request, index) => ({
+    identity: tupleKey(
+      suite.name,
+      runId,
+      sampleId,
+      request.case,
+      request.stepKey,
+      scorerKeyOf(request.binding),
+      `${index}`
+    ),
+    observation: { targetStepKey: request.stepKey, scorerKey: scorerKeyOf(request.binding) },
+    score: Effect.suspend(() => request.binding.scorer.score(structuredClone(request.input))),
+    at: Date.parse(at)
+  }))
+  return { requests, jobs }
+}
 
 const batchFallback = (
   jobs: ReadonlyArray<ScoreJob>,
@@ -498,201 +497,178 @@ const batchFallback = (
     ? Effect.interrupt
     : Effect.succeed(jobs.map((job) => ScorerRunner.inconclusive(job, cause)))
 
-const scoreCorrelated = (
+const scoreCorrelated = effect (
   jobs: ReadonlyArray<ScoreJob>,
   scorer: ScoreBatchRunner,
   runBatchCorrelated: NonNullable<ScoreBatchRunner["runBatchCorrelated"]>,
   { concurrency }: ScoreContext
-): Effect.Effect<ReadonlyArray<ScoreObservation>, EvalError> =>
-  Effect.gen(function*() {
-    const batchResults: ReadonlyArray<BatchResult> = yield* Effect.suspend(() =>
-      runBatchCorrelated.call(scorer, jobs, { concurrency })
-    ).pipe(
-      Effect.catchCause((cause) =>
-        batchFallback(jobs, cause).pipe(
-          Effect.map((observations) =>
-            observations.map((observation, index) => ({
-              identity: jobs[index]!.identity,
-              observation
-            }))
-          )
+): Effect.Effect<ReadonlyArray<ScoreObservation>, EvalError> => {
+  const batchResults: ReadonlyArray<BatchResult> = try Effect.suspend(() =>
+    runBatchCorrelated.call(scorer, jobs, { concurrency })
+  ).pipe(
+    Effect.catchCause((cause) =>
+      batchFallback(jobs, cause).pipe(
+        Effect.map((observations) =>
+          observations.map((observation, index) => ({
+            identity: jobs[index]!.identity,
+            observation
+          }))
         )
       )
     )
-    if (!Array.isArray(batchResults)) {
-      return yield* Effect.fail(
-        new EvalError({
-          code: "scorer_protocol",
-          message: "Correlated scorer batch must return an array",
-          path: "runBatchCorrelated"
-        })
-      )
+  )
+  if (!Array.isArray(batchResults)) {
+    throw new EvalError({
+      code: "scorer_protocol",
+      message: "Correlated scorer batch must return an array",
+      path: "runBatchCorrelated"
+    })
+  }
+  if (batchResults.length !== jobs.length) {
+    throw new EvalError({
+      code: "scorer_protocol",
+      message:
+        `Correlated scorer batch returned ${batchResults.length} results for ${jobs.length} jobs; a batch runner must return exactly one result per job identity`,
+      path: "runBatchCorrelated"
+    })
+  }
+  const jobIndexByIdentity = new Map(jobs.map((job, index) => [job.identity, index] as const))
+  const byIdentity = new Map<string, ScoreObservation>()
+  let unknown: { readonly identity: string; readonly index: number } | undefined
+  for (const [index, result] of batchResults.entries()) {
+    if (typeof result !== "object" || result === null || typeof result.identity !== "string") {
+      throw new EvalError({
+        code: "scorer_protocol",
+        message: "Correlated scorer result must contain a string identity",
+        path: `runBatchCorrelated[${index}]`
+      })
     }
-    if (batchResults.length !== jobs.length) {
-      return yield* Effect.fail(
-        new EvalError({
-          code: "scorer_protocol",
-          message:
-            `Correlated scorer batch returned ${batchResults.length} results for ${jobs.length} jobs; a batch runner must return exactly one result per job identity`,
-          path: "runBatchCorrelated"
-        })
-      )
+    if (result.recorded === "failed") {
+      throw new EvalError({
+        code: "scorer_unavailable",
+        message: "Scorer observation could not be persisted",
+        path: `runBatchCorrelated[${index}]`
+      })
     }
-    const jobIndexByIdentity = new Map(jobs.map((job, index) => [job.identity, index] as const))
-    const byIdentity = new Map<string, ScoreObservation>()
-    let unknown: { readonly identity: string; readonly index: number } | undefined
-    for (const [index, result] of batchResults.entries()) {
-      if (typeof result !== "object" || result === null || typeof result.identity !== "string") {
-        return yield* Effect.fail(
-          new EvalError({
-            code: "scorer_protocol",
-            message: "Correlated scorer result must contain a string identity",
-            path: `runBatchCorrelated[${index}]`
-          })
-        )
-      }
-      if (result.recorded === "failed") {
-        return yield* Effect.fail(
-          new EvalError({
-            code: "scorer_unavailable",
-            message: "Scorer observation could not be persisted",
-            path: `runBatchCorrelated[${index}]`
-          })
-        )
-      }
-      const jobIndex = jobIndexByIdentity.get(result.identity)
-      if (jobIndex !== undefined && byIdentity.has(result.identity)) {
-        return yield* Effect.fail(
-          new EvalError({
-            code: "scorer_protocol",
-            message:
-              `Correlated scorer batch returned duplicate identity '${result.identity}' for job ${jobIndex} at result index ${index}`,
-            path: `runBatchCorrelated[${index}]`
-          })
-        )
-      }
-      if (jobIndex === undefined) unknown = { identity: result.identity, index }
-      byIdentity.set(result.identity, result.observation)
+    const jobIndex = jobIndexByIdentity.get(result.identity)
+    if (jobIndex !== undefined && byIdentity.has(result.identity)) {
+      throw new EvalError({
+        code: "scorer_protocol",
+        message:
+          `Correlated scorer batch returned duplicate identity '${result.identity}' for job ${jobIndex} at result index ${index}`,
+        path: `runBatchCorrelated[${index}]`
+      })
     }
-    if (unknown !== undefined) {
-      const missingJobIndex = jobs.findIndex((job) => !byIdentity.has(job.identity))
-      const missingIdentity = jobs[missingJobIndex]!.identity
-      return yield* Effect.fail(
-        new EvalError({
-          code: "scorer_protocol",
-          message: `Correlated scorer batch returned unknown identity '${
-            flattenControlCharacters(unknown.identity)
-          }' at result index ${unknown.index}; job ${missingJobIndex} identity '${missingIdentity}' is absent`,
-          path: `runBatchCorrelated[${unknown.index}]`
-        })
-      )
-    }
-    return jobs.map((job) => byIdentity.get(job.identity)!)
-  })
+    if (jobIndex === undefined) unknown = { identity: result.identity, index }
+    byIdentity.set(result.identity, result.observation)
+  }
+  if (unknown !== undefined) {
+    const missingJobIndex = jobs.findIndex((job) => !byIdentity.has(job.identity))
+    const missingIdentity = jobs[missingJobIndex]!.identity
+    throw new EvalError({
+      code: "scorer_protocol",
+      message: `Correlated scorer batch returned unknown identity '${
+        flattenControlCharacters(unknown.identity)
+      }' at result index ${unknown.index}; job ${missingJobIndex} identity '${missingIdentity}' is absent`,
+      path: `runBatchCorrelated[${unknown.index}]`
+    })
+  }
+  return jobs.map((job) => byIdentity.get(job.identity)!)
+}
 
-const scoreOrderOnly = (
+const scoreOrderOnly = effect (
   jobs: ReadonlyArray<ScoreJob>,
   requests: ReadonlyArray<ScoreRequest>,
   scorer: ScoreBatchRunner,
   { concurrency }: ScoreContext
-): Effect.Effect<ReadonlyArray<ScoreObservation>, EvalError> =>
-  Effect.gen(function*() {
-    const pairIndexes = new Map<string, number>()
-    for (const [index, job] of jobs.entries()) {
-      const pair = tupleKey(job.observation.targetStepKey, job.observation.scorerKey)
-      const previous = pairIndexes.get(pair)
-      if (previous !== undefined) {
-        const first = requests[previous]!
-        const second = requests[index]!
-        return yield* Effect.fail(
-          new EvalError({
-            code: "ambiguous_score_job",
-            message: `Cannot attribute score jobs for cases '${first.case}' and '${second.case}': both use step key '${
-              flattenControlCharacters(job.observation.targetStepKey)
-            }' and scorer ${
-              label(second.binding)
-            }. Give each case its own step key, or provide a batch runner that implements runBatchCorrelated`,
-            path: "runBatch"
-          })
-        )
-      }
-      pairIndexes.set(pair, index)
+): Effect.Effect<ReadonlyArray<ScoreObservation>, EvalError> => {
+  const pairIndexes = new Map<string, number>()
+  for (const [index, job] of jobs.entries()) {
+    const pair = tupleKey(job.observation.targetStepKey, job.observation.scorerKey)
+    const previous = pairIndexes.get(pair)
+    if (previous !== undefined) {
+      const first = requests[previous]!
+      const second = requests[index]!
+      throw new EvalError({
+        code: "ambiguous_score_job",
+        message: `Cannot attribute score jobs for cases '${first.case}' and '${second.case}': both use step key '${
+          flattenControlCharacters(job.observation.targetStepKey)
+        }' and scorer ${
+          label(second.binding)
+        }. Give each case its own step key, or provide a batch runner that implements runBatchCorrelated`,
+        path: "runBatch"
+      })
     }
-    const results = yield* Effect.suspend(() => scorer.runBatch(jobs, { concurrency })).pipe(
-      Effect.catchCause((cause) => batchFallback(jobs, cause))
-    )
-    if (results.length !== jobs.length) {
-      return yield* Effect.fail(
-        new EvalError({
-          code: "scorer_protocol",
-          message:
-            `Scorer batch returned ${results.length} observations for ${jobs.length} jobs; a batch runner must return exactly one observation per job, in order`,
-          path: "runBatch"
-        })
-      )
-    }
-    return results
-  })
+    pairIndexes.set(pair, index)
+  }
+  const results = try Effect.suspend(() => scorer.runBatch(jobs, { concurrency })).pipe(
+    Effect.catchCause((cause) => batchFallback(jobs, cause))
+  )
+  if (results.length !== jobs.length) {
+    throw new EvalError({
+      code: "scorer_protocol",
+      message:
+        `Scorer batch returned ${results.length} observations for ${jobs.length} jobs; a batch runner must return exactly one observation per job, in order`,
+      path: "runBatch"
+    })
+  }
+  return results
+}
 
-const score = (
+const score = effect (
   cases: ReadonlyArray<CaseResult>,
   suite: Suite,
   scorer: ScoreBatchRunner,
   context: ScoreContext
-): Effect.Effect<ReadonlyArray<CaseResult>, EvalError> =>
-  Effect.gen(function*() {
-    const { requests, jobs } = yield* buildJobs(cases, suite, context)
-    if (requests.length === 0) return cases
-    const runBatchCorrelated = scorer.runBatchCorrelated
-    const protocol = runBatchCorrelated === undefined ? "runBatch" : "runBatchCorrelated"
-    const results = yield* runBatchCorrelated === undefined
-      ? scoreOrderOnly(jobs, requests, scorer, context)
-      : scoreCorrelated(jobs, scorer, runBatchCorrelated, context)
-    const { at } = context
-    const observations: Array<Observation> = []
-    for (const [index, request] of requests.entries()) {
-      const result = results[index]
-      if (result === null || result === undefined) {
-        return yield* Effect.fail(
-          new EvalError({
-            code: "scorer_protocol",
-            message: `Scorer batch returned a missing observation for job ${index}`,
-            path: `${protocol}[${index}]`
-          })
-        )
-      }
-      if (result.targetStepKey !== request.stepKey || result.scorerKey !== scorerKeyOf(request.binding)) {
-        return yield* Effect.fail(
-          new EvalError({
-            code: "scorer_protocol",
-            message: flattenControlCharacters(
-              protocol === "runBatchCorrelated"
-                ? `Correlated scorer batch identity '${
-                  jobs[index]!.identity
-                }' returned step '${result.targetStepKey}' and scorer '${result.scorerKey}' where job ${index} asked for scorer '${
-                  scorerKeyOf(request.binding)
-                }' at step '${request.stepKey}'`
-                : `Scorer batch returned an observation for '${result.scorerKey}' at step '${result.targetStepKey}' where job ${index} asked for '${
-                  scorerKeyOf(request.binding)
-                }' at step '${request.stepKey}'; results must stay aligned with their jobs`
-            ),
-            path: `${protocol}[${index}]`
-          })
-        )
-      }
-      observations.push(observationFor(request, result, at))
+): Effect.Effect<ReadonlyArray<CaseResult>, EvalError> => {
+  const { requests, jobs } = try buildJobs(cases, suite, context)
+  if (requests.length === 0) return cases
+  const runBatchCorrelated = scorer.runBatchCorrelated
+  const protocol = runBatchCorrelated === undefined ? "runBatch" : "runBatchCorrelated"
+  const results = try (runBatchCorrelated === undefined
+    ? scoreOrderOnly(jobs, requests, scorer, context)
+    : scoreCorrelated(jobs, scorer, runBatchCorrelated, context))
+  const { at } = context
+  const observations: Array<Observation> = []
+  for (const [index, request] of requests.entries()) {
+    const result = results[index]
+    if (result === null || result === undefined) {
+      throw new EvalError({
+        code: "scorer_protocol",
+        message: `Scorer batch returned a missing observation for job ${index}`,
+        path: `${protocol}[${index}]`
+      })
     }
-    const byCase = new Map<string, Array<Observation>>()
-    for (const observation of observations) {
-      const bucket = byCase.get(observation.case)
-      if (bucket === undefined) byCase.set(observation.case, [observation])
-      else bucket.push(observation)
+    if (result.targetStepKey !== request.stepKey || result.scorerKey !== scorerKeyOf(request.binding)) {
+      throw new EvalError({
+        code: "scorer_protocol",
+        message: flattenControlCharacters(
+          protocol === "runBatchCorrelated"
+            ? `Correlated scorer batch identity '${
+              jobs[index]!.identity
+            }' returned step '${result.targetStepKey}' and scorer '${result.scorerKey}' where job ${index} asked for scorer '${
+              scorerKeyOf(request.binding)
+            }' at step '${request.stepKey}'`
+            : `Scorer batch returned an observation for '${result.scorerKey}' at step '${result.targetStepKey}' where job ${index} asked for '${
+              scorerKeyOf(request.binding)
+            }' at step '${request.stepKey}'; results must stay aligned with their jobs`
+        ),
+        path: `${protocol}[${index}]`
+      })
     }
-    return cases.map((caseResult) => ({
-      ...caseResult,
-      observations: byCase.get(caseResult.case) ?? []
-    }))
-  })
+    observations.push(observationFor(request, result, at))
+  }
+  const byCase = new Map<string, Array<Observation>>()
+  for (const observation of observations) {
+    const bucket = byCase.get(observation.case)
+    if (bucket === undefined) byCase.set(observation.case, [observation])
+    else bucket.push(observation)
+  }
+  return cases.map((caseResult) => ({
+    ...caseResult,
+    observations: byCase.get(caseResult.case) ?? []
+  }))
+}
 
 /**
  * Runs a fixed suite with bounded execution and declaration-order results.
@@ -723,65 +699,59 @@ export const run = (
   suite: Suite,
   options: RunOptions
 ): Effect.Effect<RunResult, EvalError, CaseExecutor> =>
-  Effect.gen(function*() {
-    const executor = yield* CaseExecutor
-    const injected = yield* Effect.serviceOption(Runner)
+  Effect.withSpan(effect {
+    const executor = try CaseExecutor
+    const injected = try Effect.serviceOption(Runner)
     const scorer = options.scorer ?? (injected._tag === "Some" ? injected.value : makeInline())
     const atMillis = Date.parse(options.at)
     if (options.runId.trim().length === 0) {
-      return yield* Effect.fail(
-        new EvalError({
-          code: "invalid_run_options",
-          message: "Deterministic runs require a non-empty runId",
-          path: "options.runId"
-        })
-      )
+      throw new EvalError({
+        code: "invalid_run_options",
+        message: "Deterministic runs require a non-empty runId",
+        path: "options.runId"
+      })
     }
     if (
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(options.at) ||
       !Number.isFinite(atMillis) ||
       new Date(atMillis).toISOString() !== options.at
     ) {
-      return yield* Effect.fail(
-        new EvalError({
-          code: "invalid_run_options",
-          message: flattenControlCharacters(
-            `Deterministic runs require a canonical UTC timestamp such as 2026-01-01T00:00:00.000Z, got '${options.at}'`
-          ),
-          path: "options.at"
-        })
-      )
+      throw new EvalError({
+        code: "invalid_run_options",
+        message: flattenControlCharacters(
+          `Deterministic runs require a canonical UTC timestamp such as 2026-01-01T00:00:00.000Z, got '${options.at}'`
+        ),
+        path: "options.at"
+      })
     }
     const n = options.trials ?? suite.trials ?? 1
     const k = options.k ?? 1
     if (!Number.isSafeInteger(n) || n < 1 || n > 1000 || !Number.isSafeInteger(k) || k < 1 || k > n) {
-      return yield* Effect.fail(
-        new EvalError({
-          code: "invalid_trials",
-          message: "trials must be an integer from 1 to 1000 and k must be an integer from 1 to trials",
-          path: "options.trials"
-        })
-      )
+      throw new EvalError({
+        code: "invalid_trials",
+        message: "trials must be an integer from 1 to 1000 and k must be an integer from 1 to trials",
+        path: "options.trials"
+      })
     }
     const at = options.at
     const runId = options.runId
     const sampleId = options.sampleId ?? "default"
     // Await each batch before starting the next: concurrency within a trial is
     // bounded by the suite, and neither scheduling nor scorer latency reorders trials.
-    const batches = yield* Effect.forEach(Array.from({ length: n }, (_, index) => index), (index) =>
-      Effect.gen(function*() {
-        const cases = yield* Effect.forEach(suite.cases, (suiteCase) =>
+    const batches = try Effect.forEach(Array.from({ length: n }, (_, index) => index), (index) =>
+      effect {
+        const cases = try Effect.forEach(suite.cases, (suiteCase) =>
           runCase(executor, suiteCase), {
           concurrency: suite.concurrency,
           discard: false
         })
-        return yield* score(cases, suite, scorer, {
+        return try score(cases, suite, scorer, {
           concurrency: suite.concurrency,
           at,
           runId,
           sampleId: n === 1 ? sampleId : tupleKey(sampleId, String(index))
         })
-      }), { concurrency: 1 })
+      }, { concurrency: 1 })
     const outcomes: Array<[string, ReadonlyArray<boolean>]> = []
     const cases = suite.cases.map((suiteCase, index) => {
       const attempts = batches.map((batch) =>
@@ -805,10 +775,10 @@ export const run = (
       cases,
       observations: cases.flatMap((caseResult) => caseResult.observations),
       // fromEntries defines own properties, so a case named `__proto__` stays a case.
-      trials: Trials.aggregate(Object.fromEntries(outcomes), k),
+      trials: try Effect.orDie(Effect.try(() => Trials.aggregate(Object.fromEntries(outcomes), k))),
       k
     }
-  }).pipe(Effect.withSpan("Eval.run", { attributes: { suite: suite.name, runId: options.runId } }))
+  }, "Eval.run", { attributes: { suite: suite.name, runId: options.runId } })
 
 /**
  * Provides a batch runner that is never available.
