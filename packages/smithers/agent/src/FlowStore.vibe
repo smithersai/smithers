@@ -31,6 +31,7 @@ import * as RcMap from "effect/RcMap"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
+import { generationName } from "./FlowStore.platform.ts"
 
 const { projectFlowsDirectory } = Descriptor
 
@@ -218,13 +219,12 @@ const validateMemoryPath = (id: string, key: string): Effect.Effect<void, FlowSt
  */
 export const makeMemory = (written: Map<string, string> = new Map()): Service =>
   FlowStore.of({
-    write: (id, files) =>
-      Effect.gen(function*() {
-        yield* validateId(id)
-        for (const path of Object.keys(files)) yield* validateMemoryPath(id, path)
-        for (const [path, source] of Object.entries(files)) written.set(path, source)
-        return { files: Object.keys(files) }
-      }),
+    write: effect (id, files) => {
+      try validateId(id)
+      for (const path of Object.keys(files)) try validateMemoryPath(id, path)
+      for (const [path, source] of Object.entries(files)) written.set(path, source)
+      return { files: Object.keys(files) }
+    },
     list: () => Effect.sync(() => listPaths(written.keys()))
   })
 
@@ -272,50 +272,44 @@ const isLink = (fs: FileSystem.FileSystem, target: string): Effect.Effect<boolea
  * created, so a planted link is reported back to the model instead of
  * overwriting the file it points at.
  */
-const validateConfinement = (
+effect function validateConfinement(
   fs: FileSystem.FileSystem,
   path: Path.Path,
   root: string,
   relative: string
-): Effect.Effect<void, FlowStoreError> =>
-  Effect.gen(function*() {
-    const walked: Array<string> = []
-    for (const segment of segmentsOf(path, relative)) {
-      walked.push(segment)
-      if (yield* isLink(fs, path.join(root, ...walked))) {
-        return yield* Effect.fail(error(
-          "invalid_path",
-          `"${relative}" leaves the flows root through the symbolic link at "${
-            walked.join("/")
-          }". Remove the link and save the flow again.`
-        ))
-      }
-    }
-  })
-
-/** Creates checked parent directories without following an existing symbolic link. */
-const prepareParent = (
-  fs: FileSystem.FileSystem,
-  path: Path.Path,
-  root: string,
-  relative: string
-) =>
-  Effect.gen(function*() {
-    let directory = root
-    for (const segment of segmentsOf(path, relative).slice(0, -1)) {
-      directory = path.join(directory, segment)
-      const child = directory
-      yield* fs.makeDirectory(child).pipe(
-        Effect.catch((cause) =>
-          Effect.gen(function*() {
-            if (yield* isLink(fs, child)) return yield* Effect.fail(cause)
-            const info = yield* fs.stat(child)
-            if (info.type !== "Directory") return yield* Effect.fail(cause)
-          })
-        )
+): void!FlowStoreError {
+  const walked: Array<string> = []
+  for (const segment of segmentsOf(path, relative)) {
+    walked.push(segment)
+    if (try isLink(fs, path.join(root, ...walked))) {
+      throw error(
+        "invalid_path",
+        `"${relative}" leaves the flows root through the symbolic link at "${
+          walked.join("/")
+        }". Remove the link and save the flow again.`
       )
     }
-  })
+  }
+}
+
+/** Creates checked parent directories without following an existing symbolic link. */
+effect function prepareParent(
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+  root: string,
+  relative: string
+) {
+  let directory = root
+  for (const segment of segmentsOf(path, relative).slice(0, -1)) {
+    directory = path.join(directory, segment)
+    const child = directory
+    fs.makeDirectory(child) catch effect (cause) => {
+      if (try isLink(fs, child)) throw cause
+      const info = try fs.stat(child)
+      if (info.type !== "Directory") throw cause
+    }
+  }
+}
 
 /** Stages all bytes and backups before replacing any target; rolls back failed publication. */
 const publish = (
@@ -325,14 +319,14 @@ const publish = (
   files: ReadonlyArray<readonly [string, string]>
 ): Effect.Effect<void, FlowStoreError> =>
   Effect.uninterruptibleMask((restore) =>
-    Effect.gen(function*() {
+    effect {
       // A named, exclusive mkdir instead of makeTempDirectory: the capability
       // kernel's guarded filesystem, which every agent-reachable native host
       // composes, refuses the makeTemp* family (see Executable.reserveSibling).
       // A non-recursive mkdir fails when the name is taken, so the generation
       // is still this save's own.
-      const generation = path.join(root, `.flow-store-${globalThis.crypto.randomUUID()}`)
-      yield* fs.makeDirectory(generation)
+      const generation = path.join(root, `.flow-store-${generationName()}`)
+      try fs.makeDirectory(generation)
       const entries = files.map(([relative, source], index) => ({
         relative,
         source,
@@ -342,45 +336,45 @@ const publish = (
         existed: false
       }))
       let retainGeneration = false
-      const result = yield* Effect.exit(Effect.gen(function*() {
-        yield* restore(Effect.gen(function*() {
+      const result = try Effect.exit(effect {
+        try restore(effect {
           for (const entry of entries) {
-            yield* fs.writeFileString(entry.staged, entry.source, { flag: "wx" })
+            try fs.writeFileString(entry.staged, entry.source, { flag: "wx" })
           }
           // Backups are copied before publishing, so even a disk-full error
           // while retaining old bytes cannot remove an existing destination.
           for (const entry of entries) {
-            yield* validateConfinement(fs, path, root, entry.relative)
-            yield* prepareParent(fs, path, root, entry.relative)
-            const info = yield* fs.stat(entry.target).pipe(
+            try validateConfinement(fs, path, root, entry.relative)
+            try prepareParent(fs, path, root, entry.relative)
+            const info = try fs.stat(entry.target).pipe(
               Effect.catch((cause) => cause.reason._tag === "NotFound" ? Effect.succeed(undefined) : Effect.fail(cause))
             )
             if (info !== undefined) {
               if (info.type !== "File") {
-                return yield* Effect.fail(error("write_failed", `"${entry.relative}" is not a regular file.`))
+                throw error("write_failed", `"${entry.relative}" is not a regular file.`)
               }
-              yield* fs.readFile(entry.target).pipe(
+              try fs.readFile(entry.target).pipe(
                 Effect.flatMap((bytes) => fs.writeFile(entry.backup, bytes, { flag: "wx" }))
               )
               entry.existed = true
             }
           }
-        }))
+        })
         const published: Array<typeof entries[number]> = []
         // Publication and rollback are masked: interruption during staging
         // cleans up, while interruption after the first rename waits for the
         // complete set to be installed or restored.
-        const installed = yield* Effect.exit(Effect.gen(function*() {
+        const installed = try Effect.exit(effect {
           for (const entry of entries) {
-            yield* validateConfinement(fs, path, root, entry.relative)
-            yield* fs.rename(entry.staged, entry.target)
+            try validateConfinement(fs, path, root, entry.relative)
+            try fs.rename(entry.staged, entry.target)
             published.push(entry)
           }
-        }))
+        })
         if (Exit.isFailure(installed)) {
           const failures: Array<unknown> = []
           for (const entry of published.reverse()) {
-            const rollback = yield* Effect.exit(
+            const rollback = try Effect.exit(
               validateConfinement(fs, path, root, entry.relative).pipe(
                 Effect.andThen(
                   entry.existed
@@ -395,17 +389,17 @@ const publish = (
             // Never delete the only surviving previous bytes if the host
             // also refuses recovery. Keep them at the reported location.
             retainGeneration = true
-            return yield* Effect.fail(error(
+            throw error(
               "write_failed",
               `could not restore the saved flow; recovery files remain at "${generation}"`,
               { publication: installed.cause, rollback: failures }
-            ))
+            )
           }
-          return yield* Effect.failCause(installed.cause)
+          return try Effect.failCause(installed.cause)
         }
-      }))
+      })
       if (!retainGeneration) {
-        yield* fs.remove(generation, { recursive: true }).pipe(
+        try fs.remove(generation, { recursive: true }).pipe(
           Effect.catchCause((cause) =>
             Cause.hasInterruptsOnly(cause)
               ? Effect.failCause(cause)
@@ -413,8 +407,8 @@ const publish = (
           )
         )
       }
-      if (Exit.isFailure(result)) return yield* Effect.failCause(result.cause)
-    })
+      if (Exit.isFailure(result)) return try Effect.failCause(result.cause)
+    }
   ).pipe(Effect.mapError((cause) =>
     cause instanceof FlowStoreError ? cause : error("write_failed", "could not publish the saved flow", cause)
   ))
@@ -427,11 +421,11 @@ const locksLayer = Layer.effect(WriteLocks, RcMap.make({ lookup: (_root: string)
 const lockOwners = Layer.makeMemoMapUnsafe()
 
 const serializeWrite = <A, E>(root: string, write: Effect.Effect<A, E>): Effect.Effect<A, E> =>
-  Effect.scoped(Effect.gen(function*() {
-    const services = yield* Layer.buildWithMemoMap(locksLayer, lockOwners, yield* Scope.Scope)
-    const lock = yield* RcMap.get(Context.get(services, WriteLocks), root)
-    return yield* lock.withPermit(write)
-  }))
+  Effect.scoped(effect {
+    const services = try Layer.buildWithMemoMap(locksLayer, lockOwners, try Scope.Scope)
+    const lock = try RcMap.get(Context.get(services, WriteLocks), root)
+    return try lock.withPermit(write)
+  })
 
 /**
  * Constructs a store over a directory on the host filesystem.
@@ -466,53 +460,51 @@ export const makeFileSystem = (
     write: (id, files) =>
       serializeWrite(
         lockKey,
-        Effect.gen(function*() {
-          yield* validateId(id)
+        effect {
+          try validateId(id)
           const resolved: Array<readonly [string, string]> = []
           for (const [relative, source] of Object.entries(files)) {
-            const confined = yield* validatePath(path, root, id, relative)
+            const confined = try validatePath(path, root, id, relative)
             for (const [previous] of resolved) {
               const between = path.relative(path.join(root, previous), path.join(root, confined))
               const reverse = path.relative(path.join(root, confined), path.join(root, previous))
               if (!isOutside(path, between) || !isOutside(path, reverse)) {
-                return yield* Effect.fail(error("invalid_path", `"${relative}" overlaps another saved file path.`))
+                throw error("invalid_path", `"${relative}" overlaps another saved file path.`)
               }
             }
             resolved.push([confined, source])
           }
-          for (const [relative] of resolved) yield* validateConfinement(fs, path, root, relative)
+          for (const [relative] of resolved) try validateConfinement(fs, path, root, relative)
           if (!KernelFileSystem.isConfinable(fs)) {
-            return yield* Effect.fail(
-              error("unsupported", "Saving flows requires a no-follow, confined filesystem host.")
-            )
+            throw error("unsupported", "Saving flows requires a no-follow, confined filesystem host.")
           }
-          yield* fs.makeDirectory(root, { recursive: true }).pipe(
+          try fs.makeDirectory(root, { recursive: true }).pipe(
             Effect.mapError((cause) => error("write_failed", "could not create the flows root", cause))
           )
-          const confined = yield* KernelFileSystem.confined(fs, root).pipe(
+          const confined = try KernelFileSystem.confined(fs, root).pipe(
             Effect.provideService(Path.Path, path),
             Effect.mapError((cause) => error("write_failed", "could not confine the flows root", cause))
           )
-          yield* publish(confined, path, root, resolved)
+          try publish(confined, path, root, resolved)
           return { files: Object.keys(files) }
-        })
+        }
       ),
     list: () =>
-      Effect.gen(function*() {
+      effect {
         const directory = path.join(root, ...flowsSegments)
         // A directory that cannot be listed contributes nothing, which is the
         // same reading `WorkspaceObservation` takes of the same question. A
         // root that has never saved a flow has no `.smithers/flows` directory, and
         // that is the state every host starts in rather than a failure.
-        const entries = yield* fs.readDirectory(directory).pipe(Effect.orElseSucceed(() => []))
+        const entries = try fs.readDirectory(directory).pipe(Effect.orElseSucceed(() => []))
         const paths: Array<string> = []
         for (const id of entries) {
           if (!idPattern.test(id)) continue
-          const held = yield* fs.readDirectory(path.join(directory, id), { recursive: true }).pipe(
+          const held = try fs.readDirectory(path.join(directory, id), { recursive: true }).pipe(
             Effect.orElseSucceed(() => [])
           )
           for (const relative of held) {
-            const info = yield* fs.stat(path.join(directory, id, relative)).pipe(
+            const info = try fs.stat(path.join(directory, id, relative)).pipe(
               Effect.map((stat) => stat.type),
               // An entry that cannot be stated is not a file the store can
               // claim to hold: a dangling link is the ordinary way to produce
@@ -523,7 +515,7 @@ export const makeFileSystem = (
           }
         }
         return listPaths(paths)
-      })
+      }
   })
 }
 
@@ -564,11 +556,11 @@ export const layerFileSystem = (
   root: string
 ): Layer.Layer<FlowStore, never, FileSystem.FileSystem | Path.Path> =>
   Layer.effect(FlowStore)(
-    Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
-      const path = yield* Path.Path
+    effect {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
       return makeFileSystem(fs, path, root)
-    })
+    }
   )
 
 /**

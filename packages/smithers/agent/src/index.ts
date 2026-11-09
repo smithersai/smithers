@@ -94,7 +94,7 @@ export * as PromoteFlows from "./PromoteFlows.vibe"
  * @category services
  * @since 0.1.0
  */
-export * as FlowStore from "./FlowStore.ts"
+export * as FlowStore from "./FlowStore.vibe"
 
 /**
  * @category constructors

@@ -84,7 +84,7 @@ const importRules = ImportRules({
     },
     {
       kind: "rootImportsOnly",
-      files: ["src/EngineChildren.ts", "src/FlowEngineLike.ts", "src/FlowStore.ts"],
+      files: ["src/EngineChildren.ts", "src/FlowEngineLike.ts", "src/FlowStore.vibe"],
       packages: ["@smthrs/*"],
       because: "sdk.root-imports-only: these runtime boundaries use the public package roots."
     }
@@ -196,7 +196,7 @@ const securityReview = Smithers.SecurityReview({
         "makeMemory or a custom store accepting file keys outside .smithers/flows/<id>/ because only the id is validated.",
         "Rollback or generation cleanup removing a path that was not staged by this save."
       ],
-      paths: ["src/FlowStore.ts", "src/PromoteFlows.vibe"]
+      paths: ["src/FlowStore.vibe", "src/PromoteFlows.vibe"]
     },
     {
       id: "promoted-flow-activation",

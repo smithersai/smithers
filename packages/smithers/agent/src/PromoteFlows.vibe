@@ -33,7 +33,7 @@ import { projectFlowsDirectory } from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import type * as Context from "effect/Context"
 import * as Schema from "effect/Schema"
-import * as FlowStore from "./FlowStore.ts"
+import * as FlowStore from "./FlowStore.vibe"
 
 /**
  * What a saved flow has to get right, in the order it matters.

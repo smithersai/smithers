@@ -92,8 +92,8 @@
       "default": "./.vibelang/js/src/FlowEngineLike.js"
     },
     "./FlowStore": {
-      "types": "./src/FlowStore.ts",
-      "vibelang-source": "./src/FlowStore.ts",
+      "types": "./.vibe/declarations/FlowStore.d.vibe.ts",
+      "vibelang-source": "./src/FlowStore.vibe",
       "default": "./.vibelang/js/src/FlowStore.js"
     },
     "./InMemoryWorkspaceSandbox": {
