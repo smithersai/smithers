@@ -71,6 +71,11 @@ brick                                   state         proof
   Container graph and emitted wiki-command tests. Whole-app strict gates remain red. Bundled attribution has both VibeLang and plain-JS
   reproductions; the installed workerd inspector cannot enable precise collection. No runtime source is excluded.
 
+- **Unit coverage, second lane (0016, lane vl-coverage2): partial.** `worker/Http.vibe`, `src/web/backend.vibe`,
+  `src/actions/MockActions.vibe`, `src/actions/execution.vibe`, `src/core/conversation.vibe` and `src/core/LiveWiki.vibe`
+  reach 100% unit coverage on all four metrics; `src/core/MockFactory.vibe` keeps three race-only or invariant-guarded paths. A mock
+  reply interrupted by a reload no longer blocks its conversation. Other files below 100% remain.
+
 - Brick 6: [0024](decisions/0024-sandboxes.md), sandbox UI and shared lifecycle flows; real Container activation awaits trusted 0019 identity and deployment receipts.
 
 - **Rulings audit (vl-audit):** [rulings status](rulings-status.md) holds each ruling's state, evidence and owner.

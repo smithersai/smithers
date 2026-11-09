@@ -492,3 +492,50 @@ The unit gate still fails below 100%. No file below is excluded and no threshold
 | `worker/VipDraft.vibe`, model paths of `worker/Reply.vibe` | A model credential reference in the environment. | `test/live.workerd.test.vibe` covers Reply, opt-in on `CEREBRAS_API_KEY`. `test/vipDraft.test.vibe` covers `VipDraft`, opt-in on the same key |
 | GitHub read, write, VIP proposal and label paths of `worker/Issues.vibe` (`githubHost`) | Needs the GitHub test token: a real GitHub token for the test repository. No fake GitHub (`test/issuesGithub.coverage.test.vibe` was one and is deleted). | `test/issues.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
 | GitHub write paths of `worker/Wiki.vibe` | A real GitHub token for the test repository. | `test/wikiEdit.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
+
+## Lane vl-coverage2 (2026-11-09)
+
+A second unit lane beside vl-coverage, on the files vl-coverage does not own. Same provider, thresholds and
+`pnpm test:coverage`; nothing excluded and no threshold changed. Unit suite only: the browser, workerd, fuzz and
+benchmark suites were not measured by this lane.
+
+Before is main `92651c71` (1407 passed / 3 skipped). After is this lane's last commit on a later main (1488 passed /
+3 skipped); the All files row includes other lanes' work landed between them.
+
+| File | Lines | Branches | Functions | Statements |
+| --- | --- | --- | --- | --- |
+| `worker/Http.vibe` | 82/93 (88.17%) → 93/93 (100%) | 82/106 (77.35%) → 104/104 (100%) | 17/23 (73.91%) → 23/23 (100%) | 102/126 (80.95%) → 126/126 (100%) |
+| `src/web/backend.vibe` | 52/73 (71.23%) → 64/64 (100%) | 18/25 (72%) → 15/15 (100%) | 22/38 (57.89%) → 38/38 (100%) | 55/86 (63.95%) → 72/72 (100%) |
+| `src/core/MockFactory.vibe` | 239/254 (94.09%) → 254/259 (98.06%) | 126/152 (82.89%) → 135/141 (95.74%) | 75/80 (93.75%) → 78/78 (100%) | 290/311 (93.24%) → 306/314 (97.45%) |
+| `src/actions/MockActions.vibe` | 114/118 (96.61%) → 114/114 (100%) | 73/95 (76.84%) → 89/89 (100%) | 31/40 (77.5%) → 36/36 (100%) | 139/159 (87.42%) → 151/151 (100%) |
+| `src/actions/execution.vibe` | 32/41 (78.04%) → 39/39 (100%) | 32/38 (84.21%) → 36/36 (100%) | 13/17 (76.47%) → 17/17 (100%) | 43/53 (81.13%) → 51/51 (100%) |
+| `src/core/conversation.vibe` | 232/241 (96.26%) → 241/241 (100%) | 378/402 (94.02%) → 402/402 (100%) | 74/78 (94.87%) → 78/78 (100%) | 310/331 (93.65%) → 331/331 (100%) |
+| `src/core/LiveWiki.vibe` | 5/15 (33.33%) → 15/15 (100%) | 0/4 (0%) → 4/4 (100%) | 3/10 (30%) → 10/10 (100%) | 6/21 (28.57%) → 21/21 (100%) |
+| All files | 6379/7178 (88.86%) → 6582/7251 (90.77%) | 6709/7843 (85.54%) → 6951/7936 (87.58%) | 2249/2677 (84.01%) → 2342/2709 (86.45%) | 7950/9249 (85.95%) → 8274/9354 (88.45%) |
+
+**Bug fixed.** A tour or demo conversation's retained `MockJournal` can end mid-reply. Restoring it left the room
+busy forever: later posts were never answered and a tour was refused `busy`. Restoring now fails that reply with the
+live wording (0014). Regression: `test/mockFactory.coverage.test.vibe`, red first (reply unfinished after 10 s).
+
+**Dead code deleted** (each named in its commit): tour-control's integer and negative step checks (`Seq` rejects
+both); the browser factory's "unavailable" throws for issues, wiki and tour control (both selectable factories supply
+them); `EndTour`'s action invocation kind, execute case and mock registration (internal, refused by every gate before
+`prepare`); MockActions' `invalid-run` and `cancel-failed` mappings and missing-invocation checks; `Tours.finish`'s
+unused reason; MockFactory's `account-unavailable` mapping, the scripted agent's wiki read, history and prompt
+fallbacks and two always-defined `??` fallbacks.
+
+**Left uncovered in `src/core/MockFactory.vibe`, not excluded:**
+
+| Lines | Why a test can't reach it deterministically |
+| --- | --- |
+| 90-97 | Reply-start contention: a tour accepted between the answer loop reading the posts and `StartReply`. Only a scheduling race reaches it; `test/postTourOrdering.test.vibe` races it with yielding schedulers and did not hit it in this measurement. |
+| 102 | `!started`: `StartReply` refused for a reason other than `busy`. Dispatch only selects unanswered posts while idle, and `full` needs 2^53 events (replay renumbers retained events). Kept as the guard for those refusals. |
+| 325 | `Tours.ended` after the tour already ended: between `running` and the subscription. Race only; the check keeps `ended` from waiting forever. |
+
+**Placeholder flow bodies.** `src/core/flows.vibe` has 14 uncovered `body: () => Node.succeed(…)` functions:
+`Flow.make` requires a body, and `engine.register` replaces it. vl-coverage found the same in
+`worker/Accounts.vibe`. Covering them needs `@smthrs/flow` to accept a declaration without a body; not changed here.
+
+**Service Shape spread.** `test/support/overlaidAccounts.vibe` lists the `Accounts` members, as `overlaid.vibe` does
+`Factory`'s, because spreading a service Shape drops its methods in VibeLang 0.0.12. The upstream fix awaits
+publication (roadmap, vl-actions); the helper can become a spread once 0.0.13 is consumed.
