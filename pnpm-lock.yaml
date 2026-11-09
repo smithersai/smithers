@@ -1014,6 +1014,9 @@ importers:
       '@smthrs/lemmascript':
         specifier: workspace:*
         version: link:../../packages/lemmascript
+      '@smthrs/mvp':
+        specifier: workspace:*
+        version: link:../mvp
       '@smthrs/platform-node':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/platform-node
