@@ -47,7 +47,7 @@ export default defineConfig({
         "src/internal/ApplyPatch.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/ExaWebSearch.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/Ls.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
-        "src/NativeSearch.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
+        "src/NativeSearch.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/HttpNetwork.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/IpAddress.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/SearchConformance.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },

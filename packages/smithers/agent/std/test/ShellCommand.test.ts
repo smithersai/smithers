@@ -11,7 +11,7 @@ import {
   truncateMiddleChars,
   truncateMiddleWithTokenBudget
 } from "../src/internal/CodexText.ts"
-import * as ShellCommand from "../src/ShellCommand.ts"
+import * as ShellCommand from "../src/ShellCommand.vibe"
 import { layer } from "./TestLayers.ts"
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)

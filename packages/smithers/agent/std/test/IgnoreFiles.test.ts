@@ -9,7 +9,7 @@ import { afterAll, describe, expect, it } from "vitest"
 import * as Glob from "../src/Glob.vibe"
 import * as Grep from "../src/Grep.vibe"
 import * as Ignore from "../src/internal/Ignore.ts"
-import * as NativeSearch from "../src/NativeSearch.ts"
+import * as NativeSearch from "../src/NativeSearch.vibe"
 import * as PortableSearch from "../src/PortableSearch.vibe"
 import * as Search from "../src/Search.vibe"
 

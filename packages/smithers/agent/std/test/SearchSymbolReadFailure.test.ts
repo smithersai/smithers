@@ -8,7 +8,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Grep from "../src/Grep.vibe"
-import * as NativeSearch from "../src/NativeSearch.ts"
+import * as NativeSearch from "../src/NativeSearch.vibe"
 import * as PortableSearch from "../src/PortableSearch.vibe"
 import * as Search from "../src/Search.vibe"
 

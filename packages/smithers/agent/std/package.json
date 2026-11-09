@@ -113,8 +113,8 @@
       "default": "./.vibelang/js/src/Manifest.js"
     },
     "./NativeSearch": {
-      "types": "./src/NativeSearch.ts",
-      "vibelang-source": "./src/NativeSearch.ts",
+      "types": "./.vibe/declarations/NativeSearch.d.vibe.ts",
+      "vibelang-source": "./src/NativeSearch.vibe",
       "default": "./.vibelang/js/src/NativeSearch.js"
     },
     "./PortableSearch": {
@@ -158,8 +158,8 @@
       "default": "./.vibelang/js/src/SearchContract.js"
     },
     "./ShellCommand": {
-      "types": "./src/ShellCommand.ts",
-      "vibelang-source": "./src/ShellCommand.ts",
+      "types": "./.vibe/declarations/ShellCommand.d.vibe.ts",
+      "vibelang-source": "./src/ShellCommand.vibe",
       "default": "./.vibelang/js/src/ShellCommand.js"
     },
     "./StdError": {

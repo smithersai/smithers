@@ -157,6 +157,7 @@ const countLines = (content: string): number => {
  *
  * @since 1.0.0
  * @private
+ * @throws {never}
  */
 export const formatExecOutputForModel = (options: {
   readonly output: string

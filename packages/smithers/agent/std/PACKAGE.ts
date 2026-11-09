@@ -123,7 +123,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/Exec.vibe",
         "src/internal/GitWorktree.vibe",
         "src/Checkpoints.vibe",
-        "src/NativeSearch.ts",
+        "src/NativeSearch.vibe",
         "src/PortableSearch.vibe"
       ]
     },
@@ -152,7 +152,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/internal/Exec.vibe",
         "src/Container.vibe",
-        "src/NativeSearch.ts",
+        "src/NativeSearch.vibe",
         "src/TestRun.ts",
         "src/Bash.ts"
       ]
@@ -209,7 +209,7 @@ const securityReview = Smithers.SecurityReview({
         "Lsp.run forwarding any absolute path to the language server with only an isAbsolutePath check, so documentSymbols, hover, or diagnostics reveal an out-of-workspace file.",
         "The host language server loading workspace-controlled code (tsconfig plugins, a workspace-local typescript or node_modules binary) outside any sandbox."
       ],
-      paths: ["src/NativeSearch.ts", "src/Grep.vibe", "src/Glob.vibe", "src/Lsp.vibe"]
+      paths: ["src/NativeSearch.vibe", "src/Grep.vibe", "src/Glob.vibe", "src/Lsp.vibe"]
     },
     {
       id: "container-seal",

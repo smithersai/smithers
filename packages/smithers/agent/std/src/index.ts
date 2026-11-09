@@ -54,7 +54,7 @@ export * as SearchConformance from "./SearchConformance.vibe"
 export * as PortableSearch from "./PortableSearch.vibe"
 
 /** @category layers @since 1.0.0 */
-export * as NativeSearch from "./NativeSearch.ts"
+export * as NativeSearch from "./NativeSearch.vibe"
 
 /** @category layers @since 1.0.0-rc.8 */
 export * as RemoteSearch from "./RemoteSearch.ts"
@@ -105,7 +105,7 @@ export * as ApplyPatch from "./ApplyPatch.vibe"
  * @category flows
  * @since 1.0.0
  */
-export * as ShellCommand from "./ShellCommand.ts"
+export * as ShellCommand from "./ShellCommand.vibe"
 
 /**
  * @category flows

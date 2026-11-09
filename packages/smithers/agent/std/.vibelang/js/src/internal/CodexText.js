@@ -136,6 +136,7 @@ const countLines = (content) => {
  *
  * @since 1.0.0
  * @private
+ * @throws {never}
  */
 export const formatExecOutputForModel = (options) => {
     const content = options.timedOutAfterMs === undefined
