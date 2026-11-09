@@ -45,6 +45,7 @@ import { ambientEnvironment, type ChildProcessSpawner } from "@smthrs/kernel/Chi
 import { Effect } from "effect"
 import * as StdError from "../StdError.ts"
 import * as Exec from "./Exec.vibe"
+import { randomId } from "./GitWorktree.platform.ts"
 
 const failed = (message: string, code: StdError.Code = "command_failed") => new StdError.StdError({ code, message })
 
@@ -81,15 +82,14 @@ const run = (command: string, args: ReadonlyArray<string>, env?: Readonly<Record
  */
 const git = (root: string, args: ReadonlyArray<string>) => run("git", [...hostGitSettings, "-C", root, ...args])
 
-const resolveCommit = (root: string, refs: ReadonlyArray<string>) =>
-  Effect.gen(function*() {
-    for (const ref of refs) {
-      const answer = yield* git(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])
-      const commit = answer.stdout.trim()
-      if (answer.exitCode === 0 && commit !== "") return { ref, commit }
-    }
-    return yield* Effect.fail(failed(`No commit resolves from ${refs.join(" or ")} in ${root}.`, "not_found"))
-  })
+const resolveCommit = effect (root: string, refs: ReadonlyArray<string>) => {
+  for (const ref of refs) {
+    const answer = try git(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])
+    const commit = answer.stdout.trim()
+    if (answer.exitCode === 0 && commit !== "") return { ref, commit }
+  }
+  throw failed(`No commit resolves from ${refs.join(" or ")} in ${root}.`, "not_found")
+}
 
 /**
  * Where one workspace repository keeps what the shadow needs, as its own git
@@ -124,36 +124,35 @@ export interface Repository {
 const config = (repository: Pick<Repository, "common">, args: ReadonlyArray<string>) =>
   run("git", ["--git-dir=/dev/null", "config", "--file", `${repository.common}/config`, ...args], isolated)
 
-const open = (root: string): Effect.Effect<Repository, StdError.StdError, ChildProcessSpawner> =>
-  Effect.gen(function*() {
-    const stripped = root.replace(/\/+$/, "")
-    const answer = yield* git(stripped, [
-      "rev-parse",
-      "--path-format=absolute",
-      "--show-toplevel",
-      "--git-common-dir",
-      "--git-path",
-      "index",
-      "--show-object-format"
-    ])
-    const [toplevel, common, index, objectFormat] = answer.stdout.split("\n").map((line) => line.trim())
-    if (
-      answer.exitCode !== 0 || toplevel === undefined || toplevel === "" || common === undefined || common === "" ||
-      index === undefined || index === "" || objectFormat === undefined || !bareWord.test(objectFormat)
-    ) {
-      return yield* Effect.fail(failed(`${stripped} is not a git work tree: ${answer.stderr.trim()}`))
-    }
-    const found = yield* config({ common }, ["--get-regexp", dataSettings.source])
-    const settings = found.exitCode === 0
-      ? found.stdout.split("\n").flatMap((line) => {
-        const [key, value] = line.trim().split(/\s+/)
-        return key !== undefined && value !== undefined && dataSettings.test(key) && bareWord.test(value)
-          ? ["-c", `${key}=${value}`]
-          : []
-      })
-      : []
-    return { root: stripped, toplevel, common, index, objectFormat, settings }
-  })
+const open = effect (root: string): Repository!StdError.StdError!ChildProcessSpawner => {
+  const stripped = root.replace(/\/+$/, "")
+  const answer = try git(stripped, [
+    "rev-parse",
+    "--path-format=absolute",
+    "--show-toplevel",
+    "--git-common-dir",
+    "--git-path",
+    "index",
+    "--show-object-format"
+  ])
+  const [toplevel, common, index, objectFormat] = answer.stdout.split("\n").map((line) => line.trim())
+  if (
+    answer.exitCode !== 0 || toplevel === undefined || toplevel === "" || common === undefined || common === "" ||
+    index === undefined || index === "" || objectFormat === undefined || !bareWord.test(objectFormat)
+  ) {
+    throw failed(`${stripped} is not a git work tree: ${answer.stderr.trim()}`)
+  }
+  const found = try config({ common }, ["--get-regexp", dataSettings.source])
+  const settings = found.exitCode === 0
+    ? found.stdout.split("\n").flatMap((line) => {
+      const [key, value] = line.trim().split(/\s+/)
+      return key !== undefined && value !== undefined && dataSettings.test(key) && bareWord.test(value)
+        ? ["-c", `${key}=${value}`]
+        : []
+    })
+    : []
+  return { root: stripped, toplevel, common, index, objectFormat, settings }
+}
 
 const temporaryRoot = (): string => {
   const env = ambientEnvironment()
@@ -241,36 +240,35 @@ const shadowOf = (repository: Repository, path: string): Shadow => ({
  * @category utilities
  * @since 1.0.0
  */
-const withShadow = <A, E, R>(
+const withShadow = effect <A, E, R>(
   repository: Repository,
   use: (shadow: Shadow) => Effect.Effect<A, E, R>
-): Effect.Effect<A, E | StdError.StdError, R | ChildProcessSpawner> =>
-  Effect.gen(function*() {
-    const path = `${temporaryRoot()}/smithers-git-${globalThis.crypto.randomUUID()}`
-    return yield* Effect.acquireUseRelease(
-      Effect.succeed(path),
-      () =>
-        Effect.gen(function*() {
-          const created = yield* run(
-            "git",
-            ["init", "--quiet", "--bare", "--template=", `--object-format=${repository.objectFormat}`, path],
-            isolated
-          )
-          if (created.exitCode !== 0) {
-            return yield* Effect.fail(failed(`Could not create a shadow repository: ${created.stderr.trim()}`))
-          }
-          return yield* use(shadowOf(repository, path))
-        }),
-      () =>
-        remove(path).pipe(
-          Effect.catch((error) =>
-            Effect.logWarning("could not remove a shadow repository").pipe(
-              Effect.annotateLogs({ path, reason: error.message })
-            )
+): A!(E | StdError.StdError)!(R | ChildProcessSpawner) => {
+  const path = `${temporaryRoot()}/smithers-git-${randomId()}`
+  return try Effect.acquireUseRelease(
+    Effect.succeed(path),
+    () =>
+      effect {
+        const created = try run(
+          "git",
+          ["init", "--quiet", "--bare", "--template=", `--object-format=${repository.objectFormat}`, path],
+          isolated
+        )
+        if (created.exitCode !== 0) {
+          throw failed(`Could not create a shadow repository: ${created.stderr.trim()}`)
+        }
+        return try use(shadowOf(repository, path))
+      },
+    () =>
+      remove(path).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("could not remove a shadow repository").pipe(
+            Effect.annotateLogs({ path, reason: error.message })
           )
         )
-    )
-  })
+      )
+  )
+}
 
 /** `to` relative to `from`, both absolute POSIX paths. */
 const relative = (from: string, to: string): string => {
@@ -377,18 +375,17 @@ const publish = [
  * `host` fails the call before the rename, and a parent that resolves outside
  * the workspace root fails it before the rename too.
  */
-const checkout = (shadow: Shadow, host: string, commit: string) =>
-  Effect.gen(function*() {
+const checkout = effect (shadow: Shadow, host: string, commit: string) => {
     const repository = shadow.repository
     const parent = host.slice(0, host.lastIndexOf("/"))
     const name = host.slice(host.lastIndexOf("/") + 1)
     const beside = repository.root.slice(0, repository.root.lastIndexOf("/")) || "/"
     const cache = cacheRoot()
-    const stage = `checkout-${globalThis.crypto.randomUUID()}`
+    const stage = `checkout-${randomId()}`
     const besideStage = `${beside.replace(/\/+$/, "")}/.smithers-${stage}`
     const cacheStage = `${cache}/${stage}`
-    const measured = yield* run("sh", ["-c", measure, "sh", parent, shadow.path, beside, cache])
-    yield* succeeded(measured, `Could not check out ${commit}`)
+    const measured = try run("sh", ["-c", measure, "sh", parent, shadow.path, beside, cache])
+    try succeeded(measured, `Could not check out ${commit}`)
     const [target, inShadow, besideRoot, inCache] = measured.stdout.split("\n").map((line) => line.trim())
     const scratch = target === undefined || target === "" || target === inShadow
       ? undefined
@@ -404,12 +401,10 @@ const checkout = (shadow: Shadow, host: string, commit: string) =>
       : scratch
     if (base === undefined) {
       const unwritable = besideRoot === "unwritable" ? " (not writable by this user)" : ""
-      return yield* Effect.fail(
-        failed(
-          `Could not check out ${commit}: neither ${shadow.path} nor ${beside}${unwritable} nor ${
-            cache === "" ? "a cache directory" : cache
-          } is on the filesystem of ${parent}`
-        )
+      throw failed(
+        `Could not check out ${commit}: neither ${shadow.path} nor ${beside}${unwritable} nor ${
+          cache === "" ? "a cache directory" : cache
+        } is on the filesystem of ${parent}`
       )
     }
     const staged = `${base}/${name}`
@@ -417,8 +412,8 @@ const checkout = (shadow: Shadow, host: string, commit: string) =>
       `${repository.toplevel}${host.slice(repository.root.length)}/.git/objects`,
       `${repository.common}/objects`
     )
-    const write = Effect.gen(function*() {
-      const prepared = yield* run("sh", [
+    const write = effect {
+      const prepared = try run("sh", [
         "-c",
         [
           "set -eC",
@@ -435,54 +430,53 @@ const checkout = (shadow: Shadow, host: string, commit: string) =>
         objects,
         checkoutConfig(repository)
       ])
-      yield* succeeded(prepared, `Could not check out ${commit}`)
-      const written = yield* shadow.git(["read-tree", "--reset", "-u", commit], staged)
-      yield* succeeded(written, `Could not check out ${commit}`)
-      const indexed = yield* run("sh", [
+      try succeeded(prepared, `Could not check out ${commit}`)
+      const written = try shadow.git(["read-tree", "--reset", "-u", commit], staged)
+      try succeeded(written, `Could not check out ${commit}`)
+      const indexed = try run("sh", [
         "-c",
         "set -C; cat -- \"$1\" > \"$2\"",
         "sh",
         `${shadow.path}/index`,
         `${staged}/.git/index`
       ])
-      yield* succeeded(indexed, `Could not check out ${commit}`)
-      const moved = yield* run("sh", ["-c", publish, "sh", staged, parent, name, repository.root])
-      yield* succeeded(moved, `Could not check out ${commit}`)
-    })
-    return yield* scratch !== undefined
+      try succeeded(indexed, `Could not check out ${commit}`)
+      const moved = try run("sh", ["-c", publish, "sh", staged, parent, name, repository.root])
+      try succeeded(moved, `Could not check out ${commit}`)
+    }
+    return try (scratch !== undefined
       ? write.pipe(Effect.ensuring(remove(scratch).pipe(Effect.ignore)))
-      : write
-  })
+      : write)
+}
 
-const withDetachedWorktree = <A, E, R>(
+const withDetachedWorktree = effect <A, E, R>(
   repository: Repository,
   prefix: string,
   commit: string,
   use: (host: string) => Effect.Effect<A, E, R>
-): Effect.Effect<A, E | StdError.StdError, R | ChildProcessSpawner> =>
-  Effect.gen(function*() {
-    // Allocate on execution, including when the same Effect is run twice.
-    // Never remove an existing checkout: another call may still be using it.
-    const host = `${repository.root}/${prefix}-${globalThis.crypto.randomUUID()}`
-    return yield* Effect.acquireUseRelease(
-      Effect.succeed(host),
-      () =>
-        Effect.gen(function*() {
-          yield* withShadow(repository, (shadow) => checkout(shadow, host, commit))
-          return yield* use(host)
-        }),
-      // A checkout left behind is a stale copy of the repository inside the
-      // workspace. Walks prune it, but the operator must still hear about it.
-      () =>
-        remove(host).pipe(
-          Effect.catch((error) =>
-            Effect.logWarning("could not remove a scratch checkout").pipe(
-              Effect.annotateLogs({ path: host, reason: error.message })
-            )
+): A!(E | StdError.StdError)!(R | ChildProcessSpawner) => {
+  // Allocate on execution, including when the same Effect is run twice.
+  // Never remove an existing checkout: another call may still be using it.
+  const host = `${repository.root}/${prefix}-${randomId()}`
+  return try Effect.acquireUseRelease(
+    Effect.succeed(host),
+    () =>
+      effect {
+        try withShadow(repository, (shadow) => checkout(shadow, host, commit))
+        return try use(host)
+      },
+    // A checkout left behind is a stale copy of the repository inside the
+    // workspace. Walks prune it, but the operator must still hear about it.
+    () =>
+      remove(host).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("could not remove a scratch checkout").pipe(
+            Effect.annotateLogs({ path: host, reason: error.message })
           )
         )
-    )
-  })
+      )
+  )
+}
 
 /**
  * Internal Git operations used by both checkpoint and baseline leases.

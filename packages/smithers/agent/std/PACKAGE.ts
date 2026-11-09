@@ -121,7 +121,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Bash.ts",
         "src/TestRun.ts",
         "src/internal/Exec.vibe",
-        "src/internal/GitWorktree.ts",
+        "src/internal/GitWorktree.vibe",
         "src/Checkpoints.ts",
         "src/NativeSearch.ts",
         "src/PortableSearch.ts"
@@ -137,7 +137,7 @@ const securityReview = Smithers.SecurityReview({
         "Checkpoint ids or config keys written with git config that could alter keys outside the checkpoint section.",
         "A scratch checkout path built from caller text that could land outside the repository root."
       ],
-      paths: ["src/Checkpoints.ts", "src/internal/GitWorktree.ts", "src/Relocate.vibe"]
+      paths: ["src/Checkpoints.ts", "src/internal/GitWorktree.vibe", "src/Relocate.vibe"]
     },
     {
       id: "child-env-secret-leak",
