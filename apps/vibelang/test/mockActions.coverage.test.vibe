@@ -160,7 +160,11 @@ describe("mock-mode actions", () => {
     }
   }))
 
-  for (const [label, ending, state] of [["none", [], "failed"], ["a failed reply", [{ type: "ReplyFailed" }], "failed"], ["its end", [{ type: "TourEnded" }], "passed"]] as const) {
+  // The injected stream is every event the action sees: its start step reads the tour's id from TourStarted.
+  for (const [label, ending, state] of [
+    ["no start", [], "failed"], ["no end", [{ type: "TourStarted" }], "failed"],
+    ["a failed reply", [{ type: "TourStarted" }, { type: "ReplyFailed" }], "failed"], ["its end", [{ type: "TourStarted" }, { type: "TourEnded" }], "passed"],
+  ] as const) {
     it.live(`a tour action whose guide sees ${label} settles ${state}`, () => scoped(effect {
       provide world(maintainer, () => ({ events: () => Stream.fromIterable(ending.map((event) => ({ ...event, seq: 99, id: "t1" }) as never)) })) {
         const run = try finished(try (try Actions).start("vibelang/Tour", {}, "button"))

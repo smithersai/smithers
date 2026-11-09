@@ -6,7 +6,7 @@ import { apply, empty, type Conversation } from "../core/conversation.vibe"
 import { decide, type Intent } from "../core/decide.vibe"
 import type { Identity } from "../core/roles.vibe"
 import { Factory } from "../core/Factory.vibe"
-import { Post, PostStep, Tour, TourStep } from "../core/flows.vibe"
+import { BeginTour, DispatchPost, endsTour, GuideTour, Post, RecordPost, Tour } from "../core/flows.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import type { HistoryReader } from "../history/tools.vibe"
 import { ActionDevice, deviceRegistration, execute, historyRegistration, prepare, refused } from "./execution.vibe"
@@ -68,27 +68,35 @@ export function MockActions(principal: Principal) {
       return reader
     })
     // An action's Post and Tour ask this world's factory; the conversation is the principal's or the run's own.
+    effect function conversationOfRun() {
+      return principal.conversation ?? `action-${(try FlowRuntime.FlowInstance).executionId}`
+    }
     const baseRegistration = Layer.mergeAll(
-      Interpreter.layerWithImplementations(Post, PostStep.toLayer(effect (payload) => {
-        const id = (try FlowRuntime.FlowInstance).executionId
-        try Action.make({ name: "vibelang/post/record", execute: orDie(factory.post((principal.conversation ?? `action-${id}`), id, "Guest", payload.text)) })
-        return null
-      })),
-      Interpreter.layerWithImplementations(Tour, TourStep.toLayer(effect () => {
-        const id = (try FlowRuntime.FlowInstance).executionId
-        const conversation = (principal.conversation ?? `action-${id}`)
-        const after = try Action.make({ name: "vibelang/tour/start", success: Schema.Number, execute: orDie(effect {
-          const before = try factory.read(conversation, 0)
-          try factory.tour(conversation)
-          return before.seq
-        }) })
-        const end = Stream.runLast(factory.events(conversation, after).pipe(Stream.takeUntil((event) =>
-          event.type === "ReplyFinished" || event.type === "ReplyFailed" || event.type === "TourEnded"
-        )))
-        const last = try Action.make({ name: "vibelang/tour/guide", execute: map(orDie(end), (event) => Option.isSome(event) && event.value.type !== "ReplyFailed"), success: Schema.Boolean })
-        if (!last) return try Effect.die(new ActionFailure({ code: "failed" }))
-        return null
-      })),
+      // The factory's post records the post and dispatches its reply in that conversation's own Post run.
+      Interpreter.layerWithImplementations(Post, Layer.mergeAll(
+        RecordPost.toLayer(effect (payload) => {
+          try orDie(factory.post(try conversationOfRun(), (try FlowRuntime.FlowInstance).executionId, "Guest", payload.text))
+          return null
+        }),
+        DispatchPost.toLayer(() => Effect.as(Effect.logInfo("vibelang.action.post.dispatch").pipe(Effect.annotateLogs({ outcome: "requested" })), null)),
+      )),
+      // Start asks the factory for a tour and answers its id; guide follows that tour until it ends.
+      Interpreter.layerWithImplementations(Tour, Layer.mergeAll(
+        BeginTour.toLayer(effect () => {
+          const conversation = try conversationOfRun()
+          const before = try orDie(factory.read(conversation, 0))
+          try orDie(factory.tour(conversation))
+          const started = try orDie(Stream.runHead(factory.events(conversation, before.seq).pipe(Stream.filter((event) => event.type === "TourStarted"))))
+          return Option.getOrThrow(started).id
+        }),
+        GuideTour.toLayer(effect ({ tour }) => {
+          const end = Stream.runLast(factory.events(try conversationOfRun(), 0).pipe(Stream.takeUntil((event) => endsTour(event, tour))))
+          const last = try orDie(end)
+          // Passed only when the tour itself ended or finished; a stream that closes first, or a failed tour, fails the run.
+          if (!Option.isSome(last) || !endsTour(last.value, tour) || last.value.type === "ReplyFailed") return try Effect.die(new ActionFailure({ code: "failed" }))
+          return null
+        }),
+      )),
     )
     const registrationLayer = Layer.mergeAll(baseRegistration, historyRegistration(history), deviceRegistration).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer))
     const engine = Context.get(try Layer.buildWithScope(registrationLayer, scope), FlowRuntime.FlowRuntime)

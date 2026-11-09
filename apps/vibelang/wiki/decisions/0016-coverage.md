@@ -645,14 +645,19 @@ fallbacks and two always-defined `??` fallbacks.
 
 **Flow bodies (fixed 2026-11-09).** `src/core/flows.vibe` had 14 flows whose `body` was `() => Node.succeed(…)` and
 whose behavior `engine.register` attached at registration, a second, opaque shape the flow package documents as
-internal. Each body now calls one declared action (`<flow>/perform`, or the sandbox `…/commit` actions it already
-declared), and each host attaches that action's implementation with `Interpreter.layerWithImplementations`. The
-implementations read `Posts`, `Tours`, `SandboxHost` and `ActionDevice` from context. Mock actions, the scripted and
-live replies, and the device sandbox steps are different implementations of the same action, not different bodies.
-`@smthrs/flow` needed no change: the inline `Action.make`, `DurableDeferred` and `DurableClock` steps run nested inside
-the declared action. `test/flowBodies.test.vibe` runs every flow's own body and fails when one is a placeholder.
-Journals gain the outer `perform` step. Resuming a run journaled before this change (a tour parked across the deploy)
-is untested.
+internal. Each body now sequences one declared action per step it journaled before, in the same order:
+`vibelang/post/record` then `vibelang/post/dispatch`, `vibelang/tour/record` then `vibelang/tour/dispatch`,
+`vibelang/tour/start` then `vibelang/tour/guide`, `vibelang/tour/end` then `vibelang/tour/wake`, and
+`vibelang/tour/request/<control>` then `vibelang/tour/signal`. A step that runs only after an accepted one is a
+`Node.branch`. Reply is one step, `vibelang/reply/answer`: what it does inside is its host's composition. The docs
+and wiki tools are one `…/pane/open` step, and the sandbox flows their `…/commit` step. Each host attaches the steps'
+implementations with `Interpreter.layerWithImplementations`; they read `Posts`, `Tours`, `SandboxHost` and
+`ActionDevice` from context. Mock actions guide a tour by following the factory's events until that tour ends.
+`test/flowBodies.test.vibe` pins every step name and both arms of each branch, so the journal, the Actions pane
+(`bench/browser.spec.ts` "chat, scroll, home, tour and escape actions"), spans and metrics name real steps. The first
+version of this fix (44053da0) wrapped each body in one `<flow>/perform` step, and the Actions pane showed
+`perform · running` instead of the tour's `start` and `guide`. Resuming a run journaled before either change (a tour
+parked across the deploy) is untested.
 
 **Service Shape spread.** `test/support/overlaidAccounts.vibe` lists the `Accounts` members, as `overlaid.vibe` does
 `Factory`'s, because spreading a service Shape drops its methods in VibeLang 0.0.12. The upstream fix awaits

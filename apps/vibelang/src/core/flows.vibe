@@ -13,7 +13,7 @@ import * as Continuation from "./flowDecision.vibe"
 // The steps reach the conversation's one state machine (conversation.vibe) through the `Posts` and `Tours` services;
 // nothing here decides anything.
 import { Action, DurableDeferred, DurableClock, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
-import { Node } from "@smthrs/plan"
+import { Node, Planned } from "@smthrs/plan"
 import { holdRemaining, unansweredSelection, type Conversation, type Event, isTour } from "./conversation.vibe"
 import { type Refusal } from "./decide.vibe"
 import { endsTourEvent, readingHold } from "./flowDecision.vibe"
@@ -28,22 +28,34 @@ export const patient = RetryPolicy.make({ initialMs: 500, factor: 2, maxMs: 60_0
 /** A post's answer: `null` once the sequencer recorded it, else why it refused. */
 export const PostAnswer = Schema.NullOr(RefusalReason)
 
-// Each flow's body calls one declared action, `<flow>/perform`. The host where the engine runs attaches that action's
-// implementation as a layer, and the implementation reaches the conversation through services in context.
+// Each flow's body is its steps, one declared action per step, in order (`Node.branch` where a step runs only after an
+// accepted one). The host where the engine runs attaches each step's implementation as a layer, and the
+// implementation reaches the conversation through services in context. The journal, the Actions pane, spans and
+// metrics name these steps.
 const postPayload = { clientId: Schema.String, name: Schema.String, text: Schema.String, owner: Schema.optional(Schema.String) }
-/** Records a post and dispatches its reply (`posted`). */
-export const PostStep = Action.make("vibelang/Post/perform", { payload: postPayload, success: PostAnswer })
+/** Records the post: `null` once recorded, else the refusal. */
+export const RecordPost = Action.make("vibelang/post/record", { payload: postPayload, success: PostAnswer })
+/** Starts the reply of the oldest unanswered post, unless one runs. */
+export const DispatchPost = Action.make("vibelang/post/dispatch", { payload: {}, success: Schema.Null })
 /** `owner` is trusted factory metadata captured at acceptance; absent legacy owners have no compute authority. */
 export const Post = Flow.make("vibelang/Post", {
   description: "Records a person's post in its conversation, then makes sure the agent answers it.",
   modelInvocable: false,
   payload: postPayload,
   success: PostAnswer,
-  body: Node.capture({}, (payload) => PostStep.call(payload)),
+  body: Node.capture({}, (payload) => RecordPost.call(payload).pipe(Node.branch({
+    if: Node.capture({}, (answer) => answer === null),
+    then: () => DispatchPost.call({}),
+    else: (answer) => Node.succeed(answer),
+  }))),
 })
 
-/** The agent's answer to one post. Each host implements it: worker/Reply.vibe live, MockFactory.vibe scripted. */
-export const ReplyStep = Action.make("vibelang/Reply/perform", { payload: { post: Schema.String }, success: Schema.Null })
+/**
+ * The agent's answer to one post, one step: what it does inside (admit, compose, append, settle) is the host's
+ * composition, journaled as that step's own steps. Each host implements it: worker/Reply.vibe live, MockFactory.vibe
+ * scripted.
+ */
+export const ReplyStep = Action.make("vibelang/reply/answer", { payload: { post: Schema.String }, success: Schema.Null })
 export const Reply = Flow.make("vibelang/Reply", {
   description: "The VibeLang agent answers one person's post in its conversation.",
   modelInvocable: false,
@@ -76,29 +88,28 @@ export const posts = Metric.counter("vibelang_posts", {
   incremental: true,
 })
 
-/** A Post's body: record the post; once recorded, dispatch its reply. The answer is the record step's. */
-export effect function posted(payload: { readonly clientId: string; readonly name: string; readonly text: string; readonly owner?: string | undefined }) {
-  const sequencer = try Posts
-  let run = Continuation.begin("post")
-  const answer = try Action.make({
-    name: "vibelang/post/record",
-    success: PostAnswer,
-    execute: sequencer.record(payload.clientId, payload.name, payload.text, payload.owner),
-  })
-  run = Continuation.record(run, answer)
-  if (Continuation.canDispatch(run)) {
-    try Action.make({ name: "vibelang/post/dispatch", execute: sequencer.dispatch() })
-    run = Continuation.dispatch(run)
-  }
-  const outcome = run.answer ?? "accepted"
+/** A Post's record step: the sequencer's answer, counted and logged by outcome. */
+export effect function recordPost(payload: { readonly clientId: string; readonly name: string; readonly text: string; readonly owner?: string | undefined }) {
+  const answer = try (try Posts).record(payload.clientId, payload.name, payload.text, payload.owner)
+  const outcome = answer ?? "accepted"
   try Metric.update(Metric.withAttributes(posts, { outcome }), 1)
   // The outcome only: never the post's text, its client id or its author's name.
   try Effect.logInfo("vibelang.post").pipe(Effect.annotateLogs({ outcome }))
   return answer
 }
 
+/** A Post's dispatch step, run only after an accepted record. */
+export effect function dispatchPost() {
+  try (try Posts).dispatch()
+  try Effect.logInfo("vibelang.post.dispatch").pipe(Effect.annotateLogs({ outcome: "requested" }))
+  return null
+}
+
 /** Registers `Post` with the engine; its steps reach the sequencer through `Posts`. */
-export const postRegistration = Interpreter.layerWithImplementations(Post, PostStep.toLayer((payload) => withSpan(posted(payload), "vibelang.post")))
+export const postRegistration = Interpreter.layerWithImplementations(Post, Layer.mergeAll(
+  RecordPost.toLayer((payload) => withSpan(recordPost(payload), "vibelang.post")),
+  DispatchPost.toLayer(() => withSpan(dispatchPost(), "vibelang.post.dispatch")),
+))
 
 // ── the tour (wiki/decisions/0014-agent-tour.md) ─────────────────────────────────────────────────────────────────
 
@@ -146,35 +157,59 @@ export function touring(conversation: Conversation): string {
   return conversation.agent === "working" && isTour(conversation.entries, conversation.replying) ? conversation.replying : ""
 }
 
-export const StartTourStep = Action.make("vibelang/StartTour/perform", { payload: {}, success: PostAnswer })
+/** Records a new tour: `null` once recorded, else the refusal. */
+export const RecordTour = Action.make("vibelang/tour/record", { payload: {}, success: PostAnswer })
+/** Starts the running tour's `vibelang/Tour` run, unless it runs. */
+export const DispatchTour = Action.make("vibelang/tour/dispatch", { payload: {}, success: Schema.Null })
 export const StartTour = Flow.make("vibelang/StartTour", {
   description: "Starts the agent's tour of VibeLang in its conversation, then makes sure it runs.",
   modelInvocable: false,
   payload: {},
   success: PostAnswer,
-  body: Node.capture({}, (payload) => StartTourStep.call(payload)),
+  body: Node.capture({}, () => RecordTour.call({}).pipe(Node.branch({
+    if: Node.capture({}, (answer) => answer === null),
+    then: () => DispatchTour.call({}),
+    else: (answer) => Node.succeed(answer),
+  }))),
 })
 
-/** The tour itself (`toured` over `walk`). Mock-mode actions implement it by asking the factory for a tour. */
-export const TourStep = Action.make("vibelang/Tour/perform", { payload: { tour: Schema.String }, success: Schema.Null })
+/** Admits a tour run: the id of the tour it guides, `""` once that tour no longer runs. */
+export const BeginTour = Action.make("vibelang/tour/start", { payload: { tour: Schema.String }, success: Schema.String })
+/** Guides the admitted tour until it is done or the person ends it. */
+export const GuideTour = Action.make("vibelang/tour/guide", { payload: { tour: Schema.String }, success: Schema.Null })
+/**
+ * The tour itself: start, then guide. The conversation hosts guide with `toured` over `walk`; mock-mode actions start
+ * a tour through the factory and guide by following it.
+ */
 export const Tour = Flow.make("vibelang/Tour", {
   description: "The VibeLang agent tours VibeLang's docs: it opens each page in the docs pane and says what it is.",
   modelInvocable: false,
   payload: { tour: Schema.String },
   success: Schema.Null,
-  body: Node.capture({}, (payload) => TourStep.call(payload)),
+  body: Node.capture({}, (payload) => BeginTour.call(payload).pipe(Node.branch({
+    if: Node.capture({}, (tour) => tour !== ""),
+    then: (tour) => GuideTour.call({ tour }),
+    else: () => Node.succeed(null),
+  }))),
 })
 
-export const EndTourStep = Action.make("vibelang/EndTour/perform", { payload: {}, success: PostAnswer })
+/** Ends the running tour: `null` once recorded, else the refusal (`not-replying` when none runs). */
+export const RecordEndTour = Action.make("vibelang/tour/end", { payload: {}, success: PostAnswer })
+/** Wakes the parked tour run after its end was recorded. */
+export const WakeTour = Action.make("vibelang/tour/wake", { payload: {}, success: Schema.Null })
 export const EndTour = Flow.make("vibelang/EndTour", {
   description: "Ends the agent's tour at once; the person keeps the conversation and the docs pane.",
   modelInvocable: false,
   payload: {},
   success: PostAnswer,
-  body: Node.capture({}, (payload) => EndTourStep.call(payload)),
+  body: Node.capture({}, () => RecordEndTour.call({}).pipe(Node.branch({
+    if: Node.capture({}, (answer) => answer === null),
+    then: () => WakeTour.call({}),
+    else: (answer) => Node.succeed(answer),
+  }))),
 })
 
-/** Tour steps, by step (`start`, `end`, `wake`, `open`, `say`, `hold`, `run`) and outcome. */
+/** Tour steps, by step (`start`, `dispatch`, `end`, `wake`, `open`, `say`, `hold`, `run`) and outcome. */
 export const tourSteps = Metric.counter("vibelang_tour_steps", {
   description: "Tour steps, by step and outcome",
   incremental: true,
@@ -186,32 +221,32 @@ effect function counted(step: string, outcome: string) {
   try Effect.logInfo(`vibelang.tour.${step}`).pipe(Effect.annotateLogs({ outcome }))
 }
 
-/** StartTour's body: record the tour; once recorded, dispatch it. The answer is the record step's. */
-export effect function startTour() {
-  const tours = try Tours
-  let run = Continuation.begin("tour")
-  const answer = try Action.make({ name: "vibelang/tour/record", success: PostAnswer, execute: tours.start() })
-  run = Continuation.record(run, answer)
-  if (Continuation.canDispatch(run)) {
-    try Action.make({ name: "vibelang/tour/dispatch", execute: tours.dispatch() })
-    run = Continuation.dispatch(run)
-  }
-  try counted("start", run.answer ?? "accepted")
+/** StartTour's record step: the sequencer's answer, counted by outcome. */
+export effect function recordTour() {
+  const answer = try (try Tours).start()
+  try counted("start", answer ?? "accepted")
   return answer
 }
 
-/** EndTour's body: end the running tour. */
-export effect function endTour() {
-  let run = Continuation.begin("end")
-  const tours = try Tours
-  const answer = try Action.make({ name: "vibelang/tour/end", success: PostAnswer, execute: tours.end() })
-  run = Continuation.record(run, answer)
-  if (Continuation.canDispatch(run)) {
-    try Action.make({ name: "vibelang/tour/wake", execute: withSpan(effect { try tours.wake(); try counted("wake", "requested") }, "vibelang.tour.wake") })
-    run = Continuation.dispatch(run)
-  }
-  try counted("end", run.answer ?? "accepted")
+/** StartTour's dispatch step, run only after an accepted record. */
+export effect function dispatchTour() {
+  try (try Tours).dispatch()
+  try counted("dispatch", "requested")
+  return null
+}
+
+/** EndTour's end step: the sequencer's answer, counted by outcome. */
+export effect function recordEndTour() {
+  const answer = try (try Tours).end()
+  try counted("end", answer ?? "accepted")
   return answer
+}
+
+/** EndTour's wake step, run only after an accepted end. */
+export effect function wakeTour() {
+  try (try Tours).wake()
+  try counted("wake", "requested")
+  return null
 }
 
 /** `vibelang/docs/open`'s body: shows the docs page at `path` in the pane while `tour` runs. */
@@ -241,33 +276,53 @@ export function readingMillis(text: string): number {
 /** One durable gate per numbered drive/control event. A signal can arrive before the wait parks. */
 export function walkthroughGate(revision: number) { return DurableDeferred.make(`vibelang/tour/control/${revision}`, { success: Walkthrough }) }
 
-export const PauseTourStep = Action.make("vibelang/tour/pause/perform", { payload: {}, success: PostAnswer })
+/** A walkthrough control's record: the tour it changed, the gate revision it signals and the new state, or why not. */
+export const TourControlled = Schema.Struct({ tour: Schema.String, previous: Schema.Number, state: Schema.NullOr(Walkthrough), refusal: PostAnswer })
+/** Signals the tour run parked on gate `previous` with the walkthrough's new state, then wakes it. */
+export const SignalTour = Action.make("vibelang/tour/signal", { payload: { tour: Schema.String, previous: Schema.Number, state: Walkthrough }, success: Schema.Null })
+export const RecordPause = Action.make("vibelang/tour/request/pause", { payload: {}, success: TourControlled })
+export const RecordResume = Action.make("vibelang/tour/request/resume", { payload: {}, success: TourControlled })
+export const RecordSeek = Action.make("vibelang/tour/request/seek", { payload: { step: Schema.Int }, success: TourControlled })
+
+/** A control's body after its record step: signal the parked run when the control changed the walkthrough. */
+function signalled<E, R>(control: Node.Node<typeof TourControlled.Type, E, R>) {
+  return control.pipe(Node.branch({
+    if: Node.capture({}, (result) => result.state !== null && result.refusal === null),
+    // The branch admits only a non-null state; the payload schema checks it again when the step runs.
+    then: (result) => SignalTour.call({ tour: result.tour, previous: result.previous, state: result.state as Planned.Planned<Walkthrough> }),
+    else: (result) => Node.succeed(result.refusal),
+  }))
+}
 export const PauseTour = Flow.make("vibelang/tour/pause", {
   description: "Pauses the walkthrough's current reading hold.", modelInvocable: false,
-  payload: {}, success: PostAnswer, body: Node.capture({}, (payload) => PauseTourStep.call(payload)),
+  payload: {}, success: PostAnswer, body: Node.capture({}, () => signalled(RecordPause.call({}))),
 })
-export const ResumeTourStep = Action.make("vibelang/tour/resume/perform", { payload: {}, success: PostAnswer })
 export const ResumeTour = Flow.make("vibelang/tour/resume", {
   description: "Resumes the walkthrough's remaining reading time.", modelInvocable: false,
-  payload: {}, success: PostAnswer, body: Node.capture({}, (payload) => ResumeTourStep.call(payload)),
+  payload: {}, success: PostAnswer, body: Node.capture({}, () => signalled(RecordResume.call({}))),
 })
-export const SeekTourStep = Action.make("vibelang/tour/seek/perform", { payload: { step: Schema.Int }, success: PostAnswer })
 export const SeekTour = Flow.make("vibelang/tour/seek", {
   description: "Seeks to a walkthrough step.", modelInvocable: false,
-  payload: { step: Schema.Int }, success: PostAnswer, body: Node.capture({}, (payload) => SeekTourStep.call(payload)),
+  payload: { step: Schema.Int }, success: PostAnswer, body: Node.capture({}, (payload) => signalled(RecordSeek.call(payload))),
 })
+
+/** A control's record step: the sequencer's answer, counted by outcome. A host without controls refuses. */
 export effect function controlTour(action: "pause" | "resume" | "seek", step: number) {
   const tours = try Tours
-  if (tours.control === undefined) return "not-replying" as const
-  const result = try Action.make({ name: `vibelang/tour/${action}`, success: Schema.Struct({ tour: Schema.String, previous: Schema.Number, state: Schema.NullOr(Walkthrough), refusal: PostAnswer }), execute: tours.control(action, step) })
-  if (result.state !== null && result.refusal === null) {
-    const gate = walkthroughGate(result.previous)
-    const token = try Effect.orDie(Effect.try(() => DurableDeferred.tokenFromExecutionId(gate, { flow: Tour, executionId: `tour/${result.tour}` })))
-    try Action.make({ name: "vibelang/tour/signal", execute: Effect.orDie(DurableDeferred.succeed(gate, { token, value: result.state })) })
-    try tours.wake()
-  }
+  const result = tours.control === undefined
+    ? { tour: "", previous: 0, state: null, refusal: "not-replying" as const }
+    : try tours.control(action, step)
   try counted(action, result.refusal ?? "accepted")
-  return result.refusal
+  return result
+}
+
+/** A control's signal step: completes the parked run's gate with the new state, then wakes the run. */
+export effect function signalTour(tour: string, previous: number, state: Walkthrough) {
+  const gate = walkthroughGate(previous)
+  const token = try Effect.orDie(Effect.try(() => DurableDeferred.tokenFromExecutionId(gate, { flow: Tour, executionId: `tour/${tour}` })))
+  try Effect.orDie(DurableDeferred.succeed(gate, { token, value: state }))
+  try (try Tours).wake()
+  return null
 }
 
 /** Both hosts run the designer's exact script. Each visit has a journal identity, including back/skip. */
@@ -322,7 +377,11 @@ export effect function toured<E, R>(tour: string, speak: void!E!R) {
   let run = Continuation.beginTourBody()
   const tours = try Tours
   run = Continuation.observeTourActivity(run, try tours.running(tour))
-  if (!Continuation.canSpeakTour(run)) return null
+  // Every run logs one outcome. A run (or its re-drive after a park) that finds the tour over is `inactive`.
+  if (!Continuation.canSpeakTour(run)) {
+    try counted("run", run.phase)
+    return null
+  }
   run = Continuation.startTourSpeech(run)
   const outcome = try.race [Effect.as(speak, "finished"), Effect.as(tours.ended(tour), "ended")]
   run = Continuation.finishTourSpeech(run, outcome === "ended")
@@ -332,15 +391,40 @@ export effect function toured<E, R>(tour: string, speak: void!E!R) {
 
 /** Registers StartTour, the walkthrough controls and EndTour; their steps reach the sequencer through `Tours`. */
 export const tourRegistration = Layer.mergeAll(
-  Interpreter.layerWithImplementations(StartTour, StartTourStep.toLayer(() => withSpan(startTour(), "vibelang.tour.start"))),
-  Interpreter.layerWithImplementations(PauseTour, PauseTourStep.toLayer(() => withSpan(controlTour("pause", 0), "vibelang.tour.pause"))),
-  Interpreter.layerWithImplementations(ResumeTour, ResumeTourStep.toLayer(() => withSpan(controlTour("resume", 0), "vibelang.tour.resume"))),
-  Interpreter.layerWithImplementations(SeekTour, SeekTourStep.toLayer((p) => withSpan(controlTour("seek", p.step), "vibelang.tour.seek"))),
-  Interpreter.layerWithImplementations(EndTour, EndTourStep.toLayer(() => withSpan(endTour(), "vibelang.tour.end"))),
+  Interpreter.layerWithImplementations(StartTour, Layer.mergeAll(
+    RecordTour.toLayer(() => withSpan(recordTour(), "vibelang.tour.start")),
+    DispatchTour.toLayer(() => withSpan(dispatchTour(), "vibelang.tour.dispatch")),
+  )),
+  Interpreter.layerWithImplementations(PauseTour, Layer.mergeAll(
+    RecordPause.toLayer(() => withSpan(controlTour("pause", 0), "vibelang.tour.pause")),
+    SignalTour.toLayer((p) => withSpan(signalTour(p.tour, p.previous, p.state), "vibelang.tour.signal")),
+  )),
+  Interpreter.layerWithImplementations(ResumeTour, Layer.mergeAll(
+    RecordResume.toLayer(() => withSpan(controlTour("resume", 0), "vibelang.tour.resume")),
+    SignalTour.toLayer((p) => withSpan(signalTour(p.tour, p.previous, p.state), "vibelang.tour.signal")),
+  )),
+  Interpreter.layerWithImplementations(SeekTour, Layer.mergeAll(
+    RecordSeek.toLayer((p) => withSpan(controlTour("seek", p.step), "vibelang.tour.seek")),
+    SignalTour.toLayer((p) => withSpan(signalTour(p.tour, p.previous, p.state), "vibelang.tour.signal")),
+  )),
+  Interpreter.layerWithImplementations(EndTour, Layer.mergeAll(
+    RecordEndTour.toLayer(() => withSpan(recordEndTour(), "vibelang.tour.end")),
+    WakeTour.toLayer(() => withSpan(wakeTour(), "vibelang.tour.wake")),
+  )),
 )
 
-/** Registers `Tour` on both hosts: the designer's walkthrough, raced against the person ending it. */
-export const walkRegistration = Interpreter.layerWithImplementations(Tour, TourStep.toLayer((p) => withSpan(toured(p.tour, walk(p.tour)), "vibelang.tour")))
+/** A tour run's start step: the tour, while it still owns the conversation; else `""`, counted as an inactive run. */
+export effect function beginTour(tour: string) {
+  if (try (try Tours).running(tour)) return tour
+  try counted("run", "inactive")
+  return ""
+}
+
+/** Registers `Tour` on both conversation hosts: the designer's walkthrough, raced against the person ending it. */
+export const walkRegistration = Interpreter.layerWithImplementations(Tour, Layer.mergeAll(
+  BeginTour.toLayer((p) => withSpan(beginTour(p.tour), "vibelang.tour.begin")),
+  GuideTour.toLayer((p) => withSpan(toured(p.tour, walk(p.tour)), "vibelang.tour")),
+))
 
 // ── Sandboxes: all surfaces and agents run the same typed, journaled steps. ─────────────────────────────────────
 import { SandboxSnapshot, Refused, Unavailable } from "./Factory.vibe"
@@ -386,7 +470,7 @@ export const sandboxRegistration = Layer.mergeAll(
 
 
 /** The public docs tool remains available to ordinary replies; the tour controller owns its own page order. */
-export const OpenDocsStep = Action.make("vibelang/docs/open/perform", { payload: { path: Schema.String }, success: Schema.Boolean })
+export const OpenDocsStep = Action.make("vibelang/docs/pane/open", { payload: { path: Schema.String }, success: Schema.Boolean })
 export const OpenDocs = Flow.make("vibelang/docs/open", {
   description: "Opens a VibeLang docs page in the conversation. path is the page path, such as /setup. Returns whether it opened.",
   modelInvocable: true,
@@ -396,7 +480,7 @@ export const OpenDocs = Flow.make("vibelang/docs/open", {
 })
 
 /** Wiki tool and person action: both record OpenPane, through the same sequencer and journaled step. */
-export const OpenWikiStep = Action.make("vibelang/wiki/open/perform", { payload: { page: Schema.String }, success: Schema.Boolean })
+export const OpenWikiStep = Action.make("vibelang/wiki/pane/open", { payload: { page: Schema.String }, success: Schema.Boolean })
 export const OpenWiki = Flow.make("vibelang/wiki/open", {
   description: "Opens a project wiki page in the conversation. page is index, rulings, roadmap or a decisions/<number>-<slug> page id. Returns whether it opened.",
   modelInvocable: true,

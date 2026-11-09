@@ -81,7 +81,7 @@ function expectAnsweredAfterTour(events: ReadonlyArray<Event>) {
 }
 
 it.live("a tour accepted before the reply starts runs as its child; ending it lets the reply answer", () => effect {
-  const reply = try latch("vibelang/Reply")
+  const reply = try latch("vibelang/reply/answer")
   const lines = try Ref.make<ReadonlyArray<Line>>([])
   const world = Layer.merge(MockFactory.pipe(Layer.provide(Layer.succeed(Digest.Digest, try holding([reply])))), capture(lines))
   return try Effect.provide(effect {
@@ -103,8 +103,8 @@ it.live("a tour accepted before the reply starts runs as its child; ending it le
 }, 30_000)
 
 it.live("a tour ended before the reply's child starts it: the child returns at once and the reply retries", () => effect {
-  const reply = try latch("vibelang/Reply")
-  const tour = try latch("vibelang/Tour")
+  const reply = try latch("vibelang/reply/answer")
+  const tour = try latch("vibelang/tour/start")
   const lines = try Ref.make<ReadonlyArray<Line>>([])
   const world = Layer.merge(MockFactory.pipe(Layer.provide(Layer.succeed(Digest.Digest, try holding([reply, tour])))), capture(lines))
   return try Effect.provide(effect {

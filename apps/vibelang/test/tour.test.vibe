@@ -9,7 +9,7 @@ import { Action, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import {
-  DOCS_ORIGIN, docsPage, EndTour, openDocs, readingMillis, Reply, ReplyStep, say, StartTour, Tour, TourStep, toured, tourRegistration, Tours, walk,
+  DOCS_ORIGIN, docsPage, EndTour, openDocs, readingMillis, Reply, ReplyStep, say, StartTour, Tour, toured, tourRegistration, Tours, walk, walkRegistration,
 } from "../src/core/flows.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
@@ -170,7 +170,7 @@ describe("the tour's flows over the live sequencer", () => {
   it.effect("the actual walkthrough holds its first step to the exact table deadline", () => scoped(effect {
     const w = try world()
     try w.sequencer.startTour()
-    try Layer.build(Interpreter.layerWithImplementations(Tour, TourStep.toLayer(() => inWorld(w, toured("t1", walk("t1"))))).pipe(onEngine(w)))
+    try Layer.build(walkRegistration.pipe(Layer.provide(Layer.succeed(Tours, toursOf(w.sequencer))), onEngine(w)))
     const running = fork w.engine.execute(Tour, { executionId: "tour/pacing", payload: { tour: "t1" } })
     try until2(w, event => event.type === "ReplyDelta")
     try TestClock.adjust("6 seconds")
@@ -250,10 +250,11 @@ describe("the tour's flows over the live sequencer", () => {
     try Effect.try(() => {
       expect(lines.map((line) => [JSON.parse(line).message[0], JSON.parse(line).annotations.outcome])).toEqual([
         ["vibelang.tour.start", "accepted"],
+        ["vibelang.tour.dispatch", "requested"],
         ["vibelang.tour.open", "opened"],
         ["vibelang.tour.say", "said"],
-        ["vibelang.tour.wake", "requested"],
         ["vibelang.tour.end", "accepted"],
+        ["vibelang.tour.wake", "requested"],
         ["vibelang.tour.end", "not-replying"],
       ])
       for (const line of lines) expect(line).not.toContain("secret")

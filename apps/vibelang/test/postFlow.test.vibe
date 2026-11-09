@@ -113,7 +113,7 @@ describe("the vibelang/Post flow", () => {
     try post(w, "post/2", "other", "   ")
     const lines = (try Ref.get(w.lines)).filter((line) => line.includes("vibelang.post"))
     try Effect.try(() => {
-      expect(lines.map((line) => JSON.parse(line).annotations.outcome)).toEqual(["accepted", "empty"])
+      expect(lines.map((line) => JSON.parse(line).annotations.outcome)).toEqual(["accepted", "requested", "empty"])
       for (const line of lines) {
         expect(line).not.toContain("secret")
         expect(line).not.toContain("Ada")
