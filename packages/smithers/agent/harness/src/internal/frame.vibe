@@ -35,7 +35,7 @@ import { decider } from "./decidedBy.ts"
 import * as DemandText from "./demandText.ts"
 import * as elide from "./elide.ts"
 import { paidTogether, readingCost } from "./paidUsage.ts"
-import * as UnfinishedWork from "./unfinishedWork.ts"
+import * as UnfinishedWork from "./unfinishedWork.vibe"
 import * as UnobservedCall from "./unobservedCall.ts"
 
 /** The one journal-event-type table; see `AgentEvent.eventType`. */

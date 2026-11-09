@@ -30,6 +30,7 @@ export const defaultKeepRecent = 20_000;
  *
  * @since 1.0.0-rc.0
  * @private
+ * @throws {never}
  */
 export const compactable = (segments) => segments.filter((segment) => segment.kind === "transcript" || segment.kind === "summary" || segment.kind === "steering");
 /**
@@ -39,6 +40,7 @@ export const compactable = (segments) => segments.filter((segment) => segment.ki
  *
  * @since 1.0.0-rc.0
  * @private
+ * @throws {never}
  */
 export const pairBoundaries = (segments) => {
     const calls = new Map();

@@ -87,7 +87,7 @@ export * as ExternalTranscript from "./ExternalTranscript.vibe"
  * @category compaction
  * @since 0.1.0
  */
-export * as Compaction from "./Compaction.ts"
+export * as Compaction from "./Compaction.vibe"
 
 /**
  * @category steering

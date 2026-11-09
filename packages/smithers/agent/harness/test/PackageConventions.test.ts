@@ -46,7 +46,7 @@ describe("package conventions", () => {
 
   // Compaction verified the declared digest twice, with the noun as the only difference.
   it("verifies a declared compaction prefix in one place", () => {
-    const compaction = src.find(([name]) => name === "Compaction.ts")?.[1] ?? ""
+    const compaction = src.find(([name]) => name === "Compaction.vibe")?.[1] ?? ""
     expect(compaction.match(/step\.replacedPrefixDigest/g)?.length).toBe(1)
   })
 

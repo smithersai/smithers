@@ -1000,7 +1000,7 @@ describe("HarnessError", () => {
     // and every such site must name a member.
     const constructed = new Set<string>()
     for (const file of readdirSync(new URL("../src/", import.meta.url), { recursive: true })) {
-      if (!String(file).endsWith(".ts")) continue
+      if (!/\.(?:ts|vibe)$/.test(String(file))) continue
       const text = readFileSync(new URL(`../src/${String(file)}`, import.meta.url), "utf8")
       for (const match of text.matchAll(/new HarnessError\(\{\s*code: "([a-z_]+)"/g)) constructed.add(match[1]!)
     }

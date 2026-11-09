@@ -142,6 +142,7 @@ const usageLimitMessage = (reset: number | undefined): string =>
  *
  * @category conversions
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const publicMessage = (error: {
   readonly code: EvaluatorErrorCode

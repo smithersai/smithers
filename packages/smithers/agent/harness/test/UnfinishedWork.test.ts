@@ -18,7 +18,7 @@ import * as EngineLike from "../src/EngineLike.ts"
 import * as FailedCall from "../src/FailedCall.ts"
 import type { HarnessError } from "../src/HarnessError.vibe"
 import * as Frame from "../src/internal/frame.vibe"
-import * as UnfinishedWork from "../src/internal/unfinishedWork.ts"
+import * as UnfinishedWork from "../src/internal/unfinishedWork.vibe"
 
 const task = "Migrate the orders table to the new schema."
 const report = "I could not finish the migration: it needs database credentials this run does not have."

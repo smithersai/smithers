@@ -726,6 +726,7 @@ export const refusedBytes = 2048;
  *
  * @category conversions
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const refused = (claim) => elide.head(claim.trim(), refusedBytes, "the run record has the whole completion");
 /**
