@@ -639,9 +639,9 @@ fallbacks and two always-defined `??` fallbacks.
 
 | Lines | Why a test can't reach it deterministically |
 | --- | --- |
-| 90-97 | Reply-start contention: a tour accepted between the answer loop reading the posts and `StartReply`. Only a scheduling race reaches it; `test/postTourOrdering.test.vibe` races it with yielding schedulers and did not hit it in this measurement. |
-| 102 | `!started`: `StartReply` refused for a reason other than `busy`. Dispatch only selects unanswered posts while idle, and `full` needs 2^53 events (replay renumbers retained events). Kept as the guard for those refusals. |
-| 325 | `Tours.ended` after the tour already ended: between `running` and the subscription. Race only; the check keeps `ended` from waiting forever. |
+| 90-97 | Covered since 2026-11-09 by `test/mockReplyRace.coverage.test.vibe`. The mock reads `Digest` from context; a Digest that holds the reply's first journaled digest on a latch opens the window between dispatch and `StartReply`, and a second latch on the child tour opens the window before it runs. |
+| 102 | Deleted 2026-11-09. `StartReply` refused for a reason other than `busy` needs a second dispatch of the post, which the answer loop never makes, or 2^53 events. The start step now has no success value and every refusal is contention. |
+| 327 | `Tours.ended` after the tour already ended: between `running` and the subscription. Nothing in that window calls a service a test can hold, so only the fiber scheduler reaches it; the check keeps `ended` from waiting forever. |
 
 **Flow bodies (fixed 2026-11-09).** `src/core/flows.vibe` had 14 flows whose `body` was `() => Node.succeed(…)` and
 whose behavior `engine.register` attached at registration, a second, opaque shape the flow package documents as

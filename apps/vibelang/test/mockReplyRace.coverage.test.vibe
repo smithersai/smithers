@@ -1,0 +1,127 @@
+// A tour accepted after the answer loop picked a post, before that post's reply started (src/core/MockFactory.vibe).
+// A Digest that holds a flow's first journaled digest on a latch opens each window deterministically: the reply is
+// refused `busy`, counts the contention, runs the accepted tour as its child, and answers the post once it ends.
+import { expect, it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { Digest } from "effect/crypto"
+import { apply, empty, type Event } from "../src/core/conversation.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { replyIdOf } from "../src/core/flows.vibe"
+import { mockReply } from "../src/core/mockReplies.vibe"
+
+effect function platformDigest() {
+  provide WebCrypto.layer {
+    return try Digest.Digest
+  }
+}
+
+interface Latch {
+  readonly marker: string
+  readonly held: Deferred.Deferred<void>
+  readonly release: Deferred.Deferred<void>
+}
+
+effect function latch(marker: string) {
+  const value: Latch = { marker, held: try Deferred.make<void>(), release: try Deferred.make<void>() }
+  return value
+}
+
+/** The platform Digest, except the first digest naming each latch's marker signals `held`, then waits for `release`. */
+effect function holding(latches: ReadonlyArray<Latch>) {
+  const web = try platformDigest()
+  const armed = new Set(latches.map((each) => each.marker))
+  const hold = (data: Uint8Array) => effect {
+    const text = try Effect.orDie(Effect.try(() => new TextDecoder().decode(data)))
+    const found = latches.find((each) => armed.has(each.marker) && text.includes(each.marker))
+    if (found === undefined) return
+    armed.delete(found.marker)
+    try Deferred.succeed(found.held, undefined)
+    try Deferred.await(found.release)
+  }
+  const digest: Digest.Digest["Service"] = {
+    digest: (algorithm, data) => Effect.andThen(hold(data), web.digest(algorithm, data)),
+    digestHex: (algorithm, data) => Effect.andThen(hold(data), web.digestHex(algorithm, data)),
+  }
+  return digest
+}
+
+interface Line {
+  readonly message: string
+  readonly outcome: unknown
+}
+
+/** Every log line's message and `outcome` annotation, beside the default logger. */
+function capture(lines: Ref.Ref<ReadonlyArray<Line>>) {
+  return Logger.layer([Logger.make((options) => {
+    const line: Line = { message: String(options.message), outcome: options.fiber.getRef(References.CurrentLogAnnotations).outcome }
+    Effect.runSync(Ref.update(lines, (all) => [...all, line]))
+  })], { mergeWithExisting: true })
+}
+
+/** The room's events up to the reply to `post` finishing, and the outcomes logged as `message`. */
+effect function answered(post: string, lines: Ref.Ref<ReadonlyArray<Line>>, message: string) {
+  const factory = try Factory
+  const events: ReadonlyArray<Event> = Array.from(try Stream.runCollect(factory.events("race", 0).pipe(
+    Stream.takeUntil((event) => event.type === "ReplyFinished" && event.id === replyIdOf(post)),
+    Stream.timeout("10 seconds"),
+  )))
+  const outcomes = (try Ref.get(lines)).filter((line) => line.message.includes(message)).map((line) => line.outcome)
+  return { events, outcomes }
+}
+
+function expectAnsweredAfterTour(events: ReadonlyArray<Event>) {
+  const types = events.map((event) => event.type)
+  expect(types.indexOf("TourStarted")).toBeGreaterThan(types.indexOf("Posted"))
+  expect(types.indexOf("TourEnded")).toBeLessThan(types.indexOf("ReplyStarted"))
+  const conversation = events.reduce(apply, empty)
+  const person = conversation.entries.find((entry) => entry.author === "person")!
+  expect(conversation.entries.find((entry) => entry.inReplyTo === person.id)).toMatchObject({ text: mockReply("install"), done: true })
+  expect(conversation.agent).toBe("idle")
+}
+
+it.live("a tour accepted before the reply starts runs as its child; ending it lets the reply answer", () => effect {
+  const reply = try latch("vibelang/Reply")
+  const lines = try Ref.make<ReadonlyArray<Line>>([])
+  const world = Layer.merge(MockFactory.pipe(Layer.provide(Layer.succeed(Digest.Digest, try holding([reply])))), capture(lines))
+  return try Effect.provide(effect {
+    const factory = try Factory
+    try factory.post("race", "a", "Ada", "install")
+    const post = (try factory.read("race", 0)).entries[0]!.id
+    try Deferred.await(reply.held).pipe(Effect.timeout("5 seconds"))
+    try factory.tour("race")
+    try Deferred.succeed(reply.release, undefined)
+    try Stream.runDrain(factory.events("race", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyDelta"), Stream.timeout("5 seconds")))
+    try factory.endTour("race")
+    const { events, outcomes } = try answered(post, lines, "vibelang.reply.start")
+    try Effect.try(() => {
+      expectAnsweredAfterTour(events)
+      expect(events.some((event) => event.type === "WalkthroughDriven")).toBe(true)
+      expect(outcomes).toContain("contended")
+    })
+  }, world)
+}, 30_000)
+
+it.live("a tour ended before the reply's child starts it: the child returns at once and the reply retries", () => effect {
+  const reply = try latch("vibelang/Reply")
+  const tour = try latch("vibelang/Tour")
+  const lines = try Ref.make<ReadonlyArray<Line>>([])
+  const world = Layer.merge(MockFactory.pipe(Layer.provide(Layer.succeed(Digest.Digest, try holding([reply, tour])))), capture(lines))
+  return try Effect.provide(effect {
+    const factory = try Factory
+    try factory.post("race", "a", "Ada", "install")
+    const post = (try factory.read("race", 0)).entries[0]!.id
+    try Deferred.await(reply.held).pipe(Effect.timeout("5 seconds"))
+    try factory.tour("race")
+    try Deferred.succeed(reply.release, undefined)
+    try Deferred.await(tour.held).pipe(Effect.timeout("5 seconds"))
+    try factory.endTour("race")
+    try Deferred.succeed(tour.release, undefined)
+    const { events, outcomes } = try answered(post, lines, "vibelang.reply.start")
+    try Effect.try(() => {
+      expectAnsweredAfterTour(events)
+      expect(events.some((event) => event.type === "WalkthroughDriven")).toBe(false)
+      expect(outcomes).toContain("contended")
+    })
+  }, world)
+}, 30_000)
