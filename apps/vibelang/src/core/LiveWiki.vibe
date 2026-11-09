@@ -1,7 +1,7 @@
 import { DurableText } from "./wire.vibe"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { WikiFailure, WikiState, type WikiApi, type WikiRequest } from "./wikiSchemas.vibe"
-const reasons = ["forbidden", "connect", "sign-in", "missing", "unknown", "conflict", "empty", "invalid", "unavailable", "rate-limited", "no-model", "draft", "budget", "partial", "failed"] as const
+const reasons = ["forbidden", "connect", "fork", "install", "sign-in", "missing", "unknown", "conflict", "empty", "invalid", "unavailable", "rate-limited", "no-model", "draft", "budget", "partial", "failed"] as const
 export effect function liveWiki(origin: string): WikiApi!!HttpClient.HttpClient {
   const client = try HttpClient.HttpClient
   const answer = effect (response: import("effect/http").HttpClientResponse.HttpClientResponse) => {

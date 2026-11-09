@@ -13,7 +13,8 @@ import type { Storage } from "../worker/Objects.vibe"
 import { objectStorage } from "./support/objectStorage.ts"
 
 const repo: Issues.Repository = { owner: "o", name: "r", api: "https://github.test", agent: "agent-bot" }
-const person = (over: Partial<Issues.Principal> = {}): Issues.Principal => ({ id: "7", login: "ada", role: "maintainer", token: Redacted.make("token"), ...over })
+const person = (over: Partial<Issues.Principal> = {}): Issues.Principal => ({ id: "7", login: "ada", role: "maintainer", connection: { person: 1, delegation: "fixture-delegation" }, ...over })
+const unconnected: Issues.Principal = { id: "7", login: "ada", role: "maintainer" }
 const asking = (over: Partial<IssueRequest> = {}): IssueRequest => ({ op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k1", ...over })
 /** The typed failure of a program expected to refuse; any other failure fails the assertion on its `reason`. */
 const refusal = <A, E, R>(program: A!E!R) => Effect.flip(program).pipe(Effect.map((error) => error as unknown as IssueFailure))
@@ -97,8 +98,8 @@ describe("the GitHub host's refusals", () => {
     ["an agent never accepts", person({ kind: "agent" }), { op: "accept", number: 7 }, "forbidden"],
     ["an agent never declines", person({ kind: "agent" }), { op: "decline", number: 7 }, "forbidden"],
     ["a write needs a key", person(), { op: "new", title: "t", key: "" }, "sign-in"],
-    ["a write needs a connected account", person({ token: Redacted.make("") }), { op: "new", title: "t" }, "connect"],
-    ["drafting is unavailable with no writer, even unconnected", person({ token: Redacted.make("") }), { op: "draft", title: "t" }, "unavailable"],
+    ["a write needs a connected account", unconnected, { op: "new", title: "t" }, "connect"],
+    ["drafting is unavailable with no writer, even unconnected", unconnected, { op: "draft", title: "t" }, "unavailable"],
   ]
   it.live.each(cases)("%s", ([_name, actor, over, reason]) => effect {
     const { client, seen } = transport(500, {})
@@ -219,7 +220,7 @@ describe("the durable issues execution", () => {
   }, 60_000)
 
   it.live("accepting leaves every other issue as it was, and reports an unconnected session", () => effect {
-    const { run } = world(authorityOf(person({ token: Redacted.make("") })), () => [record(), record({ number: 8, githubId: 801 })])
+    const { run } = world(authorityOf(unconnected), () => [record(), record({ number: 8, githubId: 801 })])
     const result = try run(asking({ op: "accept", number: 7, key: "accept-2" }))
     try Effect.try(() => {
       expect(result.items.map((item) => item.vip)).toEqual(["Accepted", "In review"])

@@ -270,15 +270,13 @@ describe("the device route's refusals", () => {
         const oversized = try http.execute(post(origin, JSON.stringify({ token: "x".repeat(3000) })))
         const issued = try (try http.execute(post(origin, JSON.stringify({ token: "device-token-9" })))).json
         const cookie = (issued as { readonly cookie: string }).cookie
-        const connect = try http.execute(HttpClientRequest.get(origin + "/api/auth/github").pipe(HttpClientRequest.setHeader("cookie", cookie)))
-        const page = try http.execute(HttpClientRequest.get(origin + "/api/auth/sign-in?wiki-page=" + encodeURIComponent("../secrets")))
+        const connect = try http.execute(HttpClientRequest.post(origin + "/api/auth/connect").pipe(HttpClientRequest.setHeader("origin", origin), HttpClientRequest.setHeader("cookie", cookie)))
         const wiki = try http.execute(HttpClientRequest.post(origin + "/api/wiki").pipe(HttpClientRequest.setHeader("origin", "https://elsewhere.example"), HttpClientRequest.bodyText("{}", "application/json")))
         try Effect.try(() => {
           expect(notJson.status).toBe(400)
           expect(foreign.status).toBe(403)
           expect(oversized.status).toBe(413)
           expect(connect.status).toBe(403)
-          expect(page.status).toBe(400)
           expect(wiki.status).toBe(403)
         })
       }

@@ -161,11 +161,13 @@ it.effect("serves consent: GET shows the page with its CSP, POST needs same-orig
   const empty = try post("answer=connect")
   const fresh = try atConsent()
   const noConsent = try route(fresh.broker, Broker.CONSENT, { method: "POST", headers: { cookie: `__Host-smithers-broker=${fresh.browser}`, origin: "https://smithers.sh", "sec-fetch-site": "same-origin" }, body: "answer=cancel" })
-  const done = try post(form("connect"))
+  const nullForm = { cookie, origin: "null", "content-type": "application/x-www-form-urlencoded" }
+  const nullCrossSite = try post(form("connect"), { ...nullForm, "sec-fetch-site": "cross-site" })
+  const done = try post(form("connect"), { ...nullForm, "sec-fetch-site": "same-origin" })
   try Effect.try(() => {
     expect(page.status).toBe(200)
-    expect(page.headers["content-security-policy"]).toBe(Broker.CONSENT_CSP)
-    expect([crossSite.status, large.status, badAnswer.status, empty.status, noConsent.status]).toEqual([400, 400, 400, 400, 400])
+    expect(page.headers["content-security-policy"]).toBe(Broker.CONSENT_CSP + " " + origin)
+    expect([crossSite.status, large.status, badAnswer.status, empty.status, noConsent.status, nullCrossSite.status]).toEqual([400, 400, 400, 400, 400, 400])
     expect(done.status).toBe(303)
     expect(f.installed).toHaveLength(1)
   })

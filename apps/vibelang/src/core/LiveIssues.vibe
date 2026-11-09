@@ -7,7 +7,7 @@ export effect function liveIssues(origin: string): IssuesApi!!HttpClient.HttpCli
     const response = try client.execute(wire).pipe(Effect.mapError(() => new IssueFailure({ reason: "unavailable" })))
     if (response.status !== 200) {
       const body = response.json catch () => undefined
-      const failure = Schema.decodeUnknownOption(Schema.Struct({ unwritten: Schema.optionalKey(Schema.Boolean), reason: Schema.Literals(["forbidden", "connect", "sign-in", "missing", "unknown", "title", "incomplete", "assignee", "empty", "tree", "invalid", "review", "closed", "unavailable", "rate-limited", "no-model", "draft", "budget"]) }))(body)
+      const failure = Schema.decodeUnknownOption(Schema.Struct({ unwritten: Schema.optionalKey(Schema.Boolean), reason: Schema.Literals(["forbidden", "connect", "fork", "install", "sign-in", "missing", "unknown", "title", "incomplete", "assignee", "empty", "tree", "invalid", "review", "closed", "unavailable", "rate-limited", "no-model", "draft", "budget"]) }))(body)
       throw new IssueFailure(Option.isSome(failure) ? failure.value : { reason: "unavailable" })
     }
     const body = try response.json.pipe(Effect.mapError(() => new IssueFailure({ reason: "protocol" })))

@@ -117,7 +117,7 @@ it.live("wiki/http-surface", () => run("wiki/http-surface", Http, (input) => eff
     const answer = try Effect.provideService(publicWiki("wiki-public", storage), HttpServerRequest.HttpServerRequest, server)
     if (answer.status !== 404) return false
   }
-  const authority: WikiAuthority.Shape = { current: () => succeed(input.signedOut ? undefined : { id: "7", login: "fuzz", role: input.role, token: Redacted.make("token") }) }
+  const authority: WikiAuthority.Shape = { current: () => succeed(input.signedOut ? undefined : { id: "7", login: "fuzz", role: input.role, connection: { person: 1, delegation: "fixture-delegation" } }) }
   const response = try Effect.provideService(serveWiki("wiki-http", storage, repo).pipe(
     Effect.provideService(WikiAuthority, authority),
     Effect.provideService(HttpClient.HttpClient, fakeClient(seeded())),

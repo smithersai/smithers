@@ -6,3 +6,20 @@ it("preserves rate-limited 403 classification and delay before permission handli
   expect(issueFailureOf({ details: { status: 403 } }).reason).toBe("forbidden")
   expect(JSON.stringify(issueFailureOf({ details: { status: 403, rateLimited: true, body: "private-text", token: "private-key" } }))).not.toMatch(/private-text|private-key/)
 })
+
+import { GitHub } from "@smthrs/integrations"
+import { wikiFailureOf } from "../worker/Wiki.vibe"
+it("names each broker refusal, on a typed write and on a delegated read, without the provider error", () => {
+  for (const reason of ["connect", "fork", "install", "forbidden", "unknown", "unavailable", "key_conflict"] as const) {
+    const expected = reason === "key_conflict" ? "invalid" : reason
+    const typed = new GitHub.Delegation.DelegationRefused({ reason })
+    const read = { details: { delegation: reason, status: 500, token: "private-key" } }
+    for (const error of [typed, read]) {
+      expect(issueFailureOf(error).reason).toBe(expected)
+      expect(wikiFailureOf(error).reason).toBe(expected)
+      expect(JSON.stringify(issueFailureOf(error))).not.toContain("private-key")
+    }
+  }
+  expect(issueFailureOf(new GitHub.Delegation.DelegationRefused({ reason: "fork" })).code).toBeUndefined()
+  expect(issueFailureOf(new GitHub.Delegation.DelegationRefused({ reason: "unavailable" })).code).toBe("unavailable")
+})

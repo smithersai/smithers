@@ -84,7 +84,15 @@ export function issuesView(ui: IssuesUi, h: H, send: Send): Html {
   ])
 }
 function connected(ui: IssuesUi): boolean { return ui.data.connected !== false }
-function connect(h: H, ui: IssuesUi): Html { return h.a([h.Class("sui-button sui-button-sm"), h.Href(ui.connection)], ["Connect GitHub"]) }
+function connect(h: H, ui: IssuesUi): Html { return h.form([h.Method("post"), h.Action(ui.connection)], [h.button([h.Class("sui-button sui-button-sm"), h.Type("submit")], ["Connect GitHub"])]) }
+function disconnect(h: H): Html { return h.form([h.Method("post"), h.Action("/api/auth/disconnect")], [h.button([h.Class("sui-button sui-button-sm"), h.Type("submit")], ["Disconnect"])]) }
+/** The one action a failure offers: connecting, forking, or installing the App on the fork. */
+function failureAction(h: H, ui: IssuesUi): ReadonlyArray<Html> {
+  if (ui.error === "Connect GitHub.") return [connect(h, ui)]
+  if (ui.error === "Fork on GitHub.") return [h.a([h.Class("sui-button sui-button-sm"), h.Href("https://github.com/smithersai/vibelang/fork")], ["Fork"])]
+  if (ui.error === "Install Smithers on your fork.") return [h.a([h.Class("sui-button sui-button-sm"), h.Href("/api/auth/install")], ["Install"])]
+  return []
+}
 function rolesView(h: H, send: Send): ReadonlyArray<Html> {
   const roles: ReadonlyArray<Role> = ["viewer", "new", "community", "contributor", "maintainer"]
   const rows: ReadonlyArray<{ readonly label: string; readonly op: IssueOperation | "roles" }> = [
@@ -110,7 +118,7 @@ function list(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
   const rows = filtered.filter((i) => i.state === ui.state && `${i.title} #${i.number} ${i.labels.join(" ")}`.toLowerCase().includes(ui.query.toLowerCase()))
   const propose = ui.kind === "VIPs"
   const action = propose ? "Propose a VIP" : "New issue"
-  const connection = ui.role !== "viewer" && !connected(ui) ? [connect(h, ui)] : []
+  const connection = ui.role !== "viewer" && !connected(ui) ? [connect(h, ui)] : ui.data.connected === true ? [disconnect(h)] : []
   const controls = connected(ui) && issuePermission(ui.role, propose ? "propose" : "new") ? [h.button([h.Class("sui-button sui-button-sm sui-button-default"), h.Type("button"), h.OnClick(send(propose ? "vip-form" : "new-form"))], [action])] : []
   return [header(h, send, titleOf(ui), "‹ Chat", [button(h, send, "Specification", "specification"), button(h, send, "Roles", "roles"), ...connection, ...controls]), ...(ui.error === "" || ui.status === "error" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]), h.div([h.Class("sui-page-body")], [h.div([h.Class("sui-issues-view")], [
     h.div([h.Class("sui-issues-header")], [
@@ -154,7 +162,7 @@ function detail(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
       h.ol([h.Class("sui-item-conv-events")], i.notes.filter(n => n.event).map(n => h.li([h.Class("sui-item-conv-event")], [h.span([h.Class("sui-item-conv-event-icon")], [n.text.startsWith("added ") ? "+" : n.text.startsWith("accepted ") ? "✓" : n.text.startsWith("proposed ") ? "◦" : "↳"]), h.span([h.Class("sui-item-conv-event-text")], [h.b([], [n.author]), " ", ...eventText(ui, h, send, n.text), ...(n.age === "" ? [] : [` · ${n.age}`])])]))),
       h.ol([h.Class("sui-item-conv-comments")], i.notes.filter(n => !n.event).map(n => h.li([h.Class("sui-item-conv-comment")], [h.div([h.Class("sui-item-conv-comment-meta")], [avatar(h, n.author), h.span([h.Class("sui-item-conv-author")], [n.author]), ...(n.author === "VibeLang agent" ? [h.span([h.Class("sui-badge sui-badge-secondary")], ["agent"])] : []), ...(n.age === "" ? [] : [h.span([], [when(ui.data.absoluteDates === true, n.age, true)])])]), ...issueBody(ui, h, send, n.text)]))),
       ...(connected(ui) && issuePermission(ui.role, "comment") ? [h.div([h.Class("sui-item-conv-composer")], [h.textarea([h.Class("sui-textarea"), h.AriaLabel("Comment"), h.Disabled(ui.busy || ui.retry !== undefined), h.Placeholder("Comment"), h.Value(ui.comment), h.OnInput((value) => send("comment-text", value)), h.OnKeyDownPreventDefault((key, mods) => key === "Enter" && (mods.metaKey || mods.ctrlKey) ? Option.some(send("comment")) : Option.none())]), h.div([h.Class("sui-item-conv-composer-actions")], [h.button([h.Type("button"), h.Class("sui-button sui-button-sm sui-button-default"), h.OnClick(send("comment"))], ["Comment"])])])] : []),
-      ...(ui.error === "" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...(ui.error === "Connect GitHub." ? [connect(h, ui)] : []), ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]),
+      ...(ui.error === "" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...failureAction(h, ui), ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]),
     ]),
     h.aside([h.Class("sui-item-conv-aside")], [aside("Assignees", [i.assignee === "" ? h.span([h.Class("ix-aside-muted")], ["No one"]) : h.span([h.Class("ix-aside-row")], [avatar(h, i.assignee), i.assignee])]), ...(i.task === "" ? [] : [aside("Task", [h.span([h.Class("ix-aside-row")], [icon(h, i), i.task])])]), aside("Labels", i.labels.map((l) => h.span([h.Class("sui-badge sui-badge-secondary")], [l]))), ...(parent === undefined ? [] : [aside("Parent", [issueLink(h, send, parent)])]), ...(i.vip === "" ? [] : [aside("Proposer", [h.span([], [i.author])]), ...(ui.data.reviewers === undefined || ui.data.reviewers.length === 0 ? [] : [aside("Reviewer", [h.span([], [ui.data.reviewers.join(", ")])])]), ...children.filter((c) => c.task !== "").map((c) => aside("Task", [issueLink(h, send, c)])), aside("VIP", [h.a([h.Href(i.review), h.Class("sui-button-link")], ["Review change"]), h.a([h.Href(i.review + "/files"), h.Class("sui-item-aside-link")], [i.path.trim() === "" ? "Files" : i.path])])])]),
   ])])]
@@ -176,7 +184,7 @@ function form(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
         h.div([], [h.span([h.Class("sui-label")], ["Prior art"]), h.p([h.Style({ margin: "4px 0 0", fontSize: "13px", whiteSpace: "pre-line" })], [ui.prior])]),
       ]),
     ])]),
-    ...(ui.error === "" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...(ui.error === "Connect GitHub." ? [connect(h, ui)] : []), ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]),
+    ...(ui.error === "" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...failureAction(h, ui), ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]),
     h.div([h.Class("sui-issue-form-actions")], [...(vip && ui.step === 1 ? [button(h, send, "Draft with agent", "draft")] : []), ...(vip && ui.step > 1 ? [button(h, send, "Back", "back")] : []), h.button([h.Class("sui-button sui-button-sm sui-button-solid"), h.Type("button"), h.Disabled(ui.busy || ui.retry !== undefined), h.OnClick(send(vip ? ui.step < 4 ? "continue" : "propose" : "new"))], [vip ? ui.step < 4 ? "Continue" : "Submit VIP" : "New issue"])]),
   ])])]
 }
@@ -186,7 +194,7 @@ function dialog(ui: IssuesUi, h: H, send: Send): Html {
   return h.dialog([h.Id("ix-dialog"), h.Class("sui-dialog-content ix-dialog"), h.AriaLabel(name), h.AriaModal(true), h.DataAttribute("state", "open"), h.OnCancelPreventDefault(send("cancel"))], [
     h.div([h.Class("sui-dialog-header")], [h.h2([h.Class("sui-dialog-title")], [name])]),
     ...(ui.dialog === "commit" ? [h.div([h.Class("sui-field")], [h.span([h.Class("sui-label")], ["Assignee"]), h.div([h.Class("ix-pick"), h.Role("radiogroup"), h.AriaLabel("Assignee"), h.OnKeyDownPreventDefault((key) => key === "Enter" ? Option.some(send("commit")) : Option.none())], (ui.data.assignees ?? ["VibeLang agent", "Will", "Maya"].map((name) => ({ login: name, label: name }))).map((choice) => ({ ...choice, display: choice.label.trim() === "" ? choice.login : choice.label })).filter((choice) => choice.display.trim() !== "").map((choice) => h.label([], [h.input([h.Type("radio"), h.AriaLabel(choice.display), h.Disabled(ui.busy || ui.retry !== undefined), h.Name("assignee"), h.Checked(ui.assignee === choice.login), h.Value(choice.login), h.OnClick(send("assignee", choice.login))]), h.span([h.Class("ix-avatar"), h.DataAttribute("agent", String(choice.display === "VibeLang agent"))], [choice.display.slice(0, 1)]), choice.display])))])] : ui.dialog === "split" ? [field(h, send, "Title", "title", ui.title), field(h, send, "Summary", "summary", ui.summary, "", false, false, ui.busy || ui.retry !== undefined)] : [field(h, send, "Parent", "parent", ui.parent)]),
-    ...(ui.error === "" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...(ui.error === "Connect GitHub." ? [connect(h, ui)] : []), ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]),
+    ...(ui.error === "" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...failureAction(h, ui), ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]),
     h.div([h.Class("sui-dialog-footer")], [button(h, send, "Cancel", "cancel"), h.button([h.Class("sui-button sui-button-sm sui-button-solid"), h.Type("button"), h.Disabled(ui.busy || ui.retry !== undefined), h.OnClick(send(ui.dialog))], [ui.dialog === "commit" ? "Commit" : ui.dialog === "split" ? "Split" : "Link"])]),
   ])
 }

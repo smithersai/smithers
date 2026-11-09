@@ -1,4 +1,3 @@
-import * as Credentials from "../../worker/IssueCredentials.vibe"
 import { SpecificationReviewers } from "../../src/core/specification.vibe"
 import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 // The product fixture host on workerd's real persistent flow engine; there is no HTTP interception.
@@ -25,7 +24,7 @@ export class IssuesObject {
     if (new URL(request.url).pathname === "/api/issues") return HttpServerResponse.toWeb(await runPromise(scoped(effect {
       const kind = request.headers.get("x-test-principal") === "agent" ? "agent" as const : "person" as const
       const identity = { id: "fixture-maintainer", login: "will", role: "maintainer" as const, kind }
-      const authority: IssueAuthority.Shape = { current: () => Effect.succeed({ ...identity, token: Redacted.make("fixture-only") }) }
+      const authority: IssueAuthority.Shape = { current: () => Effect.succeed({ ...identity, connection: { person: 1, delegation: "fixture-delegation" } }) }
       const stored = try promise(() => state.storage.get("gates/fixture"))
       const current = try Ref.make(stored === undefined ? { seq: 0, items: fixtureIssues } : try Schema.decodeUnknownEffect(IssuesState)(stored))
       const fixture = try fixtureHost(effect () => identity, current)
@@ -42,7 +41,7 @@ export class IssuesObject {
       const resumed = try Ref.make(false)
       const child = try Ref.make<{ key: string; linked: boolean } | undefined>(undefined)
       const writes = try Ref.make(0)
-      const authority: IssueAuthority.Shape = { current: () => Effect.succeed({ id: "fixture-maintainer", login: "will", role: "maintainer", token: Redacted.make("fixture-only") }) }
+      const authority: IssueAuthority.Shape = { current: () => Effect.succeed({ id: "fixture-maintainer", login: "will", role: "maintainer", connection: { person: 1, delegation: "fixture-delegation" } }) }
       const faulty: IssueHost.Shape = { perform: effect (payload) => {
         if (payload.op === "read") return { seq: 1, items: fixtureIssues }
         const key = try issueWriteKey(repository, "fixture-maintainer", payload, "issue")
@@ -59,7 +58,7 @@ export class IssuesObject {
       const first = try Effect.result(run(payload))
       const failedReplay = try Effect.result(run(payload))
       const saved = try run({ ...payload, op: "read", key: "restore", resumeOp: "split", resumeKey: payload.key })
-      const other = executeIssues(hostId, state.storage, { ...payload, op: "read", key: "other-person-read", resumeOp: "split", resumeKey: payload.key }).pipe(Effect.provideService(IssueAuthority, { current: () => Effect.succeed({ id: "other-person", login: "other", role: "maintainer", token: Redacted.make("fixture-only") }) }), Effect.provideService(IssueHost, faulty), Effect.provide(FetchHttpClient.layer))
+      const other = executeIssues(hostId, state.storage, { ...payload, op: "read", key: "other-person-read", resumeOp: "split", resumeKey: payload.key }).pipe(Effect.provideService(IssueAuthority, { current: () => Effect.succeed({ id: "other-person", login: "other", role: "maintainer", connection: { person: 1, delegation: "fixture-delegation" } }) }), Effect.provideService(IssueHost, faulty), Effect.provide(FetchHttpClient.layer))
       const differentPerson = try Effect.result(other)
       try Ref.set(resumed, true)
       const edited = try Effect.result(run({ ...payload, title: "Different request", recovery: "edited" }))
@@ -99,32 +98,6 @@ export class IssuesObject {
       const recovered = try execute("second")
       const spent = try promise(() => this.state.storage.get(DailyBudget.SPENT))
       return { first, replay, spent, recovered }
-    })))
-    if (new URL(request.url).pathname === "/credentials") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(await runPromise(effect {
-      const person = try Ref.make<Credentials.SessionPerson | undefined>({ key: "one", id: "2", login: "jun", role: "maintainer" })
-      const credentials = try Credentials.make(this.state.storage, Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), () => Ref.get(person))
-      const expires = (try Clock.currentTimeMillis) + 60_000
-      try credentials.remember("one", "2", Redacted.make("fixture-user-access"), expires)
-      const raw = try promise(() => this.state.storage.get("github/one"))
-      const encrypted = !JSON.stringify(raw).includes("fixture-user-access")
-      const connected = Redacted.value((try credentials.current("signed"))!.token) === "fixture-user-access"
-      try Ref.update(person, p => p === undefined ? p : { ...p, role: "new" as const })
-      const freshRole = (try credentials.current("signed"))?.role === "new"
-      try Ref.update(person, p => p === undefined ? p : { ...p, id: "3" })
-      const ownerBound = Redacted.value((try credentials.current("signed"))!.token) === ""
-      try promise(() => this.state.storage.put("github/two", raw))
-      try Ref.set(person, { key: "two", id: "2", login: "jun", role: "new" as const })
-      const copied = try Effect.result(credentials.current("signed"))
-      const sessionBound = copied._tag === "Failure"
-      try Ref.set(person, { key: "one", id: "2", login: "jun", role: "new" as const })
-      try credentials.remember("one", "2", Redacted.make("fixture-user-access"), 0)
-      const expired = Redacted.value((try credentials.current("signed"))!.token) === ""
-      try credentials.remember("one", "2", Redacted.make("fixture-user-access"), expires)
-      try credentials.forget("one")
-      const forgotten = Redacted.value((try credentials.current("signed"))!.token) === ""
-      try Ref.set(person, undefined)
-      const anonymous = (try credentials.current(undefined)) === undefined
-      return { encrypted, connected, freshRole, ownerBound, sessionBound, expired, forgotten, anonymous }
     })))
     if (new URL(request.url).pathname === "/runs") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(this.state.storage.sql.exec("SELECT run_id, status FROM flows_runs ORDER BY run_id").toArray()))
     const payload = Schema.decodeUnknownSync(IssueRequest)(await request.json())

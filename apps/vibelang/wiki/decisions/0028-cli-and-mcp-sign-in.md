@@ -30,7 +30,7 @@ line-wraps worse than the parenthetical.
 ## Rules the server keeps
 
 - The session record carries `agent: true` only when issued through the device route; the browser callback never sets
-  it, and an agent session can never bind a GitHub credential (`/api/auth/github` refuses it), so an agent's writes
+  it, and an agent session can never bind a GitHub credential (`/api/auth/connect` refuses it), so an agent's writes
   stay the agent's.
 - `POST /api/auth/device` is a journaled `vibelang/Account` step, bounded at 2 KiB with the three-second deadline,
   same-origin like every mutation; the access token is used for one identity lookup and discarded, as the browser

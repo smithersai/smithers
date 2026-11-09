@@ -14,7 +14,7 @@ const refusal = async (client: HttpClient.HttpClient, cursor: string, token?: st
   return result._tag === "Failure" ? result.failure.reason : result.success
 }
 const draft: IssueRequest = { op: "draft", number: 0, parent: 0, title: "Tuple", text: "Summary", assignee: "", example: "", prior: "", key: "draft-1" }
-const person: Issues.Principal = { id: "1", login: "will", role: "maintainer", token: Redacted.make("") }
+const person: Issues.Principal = { id: "1", login: "will", role: "maintainer" }
 
 it("GitHub-bound modules refuse faulty answers, and a VIP draft never reaches GitHub", async ({ bench }) => {
   const main = workload(bench, "main-log-refusals", "async", async () => {

@@ -400,7 +400,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     IssuesFailed: ({ reason, op, key, unwritten }) => {
       const ui = model.issues ?? initialIssues
       const relevant = ModelDecision.issueResponseSettles(ui.retry?.op ?? null, ui.retry?.key ?? null, op ?? null, key ?? null)
-      const step = IssueDecision.issueFailed(issueScreen(ui), ui.data.items.length === 0, relevant, unwritten === true, reason === "connect" ? "Connect GitHub." : IssueDecision.issueFailureText(reason))
+      const step = IssueDecision.issueFailed(issueScreen(ui), ui.data.items.length === 0, relevant, unwritten === true, reason === "connect" ? "Connect GitHub." : reason === "fork" ? "Fork on GitHub." : reason === "install" ? "Install Smithers on your fork." : IssueDecision.issueFailureText(reason))
       return { model: { ...model, issues: { ...ui, ...step.state, retry: step.clearRetry ? undefined : ui.retry } } }
     },
     IssueDetailsLoaded: ({ data, number }) => model.issues === undefined || !ModelDecision.issueDetailsApply(model.issues.selected, number, data.seq, model.issues.data.seq) ? { model } : { model: { ...model, issues: { ...model.issues, data } } },

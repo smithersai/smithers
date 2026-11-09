@@ -209,7 +209,7 @@ export effect function make(options: {
     consentCookie: (consent: string) => options.keys.sign("broker_consent", consent),
     consentPage: (consent: string, cookie: string | undefined) => observed("consent_page", effect {
       const parsed = try openConsent(consent, cookie, false)
-      return { html: consentHtml(new URL(parsed.claims.origin).host, parsed.person.login, consent) }
+      return { html: consentHtml(new URL(parsed.claims.origin).host, parsed.person.login, consent), origin: parsed.claims.origin }
     }),
     /** The only step that installs a credential: same-origin POST, once. GitHub skips its own prompt for an authorized person. */
     consent: (consent: string, answer: "connect" | "cancel", cookie: string | undefined) => observed("consent", effect {
@@ -288,6 +288,8 @@ export function consentHtml(host: string, login: string, consent: string): strin
   return `<!doctype html><meta name="referrer" content="no-referrer"><title>Connect GitHub</title><form method="post"><input type="hidden" name="consent" value="${escapeHtml(consent)}"><p>Connect ${escapeHtml(host)} to GitHub as @${escapeHtml(login)}?</p><button name="answer" value="connect">Connect</button> <button name="answer" value="cancel">Cancel</button></form>`
 }
 export const CONSENT_CSP = "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+/** Browsers apply `form-action` to a form's redirects too, so the page must allow the one site its answer returns to. */
+export const consentCsp = (siteOrigin: string) => CONSENT_CSP + " " + siteOrigin
 
 /** Shared route adapter; the host runs each invocation as a durable step. No redirect from an unverified request. */
 export effect function serve<R>(broker: Omit<Effect.Success<ReturnType<typeof make>>, "callback" | "consent"> & {
@@ -314,10 +316,11 @@ export effect function serve<R>(broker: Omit<Effect.Success<ReturnType<typeof ma
     }
     if (url.pathname === CONSENT && request.method === "GET") {
       const page = try broker.consentPage(url.searchParams.get("consent") ?? "", request.cookies[cookieName])
-      return HttpServerResponse.text(page.html, { contentType: "text/html; charset=utf-8", headers: { ...HEADERS, "content-security-policy": CONSENT_CSP } })
+      return HttpServerResponse.text(page.html, { contentType: "text/html; charset=utf-8", headers: { ...HEADERS, "content-security-policy": consentCsp(page.origin) } })
     }
     if (url.pathname === CONSENT && request.method === "POST") {
-      if (request.headers.origin !== origin || request.headers["sec-fetch-site"] !== "same-origin" || Number(request.headers["content-length"]) > 2048) return bad()
+      // The page is no-referrer, so a browser sends `Origin: null`; Sec-Fetch-Site is what web content cannot forge.
+      if ((request.headers.origin !== origin && request.headers.origin !== "null") || request.headers["sec-fetch-site"] !== "same-origin" || Number(request.headers["content-length"]) > 2048) return bad()
       const text = try checked(request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(2048)), Effect.timeout("3 seconds")))
       const form = new URLSearchParams(text)
       const answer = form.get("answer")

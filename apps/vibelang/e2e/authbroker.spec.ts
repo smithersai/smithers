@@ -22,3 +22,22 @@ test("signs in through smithers' callback and returns a local session with no to
   expect(requests.join(" ")).not.toMatch(/fixture-token|access_token/)
   expect(errors).toEqual([])
 })
+
+test("Connect GitHub round trip: consent on smithers, a write as the person, and no token in any URL", async ({ page }) => {
+  const requests: string[] = []
+  page.on("request", request => requests.push(request.url()))
+  await page.goto(origin)
+  await page.getByRole("link", { name: "Sign in", exact: true }).click()
+  await page.getByRole("link", { name: "Continue", exact: true }).click()
+  await expect(page.getByText("ada", { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Connect GitHub", exact: true }).click()
+  await page.getByRole("link", { name: "Continue", exact: true }).click()
+  await expect(page.getByText("as @ada")).toBeVisible()
+  await page.getByRole("button", { name: "Connect", exact: true }).click()
+  await expect(page).toHaveURL(origin + "/?issues=1")
+  const written = await page.request.post(origin + "/api/issues", { headers: { origin }, data: { op: "new", key: "browser-1", number: 0, parent: 0, title: "From the browser", text: "b", assignee: "", example: "", prior: "" } })
+  expect(written.status()).toBe(200)
+  const state = await (await page.request.get(origin + "/__connection/state")).json()
+  expect(state.issues.map((issue: { title: string }) => issue.title)).toContain("From the browser")
+  expect(requests.join(" ")).not.toMatch(/fixture-token|access_token|delegation/)
+})

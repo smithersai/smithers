@@ -158,35 +158,13 @@ describe("configured sessions and grants in real workerd storage", () => {
       const denied = try request("/api/issues", person, body)
       const unsigned = try request("/api/issues", "", { ...body, op: "new" })
       const disconnected = try request("/api/issues", maintainer, { ...body, op: "new" })
-      const connectAnonymous = try request("/api/auth/github")
-      const start = try request("/api/auth/github", person)
-      const state = new URL(start.headers.location!).searchParams.get("state")!
-      const stateCookie = start.headers["set-cookie"]!.split(";")[0]!
-      const differentPerson = try request("/api/auth/callback?state=" + state + "&code=unused", stateCookie + "; " + maintainer)
+      const connectAnonymous = try request("/api/auth/connect", "", {})
+      const noBroker = try request("/api/auth/connect", person, {})
       const client = try HttpClient.HttpClient
       const crossOrigin = try client.execute(HttpClientRequest.post(api.origin + "/api/issues").pipe(HttpClientRequest.setHeader("cookie", maintainer), HttpClientRequest.setHeader("origin", "https://elsewhere.example"), HttpClientRequest.bodyJsonUnsafe(body)))
       const huge = try request("/api/issues", maintainer, { ...body, padding: "x".repeat(33_000) })
       try Effect.try(() => {
-        expect([denied.status, unsigned.status, disconnected.status, connectAnonymous.status, start.status, differentPerson.status, crossOrigin.status, huge.status]).toEqual([403, 401, 401, 401, 302, 403, 403, 413])
-      })
-    }
-  })
-  it.live("binds explicit GitHub connection state to its signed cookie and exact callback before any token exchange", () => effect {
-    provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
-      const client = try HttpClient.HttpClient
-      const signed = try issue("7", "ada")
-      const response = try request("/api/auth/github", signed)
-      const location = response.headers.location!
-      const url = new URL(location)
-      const bad = try request("/api/auth/callback?state=forged&code=unused")
-      try Effect.try(() => {
-        expect(response.status).toBe(302)
-        expect(url.searchParams.get("redirect_uri")).toBe(origin + "/api/auth/callback")
-        expect(url.searchParams.get("code_challenge_method")).toBe("S256")
-        expect(url.searchParams.get("state")?.length).toBeGreaterThan(32)
-        expect(response.headers["set-cookie"]).toContain("HttpOnly")
-        expect(response.headers["set-cookie"]).toContain("Secure")
-        expect(bad.status).toBe(400)
+        expect([denied.status, unsigned.status, disconnected.status, connectAnonymous.status, noBroker.status, crossOrigin.status, huge.status]).toEqual([403, 401, 401, 401, 503, 403, 413])
       })
     }
   })
@@ -211,36 +189,6 @@ describe("invalid authentication cannot take down public chat", () => {
       try Effect.try(() => {
         expect(session).toMatchObject({ role: "viewer", available: false })
         expect(posted.status).toBe(200)
-      })
-    }
-  })
-})
-
-describe("OAuth exchange faults by injected GitHub service", () => {
-  let faulty: Served
-  beforeAll(async () => { faulty = await runPromise(serveApi({
-    VIBELANG_ORIGIN: "https://factory.example", VIBELANG_INITIAL_MAINTAINER_ID: "1",
-    GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
-    SESSION_SECRET: "fixture-only-signing-secret-32-chars", SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-    ACCOUNT_FAULT: "exchange",
-  })) })
-  afterAll(async () => { await faulty?.dispose() })
-  it.live("returns a visible sign-in failure and consumes OAuth state once", () => effect {
-    provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
-      const client = try HttpClient.HttpClient
-      const issued = try (try client.get(faulty.origin + "/__fixture/issue?id=7&login=ada")).json as { readonly cookie: string }
-      const start = try client.execute(HttpClientRequest.get(faulty.origin + "/api/auth/github").pipe(HttpClientRequest.setHeader("cookie", issued.cookie)))
-      const state = new URL(start.headers.location!).searchParams.get("state")!
-      const cookie = start.headers["set-cookie"]!.split(";")[0]! + "; " + issued.cookie
-      const path = faulty.origin + "/api/auth/callback?state=" + state + "&code=fixture-unused-code"
-      const failed = try client.execute(HttpClientRequest.get(path).pipe(HttpClientRequest.setHeader("cookie", cookie)))
-      const repeated = try client.execute(HttpClientRequest.get(path).pipe(HttpClientRequest.setHeader("cookie", cookie)))
-      const session = try (try client.get(faulty.origin + "/api/auth/session")).json
-      try Effect.try(() => {
-        expect(failed.status).toBe(302)
-        expect(failed.headers.location).toBe("https://factory.example/?sign-in=failed")
-        expect(repeated.status).toBe(400)
-        expect(session).toMatchObject({ id: "", role: "viewer" })
       })
     }
   })
@@ -323,7 +271,7 @@ describe("the CLI and MCP device sign-in in real workerd storage", () => {
       try call("/api/roles", maintainer, { id: "7", role: "new" })
       const demoted = try call("/api/history/plan", agent, plan)
       const fold = try call("/api/history/fold", agent, {})
-      const connect = try call("/api/auth/github", agent)
+      const connect = try call("/api/auth/connect", agent, {})
       const ownerAgent = (try deviceSession("device-token-1")).body!.cookie
       const refusedApprove = try call("/api/history/approve", ownerAgent, { id: (allowed as { id: string }).id, agent: false, role: "maintainer" })
       const refusedFold = try call("/api/history/fold", ownerAgent, {})

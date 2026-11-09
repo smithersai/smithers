@@ -162,12 +162,11 @@ it.live("accounts/worker-lifecycle", () => run("accounts/worker-lifecycle", Life
   }
 
   if (input.connectSignedOut) {
-    const connect = try step("GET", "/api/auth/github")
+    const connect = try step("POST", "/api/auth/connect")
     if (connect.status !== 401) return false
   }
   const signIn = try step("GET", input.resumeGarbage ? "/api/auth/sign-in?resume-op=commit" : input.resume ? "/api/auth/sign-in?resume-op=commit&resume-key=abc&resume-recovery=rec-1" : "/api/auth/sign-in")
-  if (signIn.status !== (input.resumeGarbage ? 400 : 302)) return false
-  if (input.resumeGarbage) return true
+  if (signIn.status !== 302) return false
   const callback = try callbackStep(false)
   if (callback.status !== 302) return false
   const session = try step("GET", "/api/auth/session")
@@ -199,17 +198,7 @@ it.live("accounts/worker-lifecycle", () => run("accounts/worker-lifecycle", Life
   const selfDemotion = input.person === "1" && input.target === "1" && input.grant !== "maintainer"
   if (input.person === "1" && grant.status !== (selfDemotion ? 403 : 200)) return false
   if (input.person === "2" && input.target !== "2" && grant.status === 200) return false
-  if (input.badGithubId) userPerson = "0"
-  const connect = try step("GET", "/api/auth/github")
-  if (connect.status !== 302) return false
-  if (input.badGithubId) {
-    const failed = try callbackStep(false)
-    if (failed.status !== 400) return false
-    userPerson = input.person
-    if ((try step("GET", "/api/auth/github")).status !== 302) return false
-  }
-  const connected = try callbackStep(false)
-  if (connected.status !== 302) return false
+  if ((try step("POST", "/api/auth/connect")).status !== 503) return false
   const signOut = try step("POST", "/api/auth/sign-out")
   if (signOut.status !== 204) return false
   const after = try step("GET", "/api/auth/session")

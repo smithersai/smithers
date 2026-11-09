@@ -40,7 +40,7 @@ effect function issueWorld() {
     if (reason !== "") throw new IssueFailure({ reason, unwritten: true })
     return try real.perform(request)
   } }
-  const authority: Issues.IssueAuthority.Shape = { current: () => Ref.get(identity).pipe(Effect.map(actor => ({ ...actor, token: Redacted.make("") }))) }
+  const authority: Issues.IssueAuthority.Shape = { current: () => Ref.get(identity).pipe(Effect.map(actor => ({ ...actor }))) }
   const serve = effect (path: string, method = "GET", body?: unknown) => {
     const request = try incoming(path, method, body)
     return try Issues.serveIssues("bench-issues", storage).pipe(
@@ -150,7 +150,7 @@ effect function wikiWorld() {
     if (reason !== "") throw new WikiFailure({ reason, unwritten: true })
     return try real.perform(request)
   } }
-  const authority: Wiki.WikiAuthority.Shape = { current: () => Ref.get(identity).pipe(Effect.map(actor => ({ ...actor, token: Redacted.make("") }))) }
+  const authority: Wiki.WikiAuthority.Shape = { current: () => Ref.get(identity).pipe(Effect.map(actor => ({ ...actor }))) }
   const serve = effect (path: string, method = "GET", body?: unknown) => {
     const request = try incoming(path, method, body)
     return try Wiki.serveWiki("bench-wiki", storage).pipe(

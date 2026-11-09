@@ -12,12 +12,15 @@ import { applyIssues, approveVip, canLinkIssues, emptyIssues, issuePermission, s
 import { IssueHost, issueFlows, issueRegistration, authorizeIssue, issueExecutionId, issueRecoveryId } from "../src/core/issueFlows.vibe"
 import { IssueFailure, IssueRequest, vipDocument, vipIssueBody } from "../src/core/issueSchemas.vibe"
 import type { Storage } from "./Objects.vibe"
+import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
 
 /** `kind: "agent"` marks a device sign-in (decision 0028); agents never approve, accept, decline or merge. */
-export interface Principal { readonly id: string; readonly login: string; readonly role: Role; readonly token: Redacted.Redacted<string>; readonly kind?: "person" | "agent" }
+export interface Principal { readonly id: string; readonly login: string; readonly role: Role; readonly connection?: Connection; readonly kind?: "person" | "agent" }
 export service IssueAuthority {
   current(): (Principal | undefined)!IssueFailure
   readonly authorize?: (operation: IssueRequest["op"]) => void!IssueFailure
+  /** The broker no longer honors this person's delegation; forget it locally. */
+  readonly lost?: () => void!!
 }
 export interface Repository { readonly owner: string; readonly name: string; readonly api: string; readonly agent: string }
 export const repository: Repository = { owner: "smithersai", name: "vibelang", api: "https://api.github.com", agent: "" }
@@ -49,6 +52,8 @@ export effect function verifiedVip(repo: Repository, body: string, author: numbe
 
 /** No raw provider error, request content or credential crosses this boundary. */
 export function issueFailureOf(error: unknown): IssueFailure {
+  const refusal = refusalOf(error)
+  if (refusal !== undefined) return new IssueFailure({ reason: refusal === "key_conflict" ? "invalid" : refusal, ...(refusal === "unknown" || refusal === "unavailable" ? { code: refusal } : {}) })
   const details = (error as { readonly details?: Readonly<Record<string, unknown>> })?.details
   const status = details?.status
   const reason = details?.outcomeUnknown === true ? "unknown" : details?.incomplete === true ? "partial" : details?.rateLimited === true ? "rate-limited" : status === 401 ? "sign-in" : status === 403 ? "forbidden" : status === 404 ? "missing" : "unavailable"
@@ -59,6 +64,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
   const authority = try IssueAuthority
   const http = try HttpClient.HttpClient
   const writer = try Effect.serviceOption(VipWriter)
+  const delegate = try Effect.serviceOption(GitHubDelegate)
   let revision = 0
   let touched = false
   effect function read(number = 0) {
@@ -120,25 +126,38 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
       if (authority.authorize !== undefined) try authority.authorize(request.op)
       if (!issuePermission(actor?.role ?? "viewer", request.op)) throw new IssueFailure({ reason: "forbidden" })
       if ((request.op === "accept" || request.op === "decline") && actor?.kind === "agent") throw new IssueFailure({ reason: "forbidden" })
-      const token = actor?.token ?? Redacted.make("")
       const work = effect {
         if (request.op === "read") return try read(request.number)
         if (actor === undefined || request.key === "") throw new IssueFailure({ reason: "sign-in" })
-        if (request.op !== "draft" && Redacted.value(actor.token) === "") throw new IssueFailure({ reason: "connect" })
+        if (request.op !== "draft" && actor.connection === undefined) throw new IssueFailure({ reason: "connect" })
         const since = "1970-01-01T00:00:00.000Z"
         // A logical write keeps its marker when SDK retryFrom creates a new execution.
         const key = (name: string) => issueWriteKey(repo, actor.id, request, name)
-        const authorized = <A, E, R>(program: A!E!R) => effect {
+        const repository = `${repo.owner}/${repo.name}`
+        /** Every write re-reads who is asking; a role lost mid-flow stops the next step. */
+        const live = effect {
           const current = try authority.current()
           if (current === undefined || current.id !== actor.id || !issuePermission(current.role, request.op)) throw new IssueFailure({ reason: "forbidden" })
-          if (Redacted.value(current.token) === "") throw new IssueFailure({ reason: "connect" })
+          if (current.connection === undefined || Option.isNone(delegate)) throw new IssueFailure({ reason: "connect" })
           if (authority.authorize !== undefined) try authority.authorize(request.op)
           touched = true
-          return try program.pipe(GitHub.Calls.withToken(current.token, repo.api), Effect.provideService(HttpClient.HttpClient, http))
+          return { connection: current.connection, delegate: delegate.value }
         }
-        const permitted = <A, E, R>(operation: Action.Keyed<A, E, R>): Action.Keyed<A, E | IssueFailure, Exclude<R, GitHub.GitHubClient.GitHubClient>> => ({
-          find: (key) => authorized(operation.find(key)), perform: (key) => authorized(operation.perform(key)),
+        const permitted = (operation: GitHub.DelegationPolicy.Operation): Action.Keyed<GitHub.Delegation.Receipt, IssueFailure, never> => ({
+          find: (name) => effect {
+            const { connection, delegate } = try live
+            return try delegate.keyed(connection.person, connection.delegation, operation).find(name).pipe(Effect.provideService(HttpClient.HttpClient, http), Effect.mapError(issueFailureOf))
+          },
+          perform: (name) => effect {
+            const { connection, delegate } = try live
+            return try delegate.keyed(connection.person, connection.delegation, operation).perform(name).pipe(Effect.provideService(HttpClient.HttpClient, http), Effect.mapError(issueFailureOf))
+          },
         })
+        /** One idempotent write with no GitHub object of its own to adopt. */
+        const written = effect (name: string, operation: GitHub.DelegationPolicy.Operation) => {
+          const { connection, delegate } = try live
+          try delegate.write(connection.person, connection.delegation, try key(name), operation).pipe(Effect.provideService(HttpClient.HttpClient, http), Effect.mapError(issueFailureOf))
+        }
         if (request.op === "draft") {
           if (Option.isNone(writer)) throw new IssueFailure({ reason: "unavailable" })
           return { seq: revision, items: [], draft: try writer.value.draft(request) }
@@ -148,39 +167,39 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
         if (["new", "split", "propose"].includes(request.op) && request.title.trim() === "") throw new IssueFailure({ reason: "title" })
         if (request.op === "new" || request.op === "split") {
           if (request.op === "split" && issue === undefined) throw new IssueFailure({ reason: "missing" })
-          const made = try Action.once("issue", permitted(try Effect.try(() => GitHub.Once.issue(repo.owner, repo.name, { title: request.title.trim(), body: request.text, since, author: actor.login }))), { key: try key("issue") })
+          const made = try Action.once("issue", permitted({ kind: "issue.create", repository, title: request.title.trim(), body: request.text, since }), { key: try key("issue") })
           if (request.op === "split") {
-            const current = try GitHub.IssueChanges.get(repo.owner, repo.name, made.number)
-            if (current.parent_issue_url !== `${repo.api}/repos/${repo.owner}/${repo.name}/issues/${request.number}`) try authorized(GitHub.IssueChanges.link(repo.owner, repo.name, request.number, made.id))
+            const current = try GitHub.IssueChanges.get(repo.owner, repo.name, made.number!)
+            if (current.parent_issue_url !== `${repo.api}/repos/${repo.owner}/${repo.name}/issues/${request.number}`) try written("link", { kind: "issue.link", repository, parent: request.number, child: made.id! })
           }
-          return { ...(try read(made.number)), selected: made.number }
+          return { ...(try read(made.number!)), selected: made.number! }
         }
         if (request.op === "propose") {
           if ([request.text, request.example, request.prior].some((s) => s.trim() === "")) throw new IssueFailure({ reason: "incomplete" })
-          // The person's fork owns the change. The GraphQL commit is authored by this token's account.
-          const personalRepo = try authorized(GitHub.Proposals.ensureFork(repo.owner, repo.name, actor.login))
-          const head = try GitHub.Refs.getBranch(repo.owner, repo.name, personalRepo.sourceDefaultBranch)
+          // The person's fork owns the change; smithers.sh derives and verifies it from their login (decision 0165).
+          const upstream = try Effect.flatMap(GitHub.GitHubClient.GitHubClient, (api) => api.request("GET", `/repos/${repository}`, undefined, { schema: Schema.Struct({ default_branch: Schema.String }) }))
+          const head = try GitHub.Refs.getBranch(repo.owner, repo.name, upstream.default_branch)
           if (Option.isNone(head)) throw new IssueFailure({ reason: "missing" })
-          const branch = try Action.once("branch", permitted(try Effect.try(() => GitHub.Once.branch(personalRepo.owner.login, personalRepo.name, { prefix: "vibelang/vip-", label: "proposal", at: Effect.succeed(head.value.sha) }))), { key: try key("branch") })
+          const branch = try Action.once("branch", permitted({ kind: "branch.create", repository, prefix: "vibelang/vip-", label: "proposal", at: head.value.sha }), { key: try key("branch") })
           const path = `docs/design/vips/proposal-${try key("document")}.md`
           const document = vipDocument(request)
           const contents = try Effect.try(() => Base64.encode(document))
-          try Action.once("commit", permitted(try Effect.try(() => GitHub.Once.commitOnBranch(personalRepo.owner.login, personalRepo.name, { branch: branch.name, expectedHeadOid: branch.sha, headline: `VIP: ${request.title.trim()}`, additions: [{ path, contents }], deletions: [] }))), { key: try key("commit") })
-          const pull = try Action.once("review", permitted(try Effect.try(() => GitHub.Once.pull(repo.owner, repo.name, { head: `${actor.login}:${branch.name}`, base: personalRepo.sourceDefaultBranch, title: `VIP: ${request.title.trim()}`, body: document, draft: false }))), { key: try key("review") })
-          const review = `https://github.com/${repo.owner}/${repo.name}/pull/${pull.number}`
+          try Action.once("commit", permitted({ kind: "commit.create", repository, branch: branch.name!, expectedHeadOid: branch.sha!, headline: `VIP: ${request.title.trim()}`, additions: [{ path, contents }], deletions: [] }), { key: try key("commit") })
+          const pull = try Action.once("review", permitted({ kind: "pull.create", repository, head: `${actor.login}:${branch.name!}`, base: upstream.default_branch, title: `VIP: ${request.title.trim()}`, body: document }), { key: try key("review") })
+          const review = `https://github.com/${repo.owner}/${repo.name}/pull/${pull.number!}`
           const body = `${vipIssueBody(request)}\n<!-- vibelang:vip path=${path} review=${review} -->`
-          const made = try Action.once("vip-issue", permitted(try Effect.try(() => GitHub.Once.issue(repo.owner, repo.name, { title: request.title.trim(), body, since, author: actor.login }))), { key: try key("vip-issue") })
-          const observed = try read(made.number)
+          const made = try Action.once("vip-issue", permitted({ kind: "issue.create", repository, title: request.title.trim(), body, since }), { key: try key("vip-issue") })
+          const observed = try read(made.number!)
           if (!observed.items.some(issue => issue.number === made.number && issue.vip !== "")) throw new IssueFailure({ reason: "unavailable", code: "unavailable" })
-          return { ...observed, selected: made.number }
+          return { ...observed, selected: made.number! }
         }
         if (issue === undefined) throw new IssueFailure({ reason: "missing" })
         if (request.op === "comment") {
           if (request.text.trim() === "") throw new IssueFailure({ reason: "empty" })
-          try Action.once("comment", permitted(try Effect.try(() => GitHub.Once.comment(repo.owner, repo.name, issue.number, request.text.trim(), { author: actor.login }))), { key: try key("comment") })
+          try Action.once("comment", permitted({ kind: "comment.create", repository, number: issue.number, body: request.text.trim() }), { key: try key("comment") })
         } else if (request.op === "link") {
           if (!canLinkIssues(before.items, issue.number, request.parent)) throw new IssueFailure({ reason: "tree" })
-          if (issue.parent !== request.parent) try authorized(GitHub.IssueChanges.link(repo.owner, repo.name, request.parent, issue.githubId))
+          if (issue.parent !== request.parent) try written("link", { kind: "issue.link", repository, parent: request.parent, child: issue.githubId })
         } else if (request.op === "commit" || request.op === "uncommit") {
           const committing = request.op === "commit"
           if (committing && issue.state !== "open") throw new IssueFailure({ reason: "closed" })
@@ -188,13 +207,14 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           if (committing && (login.trim() === "" || !before.assignees.some(choice => choice.login.toLowerCase() === login.toLowerCase()))) throw new IssueFailure({ reason: "assignee" })
           const target = setCommitment(issue, login, committing)
           // Preserve concurrent label edits: only the two managed labels are ever added or removed.
-          const changed = try authorized(GitHub.IssueChanges.update(repo.owner, repo.name, issue.number, { assignees: target.assignee === "" ? [] : [target.assignee] }))
+          try written("assign", { kind: "issue.assign", repository, number: issue.number, assignees: target.assignee === "" ? [] : [target.assignee] })
           if (committing) {
-            if (!changed.assignees.some((a) => a?.login.toLowerCase() === target.assignee.toLowerCase())) throw new IssueFailure({ reason: "assignee" })
-            try authorized(GitHub.Issues.createLabel(repo.owner, repo.name, { name: TASK_LABEL, color: "36b3aa" }))
-            try authorized(GitHub.Issues.addLabels(repo.owner, repo.name, issue.number, [TASK_LABEL]))
-          } else try authorized(GitHub.Issues.removeLabel(repo.owner, repo.name, issue.number, TASK_LABEL))
-          try authorized(GitHub.Issues.removeLabel(repo.owner, repo.name, issue.number, "vibelang:running"))
+            const after = try read(issue.number)
+            if (!after.items.some((item) => item.number === issue.number && item.assignee.split(", ").some((login) => login.toLowerCase() === target.assignee.toLowerCase()))) throw new IssueFailure({ reason: "assignee" })
+            try written("task-label", { kind: "label.create", repository, name: TASK_LABEL, color: "36b3aa" })
+            try written("task-labeled", { kind: "label.add", repository, number: issue.number, labels: [TASK_LABEL] })
+          } else try written("task-unlabeled", { kind: "label.remove", repository, number: issue.number, label: TASK_LABEL })
+          try written("not-running", { kind: "label.remove", repository, number: issue.number, label: "vibelang:running" })
         } else if (request.op === "accept" || request.op === "decline") {
           if (request.op === "accept" && issue.vip === "In review") {
             const approved = approveVip(issue, actor.role, actor.kind ?? "person", actor.login, new Date(try Clock.currentTimeMillis).toISOString())
@@ -204,17 +224,25 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           if (!plan.allowed) throw new IssueFailure({ reason: "review" })
           const label = request.op === "accept" ? ACCEPTED : DECLINED
           if (plan.label) {
-            try authorized(GitHub.Issues.createLabel(repo.owner, repo.name, { name: label, color: request.op === "accept" ? "36b3aa" : "d73a4a" }))
-            try authorized(GitHub.Issues.addLabels(repo.owner, repo.name, issue.number, [label]))
+            try written("review-label", { kind: "label.create", repository, name: label, color: request.op === "accept" ? "36b3aa" : "d73a4a" })
+            try written("review-labeled", { kind: "label.add", repository, number: issue.number, labels: [label] })
           }
-          if (plan.close) try authorized(GitHub.IssueChanges.update(repo.owner, repo.name, issue.number, { state: "closed" }))
+          if (plan.close) try written("close", { kind: "issue.close", repository, number: issue.number })
         } else throw new IssueFailure({ reason: "unsupported" })
         return try read(issue.number)
       }
-      return try work.pipe(GitHub.Calls.withToken(token, repo.api), Effect.provideService(HttpClient.HttpClient, http), Effect.mapError((error) => {
+      const run = (connection: Connection | undefined) => work.pipe(asPerson(connection, repo.api, http, delegate), Effect.mapError((error) => {
         const failure = error._tag === "IssueFailure" ? error : issueFailureOf(error)
         return fresh() && !touched && ["title", "incomplete", "empty", "tree", "assignee", "closed", "review"].includes(failure.reason) ? new IssueFailure({ ...failure, unwritten: true }) : failure
-      }))
+      }), Effect.tapError((failure) => failure.reason === "connect" && authority.lost !== undefined ? authority.lost() : Effect.void))
+      // A delegation that ended must not hide public issues from its owner.
+      if (request.op === "read" && actor?.connection !== undefined) {
+        const first = try Effect.result(run(actor.connection))
+        if (first._tag === "Success") return first.success
+        if (first.failure.reason !== "connect") throw first.failure
+        return try run(undefined)
+      }
+      return try run(actor?.connection)
     },
   }
   return host
@@ -236,7 +264,7 @@ export effect function serveIssues(hostId: string, storage: Storage, repo: Repos
   const result = try Effect.result(executeIssues(hostId, storage, payload, repo))
   if (result._tag === "Failure") {
     const reason = result.failure._tag === "IssueFailure" ? result.failure.reason : "unavailable"
-    const status = reason === "forbidden" ? 403 : reason === "sign-in" || reason === "connect" ? 401 : reason === "missing" ? 404 : reason === "unknown" ? 409 : ["title", "incomplete", "assignee", "empty", "tree", "invalid", "review", "closed"].includes(reason) ? 400 : 503
+    const status = reason === "forbidden" ? 403 : reason === "sign-in" || reason === "connect" ? 401 : reason === "missing" ? 404 : reason === "unknown" ? 409 : ["title", "incomplete", "assignee", "empty", "tree", "invalid", "review", "closed", "fork", "install"].includes(reason) ? 400 : 503
     return HttpServerResponse.jsonUnsafe({ reason, ...(result.failure._tag === "IssueFailure" && result.failure.unwritten === true ? { unwritten: true } : {}) }, { status, headers: { "cache-control": "no-store" } })
   }
   if (actor !== undefined && accepted !== undefined && (payload.op === "new" || payload.op === "comment")) try accepted(actor)
@@ -346,7 +374,7 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
     }
     return result
   }, runtime(target))).pipe(Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: "unavailable" })))
-  return { ...result, role: actor?.role ?? "viewer", connected: actor !== undefined && Redacted.value(actor.token) !== "" }
+  return { ...result, role: actor?.role ?? "viewer", connected: actor?.connection !== undefined }
 }
 
 /** Unconfigured sign-in still leaves GitHub's public issues readable. */

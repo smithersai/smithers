@@ -8,10 +8,10 @@ import type { Storage } from "../../worker/Objects.vibe"
 
 type FixtureRole = Principal["role"]
 const people: Record<string, Principal> = {
-  maintainer: { id: "fixture-maintainer", login: "will", role: "maintainer", token: Redacted.make("fixture-only") },
-  contributor: { id: "fixture-contributor", login: "jun", role: "contributor", token: Redacted.make("fixture-only") },
-  community: { id: "fixture-community", login: "noor", role: "community", token: Redacted.make("fixture-only") },
-  viewer: { id: "", login: "Guest", role: "viewer", token: Redacted.make("") },
+  maintainer: { id: "fixture-maintainer", login: "will", role: "maintainer", connection: { person: 1, delegation: "fixture-delegation" } },
+  contributor: { id: "fixture-contributor", login: "jun", role: "contributor", connection: { person: 1, delegation: "fixture-delegation" } },
+  community: { id: "fixture-community", login: "noor", role: "community", connection: { person: 1, delegation: "fixture-delegation" } },
+  viewer: { id: "", login: "Guest", role: "viewer" },
 }
 
 const StoredPages = Schema.Struct({ pages: Schema.Array(Schema.Struct({ id: Schema.String, source: Schema.String, revision: Schema.String })), seq: Schema.Number })

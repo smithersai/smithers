@@ -14,8 +14,8 @@ import type { Storage } from "../worker/Objects.vibe"
 import { objectStorage } from "./support/objectStorage.ts"
 
 const roadmap = pages.find((page) => page.id === "roadmap")!
-const will: Principal = { id: "fixture-maintainer", login: "will", role: "maintainer", token: Redacted.make("fixture-token") }
-const jun: Principal = { id: "fixture-contributor", login: "jun", role: "contributor", token: Redacted.make("fixture-token") }
+const will: Principal = { id: "fixture-maintainer", login: "will", role: "maintainer", connection: { person: 1, delegation: "fixture-delegation" } }
+const jun: Principal = { id: "fixture-contributor", login: "jun", role: "contributor", connection: { person: 1, delegation: "fixture-delegation" } }
 const FailureBody = Schema.Struct({ reason: Schema.String })
 
 interface Answer { readonly status: number; readonly state?: typeof WikiState.Type | undefined; readonly reason?: string }
@@ -135,7 +135,7 @@ it.live("an agent principal can draft but cannot submit even with a maintainer's
 import { executeWiki } from "../worker/Wiki.vibe"
 it.live("an unconnected person keeps their reviewed text before credential connection, without a GitHub request", () => scoped(effect {
   const storage = try Effect.try(() => objectStorage()) as unknown as Storage
-  const unconnected = { ...will, token: Redacted.make("") }
+  const { connection: _connection, ...unconnected } = will
   const outcome = try Effect.result(executeWiki("unconnected-wiki", storage, { op: "save", page: "roadmap", base: roadmap.source, text: roadmap.source + "\nRetain my edit.\n", key: "connect-edit" }).pipe(
     Effect.provideService(WikiAuthority, { current: () => Effect.succeed(unconnected) }), Effect.provide(FetchHttpClient.layer),
   ))

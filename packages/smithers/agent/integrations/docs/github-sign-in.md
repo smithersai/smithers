@@ -58,4 +58,6 @@ A hosted site never holds a GitHub token. `GitHub.Delegation` keeps one sealed u
 | `unknown` | GitHub's answer was lost. Retry with the same key to join it. |
 | `key_conflict` | The key already names a different operation. |
 
+Calls post to `Delegation.ROUTE?person=<id>`. The host routes with `Delegation.personOf` to that person's single-writer object; only the signed envelope is trusted. `connections()` lists a person's sites for a Disconnect page.
+
 The host supplies a per-person `Store`, a `Journal` backed by its flow engine, and an `Act` that binds a token to the GitHub client. Every token the host doesn't keep is revoked, because GitHub keeps only ten per person per App.

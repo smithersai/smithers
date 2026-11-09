@@ -13,7 +13,7 @@ import type { Storage } from "../worker/Objects.vibe"
 import { serveWiki, WikiAuthority } from "../worker/Wiki.vibe"
 import { objectStorage } from "./support/objectStorage.ts"
 
-const jun: Principal = { id: "fixture-contributor", login: "jun", role: "contributor", token: Redacted.make("fixture-token") }
+const jun: Principal = { id: "fixture-contributor", login: "jun", role: "contributor", connection: { person: 1, delegation: "fixture-delegation" } }
 const failure = (error: WikiFailure) => ({ reason: error.reason, unwritten: error.unwritten })
 
 /** serveWiki on loopback, every request signed in as `actor` (the browser's cookie, which LiveWiki leaves to fetch). */

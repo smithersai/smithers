@@ -20,7 +20,8 @@ export effect function serve(objects: Effect.Success<typeof GitHubConnection>) {
   const request = try HttpServerRequest.HttpServerRequest
   if (request.method !== "GET" && request.method !== "POST") return empty(405)
   const origin = new URL(request.originalUrl).origin
-  if (request.method === "POST" && request.headers.origin !== origin) return empty(403)
+  // This page is no-referrer, so a browser sends `Origin: null` on its own form.
+  if (request.method === "POST" && request.headers.origin !== origin && !(request.headers.origin === "null" && request.headers["sec-fetch-site"] === "same-origin")) return empty(403)
   const sessions = try Sessions
   const actor = sessions.resolve catch () => Option.none()
   // Only the person: an agent, flow or sandbox holding a session never reaches this page (AUTH-8).

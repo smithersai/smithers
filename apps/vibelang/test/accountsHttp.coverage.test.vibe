@@ -397,63 +397,16 @@ describe("connecting GitHub for issues", () => {
       const { origin } = try serve(setupWith(github([{ id: 7, login: "ada" }])))
       provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
         const http = try HttpClient.HttpClient
-        const anonymous = try http.execute(get(origin, "/api/auth/github"))
+        const anonymous = try http.execute(post(origin, "/api/auth/connect", {}))
         const { cookie } = try signIn(http, origin, "7")
-        const badOp = try http.execute(get(origin, "/api/auth/github?resume-op=bogus&resume-key=k1", cookie))
-        const missingKey = try http.execute(get(origin, "/api/auth/github?resume-op=new", cookie))
-        const badKey = try http.execute(get(origin, "/api/auth/github?resume-op=new&resume-key=has%20space", cookie))
-        const recoveryAlone = try http.execute(get(origin, "/api/auth/github?resume-recovery=r1", cookie))
-        const badRecovery = try http.execute(get(origin, "/api/auth/github?resume-op=new&resume-key=k1&resume-recovery=has%20space", cookie))
+        const badOp = try http.execute(post(origin, "/api/auth/connect?resume-op=bogus&resume-key=k1", {}, cookie))
+        const missingKey = try http.execute(post(origin, "/api/auth/connect?resume-op=new", {}, cookie))
+        const badKey = try http.execute(post(origin, "/api/auth/connect?resume-op=new&resume-key=has%20space", {}, cookie))
+        const recoveryAlone = try http.execute(post(origin, "/api/auth/connect?resume-recovery=r1", {}, cookie))
+        const badRecovery = try http.execute(post(origin, "/api/auth/connect?resume-op=new&resume-key=k1&resume-recovery=has%20space", {}, cookie))
         try Effect.try(() => {
           expect(anonymous.status).toBe(401)
           expect([badOp.status, missingKey.status, badKey.status, recoveryAlone.status, badRecovery.status]).toEqual([400, 400, 400, 400, 400])
-        })
-      }
-    }
-  }), 30_000)
-
-  it.live("remembers the connection, resumes the operation, and forgets it at sign-out", () => scoped(effect {
-    provide NodeHttpServer.layerTest {
-      const { origin, storage } = try serve(setupWith(github([{ id: 7, login: "ada" }], [], Date.now() + 3_600_000)))
-      provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
-        const http = try HttpClient.HttpClient
-        const { cookie } = try signIn(http, origin, "7")
-        const connect = try http.execute(get(origin, "/api/auth/github?resume-op=comment&resume-key=k-1&resume-recovery=rec-1", cookie))
-        const location = connect.headers["location"] ?? ""
-        const state = new URL(location).searchParams.get("state") ?? ""
-        const callback = try http.execute(get(origin, `${Accounts.CALLBACK}?state=${state}&code=7`, [cookieOf(connect, "__Host-vibelang-sign-in"), cookie].filter((entry) => entry !== "").join("; ")))
-        const stored = [...storage.kv.keys()].filter((key) => key.startsWith("github/"))
-        const ended = try http.execute(post(origin, "/api/auth/sign-out", {}, cookie))
-        const forgotten = [...storage.kv.keys()].filter((key) => key.startsWith("github/"))
-        try Effect.try(() => {
-          expect(connect.status).toBe(302)
-          expect(location.startsWith("https://github.test/login?")).toBe(true)
-          expect(callback.status).toBe(302)
-          expect(callback.headers["location"]).toBe(`${ORIGIN}/?issues=1&resume-op=comment&resume-key=k-1&resume-recovery=rec-1`)
-          expect(cookieOf(callback, Accounts.SESSION)).toBe("")
-          expect(stored).toHaveLength(1)
-          expect(ended.status).toBe(204)
-          expect(forgotten).toHaveLength(0)
-        })
-      }
-    }
-  }), 30_000)
-
-  it.live("refuses the callback when the session or the person changed", () => scoped(effect {
-    provide NodeHttpServer.layerTest {
-      const { origin } = try serve(setupWith(github([{ id: 7, login: "ada" }, { id: 8, login: "grace" }])))
-      provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
-        const http = try HttpClient.HttpClient
-        const ada = (try signIn(http, origin, "7")).cookie
-        const grace = (try signIn(http, origin, "8")).cookie
-        const connect = try http.execute(get(origin, "/api/auth/github", ada))
-        const state = new URL(connect.headers["location"] ?? "").searchParams.get("state") ?? ""
-        const stateCookie = cookieOf(connect, "__Host-vibelang-sign-in")
-        const withoutSession = try http.execute(get(origin, `${Accounts.CALLBACK}?state=${state}&code=7`, stateCookie))
-        const wrongSession = try http.execute(get(origin, `${Accounts.CALLBACK}?state=${state}&code=7`, [stateCookie, grace].join("; ")))
-        const wrongPerson = try http.execute(get(origin, `${Accounts.CALLBACK}?state=${state}&code=8`, [stateCookie, ada].join("; ")))
-        try Effect.try(() => {
-          expect([withoutSession.status, wrongSession.status, wrongPerson.status]).toEqual([403, 403, 403])
         })
       }
     }

@@ -55,11 +55,11 @@ describe("the list", () => {
   })
   it("offers GitHub connection only to a signed-in, unconnected person, at the configured address", () => {
     const unconnected = (over: Partial<Ui>) => model(ui({ ...over, data: { seq: 1, connected: false, items: [issue()] } }))
-    scene(app, given(unconnected({ role: "new" })), expect(role("link", { name: "Connect GitHub" })).toHaveAttr("href", "/api/auth/github"), expect(role("button", { name: "New issue" })).toBeAbsent())
+    scene(app, given(unconnected({ role: "new" })), expect(role("button", { name: "Connect GitHub" })).toExist(), expect(role("button", { name: "New issue" })).toBeAbsent())
     const retry = { op: "new", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k" } as NonNullable<Ui["retry"]>
-    scene(app, given(unconnected({ role: "new", retry })), expect(role("link", { name: "Connect GitHub" })).toHaveAttr("href", "/api/auth/github?resume-op=new&resume-key=k"))
-    scene(app, given(unconnected({ role: "new", retry: { ...retry, recovery: "r" } })), expect(role("link", { name: "Connect GitHub" })).toHaveAttr("href", "/api/auth/github?resume-op=new&resume-key=k&resume-recovery=r"))
-    scene(app, given(unconnected({ role: "viewer" })), expect(role("link", { name: "Connect GitHub" })).toBeAbsent())
+    scene(app, given(unconnected({ role: "new", retry })), expect(role("button", { name: "Connect GitHub" })).toExist())
+    scene(app, given(unconnected({ role: "new", retry: { ...retry, recovery: "r" } })), expect(role("button", { name: "Connect GitHub" })).toExist())
+    scene(app, given(unconnected({ role: "viewer" })), expect(role("button", { name: "Connect GitHub" })).toBeAbsent())
   })
   it("shows a list-level failure with retry only when the role may retry it", () => {
     const retry = { op: "new", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k" } as NonNullable<Ui["retry"]>
@@ -138,7 +138,7 @@ describe("an issue", () => {
     const retry = { op: "comment", number: 7, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k" } as NonNullable<Ui["retry"]>
     scene(app, given(detail({}, [issue()])), expect(role("textbox", { name: "Comment" })).toExist())
     scene(app, given(detail({ role: "viewer" }, [issue()])), expect(role("textbox", { name: "Comment" })).toBeAbsent())
-    scene(app, given(detail({ retry, error: "Connect GitHub." }, [issue()])), expect(role("textbox", { name: "Comment" })).toBeDisabled(), expect(role("link", { name: "Connect GitHub" })).toExist(), expect(role("button", { name: "Retry" })).toExist())
+    scene(app, given(detail({ retry, error: "Connect GitHub." }, [issue()])), expect(role("textbox", { name: "Comment" })).toBeDisabled(), expect(role("button", { name: "Connect GitHub" })).toExist(), expect(role("button", { name: "Retry" })).toExist())
     scene(app, given(detail({ error: "Couldn't load comments. Retry." }, [issue()])), expect(role("button", { name: "Retry" })).toExist())
     scene(app, given(detail({ error: "x", retry, role: "viewer" }, [issue()])), expect(role("button", { name: "Retry" })).toBeAbsent())
   })
@@ -164,7 +164,7 @@ describe("the forms", () => {
   })
   it("a new issue is one step and names its failure", () => {
     scene(app, given(model(ui({ screen: "new" }))), expect(role("textbox", { name: "Title" })).toExist(), expect(role("button", { name: "New issue" })).toExist())
-    scene(app, given(model(ui({ screen: "new", error: "Connect GitHub." }))), expect(role("alert")).toExist(), expect(role("link", { name: "Connect GitHub" })).toExist())
+    scene(app, given(model(ui({ screen: "new", error: "Connect GitHub." }))), expect(role("alert")).toExist(), expect(role("button", { name: "Connect GitHub" })).toExist())
   })
   it("locks fields while a submission is pending", () => {
     const retry = { op: "new", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k" } as NonNullable<Ui["retry"]>
@@ -178,7 +178,7 @@ describe("the dialogs", () => {
     it(`names ${verb}, and shows a failure with its retry`, () => {
       const retry = { op: dialog, number: 7, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k" } as NonNullable<Ui["retry"]>
       scene(app, given(model(ui({ screen: "detail", selected: 7, dialog }))), expect(within(role("dialog", { name }), role("button", { name: verb }))).toExist())
-      scene(app, given(model(ui({ screen: "detail", selected: 7, dialog, retry, error: "Connect GitHub." }))), expect(within(role("dialog", { name }), role("link", { name: "Connect GitHub" }))).toExist(), expect(within(role("dialog", { name }), role("button", { name: verb }))).toBeDisabled())
+      scene(app, given(model(ui({ screen: "detail", selected: 7, dialog, retry, error: "Connect GitHub." }))), expect(within(role("dialog", { name }), role("button", { name: "Connect GitHub" }))).toExist(), expect(within(role("dialog", { name }), role("button", { name: verb }))).toBeDisabled())
       scene(app, given(model(ui({ screen: "detail", selected: 7, dialog, retry: undefined, error: "Couldn't load comments. Retry." }))), expect(within(role("dialog", { name }), role("button", { name: "Retry" }))).toExist())
     })
   }

@@ -201,7 +201,7 @@ it.live("issues/http-surface", () => run("issues/http-surface", HttpOp, (input) 
   const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
   const storage = raw as unknown as Storage
   const fake = seed()
-  const authority: IssueAuthority.Shape = { current: () => succeed(input.signedOut ? undefined : { id: "7", login: "fuzz", role: input.role, token: Redacted.make("token") }) }
+  const authority: IssueAuthority.Shape = { current: () => succeed(input.signedOut ? undefined : { id: "7", login: "fuzz", role: input.role, connection: { person: 1, delegation: "fixture-delegation" } }) }
   const validBody = { op: "comment", number: 1, parent: 0, title: "T", text: "body", example: "", prior: "", assignee: "", key: `k${input.key}` }
   const body = input.body === "empty" ? undefined
     : input.body === "garbage" ? "{not json"

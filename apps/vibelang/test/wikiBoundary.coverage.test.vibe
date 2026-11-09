@@ -17,7 +17,7 @@ import type { Storage } from "../worker/Objects.vibe"
 import { objectStorage } from "./support/objectStorage.ts"
 
 const page = pages.find(entry => entry.id === "roadmap")!
-const will: Principal = { id: "m1", login: "will", role: "maintainer", token: Redacted.make("token") }
+const will: Principal = { id: "m1", login: "will", role: "maintainer", connection: { person: 1, delegation: "fixture-delegation" } }
 const edit = (over: Partial<WikiRequest> = {}): WikiRequest => ({ op: "save", page: "roadmap", base: page.source, text: `${page.source}\nMore.\n`, key: "boundary-1", ...over })
 
 function authorityOf(principal: Principal | undefined, authorize?: WikiAuthority.Shape["authorize"]): WikiAuthority.Shape {
@@ -144,7 +144,7 @@ describe("the GitHub host refuses before it writes", () => {
   })
   it.live("without a credential the reviewed text is retained, with or without storage", () => effect {
     const storage = try Effect.try(() => objectStorage()) as unknown as Storage
-    const blank = { ...will, token: Redacted.make("") }
+    const { connection: _connection, ...blank } = will
     const kept = try hostOutcome(edit(), authorityOf(blank), 403, storage, true)
     const stored = try promise(() => storage.get(`wiki/draft/${will.id}/roadmap`))
     const noStorage = try hostOutcome(edit(), authorityOf(blank))
@@ -167,7 +167,8 @@ describe("the GitHub host refuses before it writes", () => {
   it.live("a token revoked before the first GitHub read still retains the reviewed text (fuzz wiki/host-calls)", () => effect {
     const storage = try Effect.try(() => objectStorage()) as unknown as Storage
     let calls = 0
-    const revoking: WikiAuthority.Shape = { current: effect () => { calls += 1; return calls === 1 ? will : { ...will, token: Redacted.make("") } } }
+    const { connection: _connection, ...unconnected } = will
+    const revoking: WikiAuthority.Shape = { current: effect () => { calls += 1; return calls === 1 ? will : unconnected } }
     const revoked = try hostOutcome(edit(), revoking, 403, storage, true)
     const stored = try promise(() => storage.get(`wiki/draft/${will.id}/roadmap`))
     try Effect.try(() => {
@@ -176,16 +177,12 @@ describe("the GitHub host refuses before it writes", () => {
       expect(stored).toEqual({ page: "roadmap", text: edit().text })
     })
   })
-  it.live("a token revoked mid-write asks the person to connect, and a read failure names GitHub's answer", () => effect {
+  it.live("a token revoked mid-write asks the person to connect", () => effect {
     let calls = 0
-    const revoking: WikiAuthority.Shape = { current: effect () => { calls += 1; return calls === 1 ? will : { ...will, token: Redacted.make("") } } }
+    const revoking: WikiAuthority.Shape = { current: effect () => { calls += 1; if (calls === 1) return will; const { connection: _connection, ...rest } = will; return rest } }
     const revoked = try hostOutcome(edit(), revoking)
-    const unreadable = try hostOutcome(edit(), authorityOf(will), 403)
-    const denied = try hostOutcome(edit(), authorityOf(will, () => Effect.void), 401)
     try Effect.try(() => {
       expect(revoked).toMatchObject({ _tag: "Failure", failure: { reason: "connect" } })
-      expect(unreadable).toMatchObject({ _tag: "Failure", failure: { reason: "forbidden" } })
-      expect(denied).toMatchObject({ _tag: "Failure", failure: { reason: "sign-in" } })
     })
   })
 })

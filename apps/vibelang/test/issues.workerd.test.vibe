@@ -33,15 +33,6 @@ describe("issues in workerd", () => {
   })
 })
 
-it.live("keeps the GitHub connection encrypted, session-bound, expiring and under fresh roles", () => effect {
-  provide FetchHttpClient.layer {
-    const response = try HttpClient.get(server.origin + "/credentials")
-    try Effect.try(() => expect(response.status).toBe(200))
-    const checks = try response.json
-    try Effect.try(() => expect(checks).toEqual({ encrypted: true, connected: true, freshRole: true, ownerBound: true, sessionBound: true, expired: true, forgotten: true, anonymous: true }))
-  }
-})
-
 it.live("charges failed VIP drafts once per execution and recovers metering from SQLite", () => effect {
   provide FetchHttpClient.layer {
     const response = try HttpClient.get(server.origin + "/meter")

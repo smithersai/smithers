@@ -85,11 +85,11 @@ it("an incoming demotion closes an open commitment dialog immediately", () => {
 
 it("offers connection before a person can enter a GitHub write", () => {
   scene({ update, view }, given({ ...base, mode: "live", issues: { ...base.issues, data: { ...data, connected: false } } }),
-    expect(role("link", { name: "Connect GitHub" })).toExist(),
+    expect(role("button", { name: "Connect GitHub" })).toExist(),
     expect(role("button", { name: "New issue" })).toBeAbsent(),
     click(role("link", { name: "Case branches on tuples" })),
     Command.resolve(LoadIssueDetails, Message.IssueDetailsLoaded({ number: 42, data: { ...data, seq: 1, connected: false } })),
-    expect(role("link", { name: "Connect GitHub" })).toExist(),
+    expect(role("button", { name: "Connect GitHub" })).toExist(),
     expect(role("button", { name: "Commit" })).toBeAbsent(),
     expect(role("textbox", { name: "Comment" })).toBeAbsent(),
   )

@@ -77,24 +77,6 @@ it("workerd disabled sign-in and injected OAuth exchange failure", async ({ benc
         const issued = await runPromise(request(client, faulty.origin, `/__fixture/issue?id=${id}&login=benchmark`))
         expect(issued.status).toBe(200)
         const personal = Schema.decodeUnknownSync(Schema.Struct({ cookie: Schema.String }))(await runPromise(issued.json)).cookie
-        const start = await runPromise(request(client, faulty.origin, "/api/auth/github", personal))
-        expect(start.status).toBe(302)
-        const location = new URL(start.headers.location!)
-        expect(location.origin + location.pathname).toBe("https://github.com/login/oauth/authorize")
-        expect(location.searchParams.get("redirect_uri")).toBe(configuredOrigin + "/api/auth/callback")
-        expect((location.searchParams.get("code_challenge") ?? "").length).toBeGreaterThan(30)
-        const cookie = start.headers["set-cookie"]!.split(";")[0]! + "; " + personal
-        const callback = `/api/auth/callback?state=${encodeURIComponent(location.searchParams.get("state")!)}&code=benchmark-unused-code`
-        const failed = await runPromise(request(client, faulty.origin, callback, cookie))
-        expect(failed.status).toBe(302)
-        expect(failed.headers.location).toBe(configuredOrigin + "/?sign-in=failed")
-        const cookies = failed.cookies.cookies
-        expect(Object.hasOwn(cookies, "__Host-vibelang-session"), "failure must not issue a session cookie").toBe(false)
-        expect(Object.keys(cookies)).toEqual(["__Host-vibelang-sign-in"])
-        const cleared = cookies["__Host-vibelang-sign-in"]
-        expect(cleared?.value === "").toBe(true)
-        expect(Duration.toMillis(cleared?.options?.maxAge ?? 1)).toBe(0)
-        expect((await runPromise(request(client, faulty.origin, callback, cookie))).status).toBe(400)
         expect(await runPromise((await runPromise(request(client, faulty.origin, "/api/auth/session"))).json)).toEqual({ id: "", login: "", role: "viewer", available: false })
         expect(await runPromise((await runPromise(request(client, faulty.origin, "/api/auth/session", personal))).json)).toMatchObject({ id, login: "benchmark", role: "new", available: false })
       }))

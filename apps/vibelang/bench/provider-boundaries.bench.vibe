@@ -56,7 +56,7 @@ it("GitHub hosts refuse unauthorized and unconnected writes before transport", a
       try Ref.update(requests, n => n + 1)
       throw new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "Synthetic unavailable transport" }) })
     })
-    const actor = try Ref.make<Issues.Principal | undefined>({ id: "1", login: "fixture", role: "maintainer", token: Redacted.make("") })
+    const actor = try Ref.make<Issues.Principal | undefined>({ id: "1", login: "fixture", role: "maintainer" })
     const issue: IssueRequest = { op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "request" }
     const wiki: WikiRequest = { op: "save", page: "roadmap", base: "before", text: "after", key: "request" }
     const kv = try Effect.try(() => objectStorage())

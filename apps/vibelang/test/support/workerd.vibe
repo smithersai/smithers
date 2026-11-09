@@ -198,8 +198,9 @@ export effect function serveAuthBroker() {
       env: {
         BROKER: { type: "durable-object", worker: "authbroker", exportName: "HostedBroker" },
         SITE: { type: "durable-object", worker: "authbroker", exportName: "HostedSite" },
+        CONNECTION: { type: "durable-object", worker: "authbroker", exportName: "HostedConnection" },
       },
-      exports: { HostedBroker: { type: "durable-object", storage: "sqlite" }, HostedSite: { type: "durable-object", storage: "sqlite" } },
+      exports: { HostedBroker: { type: "durable-object", storage: "sqlite" }, HostedSite: { type: "durable-object", storage: "sqlite" }, HostedConnection: { type: "durable-object", storage: "sqlite" } },
     })
   }
 }

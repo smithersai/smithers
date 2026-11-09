@@ -152,7 +152,9 @@ export function failedWikiEdit(editing: WikiEditScreen, text: string, unwritten:
 //@ ensures reason == "forbidden" ==> \result == "Not allowed."
 //@ ensures reason == "conflict" ==> \result == "The page changed. Reload the editor."
 //@ ensures (reason == "connect" || reason == "sign-in") ==> \result == "Connect GitHub."
-//@ ensures reason != "forbidden" && reason != "conflict" && reason != "connect" && reason != "sign-in" ==> \result == "Couldn't save. Retry."
+//@ ensures reason == "fork" ==> \result == "Fork on GitHub."
+//@ ensures reason == "install" ==> \result == "Install Smithers on your fork."
+//@ ensures reason != "forbidden" && reason != "conflict" && reason != "connect" && reason != "sign-in" && reason != "fork" && reason != "install" ==> \result == "Couldn't save. Retry."
 export function wikiEditErrorText(reason: string): string {
-  return reason === "forbidden" ? "Not allowed." : reason === "conflict" ? "The page changed. Reload the editor." : reason === "connect" || reason === "sign-in" ? "Connect GitHub." : "Couldn't save. Retry."
+  return reason === "forbidden" ? "Not allowed." : reason === "conflict" ? "The page changed. Reload the editor." : reason === "connect" || reason === "sign-in" ? "Connect GitHub." : reason === "fork" ? "Fork on GitHub." : reason === "install" ? "Install Smithers on your fork." : "Couldn't save. Retry."
 }

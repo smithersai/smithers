@@ -26,7 +26,7 @@ Opus is `vl-connectdesign-opus.DESIGN.md`; Sol is `vl-connectdesign-sol.DESIGN.m
 | 2c | Revocation | Both | Site Disconnect, smithers.sh Disconnect, registry removal, 401, expiry, `github_app_authorization`. The last delegation revokes the single token, never the grant. |
 | 3 | Scope language | Opus | Closed union of typed operations with a pure `permits` predicate, plus Sol's immutable repository id and fork-parent check. |
 | 4 | Gates | Opus | The site re-reads role at each step. Sol's callback permit adds a round trip and stops nothing: a compromised site can answer its own callback. |
-| 5 | Durability | Opus, with Sol's `unknown` | Execution per `(origin, person, key)`; text sealed outside the journal. Missing evidence answers `unknown` and never resends a create. |
+| 5 | Durability | Opus, with Sol's `unknown` | Execution per `(origin, person, key)`; no text is stored: the site resends the operation on retry, bound by digest. Missing evidence answers `unknown` and never resends a create. |
 | 6 | States | Opus | Fewest words, and one action per state. |
 | 7 | Trust limit | Both | Stated below. |
 | 8 | Migration | Opus | Old rows deleted, not revoked: they lack refresh tokens and die within 8 hours. Existing write keys are kept, so in-flight writes adopt their GitHub object. |
@@ -89,6 +89,14 @@ Proposals cannot avoid forks: a branch on the upstream repository needs write ac
 | Role, scope, or GitHub 403 | `forbidden` | Not allowed. | none |
 | smithers.sh unreachable | `unavailable` | Couldn't save. Retry. | Retry, same key |
 | Answer lost | `unknown` | Unchanged | Retry joins |
+
+## As built
+
+Reads are one GET-only path allowlist (`DelegationPolicy.readable`), not typed reads: the rejected proxy's arguments concern writes. `DelegationPolicy` has unit coverage, no Dafny proofs.
+
+`GitHubConnection` routes by `?person=` and trusts only the signed envelope. A site with no `grants` in `HOSTED_AUTH_SITES` signs in and holds no scope. A person disconnects a site at `/api/auth/connections`. The site's Install action redirects through `GITHUB_APP_SLUG`.
+
+Vibelang's GET callback for direct sign-in remains, reachable only with no broker configured (tests). `GITHUB_CLIENT_SECRET` stays until it is removed.
 
 ## Trust limit
 

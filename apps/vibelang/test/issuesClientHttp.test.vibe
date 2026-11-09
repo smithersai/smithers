@@ -22,7 +22,7 @@ effect function serving() {
   const store = try makeIssueStore()
   const host = try fixtureHost(selected, store.state, store.lock)
   const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Storage
-  const authority: IssueAuthority.Shape = { current: effect () => { const person = try selected(); return person.id === "" ? undefined : { ...person, token: Redacted.make("fixture-only") } } }
+  const authority: IssueAuthority.Shape = { current: effect () => { const person = try selected(); return person.id === "" ? undefined : { ...person, connection: { person: 1, delegation: "fixture-delegation" } } } }
   try HttpServer.serveEffect(serveIssues("issues-client-http", storage).pipe(Effect.provideService(IssueHost, host), Effect.provideService(IssueAuthority, authority)))
   const client = try liveIssues("")
   return { accounts, client }

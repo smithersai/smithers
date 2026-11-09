@@ -4,6 +4,7 @@ import { Core, GitHub } from "@smthrs/integrations"
 import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as SmithersBroker from "../../../mvp/worker/AuthBrokerHost.vibe"
 import * as Accounts from "../../worker/Accounts.vibe"
+import * as Connection from "../../../mvp/worker/GitHubConnectionHost.vibe"
 import type { Storage } from "../../worker/Objects.vibe"
 import type { ObjectDatabase } from "@smthrs/platform-cloudflare"
 
@@ -14,15 +15,61 @@ function origins(request: Request) {
   const url = new URL(request.url)
   return { site: "http://127.0.0.1:" + url.port, broker: "http://localhost:" + url.port }
 }
+const connectionKeys = { active: "k1", keys: { k1: encryptionKey } }
+const grants: ReadonlyArray<GitHub.DelegationPolicy.Grant> = [{ repository: "smithersai/vibelang", repositoryId: 11, scopes: ["issues", "proposals"], paths: ["docs/design/vips/"], branchPrefix: "vibelang/", labelPrefix: "vibelang:" }]
+const missing = () => Effect.fail({ details: { status: 404 } })
+/** smithers.sh's real per-person object on durable SQLite; GitHub itself is the injected client. */
+export class HostedConnection {
+  issues: Array<Record<string, unknown>> = []
+  revoked: Array<string> = []
+  service: Promise<Effect.Success<ReturnType<typeof Connection.make>>> | undefined
+  constructor(readonly state: State) {}
+  client(): GitHub.GitHubClient.GitHubClient {
+    const request = (method: string, path: string, body?: { readonly title?: string; readonly body?: string }): Effect.Effect<any, any> => {
+      if (path === "/repos/smithersai/vibelang") return succeed({ id: 11, name: "vibelang", owner: { login: "smithersai" }, default_branch: "main" })
+      if (path.startsWith("/repos/smithersai/vibelang/issues?") || path === "/repos/smithersai/vibelang/issues" && method === "GET") return succeed(this.issues)
+      if (method === "POST" && path === "/repos/smithersai/vibelang/issues") {
+        const number = this.issues.length + 1
+        const issue = { id: 100 + number, node_id: "I_" + number, number, title: body?.title ?? "", body: body?.body ?? "", state: "open", created_at: "2026-11-09T00:00:00Z", updated_at: "2026-11-09T00:00:00Z", closed_at: null, user: { login: "ada", id: 7 }, labels: [], assignees: [], comments: 0, html_url: "" }
+        this.issues.push(issue)
+        return succeed(issue)
+      }
+      return missing()
+    }
+    return { request: request as GitHub.GitHubClient.GitHubClient["request"], paginate: (path) => request("GET", path).pipe(Effect.map((items) => ({ items, truncated: false, next: null })), Effect.catch(() => succeed({ items: [], truncated: false, next: null }))) as never, count: () => Effect.die("unused") }
+  }
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url)
+    const brokerOrigin = "http://localhost:" + url.port
+    const site = "http://127.0.0.1:" + url.port
+    const die = () => Effect.die("unused")
+    const github = GitHub.Auth.GitHubAuth.of({
+      authorizeUrl: () => "", exchange: die, user: die, permission: die, deviceCode: die, deviceToken: die,
+      refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
+      revoke: (token) => { this.revoked.push(Redacted.value(token)); return Effect.void },
+    })
+    this.service ??= runPromise(Connection.make(7, this.state.id.toString(), this.state.storage as never, { origin: brokerOrigin, sites: [{ origin: site, secret, grants }], keyring: connectionKeys }, github, () => (program) => Effect.provideService(program, GitHub.GitHubClient.GitHubClient, this.client()) as never))
+    const service = await this.service
+    const answer = (value: unknown) => HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(value))
+    if (url.pathname === "/__connection/install") {
+      const input = await request.json() as { origin: string; login: string; access: string; refresh: string | null; expires: number | null }
+      return answer(await runPromise(service.install({ origin: input.origin, login: input.login, tokens: { accessToken: Redacted.make(input.access), refreshToken: input.refresh === null ? null : Redacted.make(input.refresh), expiresAt: input.expires } })))
+    }
+    if (url.pathname === "/__connection/state") return answer({ issues: this.issues, revoked: this.revoked.length, connections: await runPromise(service.connections()), journal: this.state.storage.sql.exec("SELECT * FROM flows_runs").toArray(), rows: this.state.storage.sql.exec("SELECT key, value FROM github_connection").toArray() })
+    if (url.pathname === "/__connection/end") { await runPromise(service.revokedAtGitHub()); return answer({}) }
+    return HttpServerResponse.toWeb(await runPromise(service.fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)))))
+  }
+}
 export class HostedBroker {
   lines: Array<string> = []
   tokens = runPromise(tokenService())
   service: Promise<Effect.Success<ReturnType<typeof SmithersBroker.make>>> | undefined
-  constructor(readonly state: State) {}
+  constructor(readonly state: State, readonly env: Env) {}
   async fetch(request: Request): Promise<Response> {
     const origin = origins(request)
     const url = new URL(request.url)
     const tokens = await this.tokens
+    const env = this.env
     const github: GitHub.Auth.GitHubAuth["Service"] = {
       ...tokens.github,
       authorizeUrl: ({ state, codeChallenge, redirectUri }) => origin.broker + "/__github?" + new URLSearchParams({ state, challenge: codeChallenge, redirect_uri: redirectUri }),
@@ -41,6 +88,10 @@ export class HostedBroker {
     }
     this.service ??= runPromise(SmithersBroker.make(this.state.id.toString(), this.state.storage, {
       origin: origin.broker, sites: [{ origin: origin.site, secret }], secret: Redacted.make("broker-private-cookie-signing-key-32"), encryptionKey, localDevelopment: true,
+      connections: { install: (input) => effect {
+        const web = try promise(() => (env.CONNECTION.getByName("person:7") as unknown as { fetch(url: string, init: { method: string; body: string }): Promise<Response> }).fetch(origin.broker + "/__connection/install", { method: "POST", body: JSON.stringify({ origin: input.origin, login: input.login, access: Redacted.value(input.tokens.accessToken), refresh: input.tokens.refreshToken === null ? null : Redacted.value(input.tokens.refreshToken), expires: input.tokens.expiresAt }) }))
+        return try promise(() => web.json() as Promise<{ delegation: string; expires: number }>)
+      } },
     }, github))
     const service = await this.service
     if (url.pathname === "/__logs") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(this.lines))
@@ -97,7 +148,7 @@ export class HostedSite {
     if (new URL(request.url).pathname === "/") {
       const incoming = HttpServerRequest.fromWeb(request)
       const current = await runPromise(service.current(incoming.cookies["vibelang-session"]))
-      return HttpServerResponse.toWeb(HttpServerResponse.text('<!doctype html><title>Hosted site</title>' + (current.id === "" ? '<a href="/api/auth/sign-in">Sign in</a>' : '<p>' + current.login + '</p>'), { contentType: "text/html" }))
+      return HttpServerResponse.toWeb(HttpServerResponse.text('<!doctype html><title>Hosted site</title>' + (current.id === "" ? '<a href="/api/auth/sign-in">Sign in</a>' : '<p>' + current.login + '</p><form method="post" action="/api/auth/connect"><button>Connect GitHub</button></form>'), { contentType: "text/html" }))
     }
     return HttpServerResponse.toWeb(await runPromise(service.fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)))))
   }
@@ -105,7 +156,10 @@ export class HostedSite {
 interface Env {
   readonly BROKER: { getByName(name: string): { fetch(request: Request): Promise<Response> } }
   readonly SITE: { getByName(name: string): { fetch(request: Request): Promise<Response> } }
+  readonly CONNECTION: { getByName(name: string): { fetch(request: Request): Promise<Response> } }
 }
 export default { async fetch(request: Request, env: Env): Promise<Response> {
-  return await (new URL(request.url).hostname === "localhost" ? env.BROKER : env.SITE).getByName("auth").fetch(request)
+  const url = new URL(request.url)
+  if (url.pathname.startsWith("/__connection") || GitHub.Delegation.handles(request.url)) return await env.CONNECTION.getByName("person:7").fetch(request)
+  return await (url.hostname === "localhost" ? env.BROKER : env.SITE).getByName("auth").fetch(request)
 } }

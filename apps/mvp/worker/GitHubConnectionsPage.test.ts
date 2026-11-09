@@ -73,8 +73,16 @@ run("Disconnect revokes that site for the signed-in person and returns to the pa
 run("refuses a cross-site POST before any session is read", Effect.gen(function*() {
   const calls: Calls = { revoked: [] }
   const page = yield* answer(calls, person("x"), request("POST", { origin: "https://evil.test" }, "origin=x"))
-  expect(page.status).toBe(403)
+  const nullCrossSite = yield* answer(calls, person("x"), request("POST", { origin: "null", "sec-fetch-site": "cross-site" }, "origin=x"))
+  expect([page.status, nullCrossSite.status]).toEqual([403, 403])
   expect(calls.revoked).toEqual([])
+}))
+run("accepts its own form, which a no-referrer page posts with Origin null", Effect.gen(function*() {
+  const { id, github } = yield* seeded
+  const calls: Calls = { revoked: [] }
+  const page = yield* answer(calls, person(id), request("POST", { ...form, origin: "null", "sec-fetch-site": "same-origin" }, `origin=${encodeURIComponent(site)}`))
+  expect(page.status).toBe(303)
+  expect(calls.revoked).toEqual([[github, site]])
 }))
 run("says Retry when the connection object is unavailable, and refuses other methods", Effect.gen(function*() {
   const { id } = yield* seeded
