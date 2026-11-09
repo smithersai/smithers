@@ -58,3 +58,9 @@ projects payloads/native observations. Updatedmodule13units;61/61current mutants
 mutationsmatchactualreceipts. Typecheck0,835unit/52workerd/9fuzz(119738executions1replay)/2benchmark passes.
 The optional-member-default minimal repro retains the emitter failure; both exact present/undefined postconditions
 are retained as implications. No runtime workaround or dependency is added.
+
+Eighteenth batch: realReplybodythreadsverifiedstartreceipt/composition/settlementorder. Eightnewmethods close
+0..1counters; doneonlyadmission, completedcompositionbeforesettlement, terminal/refusedimmutability. Flowmodule
+21units,102/102current mutants(59new),17sources935current mutationsmatchactualreceipts. Typecheck0,835unit/52workerd
+passes. Realengine/loggerorder testsfailfirstthenpasswithcounts-onlyannotationsandnopost/nameleak. Retryattempts
+andSDKreplayareexplicitboundaries. Nullablememberinequalityminimalreprokeepsitscontract. No new dependency.

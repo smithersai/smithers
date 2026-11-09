@@ -187,3 +187,8 @@ Reply event routing (0018) now lives in the proved kernel: every recognized kind
 non-text/unrelated events are identities, bounded tokens remain bounded and invalidity never clears. The native
 wrapper only projects SDK payloads and native observations. The optional-member conditional reproduction retains
 the backend failure; equivalent undefined/present postconditions preserve the full original relation.
+
+The Reply body (0018) threads the proved start-receipt/composition/settlement run through its real Actions. Only done
+admits composition, settlement requires completed composition, terminal/refused states are immutable, and all counters
+are bounded by one. SDK retries/replay stay outside this per-invocation order theorem. Nullable-member inequality
+emission has a retained exact reproduction; no existing production contract is weakened.

@@ -316,3 +316,8 @@ the changed source, including45new guard/field/label mutations; generated inputs
 **Reply event routing (0018).** All61current Reply kernel mutants rerun against the changed source, including14new
 event-kind, ignored-event, text-only, settlement-admission, exact-charge and failure-code mutations. Existing reply
 unit/workerd, full units, independent BigInt event fuzzing and affected benchmarks exercise the native projection.
+
+**Reply body order (0018).** A real Effect logger observes counts from the real memory engine in budget/configuration
+refusal and replay cases; both fail before the order log is added, then pass with exactly one completed-stage record.
+Serialized annotations contain neither post text nor person name. All102current flow-kernel mutants are rerun,
+including59new constructor, stage-admission, field-frame and reachable-invariant cases.

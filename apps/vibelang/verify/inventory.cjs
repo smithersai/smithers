@@ -12,7 +12,7 @@ const shellBoundaries = {
   'src/web/historyApp.vibe': 'Calls proved role thresholds, live role reset, open-epic membership, plan initialization/validation/field selection. Remaining page merges, async response guards, complete model frames and command scheduling remain unproved.',
   'src/history/LiveMythical.vibe': 'Calls proved accepted/refused/unavailable HTTP outcome mapping. Native HTTP/SSE and JSON/Schema codecs remain boundaries.',
 
-  'worker/Reply.vibe': 'Calls the proved complete event router for progress and completion choices; invalid telemetry retains prior valid spend and cannot publish success. Native SDK payload projection and effect orchestration remain unproved; native safe-integer observations, AgentAction internal event replay, DoneText/provider decoding and date/prompt formatting remain host boundaries.',
+  'worker/Reply.vibe': 'Threads the proved Reply start/compose/settle model through actual Actions and calls the proved complete event router/completion choices; invalid telemetry retains prior valid spend and cannot publish success. Native SDK payload projection and effect orchestration remain unproved; native safe-integer observations, AgentAction internal event replay, DoneText/provider decoding and date/prompt formatting remain host boundaries.',
   'worker/Objects.vibe': 'The live dispatcher uses the proved scan/attempt/done transition; only a successful engine start writes a mark. Intent/storage codecs, engine execution, alarms and runtime composition remain host boundaries.',
   'src/web/theatre.vibe': 'Calls the proved selector, speech action, audio identity, outcome and focus-index policies. DOM geometry and native number subtraction, speech APIs, persisted JSON decoding and host execution remain boundaries.',
   'src/history/Sequencer.vibe': 'Calls the proved history machine, rank validation and capacity guard. Decodes storage/replay/follow/bootstrap with redacted errors. Fold targets call the proved foldTarget. Locking, store-before-publish, epic opening for untrailered folds, title truncation and trailer regexp remain unproved.',
@@ -54,7 +54,7 @@ const boundaries = {
   'src/core/conversation.vibe': 'Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain.',
   'worker/replyReasons.vibe': 'Failure precedence and model reason codes; proved.',
   'worker/budgetDecision.vibe': 'Strict admission, nonnegative integer charge and exact total; proved under safe-sum precondition.',
-  'src/core/flowDecision.vibe': 'Post/StartTour record-once/accepted-dispatch-once model and its invariant, dispatch admission, append ordering, tour terminal events, reading-time policy and first undispatched source index; proved.',
+  'src/core/flowDecision.vibe': 'Post/StartTour record-once/accepted-dispatch-once and Reply start-receipt/composition/settlement ordering models, exact closed invariants and at-most-one stage bounds; dispatch admission, append order, tour terminal events, reading time and first undispatched source index; proved.',
 };
 const functionBoundaries = {
   "src/history/roles.vibe:atLeast": "Calls the shared proved role threshold; validated roles use the existing authoritative standing order.",

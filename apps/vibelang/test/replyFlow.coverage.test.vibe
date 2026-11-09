@@ -38,17 +38,29 @@ effect function world(limit: number) {
 describe("live reply flows", () => {
   for (const [limit, reason] of [[0, REASONS.budget], [100, REASONS.unconfigured]] as const) {
     it.live(`settles a persisted post with its actual ${limit === 0 ? "budget" : "configuration"} refusal`, () => scoped(effect {
-      const w = try world(limit)
-      try w.sequencer.post("a", "Ada", "question")
-      const answer = try w.engine.execute(Reply, { executionId: "reply/m1", payload: { post: "m1" } })
-      const replayed = try w.engine.execute(Reply, { executionId: "reply/m1", payload: { post: "m1" } })
-      const snapshot = try w.sequencer.read(0)
-      const events = try Ref.get(w.events)
-      try Effect.try(() => {
-        expect([answer, replayed]).toEqual([null, null])
-        expect(snapshot.entries[1]).toMatchObject({ id: "r1", done: true, error: reason })
-        expect(events.map((event) => event.type)).toEqual(["Posted", "ReplyStarted", "ReplyFailed"])
+      const orders: Array<Readonly<Record<string, unknown>>> = []
+      const logger = Logger.make((entry) => {
+        if (entry.message === "vibelang.reply.order" || Array.isArray(entry.message) && entry.message.includes("vibelang.reply.order")) {
+          orders.push(entry.fiber.getRef(References.CurrentLogAnnotations))
+        }
       })
+      provide Logger.CurrentLoggers = new Set([logger]), References.MinimumLogLevel = "Debug" {
+        const w = try world(limit)
+        try w.sequencer.post("a", "Ada", "question")
+        const answer = try w.engine.execute(Reply, { executionId: "reply/m1", payload: { post: "m1" } })
+        const replayed = try w.engine.execute(Reply, { executionId: "reply/m1", payload: { post: "m1" } })
+        const snapshot = try w.sequencer.read(0)
+        const events = try Ref.get(w.events)
+        try Effect.try(() => {
+          expect([answer, replayed]).toEqual([null, null])
+          expect(snapshot.entries[1]).toMatchObject({ id: "r1", done: true, error: reason })
+          expect(events.map((event) => event.type)).toEqual(["Posted", "ReplyStarted", "ReplyFailed"])
+          expect(orders).toHaveLength(1)
+          expect(orders[0]).toMatchObject({ startReceipts: 1, compositions: 1, settlementReceipts: 1 })
+          expect(JSON.stringify(orders)).not.toContain("question")
+          expect(JSON.stringify(orders)).not.toContain("Ada")
+        })
+      }
     }))
   }
 

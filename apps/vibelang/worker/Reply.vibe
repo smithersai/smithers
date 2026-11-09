@@ -1,3 +1,4 @@
+import { beginReply, recordReplyStart, canComposeReply, beginReplyComposition, finishReplyComposition, canSettleReply, recordReplySettlement } from "../src/core/flowDecision.vibe"
 import { initialProgress, advanceProgress, completion, type ProgressState } from "./replyProgressDecision.vibe"
 import { promptWindow } from "../src/core/sequenceDecision.vibe"
 // The agent's reply to one post, a durable `@smthrs/flow` flow (rulings VL-11; wiki/decisions/0010-live-agent.md,
@@ -317,6 +318,7 @@ effect function compose(post: string, reply: string) {
 
 /** The reply flow's body: start the reply, compose it, then settle it as finished or failed. */
 export effect function answer(post: string) {
+  let run = beginReply()
   const replies = try Replies
   const reply = replyIdOf(post)
   const started = try Action.make({
@@ -330,11 +332,13 @@ export effect function answer(post: string) {
       return answered
     },
   })
-  if (started !== "done") {
+  run = recordReplyStart(run, started)
+  if (!canComposeReply(run)) {
     try Effect.logWarning("vibelang.reply").pipe(Effect.annotateLogs({ outcome: "refused" }))
     return null
   }
   // Interruption is the engine's (a reset or a yielded drive): it resumes the flow, so it is never a failed reply.
+  run = beginReplyComposition(run)
   const outcome = try Effect.catchCause(compose(post, reply), (cause) => {
     if (Cause.hasInterrupts(cause)) return Effect.failCause(cause)
     return Effect.as(
@@ -342,11 +346,16 @@ export effect function answer(post: string) {
       Outcome.Failed({ reason: REASONS.failed }),
     )
   })
+  run = finishReplyComposition(run)
   const settled = match (outcome) {
     when { _tag: "Answered", let text }: replies.finish(reply, text);
     when { _tag: "Failed", let reason }: replies.fail(reply, reason);
   }
-  try Action.make({ name: "vibelang/reply/settle", success: Answered, execute: settled })
+  if (canSettleReply(run)) {
+    try Action.make({ name: "vibelang/reply/settle", success: Answered, execute: settled })
+    run = recordReplySettlement(run)
+  }
+  try Effect.logInfo("vibelang.reply.order").pipe(Effect.annotateLogs({ startReceipts: run.starts, compositions: run.compositions, settlementReceipts: run.settlements }))
   return null
 }
 
