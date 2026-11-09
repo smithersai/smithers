@@ -1,0 +1,63 @@
+// smithers.sh's real per-person GitHub connection (decision 0165) for the fuzzers. The site reaches GitHub only through
+// a signed delegation, smithers.sh's own route admits each call, and the fuzzer's in-memory GitHub is the connection's
+// injected client. Nothing intercepts a request: the site's network has two hosts, smithers.sh and GitHub.
+import { GitHub } from "@smthrs/integrations"
+import { HttpClient, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import * as Connection from "../../mvp/worker/GitHubConnectionHost.vibe"
+import type { Connection as Delegated } from "../worker/GitHubDelegate.vibe"
+import { API, REPOSITORY_ID } from "./issues-node-fake.vibe"
+import { Finding } from "./run.vibe"
+
+const BROKER = "https://smithers.invalid"
+const SITE = "https://vibelang.invalid"
+const PERSON = 7
+const secret = Redacted.make("fuzz-site-delegation-secret-32-chars")
+const sites: ReadonlyArray<GitHub.Delegation.Site> = [{
+  origin: SITE, secret,
+  grants: [{ repository: "o/r", repositoryId: REPOSITORY_ID, scopes: ["issues", "proposals"], paths: ["wiki/", "docs/design/vips/"], branchPrefix: "vibelang/", labelPrefix: "vibelang:" }],
+}]
+const keyring = { active: "k1", keys: { k1: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=") } }
+
+/** The writes GitHub accepted from smithers.sh over a whole fuzz run. */
+export interface Reach { writes: number }
+export const reach = (): Reach => ({ writes: 0 })
+/**
+ * After a fuzz run, the property on one input that writes: a run is only as good as the writes that reached GitHub, and
+ * a short budget may draw none. Fails when the witness fails or when no write of the run, witness included, reached GitHub.
+ */
+export effect function reached<A>(target: string, counter: Reach, property: (input: A) => boolean | (boolean!unknown!Scope.Scope), witness: A) {
+  const passed = try scoped(Effect.suspend(() => {
+    const output = property(witness)
+    return Effect.isEffect(output) ? output : succeed(output)
+  }))
+  if (!passed) throw new Finding({ report: `${target}: its write witness failed` })
+  if (counter.writes === 0) throw new Finding({ report: `${target}: no write reached GitHub` })
+}
+
+/** A connected person: the site's delegate, the site's network and the person's delegation handle. */
+export effect function delegated(github: HttpClient.HttpClient, counter: Reach, login = "fuzz") {
+  const storage = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  const counted = HttpClient.tap(github, (response) => Effect.sync(() => {
+    if (response.request.method !== "GET" && response.status < 300) counter.writes += 1
+  }))
+  const unused = () => Effect.die("unused")
+  const auth = GitHub.Auth.GitHubAuth.of({
+    authorizeUrl: () => "", exchange: unused, user: unused, permission: unused, deviceCode: unused, deviceToken: unused,
+    refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
+    revoke: () => Effect.void,
+  })
+  const act: GitHub.Delegation.Act = (token) => (program) => program.pipe(GitHub.Calls.withToken(token, API), Effect.provideService(HttpClient.HttpClient, counted)) as never
+  const host = try Connection.make(PERSON, "fuzz-connection", storage as never, { origin: BROKER, sites, keyring }, auth, act)
+  const installed = try host.install({ origin: SITE, login, tokens: { accessToken: Redacted.make("fuzz-token"), refreshToken: null, expiresAt: null } })
+  const delegate = try GitHub.Delegation.site({ origin: SITE, brokerOrigin: BROKER, secret })
+  const broker = (request: HttpClientRequest.HttpClientRequest) => effect {
+    const web = try Effect.orDie(HttpClientRequest.toWeb(request))
+    const answer = try GitHub.Delegation.route({ origin: BROKER, sites }, (_, inner) => Effect.provideService(host.fetch, HttpServerRequest.HttpServerRequest, inner))
+      .pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web)))
+    return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(answer))
+  }
+  const http = HttpClient.make((request, url) => url.origin === BROKER ? broker(request) : github.execute(request))
+  const connection: Delegated = { person: PERSON, delegation: installed.delegation }
+  return { delegate, http, connection }
+}

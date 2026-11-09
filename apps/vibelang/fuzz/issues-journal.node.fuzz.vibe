@@ -1,13 +1,16 @@
 // Journaled issue writes through the durable engine on real SQLite: a replay of the same key joins its receipt and
 // writes nothing, a changed payload under it is refused, a resumed read reports the original's outcome, and an
-// explicit recovery retries only a failed write.
+// explicit recovery retries only a failed write. Every write goes through smithers.sh's delegation, and a run in which
+// none reached GitHub fails.
 import { it } from "@effect/vitest"
 import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
 import { executeIssues, serveIssues, IssueAuthority } from "../worker/Issues.vibe"
+import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
 import type { Storage } from "../worker/Objects.vibe"
-import { fakeClient, repo, seed } from "./issues-node-fake.vibe"
+import { fakeClient, forked, repo, seed } from "./issues-node-fake.vibe"
+import { delegated, reach, reached } from "./delegated.vibe"
 import { run, Finding } from "./run.vibe"
 
 const Words = Schema.Literals(["", " ", "word", "A longer body"])
@@ -20,14 +23,17 @@ const Write = Schema.Struct({
   then: Schema.Literals(["replay", "change", "resume", "resume-recovered", "recover", "bad-recovery", "signed-out-resume", "bad-resume", "http"]),
 })
 
-it.live("issues/journaled-writes", () => run("issues/journaled-writes", Write, (input) => effect {
+const counter = reach()
+const journaledWrites = (input: typeof Write.Type) => effect {
   const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
   const storage = raw as unknown as Storage
   const fake = seed()
+  forked(fake)
+  const site = try delegated(fakeClient(fake), counter)
   const signedIn = try Ref.make(true)
-  const authority: IssueAuthority.Shape = { current: () => Effect.map(Ref.get(signedIn), (on) => on ? { id: "7", login: "fuzz", role: "maintainer" as const, token: Redacted.make("token"), kind: input.agent ? "agent" as const : "person" as const } : undefined) }
-  const client = fakeClient(fake)
-  const execute = (request: IssueRequest) => Effect.result(executeIssues("journal", storage, request, repo).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, client)))
+  const authority: IssueAuthority.Shape = { current: () => Effect.map(Ref.get(signedIn), (on) => on ? { id: "7", login: "fuzz", role: "maintainer" as const, connection: site.connection, kind: input.agent ? "agent" as const : "person" as const } : undefined) }
+  const client = site.http
+  const execute = (request: IssueRequest) => Effect.result(executeIssues("journal", storage, request, repo).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, client), Effect.provideService(GitHubDelegate, site.delegate)))
   /** The engine's store failures stay untyped by reason; a refusal is an IssueFailure's reason. */
   const reasonOf = (result: Effect.Success<ReturnType<typeof execute>>) => result._tag === "Success" ? "ok" : result.failure._tag === "IssueFailure" ? result.failure.reason : result.failure._tag
   fake.forbiddenNext = input.forbidden
@@ -77,12 +83,13 @@ it.live("issues/journaled-writes", () => run("issues/journaled-writes", Write, (
     default: {
       // The same request over HTTP: a refusal's status names its reason, and a success answers the state.
       const web = try HttpClientRequest.toWeb(HttpClientRequest.bodyText(HttpClientRequest.post("https://fuzz.invalid/api/issues"), JSON.stringify({ ...request, key: "journal-http" })))
-      const response = try Effect.provideService(serveIssues("journal", storage, repo, () => Effect.void).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, client)), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
+      const response = try Effect.provideService(serveIssues("journal", storage, repo, () => Effect.void).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, client), Effect.provideService(GitHubDelegate, site.delegate)), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
       const text = try promise(() => HttpServerResponse.toWeb(response).text())
       const parsed = try Effect.try(() => JSON.parse(text))
-      const expected: Record<string, number> = { forbidden: 403, "sign-in": 401, connect: 401, missing: 404, unknown: 409, title: 400, incomplete: 400, assignee: 400, empty: 400, tree: 400, invalid: 400, review: 400, closed: 400 }
+      const expected: Record<string, number> = { forbidden: 403, "sign-in": 401, connect: 401, missing: 404, unknown: 409, title: 400, incomplete: 400, assignee: 400, empty: 400, tree: 400, invalid: 400, review: 400, closed: 400, fork: 400, install: 400 }
       if (response.status === 200 ? !Array.isArray(parsed.items) : response.status !== (expected[parsed.reason] ?? 503)) throw new Finding({ report: `HTTP answered ${response.status} for ${parsed.reason}` })
     }
   }
   return true
-}))
+}
+it.live("issues/journaled-writes", () => Effect.andThen(run("issues/journaled-writes", Write, journaledWrites), reached("issues/journaled-writes", counter, journaledWrites, { op: "comment", number: 1, title: "word", text: "word", example: "", prior: "", forbidden: false, agent: false, then: "replay" })))

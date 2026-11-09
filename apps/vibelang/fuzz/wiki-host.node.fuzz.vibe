@@ -1,5 +1,6 @@
-// The wiki's GitHub host up to its journaled writes, by people, agents, demoted and disconnected callers, with an
-// authority that may refuse; and the HTTP boundary over a host that fails with each reason, journaled and recovered.
+// The wiki's GitHub host through its journaled writes, by people, agents, demoted and disconnected callers, with an
+// authority that may refuse, writing through smithers.sh's delegation; and the HTTP boundary over a host that fails
+// with each reason, journaled and recovered.
 import { it } from "@effect/vitest"
 import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { WebCrypto } from "@smthrs/crypto"
@@ -11,8 +12,10 @@ import { WikiWriter } from "../src/core/WikiWriter.vibe"
 import { WikiHost } from "../src/core/wikiFlows.vibe"
 import { WikiFailure, WikiState, type WikiRequest } from "../src/core/wikiSchemas.vibe"
 import { executeWiki, githubWikiHost, serveWiki, wikiFailureOf, WikiAuthority, type WikiRepository } from "../worker/Wiki.vibe"
+import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
 import type { Storage } from "../worker/Objects.vibe"
-import { API, fakeClient, seed } from "./issues-node-fake.vibe"
+import { API, fakeClient, forked, seed } from "./issues-node-fake.vibe"
+import { delegated, reach, reached } from "./delegated.vibe"
 import { run, Finding } from "./run.vibe"
 import { faultyStore } from "./faulty-store.ts"
 
@@ -20,7 +23,7 @@ const repo: WikiRepository = { owner: "o", name: "r", api: API, agent: "", root:
 const page = pages[0]!.id
 const SOURCE = "# Page\n\nThe repository text.\n"
 const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
-const REASONS = ["forbidden", "sign-in", "connect", "missing", "invalid", "conflict", "empty", "unknown", "partial", "rate-limited", "unavailable"]
+const REASONS = ["forbidden", "sign-in", "connect", "fork", "install", "missing", "invalid", "conflict", "empty", "unknown", "partial", "rate-limited", "unavailable"]
 
 const Call = Schema.Struct({
   op: Schema.Literals(["read", "save", "propose", "draft"]),
@@ -33,13 +36,18 @@ const Call = Schema.Struct({
   base: Schema.Literals(["current", "stale"]),
   text: Schema.Literals(["", "  ", SOURCE, "Edited text."]),
   main: Schema.Literals(["present", "missing", "advanced", "error"]),
+  // Optional so saved regressions from before it still decode: absent, the person has forked.
+  fork: Schema.optionalKey(Schema.Boolean),
 })
 
-/** The host's refusals come before any write, a draft survives a missing credential, and a read returns the page. */
-it.live("wiki/host-calls", () => run("wiki/host-calls", Call, (input) => effect {
+/** The host's refusals come before any write, a draft survives a missing credential, a read returns the page and a write its review. */
+const calls = reach()
+const hostCalls = (input: typeof Call.Type) => effect {
   const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
   const storage = raw as unknown as Storage
   const fake = seed()
+  if (input.fork !== false) forked(fake)
+  const site = try delegated(fakeClient(fake), calls)
   fake.files[`wiki/${page}.md`] = SOURCE
   fake.noMain = input.main === "missing"
   fake.pinnedText = input.main === "advanced" ? "Main advanced." : undefined
@@ -47,29 +55,31 @@ it.live("wiki/host-calls", () => run("wiki/host-calls", Call, (input) => effect 
   fake.contentStatus = input.main === "error" ? 500 : 200
   // A text the person reviewed earlier, kept for them across a credential connection.
   if (input.stored && input.op === "read") try promise(() => storage.put(`wiki/draft/7/${page}`, { page, text: "Kept." }))
-  const calls = try Ref.make(0)
-  const person = (role: typeof Role.Type, later: boolean) => ({ id: "7", login: "fuzz", role, token: Redacted.make(input.caller === "no-token" || (input.caller === "disconnected" && later) ? "" : "token"), kind: input.caller === "agent" ? "agent" as const : "person" as const })
+  const asked = try Ref.make(0)
+  const person = (role: typeof Role.Type, later: boolean) => ({ id: "7", login: "fuzz", role, ...(input.caller === "no-token" || (input.caller === "disconnected" && later) ? {} : { connection: site.connection }), kind: input.caller === "agent" ? "agent" as const : "person" as const })
   const authority: WikiAuthority.Shape = {
-    current: () => Effect.map(Ref.updateAndGet(calls, (n) => n + 1), (n) => input.caller === "signed-out" ? undefined : person(input.caller === "demoted" && n > 1 ? "viewer" : input.role, n > 1)),
+    current: () => Effect.map(Ref.updateAndGet(asked, (n) => n + 1), (n) => input.caller === "signed-out" ? undefined : person(input.caller === "demoted" && n > 1 ? "viewer" : input.role, n > 1)),
     ...(input.authorize === "absent" ? {} : { authorize: () => input.authorize === "refuses" ? Effect.fail(new WikiFailure({ reason: "forbidden" })) : Effect.void }),
   }
-  const client = fakeClient(fake)
+  const client = site.http
   const host = try githubWikiHost(repo, input.stored ? storage : undefined, () => input.fresh).pipe(
-    Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, client),
+    Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, client), Effect.provideService(GitHubDelegate, site.delegate),
     Effect.provide(input.writer ? Layer.succeed(WikiWriter, { draft: (request) => succeed({ page: request.page, text: `${request.source}\n${request.ask}` }) }) : Layer.empty),
   )
   const request: WikiRequest = { op: input.op, page, base: input.base === "current" ? SOURCE : "Stale.", text: input.text, key: input.caller === "blank-key" ? "" : "k1" }
-  // The journaled writes need the durable engine; this target stops at their first Action, which then dies.
-  const result = try exit(host.perform(request).pipe(Effect.provide(WebCrypto.layer)) as typeof WikiState.Type!WikiFailure)
+  // A write runs this host on the durable engine; a GitHub 5xx stays off it, whose retries wait on the real clock.
+  const write = ["save", "propose"].includes(input.op) && request.key !== "" && input.main !== "error"
+  const performed = write
+    ? executeWiki("host-calls", storage, request, repo).pipe(Effect.provideService(WikiHost, host), Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, client))
+    : host.perform(request)
+  const pullsBefore = fake.pulls.length
+  const result = try exit(performed.pipe(Effect.provide(WebCrypto.layer)) as typeof WikiState.Type!WikiFailure)
   const signedIn = input.caller !== "signed-out"
   const allowed = wikiPermission(signedIn ? input.role : "viewer", input.op) && wikiSubmissionAllowed(input.op, input.caller === "agent" ? "agent" : "person") && input.authorize !== "refuses"
   if (result._tag === "Failure") {
     const failure = Option.getOrUndefined(Cause.findErrorOption(result.cause))
-    if (failure === undefined) {
-      // Only a write that passed every refusal reaches the engine's Action.
-      if (!allowed || !["save", "propose"].includes(input.op)) throw new Finding({ report: `${input.op} died before its write` })
-      return true
-    }
+    if (failure === undefined) throw new Finding({ report: `${input.op} died` })
+    if (fake.pulls.length !== pullsBefore) throw new Finding({ report: `a failed ${input.op} opened a review` })
     if (!REASONS.includes(failure.reason)) throw new Finding({ report: `${input.op} failed with ${failure.reason}` })
     if (!allowed && failure.reason !== "forbidden") throw new Finding({ report: `a refused ${input.op} answered ${failure.reason}` })
     if (failure.reason === "connect" && input.stored && ["save", "propose"].includes(input.op)) {
@@ -84,8 +94,12 @@ it.live("wiki/host-calls", () => run("wiki/host-calls", Call, (input) => effect 
   if (input.op === "read" && !result.value.pages.some((entry) => entry.id === page && entry.source === SOURCE)) throw new Finding({ report: "a read lost its page" })
   if (input.op === "read" && input.stored && signedIn && result.value.draft?.text !== "Kept.") throw new Finding({ report: "a read lost the person's kept text" })
   if (input.op === "draft" && result.value.draft?.page !== page) throw new Finding({ report: "a draft named another page" })
+  if (write && (!(result.value.review ?? "").startsWith("https://github.com/o/r/pull/") || fake.pulls.length !== pullsBefore + 1 || input.fork === false)) throw new Finding({ report: `a ${input.op} answered without one review on the person's fork` })
   return true
-}))
+}
+it.live("wiki/host-calls", () => Effect.andThen(run("wiki/host-calls", Call, hostCalls), reached("wiki/host-calls", calls, hostCalls, {
+  op: "propose", role: "maintainer", caller: "person", authorize: "absent", writer: false, stored: false, fresh: false, base: "current", text: "Edited text.", main: "present", fork: true,
+})))
 
 const Served = Schema.Struct({
   reason: Schema.Literals(["ok", ...REASONS]),
@@ -95,7 +109,7 @@ const Served = Schema.Struct({
   recovery: Schema.Literals(["none", "r1", "bad recovery!"]),
   op: Schema.Literals(["read", "propose"]),
 })
-const STATUS: Record<string, number> = { forbidden: 403, "sign-in": 401, connect: 401, missing: 404, unknown: 409, conflict: 409, empty: 400, invalid: 400 }
+const STATUS: Record<string, number> = { forbidden: 403, "sign-in": 401, connect: 401, missing: 404, unknown: 409, conflict: 409, empty: 400, invalid: 400, fork: 400, install: 400 }
 
 /** Over a host that fails with any reason, HTTP answers that reason's status, twice, and a recovery reruns it once. */
 it.live("wiki/served-failures", () => run("wiki/served-failures", Served, (input) => effect {
@@ -108,7 +122,7 @@ it.live("wiki/served-failures", () => run("wiki/served-failures", Served, (input
       : input.untyped ? Effect.die(new Error("host defect"))
       : fail(new WikiFailure({ reason: input.reason, ...(input.unwritten ? { unwritten: true } : {}) }))),
   }
-  const authority: WikiAuthority.Shape = { current: () => succeed({ id: "7", login: "fuzz", role: "maintainer" as const, token: Redacted.make("token") }), ...(input.authorize ? { authorize: () => Effect.void } : {}) }
+  const authority: WikiAuthority.Shape = { current: () => succeed({ id: "7", login: "fuzz", role: "maintainer" as const }), ...(input.authorize ? { authorize: () => Effect.void } : {}) }
   const body = { op: input.op, page, base: SOURCE, text: "Edited.", key: "served-1", ...(input.recovery === "none" ? {} : { recovery: input.recovery }) }
   const serve = effect {
     const web = try HttpClientRequest.toWeb(HttpClientRequest.bodyText(HttpClientRequest.post("https://fuzz.invalid/api/wiki"), JSON.stringify(body)))

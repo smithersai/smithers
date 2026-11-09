@@ -4,6 +4,8 @@ import type { Repository } from "../worker/Issues.vibe"
 
 export const API = "https://github.invalid"
 export const repo: Repository = { owner: "o", name: "r", api: API, agent: "vibe-agent" }
+/** GitHub's immutable id for o/r: smithers.sh checks it, and a fork's parent, before every write. */
+export const REPOSITORY_ID = 11
 
 export interface FakeIssue {
   id: number
@@ -46,7 +48,7 @@ export interface Fake {
   labels: Array<string>
   assignable: Array<{ id: number; login: string }>
   pulls: Array<FakePull>
-  forks: Record<string, { name: string; owner: { login: string }; default_branch: string; fork?: boolean; parent?: { full_name: string } }>
+  forks: Record<string, { id: number; name: string; owner: { login: string }; default_branch: string; fork: boolean; parent: { id: number; full_name: string } }>
   branches: Record<string, Record<string, string>>
   commits: Record<string, string>
   pullAdditions: Record<string, Array<string>>
@@ -109,6 +111,12 @@ export function seed(): Fake {
   return fake
 }
 
+/** The person forked o/r on GitHub themselves: smithers.sh never creates a fork (decision 0165). */
+export function forked(fake: Fake, login = "fuzz"): void {
+  fake.forks[`${login}/r`] = { id: 12, name: "r", owner: { login }, default_branch: "main", fork: true, parent: { id: REPOSITORY_ID, full_name: "o/r" } }
+  fake.branches[`${login}/r`] = { ...fake.branches["o/r"] }
+}
+
 const jsonResponse = (request: HttpClientRequest.HttpClientRequest, status: number, body: unknown, headers: Record<string, string> = {}) =>
   succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } }))))
 
@@ -146,7 +154,6 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
     const pullOne = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/.exec(path)
     const pullFiles = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/files$/.exec(path)
     const pullReviews = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/reviews$/.exec(path)
-    const forks = /^\/repos\/([^/]+)\/([^/]+)\/forks$/.exec(path)
     const repoOne = /^\/repos\/([^/]+)\/([^/]+)$/.exec(path)
     const refOne = /^\/repos\/([^/]+)\/([^/]+)\/git\/ref\/heads\/(.+)$/.exec(path)
     const matchingRefs = /^\/repos\/([^/]+)\/([^/]+)\/git\/matching-refs\/heads\/(.+)$/.exec(path)
@@ -154,16 +161,9 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
     const commitOne = /^\/repos\/([^/]+)\/([^/]+)\/git\/commits\/([0-9a-f]+)$/.exec(path)
     if (repoOne && request.method === "GET") {
       const key = `${repoOne[1]}/${repoOne[2]}`
-      if (key === "o/r") return try jsonResponse(request, 200, { name: "r", owner: { login: "o" }, default_branch: "main" })
+      if (key === "o/r") return try jsonResponse(request, 200, { id: REPOSITORY_ID, name: "r", owner: { login: "o" }, default_branch: "main" })
       const existing = fake.forks[key]
       return try (existing === undefined ? jsonResponse(request, 404, { message: "Not Found" }) : jsonResponse(request, 200, existing))
-    }
-    if (forks && request.method === "POST") {
-      return try write(201, () => fake.forks[`fuzz/${forks[2]}`], () => {
-        const made = { name: forks[2]!, owner: { login: "fuzz" }, default_branch: "main", fork: true, parent: { full_name: `${forks[1]}/${forks[2]}` } }
-        fake.forks[`fuzz/${forks[2]}`] = made
-        fake.branches[`fuzz/${forks[2]}`] = { ...fake.branches[`${forks[1]}/${forks[2]}`] }
-      })
     }
     if (issuesList && request.method === "GET") return try page(fake.malformedIssues ? [{ garbage: true }, ...fake.issues] : fake.issues, fake.endlessIssues)
     if (issuesList && request.method === "POST") {

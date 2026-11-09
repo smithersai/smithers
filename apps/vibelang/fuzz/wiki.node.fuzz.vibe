@@ -7,15 +7,18 @@ import { pages } from "../src/core/wiki.vibe"
 import { WikiWriter } from "../src/core/WikiWriter.vibe"
 import { WikiState, type WikiRequest } from "../src/core/wikiSchemas.vibe"
 import { executeWiki, publicWiki, serveWiki, WikiAuthority, wikiFailureOf, wikiFilePath, type WikiRepository } from "../worker/Wiki.vibe"
+import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
+import type { Principal } from "../worker/Issues.vibe"
 import type { Storage } from "../worker/Objects.vibe"
-import { API, fakeClient, seed, type Fake } from "./issues-node-fake.vibe"
+import { API, fakeClient, forked, seed, type Fake } from "./issues-node-fake.vibe"
+import { delegated, reach, reached } from "./delegated.vibe"
 import { run, Int } from "./run.vibe"
 
 const repo: WikiRepository = { owner: "o", name: "r", api: API, agent: "", root: "wiki" }
 const page = pages[0]!.id
 const SOURCE = "# Page\n\nThe repository text.\n"
 const path = `wiki/${page}.md`
-const reasons = ["forbidden", "sign-in", "connect", "missing", "invalid", "conflict", "empty", "unknown", "partial", "rate-limited", "unavailable"]
+const reasons = ["forbidden", "sign-in", "connect", "fork", "install", "missing", "invalid", "conflict", "empty", "unknown", "partial", "rate-limited", "unavailable"]
 const clean = /^[^\uD800-\uDFFF]*$/
 const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
 const Op = Schema.Struct({
@@ -34,20 +37,23 @@ const Input = Schema.Array(Op).check(Schema.isMaxLength(8))
 const seeded = (): Fake => {
   const fake = seed()
   fake.files[path] = SOURCE
+  forked(fake)
   return fake
 }
 const writer = (available: boolean): WikiWriter.Shape => ({
   draft: (request) => available ? succeed({ page: request.page, text: `${request.source}\n${request.ask}` }) : Effect.die("The target never drafts here"),
 })
 
-/** The durable wiki edit over a stateful GitHub: typed outcomes, one review per key, no write without authority. */
-it.live("wiki/github-host-operations", () => run("wiki/github-host-operations", Input, (ops) => effect {
+/** The durable wiki edit over a stateful GitHub through smithers.sh: typed outcomes, one review per key, no write without authority. */
+const operations = reach()
+const hostOperations = (ops: typeof Input.Type) => effect {
   const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
   const storage = raw as unknown as Storage
   const fake = seeded()
-  const principal = try Ref.make<{ id: string; login: string; role: typeof Role.Type; token: Redacted.Redacted<string> } | undefined>(undefined)
+  const site = try delegated(fakeClient(fake), operations)
+  const principal = try Ref.make<Principal | undefined>(undefined)
   const authority: WikiAuthority.Shape = { current: () => Ref.get(principal) }
-  const client = fakeClient(fake)
+  const client = site.http
   const reviews = new Map<string, string>()
   const failed = new Map<string, WikiRequest>()
   for (const op of ops) {
@@ -56,7 +62,7 @@ it.live("wiki/github-host-operations", () => run("wiki/github-host-operations", 
     // No 5xx here: the flow retries `unavailable` for up to 120 seconds on the real clock. wiki/failure-mapping covers it.
     fake.contentStatus = op.salt % 16 === 13 ? 404 : 200
     fake.noMain = op.salt % 16 === 15
-    try Ref.set(principal, op.signedOut ? undefined : { id: "7", login: "fuzz", role: op.role, token: Redacted.make(op.noToken ? "" : "token") })
+    try Ref.set(principal, op.signedOut ? undefined : { id: "7", login: "fuzz", role: op.role, ...(op.noToken ? {} : { connection: site.connection }) })
     const retried = op.salt % 8 === 3 ? failed.get(`${op.key % 4}`) : undefined
     const request: WikiRequest = retried !== undefined ? { ...retried, recovery: "r1" } : { op: op.op, page: op.page, base: op.base === "current" ? SOURCE : "Stale.", text: op.text, key: op.salt % 32 === 17 ? "bad key!" : `k${op.key}` }
     const writesBefore = fake.writes
@@ -65,6 +71,7 @@ it.live("wiki/github-host-operations", () => run("wiki/github-host-operations", 
     const result = try Effect.result(executeWiki("wiki-fuzz", storage, request, repo).pipe(
       Effect.provideService(WikiAuthority, authority),
       Effect.provideService(HttpClient.HttpClient, client),
+      Effect.provideService(GitHubDelegate, site.delegate),
       Effect.provideService(WikiWriter, writer(true)),
       Effect.provide(WebCrypto.layer),
     ))
@@ -90,7 +97,10 @@ it.live("wiki/github-host-operations", () => run("wiki/github-host-operations", 
     }
   }
   return true
-}))
+}
+it.live("wiki/github-host-operations", () => Effect.andThen(run("wiki/github-host-operations", Input, hostOperations), reached("wiki/github-host-operations", operations, hostOperations, [
+  { op: "propose", role: "maintainer", signedOut: false, noToken: false, page, base: "current", text: "Edited text.", key: 1, salt: 0 },
+])))
 
 const Http = Schema.Struct({
   method: Schema.Literals(["GET", "POST", "PUT"]),
@@ -102,7 +112,8 @@ const Http = Schema.Struct({
 })
 
 /** Every request shape gets a typed status; refusals name their reason. */
-it.live("wiki/http-surface", () => run("wiki/http-surface", Http, (input) => effect {
+const surface = reach()
+const httpSurface = (input: typeof Http.Type) => effect {
   const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
   const storage = raw as unknown as Storage
   const valid = { op: "propose", page, base: SOURCE, text: "Edited.", key: `k${input.key}` }
@@ -117,10 +128,12 @@ it.live("wiki/http-surface", () => run("wiki/http-surface", Http, (input) => eff
     const answer = try Effect.provideService(publicWiki("wiki-public", storage), HttpServerRequest.HttpServerRequest, server)
     if (answer.status !== 404) return false
   }
-  const authority: WikiAuthority.Shape = { current: () => succeed(input.signedOut ? undefined : { id: "7", login: "fuzz", role: input.role, connection: { person: 1, delegation: "fixture-delegation" } }) }
+  const site = try delegated(fakeClient(seeded()), surface)
+  const authority: WikiAuthority.Shape = { current: () => succeed(input.signedOut ? undefined : { id: "7", login: "fuzz", role: input.role, connection: site.connection }) }
   const response = try Effect.provideService(serveWiki("wiki-http", storage, repo).pipe(
     Effect.provideService(WikiAuthority, authority),
-    Effect.provideService(HttpClient.HttpClient, fakeClient(seeded())),
+    Effect.provideService(HttpClient.HttpClient, site.http),
+    Effect.provideService(GitHubDelegate, site.delegate),
     Effect.provide(WebCrypto.layer),
   ), HttpServerRequest.HttpServerRequest, server)
   if (![200, 400, 401, 403, 404, 405, 409, 413, 503].includes(response.status)) return false
@@ -128,6 +141,20 @@ it.live("wiki/http-surface", () => run("wiki/http-surface", Http, (input) => eff
   if (response.status === 404 && input.path === "/other" || response.status === 405) return text === ""
   const parsed = try Effect.try(() => JSON.parse(text))
   return response.status === 200 ? Array.isArray(parsed.pages) : typeof parsed.reason === "string"
+}
+it.live("wiki/http-surface", () => Effect.andThen(run("wiki/http-surface", Http, httpSurface), reached("wiki/http-surface", surface, httpSurface, { method: "POST", path: "/api/wiki", body: "valid", role: "maintainer", signedOut: false, key: 1 })))
+
+/** Regression: GitHub's 404 on a delegated read was `unavailable`, which the flow retried for two minutes. */
+it.live("wiki: a connected read of a page missing from the repository answers missing at once", () => scoped(effect {
+  const storage = (try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))) as unknown as Storage
+  const fake = seed()
+  const site = try delegated(fakeClient(fake), reach())
+  const authority: WikiAuthority.Shape = { current: () => succeed({ id: "7", login: "fuzz", role: "maintainer" as const, connection: site.connection }) }
+  const read = try Effect.result(executeWiki("wiki-missing", storage, { op: "read", page, base: "", text: "", key: "read-1" }, repo).pipe(
+    Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, site.http), Effect.provideService(GitHubDelegate, site.delegate),
+    Effect.provide(WebCrypto.layer), Effect.timeout("10 seconds"),
+  ))
+  if (read._tag !== "Failure" || read.failure._tag !== "WikiFailure" || read.failure.reason !== "missing") throw new Error("a missing page did not answer missing")
 }))
 
 const Mapping = Schema.Struct({ kind: Schema.Literals(["none", "401", "403", "404", "429", "500", "unknown", "incomplete", "rate-limited"]), page: Schema.Literals([page, "decisions", "no-such-page"]) })
