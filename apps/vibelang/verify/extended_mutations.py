@@ -4958,7 +4958,7 @@ cases.extend([('src/web/modelDecision.vibe', 'actions-click-close', 'clickedActi
  ('src/web/paneDecision.vibe', 'pane-sandbox-palette', 'startSandboxAction', 'palette: false', 'palette: state.palette', 'an action closes the palette'),
  ('src/web/paneDecision.vibe', 'pane-sandbox-docs', 'startSandboxAction', 'docs: "pane", pane', 'docs: state.docs, pane', 'an action unmaximizes docs'),
  ('src/web/paneDecision.vibe', 'pane-sandbox-pane-max', 'startSandboxAction', 'state.docs === "max" ? "max"', 'state.docs === "max" ? "pane"', 'a maximized page hands its size over'),
- ('src/web/paneDecision.vibe', 'pane-sandbox-operation', 'startSandboxAction', 'operation: operationOf(kind)', 'operation: ""', 'an action records its kind'),
+ ('src/web/paneDecision.vibe', 'pane-sandbox-operation', 'startSandboxAction', 'operation: kind', 'operation: ""', 'an action records its kind'),
  ('src/web/paneDecision.vibe', 'pane-sandbox-busy', 'startSandboxAction', 'busy: true', 'busy: state.busy', 'an action starts the wait'),
  ('src/web/paneDecision.vibe', 'pane-sandbox-error', 'startSandboxAction', 'error: "", request', 'error: state.error, request', 'an action clears the failure'),
  ('src/web/paneDecision.vibe', 'pane-sandbox-draft', 'startSandboxAction', 'draft: "" }', 'draft: state.draft }', 'an action spends the draft'),
@@ -5000,9 +5000,7 @@ cases.extend([('src/web/modelDecision.vibe', 'actions-click-close', 'clickedActi
  ('src/web/paneDecision.vibe', 'pane-wiki-text-forbidden', 'wikiEditErrorText', 'reason === "forbidden" ? "Not allowed."', 'reason === "forbidden" ? ""', 'forbidden names itself'),
  ('src/web/paneDecision.vibe', 'pane-wiki-text-conflict', 'wikiEditErrorText', '"The page changed. Reload the editor."', '""', 'conflict names itself'),
  ('src/web/paneDecision.vibe', 'pane-wiki-text-connect', 'wikiEditErrorText', 'reason === "connect" || reason === "sign-in"', 'reason === "connect"', 'sign-in also connects'),
- ('src/web/paneDecision.vibe', 'pane-wiki-text-default', 'wikiEditErrorText', '"Couldn\'t save. Retry."', '""', 'other failures say retry'),
- ('src/web/paneDecision.vibe', 'pane-operation-of-start', 'operationOf', 'kind === "start" ? "start"', 'kind === "start" ? "stop"', 'start records start'),
- ('src/web/paneDecision.vibe', 'pane-operation-of-stop', 'operationOf', 'kind === "stop" ? "stop"', 'kind === "stop" ? "command"', 'stop records stop')])
+ ('src/web/paneDecision.vibe', 'pane-wiki-text-default', 'wikiEditErrorText', '"Couldn\'t save. Retry."', '""', 'other failures say retry')])
 
 # Batch 26: the issues screen and its update arms.
 cases.extend([

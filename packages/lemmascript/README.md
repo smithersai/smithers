@@ -18,6 +18,9 @@ tests read are unchanged except for the patches listed below.
 | Object spread of a value holding a strict subset of the base record's fields | Offered upstream later |
 | A contract record literal may begin with a spread (`\\result == { ...state, f: v }`), and a contract record or array literal on the right of `==` takes the left operand's declared type | Offered upstream later |
 | An exhaustive `X.match(value, { Tag: ({ field }) => result })` table over a `_tag` union, in return position, read as a `switch` | Offered upstream later |
+| A string-literal union member spelled `""` gets a valid Dafny constructor name, and one spelled `none` stays the union's own constructor rather than Option's `None` | Offered upstream later |
+| A string-literal union value widens where TypeScript allows it: to a `string` slot, and to a union holding all of its members, in arguments, fields, returns and `==` | Offered upstream later |
+| A constant imported by name from another module (`import { LIMIT as L }`) is declared with its value, with the constants its initializer reads; a name that collides with another constant is refused | Offered upstream later |
 
 Each patch is offered back upstream later. Will decides any GitHub contribution.
 

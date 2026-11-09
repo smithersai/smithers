@@ -93,6 +93,40 @@ cp tools/fixtures/empty-string-union-wrong.ts "$fixture_dir/empty-string-union-w
 expect_failure \
   "an empty union member verified as a different member" \
   npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/empty-string-union-wrong.ts"
+
+# A string-literal union widens to `string` and to a superset union; a constant
+# imported from another module keeps its declared value. Each wrong twin must
+# fail on a proof obligation, not on a resolution error.
+expect_proof_failure() {
+  local message="$1"
+  shift
+  local log="$fixture_dir/proof-failure.log"
+  if "$@" >"$log" 2>&1; then
+    echo "ERROR: $message"
+    exit 1
+  fi
+  if grep -q "resolution/type errors" "$log" || ! grep -q "could not be proved" "$log"; then
+    cat "$log"
+    echo "ERROR: $message (failed before reaching a proof obligation)"
+    exit 1
+  fi
+}
+for name in union-to-string string-union-subset; do
+  cp "tools/fixtures/$name.ts" "tools/fixtures/$name-wrong.ts" "$fixture_dir/"
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name.ts"
+  expect_proof_failure \
+    "a widened string-union member verified as another member ($name)" \
+    npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name-wrong.ts"
+done
+cp -R tools/fixtures/imported-const tools/fixtures/imported-const-wrong tools/fixtures/imported-const-collision "$fixture_dir/"
+npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/imported-const/use.ts"
+expect_proof_failure \
+  "an imported constant verified against a value it does not have" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/imported-const-wrong/use.ts"
+expect_failure \
+  "an imported constant was merged with a local constant of the same name" \
+  npx tsx tools/src/lsc.ts gen --backend=dafny "$fixture_dir/imported-const-collision/use.ts"
+
 cp tools/fixtures/tagged-match-missing-arm.ts "$fixture_dir/tagged-match-missing-arm.ts"
 expect_failure \
   "a non-exhaustive handler table was read as a tagged match" \

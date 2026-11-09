@@ -99,6 +99,58 @@ function registerExternIfCrossFile(
   }
 }
 
+/** The const declaration an identifier names, when it lives in another module. */
+function crossFileConst(id: Node, currentPath: string): VariableDeclaration | undefined {
+  let symbol = id.getSymbol();
+  const aliased = symbol?.getAliasedSymbol();
+  if (aliased) symbol = aliased;
+  const decl = symbol?.getDeclarations().find(Node.isVariableDeclaration);
+  if (!decl || decl.getSourceFile().getFilePath() === currentPath) return undefined;
+  if (decl.getSourceFile().getFilePath().endsWith(".d.ts")) return undefined;
+  const list = decl.getParent();
+  if (!Node.isVariableDeclarationList(list) || !(list.getFlags() & 2 /* const */)) return undefined;
+  const init = decl.getInitializer();
+  if (!init || Node.isArrowFunction(init) || Node.isFunctionExpression(init)) return undefined;
+  if (typeToString(decl.getType()).startsWith("__")) return undefined;
+  return decl;
+}
+
+/** Constants a module imports by name from other modules, with the constants
+ *  their initializers read, in dependency order. Each is copied under the name
+ *  it is read by (`import { A as B }` declares `B`), so a contract or body that
+ *  reads it resolves to the declared value. A copied name that collides with a
+ *  different constant is refused rather than merged. */
+function importedConstants(sourceFile: SourceFile, localNames: ReadonlySet<string>): RawConst[] {
+  const currentPath = sourceFile.getFilePath();
+  const out: RawConst[] = [];
+  const copied = new Map<string, VariableDeclaration>();
+  const copy = (name: string, decl: VariableDeclaration): void => {
+    const prior = copied.get(name);
+    if (prior === decl) return;
+    if (prior || localNames.has(name)) {
+      throw new Error(`imported const '${name}' from ${decl.getSourceFile().getBaseName()} collides with another constant of that name in ${sourceFile.getBaseName()}`);
+    }
+    copied.set(name, decl);
+    _validateDependency(decl.getSourceFile());
+    const init = decl.getInitializerOrThrow();
+    for (const id of init.getDescendantsOfKind(SyntaxKind.Identifier)) {
+      const dep = crossFileConst(id, currentPath);
+      if (dep) copy(id.getText(), dep);
+    }
+    out.push({ name, tsType: typeToString(decl.getType()), value: extractExpr(init as Expression) });
+  };
+  for (const imp of sourceFile.getImportDeclarations()) {
+    if (imp.isTypeOnly()) continue;
+    for (const spec of imp.getNamedImports()) {
+      if (spec.isTypeOnly()) continue;
+      const local = spec.getAliasNode() ?? spec.getNameNode();
+      const decl = crossFileConst(local, currentPath);
+      if (decl) copy(local.getText(), decl);
+    }
+  }
+  return out;
+}
+
 function detectCrossFileExtern(
   callee: import("ts-morph").PropertyAccessExpression | import("ts-morph").Identifier,
   sourceFile: SourceFile,
@@ -2319,6 +2371,8 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
       }
     }
   }
+
+  constants.unshift(...importedConstants(sourceFile, new Set(constants.map(c => c.name))));
 
   // Collect all function-like declarations: function declarations + const arrow functions
   const allFns: { name: string; node: FunctionDeclaration; parentStmt?: Node }[] = [];

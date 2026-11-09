@@ -19,22 +19,13 @@ export interface SandboxCommand { readonly type: "SandboxAction"; readonly reque
 export interface SandboxStep { readonly state: SandboxScreen; readonly commands: ReadonlyArray<SandboxCommand> }
 export interface SandboxResult { readonly pane: SandboxPane; readonly operation: SandboxOperation; readonly busy: boolean; readonly error: string }
 
-/** The operation recorded for each action kind. */
-//@ verify
-//@ ensures kind == "start" ==> \result == "start"
-//@ ensures kind == "stop" ==> \result == "stop"
-//@ ensures kind == "command" ==> \result == "command"
-export function operationOf(kind: SandboxKind): SandboxOperation {
-  return kind === "start" ? "start" : kind === "stop" ? "stop" : "command"
-}
-
 /** An accepted action shows the sandbox beside the chat, takes the next request number and spends the draft on its command. */
 //@ verify
-//@ ensures \result.state == { ...state, surface: "chat", palette: false, docs: "pane", pane: state.docs == "max" ? "max" : "pane", operation: operationOf(kind), busy: true, error: "", request: state.request + 1, draft: "" }
+//@ ensures \result.state == { ...state, surface: "chat", palette: false, docs: "pane", pane: state.docs == "max" ? "max" : "pane", operation: kind, busy: true, error: "", request: state.request + 1, draft: "" }
 //@ ensures \result.commands == [{ type: "SandboxAction", request: state.request + 1, kind: kind, generation: generation, command: state.draft }]
 export function startSandboxAction(state: SandboxScreen, kind: SandboxKind, generation: number): SandboxStep {
   const request = state.request + 1
-  return { state: { ...state, surface: "chat", palette: false, docs: "pane", pane: state.docs === "max" ? "max" : "pane", operation: operationOf(kind), busy: true, error: "", request, draft: "" }, commands: [{ type: "SandboxAction", request, kind, generation, command: state.draft }] }
+  return { state: { ...state, surface: "chat", palette: false, docs: "pane", pane: state.docs === "max" ? "max" : "pane", operation: kind, busy: true, error: "", request, draft: "" }, commands: [{ type: "SandboxAction", request, kind, generation, command: state.draft }] }
 }
 
 /** A current snapshot ends the wait and clears the failure; the pane opens only when told to. */

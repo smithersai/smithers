@@ -167,6 +167,46 @@ function findSynthArrayUnion(name: string, typeDecls: TypeDeclInfo[]): TypeDeclI
   return null;
 }
 
+/** A named string-literal union lowers to its own datatype, but at runtime it is
+ *  a plain string, so TypeScript lets it flow into a `string` slot or into a
+ *  union whose members include all of its own. Widen it there with a match on
+ *  its members: each constructor becomes its own spelling, as a string or as
+ *  the superset's constructor of that spelling. Any other pairing, including a
+ *  target that lacks one of the members, is left for the backend to reject. */
+function widenStringUnion(value: TExpr, targetTy: Ty, typeDecls: TypeDeclInfo[]): TExpr {
+  if (value.kind === "conditional") {
+    const then_ = widenStringUnion(value.then, targetTy, typeDecls);
+    const else_ = widenStringUnion(value.else, targetTy, typeDecls);
+    if (then_ === value.then && else_ === value.else) return value;
+    return { ...value, then: then_, else: else_, ty: conditionalResultTy(then_.ty, else_.ty) };
+  }
+  if (value.ty.kind !== "user") return value;
+  const source = declOfKind(typeDecls, value.ty.name, "string-union");
+  if (!source?.values?.length) return value;
+  let bodyTy: Ty;
+  if (targetTy.kind === "string") {
+    bodyTy = { kind: "string" };
+  } else if (targetTy.kind === "user" && targetTy.name !== value.ty.name) {
+    const target = declOfKind(typeDecls, targetTy.name, "string-union");
+    if (!target?.values || !source.values.every(v => target.values!.includes(v))) return value;
+    bodyTy = targetTy;
+  } else {
+    return value;
+  }
+  return {
+    kind: "tagMatch", scrutinee: value, typeName: source.name,
+    cases: source.values.map(v => ({ variant: v, body: { kind: "str", value: v, ty: bodyTy } })),
+    fallthrough: null, ty: bodyTy,
+  };
+}
+
+/** The common type of two compared string-literal union values: the string, or
+ *  the union whose members include the other's. */
+function widenStringUnionPair(left: TExpr, right: TExpr, typeDecls: TypeDeclInfo[]): [TExpr, TExpr] {
+  if (left.kind === "str" || right.kind === "str") return [left, right];
+  return [widenStringUnion(left, right.ty, typeDecls), widenStringUnion(right, left.ty, typeDecls)];
+}
+
 /** Coerce `value` to `targetTy` at an assignment-position. Mirrors TS subtyping
  *  for the two upcast shapes LS synthesizes:
  *    - `T` into `optional<T>` slot  → wrap with `Some(...)`
@@ -176,6 +216,7 @@ function findSynthArrayUnion(name: string, typeDecls: TypeDeclInfo[]): TypeDeclI
  *  source is unknown, or no rule matches). */
 function coerceToTargetTy(value: TExpr, targetTy: Ty, typeDecls: TypeDeclInfo[]): TExpr {
   value = coerceStr(value, targetTy);
+  value = widenStringUnion(value, targetTy.kind === "optional" ? targetTy.inner : targetTy, typeDecls);
   if (value.ty.kind === "unknown" || value.ty.kind === "void") return value;
   if (targetTy.kind === "optional" && value.ty.kind !== "optional") {
     return wrapSome(value, targetTy);
@@ -822,6 +863,7 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
       if (e.op === "===" || e.op === "!==") {
         left = coerceStr(left, right.ty);
         right = coerceStr(right, left.ty);
+        [left, right] = widenStringUnionPair(left, right, ctx.typeDecls);
         // Spec (`//@`) comparisons are proof-only, so they can't diverge at
         // runtime; only warn on executable code.
         if (!ctx.inSpec && refEqHazard(left.ty, ctx.typeDecls) && refEqHazard(right.ty, ctx.typeDecls)) {
