@@ -7,8 +7,9 @@ import { Command, Dom, Subscription, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import type { Refused, Unavailable } from "../history/MythicalHistory.vibe"
+import { resolvedRole, toggleEpic, planFields, initialEpic, validPlanField } from "../history/flowMachine.vibe"
 import { PAGE } from "../history/pages.vibe"
-import { type Role, ROLES } from "../history/roles.vibe"
+import { type Role, atLeast } from "../history/roles.vibe"
 import { CommitPage, EpicPage, HistoryEvent, Matches, Outline } from "../history/schemas.vibe"
 export { PAGE } from "../history/pages.vibe"
 
@@ -151,7 +152,7 @@ export function init(flags: HistoryFlags): Return {
 
 /** Whether `role` may take what needs `least`. */
 export function allowed(role: Role, least: Role): boolean {
-  return ROLES.indexOf(role) >= ROLES.indexOf(least)
+  return atLeast(role, least)
 }
 
 const COMMIT_HASH = /^m\d+$/
@@ -198,7 +199,7 @@ function write(model: HistoryModel, command: Command.Command<HistoryMessage, nev
 export function update(model: HistoryModel, message: HistoryMessage): Return {
   return HistoryMessage.match<Return>(message, {
     // Live, the server decides who you are: a viewer until sign-in (decision 0019) lands.
-    ResolvedMode: ({ mode }) => ({ model: { ...model, mode, role: mode === "live" ? "viewer" : model.role } }),
+    ResolvedMode: ({ mode }) => ({ model: { ...model, mode, role: resolvedRole(mode, model.role) } }),
     // A newer outline reads again what the page shows; an older one, arriving late, changes nothing.
     GotOutline: ({ outline }) => {
       if (model.status === "ready" && outline.seq < model.outline.seq) return { model }
@@ -223,14 +224,15 @@ export function update(model: HistoryModel, message: HistoryMessage): Return {
       return { model: next }
     },
     ToggledEpic: ({ id }) => {
-      if (model.open.includes(id)) return { model: { ...model, open: model.open.filter((each) => each !== id) } }
-      const next = { ...model, open: [...model.open, id] }
+      const wasOpen = model.open.includes(id)
+      const next = { ...model, open: toggleEpic(model.open, id) }
+      if (wasOpen) return { model: next }
       return pageOf(model, id) === undefined ? { model: next, commands: [ReadEpic({ id, from: 0 })] } : { model: next }
     },
     ClickedMore: ({ id }) => ({ model, commands: [ReadEpic({ id, from: pageOf(model, id)?.commits.length ?? 0 })] }),
     UpdatedFilter: ({ value }) => ({ model: { ...model, filter: value }, commands: value.trim() === "" ? [] : [ReadMatches({ query: value })] }),
     OpenedPlan: ({ how, target }) => {
-      const epic = how === "append" ? (model.outline.epics[0]?.id ?? NEW_EPIC) : ""
+      const epic = initialEpic(how, model.outline.epics[0]?.id)
       return {
         model: { ...model, dialog: true, error: "", form: { ...emptyForm, how, target, epic } },
         commands: [ShowPlan({})],
@@ -238,15 +240,13 @@ export function update(model: HistoryModel, message: HistoryMessage): Return {
     },
     ClosedPlan: () => ({ model: { ...model, dialog: false, error: "" }, commands: [ClosePlan({})] }),
     UpdatedForm: ({ field, value }) => {
-      if (field === "how" && value !== "append" && value !== "insert" && value !== "amend") return { model }
+      if (!validPlanField(field, value)) return { model }
       return { model: { ...model, form: { ...model.form, [field]: value } } }
     },
     SubmittedPlan: () => {
       const { form } = model
       return write(model, PlanCommand({
-        how: form.how,
-        epic: form.epic === NEW_EPIC ? "" : form.epic,
-        newEpic: form.how === "append" && form.epic === NEW_EPIC ? form.newEpic : "",
+        ...planFields(form.how, form.epic, form.newEpic),
         target: form.target,
         title: form.title,
         task: form.task,

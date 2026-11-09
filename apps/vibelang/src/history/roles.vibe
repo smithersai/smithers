@@ -2,7 +2,7 @@
 // roles lane's policy interface replaces `Caller`'s source when it lands; every flow already reads its least role from
 // `HISTORY_ROLES` and the caller from `Caller`, so switching is one change here.
 
-import { type Action, leastRole, peopleOnly, type Principal, type Role, standing } from "./flowMachine.vibe"
+import { type Action, leastRole, peopleOnly, type Principal, type Role, atLeast as historyAtLeast } from "./flowMachine.vibe"
 
 // Roles, actions and `may` are the proved flow machine's (flowMachine.vibe); this module names them for the app.
 export type { Action, Principal, Role }
@@ -30,7 +30,7 @@ export const PEOPLE_ONLY: ReadonlyArray<Action> = ACTIONS.filter(peopleOnly)
 
 /** Whether `role` is `least` or above. */
 export function atLeast(role: Role, least: Role): boolean {
-  return standing(role) >= standing(least)
+  return historyAtLeast(role, least)
 }
 
 /** The one place a flow learns who runs it. */

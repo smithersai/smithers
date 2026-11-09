@@ -308,3 +308,7 @@ root completion and each independent measure step. An equivalent redundant self-
 known valid spend is preserved afterward, including the exact safe boundary. Forty-seven contract-preserving mutants
 cover initialization, safe-domain admission, all unrelated fields, the invalidity latch and completion outcomes. The
 reply fuzz oracle now computes expected sums with independent BigInt arithmetic in Effect, retaining its corpus.
+
+**Shared history decisions (0018).** Existing real-engine role/Plan/Note tests, real HTTP history clients and the
+/history browser suite exercise the extracted policies. All61current history flow-machine mutants are rerun against
+the changed source, including45new guard/field/label mutations; generated inputs are checked byte-for-byte.

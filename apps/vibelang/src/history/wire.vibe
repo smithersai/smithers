@@ -8,6 +8,7 @@
 //   GET  /api/history/events?after=<seq>    text/event-stream: `id: <seq>`, `data: <HistoryEvent JSON>`
 //   POST /api/history/<action>            a flow: plan, start, note, approve or fold
 //                                         → 200 Written | 409 Refusal (the sequencer's) | 403 Refusal (forbidden)
+import { historyStatus } from "./flowMachine.vibe"
 import { DurableText } from "../core/wire.vibe"
 import { MAX_NOTE, MAX_TITLE } from "./mythical.vibe"
 import type { PageRequest } from "./pages.vibe"
@@ -88,7 +89,5 @@ export const MAX_WRITE_BYTES = (MAX_NOTE + MAX_TITLE * 4) * 4 + 4096
 
 /** The HTTP status a write's refusal answers with. */
 export function statusOf(refusal: string): number {
-  if (refusal === "forbidden") return 403
-  if (refusal === "unavailable") return 503
-  return 409
+  return historyStatus(refusal)
 }

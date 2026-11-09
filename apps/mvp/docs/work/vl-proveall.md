@@ -45,3 +45,9 @@ fail first; the full eight-case integrity suite passes afterward. Nine productio
 mutants, all17current module hashes and817current mutants match actual receipts. Finaltypecheck0,835unit passes,
 52workerd passes,9reply fuzz targets139674executions/1retained regression replay and2affected benchmarks pass.
 Native safe-integer emission is retained as a minimal exact-contract tool gap; event routing and SDK replay are not claimed proved.
+
+Sixteenth batch: twelve shared history-page decisions reuse the authoritative existing ranking. Exact role/status,
+Plan operation/fields, open-epic membership/opening prefix, signature and label policies are now called by actual
+HTTP/flow/browser hosts. Updatedmodule23proofunits;61/61current mutants reject(45new);17sources862mutantsmatch
+realreceipts. Typecheck0,835unit/52workerd/21historybrowser passes,port4504. Full page merging/model admission
+remains unfinished and toolrequest projection retains the optional-union-default reproduction. No new dependency.

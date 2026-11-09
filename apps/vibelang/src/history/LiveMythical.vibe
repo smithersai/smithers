@@ -4,6 +4,7 @@
 import * as Sse from "effect/encoding/Sse"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import type { Mode } from "../core/Factory.vibe"
+import { historyResponse } from "./flowMachine.vibe"
 import { Mythical, Refused, Unavailable } from "./MythicalHistory.vibe"
 import type { PageRequest } from "./pages.vibe"
 import { CommitPage, EpicPage, HistoryEvent, Matches, Outline } from "./schemas.vibe"
@@ -30,8 +31,9 @@ export function LiveMythical(origin: string) {
       const request = HttpClientRequest.post(`${origin}${HISTORY_PATH}/${name}`).pipe(HttpClientRequest.bodyJsonUnsafe(body))
       const response: HttpClientResponse.HttpClientResponse = try Effect.mapError(client.execute(request), unavailable(`${name} unreachable`))
       const json = try Effect.mapError(response.json, unavailable(`${name} is not JSON`))
-      if (response.status === 200) return try Effect.mapError(decodeWritten(json), unavailable(`${name} is not the protocol`))
-      if (response.status === 403 || response.status === 409 || response.status === 503) {
+      const outcome = historyResponse(response.status)
+      if (outcome === "accepted") return try Effect.mapError(decodeWritten(json), unavailable(`${name} is not the protocol`))
+      if (outcome === "refused") {
         const refused = try Effect.mapError(decodeRefusal(json), unavailable(`${name} refusal is not the protocol`))
         throw new Refused({ refusal: refused.refusal })
       }

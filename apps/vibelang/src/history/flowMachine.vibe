@@ -151,3 +151,126 @@ export function lawful(run: Run): boolean {
   if ((run.phase === "authorized" || run.phase === "recorded") && !may(run.principal, run.action)) return false
   return run.action === "fold" || run.records <= 1
 }
+
+export interface PlanFields { readonly how: "append" | "insert" | "amend"; readonly epic: string; readonly newEpic: string }
+
+
+//@ verify
+//@ ensures \result == (standing(role) >= standing(least))
+export function atLeast(role: Role, least: Role): boolean {
+  return standing(role) >= standing(least)
+}
+
+
+//@ verify
+//@ ensures refusal == "forbidden" ==> \result == 403
+//@ ensures refusal == "unavailable" ==> \result == 503
+//@ ensures refusal != "forbidden" && refusal != "unavailable" ==> \result == 409
+export function historyStatus(refusal: string): number {
+  if (refusal === "forbidden") return 403
+  if (refusal === "unavailable") return 503
+  return 409
+}
+
+
+//@ verify
+//@ ensures how == "append" ==> \result == "append"
+//@ ensures how != "append" ==> \result == "retell"
+export function planAction(how: "append" | "insert" | "amend"): Action {
+  return how === "append" ? "append" : "retell"
+}
+
+
+//@ verify
+//@ ensures (\result == "accepted") == (status == 200)
+//@ ensures (\result == "refused") == (status == 403 || status == 409 || status == 503)
+//@ ensures (\result == "unavailable") == (status != 200 && status != 403 && status != 409 && status != 503)
+export function historyResponse(status: number): "accepted" | "refused" | "unavailable" {
+  if (status === 200) return "accepted"
+  if (status === 403 || status === 409 || status === 503) return "refused"
+  return "unavailable"
+}
+
+
+//@ verify
+//@ ensures agent ==> \result == name + " (agent)"
+//@ ensures !agent ==> \result == name
+export function historySignature(name: string, agent: boolean): string {
+  return agent ? `${name} (agent)` : name
+}
+
+
+//@ verify
+//@ ensures mode == "live" ==> \result == "viewer"
+//@ ensures mode != "live" ==> \result == current
+export function resolvedRole(mode: string, current: Role): Role {
+  return mode === "live" ? "viewer" : current
+}
+
+
+//@ verify
+//@ ensures \result.includes(id) == !ids.includes(id)
+//@ ensures forall(i, 0 <= i && i < ids.length && ids[i] != id ==> \result.includes(ids[i]))
+//@ ensures forall(i, 0 <= i && i < \result.length ==> \result[i] == id || ids.includes(\result[i]))
+//@ ensures !ids.includes(id) ==> \result.length == ids.length + 1 && forall(i, 0 <= i && i < ids.length ==> \result[i] == ids[i])
+export function toggleEpic(ids: ReadonlyArray<string>, id: string): ReadonlyArray<string> {
+  return ids.includes(id) ? ids.filter((each) => each !== id) : [...ids, id]
+}
+
+
+//@ verify
+//@ ensures \result.how == how
+//@ ensures \result.epic == (epic == "new" ? "" : epic)
+//@ ensures \result.newEpic == (how == "append" && epic == "new" ? newEpic : "")
+export function planFields(how: "append" | "insert" | "amend", epic: string, newEpic: string): PlanFields {
+  return { how, epic: epic === "new" ? "" : epic, newEpic: how === "append" && epic === "new" ? newEpic : "" }
+}
+
+
+//@ verify
+//@ ensures state == "planned" ==> \result == "sui-badge-warning"
+//@ ensures state == "working" ==> \result == "sui-badge-default"
+//@ ensures state == "approved" ==> \result == "sui-badge-success"
+//@ ensures state != "planned" && state != "working" && state != "approved" ==> \result == "sui-badge-secondary"
+export function historyBadge(state: string): string {
+  return state === "planned" ? "sui-badge-warning" : state === "working" ? "sui-badge-default" : state === "approved" ? "sui-badge-success" : "sui-badge-secondary"
+}
+
+
+//@ verify
+//@ ensures refusal == "forbidden" ==> \result == "Your role can't do that."
+//@ ensures refusal == "empty" ==> \result == "Needs a title."
+//@ ensures refusal == "too-long" ==> \result == "Too long."
+//@ ensures refusal == "duplicate" ==> \result == "Already there."
+//@ ensures refusal == "unknown" ==> \result == "No such epic or commit."
+//@ ensures refusal == "state" ==> \result == "Not in that state."
+//@ ensures refusal == "full" ==> \result == "History full."
+//@ ensures refusal == "unavailable" ==> \result == "The history can't be reached."
+//@ ensures refusal != "forbidden" && refusal != "empty" && refusal != "too-long" && refusal != "duplicate" && refusal != "unknown" && refusal != "state" && refusal != "full" && refusal != "unavailable" ==> \result == refusal
+export function historyRefusal(refusal: string): string {
+  if (refusal === "forbidden") return "Your role can't do that."
+  if (refusal === "empty") return "Needs a title."
+  if (refusal === "too-long") return "Too long."
+  if (refusal === "duplicate") return "Already there."
+  if (refusal === "unknown") return "No such epic or commit."
+  if (refusal === "state") return "Not in that state."
+  if (refusal === "full") return "History full."
+  if (refusal === "unavailable") return "The history can't be reached."
+  return refusal
+}
+
+
+/** Opening a Plan form selects the first epic only for an append. */
+//@ verify
+//@ ensures how == "append" ==> \result == (first == undefined ? "new" : first)
+//@ ensures how != "append" ==> \result == ""
+export function initialEpic(how: "append" | "insert" | "amend", first: string | undefined): string {
+  return how === "append" ? (first ?? "new") : ""
+}
+
+/** A free-form value never enters the discriminant unless it is one of the declared operations. */
+//@ verify
+//@ ensures \result == (field != "how" || value == "append" || value == "insert" || value == "amend")
+export function validPlanField(field: string, value: string): boolean {
+  return field !== "how" || value === "append" || value === "insert" || value === "amend"
+}

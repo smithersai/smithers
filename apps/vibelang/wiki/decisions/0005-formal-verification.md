@@ -178,3 +178,7 @@ Reply progress (0018) proves the zero base and exact bounded addition recurrence
 frames, latched malformed usage and completion precedence. The host establishes safe integers before arithmetic;
 `safe-usage-integer.ts` records that native predicate emission gap. Event routing, provider decoding and SDK replay
 remain explicit boundaries. No contract is weakened to admit a non-integer or overflowing settlement.
+
+The shared history flow machine (0018) also proves role thresholds, HTTP outcomes, Plan operation/field policies,
+open-epic membership and append-prefix behavior, agent signatures and product labels. Actual browser and protocol
+callers use these decisions. Full page merging, response admission and model frames remain explicit unfinished work.

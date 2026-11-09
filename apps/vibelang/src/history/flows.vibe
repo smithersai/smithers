@@ -17,7 +17,7 @@
 // `canRecord` says so; nothing here decides anything.
 import { Action as Step, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { authorize, begin, canRecord, record, type Run } from "./flowMachine.vibe"
+import { authorize, begin, canRecord, record, historySignature, planAction, type Run } from "./flowMachine.vibe"
 import type { History } from "./mythical.vibe"
 import { type Action, ACTIONS, Caller, type Principal, ROLES } from "./roles.vibe"
 import type { Answer, MainCommit, PlanRequest } from "./Sequencer.vibe"
@@ -72,7 +72,7 @@ effect function counted(step: string, outcome: string) {
 
 /** The name a note or an approval carries: the person's, marked when the agent acts for them. */
 export function signature(principal: Principal): string {
-  return principal.agent ? `${principal.name} (agent)` : principal.name
+  return historySignature(principal.name, principal.agent)
 }
 
 /** The flow's run once the caller asked to take `action`: a journaled step, so a refusal is on the record as an acceptance is. */
@@ -152,7 +152,7 @@ export const Bootstrap = Flow.make("vibelang/history/Bootstrap", {
 /** Plan's body. */
 export effect function planned(request: PlanRequest) {
   const stack = try Stack
-  return try guarded(request.how === "append" ? "append" : "retell", () => stack.plan(request))
+  return try guarded(planAction(request.how), () => stack.plan(request))
 }
 
 /** Start's body. */

@@ -9,6 +9,9 @@ function scan(folder) {
     e.isDirectory() ? scan(path.join(folder,e.name)) : e.name.endsWith('.vibe') ? [path.join(folder,e.name)] : []);
 }
 const shellBoundaries = {
+  'src/web/historyApp.vibe': 'Calls proved role thresholds, live role reset, open-epic membership, plan initialization/validation/field selection. Remaining page merges, async response guards, complete model frames and command scheduling remain unproved.',
+  'src/history/LiveMythical.vibe': 'Calls proved accepted/refused/unavailable HTTP outcome mapping. Native HTTP/SSE and JSON/Schema codecs remain boundaries.',
+
   'worker/Reply.vibe': 'Calls the proved progress kernel for initial/reset/delta/settlement/failure and completion choices; invalid telemetry retains prior valid spend and cannot publish success. Event-tag/payload projection and orchestration remain unproved; native safe-integer observations, AgentAction internal event replay, DoneText/provider decoding and date/prompt formatting remain host boundaries.',
   'worker/Objects.vibe': 'The live dispatcher uses the proved scan/attempt/done transition; only a successful engine start writes a mark. Intent/storage codecs, engine execution, alarms and runtime composition remain host boundaries.',
   'src/web/theatre.vibe': 'Calls the proved selector, speech action, audio identity, outcome and focus-index policies. DOM geometry and native number subtraction, speech APIs, persisted JSON decoding and host execution remain boundaries.',
@@ -47,13 +50,19 @@ const boundaries = {
   'src/core/protocolDecision.vibe': 'Conversation/cursor/body validation, exact route and HTTP outcomes, explicit backend choice; proved.',
   'src/web/screenDecision.vibe': 'Exact six-field surface/tour projections plus escape, palette, scroll, focus, stream and announcement decisions; finite coordinate comparisons use exact reals. Native subtraction, nonfinite inputs and counter-capacity applicability remain unproved.',
   'src/history/mythical.vibe': 'Exact history transitions and unchanged fields, refusal precedence, first-match lookup, rank-bound induction and sequence capacity; notes are retained and trailers fold only into approved or landed commits; proved over validated safe integers (0020, unsafe-integer.ts).',
-  'src/history/flowMachine.vibe': 'Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020).',
+  'src/history/flowMachine.vibe': 'History authorization/run ordering plus shared role thresholds, HTTP outcomes, plan validation/fields, open-epic membership, role reset and product labels; exact scalar and set/prefix contracts with executable mutations (0020). Native codecs, complete page/model transitions and engine replay remain boundaries.',
   'src/core/conversation.vibe': 'Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain.',
   'worker/replyReasons.vibe': 'Failure precedence and model reason codes; proved.',
   'worker/budgetDecision.vibe': 'Strict admission, nonnegative integer charge and exact total; proved under safe-sum precondition.',
   'src/core/flowDecision.vibe': 'Post/StartTour record-once/accepted-dispatch-once model and its invariant, dispatch admission, append ordering, tour terminal events, reading-time policy and first undispatched source index; proved.',
 };
 const functionBoundaries = {
+  "src/history/roles.vibe:atLeast": "Calls the shared proved role threshold; validated roles use the existing authoritative standing order.",
+  "src/history/wire.vibe:statusOf": "Calls proved exact forbidden/unavailable/other refusal HTTP status mapping; no codec decision here.",
+  "src/history/flows.vibe:signature": "Calls proved exact name/agent signature projection.",
+  "src/web/historyApp.vibe:allowed": "Calls the shared proved role threshold; no duplicate role ranking.",
+  "src/web/historyView.vibe:badgeOf": "Calls proved exact commit-state badge mapping; HtmlBuilder execution is outside this label policy.",
+  "src/web/historyView.vibe:refusalText": "Calls proved exact product refusal labels and unknown-label preservation.",
   "src/history/mythical.vibe:replayEvent": "Retains every apply transition/frame over a validated safe event, including unchanged full snapshots; proved without weakening apply's below-capacity precondition.",
   "src/history/mythical.vibe:replayHistory": "Proved safe monotone cursor bounds, rank-below-cursor preservation and exact final cursor for contiguous validated events. Full replay-state equivalence and journal ordering remain unproved.",
   "src/history/mythical.vibe:decideWithinCapacity": "Exact capacity refusal and every decide postcondition, including append/insertion rank, lifted through the production wrapper; proved.",

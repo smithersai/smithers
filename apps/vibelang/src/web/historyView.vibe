@@ -3,6 +3,7 @@
 // (`sui-*`), the app's frame (`vl-*`) and the design's own (`mh-*`, history.css). Only actions the reader's role may
 // take render.
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
+import { historyBadge, historyRefusal } from "../history/flowMachine.vibe"
 import { modeSwitch } from "./modeSwitch.vibe"
 import type { Commit } from "../history/mythical.vibe"
 import type { CommitPage, EpicCount, Head } from "../history/pages.vibe"
@@ -197,7 +198,7 @@ function row(model: HistoryModel, commit: Head, h: H, withEpic: boolean): Html {
 }
 
 function badgeOf(state: Commit["state"]): string {
-  return state === "planned" ? "sui-badge-warning" : state === "working" ? "sui-badge-default" : state === "approved" ? "sui-badge-success" : "sui-badge-secondary"
+  return historyBadge(state)
 }
 
 function failure(model: HistoryModel, h: H): ReadonlyArray<Html> {
@@ -206,17 +207,7 @@ function failure(model: HistoryModel, h: H): ReadonlyArray<Html> {
 
 /** A refusal in the page's words. */
 export function refusalText(refusal: string): string {
-  switch (refusal) {
-    case "forbidden": return "Your role can't do that."
-    case "empty": return "Needs a title."
-    case "too-long": return "Too long."
-    case "duplicate": return "Already there."
-    case "unknown": return "No such epic or commit."
-    case "state": return "Not in that state."
-    case "full": return "History full."
-    case "unavailable": return "The history can't be reached."
-    default: return refusal
-  }
+  return historyRefusal(refusal)
 }
 
 // ── an epic ──────────────────────────────────────────────────────────────────────────────────────────────────────
