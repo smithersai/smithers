@@ -9,7 +9,7 @@ import { encodeComponent, fromEntry, isPromoted } from "./steering.trusted.ts"
 import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.vibe"
 import { defaultCapacity } from "../../../packages/smithers/notifications/src/NotificationState.ts"
 import * as SteerPayload from "../../../packages/smithers/notifications/src/SteerPayload.vibe"
-import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
+import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.vibe"
 import { CodingError, PlanningInput } from "./schema.ts"
 
 const flowId = "coding/request"

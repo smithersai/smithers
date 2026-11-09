@@ -29,7 +29,7 @@ import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/index.ts"
 import * as CacheStore from "../../../packages/smithers/flows/step-cache/src/CacheStore.vibe"
 import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.vibe"
-import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
+import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.vibe"
 import { TodoBoundary, todoPauseLayer, TodoPauseRequested, todoResumeLayer } from "../coding/todo-pause.vibe"
 
 const database = Layer.mergeAll(

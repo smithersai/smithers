@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import * as RunCatalogRead from "@smthrs/engine-store/RunCatalogRead"
 import { Effect, Layer } from "effect"
 import * as NativeControl from "../../../../packages/smithers/src/internal/NativeControl.ts"
-import { ModuleOwner } from "../../../../packages/smithers/src/internal/ModuleOwner.ts"
+import { ModuleOwner } from "../../../../packages/smithers/src/internal/ModuleOwner.vibe"
 import { readVibeRequest } from "../../coding/vibe-evidence.vibe"
 
 export const observeCompletedRequest = async (platform: NativeControl.Platform, root: string, originalCommitId: string,

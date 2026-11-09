@@ -279,7 +279,7 @@ for (
     const { FlowEngine } = await import("@smthrs/engine")
     const { NodeCrypto } = await import("@effect/platform-node")
     const { ManagedRuntime } = await import("effect")
-    const { ModuleOwner } = await import("../../../packages/smithers/src/internal/ModuleOwner.ts")
+    const { ModuleOwner } = await import("../../../packages/smithers/src/internal/ModuleOwner.vibe")
     const { Revision } = await import("../coding/schema.ts")
     const { CreateStackBase, stackBaseLayer } = await import("../coding/stack.vibe")
     const current = resolved("z", "d".repeat(40), ["e".repeat(40)])

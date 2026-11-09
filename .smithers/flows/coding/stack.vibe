@@ -14,7 +14,7 @@ import { sourceRefusal } from "./source-refusal.vibe"
  */
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
+import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.vibe"
 import {
   NativeCoding,
   NativeCodingError,

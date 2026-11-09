@@ -8,7 +8,7 @@ import * as Executable from "@smthrs/registry/Executable"
 import { Effect, Layer, Option, Path, Schema } from "effect"
 import { setupConfiguration, SetupOperationResponseSchema } from "../../../packages/rpc/src/RepositorySetup.ts"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
-import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
+import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.vibe"
 import { NativeCoding } from "../coding/native.vibe"
 import { CodingError } from "../coding/schema.ts"
 import {

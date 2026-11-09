@@ -82,7 +82,7 @@ const securityReview = Smithers.SecurityReview({
       service: ["//packages/smithers/control/src/ControlServer.vibe", "//packages/smithers/control/src/ControlLive.ts"],
       storageOrEgress: [
         "//packages/smithers/control/src/ControlExecutor.vibe",
-        "//packages/smithers/control/src/ControlRuntime.ts",
+        "//packages/smithers/control/src/ControlRuntime.vibe",
         "//packages/smithers/control/src/SqlControlRuntime.ts"
       ]
     }

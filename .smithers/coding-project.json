@@ -377,7 +377,7 @@
         "packages/smithers/NATIVE-CONTROL.md",
         "packages/smithers/src/internal/BunControl.ts",
         "packages/smithers/src/internal/NodeControlHost.ts",
-        "packages/smithers/src/internal/ModuleAdmission.ts"
+        "packages/smithers/src/internal/ModuleAdmission.vibe"
       ],
       "related": [
         "runtime",

@@ -9,7 +9,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { RpcClient, RpcSerialization } from "effect/rpc"
 import { mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
-import * as Serve from "../../../packages/smithers/src/Serve.ts"
+import * as Serve from "../../../packages/smithers/src/Serve.vibe"
 import { layer } from "./host.ts"
 
 /** Resolve declarations against this bundle without installing project dependencies. */

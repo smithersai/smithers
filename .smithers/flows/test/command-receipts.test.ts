@@ -6,7 +6,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
+import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.vibe"
 import { commandReceipts } from "../coding/command-receipts.vibe"
 
 test("private command receipts invalidate old exits, survive replacement and fail closed on corrupt storage", async (t) => {

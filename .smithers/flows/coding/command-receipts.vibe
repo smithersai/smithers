@@ -1,6 +1,6 @@
 /** Installed command audit. Repository results cannot manufacture these bytes. */
 import { CommandReceipt } from "../../../packages/smithers/gateway/src/RuntimeBridge.ts"
-import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
+import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.vibe"
 import { freshId, receiptFile } from "./command-receipts.platform.ts"
 
 type Result = {

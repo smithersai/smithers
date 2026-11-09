@@ -23,8 +23,8 @@ import * as SqlJournal from "../../../packages/smithers/flows/journal/src/SqlJou
 import type { Notification } from "../../../packages/smithers/notifications/src/Notification.vibe"
 import * as NotificationEvent from "../../../packages/smithers/notifications/src/NotificationEvent.vibe"
 import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.vibe"
-import * as LocalControl from "../../../packages/smithers/src/internal/LocalControl.ts"
-import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
+import * as LocalControl from "../../../packages/smithers/src/internal/LocalControl.vibe"
+import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.vibe"
 import { ApplyNative, EditAtom, Entry, Observe, Prepare } from "../coding/atoms.vibe"
 import ImplementAtoms, { atomFlows } from "../coding/implementation/flow.ts"
 import {

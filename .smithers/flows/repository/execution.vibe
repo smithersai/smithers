@@ -2,7 +2,7 @@
 import * as Budget from "@smthrs/agent/Budget"
 import { FlowRuntime } from "@smthrs/flow"
 import type * as Evaluator from "@smthrs/model/Evaluator"
-import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
+import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.vibe"
 import { type ImmutableSourceOptions, runSourceProcess, withImmutableSource } from "../coding/immutable-source.vibe"
 import { CodingError } from "../coding/schema.ts"
 import { approvedText, pinApprovedRecords, pinApprovedSubject } from "./approved-text.ts"

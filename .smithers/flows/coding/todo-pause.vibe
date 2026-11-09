@@ -2,7 +2,7 @@
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import { Action, DurableDeferred, Flow, FlowRuntime, WaitFor } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
+import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.vibe"
 import { CodingError } from "./schema.ts"
 
 /** The observation is a recorded step: replay must not re-read a later inbox. */

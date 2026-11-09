@@ -12,7 +12,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net"
 import { test, type TestContext } from "node:test"
 import { initialSetup, setupCandidate } from "../../../packages/rpc/src/RepositorySetup.ts"
-import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
+import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.vibe"
 import { type BackendLanding, Landing } from "../coding/landing.vibe"
 import { NativeCoding } from "../coding/native.vibe"
 import { CodingError } from "../coding/schema.ts"

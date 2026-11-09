@@ -17,7 +17,7 @@ import { join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
-import * as Serve from "../../../packages/smithers/src/Serve.ts"
+import * as Serve from "../../../packages/smithers/src/Serve.vibe"
 import { layer, sourceDigest } from "../invoke/host.ts"
 import { registerPinnedLibraries } from "../invoke/serve.ts"
 

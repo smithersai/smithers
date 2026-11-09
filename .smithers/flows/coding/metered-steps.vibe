@@ -5,7 +5,7 @@
  * (packages/smithers/src/internal/MeteredDispatch.ts).
  */
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
-import * as MeteredDispatch from "../../../packages/smithers/src/internal/MeteredDispatch.ts"
+import * as MeteredDispatch from "../../../packages/smithers/src/internal/MeteredDispatch.vibe"
 
 /** The proxy reads this header only from a flow host credential. */
 export const header = MeteredDispatch.header
