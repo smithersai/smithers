@@ -8,7 +8,7 @@ import { Factory } from "../core/Factory.vibe"
 import { EndTour, Post, Tour } from "../core/flows.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import type { HistoryReader } from "../history/tools.vibe"
-import { ActionDevice, deviceRegistration, execute, historyRegistration, prepare } from "./execution.vibe"
+import { ActionDevice, deviceRegistration, execute, historyRegistration, prepare, refused } from "./execution.vibe"
 import { Actions, ActionFailure, type Actor, type Door, Run, type Role } from "./Actions.vibe"
 import { allowed, bundled, registration } from "./catalog.vibe"
 
@@ -105,7 +105,7 @@ export function MockActions(principal: Principal) {
       }
       const origin = try orDie(Effect.try(() => RunMetrics.withOrigin({ door, actor: principal.actor })))
       const result = try exit(program.pipe(Effect.provideService(StepTrace.Sink, observer), Effect.provideService(ActionDevice, factory), origin))
-      const status = Exit.isSuccess(result) ? "passed" : Cause.hasInterruptsOnly(result.cause) ? "cancelled" : "failed"
+      const status = Exit.isSuccess(result) ? (refused(result.value) ? "failed" : "passed") : Cause.hasInterruptsOnly(result.cause) ? "cancelled" : "failed"
       const output = Exit.isSuccess(result) ? try Effect.orDie(Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Json))(result.value)) : status === "failed" ? "Action failed" : "Cancelled"
       try record({ type: "SettleAction", id, state: status, result: output, at: try Clock.currentTimeMillis })
     }

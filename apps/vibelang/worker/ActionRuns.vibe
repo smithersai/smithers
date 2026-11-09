@@ -6,7 +6,7 @@ import { Flow, RunMetrics } from "@smthrs/flow"
 import { Run, type Role } from "../src/actions/Actions.vibe"
 import { allowed, registration } from "../src/actions/catalog.vibe"
 import { type RunRequest } from "../src/actions/wire.vibe"
-import { prepare } from "../src/actions/execution.vibe"
+import { prepare, refused } from "../src/actions/execution.vibe"
 import { signedOut, type ActionIdentity } from "./ActionIdentity.vibe"
 import * as HistoryActions from "./HistoryActions.vibe"
 import { Post, Tour, Reply } from "../src/core/flows.vibe"
@@ -90,7 +90,7 @@ export effect function alarm(hostId: string, storage: Objects.Storage, sequencer
       if (Option.isSome(receipt) && receipt.value._tag === "Complete") {
         const result = receipt.value.exit
         const output = Exit.isSuccess(result) ? try Effect.orDie(Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Json))(result.value)) : "Action failed"
-        try sequencer.action({ type: "SettleAction", id: request.id, state: Exit.isSuccess(result) ? "passed" : "failed", result: output, at: try Clock.currentTimeMillis })
+        try sequencer.action({ type: "SettleAction", id: request.id, state: Exit.isSuccess(result) && !refused(result.value) ? "passed" : "failed", result: output, at: try Clock.currentTimeMillis })
       }
     }
     return outcome

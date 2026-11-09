@@ -33,6 +33,18 @@ describe("registered actions", () => {
       })
     }
   })
+  it.live("settles a refused history write as failed with its reason, and an accepted one as passed", () => effect {
+    provide world {
+      const actions = try Actions
+      const refused = try finished(try actions.start("vibelang/history/Start", { id: "m999999", lane: "lane" }, "button"))
+      const accepted = try finished(try actions.start("vibelang/history/Plan", { how: "append", epic: "", newEpic: "Runs", target: "", title: "Settles", task: "t" }, "button"))
+      try Effect.try(() => {
+        expect(Option.isSome(refused) && refused.value.state).toBe("failed")
+        expect(Option.isSome(refused) && JSON.parse(refused.value.result).refusal).toBe("unknown")
+        expect(Option.isSome(accepted) && accepted.value.state).toBe("passed")
+      })
+    }
+  })
   it.effect("filters every role at the service boundary, including direct calls", () => effect {
     for (const role of ["viewer", "new", "community", "contributor", "maintainer"] as const) {
       provide MockActions({ role, actor: "person" }).pipe(Layer.provide(MockFactory)) {

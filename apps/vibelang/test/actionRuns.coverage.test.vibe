@@ -118,7 +118,7 @@ describe("starting a run", () => {
 })
 
 describe("the run's alarm", () => {
-  it.live("passes a refused history write and carries the refusal in the result", () => scoped(effect {
+  it.live("fails a refused history write and carries the refusal in the result", () => scoped(effect {
     const w = try world()
     const open = try w.object("nothing")
     try open.host.start(request("nothing", START, { id: "m99", lane: "lane" }, w.person.id), "maintainer")
@@ -127,7 +127,7 @@ describe("the run's alarm", () => {
     }
     const rows = try Runs.read(open.sequencer)
     try Effect.try(() => {
-      expect(rows).toMatchObject([{ id: "nothing", state: "passed" }])
+      expect(rows).toMatchObject([{ id: "nothing", state: "failed" }])
       expect(JSON.parse(rows[0]!.result).refusal).toBe("unknown")
     })
   }), 60_000)

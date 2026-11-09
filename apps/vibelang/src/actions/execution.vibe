@@ -1,7 +1,7 @@
 // The actual declarations and host bodies; no second graph, schema, or workflow runtime.
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { EndTour, Post, Tour, SandboxStart, SandboxStop, SandboxCommand } from "../core/flows.vibe"
-import { Note, Plan, Start } from "../history/flows.vibe"
+import { HistoryAnswer, Note, Plan, Start } from "../history/flows.vibe"
 import { type HistoryReader, note, plan, Show, show, start } from "../history/tools.vibe"
 import { Factory, Refused } from "../core/Factory.vibe"
 import { ActionFailure } from "./Actions.vibe"
@@ -26,6 +26,11 @@ export effect function prepare(name: string, input: Schema.Json, id: string) {
   }
 }
 export type Invocation = Effect.Success<ReturnType<typeof prepare>>
+
+/** A history write answers its refusal as a value, so its flow succeeds. The run still failed: nothing was written. */
+export function refused(answer: unknown): boolean {
+  return Schema.is(HistoryAnswer)(answer) && answer.refusal !== null
+}
 
 /** History operations still execute their owning API's durable flows, with its policy. */
 export function historyRegistration<R>(history: HistoryReader!never!R) {
