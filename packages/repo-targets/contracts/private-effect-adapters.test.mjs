@@ -14,6 +14,7 @@ import {
   privateEffectAdapters,
   relocatePrivateAdapterImports
 } from "../scripts/private-effect-adapters.mjs"
+import { workspacePackages } from "../scripts/workspace-packages.mjs"
 
 const root = resolve(import.meta.dirname, "../../..")
 const sourceRequire = createRequire(join(root, "packages/smithers/package.json"))
@@ -117,6 +118,16 @@ test("private adapter declarations reject incomplete, mutable, and consumer reso
     assert.throws(() => privateEffectAdapters(input), /published resolver edge/)
   }
 })
+
+// Each owner pins its adapters' ordinary dependencies by hand, so one Effect bump must move all of them together.
+test("every workspace owner of private adapters builds them from its own installed manifest", () =>
+  fixture(async (directory) => {
+    const owners = workspacePackages(root).filter((entry) => entry.manifest.smthrs?.privateEffectAdapters !== undefined)
+    assert.ok(owners.length >= 2)
+    for (const entry of owners) {
+      await buildPrivateEffectAdapters(join(root, entry.dir), { distRoot: join(directory, entry.dir, "dist") })
+    }
+  }))
 
 test("owners without private adapters keep their existing build and import contract", () =>
   fixture(async (directory) => {
