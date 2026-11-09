@@ -50,7 +50,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
 import type { RouteResolver } from "./FlowEngineLike.ts"
-import * as Internal from "./internal/ModelStep.ts"
+import * as Internal from "./internal/ModelStep.vibe"
 
 /**
  * One model call.

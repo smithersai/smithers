@@ -19,7 +19,7 @@ import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import * as InternalModelStep from "../../src/internal/ModelStep.ts"
+import * as InternalModelStep from "../../src/internal/ModelStep.vibe"
 import * as ModelStep from "../../src/ModelStep.ts"
 import { ask, execute, reply, runtime, scripted, textOf, through } from "./model-step-stack.ts"
 

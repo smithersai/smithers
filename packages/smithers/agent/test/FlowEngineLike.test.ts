@@ -54,7 +54,7 @@ import * as AgentSession from "../src/AgentSession.ts"
 import * as Budget from "../src/Budget.ts"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as InMemoryWorkspaceSandbox from "../src/InMemoryWorkspaceSandbox.ts"
-import * as InternalModelStep from "../src/internal/ModelStep.ts"
+import * as InternalModelStep from "../src/internal/ModelStep.vibe"
 import * as QuotaPolicy from "../src/QuotaPolicy.vibe"
 import * as WorkspaceObservation from "../src/WorkspaceObservation.ts"
 

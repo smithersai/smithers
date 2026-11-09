@@ -42,7 +42,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { afterEach, describe, expect, it } from "vitest"
-import * as InternalModelStep from "../src/internal/ModelStep.ts"
+import * as InternalModelStep from "../src/internal/ModelStep.vibe"
 import * as ModelStep from "../src/ModelStep.ts"
 import {
   ask,

@@ -9,7 +9,7 @@ import { Node } from "@smthrs/plan"
 import { Cause, Deferred, Effect, Exit, Layer, Schema, Scope, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import { ModelStep } from "../src/index.ts"
-import * as Internal from "../src/internal/ModelStep.ts"
+import * as Internal from "../src/internal/ModelStep.vibe"
 import { ask, reply, scripted, through } from "./fixtures/model-step-stack.ts"
 
 const probe = Flow.make("agent/test/model-step-public", {

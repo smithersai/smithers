@@ -479,8 +479,8 @@ export const recordModelStep = (
         (stalls.has(error) && stalls.size <= defaultModelOverruns))
     const call: Effect.Effect<ReadonlyArray<ModelEvent.ModelEvent>, Model.ModelFailure> = callOnce.pipe(
       Effect.catchIf(reissuable, (error) =>
-        Effect.gen(function*() {
-          const failedAt = yield* Clock.currentTimeMillis
+        effect {
+          const failedAt = try Clock.currentTimeMillis
           // Both cut-off errors are this attempt's own, so neither carries a
           // status, and the re-issue follows at once.
           const retry = ModelEvent.ModelEvent.Retry({
@@ -491,9 +491,9 @@ export const recordModelStep = (
             elapsedMs: Math.max(0, Math.round(failedAt - callStartedAt))
           })
           reissues.push(retry)
-          if (onEvent !== undefined) yield* onEvent(retry)
-          return yield* call
-        }))
+          if (onEvent !== undefined) try onEvent(retry)
+          return try call
+        })
     )
 
     // Partial text from a re-issued call is unsafe to replay, but its usage is
@@ -612,7 +612,7 @@ export const material = (request: ModelRequest.ModelRequest): KeyMaterial.KeyMat
  * @category constructors
  * @since 1.0.0-rc.16
  */
-export const key = Effect.fn("ModelStep.key")(function*(
+export const key = Effect.fn("ModelStep.key")(effect function (
   material: KeyMaterial.KeyMaterial,
   prepared: Route.PreparedRequest
 ) {
@@ -644,22 +644,22 @@ export const key = Effect.fn("ModelStep.key")(function*(
   const wire = `[${prepared.body.join(",")}]`
   // `Digest.provideSync` supplies a synchronous SHA-256 proven byte-identical
   // to the platform service, so a key needs no `Crypto` from its caller.
-  const crypto = yield* Digest.provideSync(EffectDigest.Digest)
+  const crypto = try Digest.provideSync(EffectDigest.Digest)
   for (let ordinal = 0;; ordinal++) {
     sealed.body.request.body = `flows/agent/wire-body/${ordinal}`
     const marker = JSON.stringify(sealed.body.request.body)
     let collision = false
-    const derived = yield* StepKey.fromKeyMaterial(sealed, {}).pipe(
+    const derived = try StepKey.fromKeyMaterial(sealed, {}).pipe(
       Effect.provideService(EffectDigest.Digest, {
         ...crypto,
-        digest: (algorithm, data) => {
-          const canonical = new TextDecoder().decode(data)
+        digest: effect (algorithm, data) => {
+          const canonical = try Effect.orDie(Effect.try(() => new TextDecoder().decode(data)))
           const offset = canonical.indexOf(marker)
           // Caller material can contain the same literal. Retry with another
           // marker rather than replacing any caller-owned value. No marker is
           // ever part of the returned key's bytes.
           collision = offset < 0 || canonical.indexOf(marker, offset + marker.length) !== -1
-          return crypto.digest(
+          return try crypto.digest(
             algorithm,
             collision ? data : new TextEncoder().encode(
               canonical.slice(0, offset) + wire + canonical.slice(offset + marker.length)
@@ -799,10 +799,10 @@ export const dispatch = (
   typeof Failure.Type,
   (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
 > =>
-  Effect.gen(function*() {
+  effect {
     const fields = { step: options.name, model: options.request.modelId }
     // The flow whose step makes the call, for its usage metrics.
-    const flow = (yield* FlowRuntime.FlowInstance).flow._tag
+    const flow = (try FlowRuntime.FlowInstance).flow._tag
     // Both are this dispatch's own: whether any attempt ran here, and how the
     // last one that ran here ended, so the next can say so to `onEvent`.
     let executed = false
@@ -812,7 +812,7 @@ export const dispatch = (
       readonly at: number
       readonly elapsedMs: number
     } | undefined
-    const recorded = yield* Action.make({
+    const recorded = try Action.make({
       name: options.name,
       retryPolicy: options.retryPolicy,
       ...(options.heartbeatTimeoutMs === undefined ? {} : { heartbeatTimeoutMs: options.heartbeatTimeoutMs }),
@@ -820,16 +820,16 @@ export const dispatch = (
       error: Failure,
       tier: "sealed",
       idempotencyKey: options.key,
-      execute: Effect.gen(function*() {
+      execute: effect {
         executed = true
-        const attempt = yield* Action.CurrentAttempt
-        const startedAt = yield* Clock.currentTimeMillis
+        const attempt = try Action.CurrentAttempt
+        const startedAt = try Clock.currentTimeMillis
         // The engine re-runs an attempt an earlier execution started and
         // never settled under the same number: that call was cut off mid-flight.
-        const redispatched = yield* Action.CurrentRedispatch
+        const redispatched = try Action.CurrentRedispatch
         if (redispatched) {
-          yield* Metric.update(Metric.withAttributes(redispatches, { step: options.name }), 1)
-          yield* Effect.annotateLogs(
+          try Metric.update(Metric.withAttributes(redispatches, { step: options.name }), 1)
+          try Effect.annotateLogs(
             Effect.logWarning("A model step's earlier call was cut off mid-flight; calling the provider again"),
             { ...fields, attempt }
           )
@@ -837,7 +837,7 @@ export const dispatch = (
         const before = previous
         previous = undefined
         if (options.onEvent !== undefined && (before !== undefined || redispatched)) {
-          yield* options.onEvent(ModelEvent.ModelEvent.Retry({
+          try options.onEvent(ModelEvent.ModelEvent.Retry({
             type: "retry",
             attempt,
             code: before?.code ?? "interrupted",
@@ -846,13 +846,13 @@ export const dispatch = (
             ...(before?.httpStatus === undefined ? {} : { httpStatus: before.httpStatus })
           }))
         }
-        const unsealed = options.unsealedUsage === undefined ? undefined : yield* options.unsealedUsage
+        const unsealed = options.unsealedUsage === undefined ? undefined : try options.unsealedUsage
         let reported: ModelEvent.Usage | undefined
         // The attempt number is the engine's, restored from its own records
         // after a restart, so the last attempt is the last one however many
         // processes the earlier ones ran in.
         const last = options.sealExhausted === true ? options.retryPolicy.maxAttempts : undefined
-        return yield* recordModelStep(options.model, options.request, {
+        return try recordModelStep(options.model, options.request, {
           budgetMillis: options.callTimeoutMs,
           correction: options.correction,
           onUsage: (usage) => {
@@ -870,44 +870,44 @@ export const dispatch = (
             Exit.isFailure(exit) && reported !== undefined && unsealed !== undefined ? unsealed(reported) : Effect.void
           ),
           Effect.onExit((exit) =>
-            Effect.gen(function*() {
-              const at = yield* Clock.currentTimeMillis
+            effect {
+              const at = try Clock.currentTimeMillis
               const end = ended(exit)
               if (Exit.isFailure(exit)) {
                 previous = { code: end.code!, httpStatus: end.httpStatus, at, elapsedMs: Math.max(0, at - startedAt) }
               }
-              yield* Metric.update(Metric.withAttributes(calls, { step: options.name, outcome: end.outcome }), 1)
+              try Metric.update(Metric.withAttributes(calls, { step: options.name, outcome: end.outcome }), 1)
               // Usage metrics: this flow's model call and the tokens it reported.
-              yield* RunMetrics.recordModelCall({
+              try RunMetrics.recordModelCall({
                 flow,
                 model: options.request.modelId,
                 outcome: end.outcome,
                 inputTokens: reported?.inputTokens,
                 outputTokens: reported?.outputTokens
               })
-              yield* Effect.annotateLogs(Effect.logDebug("A model step's provider call ended"), {
+              try Effect.annotateLogs(Effect.logDebug("A model step's provider call ended"), {
                 ...fields,
                 attempt,
                 outcome: end.outcome,
                 ...(end.code === undefined ? {} : { code: end.code })
               })
-            })
+            }
           )
         )
-      })
+      }
     })
     const settled = normalizeRecordedModelStep(recorded)
     const outcome = !executed ? "replayed" : settled.error === undefined ? "sealed" : "sealed_error"
     if (!executed) {
-      yield* Metric.update(Metric.withAttributes(replays, { step: options.name }), 1)
-      yield* Effect.annotateLogs(Effect.logDebug("A model step replayed its recorded result"), fields)
+      try Metric.update(Metric.withAttributes(replays, { step: options.name }), 1)
+      try Effect.annotateLogs(Effect.logDebug("A model step replayed its recorded result"), fields)
     }
-    yield* Effect.annotateCurrentSpan({
+    try Effect.annotateCurrentSpan({
       "smithers.model_step.outcome": outcome,
       ...(settled.error === undefined ? {} : { "smithers.model_step.error_code": settled.error.code })
     })
     return { recorded: settled, replayed: !executed }
-  }).pipe(
+  }.pipe(
     // A refused call fails the step with the provider's error, so the span
     // exports only its tag and code.
     SpanFailure.withSpan("ModelStep", {

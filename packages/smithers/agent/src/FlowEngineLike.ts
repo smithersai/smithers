@@ -75,7 +75,7 @@ import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import * as Budget from "./Budget.ts"
 import { callId } from "./internal/CallIdentity.ts"
-import * as ModelStep from "./internal/ModelStep.ts"
+import * as ModelStep from "./internal/ModelStep.vibe"
 import * as QuotaPolicy from "./QuotaPolicy.vibe"
 import * as RunawayGuard from "./RunawayGuard.vibe"
 import * as WorkspaceObservation from "./WorkspaceObservation.ts"
@@ -90,7 +90,7 @@ export {
   defaultModelOverruns,
   defaultModelRetryPolicy,
   RecordedModelStep
-} from "./internal/ModelStep.ts"
+} from "./internal/ModelStep.vibe"
 
 /**
  * Route resolution for one sealed model request.
