@@ -1,0 +1,21 @@
+// Persisted counterexamples from before IssuesUi gained `connection`.
+// The saved files stay as found; the public Fuzz codec alone upgrades their JSON on replay.
+import { Fuzz } from "@smthrs/fuzz"
+import { initialIssues } from "../src/web/issues.vibe"
+
+function upgrade(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(upgrade)
+  if (typeof value !== "object" || value === null) return value
+  const upgraded = Object.fromEntries(Object.entries(value).map(([key, item]) => [key, upgrade(item)]))
+  return "keyPrefix" in upgraded && "screen" in upgraded && !("connection" in upgraded) ? { ...upgraded, connection: initialIssues.connection } : upgraded
+}
+
+const parseJson = Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))
+
+/** The JSON codec Fuzz derives by default, reading saved values from before `connection` existed. */
+export function issuesCorpusCodec<S extends Schema.Top>(schema: S): Fuzz.Codec<S["Type"]> {
+  const codec: any = Schema.toCodecJson(schema as any)
+  const encode: (value: unknown) => unknown = Schema.encodeSync(codec)
+  const decode: (value: unknown) => S["Type"] = Schema.decodeSync(codec)
+  return { id: "json", encode: (value) => JSON.stringify(encode(value)), decode: (text) => decode(upgrade(parseJson(text))) }
+}

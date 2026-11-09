@@ -14,7 +14,7 @@ export effect function main() {
   const root = (try Path.Path).resolve(".")
   const coverage = try Config.Boolean("FUZZ_COVERAGE").pipe(Config.withDefault(false))
   const configuredBudget = try Config.option(Config.String("FUZZ_BUDGET"))
-  const budget = Option.getOrElse(configuredBudget, () => "250 millis")
+  const budget = Option.getOrElse(configuredBudget, () => coverage ? "5 seconds" : "250 millis")
   const browserBudget = Option.getOrElse(configuredBudget, () => "25 seconds")
   const seed = try Config.String("FUZZ_SEED").pipe(Config.withDefault("20261107"))
   const executions = try Config.option(Config.Int("FUZZ_EXECUTIONS"))

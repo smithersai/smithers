@@ -8,6 +8,7 @@ import { ActionView } from "../src/web/actionModel.vibe"
 import { Flags, init, Message, Model, update } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
 import { run, Text } from "./run.vibe"
+import { issuesCorpusCodec } from "./issues-corpus.vibe"
 
 const ROLES = ["button", "link", "textbox", "combobox", "checkbox", "radio", "switch", "slider", "searchbox", "spinbutton", "option", "tab", "menuitem", "treeitem"]
 
@@ -27,7 +28,8 @@ function renders(model: Model): boolean {
 const Actions = ["retry", "close", "specification", "spec-review", "roles", "list", "select", "kind", "kind-key", "state", "query", "title", "summary", "example", "prior", "comment-text", "parent", "assignee", "cancel", "back", "continue", "new-form", "vip-form", "commit-dialog", "split-dialog", "link-dialog", "read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft", "spec-revise", "unknown"] as const
 const Step = Schema.Struct({ action: Schema.Literals(Actions), value: Schema.Union([Schema.Literals(["astra", "sol", "fable", "opus", "1", "45"]), Text]) })
 
-it.live("screens/issues-update-sequences", () => run("screens/issues-update-sequences", Schema.Struct({ ui: IssuesUi, steps: Schema.Array(Step).check(Schema.isMaxLength(32)) }), ({ ui, steps }) => {
+const Sequence = Schema.Struct({ ui: IssuesUi, steps: Schema.Array(Step).check(Schema.isMaxLength(32)) })
+it.live("screens/issues-update-sequences", () => run("screens/issues-update-sequences", Sequence, ({ ui, steps }) => {
   let state = ui
   for (const step of steps) {
     const before = state
@@ -41,7 +43,7 @@ it.live("screens/issues-update-sequences", () => run("screens/issues-update-sequ
     if (before.retry !== undefined && before.retry.op === step.action && result.request.key !== before.retry.key) return false
   }
   return true
-}))
+}, undefined, { codec: issuesCorpusCodec(Sequence) }))
 
 it.live("screens/issues-requests-decode", () => run("screens/issues-requests-decode", Schema.Struct({ parent: Schema.Union([Text, Schema.Literals(["", "0", " 7 ", "1.5", "-1", "1e3", "NaN", "9007199254740993"])]), title: Text, action: Schema.Literals(["new", "comment", "link", "split", "commit", "propose", "read"]) }), ({ parent, title, action }) => {
   const ui: IssuesUi = { ...initialIssues, role: "maintainer", keyPrefix: "k", serial: 1, selected: 1, parent, title: `title ${title.toWellFormed()}` }
@@ -53,7 +55,7 @@ it.live("screens/issues-requests-decode", () => run("screens/issues-requests-dec
 const View = Schema.Struct({ flags: Flags, ui: IssuesUi })
 it.live("screens/issues-view-names-controls", () => run("screens/issues-view-names-controls", View, ({ flags, ui }) => effect {
   return try Effect.try(() => renders({ ...init(flags).model, surface: "chat", issues: { ...ui, open: true } }))
-}))
+}, undefined, { codec: issuesCorpusCodec(View) }))
 
 it.live("screens/panes-name-controls", () => run("screens/panes-name-controls", Schema.Struct({ flags: Flags, actions: ActionView, wiki: Schema.Boolean, open: Schema.Boolean, maximized: Schema.Boolean }), ({ flags, actions, wiki, open, maximized }) => effect {
   const model = init(flags).model

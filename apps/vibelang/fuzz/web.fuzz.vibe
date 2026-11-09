@@ -5,8 +5,11 @@ import { Model, Flags, Message, init, update, keyMessage, viewTransition } from 
 import { view, failureOf } from "../src/web/view.vibe"
 import { blocks, inline } from "../src/web/markdown.vibe"
 import { run, TextOrBoundary, Int, same } from "./run.vibe"
+import { issuesCorpusCodec } from "./issues-corpus.vibe"
 
-it.live("web/view-models", () => run("web/view-models", Schema.Struct({ model: Model, own: Schema.Boolean }), ({ model, own }) => effect {
+const Rendered = Schema.Struct({ model: Model, own: Schema.Boolean })
+
+it.live("web/view-models", () => run("web/view-models", Rendered, ({ model, own }) => effect {
   const rendered: Model = { ...model, client: { ...model.client, conversation: { ...model.client.conversation, entries: model.client.conversation.entries.map((entry, index) => own ? { ...entry, clientId: `${model.session}-${index + 1}` } : entry) } } }
   return try Effect.try(() => {
     let named = true
@@ -19,7 +22,7 @@ it.live("web/view-models", () => run("web/view-models", Schema.Struct({ model: M
     })
     return named
   })
-}))
+}, undefined, { codec: issuesCorpusCodec(Rendered) }))
 
 it.live("web/update-sequences", () => run("web/update-sequences", Schema.Struct({ flags: Flags, messages: Schema.Array(Message).check(Schema.isMaxLength(40)) }), ({ flags, messages }) => {
   let model = init(flags).model
