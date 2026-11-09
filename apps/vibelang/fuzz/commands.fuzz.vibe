@@ -1,0 +1,271 @@
+// Runs the Commands `update` returns, in a closed loop: each Command's Message goes back through `update`, as the Foldkit runtime does.
+import { it } from "@effect/vitest"
+import { Factory, Unavailable, Refused } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { AccountUnavailable } from "../src/core/roles.vibe"
+import { IssueFailure } from "../src/core/issueSchemas.vibe"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
+import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { Model, Flags, Message, init, update, accountOf, tourConversation, walkthroughSession } from "../src/web/main.vibe"
+import { pages, wikiEditable } from "../src/core/wiki.vibe"
+import { actionsOf } from "../src/web/actionModel.vibe"
+import { run, Finding, Int, TextOrBoundary } from "./run.vibe"
+
+const MAX_COMMANDS = 48
+
+const Backend = Schema.Literals(["mock", "live", "bare", "faulty"])
+const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
+type Backend = typeof Backend.Type
+
+const unavailable = fail(new Unavailable({ reason: "fault" }))
+const refused = fail(new Refused({ refusal: "busy" }))
+const noAccount = fail(new AccountUnavailable({ reason: "fault" }))
+
+/** A backend whose every operation answers with its typed failure. */
+const faulty: Factory.Shape = {
+  mode: "mock",
+  accounts: {
+    current: () => noAccount, members: () => noAccount, grant: () => noAccount, signOut: () => noAccount,
+    signInAgent: () => noAccount, choose: () => noAccount, participated: () => noAccount, events: () => Stream.fail(new AccountUnavailable({ reason: "fault" })),
+  },
+  issues: { read: () => fail(new IssueFailure({ reason: "unavailable" })), act: () => fail(new IssueFailure({ reason: "conflict", unwritten: true })) },
+  wiki: { read: () => fail(new WikiFailure({ reason: "unavailable" })), act: () => fail(new WikiFailure({ reason: "conflict", unwritten: true })) },
+  post: () => refused,
+  read: () => unavailable,
+  events: () => Stream.fail(new Unavailable({ reason: "fault" })),
+  tour: () => refused,
+  openWiki: () => unavailable,
+  controlTour: () => unavailable,
+  endTour: () => unavailable,
+  sandbox: () => unavailable,
+  startSandbox: () => refused,
+  stopSandbox: () => unavailable,
+  sandboxCommand: () => refused,
+}
+
+const noActions: Actions.Shape = {
+  list: () => fail(new ActionFailure({ code: "fault" })), commands: () => fail(new ActionFailure({ code: "fault" })), runs: () => fail(new ActionFailure({ code: "fault" })),
+  read: () => fail(new ActionFailure({ code: "fault" })), start: () => fail(new ActionFailure({ code: "fault" })), command: () => fail(new ActionFailure({ code: "fault" })),
+  rerun: () => fail(new ActionFailure({ code: "fault" })), cancel: () => fail(new ActionFailure({ code: "fault" })), follow: () => Stream.fail(new ActionFailure({ code: "fault" })),
+}
+
+/** The same service object with some members replaced; a service's methods do not survive an object spread. */
+function changedFactory(factory: Factory.Shape, change: Record<string, unknown>): Factory.Shape {
+  return Object.assign(Object.create(factory) as Factory.Shape, change)
+}
+
+/** The real mock Factory and Actions, the same seen as live, without optional services, or failing everywhere. */
+function backend(kind: Backend, role: typeof Role.Type) {
+  if (kind === "faulty") return Layer.merge(Layer.succeed(Factory, faulty), Layer.succeed(Actions, noActions))
+  const mock = mockFactoryFor(role)
+  const changed = Layer.effect(Factory, map(Factory, (factory) => kind === "live" ? changedFactory(factory, { mode: "live" }) : kind === "bare" ? changedFactory(factory, { accounts: undefined, issues: undefined, wiki: undefined, controlTour: undefined }) : factory)).pipe(Layer.provide(mock))
+  return Layer.provideMerge(MockActions({ actor: "person" }), changed)
+}
+
+/** One tab: every Command ends in a Message, the Message goes back through `update`, and the Model stays valid. */
+function tab(flags: Flags) {
+  const first = init(flags)
+  let model = first.model
+  const pending = [...(first.commands ?? [])]
+  let ran = 0
+  const accept = (message: Message): string | undefined => {
+    const next = update(model, message)
+    model = next.model
+    pending.push(...(next.commands ?? []))
+    const checked = Schema.decodeUnknownExit(Schema.toType(Model))(model)
+    return checked._tag === "Success" ? undefined : Cause.pretty(checked.cause)
+  }
+  const settle = effect {
+    while (pending.length > 0 && ran < MAX_COMMANDS) {
+      const command = pending.shift()!
+      ran++
+      const result = try exit(timeout(command.effect, "5 seconds"))
+      if (result._tag === "Failure") throw new Finding({ report: `${command.name}: ${Cause.pretty(result.cause)}` })
+      if (!Schema.is(Message)(result.value)) throw new Finding({ report: `${command.name}: answered with an undeclared Message` })
+      const invalid = accept(result.value)
+      if (invalid !== undefined) throw new Finding({ report: `${command.name}: left an invalid Model: ${invalid}` })
+    }
+  }
+  return {
+    model: () => model,
+    settle,
+    send: effect (message: Message) => {
+      const invalid = accept(message)
+      if (invalid !== undefined) throw new Finding({ report: `${message._tag}: left an invalid Model: ${invalid}` })
+      try settle
+    },
+  }
+}
+
+effect function drive(flags: Flags, messages: ReadonlyArray<Message>) {
+  const session = tab(flags)
+  try session.settle
+  for (const message of messages) try session.send(message)
+  return true
+}
+
+const PUMP_WINDOW = "20 millis"
+
+/** What the event subscriptions would deliver: anything the conversation and tour streams hold right now. */
+effect function pump(session: ReturnType<typeof tab>) {
+  const factory = try Factory
+  const collect = (conversation: string, after: number) => Effect.result(Stream.runCollect(factory.events(conversation, after).pipe(Stream.interruptWhen(Effect.sleep(PUMP_WINDOW)))))
+  const before = session.model()
+  const events = try collect(before.conversation, before.client.conversation.seq)
+  if (events._tag === "Failure") try session.send(try Effect.try(() => Message.FailedEvents({ reason: events.failure.reason })))
+  else for (const event of events.success) try session.send(try Effect.try(() => Message.ReceivedEvent({ event })))
+  const state = session.model()
+  if (state.tourClient === undefined) return
+  const tour = try collect(tourConversation(walkthroughSession(state)), state.tourClient.conversation.seq)
+  if (tour._tag === "Failure") try session.send(try Effect.try(() => Message.FailedTourEvents()))
+  else for (const event of tour.success) try session.send(try Effect.try(() => Message.ReceivedTourEvent({ event })))
+}
+
+const Op = Schema.Literals([
+  "post", "mock-mode", "live-mode", "sandbox-command", "slash", "palette", "escape", "splash", "chat", "docs", "reconnect", "retry", "latest",
+  "actions", "maximize-actions", "select-action", "action-input", "run-action", "cancel-action", "select-run", "tick", "retry-actions", "move-slash", "pick-slash",
+  "wiki", "filter-wiki", "wiki-location", "edit-wiki", "wiki-draft", "edit-text", "edit-same", "save-wiki", "cancel-edit",
+  "account", "sign-in", "sign-out", "choose", "people", "close-people", "toggle-people", "select-role", "confirm-role", "cancel-role", "dismiss", "retry-account", "resolve-mock", "resolve-live",
+  "issues", "issue-ui", "issue-card", "sandboxes", "maximize-sandboxes", "start-sandbox", "stop-sandbox", "terminal", "submit-terminal",
+  "tour", "auto-tour", "pause-tour", "back-stop", "skip-stop", "tour-sound", "end-tour", "measure", "remeasure", "tour-focus", "media", "pump", "wiki-save", "wiki-no-change", "drive-tour", "tour-event-end",
+])
+const ISSUE_ACTIONS = ["retry", "close", "specification", "spec-review", "roles", "list", "select", "kind", "state", "query", "title", "summary", "example", "prior", "comment-text", "parent", "assignee", "cancel", "back", "continue", "new-form", "vip-form", "commit-dialog", "split-dialog", "link-dialog"]
+const ISSUE_KINDS = ["All", "Issues", "Tasks", "VIPs"]
+const REVIEWERS = ["astra", "sol", "fable", "opus"]
+const ROLES = ["viewer", "new", "community", "contributor", "maintainer"] as const
+const GRANTS = ["new", "community", "contributor", "maintainer"] as const
+const Step = Schema.Struct({ op: Op, n: Int, text: TextOrBoundary })
+
+const TOUR_ID = "fuzz-tour"
+
+/** The sequencer's next tour events for this tab: the tour starts if it has not, then the agent drives to `step`. */
+function tourStop(model: Model, step: number): ReadonlyArray<Message> {
+  const conversation = model.tourClient?.conversation
+  const seq = conversation?.seq ?? 0
+  const started = conversation?.replying === TOUR_ID
+  return [
+    ...(started ? [] : [Message.ReceivedTourEvent({ event: { type: "TourStarted", seq: seq + 1, id: TOUR_ID } })]),
+    Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", seq: seq + (started ? 1 : 2), id: TOUR_ID, step, target: "", at: 1, duration: 1 } }),
+  ]
+}
+
+function tourEnded(model: Model): ReadonlyArray<Message> {
+  const seq = model.tourClient?.conversation.seq ?? 0
+  return [Message.ReceivedTourEvent({ event: { type: "TourEnded", seq: seq + 1, id: TOUR_ID } })]
+}
+
+/** A person's next gesture, chosen from what the screen currently offers so sequences get past the first dialog. */
+function gesture(model: Model, { op, n, text }: typeof Step.Type): ReadonlyArray<Message> {
+  const actions = actionsOf(model)
+  const entry = actions.entries[n % Math.max(1, actions.entries.length)]
+  const command = actions.commands[n % Math.max(1, actions.commands.length)]
+  const page = pages[n % pages.length]!
+  const editable = pages.filter((entry) => wikiEditable(entry.id))[n % pages.filter((entry) => wikiEditable(entry.id)).length]!
+  const person = accountOf(model).members[n % Math.max(1, accountOf(model).members.length)]
+  switch (op) {
+    case "post": return [Message.UpdatedDraft({ value: text === "" ? "install" : text }), Message.SubmittedDraft()]
+    case "mock-mode": return [Message.UpdatedDraft({ value: "/mock" }), Message.SubmittedDraft()]
+    case "live-mode": return [Message.UpdatedDraft({ value: "/live" }), Message.SubmittedDraft()]
+    case "sandbox-command": return [Message.UpdatedDraft({ value: "/sandbox" }), Message.SubmittedDraft()]
+    case "slash": return [Message.UpdatedDraft({ value: `/${command?.name ?? text} ${text}` }), Message.SubmittedDraft()]
+    case "palette": return [Message.PressedCommandK()]
+    case "escape": return [Message.PressedEscape()]
+    case "splash": return [Message.ClickedSplash()]
+    case "chat": return [Message.ClickedChat()]
+    case "docs": return [Message.ClickedDocs()]
+    case "reconnect": return [Message.ClickedReconnect()]
+    case "retry": return [Message.ClickedRetry({ clientId: model.client.conversation.entries[n % Math.max(1, model.client.conversation.entries.length)]?.clientId ?? text })]
+    case "latest": return [Message.ClickedLatest()]
+    case "actions": return [Message.ClickedActions()]
+    case "maximize-actions": return [Message.MaximizedActions()]
+    case "select-action": return entry === undefined ? [] : [Message.SelectedAction({ name: entry.name })]
+    case "action-input": return [Message.UpdatedActionInput({ value: n % 2 === 0 ? text : "{\"a\":1}" })]
+    case "run-action": return [Message.ClickedRunAction()]
+    case "cancel-action": return [Message.ClickedCancelAction()]
+    case "select-run": return [Message.SelectedRun({ id: actions.runs[n % Math.max(1, actions.runs.length)]?.id ?? text })]
+    case "tick": return [Message.TickedActions({ at: n * 1000 })]
+    case "retry-actions": return [Message.RetriedActions()]
+    case "move-slash": return [Message.UpdatedDraft({ value: "/" }), Message.MovedSlash({ delta: n % 2 === 0 ? 1 : -1 })]
+    case "pick-slash": return command === undefined ? [] : [Message.UpdatedDraft({ value: "/" }), Message.PickedSlash({ name: command.name })]
+    case "wiki": return [Message.ClickedWiki({ page: page.id })]
+    case "filter-wiki": return [Message.FilteredWiki({ value: text })]
+    case "wiki-location": return [Message.WikiLocationChanged({ page: n % 2 === 0 ? `/wiki/${page.id}#a` : "/" })]
+    case "edit-wiki": return [Message.ClickedWiki({ page: page.id }), Message.ClickedEditWiki()]
+    case "wiki-draft": return [Message.ClickedWikiDraft({ page: page.id })]
+    case "edit-text": return [Message.UpdatedWikiEdit({ value: `${text}!` })]
+    case "edit-same": return [Message.UpdatedWikiEdit({ value: model.wikiEdit?.base ?? text })]
+    case "save-wiki": return [Message.SubmittedWikiEdit()]
+    case "cancel-edit": return [Message.CanceledWikiEdit()]
+    case "account": return [Message.ClickedAccount()]
+    case "sign-in": return [Message.ClickedSignIn()]
+    case "sign-out": return [Message.ClickedSignOut()]
+    case "choose": return [Message.ChoseIdentity({ role: ROLES[n % ROLES.length]! })]
+    case "people": return [Message.ClickedPeople()]
+    case "close-people": return [Message.ClosedPeople()]
+    case "toggle-people": return [Message.ToggledPeople()]
+    case "select-role": return [Message.SelectedRole({ id: person?.id ?? text, role: GRANTS[n % GRANTS.length]! })]
+    case "confirm-role": return [Message.ConfirmedRole()]
+    case "cancel-role": return [Message.CancelledRole()]
+    case "dismiss": return [Message.DismissedAccountError()]
+    case "retry-account": return [Message.RetriedAccount()]
+    case "resolve-mock": return [Message.ResolvedMode({ mode: "mock" })]
+    case "resolve-live": return [Message.ResolvedMode({ mode: "live" })]
+    case "issues": return [Message.ClickedIssues()]
+    case "issue-ui": {
+      const action = ISSUE_ACTIONS[n % ISSUE_ACTIONS.length]!
+      return [Message.IssueUi({ action, value: action === "kind" ? ISSUE_KINDS[n % ISSUE_KINDS.length]! : action === "state" ? (n % 2 === 0 ? "open" : "closed") : action === "select" ? String(n) : action === "spec-review" ? REVIEWERS[n % REVIEWERS.length]! : text })]
+    }
+    case "issue-card": return [Message.OpenIssueCard({ number: n })]
+    case "sandboxes": return [Message.ClickedSandboxes()]
+    case "maximize-sandboxes": return [Message.MaximizedSandboxes()]
+    case "start-sandbox": return [Message.StartedSandbox()]
+    case "stop-sandbox": return [Message.StoppedSandbox()]
+    case "terminal": return [Message.UpdatedTerminal({ value: text })]
+    case "submit-terminal": return [Message.SubmittedTerminal()]
+    case "tour": return [Message.ClickedLearnMore()]
+    case "auto-tour": return [Message.AutoTour()]
+    case "pause-tour": return [Message.ClickedPauseTour()]
+    case "back-stop": return [Message.ClickedBackStop()]
+    case "skip-stop": return [Message.ClickedSkipStop()]
+    case "tour-sound": return [Message.ToggledTourSound()]
+    case "end-tour": return [Message.ClickedEndTour()]
+    case "measure": return [Message.MeasuredTheatre({ x: n, y: n, width: n, height: n })]
+    case "remeasure": return [Message.RemeasureTheatre()]
+    case "tour-focus": return [Message.MovedTourFocus({ backward: n % 2 === 0 })]
+    case "media": return [n % 2 === 0 ? Message.LoadedMedia({ kind: "image" }) : Message.FailedMedia({ src: text, kind: "video" })]
+    case "pump": return []
+    case "wiki-save": return [Message.ClickedWiki({ page: editable.id }), Message.ClickedEditWiki(), Message.UpdatedWikiEdit({ value: `${text}!` }), Message.SubmittedWikiEdit()]
+    case "wiki-no-change": return [Message.ClickedWiki({ page: editable.id }), Message.ClickedEditWiki(), Message.SubmittedWikiEdit()]
+    case "drive-tour": return tourStop(model, n % 10 + 1)
+    case "tour-event-end": return tourEnded(model)
+  }
+}
+
+const Input = Schema.Struct({ flags: Flags, backend: Backend, role: Role, messages: Schema.Array(Message).check(Schema.isMaxLength(12)) })
+
+it.live("web/command-sequences", () => run("web/command-sequences", Input, ({ flags, backend: kind, role, messages }) => Effect.provide(drive(flags, messages), backend(kind, role))))
+
+it.live("web/commands-from-any-model", () => run("web/commands-from-any-model", Schema.Struct({ model: Model, message: Message, backend: Backend, role: Role, repeat: Int }), ({ model, message, backend: kind, role }) => Effect.provide(effect {
+  const answer = update(model, message)
+  for (const command of answer.commands ?? []) {
+    const result = try exit(timeout(command.effect, "5 seconds"))
+    if (result._tag === "Failure") throw new Finding({ report: `${command.name}: ${Cause.pretty(result.cause)}` })
+    if (!Schema.is(Model)(update(answer.model, result.value).model)) throw new Finding({ report: `${command.name}: left an invalid Model` })
+  }
+  return true
+}, backend(kind, role))))
+
+const Guided = Schema.Struct({ session: Int, resumeTour: Schema.Boolean, backend: Backend, role: Role, steps: Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(24)) })
+
+it.live("web/guided-commands", () => run("web/guided-commands", Guided, ({ session: id, resumeTour, backend: kind, role, steps }) => Effect.provide(effect {
+  const session = tab({ session: `s${id}`, mode: "mock", name: "Guest", ...(resumeTour ? { resumeTour: true } : {}) })
+  try session.settle
+  try session.send(try Effect.try(() => Message.ResolvedMode({ mode: "mock" })))
+  try session.send(try Effect.try(() => Message.ChoseIdentity({ role })))
+  for (const step of steps) {
+    for (const message of gesture(session.model(), step)) try session.send(message)
+    if (step.op === "pump" || step.op === "tour") try pump(session)
+  }
+  return true
+}, backend(kind, role))))
