@@ -73,8 +73,8 @@
       "default": "./.vibelang/js/src/Schedule.js"
     },
     "./Scheduler": {
-      "types": "./src/Scheduler.ts",
-      "vibelang-source": "./src/Scheduler.ts",
+      "types": "./.vibe/declarations/Scheduler.d.vibe.ts",
+      "vibelang-source": "./src/Scheduler.vibe",
       "default": "./.vibelang/js/src/Scheduler.js"
     },
     "./SqlTriggerStore": {

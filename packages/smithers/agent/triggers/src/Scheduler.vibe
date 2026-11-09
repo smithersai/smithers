@@ -244,8 +244,8 @@ const settledState = (status: RunStatus): RunState | undefined =>
  */
 export const layerControlRunner: Layer.Layer<Runner, never, Control.Control> = Layer.effect(
   Runner,
-  Effect.gen(function*() {
-    const control = yield* Control.Control
+  effect {
+    const control = try Control.Control
     return makeRunner({
       start: (input) =>
         translateRunnerFailure(
@@ -289,7 +289,7 @@ export const layerControlRunner: Layer.Layer<Runner, never, Control.Control> = L
           `Control could not cancel run ${runId}`
         )
     })
-  })
+  }
 )
 
 /**
@@ -389,14 +389,14 @@ const timed = <A, E, R>(
   histogram: typeof tickDuration,
   effect: Effect.Effect<A, E, R>
 ): Effect.Effect<A, E, R> =>
-  Effect.gen(function*() {
-    const started = yield* Clock.currentTimeMillis
-    return yield* effect.pipe(
+  effect {
+    const started = try Clock.currentTimeMillis
+    return try effect.pipe(
       Effect.ensuring(
         Effect.flatMap(Clock.currentTimeMillis, (ended) => Metric.update(histogram, ended - started))
       )
     )
-  })
+  }
 
 const deadline = <A>(
   effect: Effect.Effect<A, TriggerError>,
@@ -476,9 +476,9 @@ const isolate = (
 export const make = (
   options: Options = {}
 ): Effect.Effect<Service, TriggerError, Runner | Scope.Scope | TriggerStore> =>
-  Effect.gen(function*() {
-    const parentScope = yield* Effect.scope
-    const providedStore = yield* TriggerStore
+  effect {
+    const parentScope = try Effect.scope
+    const providedStore = try TriggerStore
     // Every fire the ledger records is counted by outcome, so a dropped,
     // skipped, or failed occurrence is visible without reading the ledger.
     const store: typeof providedStore = {
@@ -488,23 +488,23 @@ export const make = (
           Effect.tap(() => Metric.update(firesRecorded.pipe(Metric.withAttributes({ outcome: result.outcome })), 1))
         )
     }
-    const active = yield* ActiveRuns.make
-    const observedAt = yield* Ref.make<ReadonlyMap<string, number>>(new Map())
-    const semaphore = yield* Semaphore.make(1)
-    const runPollInterval = yield* duration(options.runPollInterval ?? "15 seconds", "runPollInterval")
+    const active = try ActiveRuns.make
+    const observedAt = try Ref.make<ReadonlyMap<string, number>>(new Map())
+    const semaphore = try Semaphore.make(1)
+    const runPollInterval = try duration(options.runPollInterval ?? "15 seconds", "runPollInterval")
     const concurrency = options.concurrency ?? defaultConcurrency
     if (!Number.isInteger(concurrency) || concurrency < 1) {
-      return yield* Effect.fail(invalidOption("concurrency", "a positive integer"))
+      throw invalidOption("concurrency", "a positive integer")
     }
-    const startTimeout = yield* duration(options.startTimeout ?? "4 minutes", "startTimeout")
-    const inspectTimeout = yield* duration(options.inspectTimeout ?? "30 seconds", "inspectTimeout")
-    const cancelTimeout = yield* duration(options.cancelTimeout ?? "30 seconds", "cancelTimeout")
-    const fireRetention = yield* duration(options.fireRetention ?? defaultFireRetention, "fireRetention")
-    const lastPrunedAt = yield* Ref.make<number | undefined>(undefined)
+    const startTimeout = try duration(options.startTimeout ?? "4 minutes", "startTimeout")
+    const inspectTimeout = try duration(options.inspectTimeout ?? "30 seconds", "inspectTimeout")
+    const cancelTimeout = try duration(options.cancelTimeout ?? "30 seconds", "cancelTimeout")
+    const fireRetention = try duration(options.fireRetention ?? defaultFireRetention, "fireRetention")
+    const lastPrunedAt = try Ref.make<number | undefined>(undefined)
     // Every runner call carries a deadline. A runtime that never answers used
     // to hold the launch, and the tick waiting on it, for the life of the
     // scope with nothing written down.
-    const provided = yield* Runner
+    const provided = try Runner
     const runner: RunnerService = {
       start: (input) => deadline(provided.start(input), startTimeout, `Runner.start for ${input.idempotencyKey}`),
       inspect: (runId) => deadline(provided.inspect(runId), inspectTimeout, `Runner.inspect for run ${runId}`),
@@ -580,52 +580,52 @@ export const make = (
       trigger: Registered,
       runId: string
     ): Effect.Effect<ActiveRuns.Active | undefined, TriggerError> =>
-      Effect.gen(function*() {
-        const occurrence = yield* occurrenceOf(trigger.id, runId)
-        const state = yield* inspectStored(runId)
+      effect {
+        const occurrence = try occurrenceOf(trigger.id, runId)
+        const state = try inspectStored(runId)
         if (state !== "active") {
-          yield* settleRecovered(trigger.id, occurrence, runId, state)
+          try settleRecovered(trigger.id, occurrence, runId, state)
           return undefined
         }
         const recovered: ActiveRuns.Active = { occurrence, runId }
-        yield* active.take(trigger.id, recovered)
+        try active.take(trigger.id, recovered)
         return recovered
-      })
+      }
 
     const resolveActive = (
       trigger: Registered,
       held: Held | undefined
     ): Effect.Effect<ActiveRuns.Active | undefined, TriggerError> =>
-      Effect.gen(function*() {
-        const local = yield* active.get(trigger.id)
+      effect {
+        const local = try active.get(trigger.id)
         if (local !== undefined) {
           // The finalizer detaches the fiber when monitoring ends. An entry
           // without a fiber was recovered or could no longer be inspected;
           // only the runtime can say whether that run is still going.
           if (local.fiber !== undefined) return local
           if (!isReservation(local.runId)) {
-            const state = yield* inspectStored(local.runId)
+            const state = try inspectStored(local.runId)
             if (state === "active") return local
-            yield* settleRecovered(trigger.id, local.occurrence, local.runId, state)
-            yield* active.remove(trigger.id, local.occurrence)
+            try settleRecovered(trigger.id, local.occurrence, local.runId, state)
+            try active.remove(trigger.id, local.occurrence)
           } else {
             // A recovered reservation has no monitor that can remove it. Ask
             // the store on every tick so its lease can expire and re-arm the
             // occurrence instead of pinning this local cache forever.
-            const stored = yield* storedActive(trigger.id, held)
+            const stored = try storedActive(trigger.id, held)
             if (Option.isNone(stored)) {
-              yield* active.remove(trigger.id, local.occurrence)
+              try active.remove(trigger.id, local.occurrence)
               return undefined
             }
             if (stored.value === local.runId) return local
-            yield* active.remove(trigger.id, local.occurrence)
-            return yield* recoverStored(trigger, stored.value)
+            try active.remove(trigger.id, local.occurrence)
+            return try recoverStored(trigger, stored.value)
           }
         }
-        const stored = yield* storedActive(trigger.id, held)
+        const stored = try storedActive(trigger.id, held)
         if (Option.isNone(stored)) return undefined
-        return yield* recoverStored(trigger, stored.value)
-      })
+        return try recoverStored(trigger, stored.value)
+      }
 
     const recordFailed = (
       trigger: Registered,
@@ -645,9 +645,9 @@ export const make = (
     // times, doubling the poll interval up to a minute, then let the next tick
     // inspect the durable owner again. Interruption must still close the scope.
     const inspectRun = (triggerId: string, runId: string): Effect.Effect<Option.Option<RunState>, TriggerError> =>
-      Effect.gen(function*() {
+      effect {
         for (let attempt = 0;; attempt++) {
-          const inspected = yield* runner.inspect(runId).pipe(
+          const inspected = try runner.inspect(runId).pipe(
             Effect.map(Option.some),
             Effect.catchCause((cause) =>
               Cause.hasInterrupts(cause) ?
@@ -660,14 +660,14 @@ export const make = (
           )
           if (Option.isSome(inspected)) return inspected
           if (attempt === 3) {
-            yield* Effect.logWarning("A trigger run monitor detached after inspection retries").pipe(
+            try Effect.logWarning("A trigger run monitor detached after inspection retries").pipe(
               Effect.annotateLogs({ triggerId, runId })
             )
             return Option.none<RunState>()
           }
-          yield* Effect.sleep(Math.min(Duration.toMillis(runPollInterval) * 2 ** attempt, 60_000))
+          try Effect.sleep(Math.min(Duration.toMillis(runPollInterval) * 2 ** attempt, 60_000))
         }
-      })
+      }
 
     const launch = (
       trigger: Registered,
@@ -675,15 +675,15 @@ export const make = (
       reservation: string,
       preserveBuffered: boolean
     ): Effect.Effect<void, TriggerError> =>
-      Effect.gen(function*() {
+      effect {
         // The occurrence takes the entry under its reservation before the
         // runner hears of it, so every write below is fenced on this launch.
-        yield* active.take(trigger.id, { occurrence, runId: reservation })
+        try active.take(trigger.id, { occurrence, runId: reservation })
         let runId: string | undefined
         let launchRecorded = false
         let completed = false
-        const lifecycle = Effect.gen(function*() {
-          runId = yield* timed(
+        const lifecycle = (effect {
+          runId = try timed(
             launchDuration,
             runner.start({
               flowId: trigger.flowId,
@@ -696,8 +696,8 @@ export const make = (
             })
           )
           const startedRunId = runId
-          yield* active.update(trigger.id, occurrence, (entry) => ({ ...entry, runId: startedRunId }))
-          yield* store.recordResult({
+          try active.update(trigger.id, occurrence, (entry) => ({ ...entry, runId: startedRunId }))
+          try store.recordResult({
             triggerId: trigger.id,
             occurrence,
             outcome: "launched",
@@ -707,41 +707,41 @@ export const make = (
           launchRecorded = true
           let state: RunState
           while (true) {
-            const inspected = yield* inspectRun(trigger.id, runId)
+            const inspected = try inspectRun(trigger.id, runId)
             if (Option.isNone(inspected)) return
             state = inspected.value
             if (state !== "active") break
-            yield* Effect.sleep(runPollInterval)
+            try Effect.sleep(runPollInterval)
           }
-          yield* recordSettled(trigger.id, occurrence, runId, state)
+          try recordSettled(trigger.id, occurrence, runId, state)
           completed = true
         }).pipe(
           Effect.catch((error) =>
-            Effect.gen(function*() {
+            effect {
               if (launchRecorded) {
-                yield* Effect.logWarning("A trigger run monitor could not persist completion", error).pipe(
+                try Effect.logWarning("A trigger run monitor could not persist completion", error).pipe(
                   Effect.annotateLogs({ triggerId: trigger.id, runId: runId! })
                 )
                 return
               }
               if (error.code === "stale_owner" && runId !== undefined) {
-                yield* Effect.logWarning("A trigger launch lost its reservation", error).pipe(
+                try Effect.logWarning("A trigger launch lost its reservation", error).pipe(
                   Effect.annotateLogs({ triggerId: trigger.id, occurrence: String(occurrence) })
                 )
                 const losingRunId = runId
-                yield* isolate(
+                try isolate(
                   { triggerId: trigger.id, runId },
                   "losing run reconciliation",
-                  Effect.gen(function*() {
-                    const held = yield* store.inspect(trigger.id)
+                  effect {
+                    const held = try store.inspect(trigger.id)
                     // An idempotent retry may have committed this same run.
                     // An unfinished retry of the same occurrence will adopt it.
                     if (
                       held.activeRunId === losingRunId ||
                       (held.activeRunId !== undefined && reservationOccurrence(held.activeRunId) === occurrence)
                     ) return
-                    yield* runner.cancel(losingRunId)
-                  })
+                    try runner.cancel(losingRunId)
+                  }
                 ).pipe(Effect.ignore)
                 return
               }
@@ -749,7 +749,7 @@ export const make = (
                 // A buffered occurrence was taken off the buffer by the claim
                 // that led here. Re-arm it under this reservation so the next
                 // tick retries it rather than losing it.
-                yield* isolate(
+                try isolate(
                   { triggerId: trigger.id },
                   "buffered launch compensation",
                   store.restorePending({ triggerId: trigger.id, occurrence, reservationId: reservation })
@@ -761,7 +761,7 @@ export const make = (
                 // under the same idempotency key and the runtime's durable
                 // deduplication answers with the same run.
                 if (runId !== undefined || error.code === "runner_timeout") {
-                  yield* isolate(
+                  try isolate(
                     { triggerId: trigger.id },
                     "launch compensation",
                     store.restorePending({
@@ -771,13 +771,13 @@ export const make = (
                     })
                   ).pipe(Effect.ignore)
                 } else {
-                  yield* recordFailed(trigger, occurrence, error, reservation).pipe(Effect.ignore)
+                  try recordFailed(trigger, occurrence, error, reservation).pipe(Effect.ignore)
                 }
               }
-              yield* Effect.logWarning("A trigger launch failed", error).pipe(
+              try Effect.logWarning("A trigger launch failed", error).pipe(
                 Effect.annotateLogs({ triggerId: trigger.id, occurrence: String(occurrence) })
               )
-            })
+            }
           ),
           // Interrupting this fiber detaches the monitor; it never cancels the
           // run. The run is durable and outlives this process, so a deploy or
@@ -795,7 +795,7 @@ export const make = (
         // compensated in the lifecycle itself. A tick that waited held every
         // other trigger for as long as one plan sat parked or one runner was
         // slow, and a boundary that passed meanwhile was never claimed.
-        const fiber = yield* Effect.forkIn(
+        const fiber = try Effect.forkIn(
           Effect.scoped(lifecycle).pipe(
             Effect.onExit((exit) =>
               exit._tag === "Failure" && !Cause.hasInterrupts(exit.cause)
@@ -819,9 +819,9 @@ export const make = (
         // `startImmediately` can finish or detach before the fork returns.
         // Never attach a finished fiber to an entry awaiting tick recovery.
         if (fiber.pollUnsafe() === undefined) {
-          yield* active.update(trigger.id, occurrence, (entry) => ({ ...entry, fiber }))
+          try active.update(trigger.id, occurrence, (entry) => ({ ...entry, fiber }))
         }
-      })
+      }
 
     // Only a claim that named the run it is superseding gets here, so the run
     // id is known. The monitor, on the other hand, may not exist: the run can
@@ -836,9 +836,9 @@ export const make = (
       replacementReservation: string,
       queueReplacement: boolean
     ): Effect.Effect<void, TriggerError> =>
-      Effect.gen(function*() {
+      effect {
         if (!isReservation(prior.runId)) {
-          yield* runner.cancel(prior.runId).pipe(
+          try runner.cancel(prior.runId).pipe(
             Effect.catch((error) => {
               // The claim already replaced the prior run with the new launch
               // reservation. If cancellation fails, restore that run as active
@@ -862,7 +862,7 @@ export const make = (
           )
         }
         if (Number.isFinite(prior.occurrence) && !isReservation(prior.runId)) {
-          yield* store.recordResult({
+          try store.recordResult({
             triggerId: trigger.id,
             occurrence: prior.occurrence,
             outcome: "superseded",
@@ -872,9 +872,9 @@ export const make = (
         // Keep the monitor attached until the terminal write succeeds. If the
         // store refuses it after cancellation, the monitor can still observe
         // the stopped run and record a terminal result on its next poll.
-        if (prior.fiber !== undefined) yield* Fiber.interrupt(prior.fiber)
-        yield* active.remove(trigger.id, prior.occurrence)
-      })
+        if (prior.fiber !== undefined) try Fiber.interrupt(prior.fiber)
+        try active.remove(trigger.id, prior.occurrence)
+      }
 
     const dispatchClaimed = (
       trigger: Registered,
@@ -882,20 +882,20 @@ export const make = (
       claim: Exclude<Claim, { readonly claimed: false }>,
       resumeBuffered = false
     ): Effect.Effect<void, TriggerError> =>
-      Effect.gen(function*() {
+      effect {
         switch (claim.action) {
           case "fire":
-            yield* launch(trigger, occurrence, claim.reservationId, resumeBuffered)
+            try launch(trigger, occurrence, claim.reservationId, resumeBuffered)
             return
           case "skip":
-            yield* store.recordResult({
+            try store.recordResult({
               triggerId: trigger.id,
               occurrence,
               outcome: "skipped"
             })
             return
           case "buffer":
-            yield* store.recordResult({
+            try store.recordResult({
               triggerId: trigger.id,
               occurrence,
               outcome: "buffered"
@@ -904,13 +904,13 @@ export const make = (
           case "supersede": {
             const superseded = claim.activeRunId
             if (superseded !== undefined) {
-              const local = yield* active.get(trigger.id)
-              yield* cancelActive(
+              const local = try active.get(trigger.id)
+              try cancelActive(
                 trigger,
                 local !== undefined && local.runId === superseded
                   ? { ...local, runId: superseded }
                   : {
-                    occurrence: yield* occurrenceOf(trigger.id, superseded),
+                    occurrence: try occurrenceOf(trigger.id, superseded),
                     runId: superseded
                   },
                 occurrence,
@@ -918,11 +918,11 @@ export const make = (
                 !resumeBuffered
               )
             }
-            yield* launch(trigger, occurrence, claim.reservationId, resumeBuffered)
+            try launch(trigger, occurrence, claim.reservationId, resumeBuffered)
             return
           }
         }
-      })
+      }
 
     const claimOnce = (
       trigger: Registered,
@@ -999,22 +999,22 @@ export const make = (
       held: Held | undefined,
       refreshed = false
     ): Effect.Effect<void, TriggerError> =>
-      Effect.gen(function*() {
+      (effect {
         // Each trigger reads the clock itself. One instant captured before the
         // tick fanned out aged by every launch that finished ahead of it.
-        const now = yield* Clock.currentTimeMillis
-        const running = yield* resolveActive(trigger, held)
+        const now = try Clock.currentTimeMillis
+        const running = try resolveActive(trigger, held)
         // Disable prevents future claims, not recovery of an already active
         // occurrence (including a plan waiting for a human decision).
         if (!trigger.enabled) return
-        if (running === undefined || trigger.overlap === "supersede") yield* resumePending(trigger, held)
-        const observed = (yield* Ref.get(observedAt)).get(trigger.id)
-        const due = yield* DueOccurrences.compute(trigger, now, observed)
+        if (running === undefined || trigger.overlap === "supersede") try resumePending(trigger, held)
+        const observed = (try Ref.get(observedAt)).get(trigger.id)
+        const due = try DueOccurrences.compute(trigger, now, observed)
         let dispatched: number | undefined
         let interrupted = false
         let stale = false
         for (const occurrence of due.occurrences) {
-          const settledHere = yield* attempted(
+          const settledHere = try attempted(
             { triggerId: trigger.id },
             `dispatch of occurrence ${occurrence}`,
             claimOnce(trigger, occurrence).pipe(
@@ -1040,33 +1040,33 @@ export const make = (
           // and watermark. A second mismatch waits for the next tick, which
           // reads again anyway. A buffered occurrence is store state rather
           // than a computed decision, so `resumePending` retries it as is.
-          if (dispatched !== undefined) yield* observe(trigger.id, dispatched)
+          if (dispatched !== undefined) try observe(trigger.id, dispatched)
           if (refreshed) return
-          const current = yield* store.get(trigger.id)
+          const current = try store.get(trigger.id)
           if (Option.isNone(current) || current.value.revision === trigger.revision) return
           // The refreshed declaration comes from the store, not the listing,
           // so the held snapshot no longer describes it.
-          return yield* processTrigger(current.value, undefined, true)
+          return try processTrigger(current.value, undefined, true)
         }
-        if (!interrupted) return yield* observe(trigger.id, due.watermark)
-        if (dispatched !== undefined) yield* observe(trigger.id, dispatched)
+        if (!interrupted) return try observe(trigger.id, due.watermark)
+        if (dispatched !== undefined) try observe(trigger.id, dispatched)
       }).pipe(Effect.withSpan("Scheduler.processTrigger", { attributes: { triggerId: trigger.id } }))
 
     const host = options.host ?? defaultHost
 
     const runOnce = semaphore.withPermits(1)(
-      Effect.gen(function*() {
+      (effect {
         // The heartbeat is observability, not dispatch: a store that cannot
         // record it is logged and the tick goes on, so a listing's "nothing is
         // listening" can never be caused by the row that reports it.
-        yield* isolate({ host }, "heartbeat", store.heartbeat(host))
+        try isolate({ host }, "heartbeat", store.heartbeat(host))
         // Nothing else deletes from the fire ledger, so without this it keeps
         // one row per occurrence forever and every fires listing reads it all.
-        const now = yield* Clock.currentTimeMillis
-        const last = yield* Ref.get(lastPrunedAt)
+        const now = try Clock.currentTimeMillis
+        const last = try Ref.get(lastPrunedAt)
         if (last === undefined || now - last >= pruneEvery) {
-          yield* Ref.set(lastPrunedAt, now)
-          yield* isolate(
+          try Ref.set(lastPrunedAt, now)
+          try isolate(
             { host },
             "fire ledger prune",
             Effect.asVoid(store.pruneFires({ olderThan: now - Duration.toMillis(fireRetention) }))
@@ -1075,13 +1075,13 @@ export const make = (
         // Every trigger, not only the enabled ones: a disabled trigger can
         // still hold an active occurrence that has to recover, and the enabled
         // check below it stops the new claims.
-        const listing = yield* store.list()
+        const listing = try store.list()
         // Triggers are independent once claimed: the store fences each claim
         // on its own row. Walking them in series let one launch waiting on a
         // parked plan hold every trigger after it for the whole wait. A row
         // the store could not decode is one more isolated failure, so one
         // corrupt declaration cannot stop the healthy schedules beside it.
-        yield* Effect.forEach(
+        try Effect.forEach(
           listing,
           (row) =>
             isolate(
@@ -1097,7 +1097,7 @@ export const make = (
     )
 
     return Scheduler.of({ runOnce })
-  })
+  }
 
 /**
  * Constructs a scheduler that performs no work.
@@ -1126,10 +1126,10 @@ export const layer = (
 ): Layer.Layer<Scheduler, TriggerError, Runner | TriggerStore> =>
   Layer.effect(
     Scheduler,
-    Effect.gen(function*() {
-      const scheduler = yield* make(options)
-      const pollInterval = yield* duration(options.pollInterval ?? "1 minute", "pollInterval")
-      yield* Effect.forkScoped(
+    effect {
+      const scheduler = try make(options)
+      const pollInterval = try duration(options.pollInterval ?? "1 minute", "pollInterval")
+      try Effect.forkScoped(
         Effect.forever(
           scheduler.runOnce.pipe(
             Effect.catchCause((cause) =>
@@ -1142,7 +1142,7 @@ export const layer = (
         )
       )
       return scheduler
-    })
+    }
   )
 
 /**

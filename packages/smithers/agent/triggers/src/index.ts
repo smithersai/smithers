@@ -21,7 +21,7 @@ export * as TriggerStore from "./TriggerStore.ts"
 /** @category services @since 0.1.0 */
 export * as SqlTriggerStore from "./SqlTriggerStore.vibe"
 /** @category scheduling @since 0.1.0 */
-export * as Scheduler from "./Scheduler.ts"
+export * as Scheduler from "./Scheduler.vibe"
 /** @category services @since 1.0.0-rc.0 */
 export * as DispatchReader from "./DispatchReader.ts"
 /** @category channels @since 0.1.0 */

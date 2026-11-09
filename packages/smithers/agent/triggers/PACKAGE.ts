@@ -58,7 +58,7 @@ const securityReview = Smithers.SecurityReview({
         "layerControlRunner or runApprovedPlan calling an approve operation, or constructing an envelope other than plan.envelope from control.plan.",
         "An unbounded retry of a parked plan instead of the parkedAttempts limit."
       ],
-      paths: ["src/Scheduler.ts"]
+      paths: ["src/Scheduler.vibe"]
     },
     {
       id: "trigger-sql-parameterized",
@@ -103,7 +103,7 @@ const securityReview = Smithers.SecurityReview({
         "A claim path in SqlTriggerStore.vibe or ClaimDecision.ts whose UPDATE lacks the active_run_id or reservation guard, or ignores affectedRows.",
         "An idempotency key for Control that is not derived from trigger id and occurrence."
       ],
-      paths: ["src/SqlTriggerStore.vibe", "src/ClaimDecision.ts", "src/Scheduler.ts", "src/Overlap.ts"]
+      paths: ["src/SqlTriggerStore.vibe", "src/ClaimDecision.ts", "src/Scheduler.vibe", "src/Overlap.ts"]
     },
     {
       id: "cancel-own-runs-only",
@@ -115,7 +115,7 @@ const securityReview = Smithers.SecurityReview({
         "A run id read from the store or a fire record passed to cancel without checking it belongs to that trigger id.",
         "A reservation id (isReservation) passed to Control.cancel as if it were a run id."
       ],
-      paths: ["src/Scheduler.ts", "src/internal/ActiveRuns.vibe", "src/SqlTriggerStore.vibe"]
+      paths: ["src/Scheduler.vibe", "src/internal/ActiveRuns.vibe", "src/SqlTriggerStore.vibe"]
     }
   ]
 })
