@@ -475,6 +475,11 @@ ordering, non-Markdown omission, deterministic output and read failures preservi
 only in the ignored compiler fixture tree. No runtime source is excluded and no dependency was added.
 
 
+## A refused history write is a failed run (2026-11-09)
+
+Plan, Start and Note answer a refusal as a value, so their flow succeeds. The run settles as `failed` with the
+refusal kept in its result, live and in mock mode, through `refused` in `src/actions/execution.vibe`.
+
 ## Paths a Node unit test can't close (2026-11-09)
 
 The unit gate still fails below 100%. No file below is excluded and no threshold changed; each stays counted as uncovered.
