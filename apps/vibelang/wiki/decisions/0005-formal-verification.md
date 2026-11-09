@@ -18,7 +18,7 @@
 
 From `apps/vibelang`, run `pnpm verify`. On the first run it installs the lockfile-pinned LemmaScript **0.6.6** npm
 closure and **Dafny 4.11.0** into ignored `verify/.tools`. The installer verifies the official Dafny release archive's
-SHA-256 before extraction. It supports Linux x86_64 and macOS arm64/x86_64; only Linux was exercised on this lane.
+SHA-256 before extraction. It supports Linux x 86_64 and macOS arm 64/x 86_64; only Linux was exercised on this lane.
 Node >=18, npm, Python >=3.9, curl and unzip are prerequisites; there is no global tool installation.
 
 Every check strictly typechecks the selected source, creates a unique ignored `verify/.checks/run-*` directory,
@@ -197,3 +197,5 @@ Tour/EndTour ordering (0018) now shares proved admission and phase/counter invar
 current active observation before one speaker, and absorbing inactive/finished/ended states. The actual body still
 uses the same SDK race/cancellation; the conversation machine separately proves no writes after end. Nullable
 record guard/union fixtures retain the backend failures for the prospective complete walk cursor.
+
+Walkthrough counter extension (0018, batch20): actual private visit/hold identities use exact BigInt plus-one; pause/seek/clock choices carry contracts and 12 new mutants. Seven regression cases include the observed native-number collision beyond 2**53. No new dependency.

@@ -7,7 +7,7 @@ updated: 2026-11-08
 ---
 
 Will's VL-29 proof lane: inventory every executable function, extract and prove decisions, reject executable mutations,
-and record every tool boundary. [Decision0018](../../../vibelang/wiki/decisions/0018-proofs.md) holds the current
+and record every tool boundary. [Decision 0018](../../../vibelang/wiki/decisions/0018-proofs.md) holds the current
 inventory and claims. The app's normal CI includes proof, mutation and inventory gates.
 
 Eight module batches are landed, through `de6d23840628`: thirteen marked proof modules and 567 rejected mutations
@@ -34,40 +34,39 @@ sixteen modules and 755 current matched rejections, with 826 unit/integration an
 proof goal remains in progress; the inventory names supported-but-unproved logic and actual tool boundaries.
 
 Fourteenth batch: the unchanged iterative issue-link guard now proves an exact bounded first-match ancestor path
-reaches the root without the child. Full conversation proof:19,896isolated batches; fifteen new mutants. All770current
-mutations match actual Dafny failures; an equivalent early-self-check deletion is excluded and replaced. Global graph
-preservation and acceptance completeness remain explicit gaps. Rebased on6db1ba51HTTPtests; required gates rerun.
-New optional-union-default tool reproduction retains the exact contract; no request projection workaround.
+reaches the root without the child. The full conversation proof runs in 19,896 isolated batches; fifteen new mutants.
+All 770 current mutations match actual Dafny failures; an equivalent early-self-check deletion is excluded and
+replaced. Global graph preservation and acceptance completeness remain explicit gaps. Rebased on `6db1ba51` (HTTP
+tests); required gates rerun. A new optional-union-default tool reproduction retains the exact contract.
 
-Fifteenth batch: Reply accounting now preserves prior valid spend after negative, fractional, NaN, infinite and unsafe
+Fifteenth batch: Reply accounting preserves prior valid spend after negative, fractional, NaN, infinite and unsafe
 settlements, latches invalidity and refuses successful completion with invalid accounting. Seven numeric regressions
-fail first; the full eight-case integrity suite passes afterward. Nine production proof functions/ten units,47new
-mutants, all17current module hashes and817current mutants match actual receipts. Finaltypecheck0,835unit passes,
-52workerd passes,9reply fuzz targets139674executions/1retained regression replay and2affected benchmarks pass.
-Native safe-integer emission is retained as a minimal exact-contract tool gap; event routing and SDK replay are not claimed proved.
+fail first; the eight-case integrity suite passes afterward. Nine production proof functions (ten units), 47 new
+mutants; all 17 module hashes and 817 mutants match actual receipts. Typecheck exit 0, 835 unit, 52 workerd, 9 reply
+fuzz targets (139,674 executions, 1 retained replay) and 2 affected benchmarks pass. Native safe-integer emission is
+a minimal exact-contract tool gap; event routing and SDK replay are not claimed proved.
 
-Sixteenth batch: twelve shared history-page decisions reuse the authoritative existing ranking. Exact role/status,
-Plan operation/fields, open-epic membership/opening prefix, signature and label policies are now called by actual
-HTTP/flow/browser hosts. Updatedmodule23proofunits;61/61current mutants reject(45new);17sources862mutantsmatch
-realreceipts. Typecheck0,835unit/52workerd/21historybrowser passes,port4504. Full page merging/model admission
-remains unfinished and toolrequest projection retains the optional-union-default reproduction. No new dependency.
+Sixteenth batch: twelve shared history-page decisions reuse the existing ranking. Role/status, Plan operation and
+fields, open-epic membership and opening prefix, signature and label policies are called by the HTTP, flow and browser
+hosts. 23 proof units; 61/61 module mutants reject (45 new); 17 sources and 862 mutants match receipts. Typecheck 0,
+835 unit, 52 workerd and 21 history browser cases pass on port 4504. Page merging and model admission remain open.
 
-Seventeenth batch: Reply event dispatch itself now runs through the proved reducer, including ignored/non-text
-identity, requested/retried resets, exact settled charges, latched invalidity and failure frames. The SDK host only
-projects payloads/native observations. Updatedmodule13units;61/61current mutants reject(14new);17source/876current
-mutationsmatchactualreceipts. Typecheck0,835unit/52workerd/9fuzz(119738executions1replay)/2benchmark passes.
-The optional-member-default minimal repro retains the emitter failure; both exact present/undefined postconditions
-are retained as implications. No runtime workaround or dependency is added.
+Seventeenth batch: Reply event dispatch runs through the proved reducer: ignored and non-text identity, requested and
+retried resets, exact settled charges, latched invalidity and failure frames. The SDK host only projects payloads.
+13 units; 61/61 mutants reject (14 new); 17 sources and 876 mutations match receipts. Typecheck 0, 835 unit,
+52 workerd, 9 fuzz targets (119,738 executions, 1 replay) and 2 benchmarks pass. The optional-member-default
+reproduction keeps the emitter failure; present and undefined postconditions stay as implications.
 
-Eighteenth batch: realReplybodythreadsverifiedstartreceipt/composition/settlementorder. Eightnewmethods close
-0..1counters; doneonlyadmission, completedcompositionbeforesettlement, terminal/refusedimmutability. Flowmodule
-21units,102/102current mutants(59new),17sources935current mutationsmatchactualreceipts. Typecheck0,835unit/52workerd
-passes. Realengine/loggerorder testsfailfirstthenpasswithcounts-onlyannotationsandnopost/nameleak. Retryattempts
-andSDKreplayareexplicitboundaries. Nullablememberinequalityminimalreprokeepsitscontract. No new dependency.
+Eighteenth batch: the Reply body threads the verified start receipt, composition and settlement order. Eight new
+methods bound counters to 0..1, admit only done, require composition before settlement and keep terminal and refused
+states immutable. 21 flow units; 102/102 mutants reject (59 new); 17 sources and 935 mutations match receipts.
+Typecheck 0, 835 unit and 52 workerd pass. Engine and logger order tests fail first, then pass with count-only
+annotations and no post text or names. Retry attempts and SDK replay are explicit boundaries.
 
-Nineteenth batch: Tour active/ready/onespeaker/terminalmodelandEndTouracceptedrecordbeforewakearethreaded
-throughrealbodies. Sixnewfunctions,27flowmoduleunits,129/129currentmodulemutants(27new),17sources962currentinputs
-matchactualproofs/rejections. Typecheck0,835unit/52workerd/15targeted/33browser passeson4504. ExistingSDKrace
-andCoreterminalguardsstayunchanged. Nullable-recordguard/unionprobesretainminimalexactcontractsanderrors.
+Nineteenth batch: the Tour active, ready, one-speaker and terminal model and EndTour's record-before-wake order are
+threaded through the real bodies. Six new functions, 27 flow units, 129/129 mutants reject (27 new); 17 sources and
+962 inputs match receipts. Typecheck 0, 835 unit, 52 workerd, 15 targeted and 33 browser cases pass on 4504.
+Rebased on `1b5decf5`: 838 unit cases in 127 files, 52 workerd and 33 browser cases pass. Inventory 2,508.
 
-Batch19 final rebase on1b5decf5 preserves incoming coverage refactors: typecheck0,838unit cases/127files,52workerd and33browser cases pass;17/962receipt identities unchanged. Inventory2,508.
+Twentieth batch: the walkthrough's counter, wait, seek and clock choices move into proved `flowDecision` functions.
+Private visit and turn counters use BigInt; step names are unchanged. Five functions, 33 flow units, 12 new mutants.

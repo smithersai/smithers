@@ -270,3 +270,45 @@ export function tourLawful(run: TourRun): boolean {
   if (run.phase === "finished") return run.speakers === 1 && run.outcome === "finished"
   return run.speakers === 1 && run.outcome === "ended"
 }
+
+/** Private visit/turn identities use native exact integers; serialized step names remain decimal strings. */
+//@ verify
+//@ ensures \result == value + 1
+//@ ensures \result > value
+//@ ensures value >= 0 ==> \result >= 1
+export function nextTourCounter(value: bigint): bigint {
+  return value + 1n
+}
+
+//@ verify
+//@ ensures \result == (value == 0)
+export function firstTourVisit(value: bigint): boolean {
+  return value === 0n
+}
+
+//@ verify
+//@ ensures paused ==> \result == "control"
+//@ ensures !paused ==> \result == "race"
+export function tourWait(paused: boolean): "control" | "race" {
+  return paused ? "control" : "race"
+}
+
+export type TourControlAction = "seek" | "wait"
+export interface TourControlChoice { readonly action: TourControlAction; readonly step: number }
+
+/** A seek chooses the requested step. Pause/resume retain the existing cursor. */
+//@ verify
+//@ ensures target == "" ==> \result.action == "seek" && \result.step == requested
+//@ ensures target != "" ==> \result.action == "wait" && \result.step == current
+export function tourControlChoice(current: number, target: string, requested: number): TourControlChoice {
+  const action: TourControlAction = target === "" ? "seek" : "wait"
+  return { action, step: target === "" ? requested : current }
+}
+
+/** Only the reading clock advances to the next step; the caller bounds this cursor by its finite script. */
+//@ verify
+//@ requires 0 <= current && current < 9007199254740991
+//@ ensures \result == current + 1 && 1 <= \result && \result <= 9007199254740991
+export function nextTourStep(current: number): number {
+  return current + 1
+}

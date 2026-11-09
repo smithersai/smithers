@@ -310,19 +310,19 @@ cover initialization, safe-domain admission, all unrelated fields, the invalidit
 reply fuzz oracle now computes expected sums with independent BigInt arithmetic in Effect, retaining its corpus.
 
 **Shared history decisions (0018).** Existing real-engine role/Plan/Note tests, real HTTP history clients and the
-/history browser suite exercise the extracted policies. All61current history flow-machine mutants are rerun against
-the changed source, including45new guard/field/label mutations; generated inputs are checked byte-for-byte.
+/history browser suite exercise the extracted policies. All 61 current history flow-machine mutants are rerun against
+the changed source, including 45 new guard/field/label mutations; generated inputs are checked byte-for-byte.
 
-**Reply event routing (0018).** All61current Reply kernel mutants rerun against the changed source, including14new
+**Reply event routing (0018).** All 61 current Reply kernel mutants rerun against the changed source, including 14 new
 event-kind, ignored-event, text-only, settlement-admission, exact-charge and failure-code mutations. Existing reply
 unit/workerd, full units, independent BigInt event fuzzing and affected benchmarks exercise the native projection.
 
 **Reply body order (0018).** A real Effect logger observes counts from the real memory engine in budget/configuration
 refusal and replay cases; both fail before the order log is added, then pass with exactly one completed-stage record.
-Serialized annotations contain neither post text nor person name. All102current flow-kernel mutants are rerun,
-including59new constructor, stage-admission, field-frame and reachable-invariant cases.
+Serialized annotations contain neither post text nor person name. All 102 current flow-kernel mutants are rerun,
+including 59 new constructor, stage-admission, field-frame and reachable-invariant cases.
 
-**Tour and accepted-end order (0018).** All129current flow-kernel mutants rerun, including27new end-kind, speaker
+**Tour and accepted-end order (0018).** All 129 current flow-kernel mutants rerun, including 27 new end-kind, speaker
 admission, exact phase/outcome and invariant cases. Existing real sequencer/engine tests assert end-before-next-reply,
 speaker interruption, no late text, and unchanged content-free step observations. The three browser suites run on
 4504 and retain pause/back/seek/exit, live app surface driving and both control themes/phone.
@@ -331,3 +331,5 @@ speaker interruption, no late text, and unchanged content-free step observations
 local gate receipts. The focused regression fails before the fix. Projections now drop external approvedBy and
 approvedAt fields before persisting; only saved local receipts restore them. Actual SQLite/offline HTTP issue flows
 also cover comments, parent links, task commitment, invalid content, missing targets and unchanged issue truth.
+
+Walkthrough counter extension (0018, batch20): actual private visit/hold identities use exact BigInt plus-one; pause/seek/clock choices carry contracts and 12 new mutants. Seven regression cases include the observed native-number collision beyond 2**53. No new dependency.

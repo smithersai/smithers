@@ -52,7 +52,7 @@ from original-source ESTree, including methods and Effect blocks: `node verify/i
 Each generated-only source directory extends the app's compiler options with an empty root-file list. LemmaScript
 adds the exact selected module and resolves its dependencies; it does not reload unrelated app/test files for every
 mutation. Strict checking still runs separately over every selected source. The history probe emitted byte-identical
-Dafny and reduced generation from25.795s to2.506s on the loaded shared host; this is a diagnostic measurement, not
+Dafny and reduced generation from 25.795 s to 2.506 s on the loaded shared host; this is a diagnostic measurement, not
 a reproducible application benchmark claim.
 
 Production verification allows 60 seconds per Dafny assertion batch; conversation uses the assertion splitting

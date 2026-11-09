@@ -267,19 +267,19 @@ export effect function walk(tour: string) {
     return saved === null || saved.paused ? saved : { ...saved, remaining: holdRemaining(saved.remaining, saved.at, try Clock.currentTimeMillis) }
   } })
   let step = restored?.step ?? 1
-  let visit = 0
+  let visit = 0n
   while (step <= WALKTHROUGH.length) {
     const stop = WALKTHROUGH[step - 1]!
-    let state = visit === 0 && restored !== null && restored.target !== "" ? restored : try Action.make({ name: `vibelang/tour/step/${visit}/${step}`, success: Walkthrough, execute: withSpan(effect {
+    let state = Continuation.firstTourVisit(visit) && restored !== null && restored.target !== "" ? restored : try Action.make({ name: `vibelang/tour/step/${visit}/${step}`, success: Walkthrough, execute: withSpan(effect {
       const state = try tours.drive!(tour, step, stop.target, Math.max(stop.duration, readingMillis(stop.subtitle)))
       try counted("drive", String(step))
       return state
     }, "vibelang.tour.drive") })
-    if (!(visit === 0 && restored !== null && restored.target !== "") && !(try narrateLine(tour, stop.subtitle, visit))) return
-    let turn = 0
+    if (!(Continuation.firstTourVisit(visit) && restored !== null && restored.target !== "") && !(try narrateLine(tour, stop.subtitle, visit))) return
+    let turn = 0n
     while (true) {
       const changed = DurableDeferred.await(walkthroughGate(state.revision))
-      const next = state.paused ? try changed : try DurableDeferred.raceAll({
+      const next = Continuation.tourWait(state.paused) === "control" ? try changed : try DurableDeferred.raceAll({
         name: `vibelang/tour/gate/${visit}/${turn}`, success: Schema.NullOr(Walkthrough), error: Schema.Never,
         effects: [changed, Effect.as(withSpan(effect {
           try counted("hold", "started")
@@ -287,16 +287,18 @@ export effect function walk(tour: string) {
           try counted("hold", "finished")
         }, "vibelang.tour.hold"), null)],
       })
-      if (next === null) { step++; break }
+      if (next === null) { step = Continuation.nextTourStep(step); break }
       state = next
-      if (state.target === "") { step = state.step; break }
-      turn++
+      const control = Continuation.tourControlChoice(step, state.target, state.step)
+      step = control.step
+      if (control.action === "seek") break
+      turn = Continuation.nextTourCounter(turn)
     }
-    visit++
+    visit = Continuation.nextTourCounter(visit)
   }
   try Action.make({ name: "vibelang/tour/finish", execute: tours.finish(tour, "") })
 }
-effect function narrateLine(tour: string, text: string, visit: number) {
+effect function narrateLine(tour: string, text: string, visit: bigint) {
   return try Action.make({ name: `vibelang/tour/say/${visit}`, success: Schema.Boolean, execute: say(tour, text) })
 }
 
