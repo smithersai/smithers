@@ -1,0 +1,55 @@
+import { it, expect } from "@effect/vitest"
+import { makeIssueFactory } from "../src/core/IssuesFactory.vibe"
+import { requestedSpecificationReview } from "../src/core/specification.vibe"
+import { specificationAccepted } from "../src/core/conversation.vibe"
+import type { IssueRequest, IssuesState } from "../src/core/issueSchemas.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const base: IssueRequest = { op: "spec-review", revision: 2, reviewer: "astra", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "bench" }
+
+it("specification revisions invalidate acceptance until every named review passes", async ({ bench }) => {
+  const result = await workload(bench, "specification-review-journey", async () => {
+    await runPromise(scoped(effect {
+      const api = try makeIssueFactory("maintainer")
+      const before = try api.read()
+      const revised = try api.act({ ...base, op: "spec-revise", text: "# Measured specification", key: "revise" })
+      const unchanged = try api.act({ ...base, op: "spec-revise", revision: 3, text: "# Measured specification", key: "unchanged" })
+      const stale = try Effect.result(api.act({ ...base, key: "stale" }))
+      const empty = try Effect.result(api.act({ ...base, op: "spec-revise", revision: 3, text: " ", key: "empty" }))
+      const states: Array<typeof IssuesState.Type> = []
+      for (const reviewer of ["astra", "sol", "fable", "opus"] as const) states.push(try api.act({ ...base, reviewer, revision: 3, key: reviewer }))
+      const accepted = try api.act({ ...base, reviewer: "opus", revision: 3, key: "opus-again" })
+      const replayed = try api.act({ ...base, reviewer: "opus", revision: 3, key: "opus-again" })
+      const reset = try api.act({ ...base, op: "spec-revise", revision: 3, text: "# New revision", key: "reset" })
+      const ignored = try requestedSpecificationReview(api, "Review this issue", "ignored")
+      const unknown = try requestedSpecificationReview(api, "Review the specification", "unknown")
+      const answer = try requestedSpecificationReview(api, "Codex Sol, review the specification", "chat-review")
+      const final = try api.read()
+      try Effect.try(() => {
+        expect(specificationAccepted(before.specification!)).toBe(true)
+        expect(revised.seq).toBe(1)
+        expect(revised.specification).toMatchObject({ revision: 3, text: "# Measured specification", astra: { verdict: "" }, sol: { verdict: "" }, fable: { verdict: "" }, opus: { verdict: "" } })
+        expect(unchanged).toEqual(revised)
+        expect(stale._tag).toBe("Failure"); expect(empty._tag).toBe("Failure")
+        if (stale._tag === "Failure") expect(stale.failure).toMatchObject({ reason: "review", unwritten: true })
+        if (empty._tag === "Failure") expect(empty.failure).toMatchObject({ reason: "invalid", unwritten: true })
+        expect(states.map(state => state.seq)).toEqual([2, 3, 4, 5])
+        expect(states.map(state => specificationAccepted(state.specification!))).toEqual([false, false, false, false])
+        expect(states[3]?.specification?.opus).toMatchObject({ grade: "B", revision: 3 })
+        expect(accepted.seq).toBe(6)
+        expect(specificationAccepted(accepted.specification!)).toBe(true)
+        expect(replayed).toEqual(accepted)
+        expect(reset.seq).toBe(7)
+        expect(specificationAccepted(reset.specification!)).toBe(false)
+        expect([ignored, unknown, answer]).toEqual([undefined, undefined, "Codex Sol · LGTM · A · r4"])
+        expect(final.seq).toBe(8)
+        expect(final.items).toEqual(before.items)
+        expect(final.specificationHistory?.slice(6).map(entry => [entry.revision, entry.event, entry.reviewer, entry.grade])).toEqual([
+          [3, "reset", "", ""], [3, "review", "astra", "A"], [3, "review", "sol", "A"], [3, "review", "fable", "A"],
+          [3, "review", "opus", "B"], [3, "review", "opus", "A"], [4, "reset", "", ""], [4, "review", "sol", "A"],
+        ])
+      })
+    }))
+  }).run(slow)
+  await runPromise(artifact("specification", "Vitest built-in bench; actual product issue flows and memory durable engine. Revise accepted specification, refuse stale/empty edits, collect all four scripted named reviews with Opus requesting a second review, verify once-only replay, reset on another revision and invoke the same review through the mock chat command. Complete review-history tuples and unchanged issues checked. Three fresh engines; setup/assertions included.", ["Product scripted reviewer behavior, no real model review, grade quality assessment, GitHub write or network. Named model performance belongs to an explicitly configured live workload."], result))
+})

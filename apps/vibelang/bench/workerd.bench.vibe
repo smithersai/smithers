@@ -63,7 +63,8 @@ effect function historyProtocol(client: HttpClient.HttpClient, origin: string) {
   return statuses
 }
 
-it("workerd sequencer, post, reply and tour flows", async ({ bench }) => {
+// Three naturally paced walkthroughs include their real reading holds; the shared 120s default cannot fit them.
+it("workerd sequencer, post, reply and tour flows", { timeout: WALKTHROUGH.reduce((ms, stop) => ms + stop.duration, 0) * slow.iterations + 180_000 }, async ({ bench }) => {
   await runPromise(scoped(effect {
     provide NodeHttpServer.layerTest {
       const model = try modelService()
@@ -188,7 +189,7 @@ it("workerd sequencer, post, reply and tour flows", async ({ bench }) => {
           expect(paths.filter((path, index) => index === 0 || path !== paths[index - 1])).toEqual(WALKTHROUGH.map((stop) => stop.target))
         }))
         results.push(try tryPromise(() => tourBench.run(slow)))
-        try artifact("workerd", "Vitest built-in bench; actual local workerd Durable Objects, SQLite engine, alarms, LiveFactory HTTP/SSE, agent and QuickJS; deterministic HTTP model service. Three new conversations each, unwarmed. Bundling/server startup excluded; post-through-settle/read included.", ["Flow/adapter overhead, no model inference, WAN or production contention. Tour includes five real durable reading holds. Test host delegates to production Objects/Http; Alchemy's deploy-only wiring is not run."], results)
+        try artifact("workerd", "Vitest built-in bench; actual local workerd Durable Objects, SQLite engine, alarms, LiveFactory HTTP/SSE, agent and QuickJS; deterministic HTTP model service. Three new conversations each, unwarmed. Bundling/server startup excluded; post-through-settle/read included.", ["Flow/adapter overhead, no model inference, WAN or production contention. Tour includes ten real durable reading holds, totaling 134 seconds. Test host delegates to production Objects/Http; Alchemy's deploy-only wiring is not run."], results)
       }
     }
   }))

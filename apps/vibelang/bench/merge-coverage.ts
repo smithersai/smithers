@@ -10,10 +10,9 @@
 // location, and enforces 100% lines, branches, functions and statements per file:
 //
 // - A file with no Vitest-recorded execution is gated on its workerd-remapped structure (all four metrics).
-// - A file executed in both keeps its Vitest structure, with each uncovered statement, function or branch credited
-//   when the workerd evidence covers the same source location. The two compilers emit different shapes for one
-//   source, so this union is by start line (and arm count for branches): exact for this codebase's one-statement-
-//   per-line style, heuristic for same-line constructs (limitation, 0017).
+// - A file executed in both keeps its Vitest structure. Cross-runtime hits require identical complete source
+//   ranges (and ordered arm ranges for branches). An enclosing statement or another same-line function cannot
+//   establish execution. Different compiler shapes remain uncovered instead of being guessed (0017).
 // - Lines no benchmark should run are excluded only with their reason recorded here and in decision 0017.
 import { createRequire } from "node:module"
 import { existsSync, readdirSync, readFileSync, mkdirSync, writeFileSync } from "node:fs"
@@ -155,24 +154,24 @@ function excludeLines(json: FileCoverageJSON, lines: ReadonlyArray<number>): Fil
   return compact(kept)
 }
 
-function lineSpans(json: FileCoverageJSON): ReadonlyArray<readonly [number, number, number]> {
-  return Object.entries(json.statementMap).map(([id, loc]) => [loc.start.line, loc.end.line ?? loc.start.line, json.s[id] ?? 0])
-}
-
 function uncoveredLines(json: FileCoverageJSON): Array<number> {
   const lines = new Map<number, number>()
-  for (const [start, end, hits] of lineSpans(json)) {
-    for (let line = start; line <= end; line++) lines.set(line, Math.max(lines.get(line) ?? 0, hits))
+  for (const [id, loc] of Object.entries(json.statementMap)) {
+    const line = loc.start.line
+    lines.set(line, Math.max(lines.get(line) ?? 0, json.s[id] ?? 0))
   }
   return [...lines.entries()].filter(([, hits]) => hits === 0).map(([line]) => line).sort((x, y) => x - y)
 }
 
-function metrics(json: FileCoverageJSON) {
+export function metrics(json: FileCoverageJSON) {
   const total = { lines: 0, statements: 0, functions: 0, branches: 0 }
   const covered = { lines: 0, statements: 0, functions: 0, branches: 0 }
   const lineHits = new Map<number, number>()
-  for (const [start, end, hits] of lineSpans(json)) {
-    for (let line = start; line <= end; line++) lineHits.set(line, Math.max(lineHits.get(line) ?? 0, hits))
+  // Istanbul defines executable lines by statement starts. A multi-line outer declaration does not execute
+  // every nested body; spreading its hit over the entire range would credit unreachable statements.
+  for (const [id, loc] of Object.entries(json.statementMap)) {
+    const line = loc.start.line
+    lineHits.set(line, Math.max(lineHits.get(line) ?? 0, json.s[id] ?? 0))
   }
   total.lines = lineHits.size
   covered.lines = [...lineHits.values()].filter((hits) => hits > 0).length
@@ -188,36 +187,45 @@ function metrics(json: FileCoverageJSON) {
 }
 
 /** Credits a Vitest-structured file with evidence for the same source from another runtime, by location. */
-function unionEvidence(base: FileCoverageJSON, evidence: FileCoverageJSON): FileCoverageJSON {
+export function unionEvidence(base: FileCoverageJSON, evidence: FileCoverageJSON): FileCoverageJSON {
   const json = JSON.parse(JSON.stringify(base)) as FileCoverageJSON
-  const spans = lineSpans(evidence)
-  const hitAt = (line: number) => spans.some(([start, end, hits]) => start <= line && line <= end && hits > 0)
-  const evidenceFns = new Map<number, number>()
-  for (const [id, fn] of Object.entries(evidence.fnMap)) evidenceFns.set(fn.decl.start.line, Math.max(evidenceFns.get(fn.decl.start.line) ?? 0, evidence.f[id] ?? 0))
-  const evidenceBranches = new Map<number, Array<ReadonlyArray<number>>>()
+  const location = (loc: { start: Position; end: Position }) => {
+    const coordinates = [loc.start.line, loc.start.column, loc.end.line, loc.end.column]
+    if (!coordinates.every(value => value !== null && Number.isSafeInteger(value) && value >= 0)) return undefined
+    return JSON.stringify(coordinates)
+  }
+  const statements = new Set(Object.entries(evidence.statementMap).filter(([id]) => (evidence.s[id] ?? 0) > 0).map(([, loc]) => location(loc)).filter(key => key !== undefined))
+  const evidenceFns = new Set(Object.entries(evidence.fnMap).filter(([id]) => (evidence.f[id] ?? 0) > 0).map(([, fn]) => location(fn.decl)).filter(key => key !== undefined))
+  const branchKey = (branch: FileCoverageJSON["branchMap"][string]) => {
+    const loc = location(branch.loc), arms = branch.locations.map(location)
+    return loc === undefined || arms.some(key => key === undefined) ? undefined : JSON.stringify([branch.type, loc, arms])
+  }
+  const evidenceBranches = new Map<string, Array<ReadonlyArray<number>>>()
   for (const [id, branch] of Object.entries(evidence.branchMap)) {
-    const list = evidenceBranches.get(branch.loc.start.line) ?? []
+    const key = branchKey(branch)
+    if (key === undefined) continue
+    const list = evidenceBranches.get(key) ?? []
     list.push(evidence.b[id] ?? [])
-    evidenceBranches.set(branch.loc.start.line, list)
+    evidenceBranches.set(key, list)
   }
   for (const [id, loc] of Object.entries(json.statementMap)) {
     if ((json.s[id] ?? 0) > 0) continue
-    let hit = 0
-    for (let line = loc.start.line; line <= (loc.end.line ?? loc.start.line); line++) if (hitAt(line)) hit = 1
-    if (hit > 0) json.s[id] = hit
+    const key = location(loc)
+    if (key !== undefined && statements.has(key)) json.s[id] = 1
   }
   for (const [id, fn] of Object.entries(json.fnMap)) {
     if ((json.f[id] ?? 0) > 0) continue
-    if ((evidenceFns.get(fn.decl.start.line) ?? 0) > 0) json.f[id] = 1
+    const key = location(fn.decl)
+    if (key !== undefined && evidenceFns.has(key)) json.f[id] = 1
   }
   for (const [id, branch] of Object.entries(json.branchMap)) {
     const hits = json.b[id] ?? []
     if (hits.every((hit) => hit > 0)) continue
-    const candidates = evidenceBranches.get(branch.loc.start.line) ?? []
-    // Arms across two compilers are matched only when the node has the same shape and every arm ran.
-    if (candidates.some((candidate) => candidate.length === hits.length && candidate.every((hit) => hit > 0))) {
-      json.b[id] = hits.map(() => 1)
-    }
+    const key = branchKey(branch)
+    if (key === undefined) continue
+    const candidates = evidenceBranches.get(key) ?? []
+    // Every arm must have the same ordered source range, not just the same line and number of arms.
+    json.b[id] = hits.map((hit, index) => hit > 0 || candidates.some(candidate => candidate.length === hits.length && (candidate[index] ?? 0) > 0) ? 1 : 0)
   }
   return json
 }
@@ -289,4 +297,4 @@ async function main() {
   }
 }
 
-await main()
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main()

@@ -8,6 +8,18 @@ import { pathToFileURL } from "node:url"
 import { resolve } from "node:path"
 import { performance } from "node:perf_hooks"
 const live = process.env.BENCH_LIVE === "1"
+let deploymentRevision: string | null = null
+test.beforeAll(async ({ baseURL }) => {
+  if (!live) return
+  const health = await fetch(`${baseURL}/api/health`)
+  expect(health.status).toBe(200)
+  const body = await health.json()
+  expect(body).toMatchObject({ ok: true, agent: "live" })
+  if (typeof body.commit === "string") {
+    expect(body.commit).toMatch(/^[0-9a-f]{10,40}$/)
+    deploymentRevision = body.commit
+  }
+})
 
 async function save(name: string, measurements: unknown, limitations: string[]) {
   const timestamp = new Date().toISOString()
@@ -20,7 +32,7 @@ async function save(name: string, measurements: unknown, limitations: string[]) 
     schema: 1, instrumented: process.env.BENCH_COVERAGE === "1", name, timestamp, localTime: new Date().toString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     machine: { hostname: hostname(), platform: platform(), release: release(), cpu: cpus()[0]?.model, logicalCpus: cpus().length },
     runtime: process.versions, versions, revision,
-    deployment: { revision: live ? null : revision, identityMethod: live ? "Production does not expose its revision; unknown." : "Local build from this workspace revision." },
+    deployment: { revision: live ? deploymentRevision : revision, identityMethod: live ? (deploymentRevision === null ? "Production does not expose its revision; unknown." : "Production /api/health commit at suite start.") : "Local build from this workspace revision." },
     method: "Serial Chromium desktop runs from nyc-01. First render: fresh context navigation to visible heading. Command-K: key dispatch to visible modal and focused textbox. Keystroke: key dispatch to input value. API: wall time at client; first event/visible answer delta and settlement from numbered SSE events. All raw samples retained; assertions included; no tail percentile claimed.",
     limitations, measurements,
   }, null, 2) + "\n", { flag: "wx" })
@@ -76,7 +88,9 @@ test("post acceptance, first event, first answer delta, settlement, fresh/warm A
   const samples: Record<string, unknown>[] = []
   try {
     const health = await fetch(`${baseURL}/api/health`)
-    expect(await health.json()).toEqual({ ok: true, agent: "live" })
+    const healthBody = await health.json()
+    expect(healthBody).toMatchObject({ ok: true, agent: "live" })
+    if (deploymentRevision !== null) expect(healthBody.commit).toBe(deploymentRevision)
     for (let run = 0; run < 3; run++) {
       const room = `bench-${Date.now()}-${run}`
       const path = `${baseURL}/api/conversations/${room}`
@@ -233,6 +247,42 @@ test("chat, scroll, home, tour and escape actions", async ({ page, baseURL }) =>
       await page.getByRole("button", { name: "Latest", exact: true }).click()
       await expect(page.getByRole("button", { name: "Latest", exact: true })).toBeHidden()
     })
+    const actions = page.getByRole("region", { name: "Actions", exact: true })
+    await time("actions-open", async () => {
+      await page.getByRole("button", { name: "Expand Actions", exact: true }).click()
+      await actions.getByRole("button", { name: "Tour", exact: true }).click()
+      await expect(actions.getByText("No runs yet", { exact: true })).toBeVisible()
+    })
+    const cards = page.getByRole("button", { name: /^Open Tour run / })
+    let previousRun = ""
+    await time("actions-run-and-trace", async () => {
+      await actions.getByRole("button", { name: "Run", exact: true }).click()
+      await expect(cards).toHaveCount(1)
+      previousRun = (await cards.first().getAttribute("aria-label"))!
+      await cards.first().click()
+      await expect(actions).toHaveAttribute("data-maximized", "true")
+      await expect(actions.getByLabel("Logs", { exact: true })).toContainText(/start|guide/)
+    })
+    await time("actions-cancel", async () => {
+      await actions.getByRole("button", { name: "Cancel", exact: true }).click()
+      await expect(actions.getByText("Cancelled", { exact: true }).first()).toBeVisible()
+    })
+    await time("actions-rerun", async () => {
+      await actions.getByRole("button", { name: "Re-run", exact: true }).click()
+      await expect(cards).toHaveCount(2)
+      const next = await cards.first().getAttribute("aria-label")
+      expect(next).not.toBe(previousRun)
+      await expect(actions).toContainText(`#${next!.replace("Open Tour run ", "")}`)
+      await actions.getByRole("button", { name: "Cancel", exact: true }).click()
+      await expect(actions.getByText("Cancelled", { exact: true }).first()).toBeVisible()
+    })
+    await time("actions-escape-collapse", async () => {
+      await page.keyboard.press("Escape")
+      await expect(actions).toHaveAttribute("data-maximized", "false")
+      await actions.getByRole("button", { name: "Collapse Actions", exact: true }).click()
+      await expect(page.getByRole("button", { name: "Expand Actions", exact: true })).toBeVisible()
+      await expect(page.locator('form[data-docked="true"]').getByRole("textbox", { name: "Message", exact: true })).toBeEnabled()
+    })
     await time("home-expand-minimize", async () => {
       await page.getByRole("button", { name: "Expand the VibeLang home page" }).click()
       await expect(page.getByRole("heading", { name: "VibeLang", exact: true })).toBeVisible()
@@ -240,32 +290,53 @@ test("chat, scroll, home, tour and escape actions", async ({ page, baseURL }) =>
       await expect(page.getByRole("textbox", { name: "Message" })).toBeFocused()
     })
     await page.getByRole("button", { name: "Expand the VibeLang home page" }).click()
-    await time("learn-more-open-docs", async () => {
+    const theatre = page.getByRole("region", { name: "Walkthrough", exact: true })
+    await time("learn-more", async () => {
       await page.getByRole("button", { name: "Learn more", exact: true }).click()
       await expect(page.getByRole("button", { name: "Esc", exact: true })).toBeVisible()
-      await expect(page.locator("iframe[title='VibeLang docs']")).toHaveAttribute("src", "https://vibelang.sh/")
+      await expect(theatre).toHaveAttribute("data-step", "1")
+      await expect(theatre).toContainText("I'm the VibeLang agent.")
     })
-    await expect(page.getByRole("region", { name: "Docs", exact: true })).toHaveAttribute("data-maximized", "true")
-    await expect(page.getByRole("region", { name: "Current stop" })).toContainText("VibeLang is Effect")
+    await time("tour-pause", async () => {
+      await page.getByRole("button", { name: "Pause", exact: true }).click()
+      await expect(theatre).toHaveAttribute("data-paused", "true")
+    })
+    await time("tour-resume", async () => {
+      await page.getByRole("button", { name: "Play", exact: true }).click()
+      await expect(theatre).toHaveAttribute("data-paused", "false")
+    })
+    const stepChecks: Record<number, () => Promise<void>> = {
+      2: async () => { await expect(page.locator('[data-role="user"]')).toContainText("What makes VibeLang different from TypeScript?") },
+      3: async () => { await expect(page.locator(".ix-surface")).toBeVisible() },
+      4: async () => { await expect(page.locator(".sui-item-conv")).toContainText("#48") },
+      5: async () => { await expect(page.locator(".sui-item-conv")).toContainText("#45") },
+      6: async () => { await expect(page.getByRole("region", { name: "Wiki", exact: true })).toHaveAttribute("data-maximized", "true") },
+    }
+    for (let step = 2; step <= 6; step++) await time(`tour-skip-${step}`, async () => {
+      await page.getByRole("button", { name: "Skip", exact: true }).click()
+      await expect(theatre).toHaveAttribute("data-step", String(step))
+      await stepChecks[step]!()
+    })
     await time("escape-tour", async () => {
       await page.keyboard.press("Escape")
       await expect(page.getByRole("button", { name: "Esc", exact: true })).toBeHidden()
-      await expect(page.locator("[data-role='assistant'][data-in-reply-to=''][data-done='true']")).toHaveCount(1)
+      await expect(page.getByRole("status", { name: "Tour", exact: true })).toHaveText("Tour ended. You have control.")
     })
-    await expect(page.getByRole("region", { name: "Docs", exact: true })).toHaveAttribute("data-maximized", "false")
+    const wiki = page.getByRole("region", { name: "Wiki", exact: true })
+    await expect(wiki).toHaveAttribute("data-maximized", "false")
     await expect(page.getByRole("textbox", { name: "Message" })).toBeFocused()
-    await time("docs-maximize", async () => {
-      await page.getByRole("button", { name: "Maximize the docs" }).click()
-      await expect(page.getByRole("region", { name: "Docs", exact: true })).toHaveAttribute("data-maximized", "true")
+    await time("wiki-maximize", async () => {
+      await page.getByRole("button", { name: "Maximize the wiki" }).click()
+      await expect(wiki).toHaveAttribute("data-maximized", "true")
     })
-    await time("docs-minimize", async () => {
-      await page.getByRole("button", { name: "Minimize the docs" }).click()
-      await expect(page.getByRole("region", { name: "Docs", exact: true })).toHaveAttribute("data-maximized", "false")
+    await time("wiki-minimize", async () => {
+      await page.getByRole("button", { name: "Minimize the wiki" }).click()
+      await expect(wiki).toHaveAttribute("data-maximized", "false")
     })
-    await page.getByRole("button", { name: "Maximize the docs" }).click()
-    await time("escape-docs", async () => {
+    await page.getByRole("button", { name: "Maximize the wiki" }).click()
+    await time("escape-wiki", async () => {
       await page.keyboard.press("Escape")
-      await expect(page.getByRole("region", { name: "Docs", exact: true })).toHaveAttribute("data-maximized", "false")
+      await expect(wiki).toHaveAttribute("data-maximized", "false")
     })
   } finally {
     if (coverage) await coverage()

@@ -58,8 +58,10 @@ user isolate over the inspector before it exits, writing the dump with both maps
 the process exits. `bench/merge-coverage.ts` then remaps each dump (instrumented to bundle to source), unions it
 with the Vitest map and enforces 100% lines, branches, functions and statements per file across `src/`, `worker/`,
 `infra/` and `scripts/`. A file with no Node-side execution is gated on its workerd-remapped structure. A file
-executed in both is gated on its Vitest structure with line coverage as the union of both: the two compilers emit
-different branch/function shapes for one source, and arm-level union across them is not meaningful (limitation).
+executed in both keeps its Vitest structure. Cross-runtime credit requires identical complete statement or function
+declaration ranges; branch credit requires the same type and ordered arm ranges. Missing/non-finite columns never
+establish execution. Complementary hits on exactly matching branch arms may combine; different shapes stay uncovered.
+Executable lines are statement start lines, as in Istanbul; a declaration's hit never executes its whole nested body.
 A line no benchmark should run is excluded only with its reason recorded in `merge-coverage.ts` and here:
 `scripts/mythical-seed.vibe` line 103 (`Refused` guard) is unreachable from real input because `intentsOf`
 guarantees by construction that `decide` accepts every seeded intent and `decideWithinCapacity` refuses only at
@@ -84,13 +86,14 @@ mock timing or engine behavior changed.
 
 **Coverage qualification.** Decision 0016's retained `coverage-source-ranges` reproduction shows that minified
 Chromium coverage can credit an unexecuted source return. Browser source-line/statement figures are diagnostic,
-not proof of executed lines. The installed workerd inspector rejects precise V8 coverage, so actual worker execution
-remains uncredited by the parent collector. Neither problem is hidden by an exclusion. Changing VibeLang compilation
+not proof of executed lines. The installed workerd inspector rejects precise V8 coverage, so the parent V8 collector
+cannot credit worker execution; independent instrumented dumps supply that evidence. Neither limitation is hidden by an exclusion. Changing VibeLang compilation
 or source-map behavior requires Will's prior decision (VL-7); no such change is made in this lane.
 The only generated-code exclusion is `dist/assets/rolldown-runtime-*.js`: Vite's own bootstrap has no app source map,
 so its generated lines do not belong in the production-source denominator. No `src/` or `worker/` line is excluded.
-A separate, unshipped Istanbul-counter/inspector probe can distinguish a visited arm from an unvisited arm in real
-workerd; it is not qualified as this suite's collector and contributes no coverage credits.
+Workerd's independent Istanbul counters are now collected by the shipped test host. Their remapped results and the
+Chromium results remain diagnostic while the bundled attribution negative control is unresolved; a green workload
+or a configured threshold is not a trustworthy 100% execution certificate.
 
 **Sandbox compiler boundary.** After sandbox main 965fb766, the new workerd benchmark hit the retained `~/vl/vibelang-bugs/nested-benchmark-effect/` reproduction: an inner `runPromise(effect { … })` inside an async benchmark callback built by an outer Effect is typed as a plain function. The same inner program compiles in the control; no request runs. Its workerd benchmark fragment is deferred, with no substitute path or compiler behavior change. Independent product-mock Factory, integer meter and agent-binding benchmarks continue. An upstream compiler fix requires Will’s prior VL-7 decision and the VibeLang merge queue.
 
@@ -112,3 +115,23 @@ was previously dropped before their maps could credit `scripts/*.vibe`. The seed
 `decide` accepts every seeded intent, and `decideWithinCapacity` refuses only at 2^53 events. It is a defensive
 guard against a `seedOf` defect, not behavior a benchmark should reach; exclusion reason recorded here per the
 lane rule, enforced when the merged gate lands with the workerd collector.
+
+**Resumed qualification, 2026-11-09.** Four failed-first merger cases reject enclosing-statement credit, same-line
+function/branch borrowing and incomplete columns, while allowing exact matches and complementary exact arm hits.
+Earlier figures from the line-span merger are superseded; no percentage from that heuristic establishes execution.
+No compiler behavior, dependency, threshold or production exclusion changes in this correction.
+
+The expanded corpus independently benchmarks real SQLite conversation hosts (queued posts, owner-preserving
+duplicates, alarm settlement, sequencer recovery, cancellation tombstones), action hosts (request conflicts,
+terminal traces, queued cancellation and current-role revocation), all dispatch/progress/startup/theatre decisions,
+and specification revision/review/reset through product mock flows. The wiki generator runs actual emitted child
+processes on fixture files, checking deterministic output and preservation after real read failures. Run that command
+separately from ordinary wiki-process tests, which share its ignored compiler fixture directory. No test suite is
+imported into the benchmark suite and no GitHub request is intercepted.
+
+Native browser workloads follow VL-31's private walkthrough stream: Pause/Play, real issue/VIP/wiki destinations,
+Escape and pane controls. They also measure real action Run/trace/Cancel/Re-run with distinct execution identities.
+The workerd deadline includes three complete reading budgets; shortening real reading holds
+would invalidate the method. Production's `/api/health` now exposes its deployed commit; live artifacts retain it
+when present and leave it unknown when absent. The successful sandbox workerd lifecycle/metering benchmark is now
+on main; the older nested-Effect reproduction above is retained as history, not an active deferral of that workload.

@@ -195,7 +195,7 @@ it("wiki pane renders navigation, decisions and recovery", async ({ bench }) => 
     [{ ...opened, wikiStatus: "error" as const, wikiRequested: "index" }, [expect(role("button", { name: "Retry" })).toExist()]],
     [{ ...opened, wikiQuery: "zzz-no-match" }, [expect(text('No pages match "zzz-no-match"')).toExist()]],
     [{ ...opened, wikiQuery: "rulings" }, [expect(role("link", { name: "Rulings" })).toExist()]],
-    [{ ...opened, tour: true }, [expect(role("region", { name: "Wiki" })).toHaveAttr("data-maximized", "true")]],
+    [{ ...opened, tour: true, docs: "max" }, [expect(role("region", { name: "Wiki" })).toHaveAttr("data-maximized", "true")]],
     [update(chat, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/nope" } })).model, [expect(role("region", { name: "Wiki" })).toExist()]],
   ]
   const result = await workload(bench, "wiki-view-matrix", () => {
@@ -259,9 +259,14 @@ it("main reducer visits the wiki, launches actions and drives sandbox controls",
     assert(blocked.commands ?? []).toHaveLength(0)
     const unknown = update({ ...actionable, actions: { ...actionable.actions, selected: "vibelang/nope" } }, Message.ClickedRunAction())
     assert(unknown.commands ?? []).toHaveLength(0)
-    const slashed = update({ ...actionable, draft: "/tour please", actions: { ...actionable.actions, slash: true } }, Message.PickedSlash({ name: "vibelang/Tour" }))
+    const slashed = update({ ...actionable, draft: "/post please", actions: { ...actionable.actions, slash: true, commands: [registration("vibelang/Post")] } }, Message.PickedSlash({ name: "vibelang/Post" }))
     assert(slashed.model.draft).toBe("")
     assert(slashed.commands).toHaveLength(1)
+    const toured = update({ ...actionable, draft: "/tour", actions: { ...actionable.actions, slash: true } }, Message.PickedSlash({ name: "vibelang/Tour" }))
+    assert(toured.model.tour).toBe(true)
+    assert(toured.model.conversation).toBe("demo-bench")
+    assert(toured.model.tourClient?.conversation.seq).toBe(0)
+    assert(toured.commands?.map(command => command.name)).toEqual(["StartTour", "PresentTour", "MeasureTheatre"])
     const started = update(home, Message.StartedSandbox())
     assert(started.model.sandboxBusy).toBe(true)
     assert(started.commands).toHaveLength(1)
