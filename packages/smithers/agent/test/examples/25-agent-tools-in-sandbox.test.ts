@@ -16,7 +16,7 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { main } from "../../examples/25-agent-tools-in-sandbox.ts"
+import { main } from "../../examples/25-agent-tools-in-sandbox.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 

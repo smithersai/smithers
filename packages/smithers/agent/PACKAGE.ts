@@ -146,7 +146,7 @@ const securityReview = Smithers.SecurityReview({
         "confinedFileSystem accepting, on POSIX, a root another user owns or whose mode grants any group or other permission (mode & 0o077).",
         "Read/Write FlowBinding capabilities or effects wider than `${canonicalRoot}/**`, or a capabilityEnvelope without that resource."
       ],
-      paths: ["examples/25-agent-tools-in-sandbox.ts", "test/examples/25-*.test.ts"]
+      paths: ["examples/25-agent-tools-in-sandbox.vibe", "test/examples/25-*.test.ts"]
     },
     {
       id: "example-provider-key-handling",
@@ -183,7 +183,7 @@ const securityReview = Smithers.SecurityReview({
         "A scripted model that splices prompt text into cell code without JSON.stringify.",
         "Budget.layerUnbounded or QuotaPolicy.layerUnclassified used in an example that reaches a real provider."
       ],
-      paths: ["examples/11-agent-step.vibe", "examples/25-agent-tools-in-sandbox.ts", "examples/39-agent-policies.ts"]
+      paths: ["examples/11-agent-step.vibe", "examples/25-agent-tools-in-sandbox.vibe", "examples/39-agent-policies.ts"]
     },
     {
       id: "flow-store-confinement",

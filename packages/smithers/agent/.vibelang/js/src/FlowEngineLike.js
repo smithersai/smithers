@@ -88,6 +88,7 @@ export { defaultModelIdleMs, defaultModelOverruns, defaultModelRetryPolicy, Reco
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const routeResolver = (route) => ({
     prepare: (request) => Route.prepare(route, request)

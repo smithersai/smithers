@@ -61,10 +61,26 @@
       "vibelang-source": "./src/Budget.ts",
       "default": "./.vibelang/js/src/Budget.js"
     },
-    "./CellPlugin": "./src/CellPlugin.ts",
-    "./Checkpointed": "./src/Checkpointed.ts",
-    "./ChildFlows": "./src/ChildFlows.ts",
-    "./EngineChildren": "./src/EngineChildren.ts",
+    "./CellPlugin": {
+      "types": "./src/CellPlugin.ts",
+      "vibelang-source": "./src/CellPlugin.ts",
+      "default": "./.vibelang/js/src/CellPlugin.js"
+    },
+    "./Checkpointed": {
+      "types": "./src/Checkpointed.ts",
+      "vibelang-source": "./src/Checkpointed.ts",
+      "default": "./.vibelang/js/src/Checkpointed.js"
+    },
+    "./ChildFlows": {
+      "types": "./src/ChildFlows.ts",
+      "vibelang-source": "./src/ChildFlows.ts",
+      "default": "./.vibelang/js/src/ChildFlows.js"
+    },
+    "./EngineChildren": {
+      "types": "./src/EngineChildren.ts",
+      "vibelang-source": "./src/EngineChildren.ts",
+      "default": "./.vibelang/js/src/EngineChildren.js"
+    },
     "./EventSink": {
       "types": "./src/EventSink.ts",
       "vibelang-source": "./src/EventSink.ts",
@@ -75,8 +91,16 @@
       "vibelang-source": "./src/FlowEngineLike.ts",
       "default": "./.vibelang/js/src/FlowEngineLike.js"
     },
-    "./FlowStore": "./src/FlowStore.ts",
-    "./InMemoryWorkspaceSandbox": "./src/InMemoryWorkspaceSandbox.ts",
+    "./FlowStore": {
+      "types": "./src/FlowStore.ts",
+      "vibelang-source": "./src/FlowStore.ts",
+      "default": "./.vibelang/js/src/FlowStore.js"
+    },
+    "./InMemoryWorkspaceSandbox": {
+      "types": "./src/InMemoryWorkspaceSandbox.ts",
+      "vibelang-source": "./src/InMemoryWorkspaceSandbox.ts",
+      "default": "./.vibelang/js/src/InMemoryWorkspaceSandbox.js"
+    },
     "./Memory": {
       "types": "./src/Memory.ts",
       "vibelang-source": "./src/Memory.ts",
@@ -127,14 +151,26 @@
       "vibelang-source": "./src/SeatRouter.ts",
       "default": "./.vibelang/js/src/SeatRouter.js"
     },
-    "./SmithersPlugin": "./src/SmithersPlugin.ts",
+    "./SmithersPlugin": {
+      "types": "./src/SmithersPlugin.ts",
+      "vibelang-source": "./src/SmithersPlugin.ts",
+      "default": "./.vibelang/js/src/SmithersPlugin.js"
+    },
     "./StandardFlows": {
       "types": "./src/StandardFlows.ts",
       "vibelang-source": "./src/StandardFlows.ts",
       "default": "./.vibelang/js/src/StandardFlows.js"
     },
-    "./WorkspaceObservation": "./src/WorkspaceObservation.ts",
-    "./WorkspaceSandbox": "./src/WorkspaceSandbox.ts",
+    "./WorkspaceObservation": {
+      "types": "./src/WorkspaceObservation.ts",
+      "vibelang-source": "./src/WorkspaceObservation.ts",
+      "default": "./.vibelang/js/src/WorkspaceObservation.js"
+    },
+    "./WorkspaceSandbox": {
+      "types": "./src/WorkspaceSandbox.ts",
+      "vibelang-source": "./src/WorkspaceSandbox.ts",
+      "default": "./.vibelang/js/src/WorkspaceSandbox.js"
+    },
     "./index": {
       "types": "./src/index.ts",
       "vibelang-source": "./src/index.ts",
@@ -150,9 +186,21 @@
       "vibelang-source": "./src/Acp.vibe",
       "default": "./.vibelang/js/src/Acp.js"
     },
-    "./AgentRunner": "./src/AgentRunner.ts",
-    "./ExternalAgent": "./src/ExternalAgent.ts",
-    "./Transcript": "./src/Transcript.ts"
+    "./AgentRunner": {
+      "types": "./src/AgentRunner.ts",
+      "vibelang-source": "./src/AgentRunner.ts",
+      "default": "./.vibelang/js/src/AgentRunner.js"
+    },
+    "./ExternalAgent": {
+      "types": "./src/ExternalAgent.ts",
+      "vibelang-source": "./src/ExternalAgent.ts",
+      "default": "./.vibelang/js/src/ExternalAgent.js"
+    },
+    "./Transcript": {
+      "types": "./src/Transcript.ts",
+      "vibelang-source": "./src/Transcript.ts",
+      "default": "./.vibelang/js/src/Transcript.js"
+    }
   },
   "files": [
     "src/**/*.ts",

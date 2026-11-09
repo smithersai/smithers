@@ -46,7 +46,7 @@ import * as Path from "effect/Path"
 import * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import { lstatSync, mkdirSync, statSync } from "node:fs"
+import { confinedPath, ensureScratchRoot, scratchRootRefused } from "./25-agent-tools-in-sandbox.platform.ts"
 
 /** What the step must answer with. Nothing downstream parses model text. */
 export const Tally = Schema.Struct({
@@ -145,98 +145,68 @@ export interface Summary {
  * Missing methods retain the inert defaults; no raw host method is spread in.
  * The host owns this scratch tree exclusively while the run is active.
  */
-const confinedFileSystem = (root: string) =>
-  Effect.gen(function*() {
-    const host = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const canonicalRoot = yield* host.realPath(root)
-    if (/[?*]/.test(canonicalRoot)) {
-      return yield* Effect.fail(
+effect function confinedFileSystem(root: string) {
+  const host = try FileSystem.FileSystem
+  const path = try Path.Path
+  const canonicalRoot = try host.realPath(root)
+  if (/[?*]/.test(canonicalRoot)) {
+    throw new PlatformError.PlatformError(
+      new PlatformError.BadArgument({
+        module: "FileSystem",
+        method: "root",
+        description: "Scratch roots must not contain capability glob characters"
+      })
+    )
+  }
+  // The link walk below checks, then acts, so it is only sound while no other
+  // principal can change the tree. On POSIX, refuse a root another user owns or
+  // that grants any group or other permission: a traversable root would let
+  // another user reach a writable inner directory. The check is POSIX only;
+  // Windows has no getuid and libuv reports every writable directory as 0o777.
+  if (try scratchRootRefused(canonicalRoot)) {
+    throw new PlatformError.PlatformError(
+      new PlatformError.BadArgument({
+        module: "FileSystem",
+        method: "root",
+        description: "Scratch roots must be owned by this user and grant no group or other permissions"
+      })
+    )
+  }
+  const resolve = (requested: string) =>
+    Effect.try({
+      try: () => confinedPath(path, canonicalRoot, requested),
+      catch: (cause) =>
         new PlatformError.PlatformError(
           new PlatformError.BadArgument({
             module: "FileSystem",
-            method: "root",
-            description: "Scratch roots must not contain capability glob characters"
+            method: "resolve",
+            cause,
+            description: "Path must stay in the scratch root without traversal or links"
           })
         )
-      )
-    }
-    // The link walk below checks, then acts, so it is only sound while no other
-    // principal can change the tree. On POSIX, refuse a root another user owns or
-    // that grants any group or other permission: a traversable root would let
-    // another user reach a writable inner directory. The check is POSIX only;
-    // Windows has no getuid and libuv reports every writable directory as 0o777.
-    const uid = process.getuid?.()
-    if (uid !== undefined) {
-      const rootInfo = statSync(canonicalRoot)
-      if (rootInfo.uid !== uid || (rootInfo.mode & 0o077) !== 0) {
-        return yield* Effect.fail(
-          new PlatformError.PlatformError(
-            new PlatformError.BadArgument({
-              module: "FileSystem",
-              method: "root",
-              description: "Scratch roots must be owned by this user and grant no group or other permissions"
-            })
-          )
-        )
-      }
-    }
-    const resolve = (requested: string) =>
-      Effect.try({
-        try: () => {
-          if (path.isAbsolute(requested) || requested.split(/[/\\]/).includes("..") || requested.includes("\0")) {
-            throw new Error("Paths must be relative to the scratch root without traversal")
-          }
-          const destination = path.resolve(canonicalRoot, requested)
-          const relative = path.relative(canonicalRoot, destination)
-          if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-            throw new Error("Path leaves the scratch root")
-          }
-          // Inspect every component, including dangling links and parents of files
-          // that do not exist yet. Refusing all symlinks also prevents write's
-          // atomic replacement helper from following a link outside the root.
-          let current = canonicalRoot
-          for (const part of ["", ...relative.split(path.sep)]) {
-            current = path.join(current, part)
-            const info = lstatSync(current, { throwIfNoEntry: false })
-            if (info?.isSymbolicLink() || (info?.isFile() && info.nlink > 1)) {
-              throw new Error("Linked files are not available in the scratch filesystem")
-            }
-          }
-          return destination
-        },
-        catch: (cause) =>
-          new PlatformError.PlatformError(
-            new PlatformError.BadArgument({
-              module: "FileSystem",
-              method: "resolve",
-              cause,
-              description: "Path must stay in the scratch root without traversal or links"
-            })
-          )
-      })
-    const scoped = FileSystem.makeNoop({
-      stat: (name) => resolve(name).pipe(Effect.flatMap(host.stat)),
-      exists: (name) => resolve(name).pipe(Effect.flatMap(host.exists)),
-      readFile: (name) => resolve(name).pipe(Effect.flatMap(host.readFile)),
-      makeDirectory: (name, options) => resolve(name).pipe(Effect.flatMap((file) => host.makeDirectory(file, options))),
-      // Preserve.writeFileString uses this result for its temporary sibling, so
-      // keep it in the service's relative namespace too.
-      realPath: (name) => resolve(name).pipe(Effect.map((file) => path.relative(canonicalRoot, file))),
-      writeFileString: (name, content, options) =>
-        resolve(name).pipe(Effect.flatMap((file) => host.writeFileString(file, content, options))),
-      chmod: (name, mode) => resolve(name).pipe(Effect.flatMap((file) => host.chmod(file, mode))),
-      chown: (name, uid, gid) => resolve(name).pipe(Effect.flatMap((file) => host.chown(file, uid, gid))),
-      remove: (name, options) => resolve(name).pipe(Effect.flatMap((file) => host.remove(file, options))),
-      rename: (from, to) =>
-        Effect.gen(function*() {
-          const source = yield* resolve(from)
-          const target = yield* resolve(to)
-          yield* host.rename(source, target)
-        })
     })
-    return { services: Context.make(FileSystem.FileSystem, scoped).pipe(Context.add(Path.Path, path)), canonicalRoot }
+  const scoped = FileSystem.makeNoop({
+    stat: (name) => resolve(name).pipe(Effect.flatMap(host.stat)),
+    exists: (name) => resolve(name).pipe(Effect.flatMap(host.exists)),
+    readFile: (name) => resolve(name).pipe(Effect.flatMap(host.readFile)),
+    makeDirectory: (name, options) => resolve(name).pipe(Effect.flatMap((file) => host.makeDirectory(file, options))),
+    // Preserve.writeFileString uses this result for its temporary sibling, so
+    // keep it in the service's relative namespace too.
+    realPath: (name) => resolve(name).pipe(Effect.map((file) => path.relative(canonicalRoot, file))),
+    writeFileString: (name, content, options) =>
+      resolve(name).pipe(Effect.flatMap((file) => host.writeFileString(file, content, options))),
+    chmod: (name, mode) => resolve(name).pipe(Effect.flatMap((file) => host.chmod(file, mode))),
+    chown: (name, uid, gid) => resolve(name).pipe(Effect.flatMap((file) => host.chown(file, uid, gid))),
+    remove: (name, options) => resolve(name).pipe(Effect.flatMap((file) => host.remove(file, options))),
+    rename: (from, to) =>
+      effect {
+        const source = try resolve(from)
+        const target = try resolve(to)
+        try host.rename(source, target)
+      }
   })
+  return { services: Context.make(FileSystem.FileSystem, scoped).pipe(Context.add(Path.Path, path)), canonicalRoot }
+}
 
 /**
  * Runs the step against a real directory.
@@ -246,18 +216,18 @@ const confinedFileSystem = (root: string) =>
  * @param model an optional model for exercising other cells; defaults to the offline script
  */
 export const main = (filename: string, root: string, model?: Model.Model): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
+  effect {
     const source = "notes.md"
     const target = "line-count.txt"
-    yield* Effect.sync(() => mkdirSync(root, { recursive: true, mode: 0o700 }))
-    const { services, canonicalRoot } = yield* confinedFileSystem(root)
+    try ensureScratchRoot(root)
+    const { services, canonicalRoot } = try confinedFileSystem(root)
     const scratch = Context.get(services, FileSystem.FileSystem)
-    yield* scratch.writeFileString(source, "alpha\nbeta\ngamma")
+    try scratch.writeFileString(source, "alpha\nbeta\ngamma")
     const resource = `${canonicalRoot}/**`
     const capabilities = ["fs:read", "fs:write"] as const
     // The standard declarations cover the entire host filesystem. Narrow both
     // declarations to match the confined service and expose just these tools.
-    const files = FlowBinding.source("examples/scratch-files", [
+    const files = try Effect.try(() => FlowBinding.source("examples/scratch-files", [
       FlowBinding.provide(
         FlowBinding.make({
           flow: {
@@ -288,7 +258,7 @@ export const main = (filename: string, root: string, model?: Model.Model): Effec
         }),
         services
       )
-    ])
+    ]))
     const asked: Array<string> = []
 
     const host = AgentAction.layerHost({
@@ -341,23 +311,24 @@ export const main = (filename: string, root: string, model?: Model.Model): Effec
       Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-sandbox"))
     )
 
-    const observed = yield* Effect.scoped(
-      Effect.gen(function*() {
-        const tally = yield* Audit.execute({ source, target }, { executionId: "audit-1" })
-        const journal = yield* Journal.Journal
-        yield* journal.flush
-        const page = yield* journal.entries({ runId: "audit-1" as JournalEvent.RunId, limit: 500 })
+    const observed = try Effect.scoped(
+      effect {
+        const tally = try Audit.execute({ source, target }, { executionId: "audit-1" })
+        const journal = try Journal.Journal
+        try journal.flush
+        const page = try journal.entries({ runId: "audit-1" as JournalEvent.RunId, limit: 500 })
         return { tally, eventTypes: [...new Set(page.entries.map((entry) => entry.eventType))] }
-      }).pipe(Effect.provide(stack))
+      }.pipe(Effect.provide(stack))
     )
 
+    const bytes = try scratch.readFile(target)
     return {
       tally: observed.tally,
-      written: new TextDecoder().decode(yield* scratch.readFile(target)),
+      written: try Effect.try(() => new TextDecoder().decode(bytes)),
       asked,
       eventTypes: observed.eventTypes
     } satisfies Summary
-  }).pipe(
+  }.pipe(
     Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)),
     Effect.orDie
   )
