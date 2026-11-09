@@ -66,7 +66,7 @@ import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpaw
 import { readFile, writeFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import * as Agent from "../src/Agent.ts"
+import * as Agent from "../src/Agent.vibe"
 import * as AgentSession from "../src/AgentSession.ts"
 import * as CellPlugin from "../src/CellPlugin.ts"
 import * as ChildFlows from "../src/ChildFlows.ts"

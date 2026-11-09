@@ -46,7 +46,7 @@ import {
 } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
-import * as Agent from "../src/Agent.ts"
+import * as Agent from "../src/Agent.vibe"
 import * as AgentAction from "../src/AgentAction.ts"
 import * as Budget from "../src/Budget.ts"
 import * as EventSink from "../src/EventSink.ts"

@@ -208,6 +208,7 @@ export interface Transcript {
  *
  * @category constructors
  * @since 1.0.0
+ * @throws {never}
  */
 export const transcript = (): Transcript => ({ candidates: [], decisions: [], seen: new Set() })
 

@@ -36,7 +36,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import * as Agent from "../src/Agent.ts"
+import * as Agent from "../src/Agent.vibe"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as Memory from "../src/Memory.ts"
 import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"

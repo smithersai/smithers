@@ -208,7 +208,7 @@ const securityReview = Smithers.SecurityReview({
         "A saved flow's declared capabilities not intersected with the writing run's capability ceiling when it is later invoked.",
         "Executable module loading that runs a flow whose content digest differs from the approved execution digest."
       ],
-      paths: ["src/PromoteFlows.vibe", "src/Agent.ts", "src/AgentSession.ts", "src/CellPlugin.ts"]
+      paths: ["src/PromoteFlows.vibe", "src/Agent.vibe", "src/AgentSession.ts", "src/CellPlugin.ts"]
     },
     {
       id: "capability-envelope-attenuation",
@@ -221,7 +221,7 @@ const securityReview = Smithers.SecurityReview({
         "Memory recall or remember reaching a bank without memoryAuthority or the supervisor ceiling check.",
         "registry.loadBody or approvedModule executed without re-checking the approved execution digest after the registry changed."
       ],
-      paths: ["src/AgentSession.ts", "src/Agent.ts", "src/AgentAction.ts", "src/StandardFlows.ts"]
+      paths: ["src/AgentSession.ts", "src/Agent.vibe", "src/AgentAction.ts", "src/StandardFlows.ts"]
     },
     {
       id: "ask-approval-binding",
@@ -319,7 +319,7 @@ const securityReview = Smithers.SecurityReview({
         "supervisorMemory or MemorySnapshotRecorder writing a sentence without redaction.",
         "Fields renamed (spent, generation params) to dodge redaction that could still carry secret values."
       ],
-      paths: ["src/AgentSession.ts", "src/Agent.ts", "src/EventSink.ts", "src/MemorySnapshotRecorder.vibe"]
+      paths: ["src/AgentSession.ts", "src/Agent.vibe", "src/EventSink.ts", "src/MemorySnapshotRecorder.vibe"]
     },
     {
       id: "seat-routing-injection",

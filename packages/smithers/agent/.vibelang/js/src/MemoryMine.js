@@ -157,6 +157,7 @@ export const noteId = (bank, text) => Digest.digest(`${bank}\0${normalize(text)}
  *
  * @category constructors
  * @since 1.0.0
+ * @throws {never}
  */
 export const transcript = () => ({ candidates: [], decisions: [], seen: new Set() });
 /**

@@ -358,11 +358,11 @@ const memoryDetail = (cause: Cause.Cause<unknown>): string => {
 const supervisorMemory = (
   options: Options
 ): Effect.Effect<{ readonly memory: Supervisor.Memory; readonly writes: boolean }> =>
-  Effect.gen(function*() {
-    const store = yield* Effect.serviceOption(MemoryStore.MemoryStore)
-    const recall = yield* Effect.serviceOption(Recall.Recall)
+  effect {
+    const store = try Effect.serviceOption(MemoryStore.MemoryStore)
+    const recall = try Effect.serviceOption(Recall.Recall)
     const declared = options.supervisor?.banks ?? []
-    const ambient = yield* CapabilitySet.current
+    const ambient = try CapabilitySet.current
     const ceiling = options.capabilityEnvelope === undefined
       ? ambient
       : CapabilitySet.intersect(ambient, CapabilitySet.fromPatterns(options.capabilityEnvelope))
@@ -405,7 +405,7 @@ const supervisorMemory = (
           )
     }
     return { memory, writes: writeBank !== undefined }
-  })
+  }
 
 /**
  * Runs `MemoryMine` over the events `stream` emitted, once, when it ends,
@@ -433,19 +433,19 @@ const minedAtEnd = <E, R>(
           MemoryMine.add(read, { seq, eventType: event.eventType, payload: event })
         })
       ),
-      Stream.concat(Stream.unwrap(Effect.gen(function*() {
-        const events = yield* MemoryMine.settle({
-          engine: yield* EngineLike.EngineLike,
+      Stream.concat(Stream.unwrap(effect {
+        const events = try MemoryMine.settle({
+          engine: try EngineLike.EngineLike,
           session: input.session,
           frame: Math.max(frames - 1, 0),
           task: input.task,
           candidates: read.candidates,
           memory: input.memory
         })
-        const observe = yield* AgentEvent.Observer
-        yield* Effect.forEach(events, observe, { discard: true })
+        const observe = try AgentEvent.Observer
+        try Effect.forEach(events, observe, { discard: true })
         return Stream.fromIterable(events)
-      })))
+      }))
     )
   })
 
@@ -667,20 +667,20 @@ const withCapacity = (
     }>()
     const attempt = (): Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure | HarnessError> =>
       Stream.unwrap(
-        Effect.gen(function*() {
-          const now = yield* Clock.currentTimeMillis
+        effect {
+          const now = try Clock.currentTimeMillis
           let selected = -1
           for (let index = 0; index < seats.length; index++) {
             if (tried.has(index)) continue
             const entry = seats[index]!
-            const resolvedEntry = yield* Effect.gen(function*() {
+            const resolvedEntry = try effect {
               let callKey: string | undefined
               if (entry.seat.refresh !== undefined) {
-                const instance = yield* FlowRuntime.FlowInstance
+                const instance = try FlowRuntime.FlowInstance
                 const { modelId: _model, cacheKey: _cache, ...request } = Schema.encodeSync(ModelRequest.ModelRequest)(
                   step.request
                 )
-                callKey = yield* StepKey.fromKeyMaterial({
+                callKey = try StepKey.fromKeyMaterial({
                   ...step.keyMaterial,
                   body: {
                     _tag: "FactoryModelChoice",
@@ -700,13 +700,13 @@ const withCapacity = (
                   )
                 )
               }
-              const seat = entry.seat.refresh === undefined ? entry.seat : yield* entry.seat.refresh(callKey).pipe(
+              const seat = entry.seat.refresh === undefined ? entry.seat : try entry.seat.refresh(callKey).pipe(
                 Effect.mapError((cause) => new HarnessError({ code: "model_failed", message: cause.message, cause }))
               )
               entry.update(seat)
               const engine = entry.engine
-              const request = ModelRequest.ModelRequest.make({ ...step.request, modelId: seat.modelId })
-              return yield* EngineLike.resolve(engine, request).pipe(Effect.map((resolved) => {
+              const request = try Effect.sync(() => ModelRequest.ModelRequest.make({ ...step.request, modelId: seat.modelId }))
+              return try EngineLike.resolve(engine, request).pipe(Effect.map((resolved) => {
                 const identity = Option.isSome(resolved) && Option.isSome(resolved.value.binding)
                   ? ["route", resolved.value.binding.value.routeId]
                   : ["seat", seat.id]
@@ -718,7 +718,7 @@ const withCapacity = (
                   key: JSON.stringify([...identity, seat.modelId])
                 }
               }))
-            }).pipe(Effect.result)
+            }.pipe(Effect.result)
             if (resolvedEntry._tag === "Failure") {
               lastError = resolvedEntry.failure
               previous = index
@@ -751,7 +751,7 @@ const withCapacity = (
             const source = earliest.park.source === "text" ? "default" : earliest.park.source
             const code = Option.getOrUndefined(QuotaPolicy.modelErrorOf(lastError))?.code ?? "unknown"
             const parkName = `agent/capacity/${seats[0]!.seat.id}/${earliest.park.wakeAt}/${parkCount++}`
-            yield* Action.make({
+            try Action.make({
               name: `${parkName}/parked`,
               tier: "sealed",
               execute: emit(
@@ -765,18 +765,18 @@ const withCapacity = (
               )
             })
             if (earliest.park.wakeAt > now) {
-              yield* FlowRuntime.annotateWaiting({ reason: "quota", wakeAt: earliest.park.wakeAt })
+              try FlowRuntime.annotateWaiting({ reason: "quota", wakeAt: earliest.park.wakeAt })
             }
-            yield* DurableClock.sleep({
+            try DurableClock.sleep({
               name: parkName,
               duration: Duration.millis(Math.max(0, earliest.park.wakeAt - now)),
               inMemoryThreshold: 1
             })
-            yield* emit(
+            try emit(
               new AgentEvent.ModelUnparked({
                 eventType: AgentEvent.eventType.modelUnparked,
                 seat: earliest.entry.seat.id,
-                at: yield* Clock.currentTimeMillis
+                at: try Clock.currentTimeMillis
               })
             )
             cycle++
@@ -788,7 +788,7 @@ const withCapacity = (
           const entry = entries.get(selected)!
           if (previous >= 0 && previous !== selected && lastError !== undefined) {
             const model = Option.getOrUndefined(QuotaPolicy.modelErrorOf(lastError))
-            yield* emit(
+            try emit(
               new AgentEvent.SeatFailedOver({
                 eventType: AgentEvent.eventType.seatFailedOver,
                 from: seats[previous]!.seat.id,
@@ -801,7 +801,7 @@ const withCapacity = (
               })
             )
           }
-          yield* emit(
+          try emit(
             new AgentEvent.ModelSelected({
               eventType: AgentEvent.eventType.modelSelected,
               seat: entry.seat.id
@@ -821,13 +821,13 @@ const withCapacity = (
           }
           // When this seat's try was issued, so the retry that follows a
           // failure can say how long the failed try ran.
-          const beforeCall = yield* Clock.currentTimeMillis
+          const beforeCall = try Clock.currentTimeMillis
           return entry.engine.sealStepWithEvents!(changed, emit).pipe(
             Stream.catchCause((cause) =>
-              Stream.unwrap(Effect.gen(function*() {
+              Stream.unwrap(effect {
                 const error = Cause.squash(cause)
                 const model = Option.getOrUndefined(QuotaPolicy.modelErrorOf(error))
-                const afterCall = yield* Clock.currentTimeMillis
+                const afterCall = try Clock.currentTimeMillis
                 const classified = model === undefined
                   ? Option.none<QuotaPolicy.Park>()
                   : policy.classify(model, afterCall)
@@ -835,13 +835,13 @@ const withCapacity = (
                 // while one is left. A seat signed in elsewhere may also answer,
                 // and so may one whose context window fits what overflowed this one.
                 const seatsLeft = seats.length - tried.size - 1
-                const backup = Fault.respond(Fault.of(error), {
+                const backup = (try Effect.sync(() => Fault.respond(Fault.of(error), {
                   attempt: 1,
                   seatsLeft,
                   parksLeft: maxParks - parkCount,
                   replans: 0,
                   veryHard: false
-                }) === "backup"
+                }))) === "backup"
                 const canFailOver = model !== undefined && seatsLeft > 0 &&
                   (backup || model.code === "authentication" || model.code === "context_overflow" ||
                     model.code === "out_of_credit")
@@ -856,7 +856,7 @@ const withCapacity = (
                   }
                 }
                 if (Option.isSome(classified)) {
-                  const park = yield* Action.make({
+                  const park = try Action.make({
                     name: `agent/capacity/${seats[0]!.seat.id}/cool/${cycle}/${selected}/${tried.size}`,
                     tier: "sealed",
                     success: QuotaPolicy.Park,
@@ -890,11 +890,11 @@ const withCapacity = (
                   ),
                   attempt()
                 )
-              }))
+              })
             ),
             Stream.provideContext(services)
           )
-        }).pipe(Effect.provideContext(services))
+        }.pipe(Effect.provideContext(services))
       )
     return attempt()
   }
@@ -905,12 +905,12 @@ const withCapacity = (
     // only be resolved after its keyed refresh inside the sealed call; it has
     // no honest pre-dispatch route to report.
     resolve: (request) =>
-      Effect.gen(function*() {
-        const now = yield* Clock.currentTimeMillis
+      effect {
+        const now = try Clock.currentTimeMillis
         for (const entry of seats) {
           if (entry.seat.refresh !== undefined) return Option.none<EngineLike.Resolved>()
-          const next = ModelRequest.ModelRequest.make({ ...request, modelId: entry.seat.modelId })
-          const resolved = yield* EngineLike.resolve(entry.engine, next)
+          const next = try Effect.sync(() => ModelRequest.ModelRequest.make({ ...request, modelId: entry.seat.modelId }))
+          const resolved = try EngineLike.resolve(entry.engine, next)
           const identity = Option.isSome(resolved) && Option.isSome(resolved.value.binding)
             ? ["route", resolved.value.binding.value.routeId]
             : ["seat", entry.seat.id]
@@ -918,7 +918,7 @@ const withCapacity = (
           if (!isSpent(key) && (coolingFor(key)?.wakeAt ?? 0) <= now) return resolved
         }
         return Option.none<EngineLike.Resolved>()
-      }),
+      },
     sealStepWithEvents
   })
 }
@@ -964,9 +964,9 @@ export class Agent extends Context.Service<Agent, Service>()("@smthrs/agent/Agen
 
 const runProductionUnmeasured: Service["run"] = (options) =>
   Stream.unwrap(
-    Effect.gen(function*() {
-      const kernel = yield* CellPlugin.make(options.plugins, options.config)
-      yield* Effect.forEach(
+    effect {
+      const kernel = try CellPlugin.make(options.plugins, options.config)
+      try Effect.forEach(
         kernel.observerErrors,
         (error) =>
           Effect.annotateLogs(Effect.logWarning("A plugin configuration observer failed"), {
@@ -976,13 +976,13 @@ const runProductionUnmeasured: Service["run"] = (options) =>
           }),
         { discard: true }
       )
-      const layers = yield* compositionLayers(options, kernel.plugins, kernel.config)
+      const layers = try compositionLayers(options, kernel.plugins, kernel.config)
       return Stream.unwrap(
-        Effect.gen(function*() {
-          const discovered = yield* CellPlugin.registry(kernel.plugins, options.registry)
+        effect {
+          const discovered = try CellPlugin.registry(kernel.plugins, options.registry)
           // Each source is resolved once: its bindings are both the catalog
           // and, for a pinned source, the names the relevance reading skips.
-          const sources = yield* Effect.forEach(
+          const sources = try Effect.forEach(
             options.flows ?? [],
             (source) =>
               Effect.map(
@@ -995,15 +995,15 @@ const runProductionUnmeasured: Service["run"] = (options) =>
                 (bindings) => ({ name: source.name, bindings })
               )
           )
-          const composed = yield* Effect.fromResult(
-            FlowBinding.catalogResult(sources.flatMap((source) => source.bindings))
-          )
+          const composition = try Effect.sync(() => FlowBinding.catalogResult(sources.flatMap((source) => source.bindings)))
+          const composed = try Effect.fromResult(composition)
           const pinnedSources = new Set([...StandardFlows.coreSources, ...(options.pinnedSources ?? [])])
           const pinned = sources.filter((source) => pinnedSources.has(source.name))
             .flatMap((source) => source.bindings.map((binding) => binding.descriptor.name))
-          const contributed = yield* CellPlugin.flows(kernel.plugins, composed.entries)
-          const catalog = yield* Effect.fromResult(FlowBinding.catalogResult(contributed))
-          const monitors = yield* CellPlugin.monitors(kernel.plugins, [
+          const contributed = try CellPlugin.flows(kernel.plugins, composed.entries)
+          const catalogResult = try Effect.sync(() => FlowBinding.catalogResult(contributed))
+          const catalog = try Effect.fromResult(catalogResult)
+          const monitors = try CellPlugin.monitors(kernel.plugins, [
             ...Monitor.defaults(),
             ...(options.supervisor?.monitors ?? [])
           ]).pipe(
@@ -1023,13 +1023,15 @@ const runProductionUnmeasured: Service["run"] = (options) =>
             visible: () =>
               Effect.map(discovered.visible(), (entries) => entries.filter((entry) => entry.body._tag !== "Markdown"))
           }
-          const registry = FlowBinding.registry(runnable, catalog)
-          const resolver = CellCalls.make({
-            registry,
-            catalog,
-            implementations: options.implementations,
-            prompt: options.promptRunner
-          })
+          const registry = try Effect.sync(() => FlowBinding.registry(runnable, catalog))
+          const resolver = try Effect.sync(() =>
+            CellCalls.make({
+              registry,
+              catalog,
+              implementations: options.implementations,
+              prompt: options.promptRunner
+            })
+          )
           // This composition is the one place that knows the run's whole
           // authority, so it is the one place that may declare it (issue #75).
           // The envelope is exactly what `CellTurn` runs under, and the
@@ -1044,7 +1046,7 @@ const runProductionUnmeasured: Service["run"] = (options) =>
           // composition with nowhere to pin a tree must not be wrapped at all:
           // then `at` is refused by the engine port's own `capture`, which is
           // the one place that knows the host has no store.
-          const decorated = yield* Checkpointed.decorate({
+          const decorated = try Checkpointed.decorate({
             ...(options.authorize === undefined ? {} : { authorize: options.authorize }),
             run: resolver.run
           })
@@ -1059,16 +1061,16 @@ const runProductionUnmeasured: Service["run"] = (options) =>
               modelRetryPolicy: options.modelRetryPolicy
             })
           const seats = [options.seat, ...(options.fallbackSeats ?? [])]
-          const ports = yield* Effect.forEach(seats, (seat) => {
+          const ports = try Effect.forEach(seats, (seat) => {
             if (seat.refresh === undefined) {
               return Effect.map(makePort(seat), (engine) => ({ seat, engine, update: (_next: Seat.Seat) => {} }))
             }
-            return Effect.gen(function*() {
+            return effect {
               // One port owns the durable activity registration for the whole
               // invocation. Refresh its delegates before sealing, never replace
               // the port and capture an earlier call's event sink.
               let selected = seat
-              const engine = yield* makePort(Seat.make({
+              const engine = try makePort(Seat.make({
                 ...seat,
                 model: { ...seat.model, stream: (request) => selected.model.stream(request) },
                 route: { prepare: (request) => selected.route.prepare(request) }
@@ -1080,9 +1082,9 @@ const runProductionUnmeasured: Service["run"] = (options) =>
                   selected = next
                 }
               }
-            })
+            }
           })
-          const capacityServices = yield* Effect.context<
+          const capacityServices = try Effect.context<
             | FlowRuntime.FlowRuntime
             | FlowRuntime.FlowInstance
             | (EffectDigest.Digest | SecureRandom.SecureRandom)
@@ -1092,14 +1094,15 @@ const runProductionUnmeasured: Service["run"] = (options) =>
           const port = options.capacity?.park === false && ports.length === 1 && options.seat.refresh === undefined
             ? ports[0]!.engine
             : withCapacity(ports, options.capacity, capacityServices)
-          const state = CellTurn.make({
+          const hasCheckpoints = Option.isSome(try Effect.serviceOption(Checkpoints.Checkpoints))
+          const state = try Effect.sync(() => CellTurn.make({
             session: options.session,
             seat: options.seat.id,
             modelParams: options.modelParams ?? ModelRequest.GenerationParams.make(),
             layers,
             capabilityEnvelope: options.capabilityEnvelope ?? [],
             placement: options.placement ?? Option.none(),
-            contextWindow: opening(options, [], Option.isSome(yield* Effect.serviceOption(Checkpoints.Checkpoints))),
+            contextWindow: opening(options, [], hasCheckpoints),
             contextWindowTokens: options.seat.contextWindowTokens,
             maxFrames: options.maxFrames,
             readOnlyCap: options.readOnlyCap,
@@ -1111,8 +1114,8 @@ const runProductionUnmeasured: Service["run"] = (options) =>
             claimCap: options.claimCap,
             approvalChannel: options.approvalChannel,
             serverTools: options.serverTools
-          })
-          const { memory, writes } = yield* supervisorMemory(options)
+          }))
+          const { memory, writes } = try supervisorMemory(options)
           const turns = CellTurn.run({
             state,
             flows: [],
@@ -1137,11 +1140,11 @@ const runProductionUnmeasured: Service["run"] = (options) =>
               Stream.provideService(EngineLike.EngineLike, withRequestPlugins(port, kernel.plugins)),
               Stream.provideService(Supervisor.Memory, memory)
             )
-        })
+        }
       ).pipe(
         Stream.provide(kernel.layer)
       )
-    })
+    }
   )
 
 /** A call that resolved with a failure envelope, carried through its span as a failure. */
@@ -1162,11 +1165,12 @@ class ToolCallFailed extends Error {
  * run the call starts is counted as the agent's, through door `agent`
  * (`RunMetrics`).
  */
-const executeTool = (
+effect function executeTool(
   run: FlowEngineLike.CallRunner["run"],
   call: Cell.Call
-): Effect.Effect<Cell.CallResult, HarnessError> =>
-  run(call).pipe(
+): Cell.CallResult!HarnessError {
+  const toolCallId = try Effect.sync(() => CallIdentity.callId(call.identity))
+  return try run(call).pipe(
     RunMetrics.withOrigin({ door: "agent", actor: "agent" }),
     Effect.flatMap((result) => {
       if (result.outcome === "success") return Effect.succeed(result)
@@ -1179,7 +1183,7 @@ const executeTool = (
       attributes: {
         "gen_ai.operation.name": "execute_tool",
         "gen_ai.tool.name": call.flowName,
-        "gen_ai.tool.call.id": CallIdentity.callId(call.identity)
+        "gen_ai.tool.call.id": toolCallId
       }
     }),
     Effect.catchIf(
@@ -1187,6 +1191,7 @@ const executeTool = (
       (error) => Effect.succeed(error.result)
     )
   )
+}
 
 const runProduction: Service["run"] = (options) =>
   Stream.scoped(
@@ -1239,23 +1244,23 @@ export const layer: Layer.Layer<
   Agent,
   never,
   QuotaPolicy.QuotaClassifier | Budget.Budget
-> = Layer.effect(Agent)(Effect.gen(function*() {
-  const budget = yield* Budget.Budget
-  const quota = yield* QuotaPolicy.QuotaClassifier
+> = Layer.effect(Agent)(effect {
+  const budget = try Budget.Budget
+  const quota = try QuotaPolicy.QuotaClassifier
   return make({
     run: (options) =>
-      Stream.unwrap(Effect.gen(function*() {
+      Stream.unwrap(effect {
         // AgentSession binds the approved envelope's policy per execution. It
         // takes precedence over the host's construction-time defaults.
-        const runBudget = yield* Effect.serviceOption(Budget.Budget)
-        const runQuota = yield* Effect.serviceOption(QuotaPolicy.QuotaClassifier)
+        const runBudget = try Effect.serviceOption(Budget.Budget)
+        const runQuota = try Effect.serviceOption(QuotaPolicy.QuotaClassifier)
         return runProduction(options).pipe(
           Stream.provideService(Budget.Budget, Option.getOrElse(runBudget, () => budget)),
           Stream.provideService(QuotaPolicy.QuotaClassifier, Option.getOrElse(runQuota, () => quota))
         )
-      }))
+      })
   })
-}))
+})
 
 /**
  * Provides {@link makeNoop}.

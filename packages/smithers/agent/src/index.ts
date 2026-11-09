@@ -34,7 +34,7 @@ export * as MemorySnapshotRecorder from "./MemorySnapshotRecorder.vibe"
  * @category services
  * @since 0.1.0
  */
-export * as Agent from "./Agent.ts"
+export * as Agent from "./Agent.vibe"
 
 /**
  * @category models

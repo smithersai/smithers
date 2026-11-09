@@ -30,7 +30,7 @@ import { Context, Effect, FileSystem, Layer, Option, Schema, Stream } from "effe
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import * as Agent from "../src/Agent.ts"
+import * as Agent from "../src/Agent.vibe"
 import * as FlowStore from "../src/FlowStore.vibe"
 import * as PromoteFlows from "../src/PromoteFlows.vibe"
 import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"

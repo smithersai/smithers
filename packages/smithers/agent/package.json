@@ -42,8 +42,8 @@
     "./internal/*": null,
     "./*/index": null,
     "./Agent": {
-      "types": "./src/Agent.ts",
-      "vibelang-source": "./src/Agent.ts",
+      "types": "./.vibe/declarations/Agent.d.vibe.ts",
+      "vibelang-source": "./src/Agent.vibe",
       "default": "./.vibelang/js/src/Agent.js"
     },
     "./AgentAction": {

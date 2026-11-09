@@ -62,7 +62,7 @@ import {
   Stream
 } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Agent from "../src/Agent.ts"
+import * as Agent from "../src/Agent.vibe"
 import * as AgentSession from "../src/AgentSession.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as Seat from "../src/Seat.vibe"
