@@ -494,25 +494,20 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       model: { ...model, draft: value, actions: { ...actionsOf(model), slash: value.startsWith("/"), highlight: 0 } },
       ...(value.startsWith("/") && actionsOf(model).entries.length === 0 ? { commands: [LoadActions({ flow: "", ...(actionsOf(model).epoch === undefined ? {} : { epoch: actionsOf(model).epoch }) })] } : {}),
     }),
-    ClickedActions: () => {
-      const actions = actionsOf(model)
-      return actions.open
-        ? { model: { ...model, actions: { ...actions, open: false, maximized: false } }, commands: [FocusComposer({})] }
-        : { model: { ...model, actions: { ...actions, open: true, loading: actions.entries.length === 0 } }, commands: [LoadActions({ flow: actions.selected, ...(actions.epoch === undefined ? {} : { epoch: actions.epoch }) })] }
-    },
-    MaximizedActions: () => ({ model: { ...model, actions: { ...actionsOf(model), maximized: !actionsOf(model).maximized } } }),
-    SelectedAction: ({ name }) => ({ model: { ...model, actions: { ...actionsOf(model), selected: name, run: "", loading: true, error: "" } }, commands: [LoadActions({ flow: name, ...(actionsOf(model).epoch === undefined ? {} : { epoch: actionsOf(model).epoch }) })] }),
+    ClickedActions: () => runActions(model, ModelDecision.clickedActions(actionScreen(model), actionsOf(model).entries.length !== 0, actionsOf(model).epoch ?? null)),
+    MaximizedActions: () => runActions(model, ModelDecision.maximizedActions(actionScreen(model))),
+    SelectedAction: ({ name }) => runActions(model, ModelDecision.selectedAction(actionScreen(model), name, actionsOf(model).epoch ?? null)),
     SelectedActionStep: ({ key }) => ({ model: { ...model, actions: { ...actionsOf(model), step: key } } }),
     SelectedRun: ({ id }) => ({ model: { ...model, actions: { ...actionsOf(model), step: "", run: id, selected: actionsOf(model).runs.find((run) => run.id === id)?.flow ?? actionsOf(model).selected, open: true, maximized: true } } }),
     LoadedActions: ({ entries, commands, runs, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: { ...model, actions: { ...actionsOf(model), entries, commands, runs: mergeRuns(actionsOf(model).runs, runs), loading: false, error: "" } } }),
-    FailedActions: ({ code, epoch }) => !ModelDecision.actionsFailureApplies(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: { ...model, actions: { ...actionsOf(model), loading: false, starting: false, error: code } } }),
-    UpdatedActionInput: ({ value }) => ({ model: { ...model, actions: { ...actionsOf(model), input: value } } }),
+    FailedActions: ({ code, epoch }) => !ModelDecision.actionsFailureApplies(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : runActions(model, ModelDecision.failedActions(actionScreen(model), code)),
+    UpdatedActionInput: ({ value }) => runActions(model, ModelDecision.updatedActionInput(actionScreen(model), value)),
     ClickedRunAction: () => launchAction(model, actionsOf(model).selected, "button"),
     StartedAction: ({ run, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: { ...model, surface: "chat", stream: "open", palette: false, actions: { ...actionsOf(model), ...(actionsOf(model).run === "" ? {} : { step: "", run: run.id, selected: run.flow }), starting: false, runs: mergeRuns(actionsOf(model).runs, [run]), error: "" } }, commands: [ClosePalette({ dock: true })] }),
     ChangedAction: ({ run }) => ({ model: { ...model, actions: { ...actionsOf(model), runs: mergeRuns(actionsOf(model).runs, [run]) } } }),
     TickedActions: ({ at }) => ({ model: { ...model, actions: { ...actionsOf(model), now: ModelDecision.actionsClock(actionsOf(model).now ?? 0, at) } } }),
     ClickedCancelAction: () => ({ model, commands: [CancelAction({ id: actionsOf(model).run })] }),
-    RetriedActions: () => ({ model: { ...model, actions: { ...actionsOf(model), loading: true, error: "" } }, commands: [LoadActions({ flow: actionsOf(model).selected, ...(actionsOf(model).epoch === undefined ? {} : { epoch: actionsOf(model).epoch }) })] }),
+    RetriedActions: () => runActions(model, ModelDecision.retriedActions(actionScreen(model), actionsOf(model).epoch ?? null)),
     MovedSlash: ({ delta }) => {
       const menu = completions(model)
       return { model: { ...model, actions: { ...actionsOf(model), highlight: ModelDecision.slashHighlight(actionsOf(model).highlight, delta, menu.length) } } }
@@ -607,6 +602,24 @@ function runAccount(model: Model, step: ModelDecision.AccountStep): Update.Retur
   const { surface, docs, ...account } = step.state
   const next: Model = { ...model, surface, docs, account: { ...accountOf(model), ...account } }
   return step.commands.length === 0 ? { model: next } : { model: next, commands: step.commands.map(accountCommand) }
+}
+
+function actionScreen(model: Model): ModelDecision.ActionScreen {
+  const { open, maximized, selected, run, loading, starting, error, input, highlight } = actionsOf(model)
+  return { open, maximized, selected, run, loading, starting, error, input, highlight }
+}
+
+function actionCommand(command: ModelDecision.ActionCommand) {
+  switch (command.type) {
+    case "FocusComposer": return FocusComposer({})
+    case "LoadActions": return LoadActions({ flow: command.flow, ...(command.epoch === null ? {} : { epoch: command.epoch }) })
+  }
+}
+
+/** Applies a proved actions step: its state over the panel, its commands as Foldkit Commands. */
+function runActions(model: Model, step: ModelDecision.ActionStep): Update.Return<Model, Message, Factory | Actions> {
+  const next: Model = { ...model, actions: { ...actionsOf(model), ...step.state } }
+  return step.commands.length === 0 ? { model: next } : { model: next, commands: step.commands.map(actionCommand) }
 }
 
 /** A click and a browser deep link request the same durable wiki flow; the event alone moves the pane. */

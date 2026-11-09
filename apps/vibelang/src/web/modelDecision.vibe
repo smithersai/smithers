@@ -321,3 +321,73 @@ export function retriedAccount(state: AccountScreen, ledgerSeq: number): Account
   if (state.retry === "people") return { state: waiting, commands: [{ type: "LoadPeople" }] }
   return { state: waiting, commands: [{ type: "SignOut" }] }
 }
+
+// ACTIONS UPDATE
+// The actions arms of `update`, the same way: the panel state they touch, and commands main.vibe interprets.
+
+export interface ActionScreen {
+  readonly open: boolean
+  readonly maximized: boolean
+  readonly selected: string
+  readonly run: string
+  readonly loading: boolean
+  readonly starting: boolean
+  readonly error: string
+  readonly input: string
+  readonly highlight: number
+}
+export type ActionCommand =
+  | { readonly type: "FocusComposer" }
+  | { readonly type: "LoadActions"; readonly flow: string; readonly epoch: number | null }
+export interface ActionStep { readonly state: ActionScreen; readonly commands: ReadonlyArray<ActionCommand> }
+
+/** The panel button closes an open panel and gives focus back, or opens it and loads the selected flow; empty lists show loading. */
+//@ verify
+//@ ensures state.open ==> \result.state == { ...state, open: false, maximized: false }
+//@ ensures state.open ==> \result.commands == [{ type: "FocusComposer" }]
+//@ ensures !state.open ==> \result.state == { ...state, open: true, loading: !loaded }
+//@ ensures !state.open ==> \result.commands == [{ type: "LoadActions", flow: state.selected, epoch: epoch }]
+export function clickedActions(state: ActionScreen, loaded: boolean, epoch: number | null): ActionStep {
+  if (state.open) return { state: { ...state, open: false, maximized: false }, commands: [{ type: "FocusComposer" }] }
+  return { state: { ...state, open: true, loading: !loaded }, commands: [{ type: "LoadActions", flow: state.selected, epoch }] }
+}
+
+/** The size control changes only the size. */
+//@ verify
+//@ ensures \result.state == { ...state, maximized: !state.maximized }
+//@ ensures \result.commands == []
+export function maximizedActions(state: ActionScreen): ActionStep {
+  return { state: { ...state, maximized: !state.maximized }, commands: [] }
+}
+
+/** Choosing a flow leaves any open run, clears the old failure and loads it. */
+//@ verify
+//@ ensures \result.state == { ...state, selected: name, run: "", loading: true, error: "" }
+//@ ensures \result.commands == [{ type: "LoadActions", flow: name, epoch: epoch }]
+export function selectedAction(state: ActionScreen, name: string, epoch: number | null): ActionStep {
+  return { state: { ...state, selected: name, run: "", loading: true, error: "" }, commands: [{ type: "LoadActions", flow: name, epoch }] }
+}
+
+/** Typing changes only the input. */
+//@ verify
+//@ ensures \result.state == { ...state, input: value }
+//@ ensures \result.commands == []
+export function updatedActionInput(state: ActionScreen, value: string): ActionStep {
+  return { state: { ...state, input: value }, commands: [] }
+}
+
+/** Retry clears the failure and reloads the selected flow. */
+//@ verify
+//@ ensures \result.state == { ...state, loading: true, error: "" }
+//@ ensures \result.commands == [{ type: "LoadActions", flow: state.selected, epoch: epoch }]
+export function retriedActions(state: ActionScreen, epoch: number | null): ActionStep {
+  return { state: { ...state, loading: true, error: "" }, commands: [{ type: "LoadActions", flow: state.selected, epoch }] }
+}
+
+/** A failure stops both waits and shows its code. */
+//@ verify
+//@ ensures \result.state == { ...state, loading: false, starting: false, error: code }
+//@ ensures \result.commands == []
+export function failedActions(state: ActionScreen, code: string): ActionStep {
+  return { state: { ...state, loading: false, starting: false, error: code }, commands: [] }
+}

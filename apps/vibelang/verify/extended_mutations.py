@@ -4933,3 +4933,21 @@ cases.extend([('src/web/modelDecision.vibe', 'account-menu-open', 'clickedAccoun
  ('src/web/modelDecision.vibe', 'account-retry-grant', 'retriedAccount', 'if (state.retry === "grant") return { state: waiting, commands: [{ type: "GrantRole", id: state.target, role: state.targetRole }] }', 'if (state.retry === "grant") return { state: waiting, commands: [{ type: "SignOut" }] }', 'retry repeats the failed grant'),
  ('src/web/modelDecision.vibe', 'account-retry-grant-id', 'retriedAccount', 'id: state.target,', 'id: "",', 'retry grants the chosen person'),
  ('src/web/modelDecision.vibe', 'account-retry-signout', 'retriedAccount', 'return { state: waiting, commands: [{ type: "SignOut" }] }', 'return { state: waiting, commands: [{ type: "LoadPeople" }] }', 'retry repeats the failed sign-out')])
+
+# Batch 23: the actions arms of `update`, on plain types.
+cases.extend([('src/web/modelDecision.vibe', 'actions-click-close', 'clickedActions', 'open: false, maximized: false', 'open: false, maximized: state.maximized', 'closing the panel also unmaximizes it'),
+ ('src/web/modelDecision.vibe', 'actions-click-focus', 'clickedActions', 'commands: [{ type: "FocusComposer" }]', 'commands: []', 'closing returns focus'),
+ ('src/web/modelDecision.vibe', 'actions-click-branch', 'clickedActions', 'if (state.open) return', 'if (!state.open) return', 'the button toggles'),
+ ('src/web/modelDecision.vibe', 'actions-click-loading', 'clickedActions', 'loading: !loaded', 'loading: loaded', 'only an empty list shows loading'),
+ ('src/web/modelDecision.vibe', 'actions-click-epoch', 'clickedActions', 'flow: state.selected, epoch }', 'flow: state.selected, epoch: null }', 'the load carries its epoch'),
+ ('src/web/modelDecision.vibe', 'actions-click-flow', 'clickedActions', 'flow: state.selected,', 'flow: "",', 'opening loads the selected flow'),
+ ('src/web/modelDecision.vibe', 'actions-maximized', 'maximizedActions', 'maximized: !state.maximized', 'maximized: state.maximized', 'the size control flips the size'),
+ ('src/web/modelDecision.vibe', 'actions-selected-run', 'selectedAction', 'run: "", ', 'run: state.run, ', 'choosing a flow leaves the run'),
+ ('src/web/modelDecision.vibe', 'actions-selected-loading', 'selectedAction', 'loading: true, ', 'loading: false, ', 'choosing a flow loads it'),
+ ('src/web/modelDecision.vibe', 'actions-selected-error', 'selectedAction', 'loading: true, error: ""', 'loading: true, error: state.error', 'choosing a flow clears the failure'),
+ ('src/web/modelDecision.vibe', 'actions-selected-flow', 'selectedAction', 'flow: name,', 'flow: state.selected,', 'the load names the chosen flow'),
+ ('src/web/modelDecision.vibe', 'actions-input', 'updatedActionInput', 'input: value', 'input: state.input', 'typing changes the input'),
+ ('src/web/modelDecision.vibe', 'actions-retried-error', 'retriedActions', 'error: ""', 'error: state.error', 'retry clears the failure'),
+ ('src/web/modelDecision.vibe', 'actions-retried-flow', 'retriedActions', 'flow: state.selected,', 'flow: "",', 'retry reloads the selected flow'),
+ ('src/web/modelDecision.vibe', 'actions-failed-starting', 'failedActions', 'starting: false', 'starting: state.starting', 'a failure ends the start'),
+ ('src/web/modelDecision.vibe', 'actions-failed-code', 'failedActions', 'error: code', 'error: ""', 'a failure shows its code')])
