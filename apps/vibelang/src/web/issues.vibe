@@ -37,10 +37,10 @@ export const initialIssues: IssuesUi = {
 /** Typed text that is not a whole issue number names no parent; the server's tree check refuses it as a typed reason. */
 function parentNumber(text: string): number {
   const parent = Number(text.trim())
-  return Number.isSafeInteger(parent) && parent >= 0 ? parent : 0
+  return IssueDecision.issueParent(Number.isSafeInteger(parent), parent)
 }
 export function issueRequest(ui: IssuesUi, op: IssueRequest["op"]): IssueRequest {
-  return { op, number: ui.selected, parent: parentNumber(ui.parent), title: ui.title, text: op === "comment" ? ui.comment : ui.summary, example: ui.example, prior: ui.prior, assignee: ui.assignee, key: ui.keyPrefix === "" ? String(ui.serial + 1) : `${ui.keyPrefix}-${ui.serial + 1}` }
+  return { op, number: ui.selected, parent: parentNumber(ui.parent), title: ui.title, text: IssueDecision.issueRequestText(op === "comment", ui.comment, ui.summary), example: ui.example, prior: ui.prior, assignee: ui.assignee, key: ui.keyPrefix === "" ? String(ui.serial + 1) : `${ui.keyPrefix}-${ui.serial + 1}` }
 }
 /** The plain state the proved decisions in `issueDecision.vibe` read and return. */
 export function issueScreen(ui: IssuesUi): IssueDecision.IssueScreen {

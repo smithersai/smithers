@@ -99,3 +99,133 @@ export function updatedDraftMenu(value: string, empty: boolean): { readonly slas
   const slash = value.startsWith("/")
   return { slash, load: slash && empty }
 }
+
+export type SandboxPane = "closed" | "pane" | "max"
+
+/** Taking the screen back shrinks a maximized sandbox and leaves any other pane as it was. */
+//@ verify
+//@ ensures pane == "max" ==> \result == "pane"
+//@ ensures pane != "max" ==> \result == pane
+export function minimizedSandbox(pane: SandboxPane): SandboxPane {
+  return pane === "max" ? "pane" : pane
+}
+
+export interface TourStart {
+  readonly tour: boolean
+  readonly toured: boolean
+  readonly tourDismissed: boolean
+  readonly autoTour: boolean
+  readonly surface: "splash" | "chat"
+  readonly palette: boolean
+  readonly docs: "pane" | "max"
+  readonly tourError: string
+  readonly conversation: string
+  readonly wikiAfter: string
+  readonly wikiStatus: "loading" | "ready" | "error"
+  readonly step: number
+  readonly paused: boolean
+  readonly target: string
+  readonly epoch: number
+  readonly from: number
+  readonly stream: "open" | "failed"
+}
+export interface TourStarted { readonly started: boolean; readonly resetClient: boolean; readonly state: TourStart }
+
+/** Learn more makes the page this tab's tour and hands control to the agent; a second Learn more while it runs changes nothing. */
+//@ verify
+//@ ensures state.tour ==> \result == { started: false, resetClient: false, state: state }
+//@ ensures !state.tour ==> \result.started
+//@ ensures !state.tour ==> \result.resetClient == (state.conversation != conversation)
+//@ ensures !state.tour ==> \result.state == { ...state, tour: true, toured: true, tourDismissed: false, autoTour: false, surface: "splash", palette: false, docs: "pane", tourError: "", conversation: conversation, wikiAfter: "", wikiStatus: "ready", step: 1, paused: false, target: "splash", epoch: state.epoch + 1, from: 0, stream: "open" }
+export function startedTour(state: TourStart, conversation: string): TourStarted {
+  if (state.tour) return { started: false, resetClient: false, state }
+  return { started: true, resetClient: state.conversation !== conversation, state: { ...state, tour: true, toured: true, tourDismissed: false, autoTour: false, surface: "splash", palette: false, docs: "pane", tourError: "", conversation, wikiAfter: "", wikiStatus: "ready", step: 1, paused: false, target: "splash", epoch: state.epoch + 1, from: 0, stream: "open" } }
+}
+
+export interface TourEnd {
+  readonly tour: boolean
+  readonly tourDismissed: boolean
+  readonly surface: "splash" | "chat"
+  readonly palette: boolean
+  readonly draft: string
+  readonly docs: "pane" | "max"
+  readonly sandboxPane: SandboxPane
+  readonly issuesOpen: boolean
+  readonly slash: boolean
+  readonly maximized: boolean
+}
+
+/** Ending a tour gives the screen back: chat, nothing maximized, nothing open, an empty draft. */
+//@ verify
+//@ ensures \result == { ...state, tour: false, tourDismissed: true, surface: "chat", palette: false, draft: "", docs: "pane", sandboxPane: minimizedSandbox(state.sandboxPane), issuesOpen: false, slash: false, maximized: false }
+export function endedTour(state: TourEnd): TourEnd {
+  return { ...state, tour: false, tourDismissed: true, surface: "chat", palette: false, draft: "", docs: "pane", sandboxPane: minimizedSandbox(state.sandboxPane), issuesOpen: false, slash: false, maximized: false }
+}
+
+export interface TourReceipt { readonly kind: "replay" | "ignore" | "apply"; readonly present: boolean; readonly drive: boolean; readonly end: boolean }
+
+/** A tour event replays on a gap, is ignored when already applied, and otherwise presents, drives or ends the tour. A tour this tab dismissed presents nothing. */
+//@ verify
+//@ ensures gap ==> \result == { kind: "replay", present: false, drive: false, end: false }
+//@ ensures !gap && sameSeq ==> \result == { kind: "ignore", present: false, drive: false, end: false }
+//@ ensures !gap && !sameSeq ==> \result.kind == "apply"
+//@ ensures !gap && !sameSeq ==> \result.present == (!dismissed && walkthrough && (type == "WalkthroughDriven" || type == "TourPaused" || type == "TourResumed" || type == "TourSought"))
+//@ ensures !gap && !sameSeq ==> \result.drive == (\result.present && type == "WalkthroughDriven")
+//@ ensures !gap && !sameSeq ==> \result.end == (tourEntry && (type == "TourEnded" || type == "ReplyFinished" || type == "ReplyFailed"))
+export function tourReceived(gap: boolean, sameSeq: boolean, dismissed: boolean, walkthrough: boolean, tourEntry: boolean, type: string): TourReceipt {
+  if (gap) return { kind: "replay", present: false, drive: false, end: false }
+  if (sameSeq) return { kind: "ignore", present: false, drive: false, end: false }
+  const present = !dismissed && walkthrough && (type === "WalkthroughDriven" || type === "TourPaused" || type === "TourResumed" || type === "TourSought")
+  return { kind: "apply", present, drive: present && type === "WalkthroughDriven", end: tourEntry && (type === "TourEnded" || type === "ReplyFinished" || type === "ReplyFailed") }
+}
+
+/** A seek holds the presentation still until the agent drives the next stop. */
+//@ verify
+//@ ensures \result == (paused || type == "TourSought")
+export function presentedPaused(paused: boolean, type: string): boolean {
+  return paused || type === "TourSought"
+}
+
+/** A stop that names no target stays on the current one. */
+//@ verify
+//@ ensures target != "" ==> \result == target
+//@ ensures target == "" ==> \result == current
+export function tourTarget(target: string, current: string): string {
+  return target !== "" ? target : current
+}
+
+export interface WalkthroughPlan {
+  readonly surface: "splash" | "chat"
+  readonly keepsCommands: boolean
+  readonly ask: boolean
+  readonly clickIssues: boolean
+  readonly list: boolean
+  readonly vips: boolean
+  readonly card: number
+  readonly wiki: boolean
+  readonly slash: boolean
+  readonly sandbox: boolean
+  readonly finish: boolean
+}
+
+/** Each tour stop invokes the same messages the person's own controls send; the demonstration question is asked once. */
+//@ verify
+//@ ensures \result.surface == (step == 1 ? "splash" : "chat")
+//@ ensures \result.keepsCommands == (step != 10)
+//@ ensures \result.ask == (step == 2 && !posted)
+//@ ensures \result.clickIssues == (step == 3 || step == 5)
+//@ ensures \result.list == (step == 3)
+//@ ensures \result.vips == (step == 5)
+//@ ensures \result.card == (step == 4 ? 48 : step == 5 ? 45 : 0)
+//@ ensures \result.wiki == (step == 6)
+//@ ensures \result.slash == (step == 8)
+//@ ensures \result.sandbox == (step == 9)
+//@ ensures \result.finish == (step == 10)
+export function walkthroughPlan(step: number, posted: boolean): WalkthroughPlan {
+  return {
+    surface: step === 1 ? "splash" : "chat", keepsCommands: step !== 10, ask: step === 2 && !posted,
+    clickIssues: step === 3 || step === 5, list: step === 3, vips: step === 5,
+    card: step === 4 ? 48 : step === 5 ? 45 : 0,
+    wiki: step === 6, slash: step === 8, sandbox: step === 9, finish: step === 10,
+  }
+}

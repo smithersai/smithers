@@ -75,7 +75,7 @@ export function roleGrantApplied(nextSeq: number, currentSeq: number, nextRoles:
 /** Losing maintainer closes an open role dialog. */
 //@ verify
 //@ ensures \result == (role != "maintainer" && target != "")
-export function roleDialogCloses(role: string, target: string): boolean {
+export function roleDialogCloses(role: PersonRole, target: string): boolean {
   return role !== "maintainer" && target !== ""
 }
 
@@ -390,4 +390,148 @@ export function retriedActions(state: ActionScreen, epoch: number | null): Actio
 //@ ensures \result.commands == []
 export function failedActions(state: ActionScreen, code: string): ActionStep {
   return { state: { ...state, loading: false, starting: false, error: code }, commands: [] }
+}
+
+// ACCOUNT EVENTS
+// The arms that take a whole identity or a role event, on plain data; main.vibe keeps the person, the ledger and the Commands.
+
+export type PersonRole = "viewer" | "new" | "community" | "contributor" | "maintainer"
+export interface LoadedScreen {
+  readonly id: string
+  readonly role: string
+  readonly target: string
+  readonly error: string
+  readonly people: PeoplePane
+  readonly epoch: number
+  readonly actionsEpoch: number
+  readonly wikiEditRequest: number
+  readonly sandboxRequest: number
+}
+export interface AccountLoadedStep {
+  readonly changedAccount: boolean
+  readonly changedPerson: boolean
+  readonly closeDialog: boolean
+  readonly name: string
+  readonly error: string
+  readonly people: PeoplePane
+  readonly notice: string
+  readonly epoch: number
+  readonly from: number
+  readonly actionsEpoch: number
+  readonly wikiEditRequest: number
+  readonly sandboxRequest: number
+}
+
+/** A loaded identity replaces the person; a change of person or role retires what was scoped to the old one. Signing out keeps the failure text and closes People. */
+//@ verify
+//@ ensures \result.changedAccount == (id != state.id || role != state.role)
+//@ ensures \result.changedPerson == (id != state.id)
+//@ ensures \result.closeDialog == (state.target != "")
+//@ ensures login != "" ==> \result.name == login
+//@ ensures login == "" ==> \result.name == "Guest"
+//@ ensures id == "" ==> \result.error == state.error && \result.people == "closed" && \result.notice == ""
+//@ ensures id != "" ==> \result.error == "" && \result.people == state.people && \result.notice == "Signed in as " + login + "."
+//@ ensures \result.epoch == state.epoch + 1 && \result.from == ledgerSeq
+//@ ensures \result.changedAccount ==> \result.actionsEpoch == state.actionsEpoch + 1 && \result.wikiEditRequest == state.wikiEditRequest + 1 && \result.sandboxRequest == state.sandboxRequest + 1
+//@ ensures !\result.changedAccount ==> \result.actionsEpoch == state.actionsEpoch && \result.wikiEditRequest == state.wikiEditRequest && \result.sandboxRequest == state.sandboxRequest
+export function accountLoaded(state: LoadedScreen, id: string, login: string, role: string, ledgerSeq: number): AccountLoadedStep {
+  const changedAccount = accountChanged(id, state.id, role, state.role)
+  const bump = changedAccount ? 1 : 0
+  return {
+    changedAccount, changedPerson: id !== state.id, closeDialog: state.target !== "",
+    name: login !== "" ? login : "Guest",
+    error: id === "" ? state.error : "",
+    people: id === "" ? "closed" : state.people,
+    notice: id === "" ? "" : "Signed in as " + login + ".",
+    epoch: state.epoch + 1, from: ledgerSeq,
+    actionsEpoch: state.actionsEpoch + bump, wikiEditRequest: state.wikiEditRequest + bump, sandboxRequest: state.sandboxRequest + bump,
+  }
+}
+
+export interface RoleFacts {
+  readonly gap: boolean
+  readonly granted: boolean
+  readonly seq: number
+  readonly previousSeq: number
+  readonly roles: number
+  readonly previousRoles: number
+  readonly mine: boolean
+  readonly participation: boolean
+  readonly person: boolean
+  readonly peopleOpen: boolean
+  readonly ledgerRole: PersonRole
+  readonly roleName: string
+  readonly name: string
+}
+export interface RoleScreen {
+  readonly role: PersonRole
+  readonly target: string
+  readonly pending: boolean
+  readonly notice: string
+  readonly epoch: number
+  readonly from: number
+  readonly actionsEpoch: number
+  readonly wikiEditRequest: number
+  readonly sandboxRequest: number
+}
+export interface RoleStep { readonly replay: boolean; readonly changedRole: boolean; readonly closeDialog: boolean; readonly loadPeople: boolean; readonly state: RoleScreen }
+
+/** The event grants a role: it is a RoleGranted, the sequence advanced, and the role table grew. */
+//@ verify
+//@ ensures \result == (facts.granted && facts.seq > facts.previousSeq && facts.roles > facts.previousRoles)
+export function roleApplied(facts: RoleFacts): boolean {
+  return facts.granted && roleGrantApplied(facts.seq, facts.previousSeq, facts.roles, facts.previousRoles)
+}
+
+/** A missed role event resumes from the ledger. A grant updates my role only when it is mine, names the change, and refreshes People when People is open. */
+//@ verify
+//@ ensures facts.gap ==> \result == { replay: true, changedRole: false, closeDialog: false, loadPeople: false, state: { ...state, epoch: state.epoch + 1, from: facts.seq } }
+//@ ensures !facts.gap ==> !\result.replay && \result.state.epoch == state.epoch && \result.state.from == state.from
+//@ ensures !facts.gap && roleApplied(facts) && facts.mine ==> \result.state.role == facts.ledgerRole
+//@ ensures !facts.gap && !(roleApplied(facts) && facts.mine) ==> \result.state.role == state.role
+//@ ensures !facts.gap ==> \result.changedRole == (\result.state.role != state.role)
+//@ ensures !facts.gap ==> \result.closeDialog == roleDialogCloses(\result.state.role, state.target)
+//@ ensures !facts.gap && \result.closeDialog ==> \result.state.target == "" && !\result.state.pending
+//@ ensures !facts.gap && !\result.closeDialog ==> \result.state.target == state.target && \result.state.pending == state.pending
+//@ ensures !facts.gap ==> \result.loadPeople == (roleApplied(facts) && facts.peopleOpen)
+//@ ensures !facts.gap && roleApplied(facts) && facts.mine && facts.participation ==> \result.state.notice == "You're now Community."
+//@ ensures !facts.gap && roleApplied(facts) && facts.mine && !facts.participation ==> \result.state.notice == "You're now " + facts.roleName + "."
+//@ ensures !facts.gap && roleApplied(facts) && !facts.mine && facts.person && facts.peopleOpen ==> \result.state.notice == facts.name + " is now " + facts.roleName + "."
+//@ ensures !facts.gap && !(roleApplied(facts) && (facts.mine || (facts.person && facts.peopleOpen))) ==> \result.state.notice == state.notice
+//@ ensures !facts.gap && \result.changedRole ==> \result.state.actionsEpoch == state.actionsEpoch + 1 && \result.state.wikiEditRequest == state.wikiEditRequest + 1 && \result.state.sandboxRequest == state.sandboxRequest + 1
+//@ ensures !facts.gap && !\result.changedRole ==> \result.state.actionsEpoch == state.actionsEpoch && \result.state.wikiEditRequest == state.wikiEditRequest && \result.state.sandboxRequest == state.sandboxRequest
+export function roleReceived(state: RoleScreen, facts: RoleFacts): RoleStep {
+  if (facts.gap) return { replay: true, changedRole: false, closeDialog: false, loadPeople: false, state: { ...state, epoch: state.epoch + 1, from: facts.seq } }
+  const applied = roleApplied(facts)
+  const role: PersonRole = applied && facts.mine ? facts.ledgerRole : state.role
+  const changedRole = role !== state.role
+  const closeDialog = roleDialogCloses(role, state.target)
+  const notice = applied && facts.mine
+    ? (facts.participation ? "You're now Community." : "You're now " + facts.roleName + ".")
+    : applied && facts.person && facts.peopleOpen ? facts.name + " is now " + facts.roleName + "." : state.notice
+  const bump = changedRole ? 1 : 0
+  return {
+    replay: false, changedRole, closeDialog, loadPeople: applied && facts.peopleOpen,
+    state: { ...state, role, notice, target: closeDialog ? "" : state.target, pending: closeDialog ? false : state.pending, actionsEpoch: state.actionsEpoch + bump, wikiEditRequest: state.wikiEditRequest + bump, sandboxRequest: state.sandboxRequest + bump },
+  }
+}
+
+// RUN SELECTION
+
+export interface RunSelection { readonly step: string; readonly run: string; readonly selected: string; readonly open: boolean; readonly maximized: boolean }
+
+/** Picking a run opens it maximized from its own flow; an unknown run keeps the selected flow. */
+//@ verify
+//@ ensures known ==> \result == { step: "", run: id, selected: flow, open: true, maximized: true }
+//@ ensures !known ==> \result == { step: "", run: id, selected: state.selected, open: true, maximized: true }
+export function selectedRun(state: RunSelection, id: string, known: boolean, flow: string): RunSelection {
+  return { step: "", run: id, selected: known ? flow : state.selected, open: true, maximized: true }
+}
+
+/** A started run follows the panel only when the panel is already showing a run. */
+//@ verify
+//@ ensures state.run == "" ==> \result == state
+//@ ensures state.run != "" ==> \result == { ...state, step: "", run: id, selected: flow }
+export function followedRun(state: RunSelection, id: string, flow: string): RunSelection {
+  return state.run === "" ? state : { ...state, step: "", run: id, selected: flow }
 }

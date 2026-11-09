@@ -367,3 +367,19 @@ export function issueFailed(state: IssueScreen, empty: boolean, relevant: boolea
 export function issueDetailsFailed(state: IssueScreen): IssueScreen {
   return { ...state, error: "Couldn't load comments. Retry." }
 }
+
+/** A comment request carries the comment; every other request carries the summary. */
+//@ verify
+//@ ensures comment ==> \result == commentText
+//@ ensures !comment ==> \result == summary
+export function issueRequestText(comment: boolean, commentText: string, summary: string): string {
+  return comment ? commentText : summary
+}
+
+/** Text that is not a whole non-negative number names no parent. */
+//@ verify
+//@ ensures whole && parent >= 0 ==> \result == parent
+//@ ensures !(whole && parent >= 0) ==> \result == 0
+export function issueParent(whole: boolean, parent: number): number {
+  return whole && parent >= 0 ? parent : 0
+}

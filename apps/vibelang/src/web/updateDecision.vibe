@@ -1,0 +1,198 @@
+// Decisions inside the web update, over plain values: Escape's ladder, the applied event and the step after every message. `update` reads the model and builds Commands.
+
+export type EscapeRoute = "tour" | "palette" | "docs" | "splash"
+export type EscapeKind = "tour" | "palette" | "splash" | "role" | "issue-dialog" | "slash" | "menu" | "issues" | "actions" | "wiki" | "none" | "sandbox" | "docs"
+export type IssueDialog = "" | "commit" | "link" | "split"
+export interface EscapeScreen {
+  readonly target: string
+  readonly error: string
+  readonly dialog: IssueDialog
+  readonly issuesOpen: boolean
+  readonly slash: boolean
+  readonly menu: boolean
+  readonly actionsMax: boolean
+  readonly editing: boolean
+  readonly submitting: boolean
+  readonly sandboxMax: boolean
+  readonly docs: "pane" | "max"
+}
+export interface EscapeStep { readonly kind: EscapeKind; readonly reveal: boolean; readonly state: EscapeScreen }
+
+/** Escape first takes control back from the agent, then closes exactly one thing, innermost first. */
+//@ verify
+//@ ensures route == "tour" ==> \result == { kind: "tour", reveal: false, state: state }
+//@ ensures route != "tour" && state.target != "" ==> \result == { kind: "role", reveal: false, state: { ...state, target: "", error: "" } }
+//@ ensures route != "tour" && state.target == "" && state.issuesOpen && state.dialog != "" ==> \result == { kind: "issue-dialog", reveal: false, state: { ...state, dialog: "" } }
+//@ ensures route != "tour" && state.target == "" && !(state.issuesOpen && state.dialog != "") && state.slash ==> \result == { kind: "slash", reveal: false, state: { ...state, slash: false } }
+//@ ensures route == "palette" && state.target == "" && !(state.issuesOpen && state.dialog != "") && !state.slash ==> \result == { kind: "palette", reveal: false, state: state }
+//@ ensures (route == "docs" || route == "splash") && state.target == "" && !(state.issuesOpen && state.dialog != "") && !state.slash && state.menu ==> \result == { kind: "menu", reveal: false, state: { ...state, menu: false } }
+//@ ensures (route == "docs" || route == "splash") && state.target == "" && !(state.issuesOpen && state.dialog != "") && !state.slash && !state.menu && state.issuesOpen ==> \result == { kind: "issues", reveal: false, state: { ...state, issuesOpen: false } }
+//@ ensures (route == "docs" || route == "splash") && state.target == "" && !state.issuesOpen && !state.slash && !state.menu && state.actionsMax ==> \result == { kind: "actions", reveal: false, state: { ...state, actionsMax: false } }
+//@ ensures (route == "docs" || route == "splash") && state.target == "" && !state.issuesOpen && !state.slash && !state.menu && !state.actionsMax && state.editing && state.submitting ==> \result == { kind: "none", reveal: false, state: state }
+//@ ensures (route == "docs" || route == "splash") && state.target == "" && !state.issuesOpen && !state.slash && !state.menu && !state.actionsMax && state.editing && !state.submitting ==> \result == { kind: "wiki", reveal: false, state: { ...state, editing: false } }
+//@ ensures (route == "docs" || route == "splash") && state.target == "" && !state.issuesOpen && !state.slash && !state.menu && !state.actionsMax && !state.editing && state.sandboxMax ==> \result == { kind: "sandbox", reveal: false, state: { ...state, sandboxMax: false } }
+//@ ensures route == "docs" && state.target == "" && !state.issuesOpen && !state.slash && !state.menu && !state.actionsMax && !state.editing && !state.sandboxMax ==> \result == { kind: "docs", reveal: wikiPane, state: { ...state, docs: "pane" } }
+//@ ensures route == "splash" && state.target == "" && !state.issuesOpen && !state.slash && !state.menu && !state.actionsMax && !state.editing && !state.sandboxMax ==> \result == { kind: "splash", reveal: false, state: state }
+export function pressedEscape(state: EscapeScreen, route: EscapeRoute, wikiPane: boolean): EscapeStep {
+  if (route === "tour") return { kind: "tour", reveal: false, state }
+  if (state.target !== "") return { kind: "role", reveal: false, state: { ...state, target: "", error: "" } }
+  if (state.issuesOpen && state.dialog !== "") return { kind: "issue-dialog", reveal: false, state: { ...state, dialog: "" } }
+  if (state.slash) return { kind: "slash", reveal: false, state: { ...state, slash: false } }
+  if (route === "palette") return { kind: "palette", reveal: false, state }
+  if (state.menu) return { kind: "menu", reveal: false, state: { ...state, menu: false } }
+  if (state.issuesOpen) return { kind: "issues", reveal: false, state: { ...state, issuesOpen: false } }
+  if (state.actionsMax) return { kind: "actions", reveal: false, state: { ...state, actionsMax: false } }
+  if (state.editing) return state.submitting ? { kind: "none", reveal: false, state } : { kind: "wiki", reveal: false, state: { ...state, editing: false } }
+  if (state.sandboxMax) return { kind: "sandbox", reveal: false, state: { ...state, sandboxMax: false } }
+  if (route === "docs") return { kind: "docs", reveal: wikiPane, state: { ...state, docs: "pane" } }
+  return { kind: "splash", reveal: false, state }
+}
+
+export interface EventFacts {
+  readonly gap: boolean
+  readonly previousSeq: number
+  readonly seq: number
+  readonly type: string
+  readonly wikiUrl: boolean
+  readonly completed: boolean
+  readonly linksIssue: boolean
+  readonly editing: boolean
+  readonly samePage: boolean
+  readonly peopleMax: boolean
+  readonly streamOpen: boolean
+  readonly connection: string
+  readonly epoch: number
+  readonly from: number
+  readonly announced: number
+}
+export interface EventPlan {
+  readonly replay: boolean
+  readonly epoch: number
+  readonly from: number
+  readonly advanced: boolean
+  readonly pane: boolean
+  readonly plainPane: boolean
+  readonly wikiPane: boolean
+  readonly closeEditor: boolean
+  readonly peoplePane: boolean
+  readonly readAction: boolean
+  readonly refreshIssues: boolean
+  readonly connection: string
+  readonly announced: number
+}
+
+/** A missed event replays from the last applied one; an applied event moves only what it names. */
+//@ verify
+//@ ensures facts.gap ==> \result.replay && \result.epoch == facts.epoch + 1 && \result.from == facts.seq
+//@ ensures facts.gap ==> !\result.pane && !\result.plainPane && !\result.wikiPane && !\result.closeEditor && !\result.peoplePane && !\result.readAction && !\result.refreshIssues
+//@ ensures !facts.gap ==> !\result.replay && \result.epoch == facts.epoch && \result.from == facts.from
+//@ ensures !facts.gap ==> \result.advanced == (facts.seq > facts.previousSeq)
+//@ ensures !facts.gap ==> \result.pane == (facts.seq > facts.previousSeq && facts.type == "PaneOpened")
+//@ ensures !facts.gap ==> \result.plainPane == (\result.pane && !facts.wikiUrl)
+//@ ensures !facts.gap ==> \result.wikiPane == (\result.pane && facts.wikiUrl)
+//@ ensures !facts.gap ==> \result.closeEditor == (\result.pane && facts.editing && !facts.samePage)
+//@ ensures !facts.gap ==> \result.peoplePane == (\result.wikiPane && facts.peopleMax)
+//@ ensures !facts.gap ==> \result.readAction == (facts.seq > facts.previousSeq && facts.type == "ActionRequested")
+//@ ensures !facts.gap ==> \result.refreshIssues == (facts.completed && facts.linksIssue)
+//@ ensures facts.streamOpen ==> \result.connection == "Connected"
+//@ ensures !facts.streamOpen ==> \result.connection == facts.connection
+//@ ensures facts.completed && !facts.gap ==> \result.announced == facts.announced + 1
+//@ ensures !facts.completed || facts.gap ==> \result.announced == facts.announced
+export function eventReceived(facts: EventFacts): EventPlan {
+  const connection = facts.streamOpen ? "Connected" : facts.connection
+  if (facts.gap) return { replay: true, epoch: facts.epoch + 1, from: facts.seq, advanced: false, pane: false, plainPane: false, wikiPane: false, closeEditor: false, peoplePane: false, readAction: false, refreshIssues: false, connection, announced: facts.announced }
+  const advanced = facts.seq > facts.previousSeq
+  const pane = advanced && facts.type === "PaneOpened"
+  const wikiPane = pane && facts.wikiUrl
+  return {
+    replay: false, epoch: facts.epoch, from: facts.from, advanced, pane,
+    plainPane: pane && !facts.wikiUrl, wikiPane,
+    closeEditor: pane && facts.editing && !facts.samePage,
+    peoplePane: wikiPane && facts.peopleMax,
+    readAction: advanced && facts.type === "ActionRequested",
+    refreshIssues: facts.completed && facts.linksIssue,
+    connection, announced: facts.completed ? facts.announced + 1 : facts.announced,
+  }
+}
+
+/** A wiki pane scrolls below the event that opened it; a replayed pane keeps a position the transcript still has. */
+//@ verify
+//@ ensures id != "" ==> \result == id
+//@ ensures id == "" && known ==> \result == current
+//@ ensures id == "" && !known ==> \result == ""
+export function wikiAfterEvent(id: string, known: boolean, current: string): string {
+  if (id !== "") return id
+  return known ? current : ""
+}
+
+export interface AfterUpdate { readonly kind: "issues" | "measure" | "none"; readonly closeDialog: boolean; readonly clearRetry: boolean }
+
+/** After any message: a changed person or role re-gates the issue dialog; otherwise a running tour remeasures, except after a measurement or a focus return. */
+//@ verify
+//@ ensures hasIssues && (roleChanged || personChanged) ==> \result.kind == "issues" && \result.closeDialog == (dialogOpen && !permitted) && \result.clearRetry == personChanged
+//@ ensures !(hasIssues && (roleChanged || personChanged)) && tour && tag != "MeasuredTheatre" && tag != "FocusedPrompt" && tag != "RemeasureTheatre" ==> \result == { kind: "measure", closeDialog: false, clearRetry: false }
+//@ ensures !(hasIssues && (roleChanged || personChanged)) && !(tour && tag != "MeasuredTheatre" && tag != "FocusedPrompt" && tag != "RemeasureTheatre") ==> \result == { kind: "none", closeDialog: false, clearRetry: false }
+export function afterUpdate(hasIssues: boolean, roleChanged: boolean, personChanged: boolean, dialogOpen: boolean, permitted: boolean, tour: boolean, tag: string): AfterUpdate {
+  if (hasIssues && (roleChanged || personChanged)) return { kind: "issues", closeDialog: dialogOpen && !permitted, clearRetry: personChanged }
+  if (tour && tag !== "MeasuredTheatre" && tag !== "FocusedPrompt" && tag !== "RemeasureTheatre") return { kind: "measure", closeDialog: false, clearRetry: false }
+  return { kind: "none", closeDialog: false, clearRetry: false }
+}
+
+export type SubmitKind = "mode" | "sandbox" | "ignore" | "slash" | "post"
+export interface SubmitFacts { readonly mode: boolean; readonly sandbox: boolean; readonly slashed: boolean; readonly selected: boolean; readonly empty: boolean }
+
+/** A submitted draft is a mode switch, the sandbox, a picked slash command, or a post. Nothing else leaves the composer. */
+//@ verify
+//@ ensures facts.mode ==> \result == "mode"
+//@ ensures !facts.mode && facts.sandbox ==> \result == "sandbox"
+//@ ensures !facts.mode && !facts.sandbox && facts.slashed && facts.selected ==> \result == "slash"
+//@ ensures !facts.mode && !facts.sandbox && facts.slashed && !facts.selected ==> \result == "ignore"
+//@ ensures !facts.mode && !facts.sandbox && !facts.slashed && facts.empty ==> \result == "ignore"
+//@ ensures !facts.mode && !facts.sandbox && !facts.slashed && !facts.empty ==> \result == "post"
+export function submitKind(facts: SubmitFacts): SubmitKind {
+  if (facts.mode) return "mode"
+  if (facts.sandbox) return "sandbox"
+  if (facts.slashed) return facts.selected ? "slash" : "ignore"
+  return facts.empty ? "ignore" : "post"
+}
+
+/** The tour's own question keeps its stable post identity and is not counted as this tab's post. */
+//@ verify
+//@ ensures \result == (tour && step == 2 && question)
+export function demonstrates(tour: boolean, step: number, question: boolean): boolean {
+  return tour && step === 2 && question
+}
+
+/** Only a counted post advances the tab's numbering. */
+//@ verify
+//@ ensures demonstration ==> \result == sent
+//@ ensures !demonstration ==> \result == sent + 1
+export function sentAfter(demonstration: boolean, sent: number): number {
+  return demonstration ? sent : sent + 1
+}
+
+/** Only /mock and /live switch the mode. */
+//@ verify
+//@ ensures \result == (to == "mock" || to == "live")
+export function switchesMode(to: string): to is "mock" | "live" {
+  return to === "mock" || to === "live"
+}
+
+export type LaunchKind = "ignore" | "tour" | "run"
+
+/** A run starts only for a known command while none is starting; the slash command for the tour is the tour itself. */
+//@ verify
+//@ ensures (starting || !known) ==> \result == "ignore"
+//@ ensures !starting && known && isTour && slash ==> \result == "tour"
+//@ ensures !starting && known && !(isTour && slash) ==> \result == "run"
+export function launchKind(starting: boolean, known: boolean, isTour: boolean, slash: boolean): LaunchKind {
+  if (starting || !known) return "ignore"
+  return isTour && slash ? "tour" : "run"
+}
+
+/** The button retries the run on screen; a slash command never retries. */
+//@ verify
+//@ ensures \result == (button && run != "")
+export function launchRetries(button: boolean, run: string): boolean {
+  return button && run !== ""
+}
