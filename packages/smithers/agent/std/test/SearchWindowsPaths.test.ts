@@ -9,7 +9,7 @@ import { dirname, join, win32 } from "node:path"
 import { expect, it } from "vitest"
 import * as Glob from "../src/Glob.vibe"
 import * as Grep from "../src/Grep.vibe"
-import * as PortableSearch from "../src/PortableSearch.ts"
+import * as PortableSearch from "../src/PortableSearch.vibe"
 import * as Search from "../src/Search.vibe"
 
 it.each([

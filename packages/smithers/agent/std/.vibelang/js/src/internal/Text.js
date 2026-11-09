@@ -137,5 +137,6 @@ export const slice = (text, options) => {
  *
  * @category rendering
  * @since 1.0.0
+ * @throws {never}
  */
 export const notice = (unit, shown, total) => `Showing ${shown} of ${total} ${unit}; output was truncated.`;

@@ -51,7 +51,7 @@ export * as SearchContract from "./SearchContract.vibe"
 export * as SearchConformance from "./SearchConformance.vibe"
 
 /** @category layers @since 1.0.0 */
-export * as PortableSearch from "./PortableSearch.ts"
+export * as PortableSearch from "./PortableSearch.vibe"
 
 /** @category layers @since 1.0.0 */
 export * as NativeSearch from "./NativeSearch.ts"

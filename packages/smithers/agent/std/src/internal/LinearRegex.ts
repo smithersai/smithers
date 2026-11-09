@@ -28,7 +28,10 @@ type State =
 export const compile = (
   pattern: string,
   insensitive: boolean
-): { readonly test: (line: string) => Generator<void, boolean> } => {
+): {
+  /** @throws {never} */
+  readonly test: (line: string) => Generator<void, boolean>
+} => {
   let offset = 0
   const parse = (depth: number): Term => {
     if (depth > 128) throw new Error("patterns must not exceed 128 nested groups")

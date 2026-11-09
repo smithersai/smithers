@@ -10,7 +10,7 @@ import * as Glob from "../src/Glob.vibe"
 import * as Grep from "../src/Grep.vibe"
 import * as Ignore from "../src/internal/Ignore.ts"
 import * as NativeSearch from "../src/NativeSearch.ts"
-import * as PortableSearch from "../src/PortableSearch.ts"
+import * as PortableSearch from "../src/PortableSearch.vibe"
 import * as Search from "../src/Search.vibe"
 
 const temporary = mkdtempSync(join(tmpdir(), "std-ignore-"))

@@ -28,6 +28,7 @@ import * as Text from "./Text.js";
  *
  * @category search
  * @since 1.0.0
+ * @throws {never}
  */
 export const sourceLines = Text.sourceLines;
 /** Every context line belongs to exactly one match: the nearest, earliest on a tie. */
@@ -48,6 +49,7 @@ const owner = (matches, line) => {
  *
  * @category search
  * @since 1.0.0
+ * @throws {never}
  */
 export const group = (lines) => {
     const byFile = new Map();
@@ -91,6 +93,7 @@ export const group = (lines) => {
  *
  * @category search
  * @since 1.0.0
+ * @throws {never}
  */
 export const annotate = (matches, contents) => matches.map((match) => {
     const source = contents.get(match.file);

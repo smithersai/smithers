@@ -180,6 +180,7 @@ export const slice = (
  *
  * @category rendering
  * @since 1.0.0
+ * @throws {never}
  */
 export const notice = (unit: string, shown: number, total: number): string =>
   `Showing ${shown} of ${total} ${unit}; output was truncated.`

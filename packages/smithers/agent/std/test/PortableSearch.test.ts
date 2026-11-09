@@ -12,7 +12,7 @@ import * as Grep from "../src/Grep.vibe"
 import * as Grouping from "../src/internal/Grouping.ts"
 import * as LinearRegex from "../src/internal/LinearRegex.ts"
 import * as NativeSearch from "../src/NativeSearch.ts"
-import * as PortableSearch from "../src/PortableSearch.ts"
+import * as PortableSearch from "../src/PortableSearch.vibe"
 import * as Search from "../src/Search.vibe"
 import * as SearchConformance from "../src/SearchConformance.vibe"
 import * as SearchContract from "../src/SearchContract.vibe"
@@ -66,7 +66,7 @@ describe("portable search bounds", () => {
     const script = `
       import { Effect, Layer } from "effect"
       import { NodeServices } from "@effect/platform-node"
-      import * as PortableSearch from ${JSON.stringify(new URL("../src/PortableSearch.ts", import.meta.url).href)}
+      import * as PortableSearch from ${JSON.stringify(new URL("../src/PortableSearch.vibe", import.meta.url).href)}
       import * as Grep from ${JSON.stringify(new URL("../src/Grep.vibe", import.meta.url).href)}
       let ticks = 0
       const timer = setInterval(() => { ticks++ }, 1)

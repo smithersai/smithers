@@ -31,14 +31,14 @@ const candidates = (
   root: string,
   globs: ReadonlyArray<string>
 ): Effect.Effect<ReadonlyArray<string>> =>
-  Effect.gen(function*() {
+  effect {
     if (walked.explicitFile) return walked.files
     const included = walked.files.filter((file) =>
       Contract.includedByGlobs(globs, Walk.relativeForPattern(path, root, file), path.basename(file))
     )
-    const links = yield* Walk.symbolicLinks(fileSystem, included)
+    const links = try Walk.symbolicLinks(fileSystem, included)
     return included.filter((_, index) => links[index] !== true)
-  })
+  }
 
 const preview = (line: string): string => {
   let head = ""
@@ -53,24 +53,28 @@ const preview = (line: string): string => {
 const grep = (
   input: Search.GrepInput
 ): Effect.Effect<Search.GrepOutput, StdError.StdError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fileSystem = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
+  effect {
+    const fileSystem = try FileSystem.FileSystem
+    const path = try Path.Path
     const includedByGlobs = (relative: string, basename: string) =>
       Contract.includedByGlobs(input.globs, relative, basename)
-    const walked = yield* Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore, includedByGlobs)
+    const walked = try Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore, includedByGlobs)
     const insensitive = input.ignoreCase || (input.smartCase && !/[A-Z]/.test(input.pattern))
-    const regex = LinearRegex.compile(
-      input.fixedStrings ? escapeRegex(input.pattern) : input.pattern,
-      insensitive
-    )
+    const regex = try Effect.orDie(Effect.try({
+      try: () =>
+        LinearRegex.compile(
+          input.fixedStrings ? escapeRegex(input.pattern) : input.pattern,
+          insensitive
+        ),
+      catch: (error) => error
+    }))
     const shownMatches: Array<Search.GrepMatch> = []
     const shownFiles: Array<string> = []
     let total = 0
     let filesSearched = 0
     let skippedBinary = 0
 
-    const included = yield* candidates(fileSystem, path, walked, input.root, input.globs)
+    const included = try candidates(fileSystem, path, walked, input.root, input.globs)
     for (const file of included) {
       // Count every admitted file, including unreadable files and binaries.
       filesSearched++
@@ -82,14 +86,14 @@ const grep = (
       let lineNumber = 0
       let through = 0
       const scanLine = (text: string) =>
-        Effect.gen(function*() {
+        effect {
           lineNumber++
           let matches = false
           if (input.maxCount === undefined || count < input.maxCount) {
             const evaluation = regex.test(text)
             let step = evaluation.next()
             while (!step.done) {
-              yield* Effect.yieldNow
+              try Effect.yieldNow
               step = evaluation.next()
             }
             matches = step.value
@@ -117,49 +121,47 @@ const grep = (
           }
           recent.delete(lineNumber - input.beforeContext)
           if (matched.length >= remaining + 1) recent.clear()
-        })
+        }
       // Split only on LF (stripping a preceding CR), just like sourceLines.
       // Stream.splitLines also treats a standalone CR as a delimiter.
       const decoder = new TextDecoder()
       let fragments: Array<string> = []
       const consume = (chunk: string) =>
-        Effect.gen(function*() {
+        effect {
           let from = 0
           let newline = chunk.indexOf("\n")
           while (newline >= 0) {
             fragments.push(chunk.slice(from, newline))
             const line = fragments.join("")
             fragments = []
-            yield* scanLine(line.endsWith("\r") ? line.slice(0, -1) : line)
+            try scanLine(line.endsWith("\r") ? line.slice(0, -1) : line)
             from = newline + 1
             newline = chunk.indexOf("\n", from)
           }
           if (from < chunk.length) fragments.push(chunk.slice(from))
-        })
-      const scanned = yield* Effect.gen(function*() {
+        }
+      const scanned = try (effect {
         let started = false
         // A guarded disk host can safely expose atomic reads while refusing
         // open streaming handles. Retry through that same filesystem service
         // only before any bytes arrive, so a failed partial stream is never
         // combined with a second reading of a file that may have changed.
-        yield* fileSystem.stream(file).pipe(
+        try fileSystem.stream(file).pipe(
           Stream.catch((error) => started ? Stream.fail(error) : Stream.fromEffect(fileSystem.readFile(file))),
-          Stream.runForEach((bytes) => {
+          Stream.runForEach(effect (bytes) => {
             started = true
             if (bytes.includes(0)) {
-              return Effect.fail(
-                new StdError.StdError({
-                  code: "binary_file",
-                  message: `Cannot search binary file: ${file}`,
-                  path: file
-                })
-              )
+              throw new StdError.StdError({
+                code: "binary_file",
+                message: `Cannot search binary file: ${file}`,
+                path: file
+              })
             }
-            return consume(decoder.decode(bytes, { stream: true }))
+            try consume(try Effect.orDie(Effect.try(() => decoder.decode(bytes, { stream: true }))))
           })
         )
-        yield* consume(decoder.decode())
-        if (fragments.length > 0) yield* scanLine(fragments.join(""))
+        try consume(try Effect.orDie(Effect.try(() => decoder.decode())))
+        if (fragments.length > 0) try scanLine(fragments.join(""))
         return true
       }).pipe(Effect.catch((error) => {
         if (error instanceof StdError.StdError) {
@@ -181,14 +183,14 @@ const grep = (
       // moving to the next file. Overflow files never load symbol source.
       const contents = new Map<string, ReadonlyArray<string>>()
       if (input.symbols) {
-        const source = yield* fileSystem.readFileString(file).pipe(Effect.orElseSucceed(() => undefined))
+        const source = try fileSystem.readFileString(file).pipe(Effect.orElseSucceed(() => undefined))
         if (source !== undefined) contents.set(file, Grouping.sourceLines(source))
       }
       shownMatches.push(...Grouping.annotate(grouped, contents))
     }
 
     const truncated = total > input.limit
-    const unsatisfiable = total > 0 ? undefined : yield* Contract.unsatisfiableNotice({
+    const unsatisfiable = total > 0 ? undefined : try Contract.unsatisfiableNotice({
       fileSystem,
       path,
       root: input.root,
@@ -208,21 +210,21 @@ const grep = (
         : {}),
       ...(unsatisfiable === undefined ? {} : { notice: unsatisfiable })
     }
-  })
+  }
 
 const glob = (
   input: Search.GlobInput
 ): Effect.Effect<Search.GlobOutput, StdError.StdError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fileSystem = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
+  effect {
+    const fileSystem = try FileSystem.FileSystem
+    const path = try Path.Path
     const includedByGlobs = (relative: string, basename: string) =>
       Contract.includedByGlobs([input.pattern], relative, basename)
-    const walked = yield* Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore, includedByGlobs)
-    const included = yield* candidates(fileSystem, path, walked, input.root, [input.pattern])
+    const walked = try Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore, includedByGlobs)
+    const included = try candidates(fileSystem, path, walked, input.root, [input.pattern])
     const matching = [...included].sort()
     const paths = matching.slice(0, input.limit)
-    const unsatisfiable = matching.length > 0 ? undefined : yield* Contract.unsatisfiableNotice({
+    const unsatisfiable = matching.length > 0 ? undefined : try Contract.unsatisfiableNotice({
       fileSystem,
       path,
       root: input.root,
@@ -238,7 +240,7 @@ const glob = (
       ...(matching.length > input.limit ? { notice: notice("entries", paths.length, matching.length) } : {}),
       ...(unsatisfiable === undefined ? {} : { notice: unsatisfiable })
     }
-  })
+  }
 
 /**
  * The files this peer's `grep` reads for `input`, in the order it reads
@@ -253,12 +255,12 @@ const glob = (
 export const searched = (
   input: Pick<Search.GrepInput, "root" | "hidden" | "noIgnore" | "globs">
 ): Effect.Effect<ReadonlyArray<string>, StdError.StdError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fileSystem = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const walked = yield* Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore)
-    return yield* candidates(fileSystem, path, walked, input.root, input.globs)
-  })
+  effect {
+    const fileSystem = try FileSystem.FileSystem
+    const path = try Path.Path
+    const walked = try Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore)
+    return try candidates(fileSystem, path, walked, input.root, input.globs)
+  }
 
 /**
  * Captures filesystem and path services in the portable peer.

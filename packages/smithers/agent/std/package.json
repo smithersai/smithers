@@ -118,8 +118,8 @@
       "default": "./.vibelang/js/src/NativeSearch.js"
     },
     "./PortableSearch": {
-      "types": "./src/PortableSearch.ts",
-      "vibelang-source": "./src/PortableSearch.ts",
+      "types": "./.vibe/declarations/PortableSearch.d.vibe.ts",
+      "vibelang-source": "./src/PortableSearch.vibe",
       "default": "./.vibelang/js/src/PortableSearch.js"
     },
     "./Probe": {

@@ -124,7 +124,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/GitWorktree.vibe",
         "src/Checkpoints.vibe",
         "src/NativeSearch.ts",
-        "src/PortableSearch.ts"
+        "src/PortableSearch.vibe"
       ]
     },
     {
@@ -195,7 +195,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/TestReport.ts",
         "src/internal/LinearRegex.ts",
         "src/Grep.vibe",
-        "src/PortableSearch.ts"
+        "src/PortableSearch.vibe"
       ]
     },
     {

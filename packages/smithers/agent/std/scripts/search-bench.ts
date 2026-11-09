@@ -5,7 +5,7 @@ import { resolve } from "node:path"
 import * as Glob from "../src/Glob.vibe"
 import * as Grep from "../src/Grep.vibe"
 import * as NativeSearch from "../src/NativeSearch.ts"
-import * as PortableSearch from "../src/PortableSearch.ts"
+import * as PortableSearch from "../src/PortableSearch.vibe"
 
 const root = resolve(
   process.argv[2] ?? "packages/smithers/agent/harness/benchmarks/swebench/work/pytest-dev__pytest-6197"
