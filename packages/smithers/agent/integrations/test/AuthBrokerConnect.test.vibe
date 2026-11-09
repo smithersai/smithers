@@ -17,7 +17,7 @@ effect function fixture(person = 7, revokeFails = false, supplied?: Broker.Store
   const github = GitHub.Auth.GitHubAuth.of({
     authorizeUrl: ({ state }) => "https://github.test/authorize?" + new URLSearchParams({ state }),
     exchange: () => succeed({ accessToken: Redacted.make("private-github-token"), refreshToken, expiresAt: 1000 }),
-    user: () => succeed({ id: person, login: "ada" }),
+    user: () => person < 0 ? fail(new GitHub.Auth.GitHubRefused({ step: "user", reason: "unavailable" })) : succeed({ id: person, login: "ada" }),
     refresh: () => Effect.die("unused"), permission: () => succeed("read"),
     revoke: (token) => { revoked.push(Redacted.value(token)); return revokeFails ? fail(new GitHub.Auth.GitHubRefused({ step: "revoke", reason: "unavailable" })) : Effect.void },
     deviceCode: () => Effect.die("unused"), deviceToken: () => Effect.die("unused"),
@@ -82,6 +82,11 @@ it.effect("cancel revokes the token, installs nothing, and returns to the site",
 })
 it.effect("a different GitHub person is refused and the token revoked", () => effect {
   const f = try fixture(8)
+  const outcome = try exit(f.broker.callback(f.state, "code", f.start.cookie))
+  try Effect.try(() => { expect(outcome._tag).toBe("Failure"); expect(f.revoked).toEqual(["private-github-token"]); expect(f.installed).toEqual([]) })
+})
+it.effect("a connection whose person lookup fails revokes the token and keeps nothing", () => effect {
+  const f = try fixture(-1)
   const outcome = try exit(f.broker.callback(f.state, "code", f.start.cookie))
   try Effect.try(() => { expect(outcome._tag).toBe("Failure"); expect(f.revoked).toEqual(["private-github-token"]); expect(f.installed).toEqual([]) })
 })
