@@ -146,6 +146,12 @@ All of the following are from Will's message of 2026-11-07, about 00:30 PST, unl
   this is the general core of hwo our coding factory works btw". Relayed the same day: it gets built in
   vibelang.smithers.sh.
 
+- **VL-33. Sign-in reuses smithers.sh's GitHub callback; no new redirect URLs.** Will, 2026-11-09 11:19Z (Telegram,
+  answering the request to add vibelang.smithers.sh's callback to the GitHub App): "Smithers.sh should support this
+  without needing to add new redirect urls. Just keep reusing Smithers.sh somehow". Any hosted site (a subdomain or a
+  custom domain) signs in through smithers.sh's existing callback, which hands the session back to the requesting site.
+  A general Smithers capability, in the shared auth code. Replaces 0019's per-site callback.
+
 ## Process
 
 - **VL-26. Go fast and in parallel; dogfood at once: the agent through the MCP server, skill or CLI, Will through the

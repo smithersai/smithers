@@ -5,7 +5,7 @@ next. Every decision lands here in the same change as the code it shapes.
 
 | Page | What it holds |
 | --- | --- |
-| [Rulings](rulings.md) | Will's words, VL-1 to VL-32. The source of truth. |
+| [Rulings](rulings.md) | Will's words, VL-1 to VL-33. The source of truth. |
 | [Designs](designs/index.md) | Designer handoffs and implementation notes. |
 | [Roadmap](roadmap.md) | The bricks: done, in progress, next. |
 | [Rulings status](rulings-status.md) | Each ruling's state, evidence and owner (lane vl-audit). |
