@@ -114,6 +114,8 @@ at persistence boundaries, while caller-supplied timestamps remain validated.
 
 ## Alpha candidate contract changes
 
+Error construction options could become writable in TypeScript declarations after a compiler update; they now retain their readonly contract.
+
 The declaration review compares actual emitted declarations from the previous
 baseline source with this candidate. Public export maps remain unchanged, but
 existing implementations and callers need these adaptations:

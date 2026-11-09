@@ -31,9 +31,9 @@ export interface SmithersErrorOptions {
    * always include the key. Redact provider text such as a bot token in a URL
    * or an API key in a message before attaching it.
    */
-  cause?: unknown
+  readonly cause?: unknown
   /** Set `false` to leave the documentation URL out of the message. */
-  includeDocsUrl?: boolean
+  readonly includeDocsUrl?: boolean
 }
 
 /**

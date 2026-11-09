@@ -154,3 +154,7 @@ family, match by class: `x catch (e) => match (e) { when SmithersError: … }`.
 
 [Raise a SmithersError from an adapter](../guides/raise-an-error.md) shows the
 two real subclasses and what they add.
+
+Construction options are readonly: `SmithersErrorOptions.cause` and
+`SmithersErrorOptions.includeDocsUrl` cannot be reassigned through the typed
+options value. The constructor reads them without modifying the options.
