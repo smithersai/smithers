@@ -1,0 +1,115 @@
+// @vitest-environment node
+// VIP drafting through the real writer and durable engine over SQLite. Faults replace the agent or the ledger; the
+// last case asks the real model and is skipped, with its reason, when no model credential is configured.
+import { describe, expect, it } from "@effect/vitest"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { VipWriter } from "../src/core/VipWriter.vibe"
+import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
+import { chatModel } from "../worker/AgentModel.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { ChatModel, Spend } from "../worker/Reply.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { agentLayer, DraftAgent, writer, writerLayer } from "../worker/VipDraft.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+
+const request: IssueRequest = { op: "draft", key: "d1", number: 0, parent: 0, title: "Tuple patterns", text: "Match on tuples in case branches.", example: "case (a, b) -> a", prior: "ML", assignee: "" }
+const outcome = Flow.make("test/vip/outcome", { payload: {}, success: Schema.String, body: () => Node.succeed("") })
+
+/** The spend ledger as the writer sees it, recording what it was charged. */
+function ledger(admit: Spend.Shape["admit"] = () => succeed(true)) {
+  const charges: Array<{ readonly day: string; readonly reply: string; readonly tokens: number }> = []
+  const spend: Spend.Shape = { admit, spend: (day, reply, tokens) => sync(() => { charges.push({ day, reply, tokens }) }) }
+  return { charges, spend }
+}
+
+/** Runs one draft as a durable execution and answers what the person would get. */
+function drafted(storage: Storage, layer: Layer.Layer<VipWriter>, executionId: string) {
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    const draft = try VipWriter
+    try engine.register(outcome, () => effect {
+      const result = try Effect.result(draft.draft(request))
+      return JSON.stringify(result._tag === "Success" ? { draft: result.success } : { reason: result.failure.reason })
+    })
+  }).pipe(Layer.provide(layer))
+  const runtime = CloudflareRuntime.layer({ hostId: "h", executionId, flow: outcome._tag }, registration).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+  return scoped(Effect.provide(effect {
+    const text = try (try FlowRuntime.FlowRuntime).execute(outcome, { executionId, payload: {} })
+    return try Effect.try(() => JSON.parse(text)) as { readonly reason?: string; readonly draft?: { readonly title: string; readonly summary: string; readonly example: string; readonly prior: string } }
+  }, runtime))
+}
+
+const newStorage = () => objectStorage() as unknown as Storage
+const withAgent = (agent: DraftAgent.Shape, spend: Spend.Shape) => writer.pipe(Layer.provide(Layer.succeed(DraftAgent, agent)), Layer.provide(Layer.succeed(Spend, spend)))
+
+describe("drafting a VIP", () => {
+  it.live("says there is no model, before admitting or spending anything", () => effect {
+    const { charges, spend } = ledger(() => die("admitted without a model"))
+    const answer = try drafted(newStorage(), writerLayer.pipe(Layer.provide(Layer.succeed(ChatModel, { model: undefined, unusable: "credential_missing" })), Layer.provide(Layer.succeed(Spend, spend))), "no-model")
+    try Effect.try(() => {
+      expect(answer).toEqual({ reason: "no-model" })
+      expect(charges).toEqual([])
+    })
+  }, 60_000)
+
+  it.live("the agent itself also refuses to run with no model", () => effect {
+    const layer = agentLayer.pipe(Layer.provide(Layer.succeed(ChatModel, { model: undefined, unusable: "credential_missing" })))
+    const agent = try Effect.provide(DraftAgent, layer)
+    const run = agent.run as unknown as (request: IssueRequest, meter: unknown) => unknown!IssueFailure
+    const failure = try Effect.flip(run(request, undefined))
+    try Effect.try(() => {
+      expect(agent.available).toBe(false)
+      expect(failure.reason).toBe("no-model")
+    })
+  })
+
+  it.live.each([
+    ["the day's budget is spent", () => succeed(false)],
+    ["the ledger is unreachable", () => fail(new Unreachable({ what: "the ledger" }))],
+  ] as const)("reports budget, without running the agent, when %s", ([_name, admit]) => effect {
+    const { charges, spend } = ledger(admit as Spend.Shape["admit"])
+    const agent: DraftAgent.Shape = { available: true, run: () => die("ran over budget") }
+    const answer = try drafted(newStorage(), withAgent(agent, spend), "budget")
+    try Effect.try(() => {
+      expect(answer).toEqual({ reason: "budget" })
+      expect(charges).toEqual([])
+    })
+  }, 60_000)
+
+  it.live("charges what a failed draft already spent, once, and stays typed on replay", () => effect {
+    const { charges, spend } = ledger()
+    let runs = 0
+    const agent: DraftAgent.Shape = { available: true, run: effect (_request, meter) => {
+      runs += 1
+      try meter.record("paid-before-failure", { inputTokens: 11, outputTokens: 7 }).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" })))
+      throw new IssueFailure({ reason: "draft" })
+    } }
+    const storage = newStorage()
+    const first = try drafted(storage, withAgent(agent, spend), "failed")
+    const replay = try drafted(storage, withAgent(agent, spend), "failed")
+    try Effect.try(() => {
+      expect(first).toEqual({ reason: "draft" })
+      expect(replay).toEqual(first)
+      expect(runs).toBe(1)
+      expect(charges).toHaveLength(1)
+      expect(charges[0]).toMatchObject({ reply: "vip-draft/failed", tokens: 18 })
+    })
+  }, 60_000)
+})
+
+const configured = runSync(Config.option(Config.String("CEREBRAS_API_KEY")))
+describe("drafting with the real model", () => {
+  it.live.skipIf(Option.isNone(configured))(Option.isNone(configured) ? "SKIP: CEREBRAS_API_KEY is absent; the real model was not asked" : "returns one reviewable draft of the person's feature and charges it", () => effect {
+    const { charges, spend } = ledger()
+    const model = try chatModel()
+    const answer = try drafted(newStorage(), writerLayer.pipe(Layer.provide(Layer.succeed(ChatModel, model)), Layer.provide(Layer.succeed(Spend, spend))), "real-model")
+    try Effect.try(() => {
+      expect(answer.reason).toBeUndefined()
+      for (const part of [answer.draft?.title, answer.draft?.summary, answer.draft?.example, answer.draft?.prior]) expect(part?.trim()).not.toBe("")
+      expect(charges).toHaveLength(1)
+      expect(charges[0]?.tokens ?? 0).toBeGreaterThan(0)
+    })
+  }, 180_000)
+})

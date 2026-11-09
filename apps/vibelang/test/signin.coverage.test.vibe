@@ -1,0 +1,259 @@
+// @vitest-environment node
+// `login` and `logout` in-process against the real Accounts object over loopback and the identity-provider fixture
+// the workerd protocol suite uses: GitHub's device endpoints on a real socket, through the shared GitHub adapter.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { GitHub } from "@smthrs/integrations"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { readMockSession, readPending, readSession, writePending, writeSession, type PendingDevice } from "../src/surfaces/session.vibe"
+import { signIn, signOutSurface, type LoginInput, SignInFailed } from "../src/surfaces/signin.vibe"
+import * as Accounts from "../worker/Accounts.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+
+const PERSON = { id: 9, login: "fixture-person-9" }
+const NO_WAIT: LoginInput = { wait: false }
+const WAIT: LoginInput = { wait: true }
+const live = Layer.succeed(Factory, { mode: "live" } as unknown as Factory["Service"])
+
+function githubService(): GitHub.Auth.GitHubAuth["Service"] {
+  const refused = (step: "device" | "exchange" | "refresh" | "user") => fail(new GitHub.Auth.GitHubRefused({ step, reason: "rejected" }))
+  return {
+    authorizeUrl: () => "https://github.test/login", exchange: () => refused("exchange"), refresh: () => refused("refresh"),
+    user: (token) => Redacted.value(token) === "device-token-9" ? succeed(PERSON) : refused("user"),
+    permission: () => succeed("read"), revoke: () => Effect.void, deviceCode: () => refused("device"), deviceToken: () => refused("device"),
+  }
+}
+
+/** Serves the real accounts object beside the identity-provider fixture; `grant` is what the token endpoint answers next. */
+effect function world() {
+  const grant = try Ref.make<string>("authorization_pending")
+  const interval = try Ref.make(1)
+  const address = (try HttpServer.HttpServer).address
+  const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+  const storage = (try Effect.try(() => objectStorage())) as unknown as Storage
+  const accounts = try Accounts.make("signin-test", storage, {
+    origin, initialMaintainer: "1", clientId: "fixture-client-id",
+    signingSecret: Redacted.make("fixture-only-signing-secret-32-chars"),
+    encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
+    github: githubService(),
+  })
+  try HttpServer.serveEffect(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const path = new URL(request.url, origin).pathname
+    if (path === "/login/device/code") return HttpServerResponse.jsonUnsafe({ device_code: "private-device-code", user_code: "ABCD-EFGH", verification_uri: origin + "/device", expires_in: 600, interval: try Ref.get(interval) })
+    if (path === "/login/oauth/access_token") {
+      const answer = try Ref.get(grant)
+      return HttpServerResponse.jsonUnsafe(answer === "authorized" ? { access_token: "device-token-9", token_type: "bearer", scope: "read:user" } : answer === "unknown-person" ? { access_token: "stranger", token_type: "bearer", scope: "read:user" } : answer === "slow_down" ? { error: answer, interval: 30 } : { error: answer })
+    }
+    return try accounts.fetch
+  })
+  return { origin, grant, interval }
+}
+
+/** Runs a `login`/`logout` step with this directory and factory origin. */
+function configured(origin: string, directory: string, github = origin) {
+  return ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_FACTORY_URL: origin, VIBELANG_GITHUB_WEB: github, XDG_CONFIG_HOME: directory }))
+}
+
+const message = <A, E, R>(program: A!E!R) => Effect.flip(program).pipe(Effect.map((error) => (error as unknown as SignInFailed).message))
+const pendingFor = (origin: string, over: Partial<PendingDevice> = {}): PendingDevice => ({ origin, clientId: "fixture-client-id", deviceCode: "private-device-code", userCode: "OLDC-ODE1", verificationUri: origin + "/device", intervalSeconds: 1, expiresAt: Date.now() + 600_000, nextPollAt: 0, ...over })
+
+describe("device sign-in", () => {
+  it.live("starts, stays pending, finishes, keeps the session, then signs out and revokes it", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const { origin, grant } = try world()
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        const started = try signIn(NO_WAIT)
+        const stillPending = try signIn(NO_WAIT)
+        try Ref.set(grant, "authorized")
+        try sleep("1100 millis")
+        const signed = try signIn(NO_WAIT)
+        const stored = try readSession()
+        const again = try signIn(NO_WAIT)
+        const out = try signOutSurface()
+        const afterwards = try readSession()
+        const http = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
+        const revoked = try (try http.execute(HttpClientRequest.get(origin + "/api/auth/session").pipe(HttpClientRequest.setHeader("cookie", stored?.cookie ?? "")))).json
+        const quiet = try signOutSurface()
+        try Effect.try(() => {
+          expect(started).toEqual({ status: "started", login: "", userCode: "ABCD-EFGH", verificationUri: origin + "/device" })
+          expect(stillPending).toMatchObject({ status: "pending", userCode: "ABCD-EFGH" })
+          expect(signed).toMatchObject({ status: "signed-in", login: PERSON.login, userCode: "" })
+          expect(stored).toMatchObject({ origin, login: PERSON.login })
+          expect(again).toMatchObject({ status: "signed-in", login: PERSON.login })
+          expect(out).toEqual({ signedOut: true })
+          expect(afterwards).toBeUndefined()
+          expect(revoked).toMatchObject({ id: "", role: "viewer" })
+          expect(quiet).toEqual({ signedOut: false })
+        })
+      }
+    }
+  }), 60_000)
+
+  it.live.each([
+    ["access_denied", "Sign-in declined."],
+    ["expired_token", "Sign-in expired."],
+    ["unknown-person", undefined],
+  ] as const)("ends on GitHub's %s", ([answer, expected]) => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const { origin, grant } = try world()
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        try writePending(pendingFor(origin))
+        try Ref.set(grant, answer)
+        const failure = try message(signIn(NO_WAIT))
+        const left = try readPending()
+        try Effect.try(() => {
+          expect(failure).toBe(expected ?? `Sign-in at ${origin} was refused.`)
+          // An unknown person's refusal is the server's: the grant may be retried, so the pending flow stays.
+          if (expected === undefined) expect(left).toBeDefined(); else expect(left).toBeUndefined()
+        })
+      }
+    }
+  }), 60_000)
+
+  it.live("backs off when GitHub says to slow down, keeping the longer of the two intervals", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const { origin, grant } = try world()
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        try writePending(pendingFor(origin))
+        try Ref.set(grant, "slow_down")
+        const answer = try signIn(NO_WAIT)
+        const left = try readPending()
+        try Effect.try(() => {
+          expect(answer.status).toBe("pending")
+          expect(left?.intervalSeconds).toBe(30)
+          expect(left?.nextPollAt ?? 0).toBeGreaterThan(Date.now() + 25_000)
+        })
+      }
+    }
+  }), 60_000)
+
+  it.live("a stale session starts a new device flow; a grant for another factory does not carry over", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const { origin } = try world()
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        try writeSession({ origin, cookie: "__Host-vibelang-session=forged", login: "old" })
+        try writePending(pendingFor("https://other.example", { userCode: "OTHR-CODE" }))
+        const started = try signIn(NO_WAIT)
+        const session = try readSession()
+        try Effect.try(() => {
+          expect(started).toMatchObject({ status: "started", userCode: "ABCD-EFGH" })
+          expect(session).toBeUndefined()
+        })
+      }
+    }
+  }), 60_000)
+
+  it.live("waits through the durable poll until the person approves, and announces the code", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const { origin, grant } = try world()
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        try Ref.set(grant, "authorized")
+        const signed = try signIn(WAIT)
+        const stored = try readSession()
+        try Effect.try(() => {
+          expect(signed).toMatchObject({ status: "signed-in", login: PERSON.login })
+          expect(stored?.login).toBe(PERSON.login)
+        })
+      }
+    }
+  }), 60_000)
+
+  it.live("a wait the person declines fails with one safe sentence and leaves no grant", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const { origin, grant } = try world()
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        try Ref.set(grant, "access_denied")
+        const failure = try message(signIn(WAIT))
+        const left = try readPending()
+        try Effect.try(() => {
+          expect(failure).toBe("Sign-in failed.")
+          expect(left).toBeUndefined()
+        })
+      }
+    }
+  }), 60_000)
+
+  it.live.each(["https://factory.example/path", "http://factory.example", "not a url"])("refuses the factory origin %s before any request", (origin) => scoped(effect {
+    provide NodeServices.layer, live {
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        const failure = try message(signIn(NO_WAIT))
+        try Effect.try(() => expect(failure).toBe("Invalid factory origin."))
+      }
+    }
+  }), 60_000)
+})
+
+describe("a factory that does not answer sign-in", () => {
+  /** A server with only `respond`'s routes: the factory is reachable and wrong. */
+  effect function bare(respond: (path: string) => HttpServerResponse.HttpServerResponse) {
+    const address = (try HttpServer.HttpServer).address
+    const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+    try HttpServer.serveEffect(effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      return respond(new URL(request.url, origin).pathname)
+    })
+    return origin
+  }
+  it.live.each([
+    ["has no sign-in", () => HttpServerResponse.empty({ status: 404 }), (origin: string) => `Sign-in isn't available at ${origin}.`],
+    ["answers something else", () => HttpServerResponse.jsonUnsafe({ nope: true }), (origin: string) => `Sign-in at ${origin} can't be understood.`],
+  ] as const)("reports a factory that %s", ([_name, respond, expected]) => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const origin = try bare(respond)
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        const failure = try message(signIn(NO_WAIT))
+        try Effect.try(() => expect(failure).toBe(expected(origin)))
+      }
+    }
+  }), 60_000)
+
+  it.live("sign-out reports a refusal and still removes the local session", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const origin = try bare(() => HttpServerResponse.empty({ status: 500 }))
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        try writeSession({ origin, cookie: "__Host-vibelang-session=x", login: "ada" })
+        const failure = try message(signOutSurface())
+        const left = try readSession()
+        try Effect.try(() => {
+          expect(failure).toBe("Sign-out was refused.")
+          expect(left).toBeUndefined()
+        })
+      }
+    }
+  }), 60_000)
+})
+
+describe("mock sign-in", () => {
+  it.live("signs in as the fixture person with no network, and signs out", () => scoped(effect {
+    provide NodeServices.layer, mockFactoryFor() {
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured("https://never.invalid", directory) {
+        const signed = try signIn(NO_WAIT)
+        const stored = try readMockSession()
+        const out = try signOutSurface()
+        const left = try readMockSession()
+        try Effect.try(() => {
+          expect(signed.status).toBe("signed-in")
+          expect(signed.login).not.toBe("")
+          expect(stored?.login).toBe(signed.login)
+          expect(out).toEqual({ signedOut: true })
+          expect(left).toBeUndefined()
+        })
+      }
+    }
+  }), 60_000)
+})
