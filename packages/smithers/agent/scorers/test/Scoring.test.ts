@@ -2,7 +2,7 @@ import { Cause, Effect, Exit } from "effect"
 import * as Logger from "effect/Logger"
 import { describe, expect, it } from "vitest"
 import { ScorerError } from "../src/ScorerError.vibe"
-import * as ScoreStore from "../src/ScoreStore.ts"
+import * as ScoreStore from "../src/ScoreStore.vibe"
 import * as Scoring from "../src/Scoring.vibe"
 
 interface Recorder {

@@ -1,7 +1,7 @@
 import * as ScoreGate from "@smthrs/scorers/ScoreGate"
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import * as Gate from "../src/Gate.ts"
+import * as Gate from "../src/Gate.vibe"
 import type * as Regression from "../src/Regression.vibe"
 import type * as Runner from "../src/Runner.vibe"
 

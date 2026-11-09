@@ -12,8 +12,8 @@ import * as Text from "./internal/text.ts"
 import type { Result as ScorerResult } from "./Scorer.ts"
 import * as Scorer from "./Scorer.ts"
 import { ScorerError } from "./ScorerError.vibe"
-import { maxReasonBytes, type Observation, type ObservationBase } from "./ScoreStore.ts"
-import * as ScoreStore from "./ScoreStore.ts"
+import { maxReasonBytes, type Observation, type ObservationBase } from "./ScoreStore.vibe"
+import * as ScoreStore from "./ScoreStore.vibe"
 
 /**
  * One scorer execution request.

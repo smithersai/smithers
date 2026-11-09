@@ -66,7 +66,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Baseline.vibe",
         "src/Suite.vibe",
         "src/Regression.vibe",
-        "src/Gate.ts",
+        "src/Gate.vibe",
         "src/Runner.vibe",
         "src/internal/controlCharacters.ts"
       ]
@@ -130,7 +130,7 @@ const securityReview = Smithers.SecurityReview({
         "A score comparison that treats NaN, a score outside [0, 1] or a scorer-returned non-number as passing.",
         "A baseline record matched by a non-injective key, or a binding matched to a flow by anything other than reference identity."
       ],
-      paths: ["src/Gate.ts", "src/Regression.vibe", "src/Runner.vibe", "src/Trials.ts", "src/internal/tupleKey.ts"]
+      paths: ["src/Gate.vibe", "src/Regression.vibe", "src/Runner.vibe", "src/Trials.ts", "src/internal/tupleKey.ts"]
     }
   ]
 })

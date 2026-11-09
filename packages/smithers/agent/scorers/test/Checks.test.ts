@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import * as Checks from "../src/Checks.ts"
+import * as Checks from "../src/Checks.vibe"
 
 describe("Checks.words", () => {
   it("counts tokens holding a letter or digit", () => {

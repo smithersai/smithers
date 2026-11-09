@@ -55,7 +55,7 @@ const securityReview = Smithers.SecurityReview({
         "phrase() compiling a /.../ entry with new RegExp and matching it against unbounded model output.",
         "linkedReferences compiling ref.pattern with new RegExp on every call without a length or timeout bound."
       ],
-      paths: ["src/Checks.ts"]
+      paths: ["src/Checks.vibe"]
     },
     {
       id: "leakage-check-fidelity",
@@ -66,7 +66,7 @@ const securityReview = Smithers.SecurityReview({
         "Word-boundary lookarounds in phrase() that miss a marker embedded inside a longer token.",
         "leakage() quoting the full marker text in its failure detail, which flows into a persisted reason."
       ],
-      paths: ["src/Checks.ts"]
+      paths: ["src/Checks.vibe"]
     },
     {
       id: "gate-fails-closed",
@@ -78,7 +78,7 @@ const securityReview = Smithers.SecurityReview({
         "combine or grade mapping a Failed or Inconclusive verdict to exit code 0.",
         "Rubric.decide or Scorer.validate accepting an empty score set or a non-finite score as a pass."
       ],
-      paths: ["src/ScoreGate.ts", "src/Rubric.ts", "src/Scorer.ts"]
+      paths: ["src/ScoreGate.vibe", "src/Rubric.ts", "src/Scorer.ts"]
     },
     {
       id: "scorer-identity-integrity",

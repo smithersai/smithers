@@ -260,7 +260,6 @@ export const combine = (
  *
  * @category grading
  * @since 0.1.0
- * @throws {never}
  */
 export const grade = (verdict: Verdict): { readonly exitCode: 0 | 1 | 5; readonly summary: string } => {
   switch (verdict._tag) {
@@ -322,20 +321,20 @@ export const expectScores = (samples: ReadonlyArray<ScoreSample>): ScoreExpectat
 
   return {
     mean: (threshold) =>
-      Effect.gen(function*() {
-        yield* validateThreshold(threshold)
-        yield* validate
+      effect {
+        try validateThreshold(threshold)
+        try validate
         const values = scoreValues(samples)
         if (values.length === 0) return undecidable(samples, ["No score samples for mean gate"])
         const actual = values.reduce((total, value) => total + value, 0) / values.length
         return actual < threshold - meanTolerance
           ? failed(samples, [breach("mean_below_threshold", threshold, actual)])
           : passed(samples)
-      }),
+      },
     min: (threshold) =>
-      Effect.gen(function*() {
-        yield* validateThreshold(threshold)
-        yield* validate
+      effect {
+        try validateThreshold(threshold)
+        try validate
         const values = scoreValues(samples)
         if (values.length === 0) return undecidable(samples, ["No score samples for min gate"])
         // Iterative, not `Math.min(...values)`: a spread above the engine's
@@ -345,11 +344,11 @@ export const expectScores = (samples: ReadonlyArray<ScoreSample>): ScoreExpectat
         return actual < threshold
           ? failed(samples, [breach("min_below_threshold", threshold, actual)])
           : passed(samples)
-      }),
+      },
     perCase: (thresholds) =>
-      Effect.gen(function*() {
-        for (const threshold of Object.values(thresholds)) yield* validateThreshold(threshold)
-        yield* validate
+      effect {
+        for (const threshold of Object.values(thresholds)) try validateThreshold(threshold)
+        try validate
         const named = Object.entries(thresholds)
         if (named.length === 0) return passed(samples)
         // Grouped in one pass rather than rescanned per case: a suite with
@@ -379,6 +378,6 @@ export const expectScores = (samples: ReadonlyArray<ScoreSample>): ScoreExpectat
         if (unmeasured.length === named.length) return undecidable(samples, unmeasured)
         const verdict = breaches.length === 0 ? passed(samples) : failed(samples, breaches)
         return { ...verdict, inconclusive: unique([...verdict.inconclusive, ...unmeasured]) }
-      })
+      }
   }
 }

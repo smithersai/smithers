@@ -14,7 +14,7 @@ import { migration as initialScores } from "../src/migrations/0001_scores.vibe"
 import { migration as failureCodes } from "../src/migrations/0003_score_failure_codes.vibe"
 import { migration as requiredFailureCodes } from "../src/migrations/0004_require_failure_codes.vibe"
 import { ScorerError, ScorerErrorCode } from "../src/ScorerError.vibe"
-import * as ScoreStore from "../src/ScoreStore.ts"
+import * as ScoreStore from "../src/ScoreStore.vibe"
 import * as SqlScoreStore from "../src/SqlScoreStore.vibe"
 
 const scratch = mkdtempSync(join(tmpdir(), "flows-scorers-"))

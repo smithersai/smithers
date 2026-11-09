@@ -95,19 +95,19 @@ const findings = (report: Report): ReadonlyArray<string> => [
  * @since 0.1.0
  */
 export const check = (report: Report, options: Options = {}): Effect.Effect<Verdict, ScoreGateError> =>
-  Effect.gen(function*() {
+  effect {
     const expectation = expectScores(samples(report))
     const verdicts: Array<Verdict> = []
-    if (options.mean !== undefined) verdicts.push(yield* expectation.mean(options.mean))
-    if (options.min !== undefined) verdicts.push(yield* expectation.min(options.min))
-    if (options.perCase !== undefined) verdicts.push(yield* expectation.perCase(options.perCase))
+    if (options.mean !== undefined) verdicts.push(try expectation.mean(options.mean))
+    if (options.min !== undefined) verdicts.push(try expectation.min(options.min))
+    if (options.perCase !== undefined) verdicts.push(try expectation.perCase(options.perCase))
     if (options.mean === undefined && options.min === undefined && options.perCase === undefined) {
-      verdicts.push(yield* expectation.mean(0))
+      verdicts.push(try expectation.mean(0))
     }
     const reasons = findings(report)
     if (reasons.length > 0) verdicts.push({ _tag: "Failed", reasons, inconclusive: [] })
     return combine(verdicts, environmentFaults(report))
-  })
+  }
 
 /**
  * Maps a gate verdict to the shared CI convention: a finding is exit code 1,
@@ -121,7 +121,6 @@ export const check = (report: Report, options: Options = {}): Effect.Effect<Verd
  *
  * @category grading
  * @since 0.1.0
- * @throws {never}
  */
 export const ciGrade = (verdict: Verdict): { readonly exitCode: 0 | 1 | 5; readonly summary: string } => {
   const graded = grade(verdict)

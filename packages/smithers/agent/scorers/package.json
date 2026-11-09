@@ -48,8 +48,8 @@
       "default": "./.vibelang/js/src/Binding.js"
     },
     "./Checks": {
-      "types": "./src/Checks.ts",
-      "vibelang-source": "./src/Checks.ts",
+      "types": "./.vibe/declarations/src/Checks.d.vibe.ts",
+      "vibelang-source": "./src/Checks.vibe",
       "default": "./.vibelang/js/src/Checks.js"
     },
     "./Rubric": {
@@ -63,13 +63,13 @@
       "default": "./.vibelang/js/src/Sampling.js"
     },
     "./ScoreGate": {
-      "types": "./src/ScoreGate.ts",
-      "vibelang-source": "./src/ScoreGate.ts",
+      "types": "./.vibe/declarations/src/ScoreGate.d.vibe.ts",
+      "vibelang-source": "./src/ScoreGate.vibe",
       "default": "./.vibelang/js/src/ScoreGate.js"
     },
     "./ScoreStore": {
-      "types": "./src/ScoreStore.ts",
-      "vibelang-source": "./src/ScoreStore.ts",
+      "types": "./.vibe/declarations/src/ScoreStore.d.vibe.ts",
+      "vibelang-source": "./src/ScoreStore.vibe",
       "default": "./.vibelang/js/src/ScoreStore.js"
     },
     "./Scorer": {
@@ -83,7 +83,7 @@
       "default": "./.vibelang/js/src/ScorerError.js"
     },
     "./SqlScoreStore": {
-      "types": "./.vibe/declarations/SqlScoreStore.d.vibe.ts",
+      "types": "./.vibe/declarations/src/SqlScoreStore.d.vibe.ts",
       "vibelang-source": "./src/SqlScoreStore.vibe",
       "default": "./.vibelang/js/src/SqlScoreStore.js"
     },
@@ -98,7 +98,7 @@
       "default": "./.vibelang/js/src/Scorers.js"
     },
     "./Scoring": {
-      "types": "./.vibe/declarations/Scoring.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Scoring.d.vibe.ts",
       "vibelang-source": "./src/Scoring.vibe",
       "default": "./.vibelang/js/src/Scoring.js"
     },
@@ -126,7 +126,10 @@
     ".vibelang/js",
     "!.vibelang/js/.loader",
     "src/SqlScoreStore.vibe",
-    "src/Scoring.vibe"
+    "src/Scoring.vibe",
+    "src/Checks.vibe",
+    "src/ScoreGate.vibe",
+    "src/ScoreStore.vibe"
   ],
   "publishConfig": {
     "access": "public",

@@ -66,7 +66,7 @@ export * as Report from "./Report.ts"
  * @since 0.1.0
  * @category gates
  */
-export * as Gate from "./Gate.ts"
+export * as Gate from "./Gate.vibe"
 /**
  * Repeated-run statistics for live evaluations: pass@k and pass^k.
  *

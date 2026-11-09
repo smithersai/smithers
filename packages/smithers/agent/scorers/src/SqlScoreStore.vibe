@@ -17,7 +17,7 @@ import * as Json from "./internal/json.ts"
 import * as Text from "./internal/text.ts"
 import * as Migrations from "./Migrations.vibe"
 import { ScorerError } from "./ScorerError.vibe"
-import * as ScoreStore from "./ScoreStore.ts"
+import * as ScoreStore from "./ScoreStore.vibe"
 
 interface ObservationRow {
   readonly id: number

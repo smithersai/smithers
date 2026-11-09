@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, it } from "vitest"
-import * as ScoreStore from "../src/ScoreStore.ts"
+import * as ScoreStore from "../src/ScoreStore.vibe"
 import * as SqlScoreStore from "../src/SqlScoreStore.vibe"
 
 it("runs the documented quickstart twice over the same real journal", async () => {

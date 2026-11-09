@@ -14,5 +14,6 @@
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const make = (options) => ({ ...options, sampling: options.sampling ?? "all" });

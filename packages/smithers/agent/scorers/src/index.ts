@@ -17,7 +17,7 @@ export * as Binding from "./Binding.ts"
 export * as Sampling from "./Sampling.vibe"
 
 /** @category services @since 0.1.0 */
-export * as ScoreStore from "./ScoreStore.ts"
+export * as ScoreStore from "./ScoreStore.vibe"
 
 /** @category sql @since 0.1.0 */
 export * as SqlScoreStore from "./SqlScoreStore.vibe"
@@ -29,10 +29,10 @@ export * as Scoring from "./Scoring.vibe"
 export * as Migrations from "./Migrations.vibe"
 
 /** @category grading @since 0.1.0 */
-export * as ScoreGate from "./ScoreGate.ts"
+export * as ScoreGate from "./ScoreGate.vibe"
 
 /** @category checks @since 0.1.0 */
-export * as Checks from "./Checks.ts"
+export * as Checks from "./Checks.vibe"
 
 /** @category judges @since 0.1.0 */
 export * as Rubric from "./Rubric.ts"
