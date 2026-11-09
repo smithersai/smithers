@@ -69,7 +69,7 @@ export const signedOut: AccountState = { identity: viewer, menu: false, people: 
 export function accountOf(model: Model): AccountState { return model.account ?? signedOut }
 export function issueStateOf(model: Model): IssuesUi {
   const ui = model.issues ?? initialIssues
-  return { ...ui, keyPrefix: model.session, role: accountOf(model).identity.role, connection: "/api/auth/github" + (ui.retry === undefined ? "" : `?resume-op=${ui.retry.op}&resume-key=${ui.retry.key}` + (ui.retry.recovery === undefined ? "" : `&resume-recovery=${ui.retry.recovery}`)) }
+  return { ...ui, keyPrefix: model.session, role: accountOf(model).identity.role, connection: initialIssues.connection + (ui.retry === undefined ? "" : `?resume-op=${ui.retry.op}&resume-key=${ui.retry.key}` + (ui.retry.recovery === undefined ? "" : `&resume-recovery=${ui.retry.recovery}`)) }
 }
 
 // MODEL

@@ -4,7 +4,7 @@ import { issuePermission, type Role } from "../core/conversation.vibe"
 
 export schema IssuesUi {
   readonly keyPrefix: string
-  readonly connection?: string
+  readonly connection: string
   readonly open: boolean
   readonly screen: "list" | "detail" | "new" | "vip" | "roles" | "specification"
   readonly kind: "All" | "Issues" | "Tasks" | "VIPs"
@@ -29,7 +29,7 @@ export schema IssuesUi {
   readonly retry?: IssueRequest | undefined
 }
 export const initialIssues: IssuesUi = {
-  keyPrefix: "", open: true, screen: "list", kind: "All", state: "open", query: "", selected: 0, dialog: "", role: "viewer",
+  keyPrefix: "", connection: "/api/auth/github", open: true, screen: "list", kind: "All", state: "open", query: "", selected: 0, dialog: "", role: "viewer",
   status: "loading", busy: false, data: { seq: 0, items: [] }, title: "", summary: "", example: "", prior: "",
   comment: "", parent: "", assignee: "VibeLang agent", step: 1, error: "", serial: 0,
 }

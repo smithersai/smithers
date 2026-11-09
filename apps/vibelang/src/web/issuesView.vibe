@@ -83,7 +83,7 @@ export function issuesView(ui: IssuesUi, h: H, send: Send): Html {
   ])
 }
 function connected(ui: IssuesUi): boolean { return ui.data.connected !== false }
-function connect(h: H, ui: IssuesUi): Html { return h.a([h.Class("sui-button sui-button-sm"), h.Href(ui.connection ?? "/api/auth/github")], ["Connect GitHub"]) }
+function connect(h: H, ui: IssuesUi): Html { return h.a([h.Class("sui-button sui-button-sm"), h.Href(ui.connection)], ["Connect GitHub"]) }
 function rolesView(h: H, send: Send): ReadonlyArray<Html> {
   const roles: ReadonlyArray<Role> = ["viewer", "new", "community", "contributor", "maintainer"]
   const rows: ReadonlyArray<{ readonly label: string; readonly op: IssueOperation | "roles" }> = [
