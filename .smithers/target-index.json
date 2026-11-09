@@ -88527,6 +88527,31 @@
     }
   },
   {
+    "label": "//packages/smithers:tuiBundleExternals",
+    "package": "packages/smithers",
+    "name": "tuiBundleExternals",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/build-tui.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/build-tui.mjs"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers:tuiSources",
     "package": "packages/smithers",
     "name": "tuiSources",
