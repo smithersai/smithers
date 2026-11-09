@@ -28,7 +28,13 @@
     "LICENSE",
     "README.md",
     ".vibelang/js",
-    "!.vibelang/js/.loader"
+    "!.vibelang/js/.loader",
+    "src/ContextPreflight.vibe",
+    "src/ModelProbe.vibe",
+    "src/DurableModelCall.vibe",
+    "src/EnvironmentResolver.vibe",
+    "src/HostServer.ts",
+    "src/HostTools.vibe"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",

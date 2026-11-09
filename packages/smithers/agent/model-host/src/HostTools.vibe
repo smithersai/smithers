@@ -175,6 +175,9 @@ export interface HostTransport {
 
 const utf8 = new TextEncoder()
 
+/** Runs synchronous contract code in an Effect; a throw from it is a defect in this host, never a turn failure. */
+const orDefect = <A>(f: () => A) => Effect.orDie(Effect.try(f))
+
 /** A callback refusal's code, or the status it answered without one. */
 const refusalCode = (response: Response, body: unknown): string =>
   typeof body === "object" && body !== null && "code" in body && typeof body.code === "string"
@@ -380,8 +383,8 @@ const filesRead: Bind = (grant, { read }) => {
   const repository = grant.source?.repository
   if (repository === undefined) return undefined
   return (args, ordinal) =>
-    Effect.gen(function*() {
-      const input = FileRead.parseFileReadArgs(args)
+    effect {
+      const input = try orDefect(() => FileRead.parseFileReadArgs(args))
       if ("error" in input) return { refusal: input.error }
       const { repo, ref, line, column } = input.payload
       if (repo !== undefined && !namesRepository(repository, repo)) {
@@ -390,24 +393,26 @@ const filesRead: Bind = (grant, { read }) => {
       const path = repositoryPath(repository, input.payload.path)
       if (path === "") return { refusal: "file needs a file path" }
       if (ref !== undefined) return { refusal: "This question reads main only; ask without --ref." }
-      const answer = yield* read(path)
+      const answer = try read(path)
       if (!("file" in answer)) return { refusal: refusalText(path, answer.code) }
       const { file } = answer
-      const { card, value } = FileRead.fileReadCard(
-        {
-          repo: file.repository,
-          path: file.path,
-          content: file.content,
-          binary: file.binary,
-          readAt: { changeId: null, commitId: file.commit, source: "head" },
-          ...(line === undefined ? {} : { line }),
-          ...(column === undefined ? {} : { column })
-        },
-        ordinal,
-        Date.now()
+      const { card, value } = try orDefect(() =>
+        FileRead.fileReadCard(
+          {
+            repo: file.repository,
+            path: file.path,
+            content: file.content,
+            binary: file.binary,
+            readAt: { changeId: null, commitId: file.commit, source: "head" },
+            ...(line === undefined ? {} : { line }),
+            ...(column === undefined ? {} : { column })
+          },
+          ordinal,
+          Date.now()
+        )
       )
       return { cards: [card], value }
-    })
+    }
 }
 
 /** What the model and the conversation are told when a listing does not answer a directory. */
@@ -429,61 +434,68 @@ const filesList: Bind = (grant, { list }) => {
   const repository = grant.source?.repository
   if (repository === undefined) return undefined
   return (args, ordinal) =>
-    Effect.gen(function*() {
-      const input = FileList.parseFileListArgs(args)
+    effect {
+      const input = try orDefect(() => FileList.parseFileListArgs(args))
       if ("error" in input) return { refusal: input.error }
       const { repo } = input.payload
       if (repo !== undefined && !namesRepository(repository, repo)) {
         return { refusal: `This question reads ${repository} only; name a directory in it.` }
       }
       const path = repositoryPath(repository, input.payload.path)
-      const answer = yield* list(path)
+      const answer = try list(path)
       if (!("directory" in answer)) return { refusal: listRefusalText(path, answer.code) }
       const { directory } = answer
-      const { card, value } = FileList.fileListCard(
-        {
-          repo: directory.repository,
-          path: directory.path,
-          entries: directory.entries,
-          truncated: directory.truncated,
-          readAt: { changeId: null, commitId: directory.commit, source: "head" }
-        },
-        ordinal,
-        Date.now()
+      const { card, value } = try orDefect(() =>
+        FileList.fileListCard(
+          {
+            repo: directory.repository,
+            path: directory.path,
+            entries: directory.entries,
+            truncated: directory.truncated,
+            readAt: { changeId: null, commitId: directory.commit, source: "head" }
+          },
+          ordinal,
+          Date.now()
+        )
       )
       return { cards: [card], value }
-    })
+    }
 }
 
+/** Model arguments a command's generated payload cannot hold. */
+error PayloadRejected { message: string }
+
 /** Decode model arguments against the same generated payload schema as the CLI. */
-const commandPayload = (row: CatalogDescriptor, args: string | undefined): Record<string, unknown> => {
+effect function commandPayload(row: CatalogDescriptor, args: string | undefined) {
   const text = (args ?? "").trim()
   let input: unknown = {}
   const properties = (row.payload.schema.properties ?? {}) as Record<string, unknown>
   const keys = Object.keys(properties)
-  if (text.startsWith("{")) input = JSON.parse(text)
+  if (text.startsWith("{")) input = try Effect.try(() => JSON.parse(text))
   else if (text !== "") {
     if (keys.includes("n")) {
       const match = /^T([1-9]\d*)(?:\s+([\s\S]+))?$/u.exec(text)
-      if (match === null) throw new Error("Expected Tn or a JSON payload")
+      if (match === null) throw new PayloadRejected({ message: "Expected Tn or a JSON payload" })
       input = { n: Number(match[1]) }
       if (match[2] !== undefined) {
         const tail = ["answer", "text", "direction"].find((key) => keys.includes(key))
-        if (tail === undefined) throw new Error("Unexpected arguments")
+        if (tail === undefined) throw new PayloadRejected({ message: "Unexpected arguments" })
         ;(input as Record<string, unknown>)[tail] = match[2]
       }
     } else if (keys.includes("text")) input = { text }
     else if (keys.length === 1) input = { [keys[0]!]: text }
-    else throw new Error("Use a JSON object matching the command payload")
+    else throw new PayloadRejected({ message: "Use a JSON object matching the command payload" })
   }
   // Only declared payload fields reach the shared HTTP encoder.
-  return z.fromJSONSchema(
-    {
-      ...row.payload.schema,
-      $defs: row.payload.definitions,
-      additionalProperties: false
-    } as Parameters<typeof z.fromJSONSchema>[0]
-  ).parse(input) as Record<string, unknown>
+  return try Effect.try(() =>
+    z.fromJSONSchema(
+      {
+        ...row.payload.schema,
+        $defs: row.payload.definitions,
+        additionalProperties: false
+      } as Parameters<typeof z.fromJSONSchema>[0]
+    ).parse(input) as Record<string, unknown>
+  )
 }
 
 /**
@@ -511,17 +523,18 @@ const accountConversation = (grant: DurableChatGrant): boolean =>
  */
 const uiCommand = (row: CatalogDescriptor, command: UiInstruction.UiInstructionCommand): Bind => (grant) =>
   grant.api === undefined && !accountConversation(grant) ? undefined : (args) =>
-    Effect.sync(() => {
+    effect {
       const refusal = command === "theme"
         ? "Invalid arguments for theme; use light or dark."
         : `Invalid arguments for ${command}; use its declared payload.`
-      let ui: UiInstruction.UiInstructionFrame
-      try {
-        const payload = Object.entries(commandPayload(row, args)).filter(([, value]) => value !== null)
-        ui = UiInstruction.UiInstructionFrameSchema.parse({ ...Object.fromEntries(payload), command })
-      } catch {
-        return { refusal }
-      }
+      const decoded = try Effect.result(effect {
+        const payload = Object.entries(try commandPayload(row, args)).filter(([, value]) => value !== null)
+        return try Effect.try(() =>
+          UiInstruction.UiInstructionFrameSchema.parse({ ...Object.fromEntries(payload), command })
+        )
+      })
+      if (decoded._tag === "Failure") return { refusal }
+      const ui = decoded.success
       if (command === "theme" && ui.mode !== "light" && ui.mode !== "dark") return { refusal }
       /*
        * A queued request, and it says so. The committed frame is the whole
@@ -540,7 +553,7 @@ const uiCommand = (row: CatalogDescriptor, command: UiInstruction.UiInstructionC
           + "Their browser runs it; this host cannot see their screen, so never state what it shows or found.",
         ui
       }
-    })
+    }
 
 /**
  * A flow asked for with its form (THE FORM LAW). The
@@ -631,77 +644,82 @@ const flowCommand = (row: CatalogDescriptor): Bind => (grant, { api }) => {
   const author = grant.api?.author
   if (author === undefined) return undefined
   return (args, ordinal) =>
-    Effect.gen(function*() {
-      let input: { name?: string | undefined; request?: string | undefined; diff?: string | undefined }
-      try {
+    effect {
+      const decoded = try Effect.result(Effect.try(() => {
         const raw = args?.trimStart() ?? ""
         const boundary = raw.search(/\s/)
         const parsed = raw.startsWith("{") ? JSON.parse(raw) : {
           ...(raw === "" ? {} : { name: boundary < 0 ? raw : raw.slice(0, boundary) }),
           ...(boundary < 0 ? {} : { request: raw.slice(boundary).trimStart() })
         }
-        input = z.strictObject({
+        return z.strictObject({
           name: z.string().min(1).optional(),
           request: z.string().min(1).optional(),
           diff: z.string().optional()
         }).parse(parsed)
-      } catch {
+      }))
+      if (decoded._tag === "Failure") {
         return { refusal: `Invalid arguments for ${row.name}; use its declared payload.` }
       }
+      const input: { name?: string | undefined; request?: string | undefined; diff?: string | undefined } =
+        decoded.success
       const missing = ["name", ...(row.name === "flow.edit" ? ["request"] : [])].filter((key) =>
         input[key as "name" | "request"] === undefined
       )
       if (missing.length > 0) return { refusal: `${row.name} needs ${missing.join(" and ")}` }
       // The required name was checked above; no user code is loaded to resolve it.
       const name = input.name!
-      const answer = yield* api("/api/flows", { method: "GET" })
+      const answer = try api("/api/flows", { method: "GET" })
       if ("code" in answer) return { refusal: answer.code }
-      const parsed = z.array(FlowCard.FlowCardSchema).safeParse(answer.body)
+      const parsed = try orDefect(() => z.array(FlowCard.FlowCardSchema).safeParse(answer.body))
       if (answer.status !== 200 || !parsed.success) return { refusal: "Flows unavailable" }
       let model = parsed.data.find((flow) => flow.name === name)
       if (model === undefined) {
-        const named = yield* api(`/api/flows/${encodeURIComponent(name)}`, { method: "GET" })
+        const named = try api(`/api/flows/${encodeURIComponent(name)}`, { method: "GET" })
         if (!("code" in named) && named.status === 200) {
-          const selected = FlowCard.FlowCardSchema.safeParse(named.body)
+          const selected = try orDefect(() => FlowCard.FlowCardSchema.safeParse(named.body))
           if (selected.success && selected.data.name === name) model = selected.data
         }
       }
       if (model === undefined) return { refusal: `No flow ${name}` }
-      if (row.name === "flow.edit" && model.system) return { refusal: `${FlowEdit.flowTitle(name)} is built in` }
+      const title = try orDefect(() => FlowEdit.flowTitle(name))
+      if (row.name === "flow.edit" && model.system) return { refusal: `${title} is built in` }
       const now = Date.now()
       if (row.name === "flow.edit") {
-        const draft = FlowEdit.flowEditTodoInput(name, input.request!, input.diff)
-        const request = catalogRequest(catalogDescriptors.find((entry) => entry.name === "todo.new")!, draft)
-        return confirmed(yield* api(request.path, { ...request, idempotencyKey: `chat:${grant.turnId}:${ordinal}` }))
+        const request = try orDefect(() =>
+          catalogRequest(
+            catalogDescriptors.find((entry) => entry.name === "todo.new")!,
+            FlowEdit.flowEditTodoInput(name, input.request!, input.diff)
+          )
+        )
+        return confirmed(try api(request.path, { ...request, idempotencyKey: `chat:${grant.turnId}:${ordinal}` }))
       }
 
       const card: Cards.Card = {
         id: `flow:${name}`,
         kind: "flow",
-        title: FlowEdit.flowTitle(name),
+        title,
         status: "active",
         ordinal,
         createdAt: now,
         payload: { name }
       }
       return { cards: [card], value: JSON.stringify(model) }
-    })
+    }
 }
 
 /** The one descriptor-to-HTTP dispatch path; policy/confirmations stay on the server. */
 const catalogCommand = (row: CatalogDescriptor): Bind => (grant, { api }) => {
   if (grant.api === undefined || row.http === null) return undefined
   return (args, ordinal) =>
-    Effect.gen(function*() {
-      let payload: Record<string, unknown>
-      let request: CatalogHttpRequest
-      try {
-        payload = commandPayload(row, args)
+    effect {
+      const prepared = try Effect.result(effect {
+        const payload = try commandPayload(row, args)
         let binding = row.http!
         // Retry uses github's existing sync door; changing the App remains
         // person-only. No other payload field may select transport authority.
         if (row.name === "github" && payload.operation === "retry") {
-          if (Object.keys(payload).some((key) => key !== "operation")) throw new Error("Unavailable payload binding")
+          if (Object.keys(payload).some((key) => key !== "operation")) throw new PayloadRejected({ message: "Unavailable payload binding" })
           binding = { ...binding, method: "POST", body: {} }
         }
         const projection = binding.method === "GET" ? binding.query : binding.body
@@ -710,15 +728,17 @@ const catalogCommand = (row: CatalogDescriptor): Bind => (grant, { api }) => {
             ...Object.values(projection),
             ...[...binding.path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]!)
           ])
-          if (Object.keys(payload).some((key) => !fields.has(key))) throw new Error("Unavailable payload binding")
+          if (Object.keys(payload).some((key) => !fields.has(key))) throw new PayloadRejected({ message: "Unavailable payload binding" })
         }
-        request = catalogRequest({ http: binding }, payload)
-      } catch {
+        return try Effect.try(() => catalogRequest({ http: binding }, payload))
+      })
+      if (prepared._tag === "Failure") {
         return { refusal: `Invalid arguments for ${row.name}; use its declared payload.` }
       }
+      const request = prepared.success
       // A call's position is stable within the durable turn. The model cannot
       // choose or replace this key, even when it supplies one in its payload.
-      const answer = yield* api(request.path, {
+      const answer = try api(request.path, {
         ...request,
         idempotencyKey: `chat:${grant.turnId}:${ordinal}`
       })
@@ -729,33 +749,33 @@ const catalogCommand = (row: CatalogDescriptor): Bind => (grant, { api }) => {
       }
       const now = Date.now()
       if (row.name === "stack") {
-        const parsed = HomeCard.HomeCardSchema.safeParse(answer.body)
+        const parsed = try orDefect(() => HomeCard.HomeCardSchema.safeParse(answer.body))
         if (!parsed.success) return { refusal: "Invalid stack response" }
         const cards: Array<Cards.Card> = []
         const todo = catalogDescriptors.find((entry) => entry.name === "todo")!
         for (const item of parsed.data.items) {
           if (item.state === "merged" || item.state === "dropped") continue
-          const request = catalogRequest(todo, { n: item.n })
-          const detail = yield* api(request.path, request)
+          const request = try orDefect(() => catalogRequest(todo, { n: item.n }))
+          const detail = try api(request.path, request)
           if ("code" in detail) return { refusal: detail.code }
-          const model = TodoCard.TodoCardSchema.safeParse(detail.body)
+          const model = try orDefect(() => TodoCard.TodoCardSchema.safeParse(detail.body))
           if (detail.status !== 200 || !model.success || model.data.n !== item.n) {
             return { refusal: "Invalid TODO response" }
           }
-          cards.push(TodoCommands.todoCard(item.n, model.data, ordinal, now))
+          cards.push(try orDefect(() => TodoCommands.todoCard(item.n, model.data, ordinal, now)))
         }
         return { cards, value: JSON.stringify(parsed.data) }
       }
       if (row.name === "todo") {
-        const parsed = TodoCard.TodoCardSchema.safeParse(answer.body)
+        const parsed = try orDefect(() => TodoCard.TodoCardSchema.safeParse(answer.body))
         if (!parsed.success) return { refusal: "Invalid TODO response" }
         return {
-          cards: [TodoCommands.todoCard(parsed.data.n, parsed.data, ordinal, now)],
-          value: JSON.stringify(parsed.data)
+          cards: [try orDefect(() => TodoCommands.todoCard(parsed.data.n, parsed.data, ordinal, now))],
+          value: try orDefect(() => JSON.stringify(parsed.data))
         }
       }
-      return { cards: [], value: JSON.stringify({ status: answer.status, body: answer.body }) }
-    })
+      return { cards: [], value: try orDefect(() => JSON.stringify({ status: answer.status, body: answer.body })) }
+    }
 }
 
 /** A command this turn's grant runs. */
@@ -938,10 +958,10 @@ const runCommand = <E>(
   ordinal: number,
   write: FrameWriter<E>
 ): Effect.Effect<string, E> =>
-  Effect.gen(function*() {
+  effect {
     const runId = grant.request.runId
     const name = offered.command.name
-    yield* write({
+    try write({
       runId,
       type: "call.started",
       link,
@@ -950,13 +970,13 @@ const runCommand = <E>(
       description: offered.command.summary,
       ...(args === undefined ? {} : { arguments: args })
     })
-    const outcome = yield* offered.run(args, ordinal)
+    const outcome = try offered.run(args, ordinal)
     if ("refusal" in outcome) {
-      yield* write({ runId, type: "gate.rejected", link, kind: "call_failed", message: outcome.refusal })
+      try write({ runId, type: "gate.rejected", link, kind: "call_failed", message: outcome.refusal })
       return `failed: ${outcome.refusal}`
     }
-    for (const card of outcome.cards) yield* write({ runId, type: "card", card })
-    yield* write({
+    for (const card of outcome.cards) try write({ runId, type: "card", card })
+    try write({
       runId,
       type: "call.settled",
       link,
@@ -965,27 +985,27 @@ const runCommand = <E>(
       verdict: "run",
       ...(outcome.ui ? { ui: outcome.ui } : {})
     })
-    return AgentToolResult.boundToolResult(outcome.value).modelOutput
-  })
+    return (try orDefect(() => AgentToolResult.boundToolResult(outcome.value))).modelOutput
+  }
 
 /**
  * Runs one held tool call on the host and returns what the model reads: the
  * commands tool's list of what this turn runs, or one command's result.
  */
-const runHostTool = <E>(
+effect function runHostTool<E>(
   grant: DurableChatGrant,
   offered: ReadonlyArray<Offered>,
   call: HeldToolCall,
   link: number,
   ordinal: number,
   write: FrameWriter<E>
-): Effect.Effect<string, E> => {
+): Effect.Effect<string, E> {
   // A turn offered no tool runs none, whatever the model calls.
   if (call.name !== AgentCommands.commandsToolSpec.name || offered.length === 0) {
-    return Effect.succeed(AgentCommands.unknownToolResult(call.name))
+    return try Effect.orDie(Effect.try(() => AgentCommands.unknownToolResult(call.name)))
   }
-  const decoded = AgentCommands.decodeCommandsCall(call.arguments)
-  if ("failure" in decoded) return Effect.succeed(decoded.failure)
+  const decoded = try Effect.orDie(Effect.try(() => AgentCommands.decodeCommandsCall(call.arguments)))
+  if ("failure" in decoded) return decoded.failure
   if (decoded.action === "list") {
     const listed = offered.flatMap(({ command }) =>
       decoded.namespace === "" || command.name === decoded.namespace ||
@@ -997,11 +1017,11 @@ const runHostTool = <E>(
         }]
         : []
     )
-    return Effect.succeed(JSON.stringify({ commands: listed }))
+    return try Effect.orDie(Effect.try(() => JSON.stringify({ commands: listed })))
   }
   const target = offered.find(({ command }) => command.name === decoded.name)
-  if (target === undefined) return Effect.succeed(AgentCommands.unknownCommandResult(decoded.name))
-  return runCommand(grant, target, decoded.args, link, ordinal, write)
+  if (target === undefined) return try Effect.orDie(Effect.try(() => AgentCommands.unknownCommandResult(decoded.name)))
+  return try runCommand(grant, target, decoded.args, link, ordinal, write)
 }
 
 /**
@@ -1021,7 +1041,7 @@ export const runHostTurn = <E>(
   transport: HostTransport,
   diagnostics?: HostDiagnostics
 ): Effect.Effect<void, Model.ModelFailure | ModelError.ModelError | E, ModelStep.Requirements> =>
-  Effect.gen(function*() {
+  effect {
     const offered = offeredCommands(grant, transport)
     /*
      * What this turn could do, as counts and flags. A turn that answers "I
@@ -1062,7 +1082,7 @@ export const runHostTurn = <E>(
       // ellipses are multi-byte, so a code-unit count would not match either.
       instructionBytes: instructions.byteLength,
       instructionLines: request.instructions.split("\n").length,
-      instructionSha: digestSync(instructions).slice(0, 12),
+      instructionSha: (try Effect.orDie(Effect.try(() => digestSync(instructions)))).slice(0, 12),
       appended: grant.agentInstructions !== undefined,
       appendedBytes: grant.agentInstructions === undefined ? 0 : utf8.encode(grant.agentInstructions).byteLength,
       context: request.context !== undefined,
@@ -1074,14 +1094,14 @@ export const runHostTurn = <E>(
     let usage: NativeAgent.AgentTurnUsage | undefined
     let ordinal = 0
     for (let link = 0;; link += 1) {
-      const held = yield* runModelTurn(model, request, options, write, { usage }, diagnostics)
+      const held = try runModelTurn(model, request, options, write, { usage }, diagnostics)
       if (held === undefined) return
       usage = held.usage
       // The last leg's calls would have no leg left to read their results.
       if (link + 1 === AgentToolResult.MAX_TOOL_LEGS) break
       const results: Array<NativeAgent.AgentChatMessage> = []
       for (const call of held.calls) {
-        const output = yield* runHostTool(grant, offered, call, link, ordinal, write)
+        const output = try runHostTool(grant, offered, call, link, ordinal, write)
         ordinal += 1
         results.push(
           { type: "function_call", call_id: call.id, name: call.name, arguments: call.arguments },
@@ -1090,10 +1110,10 @@ export const runHostTurn = <E>(
       }
       request = { ...request, messages: [...request.messages, ...results] }
     }
-    yield* write({
+    try write({
       runId: grant.request.runId,
       type: "done",
       reason: "tool_limit",
       ...(usage === undefined ? {} : { usage })
     })
-  })
+  }

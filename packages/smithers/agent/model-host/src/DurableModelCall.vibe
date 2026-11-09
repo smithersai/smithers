@@ -198,28 +198,30 @@ export const durableModelStream = (
   onStart?: () => Effect.Effect<void>
 ): Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure, ModelStep.Requirements> =>
   Stream.callback<ModelEvent.ModelEvent, Model.ModelFailure, ModelStep.Requirements>((queue) =>
-    Effect.gen(function*() {
-      const prepared = yield* source.route.prepare(request)
+    effect {
+      const prepared = try source.route.prepare(request)
       const { body, ...material } = prepared
-      const key = digestSync(
-        CanonicalJson.stringify({
-          request: JSON.parse(JSON.stringify(request)),
-          prepared: { ...material, body: Array.from(body) }
-        })
-      )
+      const key = try Effect.orDie(Effect.try(() =>
+        digestSync(
+          CanonicalJson.stringify({
+            request: JSON.parse(JSON.stringify(request)),
+            prepared: { ...material, body: Array.from(body) }
+          })
+        )
+      ))
       let executed = false
-      const recorded = yield* Action.make({
+      const recorded = try Action.make({
         name: name + "/outcome",
         tier: "sealed",
         idempotencyKey: key,
         retryPolicy: once,
         success: Recorded,
         error: ModelStep.Failure,
-        execute: Effect.gen(function*() {
+        execute: effect {
           executed = true
-          if (onStart !== undefined) yield* onStart()
+          if (onStart !== undefined) try onStart()
           const events: Array<ModelEvent.ModelEvent> = []
-          const result = yield* ModelStep.run({
+          const result = try ModelStep.run({
             name,
             request,
             model: safeModel(source),
@@ -236,11 +238,11 @@ export const durableModelStream = (
           )
           // Preserve partial output on errors: fallback must never hide it.
           return { events, ...(result.error === undefined ? {} : { error: result.error }) }
-        })
+        }
       })
-      if (!executed) yield* Effect.forEach(recorded.events, (event) => Queue.offer(queue, event), { discard: true })
-      if (recorded.error !== undefined) return yield* Effect.fail(recorded.error)
-    }).pipe(
+      if (!executed) try Effect.forEach(recorded.events, (event) => Queue.offer(queue, event), { discard: true })
+      if (recorded.error !== undefined) throw recorded.error
+    }.pipe(
       Effect.mapError((error) =>
         error._tag === "/harness/HarnessError"
           ? new ModelError.ModelError({ code: "unknown", message: "durable model step failed" })

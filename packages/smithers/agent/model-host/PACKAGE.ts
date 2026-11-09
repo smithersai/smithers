@@ -97,7 +97,7 @@ const securityReview = Smithers.SecurityReview({
         "environmentModelResolver preferring grant.request.model over the configured binding without the planner pinning origin and credential.",
         "A fixed placeholder grant token or cursor on the stream path that a resolver could treat as a real durable grant."
       ],
-      paths: ["src/HostServer.ts", "src/EnvironmentResolver.ts"]
+      paths: ["src/HostServer.ts", "src/EnvironmentResolver.vibe"]
     },
     {
       id: "credential-egress-pinning",
@@ -109,7 +109,7 @@ const securityReview = Smithers.SecurityReview({
         "A fetch used for a provider call that does not set redirect: 'manual', letting a 3xx carry the key header to another origin.",
         "A Route or Endpoint built from a baseUrl or path that did not come from the validated ModelPlan."
       ],
-      paths: ["src/EnvironmentResolver.ts", "src/LocalModel.vibe", "src/ConfiguredModelRoute.vibe", "src/ModelProbe.ts"]
+      paths: ["src/EnvironmentResolver.vibe", "src/LocalModel.vibe", "src/ConfiguredModelRoute.vibe", "src/ModelProbe.vibe"]
     },
     {
       id: "credential-output-redaction",
@@ -123,7 +123,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/ModelTurnHost.vibe",
-        "src/ModelProbe.ts",
+        "src/ModelProbe.vibe",
         "src/LocalModel.vibe",
         "src/HostServer.ts",
         "src/ModelHostError.vibe"
@@ -139,7 +139,7 @@ const securityReview = Smithers.SecurityReview({
         "A decision or generation call in ModelProbe that runs outside providerTransport, or returns success after it refused a redirect.",
         "Caller-composed ModelCallInput (prompt, system, questions, maxTokens) reaching the provider without the rpc schema's size and count bounds."
       ],
-      paths: ["src/ModelProbe.ts", "src/LocalModel.vibe", "src/ConfiguredModelRoute.vibe"]
+      paths: ["src/ModelProbe.vibe", "src/LocalModel.vibe", "src/ConfiguredModelRoute.vibe"]
     },
     {
       id: "journal-receipt-fencing",

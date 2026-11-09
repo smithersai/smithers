@@ -1,7 +1,7 @@
 import { Model, type ModelEvent } from "@smthrs/model"
 import { Deferred, Effect, Stream } from "effect"
 import { HttpEffect } from "effect/http"
-import { environmentModelResolver } from "../../src/EnvironmentResolver.ts"
+import { environmentModelResolver } from "../../src/EnvironmentResolver.vibe"
 import { createModelTurnHandler, MODEL_HOST_PROTOCOL } from "./durable.ts"
 
 const authorization = process.env.SMITHERS_CHAT_HOST_TOKEN ?? ""

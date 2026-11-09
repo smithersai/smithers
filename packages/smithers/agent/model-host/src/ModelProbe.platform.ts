@@ -1,0 +1,14 @@
+/**
+ * Host access for the adjacent VibeLang module.
+ *
+ * @since 1.0.0-rc.0
+ */
+
+/**
+ * The monotonic clock a probe's latency is read from.
+ *
+ * @private
+ * @since 1.0.0-rc.0
+ * @throws {never}
+ */
+export const nowMs = (): number => performance.now()

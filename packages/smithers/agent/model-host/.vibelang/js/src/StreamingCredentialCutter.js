@@ -55,6 +55,7 @@ export class StreamingCredentialCutter {
         this.pending = this.pending.slice(this.pending.length - held);
         return this.release(emitted);
     }
+    /** @throws {never} */
     finish() {
         const emitted = this.cut(this.pending);
         this.pending = "";

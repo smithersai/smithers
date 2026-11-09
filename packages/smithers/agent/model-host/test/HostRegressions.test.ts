@@ -11,7 +11,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net"
 import { expect, test } from "vitest"
 import { runDurableChatTurn as durableTurn } from "../src/DurableChatProducer.ts"
-import { environmentModelResolver } from "../src/EnvironmentResolver.ts"
+import { environmentModelResolver } from "../src/EnvironmentResolver.vibe"
 import { runContextPreflight } from "./fixtures/durable.ts"
 import { DurableChatProducer, runDurableChatTurn } from "./fixtures/durable.ts"
 import { createModelTurnHandler, MODEL_HOST_STREAM_PATH } from "./fixtures/durable.ts"

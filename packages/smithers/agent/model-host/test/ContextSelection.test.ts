@@ -3,7 +3,7 @@ import type { ContextPreflight } from "@smthrs/rpc"
 import { Effect, Stream } from "effect"
 import { HttpEffect } from "effect/http"
 import { expect, test, vi } from "vitest"
-import { environmentModelResolver } from "../src/EnvironmentResolver.ts"
+import { environmentModelResolver } from "../src/EnvironmentResolver.vibe"
 import {
   createModelTurnHandler,
   MODEL_HOST_CONTEXT_SELECT_PATH,

@@ -133,8 +133,8 @@ test.each(["sdk", "host"] as const)(
 test.each(["selection", "generation", "decision", "fallback"] as const)(
   "%s replays its complete provider outcome and preserves accounting",
   async (boundary) => {
-    const { runContextPreflight } = await import("../src/ContextPreflight.ts")
-    const { createModelProbe } = await import("../src/ModelProbe.ts")
+    const { runContextPreflight } = await import("../src/ContextPreflight.vibe")
+    const { createModelProbe } = await import("../src/ModelProbe.vibe")
     const { Metric } = await import("effect")
     const { RunMetrics } = await import("@smthrs/flow")
     let calls = 0
@@ -329,7 +329,7 @@ test("reopening the SQLite host replays the settled answer with its original cac
   const { join } = await import("node:path")
   const { Redacted, Result, Stream } = await import("effect")
   const { providerTransport } = await import("../src/ProviderTransport.ts")
-  const { durableModelStream } = await import("../src/DurableModelCall.ts")
+  const { durableModelStream } = await import("../src/DurableModelCall.vibe")
   const directory = await mkdtemp(join(tmpdir(), "model-host-durable-"))
   let calls = 0
   const wire: unknown[] = []
@@ -499,7 +499,7 @@ test("a provider refusal retains retry timing while removing credential echoes",
   const { Model, ModelError } = await import("@smthrs/model")
   const { Stream } = await import("effect")
   const { inFlow, fixtureRoute } = await import("./fixtures/durable.ts")
-  const { durableModelStream } = await import("../src/DurableModelCall.ts")
+  const { durableModelStream } = await import("../src/DurableModelCall.vibe")
   const result = await Effect.runPromise(inFlow(Effect.result(Stream.runCollect(durableModelStream(
     "model-host/refusal",
     {
@@ -550,7 +550,7 @@ test("a bounded durable call cancels a silent provider at its deadline", async (
   const { Model } = await import("@smthrs/model")
   const { Stream } = await import("effect")
   const { inFlow, fixtureRoute } = await import("./fixtures/durable.ts")
-  const { durableModelStream } = await import("../src/DurableModelCall.ts")
+  const { durableModelStream } = await import("../src/DurableModelCall.vibe")
   let closed = false
   const model = Model.make({
     stream: () =>
@@ -573,7 +573,7 @@ test("a bounded durable call cancels a silent provider at its deadline", async (
 test.each(["failure", "defect"] as const)("a faulty runtime is reported safely (%s)", async (fault) => {
   const { Model } = await import("@smthrs/model")
   const { Stream } = await import("effect")
-  const { createModelProbe } = await import("../src/ModelProbe.ts")
+  const { createModelProbe } = await import("../src/ModelProbe.vibe")
   const { inFlow, fixtureRoute } = await import("./fixtures/durable.ts")
   const error = Schema.decodeUnknownSync(ModelStep.Failure)({
     _tag: "/harness/HarnessError",
@@ -618,7 +618,7 @@ test("rejects credential-bearing reasoning signatures before durable recording",
   const { Model } = await import("@smthrs/model")
   const { Stream } = await import("effect")
   const { inFlow, fixtureRoute } = await import("./fixtures/durable.ts")
-  const { durableModelStream } = await import("../src/DurableModelCall.ts")
+  const { durableModelStream } = await import("../src/DurableModelCall.vibe")
   const result = await Effect.runPromise(inFlow(Effect.result(Stream.runCollect(durableModelStream(
     "model-host/signature",
     {
@@ -648,7 +648,7 @@ test("redacts tool output before durable recording", async () => {
   const { Model } = await import("@smthrs/model")
   const { Stream } = await import("effect")
   const { inFlow, fixtureRoute } = await import("./fixtures/durable.ts")
-  const { durableModelStream } = await import("../src/DurableModelCall.ts")
+  const { durableModelStream } = await import("../src/DurableModelCall.vibe")
   const events = await Effect.runPromise(inFlow(Stream.runCollect(durableModelStream(
     "model-host/output",
     {
@@ -675,7 +675,7 @@ test.each(["text", "thinking"] as const)("keeps buffered %s deltas on their own 
   const { Model } = await import("@smthrs/model")
   const { Stream } = await import("effect")
   const { inFlow, fixtureRoute } = await import("./fixtures/durable.ts")
-  const { durableModelStream } = await import("../src/DurableModelCall.ts")
+  const { durableModelStream } = await import("../src/DurableModelCall.vibe")
   const events: ModelEvent.ModelEvent[] = [
     { type: `${kind}-start`, id: "a", ...(kind === "thinking" ? { signature: "attestation" } : {}) },
     { type: `${kind}-delta`, id: "a", text: "s" },
@@ -716,7 +716,7 @@ test.each([
   const { Model } = await import("@smthrs/model")
   const { Stream } = await import("effect")
   const { inFlow, fixtureRoute } = await import("./fixtures/durable.ts")
-  const { durableModelStream } = await import("../src/DurableModelCall.ts")
+  const { durableModelStream } = await import("../src/DurableModelCall.vibe")
   const result = await Effect.runPromise(inFlow(Effect.result(Stream.runCollect(durableModelStream(
     "model-host/metadata",
     {
@@ -745,7 +745,7 @@ test("sanitizes diagnostic strings while retaining settlement, timing, usage and
   const { Model } = await import("@smthrs/model")
   const { Stream } = await import("effect")
   const { inFlow, fixtureRoute } = await import("./fixtures/durable.ts")
-  const { durableModelStream } = await import("../src/DurableModelCall.ts")
+  const { durableModelStream } = await import("../src/DurableModelCall.vibe")
   for (
     const timing of [{ attempts: 1 }, {
       attempts: 2,

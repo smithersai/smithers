@@ -16,10 +16,10 @@ import type {
   CallbackTransportObserver,
   ObservedCallbackTransport
 } from "./CallbackTransport.ts"
-import { runContextPreflight } from "./ContextPreflight.ts"
+import { runContextPreflight } from "./ContextPreflight.vibe"
 import { createHostDiagnostics } from "./HostDiagnostics.vibe"
 import type { HostDiagnosticFields, HostDiagnostics } from "./HostDiagnostics.vibe"
-import { apiCaller, runHostTurn, sourceLister, sourceReader } from "./HostTools.ts"
+import { apiCaller, runHostTurn, sourceLister, sourceReader } from "./HostTools.vibe"
 import { CommitRefused, ProducerUnreachable, ProviderStartRefused, ReceiptMismatch } from "./ModelHostError.vibe"
 import type { ProducerError } from "./ModelHostError.vibe"
 import type { ModelTurnOptions } from "./ModelTurnHost.vibe"

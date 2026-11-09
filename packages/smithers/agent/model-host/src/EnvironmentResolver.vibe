@@ -6,6 +6,7 @@
 
 import { ConfiguredModel } from "@smthrs/rpc"
 import { Effect, Redacted } from "effect"
+import { defaultFetch } from "./EnvironmentResolver.platform.ts"
 import type { PlannedModel } from "./ConfiguredModelRoute.vibe"
 import { toModel } from "./ConfiguredModelRoute.vibe"
 import type { ModelSource } from "./FastModelFallback.vibe"
@@ -39,24 +40,26 @@ export interface EnvironmentModelResolverOptions {
  * @since 1.0.0-rc.0
  */
 export const environmentModelResolver = (options: EnvironmentModelResolverOptions): ModelTurnResolver =>
-(
+effect (
   grant,
   selection
 ) => {
-  const credentials = ConfiguredModel.hostModelCredentials(options.env)
-  const configured = ConfiguredModel.planModelBinding(options.binding, credentials, { kind: "generation" })
+  const credentials = try Effect.orDie(Effect.try(() => ConfiguredModel.hostModelCredentials(options.env)))
+  const planBinding = (binding: unknown) =>
+    Effect.orDie(Effect.try(() => ConfiguredModel.planModelBinding(binding, credentials, { kind: "generation" })))
+  const secretNamed = (name: string) =>
+    Effect.orDie(Effect.try(() => options.env[ConfiguredModel.modelCredentialEnvName(name)]?.trim()))
+  const configured = try planBinding(options.binding)
   // The wire may carry null for an absent model, as the Go resolver reads it.
   const requested: unknown = grant.request.model ?? undefined
-  const planned = requested === undefined
-    ? configured
-    : ConfiguredModel.planModelBinding(requested, credentials, { kind: "generation" })
+  const planned = try (requested === undefined ? Effect.succeed(configured) : planBinding(requested))
   if (
     !configured.ok || !planned.ok || planned.plan.credential !== configured.plan.credential ||
     planned.plan.origin !== configured.plan.origin
-  ) return Effect.fail(new ResolveFailed({ message: "configured model is unavailable" }))
-  const credential = options.env[ConfiguredModel.modelCredentialEnvName(planned.plan.credential)]?.trim()
+  ) throw new ResolveFailed({ message: "configured model is unavailable" })
+  const credential = try secretNamed(planned.plan.credential)
   if (credential === undefined || credential === "") {
-    return Effect.fail(new ResolveFailed({ message: "configured model credential is unavailable" }))
+    throw new ResolveFailed({ message: "configured model credential is unavailable" })
   }
   // The fast proxy and its fallbacks answer quickly or not at all: one try, and 9 s for a response to start.
   const fastExecution = { maxRetries: 0, responseStartMs: 9000 }
@@ -65,39 +68,37 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
       toModel(plan, Redacted.make(key), { fetch: options.fetchImpl, ...(fast ? { execution: fastExecution } : {}) }),
       (source) => source
     )
-  return modelOf(planned.plan, credential).pipe(
+  return try modelOf(planned.plan, credential).pipe(
     Effect.flatMap((model) =>
-      Effect.gen(function*() {
+      effect {
         const withFallback = (
           primary: PlannedModel,
           plan: ConfiguredModel.ModelPlan,
           primaryCredential: string
         ) =>
-          Effect.gen(function*() {
+          effect {
             const additionalCredentials: Array<string> = []
             if (plan.credential !== "SMITHERS_FAST_PROXY") {
               return { ...primary, additionalCredentials, fallbacks: [] as Array<ModelSource>, onFallback: undefined }
             }
-            let bindings: unknown
-            try {
-              bindings = JSON.parse(options.env.SMITHERS_FAST_FALLBACK_MODELS ?? "[]")
-            } catch {
-              return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
-            }
+            const bindings: unknown = try Effect.try({
+              try: () => JSON.parse(options.env.SMITHERS_FAST_FALLBACK_MODELS ?? "[]"),
+              catch: () => new ResolveFailed({ message: "fast-model fallback unavailable" })
+            })
             if (!Array.isArray(bindings)) {
-              return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
+              throw new ResolveFailed({ message: "fast-model fallback unavailable" })
             }
             const sources: Array<ModelSource> = []
             for (const binding of bindings) {
-              const fallback = ConfiguredModel.planModelBinding(binding, credentials, { kind: "generation" })
+              const fallback = try planBinding(binding)
               if (!fallback.ok) {
-                return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
+                throw new ResolveFailed({ message: "fast-model fallback unavailable" })
               }
-              const key = options.env[ConfiguredModel.modelCredentialEnvName(fallback.plan.credential)]?.trim()
+              const key = try secretNamed(fallback.plan.credential)
               if (!key) {
-                return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
+                throw new ResolveFailed({ message: "fast-model fallback unavailable" })
               }
-              const model = yield* modelOf(fallback.plan, key, true)
+              const model = try modelOf(fallback.plan, key, true)
               additionalCredentials.push(key)
               sources.push({
                 ...model,
@@ -115,7 +116,7 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
                   try: async (signal) => {
                     const endpoint = new URL(plan.baseUrl)
                     endpoint.pathname = endpoint.pathname.replace(/\/fast$/, "/fast/selected")
-                    const response = await refusingRedirects(options.fetchImpl ?? globalThis.fetch)(endpoint, {
+                    const response = await refusingRedirects(options.fetchImpl ?? defaultFetch())(endpoint, {
                       method: "POST",
                       headers: { "content-type": "application/json", authorization: `Bearer ${primaryCredential}` },
                       body: JSON.stringify({ index }),
@@ -126,8 +127,8 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
                   catch: () => undefined
                 }).pipe(Effect.ignore)
             }
-          })
-        const routedModel = yield* withFallback(model, planned.plan, credential)
+          }
+        const routedModel = try withFallback(model, planned.plan, credential)
         const resolved = {
           model: routedModel.model,
           options: {
@@ -146,9 +147,9 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
         // A selection-only request brings its own host-read input; a chat
         // turn's preflight reads authorized SharedEntries through the callback.
         if (grant.request.sharedConversation !== true && selection === undefined) return resolved
-        const input = selection !== undefined ? selection : yield* Effect.tryPromise({
+        const input = selection !== undefined ? selection : try Effect.tryPromise({
           try: async (signal) => {
-            const response = await refusingRedirects(options.fetchImpl ?? globalThis.fetch)(
+            const response = await refusingRedirects(options.fetchImpl ?? defaultFetch())(
               new URL("/internal/chat/context", grant.producerBaseUrl),
               {
                 method: "POST",
@@ -168,14 +169,14 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
         if (options.preflightBinding === undefined) return { ...resolved, preflight: { ...resolved, input } }
         // This binding is supplied by the host launcher, never by the prompt.
         // It may spend a different owner key, but keeps that key's own origin.
-        const fast = ConfiguredModel.planModelBinding(options.preflightBinding, credentials, { kind: "generation" })
-        if (!fast.ok) return yield* Effect.fail(new ResolveFailed({ message: "preflight model is unavailable" }))
-        const fastCredential = options.env[ConfiguredModel.modelCredentialEnvName(fast.plan.credential)]?.trim()
+        const fast = try planBinding(options.preflightBinding)
+        if (!fast.ok) throw new ResolveFailed({ message: "preflight model is unavailable" })
+        const fastCredential = try secretNamed(fast.plan.credential)
         if (fastCredential === undefined || fastCredential === "") {
-          return yield* Effect.fail(new ResolveFailed({ message: "preflight model credential is unavailable" }))
+          throw new ResolveFailed({ message: "preflight model credential is unavailable" })
         }
-        const fastModel = yield* modelOf(fast.plan, fastCredential)
-        const routedFast = yield* withFallback(fastModel, fast.plan, fastCredential)
+        const fastModel = try modelOf(fast.plan, fastCredential)
+        const routedFast = try withFallback(fastModel, fast.plan, fastCredential)
         return {
           ...resolved,
           preflight: {
@@ -194,7 +195,7 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
             }
           }
         }
-      })
+      }
     ),
     Effect.mapError(() => new ResolveFailed({ message: "configured model route is unavailable" }))
   )

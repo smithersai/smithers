@@ -25,9 +25,9 @@ export {
   type ToModelOptions,
   withRoute
 } from "./ConfiguredModelRoute.vibe"
-export { type ContextPreflightAnswer, runContextPreflight } from "./ContextPreflight.ts"
+export { type ContextPreflightAnswer, runContextPreflight } from "./ContextPreflight.vibe"
 export { type DurableChatGrant, DurableChatProducer, runDurableChatTurn } from "./DurableChatProducer.ts"
-export { environmentModelResolver, type EnvironmentModelResolverOptions } from "./EnvironmentResolver.ts"
+export { environmentModelResolver, type EnvironmentModelResolverOptions } from "./EnvironmentResolver.vibe"
 export {
   createHostDiagnostics,
   type HostDiagnosticFields,
@@ -59,7 +59,7 @@ export {
   ResolveFailed,
   StreamTooLarge
 } from "./ModelHostError.vibe"
-export { createModelProbe, type ModelProbe, type ModelProbeOptions } from "./ModelProbe.ts"
+export { createModelProbe, type ModelProbe, type ModelProbeOptions } from "./ModelProbe.vibe"
 export {
   type FrameWriter,
   type HeldToolCall,

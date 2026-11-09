@@ -8,7 +8,7 @@ import type { ModelStep } from "@smthrs/agent"
 import { type Model, ModelError, type ModelEvent, ModelRequest } from "@smthrs/model"
 import { Effect, Stream } from "effect"
 import type { HostModelRoute } from "./ConfiguredModelRoute.vibe"
-import { durableModelStream } from "./DurableModelCall.ts"
+import { durableModelStream } from "./DurableModelCall.vibe"
 
 /**
  * One host-owned provider and its matching credential-free preparation.
