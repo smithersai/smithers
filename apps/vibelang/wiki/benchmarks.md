@@ -611,6 +611,18 @@ The committed nine-case roster counts actual indexed reads in decide/apply/recei
 - The workerd deadline now includes three real reading budgets. The preceding run passed 97 groups and failed only that deadline; no reading hold was shortened.
 - Earlier landed fixes remain: native page-key/Latest follow recovery, site /history routing, correlated concurrent replies, and real mock initialization before clocked tests. Their historical receipts remain in the lane report.
 
+## Sandbox objects (in-memory Container)
+
+Vitest built-in bench, three samples per journey on one served Worker, production object bodies in real workerd SQLite. Artifact: `2026-11-09T17-36-26.294Z-sandbox-objects.json`, recorded 2026-11-09T17:36:26.294Z on the development host.
+
+| Journey | Mean (ms) | Samples |
+| --- | ---: | ---: |
+| `sandbox-objects-lifecycle` | 751.395 | 3 |
+| `sandbox-objects-refusals` | 9.323 | 3 |
+| `sandbox-machine-faults` | 54.788 | 3 |
+
+Limitation: an in-memory Container answers the run tool's fence protocol. No Cloudflare Container, image, checkpoint or shell latency is measured (0017).
+
 ## Benchmark-only coverage
 
 `pnpm bench:coverage` executes only benchmark workloads once under the coverage lane patched V8 5.0.0 provider, with subprocess evidence; no unit or fuzz suite is imported. Workerd adds independent Istanbul counters and Chromium precise V8 dumps. Strict 100% per-file thresholds remain red. Merged src/worker count: 5083/6675 statement-start executable lines. Scope additionally includes infra/scripts; the sole reasoned source exclusion is the unreachable mythical-seed guard in 0017. No src/worker line is excluded.
