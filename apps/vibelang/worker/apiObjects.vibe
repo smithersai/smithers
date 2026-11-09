@@ -1,0 +1,416 @@
+// The bodies of the API Worker's Durable Objects and its fetch handler. Their Alchemy bindings are worker/Api.vibe; Alchemy
+// is imported for types only here, so a workerd host can bundle and run these bodies.
+import type * as Cloudflare from "@alchemy.run/cloudflare"
+import { RuntimeContext } from "alchemy/RuntimeContext"
+import { WikiDrafting } from "../src/core/WikiWriter.vibe"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
+import { liveSpecificationReviewers } from "./SpecificationReviewers.vibe"
+import { accountRoute } from "../src/core/protocolDecision.vibe"
+import { publicIssues } from "./Issues.vibe"
+import { publicWiki } from "./Wiki.vibe"
+import { writerLayer } from "./VipDraft.vibe"
+import { wikiWriterLayer } from "./WikiDraft.vibe"
+import { ChatModel, Spend as IssueSpend, type Spend } from "./Reply.vibe"
+import type { Run, Role } from "../src/actions/Actions.vibe"
+import type { RunRequest } from "../src/actions/wire.vibe"
+import type { ActionsApi } from "./ActionsHttp.vibe"
+import { ActionIdentity, fromAccounts, trustedOf } from "./ActionIdentity.vibe"
+import * as ActionRuns from "./ActionRuns.vibe"
+import * as ActionDirectory from "./ActionDirectory.vibe"
+import * as Accounts from "./Accounts.vibe"
+import { postName, type Identity } from "../src/core/roles.vibe"
+import { FetchHttpClient, HttpClient, HttpServerRequest } from "effect/http"
+import type { ReadSnapshot } from "../src/core/schemas.vibe"
+import { type PageRequest, pageOf } from "../src/history/pages.vibe"
+import type { Write } from "../src/history/wire.vibe"
+import type { Principal } from "../src/history/roles.vibe"
+import * as HistoryObject from "./HistoryObject.vibe"
+import { chargeKeyOf } from "./budgetDecision.vibe"
+import { afterOf, eventStream, handle, type Conversations, type Histories } from "./Http.vibe"
+import { githubMain } from "./MainLog.vibe"
+import * as Objects from "./Objects.vibe"
+import { SandboxIdentity } from "./accountObject.vibe"
+import type { Gateway } from "./SandboxHttp.vibe"
+import { Unreachable } from "./Unreachable.vibe"
+import { Actions } from "../src/actions/Actions.vibe"
+import { LiveActions } from "../src/actions/LiveActions.vibe"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { Factory as importFactory } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { AgentActions } from "../src/actions/agent.vibe"
+
+export type ObjectState = Cloudflare.DurableObjectState["Service"]
+/** A namespace as the bodies use it: Alchemy's in production, a fetch adapter in the benchmark host. */
+export type Namespace<Shape> = Pick<Cloudflare.DurableObject<Shape>, "getByName">
+type Model = Effect.Success<ReturnType<typeof import("./AgentModel.vibe").chatModel>>
+type Setup = NonNullable<Effect.Success<ReturnType<typeof Accounts.configured>>>
+/** The repository whose history the History object holds. */
+export const REPOSITORY = "vibelang"
+
+export interface ConversationShape {
+  readonly startAction: (request: RunRequest, role: Role) => (string | null)!!RuntimeContext
+  readonly actionRequest: () => (RunRequest | undefined)!!RuntimeContext
+  readonly actionRuns: () => ReadonlyArray<Run>!!RuntimeContext
+  readonly cancelAction: (id: string, role: Role, owner: string) => (string | null)!!RuntimeContext
+  readonly post: (clientId: string, name: string, text: string, owner?: string) => (string | null)!!RuntimeContext
+  readonly read: (after: number) => ReadSnapshot!!RuntimeContext
+  readonly openWiki: (page: string) => (string | null)!!RuntimeContext
+  readonly tour: () => (string | null)!!RuntimeContext
+  readonly controlTour: (action: "pause" | "resume" | "seek", step: number) => (string | null)!!RuntimeContext
+  readonly endTour: () => (string | null)!!RuntimeContext
+  readonly alarm: () => void!!RuntimeContext
+}
+
+export interface BudgetShape {
+  readonly admit: () => boolean!!RuntimeContext
+  readonly spend: (reply: string, tokens: number) => void!!RuntimeContext
+}
+
+export interface HistoryShape {
+  readonly page: (request: PageRequest) => unknown!!RuntimeContext
+  /** A write as the request's signed-in identity (0028); a visitor is a viewer and is refused. */
+  readonly write: (name: Write, body: unknown, principal: Principal) => HistoryObject.Answered!!RuntimeContext
+  /** A write as `principal`: only the API Worker's own objects call it (`HistoryObject.readerOver`). */
+  readonly act: (name: Write, body: unknown, principal: Principal, operation: string) => HistoryObject.Answered!!RuntimeContext
+}
+
+export interface AccountsShape {
+  readonly draftWiki: (owner: string, page: string, ask: string, key: string) => (string | null)!!RuntimeContext
+  readonly role: (owner: string) => import("../src/core/conversation.vibe").Role!!RuntimeContext
+  readonly allowed: (actor: string, action: import("../src/core/conversation.vibe").Action) => boolean!!RuntimeContext
+  readonly current: (cookie: string | undefined) => Identity!!RuntimeContext
+  readonly participation: (cookie: string | undefined) => void!!RuntimeContext
+}
+export interface ActionDirectoryShape {
+  readonly list: (flow: string) => ReadonlyArray<Run>!!RuntimeContext
+  readonly start: (request: RunRequest, role: Role) => (string | null)!!RuntimeContext
+  readonly rerun: (id: string, next: string, role: Role, owner: string, caller?: { readonly name: string; readonly actor: "person" | "agent" }) => (string | null)!!RuntimeContext
+  readonly cancel: (id: string, role: Role, owner: string) => (string | null)!!RuntimeContext
+}
+/** The stub of `name`'s object; a call that fails to reach it is `Unreachable`. */
+function objectOf<Shape>(namespace: Namespace<Shape>, name: string, what: string) {
+  return Effect.try({ try: () => namespace.getByName(name), catch: () => new Unreachable({ what }) })
+}
+
+/** `call` with the request's runtime, its failures `Unreachable`. */
+function reached<A, E>(runtime: RuntimeContext["Service"], what: string, call: A!E!RuntimeContext) {
+  return Effect.mapError(Effect.provideService(call, RuntimeContext, runtime), () => new Unreachable({ what }))
+}
+
+/** The same daily token ledger serves conversation answers and explicit VIP drafts. */
+function spendOf(runtime: RuntimeContext["Service"], budgets: Namespace<BudgetShape>, hostId: string): Spend.Shape {
+  return {
+    admit: (day) => effect {
+      const object = try objectOf(budgets, day, "budget")
+      return try reached(runtime, "budget", object.admit())
+    },
+    spend: (day, reply, tokens) => effect {
+      const object = try objectOf(budgets, day, "budget")
+      // The day's object is shared by every conversation and account; the host's own id namespaces the charge.
+      try reached(runtime, "budget", object.spend(chargeKeyOf(hostId, reply), tokens))
+    },
+  }
+}
+
+/** Session/grant RPCs capture the host runtime; no credential enters a run request or journal. */
+function actionIdentity(namespace: Namespace<AccountsShape>, runtime: RuntimeContext["Service"], trusted?: { readonly owner: string; readonly name?: string }) {
+  const account = effect () => try objectOf(namespace, "project", "accounts")
+  return fromAccounts({
+    current: effect (signed) => try reached(runtime, "accounts", (try account()).current(signed)),
+    role: effect (owner) => try reached(runtime, "accounts", (try account()).role(owner)),
+    allowed: effect (owner, operation) => try reached(runtime, "accounts", (try account()).allowed(owner, operation)),
+  }, trusted)
+}
+
+/** One UTC day's token budget. */
+export function budgetObject(state: ObjectState, limit: number) {
+  return effect {
+    const budget = try Objects.budget(state.raw.storage, limit)
+    return { admit: () => budget.admit(), spend: budget.spend }
+  }
+}
+
+/** VibeLang's history; `client` reads GitHub's main. */
+export function historyObject(state: ObjectState, token: string | undefined, client: HttpClient.HttpClient) {
+  return effect {
+    const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
+    const sequencer = try HistoryObject.history(state.raw.storage)
+    const main = githubMain("smithersai/vibelang", client, token)
+    if ((try sequencer.read()).seq === 0) try HistoryObject.bootstrap(hostId, state.raw.storage, sequencer, main)
+    return {
+      // Each page is computed here, beside the history, so a reader gets only what it shows.
+      page: (request: PageRequest) => Effect.map(sequencer.read(), (history) => pageOf(history, request) as unknown),
+      write: (name: Write, body: unknown, principal: Principal) =>
+        HistoryObject.write(hostId, state.raw.storage, sequencer, main, principal, name, body),
+      act: (name: Write, body: unknown, principal: Principal, operation: string) =>
+        HistoryObject.write(hostId, state.raw.storage, sequencer, main, principal, name, body, operation),
+      fetch: effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        return eventStream(sequencer.follow(afterOf(new URL(request.url, "http://history.invalid")) ?? 0))
+      },
+    }
+  }
+}
+
+/** The project's accounts; `setup` is undefined when sign-in is not configured. */
+export function accountsObject(state: ObjectState, budgets: Namespace<BudgetShape>, model: Model, setup: Setup | undefined) {
+  return effect {
+    const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
+    if (setup === undefined) return {
+      draftWiki: () => succeed("forbidden"),
+      current: () => Effect.succeed({ id: "", login: "", role: "viewer" as const }), role: () => succeed("viewer" as const), allowed: () => succeed(false), participation: () => Effect.void,
+      fetch: effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        if (new URL(request.url, "https://api.invalid").pathname === "/api/issues") return try publicIssues(hostId, state.raw.storage)
+        if (new URL(request.url, "https://api.invalid").pathname === "/api/wiki") return try publicWiki(hostId, state.raw.storage)
+        return try Accounts.disabled()
+      },
+    }
+    const accounts = try Effect.orDie(Accounts.make(hostId, state.raw.storage, setup).pipe(Effect.provide(FetchHttpClient.layer)))
+    return {
+      ...accounts,
+      draftWiki: (owner: string, page: string, ask: string, key: string) => effect {
+        const runtime = try RuntimeContext
+        const spend = spendOf(runtime, budgets, hostId)
+        return try Effect.orDie(accounts.draftWiki(owner, page, ask, key).pipe(Effect.provide(wikiWriterLayer.pipe(Layer.provide(Layer.succeed(ChatModel, model)), Layer.provide(Layer.succeed(IssueSpend, spend))))))
+      },
+      fetch: effect {
+        const runtime = try RuntimeContext
+        const spend = spendOf(runtime, budgets, hostId)
+        return try accounts.fetch.pipe(Effect.provide(Layer.mergeAll(writerLayer, liveSpecificationReviewers, wikiWriterLayer).pipe(Layer.provide(Layer.succeed(ChatModel, model)), Layer.provide(Layer.succeed(IssueSpend, spend)))))
+      },
+    }
+  }
+}
+
+/** One conversation; `clientOf` adapts the entrypoint its alarm calls back into. */
+export function conversationObject(state: ObjectState, budgets: Namespace<BudgetShape>, histories: Namespace<HistoryShape>, accounts: Namespace<AccountsShape>, model: Model, clientOf: typeof Cloudflare.toHttpClient) {
+  return effect {
+    // The object's id, the same for every incarnation: the engine's host id (it has none when Alchemy plans).
+    const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
+    const sequencer = try Objects.conversation(state.raw.storage)
+    const identity = actionIdentity(accounts, try RuntimeContext)
+    const actionRuns = ActionRuns.make(hostId, state.raw.storage, sequencer, identity)
+
+    return {
+      startAction: (request: RunRequest, role: Role) => Effect.orDie(actionRuns.start(request, role)),
+      actionRequest: () => promise(() => state.raw.storage.get<RunRequest>("action/request")),
+      actionRuns: () => ActionRuns.read(sequencer),
+      cancelAction: (id: string, role: Role, owner: string) => Effect.orDie(actionRuns.cancel(id, role, owner)),
+      post: (clientId: string, name: string, text: string, owner?: string) =>
+        Objects.post(hostId, state.raw.storage, sequencer, clientId, name, text, owner),
+      read: sequencer.read,
+      openWiki: (page: string) => Objects.openWiki(hostId, state.raw.storage, sequencer, page),
+      controlTour: (action: "pause" | "resume" | "seek", step: number) => Objects.controlTour(hostId, state.raw.storage, sequencer, action, step),
+      tour: () => Objects.tour(hostId, state.raw.storage, sequencer),
+      endTour: () => Objects.endTour(hostId, state.raw.storage, sequencer),
+      // The event stream of the request the API Worker forwarded, from its `after` cursor.
+      fetch: effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        try sequencer.ensureDispatched()
+        return eventStream(sequencer.follow(afterOf(new URL(request.url, "http://conversation.invalid")) ?? 0))
+      },
+      alarm: () => scoped(effect {
+        const runtime = try RuntimeContext
+        const spend = spendOf(runtime, budgets, hostId)
+        const request = try promise(() => state.raw.storage.get<RunRequest>("action/request"))
+        const snapshot = try sequencer.read(0)
+        const post = snapshot.entries.find(entry => entry.author === "person" && !snapshot.entries.some(reply => reply.inReplyTo === entry.id && reply.done))
+        const owner = request?.owner ?? (post === undefined ? "" : (try promise(() => state.raw.storage.get<string>(`post-owner/${post.id}`))) ?? "")
+        const name = request?.name ?? post?.name ?? "Guest"
+        const principal: Principal = { role: try Effect.orDie(identity.role(owner)), name, agent: request === undefined || request.actor === "agent" }
+        const entrypoint = state.exports.default
+        if (entrypoint === undefined) return try Effect.die(new Error("The action host has no default entrypoint"))
+        const self = try Effect.orDie(entrypoint({ props: { actionOwner: owner, actionName: name } }))
+        const transport = Layer.succeed(HttpClient.HttpClient, try Effect.orDie(Effect.try(() => clientOf(self))))
+        const actionContext = try Layer.buildWithScope(Layer.merge(LiveActions("https://actions.internal"), LiveFactory("https://actions.internal")).pipe(Layer.provide(transport)), try Scope.Scope)
+        const tools = {
+          actions: Context.get(actionContext, Actions),
+          announce: effect (run: Run) => { try sequencer.action({ type: "RequestAction", id: run.id, flow: run.flow, door: "agent", actor: "agent", at: run.started }) },
+        }
+        // The agent's history tools reach VibeLang's History object, as the API's routes do.
+        const history = HistoryObject.readerOver(
+          (request) => effect {
+            const object = try objectOf(histories, REPOSITORY, "history")
+            return try reached(runtime, "history", object.page(request))
+          },
+          (name, body, principal, operation) => effect {
+            const object = try objectOf(histories, REPOSITORY, "history")
+            const fresh: Principal = { ...principal, role: try Effect.orDie(identity.role(owner)) }
+            return try reached(runtime, "history", object.act(name, body, fresh, operation))
+          },
+          principal,
+        )
+        const wikiDrafting: WikiDrafting.Shape = { draft: effect (page, ask, key) => {
+          if (owner === "") throw new WikiFailure({ reason: "forbidden" })
+          const account = try objectOf(accounts, "project", "accounts").pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
+          const refusal = try reached(runtime, "accounts", account.draftWiki(owner, page, ask, key)).pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
+          if (refusal !== null) throw new WikiFailure({ reason: refusal })
+        } }
+        try Effect.provideService(Effect.provideService(actionRuns.alarm(spend, model, history), WikiDrafting, wikiDrafting), AgentActions, tools).pipe(Effect.provideService(ActionDevice, Context.get(actionContext, importFactory)))
+      }),
+    }
+  }
+}
+
+/** The directory of action runs. */
+export function actionIndexObject(state: ObjectState, accounts: Namespace<AccountsShape>, conversations: Namespace<ConversationShape>) {
+  return effect {
+    const runtime = try RuntimeContext
+    const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
+    const root = (id: string) => id.endsWith("-reply") ? id.slice(0, -6) : id
+    const runs: ActionDirectory.Runs = {
+      request: effect (id) => {
+        const object = try objectOf(conversations, `action-${root(id)}`, "action")
+        return try reached(runtime, "action", object.actionRequest())
+      },
+      start: effect (request, role) => {
+        const object = try objectOf(conversations, `action-${request.id}`, "action")
+        return try Effect.orDie(reached(runtime, "action", object.startAction(request, role)))
+      },
+      read: effect (id) => {
+        const object = try objectOf(conversations, `action-${root(id)}`, "action")
+        return try Effect.orDie(reached(runtime, "action", object.actionRuns()))
+      },
+      cancel: effect (id, role, owner) => {
+        const object = try objectOf(conversations, `action-${root(id)}`, "action")
+        return try Effect.orDie(reached(runtime, "action", object.cancelAction(id, role, owner)))
+      },
+    }
+    const directory = ActionDirectory.directory(hostId, state.raw.storage, runs, actionIdentity(accounts, runtime))
+    return {
+      list: directory.list,
+      start: (request: RunRequest, role: Role) => Effect.orDie(directory.start(request, role)),
+      rerun: (id: string, next: string, role: Role, owner: string, caller?: { readonly name: string; readonly actor: "person" | "agent" }) => Effect.orDie(directory.rerun(id, next, role, owner, caller)),
+      cancel: (id: string, role: Role, owner: string) => Effect.orDie(directory.cancel(id, role, owner)),
+    }
+  }
+}
+
+/** The sandbox gateway's identity, by the request's trusted props or its cookie. */
+export function sandboxIdentityOf(namespace: Namespace<AccountsShape>, executionProps: Record<string, unknown>!!): SandboxIdentity.Shape {
+  return {
+    request: effect () => {
+      const runtime = try RuntimeContext
+      const trusted = trustedOf(try executionProps)
+      if (trusted !== undefined) {
+        const account = try Effect.orDie(objectOf(namespace, "project", "accounts"))
+        const admitted = try Effect.orDie(reached(runtime, "accounts", account.allowed(trusted.owner, "sandbox")))
+        const role = admitted ? try Effect.orDie(reached(runtime, "accounts", account.role(trusted.owner))) : "viewer" as const
+        return { owner: trusted.owner, role }
+      }
+      const account = try Effect.orDie(objectOf(namespace, "project", "accounts"))
+      return try Accounts.sandboxPrincipal(
+        signed => Effect.orDie(reached(runtime, "accounts", account.current(signed))),
+        (actor, action) => Effect.orDie(reached(runtime, "accounts", account.allowed(actor, action))),
+      )
+    },
+    role: effect (owner: string) => {
+      const runtime = try RuntimeContext
+      const account = try Effect.orDie(objectOf(namespace, "project", "accounts"))
+      const allowed = try Effect.orDie(reached(runtime, "accounts", account.allowed(owner, "sandbox")))
+      return allowed ? try Effect.orDie(reached(runtime, "accounts", account.role(owner))) : "viewer" as const
+    },
+  }
+}
+
+/** The API Worker's fetch: account routes reach ProjectAccounts, the rest the HTTP protocol. */
+export function apiFetch(namespaces: { readonly conversations: Namespace<ConversationShape>; readonly accounts: Namespace<AccountsShape>; readonly actions: Namespace<ActionDirectoryShape>; readonly histories: Namespace<HistoryShape> }, gateway: Gateway<RuntimeContext>, commit: string | undefined, executionProps: Record<string, unknown>!!) {
+  const { conversations, accounts, actions, histories } = namespaces
+  return effect {
+    const runtime = try RuntimeContext
+    const request = try HttpServerRequest.HttpServerRequest
+    const path = new URL(request.url, "http://api.invalid").pathname
+    if (accountRoute(path)) {
+      const object = try Effect.orDie(objectOf(accounts, "project", "accounts"))
+      return try Effect.orDie(reached(runtime, "accounts", object.fetch(request)))
+    }
+    const api: Conversations = {
+      post: (conversation, body) => effect {
+        const object = try objectOf(conversations, conversation, "conversation")
+        const account = try objectOf(accounts, "project", "accounts")
+        const identity = try reached(runtime, "accounts", account.current(Accounts.cookieOf(request)))
+        if (identity.id !== "" && !Accounts.sameOrigin(request)) return "forbidden"
+        const refusal = try reached(runtime, "conversation", object.post(body.clientId, postName(identity), body.text, identity.id))
+        if (refusal === null && identity.id !== "") try reached(runtime, "accounts", account.participation(Accounts.cookieOf(request)))
+        return refusal
+      },
+      read: (conversation, after) => effect {
+        const object = try objectOf(conversations, conversation, "conversation")
+        return try reached(runtime, "conversation", object.read(after))
+      },
+      openWiki: (conversation, page) => effect {
+        const object = try objectOf(conversations, conversation, "conversation")
+        return try reached(runtime, "conversation", object.openWiki(page))
+      },
+      tour: (conversation) => effect {
+        const object = try objectOf(conversations, conversation, "conversation")
+        return try reached(runtime, "conversation", object.tour())
+      },
+      controlTour: (conversation, action, step) => effect {
+        const object = try objectOf(conversations, conversation, "conversation")
+        return try reached(runtime, "conversation", object.controlTour(action, step))
+      },
+      endTour: (conversation) => effect {
+        const object = try objectOf(conversations, conversation, "conversation")
+        return try reached(runtime, "conversation", object.endTour())
+      },
+      events: (conversation) => effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const object = try objectOf(conversations, conversation, "conversation")
+        return try reached(runtime, "conversation", object.fetch(request))
+      },
+    }
+    const history: Histories = {
+      page: effect (request) => {
+        const object = try objectOf(histories, REPOSITORY, "history")
+        return try reached(runtime, "history", object.page(request))
+      },
+      write: effect (name, body) => {
+        const object = try objectOf(histories, REPOSITORY, "history")
+        const account = try objectOf(accounts, "project", "accounts")
+        const identity = try reached(runtime, "accounts", account.current(Accounts.cookieOf(request)))
+        if (identity.id !== "" && !Accounts.sameOrigin(request)) return { id: "", folded: 0, refusal: "forbidden" }
+        // The person acts, or their agent for them with their role; the history machine refuses agents approve and fold.
+        const principal: Principal = identity.id === ""
+          ? { role: "viewer", name: "Guest", agent: false }
+          : { role: identity.role, name: identity.login, agent: identity.agent === true }
+        return try reached(runtime, "history", object.write(name, body, principal))
+      },
+      events: effect () => {
+        const request = try HttpServerRequest.HttpServerRequest
+        const object = try objectOf(histories, REPOSITORY, "history")
+        return try reached(runtime, "history", object.fetch(request))
+      },
+    }
+    const root = (id: string) => id.endsWith("-reply") ? id.slice(0, -6) : id
+    const actionApi: ActionsApi = {
+      rerun: effect (id, next, role, owner, caller) => {
+        const object = try objectOf(actions, "vibelang", "actions")
+        return try reached(runtime, "actions", object.rerun(id, next, role, owner, caller))
+      },
+      list: effect (flow) => {
+        const object = try objectOf(actions, "vibelang", "actions")
+        return try reached(runtime, "actions", object.list(flow))
+      },
+      start: effect (request, role) => {
+        const object = try objectOf(actions, "vibelang", "actions")
+        return try reached(runtime, "actions", object.start(request, role))
+      },
+      cancel: effect (id, role, owner) => {
+        const object = try objectOf(actions, "vibelang", "actions")
+        return try reached(runtime, "actions", object.cancel(id, role, owner))
+      },
+      read: effect (id) => {
+        const object = try objectOf(conversations, `action-${root(id)}`, "action")
+        return try reached(runtime, "action", object.actionRuns())
+      },
+      events: effect (id) => {
+        const request = try HttpServerRequest.HttpServerRequest
+        const object = try objectOf(conversations, `action-${root(id)}`, "action")
+        return try reached(runtime, "action", object.fetch(request))
+      },
+    }
+    return try handle(api, history, gateway, actionApi, commit).pipe(Effect.provideService(ActionIdentity, actionIdentity(accounts, runtime, trustedOf(try executionProps))))
+  }
+}

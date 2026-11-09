@@ -205,6 +205,18 @@ The rejected browser-command fault overlays reproduce published VibeLang 0.0.12 
 
 **Sandbox objects on an in-memory Container (2026-11-09).** `bench/sandbox-objects.bench.vibe` runs the production account and machine bodies (`worker/accountObject.vibe`, `worker/machineObject.vibe`) and gateway in real workerd SQLite through `identityFromPolicy`. It checks generation fencing, once-only command replay, checkpoint restore, role and binding refusals, and Container faults. `test/workerd/bench-sandbox.vibe` supplies an in-memory Container that answers the run tool's fence protocol, so this measures object, ledger and fencing overhead only. It is not the `container-checkpoint-restart` benchmark above, which stays planned. Benchmark-only coverage after this change: 5,938 / 7,042 src/worker statement-start lines (84.32%); the strict gate stays red.
 
+**API Worker bodies and GitHub-bound paths (2026-11-09).** `worker/Api.vibe` now holds only Alchemy bindings; the object bodies and fetch handler are `worker/apiObjects.vibe`, imported by `test/workerd/bench-api.vibe`. `bench/api-workerd.bench.vibe` runs them in real workerd SQLite through `apiFetch`, alarms, and a deterministic HTTP model service. Objects reach each other by `fetch`, not Alchemy RPC, and sign-in is unconfigured there. `bench/github-faults.bench.vibe` covers `worker/MainLog.vibe` refusals and a VIP draft through an injected faulty `HttpClient`.
+
+These paths wait for a GitHub test credential and stay in the denominator. A local GitHub fixture would be a mock, so none is used on a happy path:
+
+| File | Waits for GitHub | Runs without it |
+| --- | --- | --- |
+| `worker/Issues.vibe` | `verifiedVip` after a marker matches; `read` after its first page; every write in `perform` after `read`, including its title, missing, tree, assignee, closed and review refusals; the `executeIssues` observer | policy, sign-in and connect refusals, unavailable writer, `draft`, HTTP validation, `publicIssues` method refusal |
+| `worker/MainLog.vibe` | the commit-returning `return found` over real commits | transport, status, JSON, shape, empty-page and out-of-reach refusals |
+| `worker/Wiki.vibe` | a successful source read and its `note`; a draft after its source read; every write after its first authorized read, including conflict and empty-change refusals | sign-in refusal, empty draft, unavailable writer, retained draft before `connect` |
+
+Skipped by decision 0165: `connect`, `/api/auth/github` and `worker/IssueCredentials.vibe`.
+
 Ordinary reachable control/error paths also remain; they are reported per file and are not folded into these external deferrals. No new source exclusion, threshold change, dependency, deployment or GitHub mutation is authorized by this table.
 
 ### Runner preflight correction (2026-11-09)

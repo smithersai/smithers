@@ -12,27 +12,8 @@ import { outlineOf, epicPageOf, commitPageOf, matchesOf } from "../src/history/p
 import {  } from "../src/core/flows.vibe"
 import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { serveApi, room } from "../test/support/workerd.vibe"
+import { modelService } from "./fixtures.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
-
-/** A real local deterministic model endpoint. It exercises the HTTP adapter, agent and QuickJS, without inference. */
-effect function modelService() {
-  const server = try HttpServer.HttpServer
-  try server.serve(effect {
-    const request = try HttpServerRequest.HttpServerRequest
-    const body = try request.text
-    const tour = body.includes("Give the tour now.")
-    const fence = "`".repeat(3)
-    const cell = tour
-      ? `${fence}cell\nctx.done({stops:["Deterministic tour 1.","Deterministic tour 2.","Deterministic tour 3.","Deterministic tour 4.","Deterministic tour 5."]});\n${fence}`
-      : `${fence}cell\nctx.done("Deterministic answer.");\n${fence}`
-    return HttpServerResponse.text([
-      `data: ${JSON.stringify({ id: "bench", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: cell }, finish_reason: null }] })}\n\n`,
-      `data: ${JSON.stringify({ id: "bench", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n`,
-      "data: [DONE]\n\n",
-    ].join(""), { contentType: "text/event-stream" })
-  })
-  return HttpServer.formatAddress(server.address).replace("0.0.0.0", "127.0.0.1").replace("[::]", "127.0.0.1")
-}
 
 effect function settled(factory: Factory.Shape, conversation: string) {
   return Array.from(try Stream.runCollect(factory.events(conversation, 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished" || event.type === "ReplyFailed" || event.type === "TourEnded"))))

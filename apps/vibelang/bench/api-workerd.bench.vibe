@@ -1,0 +1,85 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { serveApiObjects } from "../test/support/workerd.vibe"
+import { modelService } from "./fixtures.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const http = runSync(Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
+const call = async (origin: string, path: string, init: { readonly method?: "GET" | "POST" | "DELETE"; readonly body?: string } = {}) => {
+  const request = HttpClientRequest.make(init.method ?? "GET")(`${origin}${path}`).pipe(init.body === undefined ? (same) => same : HttpClientRequest.bodyText(init.body, "application/json"))
+  const response = await runPromise(http.execute(request))
+  return { status: response.status, body: await runPromise(response.text) }
+}
+const object = async (origin: string, kind: string, name: string, method: string, args: ReadonlyArray<unknown>) => {
+  const answer = await call(origin, `/__object/${kind}/${name}/${method}`, { method: "POST", body: JSON.stringify(args) })
+  expect(answer.status).toBe(200)
+  return (JSON.parse(answer.body) as { readonly value: unknown }).value
+}
+
+it("the API Worker's production object bodies answer through workerd", { timeout: 240_000 }, async ({ bench }) => {
+  await runPromise(scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const model = try modelService()
+      const api = try acquireRelease(serveApiObjects({
+        CHAT_MODEL: JSON.stringify({ protocol: "openai-chat", baseUrl: model, modelId: "deterministic", credential: "BENCH" }),
+        SMITHERS_MODEL_KEY_BENCH: "benchmark-only", SMITHERS_MODEL_KEY_BENCH_ORIGIN: model,
+      }), (served) => promise(served.dispose))
+      provide LiveFactory(api.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+        const factory = try Factory
+        let run = 0
+        const conversation = workload(bench, "api-objects-conversation", "async", async () => {
+          const room = `bench-api-${++run}`
+          await runPromise(factory.post(room, "a", "Bench", "Reply briefly."))
+          const events = Array.from(await runPromise(Stream.runCollect(factory.events(room, 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished" || event.type === "ReplyFailed")))))
+          expect(events.at(-1)).toMatchObject({ type: "ReplyFinished" })
+          const read = await runPromise(factory.read(room, 0))
+          expect(read.entries.map((entry) => [entry.author, entry.text])).toEqual([["person", "Reply briefly."], ["agent", "Deterministic answer."]])
+        })
+        const unbound = workload(bench, "api-objects-unbound", "async", async () => {
+          const result = await runPromise(Effect.result(factory.read(`unbound-${++run}`, 0)))
+          expect(result._tag).toBe("Failure")
+        })
+        const unconfigured = workload(bench, "api-objects-unconfigured-accounts", "async", async () => {
+          expect((await call(api.origin, "/api/issues", { method: "DELETE" })).status).toBe(405)
+          expect((await call(api.origin, "/api/wiki", { method: "DELETE" })).status).toBe(405)
+          expect(await object(api.origin, "accounts", "project", "draftWiki", ["o", "p", "a", "k"])).toBe("forbidden")
+          expect(await object(api.origin, "accounts", "project", "role", ["o"])).toBe("viewer")
+          expect(await object(api.origin, "accounts", "project", "allowed", ["o", "sandbox"])).toBe(false)
+          expect(await object(api.origin, "accounts", "project", "current", [undefined])).toEqual({ id: "", login: "", role: "viewer" })
+          expect(await object(api.origin, "accounts", "project", "participation", [undefined])).toBeUndefined()
+        })
+        const identity = workload(bench, "api-objects-sandbox-identity", "async", async () => {
+          expect(JSON.parse((await call(api.origin, "/__identity")).body)).toEqual({ principal: { owner: "", role: "viewer" }, role: "viewer" })
+          const trusted = encodeURIComponent(JSON.stringify({ actionOwner: "will", actionName: "Will" }))
+          expect(JSON.parse((await call(api.origin, `/__identity?props=${trusted}`)).body)).toEqual({ principal: { owner: "will", role: "viewer" }, role: "viewer" })
+        })
+        const budget = workload(bench, "api-objects-budget", "async", async () => {
+          const day = `bench-${++run}`
+          expect(await object(api.origin, "budget", day, "admit", [])).toBe(true)
+          expect(await object(api.origin, "budget", day, "spend", ["reply", 1])).toBeUndefined()
+        })
+        const runs = workload(bench, "api-objects-action-directory", "async", async () => {
+          expect((await call(api.origin, "/api/actions/runs?flow=vibelang/none")).body).toBe("[]")
+          expect((await call(api.origin, "/api/actions/runs/a-missing")).status).toBe(404)
+          expect(await object(api.origin, "actions", "vibelang", "cancel", ["a-missing", "viewer", ""])).toBe("not-found")
+          expect(await object(api.origin, "actions", "vibelang", "rerun", ["a-missing", "a-next", "viewer", ""])).toBe("not-found")
+        })
+        const history = workload(bench, "api-objects-history", "async", async () => {
+          const outline = await call(api.origin, "/api/history")
+          expect(outline.status).toBe(200)
+          expect((JSON.parse(outline.body) as { readonly seq: number }).seq).toBeGreaterThan(0)
+          const events = await runPromise(http.execute(HttpClientRequest.get(`${api.origin}/api/history/events?after=0`)))
+          expect(events.status).toBe(200)
+          await runPromise(Stream.runDrain(Stream.take(events.stream, 1)).pipe(Effect.timeout("3 seconds"), Effect.ignore))
+        })
+        const results = []
+        for (const each of [conversation, unbound, unconfigured, identity, budget, runs, history]) results.push(try tryPromise(() => each.run(slow)))
+        try artifact("api-objects", "Vitest built-in bench; the production bodies of worker/Api.vibe in real workerd SQLite through apiFetch, LiveFactory HTTP and alarms; deterministic HTTP model service.", ["No GitHub: History reads through an injected faulty client.", "Sign-in unconfigured: ProjectAccounts' configured branch runs in accounts-workerd.", "Objects reach each other by fetch, not Alchemy RPC.", "Deterministic model; no inference latency."], results)
+      }
+    }
+  }))
+})
