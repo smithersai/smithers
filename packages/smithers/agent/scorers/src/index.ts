@@ -20,7 +20,7 @@ export * as Sampling from "./Sampling.vibe"
 export * as ScoreStore from "./ScoreStore.ts"
 
 /** @category sql @since 0.1.0 */
-export * as SqlScoreStore from "./SqlScoreStore.ts"
+export * as SqlScoreStore from "./SqlScoreStore.vibe"
 
 /** @category scoring @since 0.1.0 */
 export * as Scoring from "./Scoring.ts"

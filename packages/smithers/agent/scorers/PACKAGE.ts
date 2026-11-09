@@ -20,7 +20,7 @@ const securityReview = Smithers.SecurityReview({
         "A sql template in SqlScoreStore.ts that splices a caller string through sql.unsafe, sql.literal, or string concatenation.",
         "A page limit, offset, before, or prune cutoff that reaches LIMIT, OFFSET, or DELETE without the safe-integer validation."
       ],
-      paths: ["src/SqlScoreStore.ts", "src/Migrations.vibe", "src/migrations/**"]
+      paths: ["src/SqlScoreStore.vibe", "src/Migrations.vibe", "src/migrations/**"]
     },
     {
       id: "observation-redaction",
@@ -32,7 +32,7 @@ const securityReview = Smithers.SecurityReview({
         "Scoring.inconclusive or Scoring.runBatch building a reason from an error cause that bypasses the store's redaction path.",
         "The byte bound measured before redaction so a scrub-grown payload is stored past maxMetadataBytes."
       ],
-      paths: ["src/SqlScoreStore.ts", "src/Scoring.ts", "src/internal/**"]
+      paths: ["src/SqlScoreStore.vibe", "src/Scoring.ts", "src/internal/**"]
     },
     {
       id: "judge-prompt-injection",
@@ -89,7 +89,7 @@ const securityReview = Smithers.SecurityReview({
         "scorerKey derived from anything other than Digest over the canonical id, version, and config.",
         "Sampling material() or job identity built by joining parts without length prefixes, so two part lists hash to the same string."
       ],
-      paths: ["src/Scorer.ts", "src/Sampling.vibe", "src/Binding.ts", "src/SqlScoreStore.ts"]
+      paths: ["src/Scorer.ts", "src/Sampling.vibe", "src/Binding.ts", "src/SqlScoreStore.vibe"]
     }
   ]
 })

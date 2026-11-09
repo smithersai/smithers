@@ -15,7 +15,7 @@ import { migration as failureCodes } from "../src/migrations/0003_score_failure_
 import { migration as requiredFailureCodes } from "../src/migrations/0004_require_failure_codes.vibe"
 import { ScorerError, ScorerErrorCode } from "../src/ScorerError.vibe"
 import * as ScoreStore from "../src/ScoreStore.ts"
-import * as SqlScoreStore from "../src/SqlScoreStore.ts"
+import * as SqlScoreStore from "../src/SqlScoreStore.vibe"
 
 const scratch = mkdtempSync(join(tmpdir(), "flows-scorers-"))
 afterAll(() => {
@@ -469,6 +469,22 @@ describe("ScoreStore", () => {
       }))
       expect(failure).toBeInstanceOf(ScorerError)
       expect(failure.code).toBe("invalid_observation")
+    })
+
+    it("turns metadata whose array length throws into a failed effect", async () => {
+      const hostile = new Proxy([], {
+        get: (target, key, receiver) => {
+          if (key === "length") throw new TypeError("no")
+          return Reflect.get(target, key, receiver)
+        }
+      })
+      const failure = await failed(Effect.gen(function*() {
+        const store = yield* ScoreStore.ScoreStore
+        return yield* store.record(score({ meta: hostile }))
+      }))
+      expect(failure).toBeInstanceOf(ScorerError)
+      expect(failure.code).toBe("invalid_observation")
+      expect(failure.message).toBe("An observation could not be snapshotted")
     })
   })
 

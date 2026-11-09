@@ -17,6 +17,7 @@ const decoder = new TextDecoder()
  *
  * @category measuring
  * @since 0.1.0
+ * @throws {never}
  */
 export const byteLength = (text: string): number => encoder.encode(text).length
 
