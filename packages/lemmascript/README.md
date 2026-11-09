@@ -16,6 +16,7 @@ tests read are unchanged except for the patches listed below.
 | `lsc claimcheck` is optional: this copy does not depend on `lemmascript-claimcheck`, and the subcommand reports it missing | Local only |
 | Object spread of a conditional over two object literals (`...(c ? { a: 1 } : { b: 2 })`) field by field | Offered upstream later |
 | Object spread of a value holding a strict subset of the base record's fields | Offered upstream later |
+| A contract record literal may begin with a spread (`\\result == { ...state, f: v }`), and a contract record or array literal on the right of `==` takes the left operand's declared type | Offered upstream later |
 | An exhaustive `X.match(value, { Tag: ({ field }) => result })` table over a `_tag` union, in return position, read as a `switch` | Offered upstream later |
 
 Each patch is offered back upstream later. Will decides any GitHub contribution.

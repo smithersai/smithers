@@ -813,6 +813,11 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
       if (e.op === "&&" || e.op === "==>") {
         rightCtx = collectAndChainNarrowings(left, ctx);
       }
+      // A contract literal compared with a typed value takes that type, so `\\result.commands == [{ type: "T" }]`
+      // builds the declared datatype and not an anonymous tuple.
+      if (ctx.inSpec && (e.op === "===" || e.op === "!==") && (rawRight.kind === "record" || rawRight.kind === "arrayLiteral")) {
+        rightCtx = { ...rightCtx, returnTy: left.ty };
+      }
       let right = resolveExpr(rawRight, rightCtx);
       if (e.op === "===" || e.op === "!==") {
         left = coerceStr(left, right.ty);

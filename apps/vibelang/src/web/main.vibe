@@ -336,24 +336,19 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
         ...(commands.length > 0 ? { commands } : {}),
       }
     },
-    AccountFailed: () => ({ model: { ...model, account: { ...accountOf(model), pending: false, error: ModelDecision.accountFailureText(accountOf(model).retry) } } }),
-    ClickedAccount: () => ({ model: { ...model, account: { ...accountOf(model), menu: !accountOf(model).menu } }, commands: [FocusAccountMenu({ open: !accountOf(model).menu })] }),
-    ClickedSignIn: () => ModelDecision.signInRefused(model.mode === "live", accountOf(model).identity.available === false)
-      ? { model: { ...model, account: { ...accountOf(model), pending: false, retry: "sign-in", error: "Sign-in unavailable." } } }
-      : ({ model: { ...model, account: { ...accountOf(model), pending: true, error: "", retry: "sign-in" } }, commands: [SignInAccount({ mock: model.mode === "mock" })] }),
-    ClickedSignOut: () => ({ model: { ...model, account: { ...accountOf(model), retry: "sign-out" } }, commands: [SignOutAccount({})] }),
+    AccountFailed: () => runAccount(model, ModelDecision.accountFailed(accountScreen(model))),
+    ClickedAccount: () => runAccount(model, ModelDecision.clickedAccount(accountScreen(model))),
+    ClickedSignIn: () => runAccount(model, ModelDecision.clickedSignIn(accountScreen(model), model.mode === "live", accountOf(model).identity.available === false, model.mode === "mock")),
+    ClickedSignOut: () => runAccount(model, ModelDecision.clickedSignOut(accountScreen(model))),
     ChoseIdentity: ({ role }) => ({ model, commands: [ChooseIdentity({ role })] }),
-    ClickedPeople: () => {
-      const foreground = model.docs === "max"
-      return { model: { ...model, surface: "chat", ...(foreground ? { docs: "pane" as const } : {}), account: { ...accountOf(model), menu: false, people: ModelDecision.peopleOpened(foreground), retry: "people" } }, commands: [LoadPeople({})] }
-    },
+    ClickedPeople: () => runAccount(model, ModelDecision.clickedPeople(accountScreen(model))),
     LoadedPeople: ({ members }) => ({ model: { ...model, account: { ...accountOf(model), members, pending: false } } }),
-    ClosedPeople: () => ({ model: { ...model, account: { ...accountOf(model), people: "closed" } } }),
-    ToggledPeople: () => ({ model: { ...model, account: { ...accountOf(model), people: ModelDecision.peopleToggled(accountOf(model).people) } } }),
-    SelectedRole: ({ id, role }) => !ModelDecision.canSelectRole(accountOf(model).identity.role) ? { model } : ({ model: { ...model, account: { ...accountOf(model), target: id, targetRole: role, error: "" } }, commands: [ShowRoleDialog({})] }),
-    CancelledRole: () => ({ model: { ...model, account: { ...accountOf(model), target: "", error: "" } }, commands: [CloseRoleDialog({})] }),
-    ConfirmedRole: () => ({ model: { ...model, account: { ...accountOf(model), pending: true, retry: "grant" } }, commands: [GrantRole({ id: accountOf(model).target, role: accountOf(model).targetRole })] }),
-    GrantedRole: () => ({ model: { ...model, account: { ...accountOf(model), target: "", pending: false } }, commands: [CloseRoleDialog({}), LoadPeople({})] }),
+    ClosedPeople: () => runAccount(model, ModelDecision.closedPeople(accountScreen(model))),
+    ToggledPeople: () => runAccount(model, ModelDecision.toggledPeople(accountScreen(model))),
+    SelectedRole: ({ id, role }) => !ModelDecision.canSelectRole(accountOf(model).identity.role) ? { model } : runAccount(model, ModelDecision.selectedRole(accountScreen(model), id, role)),
+    CancelledRole: () => runAccount(model, ModelDecision.cancelledRole(accountScreen(model))),
+    ConfirmedRole: () => runAccount(model, ModelDecision.confirmedRole(accountScreen(model))),
+    GrantedRole: () => runAccount(model, ModelDecision.grantedRole(accountScreen(model))),
     ReceivedRole: ({ event }) => {
       const account = accountOf(model)
       const ledger = Machine.receive(account.ledger, event)
@@ -371,17 +366,9 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       const commands = [...(close ? [CloseRoleDialog({})] : []), ...(changed && account.people !== "closed" ? [LoadPeople({})] : []), ...(changedRole ? [LoadActions({ flow: nextActions.selected, epoch: nextActions.epoch ?? 0 })] : [])]
       return { model: { ...(changedRole ? withoutSandbox : model), actions: nextActions, ...(changedRole ? { wikiEdit: undefined, wikiReview: undefined, wikiEditRequest: (model.wikiEditRequest ?? 0) + 1, sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), account: { ...account, ledger, identity, notice, target: close ? "" : account.target, pending: close ? false : account.pending } }, ...(commands.length > 0 ? { commands } : {}) }
     },
-    FailedRoles: () => ({ model: { ...model, account: { ...accountOf(model), error: "Connection lost.", retry: "roles", pending: false } } }),
-    RetriedAccount: () => ModelDecision.accountRetryPlan(accountOf(model).retry) === "resume" ? ({
-      model: { ...model, account: { ...accountOf(model), error: "", pending: false, epoch: accountOf(model).epoch + 1, from: accountOf(model).ledger.conversation.seq } },
-    }) : ModelDecision.accountRetryPlan(accountOf(model).retry) === "sign-in" ? update(model, Message.ClickedSignIn()) : ({
-      model: { ...model, account: { ...accountOf(model), pending: true, error: "" } },
-      commands: [accountOf(model).retry === "grant" ? GrantRole({ id: accountOf(model).target, role: accountOf(model).targetRole })
-        : accountOf(model).retry === "people" ? LoadPeople({})
-        : accountOf(model).retry === "sign-out" ? SignOutAccount({})
-        : SignInAccount({ mock: model.mode === "mock" })],
-    }),
-    DismissedAccountError: () => ({ model: { ...model, account: { ...accountOf(model), error: "" } } }),
+    FailedRoles: () => runAccount(model, ModelDecision.failedRoles(accountScreen(model))),
+    RetriedAccount: () => ModelDecision.accountRetryPlan(accountOf(model).retry) === "sign-in" ? update(model, Message.ClickedSignIn()) : runAccount(model, ModelDecision.retriedAccount(accountScreen(model), accountOf(model).ledger.conversation.seq)),
+    DismissedAccountError: () => runAccount(model, ModelDecision.dismissedAccountError(accountScreen(model))),
     OpenIssueCard: ({ number }) => ({ model: { ...model, issues: { ...(model.issues ?? initialIssues), open: true, screen: "detail", selected: number } }, commands: [LoadIssues({}), ...(model.mode === "live" ? [LoadIssueDetails({ number, key: `${model.session}-card-${number}-${(model.issues?.serial ?? 0) + 1}` })] : [])] }),
     IssueProjectionLoaded: ({ data }) => data.seq < (model.issues?.data.seq ?? 0) ? { model } : { model: { ...model, issues: { ...(model.issues ?? { ...initialIssues, open: false }), data, status: "ready", role: data.role ?? (model.mode === "mock" ? "maintainer" : "viewer") } } },
     ClickedIssues: () => ({ model: { ...model, issues: { ...(model.issues ?? initialIssues), open: true } }, commands: model.issues?.busy ? [] : [LoadIssues({})] }),
@@ -595,6 +582,31 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     return { ...next, commands: [...(next.commands ?? []), MeasureTheatre({ target: next.model.theatre?.target ?? "splash" })] }
   }
   return next
+}
+
+/** The plain account state the proved arms in `modelDecision.vibe` read and return. */
+function accountScreen(model: Model): ModelDecision.AccountScreen {
+  const { menu, people, pending, error, retry, target, targetRole, epoch, from } = accountOf(model)
+  return { surface: model.surface, docs: model.docs, menu, people, pending, error, retry, target, targetRole, epoch, from }
+}
+
+function accountCommand(command: ModelDecision.AccountCommand) {
+  switch (command.type) {
+    case "FocusAccountMenu": return FocusAccountMenu({ open: command.open })
+    case "SignIn": return SignInAccount({ mock: command.mock })
+    case "SignOut": return SignOutAccount({})
+    case "LoadPeople": return LoadPeople({})
+    case "ShowRoleDialog": return ShowRoleDialog({})
+    case "CloseRoleDialog": return CloseRoleDialog({})
+    case "GrantRole": return GrantRole({ id: command.id, role: command.role })
+  }
+}
+
+/** Applies a proved account step: its state over the model, its commands as Foldkit Commands. */
+function runAccount(model: Model, step: ModelDecision.AccountStep): Update.Return<Model, Message, Factory | Actions> {
+  const { surface, docs, ...account } = step.state
+  const next: Model = { ...model, surface, docs, account: { ...accountOf(model), ...account } }
+  return step.commands.length === 0 ? { model: next } : { model: next, commands: step.commands.map(accountCommand) }
 }
 
 /** A click and a browser deep link request the same durable wiki flow; the event alone moves the pane. */

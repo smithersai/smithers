@@ -170,3 +170,154 @@ export function sandboxLowMinutes(remaining: number, warnedMonth: number | null,
 export function sandboxPaneOpens(status: string, previous: string | null): boolean {
   return status === "running" && previous !== "running"
 }
+
+// ACCOUNT UPDATE
+// The account arms of `update` in main.vibe, on plain data: the state they touch, and commands main.vibe interprets.
+
+export type GrantableRole = "new" | "community" | "contributor" | "maintainer"
+export interface AccountScreen {
+  readonly surface: "splash" | "chat"
+  readonly docs: "pane" | "max"
+  readonly menu: boolean
+  readonly people: PeoplePane
+  readonly pending: boolean
+  readonly error: string
+  readonly retry: AccountRetry
+  readonly target: string
+  readonly targetRole: GrantableRole
+  readonly epoch: number
+  readonly from: number
+}
+export type AccountCommand =
+  | { readonly type: "FocusAccountMenu"; readonly open: boolean }
+  | { readonly type: "SignIn"; readonly mock: boolean }
+  | { readonly type: "SignOut" }
+  | { readonly type: "LoadPeople" }
+  | { readonly type: "ShowRoleDialog" }
+  | { readonly type: "CloseRoleDialog" }
+  | { readonly type: "GrantRole"; readonly id: string; readonly role: GrantableRole }
+export interface AccountStep { readonly state: AccountScreen; readonly commands: ReadonlyArray<AccountCommand> }
+
+/** The account button flips the menu and moves focus with it. */
+//@ verify
+//@ ensures \result.state == { ...state, menu: !state.menu }
+//@ ensures \result.commands == [{ type: "FocusAccountMenu", open: !state.menu }]
+export function clickedAccount(state: AccountScreen): AccountStep {
+  return { state: { ...state, menu: !state.menu }, commands: [{ type: "FocusAccountMenu", open: !state.menu }] }
+}
+
+/** Sign-in starts unless the live server said it is unavailable; a refusal names itself and starts nothing. */
+//@ verify
+//@ ensures signInRefused(live, unavailable) ==> \result.state == { ...state, pending: false, retry: "sign-in", error: "Sign-in unavailable." }
+//@ ensures signInRefused(live, unavailable) ==> \result.commands == []
+//@ ensures !signInRefused(live, unavailable) ==> \result.state == { ...state, pending: true, error: "", retry: "sign-in" }
+//@ ensures !signInRefused(live, unavailable) ==> \result.commands == [{ type: "SignIn", mock: mock }]
+export function clickedSignIn(state: AccountScreen, live: boolean, unavailable: boolean, mock: boolean): AccountStep {
+  if (signInRefused(live, unavailable)) return { state: { ...state, pending: false, retry: "sign-in", error: "Sign-in unavailable." }, commands: [] }
+  return { state: { ...state, pending: true, error: "", retry: "sign-in" }, commands: [{ type: "SignIn", mock }] }
+}
+
+/** Sign-out records what a retry repeats. */
+//@ verify
+//@ ensures \result.state == { ...state, retry: "sign-out" }
+//@ ensures \result.commands == [{ type: "SignOut" }]
+export function clickedSignOut(state: AccountScreen): AccountStep {
+  return { state: { ...state, retry: "sign-out" }, commands: [{ type: "SignOut" }] }
+}
+
+/** People shows the chat, takes over a maximized page, closes the menu and loads the list. */
+//@ verify
+//@ ensures \result.state == { ...state, surface: "chat", docs: "pane", menu: false, people: peopleOpened(state.docs == "max"), retry: "people" }
+//@ ensures \result.commands == [{ type: "LoadPeople" }]
+export function clickedPeople(state: AccountScreen): AccountStep {
+  return { state: { ...state, surface: "chat", docs: "pane", menu: false, people: peopleOpened(state.docs === "max"), retry: "people" }, commands: [{ type: "LoadPeople" }] }
+}
+
+/** Closing People changes only the pane. */
+//@ verify
+//@ ensures \result.state == { ...state, people: "closed" }
+//@ ensures \result.commands == []
+export function closedPeople(state: AccountScreen): AccountStep {
+  return { state: { ...state, people: "closed" }, commands: [] }
+}
+
+/** The size control changes only the pane. */
+//@ verify
+//@ ensures \result.state == { ...state, people: peopleToggled(state.people) }
+//@ ensures \result.commands == []
+export function toggledPeople(state: AccountScreen): AccountStep {
+  return { state: { ...state, people: peopleToggled(state.people) }, commands: [] }
+}
+
+/** Choosing a person's role opens the dialog on that person, clearing an older failure. */
+//@ verify
+//@ ensures \result.state == { ...state, target: id, targetRole: role, error: "" }
+//@ ensures \result.commands == [{ type: "ShowRoleDialog" }]
+export function selectedRole(state: AccountScreen, id: string, role: GrantableRole): AccountStep {
+  return { state: { ...state, target: id, targetRole: role, error: "" }, commands: [{ type: "ShowRoleDialog" }] }
+}
+
+/** Cancel closes the dialog and forgets its person. */
+//@ verify
+//@ ensures \result.state == { ...state, target: "", error: "" }
+//@ ensures \result.commands == [{ type: "CloseRoleDialog" }]
+export function cancelledRole(state: AccountScreen): AccountStep {
+  return { state: { ...state, target: "", error: "" }, commands: [{ type: "CloseRoleDialog" }] }
+}
+
+/** Confirm sends exactly the chosen person and role, and records what a retry repeats. */
+//@ verify
+//@ ensures \result.state == { ...state, pending: true, retry: "grant" }
+//@ ensures \result.commands == [{ type: "GrantRole", id: state.target, role: state.targetRole }]
+export function confirmedRole(state: AccountScreen): AccountStep {
+  return { state: { ...state, pending: true, retry: "grant" }, commands: [{ type: "GrantRole", id: state.target, role: state.targetRole }] }
+}
+
+/** A finished grant closes the dialog first, then reloads the list. */
+//@ verify
+//@ ensures \result.state == { ...state, target: "", pending: false }
+//@ ensures \result.commands == [{ type: "CloseRoleDialog" }, { type: "LoadPeople" }]
+export function grantedRole(state: AccountScreen): AccountStep {
+  return { state: { ...state, target: "", pending: false }, commands: [{ type: "CloseRoleDialog" }, { type: "LoadPeople" }] }
+}
+
+/** A lost role stream stops waiting and offers its resume. */
+//@ verify
+//@ ensures \result.state == { ...state, error: "Connection lost.", retry: "roles", pending: false }
+//@ ensures \result.commands == []
+export function failedRoles(state: AccountScreen): AccountStep {
+  return { state: { ...state, error: "Connection lost.", retry: "roles", pending: false }, commands: [] }
+}
+
+/** A failed request stops waiting and names the operation a retry repeats. */
+//@ verify
+//@ ensures \result.state == { ...state, pending: false, error: accountFailureText(state.retry) }
+//@ ensures \result.commands == []
+export function accountFailed(state: AccountScreen): AccountStep {
+  return { state: { ...state, pending: false, error: accountFailureText(state.retry) }, commands: [] }
+}
+
+/** Dismiss clears only the failure. */
+//@ verify
+//@ ensures \result.state == { ...state, error: "" }
+//@ ensures \result.commands == []
+export function dismissedAccountError(state: AccountScreen): AccountStep {
+  return { state: { ...state, error: "" }, commands: [] }
+}
+
+/** Retry resumes the role stream from the ledger, or repeats the one failed command. Sign-in re-enters its own guard in main.vibe. */
+//@ verify
+//@ requires state.retry != "sign-in"
+//@ ensures state.retry == "roles" ==> \result.state == { ...state, error: "", pending: false, epoch: state.epoch + 1, from: ledgerSeq }
+//@ ensures state.retry == "roles" ==> \result.commands == []
+//@ ensures state.retry != "roles" ==> \result.state == { ...state, pending: true, error: "" }
+//@ ensures state.retry == "grant" ==> \result.commands == [{ type: "GrantRole", id: state.target, role: state.targetRole }]
+//@ ensures state.retry == "people" ==> \result.commands == [{ type: "LoadPeople" }]
+//@ ensures state.retry == "sign-out" ==> \result.commands == [{ type: "SignOut" }]
+export function retriedAccount(state: AccountScreen, ledgerSeq: number): AccountStep {
+  if (accountRetryPlan(state.retry) === "resume") return { state: { ...state, error: "", pending: false, epoch: state.epoch + 1, from: ledgerSeq }, commands: [] }
+  const waiting: AccountScreen = { ...state, pending: true, error: "" }
+  if (state.retry === "grant") return { state: waiting, commands: [{ type: "GrantRole", id: state.target, role: state.targetRole }] }
+  if (state.retry === "people") return { state: waiting, commands: [{ type: "LoadPeople" }] }
+  return { state: waiting, commands: [{ type: "SignOut" }] }
+}

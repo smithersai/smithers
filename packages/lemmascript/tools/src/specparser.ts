@@ -123,6 +123,9 @@ class Parser {
       throw new Error(`Expected ${type}${value ? ` '${value}'` : ""}, got ${t ? JSON.stringify(t) : "EOF"}`);
     return t;
   }
+  spreadAhead() {
+    return [0, 1, 2].every((n) => { const t = this.tokens[this.pos + n]; return t?.type === "punc" && t.value === "."; });
+  }
   match(type: string, value?: string) {
     const t = this.peek();
     if (t && t.type === type && (value === undefined || t.value === value)) {
@@ -316,7 +319,17 @@ class Parser {
     if (t.type === "punc" && t.value === "{") {
       this.advance();
       const fields: { name: string; value: Expr }[] = [];
+      let spread: Expr | null = null;
       if (!this.match("punc", "}")) {
+        // `{ ...base, f: v }`: the spread comes first, like the executable object literal the checker accepts.
+        if (this.spreadAhead()) {
+          this.pos += 3;
+          spread = this.parseIff();
+          if (!this.match("punc", ",")) {
+            this.expect("punc", "}");
+            return { kind: "record", spread, fields };
+          }
+        }
         const name = this.expect("ident").value as string;
         this.expect("punc", ":");
         fields.push({ name, value: this.parseIff() });
@@ -327,7 +340,7 @@ class Parser {
         }
         this.expect("punc", "}");
       }
-      return { kind: "record", spread: null, fields };
+      return { kind: "record", spread, fields };
     }
     throw new Error(`Unexpected: ${JSON.stringify(t)}`);
   }

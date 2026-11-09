@@ -199,3 +199,7 @@ uses the same SDK race/cancellation; the conversation machine separately proves 
 record guard/union fixtures retain the backend failures for the prospective complete walk cursor.
 
 Walkthrough counter extension (0018, batch20): actual private visit/hold identities use exact BigInt plus-one; pause/seek/clock choices carry contracts and 12 new mutants. Seven regression cases include the observed native-number collision beyond 2**53. No new dependency.
+
+**LemmaScript source and the web update (0018).** LemmaScript is now the workspace package `packages/lemmascript`, a copy of 0.6.6 with listed
+patches; `verify/install.sh` builds it, so npm no longer supplies the tool. `update` in `src/web/main.vibe` moves arm by arm onto plain state
+with commands as data; the arms proved so far, and those still inline, are listed in 0018.

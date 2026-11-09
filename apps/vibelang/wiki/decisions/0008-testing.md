@@ -354,3 +354,8 @@ configuration after it landed. Its include list remains independent, and 100% th
 runtime counters join. The latest per-file source receipt is linked from the benchmark table. Native wiki
 editing and emitted wiki CLI/MCP operations are included; product fixture review links are not real GitHub writes.
 The complete run's behavioral assertions pass, while its strict coverage qualification remains red.
+
+## Tool list: vendored LemmaScript (0018)
+
+`packages/lemmascript` adds `ts-morph` 25.0.1, `tsx`, `typescript` and `@types/node` at their monorepo versions to the lockfile for
+this package. `ts-morph` was already this toolchain's dependency through the npm package. All four are awaiting Will's VL-5 approval.
