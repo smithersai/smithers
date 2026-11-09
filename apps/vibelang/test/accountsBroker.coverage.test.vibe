@@ -1,0 +1,256 @@
+// @vitest-environment node
+// Sign-in through the real auth broker on the same loopback server as the Accounts object, plus the object's request
+// guards for device, callback, wiki and issue traffic. Only GitHub itself is a fixture: nothing is intercepted.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse, HttpServer, HttpServerRequest } from "effect/http"
+import { FlowEngine } from "@smthrs/engine"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Core, GitHub } from "@smthrs/integrations"
+import { Node } from "@smthrs/plan"
+import * as Accounts from "../worker/Accounts.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+
+const ORIGIN = "https://factory.example"
+const STATE = "__Host-vibelang-sign-in"
+const SITE_SECRET = Redacted.make("fixture-only-broker-site-secret-32-chars")
+const manual = FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })))
+
+/** GitHub with one person per numeric code; a code of 0 has no account. */
+const github: GitHub.Auth.GitHubAuth["Service"] = {
+  authorizeUrl: ({ state }) => `https://github.test/login?state=${state}`,
+  exchange: ({ code }) => succeed({ accessToken: Redacted.make(Redacted.value(code)), expiresAt: null, refreshToken: null }),
+  refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
+  user: (token) => Redacted.value(token) === "0" ? fail(new GitHub.Auth.GitHubRefused({ step: "user", reason: "rejected" })) : succeed({ id: Number(Redacted.value(token)), login: "ada" }),
+  permission: () => succeed("read"),
+  revoke: () => Effect.void,
+  deviceCode: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
+  deviceToken: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
+}
+
+function setup(broker?: Accounts.Setup["broker"]): Accounts.Setup {
+  return {
+    origin: ORIGIN, initialMaintainer: "1", clientId: "fixture-client-id", github,
+    signingSecret: Redacted.make("fixture-only-signing-secret-32-chars"),
+    encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
+    ...(broker === undefined ? {} : { broker }),
+  }
+}
+
+function addressOf(server: HttpServer.HttpServer["Service"]): string {
+  const address = server.address
+  return address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+}
+
+const BrokerStep = Flow.make("test/AccountsBroker", { payload: {}, success: Schema.Null, body: () => Node.succeed(null) })
+/** One broker step in a real engine, as the durable production host runs it: the broker revokes tokens durably. */
+const inFlow = <R>(body: string!GitHub.Auth.Broker.BrokerRefused!R) => scoped(effect {
+  const runtime = try FlowRuntime.FlowRuntime
+  const outcome = try Ref.make<Exit.Exit<string, GitHub.Auth.Broker.BrokerRefused>>(Exit.succeed(""))
+  try runtime.register(BrokerStep, () => effect { try Ref.set(outcome, try exit(body as string!GitHub.Auth.Broker.BrokerRefused)); return null })
+  try Effect.orDie(runtime.execute(BrokerStep, { executionId: try Effect.orDie(Core.Pkce.createCodeVerifier()), payload: {} }))
+  return try (try Ref.get(outcome))
+}).pipe(Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer)))
+
+/** The object and, when `brokered`, the real broker it trusts, on one loopback server. A brokered host needs the
+ * plain client: the test server's own client prepends its address, so an absolute exchange URL never arrives. */
+effect function serve(brokered: boolean, named?: Accounts.Setup["broker"]) {
+  const storage = try Effect.try(() => objectStorage())
+  const server = try HttpServer.HttpServer
+  const origin = addressOf(server)
+  const keys = try Core.CookieKeys.make({ primary: Redacted.make("fixture-only-broker-cookie-key-32-chars") }, "primary")
+  const broker = try GitHub.Auth.Broker.make({
+    origin, keys, github, localDevelopment: true, store: try GitHub.Auth.Broker.memoryStore(),
+    sites: [{ origin: ORIGIN, secret: SITE_SECRET }],
+    encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
+  })
+  const durable = {
+    ...broker,
+    callback: (...args: Parameters<typeof broker.callback>) => inFlow(broker.callback(...args)),
+    consent: (...args: Parameters<typeof broker.consent>) => inFlow(broker.consent(...args)),
+  }
+  const accounts = try Accounts.make("accounts-broker-test", storage as unknown as Storage, setup(brokered ? { origin, secret: SITE_SECRET, localDevelopment: true } : named))
+  try HttpServer.serveEffect(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    return GitHub.Auth.Broker.handles(request.url) ? try GitHub.Auth.Broker.serve(durable, origin) : try accounts.fetch
+  })
+  return { accounts, origin, storage }
+}
+
+const value = (response: HttpClientResponse.HttpClientResponse, name: string) => response.cookies.cookies[name]?.value ?? ""
+function callback(origin: string, body: string, cookie: string, requestOrigin = ORIGIN, site?: string) {
+  return HttpClientRequest.post(origin + Accounts.CALLBACK).pipe(
+    HttpClientRequest.setHeader("origin", requestOrigin),
+    HttpClientRequest.setHeader("cookie", `${STATE}=${cookie}`),
+    site === undefined ? identity : HttpClientRequest.setHeader("sec-fetch-site", site),
+    HttpClientRequest.bodyText(body, "application/json"),
+  )
+}
+/** The browser's whole trip through the broker, up to the fragment the handoff page reads. */
+effect function handoff(http: HttpClient.HttpClient, origin: string, code: string) {
+  const start = try http.get(origin + "/api/auth/sign-in")
+  const atBroker = try http.get(start.headers["location"] ?? "")
+  const state = new URL(atBroker.headers["location"] ?? "").searchParams.get("state") ?? ""
+  const back = try http.execute(HttpClientRequest.get(`${origin}${Accounts.CALLBACK}?state=${state}&code=${code}`).pipe(HttpClientRequest.setHeader("cookie", `smithers-broker=${value(atBroker, "smithers-broker")}`)))
+  const fragment = new URLSearchParams(new URL(back.headers["location"] ?? "").hash.slice(1))
+  return { start, pending: value(start, STATE), code: fragment.get("code") ?? "", state: fragment.get("state") ?? "", location: back.headers["location"] ?? "" }
+}
+const posted = (flow: { readonly code: string; readonly state: string }) => JSON.stringify({ code: flow.code, state: flow.state })
+
+describe("sign-in through the broker", () => {
+  it.live("carries a person from the broker to a session, once", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      provide manual {
+        const { origin } = try serve(true)
+        const http = try HttpClient.HttpClient
+        const flow = try handoff(http, origin, "7")
+        const accepted = try http.execute(callback(origin, posted(flow), flow.pending))
+        const session = value(accepted, Accounts.SESSION)
+        const who = try (try http.execute(HttpClientRequest.get(origin + "/api/auth/session").pipe(HttpClientRequest.setHeader("cookie", `${Accounts.SESSION}=${session}`)))).json
+        const replay = try http.execute(callback(origin, posted(flow), flow.pending))
+        try Effect.try(() => {
+          expect(flow.location.startsWith(`${ORIGIN}${Accounts.CALLBACK}#`)).toBe(true)
+          expect(accepted.status).toBe(200)
+          expect(value(accepted, STATE)).toBe("")
+          expect(who).toMatchObject({ id: "7", login: "ada", available: true })
+          expect(replay.status).toBe(400)
+        })
+      }
+    }
+  }), 30_000)
+  it.live("refuses a handoff with a bad body, a foreign browser, the wrong state, or a stale or foreign record", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      provide manual {
+        const { origin, storage } = try serve(true)
+        const http = try HttpClient.HttpClient
+        const flow = try handoff(http, origin, "7")
+        const statusOf = effect (body: string, cookie: string) => (try http.execute(callback(origin, body, cookie))).status
+        const malformed = try statusOf("{", flow.pending)
+        const foreignCookie = try statusOf(posted(flow), flow.pending + "0")
+        const wrongState = try statusOf(JSON.stringify({ code: flow.code, state: "y".repeat(43) }), flow.pending)
+        const record = (try promise(() => storage.get(`broker/${flow.state}`))) as { readonly claims: { readonly expires: number } }
+        try promise(() => storage.put(`broker/${flow.state}`, { ...record, claims: { ...record.claims, expires: 1 } }))
+        const expired = try statusOf(posted(flow), flow.pending)
+        try promise(() => storage.put(`broker/${flow.state}`, { ...record, claims: { ...record.claims, origin: "https://other.example" } }))
+        const foreignOrigin = try statusOf(posted(flow), flow.pending)
+        try promise(() => storage.put(`broker/${flow.state}`, { nonsense: true }))
+        const corrupt = try statusOf(posted(flow), flow.pending)
+        try Effect.try(() => expect([malformed, foreignCookie, wrongState, expired, foreignOrigin, corrupt]).toEqual([400, 400, 400, 400, 400, 400]))
+      }
+    }
+  }), 30_000)
+  it.live("clears the attempt and answers 503 when the broker refuses the exchange", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      provide manual {
+        const { origin } = try serve(true)
+        const http = try HttpClient.HttpClient
+        const flow = try handoff(http, origin, "7")
+        const answer = try http.execute(callback(origin, JSON.stringify({ code: "z".repeat(43), state: flow.state }), flow.pending))
+        try Effect.try(() => {
+          expect(answer.status).toBe(503)
+          expect(answer.cookies.cookies[STATE]?.value).toBe("")
+        })
+      }
+    }
+  }), 30_000)
+  it.live("accepts the handoff page's own null origin only from the same site", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      provide manual {
+        const { origin } = try serve(true)
+        const http = try HttpClient.HttpClient
+        const flow = try handoff(http, origin, "7")
+        const crossSite = try http.execute(callback(origin, posted(flow), flow.pending, "null", "cross-site"))
+        const foreign = try http.execute(callback(origin, posted(flow), flow.pending, "https://evil.example"))
+        const sameSite = try http.execute(callback(origin, posted(flow), flow.pending, "null", "same-origin"))
+        try Effect.try(() => expect([crossSite.status, foreign.status, sameSite.status]).toEqual([403, 403, 200]))
+      }
+    }
+  }), 30_000)
+  it.live("serves the handoff page with no state, and refuses a POST with no broker configured", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const { origin } = try serve(false)
+      provide manual {
+        const http = try HttpClient.HttpClient
+        const page = try http.get(origin + Accounts.CALLBACK)
+        const script = try page.text
+        const refused = try http.execute(callback(origin, "{}", ""))
+        try Effect.try(() => {
+          expect(script).toBe(GitHub.Auth.Broker.HANDOFF_PAGE)
+          expect(page.headers["content-security-policy"]).toContain("default-src 'none'")
+          expect(refused.status).toBe(503)
+        })
+      }
+    }
+  }), 30_000)
+})
+
+describe("a broker named without its secret", () => {
+  it.live("reports sign-in unavailable and starts nothing", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const { origin } = try serve(false, { origin: "https://smithers.test" })
+      provide manual {
+        const http = try HttpClient.HttpClient
+        const session = try (try http.get(origin + "/api/auth/session")).json
+        const start = try http.get(origin + "/api/auth/sign-in")
+        try Effect.try(() => {
+          expect(session).toMatchObject({ available: false })
+          expect(start.status).toBe(503)
+        })
+      }
+    }
+  }), 30_000)
+  it.live("a hosted broker sends the browser to its own origin", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const { origin } = try serve(false, { origin: "https://smithers.test", secret: SITE_SECRET })
+      provide manual {
+        const start = try (try HttpClient.HttpClient).get(origin + "/api/auth/sign-in")
+        try Effect.try(() => {
+          expect(start.status).toBe(302)
+          expect(start.headers["location"]).toContain("https://smithers.test/api/auth/broker/start?")
+        })
+      }
+    }
+  }), 30_000)
+})
+
+describe("the object's request guards", () => {
+  const device = (origin: string, body: HttpClientRequest.HttpClientRequest) => body.pipe(HttpClientRequest.setHeader("origin", origin))
+  it.live("bounds a device body by its bytes and by its read deadline", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const { origin, accounts } = try serve(false)
+      provide manual {
+        const http = try HttpClient.HttpClient
+        const large = try http.execute(device(ORIGIN, HttpClientRequest.post(origin + "/api/auth/device").pipe(HttpClientRequest.bodyStream(Stream.succeed(new TextEncoder().encode("x".repeat(3000))), { contentType: "application/json" }))))
+        const slow = HttpServerRequest.fromClientRequest(device(ORIGIN, HttpClientRequest.post(ORIGIN + "/api/auth/device").pipe(HttpClientRequest.bodyStream(Stream.concat(Stream.succeed(new TextEncoder().encode("{")), Stream.never), { contentType: "application/json" }))))
+        const timed = try accounts.fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, slow))
+        try Effect.try(() => expect([large.status, timed.status]).toEqual([413, 408]))
+      }
+    }
+  }), 30_000)
+  it.live.each(["/api/issues", "/api/wiki"])("%s refuses a write from another origin", (path) => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const { origin } = try serve(false)
+      provide manual {
+        const answer = try (try HttpClient.HttpClient).execute(device("https://evil.example", HttpClientRequest.post(origin + path).pipe(HttpClientRequest.bodyText("{}", "application/json"))))
+        try Effect.try(() => expect(answer.status).toBe(403))
+      }
+    }
+  }), 30_000)
+  it.live("asks a stranger to sign in before a wiki write", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const { origin } = try serve(false)
+      provide manual {
+        const answer = try (try HttpClient.HttpClient).execute(device(ORIGIN, HttpClientRequest.post(origin + "/api/wiki").pipe(HttpClientRequest.bodyJsonUnsafe({ op: "draft", page: "index", base: "", text: "ask", key: "k1" }))))
+        const body = try answer.json
+        try Effect.try(() => expect([answer.status, body]).toEqual([401, { reason: "sign-in" }]))
+      }
+    }
+  }), 30_000)
+  it.effect("refuses a chat wiki draft for an owner whose role can't draft", () => effect {
+    const storage = try Effect.try(() => objectStorage())
+    const accounts = try Accounts.make("accounts-broker-test", storage as unknown as Storage, setup())
+    expect(try accounts.draftWiki("99", "index", "ask", "k1")).toBe("forbidden")
+  }.pipe(Effect.provide(FetchHttpClient.layer)))
+})
