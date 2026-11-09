@@ -19,7 +19,8 @@ export service SandboxIdentity {
 }
 export const noIdentity = Layer.succeed(SandboxIdentity, { request: () => succeed({ owner: "", role: "viewer" as const }), role: () => succeed("viewer" as const) })
 export service SandboxGateway { readonly gateway: Gateway<RuntimeContext> }
-interface Answer { readonly snapshot: SandboxSnapshot; readonly output: string; readonly refusal: string }
+/** A refused run carries only its reason: the gateway turns it into `Refused` and reads nothing else. */
+type Answer = { readonly ok: true; readonly snapshot: SandboxSnapshot; readonly output: string } | { readonly ok: false; readonly refusal: string }
 interface AccountShape {
   run(owner: string, kind: "read" | "start" | "stop" | "command", conversation: string, operationId: string, generation: number, command: string): Answer!!RuntimeContext
   alarm(): void!!RuntimeContext
@@ -53,12 +54,10 @@ export function accountObject(state: ObjectState, namespace: Named<MachineShape>
           if (!mayStart(try identity.role(owner))) throw new Refused({ refusal: "forbidden" })
           if (saved === undefined) try promise(() => state.raw.storage.put("owner", owner))
           const answer = try Sandboxes.execute(id, state.raw.storage, host, kind === "read" ? "meter" : kind, conversation, operationId, generation, command)
-          return { snapshot: try host.snapshot(conversation), output: typeof answer === "string" ? answer : "", refusal: "" }
+          return { ok: true as const, snapshot: try host.snapshot(conversation), output: typeof answer === "string" ? answer : "" }
         }
-        return (kind === "command" ? work : Semaphore.withPermits(gate, 1)(work)) catch effect (error) => {
-          // A failed stop is still running in the persisted ledger; no success receipt is returned.
-          return { snapshot: try Effect.orDie(host.snapshot(conversation)), output: "", refusal: error._tag === "Refused" ? error.refusal : "unavailable" }
-        }
+        // A failed stop is still running in the persisted ledger; no success receipt is returned.
+        return (kind === "command" ? work : Semaphore.withPermits(gate, 1)(work)) catch (error) => ({ ok: false as const, refusal: error._tag === "Refused" ? error.refusal : "unavailable" })
       },
       alarm: effect () => {
         // Arm the retry BEFORE work: a failed container stop must not strand a running machine.
@@ -81,12 +80,12 @@ export function gatewayOf(namespace: Named<AccountShape>, identity: SandboxIdent
     const runtime = try RuntimeContext
     const principal = try identity.request()
     if (principal.owner === "" || !mayStart(principal.role)) {
-      if (kind === "read") return { snapshot: try signedOutGateway.sandbox(conversation), output: "", refusal: "" }
+      if (kind === "read") return { ok: true as const, snapshot: try signedOutGateway.sandbox(conversation), output: "" }
       throw new Refused({ refusal: "forbidden" })
     }
     const stub = try Effect.mapError(Effect.try(() => namespace.getByName(principal.owner)), () => new Unavailable({ reason: "sandbox-binding" }))
     const answer = try Effect.provideService(stub.run(principal.owner, kind, conversation, operationId, generation, command), RuntimeContext, runtime)
-    if (answer.refusal !== "") throw new Refused({ refusal: answer.refusal })
+    if (!answer.ok) throw new Refused({ refusal: answer.refusal })
     return answer
   }
   // Resolve the current principal for every HTTP operation, before any journal replay can return a result.

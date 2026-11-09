@@ -123,12 +123,12 @@ it.live("sandbox/account-gateway", () => run("sandbox/account-gateway", AccountI
     }
   }
   faulted(local.faults, clean)
-  // Only a run arms an alarm, and a run records the owner first, so an ownerless object never meters.
-  if (storage.kv.get("owner") !== undefined) try account.alarm()
+  // An alarm on an ownerless object wrote a ledger owned by nobody; a later refused run must still answer, not die.
+  try account.alarm()
   // An account belongs to the first person who used it, and an empty owner never acts.
   const owner = storage.kv.get("owner")
   const blank = try account.run("", "start", "c-1", "op-blank", 0, "")
-  if (blank.refusal !== "forbidden") return false
+  if (blank.ok || blank.refusal !== "forbidden") return false
   const foreign = try account.run("someone-else", "start", "c-1", "op-foreign", 0, "")
-  return owner === undefined || foreign.refusal === "forbidden"
+  return owner === undefined || (!foreign.ok && foreign.refusal === "forbidden")
 })))
