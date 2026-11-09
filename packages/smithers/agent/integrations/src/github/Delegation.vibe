@@ -18,10 +18,11 @@ export const CALL_TTL = 60_000
 export const EXPIRY = 30 * 24 * 60 * 60 * 1000
 export const REFRESH_MARGIN = 300_000
 export const WRITES_PER_HOUR = 60
-export type Reason = "connect" | "install" | "fork" | "forbidden" | "unavailable" | "unknown" | "key_conflict"
+/** `missing` answers only a read: GitHub found nothing at that path. */
+export type Reason = "connect" | "install" | "fork" | "forbidden" | "unavailable" | "unknown" | "key_conflict" | "missing"
 export type Mode = "read" | "find" | "perform" | "revoke"
 export class DelegationRefused extends Schema.TaggedError<DelegationRefused>()("@smthrs/integrations/DelegationRefused", {
-  reason: Schema.Literals(["connect", "install", "fork", "forbidden", "unavailable", "unknown", "key_conflict"]),
+  reason: Schema.Literals(["connect", "install", "fork", "forbidden", "unavailable", "unknown", "key_conflict", "missing"]),
 }) {}
 const refused = (reason: Reason) => new DelegationRefused({ reason })
 export interface Site { readonly origin: string; readonly secret: Redacted.Redacted<string>; readonly grants: ReadonlyArray<Policy.Grant> }
@@ -126,7 +127,7 @@ export effect function sqliteStore(sql: Sql): Store!DelegationRefused {
   }
 }
 
-/** The call's target person, as the host's router reads it. Unauthenticated routing only: `handle` checks the signed envelope. */
+/** The call's target person, read from its URL. `route` admits it only when the signed envelope names the same person. */
 export function personOf(url: string): number | undefined {
   const value = new URL(url, "https://broker.invalid").searchParams.get("person") ?? ""
   if (!/^[1-9][0-9]{0,15}$/.test(value)) return undefined
@@ -136,7 +137,7 @@ export function personOf(url: string): number | undefined {
 export const handles = (url: string) => new URL(url, "https://broker.invalid").pathname === ROUTE
 
 export const MAX_BODY = 4_194_304
-const statusFor = (reason: Reason) => reason === "forbidden" ? 403 : reason === "connect" || reason === "install" || reason === "fork" ? 401 : reason === "key_conflict" || reason === "unknown" ? 409 : 503
+const statusFor = (reason: Reason) => reason === "missing" ? 404 : reason === "forbidden" ? 403 : reason === "connect" || reason === "install" || reason === "fork" ? 401 : reason === "key_conflict" || reason === "unknown" ? 409 : 503
 const NO_STORE = { "cache-control": "no-store", "referrer-policy": "no-referrer" }
 /** The person's Durable Object fetch handler. Bodies are read here; nothing is logged but the fixed vocabulary. */
 export effect function serve(server: { readonly handle: (text: string) => unknown!DelegationRefused }) {
@@ -154,10 +155,10 @@ export effect function serve(server: { readonly handle: (text: string) => unknow
 const ReceiptSchema = Schema.Struct({ number: Schema.optional(Schema.Number), id: Schema.optional(Schema.Number), sha: Schema.optional(Schema.String), name: Schema.optional(Schema.String) })
 export type Receipt = typeof ReceiptSchema.Type
 const FindAnswer = Schema.Struct({ found: Schema.Boolean, receipt: Schema.optional(ReceiptSchema) })
-const Refusal = Schema.Struct({ reason: Schema.Literals(["connect", "install", "fork", "forbidden", "unavailable", "unknown", "key_conflict"]) })
+const Refusal = Schema.Struct({ reason: Schema.Literals(["connect", "install", "fork", "forbidden", "unavailable", "unknown", "key_conflict", "missing"]) })
 /** What a site's GitHub code sees: the broker's reason, on the failure type every GitHub call already uses. */
 export const reasonOf = (error: { readonly details?: Readonly<Record<string, unknown>> }): Reason | undefined => error.details?.["delegation"] as Reason | undefined
-const asIntegration = (error: DelegationRefused) => new IntegrationError("delivery-failed", "The delegated call was refused.", { delegation: error.reason, retryable: false, ...(error.reason === "unknown" ? { outcomeUnknown: true } : {}) })
+const asIntegration = (error: DelegationRefused) => new IntegrationError("delivery-failed", "The delegated call was refused.", { delegation: error.reason, retryable: false, ...(error.reason === "unknown" ? { outcomeUnknown: true } : {}), ...(error.reason === "missing" ? { status: 404 } : {}) })
 
 /** The hosted site's whole interface: it never holds a token. */
 export effect function site(options: { readonly origin: string; readonly brokerOrigin: string; readonly secret: Redacted.Redacted<string> }) {
@@ -217,6 +218,43 @@ export effect function signer(options: { readonly origin: string; readonly broke
 }
 
 const statusOf = (error: { readonly details?: Readonly<Record<string, unknown>> }) => error.details?.["status"]
+
+/** The checks that need no person's rows: the site's origin and signature, the audience, route, person, actor, expiry and digest. */
+const signed = effect (options: { readonly origin: string; readonly sites: ReadonlyArray<Site> }, envelope: typeof Envelope.Type) => {
+  const site = options.sites.find((entry) => entry.origin === envelope.origin)
+  if (site === undefined) throw refused("forbidden")
+  const keys = try CookieKeys.make({ primary: site.secret }, "primary")
+  const verified = try keys.verify("broker_delegation", envelope.request)
+  if (Option.isNone(verified)) throw refused("forbidden")
+  const claim = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Claim))(verified.value.value), () => refused("forbidden"))
+  const now = try Clock.currentTimeMillis
+  if (claim.audience !== options.origin || claim.route !== ROUTE || claim.origin !== envelope.origin || claim.person !== envelope.person || claim.actor !== "person" || claim.expires <= now || claim.expires > now + CALL_TTL) throw refused("forbidden")
+  if (claim.digest !== (try digestOf(envelope.payload))) throw refused("forbidden")
+  return { claim, site }
+}
+
+/**
+ * smithers.sh's router, before it addresses any person's object: a call reaches the object only when a configured site
+ * signed it for the person its URL names. Stateless; the object still claims the nonce and checks the delegation.
+ */
+export effect function route<E, R>(options: { readonly origin: string; readonly sites: ReadonlyArray<Site> }, forward: (person: number, request: HttpServerRequest.HttpServerRequest) => HttpServerResponse.HttpServerResponse!E!R) {
+  const request = try HttpServerRequest.HttpServerRequest
+  if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: NO_STORE })
+  if (Number(request.headers["content-length"]) > MAX_BODY) return HttpServerResponse.jsonUnsafe({ reason: "forbidden" }, { status: 413, headers: NO_STORE })
+  const text = request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(MAX_BODY)), Effect.timeout("3 seconds")) catch () => undefined
+  if (text === undefined) return HttpServerResponse.jsonUnsafe({ reason: "forbidden" }, { status: 413, headers: NO_STORE })
+  const person = personOf(request.originalUrl)
+  const admitted = try Effect.result(observed("route", effect {
+    const envelope = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Envelope))(text), () => refused("forbidden"))
+    if (person === undefined || envelope.person !== person) throw refused("forbidden")
+    try signed(options, envelope)
+    return person
+  }))
+  if (admitted._tag === "Failure") return HttpServerResponse.jsonUnsafe({ reason: admitted.failure.reason }, { status: statusFor(admitted.failure.reason), headers: NO_STORE })
+  const inner = try Effect.orDie(HttpClientRequest.toWeb(HttpClientRequest.post(new URL(request.originalUrl, options.origin).href).pipe(HttpClientRequest.bodyText(text, "application/json"))))
+  return try forward(admitted.success, HttpServerRequest.fromWeb(inner))
+}
+
 
 export effect function make(options: {
   readonly origin: string; readonly person: number; readonly sites: ReadonlyArray<Site>; readonly keyring: Keyring; readonly store: Store
@@ -359,15 +397,9 @@ export effect function make(options: {
     try options.store.put(counted, used + 1)
   }
   const verify = effect (envelope: typeof Envelope.Type) => {
-    const site = options.sites.find((entry) => entry.origin === envelope.origin)
-    if (site === undefined || envelope.person !== options.person) throw refused("forbidden")
-    const keys = try CookieKeys.make({ primary: site.secret }, "primary")
-    const verified = try keys.verify("broker_delegation", envelope.request)
-    if (Option.isNone(verified)) throw refused("forbidden")
-    const claim = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Claim))(verified.value.value), () => refused("forbidden"))
+    if (envelope.person !== options.person) throw refused("forbidden")
+    const { claim, site } = try signed(options, envelope)
     const now = try Clock.currentTimeMillis
-    if (claim.audience !== options.origin || claim.route !== ROUTE || claim.origin !== envelope.origin || claim.person !== envelope.person || claim.actor !== "person" || claim.expires <= now || claim.expires > now + CALL_TTL) throw refused("forbidden")
-    if (claim.digest !== (try digestOf(envelope.payload))) throw refused("forbidden")
     if (!(try options.store.claim("nonce/" + (try digestOf(claim.nonce)), claim.expires))) throw refused("forbidden")
     const row = try delegationOf(envelope.origin)
     if (row === undefined || row.id !== claim.delegation || !Policy.liveDelegation(row.state, row.expires, now)) throw refused("connect")
@@ -384,7 +416,7 @@ export effect function make(options: {
     if (claim.mode === "read") {
       const { path, paginate } = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ path: Schema.String, paginate: Schema.optional(Schema.Struct({ perPage: Schema.optional(Schema.Number), maxPages: Schema.optional(Schema.Number), withNext: Schema.optional(Schema.Boolean) })) })))(envelope.payload), () => refused("forbidden"))
       if (!Policy.readable(site.grants, session.login, path)) throw refused("forbidden")
-      return try github(session, Effect.flatMap(GitHubClient, (client) => paginate === undefined ? client.request("GET", path) : client.paginate(path, paginate)))
+      return try github(session, Effect.flatMap(GitHubClient, (client) => paginate === undefined ? client.request("GET", path) : client.paginate(path, paginate)), false, "missing")
     }
     if (!/^[0-9a-f]{64}$/.test(claim.key)) throw refused("forbidden")
     const operation = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Op))(envelope.payload), () => refused("forbidden")) as Policy.Operation

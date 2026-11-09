@@ -215,6 +215,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const bugsApi = yield* BugsApi.make(database)
     const brokerObjects = yield* AuthBroker.HostedAuthBroker
     const connectionObjects = yield* GitHubConnection.GitHubConnection
+    // Read once: the delegation route checks a call's signature against these sites before it addresses an object.
+    const connectionSetup = yield* GitHubConnection.configured().pipe(Effect.orDie)
     const signIn = yield* SignIn.make(database, options).pipe(Effect.provide(FetchHttpClient.layer))
     // Repositories (docs/features/repo.md): cloning into Code Storage, the `repositories` shape, reads at a commit,
     // cached in this Worker's Cache API, and what GitHub says of a repository, kept in Postgres for every data center.
@@ -444,11 +446,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         const runtime = yield* RuntimeContext
         const brokerRequest = yield* HttpServerRequest.HttpServerRequest
         if (AuthBroker.handles(brokerRequest.url)) return yield* brokerObjects.getByName("hosted").fetch(brokerRequest).pipe(Effect.provideService(RuntimeContext, runtime))
-        if (GitHub.Delegation.handles(brokerRequest.url)) {
-          const person = GitHub.Delegation.personOf(brokerRequest.url)
-          if (person === undefined) return HttpServerResponse.empty({ status: 400, headers: GitHub.Auth.Broker.HEADERS })
-          return yield* connectionObjects.getByName(GitHubConnection.nameOf(person)).fetch(brokerRequest).pipe(Effect.provideService(RuntimeContext, runtime), Effect.catchCause(() => Effect.succeed(HttpServerResponse.jsonUnsafe({ reason: "unavailable" }, { status: 503, headers: GitHub.Auth.Broker.HEADERS }))))
-        }
+        if (GitHub.Delegation.handles(brokerRequest.url)) return yield* GitHubConnection.route(connectionObjects, connectionSetup).pipe(Effect.provideService(RuntimeContext, runtime))
         const throttle = Effect.flatMap(
           HttpServerRequest.HttpServerRequest,
           Throttle.make({

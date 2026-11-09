@@ -3,6 +3,8 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { serveAuthBroker } from "./support/workerd.vibe"
 import { GitHub } from "@smthrs/integrations"
 
+const Delegation = GitHub.Delegation
+
 it.live("runs both apps' durable auth hosts in workerd, binding both browser cookies and consuming the handoff", () => scoped(effect {
   const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
   const brokerOrigin = host.origin.replace("127.0.0.1", "localhost")
@@ -159,6 +161,12 @@ it.live("connects through smithers.sh, writes once as the person, and every revo
     ))
     const state = effect { return (try (try http.get(host.origin + "/__connection/state")).json) as { issues: Array<{ title: string }>; revoked: number; connections: Array<{ origin: string }>; journal: unknown; rows: unknown } }
     const unconnected = try issue("before")
+    const openedBefore = (try (try http.get(host.origin + "/__opened")).json) as number
+    const forged = try Delegation.signer({ origin: host.origin, brokerOrigin, secret: Redacted.make("not-the-site-secret-but-32-characters") })
+    const call = { person: 9, delegation: "d", mode: "read" as const, key: "", payload: { path: "/repos/smithersai/vibelang" } }
+    const unsigned = try http.execute(HttpClientRequest.post(brokerOrigin + Delegation.ROUTE + "?person=9").pipe(HttpClientRequest.bodyJsonUnsafe({ origin: host.origin, person: 9, request: "", payload: "{}" })))
+    const wronglySigned = try http.execute(HttpClientRequest.post(brokerOrigin + Delegation.ROUTE + "?person=9").pipe(HttpClientRequest.bodyJsonUnsafe(try forged.envelope(call))))
+    const openedAfter = (try (try http.get(host.origin + "/__opened")).json) as number
     const first = try connected(host.origin, session)
     const written = try issue("key-1")
     const again = try issue("key-1")
@@ -174,6 +182,8 @@ it.live("connects through smithers.sh, writes once as the person, and every revo
     try Effect.try(() => {
       expect(anonymous.status).toBe(401)
       expect(unconnected.status).toBe(401)
+      expect([unsigned.status, wronglySigned.status]).toEqual([403, 403])
+      expect(openedAfter).toBe(openedBefore)
       expect(first.press.status).toBe(303)
       expect(first.page).toContain("Connect")
       expect(first.answered.status).toBe(303)

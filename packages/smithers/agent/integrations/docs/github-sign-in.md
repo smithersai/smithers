@@ -57,7 +57,8 @@ A hosted site never holds a GitHub token. `GitHub.Delegation` keeps one sealed u
 | `unavailable` | Try again with the same key. |
 | `unknown` | GitHub's answer was lost. Retry with the same key to join it. |
 | `key_conflict` | The key already names a different operation. |
+| `missing` | A read found nothing: GitHub answered 404. The site's GitHub error carries `status: 404`, so helpers such as `Contents.getText` answer none. |
 
-Calls post to `Delegation.ROUTE?person=<id>`. The host routes with `Delegation.personOf` to that person's single-writer object; only the signed envelope is trusted. `connections()` lists a person's sites for a Disconnect page.
+Calls post to `Delegation.ROUTE?person=<id>`. The host's router calls `Delegation.route({ origin, sites }, forward)`. It checks the site's origin and signature, the audience, route and expiry, and that the envelope names the URL's person. Only then does it call `forward(person, request)` to reach that person's single-writer object. A refused call answers `403` and addresses no object, so it creates none. The object then claims the call's nonce and checks the delegation. `connections()` lists a person's sites for a Disconnect page.
 
 The host supplies a per-person `Store`, a `Journal` backed by its flow engine, and an `Act` that binds a token to the GitHub client. Every token the host doesn't keep is revoked, because GitHub keeps only ten per person per App.

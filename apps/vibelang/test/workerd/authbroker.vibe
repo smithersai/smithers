@@ -19,11 +19,13 @@ const connectionKeys = { active: "k1", keys: { k1: encryptionKey } }
 const grants: ReadonlyArray<GitHub.DelegationPolicy.Grant> = [{ repository: "smithersai/vibelang", repositoryId: 11, scopes: ["issues", "proposals"], paths: ["docs/design/vips/"], branchPrefix: "vibelang/", labelPrefix: "vibelang:" }]
 const missing = () => Effect.fail({ details: { status: 404 } })
 /** smithers.sh's real per-person object on durable SQLite; GitHub itself is the injected client. */
+/** Every person's object this isolate constructed: the router must construct none for a call it refused. */
+const opened = new Set<string>()
 export class HostedConnection {
   issues: Array<Record<string, unknown>> = []
   revoked: Array<string> = []
   service: Promise<Effect.Success<ReturnType<typeof Connection.make>>> | undefined
-  constructor(readonly state: State) {}
+  constructor(readonly state: State) { opened.add(state.id.toString()) }
   client(): GitHub.GitHubClient.GitHubClient {
     const request = (method: string, path: string, body?: { readonly title?: string; readonly body?: string }): Effect.Effect<any, any> => {
       if (path === "/repos/smithersai/vibelang") return succeed({ id: 11, name: "vibelang", owner: { login: "smithersai" }, default_branch: "main" })
@@ -160,6 +162,15 @@ interface Env {
 }
 export default { async fetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url)
-  if (url.pathname.startsWith("/__connection") || GitHub.Delegation.handles(request.url)) return await env.CONNECTION.getByName("person:7").fetch(request)
+  if (url.pathname === "/__opened") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(opened.size))
+  if (url.pathname.startsWith("/__connection")) return await env.CONNECTION.getByName("person:7").fetch(request)
+  // smithers.sh's own route: no person's object is addressed until the site's signature admits the call.
+  if (GitHub.Delegation.handles(request.url)) {
+    const sites = [{ origin: origins(request).site, secret, grants }]
+    return HttpServerResponse.toWeb(await runPromise(GitHub.Delegation.route({ origin: origins(request).broker, sites }, (person, inner) => effect {
+      const web = try HttpServerRequest.toWeb(inner)
+      return HttpServerResponse.fromWeb(try promise(() => env.CONNECTION.getByName("person:" + person).fetch(web)))
+    }).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)))))
+  }
   return await (url.hostname === "localhost" ? env.BROKER : env.SITE).getByName("auth").fetch(request)
 } }
