@@ -252,10 +252,7 @@ export const declare = Effect.fn("flows/harness/Compaction.declare")(effect (
     throw new InvalidStep({ message: "The compaction marks must name every prefix segment once" })
   }
   try verifyExchanges(segments, marks ?? segments.map(() => "squash"))
-  const selected = try Effect.orDie(Effect.try({
-    try: () => ContextWindow.prefixDigest(window, segments.length),
-    catch: identity
-  }))
+  const selected = try sync(() => ContextWindow.prefixDigest(window, segments.length))
   const replacedPrefixDigest = try Effect.fromResult(selected).pipe(
     Effect.mapError((cause) =>
       new InvalidStep({
@@ -293,10 +290,7 @@ effect function verifyPrefix(
   step: CompactionStep,
   noun: "declared" | "recorded"
 ): Effect.Effect<void, InvalidStep> {
-  const selected = try Effect.orDie(Effect.try({
-    try: () => ContextWindow.prefixDigest(window, step.prefixLength),
-    catch: identity
-  }))
+  const selected = try sync(() => ContextWindow.prefixDigest(window, step.prefixLength))
   const actual = try Effect.fromResult(selected).pipe(
     Effect.mapError((cause) =>
       new InvalidStep({
@@ -340,25 +334,23 @@ export const summaryRequest = Effect.fn("flows/harness/Compaction.summaryRequest
     if (marks[index] !== "squash") continue
     for (const item of segment.content) if ("role" in item) messages.push(item)
   }
-  messages.push(try Effect.orDie(Effect.try({ try: () => ModelRequest.Message.user(summaryTurn), catch: identity })))
+  messages.push(try sync(() => ModelRequest.Message.user(summaryTurn)))
   const params = step.summarizer.params === undefined
-    ? try Effect.orDie(Effect.try({ try: () => ModelRequest.GenerationParams.make(), catch: identity }))
+    ? try sync(() => ModelRequest.GenerationParams.make())
     : try Schema.decodeUnknownEffect(ModelRequest.GenerationParams, { onExcessProperty: "error" })(
       step.summarizer.params
     ).pipe(
       Effect.mapError((cause) => new InvalidStep({ message: "Invalid summarizer generation parameters", cause }))
     )
-  return try Effect.orDie(Effect.try({
-    try: () =>
-      ModelRequest.ModelRequest.make({
-        modelId: step.summarizer.modelId ?? window.modelId,
-        system: [ModelRequest.SystemPart.make({ text: summaryInstruction })],
-        messages,
-        tools: [],
-        params
-      }),
-    catch: identity
-  }))
+  return try sync(() =>
+    ModelRequest.ModelRequest.make({
+      modelId: step.summarizer.modelId ?? window.modelId,
+      system: [ModelRequest.SystemPart.make({ text: summaryInstruction })],
+      messages,
+      tools: [],
+      params
+    })
+  )
 })
 
 /**
@@ -386,10 +378,7 @@ export const apply = Effect.fn("flows/harness/Compaction.apply")(effect (
         : "A compaction that squashes nothing takes no summary"
     })
   }
-  const compacted = try Effect.orDie(Effect.try({
-    try: () => ContextWindow.compactMarked(window, step.prefixLength, marks, recordedSummary),
-    catch: identity
-  }))
+  const compacted = try sync(() => ContextWindow.compactMarked(window, step.prefixLength, marks, recordedSummary))
   return try Effect.fromResult(compacted).pipe(
     Effect.mapError((cause) =>
       new InvalidStep({

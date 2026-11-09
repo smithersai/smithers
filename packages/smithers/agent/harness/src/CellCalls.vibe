@@ -34,7 +34,6 @@
 import * as MarkdownFlow from "@smthrs/registry/MarkdownFlow"
 import type * as Registry from "@smthrs/registry/Registry"
 import { Effect, Option, Schema } from "effect"
-import { identity } from "effect/Function"
 import * as Cell from "./Cell.ts"
 import type * as FlowBinding from "./FlowBinding.ts"
 import { HarnessError } from "./HarnessError.vibe"
@@ -119,7 +118,7 @@ export interface Resolver {
 }
 
 const digestOf = (descriptor: Parameters<typeof Cell.declarationDigest>[0]): Effect.Effect<string> =>
-  Effect.orDie(Effect.try({ try: () => Cell.declarationDigest(descriptor), catch: identity }))
+  sync(() => Cell.declarationDigest(descriptor))
 
 /**
  * Constructs registry-backed call resolution.

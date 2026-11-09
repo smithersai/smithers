@@ -34,11 +34,10 @@
 import * as Effect_1 from "effect/Effect";
 import * as MarkdownFlow from "@smthrs/registry/MarkdownFlow";
 import { Effect, Option, Schema } from "effect";
-import { identity } from "effect/Function";
 import * as Cell from "./Cell.js";
 import { HarnessError } from "./HarnessError.js";
 import { refusal } from "./internal/refusal.js";
-const digestOf = (descriptor) => Effect.orDie(Effect.try({ try: () => Cell.declarationDigest(descriptor), catch: identity }));
+const digestOf = (descriptor) => Effect_1.sync(() => Cell.declarationDigest(descriptor));
 /**
  * Constructs registry-backed call resolution.
  *

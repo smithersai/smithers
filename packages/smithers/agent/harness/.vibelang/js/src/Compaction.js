@@ -176,10 +176,7 @@ export const declare = Effect.fn("flows/harness/Compaction.declare")((window, pr
             return yield* Effect_1.fail(new InvalidStep({ message: "The compaction marks must name every prefix segment once" }));
         }
         yield* verifyExchanges(segments, marks ?? segments.map(() => "squash"));
-        const selected = yield* Effect.orDie(Effect.try({
-            try: () => ContextWindow.prefixDigest(window, segments.length),
-            catch: identity
-        }));
+        const selected = yield* Effect_1.sync(() => ContextWindow.prefixDigest(window, segments.length));
         const replacedPrefixDigest = yield* Effect.fromResult(selected).pipe(Effect.mapError((cause) => new InvalidStep({
             message: "The declared compaction prefix is not present in the context window",
             cause
@@ -211,10 +208,7 @@ function stepMarks(step) {
  */
 function verifyPrefix(window, step, noun) {
     return Effect_1.gen(function* verifyPrefix() {
-        const selected = yield* Effect.orDie(Effect.try({
-            try: () => ContextWindow.prefixDigest(window, step.prefixLength),
-            catch: identity
-        }));
+        const selected = yield* Effect_1.sync(() => ContextWindow.prefixDigest(window, step.prefixLength));
         const actual = yield* Effect.fromResult(selected).pipe(Effect.mapError((cause) => new InvalidStep({
             message: `The ${noun} compaction prefix is not present in the context window`,
             cause
@@ -255,18 +249,15 @@ export const summaryRequest = Effect.fn("flows/harness/Compaction.summaryRequest
                 if ("role" in item)
                     messages.push(item);
         }
-        messages.push(yield* Effect.orDie(Effect.try({ try: () => ModelRequest.Message.user(summaryTurn), catch: identity })));
+        messages.push(yield* Effect_1.sync(() => ModelRequest.Message.user(summaryTurn)));
         const params = step.summarizer.params === undefined
-            ? yield* Effect.orDie(Effect.try({ try: () => ModelRequest.GenerationParams.make(), catch: identity })) : yield* Schema.decodeUnknownEffect(ModelRequest.GenerationParams, { onExcessProperty: "error" })(step.summarizer.params).pipe(Effect.mapError((cause) => new InvalidStep({ message: "Invalid summarizer generation parameters", cause })));
-        return yield* Effect.orDie(Effect.try({
-            try: () => ModelRequest.ModelRequest.make({
-                modelId: step.summarizer.modelId ?? window.modelId,
-                system: [ModelRequest.SystemPart.make({ text: summaryInstruction })],
-                messages,
-                tools: [],
-                params
-            }),
-            catch: identity
+            ? yield* Effect_1.sync(() => ModelRequest.GenerationParams.make()) : yield* Schema.decodeUnknownEffect(ModelRequest.GenerationParams, { onExcessProperty: "error" })(step.summarizer.params).pipe(Effect.mapError((cause) => new InvalidStep({ message: "Invalid summarizer generation parameters", cause })));
+        return yield* Effect_1.sync(() => ModelRequest.ModelRequest.make({
+            modelId: step.summarizer.modelId ?? window.modelId,
+            system: [ModelRequest.SystemPart.make({ text: summaryInstruction })],
+            messages,
+            tools: [],
+            params
         }));
     });
 });
@@ -292,10 +283,7 @@ export const apply = Effect.fn("flows/harness/Compaction.apply")((window, step, 
                     : "A compaction that squashes nothing takes no summary"
             }));
         }
-        const compacted = yield* Effect.orDie(Effect.try({
-            try: () => ContextWindow.compactMarked(window, step.prefixLength, marks, recordedSummary),
-            catch: identity
-        }));
+        const compacted = yield* Effect_1.sync(() => ContextWindow.compactMarked(window, step.prefixLength, marks, recordedSummary));
         return yield* Effect.fromResult(compacted).pipe(Effect.mapError((cause) => new InvalidStep({
             message: "Unable to apply the recorded compaction summary",
             cause

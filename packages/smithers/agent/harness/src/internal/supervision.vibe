@@ -36,7 +36,6 @@ import { ModelRequest } from "@smthrs/model"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Descriptor from "@smthrs/registry/Descriptor"
 import { Clock, Deferred, Effect, Fiber, Option, Queue, Ref, Schema, type Scope } from "effect"
-import { identity } from "effect/Function"
 import * as AgentEvent from "../AgentEvent.vibe"
 import type { State } from "../CellTurn.ts"
 import * as EngineLike from "../EngineLike.vibe"
@@ -436,15 +435,11 @@ export const open = effect (input: {
             ? {
               marks: [],
               marksDecisions: [],
-              marksUnjudged: try Effect.orDie(Effect.try({
-                try: () =>
-                  Judgement.unjudgedEvent(marking.failure, {
-                    ...at,
-                    classifier: "compaction/marks",
-                    items: unmarked.length
-                  }),
-                catch: identity
-              }))
+              marksUnjudged: Judgement.unjudgedEvent(marking.failure, {
+                ...at,
+                classifier: "compaction/marks",
+                items: unmarked.length
+              })
             }
             : {
               marks: unmarked.map(({ digest }, index) => ({ digest, ...marking.success.answers[index]! })),
@@ -459,15 +454,11 @@ export const open = effect (input: {
             ? {
               memory: null,
               memoryDecisions: [],
-              memoryUnjudged: try Effect.orDie(Effect.try({
-                try: () =>
-                  Judgement.unjudgedEvent(relevance.failure, {
-                    ...at,
-                    classifier: "relevance/unnecessary",
-                    items: rows.length
-                  }),
-                catch: identity
-              })),
+              memoryUnjudged: Judgement.unjudgedEvent(relevance.failure, {
+                ...at,
+                classifier: "relevance/unnecessary",
+                items: rows.length
+              }),
               memoryRows: rows
             }
             : {

@@ -35,7 +35,6 @@
 import * as Effect_1 from "effect/Effect";
 import { ModelRequest } from "@smthrs/model";
 import { Clock, Deferred, Effect, Fiber, Option, Queue, Ref, Schema } from "effect";
-import { identity } from "effect/Function";
 import * as AgentEvent from "../AgentEvent.js";
 import * as EngineLike from "../EngineLike.js";
 import * as Judgement from "../Judgement.js";
@@ -270,14 +269,11 @@ export const open = (input) => {
                             ? {
                                 marks: [],
                                 marksDecisions: [],
-                                marksUnjudged: yield* Effect.orDie(Effect.try({
-                                    try: () => Judgement.unjudgedEvent(marking.failure, {
-                                        ...at,
-                                        classifier: "compaction/marks",
-                                        items: unmarked.length
-                                    }),
-                                    catch: identity
-                                }))
+                                marksUnjudged: Judgement.unjudgedEvent(marking.failure, {
+                                    ...at,
+                                    classifier: "compaction/marks",
+                                    items: unmarked.length
+                                })
                             }
                             : {
                                 marks: unmarked.map(({ digest }, index) => ({ digest, ...marking.success.answers[index] })),
@@ -290,14 +286,11 @@ export const open = (input) => {
                             ? {
                                 memory: null,
                                 memoryDecisions: [],
-                                memoryUnjudged: yield* Effect.orDie(Effect.try({
-                                    try: () => Judgement.unjudgedEvent(relevance.failure, {
-                                        ...at,
-                                        classifier: "relevance/unnecessary",
-                                        items: rows.length
-                                    }),
-                                    catch: identity
-                                })),
+                                memoryUnjudged: Judgement.unjudgedEvent(relevance.failure, {
+                                    ...at,
+                                    classifier: "relevance/unnecessary",
+                                    items: rows.length
+                                }),
                                 memoryRows: rows
                             }
                             : {
