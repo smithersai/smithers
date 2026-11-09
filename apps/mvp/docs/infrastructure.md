@@ -18,6 +18,7 @@ browser ── site Worker ── service binding ── ChatApi Worker ── H
 | Remote flows | the `FlowExecution` Durable Object in local workerd, its engine in the schema `smithers_flows` of the compose Postgres | the `FlowExecution` Durable Object, hosted by ChatApi, its engine in the schema `smithers_flows` of the Neon project through `ChatDatabase` ([remote-flows.md](features/remote-flows.md)) |
 | Branch sandboxes | the `BranchSandbox` image, run by local workerd through Docker | one Cloudflare Container per branch from the `BranchSandbox` image (`infra/BranchSandbox.ts`), started by that branch's `SandboxObject` Durable Object ([sandbox-tools.md](features/sandbox-tools.md)) |
 | Branch rooms | the `RoomObject` Durable Object in local workerd | one hibernating `RoomObject` per branch, hosted by ChatApi ([branch-workspace.md](features/branch-workspace.md)) |
+| GitHub connections | the `GitHubConnection` Durable Object in local workerd | one `GitHubConnection` Durable Object per person, hosted by ChatApi, with its own SQLite ([sign-in.md](features/sign-in.md)) |
 | Agent transcripts | the `RunContent` Durable Object in local workerd | the `RunContent` Durable Object, hosted by ChatApi, one per run with its own SQLite, kept 30 days after its last event ([agent-transcripts.md](features/agent-transcripts.md)) |
 
 ## Local

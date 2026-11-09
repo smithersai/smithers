@@ -126,6 +126,15 @@ export effect function sqliteStore(sql: Sql): Store!DelegationRefused {
   }
 }
 
+/** The call's target person, as the host's router reads it. Unauthenticated routing only: `handle` checks the signed envelope. */
+export function personOf(url: string): number | undefined {
+  const value = new URL(url, "https://broker.invalid").searchParams.get("person") ?? ""
+  if (!/^[1-9][0-9]{0,15}$/.test(value)) return undefined
+  const person = Number(value)
+  return Number.isSafeInteger(person) ? person : undefined
+}
+export const handles = (url: string) => new URL(url, "https://broker.invalid").pathname === ROUTE
+
 export const MAX_BODY = 4_194_304
 const statusFor = (reason: Reason) => reason === "forbidden" ? 403 : reason === "connect" || reason === "install" || reason === "fork" ? 401 : reason === "key_conflict" || reason === "unknown" ? 409 : 503
 const NO_STORE = { "cache-control": "no-store", "referrer-policy": "no-referrer" }
@@ -157,7 +166,7 @@ export effect function site(options: { readonly origin: string; readonly brokerO
     const ambient = try HttpClient.HttpClient
     const http = try Effect.mapError(Effect.try(() => forCredentials(ambient)), () => refused("unavailable"))
     const body = try sign.envelope({ person, delegation, mode, key, payload })
-    const response = http.execute(HttpClientRequest.post(options.brokerOrigin + ROUTE).pipe(HttpClientRequest.bodyJsonUnsafe(body))) catch () => undefined
+    const response = http.execute(HttpClientRequest.post(options.brokerOrigin + ROUTE + "?person=" + person).pipe(HttpClientRequest.bodyJsonUnsafe(body))) catch () => undefined
     if (response === undefined) throw refused("unavailable")
     const answer = response.json catch () => undefined
     if (response.status === 200) {
@@ -224,15 +233,18 @@ export effect function make(options: {
     return try Effect.mapError(cipher.open(value, context(name)), () => refused("connect"))
   }
   const act = options.act
-  const generationOf = effect () => {
-    const row = try credential()
-    return row === undefined ? 0 : row.generation
+  /** Never reused, even after the credential row goes: a refresh answer is journaled under its generation. */
+  const nextGeneration = effect () => {
+    const generation = Number(try options.store.get("generation") ?? 0) + 1
+    try options.store.put("generation", generation)
+    return generation
   }
   const credential = effect () => {
     const raw = try options.store.get("credential")
     return raw === undefined ? undefined : try Effect.mapError(Schema.decodeUnknownEffect(Credential)(raw), () => refused("connect"))
   }
-  const store = effect (login: string, tokens: Auth.Tokens, generation: number) => {
+  const store = effect (login: string, tokens: Auth.Tokens) => {
+    const generation = try nextGeneration()
     const access = try seal("github_access", tokens.accessToken)
     const refresh = tokens.refreshToken === null ? null : try seal("github_refresh", tokens.refreshToken)
     try options.store.put("credential", { login, keyId: options.keyring.active, access, refresh, expires: tokens.expiresAt, generation })
@@ -277,7 +289,7 @@ export effect function make(options: {
     const opened = try open(staged.keyId, "github_refreshed/" + row.generation, staged.sealed)
     const fresh = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Tokens))(Redacted.value(opened)), () => refused("connect"))
     const tokens: Auth.Tokens = { accessToken: Redacted.make(fresh.access), refreshToken: fresh.refresh === null ? null : Redacted.make(fresh.refresh), expiresAt: fresh.expires }
-    try store(row.login, tokens, row.generation + 1)
+    try store(row.login, tokens)
     return { login: row.login, token: tokens.accessToken }
   }
   const failureOf = (onFork: boolean) => (error: { readonly details?: Readonly<Record<string, unknown>> }): DelegationRefused => {
@@ -364,7 +376,10 @@ export effect function make(options: {
   const handle = (text: string) => observed("handle", effect {
     const envelope = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Envelope))(text), () => refused("forbidden"))
     const { claim, site } = try verify(envelope)
-    if (claim.mode === "revoke") { try revoke(site.origin); return {} }
+    if (claim.mode === "revoke") {
+      try options.journal("revoke/" + (try digestOf(claim.nonce)), effect { try revoke(site.origin); return "{}" })
+      return {}
+    }
     const session = try token()
     if (claim.mode === "read") {
       const { path, paginate } = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ path: Schema.String, paginate: Schema.optional(Schema.Struct({ perPage: Schema.optional(Schema.Number), maxPages: Schema.optional(Schema.Number), withNext: Schema.optional(Schema.Boolean) })) })))(envelope.payload), () => refused("forbidden"))
@@ -405,14 +420,19 @@ export effect function make(options: {
     install: (input: { readonly origin: string; readonly login: string; readonly tokens: Auth.Tokens }) => observed("install", effect {
       const site = options.sites.find((entry) => entry.origin === input.origin)
       if (site === undefined) throw refused("forbidden")
-      const generation = (try generationOf()) + 1
       try endCredential(true)
-      try store(input.login, input.tokens, generation)
+      try store(input.login, input.tokens)
       const keys = try CookieKeys.make({ primary: site.secret }, "primary")
       const id = try keys.token
       const expires = (try Clock.currentTimeMillis) + EXPIRY
       try options.store.put("delegation/" + input.origin, { id, origin: input.origin, expires, state: "active" })
       return { delegation: id, expires }
+    }),
+    /** The sites this person connected, for a Disconnect page. No handle crosses this boundary. */
+    connections: () => observed("connections", effect {
+      const now = try Clock.currentTimeMillis
+      const rows = (try options.store.list("delegation/")).flatMap((raw) => Schema.decodeUnknownOption(Row)(raw).pipe(Option.toArray))
+      return rows.filter((row) => Policy.liveDelegation(row.state, row.expires, now)).map((row) => ({ origin: row.origin, expires: row.expires }))
     }),
     /** GitHub says this person revoked the App. Nothing to revoke there; every delegation here ends. */
     revokedAtGitHub: () => observed("webhook", effect {

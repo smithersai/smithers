@@ -219,7 +219,7 @@ export effect function make(options: {
         try discard(options.github, tokens.accessToken)
         return parsed.claims.origin + "/"
       }
-      const installed = try options.connections.install({ person: parsed.person.id, origin: parsed.claims.origin, login: parsed.person.login, tokens })
+      const installed = try Effect.tapError(options.connections.install({ person: parsed.person.id, origin: parsed.claims.origin, login: parsed.person.login, tokens }), () => discard(options.github, tokens.accessToken))
       return try writeHandoff(parsed.claims, { id: parsed.person.id, login: parsed.person.login, delegation: installed.delegation, expires: installed.expires })
     }),
     start: (origin: string, signed: string) => observed("start", effect {

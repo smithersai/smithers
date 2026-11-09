@@ -713,6 +713,8 @@ serves, with distinct keys of at least 32 characters, and `AUTH_BROKER_ENCRYPTIO
 GitHub client credentials and `SESSION_SECRET` remain. A site has only its own registry key and its own session.
 No redirect URL is added. The deployment adds the `HostedAuthBroker` class/binding through Alchemy.
 
+A site with `grants` in `HOSTED_AUTH_SITES` can also act on GitHub for a person, through `GitHubConnection`, one Durable Object per person ([decision 0165](../decisions/0165-hosted-site-github-delegation.md)). It holds that person's one sealed token and answers signed `POST /api/auth/broker/delegation?person=<id>` calls. `GITHUB_CONNECTION_KEYS` (`{ id: base64 32-byte key }`) and `GITHUB_CONNECTION_KEY_ACTIVE` seal tokens; without them the broker refuses Connect. A person disconnects a site at `/api/auth/connections`. GitHub's `github_app_authorization` webhook ends every delegation.
+
 The chosen single-use code and signed-identity alternative, origin/PKCE checks, sixty-second expiry, fragment
 handoff, logging and security review are in [VibeLang decision 0029](../../../vibelang/wiki/decisions/0029-hosted-sign-in-broker.md)
 and [the integrations guide](../../../../packages/smithers/agent/integrations/README.md#hosted-site-sign-in).

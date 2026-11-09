@@ -430,7 +430,7 @@ it.live("the site client signs, calls the one route, and maps every answer", () 
   try Effect.try(() => {
     expect(none._tag).toBe("Failure")
     expect(write._tag).toBe("Failure")
-    expect(server.requests.every((request) => request.method === "POST" && request.url === Delegation.ROUTE && request.headers.traceparent === undefined)).toBe(true)
+    expect(server.requests.every((request) => request.method === "POST" && request.url === Delegation.ROUTE + "?person=7" && request.headers.traceparent === undefined)).toBe(true)
     expect(server.requests.every((request) => !JSON.stringify(request).includes("stored-token"))).toBe(true)
   })
   override = { status: 200, body: { found: true, receipt: { number: 9, id: 5 } } }
@@ -490,4 +490,43 @@ it.live("the site client signs, calls the one route, and maps every answer", () 
     expect(unknownRead._tag === "Failure" && unknownRead.failure.details?.["outcomeUnknown"]).toBe(true)
     expect(unreachable._tag === "Failure" && unreachable.failure.reason).toBe("unavailable")
   })
+})
+
+it.effect("a Connect after the connection ended redeems its own refresh, never the old answer", () => effect {
+  const f = try fixture()
+  const read = (delegation: string, n: string) => f.call("read", { path: "/repos/smithersai/vibelang" }, n, delegation)
+  try TestClock.adjust("8 hours")
+  try read(f.installed.delegation, "")
+  try f.server.revokedAtGitHub()
+  const now = try Clock.currentTimeMillis
+  const second = try f.server.install({ origin, login: "ada", tokens: { accessToken: Redacted.make("second"), refreshToken: Redacted.make("second-refresh"), expiresAt: now + 1000 } })
+  try TestClock.adjust("1 hour")
+  try read(second.delegation, "")
+  try Effect.try(() => expect(f.world.refreshes).toBe(2))
+})
+it.effect("lists the sites a person connected, without expired ones or any handle", () => effect {
+  const f = try fixture()
+  try f.server.install({ origin: other, login: "ada", tokens: { accessToken: Redacted.make("t"), refreshToken: null, expiresAt: 999_999_999 } })
+  const listed = try f.server.connections()
+  try TestClock.adjust("31 days")
+  const later = try f.server.connections()
+  try Effect.try(() => {
+    expect(listed.map((row) => row.origin).sort()).toEqual([other, origin].sort())
+    expect(JSON.stringify(listed)).not.toContain(f.installed.delegation)
+    expect(later).toEqual([])
+  })
+})
+it.effect("journals a site's revoke once per call", () => effect {
+  const f = try fixture()
+  try f.call("revoke", {}, "")
+  try Effect.try(() => {
+    expect(f.journaled.some((entry) => entry.startsWith("revoke/"))).toBe(true)
+    expect(f.world.revoked).toEqual(["stored-token"])
+  })
+})
+it("routes a call by the person named in its URL", () => {
+  expect(Delegation.personOf("https://smithers.sh" + Delegation.ROUTE + "?person=7")).toBe(7)
+  expect(Delegation.handles("https://smithers.sh" + Delegation.ROUTE + "?person=7")).toBe(true)
+  expect(Delegation.handles("https://smithers.sh/api/other")).toBe(false)
+  for (const bad of ["", "?person=0", "?person=-1", "?person=1.5", "?person=abc", "?person=99999999999999999999", "?person=9999999999999999"]) expect(Delegation.personOf("https://smithers.sh" + Delegation.ROUTE + bad)).toBeUndefined()
 })

@@ -13,6 +13,7 @@ const Step = Flow.make("auth/Broker", {
 export effect function make(hostId: string, storage: ObjectDatabase.Storage, setup: {
   readonly origin: string; readonly sites: ReadonlyArray<GitHub.Auth.Broker.HostedSite>; readonly secret: Redacted.Redacted<string>
   readonly encryptionKey: Redacted.Redacted<string>; readonly localDevelopment?: boolean
+  readonly connections?: GitHub.Auth.Broker.Connections
 }, github: GitHub.Auth.GitHubAuth["Service"]) {
     const keys = try Core.CookieKeys.make({ primary: setup.secret }, "primary")
     const store = try Effect.orDie(Broker.sqliteStore(storage.sql))

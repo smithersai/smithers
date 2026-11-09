@@ -174,6 +174,15 @@ export const takeAttempt = (stateDigest: string) =>
   })
 
 /** The person with GitHub's numeric id `githubId`, created or with their login brought up to date; returns their id. */
+/** The person's numeric GitHub id, when they have a row. */
+export const githubIdOf = (personId: string) =>
+  Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    const rows = yield* sql<{ readonly github_id: string | number }>`SELECT github_id FROM people WHERE id = ${personId}`
+    const value = Number(rows[0]?.github_id ?? Number.NaN)
+    return Number.isSafeInteger(value) && value > 0 ? value : undefined
+  })
+
 export const upsertPerson = (person: { readonly id: string; readonly githubId: number; readonly login: string }) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient

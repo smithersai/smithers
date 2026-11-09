@@ -1,4 +1,7 @@
+import { GitHub } from "@smthrs/integrations"
 import * as AuthBroker from "./AuthBroker.vibe"
+import * as GitHubConnection from "./GitHubConnection.vibe"
+import * as GitHubConnectionsPage from "./GitHubConnectionsPage.vibe"
 import { withRequestRay } from "./RequestRay.ts"
 // ChatApi's program (worker/ChatApi.ts): everything ChatApi serves and hosts. worker/ChatApi.ts loads this module when
 // the Worker first builds its program, not when Cloudflare starts the Worker, so its modules are evaluated then and
@@ -211,6 +214,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // Bug reports (docs/features/bugs.md): filing one, the Admins' read and the reports' shape.
     const bugsApi = yield* BugsApi.make(database)
     const brokerObjects = yield* AuthBroker.HostedAuthBroker
+    const connectionObjects = yield* GitHubConnection.GitHubConnection
     const signIn = yield* SignIn.make(database, options).pipe(Effect.provide(FetchHttpClient.layer))
     // Repositories (docs/features/repo.md): cloning into Code Storage, the `repositories` shape, reads at a commit,
     // cached in this Worker's Cache API, and what GitHub says of a repository, kept in Postgres for every data center.
@@ -440,6 +444,11 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         const runtime = yield* RuntimeContext
         const brokerRequest = yield* HttpServerRequest.HttpServerRequest
         if (AuthBroker.handles(brokerRequest.url)) return yield* brokerObjects.getByName("hosted").fetch(brokerRequest).pipe(Effect.provideService(RuntimeContext, runtime))
+        if (GitHub.Delegation.handles(brokerRequest.url)) {
+          const person = GitHub.Delegation.personOf(brokerRequest.url)
+          if (person === undefined) return HttpServerResponse.empty({ status: 400, headers: GitHub.Auth.Broker.HEADERS })
+          return yield* connectionObjects.getByName(GitHubConnection.nameOf(person)).fetch(brokerRequest).pipe(Effect.provideService(RuntimeContext, runtime), Effect.catchCause(() => Effect.succeed(HttpServerResponse.jsonUnsafe({ reason: "unavailable" }, { status: 503, headers: GitHub.Auth.Broker.HEADERS }))))
+        }
         const throttle = Effect.flatMap(
           HttpServerRequest.HttpServerRequest,
           Throttle.make({
@@ -517,6 +526,15 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                   Effect.provide(FetchHttpClient.layer)
                 )
               }
+              if (GitHubConnectionsPage.handles(path)) {
+                return yield* GitHubConnectionsPage.serve(connectionObjects).pipe(
+                  Effect.provide(database),
+                  Effect.provideService(RuntimeContext, runtime),
+                  Effect.provide(signedIn),
+                  Effect.provide(FetchHttpClient.layer),
+                  Effect.catchCause(() => Effect.succeed(HttpServerResponse.empty({ status: 503, headers: GitHub.Auth.Broker.HEADERS })))
+                )
+              }
               if (BugsApi.handles(path)) {
                 return yield* bugsApi.fetch.pipe(
                   Effect.provideService(Flows.FlowStarter, starter),
@@ -535,6 +553,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
               }
               if (GitHubApi.handles(path)) {
                 return yield* github.fetch.pipe(
+                  Effect.provideService(GitHubApi.EndGitHubConnection, (person) => connectionObjects.getByName(GitHubConnection.nameOf(person)).revokedAtGitHub(person).pipe(Effect.asVoid, Effect.provideService(RuntimeContext, runtime))),
                   Effect.provideService(FirstPaint.Behind, yield* RequestBackground.firstPaintBehind),
                   Effect.provideService(Flows.FlowStarter, starter),
                   Effect.provide(signedIn)
@@ -610,6 +629,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     }
   }).pipe(
     Effect.provide(AuthBroker.live),
+    Effect.provide(GitHubConnection.live),
     Effect.provide(Executions.live(DatabaseRoutes.route(pools, "FlowExecution"), {
       repositories,
       homeRepository,

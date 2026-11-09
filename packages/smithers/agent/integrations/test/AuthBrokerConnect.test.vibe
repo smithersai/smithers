@@ -10,7 +10,7 @@ import { durable } from "./DurableBroker.vibe"
 const origin = "https://vibelang.smithers.sh"
 const secret = Redacted.make("a".repeat(32))
 const sites = [{ origin, secret }]
-effect function fixture(person = 7, revokeFails = false, supplied?: Broker.Store, refreshToken: Redacted.Redacted<string> | null = Redacted.make("private-refresh")) {
+effect function fixture(person = 7, revokeFails = false, supplied?: Broker.Store, refreshToken: Redacted.Redacted<string> | null = Redacted.make("private-refresh"), installFails = false) {
   const revoked: Array<string> = []
   const installed: Array<{ person: number; origin: string; login: string; token: string }> = []
   const keys = try Core.CookieKeys.make({ primary: secret }, "primary")
@@ -25,7 +25,7 @@ effect function fixture(person = 7, revokeFails = false, supplied?: Broker.Store
   const store = supplied ?? (try Broker.memoryStore())
   const broker = durable(try Broker.make({
     origin: "https://smithers.sh", sites, keys, store, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), github,
-    connections: { install: (input) => { installed.push({ person: input.person, origin: input.origin, login: input.login, token: Redacted.value(input.tokens.accessToken) }); return succeed({ delegation: "d".repeat(43), expires: 5 }) } },
+    connections: { install: (input) => { if (installFails) return fail(new Broker.BrokerRefused()); installed.push({ person: input.person, origin: input.origin, login: input.login, token: Redacted.value(input.tokens.accessToken) }); return succeed({ delegation: "d".repeat(43), expires: 5 }) } },
   }))
   const client = try Broker.site({ origin, brokerOrigin: "https://smithers.sh", secret })
   const pending = try client.begin({ connect: { person: 7 } })
@@ -198,4 +198,15 @@ it.effect("consent without a refresh token and without a custodian's answer", ()
   const consent = new URL(location).searchParams.get("consent")!
   const answer = try f.broker.consent(consent, "connect", try f.broker.consentCookie(consent))
   try Effect.try(() => { expect(new URL(answer).origin).toBe(origin); expect(f.installed[0]!.token).toBe("private-github-token") })
+})
+
+it.effect("a failed install revokes the token it was handed instead of stranding it", () => effect {
+  const f = try fixture(7, false, undefined, Redacted.make("private-refresh"), true)
+  const location = try f.broker.callback(f.state, "code", f.start.cookie)
+  const consent = new URL(location).searchParams.get("consent")!
+  const outcome = try exit(f.broker.consent(consent, "connect", try f.broker.consentCookie(consent)))
+  try Effect.try(() => {
+    expect(outcome._tag).toBe("Failure")
+    expect(f.revoked).toEqual(["private-github-token"])
+  })
 })

@@ -175,6 +175,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
 
   const objects = new Map<string, ExecutionHost.Storage>()
   const starts: Array<{ readonly flow: string; readonly executionId: string; readonly payload: unknown }> = []
+  const endedConnections: Array<number> = []
   const starter = options.starter ?? FlowStarter.of({
     start: (flow: Flow.Any, start: { readonly executionId: string; readonly payload: unknown }) =>
       Effect.gen(function* () {
@@ -237,6 +238,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
   const handler = HttpEffect.toWebHandler(
     observed(
       afterBody(routes.fetch).pipe(
+        Effect.provideService(Api.EndGitHubConnection, (person) => Effect.sync(() => { endedConnections.push(person) })),
         Effect.provide(
           options.sessions ?? (actor === null ? Actor.signedOut : signedInAs(actor)),
         ),
@@ -271,6 +273,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
       ))),
     github,
     starts,
+    endedConnections,
     logs,
     spans,
     count,

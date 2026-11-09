@@ -35,6 +35,7 @@ export function SettingsScreen() {
             <Card>
               <CardContent className="settings-screen-section">
                 <PersonalModelSettings canSave={canSave(session)} />
+                <a href="/api/auth/connections">GitHub connections</a>
               </CardContent>
             </Card>
           )
