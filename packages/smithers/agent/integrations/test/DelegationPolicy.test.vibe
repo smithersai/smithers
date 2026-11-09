@@ -1,0 +1,91 @@
+import { describe, expect, it } from "@effect/vitest"
+import * as Policy from "../src/github/DelegationPolicy.vibe"
+
+const grants: ReadonlyArray<Policy.Grant> = [
+  { repository: "smithersai/vibelang", repositoryId: 11, scopes: ["issues", "proposals"], paths: ["docs/design/vips/"], branchPrefix: "vibelang/", labelPrefix: "vibelang:" },
+  { repository: "smithersai/smithers", repositoryId: 22, scopes: ["proposals"], paths: ["apps/vibelang/wiki/"], branchPrefix: "vibelang/", labelPrefix: "vibelang:" },
+]
+const wiki = "smithersai/smithers"
+const issues = "smithersai/vibelang"
+const commit = (path: string, extra: Partial<Extract<Policy.Operation, { kind: "commit.create" }>> = {}): Policy.Operation =>
+  ({ kind: "commit.create", repository: wiki, branch: "vibelang/wiki-x", expectedHeadOid: "a", headline: "h", additions: [{ path, contents: "eA==" }], deletions: [], ...extra })
+const check = (name: string, body: () => void) => it.effect(name, () => Effect.try(body))
+const permits = (op: Policy.Operation, login = "ada") => Policy.permits(grants, login, op)
+
+describe("DelegationPolicy.permits", () => {
+  check("admits each operation inside its grant", () => {
+    const allowed: ReadonlyArray<Policy.Operation> = [
+      { kind: "issue.create", repository: issues, title: "t", body: "b", since: "s" },
+      { kind: "comment.create", repository: issues, number: 1, body: "b" },
+      { kind: "issue.assign", repository: issues, number: 1, assignees: ["ada"] },
+      { kind: "issue.close", repository: issues, number: 1 },
+      { kind: "issue.link", repository: issues, parent: 1, child: 2 },
+      { kind: "label.create", repository: issues, name: "vibelang:task", color: "36b3aa" },
+      { kind: "label.add", repository: issues, number: 1, labels: ["vibelang:task"] },
+      { kind: "label.remove", repository: issues, number: 1, label: "vibelang:running" },
+      { kind: "branch.create", repository: wiki, prefix: "vibelang/wiki-", label: "p", at: "a" },
+      commit("apps/vibelang/wiki/index.md"),
+      { kind: "pull.create", repository: wiki, head: "ada:vibelang/wiki-x", base: "main", title: "t", body: "b" },
+    ]
+    expect(allowed.map((op) => permits(op))).toEqual(allowed.map(() => true))
+  })
+  check("compares repositories case-insensitively and refuses any outside the grants", () => {
+    expect(permits({ kind: "issue.close", repository: "SmithersAI/VibeLang", number: 1 })).toBe(true)
+    expect(permits({ kind: "issue.close", repository: "smithersai/secret", number: 1 })).toBe(false)
+  })
+  check("refuses a scope its grant lacks", () => {
+    expect(permits({ kind: "issue.close", repository: wiki, number: 1 })).toBe(false)
+    expect(Policy.permits([{ ...grants[0]!, scopes: ["issues"] }], "ada", { kind: "branch.create", repository: issues, prefix: "vibelang/x-", label: "p", at: "a" })).toBe(false)
+  })
+  for (const path of [
+    "apps/vibelang/wiki/../../secrets.md", "apps/vibelang/wiki/./x.md", "apps/vibelang/wiki-evil/x.md", "apps/vibelang/wiki",
+    "apps/vibelang/wiki/.github/workflows/x.yml", ".github/workflows/x.yml", "apps\\vibelang\\wiki\\x.md", "/apps/vibelang/wiki/x.md",
+    "apps/vibelang/wiki//x.md", "apps/vibelang/wiki/%2e%2e/x.md", "apps/vibelang/wiki/", "README.md",
+  ]) check(`refuses the commit path %s`.replace("%s", path), () => expect(permits(commit(path))).toBe(false))
+  check("refuses deletions, an empty commit, and a branch outside the prefix", () => {
+    expect(permits(commit("apps/vibelang/wiki/x.md", { deletions: ["apps/vibelang/wiki/y.md"] }))).toBe(false)
+    expect(permits(commit("apps/vibelang/wiki/x.md", { additions: [] }))).toBe(false)
+    expect(permits(commit("apps/vibelang/wiki/x.md", { branch: "main" }))).toBe(false)
+    expect(permits({ kind: "branch.create", repository: wiki, prefix: "main-", label: "p", at: "a" })).toBe(false)
+  })
+  check("refuses a head owned by another login, and matches the head's owner case-insensitively", () => {
+    const pull = (head: string): Policy.Operation => ({ kind: "pull.create", repository: wiki, head, base: "main", title: "t", body: "b" })
+    expect(permits(pull("eve:vibelang/wiki-x"))).toBe(false)
+    expect(permits(pull("ada:main"))).toBe(false)
+    expect(permits(pull("vibelang/wiki-x"))).toBe(false)
+    expect(permits(pull("ADA:vibelang/wiki-x"))).toBe(true)
+  })
+  check("refuses a label outside the prefix, and an empty label list", () => {
+    expect(permits({ kind: "label.create", repository: issues, name: "bug", color: "000000" })).toBe(false)
+    expect(permits({ kind: "label.add", repository: issues, number: 1, labels: ["vibelang:task", "bug"] })).toBe(false)
+    expect(permits({ kind: "label.add", repository: issues, number: 1, labels: [] })).toBe(false)
+    expect(permits({ kind: "label.remove", repository: issues, number: 1, label: "bug" })).toBe(false)
+  })
+})
+
+describe("DelegationPolicy.grantOf", () => {
+  check("finds the operation's grant, or nothing", () => {
+    expect(Policy.grantOf(grants, "SMITHERSAI/smithers")?.repositoryId).toBe(22)
+    expect(Policy.grantOf(grants, "smithersai/other")).toBeUndefined()
+  })
+})
+
+describe("DelegationPolicy.readable", () => {
+  const read = (path: string, login = "ada") => Policy.readable(grants, login, path)
+  for (const path of [
+    "/repos/smithersai/vibelang", "/repos/smithersai/vibelang/issues?state=all", "/repos/SmithersAI/VibeLang/issues/3/timeline",
+    "/repos/ada/smithers", "/repos/ada/smithers/git/ref/heads/x", "/repos/smithersai/smithers/contents/apps/vibelang/wiki/index.md",
+  ]) check(`admits %s`.replace("%s", path), () => expect(read(path)).toBe(true))
+  for (const path of [
+    "/user", "/repos/ada", "/repos/smithersai/secret", "/repos/eve/smithers", "/repos/ada/private", "/repos/smithersai/vibelang/../secret",
+    "/repos/smithersai/vibelang/%2e%2e/secret", "https://api.github.com/repos/smithersai/vibelang", "/repos/smithersai/vibelangevil", "/repos/smithersai/vibelang/keys",
+  ]) check(`refuses %s`.replace("%s", path), () => expect(read(path)).toBe(false))
+})
+
+describe("DelegationPolicy.liveDelegation", () => {
+  check("is live only before expiry and while not revoked", () => {
+    expect(Policy.liveDelegation("active", 10, 9)).toBe(true)
+    expect(Policy.liveDelegation("active", 10, 10)).toBe(false)
+    expect(Policy.liveDelegation("revoked", 10, 9)).toBe(false)
+  })
+})

@@ -93,6 +93,13 @@ export const json = (response: ServerResponse, status: number, body: unknown, he
   response.end(JSON.stringify(body))
 }
 
+/** A workerd SQL port whose disk has failed. */
+export const faultySql = {
+  exec: (): { readonly toArray: () => Array<Record<string, unknown>> } => {
+    throw new Error("disk")
+  }
+}
+
 /** Actual SQLite for the broker's conditional-consumption tests; it implements the workerd SQL port. */
 export const openBrokerSqlite = async () => {
   const { DatabaseSync } = await import("node:sqlite")

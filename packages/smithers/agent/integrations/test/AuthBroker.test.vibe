@@ -239,7 +239,7 @@ it.effect("fails closed on entropy collisions and changed deployment allowlists 
   options.sites.splice(0)
   const revoked = try exit(broker.callback(Broker.STATE_PREFIX + "x".repeat(43), "code", start.cookie))
   const codes = try Broker.memoryStore()
-  const faultyStore: Broker.Store = { take: codes.take, insert: (key, binding, value, expires) => key.startsWith("code/")
+  const faultyStore: Broker.Store = { take: codes.take, peek: codes.peek, insert: (key, binding, value, expires) => key.startsWith("code/")
     ? succeed(false) : codes.insert(key, binding, value, expires) }
   const failing = durable(try Broker.make({ ...options, sites, keys: f.keys, store: faultyStore }))
   const second = try f.client.begin()
@@ -298,6 +298,7 @@ it.effect("authenticates audience, nonce, PKCE and expiry inside the encrypted c
         try Ref.update(bindings, map => new Map(map).set(key, binding))
         return try actual.insert(key, binding, value, expires)
       },
+      peek: actual.peek,
       take: effect (key, binding, now) => {
         const recorded = (try Ref.get(bindings)).get(key)
         return try actual.take(key, key.startsWith("code/") ? recorded ?? binding : binding, key.startsWith("code/") ? 0 : now)

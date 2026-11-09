@@ -228,7 +228,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       return cookie(redirect(setup.github.authorizeUrl({ state: id, codeChallenge: pair.codeChallenge, redirectUri: setup.origin + CALLBACK })), STATE, try keys.sign("sign_in", id), 600_000)
     })
     if (path === CALLBACK && request.method === "GET" && !url.searchParams.has("code") && !url.searchParams.has("state")) {
-      return HttpServerResponse.text(GitHub.Auth.Broker.HANDOFF_PAGE, { contentType: "text/html; charset=utf-8", headers: { ...GitHub.Auth.Broker.HEADERS, "content-security-policy": "default-src 'none'; script-src 'sha256-9bViF1VTjG/rBCZBVwqR0M540H1re3zqdfBqAeV7Rao='; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" } })
+      return HttpServerResponse.text(GitHub.Auth.Broker.HANDOFF_PAGE, { contentType: "text/html; charset=utf-8", headers: { ...GitHub.Auth.Broker.HEADERS, "content-security-policy": GitHub.Auth.Broker.HANDOFF_CSP } })
     }
     if (path === CALLBACK && request.method === "POST") return try mutation("callback", effect {
       if (broker === undefined) return json({ error: "sign-in" }, 503)

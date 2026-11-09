@@ -1,0 +1,77 @@
+// What a hosted site may ask smithers.sh to do on a person's behalf. Pure: the only authority on an operation's meaning.
+export type Scope = "issues" | "proposals"
+export interface Grant {
+  readonly repository: string
+  /** GitHub's immutable id: a renamed or transferred repository stops matching. */
+  readonly repositoryId: number
+  readonly scopes: ReadonlyArray<Scope>
+  readonly paths: ReadonlyArray<string>
+  readonly branchPrefix: string
+  readonly labelPrefix: string
+}
+export type Operation =
+  | { readonly kind: "issue.create"; readonly repository: string; readonly title: string; readonly body: string; readonly since: string }
+  | { readonly kind: "comment.create"; readonly repository: string; readonly number: number; readonly body: string }
+  | { readonly kind: "issue.assign"; readonly repository: string; readonly number: number; readonly assignees: ReadonlyArray<string> }
+  | { readonly kind: "issue.close"; readonly repository: string; readonly number: number }
+  | { readonly kind: "issue.link"; readonly repository: string; readonly parent: number; readonly child: number }
+  | { readonly kind: "label.create"; readonly repository: string; readonly name: string; readonly color: string }
+  | { readonly kind: "label.add"; readonly repository: string; readonly number: number; readonly labels: ReadonlyArray<string> }
+  | { readonly kind: "label.remove"; readonly repository: string; readonly number: number; readonly label: string }
+  | { readonly kind: "branch.create"; readonly repository: string; readonly prefix: string; readonly label: string; readonly at: string }
+  | { readonly kind: "commit.create"; readonly repository: string; readonly branch: string; readonly expectedHeadOid: string; readonly headline: string; readonly additions: ReadonlyArray<{ readonly path: string; readonly contents: string }>; readonly deletions: ReadonlyArray<string> }
+  | { readonly kind: "pull.create"; readonly repository: string; readonly head: string; readonly base: string; readonly title: string; readonly body: string }
+
+const same = (left: string, right: string) => left.toLowerCase() === right.toLowerCase()
+export function grantOf(grants: ReadonlyArray<Grant>, repository: string): Grant | undefined {
+  return grants.find((grant) => same(grant.repository, repository))
+}
+
+function safePath(path: string): boolean {
+  if (path.includes("\\") || path.includes("%")) return false
+  return path.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".." && segment.toLowerCase() !== ".github")
+}
+const underGrant = (grant: Grant, path: string) => safePath(path) && grant.paths.some((prefix) => path.startsWith(prefix))
+const labelled = (grant: Grant, label: string) => label.startsWith(grant.labelPrefix)
+
+/** The site names only the upstream repository; smithers.sh derives the fork from the credential's own login. */
+export function permits(grants: ReadonlyArray<Grant>, login: string, operation: Operation): boolean {
+  const grant = grantOf(grants, operation.repository)
+  if (grant === undefined) return false
+  switch (operation.kind) {
+    case "branch.create":
+      return grant.scopes.includes("proposals") && operation.prefix.startsWith(grant.branchPrefix)
+    case "commit.create":
+      return grant.scopes.includes("proposals") && operation.branch.startsWith(grant.branchPrefix) && operation.deletions.length === 0 && operation.additions.length > 0 && operation.additions.every((file) => underGrant(grant, file.path))
+    case "pull.create": {
+      const separator = operation.head.indexOf(":")
+      return grant.scopes.includes("proposals") && separator > 0 && same(operation.head.slice(0, separator), login) && operation.head.slice(separator + 1).startsWith(grant.branchPrefix)
+    }
+    case "label.create":
+      return grant.scopes.includes("issues") && labelled(grant, operation.name)
+    case "label.add":
+      return grant.scopes.includes("issues") && operation.labels.length > 0 && operation.labels.every((label) => labelled(grant, label))
+    case "label.remove":
+      return grant.scopes.includes("issues") && labelled(grant, operation.label)
+    default:
+      return grant.scopes.includes("issues")
+  }
+}
+
+const READS = ["issues", "pulls", "contents", "git/ref", "git/matching-refs", "branches", "commits", "assignees"]
+
+/** GET only, under a grant's repository or the same-named repository the person owns. Reads carry no write meaning. */
+export function readable(grants: ReadonlyArray<Grant>, login: string, path: string): boolean {
+  const pathname = path.split("?")[0]!
+  if (!pathname.startsWith("/repos/") || !safePath(pathname.slice(1))) return false
+  const [owner, name, ...rest] = pathname.slice("/repos/".length).split("/")
+  if (owner === undefined || name === undefined) return false
+  const known = grants.some((grant) => same(grant.repository, `${owner}/${name}`) || (same(owner, login) && same(grant.repository.split("/")[1]!, name)))
+  if (!known) return false
+  const tail = rest.join("/")
+  return tail === "" || READS.some((read) => tail === read || tail.startsWith(read + "/"))
+}
+
+export function liveDelegation(state: string, expires: number, now: number): boolean {
+  return state === "active" && expires > now
+}

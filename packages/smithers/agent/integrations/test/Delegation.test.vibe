@@ -1,0 +1,493 @@
+import { expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServerRequest } from "effect/http"
+import { TestClock } from "effect/testing"
+import { Core, GitHub } from "../src/index.ts"
+import * as Delegation from "../src/github/Delegation.vibe"
+import type * as Policy from "../src/github/DelegationPolicy.vibe"
+import { GitHubClient } from "../src/github/GitHubClient.ts"
+import { IntegrationError } from "../src/core/IntegrationError.ts"
+import { WebCryptoCipher } from "@smthrs/control"
+
+const origin = "https://vibelang.smithers.sh"
+const other = "https://other.smithers.sh"
+const brokerOrigin = "https://smithers.sh"
+const secret = Redacted.make("a".repeat(32))
+const grants: ReadonlyArray<Policy.Grant> = [{ repository: "smithersai/vibelang", repositoryId: 11, scopes: ["issues", "proposals"], paths: ["docs/design/vips/"], branchPrefix: "vibelang/", labelPrefix: "vibelang:" }]
+const sites = [{ origin, secret, grants }, { origin: other, secret: Redacted.make("b".repeat(32)), grants }]
+const keyring = { active: "k1", keys: { k1: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=") } }
+const key = "f".repeat(64)
+const create: Policy.Operation = { kind: "issue.create", repository: "smithersai/vibelang", title: "t", body: "private-body", since: "1970-01-01T00:00:00.000Z" }
+
+interface World { calls: Array<string>; revoked: Array<string>; refreshes: number; status?: number; forkStatus?: number; refresh?: "rejected" | "unavailable"; details?: Record<string, unknown>; upstreamId?: number; fork?: unknown; found?: boolean; revokeFails?: boolean; login?: string; refreshNull?: boolean }
+function client(world: World): GitHubClient {
+  const request = (method: string, path: string): Effect.Effect<any, IntegrationError> => {
+    world.calls.push(`${method} ${path}`)
+    if ((world.status !== undefined || world.details !== undefined) && method !== "GET") return Effect.fail(new IntegrationError("delivery-failed", "no", { ...(world.status === undefined ? {} : { status: world.status }), ...world.details }))
+    if (path.includes("/git/ref/")) return Effect.fail(new IntegrationError("delivery-failed", "none", { status: 404 }))
+    if (path === "/graphql") return Effect.succeed({ data: { createCommitOnBranch: { commit: { oid: "c".repeat(40) } } } })
+    if (path.endsWith("/git/refs")) return Effect.succeed({ ref: "refs/heads/vibelang/x", object: { sha: "a".repeat(40) } })
+    if (path.endsWith("/pulls") && method === "POST") return Effect.succeed({ id: 6, number: 10, state: "open", title: "t", body: "", draft: false, merged: false, merge_commit_sha: null, changed_files: 0, user: null, head: { sha: "a".repeat(40), ref: "x" }, base: { sha: "b".repeat(40), ref: "main" }, html_url: "" })
+    if (path.endsWith("/comments") && method === "POST") return Effect.succeed({ id: 77, body: "", user: null, created_at: "", updated_at: "", html_url: "" })
+    if (path === "/repos/smithersai/vibelang") return Effect.succeed({ id: world.upstreamId ?? 11, name: "vibelang", owner: { login: "smithersai" }, default_branch: "main" })
+    if (path === "/repos/ada/vibelang") return world.forkStatus !== undefined ? Effect.fail(new IntegrationError("delivery-failed", "no", { status: world.forkStatus })) : world.fork !== undefined ? Effect.succeed(world.fork) : Effect.succeed({ id: 12, name: "vibelang", owner: { login: "ada" }, default_branch: "main", fork: true, parent: { id: 11, full_name: "smithersai/vibelang" } })
+    if (method === "POST" && path.endsWith("/issues")) return Effect.succeed({ id: 5, number: 9, title: "t", state: "open", created_at: "", updated_at: "", body: "", user: null, labels: [], comments: 0 })
+    return Effect.succeed({})
+  }
+  return { request: request as GitHubClient["request"], paginate: () => Effect.succeed({ items: [], truncated: false } as any), count: () => Effect.die("unused") }
+}
+effect function fixture(world: World = { calls: [], revoked: [], refreshes: 0 }, noRefresh = false, ring: typeof keyring = keyring) {
+  const github = GitHub.Auth.GitHubAuth.of({
+    authorizeUrl: () => "", exchange: () => Effect.die("unused"), user: () => succeed({ id: 7, login: "ada" }), permission: () => succeed("read"),
+    refresh: () => { world.refreshes += 1; return world.refresh !== undefined ? fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: world.refresh })) : succeed({ accessToken: Redacted.make("new-token"), refreshToken: world.refreshNull === true ? null : Redacted.make("new-refresh"), expiresAt: 999_999_999 }) },
+    revoke: (token) => { world.revoked.push(Redacted.value(token)); return world.revokeFails === true ? fail(new GitHub.Auth.GitHubRefused({ step: "revoke", reason: "unavailable" })) : Effect.void },
+    deviceCode: () => Effect.die("unused"), deviceToken: () => Effect.die("unused"),
+  })
+  const store = try Delegation.memoryStore()
+  const journaled: Array<string> = []
+  const journal = Delegation.memoryJournal((value) => journaled.push(value))
+  const server = try Delegation.make({ origin: brokerOrigin, person: 7, sites, keyring: ring, store, journal, github, act: () => (program) => Effect.provideService(program, GitHubClient, client(world)) as never })
+  const installed = try server.install({ origin, login: world.login ?? "ada", tokens: { accessToken: Redacted.make("stored-token"), refreshToken: noRefresh ? null : Redacted.make("stored-refresh"), expiresAt: 28_800_000 } })
+  const answer = effect (body: Record<string, unknown>) => {
+    const result = try Effect.result(server.handle(JSON.stringify(body)))
+    return result._tag === "Success" ? result.success : result.failure.reason
+  }
+  const site = try Delegation.signer({ origin, brokerOrigin, secret })
+  const call = effect (mode: Delegation.Mode, payload: unknown, callKey = key, delegation = installed.delegation) => try answer(try site.envelope({ person: 7, delegation, mode, key: callKey, payload }))
+  return { world, server, installed, site, answer, call, journaled, store, github, journal }
+}
+
+it.effect("installs one sealed credential and answers only a delegation handle", () => effect {
+  const f = try fixture()
+  const row = JSON.stringify(try f.store.get("credential"))
+  try Effect.try(() => {
+    expect(f.installed.delegation).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(JSON.stringify(f.installed)).not.toMatch(/stored-token|stored-refresh/)
+    expect(row).not.toMatch(/stored-token|stored-refresh/)
+  })
+})
+it.effect("connecting again replaces the pair and revokes only the old token", () => effect {
+  const f = try fixture()
+  try f.server.install({ origin, login: "ada", tokens: { accessToken: Redacted.make("second"), refreshToken: null, expiresAt: 28_800_000 } })
+  try Effect.try(() => expect(f.world.revoked).toEqual(["stored-token"]))
+})
+it.effect("performs a write once; the same key joins its receipt and no text reaches the journal", () => effect {
+  const f = try fixture()
+  const first = try f.call("perform", create)
+  const again = try f.call("perform", create)
+  const creates = f.world.calls.filter((call) => call === "POST /repos/smithersai/vibelang/issues")
+  try Effect.try(() => {
+    expect(first).toEqual({ number: 9, id: 5 })
+    expect(again).toEqual(first)
+    expect(creates).toHaveLength(1)
+    expect(f.journaled.join("")).not.toMatch(/private-body|stored-token/)
+  })
+})
+it.effect("refuses one key naming a different operation", () => effect {
+  const f = try fixture()
+  try f.call("perform", create)
+  const conflict = try f.call("perform", { ...create, body: "changed" })
+  try Effect.try(() => expect(conflict).toBe("key_conflict"))
+})
+it.effect("refuses a replayed nonce, expiry, another site's key, a tampered payload and a foreign actor", () => effect {
+  const f = try fixture()
+  const envelope = try f.site.envelope({ person: 7, delegation: f.installed.delegation, mode: "perform", key, payload: create })
+  const first = try f.answer(envelope)
+  const replay = try f.answer(envelope)
+  const tampered = try f.answer({ ...(try f.site.envelope({ person: 7, delegation: f.installed.delegation, mode: "perform", key: "e".repeat(64), payload: create })), payload: JSON.stringify({ ...create, body: "evil" }) })
+  const foreign = try Delegation.signer({ origin: other, brokerOrigin, secret: sites[1]!.secret })
+  const crossed = try f.answer(try foreign.envelope({ person: 7, delegation: f.installed.delegation, mode: "perform", key: "d".repeat(64), payload: create }))
+  const lying = try f.answer({ ...(try foreign.envelope({ person: 7, delegation: f.installed.delegation, mode: "perform", key: "d".repeat(64), payload: create })), origin })
+  const agent = try f.answer(try f.site.envelope({ person: 7, delegation: f.installed.delegation, mode: "perform", key: "c".repeat(64), payload: create, actor: "agent" }))
+  const wrongPerson = try f.answer(try f.site.envelope({ person: 8, delegation: f.installed.delegation, mode: "perform", key: "b".repeat(64), payload: create }))
+  const late = try f.site.envelope({ person: 7, delegation: f.installed.delegation, mode: "perform", key: "a".repeat(64), payload: create })
+  try TestClock.adjust("61 seconds")
+  const expired = try f.answer(late)
+  try Effect.try(() => {
+    expect(first).toEqual({ number: 9, id: 5 })
+    expect([replay, tampered, lying, agent, wrongPerson, expired]).toEqual(Array(6).fill("forbidden"))
+    expect(crossed).toBe("connect")
+    expect(f.world.calls.filter((call) => call.startsWith("POST"))).toHaveLength(1)
+  })
+})
+it.effect("answers connect for a wrong, expired or revoked delegation, and revokes the token with the last one", () => effect {
+  const f = try fixture()
+  const wrong = try f.call("perform", create, key, "x".repeat(43))
+  try f.server.revoke(origin)
+  const revoked = try f.call("perform", create, "e".repeat(64))
+  const g = try fixture()
+  try TestClock.adjust("30 days")
+  const expired = try g.call("perform", create)
+  try Effect.try(() => {
+    expect([wrong, revoked, expired]).toEqual(["connect", "connect", "connect"])
+    expect(f.world.revoked).toEqual(["stored-token"])
+  })
+})
+it.effect("refuses an operation outside the grant before touching GitHub", () => effect {
+  const f = try fixture()
+  const outcome = try f.call("perform", { ...create, repository: "smithersai/secret" })
+  try Effect.try(() => { expect(outcome).toBe("forbidden"); expect(f.world.calls).toEqual([]) })
+})
+it.effect("refuses a repository whose immutable id changed", () => effect {
+  const world: World = { calls: [], revoked: [], refreshes: 0 }
+  const f = try fixture(world)
+  const outcome = try f.call("perform", { ...create, repository: "SmithersAI/Vibelang", title: "renamed" }, "9".repeat(64))
+  try Effect.try(() => expect(outcome).toEqual({ number: 9, id: 5 }))
+})
+it.effect("maps GitHub's answers to the fixed vocabulary, and a 401 ends the connection", () => effect {
+  const denied = try fixture({ calls: [], revoked: [], refreshes: 0, status: 403 })
+  const dead = try fixture({ calls: [], revoked: [], refreshes: 0, status: 401 })
+  const outcome = try denied.call("perform", create)
+  const gone = try dead.call("perform", create)
+  const after = try dead.call("perform", create, "e".repeat(64))
+  try Effect.try(() => expect([outcome, gone, after]).toEqual(["forbidden", "connect", "connect"]))
+})
+it.effect("proposal writes target the person's verified fork: no fork answers fork, a refusal on it answers install", () => effect {
+  const branch: Policy.Operation = { kind: "branch.create", repository: "smithersai/vibelang", prefix: "vibelang/vip-", label: "p", at: "a".repeat(40) }
+  const none = try fixture({ calls: [], revoked: [], refreshes: 0, forkStatus: 404 })
+  const notInstalled = try fixture({ calls: [], revoked: [], refreshes: 0, status: 403 })
+  const absent = try none.call("perform", branch)
+  const refused = try notInstalled.call("perform", branch)
+  try Effect.try(() => {
+    expect(absent).toBe("fork")
+    expect(refused).toBe("install")
+    expect(none.world.calls.some((call) => call.includes("/forks"))).toBe(false)
+  })
+})
+it.effect("refreshes once near expiry and stores the new pair; a refused refresh answers connect", () => effect {
+  const f = try fixture()
+  try TestClock.adjust(28_800_000 - 60_000)
+  const outcome = try f.call("perform", create)
+  try Effect.try(() => { expect(outcome).toEqual({ number: 9, id: 5 }); expect(f.world.refreshes).toBe(1) })
+  const g = try fixture({ calls: [], revoked: [], refreshes: 0, refresh: "rejected" })
+  try TestClock.adjust(28_800_000 - 60_000)
+  const dead = try g.call("perform", create)
+  try Effect.try(() => expect(dead).toBe("connect"))
+})
+it.effect("reads only allowed GET paths", () => effect {
+  const f = try fixture()
+  const allowed = try f.call("read", { path: "/repos/smithersai/vibelang" }, "")
+  const denied = try f.call("read", { path: "/user" }, "")
+  try Effect.try(() => { expect(allowed).toMatchObject({ id: 11 }); expect(denied).toBe("forbidden") })
+})
+it.effect("limits writes per delegation per hour", () => effect {
+  const f = try fixture()
+  const outcomes: Array<unknown> = []
+  for (let i = 0; i < 61; i++) outcomes.push(try f.call("perform", { ...create, title: String(i) }, i.toString(16).padStart(64, "0")))
+  try Effect.try(() => { expect(outcomes[59]).toEqual({ number: 9, id: 5 }); expect(outcomes[60]).toBe("unavailable") })
+})
+
+const blank = (extra: Partial<World> = {}): World => ({ calls: [], revoked: [], refreshes: 0, ...extra })
+const repo = "smithersai/vibelang"
+const branchOp: Policy.Operation = { kind: "branch.create", repository: repo, prefix: "vibelang/vip-", label: "p", at: "a".repeat(40) }
+const commitOp: Policy.Operation = { kind: "commit.create", repository: repo, branch: "vibelang/vip-x", expectedHeadOid: "a".repeat(40), headline: "h", additions: [{ path: "docs/design/vips/x.md", contents: "eA==" }], deletions: [] }
+const pullOp: Policy.Operation = { kind: "pull.create", repository: repo, head: "ada:vibelang/vip-x", base: "main", title: "t", body: "b" }
+const commentOp: Policy.Operation = { kind: "comment.create", repository: repo, number: 1, body: "b" }
+const unkeyedOps: ReadonlyArray<Policy.Operation> = [
+  { kind: "issue.assign", repository: repo, number: 1, assignees: ["ada"] }, { kind: "issue.close", repository: repo, number: 1 }, { kind: "issue.link", repository: repo, parent: 1, child: 2 },
+  { kind: "label.create", repository: repo, name: "vibelang:task", color: "36b3aa" }, { kind: "label.add", repository: repo, number: 1, labels: ["vibelang:task"] }, { kind: "label.remove", repository: repo, number: 1, label: "vibelang:running" },
+]
+it.effect("a 5xx reading the fork answers unavailable, never fork", () => effect {
+  const f = try fixture(blank({ forkStatus: 503 }))
+  const outcome = try f.call("perform", branchOp)
+  try Effect.try(() => expect(outcome).toBe("unavailable"))
+})
+it.effect("performs every operation kind and answers receipts with no text", () => effect {
+  const f = try fixture()
+  const outcomes: Array<unknown> = [try f.call("perform", branchOp, "1".repeat(64)), try f.call("perform", commitOp, "2".repeat(64)), try f.call("perform", pullOp, "3".repeat(64)), try f.call("perform", commentOp, "4".repeat(64))]
+  let n = 5
+  for (const op of unkeyedOps) { outcomes.push(try f.call("perform", op, String(n).repeat(64).slice(0, 64))); n += 1 }
+  try Effect.try(() => {
+    expect(outcomes[0]).toEqual({ name: "vibelang/vip-p-" + "1".repeat(12), sha: "a".repeat(40) })
+    expect(outcomes[1]).toEqual({ sha: "c".repeat(40) })
+    expect(outcomes[2]).toMatchObject({ number: 10, id: 6 })
+    expect(outcomes[3]).toEqual({ id: 77 })
+    expect(outcomes.slice(4)).toEqual(unkeyedOps.map(() => ({})))
+  })
+})
+it.effect("find answers none, or the existing object's receipt; unkeyed operations report none", () => effect {
+  const f = try fixture()
+  const none = try f.call("find", commentOp)
+  const unkeyedFind = try f.call("find", unkeyedOps[1]!, "e".repeat(64))
+  try Effect.try(() => { expect(none).toEqual({ found: false }); expect(unkeyedFind).toEqual({ found: false }) })
+})
+it.effect("a lost answer adopts the object GitHub already holds instead of writing twice", () => effect {
+  const world = blank()
+  const f = try fixture(world)
+  const realKey = "a1".repeat(32)
+  const marked = client(world)
+  const server = try Delegation.make({ origin: brokerOrigin, person: 7, sites, keyring, store: f.store, journal: Delegation.memoryJournal(), github: f.github, act: () => (program) => Effect.provideService(program, GitHubClient, { ...marked, paginate: () => Effect.succeed({ items: [{ id: 77, body: GitHub.Issues.withWriteMarker("b", realKey), user: { id: 7, login: "ada" }, node_id: "n", issue_url: "u", created_at: "", updated_at: "" }], truncated: false } as any) }) as never })
+  const envelope = try f.site.envelope({ person: 7, delegation: f.installed.delegation, mode: "find", key: realKey, payload: commentOp })
+  const found = try server.handle(JSON.stringify(envelope))
+  const perform = try f.site.envelope({ person: 7, delegation: f.installed.delegation, mode: "perform", key: realKey, payload: commentOp })
+  const adopted = try server.handle(JSON.stringify(perform))
+  try Effect.try(() => {
+    expect(found).toEqual({ found: true, receipt: { id: 77 } })
+    expect(adopted).toEqual({ id: 77 })
+    expect(world.calls.filter((call) => call.startsWith("POST"))).toEqual([])
+  })
+})
+it.effect("reads a paginated path, and the revoke mode ends the delegation", () => effect {
+  const f = try fixture()
+  const page = try f.call("read", { path: "/repos/smithersai/vibelang/issues", paginate: { withNext: true } }, "")
+  const gone = try f.call("revoke", {}, "")
+  const after = try f.call("read", { path: "/repos/smithersai/vibelang" }, "")
+  try Effect.try(() => { expect(page).toEqual({ items: [], truncated: false }); expect(gone).toEqual({}); expect(after).toBe("connect") })
+})
+it.effect("refuses malformed input as forbidden", () => effect {
+  const f = try fixture()
+  const keys = try Core.CookieKeys.make({ primary: secret }, "primary")
+  const notJson = try Effect.result(f.server.handle("{"))
+  const badClaim = try f.answer({ origin, person: 7, payload: "{}", request: try keys.sign("broker_delegation", "{}") })
+  const badKey = try f.call("perform", create, "not-hex")
+  const badOp = try f.call("perform", { kind: "repo.delete", repository: repo }, "e".repeat(64))
+  const badRead = try f.call("read", { nope: true }, "")
+  const unknownSite = try Effect.result(f.server.install({ origin: "https://nope.example", login: "ada", tokens: { accessToken: Redacted.make("x"), refreshToken: null, expiresAt: null } }))
+  try Effect.try(() => {
+    expect(notJson._tag === "Failure" && notJson.failure.reason).toBe("forbidden")
+    expect([badClaim, badKey, badOp, badRead]).toEqual(Array(4).fill("forbidden"))
+    expect(unknownSite._tag === "Failure" && unknownSite.failure.reason).toBe("forbidden")
+  })
+})
+it.effect("revoking one site keeps the token while another site's delegation lives; a revoke failure does not block", () => effect {
+  const f = try fixture(blank({ revokeFails: true }))
+  try f.server.install({ origin: other, login: "ada", tokens: { accessToken: Redacted.make("second"), refreshToken: null, expiresAt: null } })
+  try f.server.revoke(origin)
+  const kept = f.world.revoked.length
+  try f.server.revoke(other)
+  try Effect.try(() => { expect(kept).toBe(1); expect(f.world.revoked).toEqual(["stored-token", "second"]) })
+})
+it.effect("GitHub's revocation event ends the connection without calling GitHub", () => effect {
+  const f = try fixture()
+  try f.server.revokedAtGitHub()
+  const after = try f.call("perform", create)
+  try Effect.try(() => { expect(after).toBe("connect"); expect(f.world.revoked).toEqual([]) })
+})
+it.effect("refresh: no refresh token and a corrupt row answer connect, an outage answers unavailable, a null answer stores no refresh token", () => effect {
+  const none = try fixture(blank(), true)
+  try TestClock.adjust(28_800_000 - 60_000)
+  const noRefresh = try none.call("perform", create)
+  const outage = try fixture(blank({ refresh: "unavailable" }))
+  try TestClock.adjust(28_800_000 - 60_000)
+  const down = try outage.call("perform", create)
+  const corrupt = try fixture()
+  try corrupt.store.put("credential", { nonsense: true })
+  const broken = try corrupt.call("perform", create)
+  try Effect.try(() => expect([noRefresh, down, broken]).toEqual(["connect", "unavailable", "connect"]))
+})
+it.effect("rotation: a row sealed under an old key opens and reseals; a retired key answers connect; a missing active key refuses to start", () => effect {
+  const old = { active: "k1", keys: { k1: keyring.keys.k1 } }
+  const f = try fixture(blank(), false, old)
+  const row = try f.store.get("credential")
+  const next = { active: "k2", keys: { k1: keyring.keys.k1, k2: Redacted.make("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=") } }
+  const rotated = try Delegation.make({ origin: brokerOrigin, person: 7, sites, keyring: next as typeof keyring, store: f.store, journal: Delegation.memoryJournal(), github: f.github, act: () => (program) => Effect.provideService(program, GitHubClient, client(f.world)) as never })
+  try TestClock.adjust(28_800_000 - 60_000)
+  const envelope = try f.site.envelope({ person: 7, delegation: f.installed.delegation, mode: "perform", key: "7".repeat(64), payload: create })
+  const refreshed = try rotated.handle(JSON.stringify(envelope))
+  const resealed = (try f.store.get("credential")) as { readonly keyId: string }
+  try f.store.put("credential", { ...(row as object), keyId: "gone" })
+  const retired = try Effect.result(rotated.handle(JSON.stringify(try f.site.envelope({ person: 7, delegation: f.installed.delegation, mode: "read", key: "", payload: { path: "/repos/smithersai/vibelang" } }))))
+  const misconfigured = try Effect.result(Delegation.make({ origin: brokerOrigin, person: 7, sites, keyring: { active: "absent", keys: next.keys } as typeof keyring, store: f.store, journal: Delegation.memoryJournal(), github: f.github, act: () => (program) => program as never }))
+  try Effect.try(() => {
+    expect(refreshed).toEqual({ number: 9, id: 5 })
+    expect(resealed.keyId).toBe("k2")
+    expect(retired._tag === "Failure" && retired.failure.reason).toBe("connect")
+    expect(misconfigured._tag).toBe("Failure")
+  })
+})
+it.effect("maps unknown outcomes and rate limits, refuses a changed repository id and a mismatched fork, and needs no fork for the owner", () => effect {
+  const unknown = try fixture(blank({ details: { outcomeUnknown: true } }))
+  const limited = try fixture(blank({ details: { rateLimited: true, status: 403 } }))
+  const renamed = try fixture(blank({ upstreamId: 99 }))
+  const wrongFork = try fixture(blank({ fork: { id: 12, fork: true, parent: { id: 44 } } }))
+  const notFork = try fixture(blank({ fork: { id: 12, fork: false } }))
+  const noParent = try fixture(blank({ fork: { id: 12 } }))
+  const owner = try fixture(blank({ login: "smithersai" }))
+  const results = [try unknown.call("perform", create), try limited.call("perform", create), try renamed.call("perform", create), try wrongFork.call("perform", branchOp), try notFork.call("perform", branchOp), try noParent.call("perform", branchOp)]
+  const owned = try owner.call("perform", branchOp)
+  try Effect.try(() => {
+    expect(results).toEqual(["unknown", "unavailable", "forbidden", "fork", "fork", "fork"])
+    expect(owned).toEqual({ name: "vibelang/vip-p-" + "f".repeat(12), sha: "a".repeat(40) })
+    expect(owner.world.calls.some((call) => call.includes("smithersai/vibelang/git/refs"))).toBe(true)
+  })
+})
+it.effect("a 404 on a fork write answers install, and an unrelated status answers unavailable", () => effect {
+  const absent = try fixture(blank({ status: 404 }))
+  const broken = try fixture(blank({ status: 500 }))
+  const outcomes = [try absent.call("perform", branchOp), try broken.call("perform", branchOp)]
+  try Effect.try(() => expect(outcomes).toEqual(["install", "unavailable"]))
+})
+
+const parts = (f: Effect.Success<ReturnType<typeof fixture>>, journal: Delegation.Journal) => Delegation.make({ origin: brokerOrigin, person: 7, sites, keyring, store: f.store, journal, github: f.github, act: () => (program) => Effect.provideService(program, GitHubClient, client(f.world)) as never })
+it.effect("a refresh answering no new refresh token stores none, and the next expiry asks to connect", () => effect {
+  const f = try fixture(blank({ refreshNull: true }))
+  try TestClock.adjust(28_800_000 - 60_000)
+  const refreshed = try f.call("perform", create)
+  const row = (try f.store.get("credential")) as { readonly refresh: unknown }
+  try Effect.try(() => { expect(refreshed).toEqual({ number: 9, id: 5 }); expect(row.refresh).toBeNull() })
+})
+it.effect("refuses to start on an invalid key, and tampered ciphertext asks to connect", () => effect {
+  const invalid = try Effect.result(fixture(blank(), false, { active: "k1", keys: { k1: Redacted.make("short") } } as typeof keyring))
+  const f = try fixture()
+  const row = (try f.store.get("credential")) as { readonly access: { readonly nonce: string; readonly ciphertext: string } }
+  try f.store.put("credential", { ...row, access: { ...row.access, ciphertext: "AAAA" + row.access.ciphertext.slice(4) } })
+  const outcome = try f.call("perform", create)
+  try Effect.try(() => { expect(invalid._tag).toBe("Failure"); expect(outcome).toBe("connect") })
+})
+it.effect("a corrupt journal answer fails closed", () => effect {
+  const refresh = try fixture()
+  const junkRefresh = try parts(refresh, (name, body) => name.startsWith("refresh/") ? succeed("not json") : body)
+  try TestClock.adjust(28_800_000 - 60_000)
+  const staged = try Effect.result(junkRefresh.handle(JSON.stringify(try refresh.site.envelope({ person: 7, delegation: refresh.installed.delegation, mode: "perform", key, payload: create }))))
+  const opened = try fixture()
+  const sealed = try parts(opened, (name, body) => name.startsWith("refresh/") ? Effect.as(body, JSON.stringify({ keyId: "k1", sealed: { nonce: "AAAAAAAAAAAAAAAA", ciphertext: "AAAA" } })) : body)
+  try TestClock.adjust(28_800_000 - 60_000)
+  const unopened = try Effect.result(sealed.handle(JSON.stringify(try opened.site.envelope({ person: 7, delegation: opened.installed.delegation, mode: "perform", key, payload: create }))))
+  const written = try fixture()
+  const junkWrite = try parts(written, (name, body) => name.startsWith("write/") ? succeed("not json") : body)
+  const receipt = try Effect.result(junkWrite.handle(JSON.stringify(try written.site.envelope({ person: 7, delegation: written.installed.delegation, mode: "perform", key, payload: create }))))
+  try Effect.try(() => {
+    expect(staged._tag === "Failure" && staged.failure.reason).toBe("connect")
+    expect(unopened._tag === "Failure" && unopened.failure.reason).toBe("connect")
+    expect(receipt._tag === "Failure" && receipt.failure.reason).toBe("unavailable")
+  })
+})
+it.effect("a staged refresh whose plaintext is not the token shape fails closed", () => effect {
+  const f = try fixture()
+  const cipher = try WebCryptoCipher.make({ key: keyring.keys.k1 })
+  const sealed = try cipher.seal(Redacted.make("not tokens"), { id: "7", name: "github_refreshed/1", version: 1 })
+  const server = try parts(f, (name, body) => name.startsWith("refresh/") ? Effect.as(body, JSON.stringify({ keyId: "k1", sealed })) : body)
+  try TestClock.adjust(28_800_000 - 60_000)
+  const outcome = try Effect.result(server.handle(JSON.stringify(try f.site.envelope({ person: 7, delegation: f.installed.delegation, mode: "perform", key, payload: create }))))
+  try Effect.try(() => expect(outcome._tag === "Failure" && outcome.failure.reason).toBe("connect"))
+})
+
+effect function serverFor() {
+  const f = try fixture()
+  return f
+}
+const post = (server: { readonly handle: (text: string) => unknown!Delegation.DelegationRefused }, body: string, headers: Record<string, string> = {}, method: "POST" | "GET" = "POST") => effect {
+  const request = method === "GET" ? HttpClientRequest.get(brokerOrigin + Delegation.ROUTE) : HttpClientRequest.post(brokerOrigin + Delegation.ROUTE).pipe(HttpClientRequest.setHeaders(headers), HttpClientRequest.bodyText(body, "application/json"))
+  const web = try HttpClientRequest.toWeb(request)
+  return try Delegation.serve(server).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web)))
+}
+it.effect("serve answers one refused status per reason and bounds its body", () => effect {
+  const f = try serverFor()
+  const wrongMethod = try post(f.server, "", {}, "GET")
+  const large = try post(f.server, "x".repeat(Delegation.MAX_BODY + 1))
+  const refused = try post(f.server, "not json")
+  const stripped = HttpClientRequest.post(brokerOrigin + Delegation.ROUTE).pipe(HttpClientRequest.bodyText("x".repeat(Delegation.MAX_BODY + 1), "application/json"), HttpClientRequest.removeHeader("content-length"))
+  const headerless = try Delegation.serve(f.server).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(stripped))))
+  const statuses: Array<number> = [wrongMethod.status, large.status, refused.status, headerless.status]
+  for (const reason of ["connect", "install", "fork", "forbidden", "unavailable", "unknown", "key_conflict"] as const) {
+    const response = try post({ handle: () => fail(new Delegation.DelegationRefused({ reason })) }, "{}")
+    statuses.push(response.status)
+  }
+  const accepted = try post({ handle: () => succeed({ ok: true }) }, "{}")
+  try Effect.try(() => { expect(statuses).toEqual([405, 413, 403, 413, 401, 401, 401, 403, 503, 409, 409]); expect(accepted.status).toBe(200) })
+})
+it.effect("the durable store keeps rows across reopening and claims a nonce once, pruning expired ones", () => effect {
+  const { openBrokerSqlite, faultySql } = try promise(() => import("./Fixture.ts"))
+  const database = try promise(() => openBrokerSqlite())
+  const store = try Delegation.sqliteStore(database.sql)
+  try store.put("delegation/a", { origin: "a" })
+  try store.put("delegation/a", { origin: "b" })
+  try store.put("other", 1)
+  const again = try Delegation.sqliteStore(database.sql)
+  const read = [try again.get("delegation/a"), try again.get("missing")]
+  const listed = try again.list("delegation/")
+  const now = try Clock.currentTimeMillis
+  const first = try again.claim("nonce", now + 1000)
+  const second = try again.claim("nonce", now + 1000)
+  try again.remove("other")
+  const removed = try again.get("other")
+  try TestClock.adjust(2000)
+  const afterExpiry = try again.claim("nonce", now + 5000)
+  const faulty = try Effect.result(Delegation.sqliteStore(faultySql))
+  try Effect.try(() => {
+    database.close()
+    expect(read).toEqual([{ origin: "b" }, undefined])
+    expect(listed).toEqual([{ origin: "b" }])
+    expect([first, second, afterExpiry]).toEqual([true, false, true])
+    expect(removed).toBeUndefined()
+    expect(faulty._tag === "Failure" && faulty.failure.reason).toBe("unavailable")
+  })
+})
+it.live("the site client signs, calls the one route, and maps every answer", () => effect {
+  const { startFixture, json } = try promise(() => import("./Fixture.ts"))
+  const f = try serverFor()
+  let override: { readonly status: number; readonly body: unknown; readonly raw?: boolean } | undefined
+  const server = try promise(() => startFixture(async (request, response) => {
+    if (override?.raw === true) { response.writeHead(override.status, { "content-type": "application/json" }); response.end(String(override.body)); return }
+    if (override !== undefined) return json(response, override.status, override.body)
+    const answer = await Effect.runPromise(Effect.result(f.server.handle(request.body)).pipe(Effect.provide(Layer.empty)))
+    return answer._tag === "Success" ? json(response, 200, answer.success) : json(response, 401, { reason: answer.failure.reason })
+  }))
+  const client = try Delegation.site({ origin, brokerOrigin: server.origin, secret })
+  const live = <A, E>(program: A!E!HttpClient.HttpClient) => Effect.provide(program, FetchHttpClient.layer)
+  const keyed = client.keyed(7, f.installed.delegation, create)
+  const none = try Effect.result(live(keyed.find(key)))
+  const write = try Effect.result(live(keyed.perform(key)))
+  try Effect.try(() => {
+    expect(none._tag).toBe("Failure")
+    expect(write._tag).toBe("Failure")
+    expect(server.requests.every((request) => request.method === "POST" && request.url === Delegation.ROUTE && request.headers.traceparent === undefined)).toBe(true)
+    expect(server.requests.every((request) => !JSON.stringify(request).includes("stored-token"))).toBe(true)
+  })
+  override = { status: 200, body: { found: true, receipt: { number: 9, id: 5 } } }
+  const found = try live(keyed.find(key))
+  override = { status: 200, body: { found: false } }
+  const missing = try live(keyed.find(key))
+  override = { status: 200, body: { number: 3 } }
+  const receipt = try live(keyed.perform(key))
+  try live(client.write(7, f.installed.delegation, key, create))
+  try live(client.revoke(7, f.installed.delegation))
+  override = { status: 200, body: "malformed" }
+  const badReceipt = try Effect.result(live(keyed.perform(key)))
+  const badFind = try Effect.result(live(keyed.find(key)))
+  override = { status: 401, body: { reason: "install" } }
+  const refusal = try Effect.result(live(keyed.perform(key)))
+  override = { status: 502, body: "<html>" }
+  const unknownAnswer = try Effect.result(live(keyed.perform(key)))
+  override = { status: 200, body: "<html>", raw: true }
+  const notJson = try Effect.result(live(keyed.perform(key)))
+  const brokenTransport = try Effect.result(keyed.perform(key).pipe(Effect.provideService(HttpClient.HttpClient, null as never)))
+  const http = try effect { return try HttpClient.HttpClient }.pipe(Effect.provide(FetchHttpClient.layer))
+  const reader = client.client(7, f.installed.delegation, http)
+  override = { status: 200, body: { id: 11 } }
+  const plain = try reader.request("GET", "/repos/smithersai/vibelang")
+  const decoded = try reader.request("GET", "/repos/smithersai/vibelang", undefined, { schema: Schema.Struct({ id: Schema.Number }) })
+  override = { status: 200, body: { nope: true } }
+  const undecoded = try Effect.result(reader.request("GET", "/repos/smithersai/vibelang", undefined, { schema: Schema.Struct({ id: Schema.Number }) }))
+  override = { status: 200, body: { items: [1], truncated: false, next: null } }
+  const paged = try reader.paginate("/repos/smithersai/vibelang/issues", { withNext: true })
+  const defaults = try reader.paginate("/repos/smithersai/vibelang/issues")
+  const postDie = try exit(reader.request("POST", "/repos/x"))
+  const countDie = try exit(reader.count("/repos/x"))
+  override = { status: 401, body: { reason: "connect" } }
+  const readRefused = try Effect.result(reader.request("GET", "/repos/smithersai/vibelang"))
+  override = { status: 409, body: { reason: "unknown" } }
+  const unknownRead = try Effect.result(reader.request("GET", "/repos/smithersai/vibelang"))
+  override = { status: 200, body: "unused" }
+  try promise(() => server.close())
+  const unreachable = try Effect.result(live(keyed.perform(key)))
+  try Effect.try(() => {
+    expect(notJson._tag === "Failure" && notJson.failure.reason).toBe("unavailable")
+    expect(brokenTransport._tag === "Failure" && brokenTransport.failure.reason).toBe("unavailable")
+    expect(found).toEqual(Option.some({ number: 9, id: 5 }))
+    expect(missing).toEqual(Option.none())
+    expect(receipt).toEqual({ number: 3 })
+    expect(badReceipt._tag === "Failure" && badReceipt.failure.reason).toBe("unavailable")
+    expect(badFind._tag === "Failure" && badFind.failure.reason).toBe("unavailable")
+    expect(refusal._tag === "Failure" && refusal.failure.reason).toBe("install")
+    expect(unknownAnswer._tag === "Failure" && unknownAnswer.failure.reason).toBe("unavailable")
+    expect(plain).toEqual({ id: 11 })
+    expect(decoded).toEqual({ id: 11 })
+    expect(undecoded._tag).toBe("Failure")
+    expect(paged).toEqual({ items: [1], truncated: false, next: null })
+    expect(defaults).toEqual({ items: [1], truncated: false, next: null })
+    expect([postDie._tag, countDie._tag]).toEqual(["Failure", "Failure"])
+    expect(readRefused._tag === "Failure" && Delegation.reasonOf(readRefused.failure)).toBe("connect")
+    expect(unknownRead._tag === "Failure" && unknownRead.failure.details?.["outcomeUnknown"]).toBe(true)
+    expect(unreachable._tag === "Failure" && unreachable.failure.reason).toBe("unavailable")
+  })
+})

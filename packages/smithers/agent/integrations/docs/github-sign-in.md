@@ -32,3 +32,30 @@ Applications own host-only Secure/HttpOnly/SameSite cookies, expiry and one-time
 
 Cookie purposes match [a-z][a-z0-9_]*. Signing an invalid purpose is a configuration defect; verification refuses it.
 Values may contain punctuation. This restriction prevents delimiter ambiguity while preserving deployed MVP cookies.
+
+## Acting on GitHub for a hosted site
+
+A hosted site never holds a GitHub token. `GitHub.Delegation` keeps one sealed user token per person on the host and lets a registered site act for that person through a delegation.
+
+| Step | Call |
+| --- | --- |
+| Start Connect | `GitHub.Auth.Broker.site(...).begin({ connect: { person } })` |
+| Redeem | `exchange` answers `{ id, login, delegation, expires }` |
+| Write once | `Action.once(name, delegate.keyed(person, delegation, operation))` |
+| Idempotent write | `delegate.write(person, delegation, key, operation)` |
+| Read as the person | `delegate.client(person, delegation, http)`, GET only |
+| Disconnect | `delegate.revoke(person, delegation)` |
+
+`GitHub.DelegationPolicy.permits` decides whether an operation falls inside the site's grants. A refused call fails with one reason:
+
+| Reason | Meaning |
+| --- | --- |
+| `connect` | No live delegation or token. Connect again. |
+| `fork` | The person has no fork of the repository. |
+| `install` | The GitHub App isn't installed on the person's fork. |
+| `forbidden` | Outside the grants, or GitHub refused. |
+| `unavailable` | Try again with the same key. |
+| `unknown` | GitHub's answer was lost. Retry with the same key to join it. |
+| `key_conflict` | The key already names a different operation. |
+
+The host supplies a per-person `Store`, a `Journal` backed by its flow engine, and an `Act` that binds a token to the GitHub client. Every token the host doesn't keep is revoked, because GitHub keeps only ten per person per App.

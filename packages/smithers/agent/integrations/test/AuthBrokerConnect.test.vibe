@@ -1,0 +1,195 @@
+import { expect, it } from "@effect/vitest"
+import { TestClock } from "effect/testing"
+import { Digest } from "effect/crypto"
+import { Base64 } from "effect/encoding"
+import { HttpClientRequest, HttpServerRequest } from "effect/http"
+import { Core, GitHub } from "../src/index.ts"
+import * as Broker from "../src/github/AuthBroker.vibe"
+
+const origin = "https://vibelang.smithers.sh"
+const secret = Redacted.make("a".repeat(32))
+const sites = [{ origin, secret }]
+effect function fixture(person = 7, revokeFails = false, supplied?: Broker.Store, refreshToken: Redacted.Redacted<string> | null = Redacted.make("private-refresh")) {
+  const revoked: Array<string> = []
+  const installed: Array<{ person: number; origin: string; login: string; token: string }> = []
+  const keys = try Core.CookieKeys.make({ primary: secret }, "primary")
+  const github = GitHub.Auth.GitHubAuth.of({
+    authorizeUrl: ({ state }) => "https://github.test/authorize?" + new URLSearchParams({ state }),
+    exchange: () => succeed({ accessToken: Redacted.make("private-github-token"), refreshToken, expiresAt: 1000 }),
+    user: () => succeed({ id: person, login: "ada" }),
+    refresh: () => Effect.die("unused"), permission: () => succeed("read"),
+    revoke: (token) => { revoked.push(Redacted.value(token)); return revokeFails ? fail(new GitHub.Auth.GitHubRefused({ step: "revoke", reason: "unavailable" })) : Effect.void },
+    deviceCode: () => Effect.die("unused"), deviceToken: () => Effect.die("unused"),
+  })
+  const store = supplied ?? (try Broker.memoryStore())
+  const broker = try Broker.make({
+    origin: "https://smithers.sh", sites, keys, store, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), github,
+    connections: { install: (input) => { installed.push({ person: input.person, origin: input.origin, login: input.login, token: Redacted.value(input.tokens.accessToken) }); return succeed({ delegation: "d".repeat(43), expires: 5 }) } },
+  })
+  const client = try Broker.site({ origin, brokerOrigin: "https://smithers.sh", secret })
+  const pending = try client.begin({ connect: { person: 7 } })
+  const start = try broker.start(origin, pending.returnTo)
+  const state = new URL(start.location).searchParams.get("state")!
+  return { broker, client, pending, start, state, revoked, installed, store }
+}
+const fixtureWith = (store?: Broker.Store, refresh: Redacted.Redacted<string> | null = Redacted.make("private-refresh")) => fixture(7, false, store, refresh)
+effect function atConsent() {
+  const f = try fixture()
+  const location = try f.broker.callback(f.state, "code", f.start.cookie)
+  const consent = new URL(location).searchParams.get("consent")!
+  const browser = try f.broker.consentCookie(consent)
+  return { ...f, location, consent, browser }
+}
+
+it.effect("a sign-in keeps no token: it is revoked at once, and a failed revoke does not fail sign-in", () => effect {
+  const f = try fixture(7, true)
+  const signIn = try f.client.begin()
+  const start = try f.broker.start(origin, signIn.returnTo)
+  const location = try f.broker.callback(new URL(start.location).searchParams.get("state")!, "code", start.cookie)
+  try Effect.try(() => { expect(f.revoked).toEqual(["private-github-token"]); expect(location).toContain(origin); expect(f.installed).toEqual([]) })
+})
+it.effect("connect stops at a smithers.sh consent page with no token in the URL and nothing installed", () => effect {
+  const f = try atConsent()
+  const page = try f.broker.consentPage(f.consent, f.browser)
+  try Effect.try(() => {
+    expect(f.location.startsWith("https://smithers.sh" + Broker.CONSENT)).toBe(true)
+    expect(f.location).not.toMatch(/private/)
+    expect(page.html).toContain("vibelang.smithers.sh")
+    expect(page.html).toContain("ada")
+    expect(page.html).not.toMatch(/private/)
+    expect(f.installed).toEqual([])
+    expect(f.revoked).toEqual([])
+  })
+})
+it.effect("only the consent POST installs, once, and the code redeems to the person and delegation", () => effect {
+  const f = try atConsent()
+  const location = try f.broker.consent(f.consent, "connect", f.browser)
+  const replay = try exit(f.broker.consent(f.consent, "connect", f.browser))
+  const code = new URLSearchParams(new URL(location).hash.slice(1)).get("code")!
+  const identity = try f.broker.exchange(origin, try f.client.redemption(f.pending, code))
+  try Effect.try(() => {
+    expect(f.installed).toEqual([{ person: 7, origin, login: "ada", token: "private-github-token" }])
+    expect(replay._tag).toBe("Failure")
+    expect(new URL(location).origin).toBe(origin)
+    expect(identity).toEqual({ id: 7, login: "ada", delegation: "d".repeat(43), expires: 5 })
+  })
+})
+it.effect("cancel revokes the token, installs nothing, and returns to the site", () => effect {
+  const f = try atConsent()
+  const location = try f.broker.consent(f.consent, "cancel", f.browser)
+  try Effect.try(() => { expect(f.revoked).toEqual(["private-github-token"]); expect(f.installed).toEqual([]); expect(location).toBe(origin + "/") })
+})
+it.effect("a different GitHub person is refused and the token revoked", () => effect {
+  const f = try fixture(8)
+  const outcome = try exit(f.broker.callback(f.state, "code", f.start.cookie))
+  try Effect.try(() => { expect(outcome._tag).toBe("Failure"); expect(f.revoked).toEqual(["private-github-token"]); expect(f.installed).toEqual([]) })
+})
+it.effect("an expired consent is refused and its token is not installed", () => effect {
+  const f = try atConsent()
+  try TestClock.adjust("10 minutes")
+  const outcome = try exit(f.broker.consent(f.consent, "connect", f.browser))
+  const page = try exit(f.broker.consentPage(f.consent, f.browser))
+  try Effect.try(() => { expect([outcome._tag, page._tag]).toEqual(["Failure", "Failure"]); expect(f.installed).toEqual([]) })
+})
+it.effect("the handoff page's CSP hash matches its script", () => effect {
+  const script = Broker.HANDOFF_PAGE.slice(Broker.HANDOFF_PAGE.indexOf("<script>") + 8, Broker.HANDOFF_PAGE.indexOf("</script>"))
+  const hex = try effect { return try (try Digest.Digest).digestHex(Digest.sha256, new TextEncoder().encode(script)) }.pipe(Effect.provide(Digest.layerWebCrypto))
+  const hash = Base64.encode(Uint8Array.from(hex.match(/../g)!.map((pair) => parseInt(pair, 16))))
+  try Effect.try(() => expect(Broker.HANDOFF_CSP).toContain(`'sha256-${hash}'`))
+})
+
+it.effect("consent is bound to the browser that started it, reads without consuming, and refuses a malformed id", () => effect {
+  const f = try atConsent()
+  const noCookie = try exit(f.broker.consentPage(f.consent, undefined))
+  const otherBrowser = try exit(f.broker.consent(f.consent, "connect", try f.broker.consentCookie("y".repeat(43))))
+  const malformed = try exit(f.broker.consentPage("nope", f.browser))
+  try f.broker.consentPage(f.consent, f.browser)
+  const stillThere = try f.broker.consentPage(f.consent, f.browser)
+  try Effect.try(() => {
+    expect([noCookie._tag, otherBrowser._tag, malformed._tag]).toEqual(["Failure", "Failure", "Failure"])
+    expect(stillThere.html).toContain("Connect")
+    expect(f.installed).toEqual([])
+  })
+})
+it.effect("the consent page escapes what it shows and stores a token pair with no refresh token", () => effect {
+  const f = try fixture()
+  const location = try f.broker.callback(f.state, "code", f.start.cookie)
+  const consent = new URL(location).searchParams.get("consent")!
+  const browser = try f.broker.consentCookie(consent)
+  const page = try f.broker.consentPage(consent, browser)
+  try Effect.try(() => expect(page.html).toContain(`value="${consent}"`))
+})
+const route = effect (broker: Effect.Success<ReturnType<typeof Broker.make>>, path: string, init: { readonly method?: "GET" | "POST"; readonly headers?: Record<string, string>; readonly body?: string }) => {
+  const request = HttpClientRequest.make(init.method ?? "GET")("https://smithers.sh" + path).pipe(HttpClientRequest.setHeaders(init.headers ?? {}), (value) => init.body === undefined ? value : HttpClientRequest.bodyText(value, init.body, "application/x-www-form-urlencoded"))
+  const web = try HttpClientRequest.toWeb(request)
+  return try Broker.serve(broker, "https://smithers.sh").pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web)))
+}
+it.effect("escapes the consent page's fields and refuses a route with no consent id", () => effect {
+  const f = try atConsent()
+  const empty = try route(f.broker, Broker.CONSENT, { headers: { cookie: `__Host-smithers-broker=${f.browser}` } })
+  try Effect.try(() => {
+    expect(Broker.consentHtml("a<b", '"x', "c&d")).toContain("a&#60;b")
+    expect(Broker.consentHtml("a<b", '"x', "c&d")).not.toContain('@"x')
+    expect(empty.status).toBe(400)
+  })
+})
+it.effect("the durable store reads a live record without consuming it", () => effect {
+  const { openBrokerSqlite } = try promise(() => import("./Fixture.ts"))
+  const database = try promise(() => openBrokerSqlite())
+  const store = try Broker.sqliteStore(database.sql)
+  const now = try Clock.currentTimeMillis
+  try store.insert("k", "b", "v", now + 1000)
+  const read = [try store.peek("k", "b", now), try store.peek("k", "b", now), try store.peek("k", "other", now), try store.peek("k", "b", now + 1000)]
+  const taken = try store.take("k", "b", now)
+  try Effect.try(() => { database.close(); expect(read).toEqual(["v", "v", undefined, undefined]); expect(taken).toBe("v") })
+})
+it.effect("serves consent: GET shows the page with its CSP, POST needs same-origin and installs once", () => effect {
+  const f = try atConsent()
+  const cookie = `__Host-smithers-broker=${f.browser}`
+  const page = try route(f.broker, Broker.CONSENT + "?consent=" + f.consent, { headers: { cookie } })
+  const form = (answer: string, consent = f.consent) => `consent=${consent}&answer=${answer}`
+  const post = (body: string, headers: Record<string, string> = { cookie, origin: "https://smithers.sh", "sec-fetch-site": "same-origin", "content-type": "application/x-www-form-urlencoded" }) => route(f.broker, Broker.CONSENT, { method: "POST", headers, body })
+  const crossSite = try post(form("connect"), { cookie, origin: "https://evil.test", "sec-fetch-site": "cross-site", "content-type": "application/x-www-form-urlencoded" })
+  const large = try post(form("connect") + "&pad=" + "x".repeat(3000))
+  const badAnswer = try post(form("maybe"))
+  const empty = try post("answer=connect")
+  const fresh = try atConsent()
+  const noConsent = try route(fresh.broker, Broker.CONSENT, { method: "POST", headers: { cookie: `__Host-smithers-broker=${fresh.browser}`, origin: "https://smithers.sh", "sec-fetch-site": "same-origin" }, body: "answer=cancel" })
+  const done = try post(form("connect"))
+  try Effect.try(() => {
+    expect(page.status).toBe(200)
+    expect(page.headers["content-security-policy"]).toBe(Broker.CONSENT_CSP)
+    expect([crossSite.status, large.status, badAnswer.status, empty.status, noConsent.status]).toEqual([400, 400, 400, 400, 400])
+    expect(done.status).toBe(303)
+    expect(f.installed).toHaveLength(1)
+  })
+})
+it.effect("the callback route carries the consent cookie instead of clearing it", () => effect {
+  const f = try fixture()
+  const response = try route(f.broker, `/api/auth/callback?state=${f.state}&code=c`, { headers: { cookie: `__Host-smithers-broker=${f.start.cookie}` } })
+  const location = response.headers["location"]!
+  const page = try exit(f.broker.consentPage(new URL(location).searchParams.get("consent")!, undefined))
+  try Effect.try(() => {
+    expect(response.status).toBe(303)
+    expect(location).toContain(Broker.CONSENT)
+    expect(page._tag).toBe("Failure")
+  })
+})
+it.effect("refuses connect when the host has no connection custodian, and a store that fails to record consent", () => effect {
+  const f = try fixture()
+  const keys = try Core.CookieKeys.make({ primary: secret }, "primary")
+  const bare = try Broker.make({ origin: "https://smithers.sh", sites, keys, store: f.store, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), github: GitHub.Auth.GitHubAuth.of({ authorizeUrl: () => "", exchange: () => Effect.die("unused"), user: () => Effect.die("unused"), refresh: () => Effect.die("unused"), permission: () => succeed("read"), revoke: () => Effect.void, deviceCode: () => Effect.die("unused"), deviceToken: () => Effect.die("unused") }) })
+  const noCustodian = try exit(bare.start(origin, (try f.client.begin({ connect: { person: 7 } })).returnTo))
+  const real = try Broker.memoryStore()
+  const refusing: Broker.Store = { ...real, insert: (key, binding, value, expires) => key.startsWith("consent/") ? succeed(false) : real.insert(key, binding, value, expires) }
+  const g = try fixtureWith(refusing)
+  const outcome = try exit(g.broker.callback(g.state, "code", g.start.cookie))
+  try Effect.try(() => { expect(noCustodian._tag).toBe("Failure"); expect(outcome._tag).toBe("Failure") })
+})
+it.effect("consent without a refresh token and without a custodian's answer", () => effect {
+  const f = try fixtureWith(undefined, null)
+  const location = try f.broker.callback(f.state, "code", f.start.cookie)
+  const consent = new URL(location).searchParams.get("consent")!
+  const answer = try f.broker.consent(consent, "connect", try f.broker.consentCookie(consent))
+  try Effect.try(() => { expect(new URL(answer).origin).toBe(origin); expect(f.installed[0]!.token).toBe("private-github-token") })
+})

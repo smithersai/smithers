@@ -1,0 +1,423 @@
+// smithers.sh's side and the hosted site's side of a GitHub delegation (decision 0165). Tokens never leave this module.
+import * as Policy from "./DelegationPolicy.vibe"
+import type * as Auth from "./Auth.vibe"
+import * as Once from "./Once.ts"
+import * as Issues from "./Issues.ts"
+import * as IssueChanges from "./IssueChanges.vibe"
+import { GitHubClient, type RequestOptions } from "./GitHubClient.ts"
+import { IntegrationError } from "../core/IntegrationError.ts"
+import { forCredentials } from "../core/CredentialHttp.ts"
+import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import * as CookieKeys from "../core/CookieKeys.vibe"
+import * as Signature from "../core/Signature.ts"
+import { WebCryptoCipher } from "@smthrs/control"
+import { Action } from "@smthrs/flow"
+
+export const ROUTE = "/api/auth/broker/delegation"
+export const CALL_TTL = 60_000
+export const EXPIRY = 30 * 24 * 60 * 60 * 1000
+export const REFRESH_MARGIN = 300_000
+export const WRITES_PER_HOUR = 60
+export type Reason = "connect" | "install" | "fork" | "forbidden" | "unavailable" | "unknown" | "key_conflict"
+export type Mode = "read" | "find" | "perform" | "revoke"
+export class DelegationRefused extends Schema.TaggedError<DelegationRefused>()("@smthrs/integrations/DelegationRefused", {
+  reason: Schema.Literals(["connect", "install", "fork", "forbidden", "unavailable", "unknown", "key_conflict"]),
+}) {}
+const refused = (reason: Reason) => new DelegationRefused({ reason })
+export interface Site { readonly origin: string; readonly secret: Redacted.Redacted<string>; readonly grants: ReadonlyArray<Policy.Grant> }
+export interface Keyring { readonly active: string; readonly keys: Readonly<Record<string, Redacted.Redacted<string>>> }
+/** One person's rows. A host gives each person a single-writer store. */
+export interface Store {
+  readonly get: (key: string) => unknown!DelegationRefused
+  readonly put: (key: string, value: unknown) => void!DelegationRefused
+  readonly remove: (key: string) => void!DelegationRefused
+  readonly list: (prefix: string) => ReadonlyArray<unknown>!DelegationRefused
+  /** False when the key already exists. */
+  readonly claim: (key: string, expires: number) => boolean!DelegationRefused
+}
+/** Runs `body` at most to one recorded answer per name. The host's flow journal; answers carry no text or token. */
+export type Journal = (name: string, body: string!DelegationRefused) => string!DelegationRefused
+export type Act = (token: Redacted.Redacted<string>) => <A, E, R>(program: A!E!R) => A!E!Exclude<R, GitHubClient>
+
+const Identifier = Schema.String
+const Op = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("issue.create"), repository: Identifier, title: Schema.String, body: Schema.String, since: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("comment.create"), repository: Identifier, number: Schema.Number, body: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("issue.assign"), repository: Identifier, number: Schema.Number, assignees: Schema.Array(Schema.String) }),
+  Schema.Struct({ kind: Schema.Literal("issue.close"), repository: Identifier, number: Schema.Number }),
+  Schema.Struct({ kind: Schema.Literal("issue.link"), repository: Identifier, parent: Schema.Number, child: Schema.Number }),
+  Schema.Struct({ kind: Schema.Literal("label.create"), repository: Identifier, name: Schema.String, color: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("label.add"), repository: Identifier, number: Schema.Number, labels: Schema.Array(Schema.String) }),
+  Schema.Struct({ kind: Schema.Literal("label.remove"), repository: Identifier, number: Schema.Number, label: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("branch.create"), repository: Identifier, prefix: Schema.String, label: Schema.String, at: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("commit.create"), repository: Identifier, branch: Schema.String, expectedHeadOid: Schema.String, headline: Schema.String, additions: Schema.Array(Schema.Struct({ path: Schema.String, contents: Schema.String })), deletions: Schema.Array(Schema.String) }),
+  Schema.Struct({ kind: Schema.Literal("pull.create"), repository: Identifier, head: Schema.String, base: Schema.String, title: Schema.String, body: Schema.String }),
+])
+const Claim = Schema.Struct({
+  audience: Schema.String, route: Schema.String, origin: Schema.String, person: Schema.Number, actor: Schema.String, delegation: Schema.String,
+  mode: Schema.Literals(["read", "find", "perform", "revoke"]), key: Schema.String, digest: Schema.String, nonce: Schema.String, expires: Schema.Number,
+})
+const Envelope = Schema.Struct({ origin: Schema.String, person: Schema.Number, request: Schema.String, payload: Schema.String })
+const Sealed = Schema.Struct({ nonce: Schema.String, ciphertext: Schema.String })
+const Credential = Schema.Struct({ login: Schema.String, keyId: Schema.String, access: Sealed, refresh: Schema.NullOr(Sealed), expires: Schema.NullOr(Schema.Number), generation: Schema.Number })
+const Row = Schema.Struct({ id: Schema.String, origin: Schema.String, expires: Schema.Number, state: Schema.String })
+const Tokens = Schema.Struct({ access: Schema.String, refresh: Schema.NullOr(Schema.String), expires: Schema.NullOr(Schema.Number) })
+
+const digestOf = (value: string) => Signature.computeHmacSha256Hex(value, "smithers-github-delegation-digest-v1")
+
+/** Fixed vocabulary only: never a person, key, path or text. */
+effect function record(step: string, outcome: string) {
+  try Metric.update(Metric.withAttributes(Metric.counter("smithers_github_delegation_steps", { incremental: true }), { step, outcome }), 1)
+  try Effect.logInfo("github.delegation").pipe(Effect.annotateLogs({ step, outcome }))
+}
+function observed<A, R>(step: string, body: A!DelegationRefused!R) {
+  return withSpan(Effect.tapError(Effect.tap(body, () => record(step, "accepted")), (error) => record(step, error.reason)), "github.delegation." + step)
+}
+
+/** Real in-memory store for ephemeral hosts and protocol tests. */
+export effect function memoryStore(): Store!! {
+  const rows = new Map<string, unknown>()
+  return {
+    get: (key) => succeed(rows.get(key)),
+    put: (key, value) => Effect.sync(() => { rows.set(key, value) }),
+    remove: (key) => Effect.sync(() => { rows.delete(key) }),
+    list: (prefix) => Effect.sync(() => Array.from(rows.entries()).filter(([key]) => key.startsWith(prefix)).map(([, value]) => value)),
+    claim: (key) => Effect.sync(() => { if (rows.has(key)) return false; rows.set(key, true); return true }),
+  }
+}
+export function memoryJournal(observe: (value: string) => void = () => {}): Journal {
+  const answers = new Map<string, string>()
+  return effect (name, body) => {
+    const known = answers.get(name)
+    if (known !== undefined) return known
+    const answer = try body
+    answers.set(name, answer)
+    observe(name + answer)
+    return answer
+  }
+}
+
+export interface Sql {
+  readonly exec: (query: string, ...bindings: Array<string | number>) => { readonly toArray: () => Array<Record<string, unknown>> }
+}
+const stored = <A, E>(body: A!E) => Effect.mapError(body, () => refused("unavailable"))
+/** workerd SQLite in the person's own Durable Object: a single writer, so no row needs its own fence. */
+export effect function sqliteStore(sql: Sql): Store!DelegationRefused {
+  const rows = (query: string, ...bindings: Array<string | number>) => stored(Effect.try(() => sql.exec(query, ...bindings).toArray()))
+  const parse = (text: unknown) => stored(Effect.try(() => JSON.parse(String(text)) as unknown))
+  try rows("CREATE TABLE IF NOT EXISTS github_connection (key TEXT PRIMARY KEY, value TEXT NOT NULL, expires INTEGER)")
+  return {
+    get: effect (key) => {
+      const found = try rows("SELECT value FROM github_connection WHERE key = ?", key)
+      return found.length === 0 ? undefined : try parse(found[0]!.value)
+    },
+    put: (key, value) => Effect.asVoid(rows("INSERT INTO github_connection (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, JSON.stringify(value))),
+    remove: (key) => Effect.asVoid(rows("DELETE FROM github_connection WHERE key = ?", key)),
+    list: effect (prefix) => {
+      const found = try rows("SELECT value FROM github_connection WHERE substr(key, 1, ?) = ? ORDER BY key", prefix.length, prefix)
+      const values: Array<unknown> = []
+      for (const row of found) values.push(try parse(row.value))
+      return values
+    },
+    claim: effect (key, expires) => {
+      try rows("DELETE FROM github_connection WHERE expires IS NOT NULL AND expires <= ?", try Clock.currentTimeMillis)
+      return (try rows("INSERT INTO github_connection (key, value, expires) VALUES (?, 'true', ?) ON CONFLICT(key) DO NOTHING RETURNING key", key, expires)).length === 1
+    },
+  }
+}
+
+export const MAX_BODY = 4_194_304
+const statusFor = (reason: Reason) => reason === "forbidden" ? 403 : reason === "connect" || reason === "install" || reason === "fork" ? 401 : reason === "key_conflict" || reason === "unknown" ? 409 : 503
+const NO_STORE = { "cache-control": "no-store", "referrer-policy": "no-referrer" }
+/** The person's Durable Object fetch handler. Bodies are read here; nothing is logged but the fixed vocabulary. */
+export effect function serve(server: { readonly handle: (text: string) => unknown!DelegationRefused }) {
+  const request = try HttpServerRequest.HttpServerRequest
+  if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: NO_STORE })
+  if (Number(request.headers["content-length"]) > MAX_BODY) return HttpServerResponse.jsonUnsafe({ reason: "forbidden" }, { status: 413, headers: NO_STORE })
+  const text = request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(MAX_BODY)), Effect.timeout("3 seconds")) catch () => undefined
+  if (text === undefined) return HttpServerResponse.jsonUnsafe({ reason: "forbidden" }, { status: 413, headers: NO_STORE })
+  const result = try Effect.result(server.handle(text))
+  return result._tag === "Success"
+    ? HttpServerResponse.jsonUnsafe(result.success, { headers: NO_STORE })
+    : HttpServerResponse.jsonUnsafe({ reason: result.failure.reason }, { status: statusFor(result.failure.reason), headers: NO_STORE })
+}
+
+const ReceiptSchema = Schema.Struct({ number: Schema.optional(Schema.Number), id: Schema.optional(Schema.Number), sha: Schema.optional(Schema.String), name: Schema.optional(Schema.String) })
+export type Receipt = typeof ReceiptSchema.Type
+const FindAnswer = Schema.Struct({ found: Schema.Boolean, receipt: Schema.optional(ReceiptSchema) })
+const Refusal = Schema.Struct({ reason: Schema.Literals(["connect", "install", "fork", "forbidden", "unavailable", "unknown", "key_conflict"]) })
+/** What a site's GitHub code sees: the broker's reason, on the failure type every GitHub call already uses. */
+export const reasonOf = (error: { readonly details?: Readonly<Record<string, unknown>> }): Reason | undefined => error.details?.["delegation"] as Reason | undefined
+const asIntegration = (error: DelegationRefused) => new IntegrationError("delivery-failed", "The delegated call was refused.", { delegation: error.reason, retryable: false, ...(error.reason === "unknown" ? { outcomeUnknown: true } : {}) })
+
+/** The hosted site's whole interface: it never holds a token. */
+export effect function site(options: { readonly origin: string; readonly brokerOrigin: string; readonly secret: Redacted.Redacted<string> }) {
+  const sign = try signer(options)
+  const call = (mode: Mode, person: number, delegation: string, key: string, payload: unknown): unknown!DelegationRefused!HttpClient.HttpClient => observed("site_" + mode, effect {
+    const ambient = try HttpClient.HttpClient
+    const http = try Effect.mapError(Effect.try(() => forCredentials(ambient)), () => refused("unavailable"))
+    const body = try sign.envelope({ person, delegation, mode, key, payload })
+    const response = http.execute(HttpClientRequest.post(options.brokerOrigin + ROUTE).pipe(HttpClientRequest.bodyJsonUnsafe(body))) catch () => undefined
+    if (response === undefined) throw refused("unavailable")
+    const answer = response.json catch () => undefined
+    if (response.status === 200) {
+      if (answer === undefined) throw refused("unavailable")
+      return answer
+    }
+    throw refused(Schema.decodeUnknownOption(Refusal)(answer).pipe(Option.map((value) => value.reason), Option.getOrElse(() => "unavailable" as const)))
+  }).pipe(Effect.provideService(HttpClient.TracerDisabledWhen, () => true))
+  return {
+    /** A key's write, once: for `Action.once`. */
+    keyed: (person: number, delegation: string, operation: Policy.Operation): Action.Keyed<Receipt, DelegationRefused, HttpClient.HttpClient> => Action.keyed({
+      find: (key) => effect {
+        const answer = try Effect.mapError(Schema.decodeUnknownEffect(FindAnswer)(try call("find", person, delegation, key, operation)), () => refused("unavailable"))
+        return answer.found && answer.receipt !== undefined ? Option.some<Receipt>(answer.receipt) : Option.none<Receipt>()
+      },
+      perform: (key) => Effect.flatMap(call("perform", person, delegation, key, operation), (value) => Effect.mapError(Schema.decodeUnknownEffect(ReceiptSchema)(value), () => refused("unavailable"))),
+    }),
+    /** An idempotent write with no key of its own. */
+    write: (person: number, delegation: string, key: string, operation: Policy.Operation) => Effect.asVoid(call("perform", person, delegation, key, operation)),
+    revoke: (person: number, delegation: string) => Effect.asVoid(call("revoke", person, delegation, "", {})),
+    /** GET-only: the person's reads run against their own rate limit. Every write goes through `keyed` or `write`. */
+    client: (person: number, delegation: string, http: HttpClient.HttpClient): GitHubClient => {
+      const read = (path: string, paginate?: unknown) => Effect.mapError(call("read", person, delegation, "", { path, ...(paginate === undefined ? {} : { paginate }) }).pipe(Effect.provideService(HttpClient.HttpClient, http)), asIntegration)
+      const request = (method: string, path: string, _body?: unknown, requestOptions?: RequestOptions & { readonly schema?: Schema.Top }) => {
+        if (method !== "GET") return Effect.die("delegated writes use typed operations")
+        if (requestOptions?.schema === undefined) return read(path)
+        return Effect.flatMap(read(path), (value) => Effect.mapError(Schema.decodeUnknownEffect(requestOptions.schema as never)(value as never), () => new IntegrationError("decode-failed", `GitHub response for GET ${path} failed schema validation.`, { method: "GET", path, retryable: false })))
+      }
+      return {
+        request: request as GitHubClient["request"],
+        paginate: (path, paginate) => Effect.map(read(path, paginate ?? {}), (value) => value as Effect.Success<ReturnType<GitHubClient["paginate"]>>),
+        count: () => Effect.die("count is not delegated"),
+      }
+    },
+  }
+}
+
+/** The site's half of the signature. */
+export effect function signer(options: { readonly origin: string; readonly brokerOrigin: string; readonly secret: Redacted.Redacted<string> }) {
+  const keys = try CookieKeys.make({ primary: options.secret }, "primary")
+  return {
+    envelope: effect (call: { readonly person: number; readonly delegation: string; readonly mode: Mode; readonly key: string; readonly payload: unknown; readonly actor?: string }) => {
+      const payload = JSON.stringify(call.payload)
+      const claim = { audience: options.brokerOrigin, route: ROUTE, origin: options.origin, person: call.person, actor: call.actor ?? "person", delegation: call.delegation, mode: call.mode, key: call.key, digest: try digestOf(payload), nonce: try keys.token, expires: (try Clock.currentTimeMillis) + CALL_TTL }
+      return { origin: options.origin, person: call.person, request: try keys.sign("broker_delegation", JSON.stringify(claim)), payload }
+    },
+  }
+}
+
+const statusOf = (error: { readonly details?: Readonly<Record<string, unknown>> }) => error.details?.["status"]
+
+export effect function make(options: {
+  readonly origin: string; readonly person: number; readonly sites: ReadonlyArray<Site>; readonly keyring: Keyring; readonly store: Store
+  readonly journal: Journal; readonly github: Auth.GitHubAuth["Service"]; readonly act: Act
+}) {
+  const ciphers = new Map<string, Effect.Success<ReturnType<typeof WebCryptoCipher.make>>>()
+  for (const [id, key] of Object.entries(options.keyring.keys)) ciphers.set(id, try Effect.mapError(WebCryptoCipher.make({ key }), () => refused("unavailable")))
+  if (!ciphers.has(options.keyring.active)) throw refused("unavailable")
+  const context = (name: string) => ({ id: String(options.person), name, version: 1 })
+  const seal = (name: string, value: Redacted.Redacted<string>) => Effect.orDie(ciphers.get(options.keyring.active)!.seal(value, context(name)))
+  const open = effect (keyId: string, name: string, value: typeof Sealed.Type) => {
+    const cipher = ciphers.get(keyId)
+    if (cipher === undefined) throw refused("connect")
+    return try Effect.mapError(cipher.open(value, context(name)), () => refused("connect"))
+  }
+  const act = options.act
+  const generationOf = effect () => {
+    const row = try credential()
+    return row === undefined ? 0 : row.generation
+  }
+  const credential = effect () => {
+    const raw = try options.store.get("credential")
+    return raw === undefined ? undefined : try Effect.mapError(Schema.decodeUnknownEffect(Credential)(raw), () => refused("connect"))
+  }
+  const store = effect (login: string, tokens: Auth.Tokens, generation: number) => {
+    const access = try seal("github_access", tokens.accessToken)
+    const refresh = tokens.refreshToken === null ? null : try seal("github_refresh", tokens.refreshToken)
+    try options.store.put("credential", { login, keyId: options.keyring.active, access, refresh, expires: tokens.expiresAt, generation })
+  }
+  const endCredential = effect (revoke: boolean) => {
+    const row = try credential()
+    if (row === undefined) return
+    if (revoke) {
+      const token = try open(row.keyId, "github_access", row.access)
+      options.github.revoke(token) catch () => record("revoke", "failed")
+    }
+    try options.store.remove("credential")
+  }
+  /** GitHub said the token is dead: nothing to revoke. Delegations stay; the next Connect renews the token. */
+  const dead = effect () => {
+    try endCredential(false)
+    return refused("connect")
+  }
+  const delegationOf = effect (origin: string) => {
+    const raw = try options.store.get("delegation/" + origin)
+    return raw === undefined ? undefined : Schema.decodeUnknownOption(Row)(raw).pipe(Option.getOrUndefined)
+  }
+  const token = effect () => {
+    const row = try credential()
+    if (row === undefined) throw refused("connect")
+    const now = try Clock.currentTimeMillis
+    if (row.expires === null || row.expires - REFRESH_MARGIN > now) return { login: row.login, token: try open(row.keyId, "github_access", row.access) }
+    if (row.refresh === null) throw (try dead())
+    const refreshToken = try open(row.keyId, "github_refresh", row.refresh)
+    // Single-use refresh token: the journal holds the sealed answer, so a crash before the store replays it instead of redeeming twice.
+    const sealedAnswer = options.journal("refresh/" + row.generation, effect {
+      const fresh = options.github.refresh(refreshToken) catch effect (error) => {
+        throw error.reason === "rejected" ? refused("connect") : refused("unavailable")
+      }
+      const plain = JSON.stringify({ access: Redacted.value(fresh.accessToken), refresh: fresh.refreshToken === null ? null : Redacted.value(fresh.refreshToken), expires: fresh.expiresAt })
+      return JSON.stringify({ keyId: options.keyring.active, sealed: try seal("github_refreshed/" + row.generation, Redacted.make(plain)) })
+    }) catch effect (error) => {
+      if (error.reason === "connect") throw (try dead())
+      throw error
+    }
+    const staged = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ keyId: Schema.String, sealed: Sealed })))(sealedAnswer), () => refused("connect"))
+    const opened = try open(staged.keyId, "github_refreshed/" + row.generation, staged.sealed)
+    const fresh = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Tokens))(Redacted.value(opened)), () => refused("connect"))
+    const tokens: Auth.Tokens = { accessToken: Redacted.make(fresh.access), refreshToken: fresh.refresh === null ? null : Redacted.make(fresh.refresh), expiresAt: fresh.expires }
+    try store(row.login, tokens, row.generation + 1)
+    return { login: row.login, token: tokens.accessToken }
+  }
+  const failureOf = (onFork: boolean) => (error: { readonly details?: Readonly<Record<string, unknown>> }): DelegationRefused => {
+    const status = statusOf(error)
+    if (error.details?.["outcomeUnknown"] === true) return refused("unknown")
+    if (error.details?.["rateLimited"] === true) return refused("unavailable")
+    if (status === 401) return refused("connect")
+    if (onFork && (status === 403 || status === 404)) return refused("install")
+    if (status === 403) return refused("forbidden")
+    return refused("unavailable")
+  }
+  const github = effect <A>(session: { readonly token: Redacted.Redacted<string> }, program: A!any!GitHubClient, onFork = false, missing?: Reason): A!DelegationRefused => {
+    return act(session.token)(program) catch effect (error) => {
+      if (missing !== undefined && statusOf(error) === 404) throw refused(missing)
+      const failure = failureOf(onFork)(error)
+      if (failure.reason === "connect") throw (try dead())
+      throw failure
+    }
+  }
+  const Repository = Schema.Struct({ id: Schema.Number, fork: Schema.optional(Schema.Boolean), parent: Schema.optional(Schema.Struct({ id: Schema.Number })) })
+  const repositoryOf = (session: { readonly token: Redacted.Redacted<string> }, path: string, missing?: Reason) =>
+    github(session, Effect.flatMap(GitHubClient, (api) => api.request("GET", `/repos/${path}`, undefined, { schema: Repository })), false, missing)
+  /** Upstream's immutable id, then the write's real target: the person's verified fork unless they own upstream. */
+  const targetOf = effect (session: { readonly login: string; readonly token: Redacted.Redacted<string> }, grant: Policy.Grant, operation: Policy.Operation) => {
+    const upstream = try repositoryOf(session, grant.repository)
+    if (upstream.id !== grant.repositoryId) throw refused("forbidden")
+    const [owner, name] = grant.repository.split("/") as [string, string]
+    if (operation.kind !== "branch.create" && operation.kind !== "commit.create") return { owner, name, onFork: false }
+    if (owner.toLowerCase() === session.login.toLowerCase()) return { owner, name, onFork: false }
+    const personal = try repositoryOf(session, `${session.login}/${name}`, "fork")
+    if (personal.fork !== true || personal.parent?.id !== grant.repositoryId) throw refused("fork")
+    return { owner: session.login, name, onFork: true }
+  }
+  const keyed = (operation: Policy.Operation, login: string, owner: string, name: string): Action.Keyed<unknown, any, GitHubClient> | undefined => {
+    switch (operation.kind) {
+      case "issue.create": return Once.issue(owner, name, { title: operation.title, body: operation.body, since: operation.since, author: login })
+      case "comment.create": return Once.comment(owner, name, operation.number, operation.body, { author: login })
+      case "branch.create": return Once.branch(owner, name, { prefix: operation.prefix, label: operation.label, at: Effect.succeed(operation.at) })
+      case "commit.create": return Once.commitOnBranch(owner, name, operation)
+      case "pull.create": return Once.pull(owner, name, operation)
+      default: return undefined
+    }
+  }
+  const unkeyed = (operation: Exclude<Policy.Operation, { readonly kind: "issue.create" | "comment.create" | "branch.create" | "commit.create" | "pull.create" }>, owner: string, name: string): unknown!any!GitHubClient => {
+    switch (operation.kind) {
+      case "issue.assign": return IssueChanges.update(owner, name, operation.number, { assignees: operation.assignees })
+      case "issue.close": return IssueChanges.update(owner, name, operation.number, { state: "closed" })
+      case "issue.link": return IssueChanges.link(owner, name, operation.parent, operation.child)
+      case "label.create": return Issues.createLabel(owner, name, { name: operation.name, color: operation.color })
+      case "label.add": return Issues.addLabels(owner, name, operation.number, operation.labels as readonly [string, ...Array<string>])
+      case "label.remove": return Issues.removeLabel(owner, name, operation.number, operation.label)
+    }
+  }
+  /** Numbers, ids, shas and names only: every field a site needs to continue, and no text. */
+  const receipt = (value: unknown) => {
+    const record = (typeof value === "string" ? { sha: value } : value) as Record<string, unknown>
+    const out: Record<string, unknown> = {}
+    for (const field of ["number", "id", "sha", "name"]) if (typeof record[field] === "number" || typeof record[field] === "string") out[field] = record[field]
+    return out
+  }
+  const admitWrite = effect (origin: string) => {
+    const now = try Clock.currentTimeMillis
+    const hour = Math.floor(now / 3_600_000)
+    const counted = "rate/" + origin + "/" + hour
+    const used = Number(try options.store.get(counted) ?? 0)
+    if (used >= WRITES_PER_HOUR) throw refused("unavailable")
+    try options.store.put(counted, used + 1)
+  }
+  const verify = effect (envelope: typeof Envelope.Type) => {
+    const site = options.sites.find((entry) => entry.origin === envelope.origin)
+    if (site === undefined || envelope.person !== options.person) throw refused("forbidden")
+    const keys = try CookieKeys.make({ primary: site.secret }, "primary")
+    const verified = try keys.verify("broker_delegation", envelope.request)
+    if (Option.isNone(verified)) throw refused("forbidden")
+    const claim = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Claim))(verified.value.value), () => refused("forbidden"))
+    const now = try Clock.currentTimeMillis
+    if (claim.audience !== options.origin || claim.route !== ROUTE || claim.origin !== envelope.origin || claim.person !== envelope.person || claim.actor !== "person" || claim.expires <= now || claim.expires > now + CALL_TTL) throw refused("forbidden")
+    if (claim.digest !== (try digestOf(envelope.payload))) throw refused("forbidden")
+    if (!(try options.store.claim("nonce/" + (try digestOf(claim.nonce)), claim.expires))) throw refused("forbidden")
+    const row = try delegationOf(envelope.origin)
+    if (row === undefined || row.id !== claim.delegation || !Policy.liveDelegation(row.state, row.expires, now)) throw refused("connect")
+    return { claim, site }
+  }
+  const handle = (text: string) => observed("handle", effect {
+    const envelope = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Envelope))(text), () => refused("forbidden"))
+    const { claim, site } = try verify(envelope)
+    if (claim.mode === "revoke") { try revoke(site.origin); return {} }
+    const session = try token()
+    if (claim.mode === "read") {
+      const { path, paginate } = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ path: Schema.String, paginate: Schema.optional(Schema.Struct({ perPage: Schema.optional(Schema.Number), maxPages: Schema.optional(Schema.Number), withNext: Schema.optional(Schema.Boolean) })) })))(envelope.payload), () => refused("forbidden"))
+      if (!Policy.readable(site.grants, session.login, path)) throw refused("forbidden")
+      return try github(session, Effect.flatMap(GitHubClient, (client) => paginate === undefined ? client.request("GET", path) : client.paginate(path, paginate)))
+    }
+    if (!/^[0-9a-f]{64}$/.test(claim.key)) throw refused("forbidden")
+    const operation = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Op))(envelope.payload), () => refused("forbidden")) as Policy.Operation
+    if (!Policy.permits(site.grants, session.login, operation)) throw refused("forbidden")
+    const grant = Policy.grantOf(site.grants, operation.repository)!
+    const bound = "binding/" + (try digestOf(`${site.origin}\n${claim.key}`))
+    const known = try options.store.get(bound)
+    if (known !== undefined && known !== claim.digest) throw refused("key_conflict")
+    if (known === undefined) try options.store.put(bound, claim.digest)
+    const target = try targetOf(session, grant, operation)
+    const write = keyed(operation, session.login, target.owner, target.name)
+    if (claim.mode === "find") {
+      if (write === undefined) return { found: false }
+      const found = try github(session, write.find(claim.key), target.onFork)
+      return Option.isNone(found) ? { found: false } : { found: true, receipt: receipt(found.value) }
+    }
+    const answer = try options.journal("write/" + (try digestOf(`${site.origin}\n${claim.key}`)), effect {
+      try admitWrite(site.origin)
+      if (write === undefined) { try github(session, unkeyed(operation as Parameters<typeof unkeyed>[0], target.owner, target.name)); return "{}" }
+      const found = try github(session, write.find(claim.key), target.onFork)
+      const value = Option.isSome(found) ? found.value : try github(session, write.perform(claim.key), target.onFork)
+      return JSON.stringify(receipt(value))
+    })
+    return try Effect.mapError(Effect.try(() => JSON.parse(answer) as unknown), () => refused("unavailable"))
+  })
+  const revoke = effect (origin: string) => {
+    try options.store.remove("delegation/" + origin)
+    if ((try options.store.list("delegation/")).length === 0) try endCredential(true)
+  }
+  return {
+    handle,
+    revoke: (origin: string) => observed("revoke", revoke(origin)),
+    install: (input: { readonly origin: string; readonly login: string; readonly tokens: Auth.Tokens }) => observed("install", effect {
+      const site = options.sites.find((entry) => entry.origin === input.origin)
+      if (site === undefined) throw refused("forbidden")
+      const generation = (try generationOf()) + 1
+      try endCredential(true)
+      try store(input.login, input.tokens, generation)
+      const keys = try CookieKeys.make({ primary: site.secret }, "primary")
+      const id = try keys.token
+      const expires = (try Clock.currentTimeMillis) + EXPIRY
+      try options.store.put("delegation/" + input.origin, { id, origin: input.origin, expires, state: "active" })
+      return { delegation: id, expires }
+    }),
+    /** GitHub says this person revoked the App. Nothing to revoke there; every delegation here ends. */
+    revokedAtGitHub: () => observed("webhook", effect {
+      try options.store.remove("credential")
+      for (const row of try options.store.list("delegation/")) try options.store.remove("delegation/" + (row as { origin: string }).origin)
+    }),
+  }
+}
