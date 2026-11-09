@@ -1,0 +1,89 @@
+import { it } from "@effect/vitest"
+import { getAllByRole, findAll, given, scene, type SceneSimulation } from "foldkit/scene"
+import { IssueRequest } from "../src/core/issueSchemas.vibe"
+import { issuePermission } from "../src/core/conversation.vibe"
+import { audioIdentity, speechAction, theatreFocusIndex, theatreOutcome, theatreSelector } from "../src/web/theatreDecision.vibe"
+import { IssuesUi, initialIssues, issuesUpdate } from "../src/web/issues.vibe"
+import { ActionView } from "../src/web/actionModel.vibe"
+import { Flags, init, Message, Model, update } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+import { run, Text } from "./run.vibe"
+
+const ROLES = ["button", "link", "textbox", "combobox", "checkbox", "radio", "switch", "slider", "searchbox", "spinbutton", "option", "tab", "menuitem", "treeitem"]
+
+/** Renders one model through the real update and view; every control keeps a name and no script is emitted. */
+function renders(model: Model): boolean {
+  let named = true
+  scene({ update, view }, given(model), (simulation: SceneSimulation<Model, Message>) => {
+    for (const role of ROLES) {
+      if (getAllByRole(role)(simulation.html).length !== getAllByRole(role, { name: /\S/ })(simulation.html).length) named = false
+    }
+    if (findAll(simulation.html, "script").length !== 0) named = false
+    return simulation
+  })
+  return named
+}
+
+const Actions = ["retry", "close", "specification", "spec-review", "roles", "list", "select", "kind", "kind-key", "state", "query", "title", "summary", "example", "prior", "comment-text", "parent", "assignee", "cancel", "back", "continue", "new-form", "vip-form", "commit-dialog", "split-dialog", "link-dialog", "read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft", "spec-revise", "unknown"] as const
+const Step = Schema.Struct({ action: Schema.Literals(Actions), value: Schema.Union([Schema.Literals(["astra", "sol", "fable", "opus", "1", "45"]), Text]) })
+
+it.live("screens/issues-update-sequences", () => run("screens/issues-update-sequences", Schema.Struct({ ui: IssuesUi, steps: Schema.Array(Step).check(Schema.isMaxLength(32)) }), ({ ui, steps }) => {
+  let state = ui
+  for (const step of steps) {
+    const before = state
+    const result = issuesUpdate(before, step.action, step.action === "spec-review" ? "astra" : step.value)
+    state = result.ui
+    if (state.serial < before.serial) return false
+    if (result.request === undefined) continue
+    if (!issuePermission(before.role, result.request.op)) return false
+    if (before.busy) return false
+    if (!state.busy) return false
+    if (before.retry !== undefined && before.retry.op === step.action && result.request.key !== before.retry.key) return false
+  }
+  return true
+}))
+
+it.live("screens/issues-requests-decode", () => run("screens/issues-requests-decode", Schema.Struct({ parent: Schema.Union([Text, Schema.Literals(["", "0", " 7 ", "1.5", "-1", "1e3", "NaN", "9007199254740993"])]), title: Text, action: Schema.Literals(["new", "comment", "link", "split", "commit", "propose", "read"]) }), ({ parent, title, action }) => {
+  const ui: IssuesUi = { ...initialIssues, role: "maintainer", keyPrefix: "k", serial: 1, selected: 1, parent, title: `title ${title.toWellFormed()}` }
+  const result = issuesUpdate(ui, action, "")
+  // JSON carries NaN as null, which the Worker refuses; the request must survive the wire it is sent over.
+  return result.request !== undefined && Schema.decodeUnknownExit(Schema.fromJsonString(IssueRequest))(JSON.stringify(result.request))._tag === "Success"
+}))
+
+const View = Schema.Struct({ flags: Flags, ui: IssuesUi })
+it.live("screens/issues-view-names-controls", () => run("screens/issues-view-names-controls", View, ({ flags, ui }) => effect {
+  return try Effect.try(() => renders({ ...init(flags).model, surface: "chat", issues: { ...ui, open: true } }))
+}))
+
+it.live("screens/panes-name-controls", () => run("screens/panes-name-controls", Schema.Struct({ flags: Flags, actions: ActionView, wiki: Schema.Boolean, open: Schema.Boolean, maximized: Schema.Boolean }), ({ flags, actions, wiki, open, maximized }) => effect {
+  const model = init(flags).model
+  const conversation = { ...model.client.conversation, pane: wiki ? "wiki:index" : "" }
+  return try Effect.try(() => renders({ ...model, surface: "chat", docs: maximized ? "max" : "pane", client: { ...model.client, conversation }, actions: { ...actions, open, maximized } }))
+}))
+
+const Speech = Schema.Struct({ step: Schema.Int, sound: Schema.Boolean, active: Schema.Boolean, paused: Schema.Boolean, finish: Schema.Boolean, previousStep: Schema.Int, previousSound: Schema.Boolean, previousActive: Schema.Boolean, previousPaused: Schema.Boolean })
+
+it.live("screens/theatre-speech", () => run("screens/theatre-speech", Speech, (s) => {
+  const action = speechAction(s.step, s.sound, s.active, s.paused, s.finish, s.previousStep, s.previousSound, s.previousActive, s.previousPaused)
+  if (!s.sound && action !== "cancel") return false
+  if (!s.active && !s.finish && action !== "cancel") return false
+  // A redraw of a step already speaking never restarts its utterance.
+  if (s.sound && s.active && !s.paused && s.step === s.previousStep && s.previousSound && s.previousActive && !s.previousPaused && action !== "keep") return false
+  // A voice identity of zero means the next drive speaks; only a paused change clears it.
+  const identity = audioIdentity(s.step, s.paused, s.previousStep, s.previousActive, s.previousSound)
+  if (!s.paused && identity !== s.step) return false
+  return ["sound", "muted", "paused", "ended"].includes(theatreOutcome(s.active, s.paused, s.sound))
+}))
+
+it.live("screens/theatre-focus-cycles", () => run("screens/theatre-focus-cycles", Schema.Struct({ length: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 64 })), backward: Schema.Boolean }), ({ length, backward }) => {
+  const seen = new Set<number>()
+  let index = -1
+  for (let turn = 0; turn < length; turn++) {
+    index = theatreFocusIndex(length, index, backward)
+    if (index < 0 || index >= length) return false
+    seen.add(index)
+  }
+  return seen.size === length
+}))
+
+it.live("screens/theatre-selector", () => run("screens/theatre-selector", Schema.Union([Text, Schema.Literals(["splash", "palette", "issues", "issues:vips", "issue:1", "wiki:x", "history-nav", "composer", "sandbox-pane"])]), (target) => theatreSelector(target).length > 0))

@@ -33,8 +33,13 @@ export const initialIssues: IssuesUi = {
   status: "loading", busy: false, data: { seq: 0, items: [] }, title: "", summary: "", example: "", prior: "",
   comment: "", parent: "", assignee: "VibeLang agent", step: 1, error: "", serial: 0,
 }
+/** Typed text that is not a whole issue number names no parent; the server's tree check refuses it as a typed reason. */
+function parentNumber(text: string): number {
+  const parent = Number(text.trim())
+  return Number.isSafeInteger(parent) && parent >= 0 ? parent : 0
+}
 export function issueRequest(ui: IssuesUi, op: IssueRequest["op"]): IssueRequest {
-  return { op, number: ui.selected, parent: Number(ui.parent), title: ui.title, text: op === "comment" ? ui.comment : ui.summary, example: ui.example, prior: ui.prior, assignee: ui.assignee, key: ui.keyPrefix === "" ? String(ui.serial + 1) : `${ui.keyPrefix}-${ui.serial + 1}` }
+  return { op, number: ui.selected, parent: parentNumber(ui.parent), title: ui.title, text: op === "comment" ? ui.comment : ui.summary, example: ui.example, prior: ui.prior, assignee: ui.assignee, key: ui.keyPrefix === "" ? String(ui.serial + 1) : `${ui.keyPrefix}-${ui.serial + 1}` }
 }
 export interface UiResult { readonly ui: IssuesUi; readonly request?: IssueRequest; readonly focusCommit?: boolean }
 export function issuesUpdate(ui: IssuesUi, action: string, value: string): UiResult {
@@ -49,6 +54,8 @@ export function issuesUpdate(ui: IssuesUi, action: string, value: string): UiRes
     case "specification": return { ui: { ...ui, screen: "specification", summary: ui.data.specification?.text ?? "", error: "" } }
     case "spec-review": {
       if (ui.busy || !issuePermission(ui.role, "spec-review")) return { ui }
+      if (ui.retry !== undefined && ui.retry.op === "spec-review" && ui.retry.reviewer === value) return { ui: { ...ui, busy: true, error: "" }, request: ui.retry }
+      if (ui.retry !== undefined) return { ui: { ...ui, error: "Retry the saved action." } }
       const request = { ...issueRequest(ui, "spec-review"), revision: ui.data.specification?.revision ?? 0, reviewer: value as "astra" | "sol" | "fable" | "opus" }
       return { ui: { ...ui, busy: true, serial: ui.serial + 1, retry: request, error: "" }, request }
     }

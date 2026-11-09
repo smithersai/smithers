@@ -1,6 +1,6 @@
 import { reviewActions } from "../src/core/conversation.vibe"
 import { expect, it } from "@effect/vitest"
-import { issuesUpdate, initialIssues } from "../src/web/issues.vibe"
+import { issueRequest, issuesUpdate, initialIssues } from "../src/web/issues.vibe"
 import { init, update, Message } from "../src/web/main.vibe"
 import { IssueInput } from "../src/surfaces/commands.vibe"
 
@@ -67,4 +67,22 @@ it("restores a journaled request after reconnect without changing its previous w
   expect(restored.issues?.retry?.key).toBe("old-tab-1")
   const retry = issuesUpdate(restored.issues!, "retry", "")
   expect(retry.request).toEqual({ ...request, recovery: "new-tab-1" })
+})
+
+it("keeps the saved action when a review is requested, and replays the same reviewer under its key", () => {
+  const saved = issuesUpdate({ ...initialIssues, keyPrefix: "recovery", role: "maintainer", selected: 42, parent: "42" }, "link", "").ui
+  const blocked = issuesUpdate({ ...saved, busy: false }, "spec-review", "astra")
+  expect(blocked.request).toBeUndefined()
+  expect(blocked.ui.retry).toEqual(saved.retry)
+  expect(blocked.ui.error).toBe("Retry the saved action.")
+
+  const first = issuesUpdate({ ...initialIssues, keyPrefix: "recovery", role: "maintainer" }, "spec-review", "astra")
+  const again = issuesUpdate({ ...first.ui, busy: false }, "spec-review", "astra")
+  expect(again.request?.key).toBe(first.request?.key)
+  expect(issuesUpdate({ ...first.ui, busy: false }, "spec-review", "opus").request).toBeUndefined()
+})
+
+it("sends no number for a parent that is not a whole issue number", () => {
+  for (const parent of ["NaN", "x", "1.5", "-1"]) expect(issueRequest({ ...initialIssues, parent }, "link").parent).toBe(0)
+  expect(issueRequest({ ...initialIssues, parent: " 7 " }, "link").parent).toBe(7)
 })
