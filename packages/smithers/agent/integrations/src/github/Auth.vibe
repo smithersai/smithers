@@ -271,7 +271,7 @@ const make = effect (options: {
           () => Effect.succeed<Permission>("none"),
         )); effect { return catchProgram catch effect (error) => throw refused("permission")(error) } })
         |> Effect.provide(%, context),
-    // `DELETE /applications/<client id>/token`: 204 when GitHub revoked it, 404 or 422 when it no longer has it.
+    // `DELETE /applications/<client id>/token`: 204 when revoked, 404 when absent; 422 is validation/spam failure.
     // Revoking twice is harmless, so a retried step may send it again.
     revoke: (accessToken) =>
       asApp
@@ -282,7 +282,7 @@ const make = effect (options: {
         )
         |> Effect.asVoid(%)
         |> Effect.catchIf(
-          %, (error) => statusOf(error) === 404 || statusOf(error) === 422,
+          %, (error) => statusOf(error) === 404,
           () => Effect.void,
         )
         // As the App, a refusal is GitHub refusing the App's client credentials.

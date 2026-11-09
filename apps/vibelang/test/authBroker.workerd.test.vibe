@@ -43,7 +43,65 @@ it.live("runs both apps' durable auth hosts in workerd, binding both browser coo
     expect(page.headers["referrer-policy"]).toBe("no-referrer")
     expect(page.headers["content-security-policy"]).toContain("default-src 'none'")
     expect(journal).toContain("auth/Broker")
-    expect(journal).not.toMatch(/fixture-token|code_verifier|broker_return|ada/)
+    expect(journal).not.toMatch(/fixture-token|code_verifier|broker_return|\bada\b/)
     expect(handoff).not.toMatch(/fixture-token|ada/)
   })
+}), 120_000)
+
+
+/** Complete both production hosts over HTTP; GitHub is an injected token service, never interception. */
+effect function signIn(hostOrigin: string) {
+  const http = try HttpClient.HttpClient
+  const start = try http.get(hostOrigin + "/api/auth/sign-in")
+  const pending = start.cookies.cookies["vibelang-sign-in"]!.value
+  const atBroker = try http.get(start.headers.location!)
+  const browser = atBroker.cookies.cookies["smithers-broker"]!.value
+  const form = try (try http.get(atBroker.headers.location!)).text
+  const approved = try http.get(form.match(/href="([^"]+)"/)![1]!.replaceAll("&amp;", "&"))
+  const callback = try http.execute(HttpClientRequest.get(approved.headers.location!).pipe(HttpClientRequest.setHeader("cookie", "smithers-broker=" + browser)))
+  const fragment = new URLSearchParams(new URL(callback.headers.location!).hash.slice(1))
+  const accepted = try http.execute(HttpClientRequest.post(hostOrigin + GitHub.Auth.Broker.CALLBACK).pipe(
+    HttpClientRequest.setHeader("origin", hostOrigin), HttpClientRequest.setHeader("cookie", "vibelang-sign-in=" + pending),
+    HttpClientRequest.bodyJsonUnsafe({ code: fragment.get("code"), state: fragment.get("state") }),
+  ))
+  const session = accepted.cookies.cookies["vibelang-session"]!.value
+  const identity = try (try http.execute(HttpClientRequest.get(hostOrigin + "/api/auth/session").pipe(HttpClientRequest.setHeader("cookie", "vibelang-session=" + session)))).json
+  try Effect.try(() => {
+    expect(accepted.status).toBe(200)
+    expect(identity).toMatchObject({ id: "7", login: "ada" })
+  })
+}
+
+it.live("workerd: twelve broker sign-ins preserve the kept token under GitHub's ten-token rule", () => scoped(effect {
+  const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
+  const broker = host.origin.replace("127.0.0.1", "localhost")
+  provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+    const http = try HttpClient.HttpClient
+    const before = try (try http.get(broker + "/__tokens")).json
+    try Effect.try(() => expect(before).toMatchObject({ kept: true, live: 1, attempts: 0 }))
+    for (let index = 0; index < 12; index++) try signIn(host.origin)
+    const stats = try (try http.get(broker + "/__tokens")).json
+    const journal = try (try http.get(broker + "/__journal")).text
+    try Effect.try(() => {
+      expect(stats).toMatchObject({ kept: true, live: 1, attempts: 12 })
+      expect((JSON.parse(journal) as Array<{ name: string; rows: Array<unknown> }>).find(table => table.name === "flows_attempts")!.rows).toHaveLength(48)
+      expect(journal).not.toMatch(/fixture-token|fixture-refresh|code_verifier|\bada\b/)
+    })
+  }
+}), 120_000)
+
+it.live("workerd: exhausted revocation retries count failure without failing sign-in", () => scoped(effect {
+  const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
+  const broker = host.origin.replace("127.0.0.1", "localhost")
+  provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+    const http = try HttpClient.HttpClient
+    const before = try (try http.get(broker + "/__tokens")).json as { failures: number }
+    try http.get(broker + "/__fault-revoke?count=100")
+    try signIn(host.origin)
+    const after = try (try http.get(broker + "/__tokens")).json as { failures: number; attempts: number }
+    try Effect.try(() => {
+      expect(after.failures - before.failures).toBe(1)
+      expect(after.attempts).toBe(3)
+    })
+  }
 }), 120_000)

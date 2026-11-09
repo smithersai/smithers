@@ -2,7 +2,7 @@
 // (decision 0008, Consequences). It keeps GitHub's rules that sign-in relies on: a code is bound to the PKCE challenge
 // and redirect URI it was issued for and redeems once, a refresh token redeems once and is replaced, tokens name the
 // person they were issued to, and a revoked access token stops working (revoking one GitHub no longer has succeeds,
-// as GitHub's 404 and 422 count as revoked). A test injects a fault per step. The real GitHub is worker/GitHubAuth.live.test.ts.
+// as GitHub's 404 counts as revoked). A test injects a fault per step. The real GitHub is worker/GitHubAuth.live.test.ts.
 import { Core } from "@smthrs/integrations"
 import { Clock, Effect, Redacted } from "effect"
 import { GitHubAuth, GitHubRefused, type Permission, type Tokens } from "../GitHubAuth.ts"

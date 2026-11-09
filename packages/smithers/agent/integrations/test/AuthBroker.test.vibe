@@ -1,4 +1,9 @@
-import { Tracer } from "effect"
+import { FlowEngine } from "@smthrs/engine"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { tokenService } from "./TokenService.vibe"
+import { Tracer, References } from "effect"
 import { HttpEffect, HttpServerResponse } from "effect/http"
 import { HttpClientRequest, HttpServerRequest } from "effect/http"
 import { expect, it } from "@effect/vitest"
@@ -10,7 +15,21 @@ const other = "https://other.smithers.sh"
 const secret = Redacted.make("a".repeat(32))
 const sites = [{ origin, secret }, { origin: other, secret: Redacted.make("b".repeat(32)) }, { origin: "https://factory.example", secret: Redacted.make("c".repeat(32)) }]
 
-effect function fixture(fault: "exchange" | "user" | "identity" | undefined = undefined, suppliedStore?: Broker.Store) {
+const TestFlow = Flow.make("test/Broker", {
+  payload: {}, success: Schema.Null, body: () => Node.succeed(null),
+})
+/** Run protocol callbacks in a real engine, just as the durable production host does. */
+function durable(broker: Effect.Success<ReturnType<typeof Broker.make>>) {
+  return { ...broker, callback: (...args: Parameters<typeof broker.callback>) => scoped(effect {
+    const runtime = try FlowRuntime.FlowRuntime
+    const outcome = try Ref.make<Exit.Exit<string, Broker.BrokerRefused>>(Exit.succeed(""))
+    try runtime.register(TestFlow, () => effect { try Ref.set(outcome, try exit(broker.callback(...args))); return null })
+    try runtime.execute(TestFlow, { executionId: try Effect.orDie(Core.Pkce.createCodeVerifier()), payload: {} }).pipe(Effect.orDie)
+    return try (try Ref.get(outcome))
+  }).pipe(Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer))) }
+}
+
+effect function fixture(fault: "exchange" | "user" | "identity" | undefined = undefined, suppliedStore?: Broker.Store, suppliedGithub?: GitHub.Auth.GitHubAuth["Service"]) {
   const keys = try Core.CookieKeys.make({ primary: secret }, "primary")
   const github = GitHub.Auth.GitHubAuth.of({
     authorizeUrl: ({ state, codeChallenge, redirectUri }) => "https://github.test/authorize?" + new URLSearchParams({ state, code_challenge: codeChallenge, redirect_uri: redirectUri }),
@@ -22,7 +41,7 @@ effect function fixture(fault: "exchange" | "user" | "identity" | undefined = un
     deviceToken: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
   })
   const store = suppliedStore ?? (try Broker.memoryStore())
-  const broker = try Broker.make({ origin: "https://smithers.sh", sites, keys, store, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), github })
+  const broker = durable(try Broker.make({ origin: "https://smithers.sh", sites, keys, store, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), github: suppliedGithub ?? github }))
   const client = try Broker.site({ origin, brokerOrigin: "https://smithers.sh", secret })
   const pending = try client.begin()
   const start = try broker.start(origin, pending.returnTo)
@@ -151,7 +170,7 @@ it.effect("fails closed on bad registry/key configuration, malformed signed clai
   try Effect.try(() => expect([badSite, weakKey, duplicate].every(value => value._tag === "Failure")).toBe(true))
 })
 
-effect function call(broker: Effect.Success<ReturnType<typeof Broker.make>>, path: string, body?: unknown, cookie = "", home = "https://smithers.sh", method = body === undefined ? "GET" : "POST") {
+effect function call(broker: ReturnType<typeof durable>, path: string, body?: unknown, cookie = "", home = "https://smithers.sh", method = body === undefined ? "GET" : "POST") {
   const web = try HttpClientRequest.toWeb(HttpClientRequest.make(method as "GET" | "POST")(home + path).pipe(
     HttpClientRequest.setHeader("cookie", cookie),
     request => body === undefined ? request : HttpClientRequest.bodyJsonUnsafe(request, body),
@@ -213,7 +232,7 @@ it.effect("fails closed on entropy collisions and changed deployment allowlists 
   const store = try Broker.memoryStore()
   const fixedKeys = { ...f.keys, token: succeed("x".repeat(43)) }
   const options = { origin: "https://smithers.sh", sites: [...sites], keys: fixedKeys, store, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), github: f.github }
-  const broker = try Broker.make(options)
+  const broker = durable(try Broker.make(options))
   const first = try f.client.begin()
   const start = try broker.start(origin, first.returnTo)
   const collision = try exit(broker.start(origin, (try f.client.begin()).returnTo))
@@ -222,7 +241,7 @@ it.effect("fails closed on entropy collisions and changed deployment allowlists 
   const codes = try Broker.memoryStore()
   const faultyStore: Broker.Store = { take: codes.take, insert: (key, binding, value, expires) => key.startsWith("code/")
     ? succeed(false) : codes.insert(key, binding, value, expires) }
-  const failing = try Broker.make({ ...options, sites, keys: f.keys, store: faultyStore })
+  const failing = durable(try Broker.make({ ...options, sites, keys: f.keys, store: faultyStore }))
   const second = try f.client.begin()
   const began = try failing.start(origin, second.returnTo)
   const noCode = try exit(failing.callback(new URL(began.location).searchParams.get("state")!, "code", began.cookie))
@@ -238,7 +257,7 @@ it.effect("fails closed on entropy collisions and changed deployment allowlists 
 it.effect("the explicit loopback host uses a separate non-Secure broker cookie", () => effect {
   const f = try fixture()
   const options = { origin: "http://localhost:4525", sites, keys: f.keys, store: try Broker.memoryStore(), encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), github: f.github, localDevelopment: true }
-  const broker = try Broker.make(options)
+  const broker = durable(try Broker.make(options))
   const pending = try f.client.begin()
   const web = try HttpClientRequest.toWeb(HttpClientRequest.get(options.origin + Broker.START + "?" + new URLSearchParams({ origin, return_to: pending.returnTo })))
   const response = try Broker.serve(broker, options.origin).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web)))
@@ -314,3 +333,85 @@ it.live("redacts OAuth state, signed return_to and codes in the real server HTTP
     expect(attributes).not.toMatch(/private-signature|private-state|private-code|private-value/)
   }, catch: error => error })
 }))
+
+
+it.live("twelve hosted sign-ins revoke their temporary pairs and preserve the person's kept token", () => effect {
+  const service = try tokenService()
+  try service.github.user(service.kept.accessToken)
+  const counter = Metric.counter("smithers_auth_broker_revocations", { incremental: true })
+  const before = try Metric.value(counter)
+  for (let index = 0; index < 12; index++) {
+    const f = try fixture(undefined, undefined, service.github)
+    const location = try f.broker.callback(f.state, "code", f.start.cookie)
+    const code = new URLSearchParams(new URL(location).hash.slice(1)).get("code")!
+    const person = try f.broker.exchange(origin, try f.client.redemption(f.pending, code))
+    try Effect.try(() => expect(person).toEqual({ id: 7, login: "ada" }))
+  }
+  const person = try service.github.user(service.kept.accessToken)
+  const stats = try service.stats()
+  const after = try Metric.value(counter)
+  for (const pair of service.issued.slice(1)) {
+    const access = try exit(service.github.user(pair.accessToken))
+    const refresh = try exit(service.github.refresh(pair.refreshToken))
+    try Effect.try(() => expect([access, refresh].every(value => value._tag === "Failure")).toBe(true))
+  }
+  try Effect.try(() => {
+    expect(person.id).toBe(7)
+    expect(Number(after.count) - Number(before.count)).toBe(12)
+    expect(stats).toEqual({ live: 1, attempts: 12 })
+  })
+})
+
+it.live("an exhausted revoke still signs in and increases only the fixed failure counter", () => effect {
+  const service = try tokenService()
+  try service.failRevocations(100)
+  const counter = Metric.counter("smithers_auth_broker_revocation_failures", { incremental: true })
+  const before = try Metric.value(counter)
+  const logs: Array<string> = []
+  const capture = Logger.layer([Logger.make(options => { logs.push(JSON.stringify({ message: options.message, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })) })])
+  const f = try fixture(undefined, undefined, service.github)
+  const location = try Effect.provide(f.broker.callback(f.state, "private-github-code", f.start.cookie), capture)
+  const code = new URLSearchParams(new URL(location).hash.slice(1)).get("code")!
+  const person = try f.broker.exchange(origin, try f.client.redemption(f.pending, code))
+  const after = try Metric.value(counter)
+  const stats = try service.stats()
+  try Effect.try(() => {
+    expect(person.id).toBe(7)
+    expect(Number(after.count) - Number(before.count)).toBe(1)
+    expect(stats.attempts).toBe(3)
+    const revocations = logs.filter(line => line.includes("auth.broker.revoke"))
+    expect(revocations).toHaveLength(1)
+    expect(revocations[0]).toContain('"outcome":"failed"')
+    expect(logs.join(" ")).not.toMatch(/fixture-token|fixture-refresh|private-github-code|\bada\b/)
+  })
+})
+
+
+it.live("retries a transient revoke through the engine and records a content-free success", () => effect {
+  const service = try tokenService()
+  try service.failRevocations(2)
+  const logs: Array<string> = []
+  const capture = Logger.layer([Logger.make(options => { logs.push(JSON.stringify({ message: options.message, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })) })])
+  const f = try fixture(undefined, undefined, service.github)
+  try Effect.provide(f.broker.callback(f.state, "private-github-code", f.start.cookie), capture)
+  const stats = try service.stats()
+  try Effect.try(() => {
+    expect(stats).toEqual({ live: 1, attempts: 3 })
+    expect(logs.join(" ")).toContain("auth.broker.revoke")
+    expect(logs.join(" ")).toContain("revoked")
+    expect(logs.join(" ")).not.toMatch(/fixture-token|fixture-refresh|private-github-code|\bada\b/)
+  })
+})
+
+it.live("releases the issued pair even when identity lookup fails", () => effect {
+  const service = try tokenService()
+  const f = try fixture(undefined, undefined, { ...service.github,
+    user: () => fail(new GitHub.Auth.GitHubRefused({ step: "user", reason: "unavailable" })),
+  })
+  const result = try exit(f.broker.callback(f.state, "code", f.start.cookie))
+  const stats = try service.stats()
+  try Effect.try(() => {
+    expect(Exit.isFailure(result)).toBe(true)
+    expect(stats).toEqual({ live: 1, attempts: 1 })
+  })
+})

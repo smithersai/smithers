@@ -1,0 +1,49 @@
+import { GitHub } from "@smthrs/integrations"
+const { GitHubAuth, GitHubRefused } = GitHub.Auth
+
+/** Injected OAuth service: ten live token pairs per person/app, evicting the least recently used pair. */
+export effect function tokenService() {
+  const issued: Array<{ accessToken: Redacted.Redacted<string>; refreshToken: Redacted.Redacted<string>; expiresAt: null }> = []
+  let serial = 0
+  let uses = 0
+  let failures = 0
+  let attempts = 0
+  const pairs = new Map<string, { refresh: string; used: number }>()
+  const issue = effect () => {
+    const token = "fixture-token-private-" + ++serial
+    if (pairs.size === 10) {
+      const oldest = [...pairs].sort((left, right) => left[1].used - right[1].used)[0]!
+      pairs.delete(oldest[0])
+    }
+    pairs.set(token, { refresh: "fixture-refresh-private-" + serial, used: ++uses })
+    const pair = { accessToken: Redacted.make(token), refreshToken: Redacted.make("fixture-refresh-private-" + serial), expiresAt: null }
+    issued.push(pair)
+    return pair
+  }
+  const github = GitHubAuth.of({
+    authorizeUrl: ({ state, codeChallenge, redirectUri }) => "https://github.test/authorize?" + new URLSearchParams({ state, challenge: codeChallenge, redirect_uri: redirectUri }),
+    exchange: issue,
+    user: effect (token) => {
+      const pair = pairs.get(Redacted.value(token))
+      if (pair === undefined) throw new GitHubRefused({ step: "user", reason: "rejected" })
+      pair.used = ++uses
+      return { id: 7, login: "ada" }
+    },
+    revoke: effect (token) => {
+      attempts++
+      if (failures > 0) { failures--; throw new GitHubRefused({ step: "revoke", reason: "unavailable" }) }
+      pairs.delete(Redacted.value(token))
+    },
+    refresh: effect (token) => {
+      const pair = [...pairs].find(([, pair]) => pair.refresh === Redacted.value(token))
+      if (pair === undefined) throw new GitHubRefused({ step: "refresh", reason: "rejected" })
+      pairs.delete(pair[0])
+      return try issue()
+    },
+    permission: () => succeed("read"),
+    deviceCode: () => fail(new GitHubRefused({ step: "device", reason: "unavailable" })),
+    deviceToken: () => fail(new GitHubRefused({ step: "device", reason: "unavailable" })),
+  } satisfies GitHub.Auth.GitHubAuth["Service"])
+  const kept = try issue()
+  return { github, kept, issued, failRevocations: (count: number) => sync(() => { failures = count }), stats: () => sync(() => ({ live: pairs.size, attempts })) }
+}

@@ -211,15 +211,18 @@ describe("shared GitHub user authentication over a real token endpoint", () => {
       Layer.provide(FetchHttpClient.layer),
     ) {
       const auth = try GitHub.Auth.GitHubAuth
-      for (const gone of [204, 404, 422]) {
+      for (const gone of [204, 404]) {
         status = gone
         try auth.revoke(Redacted.make("ghu_gone"))
       }
+      status = 422
+      const throttled = try exit(auth.revoke(Redacted.make("ghu_any")))
       status = 401
       const refused = try Effect.flip(auth.revoke(Redacted.make("ghu_any")))
       status = 500
       const down = try Effect.flip(auth.revoke(Redacted.make("ghu_any")))
       try Effect.try(() => {
+        expect(Exit.isFailure(throttled)).toBe(true)
         expect([refused.step, refused.reason]).toEqual(["revoke", "misconfigured"])
         expect([down.step, down.reason]).toEqual(["revoke", "unavailable"])
         expect(fixture.requests.map((request) => `${request.method} ${request.url}`)).toEqual([

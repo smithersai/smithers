@@ -94,3 +94,23 @@ A VibeLang 0.0.12 gap encountered while registering a native Vitest test is reta
 throwing registration wrapped in `Effect.try` is wrongly typed as a function. The minimal case reproduces TS2345.
 No compiler behavior was changed. The actual broker classifier regression lives with the shared API in its
 existing Effect-native test suite; no TypeScript product path or diagnostic suppression was added.
+
+## Temporary-token cleanup (2026-11-09)
+
+The identity broker now revokes each temporary access token immediately after reading identity, even when that read
+fails. `auth/broker/revoke` runs in the callback's durable flow, with three engine-managed attempts and a null-only
+receipt. The token stays in its enclosing step; no plaintext credential enters a flow payload or journal. An
+exhausted revoke increments `smithers_auth_broker_revocation_failures` and logs `auth.broker.revoke` with only
+`outcome: failed`; it cannot deny an otherwise valid sign-in. Successful cleanup increments
+`smithers_auth_broker_revocations` and logs the same fixed name with `outcome: revoked`.
+
+MVP's ordinary success path retains its encrypted token pair. Its failed callback could discard a newly issued
+pair; it now seals it into the existing cleanup store and admits the existing token-revocation flow. A committed
+session keeps its pair. GitHub's 422 validation/spam response now fails revocation instead of falsely claiming
+success. No dependency, redirect URL or deployment change is added.
+
+The package README links GitHub's ten-token limit and single-token DELETE documentation, and distinguishes the
+explicitly documented refresh-rotation/authorization-revocation behavior from the undocumented refresh effect of
+single-token deletion. Tests inject an Effect token service enforcing ten live pairs, exercise twelve sign-ins,
+and cover exhausted/transient revokes in a real engine and local workerd. The provider's pair-cascade behavior is a
+fixture assumption, not a claim of live GitHub validation.

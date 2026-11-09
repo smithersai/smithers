@@ -1,4 +1,5 @@
 // Unshipped integration host: production handlers and durable storage, with an injected GitHub authorization service.
+import { tokenService } from "../support/TokenService.vibe"
 import { Core, GitHub } from "@smthrs/integrations"
 import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as SmithersBroker from "../../../mvp/worker/AuthBrokerHost.vibe"
@@ -14,23 +15,26 @@ function origins(request: Request) {
   return { site: "http://127.0.0.1:" + url.port, broker: "http://localhost:" + url.port }
 }
 export class HostedBroker {
+  tokens = runPromise(tokenService())
   service: Promise<Effect.Success<ReturnType<typeof SmithersBroker.make>>> | undefined
   constructor(readonly state: State) {}
   async fetch(request: Request): Promise<Response> {
     const origin = origins(request)
     const url = new URL(request.url)
+    const tokens = await this.tokens
     const github: GitHub.Auth.GitHubAuth["Service"] = {
+      ...tokens.github,
       authorizeUrl: ({ state, codeChallenge, redirectUri }) => origin.broker + "/__github?" + new URLSearchParams({ state, challenge: codeChallenge, redirect_uri: redirectUri }),
       exchange: effect ({ code, codeVerifier, redirectUri }) => {
         const key = "github/" + Redacted.value(code)
         const expected = try promise(() => this.state.storage.get(key)) as { challenge: string; redirectUri: string } | undefined
         try promise(() => this.state.storage.delete(key))
         if (expected === undefined || expected.challenge !== (try Effect.orDie(Core.Pkce.deriveCodeChallenge(Redacted.value(codeVerifier)))) || expected.redirectUri !== redirectUri) throw new GitHub.Auth.GitHubRefused({ step: "exchange", reason: "rejected" })
-        return { accessToken: Redacted.make("fixture-token-private"), expiresAt: null, refreshToken: null }
+        return try tokens.github.exchange({ code, codeVerifier, redirectUri })
       },
       user: () => succeed({ id: 7, login: "ada" }),
       refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
-      permission: () => succeed("read"), revoke: () => Effect.void,
+      permission: () => succeed("read"),
       deviceCode: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
       deviceToken: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
     }
@@ -38,6 +42,16 @@ export class HostedBroker {
       origin: origin.broker, sites: [{ origin: origin.site, secret }], secret: Redacted.make("broker-private-cookie-signing-key-32"), encryptionKey, localDevelopment: true,
     }, github))
     const service = await this.service
+    if (url.pathname === "/__tokens") {
+      const kept = await runPromise(exit(tokens.github.user(tokens.kept.accessToken)))
+      const stats = await runPromise(tokens.stats())
+      const failures = await runPromise(Metric.value(Metric.counter("smithers_auth_broker_revocation_failures", { incremental: true })))
+      return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({ ...stats, kept: Exit.isSuccess(kept), failures: Number(failures.count) }))
+    }
+    if (url.pathname === "/__fault-revoke") {
+      await runPromise(tokens.failRevocations(Number(url.searchParams.get("count"))))
+      return HttpServerResponse.toWeb(HttpServerResponse.empty())
+    }
     if (url.pathname === "/__github") {
       const allow = origin.broker + "/__allow?" + url.searchParams
       return HttpServerResponse.toWeb(HttpServerResponse.text('<!doctype html><title>GitHub fixture</title><a href="' + allow.replaceAll("&", "&amp;") + '">Continue</a>', { contentType: "text/html" }))

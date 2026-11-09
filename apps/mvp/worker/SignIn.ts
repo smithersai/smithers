@@ -945,60 +945,76 @@ export const make = <E, R>(
         const fromGitHub = <A>(effect: Effect.Effect<A, GitHubRefused>) =>
           Effect.mapError(effect, (error) => failing(`${error.step}_${error.reason}`))
         const tokens = yield* fromGitHub(github.exchange({ code: Redacted.make(code), codeVerifier, redirectUri }))
-        const user = yield* fromGitHub(github.user(tokens.accessToken))
-        const roleGeneration = yield* SessionStore.roleObservation.pipe(
-          Effect.provide(database),
-          Effect.mapError((error) => new CallbackFailed({ reason: "database", returnTo, errorCode: codeOf(error) })),
-        )
-        const role = roleOf(yield* fromGitHub(github.permission(tokens.accessToken, repository)))
-        const freshId = crypto.randomUUID()
-        const freshToken = yield* keys.token
-        const signedIn = yield* SessionStore.issuance(Effect.gen(function* () {
-          const personId = yield* SessionStore.upsertPerson({ id: crypto.randomUUID(), githubId: user.id, login: user.login })
-          const candidate = Option.isNone(previous) ? Option.none<{ id: string; eligible: boolean }>()
-            : yield* SessionStore.reauthCandidate(SessionKeys.digest(previous.value.value), personId, previous.value.keyId, keys.keyIds)
-          let renewed = Option.isSome(candidate) && candidate.value.eligible
-          const pending: Array<string> = []
-          if (renewed && Option.isSome(candidate)) {
-            const held = yield* SessionStore.held(candidate.value.id)
-            if (Option.isSome(held) && held.value.access !== null) {
-              // Pre-migration rows have no pair digest. Opening their pinned seal recovers it without exposing the token.
-              const pairDigest = held.value.pairDigest ?? (yield* keys.open(held.value.access,
-                { id: candidate.value.id, name: "github_access", version: 1 }).pipe(Effect.map(value => SessionKeys.digest(Redacted.value(value))),
-                  Effect.catchTag("/control/PersistenceError", () => Effect.succeed(null))))
-              if (pairDigest === null) {
-                yield* SessionStore.revoke(candidate.value, "unreadable")
-                renewed = false
-              } else {
-                const cleanup = yield* SessionStore.enqueueCleanup({ sessionId: candidate.value.id, pairDigest, access: held.value.access, refresh: held.value.refresh })
-                if (Option.isSome(cleanup)) pending.push(cleanup.value)
+        // Until issuance commits, this callback owns the pair. Failed sign-in must hand it to durable cleanup.
+        const discardedId = crypto.randomUUID()
+        let retained = false
+        return yield* Effect.gen(function* () {
+          const user = yield* fromGitHub(github.user(tokens.accessToken))
+          const roleGeneration = yield* SessionStore.roleObservation.pipe(
+            Effect.provide(database),
+            Effect.mapError((error) => new CallbackFailed({ reason: "database", returnTo, errorCode: codeOf(error) })),
+          )
+          const role = roleOf(yield* fromGitHub(github.permission(tokens.accessToken, repository)))
+          const freshId = crypto.randomUUID()
+          const freshToken = yield* keys.token
+          const signedIn = yield* SessionStore.issuance(Effect.gen(function* () {
+            const personId = yield* SessionStore.upsertPerson({ id: crypto.randomUUID(), githubId: user.id, login: user.login })
+            const candidate = Option.isNone(previous) ? Option.none<{ id: string; eligible: boolean }>()
+              : yield* SessionStore.reauthCandidate(SessionKeys.digest(previous.value.value), personId, previous.value.keyId, keys.keyIds)
+            let renewed = Option.isSome(candidate) && candidate.value.eligible
+            const pending: Array<string> = []
+            if (renewed && Option.isSome(candidate)) {
+              const held = yield* SessionStore.held(candidate.value.id)
+              if (Option.isSome(held) && held.value.access !== null) {
+                // Pre-migration rows have no pair digest. Opening their pinned seal recovers it without exposing the token.
+                const pairDigest = held.value.pairDigest ?? (yield* keys.open(held.value.access,
+                  { id: candidate.value.id, name: "github_access", version: 1 }).pipe(Effect.map(value => SessionKeys.digest(Redacted.value(value))),
+                    Effect.catchTag("/control/PersistenceError", () => Effect.succeed(null))))
+                if (pairDigest === null) {
+                  yield* SessionStore.revoke(candidate.value, "unreadable")
+                  renewed = false
+                } else {
+                  const cleanup = yield* SessionStore.enqueueCleanup({ sessionId: candidate.value.id, pairDigest, access: held.value.access, refresh: held.value.refresh })
+                  if (Option.isSome(cleanup)) pending.push(cleanup.value)
+                }
               }
             }
-          }
-          const sessionId = renewed ? Option.getOrThrow(candidate).id : freshId
-          const token = renewed ? Option.getOrThrow(previous).value : freshToken
-          const seal = (value: Redacted.Redacted<string>, name: "github_access" | "github_refresh") => keys.seal(value, { id: sessionId, name, version: 1 })
-          const next = {
-            id: sessionId, tokenDigest: SessionKeys.digest(token), personId, role, roleGeneration,
-            access: yield* seal(tokens.accessToken, "github_access"), accessExpiresAt: tokens.expiresAt,
-            refresh: tokens.refreshToken === null ? null : yield* seal(tokens.refreshToken, "github_refresh"),
-            refreshDigest: tokens.refreshToken === null ? null : SessionKeys.digest(Redacted.value(tokens.refreshToken)),
-            pairDigest: SessionKeys.digest(Redacted.value(tokens.accessToken)), maxAgeSeconds,
-          }
-          const effectiveRole = renewed ? yield* SessionStore.reauthenticate(next, keys.keyIds)
-            : yield* SessionStore.createSession(next, keys.keyIds)
-          if (!renewed && Option.isSome(candidate)) yield* SessionStore.revoke({ id: candidate.value.id }, "sign_out")
-          const live = yield* SessionStore.findLive(SessionKeys.digest(token))
-          if (Option.isNone(live)) return yield* new CallbackFailed({ reason: "expired", returnTo })
-          return { personId, role: effectiveRole, deadline: live.value.deadline, cookieKey: live.value.cookieKey, token, pending, renewed }
-        })).pipe(
-          Effect.provide(database),
-          Effect.mapError((error) => new CallbackFailed({ reason: error instanceof SessionStore.IssuerUnconfigured ? "issuer_unconfigured" : "database", returnTo, errorCode: codeOf(error) })),
-        )
-        // Commit the cleanup request before admitting its flow. A refused start leaves it for the alarm's sweeper.
-        yield* Effect.forEach(signedIn.pending, ReplacedTokens.start, { discard: true })
-        yield* recordReauth(signedIn.renewed ? "renewed_in_place" : "new_row", signedIn.renewed ? "eligible" : "ineligible")
-        return { ...signedIn, returnTo, cookie: yield* keys.sign("session", signedIn.token, signedIn.cookieKey) }
+            const sessionId = renewed ? Option.getOrThrow(candidate).id : freshId
+            const token = renewed ? Option.getOrThrow(previous).value : freshToken
+            const seal = (value: Redacted.Redacted<string>, name: "github_access" | "github_refresh") => keys.seal(value, { id: sessionId, name, version: 1 })
+            const next = {
+              id: sessionId, tokenDigest: SessionKeys.digest(token), personId, role, roleGeneration,
+              access: yield* seal(tokens.accessToken, "github_access"), accessExpiresAt: tokens.expiresAt,
+              refresh: tokens.refreshToken === null ? null : yield* seal(tokens.refreshToken, "github_refresh"),
+              refreshDigest: tokens.refreshToken === null ? null : SessionKeys.digest(Redacted.value(tokens.refreshToken)),
+              pairDigest: SessionKeys.digest(Redacted.value(tokens.accessToken)), maxAgeSeconds,
+            }
+            const effectiveRole = renewed ? yield* SessionStore.reauthenticate(next, keys.keyIds)
+              : yield* SessionStore.createSession(next, keys.keyIds)
+            if (!renewed && Option.isSome(candidate)) yield* SessionStore.revoke({ id: candidate.value.id }, "sign_out")
+            const live = yield* SessionStore.findLive(SessionKeys.digest(token))
+            if (Option.isNone(live)) return yield* new CallbackFailed({ reason: "expired", returnTo })
+            return { personId, role: effectiveRole, deadline: live.value.deadline, cookieKey: live.value.cookieKey, token, pending, renewed }
+          })).pipe(
+            Effect.provide(database),
+            Effect.mapError((error) => new CallbackFailed({ reason: error instanceof SessionStore.IssuerUnconfigured ? "issuer_unconfigured" : "database", returnTo, errorCode: codeOf(error) })),
+          )
+          retained = true
+          // Commit the cleanup request before admitting its flow. A refused start leaves it for the alarm's sweeper.
+          yield* Effect.forEach(signedIn.pending, ReplacedTokens.start, { discard: true })
+          yield* recordReauth(signedIn.renewed ? "renewed_in_place" : "new_row", signedIn.renewed ? "eligible" : "ineligible")
+          return { ...signedIn, returnTo, cookie: yield* keys.sign("session", signedIn.token, signedIn.cookieKey) }
+        }).pipe(Effect.onError(() => Effect.gen(function* () {
+          if (retained) return
+          const access = yield* keys.seal(tokens.accessToken, { id: discardedId, name: "github_access", version: 1 })
+          const refresh = tokens.refreshToken === null ? null : yield* keys.seal(tokens.refreshToken, { id: discardedId, name: "github_refresh", version: 1 })
+          const pending = yield* SessionStore.enqueueCleanup({ sessionId: discardedId,
+            pairDigest: SessionKeys.digest(Redacted.value(tokens.accessToken)), access, refresh }).pipe(Effect.provide(database))
+          if (Option.isSome(pending)) yield* ReplacedTokens.start(pending.value)
+        }).pipe(Effect.catchCause(() => Effect.andThen(
+          Metric.update(Metric.withAttributes(ReplacedTokens.cleanups, { outcome: "failed" }), 1),
+          Effect.logWarning("auth.token_cleanup").pipe(Effect.annotateLogs({ outcome: "failed" })),
+        )))))
       }).pipe(
         // A bug: logged by its name, and the browser told sign-in failed.
         Effect.catchDefect((defect) =>

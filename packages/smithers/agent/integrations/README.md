@@ -83,7 +83,7 @@ durable clock. See [the API](docs/api.md) for its turn budget and recovery contr
 `GitHub.Auth.Broker` lets independently hosted apps reuse one registered GitHub callback. The broker authenticates
 `return_to` requests with a distinct key for each exact origin in the deployment's hosted-site registry. A request
 contains origin, nonce, S256 challenge and a ten-minute deadline. `site().begin()` creates it; `make().start()`
-starts GitHub PKCE using the broker's existing callback. `callback()` discards the provider tokens after identity
+starts GitHub PKCE using the broker's existing callback. `callback()` revokes the temporary provider access token after identity
 lookup and returns an opaque sixty-second code in the site's fixed callback fragment. `site().redemption()` signs
 the code, nonce and saved verifier; `site().exchange()` posts it server-to-server and returns only numeric ID/login.
 The site sets its own session and owns authorization.
@@ -111,3 +111,22 @@ with `Sec-Fetch-Site: same-origin`. No token ever appears in a URL. Broker metri
 outcome; exchange transport tracing is disabled. A lost response requires a fresh sign-in rather than replay.
 
 Install `Broker.httpPolicy` in the outer HTTP request context before server tracing. Alchemy hosts register it with `Telemetry.layer(Broker.httpPolicy)` during each Worker and auth Durable Object initialization; an ordinary init-only reference layer does not reach request fibers. It redacts every query value, including signed return_to, state and GitHub codes. Proxy/native access logs must independently omit OAuth query values and callback/exchange bodies.
+
+Identity-only callbacks revoke their temporary GitHub access token immediately after the identity read, including a
+failed read. The host must execute callbacks inside a flow: `auth/broker/revoke` is an independent action with three
+engine-managed attempts (100 ms, then 200 ms), returning only `null`. Its token remains inside the enclosing
+callback step; no token or refresh token enters a payload, result, journal, log or span. Exhaustion is swallowed so
+identity handoff succeeds. Fixed counters `smithers_auth_broker_revocations` and
+`smithers_auth_broker_revocation_failures` count completed revocations and exhausted cleanup respectively.
+`auth.broker.revoke` logs only `outcome: revoked|failed`. A 422 from GitHub is a revocation failure, not evidence
+that the token is gone; 404 remains idempotent success.
+
+GitHub documents a [ten-token limit per user/application/scope, with unused/least-recently-used eviction](https://docs.github.com/en/apps/oauth-apps/using-oauth-apps/authorizing-oauth-apps#oauth-app-access).
+Its [single-token DELETE endpoint](https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-token)
+supports OAuth authorizations of GitHub Apps and uses the App client id/secret as HTTP Basic credentials. Never
+use the grant-deletion endpoint for this cleanup: it revokes the person's other tokens too. The current endpoint
+documentation does not explicitly specify the effect on the paired refresh token. GitHub explicitly documents
+refresh-token invalidation for [authorization revocation](https://docs.github.com/en/organizations/managing-programmatic-access-to-your-organization/github-credential-types#github-app-refresh-tokens)
+and for [refresh-token rotation](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens#about-user-access-tokens-that-expire);
+these are different operations. The injected ten-token service models pair deletion; it is not live evidence of
+GitHub's unspecified single-token refresh cascade.

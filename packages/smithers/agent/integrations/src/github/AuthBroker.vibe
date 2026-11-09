@@ -1,3 +1,4 @@
+import { Action, RetryPolicy } from "@smthrs/flow"
 import * as Policy from "./AuthBrokerPolicy.vibe"
 import type * as Auth from "./Auth.vibe"
 import * as CookieKeys from "../core/CookieKeys.vibe"
@@ -72,6 +73,27 @@ export function observed<A, E, R>(step: string, body: A!E!R) {
 effect function record(step: string, outcome: string) {
   try Metric.update(Metric.withAttributes(Metric.counter("smithers_auth_broker_steps", { incremental: true }), { step, outcome }), 1)
   try Effect.logInfo("auth.broker").pipe(Effect.annotateLogs({ step, outcome }))
+}
+
+const revocationRetry = RetryPolicy.make({ initialMs: 100, factor: 2, maxMs: 1_000, maxAttempts: 3 })
+
+/** A token stays in the identity step's closure; the cleanup action journals only null or a fixed failure. */
+effect function discard(github: Auth.GitHubAuth["Service"], token: Redacted.Redacted<string>) {
+  const revocation = try Effect.orDie(Effect.try(() => Action.make({
+    name: "auth/broker/revoke", success: Schema.Null, error: Schema.Null,
+    retryPolicy: revocationRetry,
+    execute: Effect.as(Effect.mapError(github.revoke(token), () => null), null),
+  })))
+  try withSpan(effect {
+    const outcome = revocation catch effect () => {
+      try Metric.update(Metric.counter("smithers_auth_broker_revocation_failures", { incremental: true }), 1)
+      try Effect.logWarning("auth.broker.revoke").pipe(Effect.annotateLogs({ outcome: "failed" }))
+      return "failed"
+    }
+    if (outcome === "failed") return
+    try Metric.update(Metric.counter("smithers_auth_broker_revocations", { incremental: true }), 1)
+    try Effect.logInfo("auth.broker.revoke").pipe(Effect.annotateLogs({ outcome: "revoked" }))
+  }, "auth.broker.revoke")
 }
 
 /** Real in-memory atomic store, useful for ephemeral hosts and protocol unit tests. Hosted brokers require durability. */
@@ -174,7 +196,7 @@ export effect function make(options: {
       try fresh(pending.expires, REQUEST_TTL)
       if (!allowedOrigin(pending.claims.origin, options.sites, options.localDevelopment)) throw refused()
       const tokens = try checked(options.github.exchange({ code: Redacted.make(code), codeVerifier: Redacted.make(pending.verifier), redirectUri: options.origin + CALLBACK }))
-      const person = try checked(options.github.user(tokens.accessToken))
+      const person = try ensuring(checked(options.github.user(tokens.accessToken)), discard(options.github, tokens.accessToken))
       if (!Number.isSafeInteger(person.id) || person.id <= 0 || !/^[a-zA-Z0-9-]{1,39}$/.test(person.login)) throw refused()
       const handoff = try options.keys.token
       const codeKey = "code/" + (try hash(handoff))
@@ -205,7 +227,9 @@ fetch(location.pathname,{method:"POST",headers:{"content-type":"application/json
 </script>`
 
 /** Shared route adapter; the host runs each invocation as a durable step. No redirect from an unverified request. */
-export effect function serve(broker: Effect.Success<ReturnType<typeof make>>, origin: string) {
+export effect function serve<R>(broker: Omit<Effect.Success<ReturnType<typeof make>>, "callback"> & {
+  readonly callback: (state: string, code: string, cookie: string | undefined) => string!BrokerRefused!R
+}, origin: string) {
   const request = try HttpServerRequest.HttpServerRequest
   const url = new URL(request.originalUrl, origin)
   const cookieName = origin.startsWith("https:") ? "__Host-smithers-broker" : "smithers-broker"

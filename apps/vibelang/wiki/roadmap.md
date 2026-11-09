@@ -97,3 +97,6 @@ brick                                   state         proof
 
 - **Hosted sign-in broker (0029, lane vl-authbroker): implemented locally.** Shared signed-origin/PKCE handoff through
   smithers.sh's existing callback; no new redirect URL. Both apps' local checks precede the lead's coordinated deploy.
+
+- Hosted sign-in cleanup (0029): revoke temporary GitHub tokens in a retried flow action; count exhausted revokes
+  without failing sign-in. Failed MVP callbacks hand unkept pairs to its existing sealed cleanup flow.
