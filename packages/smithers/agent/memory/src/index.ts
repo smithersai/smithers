@@ -82,7 +82,7 @@ export * as RecallKeyword from "./RecallKeyword.vibe"
 /**
  * @category recall @since 0.1.0
  */
-export * as RecallSemantic from "./RecallSemantic.ts"
+export * as RecallSemantic from "./RecallSemantic.vibe"
 
 /**
  * @category assembly @since 0.1.0

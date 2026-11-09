@@ -249,10 +249,10 @@ export const makeSqlVectorStore = (database: DatabaseService): VectorStore => {
                 remaining: bounds[0]!.count
               },
               ({ after, remaining }) =>
-                Effect.gen(function*() {
+                effect {
                   const continuation = after === undefined ? database.sql.literal("1 = 1") : database.sql`
           (record_kind, record_id) > (${after.kind}, ${after.id})`
-                  const rows = yield* database.sql<SqlVectorRow>`
+                  const rows = try database.sql<SqlVectorRow>`
           SELECT record_kind, record_id, namespace_kind, namespace_id,
             embedding_model, content_digest, dimensions,
             CASE WHEN length(vector_bytes) <= ${maximumDimensions * 4}
@@ -262,7 +262,7 @@ export const makeSqlVectorStore = (database: DatabaseService): VectorStore => {
             AND embedding_model = ${model} AND rowid <= ${bounds[0]!.upper} AND ${continuation}
           ORDER BY record_kind, record_id
           LIMIT ${Math.min(vectorPageSize, remaining)}`.pipe(Effect.mapError(sqlError("memory vector scan failed")))
-                  const vectors = yield* Effect.forEach(rows, (row) =>
+                  const vectors = try Effect.forEach(rows, (row) =>
                     readVector(row).pipe(
                       Effect.map((vector): Vector => ({
                         bank,
@@ -285,7 +285,7 @@ export const makeSqlVectorStore = (database: DatabaseService): VectorStore => {
                       })
                       : Option.none()
                   ] as const
-                })
+                }
             )
           )
         )
@@ -294,10 +294,10 @@ export const makeSqlVectorStore = (database: DatabaseService): VectorStore => {
   return {
     scan,
     upsert: (vector) =>
-      Effect.gen(function*() {
+      effect {
         const failure = validateVector(vector)
-        if (failure !== undefined) return yield* Effect.fail(failure)
-        const { namespace } = yield* resolveNamespace(vector.bank)
+        if (failure !== undefined) throw failure
+        const { namespace } = try resolveNamespace(vector.bank)
         const { sql } = database
         // The comparison and vector write share the writer transaction. Time
         // alone cannot order commits made within one millisecond (or after a
@@ -324,7 +324,7 @@ export const makeSqlVectorStore = (database: DatabaseService): VectorStore => {
                     THEN json_extract(value_json, '$.content')
                   ELSE value_json END`
           } = ${vector.text})`
-        yield* database.write(
+        try database.write(
           sql`
       INSERT INTO memory_vectors (
         record_kind, record_id, namespace_kind, namespace_id,
@@ -350,7 +350,7 @@ export const makeSqlVectorStore = (database: DatabaseService): VectorStore => {
       WHERE ${vector.text === undefined ? sql`excluded.updated_at_ms >= memory_vectors.updated_at_ms` : current}
     `
         ).pipe(Effect.mapError(sqlError("memory vector upsert failed")), Effect.asVoid)
-      })
+      }
   }
 }
 
@@ -368,69 +368,70 @@ const vectorMismatch = (message: string): MemoryError.MemoryError =>
  * @category constructors
  * @since 0.1.0
  */
-export const recall = (
+export const recall = effect (
   input: Recall.Input,
   options: Options
-): Effect.Effect<Recall.Output, MemoryError.MemoryError, MemoryStore.MemoryStore | Embedding.Embedding> =>
-  Effect.gen(function*() {
-    const embedding = yield* Embedding.Embedding
-    const store = yield* MemoryStore.MemoryStore
-    const banks = yield* resolveBanks(input.banks)
-    const model = options.model ?? defaultModel
-    const limit = budgetLimits[input.budget ?? "mid"]
-    const query = yield* embedding.embed(input.query)
-    const now = yield* Clock.currentTimeMillis
-    const halfLife = options.halfLifeMs ?? defaultHalfLifeMs
-    if (!Number.isFinite(now) || !Number.isFinite(halfLife) || halfLife <= 0) {
-      return yield* Effect.fail(mismatch("semantic recency configuration must be finite with a positive half-life"))
-    }
-    const ranked: Array<Recall.Result> = []
-    yield* Stream.runForEach(
-      options.vectorStore.scan(banks.map(({ bank }) => bank), model),
-      (page) =>
-        Effect.gen(function*() {
-          if (page.length > vectorPageSize) {
-            return yield* Effect.fail(invalidArgument("vector scan page exceeds 64 rows", ["vectorStore", "scan"]))
-          }
-          for (const { bank, namespace } of banks) {
-            const vectors = page.filter((vector) => vector.bank === bank && vector.model === model)
-            if (vectors.length === 0) continue
-            if (
-              vectors.some((vector) =>
-                vector.dimensions !== query.vector.length || vector.vector.length !== query.vector.length
-              )
-            ) {
-              return yield* Effect.fail(vectorMismatch("embedding dimensions do not match the query vector"))
-            }
-            const rows = yield* store.searchRows({
-              namespace,
-              status: "accepted",
-              records: vectors.map((vector) => ({ kind: vector.recordKind, id: vector.recordId }))
-            })
-            const byIdentity = new Map(
-              rows.filter((row) => row.namespace.kind === namespace.kind && row.namespace.id === namespace.id).map((
-                row
-              ) => [`${row.kind}\u0000${row.id}`, row] as const)
+): Effect.Effect<Recall.Output, MemoryError.MemoryError, MemoryStore.MemoryStore | Embedding.Embedding> => {
+  const embedding = try Embedding.Embedding
+  const store = try MemoryStore.MemoryStore
+  const banks = try resolveBanks(input.banks)
+  const model = options.model ?? defaultModel
+  const limit = budgetLimits[input.budget ?? "mid"]
+  const query = try embedding.embed(input.query)
+  const now = try Clock.currentTimeMillis
+  const halfLife = options.halfLifeMs ?? defaultHalfLifeMs
+  if (!Number.isFinite(now) || !Number.isFinite(halfLife) || halfLife <= 0) {
+    throw mismatch("semantic recency configuration must be finite with a positive half-life")
+  }
+  const ranked: Array<Recall.Result> = []
+  try Stream.runForEach(
+    options.vectorStore.scan(banks.map(({ bank }) => bank), model),
+    (page) =>
+      effect {
+        if (page.length > vectorPageSize) {
+          throw invalidArgument("vector scan page exceeds 64 rows", ["vectorStore", "scan"])
+        }
+        for (const { bank, namespace } of banks) {
+          const vectors = page.filter((vector) => vector.bank === bank && vector.model === model)
+          if (vectors.length === 0) continue
+          if (
+            vectors.some((vector) =>
+              vector.dimensions !== query.vector.length || vector.vector.length !== query.vector.length
             )
-            for (const vector of vectors) {
-              const row = byIdentity.get(`${vector.recordKind}\u0000${vector.recordId}`)
-              if (row === undefined || vector.contentDigest !== digest(searchableText(row.text))) continue
-              if (row.status !== undefined && row.status !== "accepted") continue
-              if (
-                input.tagGroups !== undefined && !input.tagGroups.every((group) => Namespace.matches(group, row.tags))
-              ) continue
-              const score = cosine(query.vector, vector.vector) * recency(vector.updatedAtMs, now, halfLife)
-              if (score > 0) {
-                ranked.push({ bank, key: row.key, text: row.text, score, updatedAtMs: row.updatedAtMs })
-                ranked.sort(Recall.compareResults)
-                if (ranked.length > limit) ranked.pop()
-              }
+          ) {
+            throw vectorMismatch("embedding dimensions do not match the query vector")
+          }
+          const rows = try store.searchRows({
+            namespace,
+            status: "accepted",
+            records: vectors.map((vector) => ({ kind: vector.recordKind, id: vector.recordId }))
+          })
+          const byIdentity = new Map(
+            rows.filter((row) => row.namespace.kind === namespace.kind && row.namespace.id === namespace.id).map((
+              row
+            ) => [`${row.kind}\u0000${row.id}`, row] as const)
+          )
+          for (const vector of vectors) {
+            const row = byIdentity.get(`${vector.recordKind}\u0000${vector.recordId}`)
+            if (row === undefined) continue
+            const indexedText = try Effect.orDie(Effect.try(() => searchableText(row.text)))
+            if (vector.contentDigest !== digest(indexedText)) continue
+            if (row.status !== undefined && row.status !== "accepted") continue
+            if (
+              input.tagGroups !== undefined && !input.tagGroups.every((group) => Namespace.matches(group, row.tags))
+            ) continue
+            const score = cosine(query.vector, vector.vector) * recency(vector.updatedAtMs, now, halfLife)
+            if (score > 0) {
+              ranked.push({ bank, key: row.key, text: row.text, score, updatedAtMs: row.updatedAtMs })
+              ranked.sort(Recall.compareResults)
+              if (ranked.length > limit) ranked.pop()
             }
           }
-        })
-    )
-    return Recall.capRecallResults(ranked, input.maxTokens)
-  })
+        }
+      }
+  )
+  return Recall.capRecallResults(ranked, input.maxTokens)
+}
 
 /**
  * One authoritative row submitted for semantic projection after commit.
@@ -464,57 +465,56 @@ export interface Projector {
  * @category constructors
  * @since 0.1.0
  */
-export const makeProjector = (options: Options): Effect.Effect<Projector, never, Scope.Scope> =>
-  Effect.gen(function*() {
-    let active = 0
-    const locks = yield* RcMap.make({
-      lookup: (_key: string) =>
-        Effect.acquireRelease(
+export const makeProjector = effect (options: Options): Effect.Effect<Projector, never, Scope.Scope> => {
+  let active = 0
+  const locks = try RcMap.make({
+    lookup: (_key: string) =>
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          active++
+          return Semaphore.makeUnsafe(1)
+        }),
+        () =>
           Effect.sync(() => {
-            active++
-            return Semaphore.makeUnsafe(1)
-          }),
-          () =>
-            Effect.sync(() => {
-              active--
-            })
-        )
-    })
-    const project = (row: ProjectionInput) =>
-      Effect.suspend(() => {
-        const model = options.model ?? defaultModel
-        const snapshot = Object.freeze({
-          bank: row.bank,
-          recordKind: row.recordKind,
-          recordId: row.recordId,
-          text: row.text,
-          updatedAtMs: row.updatedAtMs
-        })
-        const task = Effect.gen(function*() {
-          const embedding = yield* Embedding.Embedding
-          const response = yield* embedding.embed(snapshot.text)
-          yield* options.vectorStore.upsert({
-            bank: snapshot.bank,
-            recordKind: snapshot.recordKind,
-            recordId: snapshot.recordId,
-            model,
-            contentDigest: digest(snapshot.text),
-            text: snapshot.text,
-            dimensions: response.vector.length,
-            vector: response.vector,
-            updatedAtMs: snapshot.updatedAtMs
+            active--
           })
-        }).pipe(
-          Effect.retry({ times: 1 }),
-          Effect.timeout(options.projectionTimeout ?? defaultProjectionTimeout),
-          Effect.catch((cause) => Effect.logWarning(`memory semantic projection failed: ${String(cause)}`)),
-          Effect.asVoid
-        )
-        const identity = `${model}\u0000${snapshot.bank}\u0000${snapshot.recordKind}\u0000${snapshot.recordId}`
-        return Effect.scoped(Effect.flatMap(RcMap.get(locks, identity), (lock) => lock.withPermit(task)))
-      })
-    return { project, activeKeys: () => active }
+      )
   })
+  const project = (row: ProjectionInput) =>
+    Effect.suspend(() => {
+      const model = options.model ?? defaultModel
+      const snapshot = Object.freeze({
+        bank: row.bank,
+        recordKind: row.recordKind,
+        recordId: row.recordId,
+        text: row.text,
+        updatedAtMs: row.updatedAtMs
+      })
+      const task = effect {
+        const embedding = try Embedding.Embedding
+        const response = try embedding.embed(snapshot.text)
+        try options.vectorStore.upsert({
+          bank: snapshot.bank,
+          recordKind: snapshot.recordKind,
+          recordId: snapshot.recordId,
+          model,
+          contentDigest: digest(snapshot.text),
+          text: snapshot.text,
+          dimensions: response.vector.length,
+          vector: response.vector,
+          updatedAtMs: snapshot.updatedAtMs
+        })
+      }.pipe(
+        Effect.retry({ times: 1 }),
+        Effect.timeout(options.projectionTimeout ?? defaultProjectionTimeout),
+        Effect.catch((cause) => Effect.logWarning(`memory semantic projection failed: ${String(cause)}`)),
+        Effect.asVoid
+      )
+      const identity = `${model}\u0000${snapshot.bank}\u0000${snapshot.recordKind}\u0000${snapshot.recordId}`
+      return Effect.scoped(Effect.flatMap(RcMap.get(locks, identity), (lock) => lock.withPermit(task)))
+    })
+  return { project, activeKeys: () => active }
+}
 
 /**
  * Decorates authoritative fact and note writes with an after-commit semantic
@@ -540,17 +540,17 @@ export const decorateStore = (
         Effect.tap(() =>
           superviseAfterCommit(
             store.getFact({ namespace: input.namespace, key: input.key }).pipe(
-              Effect.flatMap((fact) =>
-                fact === undefined
-                  ? Effect.void
-                  : project({
-                    bank: bankForNamespace(fact.namespace),
-                    recordKind: "fact",
-                    recordId: fact.key,
-                    text: searchableText(fact.value),
-                    updatedAtMs: fact.updatedAtMs
-                  })
-              )
+              Effect.flatMap(effect (fact) => {
+                if (fact === undefined) return
+                const text = try Effect.orDie(Effect.try(() => searchableText(fact.value)))
+                try project({
+                  bank: bankForNamespace(fact.namespace),
+                  recordKind: "fact",
+                  recordId: fact.key,
+                  text,
+                  updatedAtMs: fact.updatedAtMs
+                })
+              })
             )
           )
         )
@@ -583,9 +583,9 @@ export const layer = (
 ): Layer.Layer<Recall.Recall, never, MemoryStore.MemoryStore | Embedding.Embedding> =>
   Layer.effect(
     Recall.Recall,
-    Effect.gen(function*() {
-      const store = yield* MemoryStore.MemoryStore
-      const embedding = yield* Embedding.Embedding
+    effect {
+      const store = try MemoryStore.MemoryStore
+      const embedding = try Embedding.Embedding
       return Recall.Recall.of({
         recall: (input) =>
           recall(input, options).pipe(
@@ -593,5 +593,5 @@ export const layer = (
             Effect.provideService(Embedding.Embedding, embedding)
           )
       })
-    })
+    }
   )

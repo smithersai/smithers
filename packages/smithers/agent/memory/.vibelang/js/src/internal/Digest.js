@@ -11,6 +11,7 @@ import * as CoreDigest from "@smthrs/core/Digest";
  *
  * @category normalization
  * @since 0.1.0
+ * @throws {never}
  */
 export const wellFormed = (value) => value.isWellFormed() ? value : value.toWellFormed();
 /**
@@ -21,5 +22,6 @@ export const wellFormed = (value) => value.isWellFormed() ? value : value.toWell
  *
  * @category hashing
  * @since 0.1.0
+ * @throws {never}
  */
 export const digest = (text) => CoreDigest.digest(wellFormed(text));

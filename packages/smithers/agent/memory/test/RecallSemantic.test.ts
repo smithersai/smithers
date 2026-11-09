@@ -9,7 +9,7 @@ import { digest } from "../src/internal/Digest.ts"
 import { MemoryError } from "../src/MemoryError.vibe"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import * as Recall from "../src/Recall.vibe"
-import * as Semantic from "../src/RecallSemantic.ts"
+import * as Semantic from "../src/RecallSemantic.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
 
 // Tests keep the constructor's owner alive through every projection assertion.

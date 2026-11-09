@@ -7,6 +7,7 @@
 /** Cosine similarity between two embedding vectors; 0 for empty, mismatched, or zero vectors.
  * @since 1.0.0
  * @private
+ * @throws {never}
  */
 export const cosine = (left, right) => {
     if (left.length !== right.length || left.length === 0)
@@ -26,5 +27,6 @@ export const cosine = (left, right) => {
 /** The exponential recency weight: 1 at `updatedAtMs`, halving every `halfLifeMs`.
  * @since 1.0.0
  * @private
+ * @throws {never}
  */
 export const recency = (updatedAtMs, nowMs, halfLifeMs) => 2 ** (-Math.max(0, nowMs - updatedAtMs) / halfLifeMs);

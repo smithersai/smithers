@@ -9,6 +9,7 @@
  *
  * @category encoding
  * @since 0.1.0
+ * @throws {never}
  */
 export const vectorBytes = (vector) => {
     const bytes = new Uint8Array(vector.length * 4);

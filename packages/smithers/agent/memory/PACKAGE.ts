@@ -121,7 +121,7 @@ const securityReview = Smithers.SecurityReview({
         "sql.literal or sql(...) identifier interpolation built from anything other than a Kind literal or constant column list.",
         "An FTS5 MATCH operand not produced by literalFtsQuery, or a Postgres tsquery built with to_tsquery on raw text."
       ],
-      paths: ["src/internal/**", "src/RecallFts.ts", "src/RecallKeyword.vibe", "src/RecallSemantic.ts"]
+      paths: ["src/internal/**", "src/RecallFts.ts", "src/RecallKeyword.vibe", "src/RecallSemantic.vibe"]
     },
     {
       id: "recalled-memory-fence",
@@ -146,7 +146,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Namespace.vibe",
         "src/Recall.vibe",
         "src/Flows.vibe",
-        "src/RecallSemantic.ts",
+        "src/RecallSemantic.vibe",
         "src/internal/Search.ts"
       ]
     },
@@ -159,7 +159,7 @@ const securityReview = Smithers.SecurityReview({
         "A vector with non-finite, missing, or mismatched-dimension components stored or compared without rejection.",
         "Stored vector bytes decoded without a length check in VectorBytes."
       ],
-      paths: ["src/Embedding.vibe", "src/RecallSemantic.ts", "src/internal/VectorBytes.ts"]
+      paths: ["src/Embedding.vibe", "src/RecallSemantic.vibe", "src/internal/VectorBytes.ts"]
     },
     {
       id: "model-write-provenance",
@@ -187,7 +187,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/Facts.ts",
         "src/Maintenance.ts",
         "src/Flows.vibe",
-        "src/RecallSemantic.ts",
+        "src/RecallSemantic.vibe",
         "src/internal/Fts.vibe"
       ]
     }

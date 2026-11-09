@@ -112,8 +112,8 @@
       "default": "./.vibelang/js/src/RecallKeyword.js"
     },
     "./RecallSemantic": {
-      "types": "./src/RecallSemantic.ts",
-      "vibelang-source": "./src/RecallSemantic.ts",
+      "types": "./.vibe/declarations/RecallSemantic.d.vibe.ts",
+      "vibelang-source": "./src/RecallSemantic.vibe",
       "default": "./.vibelang/js/src/RecallSemantic.js"
     },
     "./SnapshotRecorder": {
