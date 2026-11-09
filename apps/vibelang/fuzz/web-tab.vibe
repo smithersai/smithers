@@ -67,9 +67,9 @@ export const Op = Schema.Literals([
   "wiki", "filter-wiki", "wiki-location", "edit-wiki", "wiki-draft", "edit-text", "edit-same", "save-wiki", "cancel-edit",
   "account", "sign-in", "sign-out", "choose", "people", "close-people", "toggle-people", "select-role", "confirm-role", "cancel-role", "dismiss", "retry-account", "resolve-mock", "resolve-live",
   "issues", "issue-ui", "issue-card", "sandboxes", "maximize-sandboxes", "start-sandbox", "stop-sandbox", "terminal", "submit-terminal",
-  "tour", "auto-tour", "pause-tour", "back-stop", "skip-stop", "tour-sound", "end-tour", "measure", "remeasure", "tour-focus", "media", "pump", "noise", "wiki-save", "wiki-no-change", "drive-tour", "tour-event-end",
+  "tour", "auto-tour", "pause-tour", "back-stop", "skip-stop", "tour-sound", "end-tour", "measure", "remeasure", "tour-focus", "media", "pump", "noise", "wiki-save", "wiki-no-change", "drive-tour", "tour-event-end", "pick-mode",
 ])
-const ISSUE_ACTIONS = ["retry", "close", "specification", "spec-review", "roles", "list", "select", "kind", "state", "query", "title", "summary", "example", "prior", "comment-text", "parent", "assignee", "cancel", "back", "continue", "new-form", "vip-form", "commit-dialog", "split-dialog", "link-dialog"]
+const ISSUE_ACTIONS = ["retry", "close", "specification", "spec-review", "roles", "list", "select", "kind", "state", "query", "title", "summary", "example", "prior", "comment-text", "parent", "assignee", "cancel", "back", "continue", "new-form", "vip-form", "commit-dialog", "split-dialog", "link-dialog", "kind-key", "focus"]
 const ISSUE_KINDS = ["All", "Issues", "Tasks", "VIPs"]
 const REVIEWERS = ["astra", "sol", "fable", "opus"]
 export const ROLES = ["viewer", "new", "community", "contributor", "maintainer"] as const
@@ -108,7 +108,8 @@ export function gesture(model: Model, { op, n, text }: typeof Step.Type): Readon
     case "mock-mode": return [Message.UpdatedDraft({ value: "/mock" }), Message.SubmittedDraft()]
     case "live-mode": return [Message.UpdatedDraft({ value: "/live" }), Message.SubmittedDraft()]
     case "sandbox-command": return [Message.UpdatedDraft({ value: "/sandbox" }), Message.SubmittedDraft()]
-    case "slash": return [Message.UpdatedDraft({ value: `/${command?.name ?? text} ${text}` }), Message.SubmittedDraft()]
+    // Completions match the command word (`/post`), never the flow's name.
+    case "slash": return [Message.UpdatedDraft({ value: `${command?.command ?? "/" + text} ${text}` }), Message.SubmittedDraft()]
     case "palette": return [Message.PressedCommandK()]
     case "escape": return [Message.PressedEscape()]
     case "splash": return [Message.ClickedSplash()]
@@ -128,6 +129,7 @@ export function gesture(model: Model, { op, n, text }: typeof Step.Type): Readon
     case "retry-actions": return [Message.RetriedActions()]
     case "move-slash": return [Message.UpdatedDraft({ value: "/" }), Message.MovedSlash({ delta: n % 2 === 0 ? 1 : -1 })]
     case "pick-slash": return command === undefined ? [] : [Message.UpdatedDraft({ value: "/" }), Message.PickedSlash({ name: command.name })]
+    case "pick-mode": return [Message.UpdatedDraft({ value: "/" }), Message.PickedSlash({ name: ["mode/mock", "mode/live", `mode/${text}`][n % 3]! })]
     case "wiki": return [Message.ClickedWiki({ page: page.id })]
     case "filter-wiki": return [Message.FilteredWiki({ value: text })]
     case "wiki-location": return [Message.WikiLocationChanged({ page: n % 2 === 0 ? `/wiki/${page.id}#a` : "/" })]
@@ -154,7 +156,7 @@ export function gesture(model: Model, { op, n, text }: typeof Step.Type): Readon
     case "issues": return [Message.ClickedIssues()]
     case "issue-ui": {
       const action = ISSUE_ACTIONS[n % ISSUE_ACTIONS.length]!
-      return [Message.IssueUi({ action, value: action === "kind" ? ISSUE_KINDS[n % ISSUE_KINDS.length]! : action === "state" ? (n % 2 === 0 ? "open" : "closed") : action === "select" ? String(n) : action === "spec-review" ? REVIEWERS[n % REVIEWERS.length]! : text })]
+      return [Message.IssueUi({ action, value: action === "kind" ? ISSUE_KINDS[n % ISSUE_KINDS.length]! : action === "state" ? (n % 2 === 0 ? "open" : "closed") : action === "select" ? String(n) : action === "kind-key" ? ISSUE_KINDS[n % ISSUE_KINDS.length]! : action === "focus" ? "ix-commit" : action === "spec-review" ? REVIEWERS[n % REVIEWERS.length]! : text })]
     }
     case "issue-card": return [Message.OpenIssueCard({ number: n })]
     case "sandboxes": return [Message.ClickedSandboxes()]

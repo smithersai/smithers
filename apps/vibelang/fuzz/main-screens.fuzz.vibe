@@ -1,6 +1,6 @@
 // Screens built the way a person reaches them, then the update branches and Commands that only those screens reach.
 import { it } from "@effect/vitest"
-import { Model, Message, accountOf, roleLabel, RunAction, ReadAction, CancelAction, LoadActions, SandboxAction, LoadPeople, GrantRole, LoadIssues, ActOnIssue, LoadIssueDetails, RefreshIssueProjection, OpenWikiEditor, SubmitWikiEdit } from "../src/web/main.vibe"
+import { Model, Message, accountOf, roleLabel, update, RunAction, ReadAction, CancelAction, LoadActions, SandboxAction, LoadPeople, GrantRole, LoadIssues, ActOnIssue, LoadIssueDetails, RefreshIssueProjection, OpenWikiEditor, SubmitWikiEdit } from "../src/web/main.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { Actions } from "../src/actions/Actions.vibe"
 import { IssueRequest } from "../src/core/issueSchemas.vibe"
@@ -82,7 +82,13 @@ function opened(model: Model): ReadonlyArray<Layer> {
   return LAYERS.filter((layer) => open[layer])
 }
 
-const Opener = Schema.Literals(["people", "select-role", "issues", "issue-ui", "move-slash", "palette", "account", "actions", "maximize-actions", "edit-wiki", "wiki-save", "sandboxes", "maximize-sandboxes", "docs", "chat", "wiki"])
+const Opener = Schema.Literals(["issue-dialog", "people", "select-role", "issues", "issue-ui", "move-slash", "palette", "account", "actions", "maximize-actions", "edit-wiki", "wiki-save", "sandboxes", "maximize-sandboxes", "docs", "chat", "wiki"])
+/** The gestures that open `step.op`'s layer; an issue dialog opens on the issues screen. */
+function opener(model: Model, step: typeof Layers.Type["steps"][number]): ReadonlyArray<Message> {
+  if (step.op === "issue-dialog") return [Message.ClickedIssues(), Message.IssueUi({ action: (["commit-dialog", "split-dialog", "link-dialog"] as const)[step.n % 3]!, value: "" })]
+  return gesture(model, { op: step.op, n: step.n, text: step.text })
+}
+
 const Layers = Schema.Struct({ session: Int, role: Role, wiki: WikiFault, steps: Schema.Array(Schema.Struct({ op: Opener, n: Int, text: TextOrBoundary })).check(Schema.isMinLength(1), Schema.isMaxLength(12)) })
 
 /**
@@ -95,10 +101,11 @@ it.live("web/escape-layers", () => run("web/escape-layers", Layers, ({ session: 
   for (const step of steps) {
     // The wiki pane arrives as a conversation event; the editor opens on the page it shows.
     if (step.op === "edit-wiki" || step.op === "wiki-save") {
-      try session.send(gesture(session.model(), step)[0]!)
+      try session.send((try Effect.try(() => opener(session.model(), step)))[0]!)
       try pump(session)
     }
-    for (const message of gesture(session.model(), step)) try session.send(message)
+    const model = session.model()
+    for (const message of try Effect.try(() => opener(model, step))) try session.send(message)
     if (step.op === "wiki") try pump(session)
   }
   for (let press = 0; press < LAYERS.length + 1; press++) {
@@ -248,3 +255,60 @@ it.live("web/command-bodies", () => run("web/command-bodies", Bodies, ({ backend
   if (body.command === "SandboxAction" && answer._tag === "FailedSandbox" && kind === "faulty") return answer.reason === (body.kind === "stop" ? "fault" : "busy")
   return true
 }, Layer.merge(kind === "mock" && wiki !== "none" ? backendWithWiki(role, wiki) : backend(kind, role), Layer.empty))))
+
+const Happening = Schema.Struct({ kind: Schema.Literals(["answer", "answer-issue", "pane-wiki", "pane-other", "action", "gap"]), n: Int, text: Text, sandbox: Schema.Boolean, edit: Schema.Boolean })
+const Happenings = Schema.Struct({ session: Int, role: Role, happenings: Schema.Array(Happening).check(Schema.isMinLength(1), Schema.isMaxLength(8)) })
+
+/** The sequencer's next events for this tab's conversation, numbered after what the tab has. */
+function eventsOf(model: Model, { kind, n, text }: typeof Happening.Type) {
+  const seq = model.client.conversation.seq
+  const post = `fuzz-post-${seq}`
+  const reply = `fuzz-reply-${seq}`
+  switch (kind) {
+    case "answer": case "answer-issue": return [
+      { type: "Posted" as const, seq: seq + 1, id: post, clientId: `c-${seq}`, name: "Guest", text: "question" },
+      { type: "ReplyStarted" as const, seq: seq + 2, id: reply, inReplyTo: post },
+      { type: "ReplyDelta" as const, seq: seq + 3, id: reply, text: kind === "answer-issue" ? `See [#${n + 1}](#issue-${n + 1}).` : text },
+      { type: "ReplyFinished" as const, seq: seq + 4, id: reply },
+    ]
+    case "pane-wiki": return [{ type: "PaneOpened" as const, seq: seq + 1, id: n % 2 === 0 ? "" : post, url: `/wiki/${pages[n % pages.length]!.id}` }]
+    case "pane-other": return [{ type: "PaneOpened" as const, seq: seq + 1, id: "", url: "/sandbox" }]
+    case "action": return [{ type: "ActionRequested" as const, seq: seq + 1, id: `run-${seq}`, flow: "vibelang/Post", door: "agent", actor: "agent", at: n }]
+    case "gap": return [{ type: "PaneOpened" as const, seq: seq + 2, id: "", url: "/sandbox" }]
+  }
+}
+
+/**
+ * Conversation events arriving on the stream: an answer that links an issue refreshes the issues projection and no other
+ * answer does, a wiki pane follows the page and shrinks maximized sandboxes, a pane elsewhere closes an unsaved editor on
+ * another page, an agent's action request is read, and a gap resumes the stream.
+ */
+it.live("web/conversation-events", () => run("web/conversation-events", Happenings, ({ session: id, role, happenings }) => Effect.provide(effect {
+  const session = try signedIn(`v${id}`, role)
+  for (const happening of happenings) {
+    if (happening.sandbox) for (const message of try Effect.try(() => [Message.ClickedSandboxes(), Message.MaximizedSandboxes()])) try session.send(message)
+    if (happening.edit) for (const message of gesture(session.model(), { op: "edit-wiki", n: happening.n, text: "" })) try session.send(message)
+    const events = eventsOf(session.model(), happening)
+    for (const [index, event] of events.entries()) {
+      const before = session.model()
+      const answer = try Effect.try(() => update(before, Message.ReceivedEvent({ event })))
+      const names = (answer.commands ?? []).map((command) => command.name)
+      const last = index === events.length - 1
+      if (happening.kind === "gap") {
+        if (answer.model.epoch !== before.epoch + 1 || answer.model.client.conversation.seq !== before.client.conversation.seq) return false
+      }
+      if (last && (happening.kind === "answer" || happening.kind === "answer-issue")) {
+        if (names.includes("RefreshIssueProjection") !== (happening.kind === "answer-issue")) return false
+      }
+      if (happening.kind === "pane-wiki") {
+        if (!names.includes("WikiLocation") || before.sandboxPane === "max" && answer.model.sandboxPane !== "pane") return false
+        const page = event.type === "PaneOpened" ? event.url.slice("/wiki/".length) : ""
+        if (before.wikiEdit !== undefined && before.wikiEdit.submission === undefined && before.wikiEdit.page !== page && answer.model.wikiEdit !== undefined) return false
+      }
+      if (happening.kind === "pane-other" && (answer.model.wikiStatus !== "ready" || answer.model.wikiAfter !== "")) return false
+      if (happening.kind === "action" && !names.includes("ReadAction")) return false
+      try session.send(try Effect.try(() => Message.ReceivedEvent({ event })))
+    }
+  }
+  return true
+}, backend("mock", role))))
