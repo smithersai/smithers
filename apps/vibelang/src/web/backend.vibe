@@ -3,12 +3,10 @@ import { liveHealth } from "../core/protocolDecision.vibe"
 
 // The browser's Factory is available immediately. Only backend operations wait for the one scoped selection.
 import { HttpClient } from "effect/http"
-import { IssueFailure } from "../core/issueSchemas.vibe"
-import { Refused, Factory, type Mode } from "../core/Factory.vibe"
+import { Factory, type Mode } from "../core/Factory.vibe"
 import { AgentActions, deferredActions } from "../actions/agent.vibe"
 import { Actions } from "../actions/Actions.vibe"
 import { LiveActions } from "../actions/LiveActions.vibe"
-import { WikiFailure } from "../core/wikiSchemas.vibe"
 import { health, LiveFactory } from "../core/LiveFactory.vibe"
 
 /** The chosen mode becomes a Foldkit message, independently of any post or event subscription. */
@@ -52,29 +50,14 @@ export function BrowserFactory(origin: string, forceMock: boolean, role: import(
         participated: effect (id) => { try (try ready).factory.accounts!.participated(id) },
         events: (after) => Stream.unwrap(effect { return (try ready).factory.accounts!.events(after) }),
       },
+      // Both selectable factories, LiveFactory and mockFactoryFor, always supply accounts, issues, wiki and controlTour.
       issues: {
-        read: effect () => {
-          const { factory } = try ready
-          if (factory.issues === undefined) throw new IssueFailure({ reason: "unavailable" })
-          return try factory.issues.read()
-        },
-        act: effect (request) => {
-          const { factory } = try ready
-          if (factory.issues === undefined) throw new IssueFailure({ reason: "unavailable" })
-          return try factory.issues.act(request)
-        },
+        read: effect () => { return try (try ready).factory.issues!.read() },
+        act: effect (request) => { return try (try ready).factory.issues!.act(request) },
       },
       wiki: {
-        read: effect (page) => {
-          const { factory } = try ready
-          if (factory.wiki === undefined) throw new WikiFailure({ reason: "unavailable" })
-          return try factory.wiki.read(page)
-        },
-        act: effect (request) => {
-          const { factory } = try ready
-          if (factory.wiki === undefined) throw new WikiFailure({ reason: "unavailable" })
-          return try factory.wiki.act(request)
-        },
+        read: effect (page) => { return try (try ready).factory.wiki!.read(page) },
+        act: effect (request) => { return try (try ready).factory.wiki!.act(request) },
       },
       post: effect (conversation, clientId, name, text) => {
         const { factory } = try ready
@@ -94,8 +77,7 @@ export function BrowserFactory(origin: string, forceMock: boolean, role: import(
       },
       controlTour: effect (conversation, action, step) => {
         const { factory } = try ready
-        if (factory.controlTour === undefined) throw new Refused({ refusal: "not-replying" })
-        return try factory.controlTour(conversation, action, step)
+        return try factory.controlTour!(conversation, action, step)
       },
       tour: effect (conversation) => {
         const { factory } = try ready
