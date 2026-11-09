@@ -172,8 +172,8 @@
       "default": "./.vibelang/js/src/github/Payload.js"
     },
     "./github/Proxy": {
-      "types": "./src/github/Proxy.ts",
-      "vibelang-source": "./src/github/Proxy.ts",
+      "types": "./.vibe/declarations/github/Proxy.d.vibe.ts",
+      "vibelang-source": "./src/github/Proxy.vibe",
       "default": "./.vibelang/js/src/github/Proxy.js"
     },
     "./github/RateLimit": {

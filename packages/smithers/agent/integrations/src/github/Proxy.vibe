@@ -170,13 +170,13 @@ export const make = (
   never,
   HttpClient.HttpClient
 > =>
-  Effect.gen(function*() {
-    const http = forCredentials(yield* HttpClient.HttpClient)
+  effect {
+    const http = forCredentials(try HttpClient.HttpClient)
     const upstream = new URL(options.upstream ?? DEFAULT_API_BASE_URL).origin
     const maxWait = Duration.fromInputUnsafe(options.maxWait ?? RateLimit.DEFAULT_MAX_WAIT)
     const timeout = Duration.fromInputUnsafe(options.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT)
     const limits = options.limits ?? RateLimit.DEFAULT_LIMITS
-    const limiters = yield* SynchronizedRef.make(HashMap.empty<string, RateLimit.RateLimiter>())
+    const limiters = try SynchronizedRef.make(HashMap.empty<string, RateLimit.RateLimiter>())
 
     const limiterFor = (principal: string) =>
       SynchronizedRef.modifyEffect(limiters, (current) =>
@@ -197,11 +197,11 @@ export const make = (
 
     // A refusal names when to retry; any other failure to prepare the request is the proxy's.
     const failed = (error: IntegrationError) =>
-      Effect.gen(function*() {
+      effect {
         if (error.reason !== "rate-limited") return json(502, { message: error.summary, reason: error.reason })
         const retryAt = String(error.details?.["retryAt"])
         const reason = String(error.details?.["reason"])
-        const now = yield* Clock.currentTimeMillis
+        const now = try Clock.currentTimeMillis
         return json(429, {
           message: `API rate limit: the Smithers GitHub proxy deferred this request until ${retryAt}`,
           reason
@@ -210,13 +210,13 @@ export const make = (
           [PROXY_RETRY_AT]: retryAt,
           [PROXY_REASON]: reason
         })
-      })
+      }
 
     // The proxy's own endpoints. `admission` answers when n writes, and a read
     // after them, could start for a repository's principal, so a caller that
     // needs several writes starts all of them or none.
     const control = (request: HttpServerRequest.HttpServerRequest, url: URL) =>
-      Effect.gen(function*() {
+      (effect {
         if (url.pathname === `${CONTROL_PREFIX}health`) return json(200, { ok: true })
         if (url.pathname !== `${CONTROL_PREFIX}admission`) return json(404, { message: "Not Found" })
         if (!authorized(request)) return json(401, { message: "GitHub proxy capability required" })
@@ -225,10 +225,10 @@ export const make = (
         if (!Number.isSafeInteger(writes) || writes < 0 || writes > 100) {
           return json(400, { message: "writes must be an integer from 0 to 100" })
         }
-        const credential = yield* options.credential(repository)
-        const limiter = yield* limiterFor(credential.principal)
-        const now = yield* Clock.currentTimeMillis
-        const startsAt = yield* limiter.earliestStart(writes, repository === undefined ? "/" : `/repos/${repository}`)
+        const credential = try options.credential(repository)
+        const limiter = try limiterFor(credential.principal)
+        const now = try Clock.currentTimeMillis
+        const startsAt = try limiter.earliestStart(writes, repository === undefined ? "/" : `/repos/${repository}`)
         return json(200, {
           principal: credential.principal,
           startsAt: new Date(startsAt).toISOString(),
@@ -237,15 +237,15 @@ export const make = (
       }).pipe(Effect.catch(failed))
 
     const forward = (request: HttpServerRequest.HttpServerRequest, url: URL) =>
-      Effect.gen(function*() {
+      (effect {
         if (!authorized(request)) return json(401, { message: "GitHub proxy capability required" })
         const path = `${url.pathname}${url.search}`
-        const credential = yield* options.credential(repositoryOf(url.pathname))
-        const limiter = yield* limiterFor(credential.principal)
+        const credential = try options.credential(repositoryOf(url.pathname))
+        const limiter = try limiterFor(credential.principal)
         const body = request.method === "GET" || request.method === "HEAD"
           ? undefined
           // A body the caller never finished sending ends the exchange; nothing reached GitHub.
-          : new Uint8Array(yield* Effect.orDie(request.arrayBuffer))
+          : new Uint8Array(try Effect.orDie(request.arrayBuffer))
         const headers: Record<string, string> = {}
         for (const name of FORWARDED_REQUEST_HEADERS) {
           const value = request.headers[name]
@@ -295,7 +295,7 @@ export const make = (
                 ? json(504, { message: "GitHub did not answer the Smithers GitHub proxy in time" })
                 : json(502, { message: "The Smithers GitHub proxy could not reach GitHub" })
             )
-        return yield* limiter.limit(
+        return try limiter.limit(
           request.method,
           path,
           send,
@@ -309,12 +309,12 @@ export const make = (
         ).pipe(Effect.map(respond), Effect.catch(refused))
       }).pipe(Effect.catch(failed))
 
-    return Effect.gen(function*() {
-      const request = yield* HttpServerRequest.HttpServerRequest
+    return effect {
+      const request = try HttpServerRequest.HttpServerRequest
       const url = new URL(request.url, "http://proxy.invalid")
-      return yield* url.pathname.startsWith(CONTROL_PREFIX) ? control(request, url) : forward(request, url)
-    })
-  })
+      return try (url.pathname.startsWith(CONTROL_PREFIX) ? control(request, url) : forward(request, url))
+    }
+  }
 
 /**
  * Serves the proxy on the `HttpServer` in context, calling GitHub through the

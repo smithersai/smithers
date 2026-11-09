@@ -74,7 +74,7 @@ export * as Payload from "./github/Payload.vibe"
  * @category services
  * @since 1.0.0
  */
-export * as Proxy from "./github/Proxy.ts"
+export * as Proxy from "./github/Proxy.vibe"
 
 /**
  * @category constructors
