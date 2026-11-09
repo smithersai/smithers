@@ -5,11 +5,11 @@ import { describe, expect, it } from "@effect/vitest"
 import { TestClock } from "effect/testing"
 import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
-import { Action, FlowRuntime } from "@smthrs/flow"
+import { Action, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import {
-  DOCS_ORIGIN, docsPage, EndTour, openDocs, readingMillis, Reply, say, StartTour, Tour, toured, tourRegistration, Tours, walk,
+  DOCS_ORIGIN, docsPage, EndTour, openDocs, readingMillis, Reply, ReplyStep, say, StartTour, Tour, TourStep, toured, tourRegistration, Tours, walk,
 } from "../src/core/flows.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
@@ -129,6 +129,11 @@ effect function world() {
   return world
 }
 
+/** Registers a flow's implementation layer on the world's engine, with the Web Crypto the engine digests with. */
+function onEngine(w: World) {
+  return <A, E, R>(layer: Layer.Layer<A, E, R>) => layer.pipe(Layer.provide(Layer.succeed(FlowRuntime.FlowRuntime, w.engine)), Layer.provide(WebCrypto.layer))
+}
+
 /** Every log line, message and annotations, as one string each. */
 function capture(lines: Ref.Ref<ReadonlyArray<string>>) {
   return Logger.layer([Logger.make((options) => {
@@ -152,13 +157,11 @@ describe("the tour's flows over the live sequencer", () => {
     const post = snapshot.entries.find((entry) => entry.author === "person")!
     const observed = try Ref.make<ReadonlyArray<Turn>>([])
     // Exercise the reply history action as a journaled step of its real flow on the engine.
-    try w.engine.register(Reply, ({ post }) => effect {
-      provide WebCrypto.layer {
-        const turns = try Action.make({ name: "vibelang/reply/history", success: Schema.Array(Turn), execute: w.sequencer.history(post) })
-        try Ref.set(observed, turns)
-        return null
-      }
-    })
+    try Layer.build(Interpreter.layerWithImplementations(Reply, ReplyStep.toLayer(({ post }) => effect {
+      const turns = try Action.make({ name: "vibelang/reply/history", success: Schema.Array(Turn), execute: w.sequencer.history(post) })
+      try Ref.set(observed, turns)
+      return null
+    })).pipe(onEngine(w)))
     try w.engine.execute(Reply, { executionId: "reply/history", payload: { post: post.id } })
     const turns = try Ref.get(observed)
     try Effect.try(() => expect(turns).toEqual([{ author: "person", text: "What are layers?" }]))
@@ -167,7 +170,7 @@ describe("the tour's flows over the live sequencer", () => {
   it.effect("the actual walkthrough holds its first step to the exact table deadline", () => scoped(effect {
     const w = try world()
     try w.sequencer.startTour()
-    try w.engine.register(Tour, () => Effect.provide(inWorld(w, toured("t1", walk("t1"))), WebCrypto.layer))
+    try Layer.build(Interpreter.layerWithImplementations(Tour, TourStep.toLayer(() => inWorld(w, toured("t1", walk("t1"))))).pipe(onEngine(w)))
     const running = fork w.engine.execute(Tour, { executionId: "tour/pacing", payload: { tour: "t1" } })
     try until2(w, event => event.type === "ReplyDelta")
     try TestClock.adjust("6 seconds")

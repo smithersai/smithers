@@ -643,9 +643,16 @@ fallbacks and two always-defined `??` fallbacks.
 | 102 | `!started`: `StartReply` refused for a reason other than `busy`. Dispatch only selects unanswered posts while idle, and `full` needs 2^53 events (replay renumbers retained events). Kept as the guard for those refusals. |
 | 325 | `Tours.ended` after the tour already ended: between `running` and the subscription. Race only; the check keeps `ended` from waiting forever. |
 
-**Placeholder flow bodies.** `src/core/flows.vibe` has 14 uncovered `body: () => Node.succeed(…)` functions:
-`Flow.make` requires a body, and `engine.register` replaces it. vl-coverage found the same in
-`worker/Accounts.vibe`. Covering them needs `@smthrs/flow` to accept a declaration without a body; not changed here.
+**Flow bodies (fixed 2026-11-09).** `src/core/flows.vibe` had 14 flows whose `body` was `() => Node.succeed(…)` and
+whose behavior `engine.register` attached at registration, a second, opaque shape the flow package documents as
+internal. Each body now calls one declared action (`<flow>/perform`, or the sandbox `…/commit` actions it already
+declared), and each host attaches that action's implementation with `Interpreter.layerWithImplementations`. The
+implementations read `Posts`, `Tours`, `SandboxHost` and `ActionDevice` from context. Mock actions, the scripted and
+live replies, and the device sandbox steps are different implementations of the same action, not different bodies.
+`@smthrs/flow` needed no change: the inline `Action.make`, `DurableDeferred` and `DurableClock` steps run nested inside
+the declared action. `test/flowBodies.test.vibe` runs every flow's own body and fails when one is a placeholder.
+Journals gain the outer `perform` step. Resuming a run journaled before this change (a tour parked across the deploy)
+is untested.
 
 **Service Shape spread.** `test/support/overlaidAccounts.vibe` lists the `Accounts` members, as `overlaid.vibe` does
 `Factory`'s, because spreading a service Shape drops its methods in VibeLang 0.0.12. The upstream fix awaits

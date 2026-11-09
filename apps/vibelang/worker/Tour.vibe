@@ -1,13 +1,9 @@
 // VL-31: the designer's exact subtitles run through the same durable controller on both hosts.
 import { WebCrypto } from "@smthrs/crypto"
-import { FlowRuntime } from "@smthrs/flow"
-import { Tour, toured, walk } from "../src/core/flows.vibe"
+import { walk, walkRegistration } from "../src/core/flows.vibe"
 import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 
 /** Every spoken/displayed line remains within the live agent's existing word bound. */
 export const Narration = Schema.Struct({ stops: Schema.Array(Schema.String.check(Schema.isPattern(/^(?:\S+\s+){0,64}\S+\s*$/), Schema.isMaxLength(560))).check(Schema.isMinLength(WALKTHROUGH.length), Schema.isMaxLength(WALKTHROUGH.length)) })
 export effect function spoken(tour: string) { try walk(tour) }
-export const tourAgentRegistration = Layer.effectDiscard(effect {
-  const engine = try FlowRuntime.FlowRuntime
-  try engine.register(Tour, p => withSpan(toured(p.tour, spoken(p.tour)), "vibelang.tour"))
-}).pipe(Layer.provide(WebCrypto.layer))
+export const tourAgentRegistration = walkRegistration.pipe(Layer.provide(WebCrypto.layer))

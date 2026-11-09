@@ -1,0 +1,98 @@
+// Each conversation flow's body is its declared step (src/core/flows.vibe): a host supplies only the implementation of
+// `<flow>/perform` (or the sandbox `commit` action), and executing the flow on the engine runs exactly that step with
+// the execution's payload and answers what it answered. No host replaces a body.
+import { describe, expect, it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime, Interpreter } from "@smthrs/flow"
+import {
+  EndTour, EndTourStep, OpenDocs, OpenDocsStep, OpenWiki, OpenWikiStep, PauseTour, PauseTourStep, Post, PostStep, Reply,
+  ReplyStep, ResumeTour, ResumeTourStep, SandboxCommand, SandboxCommandAction, SandboxMeter, SandboxMeterAction,
+  SandboxStart, SandboxStartAction, SandboxStop, SandboxStopAction, SeekTour, SeekTourStep, StartTour, StartTourStep,
+  Tour, TourStep,
+} from "../src/core/flows.vibe"
+import { Refused } from "../src/core/Factory.vibe"
+
+const snapshot = { id: "s1", generation: 2, sequence: 1, status: "running" as const, role: "maintainer" as const, allowance: 60, used: 0, remaining: 60, resetAt: 0, output: "" }
+
+/** Runs `go` on an engine in memory with `layer` registered, recording each payload the step received. */
+effect function onEngine<A, E>(layer: Layer.Layer<never, never, FlowRuntime.FlowRuntime>, go: (engine: FlowRuntime.FlowRuntime["Service"]) => A!E) {
+  const context = try Layer.build(layer.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer)))
+  return try go(Context.get(context, FlowRuntime.FlowRuntime))
+}
+
+describe("each flow's body is its declared step", () => {
+  it.effect("Post, Reply and the tour flows run their perform step with the execution's payload", () => scoped(effect {
+    const seen = try Ref.make<ReadonlyArray<unknown>>([])
+    const saw = (step: string) => (payload: unknown) => Effect.as(Ref.update(seen, (all) => [...all, [step, payload]]), null)
+    const layer = Layer.mergeAll(
+      Interpreter.layerWithImplementations(Post, PostStep.toLayer((payload) => Effect.as(saw("post")(payload), "busy" as const))),
+      Interpreter.layerWithImplementations(Reply, ReplyStep.toLayer(saw("reply"))),
+      Interpreter.layerWithImplementations(StartTour, StartTourStep.toLayer(saw("start"))),
+      Interpreter.layerWithImplementations(Tour, TourStep.toLayer(saw("tour"))),
+      Interpreter.layerWithImplementations(EndTour, EndTourStep.toLayer(saw("end"))),
+      Interpreter.layerWithImplementations(PauseTour, PauseTourStep.toLayer(saw("pause"))),
+      Interpreter.layerWithImplementations(ResumeTour, ResumeTourStep.toLayer(saw("resume"))),
+      Interpreter.layerWithImplementations(SeekTour, SeekTourStep.toLayer(saw("seek"))),
+    )
+    const answers = try onEngine(layer, (engine) => Effect.all([
+      engine.execute(Post, { executionId: "post/1", payload: { clientId: "c", name: "Ada", text: "Hi", owner: "u1" } }),
+      engine.execute(Reply, { executionId: "reply/m1", payload: { post: "m1" } }),
+      engine.execute(StartTour, { executionId: "start/1", payload: {} }),
+      engine.execute(Tour, { executionId: "tour/t1", payload: { tour: "t1" } }),
+      engine.execute(EndTour, { executionId: "end/1", payload: {} }),
+      engine.execute(PauseTour, { executionId: "pause/1", payload: {} }),
+      engine.execute(ResumeTour, { executionId: "resume/1", payload: {} }),
+      engine.execute(SeekTour, { executionId: "seek/1", payload: { step: 3 } }),
+    ]))
+    const steps = try Ref.get(seen)
+    try Effect.try(() => {
+      expect(answers).toEqual(["busy", null, null, null, null, null, null, null])
+      expect(steps).toEqual([
+        ["post", { clientId: "c", name: "Ada", text: "Hi", owner: "u1" }], ["reply", { post: "m1" }], ["start", {}],
+        ["tour", { tour: "t1" }], ["end", {}], ["pause", {}], ["resume", {}], ["seek", { step: 3 }],
+      ])
+    })
+  }))
+
+  it.effect("the docs and wiki tools answer what their open step answered", () => scoped(effect {
+    const layer = Layer.mergeAll(
+      Interpreter.layerWithImplementations(OpenDocs, OpenDocsStep.toLayer(({ path }) => Effect.succeed(path === "/setup"))),
+      Interpreter.layerWithImplementations(OpenWiki, OpenWikiStep.toLayer(({ page }) => Effect.succeed(page === "rulings"))),
+    )
+    const answers = try onEngine(layer, (engine) => Effect.all([
+      engine.execute(OpenDocs, { executionId: "docs/1", payload: { path: "/setup" } }),
+      engine.execute(OpenDocs, { executionId: "docs/2", payload: { path: "/nope" } }),
+      engine.execute(OpenWiki, { executionId: "wiki/1", payload: { page: "rulings" } }),
+      engine.execute(OpenWiki, { executionId: "wiki/2", payload: { page: "nope" } }),
+    ]))
+    try Effect.try(() => expect(answers).toEqual([true, false, true, false]))
+  }))
+
+  it.effect("the sandbox flows run their commit step, and its typed refusal is the flow's", () => scoped(effect {
+    const seen = try Ref.make<ReadonlyArray<unknown>>([])
+    const saw = (payload: unknown) => Ref.update(seen, (all) => [...all, payload])
+    const layer = Layer.mergeAll(
+      Interpreter.layerWithImplementations(SandboxStart, SandboxStartAction.toLayer((p) => Effect.as(saw(p), snapshot))),
+      Interpreter.layerWithImplementations(SandboxStop, SandboxStopAction.toLayer((p) => Effect.andThen(saw(p), Effect.fail(new Refused({ refusal: "forbidden" }))))),
+      Interpreter.layerWithImplementations(SandboxCommand, SandboxCommandAction.toLayer((p) => Effect.as(saw(p), "ok"))),
+      Interpreter.layerWithImplementations(SandboxMeter, SandboxMeterAction.toLayer((p) => saw(p))),
+    )
+    const answers = try onEngine(layer, (engine) => Effect.all([
+      engine.execute(SandboxStart, { executionId: "start/1", payload: { conversation: "c", operationId: "o1" } }),
+      Effect.flip(engine.execute(SandboxStop, { executionId: "stop/1", payload: { conversation: "c", operationId: "o2", generation: 2 } })),
+      engine.execute(SandboxCommand, { executionId: "command/1", payload: { conversation: "c", operationId: "o3", command: "ls", generation: 2 } }),
+      engine.execute(SandboxMeter, { executionId: "meter/1", payload: {} }),
+    ]))
+    const steps = try Ref.get(seen)
+    try Effect.try(() => {
+      expect(answers[0]).toEqual(snapshot)
+      expect(answers[1]).toMatchObject({ _tag: "Refused", refusal: "forbidden" })
+      expect(answers.slice(2)).toEqual(["ok", undefined])
+      expect(steps).toEqual([
+        { conversation: "c", operationId: "o1" }, { conversation: "c", operationId: "o2", generation: 2 },
+        { conversation: "c", operationId: "o3", command: "ls", generation: 2 }, {},
+      ])
+    })
+  }))
+})

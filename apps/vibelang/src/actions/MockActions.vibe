@@ -1,12 +1,12 @@
 // Registered actions over the real in-memory engine. Backend operations go through the Factory Effect API.
 import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine, StepTrace } from "@smthrs/engine"
-import { Action, FlowRuntime, RunMetrics } from "@smthrs/flow"
+import { Action, FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
 import { apply, empty, type Conversation } from "../core/conversation.vibe"
 import { decide, type Intent } from "../core/decide.vibe"
 import type { Identity } from "../core/roles.vibe"
 import { Factory } from "../core/Factory.vibe"
-import { Post, Tour } from "../core/flows.vibe"
+import { Post, PostStep, Tour, TourStep } from "../core/flows.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import type { HistoryReader } from "../history/tools.vibe"
 import { ActionDevice, deviceRegistration, execute, historyRegistration, prepare, refused } from "./execution.vibe"
@@ -67,13 +67,15 @@ export function MockActions(principal: Principal) {
       }), scope), Mythical)
       return reader
     })
-    const baseRegistration = Layer.effectDiscard(effect {
-      const engine = try FlowRuntime.FlowRuntime
-      try engine.register(Post, effect (payload, id) => {
+    // An action's Post and Tour ask this world's factory; the conversation is the principal's or the run's own.
+    const baseRegistration = Layer.mergeAll(
+      Interpreter.layerWithImplementations(Post, PostStep.toLayer(effect (payload) => {
+        const id = (try FlowRuntime.FlowInstance).executionId
         try Action.make({ name: "vibelang/post/record", execute: orDie(factory.post((principal.conversation ?? `action-${id}`), id, "Guest", payload.text)) })
         return null
-      })
-      try engine.register(Tour, effect (_payload, id) => {
+      })),
+      Interpreter.layerWithImplementations(Tour, TourStep.toLayer(effect () => {
+        const id = (try FlowRuntime.FlowInstance).executionId
         const conversation = (principal.conversation ?? `action-${id}`)
         const after = try Action.make({ name: "vibelang/tour/start", success: Schema.Number, execute: orDie(effect {
           const before = try factory.read(conversation, 0)
@@ -86,8 +88,8 @@ export function MockActions(principal: Principal) {
         const last = try Action.make({ name: "vibelang/tour/guide", execute: map(orDie(end), (event) => Option.isSome(event) && event.value.type !== "ReplyFailed"), success: Schema.Boolean })
         if (!last) return try Effect.die(new ActionFailure({ code: "failed" }))
         return null
-      })
-    })
+      })),
+    )
     const registrationLayer = Layer.mergeAll(baseRegistration, historyRegistration(history), deviceRegistration).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer))
     const engine = Context.get(try Layer.buildWithScope(registrationLayer, scope), FlowRuntime.FlowRuntime)
 

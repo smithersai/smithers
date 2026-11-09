@@ -1,6 +1,6 @@
 // The actual declarations and host bodies; no second graph, schema, or workflow runtime.
-import { Action, FlowRuntime } from "@smthrs/flow"
-import { Post, Tour, SandboxStart, SandboxStop, SandboxCommand } from "../core/flows.vibe"
+import { Action, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Post, Tour, SandboxCommand, SandboxCommandAction, SandboxStart, SandboxStartAction, SandboxStop, SandboxStopAction } from "../core/flows.vibe"
 import { HistoryAnswer, Note, Plan, Start } from "../history/flows.vibe"
 import { type HistoryReader, note, plan, Show, show, start } from "../history/tools.vibe"
 import { Factory, Refused } from "../core/Factory.vibe"
@@ -66,9 +66,9 @@ export service ActionDevice {
   readonly stopSandbox: Factory.Shape["stopSandbox"]
   readonly sandboxCommand: Factory.Shape["sandboxCommand"]
 }
-export const deviceRegistration = Layer.effectDiscard(effect {
-  const engine = try FlowRuntime.FlowRuntime
-  try engine.register(SandboxStart, effect (p) => try Action.make({ name: "vibelang/sandbox/start/dispatch", success: SandboxStart.successSchema, error: SandboxStart.errorSchema, execute: effect { return try (try ActionDevice).startSandbox(p.conversation, p.operationId) } }))
-  try engine.register(SandboxStop, effect (p) => try Action.make({ name: "vibelang/sandbox/stop/dispatch", success: SandboxStop.successSchema, error: SandboxStop.errorSchema, execute: effect { return try (try ActionDevice).stopSandbox(p.conversation, p.operationId, p.generation) } }))
-  try engine.register(SandboxCommand, effect (p) => try Action.make({ name: "vibelang/sandbox/command/dispatch", success: SandboxCommand.successSchema, error: SandboxCommand.errorSchema, execute: effect { return try (try ActionDevice).sandboxCommand(p.conversation, p.operationId, p.command, p.generation) } }))
-})
+/** An action's sandbox steps run on the caller's device: the person's own factory, through `ActionDevice`. */
+export const deviceRegistration = Layer.mergeAll(
+  Interpreter.layerWithImplementations(SandboxStart, SandboxStartAction.toLayer(effect (p) => try (try ActionDevice).startSandbox(p.conversation, p.operationId))),
+  Interpreter.layerWithImplementations(SandboxStop, SandboxStopAction.toLayer(effect (p) => try (try ActionDevice).stopSandbox(p.conversation, p.operationId, p.generation))),
+  Interpreter.layerWithImplementations(SandboxCommand, SandboxCommandAction.toLayer(effect (p) => try (try ActionDevice).sandboxCommand(p.conversation, p.operationId, p.command, p.generation))),
+)

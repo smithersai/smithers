@@ -11,13 +11,13 @@ import { promptWindow } from "../src/core/sequenceDecision.vibe"
 // becomes `FailReply` with a reason the person reads.
 import { Agent, AgentAction, Budget, EventSink, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
 import { WebCrypto } from "@smthrs/crypto"
-import { Action, FlowRuntime } from "@smthrs/flow"
+import { Action, Interpreter } from "@smthrs/flow"
 import { type AgentEvent, DoneText, type FlowBinding } from "@smthrs/harness"
 import * as QuickJSWorkerd from "@smthrs/harness/QuickJSWorkerd"
 import { Evaluator, ModelRequest } from "@smthrs/model"
 import type { HostModel } from "@smthrs/model-host"
 import { Registry } from "@smthrs/registry"
-import { patient, Reply, replyIdOf, Tours } from "../src/core/flows.vibe"
+import { patient, Reply, ReplyStep, replyIdOf, Tours } from "../src/core/flows.vibe"
 import { wikiTools, WIKI_INSTRUCTION } from "./WikiTools.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
 import { AgentActions } from "../src/actions/agent.vibe"
@@ -362,7 +362,5 @@ export effect function answer(post: string) {
 }
 
 /** Registers `Reply` with the engine; its steps reach the sequencer, the budget and the model through services. */
-export const registration = Layer.effectDiscard(effect {
-  const engine = try FlowRuntime.FlowRuntime
-  try engine.register(Reply, (payload) => Effect.orDie(answer(payload.post)))
-}).pipe(Layer.provide(WebCrypto.layer))
+export const registration = Interpreter.layerWithImplementations(Reply, ReplyStep.toLayer((payload) => Effect.orDie(answer(payload.post))))
+  .pipe(Layer.provide(WebCrypto.layer))

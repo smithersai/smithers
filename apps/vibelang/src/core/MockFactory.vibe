@@ -15,13 +15,13 @@ import type { WikiApi } from "./wikiSchemas.vibe"
 import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Digest, SecureRandom } from "effect/crypto"
-import { Action, FlowRuntime } from "@smthrs/flow"
+import { Action, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { apply, empty, isTouring, type Conversation, type Event } from "./conversation.vibe"
 import { decide, type Decision, type Intent } from "./decide.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
 import {
-  PauseTour, ResumeTour, SeekTour, OpenWiki, openWiki, wikiRegistration, EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, replyIdOf, StartTour, Tour, toured, touring, tourRegistration,
-  Tours, unanswered, walk,
+  PauseTour, ResumeTour, SeekTour, OpenWiki, openWiki, wikiRegistration, EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, ReplyStep, replyIdOf, StartTour, Tour, touring, tourRegistration,
+  Tours, unanswered, walkRegistration,
 } from "./flows.vibe"
 import { pages, requestedWiki } from "./wiki.vibe"
 import { ActionFailure } from "../actions/Actions.vibe"
@@ -332,24 +332,20 @@ return Layer.effect(Factory, effect {
         postRegistration,
         tourRegistration,
         wikiRegistration,
-        Layer.effectDiscard(effect {
-          const engine = try FlowRuntime.FlowRuntime
-          effect function reply(payload: { readonly post: string }) {
-            const person = postPeople.get(payload.post) ?? { id: "", login: "Guest" }
-            const forPoster: IssuesApi = {
-              read: effect () => try (try issuesForPerson(person)).read(),
-              act: effect (request) => try (try issuesForPerson(person)).act(request),
-            }
-            const wikiForPoster: Pick<WikiApi, "act"> = {
-              act: effect (request) => try (try wikiForPerson(person)).act(request),
-            }
-            return try Effect.orDie(withSpan(scripted(engine, state, record, payload.post, forPoster, wikiForPoster, history, conversation, {
-              startSandbox: effect (room, operationId) => try (try sandboxForOwner(postOwners.get(payload.post) ?? "")).startSandbox(room, operationId),
-            }, effect () => (try Effect.orDie(accounts.current())).id === (postOwners.get(payload.post) ?? "")), "vibelang.reply"))
+        walkRegistration,
+        Interpreter.layerWithImplementations(Reply, ReplyStep.toLayer(effect (payload: { readonly post: string }) => {
+          const person = postPeople.get(payload.post) ?? { id: "", login: "Guest" }
+          const forPoster: IssuesApi = {
+            read: effect () => try (try issuesForPerson(person)).read(),
+            act: effect (request) => try (try issuesForPerson(person)).act(request),
           }
-          try engine.register(Reply, reply)
-          try engine.register(Tour, (payload) => withSpan(toured(payload.tour, walk(payload.tour)), "vibelang.tour"))
-        }),
+          const wikiForPoster: Pick<WikiApi, "act"> = {
+            act: effect (request) => try (try wikiForPerson(person)).act(request),
+          }
+          return try Effect.orDie(withSpan(scripted(engine, state, record, payload.post, forPoster, wikiForPoster, history, conversation, {
+            startSandbox: effect (room, operationId) => try (try sandboxForOwner(postOwners.get(payload.post) ?? "")).startSandbox(room, operationId),
+          }, effect () => (try Effect.orDie(accounts.current())).id === (postOwners.get(payload.post) ?? "")), "vibelang.reply"))
+        })),
       ).pipe(
         Layer.provide(Layer.succeed(FlowRuntime.FlowRuntime, engine)),
         Layer.provide(Layer.mergeAll(Layer.succeed(Posts, posts), Layer.succeed(Tours, tours))),

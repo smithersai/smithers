@@ -6,12 +6,12 @@ export { ProjectAccounts } from "./accounts.vibe"
 // here (its entry is Node deploy code), so this file is the host: it reaches objects by `fetch` where Alchemy uses RPC,
 // and runs each Effect at this boundary. Configuration is the Worker's env, as Alchemy's WorkerConfigProvider reads it.
 // Its own answers are Effect's HTTP responses, converted to the platform's here.
-import { FlowRuntime } from "@smthrs/flow"
 import { Cell } from "@smthrs/harness"
 import { Plan } from "../../src/history/flows.vibe"
 import { historyTools } from "../../worker/HistoryTools.vibe"
 import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
-import { Tour, toured, Tours, walk } from "../../src/core/flows.vibe"
+import { Tour, Tours } from "../../src/core/flows.vibe"
+import { tourAgentRegistration } from "../../worker/Tour.vibe"
 import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Sequencer as HistorySequencer } from "../../src/history/Sequencer.vibe"
 import { type PageRequest, pageOf } from "../../src/history/pages.vibe"
@@ -225,14 +225,9 @@ effect function readingAlarm(hostId: string, storage: Objects.Storage, sequencer
     try promise(() => storage.put("test/parked", true))
     try Deferred.await(release)
   })
-  const registration = Layer.effectDiscard(effect {
-    const engine = try FlowRuntime.FlowRuntime
-    const words = Array.from({ length: 40 }, () => "word").join(" ")
-    try engine.register(Tour, ({ tour }) => toured(tour, walk(tour)))
-  })
   try ExecutionObject.alarm(Objects.executionStorage(storage), {
     flows: [Tour],
-    runtime: (intent) => CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: Tour._tag }, registration).pipe(
+    runtime: (intent) => CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: Tour._tag }, tourAgentRegistration).pipe(
       Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(Tours, tours)),
     ),
     router: Objects.unrouted,
