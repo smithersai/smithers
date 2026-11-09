@@ -70,3 +70,6 @@ Rebased on `1b5decf5`: 838 unit cases in 127 files, 52 workerd and 33 browser ca
 
 Twentieth batch: the walkthrough's counter, wait, seek and clock choices move into proved `flowDecision` functions.
 Private visit and turn counters use BigInt; step names are unchanged. Five functions, 33 flow units, 12 new mutants.
+
+Twenty-first batch: 19 inline `update` guards move to `src/web/modelDecision.vibe` and are proved; 23 units and 49 new
+mutations reject. `update` itself, its Model frames and command dispatch remain unproved.

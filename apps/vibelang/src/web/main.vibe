@@ -1,3 +1,4 @@
+import * as ModelDecision from "./modelDecision.vibe"
 import { WALKTHROUGH, DEMO_QUESTION } from "../core/walkthroughSteps.vibe"
 import { TourPresentation, presentation } from "./theatre.vibe"
 import { surfaceTransition, toggleSandbox, maximizeSandbox, currentSandbox, canSandboxAction } from "./viewDecision.vibe"
@@ -303,10 +304,11 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       const ledger = { conversation: snapshot ?? Machine.empty, pending: [], gap: false }
       const changedPerson = person.id !== accountOf(model).identity.id
       const changedRole = person.role !== accountOf(model).identity.role
-      const nextActions = changedPerson || changedRole ? { ...actionsOf(model), epoch: (actionsOf(model).epoch ?? 0) + 1, commands: [], slash: false, starting: false } : actionsOf(model)
-      const commands = [...(accountOf(model).target !== "" ? [CloseRoleDialog({})] : []), ...(changedPerson || changedRole ? [LoadActions({ flow: nextActions.selected, epoch: nextActions.epoch ?? 0 })] : [])]
+      const changedAccount = ModelDecision.accountChanged(person.id, accountOf(model).identity.id, person.role, accountOf(model).identity.role)
+      const nextActions = changedAccount ? { ...actionsOf(model), epoch: (actionsOf(model).epoch ?? 0) + 1, commands: [], slash: false, starting: false } : actionsOf(model)
+      const commands = [...(accountOf(model).target !== "" ? [CloseRoleDialog({})] : []), ...(changedAccount ? [LoadActions({ flow: nextActions.selected, epoch: nextActions.epoch ?? 0 })] : [])]
       return {
-        model: { ...(changedPerson || changedRole ? withoutSandbox : model), actions: nextActions, ...(changedPerson || changedRole ? { sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), ...(changedPerson ? { terminalDraft: "", sandboxPane: "closed" as const } : {}), name: person.login || "Guest", account: {
+        model: { ...(changedAccount ? withoutSandbox : model), actions: nextActions, ...(changedAccount ? { sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), ...(changedPerson ? { terminalDraft: "", sandboxPane: "closed" as const } : {}), name: person.login || "Guest", account: {
           ...accountOf(model), identity: person, pending: false,
           error: person.id === "" ? accountOf(model).error : "", menu: false, target: "",
           people: person.id === "" ? "closed" : accountOf(model).people,
@@ -316,21 +318,21 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
         ...(commands.length > 0 ? { commands } : {}),
       }
     },
-    AccountFailed: () => ({ model: { ...model, account: { ...accountOf(model), pending: false, error: accountOf(model).retry === "grant" ? "Role change failed." : accountOf(model).retry === "people" ? "People couldn’t load." : accountOf(model).retry === "sign-out" ? "Sign out failed." : "Sign-in failed. GitHub didn’t answer." } } }),
+    AccountFailed: () => ({ model: { ...model, account: { ...accountOf(model), pending: false, error: ModelDecision.accountFailureText(accountOf(model).retry) } } }),
     ClickedAccount: () => ({ model: { ...model, account: { ...accountOf(model), menu: !accountOf(model).menu } }, commands: [FocusAccountMenu({ open: !accountOf(model).menu })] }),
-    ClickedSignIn: () => model.mode === "live" && accountOf(model).identity.available === false
+    ClickedSignIn: () => ModelDecision.signInRefused(model.mode === "live", accountOf(model).identity.available === false)
       ? { model: { ...model, account: { ...accountOf(model), pending: false, retry: "sign-in", error: "Sign-in unavailable." } } }
       : ({ model: { ...model, account: { ...accountOf(model), pending: true, error: "", retry: "sign-in" } }, commands: [SignInAccount({ mock: model.mode === "mock" })] }),
     ClickedSignOut: () => ({ model: { ...model, account: { ...accountOf(model), retry: "sign-out" } }, commands: [SignOutAccount({})] }),
     ChoseIdentity: ({ role }) => ({ model, commands: [ChooseIdentity({ role })] }),
     ClickedPeople: () => {
       const foreground = model.docs === "max"
-      return { model: { ...model, surface: "chat", ...(foreground ? { docs: "pane" as const } : {}), account: { ...accountOf(model), menu: false, people: foreground ? "max" as const : "pane" as const, retry: "people" } }, commands: [LoadPeople({})] }
+      return { model: { ...model, surface: "chat", ...(foreground ? { docs: "pane" as const } : {}), account: { ...accountOf(model), menu: false, people: ModelDecision.peopleOpened(foreground), retry: "people" } }, commands: [LoadPeople({})] }
     },
     LoadedPeople: ({ members }) => ({ model: { ...model, account: { ...accountOf(model), members, pending: false } } }),
     ClosedPeople: () => ({ model: { ...model, account: { ...accountOf(model), people: "closed" } } }),
-    ToggledPeople: () => ({ model: { ...model, account: { ...accountOf(model), people: accountOf(model).people === "max" ? "pane" : "max" } } }),
-    SelectedRole: ({ id, role }) => accountOf(model).identity.role !== "maintainer" ? { model } : ({ model: { ...model, account: { ...accountOf(model), target: id, targetRole: role, error: "" } }, commands: [ShowRoleDialog({})] }),
+    ToggledPeople: () => ({ model: { ...model, account: { ...accountOf(model), people: ModelDecision.peopleToggled(accountOf(model).people) } } }),
+    SelectedRole: ({ id, role }) => !ModelDecision.canSelectRole(accountOf(model).identity.role) ? { model } : ({ model: { ...model, account: { ...accountOf(model), target: id, targetRole: role, error: "" } }, commands: [ShowRoleDialog({})] }),
     CancelledRole: () => ({ model: { ...model, account: { ...accountOf(model), target: "", error: "" } }, commands: [CloseRoleDialog({})] }),
     ConfirmedRole: () => ({ model: { ...model, account: { ...accountOf(model), pending: true, retry: "grant" } }, commands: [GrantRole({ id: accountOf(model).target, role: accountOf(model).targetRole })] }),
     GrantedRole: () => ({ model: { ...model, account: { ...accountOf(model), target: "", pending: false } }, commands: [CloseRoleDialog({}), LoadPeople({})] }),
@@ -338,7 +340,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       const account = accountOf(model)
       const ledger = Machine.receive(account.ledger, event)
       if (ledger.gap) return { model: { ...model, account: { ...account, ledger: Machine.resume(ledger), epoch: account.epoch + 1, from: ledger.conversation.seq } } }
-      const changed = ledger.conversation.seq > account.ledger.conversation.seq && event.type === "RoleGranted" && ledger.conversation.roles.length > account.ledger.conversation.roles.length
+      const changed = event.type === "RoleGranted" && ModelDecision.roleGrantApplied(ledger.conversation.seq, account.ledger.conversation.seq, ledger.conversation.roles.length, account.ledger.conversation.roles.length)
       const identity = changed && event.id === account.identity.id ? { ...account.identity, role: Machine.roleOf(ledger.conversation.roles, account.identity.id) } : account.identity
       const changedRole = identity.role !== account.identity.role
       const { sandbox: previousSandbox, ...withoutSandbox } = model
@@ -346,15 +348,15 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       const notice = changed && event.id === account.identity.id
         ? event.mode === "participation" ? "You're now Community." : "You're now " + roleLabel(event.role) + "."
         : changed && event.mode === "person" && account.people !== "closed" ? name + " is now " + roleLabel(event.role) + "." : account.notice
-      const close = identity.role !== "maintainer" && account.target !== ""
+      const close = ModelDecision.roleDialogCloses(identity.role, account.target)
       const nextActions = changedRole ? { ...actionsOf(model), epoch: (actionsOf(model).epoch ?? 0) + 1, commands: [], slash: false, starting: false } : actionsOf(model)
       const commands = [...(close ? [CloseRoleDialog({})] : []), ...(changed && account.people !== "closed" ? [LoadPeople({})] : []), ...(changedRole ? [LoadActions({ flow: nextActions.selected, epoch: nextActions.epoch ?? 0 })] : [])]
       return { model: { ...(changedRole ? withoutSandbox : model), actions: nextActions, ...(changedRole ? { sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), account: { ...account, ledger, identity, notice, target: close ? "" : account.target, pending: close ? false : account.pending } }, ...(commands.length > 0 ? { commands } : {}) }
     },
     FailedRoles: () => ({ model: { ...model, account: { ...accountOf(model), error: "Connection lost.", retry: "roles", pending: false } } }),
-    RetriedAccount: () => accountOf(model).retry === "roles" ? ({
+    RetriedAccount: () => ModelDecision.accountRetryPlan(accountOf(model).retry) === "resume" ? ({
       model: { ...model, account: { ...accountOf(model), error: "", pending: false, epoch: accountOf(model).epoch + 1, from: accountOf(model).ledger.conversation.seq } },
-    }) : accountOf(model).retry === "sign-in" ? update(model, Message.ClickedSignIn()) : ({
+    }) : ModelDecision.accountRetryPlan(accountOf(model).retry) === "sign-in" ? update(model, Message.ClickedSignIn()) : ({
       model: { ...model, account: { ...accountOf(model), pending: true, error: "" } },
       commands: [accountOf(model).retry === "grant" ? GrantRole({ id: accountOf(model).target, role: accountOf(model).targetRole })
         : accountOf(model).retry === "people" ? LoadPeople({})
@@ -383,16 +385,16 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
         const completed = status === "completed"
         return { model: { ...model, issues: { ...ui, keyPrefix: model.session, data, role, status: "ready", busy: false, screen: request.op.startsWith("spec-") ? "specification" : completed ? "detail" : request.op === "new" ? "new" : request.op === "propose" ? "vip" : "detail", step: 4, selected, title: request.title, summary: request.text, comment: request.op === "comment" ? request.text : "", example: request.example, prior: request.prior, parent: String(request.parent), assignee: request.assignee, retry: completed || unwritten ? undefined : request, error: completed || unwritten ? "" : "Couldn't save. Retry." } } }
       }
-      const settled = ui.retry === undefined || (ui.retry.op === op && key === ui.retry.key)
+      const settled = ModelDecision.issueResponseSettles(ui.retry?.op ?? null, ui.retry?.key ?? null, op ?? null, key ?? null)
       return { model: { ...model, issues: { ...ui, data: data.draft === undefined && data.seq >= ui.data.seq ? data : ui.data, status: "ready", role, ...(data.draft === undefined ? {} : { title: data.draft.title, summary: data.draft.summary, example: data.draft.example, prior: data.draft.prior }), busy: settled ? false : ui.busy, retry: settled ? undefined : ui.retry, error: settled ? "" : ui.error, comment: settled ? "" : ui.comment, dialog: settled ? "" : ui.dialog, ...(data.assignees === undefined ? {} : { assignee: data.assignees.some((a) => a.login === ui.assignee) ? ui.assignee : data.assignees.find((a) => a.label === "VibeLang agent")?.login ?? "" }), ...(created && settled ? { screen: "detail", selected: data.selected ?? Math.max(...data.items.map((i) => i.number)) } : {}) } }, commands: !settled || ui.dialog === "" ? [] : [CloseIssueDialog({})] }
     },
     IssuesFailed: ({ reason, op, key, unwritten }) => {
       const ui = model.issues ?? initialIssues
-      const relevant = ui.retry === undefined || (op === ui.retry.op && key === ui.retry.key)
+      const relevant = ModelDecision.issueResponseSettles(ui.retry?.op ?? null, ui.retry?.key ?? null, op ?? null, key ?? null)
       return { model: { ...model, issues: { ...ui, status: ui.data.items.length === 0 ? "error" : "ready", ...(relevant ? { busy: false, ...(unwritten === true ? { retry: undefined } : {}), error: reason === "no-model" ? "Review unavailable" : reason === "connect" ? "Connect GitHub." : reason === "forbidden" ? "Not allowed" : reason === "tree" ? "Choose another parent." : reason === "assignee" ? "Choose an assignee." : reason === "closed" ? "Issue closed." : "Couldn't save. Retry." } : {}) } } }
     },
-    IssueDetailsLoaded: ({ data, number }) => model.issues?.selected !== number || data.seq < model.issues.data.seq ? { model } : { model: { ...model, issues: { ...model.issues, data } } },
-    IssueDetailsFailed: ({ number }) => model.issues?.selected !== number || model.issues.retry !== undefined ? { model } : { model: { ...model, issues: { ...model.issues, error: "Couldn't load comments. Retry." } } },
+    IssueDetailsLoaded: ({ data, number }) => model.issues === undefined || !ModelDecision.issueDetailsApply(model.issues.selected, number, data.seq, model.issues.data.seq) ? { model } : { model: { ...model, issues: { ...model.issues, data } } },
+    IssueDetailsFailed: ({ number }) => model.issues === undefined || !ModelDecision.issueDetailsFailureShows(model.issues.selected, number, model.issues.retry !== undefined) ? { model } : { model: { ...model, issues: { ...model.issues, error: "Couldn't load comments. Retry." } } },
     IssueDialogFocused: () => ({ model }),
     PressedCommandK: () => openPalette(model, !model.palette),
     ClickedAsk: () => openPalette(model, true),
@@ -446,15 +448,15 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     SubmittedTerminal: () => sandboxAction(model, "command"),
     LoadedSandbox: ({ conversation, request, snapshot }) => {
       if (!currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0)) return { model }
-      const zero = snapshot.remaining === 0 && snapshot.id !== "" && snapshot.status === "stopped"
-      const low = snapshot.remaining > 0 && snapshot.remaining <= 10 && model.warnedMonth !== snapshot.resetAt
-      return { model: { ...model, sandbox: snapshot, sandboxPane: snapshot.status === "running" && model.sandbox?.status !== "running" ? "pane" : model.sandboxPane ?? "closed", sandboxBusy: false, sandboxOperation: "", sandboxError: "", minuteNotice: zero ? `Out of minutes — ${snapshot.id} stopped` : low ? `${snapshot.remaining} minutes left` : model.sandbox?.resetAt !== snapshot.resetAt ? "" : model.minuteNotice ?? "", warnedMonth: low ? snapshot.resetAt : model.warnedMonth ?? 0 } }
+      const zero = ModelDecision.sandboxOutOfMinutes(snapshot.remaining, snapshot.id, snapshot.status)
+      const low = ModelDecision.sandboxLowMinutes(snapshot.remaining, model.warnedMonth ?? null, snapshot.resetAt)
+      return { model: { ...model, sandbox: snapshot, sandboxPane: ModelDecision.sandboxPaneOpens(snapshot.status, model.sandbox?.status ?? null) ? "pane" : model.sandboxPane ?? "closed", sandboxBusy: false, sandboxOperation: "", sandboxError: "", minuteNotice: zero ? `Out of minutes — ${snapshot.id} stopped` : low ? `${snapshot.remaining} minutes left` : model.sandbox?.resetAt !== snapshot.resetAt ? "" : model.minuteNotice ?? "", warnedMonth: low ? snapshot.resetAt : model.warnedMonth ?? 0 } }
     },
     FailedSandbox: ({ conversation, request, reason }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0) ? { model } : ({ model: { ...model, sandboxBusy: false, sandboxError: reason } }),
     ClickedWiki: ({ page }) => visitWiki(model, page),
     WikiLocationChanged: ({ page }) => page === "/" ? { model: { ...model, surface: "splash", docs: "pane", ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } } : visitWiki(model, page),
     FilteredWiki: ({ value }) => ({ model: { ...model, wikiQuery: value } }),
-    FailedWiki: ({ request }) => ({ model: request === model.wikiRequest && model.wikiStatus === "loading" ? { ...model, wikiStatus: "error" } : model }),
+    FailedWiki: ({ request }) => ({ model: model.wikiRequest !== undefined && ModelDecision.wikiFailureApplies(request, model.wikiRequest, model.wikiStatus === "loading") ? { ...model, wikiStatus: "error" } : model }),
     SucceededWiki: () => ({ model }),
     ClickedDocs: () => ({ model: { ...model, ...toggleScreenDocs(model) }, ...(model.docs === "max" && model.client.conversation.pane.startsWith("/wiki/") ? { commands: [RevealWiki({})] } : {}) }),
     ClickedSplash: () => ({ model: { ...model, ...showSplash(model), ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } }),
@@ -473,18 +475,18 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     SelectedAction: ({ name }) => ({ model: { ...model, actions: { ...actionsOf(model), selected: name, run: "", loading: true, error: "" } }, commands: [LoadActions({ flow: name, ...(actionsOf(model).epoch === undefined ? {} : { epoch: actionsOf(model).epoch }) })] }),
     SelectedActionStep: ({ key }) => ({ model: { ...model, actions: { ...actionsOf(model), step: key } } }),
     SelectedRun: ({ id }) => ({ model: { ...model, actions: { ...actionsOf(model), step: "", run: id, selected: actionsOf(model).runs.find((run) => run.id === id)?.flow ?? actionsOf(model).selected, open: true, maximized: true } } }),
-    LoadedActions: ({ entries, commands, runs, epoch }) => (epoch ?? 0) !== (actionsOf(model).epoch ?? 0) ? { model } : ({ model: { ...model, actions: { ...actionsOf(model), entries, commands, runs: mergeRuns(actionsOf(model).runs, runs), loading: false, error: "" } } }),
-    FailedActions: ({ code, epoch }) => epoch !== undefined && epoch !== (actionsOf(model).epoch ?? 0) ? { model } : ({ model: { ...model, actions: { ...actionsOf(model), loading: false, starting: false, error: code } } }),
+    LoadedActions: ({ entries, commands, runs, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: { ...model, actions: { ...actionsOf(model), entries, commands, runs: mergeRuns(actionsOf(model).runs, runs), loading: false, error: "" } } }),
+    FailedActions: ({ code, epoch }) => !ModelDecision.actionsFailureApplies(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: { ...model, actions: { ...actionsOf(model), loading: false, starting: false, error: code } } }),
     UpdatedActionInput: ({ value }) => ({ model: { ...model, actions: { ...actionsOf(model), input: value } } }),
     ClickedRunAction: () => launchAction(model, actionsOf(model).selected, "button"),
-    StartedAction: ({ run, epoch }) => (epoch ?? 0) !== (actionsOf(model).epoch ?? 0) ? { model } : ({ model: { ...model, surface: "chat", stream: "open", palette: false, actions: { ...actionsOf(model), ...(actionsOf(model).run === "" ? {} : { step: "", run: run.id, selected: run.flow }), starting: false, runs: mergeRuns(actionsOf(model).runs, [run]), error: "" } }, commands: [ClosePalette({ dock: true })] }),
+    StartedAction: ({ run, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: { ...model, surface: "chat", stream: "open", palette: false, actions: { ...actionsOf(model), ...(actionsOf(model).run === "" ? {} : { step: "", run: run.id, selected: run.flow }), starting: false, runs: mergeRuns(actionsOf(model).runs, [run]), error: "" } }, commands: [ClosePalette({ dock: true })] }),
     ChangedAction: ({ run }) => ({ model: { ...model, actions: { ...actionsOf(model), runs: mergeRuns(actionsOf(model).runs, [run]) } } }),
-    TickedActions: ({ at }) => ({ model: { ...model, actions: { ...actionsOf(model), now: Math.max(actionsOf(model).now ?? 0, at) } } }),
+    TickedActions: ({ at }) => ({ model: { ...model, actions: { ...actionsOf(model), now: ModelDecision.actionsClock(actionsOf(model).now ?? 0, at) } } }),
     ClickedCancelAction: () => ({ model, commands: [CancelAction({ id: actionsOf(model).run })] }),
     RetriedActions: () => ({ model: { ...model, actions: { ...actionsOf(model), loading: true, error: "" } }, commands: [LoadActions({ flow: actionsOf(model).selected, ...(actionsOf(model).epoch === undefined ? {} : { epoch: actionsOf(model).epoch }) })] }),
     MovedSlash: ({ delta }) => {
       const menu = completions(model)
-      return { model: { ...model, actions: { ...actionsOf(model), highlight: menu.length === 0 ? 0 : (actionsOf(model).highlight + delta + menu.length) % menu.length } } }
+      return { model: { ...model, actions: { ...actionsOf(model), highlight: ModelDecision.slashHighlight(actionsOf(model).highlight, delta, menu.length) } } }
     },
     PickedSlash: ({ name }) => name.startsWith("mode/") ? switchMode(model, name.slice("mode/".length)) : launchAction(model, name, "slash"),
     SubmittedDraft: () => submit(model),

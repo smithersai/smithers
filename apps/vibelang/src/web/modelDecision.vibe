@@ -1,0 +1,172 @@
+// Decisions inside the web update: stale-response fences, account retries, the role gate and bounded menu movement.
+
+export type AccountRetry = "sign-in" | "people" | "grant" | "sign-out" | "roles"
+export type RetryPlan = "resume" | "sign-in" | "command"
+export type PeoplePane = "closed" | "pane" | "max"
+
+/** The failure text names the operation being retried; roles and sign-in share the sign-in text. */
+//@ verify
+//@ ensures retry == "grant" ==> \result == "Role change failed."
+//@ ensures retry == "people" ==> \result == "People couldn’t load."
+//@ ensures retry == "sign-out" ==> \result == "Sign out failed."
+//@ ensures (retry == "sign-in" || retry == "roles") ==> \result == "Sign-in failed. GitHub didn’t answer."
+export function accountFailureText(retry: AccountRetry): string {
+  if (retry === "grant") return "Role change failed."
+  if (retry === "people") return "People couldn’t load."
+  if (retry === "sign-out") return "Sign out failed."
+  return "Sign-in failed. GitHub didn’t answer."
+}
+
+/** Retry resumes the role stream, re-enters the sign-in guard, or repeats the one failed command. */
+//@ verify
+//@ ensures retry == "roles" ==> \result == "resume"
+//@ ensures retry == "sign-in" ==> \result == "sign-in"
+//@ ensures (retry == "people" || retry == "grant" || retry == "sign-out") ==> \result == "command"
+export function accountRetryPlan(retry: AccountRetry): RetryPlan {
+  if (retry === "roles") return "resume"
+  if (retry === "sign-in") return "sign-in"
+  return "command"
+}
+
+/** Live sign-in is refused only when the server said it is unavailable. */
+//@ verify
+//@ ensures \result == (live && reportedUnavailable)
+export function signInRefused(live: boolean, reportedUnavailable: boolean): boolean {
+  return live && reportedUnavailable
+}
+
+/** Only a maintainer can open the role dialog. */
+//@ verify
+//@ ensures \result == (role == "maintainer")
+export function canSelectRole(role: string): boolean {
+  return role === "maintainer"
+}
+
+/** People opens maximized only when it takes over a maximized docs page. */
+//@ verify
+//@ ensures docsMaximized ==> \result == "max"
+//@ ensures !docsMaximized ==> \result == "pane"
+export function peopleOpened(docsMaximized: boolean): PeoplePane {
+  return docsMaximized ? "max" : "pane"
+}
+
+/** The size control flips max to pane and anything else to max. */
+//@ verify
+//@ ensures pane == "max" ==> \result == "pane"
+//@ ensures pane != "max" ==> \result == "max"
+export function peopleToggled(pane: PeoplePane): PeoplePane {
+  return pane === "max" ? "pane" : "max"
+}
+
+/** A changed person or role drops role-scoped data. */
+//@ verify
+//@ ensures \result == (nextId != currentId || nextRole != currentRole)
+export function accountChanged(nextId: string, currentId: string, nextRole: string, currentRole: string): boolean {
+  return nextId !== currentId || nextRole !== currentRole
+}
+
+/** A grant counts only when the sequence advanced and the role table grew. */
+//@ verify
+//@ ensures \result == (nextSeq > currentSeq && nextRoles > currentRoles)
+export function roleGrantApplied(nextSeq: number, currentSeq: number, nextRoles: number, currentRoles: number): boolean {
+  return nextSeq > currentSeq && nextRoles > currentRoles
+}
+
+/** Losing maintainer closes an open role dialog. */
+//@ verify
+//@ ensures \result == (role != "maintainer" && target != "")
+export function roleDialogCloses(role: string, target: string): boolean {
+  return role !== "maintainer" && target !== ""
+}
+
+/** Absent epochs mean epoch zero. */
+//@ verify
+//@ ensures incoming == null && current == null ==> \result == true
+//@ ensures incoming != null && current != null ==> \result == (incoming == current)
+//@ ensures incoming == null && current != null ==> \result == (current == 0)
+//@ ensures incoming != null && current == null ==> \result == (incoming == 0)
+export function actionsEpochCurrent(incoming: number | null, current: number | null): boolean {
+  const left = incoming === null ? 0 : incoming
+  const right = current === null ? 0 : current
+  return left === right
+}
+
+/** A failure with no epoch always applies; a tagged failure must match. */
+//@ verify
+//@ ensures incoming == null ==> \result == true
+//@ ensures incoming != null && current != null ==> \result == (incoming == current)
+//@ ensures incoming != null && current == null ==> \result == (incoming == 0)
+export function actionsFailureApplies(incoming: number | null, current: number | null): boolean {
+  if (incoming === null) return true
+  return incoming === (current === null ? 0 : current)
+}
+
+/** The actions clock never moves backward. */
+//@ verify
+//@ ensures \result >= now && \result >= at
+//@ ensures \result == now || \result == at
+export function actionsClock(now: number, at: number): number {
+  return at > now ? at : now
+}
+
+/** Arrow keys wrap inside the menu and stay in range even after the menu shrinks. */
+//@ verify
+//@ requires highlight >= 0 && -1 <= delta && delta <= 1 && length >= 0
+//@ ensures length == 0 ==> \result == 0
+//@ ensures length > 0 ==> 0 <= \result && \result < length
+//@ ensures length > 0 && 0 <= highlight + delta && highlight + delta < length ==> \result == highlight + delta
+//@ ensures length > 0 && highlight == 0 && delta == -1 ==> \result == length - 1
+//@ ensures length > 0 && highlight == length - 1 && delta == 1 ==> \result == 0
+export function slashHighlight(highlight: number, delta: number, length: number): number {
+  return length === 0 ? 0 : (highlight + delta + length) % length
+}
+
+/** A mutating response is settled by its own retry, or by any response when nothing is retrying. */
+//@ verify
+//@ ensures retryOp == null ==> \result == true
+//@ ensures retryOp != null ==> \result == (retryOp == op && retryKey == key)
+export function issueResponseSettles(retryOp: string | null, retryKey: string | null, op: string | null, key: string | null): boolean {
+  return retryOp === null || (retryOp === op && retryKey === key)
+}
+
+/** Details apply only to the selected issue and never move the sequence backward. */
+//@ verify
+//@ ensures \result == (selected == issue && incomingSeq >= currentSeq)
+export function issueDetailsApply(selected: number, issue: number, incomingSeq: number, currentSeq: number): boolean {
+  return selected === issue && !(incomingSeq < currentSeq)
+}
+
+/** A details failure shows only for the selected issue and never over a mutation's retry. */
+//@ verify
+//@ ensures \result == (selected == issue && !retrying)
+export function issueDetailsFailureShows(selected: number, issue: number, retrying: boolean): boolean {
+  return selected === issue && !retrying
+}
+
+/** Only the latest loading wiki request can fail the page. */
+//@ verify
+//@ ensures \result == (request == currentRequest && loading)
+export function wikiFailureApplies(request: number, currentRequest: number, loading: boolean): boolean {
+  return request === currentRequest && loading
+}
+
+/** A stopped real sandbox with no minutes left shows the zero notice. */
+//@ verify
+//@ ensures \result == (remaining == 0 && id != "" && status == "stopped")
+export function sandboxOutOfMinutes(remaining: number, id: string, status: string): boolean {
+  return remaining === 0 && id !== "" && status === "stopped"
+}
+
+/** The low-minutes notice shows once per reset month. */
+//@ verify
+//@ ensures \result == (remaining > 0 && remaining <= 10 && warnedMonth != resetAt)
+export function sandboxLowMinutes(remaining: number, warnedMonth: number | null, resetAt: number): boolean {
+  return remaining > 0 && remaining <= 10 && warnedMonth !== resetAt
+}
+
+/** The pane opens on the transition into running, and only then. */
+//@ verify
+//@ ensures \result == (status == "running" && previous != "running")
+export function sandboxPaneOpens(status: string, previous: string | null): boolean {
+  return status === "running" && previous !== "running"
+}
