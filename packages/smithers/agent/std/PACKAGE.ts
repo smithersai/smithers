@@ -167,7 +167,7 @@ const securityReview = Smithers.SecurityReview({
         "parseHttpUrl admitting a loopback, link-local, or metadata address, or a URL whose host differs after WHATWG normalization.",
         "Caller-supplied Authorization or Cookie headers forwarded to a cross-origin redirect target."
       ],
-      paths: ["src/Fetch.vibe", "src/HttpPost.vibe", "src/WebFetch.ts", "src/internal/Http.ts", "src/internal/Url.ts"]
+      paths: ["src/Fetch.vibe", "src/HttpPost.vibe", "src/WebFetch.ts", "src/internal/Http.vibe", "src/internal/Url.ts"]
     },
     {
       id: "exa-credential-handling",

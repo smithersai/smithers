@@ -12,7 +12,7 @@ import * as Credential from "@smthrs/control/Credential"
 import * as HttpClient from "@smthrs/kernel/HttpClient"
 import { Clock, Effect, Layer, Redacted, Schema } from "effect"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
-import { header, readBounded } from "./internal/Http.ts"
+import { header, readBounded } from "./internal/Http.vibe"
 import * as StdError from "./StdError.ts"
 import * as WebSearch from "./WebSearch.vibe"
 

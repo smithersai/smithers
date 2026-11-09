@@ -7,7 +7,7 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { capability, envelope } from "./internal/Declaration.ts"
-import { execute, Response, Timeout } from "./internal/Http.ts"
+import { execute, Response, Timeout } from "./internal/Http.vibe"
 
 /**
  * Registry name for the fetch flow.

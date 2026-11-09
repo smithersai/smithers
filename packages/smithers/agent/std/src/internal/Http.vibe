@@ -11,7 +11,7 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import * as StdError from "../StdError.ts"
-import { guarded, refusal } from "./HttpNetwork.ts"
+import { guarded, refusal } from "./HttpNetwork.vibe"
 import { MAX_OUTPUT_BYTES, notice, truncateBytes } from "./Text.ts"
 import { parseHttpUrl } from "./Url.ts"
 
@@ -173,37 +173,37 @@ export const Response = Schema.Struct({
  * @since 1.0.0
  * @private
  */
-export const execute = Effect.fn("Http.execute")(function*(
-  input: {
-    readonly url: string
-    readonly headers?: Readonly<Record<string, string>> | undefined
-    readonly timeout?: number | undefined
-  },
-  makeRequest: (url: string) => HttpClientRequest.HttpClientRequest
-): Effect.fn.Return<typeof Response.Type, StdError.StdError, HttpClient.HttpClient | GrantStore> {
+export const execute = effect (input: {
+  readonly url: string
+  readonly headers?: Readonly<Record<string, string>> | undefined
+  readonly timeout?: number | undefined
+}, makeRequest: (url: string) => HttpClientRequest.HttpClientRequest): {
+  readonly status: number
+  readonly body: string
+  readonly truncated: boolean
+  readonly notice?: string | undefined
+}!StdError.StdError!(GrantStore | HttpClient.HttpClient) => try withSpan(effect {
   const url = parseHttpUrl(input.url)
   if (url === undefined) {
-    return yield* Effect.fail(
-      new StdError.StdError({
-        code: "invalid_input",
-        message: `URL must use http or https without user information: ${input.url}`,
-        path: input.url
-      })
-    )
+    throw new StdError.StdError({
+      code: "invalid_input",
+      message: `URL must use http or https without user information: ${input.url}`,
+      path: input.url
+    })
   }
-  const client = guarded(yield* HttpClient.HttpClient)
+  const client = guarded(try HttpClient.HttpClient)
   const request = makeRequest(url.toString())
-  const { status, bytes } = yield* withDeadline(
-    Effect.gen(function*() {
-      const response = yield* client.execute(
+  const { status, bytes } = try withDeadline(
+    (effect {
+      const response = try client.execute(
         input.headers === undefined ? request : HttpClientRequest.setHeaders(request, input.headers)
       )
-      const bytes = yield* readBounded(response.stream, input.url)
+      const bytes = try readBounded(response.stream, input.url)
       return { status: response.status, bytes }
     }).pipe(Effect.mapError((error) => requestError(input.url, error))),
     input.url,
     input.timeout
   )
-  const { text, ...disclosure } = capOutput(new TextDecoder().decode(bytes))
+  const { text, ...disclosure } = capOutput(try Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes))))
   return { status, body: text, ...disclosure }
-})
+}, "Http.execute")

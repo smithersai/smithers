@@ -407,6 +407,7 @@ export const withDestinationPinning = <A extends EffectHttpClient.HttpClient>(cl
  * Whether this exact client implements the Destination transport contract.
  * @category predicates
  * @since 1.0.0
+ * @throws {never}
  */
 export const supportsDestinationPinning = (client: EffectHttpClient.HttpClient): boolean => pinnedClients.has(client)
 

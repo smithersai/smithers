@@ -10,7 +10,7 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { describe, expect, it } from "vitest"
 import * as Fetch from "../src/Fetch.vibe"
 import * as HttpPost from "../src/HttpPost.vibe"
-import { guarded, refusal } from "../src/internal/HttpNetwork.ts"
+import { guarded, refusal } from "../src/internal/HttpNetwork.vibe"
 import * as WebFetch from "../src/WebFetch.ts"
 
 // Mock clients perform no I/O; explicitly opt these policy fixtures into the contract.

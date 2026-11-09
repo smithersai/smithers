@@ -300,6 +300,7 @@ export const withDestinationPinning = (client) => {
  * Whether this exact client implements the Destination transport contract.
  * @category predicates
  * @since 1.0.0
+ * @throws {never}
  */
 export const supportsDestinationPinning = (client) => pinnedClients.has(client);
 /**

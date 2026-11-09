@@ -81,6 +81,7 @@ const parseV6 = (text) => {
  *
  * @since 1.0.0-rc.16
  * @private
+ * @throws {never}
  */
 export const family = (address) => parseV4(address) !== undefined ? 4 : parseV6(address) !== undefined ? 6 : 0;
 const subnet = (network, prefix) => [(parseV4(network) ?? parseV6(network)), prefix];
@@ -124,6 +125,7 @@ const mappedV4 = publicV6[1];
  *
  * @since 1.0.0-rc.16
  * @private
+ * @throws {never}
  */
 export const isPublic = (address) => {
     const v4 = parseV4(address);

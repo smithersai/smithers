@@ -75,6 +75,7 @@ const parseV6 = (text: string): Uint8Array | undefined => {
  *
  * @since 1.0.0-rc.16
  * @private
+ * @throws {never}
  */
 export const family = (address: string): 0 | 4 | 6 =>
   parseV4(address) !== undefined ? 4 : parseV6(address) !== undefined ? 6 : 0
@@ -125,6 +126,7 @@ const mappedV4 = publicV6[1]!
  *
  * @since 1.0.0-rc.16
  * @private
+ * @throws {never}
  */
 export const isPublic = (address: string): boolean => {
   const v4 = parseV4(address)

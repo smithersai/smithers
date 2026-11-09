@@ -9,6 +9,7 @@
  *
  * @category parsing
  * @since 1.0.0
+ * @throws {never}
  */
 export const parseHttpUrl = (value, base) => {
     if (value.trim() === "")
