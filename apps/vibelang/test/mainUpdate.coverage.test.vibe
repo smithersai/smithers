@@ -1,0 +1,546 @@
+// The browser program's update, message by message: each case states what a person's action changes and which work it asks for.
+import { describe, expect, it } from "@effect/vitest"
+import { registration } from "../src/actions/catalog.vibe"
+import { DEMO_QUESTION } from "../src/core/walkthroughSteps.vibe"
+import { newClient } from "../src/core/conversation.vibe"
+import { initial as initialActions } from "../src/web/actionModel.vibe"
+import { initialIssues } from "../src/web/issues.vibe"
+import { accountOf, hasConversation, init, keyMessage, Message, type Model, roleLabel, theatreOf, tourConversation, update, viewTransition } from "../src/web/main.vibe"
+
+const flags = { session: "u", mode: "mock" as const, name: "Guest" }
+const home = init(flags).model
+const chat: Model = { ...home, surface: "chat" }
+const names = (result: { readonly commands?: ReadonlyArray<{ readonly name: string }> }) => (result.commands ?? []).map(command => command.name)
+const signedIn = (role: "new" | "community" | "contributor" | "maintainer", id = "1") => ({ id, login: `person-${id}`, role })
+const as = (model: Model, role: "new" | "community" | "contributor" | "maintainer", id = "1"): Model => ({ ...model, account: { ...accountOf(model), identity: signedIn(role, id) } })
+
+const { failedMedia: _noFailures, ...withoutFailures } = home
+
+describe("startup", () => {
+  it("names a failed sign-in, and starts clean otherwise", () => {
+    expect(accountOf(init({ ...flags, signInFailed: true }).model).error).toBe("Sign-in failed. GitHub didn’t answer.")
+    expect(accountOf(home).error).toBe("")
+  })
+  it("resumes an interrupted issue write with exactly the flags it was given", () => {
+    const resumed = init({ ...flags, openIssues: true, resumeRecovery: "r", resumeOp: "new", resumeKey: "k" })
+    const plain = init({ ...flags, openIssues: true })
+    expect(resumed.model.issues).toBeDefined()
+    expect(resumed.commands?.[0]).toMatchObject({ name: "LoadIssues", args: { resumeRecovery: "r", resumeOp: "new", resumeKey: "k" } })
+    expect(plain.commands?.[0]).toMatchObject({ name: "LoadIssues", args: {} })
+  })
+  it("resumes a tour ahead of any wiki deep link, and opens a deep link otherwise", () => {
+    const tour = init({ ...flags, resumeTour: true, wiki: "/wiki/index" })
+    const wiki = init({ ...flags, wiki: "/wiki/index" })
+    expect(tour.model.tour).toBe(true)
+    expect(names(tour)).toContain("StartTour")
+    expect(wiki.model.surface).toBe("chat")
+    expect(names(wiki)).toEqual(["OpenWiki"])
+  })
+})
+
+describe("media", () => {
+  it("records each failed source and observes both outcomes", () => {
+    const once = update(home, Message.FailedMedia({ src: "a.png", kind: "image" }))
+    const twice = update(once.model, Message.FailedMedia({ src: "b.mp4", kind: "video" }))
+    expect(twice.model.failedMedia).toEqual(["a.png", "b.mp4"])
+    expect(update(home, Message.LoadedMedia({ kind: "video" })).commands?.[0]).toMatchObject({ name: "ObserveMedia", args: { kind: "video", outcome: "loaded" } })
+    expect(update(withoutFailures, Message.FailedMedia({ src: "c", kind: "image" })).model.failedMedia).toEqual(["c"])
+    expect(update(home, Message.ObservedMedia()).model).toBe(home)
+  })
+})
+
+describe("account", () => {
+  it("sign out remembers what to retry and asks once", () => {
+    const out = update(as(chat, "new"), Message.ClickedSignOut())
+    expect(accountOf(out.model).retry).toBe("sign-out")
+    expect(names(out)).toEqual(["SignOutAccount"])
+  })
+  it("people opens, toggles and closes", () => {
+    const opened = update(as(chat, "maintainer"), Message.ClickedPeople()).model
+    const toggled = update(opened, Message.ToggledPeople()).model
+    expect(accountOf(toggled).people).not.toBe(accountOf(opened).people)
+    expect(accountOf(update(toggled, Message.ClosedPeople()).model).people).toBe("closed")
+  })
+  it("only a maintainer selects a role; cancelling clears the target", () => {
+    const denied = as(chat, "contributor")
+    expect(update(denied, Message.SelectedRole({ id: "9", role: "new" })).model).toBe(denied)
+    const picked = update(as(chat, "maintainer"), Message.SelectedRole({ id: "9", role: "community" }))
+    expect(accountOf(picked.model)).toMatchObject({ target: "9", targetRole: "community", error: "" })
+    expect(names(picked)).toEqual(["ShowRoleDialog"])
+    const cancelled = update(picked.model, Message.CancelledRole())
+    expect(accountOf(cancelled.model).target).toBe("")
+    expect(names(cancelled)).toEqual(["CloseRoleDialog"])
+  })
+  it("a loaded account closes an open role dialog and reloads actions only when the person changed", () => {
+    const pending: Model = { ...as(chat, "maintainer"), account: { ...accountOf(as(chat, "maintainer")), target: "9" } }
+    const same = update(pending, Message.AccountLoaded({ identity: signedIn("maintainer") }))
+    expect(names(same)).toEqual(["CloseRoleDialog"])
+    const other = update(pending, Message.AccountLoaded({ identity: signedIn("new", "2") }))
+    expect(names(other)).toEqual(["CloseRoleDialog", "LoadActions"])
+    expect(other.model.actions?.epoch).toBe(1)
+    expect(other.model.terminalDraft).toBe("")
+  })
+  it("a role event gap resumes from the last applied event without changing identity", () => {
+    const model = as(chat, "new")
+    const gapped = update(model, Message.ReceivedRole({ event: { type: "RoleGranted", seq: 9, id: "1", by: "x", role: "maintainer", mode: "person" } }))
+    expect(accountOf(gapped.model).identity.role).toBe("new")
+    expect(accountOf(gapped.model).epoch).toBe(accountOf(model).epoch + 1)
+  })
+  it("announces a role change to its holder, by mode, and to a maintainer watching People", () => {
+    const self = (mode: "person" | "participation") => update(as(chat, "new"), Message.ReceivedRole({ event: { type: "RoleGranted", seq: 1, id: "1", by: "x", role: "community", mode } }))
+    expect(accountOf(self("participation").model).notice).toBe("You're now Community.")
+    expect(accountOf(self("person").model).notice).toBe("You're now Community.")
+    expect(accountOf(self("person").model).identity.role).toBe("community")
+    expect(names(self("person"))).toContain("LoadActions")
+    const watching: Model = { ...as(chat, "maintainer"), account: { ...accountOf(as(chat, "maintainer")), people: "pane", members: [signedIn("new", "7")] } }
+    const seen = update(watching, Message.ReceivedRole({ event: { type: "RoleGranted", seq: 1, id: "7", by: "1", role: "community", mode: "person" } }))
+    expect(accountOf(seen.model).notice).toBe("person-7 is now Community.")
+    expect(names(seen)).toEqual(["LoadPeople"])
+    const unnamed = update(watching, Message.ReceivedRole({ event: { type: "RoleGranted", seq: 1, id: "8", by: "1", role: "community", mode: "person" } }))
+    expect(accountOf(unnamed.model).notice).toBe("8 is now Community.")
+  })
+  for (const [retry, command] of [["grant", "GrantRole"], ["people", "LoadPeople"], ["sign-out", "SignOutAccount"]] as const) {
+    it(`retry re-sends ${retry} once`, () => {
+      const model: Model = { ...as(chat, "maintainer"), account: { ...accountOf(as(chat, "maintainer")), retry, error: "x", target: "9", targetRole: "new" } }
+      const retried = update(model, Message.RetriedAccount())
+      expect(names(retried)).toEqual([command])
+      expect(accountOf(retried.model)).toMatchObject({ pending: true, error: "" })
+    })
+  }
+  it("dismisses an error", () => {
+    const model: Model = { ...chat, account: { ...accountOf(chat), error: "x" } }
+    expect(accountOf(update(model, Message.DismissedAccountError()).model).error).toBe("")
+  })
+  it("sign-in is refused where it can't run and asks the mock when mocked", () => {
+    const unavailable: Model = { ...chat, mode: "live", account: { ...accountOf(chat), identity: { ...accountOf(chat).identity, available: false } } }
+    expect(accountOf(update(unavailable, Message.ClickedSignIn()).model).error).toBe("Sign-in unavailable.")
+    const live = update({ ...chat, mode: "live" }, Message.ClickedSignIn())
+    expect(live.commands?.[0]).toMatchObject({ name: "SignInAccount", args: { mock: false } })
+  })
+})
+
+describe("issues", () => {
+  const data = (seq: number) => ({ seq, items: [] })
+  it("a projection older than the one on screen is ignored", () => {
+    const model: Model = { ...chat, issues: { ...initialIssues, data: data(5) } }
+    expect(update(model, Message.IssueProjectionLoaded({ data: data(4) })).model).toBe(model)
+    expect(update(model, Message.IssueProjectionLoaded({ data: data(6) })).model.issues?.data.seq).toBe(6)
+  })
+  it("a first projection is applied closed, as maintainer on mock and viewer on live", () => {
+    const mock = update(chat, Message.IssueProjectionLoaded({ data: data(0) })).model.issues
+    const live = update({ ...chat, mode: "live" }, Message.IssueProjectionLoaded({ data: data(0) })).model.issues
+    expect(mock).toMatchObject({ open: false, role: "maintainer" })
+    expect(live).toMatchObject({ open: false, role: "viewer" })
+  })
+  it("opening a card loads details only on live", () => {
+    expect(names(update(chat, Message.OpenIssueCard({ number: 3 })))).toEqual(["LoadIssues"])
+    const live = update({ ...chat, mode: "live" }, Message.OpenIssueCard({ number: 3 }))
+    expect(names(live)).toEqual(["LoadIssues", "LoadIssueDetails"])
+    expect(live.model.issues).toMatchObject({ open: true, screen: "detail", selected: 3 })
+  })
+  it("the Issues button doesn't reload while a write is busy", () => {
+    expect(names(update({ ...chat, issues: { ...initialIssues, busy: true } }, Message.ClickedIssues()))).toEqual([])
+  })
+  it("late details apply only to the open issue, and a failure shows only without a pending write", () => {
+    const model: Model = { ...chat, issues: { ...initialIssues, selected: 2, data: data(1) } }
+    expect(update(chat, Message.IssueDetailsLoaded({ number: 2, data: data(2) })).model).toBe(chat)
+    expect(update(model, Message.IssueDetailsLoaded({ number: 9, data: data(2) })).model).toBe(model)
+    expect(update(model, Message.IssueDetailsLoaded({ number: 2, data: data(2) })).model.issues?.data.seq).toBe(2)
+    expect(update(chat, Message.IssueDetailsFailed({ number: 2 })).model).toBe(chat)
+    expect(update(model, Message.IssueDetailsFailed({ number: 2 })).model.issues?.error).toBe("Couldn't load comments. Retry.")
+  })
+  it("names each save failure, once the failure belongs to the open write", () => {
+    for (const [reason, shown] of [["no-model", "Review unavailable"], ["connect", "Connect GitHub."], ["forbidden", "Not allowed"], ["tree", "Choose another parent."], ["assignee", "Choose an assignee."], ["closed", "Issue closed."], ["other", "Couldn't save. Retry."]] as const) {
+      const model: Model = { ...chat, issues: { ...initialIssues, busy: true, retry: { op: "new", key: "k" } as never } }
+      expect(update(model, Message.IssuesFailed({ reason, op: "new", key: "k" })).model.issues).toMatchObject({ busy: false, error: shown })
+    }
+  })
+  it("a failure with nothing loaded shows the error state; with items it keeps the list", () => {
+    expect(update(chat, Message.IssuesFailed({ reason: "x" })).model.issues?.status).toBe("error")
+  })
+  it("a role change closes a dialog the new role may not use", () => {
+    const model: Model = { ...as(chat, "maintainer"), issues: { ...initialIssues, dialog: "commit" as never } }
+    const result = update(model, Message.AccountLoaded({ identity: signedIn("new") }))
+    expect(result.model.issues).toMatchObject({ role: "new" })
+    if (result.model.issues?.dialog === "") expect(names(result)).toContain("CloseIssueDialog")
+  })
+})
+
+describe("Escape closes the innermost surface first", () => {
+  it("in order: role dialog, issue dialog, slash menu, account menu, issues, maximized actions, wiki edit, sandbox", () => {
+    const base = as(chat, "maintainer")
+    const withTarget: Model = { ...base, account: { ...accountOf(base), target: "9" } }
+    const r1 = update(withTarget, Message.PressedEscape())
+    expect(accountOf(r1.model).target).toBe("")
+    expect(names(r1)).toEqual(["CloseRoleDialog"])
+    const r2 = update({ ...base, issues: { ...initialIssues, open: true, dialog: "commit" as never } }, Message.PressedEscape())
+    expect(r2.model.issues?.dialog).toBe("")
+    expect(names(r2)).toEqual(["CloseIssueDialog"])
+    expect(update({ ...base, actions: { ...initialActions, slash: true } }, Message.PressedEscape()).model.actions?.slash).toBe(false)
+    const r3 = update({ ...base, account: { ...accountOf(base), menu: true } }, Message.PressedEscape())
+    expect(accountOf(r3.model).menu).toBe(false)
+    expect(names(r3)).toEqual(["FocusAccountMenu"])
+    expect(update({ ...base, issues: { ...initialIssues, open: true } }, Message.PressedEscape()).model.issues?.open).toBe(false)
+    expect(update({ ...base, actions: { ...initialActions, maximized: true } }, Message.PressedEscape()).model.actions?.maximized).toBe(false)
+    const editing = { page: "index", base: "a", text: "b", busy: false, error: "" }
+    expect(update({ ...base, wikiEdit: editing }, Message.PressedEscape()).model.wikiEdit).toBeUndefined()
+    const inFlight: Model = { ...base, wikiEdit: { ...editing, submission: { op: "save", page: "index", base: "a", text: "b", key: "k" } } }
+    expect(update(inFlight, Message.PressedEscape()).model).toBe(inFlight)
+    expect(update({ ...base, sandboxPane: "max" }, Message.PressedEscape()).model.sandboxPane).toBe("pane")
+  })
+  it("a maximized wiki pane returns to the pane and re-reveals the page", () => {
+    const pane = { ...chat, docs: "max" as const, client: { ...newClient, conversation: { ...newClient.conversation, pane: "/wiki/index" } } }
+    expect(names(update(pane, Message.PressedEscape()))).toEqual(["RevealWiki"])
+  })
+})
+
+describe("the tour", () => {
+  const touring = update(home, Message.ClickedLearnMore()).model
+  it("first-visit entry starts only from an untouched splash", () => {
+    expect(update(home, Message.AutoTour()).model.tour).toBe(true)
+    expect(update(chat, Message.AutoTour()).model).toBe(chat)
+  })
+  it("controls ask the agent while touring and do nothing otherwise", () => {
+    expect(update(touring, Message.ClickedPauseTour()).commands?.[0]).toMatchObject({ name: "ControlTour", args: { action: "pause" } })
+    expect(update({ ...touring, theatre: { ...theatreOf(touring), paused: true } }, Message.ClickedPauseTour()).commands?.[0]).toMatchObject({ args: { action: "resume" } })
+    expect(update(home, Message.ClickedPauseTour()).model).toBe(home)
+    expect(names(update(home, Message.ClickedPauseTour()))).toEqual([])
+  })
+  it("Back stops at the first stop; Skip seeks the next", () => {
+    expect(update(touring, Message.ClickedBackStop()).model).toBe(touring)
+    const third: Model = { ...touring, theatre: { ...theatreOf(touring), step: 3 } }
+    expect(update(third, Message.ClickedBackStop()).commands?.[0]).toMatchObject({ args: { action: "seek", step: 2 } })
+    expect(update(third, Message.ClickedSkipStop()).commands?.[0]).toMatchObject({ args: { action: "seek", step: 4 } })
+  })
+  it("Sound toggles and tells the presenter", () => {
+    const result = update(touring, Message.ToggledTourSound())
+    expect(result.model.theatre?.sound).toBe(true)
+    expect(result.commands?.[0]).toMatchObject({ name: "PresentTour", args: { sound: true, active: true } })
+  })
+  it("re-measures the spotlight only while touring", () => {
+    expect(names(update(touring, Message.RemeasureTheatre()))).toEqual(["MeasureTheatre"])
+    expect(names(update(home, Message.RemeasureTheatre()))).toEqual([])
+    const box = { x: 1, y: 2, width: 3, height: 4 } as never
+    expect(update(home, Message.MeasuredTheatre(box)).model.theatreBox).toMatchObject(box)
+  })
+  it("MovedTourFocus cycles without changing the model", () => {
+    const result = update(home, Message.MovedTourFocus({ backward: true }))
+    expect(result.model).toBe(home)
+    expect(result.commands?.[0]).toMatchObject({ name: "FocusTourControl", args: { backward: true } })
+  })
+  it("reports a lost connection", () => {
+    expect(update(touring, Message.FailedTourEvents()).model.tourError).toBe("Connection lost")
+  })
+  it("ending before the start was recorded ends it once the start lands", () => {
+    expect(update(touring, Message.SucceededTour()).model).toBe(touring)
+    const ended = update(home, Message.SucceededTour())
+    expect(ended.commands?.[0]).toMatchObject({ name: "EndTour", args: { conversation: tourConversation("u") } })
+  })
+  it("a failed start gives the chat back, unless this tab's own tour holds it", () => {
+    const failed = update(touring, Message.FailedTour({ reason: "unavailable" }))
+    expect(failed.model).toMatchObject({ surface: "chat", recoverTour: false })
+    expect(names(failed)).toContain("FocusComposer")
+    const resuming = update({ ...touring, recoverTour: true }, Message.FailedTour({ reason: "busy" }))
+    expect(resuming.model).toMatchObject({ tour: true, recoverTour: false, tourError: "" })
+  })
+  const event = (seq: number, step: number, target = "stop") => Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", id: "t1", seq, step, target, at: 0, duration: 1000 } })
+  const started = update(touring, Message.ReceivedTourEvent({ event: { type: "TourStarted", id: "t1", seq: 1 } })).model
+  it("a gap restarts the replay; a repeat changes nothing", () => {
+    const gapped = update(started, Message.ReceivedTourEvent({ event: { type: "TourEnded", id: "t1", seq: 9 } }))
+    expect(gapped.model.tourClient).toEqual(newClient)
+    expect(gapped.model.epoch).toBe(started.epoch + 1)
+    const repeat = update(started, Message.ReceivedTourEvent({ event: { type: "TourStarted", id: "t1", seq: 1 } }))
+    expect(repeat.model).toBe(started)
+  })
+  it("drives each numbered destination through the person's own messages", () => {
+    const at = (step: number) => update(started, event(2, step))
+    expect(at(1).model.surface).toBe("splash")
+    const second = at(2)
+    expect(second.model.client.conversation.entries.length + second.model.client.pending.length).toBe(1)
+    expect(names(second)).toContain("PostMessage")
+    expect(at(3).model.issues).toMatchObject({ open: true, screen: "list", kind: "All" })
+    expect(at(5).model.issues).toMatchObject({ open: true, selected: 45 })
+    expect(at(6).model.docs).toBe("max")
+    expect(at(8).model.draft).toBe("/")
+    expect(names(at(8))).toContain("FocusComposer")
+    expect(at(9).model.sandboxPane).toBe("max")
+    const last = at(10)
+    expect(last.model.tour).toBe(false)
+    expect(last.commands?.find(command => command.name === "PresentTour")).toMatchObject({ args: { step: 10, finish: true, active: false } })
+  })
+  it("the demonstration post keeps one stable identity and doesn't count as sent", () => {
+    const step2 = update(started, event(2, 2)).model
+    expect(step2.sent).toBe(started.sent)
+    const pendingId = step2.client.pending[0]?.clientId
+    expect(pendingId).toBe("u-walkthrough")
+    expect(step2.client.pending[0]?.text).toBe(DEMO_QUESTION)
+    const again = update(step2, event(3, 3)).model
+    expect(again.client.pending.filter(post => post.clientId === pendingId)).toHaveLength(1)
+  })
+  it("the tour's end event ends control and keeps the presentation commands", () => {
+    const ended = update(started, Message.ReceivedTourEvent({ event: { type: "TourEnded", id: "t1", seq: 2 } }))
+    expect(ended.model.tour).toBe(false)
+    expect(names(ended)).toEqual(expect.arrayContaining(["EndTour", "FocusComposer"]))
+  })
+  it("pausing, resuming and seeking present the frozen stop", () => {
+    const driven = update(started, event(2, 3, "issues:list")).model
+    const paused = update(driven, Message.ReceivedTourEvent({ event: { type: "TourPaused", id: "t1", seq: 3, at: 1 } }))
+    expect(paused.model.theatre).toMatchObject({ step: 3, paused: true })
+    const resumed = update(paused.model, Message.ReceivedTourEvent({ event: { type: "TourResumed", id: "t1", seq: 4, at: 2 } }))
+    expect(resumed.model.theatre?.paused).toBe(false)
+    const sought = update(resumed.model, Message.ReceivedTourEvent({ event: { type: "TourSought", id: "t1", seq: 5, at: 3, step: 4 } }))
+    expect(sought.commands?.find(command => command.name === "PresentTour")).toMatchObject({ args: { paused: true } })
+  })
+})
+
+describe("the wiki editor", () => {
+  const onPage: Model = { ...as(chat, "maintainer"), client: { ...newClient, conversation: { ...newClient.conversation, pane: "/wiki/index" } } }
+  const editing = { page: "index", base: "a", text: "a", busy: false, error: "" }
+  it("doesn't open off a page, without permission, or on an unknown or uneditable draft", () => {
+    expect(update(as(chat, "maintainer"), Message.ClickedEditWiki()).model.wikiEdit).toBeUndefined()
+    expect(update(as(onPage, "new"), Message.ClickedEditWiki()).model.wikiEdit).toBeUndefined()
+    expect(update(onPage, Message.ClickedWikiDraft({ page: "no-such" })).model.wikiEdit).toBeUndefined()
+    expect(update(as(onPage, "new"), Message.ClickedWikiDraft({ page: "index" })).model.wikiEdit).toBeUndefined()
+  })
+  it("opens the shown page, and a chat draft opens its page first", () => {
+    const opened = update(onPage, Message.ClickedEditWiki())
+    expect(opened.model.wikiEdit?.page).toBe("index")
+    expect(names(opened)).toEqual(["OpenWikiEditor"])
+    const draft = update(as(chat, "contributor"), Message.ClickedWikiDraft({ page: "index" }))
+    expect(names(draft)).toEqual(["OpenWiki", "OpenWikiEditor"])
+  })
+  it("a submitted edit returns to its page instead of opening a second one", () => {
+    const inFlight: Model = { ...onPage, wikiEdit: { ...editing, submission: { op: "save", page: "index", base: "a", text: "b", key: "k" } } }
+    expect(names(update(inFlight, Message.ClickedEditWiki()))).toEqual(["OpenWiki"])
+  })
+  it("typing and cancelling respect a write in flight", () => {
+    const typed = update({ ...onPage, wikiEdit: editing }, Message.UpdatedWikiEdit({ value: "b" }))
+    expect(typed.model.wikiEdit).toMatchObject({ text: "b", error: "" })
+    const busy: Model = { ...onPage, wikiEdit: { ...editing, busy: true } }
+    expect(update(busy, Message.UpdatedWikiEdit({ value: "b" })).model).toBe(busy)
+    expect(update(onPage, Message.UpdatedWikiEdit({ value: "b" })).model).toBe(onPage)
+    expect(update(onPage, Message.CanceledWikiEdit()).model).toBe(onPage)
+    expect(update({ ...onPage, wikiEdit: editing }, Message.CanceledWikiEdit()).model.wikiEdit).toBeUndefined()
+  })
+  it("submit refuses no change, chooses save or propose by role, and retries the same submission", () => {
+    expect(update(onPage, Message.SubmittedWikiEdit()).model).toBe(onPage)
+    expect(update({ ...onPage, wikiEdit: editing }, Message.SubmittedWikiEdit()).model.wikiEdit?.error).toBe("No changes.")
+    const changed = { ...editing, text: "b" }
+    const viewer = as({ ...onPage, wikiEdit: changed }, "new")
+    expect(update(viewer, Message.SubmittedWikiEdit()).model).toBe(viewer)
+    const saved = update({ ...onPage, wikiEdit: changed, wikiEditRequest: 2 }, Message.SubmittedWikiEdit())
+    expect(saved.model.wikiEdit?.submission).toMatchObject({ op: "save", key: "u-wiki-1" })
+    expect(update(as({ ...onPage, wikiEdit: changed }, "contributor"), Message.SubmittedWikiEdit()).model.wikiEdit?.submission?.op).toBe("propose")
+    const failed = update(saved.model, Message.FailedWikiEdit({ request: 2, reason: "unavailable" })).model
+    const retried = update(failed, Message.SubmittedWikiEdit())
+    expect(retried.model.wikiEdit?.submission).toMatchObject({ key: "u-wiki-1", recovery: "u-wiki-retry-2" })
+  })
+  it("a fresh read keeps typing, restores a stored draft, and ignores a stale editor", () => {
+    const open: Model = { ...onPage, wikiEdit: editing, wikiEditRequest: 2 }
+    const fresh = update(open, Message.BeganWikiEdit({ request: 2, page: "index", source: "new", draft: "" }))
+    expect(fresh.model.wikiEdit).toMatchObject({ base: "new", text: "new" })
+    expect(update(open, Message.BeganWikiEdit({ request: 2, page: "index", source: "new", draft: "stored" })).model.wikiEdit?.text).toBe("stored")
+    const typed: Model = { ...open, wikiEdit: { ...editing, text: "mine" } }
+    expect(update(typed, Message.BeganWikiEdit({ request: 2, page: "index", source: "new", draft: "stored" })).model.wikiEdit?.text).toBe("mine")
+    expect(update(open, Message.BeganWikiEdit({ request: 1, page: "index", source: "new", draft: "" })).model).toBe(open)
+    expect(update(onPage, Message.BeganWikiEdit({ request: 2, page: "index", source: "new", draft: "" })).model).toBe(onPage)
+  })
+  it("completion records the observed page and its review; a stale completion is ignored", () => {
+    const open: Model = { ...onPage, wikiEdit: editing, wikiEditRequest: 2 }
+    const done = update(open, Message.CompletedWikiEdit({ request: 2, page: "index", source: "s", revision: "r", review: "https://x/pull/1" })).model
+    expect(done.wikiEdit).toBeUndefined()
+    expect(done.wikiPages).toEqual([{ id: "index", source: "s", revision: "r" }])
+    expect(done.wikiReview).toEqual({ page: "index", url: "https://x/pull/1" })
+    expect(update(open, Message.CompletedWikiEdit({ request: 2, page: "index", source: "s", revision: "r", review: "" })).model.wikiReview).toBeUndefined()
+    expect(update(open, Message.CompletedWikiEdit({ request: 1, page: "index", source: "s", revision: "r", review: "" })).model).toBe(open)
+    expect(update(onPage, Message.CompletedWikiEdit({ request: 2, page: "index", source: "s", revision: "r", review: "" })).model).toBe(onPage)
+  })
+  it("failure wording is minimal and an unwritten write can be edited again", () => {
+    const submission = { op: "save" as const, page: "index", base: "a", text: "b", key: "k" }
+    const open: Model = { ...onPage, wikiEdit: { ...editing, busy: true, submission }, wikiEditRequest: 2 }
+    const shown = (reason: string, unwritten?: boolean) => update(open, Message.FailedWikiEdit({ request: 2, reason, ...(unwritten === undefined ? {} : { unwritten }) })).model.wikiEdit
+    expect(shown("forbidden")?.error).toBe("Not allowed.")
+    expect(shown("conflict")?.error).toBe("The page changed. Reload the editor.")
+    expect(shown("connect")?.error).toBe("Connect GitHub.")
+    expect(shown("sign-in")?.error).toBe("Connect GitHub.")
+    expect(shown("other")?.error).toBe("Couldn't save. Retry.")
+    expect(shown("other")?.submission).toEqual(submission)
+    expect(shown("other", true)?.submission).toBeUndefined()
+    expect(update(open, Message.FailedWikiEdit({ request: 1, reason: "x" })).model).toBe(open)
+    expect(update(onPage, Message.FailedWikiEdit({ request: 2, reason: "x" })).model).toBe(onPage)
+  })
+  it("the root location goes home and closes issues; a page location opens the wiki", () => {
+    const issues: Model = { ...chat, issues: { ...initialIssues, open: true } }
+    expect(update(issues, Message.WikiLocationChanged({ page: "/" })).model).toMatchObject({ surface: "splash", docs: "pane", issues: { open: false } })
+    expect(update(chat, Message.WikiLocationChanged({ page: "/" })).model.issues).toBeUndefined()
+    expect(names(update(chat, Message.WikiLocationChanged({ page: "/wiki/index" })))).toEqual(["OpenWiki"])
+    expect(update(chat, Message.FilteredWiki({ value: "x" })).model.wikiQuery).toBe("x")
+  })
+})
+
+describe("the sandbox pane", () => {
+  it("the terminal draft submits as a command and clears", () => {
+    const typed = update(chat, Message.UpdatedTerminal({ value: "pwd" })).model
+    const sent = update(typed, Message.SubmittedTerminal())
+    expect(sent.commands?.[0]).toMatchObject({ name: "SandboxAction", args: { kind: "command", command: "pwd" } })
+    expect(sent.model.terminalDraft).toBe("")
+    expect(update(chat, Message.SubmittedTerminal()).model).toBe(chat)
+  })
+  it("opens, maximizes and ignores a failure for another request", () => {
+    const open = update(chat, Message.ClickedSandboxes()).model
+    expect(open.sandboxPane).toBe("pane")
+    expect(update(open, Message.MaximizedSandboxes()).model.sandboxPane).toBe("max")
+    const busy: Model = { ...open, sandboxBusy: true, sandboxRequest: 2 }
+    expect(update(busy, Message.FailedSandbox({ conversation: busy.conversation, request: 1, reason: "x" })).model).toBe(busy)
+    expect(update(busy, Message.FailedSandbox({ conversation: busy.conversation, request: 2, reason: "x" })).model).toMatchObject({ sandboxBusy: false, sandboxError: "x" })
+  })
+})
+
+describe("actions", () => {
+  const tour = registration("vibelang/Tour")
+  const reply = registration("vibelang/Reply")
+  const open: Model = { ...chat, actions: { ...initialActions, entries: [tour], commands: [tour], selected: tour.name, epoch: 1 } }
+  const { epoch: _noEpoch, ...epochless } = open.actions!
+  const noEpoch: Model = { ...open, actions: epochless }
+  const run = (state: "running" | "passed", id = "a1") => ({ id, flow: tour.name, door: "button" as const, actor: "person" as const, state, started: 0, at: 1, result: "", steps: [] })
+  it("typing a slash loads the catalog only when it is empty", () => {
+    expect(names(update(chat, Message.UpdatedDraft({ value: "/" })))).toEqual(["LoadActions"])
+    expect(names(update(open, Message.UpdatedDraft({ value: "/" })))).toEqual([])
+    expect(update(open, Message.UpdatedDraft({ value: "/" })).model.actions).toMatchObject({ slash: true, highlight: 0 })
+  })
+  it("the panel opens with a load, closes back to the composer, and maximizes", () => {
+    const opened = update(open, Message.ClickedActions())
+    expect(opened.commands?.[0]).toMatchObject({ name: "LoadActions", args: { epoch: 1 } })
+    const closed = update({ ...opened.model, actions: { ...opened.model.actions!, maximized: true } }, Message.ClickedActions())
+    expect(closed.model.actions).toMatchObject({ open: false, maximized: false })
+    expect(names(closed)).toEqual(["FocusComposer"])
+    expect(update(open, Message.MaximizedActions()).model.actions?.maximized).toBe(true)
+  })
+  it("selecting a flow reloads it; selecting a run opens it maximized and follows its flow", () => {
+    const selected = update(open, Message.SelectedAction({ name: reply.name }))
+    expect(selected.model.actions).toMatchObject({ selected: reply.name, run: "", loading: true })
+    expect(selected.commands?.[0]).toMatchObject({ args: { flow: reply.name, epoch: 1 } })
+    expect(update(noEpoch, Message.SelectedAction({ name: reply.name })).commands?.[0]).not.toHaveProperty("args.epoch")
+    const known: Model = { ...open, actions: { ...open.actions!, runs: [run("running")] } }
+    expect(update(known, Message.SelectedRun({ id: "a1" })).model.actions).toMatchObject({ run: "a1", selected: tour.name, open: true, maximized: true, step: "" })
+    expect(update(known, Message.SelectedRun({ id: "gone" })).model.actions?.selected).toBe(tour.name)
+  })
+  it("responses from a previous epoch are ignored", () => {
+    expect(update(open, Message.LoadedActions({ entries: [], commands: [], runs: [], epoch: 0 })).model).toBe(open)
+    expect(update(open, Message.StartedAction({ run: run("running"), epoch: 0 })).model).toBe(open)
+    expect(update(open, Message.FailedActions({ code: "x", epoch: 0 })).model).toBe(open)
+    expect(update(open, Message.FailedActions({ code: "x", epoch: 1 })).model.actions).toMatchObject({ error: "x", loading: false, starting: false })
+  })
+  it("a started run joins the list, re-focuses a shown run, and docks the composer", () => {
+    const started = update(open, Message.StartedAction({ run: run("running"), epoch: 1 }))
+    expect(started.model.actions?.runs).toHaveLength(1)
+    expect(started.model.actions?.run).toBe("")
+    expect(names(started)).toEqual(["ClosePalette"])
+    const shown: Model = { ...open, actions: { ...open.actions!, run: "old", step: "s" } }
+    expect(update(shown, Message.StartedAction({ run: run("running", "new"), epoch: 1 })).model.actions).toMatchObject({ run: "new", step: "" })
+    expect(update(started.model, Message.ChangedAction({ run: run("passed") })).model.actions?.runs).toEqual([run("passed")])
+  })
+  it("Run launches the selected flow, a repeat re-runs, and a viewer-hidden flow can't start", () => {
+    const typed = update(open, Message.UpdatedActionInput({ value: "x" })).model
+    const launched = update(typed, Message.ClickedRunAction())
+    expect(launched.commands?.[0]).toMatchObject({ name: "RunAction", args: { name: tour.name, text: "x", door: "button", epoch: 1 } })
+    expect(launched.model.actions?.starting).toBe(true)
+    expect(update(launched.model, Message.ClickedRunAction()).model).toBe(launched.model)
+    const hidden: Model = { ...open, actions: { ...open.actions!, selected: reply.name } }
+    expect(update(hidden, Message.ClickedRunAction()).model).toBe(hidden)
+    const again: Model = { ...open, actions: { ...open.actions!, run: "a1" } }
+    expect(update(again, Message.ClickedRunAction()).commands?.[0]).toMatchObject({ args: { retry: "a1" } })
+  })
+  it("cancels the shown run and retries a failed load", () => {
+    expect(update({ ...open, actions: { ...open.actions!, run: "a1" } }, Message.ClickedCancelAction()).commands?.[0]).toMatchObject({ name: "CancelAction", args: { id: "a1" } })
+    const retried = update({ ...open, actions: { ...open.actions!, error: "x" } }, Message.RetriedActions())
+    expect(retried.model.actions).toMatchObject({ loading: true, error: "" })
+    expect(retried.commands?.[0]).toMatchObject({ args: { epoch: 1 } })
+    expect(update(noEpoch, Message.RetriedActions()).commands?.[0]).not.toHaveProperty("args.epoch")
+  })
+  it("the slash menu moves, picks a mode, starts the tour and passes the words after the command", () => {
+    const menu: Model = { ...open, draft: "/", actions: { ...open.actions!, slash: true } }
+    const moved = update(menu, Message.MovedSlash({ delta: 1 }))
+    expect(typeof moved.model.actions?.highlight).toBe("number")
+    expect(names(update(menu, Message.PickedSlash({ name: "mode/live" })))).toEqual(["SwitchMode"])
+    expect(update(menu, Message.PickedSlash({ name: "mode/bogus" })).model).toBe(menu)
+    expect(update(menu, Message.PickedSlash({ name: tour.name })).model.tour).toBe(true)
+    const worded: Model = { ...open, draft: "/run several words", actions: { ...open.actions!, commands: [{ ...tour, name: "vibelang/Run" }] } }
+    expect(update(worded, Message.PickedSlash({ name: "vibelang/Run" })).commands?.[0]).toMatchObject({ args: { text: "several words", door: "slash" } })
+  })
+})
+
+describe("submitting the draft", () => {
+  it("/mock and /live switch mode, and /sandbox opens one", () => {
+    expect(names(update({ ...chat, draft: "/live" }, Message.SubmittedDraft()))).toEqual(["SwitchMode"])
+    expect(names(update({ ...chat, draft: "/mock" }, Message.SubmittedDraft()))).toEqual(["SwitchMode"])
+    expect(names(update({ ...chat, draft: "/sandbox" }, Message.SubmittedDraft()))).toEqual(["SandboxAction", "ClosePalette"])
+  })
+  it("an unknown command does nothing; a blank draft does nothing", () => {
+    const unknown: Model = { ...chat, draft: "/nope" }
+    expect(update(unknown, Message.SubmittedDraft()).model).toBe(unknown)
+    const blank: Model = { ...chat, draft: "  " }
+    expect(update(blank, Message.SubmittedDraft()).model).toBe(blank)
+  })
+  it("a post closes issues and returns to following", () => {
+    const result = update({ ...chat, draft: "hi", following: false, issues: { ...initialIssues, open: true } }, Message.SubmittedDraft())
+    expect(result.model).toMatchObject({ following: true, sent: 1, draft: "", issues: { open: false } })
+    expect(result.commands?.[0]).toMatchObject({ name: "PostMessage", args: { clientId: "u-1", text: "hi" } })
+  })
+  it("retry re-sends only a failed post", () => {
+    const posted = update({ ...chat, draft: "hi" }, Message.SubmittedDraft()).model
+    expect(update(posted, Message.ClickedRetry({ clientId: "u-1" })).model).toBe(posted)
+    const failed = update(posted, Message.FailedPost({ clientId: "u-1", reason: "closed" })).model
+    expect(names(update(failed, Message.ClickedRetry({ clientId: "u-1" })))).toEqual(["PostMessage", "FocusComposer"])
+  })
+})
+
+describe("the event stream", () => {
+  const posted = (seq: number, id: string) => ({ type: "Posted" as const, seq, id, clientId: id, name: "Ada", text: "q", at: 0 })
+  it("a gap resumes from the last applied event; a stale scroll is dropped", () => {
+    const gapped = update(chat, Message.ReceivedEvent({ event: posted(5, "p") }))
+    expect(gapped.model.epoch).toBe(chat.epoch + 1)
+    expect(gapped.model.from).toBe(0)
+    expect(update(chat, Message.ScrolledTranscript({ bottom: false, intent: chat.followIntent - 1 })).model).toBe(chat)
+  })
+  it("a wiki pane event scrolls to the page, closes an unsaved edit of another page and docks People", () => {
+    const editing = { page: "other", base: "a", text: "a", busy: false, error: "" }
+    const model: Model = { ...chat, wikiEdit: editing, account: { ...accountOf(chat), people: "max" } }
+    const result = update(model, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "e1", url: "/wiki/index" } }))
+    expect(result.model.wikiEdit).toBeUndefined()
+    expect(accountOf(result.model).people).toBe("pane")
+    expect(result.model).toMatchObject({ following: false, wikiStatus: "ready", wikiAfter: "e1" })
+    expect(names(result)).toEqual(["WikiLocation"])
+  })
+  it("an action request reads the run once it is new", () => {
+    const result = update(chat, Message.ReceivedEvent({ event: { type: "ActionRequested", seq: 1, id: "a1", flow: "f", door: "agent", actor: "agent", at: 0 } }))
+    expect(result.commands?.[0]).toMatchObject({ name: "ReadAction", args: { id: "a1" } })
+  })
+  it("reconnect replays from the last applied event", () => {
+    const failed = update(chat, Message.FailedEvents({ reason: "ended" })).model
+    expect(failed).toMatchObject({ stream: "failed", connection: "Disconnected" })
+    const back = update(failed, Message.ClickedReconnect())
+    expect(back.model).toMatchObject({ stream: "open", connection: "Reconnecting", epoch: failed.epoch + 1 })
+    expect(names(back)).toEqual(["FocusComposer"])
+  })
+})
+
+describe("small decisions", () => {
+  it("maps the key chords and nothing else", () => {
+    expect(Option.getOrUndefined(keyMessage("k", true, false))?._tag).toBe("PressedCommandK")
+    expect(Option.getOrUndefined(keyMessage("Escape", false, false))?._tag).toBe("PressedEscape")
+    expect(Option.isNone(keyMessage("x", false, false))).toBe(true)
+  })
+  it("capitalizes a role for display and sees a conversation only with content", () => {
+    expect(roleLabel("maintainer")).toBe("Maintainer")
+    expect(hasConversation(home)).toBe(false)
+    expect(hasConversation(update({ ...chat, draft: "hi" }, Message.SubmittedDraft()).model)).toBe(true)
+  })
+  it("names a view transition for issues, a surface change, and none", () => {
+    const issues: Model = { ...chat, issues: { ...initialIssues, open: true } }
+    expect(viewTransition({ previousModel: chat, model: issues, message: Message.FocusedPrompt() })).toEqual({ types: ["to-issues"] })
+    expect(viewTransition({ previousModel: issues, model: chat, message: Message.FocusedPrompt() })).toEqual({ types: ["from-issues"] })
+    expect(viewTransition({ previousModel: chat, model: chat, message: Message.FocusedPrompt() })).toBe(false)
+    expect(viewTransition({ previousModel: home, model: chat, message: Message.FocusedPrompt() })).toHaveProperty("types")
+  })
+})
