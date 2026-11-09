@@ -109,7 +109,8 @@ it("action invocation preparation admits valid input and refuses the rest", asyn
     await runPromise(effect {
       const post = try prepare("vibelang/Post", { text: "Measured" }, "bench-1")
       const tour = try prepare("vibelang/Tour", {}, "bench-2")
-      const end = try prepare("vibelang/EndTour", null, "bench-3")
+      // EndTour is a person's Escape, not an invocable action (c0564dfd): preparing it is refused.
+      const end = try Effect.flip(prepare("vibelang/EndTour", null, "bench-3"))
       const shown = try prepare("vibelang/history/show", null, "bench-4")
       const planned = try prepare("vibelang/history/Plan", { how: "append", epic: "", newEpic: "Bench", target: "", title: "Measured", task: "Task" }, "bench-5")
       const started = try prepare("vibelang/history/Start", { id: "m1", lane: "bench" }, "bench-6")
@@ -123,7 +124,7 @@ it("action invocation preparation admits valid input and refuses the rest", asyn
       try Effect.try(() => {
         expect(post).toEqual({ kind: "post", payload: { clientId: "bench-1", name: "Guest", text: "Measured" } })
         expect(tour).toEqual({ kind: "tour", payload: { tour: "bench-2" } })
-        expect(end).toEqual({ kind: "end", payload: {} })
+        expect(end).toMatchObject({ _tag: "ActionFailure", code: "not-found" })
         expect(shown).toEqual({ kind: "show", payload: { what: "outline" } })
         expect(planned.kind).toBe("plan")
         expect(started.kind).toBe("start")
