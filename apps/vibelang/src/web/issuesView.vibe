@@ -141,7 +141,7 @@ function detail(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
     h.div([h.Class("sui-item-conv-main")], [
       h.div([h.Class("sui-item-conv-post")], [h.div([h.Class("sui-item-conv-comment-meta")], [avatar(h, i.author), h.span([h.Class("sui-item-conv-author")], [i.author]), h.span([], [when(ui.data.absoluteDates === true, i.age, true)])]), ...issueBody(ui, h, send, i.body)]),
       ...(i.vip !== "" || (parent === undefined && children.length === 0) ? [] : [
-      h.div([h.Class("sui-card")], [h.div([h.Class("sui-card-header")], [h.div([h.Class("sui-card-title")], ["Tree"]), h.span([h.Class("sui-card-action sui-badge sui-badge-secondary")], [`${children.length} children`])]), h.div([h.Class("sui-card-content ix-tree")], [
+      h.div([h.Class("sui-card")], [h.div([h.Class("sui-card-header")], [h.div([h.Class("sui-card-title")], ["Tree"]), h.span([h.Class("sui-card-action sui-badge sui-badge-secondary")], [`${children.length} ${children.length === 1 ? "child" : "children"}`])]), h.div([h.Class("sui-card-content ix-tree")], [
         ...(parent === undefined ? [] : [h.div([h.Class("ix-tree-parent")], ["Part of ", issueLink(h, send, parent)])]),
         h.ul([h.Class("ix-tree-list")], children.map((child) => h.li([h.Class("ix-tree-row")], [icon(h, child), issueLink(h, send, child), h.span([h.Class("ix-tree-meta")], [...badges(h, child, false), ...(child.assignee === "" ? [] : [avatar(h, child.assignee)])])]))),
       ])])
