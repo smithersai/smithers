@@ -382,3 +382,17 @@ stop boundaries, and real-jj seed refusal/preservation/recovery are covered. See
 without intent payloads. Behavioral mutation controls detect each changed failure behavior. Existing Vitest and V8
 5.0.0 are unchanged; this continuation adds no dependency. All strict coverage gates remain exclusive until each
 passes, under the lead's recorded ruling; current unit, Chromium and isolate measurements are in 0016.
+
+
+**Worker benchmark continuation (0017).** Ordinary public issue/wiki reads are now independently checked against
+real anonymous GitHub, opt-in with `BENCH_PUBLIC_GITHUB=1`; the production read probe is `BENCH_SITE_READS=1`.
+History/store and startup failures, chunked HTTP limits, participation/origin, streamed reply replacement, closed
+sandbox tools, native agent action cancellation, Budget expiry and refused-id replay have result-checked workloads.
+Intentional five-second, cache-TTL and two-minute waits are named in their methods. No tool or dependency added.
+The 100% gate stays unchanged; 0017 and the benchmark wiki distinguish the measured base, focused counter unions,
+deployed failures and remaining person/Container boundaries.
+
+
+Worker source receipt on c5bbf81b: 82 benchmark files passed / 174 cases, one opt-in skip and a cached old-RPC failure superseded by a passing corrected API-only collection. Exact-source merged worker lines are 2,201/2,374 (92.71%); src+worker 7,355/7,716 (95.32%). All four 100% thresholds remain red for 112 files. Later main changes need a fresh full receipt; no dependency or tool was added.
+
+Final compatibility on 479f05a3 passes typecheck, 242 unit files / 2,105 cases (one expected failure, four skips), and nine benchmark files / 22 cases (one opt-in skip). Expanded issue/wiki stale-copy checks pass separately timed and instrumented after the anonymous quota reset. No new dependency or tool. The overall strict coverage receipt remains explicitly based on c5bbf81b.

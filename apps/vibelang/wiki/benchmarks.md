@@ -3669,3 +3669,196 @@ and asserted typed value. No model call. `2026-11-10T15-42-09.996Z-live-browser.
 | 3 | 427.4 | 42.4 | 13.2 |
 
 Network, browser caches and automation are uncontrolled; three observations establish no percentile.
+
+
+## Worker continuation: method and limitations, 2026-11-10
+
+The issue and wiki repositories are public: their ordinary source reads do not require a person's GitHub sign-in.
+`bench/public-github.bench.vibe` opts in with `BENCH_PUBLIC_GITHUB=1` and sends real anonymous GETs through
+production GitHub hosts, durable SQLite execution and PublicReads. Untimed native issue/comments and immutable
+contents reads are the independent oracles. Every sample checks actual identity/content, ordering, comments,
+timeline, revisions and retained storage. One empty application-cache observation and three warm-cache samples
+are retained. Native oracle calls warm transport first; this is no DNS/TLS/OS cold-start or isolated cache-speedup
+claim. Cold includes migrations; warm reads use new durable keys on the growing journal.
+
+A real GitHub read also primes the cache-eviction case. After the actual TTL expires, faulty Effect services
+return an upstream 404 and refuse cache deletion. The operation must remain missing and retain its last-good
+page, rather than turn an authoritative missing response into content. The failure phase is injected; no request
+is intercepted and no synthetic successful provider response is supplied. Its one observation includes 31 seconds
+of intentional waiting. Successful person-owned writes, private draft reads and delegation/reconciliation remain
+deferred; the earlier table's blanket deferral of ordinary public issue/source reads is superseded by this receipt.
+Matching VIP document/reviewer reads still need a real matching native VIP fixture; current public issues supply none.
+
+Additional worker workloads check the full chunked history snapshot/reopen, malformed event refusal and exact
+repair, startup under an expired scope, a caller bounded while critical startup storage waits, safe HTTP refusal
+on failed initialization and explicit next-call recovery. Actual workerd sessions cover participation and
+cross-origin sandbox refusal, and public health reads cover all five object classes. The real reply/agent/QuickJS
+path checks a streamed answer replaced once after its cell fails, all three closed sandbox tools, and a guest's
+List/Start/Read/Cancel of the same public Tour action, including its terminal cancelled state and announcement.
+A wiki draft with an unreachable charge waits through the real two-minute policy, fails budget, logs/counts once,
+charges zero tokens, retains its reservation and makes exactly one model request. Its single observation is dominated by policy waiting.
+A separate ledger workload fills a shared day with ten concurrent calls, checks held/refused admissions, exact
+reported, unreported and over-ceiling charges, then reopens and replays settlement without charging twice.
+A refused action id also keeps its original journal payload on changed-request reuse, with one conflict counter
+and no phantom run, after main's native directory fix.
+
+No new dependency, threshold change, production exclusion, GitHub mutation, live inference or deploy. Product
+MockFactory/Mythical tools are named where used; scripted model endpoints measure agent/flow overhead only.
+Node KV/memory journal cases establish host contracts, not disk durability. Workerd cases bridge objects by fetch
+rather than Alchemy RPC. Every callback checks its result; three samples establish no tail percentile.
+
+The completed f765f8ed source-profile receipt is 2,158/2,321 worker lines (92.98%), 7,281/7,639 src+worker lines
+(95.31%). It combines the 80-file/166-test full benchmark run with explicitly retained focused collections on
+identical source bytes; it is not a single final full-roster run. The strict all-metric gate remains red.
+Main subsequently changed worker, browser/history and SDK auth code, so a fresh rebased receipt follows in the
+benchmark wiki and lane report; these numbers remain labeled with their measured base.
+
+`BENCH_SITE_READS=1` probes https://vibelang.smithers.sh without credentials, mutation or model. At
+2026-11-10 16:49:26 UTC (08:49 PST), deployment 6a3c8b517c returned issues **503 in 5,643 ms** and wiki
+**200 in 2,494 ms**; the content assertion fails and a JSON failure artifact retains only health, fixed routes,
+statuses and durations. Health separately observed starting/unreachable objects. This is a deployed finding,
+not a proved source-level cause; the lead owns deployment and production investigation.
+
+
+## Worker source receipt: c5bbf81b, 2026-11-10
+
+Measured product base c5bbf81b37eee13665edf28252aa0a52aafd8878 plus the worker benchmark patch:
+**2,201/2,374 worker lines (92.71%)**, **7,355/7,716 src+worker lines (95.32%)**.
+The canonical full roster is 7,467/7,846 lines (95.17%); all four unchanged 100% thresholds remain red for 112 files.
+This is a source receipt for that base. Main later changed public-read deadlines/cache behavior and stale UI;
+the landing compatibility checks do not make these counters a measurement of those later changes.
+
+The full benchmark-only collection passed 82 files / 174 tests, with one opt-in deployed-content skip and one
+old Budget RPC benchmark failure after main changed its signature. The corrected API-only collection passed
+independently in both timing and coverage modes, including an exact remaining-capacity check after replay.
+Both failed-case workerd dumps were quarantined; their invalid call earns no coverage. The canonical Node map
+joins the corrected collection by complete source range using the repository's mergeByPosition, before the
+standard workerd/Chromium gate. The complete canonical file roster is preserved. The 155 tracked src/worker
+sources retain SHA-256 faa49b51e12329689c6fa8cb7e679d4258a6a082b2f4803a29aaa76501f72af2;
+the generated wiki matches its preserved browser source map, SHA-256
+57798ff1e3204e9cfdf589e89c44f839b3f29a0f80d85783805bf8059416bfd1. No source exclusion or threshold change.
+This is a full collection plus an explicitly recorded correction, not one green full-roster invocation.
+
+The draft usage-report fallbacks still need a faulty journal-recovery workload: SDK usageOf can fail
+AccountingUnavailable during journal recovery. This continuation has not exercised that boundary. The legacy
+budgetDecision.charge helper is superseded by reservations. These lines remain counted; no artificial successful service, direct coverage-only call or deletion was introduced. Person-owned
+GitHub paths, a matching native VIP fixture, actual Container execution and the previously named unreachable
+routing guards remain as recorded above. A fresh full coverage receipt is still needed for later main changes.
+
+| File | Covered/total lines | Missing lines |
+| --- | ---: | --- |
+| `worker/Accounts.vibe` | 312/312 | — |
+| `worker/ActionDirectory.vibe` | 40/40 | — |
+| `worker/ActionIdentity.vibe` | 14/14 | — |
+| `worker/ActionRuns.vibe` | 120/120 | — |
+| `worker/ActionsHttp.vibe` | 41/41 | — |
+| `worker/AgentModel.vibe` | 9/9 | — |
+| `worker/Api.vibe` | 46/46 | — |
+| `worker/Budget.vibe` | 44/46 | 61, 84 |
+| `worker/GitHubDelegate.vibe` | 4/4 | — |
+| `worker/HistoryActions.vibe` | 30/33 | 26, 39, 44 |
+| `worker/HistoryObject.vibe` | 59/59 | — |
+| `worker/HistoryTools.vibe` | 8/8 | — |
+| `worker/Http.vibe` | 93/93 | — |
+| `worker/Issues.vibe` | 207/298 | 55, 56, 57, 103, 104, 105, 147, 148, 149, 150, 151, 152, 155, 156, 157, 159, 160, 161, 166, 167, 173, 174, 175, 176, 177, 178, 179, 180, 181, 183, 185, 186, 188, 189, 190, 191, 192, 193, 194, 197, 198, 199, 200, 201, 202, 203, 204, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 233, 234, 235, 236, 237, 238, 240, 241, 242, 250, 251, 252, 253, 297, 298, 299, 300, 301, 302 |
+| `worker/MainLog.vibe` | 42/42 | — |
+| `worker/ObjectStartup.vibe` | 60/60 | — |
+| `worker/ObjectStorage.vibe` | 10/10 | — |
+| `worker/Objects.vibe` | 109/112 | 114, 250, 251 |
+| `worker/PublicReads.vibe` | 12/12 | — |
+| `worker/Reply.vibe` | 139/142 | 169, 369, 370 |
+| `worker/SandboxAccounts.vibe` | 4/11 | 12, 13, 14, 15, 22, 23, 24 |
+| `worker/SandboxHttp.vibe` | 30/30 | — |
+| `worker/SandboxMachine.vibe` | 1/4 | 11, 12, 13 |
+| `worker/SandboxTools.vibe` | 11/11 | — |
+| `worker/Sandboxes.vibe` | 22/22 | — |
+| `worker/Sequencer.vibe` | 118/118 | — |
+| `worker/SpecificationReviewers.vibe` | 34/36 | 54, 55 |
+| `worker/Tour.vibe` | 1/2 | 6 |
+| `worker/Unreachable.vibe` | 1/1 | — |
+| `worker/VipDraft.vibe` | 33/35 | 61, 62 |
+| `worker/Wiki.vibe` | 127/175 | 46, 47, 63, 64, 100, 101, 102, 104, 105, 107, 108, 111, 112, 115, 116, 117, 119, 120, 121, 122, 128, 129, 130, 131, 138, 139, 140, 141, 142, 145, 147, 148, 150, 152, 153, 154, 157, 158, 160, 161, 164, 165, 166, 174, 175, 176, 177, 195 |
+| `worker/WikiDraft.vibe` | 35/37 | 63, 64 |
+| `worker/WikiTools.vibe` | 9/9 | — |
+| `worker/accountObject.vibe` | 48/48 | — |
+| `worker/agentContext.vibe` | 1/1 | — |
+| `worker/apiObjects.vibe` | 210/214 | 122, 252, 253, 254 |
+| `worker/budgetDecision.vibe` | 10/12 | 60, 61 |
+| `worker/index.vibe` | 13/13 | — |
+| `worker/liveDispatchDecision.vibe` | 7/7 | — |
+| `worker/machineObject.vibe` | 63/63 | — |
+| `worker/replyProgressDecision.vibe` | 17/17 | — |
+| `worker/replyReasons.vibe` | 7/7 | — |
+
+
+A later focused ledger-fault workload on 868ca298 passed (one executed case, two selector skips).
+It closes Budget's negative-hold and lost-reservation guards, checks no writes on either failure and exact
+remaining capacity after repair/reopening. Budget and both direct app dependencies are byte-identical to
+c5bbf81b (hashes in the module receipt); exact-position module-only union reaches **46/46 Budget lines**,
+52/53 statements, 7/7 functions and 56/58 branches. This module result does not relabel the overall receipt
+as coverage of later main. No changed module's old counters are reused.
+
+
+## Fresh compatibility and stale-copy observations: 479f05a3
+
+Typecheck and full unit passed: 242 files passed / three skipped; 2,105 cases passed, one expected failure,
+four skipped (exit 0). Nine changed benchmark files passed 22 cases with one opt-in production skip (exit 0).
+The final expanded issue/wiki stale-copy journey passed independently in both timing and coverage mode:
+one executed case / four selector skips each, exit 0. The earlier wiki-only version also passed both modes.
+
+The stale journey primes two real anonymous caches, waits through the actual 30-second TTL, then injects only
+upstream 503 responses. Exact pinned native wiki text/blob, the complete issue snapshot and native issue 1,
+the unchanged wiki cursor, the next issue read cursor, and both initial confirmation timestamps are checked.
+The two failed attempts before the runner's 19:39 UTC GitHub quota reset failed during native oracle setup;
+they are not latency observations. The post-reset workload completed and is retained in JSON.
+
+These local timings use nyc-01 under run-heavy (four cores for the latest checks) with a shared host and WAN.
+Setup, complete journeys, correctness checks and policy waits are included except the explicit untimed native
+oracles and workerd host bootstrap named above and in each JSON artifact. The cache cases include a 31-second
+wait; draft settlement expiry includes the real two-minute retry policy. One cold/TTL/deadline observation
+or three warm/ordinary samples establish no tail percentile or isolated cache speedup. Scripted model HTTP/SSE
+measures native agent/flow overhead without inference. Node object KV/memory journal cases establish host
+contracts; actual workerd cases use native objects and SQLite reached through fetch bridges, not Alchemy RPC.
+Every artifact retains the exact callback method, limitations, machine, versions, source revision and samples.
+The full coverage percentages remain the c5bbf81b source receipt, separate from these later compatibility checks.
+
+| Workload | Samples | Mean ms | Range ms |
+| --- | ---: | ---: | ---: |
+| public-issues-cold | 1 | 3361.38 | 3361.38–3361.38 |
+| public-issues-warm | 3 | 330.05 | 315.83–346.51 |
+| public-wiki-cold | 1 | 111.39 | 111.39–111.39 |
+| public-wiki-warm | 3 | 72.45 | 69.81–75.14 |
+| public-cache-eviction-failure | 1 | 31215.53 | 31215.53–31215.53 |
+| workerd-account-session-grants | 3 | 461.23 | 353.58–616.90 |
+| workerd-account-disabled | 3 | 15.39 | 5.87–34.00 |
+| workerd-account-exchange-failure | 3 | 274.78 | 75.19–657.70 |
+| worker-history-snapshot-reopen | 3 | 187.28 | 156.16–247.80 |
+| worker-expired-host-recovery | 3 | 109.23 | 97.97–115.96 |
+| worker-startup-critical-wait | 3 | 5137.43 | 5108.18–5166.10 |
+| worker-startup-failed-storage-retry | 3 | 108.56 | 81.67–139.86 |
+| action-host-recovery | 3 | 831.06 | 653.99–1074.85 |
+| action-host-role-downgrade | 3 | 100.67 | 98.68–104.16 |
+| action-refused-id-conflict | 3 | 79.28 | 76.62–84.05 |
+| worker-corrupt-conversation-reopen | 3 | 3.11 | 0.95–7.28 |
+| worker-chunked-history-overflow | 3 | 31.66 | 10.91–67.55 |
+| wiki-draft-budget-deadline | 1 | 120036.62 | 120036.62–120036.62 |
+| budget-concurrent-reservation-reopen | 3 | 11.73 | 8.20–17.15 |
+| workerd-agent-action-lifecycle | 3 | 1190.05 | 1046.58–1439.32 |
+| reply-stream-restart | 3 | 651.86 | 488.65–968.38 |
+| reply-sandbox-refusals | 3 | 400.49 | 378.06–431.37 |
+| api-objects-health | 3 | 117.23 | 5.72–338.38 |
+| api-objects-conversation | 3 | 414.82 | 344.47–539.11 |
+| api-objects-unbound | 3 | 6.36 | 2.54–13.22 |
+| api-objects-unconfigured-accounts | 3 | 13.54 | 12.35–14.79 |
+| api-objects-sandbox-identity | 3 | 4.15 | 3.87–4.62 |
+| api-objects-budget | 3 | 20.32 | 19.43–21.64 |
+| api-objects-action-directory | 3 | 11.33 | 9.57–14.46 |
+| api-objects-history | 3 | 82.43 | 77.08–88.82 |
+| api-objects-tour | 3 | 766.66 | 739.70–799.27 |
+| api-objects-agent-tools | 3 | 608.45 | 574.12–657.18 |
+| api-objects-history-write | 3 | 65.51 | 60.24–74.98 |
+| api-objects-action-runs | 3 | 651.18 | 637.69–664.30 |
+| api-objects-signed-in-accounts | 3 | 146.39 | 8.65–420.58 |
+| api-objects-owned-action-run | 3 | 435.60 | 414.51–467.02 |
+| budget-faulty-ledger-recovery | 3 | 3.05 | 1.49–5.94 |
+| public-content-stale-copy | 1 | 36157.02 | 36157.02–36157.02 |
