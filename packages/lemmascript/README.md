@@ -42,6 +42,11 @@ tests read are unchanged except for the patches listed below.
 | A type written as, or derived from, an Effect Schema (`type Model = typeof Model.Type` over `Schema.Struct`, `optionalKey`, `optional`, `Array`, `Record`, `Union` of `TaggedStruct`s, `brand`, `withDecodingDefaultKey`) is read from the value type the checker resolves, from the schema's source or from its emitted `.d.ts`, never from the schema's type text. An anonymous object, array element, record value or tagged union becomes a named datatype (`ModelRowsItem`, `ModelStatus`), and structurally equal ones share one, a schema's own alias included (`type Client = typeof Client.Type` and a Model field holding a copy of it are one datatype); an optional key is `Option` under `exactOptionalPropertyTypes` too; a brand is its primitive; an untagged union is an opaque type of its own; a function returning the alias returns its datatype; and a schema constant named only as a type stays out of the model (`schema-model/`, with a wrong twin, and `tools/tests/schema-model.test.ts`) | Offered upstream later |
 | `tools/test-fixtures.sh` runs the package's own `tsx` and `tsc` rather than `npx`, which exits with `EINVALIDTAGNAME` on this monorepo's pnpm override keys | Local only |
 
+A guarded optional record, or an already non-nullable record/primitive, may use a redundant nullish fallback in a
+contract (`spec-nullish-narrowed.ts`). Narrowing keeps the present value, including zero, false and the empty string.
+Array indexes retain their bounds-dependent fallback. The wrong guarded-result and falsy-value twins must fail a
+Dafny postcondition. Unknown, opaque and nullable types do not acquire a presence assumption.
+
 Each patch is offered back upstream later. Will decides any GitHub contribution.
 
 ## Check

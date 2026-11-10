@@ -37,6 +37,7 @@
 import type { TModule, TFunction, TStmt, TExpr } from "./typedir.js";
 import { isTerminatorKind } from "./typedir.js";
 import { builtinSpec } from "./builtins.js";
+import { declOfTy } from "./typedecls.js";
 import {
   type CondCtx, type PresentFact, type NoneDetector,
   presentFact, leadingPresent, leadingIsArray, flattenOr, noneDetector,
@@ -314,7 +315,17 @@ function ruleImplOptional(e: TExpr, ctx: CondCtx): TExpr | null {
  *  semantics (`??` tests null/undefined, not falsiness) — no falsy gate. */
 function ruleNullish(e: TExpr, ctx: CondCtx): TExpr | null {
   if (e.kind !== "nullish") return null;
-  if (e.left.ty.kind !== "optional") return null;
+  if (e.left.ty.kind !== "optional") {
+    // Resolve can already unwrap a path under a presence guard. Its fallback is then unreachable.
+    // An array index still needs ruleNullishIndex's bounds check, even when TS omitted undefined from its type.
+    if (e.left.kind === "index") return null;
+    const ty = e.left.ty;
+    const decl = declOfTy(ctx.decls, ty);
+    const knownPresent = ty.kind === "user"
+      ? decl?.kind === "record" || decl?.kind === "string-union" || decl?.kind === "discriminated-union"
+      : ty.kind !== "unknown" && ty.kind !== "void";
+    return knownPresent ? e.left : null;
+  }
   const innerTy = e.left.ty.inner;
   const binder = freshOcBinder(ctx);
   return {

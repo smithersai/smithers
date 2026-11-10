@@ -141,6 +141,14 @@ cp tools/fixtures/spec-nullish.ts tools/fixtures/spec-nullish-wrong.ts "$fixture
 expect_proof_failure \
   "Dafny accepted a contract whose ?? names the wrong default" \
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spec-nullish-wrong.ts"
+cp tools/fixtures/spec-nullish-narrowed.ts tools/fixtures/spec-nullish-narrowed-wrong.ts tools/fixtures/spec-nullish-falsy-wrong.ts "$fixture_dir/"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spec-nullish-narrowed.ts"
+expect_proof_failure \
+  "Dafny accepted a wrong guarded-nullish result" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spec-nullish-narrowed-wrong.ts"
+expect_proof_failure \
+  "Dafny treated a present zero as a nullish fallback" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spec-nullish-falsy-wrong.ts"
 "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/imported-nullish/use.ts"
 expect_proof_failure \
   "Dafny accepted more than an imported ?? contract says" \
