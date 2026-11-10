@@ -1,7 +1,7 @@
 import { Effect, Exit } from "effect"
 import { HttpClient } from "effect/http/HttpClient"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { providerTransport, refusingRedirects } from "../src/ProviderTransport.ts"
+import { providerTransport, refusingRedirects } from "../src/ProviderTransport.vibe"
 
 type Fetch = typeof globalThis.fetch
 const fetchOf = (impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): Fetch =>

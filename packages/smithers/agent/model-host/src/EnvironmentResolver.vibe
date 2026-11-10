@@ -13,7 +13,7 @@ import type { ModelSource } from "./FastModelFallback.vibe"
 import type { ModelTurnResolver } from "./HostServer.ts"
 import { readContextStream } from "./internal/ContextStream.ts"
 import { ResolveFailed } from "./ModelHostError.vibe"
-import { refusingRedirects } from "./ProviderTransport.ts"
+import { refusingRedirects } from "./ProviderTransport.vibe"
 
 /**
  * Inputs for the single-owner environment-backed model resolver.

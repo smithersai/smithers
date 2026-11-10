@@ -25,7 +25,7 @@ import {
 import type { ConfiguredModel } from "@smthrs/rpc"
 import { Effect, Layer, Redacted as Secret, Result } from "effect"
 import type { Redacted } from "effect"
-import { providerTransport } from "./ProviderTransport.ts"
+import { providerTransport } from "./ProviderTransport.vibe"
 
 /**
  * Visits a route without erasing its protocol-specific type parameters.

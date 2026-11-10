@@ -328,7 +328,7 @@ test("reopening the SQLite host replays the settled answer with its original cac
   const { tmpdir } = await import("node:os")
   const { join } = await import("node:path")
   const { Redacted, Result, Stream } = await import("effect")
-  const { providerTransport } = await import("../src/ProviderTransport.ts")
+  const { providerTransport } = await import("../src/ProviderTransport.vibe")
   const { durableModelStream } = await import("../src/DurableModelCall.vibe")
   const directory = await mkdtemp(join(tmpdir(), "model-host-durable-"))
   let calls = 0

@@ -12,6 +12,7 @@
 import { Context, Effect, Layer } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpClient from "effect/http/HttpClient"
+import { globalFetch } from "./ProviderTransport.platform.ts"
 
 /**
  * Wraps a fetch so it never follows a redirect: a 3xx answer is refused, and
@@ -59,19 +60,21 @@ export const providerTransport = (
   base?: typeof globalThis.fetch,
   onRefused?: (status: number) => void
 ): Layer.Layer<HttpClient.HttpClient> =>
-  Layer.unwrap(Effect.gen(function*() {
+  Layer.unwrap(effect {
     // Only an injected Fetch: the reference's default caches the first global fetch it sees, so an absent one reads
     // the global when the layer builds, as an explicit `base` would.
-    const fetch = base ?? Context.getOrUndefined(yield* Effect.context<never>(), FetchHttpClient.Fetch) ??
-      globalThis.fetch
+    const fetch = base ?? Context.getOrUndefined(try Effect.context<never>(), FetchHttpClient.Fetch) ??
+      globalFetch()
     const guarded = refusingRedirects(fetch, onRefused)
     return Layer.effect(
       HttpClient.HttpClient,
       Effect.map(
         HttpClient.HttpClient,
         (client) =>
-          HttpClient.transformResponse(client, (response) =>
-            Effect.provideService(response, FetchHttpClient.Fetch, guarded))
+          HttpClient.transformResponse(
+            client,
+            (response) => Effect.provideService(response, FetchHttpClient.Fetch, guarded)
+          )
       )
     ).pipe(Layer.provide(FetchHttpClient.layer))
-  }))
+  })

@@ -4,7 +4,7 @@ import { HttpClient } from "effect/http/HttpClient"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { expect, test } from "vitest"
-import { providerTransport } from "../src/ProviderTransport.ts"
+import { providerTransport } from "../src/ProviderTransport.vibe"
 
 test("uses the host's injected fetch and preserves explicit transport precedence", async () => {
   const seen: string[] = []

@@ -27,7 +27,7 @@ import { durableModelStream } from "./DurableModelCall.vibe"
 import { localModelCatalog, modelFailureOf, planOnLocal } from "./LocalModel.vibe"
 import type { LocalPlanned, ModelCredentials } from "./LocalModel.vibe"
 import { nowMs } from "./ModelProbe.platform.ts"
-import { providerTransport } from "./ProviderTransport.ts"
+import { providerTransport } from "./ProviderTransport.vibe"
 
 /**
  * How a probe reads credentials, reaches providers and bounds a call.
