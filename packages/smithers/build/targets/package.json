@@ -114,8 +114,8 @@
       "default": "./.vibelang/js/src/DependencyDocs.js"
     },
     "./DepsLint": {
-      "types": "./src/DepsLint.ts",
-      "vibelang-source": "./src/DepsLint.ts",
+      "types": "./.vibe/declarations/src/DepsLint.d.vibe.ts",
+      "vibelang-source": "./src/DepsLint.vibe",
       "default": "./.vibelang/js/src/DepsLint.js"
     },
     "./Dev": {
@@ -124,8 +124,8 @@
       "default": "./.vibelang/js/src/Dev.js"
     },
     "./Docker": {
-      "types": "./src/Docker.ts",
-      "vibelang-source": "./src/Docker.ts",
+      "types": "./.vibe/declarations/src/Docker.d.vibe.ts",
+      "vibelang-source": "./src/Docker.vibe",
       "default": "./.vibelang/js/src/Docker.js"
     },
     "./DocsCheck": {
@@ -474,8 +474,8 @@
       "default": "./.vibelang/js/src/TsBuild.js"
     },
     "./Tsconfig": {
-      "types": "./src/Tsconfig.ts",
-      "vibelang-source": "./src/Tsconfig.ts",
+      "types": "./.vibe/declarations/src/Tsconfig.d.vibe.ts",
+      "vibelang-source": "./src/Tsconfig.vibe",
       "default": "./.vibelang/js/src/Tsconfig.js"
     },
     "./Typecheck": {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import * as Anvil from "../src/Anvil.vibe"
-import * as Docker from "../src/Docker.ts"
+import * as Docker from "../src/Docker.vibe"
 import * as Foundry from "../src/Foundry.ts"
 import * as Input from "../src/Input.ts"
 import * as Mise from "../src/Mise.ts"

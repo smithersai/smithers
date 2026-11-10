@@ -155,7 +155,7 @@ export { Lockfile } from "./Lockfile.vibe"
 /** @category targets @since 0.1.0 */
 export { PnpmWorkspace } from "./PnpmWorkspaceFile.ts"
 /** @category targets @since 0.1.0 */
-export { Tsconfig } from "./Tsconfig.ts"
+export { Tsconfig } from "./Tsconfig.vibe"
 /** @category constructors @since 0.1.0 */
 export { Secret } from "./Secret.ts"
 /** @category constructors @since 0.1.0 */
@@ -181,7 +181,7 @@ export { Dprint } from "./Dprint.vibe"
 /** @category targets @since 0.1.0 */
 export { EsLint } from "./EsLint.vibe"
 /** @category targets @since 0.1.0 */
-export { DepsLint } from "./DepsLint.ts"
+export { DepsLint } from "./DepsLint.vibe"
 /** @category targets @since 0.1.0 */
 export { PackageLint } from "./PackageLint.vibe"
 /** @category targets @since 0.1.0 */
@@ -442,7 +442,7 @@ export * as Anvil from "./Anvil.vibe"
  * @category namespace exports
  * @since 0.1.0
  */
-export * as Docker from "./Docker.ts"
+export * as Docker from "./Docker.vibe"
 
 /**
  * Cross-repository target edges into opaque local workspaces.

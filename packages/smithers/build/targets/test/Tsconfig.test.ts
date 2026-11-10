@@ -11,7 +11,7 @@
 import { describe, expect, it } from "vitest"
 import * as Input from "../src/Input.ts"
 import * as Target from "../src/Target.ts"
-import * as Tsconfig from "../src/Tsconfig.ts"
+import * as Tsconfig from "../src/Tsconfig.vibe"
 
 const sections = (attrs: Tsconfig.Attrs): Record<string, ReadonlyArray<string>> =>
   JSON.parse(Tsconfig.render(attrs)) as Record<string, ReadonlyArray<string>>

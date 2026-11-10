@@ -8,7 +8,7 @@ import * as PackageManager from "../src/PackageManager.ts"
 import * as PnpmWorkspaceFile from "../src/PnpmWorkspaceFile.ts"
 import * as Runtime from "../src/Runtime.ts"
 import * as Target from "../src/Target.ts"
-import * as Tsconfig from "../src/Tsconfig.ts"
+import * as Tsconfig from "../src/Tsconfig.vibe"
 import { packageManager, runtime } from "./toolchain.ts"
 
 // The repository root, five levels up: this package nests two deep.

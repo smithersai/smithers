@@ -188,7 +188,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Shell.ts",
         "src/ToolRun.vibe",
         "src/LlmLint.ts",
-        "src/Docker.ts",
+        "src/Docker.vibe",
         "src/Cargo.ts",
         "src/Go.ts",
         "src/PackageManager.ts",

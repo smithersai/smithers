@@ -10,7 +10,7 @@
  * @since 0.1.0
  */
 import { describe, expect, it } from "vitest"
-import * as Docker from "../src/Docker.ts"
+import * as Docker from "../src/Docker.vibe"
 import { FaultSuite } from "../src/FaultSuite.ts"
 import * as Input from "../src/Input.ts"
 import * as Target from "../src/Target.ts"

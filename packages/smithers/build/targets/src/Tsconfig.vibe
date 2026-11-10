@@ -35,11 +35,11 @@
 
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as NodePath from "node:path"
 import * as GeneratedFile from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
 import * as ManifestJson from "./ManifestJson.ts"
 import * as Target from "./Target.ts"
+import * as $platform from "./Tsconfig.platform.ts"
 
 /** The directory a declaration's paths resolve against when it names none. */
 const defaultCwd = "."
@@ -172,16 +172,13 @@ export const render = (attrs: Attrs): string => {
  * keeps the declared text unchanged.
  */
 const fileRelative = (cwd: string, path: string) => {
-  const directory = NodePath.posix.dirname(path)
+  const directory = $platform.posixDirname(path)
   return (value: string): string => {
     const text = Input.rootRelative(cwd, value)
     if (directory === ".") return text
     // Anchoring both sides under one absolute base keeps the result
     // independent of the process working directory.
-    const rebased = NodePath.posix.relative(
-      NodePath.posix.join("/", cwd, directory),
-      NodePath.posix.join("/", cwd, text)
-    )
+    const rebased = $platform.posixRelativeUnder(cwd, directory, text)
     return rebased === "" ? "." : rebased
   }
 }

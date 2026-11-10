@@ -1,0 +1,16 @@
+/**
+ * The platform code of Docker.vibe, which a .vibe file does not import as a
+ * value (EK4402).
+ *
+ * @since 0.1.0
+ */
+
+import { createHash } from "node:crypto"
+
+/**
+ * The SHA-256 digest of a UTF-8 string, as lowercase hex.
+ *
+ * @category digests
+ * @since 0.1.0
+ */
+export const sha256Hex = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex")

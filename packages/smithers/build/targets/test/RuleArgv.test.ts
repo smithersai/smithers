@@ -7,7 +7,7 @@
  */
 import * as NodePath from "node:path"
 import { describe, expect, it } from "vitest"
-import { DepsLint } from "../src/DepsLint.ts"
+import { DepsLint } from "../src/DepsLint.vibe"
 import { Dev } from "../src/Dev.vibe"
 import * as Input from "../src/Input.ts"
 import { inputsFor, Install } from "../src/Install.ts"

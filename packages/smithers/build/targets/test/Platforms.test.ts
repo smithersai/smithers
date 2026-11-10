@@ -7,7 +7,7 @@
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import * as CiToolchain from "../src/CiToolchain.ts"
-import * as Docker from "../src/Docker.ts"
+import * as Docker from "../src/Docker.vibe"
 import * as Input from "../src/Input.ts"
 import * as Shell from "../src/Shell.ts"
 import * as Target from "../src/Target.ts"

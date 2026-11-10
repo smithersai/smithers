@@ -7,12 +7,12 @@
 import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { createHash } from "node:crypto"
 import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 import * as PackageManager from "./PackageManager.ts"
 import * as Runtime from "./Runtime.ts"
 import * as Target from "./Target.ts"
+import * as $platform from "./DepsLint.platform.ts"
 
 /**
  * Attributes for {@link DepsLint}.
@@ -94,7 +94,7 @@ const knipModule = (config: string): string =>
  * lists could name one file, and whichever target wrote last decided the
  * configuration the other one was judged under.
  */
-const fingerprint = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex")
+const fingerprint = (text: string): string => $platform.sha256Hex(text)
 
 /**
  * Plans missing, unused, and undeclared dependency checks.

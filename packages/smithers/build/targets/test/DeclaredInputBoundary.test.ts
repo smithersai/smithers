@@ -4,7 +4,7 @@ import * as Filegroup from "../src/Filegroup.ts"
 import * as Input from "../src/Input.ts"
 import * as Shell from "../src/Shell.ts"
 import * as Target from "../src/Target.ts"
-import * as Tsconfig from "../src/Tsconfig.ts"
+import * as Tsconfig from "../src/Tsconfig.vibe"
 
 const Holder = Target.make("DeclaredInputBoundary", {
   attrs: Schema.Struct({ input: Input.Declared }),
