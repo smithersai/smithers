@@ -14,7 +14,7 @@ import { initial as initialActions } from "../src/web/actionModel.vibe"
 import { initialIssues } from "../src/web/issues.vibe"
 import { accountOf, OpenWikiEditor, CloseIssueDialog, ClosePalette, CloseRoleDialog, EndTourCommand, FocusAccountMenu, FocusWikiEditor, init, Message, type Model, ShowIssueDialog, ShowRoleDialog, SignInAccount, SwitchMode, update } from "../src/web/main.vibe"
 import { application } from "./support/application.vibe"
-import { addElement, activeIs, chatShown, container, dispatchTouch, fire, fullLocation, remove, setLocation, tallPage } from "./support/browser.ts"
+import { addElement, activeIs, chatShown, container, dispatchTouch, fire, fullLocation, remove, setLocation, tallPage, textOf } from "./support/browser.ts"
 import { overlaid } from "./support/overlaid.vibe"
 
 const flags = { session: "e", name: "Ada", mode: "mock" as const }
@@ -235,3 +235,9 @@ it.effect("a successful read that omits the page names it missing", () => effect
     try Effect.try(() => expect(answer).toMatchObject({ _tag: "FailedWikiEdit", request: 3, reason: "missing" }))
   }
 })
+
+it.live("a wiki page whose repository Markdown changed shows the repository's text", () => scoped(effect {
+  const client = { ...chat.client, conversation: { ...chat.client.conversation, pane: "/wiki/roadmap" } }
+  try started({ client, wikiPages: [{ id: "roadmap", source: "# Roadmap\n\nChanged in the repository.", revision: "r2" }] })
+  try settled(() => expect(textOf(".vl-wiki .sui-md")).toContain("Changed in the repository."))
+}))

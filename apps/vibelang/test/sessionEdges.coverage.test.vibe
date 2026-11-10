@@ -1,0 +1,90 @@
+// @vitest-environment node
+// Where `login` keeps its settings, at the edges: no home directory, an empty XDG_CONFIG_HOME, a file that isn't
+// JSON, a settings path that can't be removed, and the explicit VIBELANG_SESSION override. Real files only.
+import { expect, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { activeSession, readSession, removeSession, settingsDir, writeSession, SessionFailed } from "../src/surfaces/session.vibe"
+
+const configured = (values: Record<string, string>) => ConfigProvider.layer(ConfigProvider.fromUnknown(values))
+const reason = <A, E, R>(program: A!E!R) => Effect.flip(program).pipe(Effect.map((error) => (error as unknown as SessionFailed).reason))
+const STORED = { origin: "https://factory.example", cookie: "__Host-vibelang-session=stored", login: "ada" }
+
+it.live.each([
+  ["no variables", {}],
+  ["both empty", { XDG_CONFIG_HOME: "", HOME: "" }],
+] as const)("with %s there is no settings directory", ([_name, values]) => scoped(effect {
+  provide NodeServices.layer, configured(values) {
+    const failure = try reason(settingsDir())
+    try Effect.try(() => expect(failure).toBe("no home directory"))
+  }
+}))
+
+it.live("an empty XDG_CONFIG_HOME keeps the settings under the home directory", () => scoped(effect {
+  provide NodeServices.layer, configured({ XDG_CONFIG_HOME: "", HOME: "/home/ada" }) {
+    const directory = try settingsDir()
+    try Effect.try(() => expect(directory).toBe("/home/ada/.config/vibelang-factory"))
+  }
+}))
+
+it.live.each([
+  ["isn't JSON", "{\"origin\":"],
+  ["is JSON of another shape", JSON.stringify({ origin: "https://factory.example", login: 7 })],
+] as const)("a stored session that %s reads as no session", ([_name, text]) => scoped(effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const directory = try fs.makeTempDirectoryScoped()
+    provide configured({ XDG_CONFIG_HOME: directory }) {
+      try fs.makeDirectory(path.join(directory, "vibelang-factory"), { recursive: true })
+      try fs.writeFileString(path.join(directory, "vibelang-factory", "session.json"), text)
+      const stored = try readSession()
+      try Effect.try(() => expect(stored).toBeUndefined())
+    }
+  }
+}))
+
+it.live("a settings path inside a file can't be removed, and says so", () => scoped(effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const directory = try fs.makeTempDirectoryScoped()
+    const file = path.join(directory, "not-a-directory")
+    try fs.writeFileString(file, "")
+    provide configured({ XDG_CONFIG_HOME: file }) {
+      const failure = try reason(removeSession())
+      try Effect.try(() => expect(failure).toBe("settings removal"))
+    }
+  }
+}))
+
+effect function withOverride(value: string) {
+  const fs = try FileSystem.FileSystem
+  const directory = try fs.makeTempDirectoryScoped()
+  return try Effect.provide(effect {
+    try writeSession(STORED)
+    return try Effect.match(activeSession(), { onFailure: (error) => ({ refused: error instanceof SessionFailed ? error.reason : "configuration" }), onSuccess: (session) => ({ session }) })
+  }, configured({ XDG_CONFIG_HOME: directory, VIBELANG_SESSION: value }))
+}
+
+it.live("VIBELANG_SESSION overrides the stored session, and an empty one doesn't", () => scoped(effect {
+  provide NodeServices.layer {
+    const override = try withOverride(JSON.stringify({ origin: "http://127.0.0.1:8787", cookie: "vibelang-session=automation" }))
+    const none = try withOverride("")
+    try Effect.try(() => {
+      expect(override).toEqual({ session: { origin: "http://127.0.0.1:8787", cookie: "vibelang-session=automation", login: "" } })
+      expect(none).toEqual({ session: STORED })
+    })
+  }
+}))
+
+it.live.each([
+  ["isn't JSON", "{origin"],
+  ["has no cookie", JSON.stringify({ origin: "https://factory.example" })],
+  ["has a cookie for another name", JSON.stringify({ origin: "https://factory.example", cookie: "session=x" })],
+  ["is plain http to a remote factory", JSON.stringify({ origin: "http://factory.example", cookie: "vibelang-session=x" })],
+] as const)("a VIBELANG_SESSION that %s is refused", ([_name, value]) => scoped(effect {
+  provide NodeServices.layer {
+    const answer = try withOverride(value)
+    try Effect.try(() => expect(answer).toEqual({ refused: "invalid session" }))
+  }
+}))

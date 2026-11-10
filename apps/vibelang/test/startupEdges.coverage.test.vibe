@@ -7,7 +7,7 @@ import { ExperimentalBrowserDocument, ExperimentalBrowserMediaQuery } from "vibe
 import { SecureRandom } from "effect/crypto"
 import { main, page } from "../src/web/startup.vibe"
 import { heldHealth } from "./support/heldHealth.vibe"
-import { container, forgetTours, fullLocation, journalKeys, refusingJournal, refusingStorage, remove, setLocation, storedJournal } from "./support/browser.ts"
+import { clickAsk, container, focusOn, hasAsk, forgetTours, fullLocation, journalKeys, refusingJournal, refusingStorage, remove, send, setLocation, storedJournal, transcript } from "./support/browser.ts"
 
 const KEYS = ["vibelang.agent", "vibelang:toured", "vibelang:tour-sound"]
 
@@ -116,4 +116,17 @@ it.live("a tour whose journal the browser refuses keeps going and stores nothing
   try running("/?agent=mock", () => expect(refused.filter((call) => call === "write").length).toBeGreaterThan(2), host)
   const keys = try Effect.try(() => journalKeys())
   try Effect.try(() => { expect(refused[0]).toBe("read"); expect(keys).toEqual([]) })
+}))
+
+it.live("a post to the shared home conversation is never kept in the page's storage", () => scoped(effect {
+  try cleaned
+  // A person who finished the tour: the page starts without one, so only the home conversation records.
+  try sync(() => window.localStorage.setItem("vibelang:toured", "1"))
+  try running("/?agent=mock", () => expect(hasAsk()).toBe(true))
+  try Effect.try(() => clickAsk())
+  try promise(() => vi.waitFor(() => focusOn("#vl-palette-prompt"), { timeout: 15_000, interval: 50 }))
+  try Effect.try(() => send("hello"))
+  try promise(() => vi.waitFor(() => expect(transcript().map(([, text]) => text)).toEqual(["hello", "done=true"]), { timeout: 15_000, interval: 50 }))
+  const keys = try Effect.try(() => journalKeys())
+  try Effect.try(() => expect(keys).toEqual([]))
 }))

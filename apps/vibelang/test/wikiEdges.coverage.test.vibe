@@ -1,0 +1,68 @@
+// The wiki pane at its remaining edges, through the real view and update: a decision page's trail, status and
+// rulings, finding pages by typing, a search that matches nothing, and a failed load's Retry.
+import { Command, click, expect, given, role, scene, text, type } from "foldkit/scene"
+import { describe, it } from "@effect/vitest"
+import { pages } from "../src/core/wiki.vibe"
+import { init, Message, OpenWikiCommand, update } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+
+const home = init({ session: "wiki-edges", mode: "mock", name: "Guest" }).model
+const app = { update, view }
+type Model = typeof home
+const at = (url: string, over: Partial<Model> = {}): Model => ({ ...home, surface: "chat", client: { ...home.client, conversation: { ...home.client.conversation, pane: url } }, ...over })
+const accepted = pages.find((page) => page.decision && page.status === "Accepted" && page.rulings.length > 0)!
+
+describe("a decision page", () => {
+  it("shows Decisions and its number in the trail, its status, and buttons for its rulings", () => {
+    const ruling = accepted.rulings[0]!
+    scene(app, given(at(`/wiki/${accepted.id}`)),
+      expect(role("button", { name: "Decisions" })).toExist(),
+      expect(text(accepted.status)).toHaveClass("sui-badge-success"),
+      click(role("button", { name: ruling })),
+      Command.expectExact(OpenWikiCommand({ conversation: home.conversation, page: `rulings#${ruling.toLowerCase()}`, request: 1 })),
+      Command.resolve(OpenWikiCommand, Message.SucceededWiki()),
+    )
+  })
+})
+
+describe("finding pages", () => {
+  it("typing filters the list and lists any other page that matches", () => {
+    const extra = pages.find((page) => !page.decision && !["index", "rulings", "roadmap", "decisions", "designs/index"].includes(page.id))!
+    scene(app, given(at("/wiki/index")),
+      expect(role("link", { name: extra.label })).toBeAbsent(),
+      type(role("textbox", { name: "Find a page" }), extra.title),
+      expect(role("link", { name: extra.label })).toExist(),
+    )
+  })
+
+  it("a search that matches nothing says so", () => {
+    scene(app, given(at("/wiki/index", { wikiQuery: "zzzz no such page" })),
+      expect(text('No pages match "zzzz no such page"')).toExist(),
+      expect(text("Decisions")).toBeAbsent(),
+    )
+  })
+})
+
+it("a failed load retries the requested page, or the index when none was requested", () => {
+  scene(app, given(at("/wiki/index", { wikiStatus: "error", wikiRequested: "roadmap" })),
+    click(role("button", { name: "Retry" })),
+    Command.expectExact(OpenWikiCommand({ conversation: home.conversation, page: "roadmap", request: 1 })),
+    Command.resolve(OpenWikiCommand, Message.SucceededWiki()),
+  )
+  scene(app, given(at("/wiki/index", { wikiStatus: "error" })),
+    click(role("button", { name: "Retry" })),
+    Command.expectExact(OpenWikiCommand({ conversation: home.conversation, page: "index", request: 1 })),
+    Command.resolve(OpenWikiCommand, Message.SucceededWiki()),
+  )
+})
+
+it("a search matching home pages and others lists them all", () => {
+  const extra = pages.filter((page) => !page.decision && !["index", "rulings", "roadmap", "decisions", "designs/index"].includes(page.id))
+  const query = "e"
+  const matching = extra.filter((page) => `${page.label} ${page.title}`.toLowerCase().includes(query))
+  scene(app, given(at("/wiki/index", { wikiQuery: query })),
+    expect(role("link", { name: "Home" })).toExist(),
+    expect(role("link", { name: matching[0]!.label })).toExist(),
+    expect(role("link", { name: matching[1]!.label })).toExist(),
+  )
+})

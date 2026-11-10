@@ -1,0 +1,74 @@
+// The shared decisions at their remaining edges: action intents with no id, flow or run, tour intents for a tour
+// that isn't running, the specifications' recursive counts against the loops they describe, and wiki lookups.
+import { describe, expect, it } from "@effect/vitest"
+import { apply, empty, type Event } from "../src/core/conversation.vibe"
+import { decide } from "../src/core/decide.vibe"
+import { runningCount, runningCountPrefix, type SandboxEntry } from "../src/core/sandboxDecision.vibe"
+import { attemptOf, restartsBefore } from "../src/core/sequencerDecision.vibe"
+import { requestedWiki, wikiPath } from "../src/core/wiki.vibe"
+
+const request = { type: "RequestAction" as const, door: "button", actor: "person", at: 0 }
+
+describe("action intents", () => {
+  it.each([
+    ["no id", { ...request, id: "", flow: "vibelang/Tour" }],
+    ["no flow", { ...request, id: "a1", flow: "" }],
+  ] as const)("a request with %s is refused as empty", (_name, intent) => {
+    expect(decide(empty, intent)).toEqual({ ok: false, refusal: "empty" })
+  })
+
+  it("a trace or settlement in a conversation that never ran an action is refused", () => {
+    expect(empty.runs).toBeUndefined()
+    expect(decide(empty, { type: "TraceAction", id: "a1", key: "k", name: "step", attempt: 1, state: "running", at: 1 })).toEqual({ ok: false, refusal: "not-replying" })
+    expect(decide(empty, { type: "SettleAction", id: "a1", state: "passed", result: "", at: 1 })).toEqual({ ok: false, refusal: "not-replying" })
+  })
+})
+
+describe("tour intents", () => {
+  const touring = apply(empty, { type: "TourStarted", seq: 1, id: "t1" })
+  it("driving a tour that isn't running is refused", () => {
+    expect(decide(empty, { type: "DriveWalkthrough", id: "t1", step: 1, target: "splash", at: 0, duration: 1000 })).toEqual({ ok: false, refusal: "not-replying" })
+    expect(decide(touring, { type: "DriveWalkthrough", id: "t2", step: 1, target: "splash", at: 0, duration: 1000 })).toEqual({ ok: false, refusal: "not-replying" })
+  })
+
+  it.each([
+    ["step 0", { step: 0 }], ["step 11", { step: 11 }], ["a fractional step", { step: 1.5 }], ["no target", { target: "" }],
+    ["a negative duration", { duration: -1 }], ["a fractional duration", { duration: 0.5 }],
+  ] as const)("a drive with %s is refused as empty", (_name, over) => {
+    expect(decide(touring, { type: "DriveWalkthrough", id: "t1", step: 1, target: "splash", at: 0, duration: 1000, ...over })).toEqual({ ok: false, refusal: "empty" })
+  })
+})
+
+describe("the specifications' counts agree with the loops", () => {
+  const sandboxes: ReadonlyArray<SandboxEntry> = [
+    { id: "s1", conversation: "c1", running: true }, { id: "s2", conversation: "c2", running: false }, { id: "s3", conversation: "c3", running: true },
+  ]
+  it("running sandboxes among the first n", () => {
+    expect([0, 1, 2, 3].map((end) => runningCountPrefix(sandboxes, end))).toEqual([0, 1, 1, 2])
+    expect(runningCountPrefix(sandboxes, sandboxes.length)).toBe(runningCount(sandboxes))
+    expect(runningCountPrefix([], 0)).toBe(runningCount([]))
+  })
+
+  const log: ReadonlyArray<Event> = [
+    { type: "ReplyRestarted", seq: 1, id: "r1" }, { type: "ReplyRestarted", seq: 2, id: "r2" }, { type: "ReplyRestarted", seq: 3, id: "r1" },
+  ]
+  it("a reply's restarts among the first n events", () => {
+    expect([0, 1, 2, 3].map((end) => restartsBefore(log, "r1", end))).toEqual([0, 1, 1, 2])
+    expect(attemptOf(log, "r1")).toBe(1 + restartsBefore(log, "r1", log.length))
+    expect(attemptOf(log, "r3")).toBe(1)
+  })
+})
+
+describe("wiki lookups", () => {
+  it.each([
+    ["/wiki", "/wiki/index"], ["/wiki/", "/wiki/index"], ["designs", "/wiki/designs/index"], ["/wiki/roadmap.md#now", "/wiki/roadmap#now"],
+  ])("the path %s opens %s", (page, path) => {
+    expect(wikiPath(page)).toBe(path)
+  })
+
+  it("a request naming no page opens the index", () => {
+    expect(requestedWiki("show me the wiki")).toBe("index")
+    expect(requestedWiki("the wiki's rulings")).toBe("rulings")
+    expect(requestedWiki("the wiki roadmap")).toBe("roadmap")
+  })
+})

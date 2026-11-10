@@ -152,3 +152,13 @@ export function refusingJournal(): { readonly window: Window; readonly refused: 
   })
   return { window: page, refused }
 }
+
+/** The text of the first element matching `css` on the page, or undefined when none matches. */
+export function textOf(css: string): string | undefined {
+  return document.querySelector(css)?.textContent ?? undefined
+}
+
+/** Focuses the first element matching `css`; throws while none is on the page, so a wait can retry it. */
+export function focusOn(css: string): void {
+  document.querySelector<HTMLElement>(css)!.focus()
+}

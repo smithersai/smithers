@@ -25,5 +25,6 @@ export function requestedWiki(text: string): string | undefined {
   if (/designs/i.test(text)) return "designs/index"
   const number = /\b([0-9]{4})\b/.exec(text)?.[1]
   if (number) return pages.find(page => page.id.startsWith(`decisions/${number}-`))?.id
-  return /rulings/i.test(text) ? "rulings" : /roadmap/i.test(text) ? "roadmap" : "index"
+  // A request naming "rulings" or "roadmap" matched those pages above.
+  return "index"
 }

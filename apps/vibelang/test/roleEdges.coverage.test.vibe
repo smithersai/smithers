@@ -1,0 +1,72 @@
+// The identity and People controls driven as a person uses them: the Visit as and role selects, the account menu's
+// arrow keys, a pending sign-in, the People size toggle, and a demotion's wording. Real view and update.
+import { click, Command, change, expect, expectHandled, expectIgnored, given, keydown, role, scene } from "foldkit/scene"
+import { describe, it } from "@effect/vitest"
+import { ChooseIdentity, init, LoadActions, Message, ShowRoleDialog, signedOut, update } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+
+const home = init({ session: "role-edges", mode: "mock", name: "Guest" }).model
+const app = { update, view }
+const will = { id: "1", login: "will", role: "maintainer" as const }
+const rira = { id: "4", login: "rira", role: "contributor" as const }
+const maintaining = (over: Partial<typeof signedOut> = {}) => ({ ...home, surface: "chat" as const, account: { ...signedOut, identity: will, members: [will, rira], people: "pane" as const, ...over } })
+
+describe("identity", () => {
+  it("choosing a role in Visit as asks for that identity", () => {
+    scene(app, given(home),
+      change(role("combobox", { name: "Visit as" }), "maintainer"),
+      Command.expectExact(ChooseIdentity({ role: "maintainer" })),
+      Command.resolve(ChooseIdentity, Message.AccountLoaded({ identity: will })),
+      Command.resolve(LoadActions, Message.LoadedActions({ entries: [], commands: [], runs: [], epoch: 1 })),
+      expect(role("button", { name: "Account" })).toExist(),
+    )
+  })
+
+  it("a sign-in in progress shows Signing in… and can't be pressed again", () => {
+    scene(app, given({ ...home, account: { ...signedOut, pending: true } }),
+      expect(role("button", { name: "Signing in…" })).toBeDisabled(),
+      expect(role("button", { name: "Sign in" })).toBeAbsent(),
+    )
+  })
+
+  it("the account menu's arrow keys move between People and Sign out, and other keys do nothing", () => {
+    const open = { ...home, account: { ...signedOut, identity: will, menu: true } }
+    scene(app, given(open),
+      keydown(role("menuitem", { name: "People" }), "a"),
+      expectIgnored(),
+      keydown(role("menuitem", { name: "Sign out" }), "b"),
+      expectIgnored(),
+    )
+    for (const key of ["ArrowDown", "ArrowUp"]) {
+      scene(app, given(open), keydown(role("menuitem", { name: "People" }), key), expectHandled())
+      scene(app, given(open), keydown(role("menuitem", { name: "Sign out" }), key), expectHandled())
+    }
+  })
+})
+
+describe("People", () => {
+  it("a maximized People offers Minimize, and minimizing offers Maximize", () => {
+    scene(app, given(maintaining({ people: "max" })),
+      click(role("button", { name: "Minimize People" })),
+      expect(role("button", { name: "Maximize People" })).toExist(),
+    )
+  })
+
+  it("choosing a member's role in their select opens the confirmation", () => {
+    scene(app, given(maintaining()),
+      change(role("combobox", { name: "Role for rira" }), "maintainer"),
+      Command.expectExact(ShowRoleDialog({})),
+      Command.resolve(ShowRoleDialog, Message.FocusedPrompt()),
+      expect(role("dialog", { name: "Promote rira to Maintainer?" })).toHaveAttr("data-state", "open"),
+    )
+  })
+
+  it("choosing a lower role asks to demote", () => {
+    scene(app, given(maintaining()),
+      change(role("combobox", { name: "Role for rira" }), "community"),
+      Command.resolve(ShowRoleDialog, Message.FocusedPrompt()),
+      expect(role("dialog", { name: "Demote rira to Community?" })).toHaveAttr("data-state", "open"),
+      expect(role("button", { name: "Demote" })).toExist(),
+    )
+  })
+})
