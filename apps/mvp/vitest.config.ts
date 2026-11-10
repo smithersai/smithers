@@ -55,7 +55,7 @@ export default defineConfig({
         "src/**/*.{ts,vibe}",
         "plugins/*/src/**/*.ts",
         // Production's hostname and the docs site's routes on it (docs/infrastructure.md#domain).
-        "infra/Domain.ts",
+        "infra/Domain.vibe",
         // Remote flows (docs/features/remote-flows.md). worker/Executions.ts, the Alchemy Durable Object declaration,
         // runs only under Alchemy's bundle, so the workerd test proves it through ExecutionHost.ts instead.
         "worker/ExecutionHost.ts",
@@ -218,9 +218,9 @@ export default defineConfig({
         "infra/ElectricAccess.vibe",
         // How ChatApi calls the gateway: its service binding (docs/infrastructure.md).
         "infra/ElectricUpstream.ts",
-        "infra/ElectricCache.ts",
+        "infra/ElectricCache.vibe",
         // Electric's container kept running between visits (docs/infrastructure.md#electric).
-        "infra/ElectricAwake.ts",
+        "infra/ElectricAwake.vibe",
         // An overloaded Electric object answered 503, and the gateway's record of each request (docs/infrastructure.md#electric).
         "infra/ElectricRelay.ts",
         // A shape request the server can't decide is refused, never narrowed (docs/features/chat.md).

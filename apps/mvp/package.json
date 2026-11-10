@@ -332,6 +332,21 @@
       "vibelang-source": "./infra/ElectricAccess.vibe",
       "default": "./.vibelang/js/infra/ElectricAccess.js"
     },
+    "#vibelang/emitted/infra/ElectricAwake": {
+      "types": "./infra/ElectricAwake.d.vibe.ts",
+      "vibelang-source": "./infra/ElectricAwake.vibe",
+      "default": "./.vibelang/js/infra/ElectricAwake.js"
+    },
+    "#vibelang/emitted/infra/ElectricCache": {
+      "types": "./infra/ElectricCache.d.vibe.ts",
+      "vibelang-source": "./infra/ElectricCache.vibe",
+      "default": "./.vibelang/js/infra/ElectricCache.js"
+    },
+    "#vibelang/emitted/infra/Domain": {
+      "types": "./infra/Domain.d.vibe.ts",
+      "vibelang-source": "./infra/Domain.vibe",
+      "default": "./.vibelang/js/infra/Domain.js"
+    },
     "#vibelang/emitted/worker/CloudRuns": {
       "types": "./worker/CloudRuns.d.vibe.ts",
       "vibelang-source": "./worker/CloudRuns.vibe",

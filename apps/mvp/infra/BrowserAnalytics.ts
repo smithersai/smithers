@@ -3,7 +3,7 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as Output from "alchemy/Output"
 import { Config, Effect, Option } from "effect"
-import type { AppHost } from "./Domain.ts"
+import type { AppHost } from "./Domain.vibe"
 
 /** Keep the custom domain free of an unmanaged browser beacon; dev and workers.dev declare no analytics resource. */
 export const BrowserAnalytics = (domain: Option.Option<AppHost>) => Effect.gen(function*() {

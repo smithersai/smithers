@@ -5,7 +5,7 @@ import * as Output from "alchemy/Output"
 import { Config, Context, Effect, Option, Redacted } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ELECTRIC_POOL_SIZE } from "./Connections.ts"
-import { type Host, logged, makeAwake, makeInFlight, recordStart, serveObject } from "./ElectricAwake.ts"
+import { type Host, logged, makeAwake, makeInFlight, recordStart, serveObject } from "#vibelang/emitted/infra/ElectricAwake"
 import { LONG_POLL_TIMEOUT_MS } from "./ElectricConfig.ts"
 
 /** The Electric release the app is built against; docker-compose.yml runs the same one. */

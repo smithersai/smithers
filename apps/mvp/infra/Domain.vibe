@@ -1,6 +1,5 @@
 // The hostname a production deployment serves the app at, `APP_DOMAIN`. The deployment supplies it with its other
 // identifiers; the public stack names no domain of its own (docs/infrastructure.md#domain).
-import { Config, Data, Effect, Option } from "effect"
 import { DOCS_SITE_PATHS } from "../src/pwa.ts"
 import { type Alias, HOSTNAME, parseAliases } from "../worker/aliases.ts"
 
@@ -11,21 +10,25 @@ export const WORKERS_DEV = "workers.dev"
  * A production deploy without a usable `APP_DOMAIN`. Unset is refused rather than read as "no domain": a deploy that
  * dropped it would detach the hostname's docs site, so the choice is spelled out every time.
  */
-export class AppDomainInvalid extends Data.TaggedError("AppDomainInvalid")<{ readonly value: string | undefined }> {
+export error AppDomainInvalid {
+  value: string | undefined
+
   override get message() {
     return this.value === undefined
-      ? `APP_DOMAIN is unset. Set it to the hostname the app serves at, such as example.com, or to ${WORKERS_DEV} ` +
-          "to serve it only at its workers.dev URL (docs/infrastructure.md#domain)."
-      : `APP_DOMAIN is "${this.value}": it must be a hostname such as example.com, with no scheme, port or path, ` +
-          `or ${WORKERS_DEV} (docs/infrastructure.md#domain).`
+      ? `APP_DOMAIN is unset. Set it to the hostname the app serves at, such as example.com, or to ${WORKERS_DEV} `
+        + "to serve it only at its workers.dev URL (docs/infrastructure.md#domain)."
+      : `APP_DOMAIN is "${this.value}": it must be a hostname such as example.com, with no scheme, port or path, `
+        + `or ${WORKERS_DEV} (docs/infrastructure.md#domain).`
   }
 }
 
 /** An `APP_DOMAIN_REDIRECTS` entry that isn't a hostname, is `APP_DOMAIN` itself, or has no domain to go to. */
-export class AppDomainRedirectInvalid extends Data.TaggedError("AppDomainRedirectInvalid")<{ readonly value: string }> {
+export error AppDomainRedirectInvalid {
+  value: string
+
   override get message() {
-    return `APP_DOMAIN_REDIRECTS lists "${this.value}": each entry must be a hostname such as www.example.com, other ` +
-      `than APP_DOMAIN, and APP_DOMAIN must name a domain, not ${WORKERS_DEV} (docs/infrastructure.md#domain).`
+    return `APP_DOMAIN_REDIRECTS lists "${this.value}": each entry must be a hostname such as www.example.com, other `
+      + `than APP_DOMAIN, and APP_DOMAIN must name a domain, not ${WORKERS_DEV} (docs/infrastructure.md#domain).`
   }
 }
 
@@ -33,11 +36,13 @@ export class AppDomainRedirectInvalid extends Data.TaggedError("AppDomainRedirec
  * An `APP_ALIASES` entry that isn't `host=/path`, names a hostname twice or one `APP_DOMAIN` or its redirects already
  * use, or has no domain to sit beside.
  */
-export class AppAliasInvalid extends Data.TaggedError("AppAliasInvalid")<{ readonly value: string }> {
+export error AppAliasInvalid {
+  value: string
+
   override get message() {
-    return `APP_ALIASES lists "${this.value}": each entry must be host=/path, such as factory.example.com=/acme/app, ` +
-      "with a hostname other than APP_DOMAIN and its redirects, and APP_DOMAIN must name a domain, not " +
-      `${WORKERS_DEV} (docs/infrastructure.md#domain).`
+    return `APP_ALIASES lists "${this.value}": each entry must be host=/path, such as factory.example.com=/acme/app, `
+      + "with a hostname other than APP_DOMAIN and its redirects, and APP_DOMAIN must name a domain, not "
+      + `${WORKERS_DEV} (docs/infrastructure.md#domain).`
   }
 }
 
@@ -57,31 +62,31 @@ export interface AppHost {
  * {@link AppDomainInvalid} when `APP_DOMAIN` is unset or isn't a hostname, and {@link AppDomainRedirectInvalid} for a
  * redirect that can't be one.
  */
-export const AppDomain: Effect.Effect<
-  Option.Option<AppHost>,
-  AppDomainInvalid | AppDomainRedirectInvalid | AppAliasInvalid | Config.ConfigError
-> = Effect.gen(function* () {
-  const value = yield* Config.option(Config.String("APP_DOMAIN"))
-  const listed = yield* Config.option(Config.String("APP_DOMAIN_REDIRECTS"))
-  const aliases = parseAliases(Option.getOrElse(yield* Config.option(Config.String("APP_ALIASES")), () => ""))
-  if ("invalid" in aliases) return yield* new AppAliasInvalid({ value: aliases.invalid })
-  const redirects = Option.match(listed, {
-    onNone: () => [],
-    onSome: (list) => list.split(",").map((entry) => entry.trim()).filter((entry) => entry !== ""),
-  })
-  if (Option.isNone(value)) return yield* new AppDomainInvalid({ value: undefined })
-  if (value.value === WORKERS_DEV) {
-    if (redirects.length > 0) return yield* new AppDomainRedirectInvalid({ value: redirects[0]! })
-    if (aliases.length > 0) return yield* new AppAliasInvalid({ value: `${aliases[0]!.host}=${aliases[0]!.path}` })
-    return Option.none()
-  }
-  if (!HOSTNAME.test(value.value)) return yield* new AppDomainInvalid({ value: value.value })
-  const wrong = redirects.find((entry) => !HOSTNAME.test(entry) || entry === value.value)
-  if (wrong !== undefined) return yield* new AppDomainRedirectInvalid({ value: wrong })
-  const taken = aliases.find((alias) => alias.host === value.value || redirects.some((entry) => entry === alias.host))
-  if (taken !== undefined) return yield* new AppAliasInvalid({ value: `${taken.host}=${taken.path}` })
-  return Option.some({ name: value.value, redirects, aliases })
-})
+export const AppDomain:
+  Option.Option<AppHost>!(AppDomainInvalid | AppDomainRedirectInvalid | AppAliasInvalid | Config.ConfigError) = effect {
+      const value = try Config.option(Config.String("APP_DOMAIN"))
+      const listed = try Config.option(Config.String("APP_DOMAIN_REDIRECTS"))
+      const aliasText = Option.getOrElse(try Config.option(Config.String("APP_ALIASES")), () => "")
+      const aliases = try sync(() => parseAliases(aliasText))
+      if ("invalid" in aliases) throw new AppAliasInvalid({ value: aliases.invalid })
+      const redirects = Option.isNone(listed)
+        ? []
+        : listed.value.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "")
+      if (Option.isNone(value)) throw new AppDomainInvalid({ value: undefined })
+      if (value.value === WORKERS_DEV) {
+        if (redirects.length > 0) throw new AppDomainRedirectInvalid({ value: redirects[0]! })
+        if (aliases.length > 0) throw new AppAliasInvalid({ value: `${aliases[0]!.host}=${aliases[0]!.path}` })
+        return Option.none()
+      }
+      if (!HOSTNAME.test(value.value)) throw new AppDomainInvalid({ value: value.value })
+      const wrong = redirects.find((entry) => !HOSTNAME.test(entry) || entry === value.value)
+      if (wrong !== undefined) throw new AppDomainRedirectInvalid({ value: wrong })
+      const taken = aliases.find((alias) =>
+        alias.host === value.value || redirects.some((entry) => entry === alias.host)
+      )
+      if (taken !== undefined) throw new AppAliasInvalid({ value: `${taken.host}=${taken.path}` })
+      return Option.some({ name: value.value, redirects, aliases })
+    }
 
 /**
  * The site Worker's `domain` for Alchemy: the bare hostname without redirects or aliases, so a deployment with no

@@ -12,7 +12,6 @@
 // production served about 2 shape requests a second at most: 20 at once, even malformed ones Electric refuses at once,
 // waited up to 26 s, while Electric's container used at most a fifth of its CPU (docs/infrastructure.md#electric).
 import { Logger } from "@smthrs/observability"
-import { Clock, Duration, Effect, Metric } from "effect"
 import { HttpServerResponse } from "effect/http"
 
 /**
@@ -24,10 +23,10 @@ export const INACTIVITY = Duration.hours(6)
 /** What the gateway's object does to Electric's container. */
 export interface Host<E = unknown, R = never> {
   /** Whether the container's process is running: a read, no call into the container. */
-  readonly running: Effect.Effect<boolean, E, R>
+  readonly running: boolean!E!R
   /** Starts the container unless it is running. */
-  readonly start: Effect.Effect<void, E, R>
-  readonly setInactivityTimeout: (ms: number) => Effect.Effect<void, E, R>
+  readonly start: void!E!R
+  readonly setInactivityTimeout: (ms: number) => void!E!R
 }
 
 /** What waking Electric did for one request: whether it started the container, and whether it set the hold. */
@@ -42,26 +41,24 @@ export interface Woken {
  * refused it, which is logged as `electric.hold` and lets the request through. Every other request only reads
  * `running`.
  */
-export const makeAwake = <E, R>(host: Host<E, R>): Effect.Effect<Woken, E, R> => {
+export const makeAwake = <E, R>(host: Host<E, R>): Woken!E!R => {
   let held = false
-  return Effect.gen(function* () {
-    const started = !(yield* host.running)
+  return effect {
+    const started = !(try host.running)
     if (started) {
-      yield* host.start
+      try host.start
       // A started container has no timeout of its own yet.
       held = false
     }
     if (held) return { started, held: false }
     // Taken before the call, so requests arriving meanwhile don't set it too.
     held = true
-    held = yield* host.setInactivityTimeout(Duration.toMillis(INACTIVITY)).pipe(
-      Effect.as(true),
-      Effect.catch((error) =>
-        Effect.logWarning("electric.hold").pipe(Effect.annotateLogs({ error: String(error) }), Effect.as(false))
-      ),
-    )
+    held = as(host.setInactivityTimeout(Duration.toMillis(INACTIVITY)), true) catch effect (error) => {
+      try logWarning("electric.hold").pipe(annotateLogs({ error: String(error) }))
+      return false
+    }
     return { started, held }
-  })
+  }
 }
 
 /**
@@ -69,7 +66,7 @@ export const makeAwake = <E, R>(host: Host<E, R>): Effect.Effect<Woken, E, R> =>
  * whole; Effect's default console logger writes each annotation as a line of its own, which Workers Logs stores as
  * separate events (production, 2026-10-25), so a record's fields couldn't be counted together.
  */
-export const logged = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => Effect.provide(effect, logs)
+export const logged = <A, E, R>(effect: A!E!R): A!E!R => Effect.provide(effect, logs)
 
 const logs = Logger.layerStructuredJson()
 
@@ -97,51 +94,54 @@ export const makeInFlight = (): InFlight => ({ current: 0 })
  * request), not an unhandled error. Never a URL, a parameter, a header or a body.
  */
 export const forward = <A extends { readonly status: number }, E1, R1, E2, R2>(
-  wake: Effect.Effect<Woken, E1, R1>,
-  send: Effect.Effect<A, E2, R2>,
+  wake: Woken!E1!R1,
+  send: A!E2!R2,
   live: boolean,
   inFlight: InFlight,
   requestId?: string,
-): Effect.Effect<A, E1 | E2, R1 | R2> =>
-  Effect.gen(function* () {
-    const correlationId = correlationOf(requestId)
-    const startedAt = yield* Clock.currentTimeMillis
-    const arrived = ++inFlight.current
-    const failed = (stage: "awake" | "electric") => (error: E1 | E2) =>
-      Effect.gen(function* () {
-        const durationMs = (yield* Clock.currentTimeMillis) - startedAt
-        yield* Effect.logWarning("electric.object.request").pipe(
-          Effect.annotateLogs({
-            correlationId,
-            live,
-            inFlight: arrived,
-            outcome: "unavailable",
-            status: 503,
-            stage,
-            error: tagOf(error),
-            durationMs,
-          }),
-        )
-      })
-    const woken = yield* wake.pipe(Effect.tapError(failed("awake")))
-    const awokeAt = yield* Clock.currentTimeMillis
-    const response = yield* send.pipe(Effect.tapError(failed("electric")))
-    const answeredAt = yield* Clock.currentTimeMillis
-    yield* Effect.logInfo("electric.object.request").pipe(
-      Effect.annotateLogs({
-        correlationId,
-        live,
-        inFlight: arrived,
-        outcome: "answered",
-        status: response.status,
-        awakeMs: awokeAt - startedAt,
-        headersMs: answeredAt - awokeAt,
-        started: woken.started,
-        held: woken.held,
-      }),
-    )
-    return response
-  }).pipe(Effect.ensuring(Effect.sync(() => void inFlight.current--)))
+): A!(E1 | E2)!(R1 | R2) =>
+  ensuring(
+    effect {
+      const correlationId = correlationOf(requestId)
+      const startedAt = try Clock.currentTimeMillis
+      const arrived = ++inFlight.current
+      const failed = (stage: "awake" | "electric") => (error: E1 | E2) =>
+        effect {
+          const durationMs = (try Clock.currentTimeMillis) - startedAt
+          try Effect.logWarning("electric.object.request").pipe(
+            Effect.annotateLogs({
+              correlationId,
+              live,
+              inFlight: arrived,
+              outcome: "unavailable",
+              status: 503,
+              stage,
+              error: tagOf(error),
+              durationMs,
+            }),
+          )
+        }
+      const woken = try wake.pipe(Effect.tapError(failed("awake")))
+      const awokeAt = try Clock.currentTimeMillis
+      const response = try send.pipe(Effect.tapError(failed("electric")))
+      const answeredAt = try Clock.currentTimeMillis
+      try Effect.logInfo("electric.object.request").pipe(
+        Effect.annotateLogs({
+          correlationId,
+          live,
+          inFlight: arrived,
+          outcome: "answered",
+          status: response.status,
+          awakeMs: awokeAt - startedAt,
+          headersMs: answeredAt - awokeAt,
+          started: woken.started,
+          held: woken.held,
+        }),
+      )
+      return response
+    },
+    sync(() => void inFlight.current--),
+  )
 
 /**
  * Sends a request `direct`ly to Electric's port, or, when that fails before Electric answers, the `waited` way, which
@@ -152,12 +152,15 @@ export const forward = <A extends { readonly status: number }, E1, R1, E2, R2>(
  * `electric.object.port` with the error's tag.
  */
 export const directOr = <A, E1, R1, E2, R2>(
-  direct: Effect.Effect<A, E1, R1>,
-  waited: Effect.Effect<A, E2, R2>,
-): Effect.Effect<A, E2, R1 | R2> =>
+  direct: A!E1!R1,
+  waited: A!E2!R2,
+): A!E2!(R1 | R2) =>
   direct.pipe(
     Effect.catch((error) =>
-      Effect.logWarning("electric.object.port").pipe(Effect.annotateLogs({ error: tagOf(error) }), Effect.andThen(waited))
+      Effect.logWarning("electric.object.port").pipe(
+        Effect.annotateLogs({ error: tagOf(error) }),
+        Effect.andThen(waited),
+      )
     ),
   )
 
@@ -174,12 +177,15 @@ export const tagOf = (error: unknown): string => {
 export const containerStarts = Metric.counter("electric_container_starts", { incremental: true })
 
 /** Records a successful container start, never an object reconstruction or failed start. No request data. */
-export const recordStart = <A, E, R>(start: Effect.Effect<A, E, R>, instanceId: string): Effect.Effect<A, E, R> =>
-  start.pipe(Effect.tap(() => Effect.gen(function* () {
-    const startedAt = yield* Clock.currentTimeMillis
-    yield* Metric.update(containerStarts, 1)
-    yield* Effect.logInfo("electric.container.start").pipe(Effect.annotateLogs({ instanceId, startedAt }))
-  })), Effect.withSpan("electric.container.start"))
+export const recordStart = <A, E, R>(start: A!E!R, instanceId: string): A!E!R =>
+  withSpan(
+    tap(start, () => effect {
+      const startedAt = try Clock.currentTimeMillis
+      try Metric.update(containerStarts, 1)
+      try Effect.logInfo("electric.container.start").pipe(Effect.annotateLogs({ instanceId, startedAt }))
+    }),
+    "electric.container.start",
+  )
 
 /**
  * The proxy's correlation id (`x-request-id`, ShapeProxy's generated span id) when the request carries a valid one, or
@@ -193,9 +199,9 @@ export const RETRY_AFTER_SECONDS = 5
 
 /** What the object's handler needs for one request: the waker, both ways to Electric's port, and the request's identity. */
 export interface Serve<E1, R1, E2, R2, E3, R3> {
-  readonly wake: Effect.Effect<Woken, E1, R1>
-  readonly direct: Effect.Effect<HttpServerResponse.HttpServerResponse, E2, R2>
-  readonly waited: Effect.Effect<HttpServerResponse.HttpServerResponse, E3, R3>
+  readonly wake: Woken!E1!R1
+  readonly direct: HttpServerResponse.HttpServerResponse!E2!R2
+  readonly waited: HttpServerResponse.HttpServerResponse!E3!R3
   readonly url: string
   readonly requestId?: string | undefined
   readonly inFlight: InFlight
@@ -203,7 +209,10 @@ export interface Serve<E1, R1, E2, R2, E3, R3> {
 
 /** What the object answers when Electric's container can't: `503`, with `retry-after` and `cache-control: no-store`. */
 export const unavailable = (): HttpServerResponse.HttpServerResponse =>
-  HttpServerResponse.empty({ status: 503, headers: { "retry-after": String(RETRY_AFTER_SECONDS), "cache-control": "no-store" } })
+  HttpServerResponse.empty({
+    status: 503,
+    headers: { "retry-after": String(RETRY_AFTER_SECONDS), "cache-control": "no-store" },
+  })
 
 /**
  * The object's handler for one request: wakes Electric and forwards the request (`forward`, `directOr`). A container
@@ -216,7 +225,13 @@ export const unavailable = (): HttpServerResponse.HttpServerResponse =>
  */
 export const serveObject = <E1, R1, E2, R2, E3, R3>(
   options: Serve<E1, R1, E2, R2, E3, R3>,
-): Effect.Effect<HttpServerResponse.HttpServerResponse, never, R1 | R2 | R3> =>
-  forward(options.wake, directOr(options.direct, options.waited), isLive(options.url), options.inFlight, options.requestId).pipe(
+): HttpServerResponse.HttpServerResponse!!(R1 | R2 | R3) =>
+  forward(
+    options.wake,
+    directOr(options.direct, options.waited),
+    isLive(options.url),
+    options.inFlight,
+    options.requestId,
+  ).pipe(
     Effect.catch(() => Effect.succeed(unavailable())),
   )

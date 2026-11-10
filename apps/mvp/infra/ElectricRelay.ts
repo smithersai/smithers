@@ -14,7 +14,7 @@
 import { Cause, Clock, Effect, Exit, Metric } from "effect"
 import { HttpServerResponse } from "effect/http"
 import { categoryOf, describe, flag } from "../worker/DurableObjectFailure.ts"
-import { correlationOf, RETRY_AFTER_SECONDS, unavailable } from "./ElectricAwake.ts"
+import { correlationOf, RETRY_AFTER_SECONDS, unavailable } from "#vibelang/emitted/infra/ElectricAwake"
 
 /** How long a device waits after an overloaded answer, in seconds (infra/ElectricAwake.ts). */
 export { RETRY_AFTER_SECONDS }

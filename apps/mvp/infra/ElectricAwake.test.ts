@@ -15,7 +15,7 @@ import {
   RETRY_AFTER_SECONDS,
   serveObject,
   type Woken,
-} from "./ElectricAwake.ts"
+} from "./ElectricAwake.vibe"
 
 /** Cloudflare's bound on `setInactivityTimeout`: greater than 0 and at most 6 hours, or the call rejects. */
 const PLATFORM_MAX_MS = 21_600_000
@@ -265,7 +265,7 @@ describe("logged", () => {
 })
 
 test("container starts record time and instance identity only after success", async () => {
-  const { recordStart, containerStarts } = await import("./ElectricAwake.ts")
+  const { recordStart, containerStarts } = await import("./ElectricAwake.vibe")
   const before = Effect.runSync(Metric.value(containerStarts))
   const good = runLogged(recordStart(Effect.succeed("started"), "instance-one"))
   expect(good.exit).toMatchObject({ _tag: "Success", value: "started" })

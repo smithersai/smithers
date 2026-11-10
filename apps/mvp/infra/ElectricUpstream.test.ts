@@ -6,7 +6,7 @@ import { Arbitrary, Effect, Logger, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { GATEWAY_BINDING, GATEWAY_URL, upstream } from "./ElectricUpstream.ts"
-import { serve } from "./ElectricCache.ts"
+import { serve } from "./ElectricCache.vibe"
 
 /** A service binding's `fetch` that records each URL it was asked for and answers an empty shape log. */
 const binding = () => {

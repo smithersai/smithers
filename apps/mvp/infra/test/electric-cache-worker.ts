@@ -4,7 +4,7 @@ import { DurableObject } from "cloudflare:workers"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Effect } from "effect"
 import { FetchHttpClient, HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { serve } from "../ElectricCache.ts"
+import { serve } from "#vibelang/emitted/infra/ElectricCache"
 import { GATEWAY_URL, upstream } from "../ElectricUpstream.ts"
 
 interface Env {

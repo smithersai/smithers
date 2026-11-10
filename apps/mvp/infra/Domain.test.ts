@@ -11,7 +11,7 @@ import {
   docsRoutes,
   workerDomain,
   WORKERS_DEV,
-} from "./Domain.ts"
+} from "./Domain.vibe"
 
 const provided = <A, E>(effect: Effect.Effect<A, E>, env: Record<string, string>) =>
   effect.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))))
