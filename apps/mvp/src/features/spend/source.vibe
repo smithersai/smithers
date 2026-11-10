@@ -1,0 +1,25 @@
+import { ShapeSource } from "@smthrs/effect-electric"
+import type { AuthStore } from "../auth/store"
+
+/** Spend shapes wait for current Admin authority; refusals remember the confirmation they checked. */
+export const adminShapeSource = (
+  source: ShapeSource.Source,
+  auth: AuthStore["Service"],
+  deniedAt: Map<string, number>,
+): ShapeSource.Source => {
+  const allowed = auth.sessionState.rows.pipe(
+    Stream.filter((rows) => rows.some((row) => row.status === "signed_in" && row.role === "admin")),
+    Stream.take(1),
+    Stream.runDrain,
+  )
+  return ShapeSource.ShapeSource.of({
+    cacheNamespace: source.cacheNamespace,
+    request: (url, init) => effect {
+      try allowed
+      const confirmation = try auth.confirmation
+      const response = try source.request(url, init)
+      if (response.status === 403) deniedAt.set(new URL(url).pathname, confirmation)
+      return response
+    },
+  })
+}

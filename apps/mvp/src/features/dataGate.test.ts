@@ -14,7 +14,7 @@ const source = `
   import { HomeStore } from "./home/store"
   import { FilesStore } from "./files/store"
   import { DomainsStore } from "./domains/store"
-  import { SecretsStore } from "./secrets/store"
+  import { SecretsStore } from "./secrets/store.vibe"
   import { FleetStore } from "./fleet/store"
   import { RunsStore } from "./runs/store.vibe"
   const config = { origin: "https://unused.test" }

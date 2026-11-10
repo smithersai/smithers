@@ -1,0 +1,219 @@
+import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
+import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
+import { AuthStore, SESSION } from "../auth/store"
+import {
+  ALERT_CHANNELS_SHAPE_ROUTE,
+  ALERT_DELIVERIES_SHAPE_ROUTE,
+  SANDBOX_LIMITS_SHAPE_ROUTE,
+  SPEND_ALERTS_SHAPE_ROUTE,
+} from "./contract"
+import {
+  adminQuery,
+  channelsQuery,
+  deliveriesQuery,
+  limitSavesQuery,
+  limitsQuery,
+  openQuery,
+  savesQuery,
+} from "./queries"
+import { AlertChannel, AlertDelivery, ChannelSave, LimitsSave, SandboxLimitsRow, Seen, SpendAlert } from "./schema"
+import { adminShapeSource } from "./source"
+
+/** Electric's mapper between snake_case columns and camelCase fields, shared by this module's shapes. */
+const snakeCamel = ElectricCollection.snakeCamelMapper()
+
+// Spend alerts on this tab (docs/features/spend-alerts.md): the deployment's model spend alerts, which only an Admin's
+// devices sync, kept on the device; this device's mark of what it has seen; and the live query the bell and panel read. While
+// the store lives, each alert the tab shows is a log line and a count, once.
+
+/** Alerts a tab showed, one count per alert per tab. */
+export const shown = Metric.counter("smithers_web_spend_alerts_shown", {
+  description: "Model spend alerts an Admin's tab showed",
+  incremental: true,
+})
+
+/** Alerts an Admin hid on a device, counted once the device stored the mark. */
+export const hidden = Metric.counter("smithers_web_spend_alerts_hidden", {
+  description: "Model spend alerts an Admin hid, once the device stored it",
+  incremental: true,
+})
+
+/** Where the alerts sync from: ChatApi's origin, the site's own. */
+export interface SpendConfig {
+  readonly origin: string
+}
+
+type Success<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>>
+
+export class SpendStore extends Context.Service<
+  SpendStore,
+  {
+    readonly alerts: ElectricCollection.ElectricCollection<SpendAlert>
+    readonly seen: Collection.Collection<Seen, string>
+    readonly open: Success<typeof openQuery>
+    /** The channels an Admin turned on, and the latest receipts, which only an Admin's devices sync. */
+    readonly channels: ElectricCollection.ElectricCollection<AlertChannel>
+    readonly deliveries: ElectricCollection.ElectricCollection<AlertDelivery>
+    /** This tab's saves of a channel that haven't landed. */
+    readonly saves: Collection.Collection<ChannelSave, string>
+    readonly channelList: Success<typeof channelsQuery>
+    readonly receipts: Success<typeof deliveriesQuery>
+    readonly pending: Success<typeof savesQuery>
+    /** The sandbox limits an Admin set, which only an Admin's devices sync, and this tab's save of them. */
+    readonly limits: ElectricCollection.ElectricCollection<SandboxLimitsRow>
+    readonly limitSaves: Collection.Collection<LimitsSave, string>
+    readonly limitRows: Success<typeof limitsQuery>
+    readonly limitPending: Success<typeof limitSavesQuery>
+    /** Where the work an action starts runs. */
+    readonly scope: Scope.Scope
+  }
+>()("@smthrs/mvp/spend/SpendStore") {
+  /** The store, its record of shown alerts running until the scope closes. */
+  static readonly layer = (config: SpendConfig) =>
+    Layer.effect(
+      SpendStore,
+      effect {
+        const scope = try Effect.scope
+        const auth = try AuthStore
+        const source = try ShapeSource.ShapeSource
+        // Permission is a prerequisite, not a failed request. No Admin shape reaches the network until the
+        // session is confirmed; subsequent requests recheck it. Sign-out wipes the device's collections.
+        const deniedAt = new Map<string, number>()
+        const adminSource = adminShapeSource(source, auth, deniedAt)
+        const alerts = try ElectricCollection.make<SpendAlert>({
+          id: "spend-alerts",
+          schema: SpendAlert,
+          getKey: (row) => row.id,
+          syncMode: "eager",
+          persist: { schemaVersion: 1 },
+          shape: {
+            url: `${config.origin}${SPEND_ALERTS_SHAPE_ROUTE}`,
+            columnMapper: snakeCamel,
+            parser: { int8: (value: string) => Number(value) },
+          },
+        }).pipe(Effect.provideService(ShapeSource.ShapeSource, adminSource))
+        const seen = try Collection.persisted<Seen, string>({
+          id: "spend-seen",
+          schema: Seen,
+          getKey: (row) => row.kind,
+          schemaVersion: 1,
+        })
+        const open = try openQuery(try adminQuery(alerts, auth.session, SpendAlert.fields), seen)
+        const shape = {
+          columnMapper: snakeCamel,
+          parser: { timestamptz: (value: string) => new Date(value).toISOString() },
+        }
+        const channels = try ElectricCollection.make<AlertChannel>({
+          id: "alert-channels",
+          schema: AlertChannel,
+          getKey: (row) => row.channel,
+          syncMode: "eager",
+          persist: { schemaVersion: 1 },
+          shape: { url: `${config.origin}${ALERT_CHANNELS_SHAPE_ROUTE}`, ...shape },
+        }).pipe(Effect.provideService(ShapeSource.ShapeSource, adminSource))
+        const deliveries = try ElectricCollection.make<AlertDelivery>({
+          id: "alert-deliveries",
+          schema: AlertDelivery,
+          getKey: (row) => `${row.alertId}:${row.channel}`,
+          syncMode: "eager",
+          persist: { schemaVersion: 1 },
+          shape: { url: `${config.origin}${ALERT_DELIVERIES_SHAPE_ROUTE}`, ...shape },
+        }).pipe(Effect.provideService(ShapeSource.ShapeSource, adminSource))
+        const saves = try Collection.local<ChannelSave, string>({
+          id: "alert-channel-saves",
+          schema: ChannelSave,
+          getKey: (row) => row.channel,
+        })
+        const limits = try ElectricCollection.make<SandboxLimitsRow>({
+          id: "sandbox-limits",
+          schema: SandboxLimitsRow,
+          getKey: (row) => row.audience,
+          syncMode: "eager",
+          persist: { schemaVersion: 1 },
+          shape: { url: `${config.origin}${SANDBOX_LIMITS_SHAPE_ROUTE}`, ...shape },
+        }).pipe(Effect.provideService(ShapeSource.ShapeSource, adminSource))
+        const limitSaves = try Collection.local<LimitsSave, string>({
+          id: "sandbox-limit-saves",
+          schema: LimitsSave,
+          getKey: (row) => row.id,
+        })
+        const limitRows = try limitsQuery(try adminQuery(limits, auth.session, SandboxLimitsRow.fields))
+        const limitPending = try limitSavesQuery(limitSaves)
+        const channelList = try channelsQuery(try adminQuery(channels, auth.session, AlertChannel.fields))
+        const receipts = try deliveriesQuery(try adminQuery(deliveries, auth.session, AlertDelivery.fields))
+        const pending = try savesQuery(saves)
+
+        // A 403 stays stopped until a newer successful confirmation grants Admin access. Observe both
+        // edges: an old request's refusal may arrive after the newer confirmation.
+        const resume = <A extends object>(shape: ElectricCollection.ElectricCollection<A>, route: string) =>
+          effect {
+            let stopped = false
+            try Stream.merge(shape.sync, Stream.map(auth.confirmations, () => ({ _tag: "Authorized" as const }))).pipe(
+              Stream.runForEach((event) => effect {
+                if (event._tag !== "Authorized") stopped = event._tag === "Stopped" && event.error.status === 403
+                const denied = deniedAt.get(route)
+                if (!stopped || denied === undefined || (try auth.confirmation) <= denied) return
+                const reader = Option.getOrThrow(try auth.session.get(SESSION))
+                if (reader.status !== "signed_in" || reader.role !== "admin") return
+                stopped = false
+                deniedAt.delete(route)
+                try shape.reconnect
+              }),
+            )
+          }
+        try resume(alerts, SPEND_ALERTS_SHAPE_ROUTE).pipe(Effect.forkIn(scope, { startImmediately: true }))
+        try resume(channels, ALERT_CHANNELS_SHAPE_ROUTE).pipe(Effect.forkIn(scope, { startImmediately: true }))
+        try resume(deliveries, ALERT_DELIVERIES_SHAPE_ROUTE).pipe(Effect.forkIn(scope, { startImmediately: true }))
+        try resume(limits, SANDBOX_LIMITS_SHAPE_ROUTE).pipe(Effect.forkIn(scope, { startImmediately: true }))
+
+        // A failed save another device's save has since superseded is no longer this tab's to show: the synced row is
+        // what the channel says now.
+        try channelList.rows.pipe(
+          Stream.runForEach((rows) =>
+            effect {
+              const now = new Map(rows.map((row) => [row.channel, row.updatedAt] as const))
+              for (const save of try saves.toArray) {
+                if (save.state === "failed" && (now.get(save.channel) ?? null) !== save.since) {
+                  try saves.delete(save.channel).pipe(Effect.ignore)
+                }
+              }
+            }
+          ),
+          Effect.forkIn(scope, { startImmediately: true }),
+        )
+
+        // Record in the publication's turn, before it returns to its caller.
+        // A queued rows-stream observer can lag behind the visible query.
+        // Each alert counts once per tab.
+        const recorded = new Set<string>()
+        try LiveQuery.observeSync(open, (rows) =>
+          Effect.forEach(rows, (alert) => {
+            if (recorded.has(alert.id)) return Effect.void
+            recorded.add(alert.id)
+            return Effect.andThen(
+              Metric.update(shown, 1),
+              Effect.logInfo("spend.alert.shown").pipe(
+                Effect.annotateLogs({ alertId: alert.id, calls: alert.calls, tokens: alert.tokens }),
+              ),
+            )
+          }, { discard: true }))
+
+        return SpendStore.of({
+          alerts,
+          seen,
+          open,
+          channels,
+          deliveries,
+          saves,
+          channelList,
+          receipts,
+          pending,
+          limits,
+          limitSaves,
+          limitRows,
+          limitPending,
+          scope,
+        })
+      },
+    )
+}

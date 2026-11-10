@@ -1,0 +1,88 @@
+import { FlowDispatch } from "../../flows/dispatch"
+import { type AnswerValue, isOpen, type Local } from "./schema"
+import { StatusStore } from "./store"
+
+// What a person does about the agent's status (decision 0015): answer its open question, keep a draft, and ask the card
+// to take focus. Hiding its toast is the feed's (decision 0009, src/features/attention/actions.ts). Each finishes at once; an answer runs on as `run/answer` in the store's scope, and
+// the card shows it sending until the run's row says it was answered.
+
+/**
+ * This tab's row for run `id`'s question `version`, made fresh when it has none or an older question's. A newer
+ * question's row is left as it is: an older answer settling late never clears the draft of the question after it.
+ */
+const touch = (id: string, version: number, change: (row: Local) => Partial<Local>) =>
+  effect {
+    const { local } = try StatusStore
+    const current = try local.get(id)
+    if (Option.isSome(current) && current.value.version > version) return
+    const fresh: Local = { id, version, draft: "", sending: false, focus: 0 }
+    const base = Option.isSome(current) && current.value.version === version ? current.value : fresh
+    const next = { ...base, ...change(base) }
+    if (Option.isNone(current)) {
+      try local.insert(next)
+      return
+    }
+    try local.update(id, (draft) => Object.assign(draft, next))
+  }.pipe(
+    // A local collection refuses only a row its own schema rejects, which these never are: a bug, not a state.
+    Effect.orDie,
+  )
+
+/**
+ * The open question of run `id`, if it is open: as the conversation has it, or, for a run whose answer this tab doesn't
+ * show, such as one on a branch the notifications panel answers, as its own row has it.
+ */
+const openQuestion = (id: string) =>
+  effect {
+    const { statuses, runs } = try StatusStore
+    const row = (try statuses.toArray).find((status) => status.id === id)
+    // A run that needs the person has a row with its question: Postgres' CHECK holds `wait` to `needs_you`.
+    if (row !== undefined) {
+      return row.state === "needs_you"
+        ? Option.some({ version: row.version!, execution: row.wait!.execution })
+        : Option.none()
+    }
+    return Option.map(Option.filter(try runs.get(id), isOpen), (run) => ({
+      version: run.version,
+      execution: run.wait!.execution,
+    }))
+  }
+
+/** Keeps the field's text for run `id`'s open question. */
+export const setDraft = (id: string, text: string) =>
+  effect {
+    const open = try openQuestion(id)
+    if (Option.isNone(open)) return
+    try touch(id, open.value.version, () => ({ draft: text }))
+  }
+
+/** Asks run `id`'s card to take focus and come into view, from a toast's or the header's Answer. */
+export const focus = (id: string) =>
+  effect {
+    const open = try openQuestion(id)
+    if (Option.isNone(open)) return
+    try touch(id, open.value.version, (row) => ({ focus: row.focus + 1 }))
+  }
+
+/**
+ * Answers run `id`'s open question with `value`: dispatches `run/answer` (door `button`) in the background, which
+ * records it and delivers it to the run. The card shows it sending until the row says it was answered; a refused
+ * answer clears that, so the person can answer again. Does nothing unless the question is open, or while this tab is
+ * still sending an answer to it.
+ */
+export const answer = (id: string, value: AnswerValue) =>
+  effect {
+    const open = try openQuestion(id)
+    if (Option.isNone(open)) return
+    const { version, execution } = open.value
+    const { scope, local } = try StatusStore
+    const mine = try local.get(id)
+    if (Option.isSome(mine) && mine.value.version === version && mine.value.sending) return
+    const flows = try FlowDispatch
+    try touch(id, version, () => ({ sending: true }))
+    try flows.dispatch("run/answer", { runId: id, version, execution, value }, { door: "button" }).pipe(
+      Effect.ignore,
+      Effect.andThen(touch(id, version, () => ({ sending: false }))),
+      Effect.forkIn(scope),
+    )
+  }
