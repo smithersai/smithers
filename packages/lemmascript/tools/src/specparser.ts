@@ -318,13 +318,26 @@ class Parser {
     }
     if (t.type === "punc" && t.value === "[") {
       this.advance();
-      const elems: Expr[] = [];
+      // Keep the same concat tree as executable array spreads. Literal-only
+      // arrays retain their original IR; each spread contributes its sequence.
+      const segments: Expr[] = [];
+      let elems: Expr[] = [];
+      const flush = () => {
+        if (elems.length > 0) { segments.push({ kind: "arrayLiteral", elems }); elems = []; }
+      };
       if (!this.match("punc", "]")) {
-        elems.push(this.parseIff());
-        while (this.match("punc", ",")) elems.push(this.parseIff());
+        do {
+          if (this.spreadAhead()) {
+            this.pos += 3;
+            flush();
+            segments.push(this.parseIff());
+          } else elems.push(this.parseIff());
+        } while (this.match("punc", ",") && !(this.peek()?.type === "punc" && this.peek()?.value === "]"));
         this.expect("punc", "]");
       }
-      return { kind: "arrayLiteral", elems };
+      flush();
+      if (segments.length === 0) return { kind: "arrayLiteral", elems: [] };
+      return segments.reduce((left, right) => ({ kind: "binop", op: "arrayConcat", left, right }));
     }
     if (t.type === "punc" && t.value === "{") {
       this.advance();

@@ -423,6 +423,12 @@ function emitExpr(e: Expr): string {
           needPreamble("SeqFindLastIndex");
           return `SeqFindLastIndex(${obj}, ${args[0]})`;
         }
+        if (e.method === "flatMap" && args.length === 1) {
+          // Array-valued callbacks map in input order, then flatten one level. Reuse
+          // map's beta reduction, index binding and receiver/name hygiene.
+          needPreamble("SeqFlatten");
+          return `SeqFlatten(${emitExpr({ ...e, method: "map" })})`;
+        }
         if (e.method === "flat" && args.length === 0) {
           needPreamble("SeqFlatten");
           return `SeqFlatten(${obj})`;
@@ -1242,7 +1248,7 @@ const SEQ_FIND_LAST = `function SeqFindLast<T>(s: seq<T>, p: T -> bool): Option<
   else SeqFindLast(s[..|s|-1], p)
 }`;
 
-const SEQ_FLATTEN = `function SeqFlatten<T>(s: seq<seq<T>>): seq<T>
+const SEQ_FLATTEN = `function {:fuel 3} SeqFlatten<T>(s: seq<seq<T>>): seq<T>
   decreases |s|
 {
   if |s| == 0 then []

@@ -151,3 +151,17 @@ test("every Dafny reserved word a TypeScript name can take is escaped", () => {
     assert.doesNotMatch(dafny, new RegExp(`\\bconst ${name}\\b(?!_)`));
   }
 });
+
+test("flatMap composes the existing ordered map and one-level flatten in every profile", () => {
+  const array = { kind: "array", elem: { kind: "int" } } as const;
+  const file = moduleWith({ kind: "const", name: "value", type: array, value: {
+    kind: "methodCall", obj: { kind: "var", name: "values" }, objTy: array,
+    method: "flatMap", args: [{ kind: "var", name: "callback" }], monadic: false,
+  } });
+  for (const options of [DEFAULT_OPTIONS, resolveOptions({ "dafny-library": "local" }, "test"), utf16]) {
+    const result = emitDafnyFile(file, "flat-map.ts", options);
+    assert.match(result, /function (?:\{[^}]*\} )?SeqFlatten<T>/);
+    assert.match(result, /const value: seq<int> := SeqFlatten\(/);
+    assert.match(result, /\(callback\)\(values\[/);
+  }
+});
