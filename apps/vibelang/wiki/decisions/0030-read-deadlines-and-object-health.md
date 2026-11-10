@@ -57,6 +57,15 @@ real persisted corrupt state/results, and action outcomes that fail their schema
 
 Browser auth projects use separate workerd stores: roles and successful write receipts must not leak across browsers.
 
+## Amendment: cold issue reads (2026-11-10, lane vl-public-reads)
+
+A cold issue list follows five GitHub cursor pages and reads assignees sequentially. Six requests at 1.1 seconds each
+cannot complete within the former 5-second flow or 6-second accounts boundary. Issue reads now have a 12-second
+engine deadline and a 13-second accounts boundary, including queue time; wiki keeps 5 and 6 seconds. Cached reads
+still wait only 3 seconds for revalidation before answering their copies stale (0031). Regression tests preserve all
+410 records on the first read through both public and accounts boundaries, and require a stalled GitHub to answer
+503 within the bounded wait. Writes keep their existing policy.
+
 ## Amendment: health waits for the start-up it wakes (2026-11-10, lane vl-public-reads)
 
 After the 05:42 deploy, a first `/api/health/objects` read reported Budget, History and ActionIndex `unreachable` and
@@ -64,8 +73,10 @@ the others `starting` at `initialize`, while a read one second later reported al
 woke each evicted object: it read the status before the initializer ran a step, and reaching a cold object took over
 two seconds. `health(patience)` now waits up to `HEALTH_PATIENCE` (2 seconds) for the current start-up to settle and
 reports it as it stands after; it never starts or retries one. Each probe's bound is `HEALTH_BUDGET` (4.5 seconds), so
-the probe holds both a cold reach and the wait. `test/objectHealth.workerd.test.vibe` fails against the deployed call
-(`Budget` reads `starting`) and passes with it; `test/objectStartup.test.vibe` bounds the wait.
+the probe holds both a cold reach and the wait. `test/apiObjects.coverage.test.vibe` holds an actual initializer at
+300 ms and proves the route waits for its ready state; the deployed immediate call fails this case. The workerd
+health test checks actual cold instances, and `test/objectStartup.test.vibe` bounds the wait. Fast workerd startup can
+finish before an immediate probe, so the controlled initializer is the deterministic regression.
 
 ## Amendment: start-up under Alchemy's bridge (2026-11-10, lane vl-startup-hang)
 

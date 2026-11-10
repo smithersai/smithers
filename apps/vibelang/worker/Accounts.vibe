@@ -203,8 +203,8 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
   }
 
   // The flow owns read/retry deadlines. This boundary also bounds time queued behind an unrelated write.
-  const readResponse = <E, R>(work: HttpServerResponse.HttpServerResponse!E!R, method: string) => method !== "GET" ? work : work.pipe(
-    Effect.timeout("6 seconds"),
+  const readResponse = <E, R>(work: HttpServerResponse.HttpServerResponse!E!R, method: string, budget: Duration.Input = "6 seconds") => method !== "GET" ? work : work.pipe(
+    Effect.timeout(budget),
     Effect.catchTag("TimeoutError", () => effect {
       try Metric.update(Metric.counter("vibelang_read_queue_deadline", { incremental: true }), 1)
       try Effect.logWarning("vibelang.read.queue.deadline")
@@ -425,7 +425,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
           },
         }
         const agent = try Config.option(Config.String("VIBELANG_AGENT_ASSIGNEE"))
-        return try readResponse(Semaphore.withPermits(issueLock, 1)(serveIssues(hostId, storage, { ...repository, agent: Option.getOrElse(agent, () => "") }, (person) => Effect.orDie(Semaphore.withPermits(lock, 1)(mutation("participation", effect { try sequencer.grant(person.id, person.id, "community", "participation") })))).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, http), delegated)), request.method)
+        return try readResponse(Semaphore.withPermits(issueLock, 1)(serveIssues(hostId, storage, { ...repository, agent: Option.getOrElse(agent, () => "") }, (person) => Effect.orDie(Semaphore.withPermits(lock, 1)(mutation("participation", effect { try sequencer.grant(person.id, person.id, "community", "participation") })))).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, http), delegated)), request.method, "13 seconds")
       }
       if (url.pathname === "/api/wiki") {
         if (url.origin !== setup.origin || (request.method !== "GET" && request.headers.origin !== setup.origin)) return json({ error: "origin" }, 403)

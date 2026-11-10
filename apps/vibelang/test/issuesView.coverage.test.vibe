@@ -1,5 +1,5 @@
 // What each person sees of the issue tracker, screen by screen: states, permissions and each form of failure.
-import { expect, given, role, scene, text, within } from "foldkit/scene"
+import { expect, given, role, scene, selector, text, within } from "foldkit/scene"
 import { describe, it } from "@effect/vitest"
 import { init, signedOut, update, Message } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
@@ -266,4 +266,15 @@ describe("the chat card", () => {
   it("a link to an unknown issue stays plain text and shows no card", () => {
     scene(app, given(answered([issue()], "[Open issue](#issue-99)")), expect(role("button", { name: "Open issue" })).toBeAbsent())
   })
+})
+
+// The same copy mark survives navigation into an issue, and disappears when fresh data replaces it.
+it("marks a stale issue copy in the list and detail, with its confirmation time", () => {
+  const stale = Date.UTC(2026, 10, 10, 13, 40)
+  const mark = selector('.vl-stale[title="As of 2026-11-10 13:40 UTC"]')
+  for (const screen of ["list", "detail"] as const) {
+    const data = { seq: 1, items: [issue()], stale }
+    scene(app, given(model(ui({ screen, selected: 7, data }))), expect(mark).toContainText("Stale"))
+    scene(app, given(model(ui({ screen, selected: 7 }))), expect(text("Stale")).toBeAbsent())
+  }
 })

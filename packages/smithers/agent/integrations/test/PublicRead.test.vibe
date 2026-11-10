@@ -300,6 +300,25 @@ describe("a reader's patience", () => {
     })
   })
 
+  it.effect("concurrent cold readers share one GitHub request, and cancelling one still lets the other receive and cache it", () => effect {
+    const world: World = { seen: [], answer: (path) => ok({ path, version: 1 }), delay: "900 millis" }
+    const client = try ReadCache.make({ store: try ReadCache.memoryStore(), upstream: github(world) })
+    const first = try forkChild(client.execute(at(pages[0]!)))
+    const second = try forkChild(client.execute(at(pages[0]!)))
+    try asked(world, 1)
+    try TestClock.withLive(sleep("50 millis"))
+    try Fiber.interrupt(first)
+    try TestClock.adjust("1 second")
+    const received = try (try Fiber.join(second)).json
+    world.down = true
+    const cached = try (try client.execute(at(pages[0]!))).json
+    try Effect.try(() => {
+      expect(received).toEqual({ path: pages[0], version: 1 })
+      expect(cached).toEqual(received)
+      expect(world.seen).toHaveLength(1)
+    })
+  })
+
   it.effect("a reader cut off mid-read leaves its GitHub request running, so the copy lands for the next reader", () => effect {
     const world: World = { seen: [], answer: (path) => ok({ path, version: 1 }), delay: "900 millis" }
     const client = try ReadCache.make({ store: try ReadCache.memoryStore(), upstream: github(world) })

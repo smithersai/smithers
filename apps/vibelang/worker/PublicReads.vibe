@@ -7,7 +7,7 @@ import type { KeyValue } from "./ObjectStorage.vibe"
 
 /**
  * How long a signed-out wiki or issue read waits for GitHub to revalidate the copies it holds, inside the read flows'
- * 5-second deadline. After, it answers those copies marked stale, and their revalidations finish on their own (0031).
+ * deadlines (wiki: 5 seconds; issues: 12 seconds). After, it answers those copies marked stale, and their revalidations finish on their own (0031).
  */
 export const READ_PATIENCE = "3 seconds"
 

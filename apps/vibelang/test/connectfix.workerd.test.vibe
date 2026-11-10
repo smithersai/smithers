@@ -5,7 +5,7 @@ let server: Served
 beforeAll(async () => { server = await runPromise(serveConnectfixHost()) })
 afterAll(async () => { await server?.dispose() })
 let object = "direct"
-const get = (path: string) => HttpClient.get(server.origin + path + (path.includes("?") ? "&" : "?") + "object=" + object).pipe(Effect.timeout("8 seconds"))
+const get = (path: string, budget: Duration.Input = "8 seconds") => HttpClient.get(server.origin + path + (path.includes("?") ? "&" : "?") + "object=" + object).pipe(Effect.timeout(budget))
 effect function state() { return (try (try get("/__state")).json) as Record<string, unknown> }
 describe("production-shaped account cutover", () => {
   it.live.each(["direct", "rollback"])("rolls forward over interrupted migration via %s and bounds both reads", (mode) => effect {
@@ -41,14 +41,20 @@ describe("production-shaped account cutover", () => {
       expect(stored.migrated).toBe(true)
       expect(stored.oldRows).toBe(0)
     })
-    const start = try Clock.currentTimeMillis
-    const responses = try all([get("/api/issues"), get("/api/wiki?page=index")], { concurrency: "unbounded" })
+    // Cold issue reads have a 12-second flow and 13-second accounts boundary (0031); wiki keeps its original bound.
+    const timed = (path: string, budget: Duration.Input) => effect {
+      const start = try Clock.currentTimeMillis
+      const response = try get(path, budget)
+      return { response, elapsed: (try Clock.currentTimeMillis) - start }
+    }
+    const reads = try all([timed("/api/issues", "15 seconds"), timed("/api/wiki?page=index", "8 seconds")], { concurrency: "unbounded" })
+    const responses = reads.map(read => read.response)
     const bodies = try all(responses.map(r => r.json))
-    const elapsed = (try Clock.currentTimeMillis) - start
     try Effect.try(() => {
       expect(responses.map(r => r.status)).toEqual([503, 503])
       expect(bodies).toEqual([{ reason: "unavailable" }, { reason: "unavailable" }])
-      expect(elapsed).toBeLessThan(8_000)
+      expect(reads[0]!.elapsed).toBeLessThan(15_000)
+      expect(reads[1]!.elapsed).toBeLessThan(8_000)
     })
   }.pipe(Effect.provide(FetchHttpClient.layer)))
 })

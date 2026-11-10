@@ -6,6 +6,8 @@ import { describe, expect, it } from "@effect/vitest"
 import { HttpClient, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { GitHub } from "@smthrs/integrations"
+import * as Accounts from "../worker/Accounts.vibe"
+import { github as authUnavailable, setupWith } from "./support/accountsWorld.vibe"
 import { publicWiki } from "../worker/Wiki.vibe"
 import { publicIssues } from "../worker/Issues.vibe"
 import { publicReads, readSetup, storeOver } from "../worker/PublicReads.vibe"
@@ -39,12 +41,16 @@ function github(world: World): HttpClient.HttpClient {
     world.seen.push({ path: path + url.search, authorization: request.headers["authorization"], etag })
     if (world.delay !== undefined) try sleep(world.delay)
     const page = Number(url.searchParams.get("page") ?? "1")
-    if (path === "/repos/smithersai/vibelang/issues" && page < (world.pages ?? 1)) {
+    if (world.limited) return answer(request, 403, JSON.stringify({ message: "API rate limit exceeded" }), { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1999999999" })
+    if (path === "/repos/smithersai/vibelang/issues" && world.pages !== undefined) {
       const next = `https://api.github.com/repositories/2/issues?state=all&sort=created&direction=asc&per_page=100&after=Y3Vyc29yOnYyOp${page}%3D&page=${page + 1}`
       const tag = `"page-${page}"`
-      return etag === tag ? answer(request, 304, "", { etag: tag }) : answer(request, 200, "[]", { etag: tag, link: `<${next}>; rel="next"` })
+      const items = Array.from({ length: page < world.pages ? 100 : 10 }, (_, offset) => {
+        const number = (page - 1) * 100 + offset + 1
+        return { id: number, node_id: `I_${number}`, number, title: `Issue ${number}`, body: "", state: "open", user: { id: 1, login: "ada" }, labels: [], assignees: [], comments: 0, created_at: "2026-11-10T00:00:00Z", updated_at: "2026-11-10T00:00:00Z", closed_at: null }
+      })
+      return etag === tag ? answer(request, 304, "", { etag: tag }) : answer(request, 200, JSON.stringify(items), { etag: tag, ...(page < world.pages ? { link: `<${next}>; rel="next"` } : {}) })
     }
-    if (world.limited) return answer(request, 403, JSON.stringify({ message: "API rate limit exceeded" }), { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1999999999" })
     const tag = `"${path.length}"`
     if (etag === tag) return answer(request, 304, "", { etag: tag })
     if (path === INDEX) return answer(request, 200, JSON.stringify({ type: "file", encoding: "base64", sha: "w1", content: btoa("# Wiki\n") }), { etag: tag })
@@ -156,12 +162,59 @@ describe("signed-out reads through smithers.sh", () => {
     const next = try served()
     try Effect.try(() => {
       expect(filled.status).toBe(200)
+      expect((filled.body.items as Array<{ number: number }>).map((item) => item.number)).toEqual(Array.from({ length: 410 }, (_, i) => 410 - i))
+      expect(slow.body.items).toEqual(filled.body.items)
+      expect(next.body.items).toEqual(filled.body.items)
       expect([slow.status, slow.body.stale]).toEqual([200, 0])
       expect(slow.elapsed).toBeLessThan(5_000)
       expect([next.status, next.body.stale]).toEqual([200, undefined])
       // GitHub's next links name the repository by id; the object asks for each page by name, through smithers.sh.
       expect(world.seen.filter((seen) => seen.path.startsWith("/repos/smithersai/vibelang/issues?")).length).toBe(10)
       expect(world.seen.every((seen) => seen.authorization === "Bearer ghs_installation_2")).toBe(true)
+    })
+  }))
+
+  for (const boundary of ["public", "accounts"] as const) it.effect(`issues: a cold list of 410 issues completes through smithers.sh at the ${boundary} boundary without first timing out to warm the cache`, () => scoped(effect {
+    const world: World = { limited: false, seen: [], pages: 5, delay: "1100 millis" }
+    const { storage, reads } = try object(world)
+    const serve = boundary === "public" ? publicIssues("issues-public-reads-cold", storage, reads) : (try Accounts.make("issues-accounts-reads-cold", storage, { ...setupWith(authUnavailable([])), origin, broker: { origin: brokerOrigin, secret } }).pipe(Effect.provideService(HttpClient.HttpClient, smithers(world)))).fetch
+    const fiber = try forkChild(get(serve, "/api/issues"))
+    let elapsed = 0
+    while (fiber.pollUnsafe() === undefined && elapsed < 15_000) {
+      try TestClock.withLive(sleep("20 millis"))
+      try TestClock.adjust("100 millis")
+      elapsed += 100
+    }
+    const result = fiber.pollUnsafe()
+    try Effect.try(() => {
+      expect(result?._tag).toBe("Success")
+      const response = result?._tag === "Success" ? result.value : undefined
+      expect(response?.status).toBe(200)
+      expect((response?.body.items as Array<{ number: number }> | undefined)?.map((item) => item.number)).toEqual(Array.from({ length: 410 }, (_, i) => 410 - i))
+      expect(response?.body).not.toHaveProperty("stale")
+      expect(world.seen).toHaveLength(6)
+      expect(world.seen.every((seen) => seen.authorization === "Bearer ghs_installation_2")).toBe(true)
+      expect(elapsed).toBeLessThan(12_000)
+    })
+  }))
+
+  it.effect("issues: a cold GitHub that never answers still releases the accounts read within its finite budget", () => scoped(effect {
+    const world: World = { limited: false, seen: [], delay: "60 seconds" }
+    const storage = try Effect.try(() => objectStorage()) as unknown as Storage
+    const accounts = try Accounts.make("issues-accounts-reads-stuck", storage, { ...setupWith(authUnavailable([])), origin, broker: { origin: brokerOrigin, secret } }).pipe(Effect.provideService(HttpClient.HttpClient, smithers(world)))
+    const fiber = try forkChild(get(accounts.fetch, "/api/issues"))
+    let elapsed = 0
+    while (fiber.pollUnsafe() === undefined && elapsed < 15_000) {
+      try TestClock.withLive(sleep("20 millis"))
+      try TestClock.adjust("250 millis")
+      elapsed += 250
+    }
+    const result = fiber.pollUnsafe()
+    try Effect.try(() => {
+      expect(result?._tag === "Success" ? result.value.status : result?._tag).toBe(503)
+      expect(result?._tag === "Success" ? result.value.body : undefined).toEqual({ reason: "unavailable" })
+      expect(elapsed).toBeLessThanOrEqual(13_250)
+      expect(world.seen.length).toBeGreaterThan(0)
     })
   }))
 

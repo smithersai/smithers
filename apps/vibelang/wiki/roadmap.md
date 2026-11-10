@@ -154,3 +154,6 @@ brick                                   state         proof
   exhaustive-match branch gaps. Fresh main also exposes the native-loader collection gap for fuzz-preflight.
   Whole-app coverage remains below 100%; independent unit, Chromium and workerd receipts are in 0016.
   The lead keeps each strict gate opt-in until its passing commit.
+
+- **Public reads follow-up (0030/0031, lane vl-public-reads):** repository-ID pagination, bounded cold issue reads,
+  cache patience, health that waits briefly for startup, and a `Stale` mark with its confirmation time. The lead deploys.

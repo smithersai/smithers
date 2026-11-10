@@ -112,10 +112,13 @@ it.effect("the wiki editor opens on repository source, restores only that page's
     if (opened._tag !== "BeganWikiEdit") return try Effect.die(new Error(`unexpected ${opened._tag}`))
     try factory.wiki!.act({ op: "draft", page: "index", base: "", text: "Add a heading", key: "commands-draft" })
     const drafted = try run(() => OpenWikiEditor({ page: "index", request: 2 }))
+    const stale = try Effect.provideService(run(() => OpenWikiEditor({ page: "index", request: 6 })), Factory, overlaid(factory, { wiki: { read: effect (page) => ({ ...try factory.wiki!.read(page), stale: 1234 }), act: factory.wiki!.act } }))
     const missing = try run(() => OpenWikiEditor({ page: "no-such-page", request: 3 }))
     const none = try Effect.provideService(run(() => OpenWikiEditor({ page: "index", request: 4 })), Factory, overlaid(factory, { wiki: undefined }))
     const denied = try Effect.provideService(run(() => OpenWikiEditor({ page: "index", request: 5 })), Factory, overlaid(factory, { wiki: { read: () => Effect.fail(new WikiFailure({ reason: "forbidden" })), act: factory.wiki!.act } }))
     try Effect.try(() => {
+      expect(opened).not.toHaveProperty("stale")
+      expect(stale).toMatchObject({ _tag: "BeganWikiEdit", request: 6, stale: 1234 })
       expect(opened.draft).toBe("")
       expect(opened.source.length).toBeGreaterThan(0)
       expect(drafted).toMatchObject({ _tag: "BeganWikiEdit", request: 2, page: "index", source: opened.source })

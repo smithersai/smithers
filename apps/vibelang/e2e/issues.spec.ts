@@ -109,7 +109,7 @@ test("a stale copy is marked in the issue list, an issue and the wiki editor; a 
   await page.goto(`http://127.0.0.1:${port}/e2e/runtime/index.html?fault=stale`)
   await maintainer(page)
   await page.getByRole("button", { name: "Issues", exact: true }).click()
-  const mark = page.locator(".sui-page-header").getByText("Stale", { exact: true })
+  const mark = page.locator(".sui-page-header .vl-stale")
   await expect(mark).toBeVisible()
   await expect(mark).toHaveAttribute("title", asOf)
   await page.getByRole("link", { name: "Case branches on tuples", exact: true }).click()
@@ -120,16 +120,16 @@ test("a stale copy is marked in the issue list, an issue and the wiki editor; a 
   const wiki = page.getByRole("region", { name: "Wiki", exact: true })
   await page.getByRole("button", { name: "Wiki", exact: true }).click()
   await wiki.getByRole("link", { name: "Roadmap", exact: true }).first().click()
-  await expect(wiki.getByText("Stale", { exact: true })).toHaveCount(0)
+  await expect(wiki.locator(".vl-stale")).toHaveCount(0)
   await wiki.getByRole("button", { name: "Edit", exact: true }).click()
   await expect(wiki.getByRole("textbox", { name: "Edit Roadmap" })).toBeFocused()
-  await expect(wiki.getByText("Stale", { exact: true })).toHaveAttribute("title", asOf)
+  await expect(wiki.locator(".vl-stale")).toHaveAttribute("title", asOf)
 
   await page.goto("/?agent=mock")
   await maintainer(page)
   await page.getByRole("button", { name: "Issues", exact: true }).click()
   await expect(page.getByRole("link", { name: "Case branches on tuples", exact: true })).toBeVisible()
-  await expect(page.getByText("Stale", { exact: true })).toHaveCount(0)
+  await expect(page.locator(".vl-stale")).toHaveCount(0)
 })
 
 test("issue list and VIP controls keep keyboard focus as they advance", async ({ page }) => {

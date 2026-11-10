@@ -3,6 +3,8 @@
 // `apiFetch`, the conversation's alarm running the agent's tools, an action run, the sandbox gateway's identity, and each
 // namespace unbound or unreachable. The objects run over SQLite storage in one process (test/support/apiWorld.vibe).
 import { describe, expect, it } from "@effect/vitest"
+import { TestClock } from "effect/testing"
+import * as ObjectStartup from "../worker/ObjectStartup.vibe"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { sandboxIdentityOf } from "../worker/apiObjects.vibe"
@@ -313,5 +315,32 @@ it.live("health identifies the account object used by public issue and wiki read
   try Effect.try(() => {
     expect(answer.status).toBe(200)
     expect(answer.body.objects.ProjectAccounts).toMatchObject({ startup: "ready", codeVersion: "unknown" })
+  })
+}))
+
+
+it.effect("the health route waits for the actual instance while a cold initializer is still running", () => scoped(effect {
+  const w = try world(false, 1000, "unusable")
+  const day = new Date(try Clock.currentTimeMillis).toISOString().slice(0, 10)
+  const actual = try w.object("budget", day)
+  const delayed = try ObjectStartup.make("Budget", { id: { toString: () => "delayed-budget" } } as never, effect {
+    try sleep("300 millis")
+    return actual
+  }, { admit: true, spend: true })
+  w.objects.set(`budget/${day}`, delayed)
+  // Only this instance is reachable: the other namespace services refuse before opening another object.
+  for (const kind of ["conversation", "accounts", "history", "actions"] as const) w.fault(kind, "unbound", 1)
+  const request = HttpServerRequest.fromClientRequest(HttpClientRequest.get(`${ORIGIN}/api/health/objects`))
+  const pending = try forkChild(w.fetchOf(request, {}))
+  try TestClock.adjust("299 millis")
+  const before = pending.pollUnsafe()
+  try TestClock.adjust("1 millis")
+  const response = HttpServerResponse.toWeb(try Fiber.join(pending))
+  const body = try promise(() => response.json()) as { objects: Record<string, { startup: string; objectId: string }> }
+  try Effect.try(() => {
+    expect(before).toBeUndefined()
+    expect(response.status).toBe(200)
+    expect(body.objects.Budget).toMatchObject({ startup: "ready", objectId: "delayed-budget" })
+    expect(body.objects.History?.startup).toBe("unreachable")
   })
 }))
