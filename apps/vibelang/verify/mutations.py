@@ -11,6 +11,8 @@ import json, pathlib, re, sys
 from mutation_edit import executable_matches, flatten_imports, function_span
 from declarations import stage as stage_declarations, parses_as_typescript, value_imports
 declarations={}
+from mutation_targets import CALLEE_PRECONDITIONS
+from sources import production_sources, require_proved
 root=pathlib.Path(__file__).resolve().parent
 from extended_mutations import cases as extended_cases
 from web_mutations import cases as web_cases
@@ -111,6 +113,21 @@ cases=[
 ('grant-maintainer', 'grantPolicy', 'if (by !== id && actor !== "maintainer") return false', 'if (false) return false', 'only a maintainer grants another person'),
 ('grant-last', 'grantPolicy', 'if (current === "maintainer" && !other) return false', 'if (false) return false', 'the final maintainer cannot be removed'),
 ('decide-role-guard', 'decide', 'if (!canGrant(conversation.roles, intent.id, intent.by, intent.role, intent.mode))', 'if (false)', 'the sequencer enforces role grant admission'),
+('decide-self-grant', 'decide', 'if (!canGrant(conversation.roles, intent.id, intent.by, intent.role, intent.mode)) return refused("forbidden")', 'if (intent.id === "" || intent.role === "viewer" || (intent.by !== intent.id && !canGrant(conversation.roles, intent.id, intent.by, intent.role, intent.mode))) return refused("forbidden")', 'a person cannot promote themselves through the sequencer'),
+('decide-authorize-narrow', 'decide', 'if (!may(roleOf(conversation.roles, intent.by), intent.action)) return refused("forbidden")', 'if ((intent.action === "merge" || intent.action === "settings" || intent.action === "roles") && !may(roleOf(conversation.roles, intent.by), intent.action)) return refused("forbidden")', 'every action, not only the maintainer ones, is authorized at its least role'),
+('decide-grant-event', 'decide', 'by: intent.by, role: intent.role, mode: intent.mode', 'by: intent.by, role: "maintainer", mode: intent.mode', 'the numbered grant carries the decided role'),
+('cangrant-self-current', 'canGrant', 'grantPolicy(id, by, roleOf(roles, id),', 'grantPolicy(id, by, "maintainer",', 'a person can only lower their own current role'),
+('steprun-drop-step', 'stepRun', ': [...run.steps, { key, name, attempt, state, started: at, at }]', ': run.steps', 'a new engine step is appended to its run'),
+('steprun-passed', 'stepRun', 'return { ...run, state: "running", steps', 'return { ...run, state: "passed", steps', 'a step keeps its run running'),
+('apply-action-actor', 'apply', 'actor: event.actor, state: "queued"', 'actor: "", state: "queued"', 'a requested run records who asked for it'),
+('apply-tour-end-runs', 'apply', 'return { ...next, entries: ended, agent: "idle", replying: "" }', 'return { ...next, entries: ended, agent: "idle", replying: "", runs: [] }', 'events other than action events leave every run'),
+('apply-walkthrough-guard', 'apply', 'if (!isTouring(conversation, event.id) || event.step < 1', 'if (event.step < 1', 'only the running tour drives the walkthrough'),
+('decide-request-copies', 'decide', 'door: intent.door, actor: intent.actor, at: intent.at', 'door: intent.door, actor: "", at: intent.at', 'the requested run event names the requesting actor'),
+('decide-trace-open', 'decide', '      if (!hasOpenRun(runsOf(conversation), intent.id)) return refused("not-replying")\n      return accepted({ type: "ActionStep"', '      return accepted({ type: "ActionStep"', 'a step is numbered only for an open run'),
+('decide-settle-open', 'decide', '      if (!hasOpenRun(runsOf(conversation), intent.id)) return refused("not-replying")\n      return accepted({ type: "ActionSettled"', '      return accepted({ type: "ActionSettled"', 'a settlement is numbered only for an open run'),
+('has-run-found', 'hasRun', 'if (runs[i]!.id === id) return true', 'if (runs[i]!.id === id) return false', 'a run with the id is found'),
+('has-open-run-state', 'hasOpenRun', 'if (runs[i]!.id === id && runOpen(runs[i]!.state)) return true', 'if (runs[i]!.id === id) return true', 'a settled run is not open'),
+('decide-request-fresh', 'decide', 'if (hasRun(runsOf(conversation), intent.id)) return refused("duplicate")', 'if (false) return refused("duplicate")', 'a requested run has a fresh id'),
 ('decide-action-guard', 'decide', 'if (!may(roleOf(conversation.roles, intent.by), intent.action))', 'if (false)', 'the sequencer refuses actions below their least role'),
 ('apply-role', 'apply', 'role: event.role, blocked: event.mode === "person"', 'role: "viewer", blocked: event.mode === "person"', 'the numbered grant preserves the role'),
 ]
@@ -143,6 +160,11 @@ cases += [
 ('src/core/wikiDecision.vibe','wiki-agent-read','wikiSubmissionAllowed','operation === "read"','false','an agent can read'),
 ('src/core/protocolDecision.vibe','wiki-account-route','accountRoute','path === "/api/wiki" || ','','wiki uses the account credential boundary'),
 ]
+cases += [
+('src/core/sandboxDecision.vibe', 'meter-rollover-early', 'meterStep', 'if (end === boundary) return', 'if (end >= boundary - 1) return', 'a month opens only at its first millisecond'),
+('src/core/sandboxDecision.vibe', 'meter-rollover-carry', 'meterStep', 'month: boundary, used: prior }', 'month: boundary, used: charged }', 'a new month starts from its own usage, never the old month\'s'),
+('src/core/sandboxDecision.vibe', 'meter-step-count', 'meterStep', 'intervalUsageMilliseconds(count, ', 'intervalUsageMilliseconds(1, ', 'every running sandbox accrues the interval'),
+]
 cases += web_cases
 if len(sys.argv) < 2: raise SystemExit('Usage: mutations.py OUT [NAME ...] [--module src/x.vibe ...]')
 out=pathlib.Path(sys.argv[1]).resolve()
@@ -158,6 +180,8 @@ unknown=selected-{name for module,name,*_ in cases}
 if unknown: raise SystemExit('Unknown mutations: '+', '.join(sorted(unknown)))
 contracts=lambda text:[line for line in text.splitlines() if line.lstrip().startswith('//@')]
 out.mkdir(parents=True,exist_ok=True)
+# A mutant reads its imports' contracts as axioms, so each import must itself be a proved production module.
+production=production_sources(root.parent)
 def stage_dependencies(text,dependencies,out):
     """Copy every `.vibe` file `text` imports for values, and theirs in turn, flattened beside it as `name.vibe.ts`.
     A module imported only with `import type` that is not TypeScript syntax gets its emitted declaration instead
@@ -170,6 +194,7 @@ def stage_dependencies(text,dependencies,out):
             if spec not in values and not parses_as_typescript(path):
                 declarations.setdefault(out/f'{spec}.d.ts',path)
                 continue
+            require_proved(path,production)
             if spec in seen:
                 if seen[spec]!=path: raise SystemExit(f'two imports share the file name {spec}')
                 continue
@@ -197,7 +222,7 @@ for module,name,fn,old,new,claim in cases:
     broken,dependencies=flatten_imports(broken,(root.parent/module).parent)
     (out/f'{name}.ts').write_text(broken)
     stage_dependencies(broken,dependencies,out)
-    manifest[name]={'source':module,'function':fn,'claim':claim,'before':old,'after':new}
+    manifest[name]={'source':module,'function':fn,'claim':claim,'before':old,'after':new,'callee_precondition':name in CALLEE_PRECONDITIONS}
 if modules and not manifest: raise SystemExit('No mutations in: '+', '.join(sorted(modules)))
 # Beside the mutants, not among them: the mutant typecheck reads every .ts under OUT.
 stage_declarations(root.parent, declarations, out.with_name(out.name+'.declarations'))

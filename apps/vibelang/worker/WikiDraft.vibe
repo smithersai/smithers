@@ -6,12 +6,17 @@ import { ModelRequest } from "@smthrs/model"
 import { WikiDraft, WikiWriter } from "../src/core/WikiWriter.vibe"
 import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
-import { agentOf, ChatModel, dayOf, Spend, draftSpend, draftSpendFailed } from "./Reply.vibe"
+import { agentOf, ChatModel, dayOf, Spend, draftSpend, draftSpendFailed, ceilingOf } from "./Reply.vibe"
+/** The model turns one run takes and the most tokens each writes; their ceiling is what its admission reserves. */
+const WIKI_FRAMES = 8
+const WIKI_ANSWER_TOKENS = 8192
+export const WIKI_CEILING = ceilingOf(WIKI_FRAMES, WIKI_ANSWER_TOKENS)
+
 export const DraftWiki = AgentAction.make("vibelang/wiki/draft-agent", {
   payload: { page: Schema.String, source: Schema.String, ask: Schema.String },
-  output: WikiDraft, seat: "agent", profile: "conversation", maxFrames: 8,
+  output: WikiDraft, seat: "agent", profile: "conversation", maxFrames: WIKI_FRAMES,
   system: [AGENT_CONTEXT, "Draft one edit to the given project wiki page. Return the complete edited Markdown page with ctx.done({page, text}): the source given, changed exactly where the person's ask needs, nothing else rewritten. Keep the page's structure and voice. Never submit, approve or merge anything."],
-  prompt: (request) => JSON.stringify(request), modelParams: ModelRequest.GenerationParams.make({ maxTokens: 8192 }),
+  prompt: (request) => JSON.stringify(request), modelParams: ModelRequest.GenerationParams.make({ maxTokens: WIKI_ANSWER_TOKENS }),
 })
 export service WikiDraftAgent {
   readonly available: boolean
@@ -48,14 +53,17 @@ export const wikiWriter = Layer.effect(WikiWriter, effect {
       const instance = try FlowRuntime.FlowInstance
       const admission = try Action.make({ name: "vibelang/wiki/admit", success: Schema.Struct({ day: Schema.String, admitted: Schema.Boolean }), error: WikiFailure, execute: effect {
         const day = dayOf(try Clock.currentTimeMillis)
-        return { day, admitted: try spend.admit(day).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" }))) }
+        return { day, admitted: try spend.admit(day, `wiki-draft/${instance.executionId}`, WIKI_CEILING).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" }))) }
       } })
       if (!admission.admitted) throw new WikiFailure({ reason: "budget" })
       // An empty policy is valid, so making the meter cannot fail.
       const meter = try Effect.orDie(Budget.make({}))
       const result = try Effect.result(agent.run(request, meter))
-      const usage = try meter.usageOf(instance.executionId).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" })))
-      try Effect.tapError(effect { try Action.make({ name: "vibelang/wiki/draft-spend", error: WikiFailure, retryPolicy: draftSpend, execute: spend.spend(admission.day, `wiki-draft/${instance.executionId}`, usage.tokens).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" }))) }) }, () => draftSpendFailed("wiki"))
+      const usage = meter.usageOf(instance.executionId) catch effect () => {
+        try Effect.logWarning("vibelang.budget.usage").pipe(Effect.annotateLogs({ outcome: "unavailable" }))
+        return { tokens: 0, calls: 0, unreported: 1 }
+      }
+      try Effect.tapError(effect { try Action.make({ name: "vibelang/wiki/draft-spend", error: WikiFailure, retryPolicy: draftSpend, execute: spend.spend(admission.day, `wiki-draft/${instance.executionId}`, usage.tokens, usage.calls > 0 && usage.unreported === undefined, WIKI_CEILING).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" }))) }) }, () => draftSpendFailed("wiki"))
       if (result._tag === "Failure") throw result.failure
       return result.success
     },

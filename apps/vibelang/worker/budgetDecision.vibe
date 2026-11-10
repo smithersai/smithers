@@ -1,11 +1,51 @@
-// The ledger's integer transition, called inside Budget's storage lock.
+// The ledger's integer transitions, called inside Budget's storage lock.
 export interface Charge { readonly spent: number; readonly added: number; readonly write: boolean }
 
-/** Admission is strict: a day at its allowance cannot start another answer. */
+/** What admission leaves in the ledger: whether the call may start, the day's open reservations, and this call's hold. */
+export interface Reservation { readonly admitted: boolean; readonly reserved: number; readonly held: number }
+
+/** What a settlement leaves in the ledger: charges, open reservations, the charge beyond reservations, and this call's charge. */
+export interface Settlement { readonly spent: number; readonly reserved: number; readonly over: number; readonly added: number; readonly write: boolean }
+
+/**
+ * Admission reserves the call's whole ceiling, under the ledger's lock, so however many calls are admitted at once the
+ * day's charges and open reservations stay within the limit. A call that already holds a reservation (its admission
+ * step ran twice) is admitted without a second hold; a call already charged is refused.
+ */
 //@ verify
-//@ ensures \result == (spent < limit)
-export function admits(spent: number, limit: number): boolean {
-  return spent < limit
+//@ requires 0 <= spent && 0 <= reserved && 0 <= held && 0 < ceiling && 0 <= over
+//@ requires spent + reserved + ceiling <= 9007199254740991
+//@ ensures recorded ==> !\result.admitted
+//@ ensures !recorded && held > 0 ==> \result.admitted
+//@ ensures !recorded && held == 0 ==> \result.admitted == (spent + reserved + ceiling <= limit)
+//@ ensures \result.admitted && held == 0 ==> \result.reserved == reserved + ceiling && \result.held == ceiling && spent + \result.reserved <= limit
+//@ ensures !(\result.admitted && held == 0) ==> \result.reserved == reserved && \result.held == held
+//@ ensures spent + reserved <= limit + over ==> spent + \result.reserved <= limit + over
+export function reserve(spent: number, reserved: number, held: number, ceiling: number, limit: number, over: number, recorded: boolean): Reservation {
+  if (recorded) return { admitted: false, reserved, held }
+  if (held > 0) return { admitted: true, reserved, held }
+  if (spent + reserved + ceiling > limit) return { admitted: false, reserved, held }
+  return { admitted: true, reserved: reserved + ceiling, held: ceiling }
+}
+
+/**
+ * A call's settlement releases its reservation and charges, once, what its provider reported, or its whole ceiling
+ * when the report is unusable. A charge beyond the call's reservation is added to `over`, so the day's charges and
+ * open reservations never pass the limit by more than `over`.
+ */
+//@ verify
+//@ requires 0 <= spent && 0 <= reserved && 0 <= over && 0 <= held && held <= reserved && 0 <= used && 0 < ceiling
+//@ requires spent + used + ceiling <= 9007199254740991 && over + used + ceiling <= 9007199254740991
+//@ ensures \result.reserved == reserved - held && \result.write == (!recorded || held > 0)
+//@ ensures recorded ==> \result.spent == spent && \result.added == 0 && \result.over == over
+//@ ensures !recorded ==> \result.added == (usable ? used : ceiling) && \result.spent == spent + \result.added
+//@ ensures !recorded ==> \result.over == over + (\result.added > held ? \result.added - held : 0)
+//@ ensures spent + reserved <= limit + over ==> \result.spent + \result.reserved <= limit + \result.over
+export function settle(spent: number, reserved: number, over: number, held: number, used: number, usable: boolean, ceiling: number, recorded: boolean, limit: number): Settlement {
+  if (recorded) return { spent, reserved: reserved - held, over, added: 0, write: held > 0 }
+  const added = usable ? used : ceiling
+  const beyond = added > held ? added - held : 0
+  return { spent: spent + added, reserved: reserved - held, over: over + beyond, added, write: true }
 }
 
 /** A replay adds nothing; a new reply's entire nonnegative charge is added exactly once. */

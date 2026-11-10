@@ -7,9 +7,17 @@ function settled(input: number | undefined, output: number | undefined): AgentEv
 }
 
 describe("reply usage integrity", () => {
+  it("uses a usable provider total, including a report with no component counts", () => {
+    for (const usage of [{ totalTokens: 7 }, { inputTokens: 100, outputTokens: 20, totalTokens: 70 }]) {
+      const event = { _tag: "model-settled", usage } as unknown as AgentEvent.AgentEvent
+      expect(fold(started, event)).toMatchObject({ tokens: usage.totalTokens, usageValid: true })
+    }
+  })
+
   for (const [label, input, output] of [
     ["negative input", -140, 0], ["negative output", 0, -1], ["not a number", Number.NaN, 2],
     ["infinite", 1, Number.POSITIVE_INFINITY], ["fractional", 0.5, 0], ["unsafe integer", Number.MAX_SAFE_INTEGER + 1, 0],
+    ["missing input", undefined, 3], ["missing output", 2, undefined], ["missing", undefined, undefined],
   ] as const) {
     it(`keeps all previously accounted calls when telemetry is ${label}`, () => {
       const before = fold(started, settled(100, 20))
@@ -27,9 +35,9 @@ describe("reply usage integrity", () => {
     expect(after.tokens).toBe(Number.MAX_SAFE_INTEGER - 1)
     expect(after).toMatchObject({ usageValid: false })
   })
-  it("counts exact safe boundary usage and missing fields as zero", () => {
-    const before = fold(started, settled(Number.MAX_SAFE_INTEGER - 1, undefined))
-    const after = fold(before, settled(undefined, 1))
+  it("counts exact safe boundary usage", () => {
+    const before = fold(started, settled(Number.MAX_SAFE_INTEGER - 1, 0))
+    const after = fold(before, settled(0, 1))
     expect(after.tokens).toBe(Number.MAX_SAFE_INTEGER)
     expect(after).toMatchObject({ usageValid: true })
   })

@@ -45,10 +45,10 @@ describe("the agent's task", () => {
 })
 
 describe("the answer while it streams", () => {
-  it("ignores non-text deltas and unrelated events, and treats missing usage as zero", () => {
+  it("ignores non-text deltas and unrelated events, and latches missing usage as invalid", () => {
     expect(fold(started, event({ _tag: "model-delta", delta: { type: "reasoning-delta", text: "hidden" } }))).toBe(started)
     expect(fold(started, event({ _tag: "cell-started" }))).toBe(started)
-    expect(fold(started, event({ _tag: "model-settled", usage: {} })).tokens).toBe(0)
+    expect(fold(started, event({ _tag: "model-settled", usage: {} }))).toMatchObject({ tokens: 0, usageValid: false })
   })
   it("shows the text the reply passes to ctx.done, as far as it has arrived", () => {
     const progress = folded([
@@ -76,11 +76,12 @@ describe("the answer while it streams", () => {
   it("counts every settled model call's tokens, and remembers the last failed call's code", () => {
     const progress = folded([
       event({ _tag: "model-settled", usage: { inputTokens: 100, outputTokens: 20 } }),
-      event({ _tag: "model-settled", usage: { inputTokens: 50 } }),
+      event({ _tag: "model-settled", usage: { inputTokens: 50, outputTokens: 0 } }),
       event({ _tag: "model-failed", code: "content_policy" }),
     ])
     expect(progress.tokens).toBe(170)
     expect(progress.failed).toBe("content_policy")
+    expect(progress.usageValid).toBe(true)
   })
 })
 

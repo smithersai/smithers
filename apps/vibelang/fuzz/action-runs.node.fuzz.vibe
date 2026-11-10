@@ -165,7 +165,7 @@ it.live("actions/held-replies", () => run("actions/held-replies", Text, (text) =
       try settle("cancelled", cancelled)
       const entered = try Deferred.make<void>()
       const release = try Deferred.make<void>()
-      const held = { admit: (day: string) => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.andThen(w.spend.admit(day))), spend: w.spend.spend }
+      const held = { admit: (day: string, reply: string, ceiling: number) => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.andThen(w.spend.admit(day, reply, ceiling))), spend: w.spend.spend }
       const running = try Effect.forkScoped(Effect.exit(cancelled.host.alarm(held, { model: scripted.model, unusable: "" }, product)))
       try Deferred.await(entered)
       const row = (try Runs.read(cancelled.sequencer)).find((item) => item.id === "cancelled-reply")

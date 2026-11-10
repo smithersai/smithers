@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { make, SPENT, type Ledger } from "../worker/Budget.vibe"
+import { make, OVER, RESERVED, SPENT, type Ledger } from "../worker/Budget.vibe"
 
 // A real in-memory ledger; the budget owns the semaphore and all accounting.
 effect function ledger() {
@@ -12,46 +12,49 @@ effect function ledger() {
 }
 
 describe("the daily ledger's accounting", () => {
-  it.effect("invalid usage cannot poison admission or a later valid spend", () => effect {
+  it.effect("an unusable report charges the call's whole ceiling, never zero or the partial sum", () => effect {
     const { storage, values } = try ledger()
-    const budget = try make(storage, 100)
-    try budget.spend("nan", Number.NaN)
-    try budget.spend("infinity", Number.POSITIVE_INFINITY)
-    try budget.spend("negative", -10)
-    try budget.spend("valid", 12.6)
+    const budget = try make(storage, 1000)
+    for (const reply of ["nan", "infinity", "negative", "absent"]) try budget.admit(reply, 40)
+    try budget.spend("nan", Number.NaN, true, 40)
+    try budget.spend("infinity", Number.POSITIVE_INFINITY, true, 40)
+    try budget.spend("negative", -10, true, 40)
+    try budget.spend("absent", 7, false, 40)
+    try budget.spend("valid", 12.6, true, 40)
     const saved = try Ref.get(values)
-    const admitted = try budget.admit()
     try Effect.try(() => {
-      expect(saved[SPENT]).toBe(13)
+      expect(saved[SPENT]).toBe(4 * 40 + 13)
+      expect(saved["reply/absent"]).toBe(40)
       expect(saved["reply/valid"]).toBe(13)
-      expect(admitted).toBe(true)
+      expect(saved[RESERVED]).toBe(0)
+      expect(saved[OVER]).toBe(13)
     })
   })
 
   it.effect("concurrent repeated spends count one charge per reply and admission stops at the limit", () => effect {
     const { storage, values } = try ledger()
     const budget = try make(storage, 12)
-    try all([budget.spend("a", 5), budget.spend("a", 5), budget.spend("b", 7)], { concurrency: "unbounded" })
+    try all([budget.spend("a", 5, true, 5), budget.spend("a", 5, true, 5), budget.spend("b", 7, true, 7)], { concurrency: "unbounded" })
     const saved = try Ref.get(values)
-    const admitted = try budget.admit()
+    const admitted = try budget.admit("c", 1)
     try Effect.try(() => {
-      expect(saved).toEqual({ spent: 12, "reply/a": 5, "reply/b": 7 })
+      expect(saved).toMatchObject({ spent: 12, "reply/a": 5, "reply/b": 7 })
       expect(admitted).toBe(false)
     })
   })
 })
 
-it.effect("usage overflow cannot corrupt the sum of recorded spends", () => effect {
+it.effect("an overflowing charge is refused; an unsafe report is charged its ceiling", () => effect {
   const { storage, values } = try ledger()
   const budget = try make(storage, Number.MAX_SAFE_INTEGER)
-  try budget.spend("first", Number.MAX_SAFE_INTEGER - 1)
-  const overflow = try Effect.exit(budget.spend("overflow", 3))
-  const unsafe = try Effect.exit(budget.spend("unsafe", Number.MAX_VALUE))
+  try budget.spend("first", Number.MAX_SAFE_INTEGER - 2, true, 1)
+  const overflow = try Effect.exit(budget.spend("overflow", 3, true, 1))
+  try budget.spend("unsafe", Number.MAX_VALUE, true, 1)
   const saved = try Ref.get(values)
   try Effect.try(() => {
     expect(Exit.isFailure(overflow)).toBe(true)
-    expect(Exit.isFailure(unsafe)).toBe(true)
-    expect(saved).toEqual({ spent: Number.MAX_SAFE_INTEGER - 1, "reply/first": Number.MAX_SAFE_INTEGER - 1 })
+    expect(saved).toMatchObject({ spent: Number.MAX_SAFE_INTEGER - 1, "reply/first": Number.MAX_SAFE_INTEGER - 2, "reply/unsafe": 1 })
+    expect(saved["reply/overflow"]).toBeUndefined()
   })
 })
 
@@ -59,7 +62,7 @@ it.effect("invalid persisted totals cannot be used for a new charge", () => effe
   const { storage, values } = try ledger()
   try storage.write({ spent: -5 })
   const budget = try make(storage, 100)
-  const result = try Effect.exit(budget.spend("reply", 3))
+  const result = try Effect.exit(budget.spend("reply", 3, true, 10))
   const saved = try Ref.get(values)
   try Effect.try(() => {
     expect(Exit.isFailure(result)).toBe(true)
@@ -67,30 +70,36 @@ it.effect("invalid persisted totals cannot be used for a new charge", () => effe
   })
 })
 
-it.effect("corrupt persisted totals cannot admit a model call", () => effect {
-  for (const total of [-5, -Infinity, NaN, Infinity, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+it.effect("corrupt persisted totals, reservations or ceilings cannot admit a model call", () => effect {
+  for (const [key, total] of [...[-5, -Infinity, NaN, Infinity, 0.5, Number.MAX_SAFE_INTEGER + 1].flatMap((value) => [[SPENT, value], [RESERVED, value], [OVER, value]] as const), ["hold/a", -1] as const]) {
     const { storage, values } = try ledger()
-    try storage.write({ spent: total })
+    try storage.write({ [key]: total })
     const budget = try make(storage, 100)
-    const admission = try Effect.exit(budget.admit())
+    const admission = try Effect.exit(budget.admit("a", 10))
     const saved = try Ref.get(values)
     try Effect.try(() => {
       expect(Exit.isFailure(admission)).toBe(true)
-      expect(saved).toEqual({ spent: total })
+      expect(saved).toEqual({ [key]: total })
     })
+  }
+  for (const ceiling of [0, -1, 0.5, NaN, Infinity]) {
+    const { storage } = try ledger()
+    const budget = try make(storage, 100)
+    const admission = try Effect.exit(budget.admit("a", ceiling))
+    try Effect.try(() => expect(Exit.isFailure(admission)).toBe(true))
   }
 })
 
 it.effect("the final safe charge is exact and its replay ignores oversized telemetry", () => effect {
   const { storage, values } = try ledger()
-  const budget = try make(storage, Number.MAX_SAFE_INTEGER)
-  try budget.spend("first", Number.MAX_SAFE_INTEGER - 1)
-  try budget.spend("last", 1)
-  try budget.spend("last", Number.MAX_VALUE)
-  const admitted = try budget.admit()
+  const budget = try make(storage, Number.MAX_SAFE_INTEGER - 3)
+  try budget.spend("first", Number.MAX_SAFE_INTEGER - 4, true, 1)
+  try budget.spend("last", 1, true, 1)
+  try budget.spend("last", Number.MAX_VALUE, true, 1)
+  const admitted = try budget.admit("more", 1)
   const saved = try Ref.get(values)
   try Effect.try(() => {
     expect(admitted).toBe(false)
-    expect(saved).toEqual({ spent: Number.MAX_SAFE_INTEGER, "reply/first": Number.MAX_SAFE_INTEGER - 1, "reply/last": 1 })
+    expect(saved).toMatchObject({ spent: Number.MAX_SAFE_INTEGER - 3, "reply/first": Number.MAX_SAFE_INTEGER - 4, "reply/last": 1 })
   })
 })

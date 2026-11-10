@@ -6,7 +6,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { FlowRuntime } from "@smthrs/flow"
 import type { Event } from "../src/core/conversation.vibe"
 import { Reply, Tours } from "../src/core/flows.vibe"
-import { chatModel } from "../worker/AgentModel.vibe"
+import { faultyChatModel } from "./support/faultyChatModel.vibe"
 import { repliesOf, toursOf } from "../worker/Objects.vibe"
 import { readerOver } from "../worker/HistoryObject.vibe"
 import { HistoryTools } from "../worker/HistoryTools.vibe"
@@ -38,7 +38,7 @@ describe("a reply whose Budget object is unreachable", () => {
       admit: () => Effect.suspend(() => { admissions += 1; return Effect.fail(new Unreachable({ what: "budget" })) }),
       spend: () => Effect.fail(new Unreachable({ what: "budget" })),
     }
-    const model = try Effect.provide(chatModel(), ConfigProvider.layer(ConfigProvider.fromUnknown({})))
+    const model = try faultyChatModel()
     const flows = registration.pipe(
       Layer.provideMerge(FlowEngine.layerMemory),
       Layer.provide(Layer.mergeAll(

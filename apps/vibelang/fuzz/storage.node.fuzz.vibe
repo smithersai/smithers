@@ -8,6 +8,7 @@ import { ledgerOver, logOver, eventKey } from "../worker/ObjectStorage.vibe"
 import * as HistoryObject from "../worker/HistoryObject.vibe"
 import { empty as emptyHistory } from "../src/history/mythical.vibe"
 import { REASONS } from "../worker/Reply.vibe"
+import { faultyChatModel } from "../test/support/faultyChatModel.vibe"
 import { run, Int, Text } from "./run.vibe"
 
 // The unconfigured reply must finish before reaching a history or a model.
@@ -53,13 +54,13 @@ it.live("storage/conversation-flows", () => run("storage/conversation-flows", Sc
   const duplicate = try Objects.post("fuzz", object, sequencer, `c${id}`, "Guest", "Question " + text)
   if (duplicate !== "duplicate") return false
   const budget = try Objects.budget(object, 100)
-  try budget.spend(`r${id}`, id)
+  try budget.spend(`r${id}`, id, true, 100)
   const spend = { admit: () => succeed(false), spend: () => Effect.void }
-  const model = { model: undefined, unusable: "unset" }
+  const model = try faultyChatModel()
   try Objects.alarm("fuzz", object, sequencer, spend, model, history)
   try Objects.alarm("fuzz", object, sequencer, spend, model, history)
   const snapshot = try sequencer.read(0)
-  if (snapshot.entries[0]?.text !== ("Question " + text).trim() || snapshot.entries[1]?.error !== REASONS.budget || !(try budget.admit())) return false
+  if (snapshot.entries[0]?.text !== ("Question " + text).trim() || snapshot.entries[1]?.error !== REASONS.budget || !(try budget.admit("probe", 1))) return false
   if ((try Objects.tour("fuzz", object, sequencer)) !== null || (try Objects.tour("fuzz", object, sequencer)) !== "busy") return false
   try Objects.alarm("fuzz", object, sequencer, { admit: () => succeed(true), spend: () => Effect.void }, model, history)
   try Objects.alarm("fuzz", object, sequencer, spend, model, history)

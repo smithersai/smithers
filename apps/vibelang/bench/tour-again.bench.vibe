@@ -64,9 +64,9 @@ it("a reply whose day ledger is corrupt fails and spends nothing", async ({ benc
         const day = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
         try promise(() => day.put("spent", 1.5))
         const budget = try Objects.budget(day, 1000)
-        const corrupt = { admit: (_day: string) => budget.admit(), spend: (_day: string, reply: string, tokens: number) => budget.spend(reply, tokens) }
-        const admitted = try exit(budget.admit())
-        const charged = try exit(budget.spend("r1", 10))
+        const corrupt = { admit: (_day: string, reply: string, ceiling: number) => budget.admit(reply, ceiling), spend: (_day: string, reply: string, tokens: number, reported: boolean, ceiling: number) => budget.spend(reply, tokens, reported, ceiling) }
+        const admitted = try exit(budget.admit("r1", 10))
+        const charged = try exit(budget.spend("r1", 10, true, 10))
         const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
         const sequencer = try Objects.conversation(storage)
         const posted = try Objects.post("room", storage, sequencer, "q1", "will", "Question?", w.person.id)

@@ -8,6 +8,11 @@ def production_sources(app: pathlib.Path):
     return sorted(p for folder in ('src', 'worker', 'scripts') for p in (app / folder).rglob('*.vibe')
                   if VERIFY.search(p.read_text()))
 
+def require_proved(dependency: pathlib.Path, production) -> None:
+    """A proof reads an imported module's contracts as axioms, so the module must itself be a proved production source."""
+    if dependency.resolve() not in {p.resolve() for p in production}:
+        raise SystemExit(f'Proof import {dependency} is not a marked production module: its contracts would be unproved axioms')
+
 # LemmaScript renames a TypeScript name that Dafny reserves (`fresh` becomes `fresh_`) and one with a leading `_`
 # (`_x` becomes `i_x`); see `dafnyBaseName` in packages/lemmascript/tools/src/dafny-emit.ts. The keyword set is read
 # from that file so the harness and the emitter cannot disagree.

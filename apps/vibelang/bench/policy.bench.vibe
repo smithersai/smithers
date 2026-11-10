@@ -1,7 +1,7 @@
 import type { TurnInput } from "../src/core/sequenceDecision.vibe"
 import type { AskProgress } from "../src/surfaces/commandDecision.vibe"
 import { it, expect } from "@effect/vitest"
-import { admits, charge } from "../worker/budgetDecision.vibe"
+import { reserve, settle } from "../worker/budgetDecision.vibe"
 import { appends, endsTourEvent, startAnswer, readingHold } from "../src/core/flowDecision.vibe"
 import { failureCode, reasonCode } from "../worker/replyReasons.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
@@ -12,11 +12,12 @@ it("durable-flow and budget decisions", async ({ bench }) => {
     expect(readingHold(10)).toBe(4000)
     expect(readingHold(11)).toBe(4300)
     expect(readingHold(20)).toBe(7000)
-    expect(admits(0, 1)).toBe(true)
-    expect(admits(1, 1)).toBe(false)
-    expect(admits(2, 1)).toBe(false)
-    expect(charge(3, 2, false)).toEqual({ spent: 5, added: 2, write: true })
-    expect(charge(3, 2, true)).toEqual({ spent: 3, added: 0, write: false })
+    expect(reserve(0, 0, 0, 1, 1, 0, false)).toEqual({ admitted: true, reserved: 1, held: 1 })
+    expect(reserve(1, 0, 0, 1, 1, 0, false)).toEqual({ admitted: false, reserved: 0, held: 0 })
+    expect(reserve(0, 1, 1, 1, 1, 0, false)).toEqual({ admitted: true, reserved: 1, held: 1 })
+    expect(settle(3, 4, 0, 4, 2, true, 4, false, 10)).toEqual({ spent: 5, reserved: 0, over: 0, added: 2, write: true })
+    expect(settle(3, 4, 0, 4, 0, false, 4, false, 10)).toEqual({ spent: 7, reserved: 0, over: 0, added: 4, write: true })
+    expect(settle(3, 0, 0, 0, 2, true, 4, true, 10)).toEqual({ spent: 3, reserved: 0, over: 0, added: 0, write: false })
     expect(appends(2, 2, 3, 3, "x")).toBe(true)
     expect(appends(2, 1, 3, 3, "x")).toBe(false)
     expect(appends(2, 2, 3, 0, "x")).toBe(false)

@@ -39,6 +39,25 @@ test('original effect declarations, blocks, constructors, methods and getters ar
   assert.deepEqual(rows.filter(row => row.category === 'effectful shell').map(row => row.label), ['work', 'action', 'callback@3', 'run', 'read', 'write']);
 });
 
+test('no function marked //@ verify is labelled unproved, and a restated policy says so', () => {
+  // The review found the proved decide module listed as "Not yet proved" (0018, finding 7); a marked function is proved.
+  const unproved = [];
+  for (const file of sourceFiles()) {
+    const source = fs.readFileSync(file, 'utf8');
+    if (!/^[ \t]*\/\/@[ \t]+verify\b/m.test(source)) continue;
+    const lines = source.split('\n');
+    for (const row of inventorySource(file, source)) {
+      let i = row.line - 2, marked = false;
+      while (i >= 0 && /^\s*(\/\/|\/\*\*|\*)/.test(lines[i])) { if (/^\s*\/\/@\s+verify\b/.test(lines[i])) marked = true; i--; }
+      if (marked && row.why.startsWith('Not yet proved')) unproved.push(`${row.file}:${row.line} ${row.label}`);
+    }
+  }
+  assert.deepEqual(unproved, []);
+  const conversation = path.join(app, 'src/core/conversation.vibe');
+  const mayRun = inventorySource(conversation, fs.readFileSync(conversation, 'utf8')).find(row => row.label === 'mayRun');
+  assert.match(mayRun.why, /^Specification restated/);
+});
+
 test('malformed source cannot produce a successful partial inventory', () => {
   assert.throws(() => inventorySource(path.join(app, 'inventory-fixture.vibe'), 'export function broken('), /parse|compiler|syntax/i);
 });

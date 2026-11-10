@@ -43,10 +43,14 @@ export service Replies {
   fail(reply: string, reason: string): Answer!!
 }
 
-/** The day's token budget (Budget.vibe), in its own Durable Object: `admit` before a model call, `spend` after. */
+/**
+ * The day's token budget (Budget.vibe), in its own Durable Object: `admit` reserves a call's whole `ceiling` before its
+ * model calls, or refuses when the day has no room for it; `spend` settles the call after them, charging `tokens` when
+ * the provider `reported` them and the whole `ceiling` when it did not, and frees the reservation.
+ */
 export service Spend {
-  admit(day: string): boolean!Unreachable
-  spend(day: string, reply: string, tokens: number): void!Unreachable
+  admit(day: string, reply: string, ceiling: number): boolean!Unreachable
+  spend(day: string, reply: string, tokens: number, reported: boolean, ceiling: number): void!Unreachable
 }
 
 /** The agent's model, or why there is none: `CHAT_MODEL` and its key (AgentModel.vibe). */
@@ -85,6 +89,14 @@ export const MAX_FRAMES = 8
 
 /** The context window the agent compacts against, as smithers.sh's agents do. */
 export const CONTEXT_WINDOW_TOKENS = 32_768
+
+/** The most tokens an agent run of `frames` model turns, each writing at most `answer`, uses: what its admission reserves. */
+export function ceilingOf(frames: number, answer: number): number {
+  return frames * (CONTEXT_WINDOW_TOKENS + answer)
+}
+
+/** A reply's reservation in the day's budget. */
+export const REPLY_CEILING = ceilingOf(MAX_FRAMES, MAX_ANSWER_TOKENS)
 
 /** The seat the agent declares; the host answers it with the deployment's chat model. */
 export const AGENT_SEAT = "agent"
@@ -171,6 +183,7 @@ export function fold(progress: Progress, event: AgentEvent.AgentEvent): Progress
   let input = 0
   let output = 0
   let code = ""
+  let present = false
   let safeTotal = false
   let safeInput = false
   let safeOutput = false
@@ -184,8 +197,10 @@ export function fold(progress: Progress, event: AgentEvent.AgentEvent): Progress
       }
       break
     case "model-settled":
-      input = event.usage.inputTokens ?? 0
-      output = event.usage.outputTokens ?? 0
+      present = Budget.reportsTokens(event.usage)
+      // The provider's total is authoritative; without one, count both reported components.
+      input = event.usage.totalTokens ?? event.usage.inputTokens ?? 0
+      output = event.usage.totalTokens === undefined ? event.usage.outputTokens ?? 0 : 0
       safeTotal = Number.isSafeInteger(progress.tokens)
       safeInput = Number.isSafeInteger(input)
       safeOutput = Number.isSafeInteger(output)
@@ -194,7 +209,7 @@ export function fold(progress: Progress, event: AgentEvent.AgentEvent): Progress
       code = event.code
       break
   }
-  return advanceProgress(progress, { kind: event._tag, textDelta, piece, projected, input, output, code, safeTotal, safeInput, safeOutput })
+  return advanceProgress(progress, { kind: event._tag, textDelta, piece, projected, input, output, code, present, safeTotal, safeInput, safeOutput })
 }
 
 /**
@@ -294,6 +309,11 @@ effect function compose(post: string, reply: string) {
   const replies = try Replies
   const spend = try Spend
   const chat = try ChatModel
+  const model = chat.model
+  if (model === undefined) {
+    try Effect.logWarning("vibelang.reply.unconfigured").pipe(Effect.annotateLogs({ reason: chat.unusable }))
+    return Outcome.Failed({ reason: REASONS.unconfigured })
+  }
   const admission = try Action.make({
     name: "vibelang/reply/admit",
     success: Schema.Struct({ day: Schema.String, admitted: Schema.Boolean }),
@@ -301,28 +321,23 @@ effect function compose(post: string, reply: string) {
     retryPolicy: patient,
     execute: effect {
       const day = dayOf(try Clock.currentTimeMillis)
-      return { day, admitted: try spend.admit(day) }
+      return { day, admitted: try spend.admit(day, reply, REPLY_CEILING) }
     },
   })
   if (!admission.admitted) return Outcome.Failed({ reason: REASONS.budget })
-  const model = chat.model
-  if (model === undefined) {
-    try Effect.logWarning("vibelang.reply.unconfigured").pipe(Effect.annotateLogs({ reason: chat.unusable }))
-    return Outcome.Failed({ reason: REASONS.unconfigured })
-  }
   const turns = try Action.make({
     name: "vibelang/reply/history",
     success: Schema.Array(Turn),
     execute: replies.history(post),
   })
   const { answered, progress } = try respond(reply, model, turns)
+  if (Exit.isFailure(answered) && Cause.hasInterrupts(answered.cause)) return try Effect.failCause(answered.cause)
   try Action.make({
     name: "vibelang/reply/spend",
     error: Unreachable,
     retryPolicy: patient,
-    execute: spend.spend(admission.day, reply, progress.tokens),
+    execute: spend.spend(admission.day, reply, progress.tokens, progress.usageValid && progress.failed === undefined, REPLY_CEILING),
   })
-  if (Exit.isFailure(answered) && Cause.hasInterrupts(answered.cause)) return try Effect.failCause(answered.cause)
   const tag = Exit.isFailure(answered) ? tagOf(Cause.squash(answered.cause)) : "answered"
   try Effect.logInfo("vibelang.reply.agent").pipe(Effect.annotateLogs({ outcome: progress.usageValid ? progress.failed ?? tag : "invalid-usage", tokens: progress.tokens }))
   const rawText = Exit.isSuccess(answered) ? answered.value : undefined

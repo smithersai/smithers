@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fresh lsc generation + Dafny verification. Never trusts saved .dfy files."""
 import atexit, concurrent.futures, hashlib, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time
-from sources import production_sources, VERIFY, dafny_keywords, dafny_name
+from sources import production_sources, require_proved, VERIFY, dafny_keywords, dafny_name
 from proof_additions import add_proof_steps, insertion_names
 from declarations import stage as stage_declarations, copied_imports, declared_imports
 from mutation_targets import POSTCONDITIONS, ASSERTIONS, postcondition_line, case_assertion_line
@@ -40,9 +40,11 @@ def stage_imports(original, staged):
  for spec in copied_imports(text, original.parent):
   dep=(original.parent/spec).resolve(); copy=(staged.parent/spec).with_name(pathlib.Path(spec).name+'.ts')
   if not dep.exists(): raise SystemExit(f'Missing proof import {spec} of {original}')
+  require_proved(dep, PRODUCTION)
   copy.parent.mkdir(parents=True,exist_ok=True)
   if not copy.exists():
    copy.write_bytes(dep.read_bytes()); stage_imports(dep,copy)
+PRODUCTION=production_sources(APP)
 shown={}
 files=[]
 for original in selected:

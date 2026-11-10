@@ -64,8 +64,8 @@ export interface ConversationShape extends ObjectStartup.Health {
 }
 
 export interface BudgetShape extends ObjectStartup.Health {
-  readonly admit: () => boolean!!RuntimeContext
-  readonly spend: (reply: string, tokens: number) => void!!RuntimeContext
+  readonly admit: (reply: string, ceiling: number) => boolean!!RuntimeContext
+  readonly spend: (reply: string, tokens: number, reported: boolean, ceiling: number) => void!!RuntimeContext
 }
 
 export interface HistoryShape extends ObjectStartup.Health {
@@ -102,14 +102,14 @@ function reached<A, E>(runtime: RuntimeContext["Service"], what: string, call: A
 /** The same daily token ledger serves conversation answers and explicit VIP drafts. */
 function spendOf(runtime: RuntimeContext["Service"], budgets: Namespace<BudgetShape>, hostId: string): Spend.Shape {
   return {
-    admit: (day) => effect {
+    // The day's object is shared by every conversation and account; the host's own id namespaces each reservation and charge.
+    admit: (day, reply, ceiling) => effect {
       const object = try objectOf(budgets, day, "budget")
-      return try reached(runtime, "budget", object.admit())
+      return try reached(runtime, "budget", object.admit(chargeKeyOf(hostId, reply), ceiling))
     },
-    spend: (day, reply, tokens) => effect {
+    spend: (day, reply, tokens, reported, ceiling) => effect {
       const object = try objectOf(budgets, day, "budget")
-      // The day's object is shared by every conversation and account; the host's own id namespaces the charge.
-      try reached(runtime, "budget", object.spend(chargeKeyOf(hostId, reply), tokens))
+      try reached(runtime, "budget", object.spend(chargeKeyOf(hostId, reply), tokens, reported, ceiling))
     },
   }
 }
@@ -128,7 +128,7 @@ function actionIdentity(namespace: Namespace<AccountsShape>, runtime: RuntimeCon
 function budgetBody(state: ObjectState, limit: number) {
   return effect {
     const budget = try ObjectStartup.step("storage", Objects.budget(state.raw.storage, limit))
-    return { admit: () => budget.admit(), spend: budget.spend }
+    return { admit: budget.admit, spend: budget.spend }
   }
 }
 

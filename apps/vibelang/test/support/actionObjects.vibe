@@ -7,6 +7,7 @@ import * as Directory from "../../worker/ActionDirectory.vibe"
 import * as Runs from "../../worker/ActionRuns.vibe"
 import * as Identity from "../../worker/ActionIdentity.vibe"
 import * as Objects from "../../worker/Objects.vibe"
+import { chargeKeyOf } from "../../worker/budgetDecision.vibe"
 import { Unreachable } from "../../worker/Unreachable.vibe"
 import { objectStorage } from "./objectStorage.ts"
 
@@ -40,10 +41,15 @@ export effect function world() {
     start: effect (request, role) => try (try object(request.id)).host.start(request, role),
     cancel: effect (id, role, owner) => try Effect.mapError((try object(id)).host.cancel(id, role, owner), () => new Unreachable({ what: "action" })),
   }, authority)
-  const budget = try Objects.budget(storage, 1000)
-  const spend = { admit: (_day: string) => budget.admit(), spend: (_day: string, reply: string, tokens: number) => budget.spend(reply, tokens) }
+  const budget = try Objects.budget(storage, 10_000_000)
+  // The live RPC adapter scopes a daily ledger's keys by host; independent objects may have identical reply ids.
+  const spendFor = (host: string) => ({
+    admit: (_day: string, reply: string, ceiling: number) => budget.admit(chargeKeyOf(host, reply), ceiling),
+    spend: (_day: string, reply: string, tokens: number, reported: boolean, ceiling: number) => budget.spend(chargeKeyOf(host, reply), tokens, reported, ceiling),
+  })
+  const spend = spendFor("world")
   const model = { model: undefined, unusable: "no-model" }
-  return { accounts, person, object, directory, spend, model, authority }
+  return { accounts, person, object, directory, spend, spendFor, model, authority }
 }
 export function request(id: string, flow: string, input: Schema.Json, owner: string): RunRequest {
   return { id, flow, input, door: "button", actor: "person", owner, name: "will" }

@@ -6,12 +6,17 @@ import { ModelRequest } from "@smthrs/model"
 import { VipDraft, VipWriter } from "../src/core/VipWriter.vibe"
 import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
-import { agentOf, ChatModel, dayOf, Spend, draftSpend, draftSpendFailed } from "./Reply.vibe"
+import { agentOf, ChatModel, dayOf, Spend, draftSpend, draftSpendFailed, ceilingOf } from "./Reply.vibe"
+/** The model turns one run takes and the most tokens each writes; their ceiling is what its admission reserves. */
+const VIP_FRAMES = 8
+const VIP_ANSWER_TOKENS = 2048
+export const VIP_CEILING = ceilingOf(VIP_FRAMES, VIP_ANSWER_TOKENS)
+
 export const DraftVip = AgentAction.make("vibelang/vip/draft-agent", {
   payload: { title: Schema.String, text: Schema.String, example: Schema.String, prior: Schema.String },
-  output: VipDraft, seat: "agent", profile: "conversation", maxFrames: 8,
+  output: VipDraft, seat: "agent", profile: "conversation", maxFrames: VIP_FRAMES,
   system: [AGENT_CONTEXT, "Draft one VibeLang language feature, with a concrete example and relevant prior art. Return the draft with ctx.done({title, summary, example, prior}). Keep the person's feature and flag uncertainty in the draft. Never submit, approve or merge anything."],
-  prompt: (request) => JSON.stringify(request), modelParams: ModelRequest.GenerationParams.make({ maxTokens: 2048 }),
+  prompt: (request) => JSON.stringify(request), modelParams: ModelRequest.GenerationParams.make({ maxTokens: VIP_ANSWER_TOKENS }),
 })
 export service DraftAgent {
   readonly available: boolean
@@ -46,14 +51,17 @@ export const writer = Layer.effect(VipWriter, effect {
       const instance = try FlowRuntime.FlowInstance
       const admission = try Action.make({ name: "vibelang/vip/admit", success: Schema.Struct({ day: Schema.String, admitted: Schema.Boolean }), error: IssueFailure, execute: effect {
         const day = dayOf(try Clock.currentTimeMillis)
-        return { day, admitted: try spend.admit(day).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" }))) }
+        return { day, admitted: try spend.admit(day, `vip-draft/${instance.executionId}`, VIP_CEILING).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" }))) }
       } })
       if (!admission.admitted) throw new IssueFailure({ reason: "budget" })
       // An empty policy is valid, so making the meter cannot fail.
       const meter = try Effect.orDie(Budget.make({}))
       const result = try Effect.result(agent.run(request, meter))
-      const usage = try meter.usageOf(instance.executionId).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" })))
-      try Effect.tapError(effect { try Action.make({ name: "vibelang/vip/spend", error: IssueFailure, retryPolicy: draftSpend, execute: spend.spend(admission.day, `vip-draft/${instance.executionId}`, usage.tokens).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" }))) }) }, () => draftSpendFailed("vip"))
+      const usage = meter.usageOf(instance.executionId) catch effect () => {
+        try Effect.logWarning("vibelang.budget.usage").pipe(Effect.annotateLogs({ outcome: "unavailable" }))
+        return { tokens: 0, calls: 0, unreported: 1 }
+      }
+      try Effect.tapError(effect { try Action.make({ name: "vibelang/vip/spend", error: IssueFailure, retryPolicy: draftSpend, execute: spend.spend(admission.day, `vip-draft/${instance.executionId}`, usage.tokens, usage.calls > 0 && usage.unreported === undefined, VIP_CEILING).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" }))) }) }, () => draftSpendFailed("vip"))
       if (result._tag === "Failure") throw result.failure
       return result.success
     },

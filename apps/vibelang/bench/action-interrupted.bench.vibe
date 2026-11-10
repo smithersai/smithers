@@ -82,7 +82,7 @@ it("the engine fails an open reply and a person cancels a reply mid-answer", asy
           const failing = Runs.make("failing", storage, faulty, w.authority)
           const started = try failing.start(request("failing", "vibelang/Post", { text: "Question?" }, w.person.id), "maintainer")
           const turns: Array<string> = []
-          for (let turn = 0; turn < 2; turn++) turns.push((try exit(failing.alarm(w.spend, model, product)))._tag)
+          for (let turn = 0; turn < 2; turn++) turns.push((try exit(failing.alarm(w.spendFor("failing"), model, product)))._tag)
           const failed = try replyOf("failing", sequencer)
 
           // The loopback model pauses after its first SSE fragment while the person cancels.
@@ -95,14 +95,14 @@ it("the engine fails an open reply and a person cancels a reply mid-answer", asy
             prompt: 3, completion: 4, pause: { after: 1, entered, release },
           }])
           const heldModel = { model: answering.model, unusable: "" }
-          const running = try Effect.forkScoped(Effect.exit(object.host.alarm(w.spend, heldModel, product)))
-          try timeout(Deferred.await(entered), "15 seconds")
+          const running = try Effect.forkScoped(Effect.exit(object.host.alarm(w.spendFor("held"), heldModel, product)))
+          try Effect.mapError(timeout(Deferred.await(entered), "15 seconds"), () => new Error("Model never reached the cancellation pause"))
           const during = try replyOf("held", object.sequencer)
           const cancelled = try object.host.cancel("held-reply", "maintainer", w.person.id)
           try Deferred.succeed(release, undefined)
-          try timeout(Fiber.join(running), "15 seconds")
+          try Effect.mapError(timeout(Fiber.join(running), "15 seconds"), () => new Error("Cancelled model did not settle after release"))
           const restarted = Runs.make("held", object.storage, try Objects.conversation(object.storage), w.authority)
-          for (let turn = 0; turn < 2; turn++) try restarted.alarm(w.spend, heldModel, product)
+          for (let turn = 0; turn < 2; turn++) try restarted.alarm(w.spendFor("held"), heldModel, product)
           const calls = try answering.calls
           const text = (try object.sequencer.read(0)).entries.find((entry) => entry.author === "agent")?.text
           const after = try replyOf("held", object.sequencer)

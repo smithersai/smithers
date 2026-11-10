@@ -259,14 +259,19 @@ it.live("api-objects/world", () => run("api-objects/world", World, (input) => ef
 const BudgetStep = Schema.Struct({
   op: Schema.Literals(["admit", "spend", "restart", "corrupt"]),
   reply: Int,
+  reported: Schema.Boolean,
   // Provider telemetry: counts, fractions, and values a Schema literal cannot hold (NaN and the infinities, as text).
   tokens: Schema.Union([Int, Schema.Literals([-5, 1.6, 2.5, 1e6, Number.MAX_SAFE_INTEGER, "NaN", "Infinity", "-Infinity"])]),
 })
 const BudgetInput = Schema.Struct({ limit: Schema.Literals([0, 1, 40, 1000000]), steps: Schema.Array(BudgetStep).check(Schema.isMaxLength(16)) })
+/** Every fuzzed call's reservation. */
+const CEILING = 10
 
 /**
- * The day's ledger against a model: admitted while spent is below the limit; a reply is charged once; a fresh
- * incarnation agrees. A ledger whose total storage corrupted (an older writer) is a defect at once, never a decision.
+ * The day's ledger against a model: a call is admitted only while the day's charges, open reservations and its own
+ * ceiling fit the limit; its settlement frees the reservation and charges, once, its usable report or its whole
+ * ceiling; a fresh incarnation agrees. A ledger whose total storage corrupted (an older writer) is a defect at once,
+ * never a decision.
  */
 it.live("api-objects/budget", () => run("api-objects/budget", BudgetInput, (input) => effect {
   const store = try Effect.try(() => TestNodeRuntime.sqliteObjectStorage())
@@ -274,8 +279,11 @@ it.live("api-objects/budget", () => run("api-objects/budget", BudgetInput, (inpu
   const state = { id: { toString: () => "budget/day" }, raw: { storage: store }, exports: {} } as never
   let budget = try budgetObject(state, input.limit)
   let spent = 0
+  let reserved = 0
+  let over = 0
   let corrupt = false
   const charged = new Set<number>()
+  const holds = new Map<number, number>()
   for (const step of input.steps) {
     if (step.op === "restart") {
       budget = try budgetObject(state, input.limit)
@@ -283,27 +291,49 @@ it.live("api-objects/budget", () => run("api-objects/budget", BudgetInput, (inpu
       try promise(() => store.put("spent", Number(step.tokens) === Math.round(Number(step.tokens)) && Number(step.tokens) >= 0 ? -1 : Number(step.tokens)))
       corrupt = true
     } else if (step.op === "admit") {
-      const exit = try Effect.exit(budget.admit())
+      const exit = try Effect.exit(budget.admit(`r${step.reply}`, CEILING))
       if (corrupt) {
         if (Exit.isSuccess(exit)) throw new Finding({ report: "admit decided over a corrupt ledger" })
-      } else if (Exit.isFailure(exit) || exit.value !== (spent < input.limit)) throw new Finding({ report: `admit disagrees: spent ${spent}, limit ${input.limit}` })
+        continue
+      }
+      const held = holds.get(step.reply) ?? 0
+      if (spent + reserved > Number.MAX_SAFE_INTEGER - CEILING) {
+        if (Exit.isSuccess(exit)) throw new Finding({ report: "admit reserved past the safe integer range" })
+        continue
+      }
+      const expected = charged.has(step.reply) ? false : held > 0 ? true : spent + reserved + CEILING <= input.limit
+      if (Exit.isFailure(exit) || exit.value !== expected) throw new Finding({ report: `admit disagrees: spent ${spent}, reserved ${reserved}, limit ${input.limit}` })
+      if (expected && held === 0) {
+        reserved += CEILING
+        holds.set(step.reply, CEILING)
+      }
     } else {
       const tokens = Number(step.tokens)
-      const used = charged.has(step.reply) ? 0 : Number.isFinite(tokens) ? Math.max(0, Math.round(tokens)) : 0
-      const exit = try Effect.exit(budget.spend(`r${step.reply}`, tokens))
+      const rounded = Number.isFinite(tokens) ? Math.round(tokens) : -1
+      const usable = step.reported && Number.isSafeInteger(rounded) && rounded >= 0
+      const report = usable ? rounded : 0
+      const exit = try Effect.exit(budget.spend(`r${step.reply}`, tokens, step.reported, CEILING))
       if (corrupt) {
         if (Exit.isSuccess(exit) && !charged.has(step.reply)) throw new Finding({ report: "spend charged a corrupt ledger" })
         continue
       }
-      if (used > Number.MAX_SAFE_INTEGER - spent) {
+      if (report + CEILING > Number.MAX_SAFE_INTEGER - spent || report + CEILING > Number.MAX_SAFE_INTEGER - over) {
         // Past the safe integer range the ledger refuses the charge and keeps the day as it was.
         if (Exit.isSuccess(exit)) throw new Finding({ report: "spend: an unsafe total was recorded" })
         continue
       }
       if (Exit.isFailure(exit)) throw new Finding({ report: `spend: ${Cause.pretty(exit.cause).slice(0, 400)}` })
-      spent += used
-      charged.add(step.reply)
+      const held = holds.get(step.reply) ?? 0
+      reserved -= held
+      holds.delete(step.reply)
+      if (!charged.has(step.reply)) {
+        const added = usable ? rounded : CEILING
+        spent += added
+        over += Math.max(0, added - held)
+        charged.add(step.reply)
+      }
     }
+    if (!corrupt && spent + reserved > input.limit + over) throw new Finding({ report: "the day passed its limit beyond over" })
   }
   return true
 }))

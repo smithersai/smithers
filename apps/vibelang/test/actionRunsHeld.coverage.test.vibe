@@ -100,7 +100,7 @@ describe("a run's reply in flight", () => {
         expect(try object.host.start(request("held", POST, { text: "Question?" }, w.person.id), "maintainer")).toBeNull()
         const entered = try Deferred.make<void>()
         const release = try Deferred.make<void>()
-        const held = { admit: (day: string) => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.andThen(w.spend.admit(day))), spend: w.spend.spend }
+        const held = { admit: (day: string, reply: string, ceiling: number) => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.andThen(w.spend.admit(day, reply, ceiling))), spend: w.spend.spend }
         const running = try Effect.forkScoped(Effect.exit(object.host.alarm(held, { model: scripted.model, unusable: "" }, product)))
         try Deferred.await(entered)
         expect((try replyOf("held", object.sequencer)).state).toBe("running")

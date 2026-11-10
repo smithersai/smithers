@@ -12,7 +12,7 @@ import * as Budget from "../worker/Budget.vibe"
 import { repliesOf, toursOf } from "../worker/Objects.vibe"
 import { readerOver } from "../worker/HistoryObject.vibe"
 import { HistoryTools } from "../worker/HistoryTools.vibe"
-import { agentOf, ChatModel, registration, Replies, REASONS, Spend, tagOf } from "../worker/Reply.vibe"
+import { agentOf, ChatModel, registration, Replies, REASONS, REPLY_CEILING, Spend, tagOf } from "../worker/Reply.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 import * as Sequencer from "../worker/Sequencer.vibe"
 import { cell, scriptedModel, type Scripted } from "../fuzz/model-server.vibe"
@@ -38,7 +38,7 @@ effect function world(scripts: ReadonlyArray<Scripted>, busy = 0, interrupting =
     start: (post) => refusals-- > 0 ? Effect.succeed("busy" as const) : real.start(post),
     history: real.history, append: real.append, restart: real.restart, finish: real.finish, fail: real.fail,
   }
-  const spend: Spend.Shape = { admit: () => budget.admit(), spend: (_day, reply, tokens) => budget.spend(reply, tokens) }
+  const spend: Spend.Shape = { admit: (_day, reply, ceiling) => budget.admit(reply, ceiling), spend: (_day, reply, tokens, reported, ceiling) => budget.spend(reply, tokens, reported, ceiling) }
   const flows = registration.pipe(
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provide(Layer.mergeAll(
@@ -53,7 +53,7 @@ effect function world(scripts: ReadonlyArray<Scripted>, busy = 0, interrupting =
     try sequencer.post("a", "Ada", text)
     const ended = try Effect.exit(engine.execute(Reply, { executionId: "reply/m1", payload: { post: "m1" } }))
     const snapshot = try sequencer.read(0)
-    return { ended, entry: snapshot.entries.find((entry) => entry.author === "agent")!, types: (try Ref.get(events)).map((event) => event.type), calls: try scripted.calls }
+    return { ended, entry: snapshot.entries.find((entry) => entry.author === "agent")!, types: (try Ref.get(events)).map((event) => event.type), calls: try scripted.calls, ledger: try Ref.get(ledger) }
   }
   return { answer }
 }
@@ -64,6 +64,15 @@ const Elsewhere = AgentAction.make("test/reply/elsewhere", { payload: {}, output
 const stream = (text: string, prompt = 10, completion = 5): Scripted => ({ kind: "stream", pieces: [text], prompt, completion })
 
 describe("a reply the agent answers", () => {
+  it.live("charges the ceiling when a provider call fails without a usage settlement", () => scoped(effect {
+    const w = try world([{ kind: "status", status: 402, code: "insufficient_quota" }])
+    const { entry, ledger, calls } = try w.answer("Hello?")
+    expect(entry).toMatchObject({ done: true, error: REASONS.credit })
+    expect(calls).toBe(1)
+    expect(ledger[Budget.SPENT]).toBe(REPLY_CEILING)
+    expect(ledger[Budget.RESERVED]).toBe(0)
+  }))
+
   it.live("shows an answer that starts over from its new start, once", () => scoped(effect {
     // The first cell's ctx.done shows "First" while it streams, then fails; the next model call answers "Second".
     const w = try world([stream("```cell\nctx.done(\"First\" + missing);\n```"), stream(cell("\"Second\""))])
@@ -85,11 +94,13 @@ describe("a reply the agent answers", () => {
   it.live("an agent run that is interrupted leaves the reply unsettled for the engine to resume", () => scoped(effect {
     const reads = "```cell\nawait ctx.call(\"vibelang/history/show\", { what: \"outline\" });\nctx.done(\"Read.\");\n```"
     const w = try world([stream(reads)], 0, true)
-    const { ended, entry, types } = try w.answer("What is in the history?")
+    const { ended, entry, types, ledger } = try w.answer("What is in the history?")
     expect(Exit.isFailure(ended) && Cause.hasInterrupts(ended.cause)).toBe(true)
     expect(entry.done).toBe(false)
     expect(types).not.toContain("ReplyFailed")
     expect(types).not.toContain("ReplyFinished")
+    expect(ledger[Budget.RESERVED]).toBe(REPLY_CEILING)
+    expect(ledger[Budget.SPENT] ?? 0).toBe(0)
   }))
 
   it.live("waits while another reply streams, then answers", () => scoped(effect {

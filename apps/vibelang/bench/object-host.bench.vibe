@@ -24,8 +24,8 @@ it("SQLite conversation hosts settle queued replies, recover and preserve owners
       const duplicate = try Objects.post("bench", storage, sequencer, "one", "Changed", "wrong", "person-2")
       const queued = try Objects.post("bench", storage, sequencer, "two", "Ada", "second")
       const before = try sequencer.read(0)
-      const budget = try Objects.budget(storage, 100)
-      const spend = { admit: (_day: string) => budget.admit(), spend: (_day: string, reply: string, tokens: number) => budget.spend(reply, tokens) }
+      const budget = try Objects.budget(storage, 10_000_000)
+      const spend = { admit: (_day: string, reply: string, ceiling: number) => budget.admit(reply, ceiling), spend: (_day: string, reply: string, tokens: number, reported: boolean, ceiling: number) => budget.spend(reply, tokens, reported, ceiling) }
       const model = { model: undefined, unusable: "unconfigured" }
       const outcomes: Array<string> = []
       for (let index = 0; index < 5; index++) outcomes.push((try Objects.alarm("bench", storage, sequencer, spend, model, unavailableHistory))._tag)

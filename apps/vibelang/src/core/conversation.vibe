@@ -151,6 +151,16 @@ export const AGENT_NAME = "VibeLang agent"
 //@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "person" && conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "agent" ==> conversation.entries[j].inReplyTo != event.inReplyTo) ==> \result.entries[conversation.entries.length].id == event.id && \result.entries[conversation.entries.length].seq == event.seq && \result.entries[conversation.entries.length].clientId == "" && \result.entries[conversation.entries.length].inReplyTo == event.inReplyTo && \result.entries[conversation.entries.length].author == "agent" && \result.entries[conversation.entries.length].name == AGENT_NAME && \result.entries[conversation.entries.length].text == "" && \result.entries[conversation.entries.length].done == false && \result.entries[conversation.entries.length].error == ""
 //@ ensures event.seq == conversation.seq + 1 && event.type == "TourStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) ==> \result.entries[conversation.entries.length].id == event.id && \result.entries[conversation.entries.length].seq == event.seq && \result.entries[conversation.entries.length].clientId == "" && \result.entries[conversation.entries.length].inReplyTo == "" && \result.entries[conversation.entries.length].author == "agent" && \result.entries[conversation.entries.length].name == AGENT_NAME && \result.entries[conversation.entries.length].text == "" && \result.entries[conversation.entries.length].done == false && \result.entries[conversation.entries.length].error == ""
 //@ ensures event.seq == conversation.seq + 1 && (event.type == "TourPaused" || event.type == "TourResumed" || event.type == "TourSought") ==> \result.entries == conversation.entries && \result.agent == conversation.agent && \result.replying == conversation.replying
+//@ ensures event.type != "ActionRequested" && event.type != "ActionStep" && event.type != "ActionSettled" ==> \result.runs == conversation.runs
+//@ ensures event.seq == conversation.seq + 1 && event.type == "ActionRequested" && event.id != "" && forall(i, 0 <= i && i < runsOf(conversation).length ==> runsOf(conversation)[i].id != event.id) ==> runsOf(\result).length == runsOf(conversation).length + 1 && runsOf(\result)[runsOf(conversation).length].actor == event.actor
+//@ ensures event.seq == conversation.seq + 1 && event.type == "ActionRequested" && event.id != "" && forall(i, 0 <= i && i < runsOf(conversation).length ==> runsOf(conversation)[i].id != event.id) ==> runsOf(\result).length == runsOf(conversation).length + 1 && forall(i, 0 <= i && i < runsOf(conversation).length ==> runsOf(\result)[i] == runsOf(conversation)[i]) && runsOf(\result)[runsOf(conversation).length].id == event.id && runsOf(\result)[runsOf(conversation).length].flow == event.flow && runsOf(\result)[runsOf(conversation).length].door == event.door && runsOf(\result)[runsOf(conversation).length].actor == event.actor && runsOf(\result)[runsOf(conversation).length].state == "queued" && runsOf(\result)[runsOf(conversation).length].started == event.at && runsOf(\result)[runsOf(conversation).length].at == event.at && runsOf(\result)[runsOf(conversation).length].result == "" && runsOf(\result)[runsOf(conversation).length].steps.length == 0
+//@ ensures event.seq == conversation.seq + 1 && event.type == "ActionRequested" && (event.id == "" || exists(i, 0 <= i && i < runsOf(conversation).length && runsOf(conversation)[i].id == event.id)) ==> \result.runs == conversation.runs
+//@ ensures event.seq == conversation.seq + 1 && event.type == "ActionStep" ==> runsOf(\result).length == runsOf(conversation).length && forall(i, 0 <= i && i < runsOf(conversation).length ==> runsOf(\result)[i] == (runsOf(conversation)[i].id == event.id ? stepRun(runsOf(conversation)[i], event.key, event.name, event.attempt, event.state, event.at) : runsOf(conversation)[i]))
+//@ ensures event.seq == conversation.seq + 1 && event.type == "ActionSettled" ==> runsOf(\result).length == runsOf(conversation).length && forall(i, 0 <= i && i < runsOf(conversation).length ==> runsOf(\result)[i] == (runsOf(conversation)[i].id == event.id ? settleRun(runsOf(conversation)[i], event.state, event.result, event.at) : runsOf(conversation)[i]))
+//@ ensures event.type != "WalkthroughDriven" && event.type != "TourPaused" && event.type != "TourResumed" && event.type != "TourSought" ==> \result.walkthrough == conversation.walkthrough
+//@ ensures event.type == "WalkthroughDriven" && !(conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == event.id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == "")) ==> \result.walkthrough == conversation.walkthrough
+//@ ensures (event.type == "TourPaused" || event.type == "TourResumed" || event.type == "TourSought") && (conversation.walkthrough == undefined || !(conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == event.id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == ""))) ==> \result.walkthrough == conversation.walkthrough
+//@ ensures event.seq == conversation.seq + 1 && event.type == "WalkthroughDriven" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == event.id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == "") && 1 <= event.step && event.step <= 10 && event.target != "" && event.duration >= 0 ==> \result.walkthrough != undefined && (\result.walkthrough ?? drivenWalkthrough(event.step, event.target, event.seq, event.duration, event.at)) == drivenWalkthrough(event.step, event.target, event.seq, event.duration, event.at)
 export function apply(conversation: Conversation, event: Event): Conversation {
   if (event.seq !== conversation.seq + 1) return conversation
   const next = { ...conversation, seq: event.seq }
@@ -161,7 +171,7 @@ export function apply(conversation: Conversation, event: Event): Conversation {
     case "ActionAuthorized":
       return next
     case "ActionRequested":
-      if (event.id === "" || (conversation.runs ?? []).some((run) => run.id === event.id)) return next
+      if (event.id === "" || hasRun(conversation.runs ?? [], event.id)) return next
       return { ...next, runs: [...(conversation.runs ?? []), { id: event.id, flow: event.flow, door: event.door, actor: event.actor, state: "queued", started: event.at, at: event.at, result: "", steps: [] }] }
     case "ActionStep":
       return { ...next, runs: (conversation.runs ?? []).map((run) => run.id === event.id ? stepRun(run, event.key, event.name, event.attempt, event.state, event.at) : run) }
@@ -425,6 +435,43 @@ export function runOpen(state: string): boolean {
   return state === "queued" || state === "running"
 }
 
+/** The conversation's action runs, none before the first request. Contracts quantify over it: a call is a trigger. */
+//@ verify
+//@ ensures \result == (conversation.runs ?? [])
+export function runsOf(conversation: Conversation): ReadonlyArray<ActionRun> {
+  return conversation.runs ?? []
+}
+
+/** Whether `runs` holds a run with this id. */
+//@ verify
+//@ ensures \result == exists(i, 0 <= i && i < runs.length && runs[i].id == id)
+export function hasRun(runs: ReadonlyArray<ActionRun>, id: string): boolean {
+  let i = 0
+  while (i < runs.length) {
+    //@ invariant 0 <= i && i <= runs.length
+    //@ invariant forall(j, 0 <= j && j < i ==> runs[j].id != id)
+    //@ decreases runs.length - i
+    if (runs[i]!.id === id) return true
+    i++
+  }
+  return false
+}
+
+/** Whether `runs` holds a queued or running run with this id: one a step or a settlement may still change. */
+//@ verify
+//@ ensures \result == exists(i, 0 <= i && i < runs.length && runs[i].id == id && (runs[i].state == "queued" || runs[i].state == "running"))
+export function hasOpenRun(runs: ReadonlyArray<ActionRun>, id: string): boolean {
+  let i = 0
+  while (i < runs.length) {
+    //@ invariant 0 <= i && i <= runs.length
+    //@ invariant forall(j, 0 <= j && j < i ==> !(runs[j].id == id && (runs[j].state == "queued" || runs[j].state == "running")))
+    //@ decreases runs.length - i
+    if (runs[i]!.id === id && runOpen(runs[i]!.state)) return true
+    i++
+  }
+  return false
+}
+
 /** A terminal run cannot be changed by a late step or a competing settlement. */
 //@ verify
 //@ ensures \result.id == run.id && \result.flow == run.flow && \result.started == run.started
@@ -451,6 +498,10 @@ export function cancelStep(step: RunStep, at: number): RunStep {
 //@ verify
 //@ ensures \result.id == run.id && \result.flow == run.flow && \result.started == run.started
 //@ ensures !runOpen(run.state) ==> \result == run
+//@ ensures \result.door == run.door && \result.actor == run.actor && \result.result == run.result
+//@ ensures runOpen(run.state) && key != "" && forall(i, 0 <= i && i < run.steps.length ==> !(run.steps[i].key == key && run.steps[i].attempt == attempt)) ==> \result.state == "running" && \result.at == latestAt(run.at, at) && \result.steps.length == run.steps.length + 1 && forall(i, 0 <= i && i < run.steps.length ==> \result.steps[i] == run.steps[i]) && \result.steps[run.steps.length].key == key && \result.steps[run.steps.length].name == name && \result.steps[run.steps.length].attempt == attempt && \result.steps[run.steps.length].state == state && \result.steps[run.steps.length].started == at && \result.steps[run.steps.length].at == at
+//@ ensures exists(i, 0 <= i && i < run.steps.length && run.steps[i].key == key && run.steps[i].attempt == attempt) ==> \result.steps.length == run.steps.length && forall(i, 0 <= i && i < run.steps.length && !(run.steps[i].key == key && run.steps[i].attempt == attempt) ==> \result.steps[i] == run.steps[i])
+//@ ensures \result != run ==> \result.state == "running" && \result.at == latestAt(run.at, at) && forall(i, 0 <= i && i < \result.steps.length && \result.steps[i].key == key && \result.steps[i].attempt == attempt ==> \result.steps[i].state == state && \result.steps[i].at == at)
 export function stepRun(run: ActionRun, key: string, name: string, attempt: number, state: string, at: number): ActionRun {
   if (!runOpen(run.state) || key === "") return run
   const prior = run.steps.find((step) => step.key === key && step.attempt === attempt)
@@ -589,6 +640,13 @@ export function retryPost(client: Client, clientId: string): Client {
 //@ ensures event.seq == client.conversation.seq + 1 && event.type == "TourStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) ==> \result.conversation.entries[client.conversation.entries.length].id == event.id && \result.conversation.entries[client.conversation.entries.length].seq == event.seq && \result.conversation.entries[client.conversation.entries.length].clientId == "" && \result.conversation.entries[client.conversation.entries.length].inReplyTo == "" && \result.conversation.entries[client.conversation.entries.length].author == "agent" && \result.conversation.entries[client.conversation.entries.length].name == AGENT_NAME && \result.conversation.entries[client.conversation.entries.length].text == "" && \result.conversation.entries[client.conversation.entries.length].done == false && \result.conversation.entries[client.conversation.entries.length].error == ""
 //@ ensures event.seq == client.conversation.seq + 1 && event.type == "Posted" ==> \result.pending.length == pendingCount(client.pending, event.clientId, client.pending.length)
 //@ ensures event.seq == client.conversation.seq + 1 && event.type == "Posted" ==> forall(i, 0 <= i && i < client.pending.length && client.pending[i].clientId != event.clientId ==> 0 <= pendingCount(client.pending, event.clientId, i) && pendingCount(client.pending, event.clientId, i) < \result.pending.length && \result.pending[pendingCount(client.pending, event.clientId, i)] == client.pending[i])
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "ActionRequested" && event.id != "" && forall(i, 0 <= i && i < runsOf(client.conversation).length ==> runsOf(client.conversation)[i].id != event.id) ==> runsOf(\result.conversation).length == runsOf(client.conversation).length + 1 && runsOf(\result.conversation)[runsOf(client.conversation).length].actor == event.actor
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "ActionRequested" && event.id != "" && forall(i, 0 <= i && i < runsOf(client.conversation).length ==> runsOf(client.conversation)[i].id != event.id) ==> runsOf(\result.conversation).length == runsOf(client.conversation).length + 1 && forall(i, 0 <= i && i < runsOf(client.conversation).length ==> runsOf(\result.conversation)[i] == runsOf(client.conversation)[i]) && runsOf(\result.conversation)[runsOf(client.conversation).length].id == event.id && runsOf(\result.conversation)[runsOf(client.conversation).length].flow == event.flow && runsOf(\result.conversation)[runsOf(client.conversation).length].door == event.door && runsOf(\result.conversation)[runsOf(client.conversation).length].actor == event.actor && runsOf(\result.conversation)[runsOf(client.conversation).length].state == "queued" && runsOf(\result.conversation)[runsOf(client.conversation).length].started == event.at && runsOf(\result.conversation)[runsOf(client.conversation).length].at == event.at && runsOf(\result.conversation)[runsOf(client.conversation).length].result == "" && runsOf(\result.conversation)[runsOf(client.conversation).length].steps.length == 0
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "ActionRequested" && (event.id == "" || exists(i, 0 <= i && i < runsOf(client.conversation).length && runsOf(client.conversation)[i].id == event.id)) ==> \result.conversation.runs == client.conversation.runs
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "ActionStep" ==> runsOf(\result.conversation).length == runsOf(client.conversation).length && forall(i, 0 <= i && i < runsOf(client.conversation).length ==> runsOf(\result.conversation)[i] == (runsOf(client.conversation)[i].id == event.id ? stepRun(runsOf(client.conversation)[i], event.key, event.name, event.attempt, event.state, event.at) : runsOf(client.conversation)[i]))
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "ActionSettled" ==> runsOf(\result.conversation).length == runsOf(client.conversation).length && forall(i, 0 <= i && i < runsOf(client.conversation).length ==> runsOf(\result.conversation)[i] == (runsOf(client.conversation)[i].id == event.id ? settleRun(runsOf(client.conversation)[i], event.state, event.result, event.at) : runsOf(client.conversation)[i]))
+//@ ensures event.type != "ActionRequested" && event.type != "ActionStep" && event.type != "ActionSettled" ==> \result.conversation.runs == client.conversation.runs
+//@ ensures event.type != "WalkthroughDriven" && event.type != "TourPaused" && event.type != "TourResumed" && event.type != "TourSought" ==> \result.conversation.walkthrough == client.conversation.walkthrough
 export function receive(client: Client, event: Event): Client {
   const seq = client.conversation.seq
   if (event.seq <= seq) return client
@@ -667,6 +725,7 @@ export function may(role: Role, action: Action): boolean {
 //@ ensures id != "" && forall(i, 0 <= i && i < roles.length ==> roles[i].id != id) ==> \result == "new"
 //@ ensures forall(i, 0 <= i && i < roles.length && roles[i].id == id && forall(j, 0 <= j && j < i ==> roles[j].id != id) && id != "" ==> \result == roles[i].role)
 //@ ensures (\result == "maintainer") == (id != "" && exists(i, 0 <= i && i < roles.length && roles[i].id == id && roles[i].role == "maintainer" && forall(j, 0 <= j && j < i ==> roles[j].id != id)))
+//@ ensures id != "" && exists(k, 0 <= k && k < roles.length && roles[k].id == id) ==> exists(i, 0 <= i && i < roles.length && roles[i].id == id && forall(j, 0 <= j && j < i ==> roles[j].id != id) && \result == roles[i].role)
 export function roleOf(roles: ReadonlyArray<RoleGrant>, id: string): Role {
   if (id === "") return "viewer"
   let i = 0
@@ -715,6 +774,7 @@ export function otherMaintainer(roles: ReadonlyArray<RoleGrant>, id: string): bo
 //@ ensures mode == "bootstrap" ==> (\result == (id != "" && by == "" && roles.length == 0 && role == "maintainer"))
 //@ ensures mode == "participation" ==> (\result == (id != "" && by == id && role == "community" && forall(i, 0 <= i && i < roles.length ==> roles[i].id != id)))
 //@ ensures mode == "person" && \result && by != id ==> by != "" && exists(i, 0 <= i && i < roles.length && roles[i].id == by && roles[i].role == "maintainer" && forall(j, 0 <= j && j < i ==> roles[j].id != by))
+//@ ensures mode == "person" && \result && by == id ==> id != "" && exists(i, 0 <= i && i < roles.length && roles[i].id == id && forall(j, 0 <= j && j < i ==> roles[j].id != id) && rank(role) < rank(roles[i].role))
 export function canGrant(roles: ReadonlyArray<RoleGrant>, id: string, by: string, role: Role, mode: GrantMode): boolean {
   return grantPolicy(id, by, roleOf(roles, id), roleOf(roles, by), role, mode, ungranted(roles, id), roles.length === 0, otherMaintainer(roles, id))
 }

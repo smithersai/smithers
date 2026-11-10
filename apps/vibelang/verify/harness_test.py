@@ -284,10 +284,32 @@ class MutationModuleFilter(unittest.TestCase):
 
 
 class MutationContractFailures(unittest.TestCase):
-    def test_a_broken_capacity_guard_fails_the_callee_domain_contract(self):
+    CALL_ONLY = {'exit': 4, 'output': 'Error: a precondition for this call could not be proved',
+                 'mapped': ['source.vibe:12: function replayEvent [replayEvent; generated line 679]']}
+
+    def test_a_callee_precondition_alone_is_not_a_rejection(self):
         from mutation_results import validate_rejection
-        validate_rejection({'exit': 4, 'output': 'Error: a precondition for this call could not be proved',
-                            'mapped': ['source.vibe:12: function decideWithinCapacity [decideWithinCapacity; generated line 679]']}, 'decideWithinCapacity')
+        with self.assertRaises(ValueError): validate_rejection(self.CALL_ONLY, 'replayEvent')
+
+    def test_a_declared_callee_domain_claim_is_rejected_by_that_precondition(self):
+        from mutation_results import validate_rejection
+        validate_rejection(self.CALL_ONLY, 'replayEvent', callee_precondition=True)
+
+    def test_only_named_mutations_claim_a_callee_domain(self):
+        from mutation_targets import CALLEE_PRECONDITIONS
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            out = pathlib.Path(folder)
+            names = sorted(CALLEE_PRECONDITIONS) + ['decide-blank']
+            result = subprocess.run([sys.executable, str(ROOT / 'mutations.py'), str(out), *names], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            manifest = json.loads((out / 'manifest.json').read_text())
+            self.assertEqual({name for name, item in manifest.items() if item['callee_precondition']}, set(CALLEE_PRECONDITIONS))
+
+    def test_an_import_of_an_unmarked_module_is_refused(self):
+        from sources import require_proved
+        production = production_sources(ROOT.parent)
+        require_proved(ROOT.parent / 'src/core/conversation.vibe', production)
+        with self.assertRaises(SystemExit): require_proved(ROOT.parent / 'src/core/Factory.vibe', production)
 
     def test_invalid_union_destructor_cannot_hide_behind_a_postcondition_failure(self):
         from mutation_results import validate_rejection

@@ -1,9 +1,11 @@
-// The agent's daily token budget (wiki/decisions/0010-live-agent.md): one ledger
-// per UTC day, in that day's Durable Object. A reply is admitted while the day has spent less than its budget, then
-// adds what its model call used, once per reply however often its step runs. Live for everyone until sign-in
-// (roadmap brick 2), so the budget is the only bound on spend. Nothing here records what anyone asked.
+// The agent's daily token budget (wiki/decisions/0010-live-agent.md): one ledger per UTC day, in that day's Durable
+// Object, shared by replies, VIP and wiki drafts and specification reviewers. A call is admitted only by reserving its
+// whole ceiling under the ledger's lock, then its settlement releases the reservation and charges what the provider
+// reported, or the ceiling when the report is unusable, once per call however often its step runs. So the day's
+// charges never pass the limit by more than `over`, the charges beyond a call's own ceiling (decision 0018). Nothing
+// here records what anyone asked.
 
-import { admits, charge, canCharge } from "./budgetDecision.vibe"
+import { canCharge, reserve, settle } from "./budgetDecision.vibe"
 
 /** The ledger's storage: numbers under keys, several written at once. */
 export interface Ledger {
@@ -12,43 +14,84 @@ export interface Ledger {
 }
 
 export const SPENT = "spent"
+/** The sum of every open reservation. */
+export const RESERVED = "reserved"
+/** The sum of every charge beyond its call's reservation. */
+export const OVER = "over"
 const replyKey = (reply: string) => `reply/${reply}`
+const holdKey = (reply: string) => `hold/${reply}`
 
-/** Tokens the agent's replies used today, as `vibelang.budget.spend` lines and a counter. */
+/** Tokens the agent's calls used today, as `vibelang.budget.spend` lines and a counter. */
 export const tokens = Metric.counter("vibelang_agent_tokens", {
   description: "Tokens the VibeLang agent's model calls used",
   incremental: true,
 })
 
+/** Tokens charged beyond their call's reservation: a call that passed its own ceiling. */
+export const overshoot = Metric.counter("vibelang_budget_overshoot_tokens", {
+  description: "Tokens charged beyond the calling flow's reserved ceiling",
+  incremental: true,
+})
+
+/** Admissions by outcome. */
+export const admissions = Metric.counter("vibelang_budget_admissions", { incremental: true })
+
+const invalid = () => Effect.die(new Error("Invalid budget accounting"))
+
 /** The day's budget of `limit` tokens over `ledger`. */
 export effect function make(ledger: Ledger, limit: number) {
   const lock = try Semaphore.make(1)
+  const totals = effect () => {
+    const spent = (try ledger.read(SPENT)) ?? 0
+    const reserved = (try ledger.read(RESERVED)) ?? 0
+    const over = (try ledger.read(OVER)) ?? 0
+    if (!Number.isSafeInteger(spent) || !Number.isSafeInteger(reserved) || !Number.isSafeInteger(over) || !canCharge(spent, reserved) || !canCharge(over, 0)) {
+      try invalid()
+    }
+    return { spent, reserved, over }
+  }
   return {
-    /** Whether the day has budget left: some spent below `limit`. */
-    admit: effect () => {
-      const spent = (try ledger.read(SPENT)) ?? 0
-      if (!Number.isSafeInteger(spent) || !canCharge(spent, 0)) {
-        try Effect.die(new Error("Invalid budget accounting"))
-      }
-      const admitted = admits(spent, limit)
-      try Effect.logInfo("vibelang.budget.admit").pipe(Effect.annotateLogs({ admitted, spent, limit }))
-      return admitted
-    },
-    /** Adds `used` tokens for `reply`, once: the same reply again adds nothing. */
-    spend: effect (reply: string, used: number) => {
-      try Semaphore.withPermits(lock, 1)(effect {
+    /** Reserves `ceiling` tokens for `reply` when the day's charges and open reservations leave room for it. */
+    admit: effect (reply: string, ceiling: number) => {
+      return try Semaphore.withPermits(lock, 1)(effect {
+        const { spent, reserved, over } = try totals()
+        const held = (try ledger.read(holdKey(reply))) ?? 0
         const recorded = (try ledger.read(replyKey(reply))) !== undefined
-        const spent = (try ledger.read(SPENT)) ?? 0
-        // Invalid provider telemetry must not turn the entire day into NaN or Infinity.
-        const normalized = recorded ? 0 : Number.isFinite(used) ? Math.max(0, Math.round(used)) : 0
-        if (!Number.isSafeInteger(spent) || !Number.isSafeInteger(normalized) || !canCharge(spent, normalized)) {
-          try Effect.die(new Error("Invalid budget accounting"))
+        if (!Number.isSafeInteger(ceiling) || ceiling <= 0 || !Number.isSafeInteger(held) || held < 0 || !canCharge(spent + reserved, ceiling)) {
+          try invalid()
         }
-        const { added, spent: total, write } = charge(spent, normalized, recorded)
-        if (!write) return
-        try ledger.write({ [SPENT]: total, [replyKey(reply)]: added })
-        try Metric.update(tokens, added)
-        try Effect.logInfo("vibelang.budget.spend").pipe(Effect.annotateLogs({ tokens: added, spent: total, limit }))
+        const result = reserve(spent, reserved, held, ceiling, limit, over, recorded)
+        if (result.admitted && held === 0) try ledger.write({ [RESERVED]: result.reserved, [holdKey(reply)]: result.held })
+        const outcome = result.admitted ? (held === 0 ? "reserved" : "held") : recorded ? "charged" : "refused"
+        try Metric.update(Metric.withAttributes(admissions, { outcome }), 1)
+        try Effect.logInfo("vibelang.budget.admit").pipe(Effect.annotateLogs({ outcome, spent, reserved: result.reserved, ceiling, limit }))
+        return result.admitted
+      })
+    },
+    /**
+     * Settles `reply`, once: releases its reservation and charges `used` tokens when the provider `reported` a usable
+     * count, else `ceiling`. The same reply again adds nothing.
+     */
+    spend: effect (reply: string, used: number, reported: boolean, ceiling: number) => {
+      try Semaphore.withPermits(lock, 1)(effect {
+        const { spent, reserved, over } = try totals()
+        const recorded = (try ledger.read(replyKey(reply))) !== undefined
+        const held = (try ledger.read(holdKey(reply))) ?? 0
+        const rounded = Number.isFinite(used) ? Math.round(used) : -1
+        const usable = reported && Number.isSafeInteger(rounded) && rounded >= 0
+        const charged = usable ? rounded : 0
+        if (!Number.isSafeInteger(ceiling) || ceiling <= 0 || !Number.isSafeInteger(held) || held < 0 || held > reserved || !canCharge(spent, charged + ceiling) || !canCharge(over, charged + ceiling)) {
+          try invalid()
+        }
+        const result = settle(spent, reserved, over, held, charged, usable, ceiling, recorded, limit)
+        if (!result.write) return
+        try ledger.write(recorded
+          ? { [RESERVED]: result.reserved, [holdKey(reply)]: 0 }
+          : { [SPENT]: result.spent, [RESERVED]: result.reserved, [OVER]: result.over, [holdKey(reply)]: 0, [replyKey(reply)]: result.added })
+        if (recorded) return
+        try Metric.update(tokens, result.added)
+        if (result.over > over) try Metric.update(overshoot, result.over - over)
+        try Effect.logInfo("vibelang.budget.spend").pipe(Effect.annotateLogs({ tokens: result.added, usable, spent: result.spent, reserved: result.reserved, over: result.over, limit }))
       })
     },
   }

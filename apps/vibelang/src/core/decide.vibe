@@ -4,7 +4,7 @@
 // conversation proof's obligations (wiki/decisions/0018-proofs.md). Contracts are in terms of the `conversation.vibe`
 // functions it imports, which that module proves.
 
-import { type Action, type Conversation, type Event, type GrantMode, type Role, apply, canGrant, canReplyTo, empty, hasClientId, hasEntryId, isReplying, isTouring, may, roleOf, runOpen } from "./conversation.vibe"
+import { type Action, type Conversation, type Event, type GrantMode, type Role, apply, canGrant, canReplyTo, empty, hasClientId, hasEntryId, hasOpenRun, hasRun, isReplying, isTouring, may, roleOf, runsOf } from "./conversation.vibe"
 
 /** The most characters one message may hold. */
 export const MAX_TEXT = 8000
@@ -59,6 +59,10 @@ function refused(refusal: Refusal): Decision {
 //@ ensures \result.ok && intent.type == "GrantRole" ==> intent.id != "" && intent.role != "viewer"
 //@ ensures \result.ok && intent.type == "GrantRole" && intent.mode == "person" && intent.by != intent.id ==> intent.by != "" && exists(i, 0 <= i && i < conversation.roles.length && conversation.roles[i].id == intent.by && conversation.roles[i].role == "maintainer" && forall(j, 0 <= j && j < i ==> conversation.roles[j].id != intent.by))
 //@ ensures \result.ok && intent.type == "Authorize" && (intent.action == "merge" || intent.action == "settings" || intent.action == "roles") ==> intent.by != "" && exists(i, 0 <= i && i < conversation.roles.length && conversation.roles[i].id == intent.by && conversation.roles[i].role == "maintainer" && forall(j, 0 <= j && j < i ==> conversation.roles[j].id != intent.by))
+//@ ensures conversation.seq < 9007199254740991 && intent.type == "GrantRole" ==> (\result.ok == canGrant(conversation.roles, intent.id, intent.by, intent.role, intent.mode)) && (!\result.ok ==> \result.refusal == "forbidden")
+//@ ensures \result.ok && intent.type == "GrantRole" ==> \result.event.type == "RoleGranted" && \result.event.id == intent.id && \result.event.by == intent.by && \result.event.role == intent.role && \result.event.mode == intent.mode
+//@ ensures conversation.seq < 9007199254740991 && intent.type == "Authorize" ==> (\result.ok == may(roleOf(conversation.roles, intent.by), intent.action)) && (!\result.ok ==> \result.refusal == "forbidden")
+//@ ensures \result.ok && intent.type == "Authorize" ==> \result.event.type == "ActionAuthorized" && \result.event.id == intent.id && \result.event.by == intent.by && \result.event.action == intent.action
 //@ ensures \result.ok ==> \result.event.seq == conversation.seq + 1
 //@ ensures \result.ok && \result.event.type == "ReplyStarted" ==> conversation.agent != "working" && \result.event.id != ""
 //@ ensures \result.ok && \result.event.type == "Posted" ==> \result.event.clientId != "" && \result.event.text != ""
@@ -87,6 +91,11 @@ function refused(refusal: Refusal): Decision {
 //@ ensures \result.ok ==> conversation.seq < 9007199254740991 && \result.event.seq == conversation.seq + 1 && \result.event.seq <= 9007199254740991
 //@ ensures \result.ok && intent.type == "DriveWalkthrough" ==> (conversation.agent == "working" && conversation.replying == intent.id && intent.id != "") && 1 <= intent.step && intent.step <= 10 && intent.target != "" && intent.duration >= 0 && \result.event.type == "WalkthroughDriven" && \result.event.step == intent.step && \result.event.target == intent.target
 //@ ensures \result.ok && (intent.type == "PauseTour" || intent.type == "ResumeTour" || intent.type == "SeekTour") ==> (conversation.agent == "working" && conversation.replying == intent.id && intent.id != "") && conversation.walkthrough != undefined
+//@ ensures \result.ok && intent.type == "RequestAction" ==> intent.id != "" && intent.flow != "" && forall(i, 0 <= i && i < runsOf(conversation).length ==> runsOf(conversation)[i].id != intent.id) && \result.event.type == "ActionRequested" && \result.event.id == intent.id && \result.event.flow == intent.flow && \result.event.door == intent.door && \result.event.actor == intent.actor && \result.event.at == intent.at
+//@ ensures conversation.seq < 9007199254740991 && intent.type == "RequestAction" && intent.id != "" && intent.flow != "" && forall(i, 0 <= i && i < runsOf(conversation).length ==> runsOf(conversation)[i].id != intent.id) ==> \result.ok
+//@ ensures \result.ok && intent.type == "TraceAction" ==> exists(i, 0 <= i && i < runsOf(conversation).length && runsOf(conversation)[i].id == intent.id && (runsOf(conversation)[i].state == "queued" || runsOf(conversation)[i].state == "running")) && \result.event.type == "ActionStep" && \result.event.id == intent.id && \result.event.key == intent.key && \result.event.name == intent.name && \result.event.attempt == intent.attempt && \result.event.state == intent.state && \result.event.at == intent.at
+//@ ensures \result.ok && intent.type == "SettleAction" ==> exists(i, 0 <= i && i < runsOf(conversation).length && runsOf(conversation)[i].id == intent.id && (runsOf(conversation)[i].state == "queued" || runsOf(conversation)[i].state == "running")) && \result.event.type == "ActionSettled" && \result.event.id == intent.id && \result.event.state == intent.state && \result.event.result == intent.result && \result.event.at == intent.at
+//@ ensures conversation.seq < 9007199254740991 && (intent.type == "TraceAction" || intent.type == "SettleAction") ==> (\result.ok == exists(i, 0 <= i && i < runsOf(conversation).length && runsOf(conversation)[i].id == intent.id && (runsOf(conversation)[i].state == "queued" || runsOf(conversation)[i].state == "running")))
 export function decide(conversation: Conversation, intent: Intent): Decision {
   if (conversation.seq >= 9007199254740991) return refused("full")
   const seq = conversation.seq + 1
@@ -99,13 +108,13 @@ export function decide(conversation: Conversation, intent: Intent): Decision {
       return accepted({ type: "ActionAuthorized", seq, id: intent.id, by: intent.by, action: intent.action })
     case "RequestAction":
       if (intent.id === "" || intent.flow === "") return refused("empty")
-      if ((conversation.runs ?? []).some((run) => run.id === intent.id)) return refused("duplicate")
+      if (hasRun(runsOf(conversation), intent.id)) return refused("duplicate")
       return accepted({ type: "ActionRequested", seq, id: intent.id, flow: intent.flow, door: intent.door, actor: intent.actor, at: intent.at })
     case "TraceAction":
-      if (!(conversation.runs ?? []).some((run) => run.id === intent.id && runOpen(run.state))) return refused("not-replying")
+      if (!hasOpenRun(runsOf(conversation), intent.id)) return refused("not-replying")
       return accepted({ type: "ActionStep", seq, id: intent.id, key: intent.key, name: intent.name, attempt: intent.attempt, state: intent.state, at: intent.at })
     case "SettleAction":
-      if (!(conversation.runs ?? []).some((run) => run.id === intent.id && runOpen(run.state))) return refused("not-replying")
+      if (!hasOpenRun(runsOf(conversation), intent.id)) return refused("not-replying")
       return accepted({ type: "ActionSettled", seq, id: intent.id, state: intent.state, result: intent.result, at: intent.at })
     case "Post": {
       const text = intent.text.trim()

@@ -62,9 +62,11 @@ it.live("reply/event-progress", () => run("reply/event-progress", Schema.Array(A
     const previous = progress
     progress = Reply.fold(progress, event)
     if (event._tag === "model-settled") {
+      // A settlement without both counts is unusable, as a malformed one is: never a free call.
+      const present = event.usage.inputTokens !== undefined && event.usage.outputTokens !== undefined
       const input = event.usage.inputTokens ?? 0
       const output = event.usage.outputTokens ?? 0
-      if (Number.isSafeInteger(input) && input >= 0 && Number.isSafeInteger(output) && output >= 0) {
+      if (present && Number.isSafeInteger(input) && input >= 0 && Number.isSafeInteger(output) && output >= 0) {
         // Independent unbounded arithmetic checks the native safe-sum boundary.
         const sum = try Effect.try(() => BigInt(tokens) + BigInt(input) + BigInt(output))
         if (sum <= 9007199254740991n) tokens = Number(sum)

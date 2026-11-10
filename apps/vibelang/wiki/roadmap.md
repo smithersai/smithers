@@ -37,6 +37,8 @@ brick                                   state         proof
 - **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 2,508 executable items. Seventeen modules carry contracts and 962 current mutant copies match actual Dafny rejections; unproved logic and tool boundaries remain explicit.
 - **Proofs outside the web app (0018, lane vl-proveall3): in progress.** Proved: sequencer, follow and command arguments; pages, docs paths, prompt form, protocol limits and the session origin; mock chunks, the cookie rule and catalog roles; the bootstrap seed's choices; the sandbox meter delay. Three defects fixed: two surrogate-pair cuts, and a long history search that never showed its matches.
 
+- **Proofs strong enough to catch real bugs (0018, lane vl-proof-strengthen): done.** `decide` is tied to the role policy for every grant and action; the day's budget reserves each call's ceiling under its lock (twenty concurrent admissions no longer pass the limit); unreported usage is charged its ceiling; runs, walkthroughs and the meter step are framed; the harness no longer counts a callee's precondition or trusts an unmarked import.
+
 - **Proofs of the web decision modules (0018, lane vl-proveall2): in progress.** Viewport steps and the history page's guards, merge, reads and arm frames are proved; 75 new mutations rejected. Remaining rows name host or tool boundaries.
 
 - **CLI and MCP sign-in (VL-26): implemented; lead deploys.** 0028: `login`/`logout` run GitHub's device flow through the shared
