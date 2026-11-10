@@ -49,8 +49,9 @@ The compiler/Vite maps preserve `.vibe` names and lines in the unbundled Vitest 
 unvisited Effect return at its original fixture line 4 and a threshold-only child exit 1 despite a passing assertion.
 Emitted CLI/MCP processes retain maps and inline source text. The prototype browser suite uses Playwright's built-in
 `page.coverage` without a new browser dependency, retains raw Chromium evidence, and checks map source content
-against the checkout. Its full-source zero seed retains tree-shaken exports and entirely unvisited files, and that
-seed is the denominator: Chromium's evidence credits it by source start (see "Chromium merge" below). Vite's
+against the checkout. Its full-source zero seed retains tree-shaken exports and entirely unvisited files. The
+denominator is the local e2e build's structure for the code that build contains and that seed for the rest; Chromium's
+evidence credits it by source start (see "Chromium merge" and "Build structure" below). Vite's
 generated module/preload helpers and pure re-export facades contain no app source; no production `.vibe` is excluded.
 
 ## Measurement blockers
@@ -65,6 +66,18 @@ observes line 4 uncovered and its expected-failure marker is gone; the minified 
 `test/browserCoverageMerge.test.vibe`, which still sees line 4 credited. No build/compiler behavior
 was changed as a workaround. Will's decision is required before the upstream change; a fix must have a regression
 and land through VibeLang's merge queue.
+
+**A second cause: Rolldown drops statement-start segments.** Unminified, Vite 8.3.4's bundler (Rolldown 1.2.x)
+prints no source-map segment at the start of an arrow-function or parenthesized initializer
+(`const position = () => ...`, `const next = (serial ?? 0) + 1`), drops redundant parentheses
+(`(a || b) ? x : y` prints `a || b ? x : y`) and wraps dynamic imports in `__vitePreload`. `ast-v8-to-istanbul` then
+starts those statements at the declared name, so the bundle's start differs from the compiler's (`19:19` becomes
+`19:8`). VibeLang's own map has the exact segment; plain JavaScript with no VibeLang compiler loses the same starts
+(source `1:19 2:19 3:17` become `1:13 2:8 3:8`). On main `02b22822`, 38 lines in `src/` had no statement start the
+bundle reproduces, so Chromium could never credit them. Reproduction: `~/vl/vibelang-bugs/coverage-source-ranges/rolldown-segments/` on nyc-01 (`node
+control.mjs`, `README.txt`, `app-diagnostic.json`). No map change in VibeLang adds a segment Rolldown never prints, so
+the reporter now takes the build's structure ("Build structure" below). An upstream Rolldown report is the lead's to
+take to Will.
 
 V8 precise coverage cannot be enabled on the installed workerd **1.20261019.1** inspector, directly or through
 Miniflare: workerd's own CDP dispatch consumes `Profiler.enable` to create its CPU profiler and never forwards it to
@@ -939,6 +952,45 @@ The landed denominators are the sources' own (7479 lines, 8096 branches). Tests:
 (a real minified Vite build of the fixture under native V8, through `measure`; failed on the old reporter with 4
 branches for 2) and two cases in `test/fuzzCoverage.test.vibe` (same starts credit whatever the ends; other starts
 credit nothing; the first failed on the full-range rule).
+
+## Build structure (lane vl-sourcemaps, 2026-11-10)
+
+The compiler's statement starts could not all be credited in Chromium: Rolldown prints no map segment at some of them
+("Measurement blockers"). The browser denominator for a local run now comes from the build Chromium runs.
+`e2e/coverage-reporter.ts` reads every chunk of `dist/assets` with its map (`readBuild`), converts each once with no
+hits, and `builtStructure` (`test/support/coverageUnion.ts`) builds each source's structure from it:
+
+```
+source in a chunk?  ── no ──▶ compiler's structure (unloaded file)
+        │ yes
+        ▼
+bundle's statements, functions, branches
+  + each compiler item whose start no bundle statement or function range contains (tree-shaken code)
+  − duplicates at one source start (Rolldown maps an inner `make` and its renamed `make_2` to one start)
+```
+
+Executed bundles still credit it by identical start (`unionEvidence`). Browser and unit structures differ only where
+the bundler changed the code. A run against a deployment (`E2E_BASE_URL`) keeps the compiler's structure: its bundle
+is not the local build. The reporter logs `Chromium structure: <n> build chunks.`
+
+Same evidence (one `pnpm e2e` run, 291 passed, 19 chunks), measured both ways:
+
+| Structure | Metrics below 100% | Lines | Branches | Functions | Statements |
+| --- | ---: | --- | --- | --- | --- |
+| compiler | 553 | 3494/7888 | 3500/8350 | 1430/2970 | 4054/10036 |
+| build (landed) | 539 | 3639/7961 | 3515/8351 | 1491/3035 | 4302/10196 |
+
+145 lines gained credit and none lost it; uncovered lines fell from 4394 to 4322. 95 compiler-only lines moved to the
+line where the bundle starts the same statement (a name a line earlier). Of the 38 lines in `src/` the reproduction
+listed as uncreditable, 29 are credited; the other 9 sit in code no browser test runs (live-mode `LiveIssues` and
+`LiveWiki`, the wiki-edit submit path in `main.vibe`, `seed.vibe` 201), and each now carries the bundle's start, so a
+test that runs it counts.
+
+Tests: `test/browserCoverageBuild.test.vibe` (a real unminified Vite build of `e2e/coverage-fixtures/initializer.vibe`
+under native V8, through `measure` with that build; failed on the old reporter with line 3 uncredited),
+`test/browserStructure.test.vibe` (contained and shifted starts replaced, tree-shaken code kept, one item per start;
+failed on a per-line rule with a shifted start counted twice) and `e2e/source-map.spec.ts` (the same fixture in
+Chromium: only the tree-shaken line 10 stays uncovered).
 
 ## Lane vl-coverage3: surfaces, history and actions (2026-11-10)
 
