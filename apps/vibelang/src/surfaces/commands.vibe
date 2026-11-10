@@ -251,19 +251,21 @@ export schema SandboxGenerationInput { readonly conversation: conversation; read
 export schema SandboxRunInput { readonly conversation: conversation; readonly operationId: operationId; readonly generation: Seq; readonly command: string }
 export schema TerminalOutput { readonly output: string }
 const sandboxFlags = { conversation: Flag.String("conversation").pipe(Flag.withDefault("home")), operationId: Flag.String("operation-id").pipe(Flag.withDefault("")) }
-export const Sandboxes = define("sandboxes", "Read the sandbox and minutes in a conversation.", ReadInput, SandboxSnapshot, { conversation: sandboxFlags.conversation, after: Flag.Int("after").pipe(Flag.withSchema(Seq)).pipe(Flag.withDefault(0)) }, effect (input) => (try (try Factory).sandbox(input.conversation)), (s) => `${s.id || "Sandboxes"}  ${s.status}  ${s.remaining} min`)
+/** How a sandbox command reports the allowance or generation refusing it. */
+export const SANDBOX_REFUSED = "The sandbox refused it"
+export const Sandboxes = define("sandboxes", "Read the sandbox and minutes in a conversation.", ReadInput, SandboxSnapshot, { conversation: sandboxFlags.conversation, after: Flag.Int("after").pipe(Flag.withSchema(Seq)).pipe(Flag.withDefault(0)) }, effect (input) => (try (try Factory).sandbox(input.conversation)), (s) => `${s.id || "Sandboxes"}  ${s.status}  ${s.remaining} min`, SANDBOX_REFUSED)
 export const StartSandbox = define("sandbox-start", "Start a sandbox through the shared allowance flow.", SandboxInput, SandboxSnapshot, sandboxFlags, effect (input) => {
   const id = input.operationId || (try IdGenerator.defaultIdGenerator.generateId())
   return try (try Factory).startSandbox(input.conversation, id)
-}, (s) => `${s.id}  ${s.status}  ${s.remaining} min`)
+}, (s) => `${s.id}  ${s.status}  ${s.remaining} min`, SANDBOX_REFUSED)
 export const StopSandbox = define("sandbox-stop", "Stop a sandbox generation and retain its files.", SandboxGenerationInput, SandboxSnapshot, { ...sandboxFlags, generation: Flag.Int("generation").pipe(Flag.withSchema(Seq)) }, effect (input) => {
   const id = input.operationId || (try IdGenerator.defaultIdGenerator.generateId())
   return try (try Factory).stopSandbox(input.conversation, id, input.generation)
-}, (s) => `${s.id}  ${s.status}`)
+}, (s) => `${s.id}  ${s.status}`, SANDBOX_REFUSED)
 export const RunSandbox = define("sandbox-run", "Run a terminal command in a sandbox generation.", SandboxRunInput, TerminalOutput, { ...sandboxFlags, generation: Flag.Int("generation").pipe(Flag.withSchema(Seq)), command: Argument.String("command") }, effect (input) => {
   const id = input.operationId || (try IdGenerator.defaultIdGenerator.generateId())
   return { output: try (try Factory).sandboxCommand(input.conversation, id, input.command, input.generation) }
-}, (s) => s.output)
+}, (s) => s.output, SANDBOX_REFUSED)
 
 export schema IssueBrief {
   readonly number: number
