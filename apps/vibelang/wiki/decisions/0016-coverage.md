@@ -786,6 +786,53 @@ Left uncovered in these files, each still counted:
 | `src/surfaces/backend.vibe:80`, `:83` | A mock session read that fails, and mock accounts missing; `mockFactoryFor` always has accounts (vl-coverage2's file). |
 | `src/web/startup.vibe:72` to `:75` | Reachable, not yet tested: the browser journal of tour and demo conversations, reached by running a tour on the started page. |
 
+## vl-coverage, tenth session (2026-11-10)
+
+Unit suite only, same provider and thresholds; nothing excluded, no threshold changed. Before is the run at `7cd40f0f`
+(1659 passed / 1 failed / 3 skipped; the failure was an MCP initialization deadline under load 102). That run overlapped
+this session's sign-in edit, so `signin.vibe`'s before column merges two versions of the file. After is the run on this
+session's last test commit (1783 passed / 3 skipped). All files, including other lanes' work landed between the runs:
+lines 91.46% → 97.08%, branches 89.46% → 93.23%, functions 90.05% → 96.79%, statements 89.8% → 95.75%; 68 of 156
+files remain below 100%. Counts are covered/total; lines count lines that start a statement.
+
+| File | Lines | Branches | Functions | Statements |
+| --- | --- | --- | --- | --- |
+| `src/surfaces/signin.vibe` | 108/108 → 111/111 | 120/126 → 105/106 | 33/36 → 27/28 | 197/207 → 145/146 |
+| `src/web/startup.vibe` | 48/50 → 50/50 | 18/22 → 22/22 | 11/13 → 13/13 | 56/64 → 64/64 |
+| `src/core/decide.vibe` | 55/55 → 55/55 | 102/107 → 107/107 | 6/6 → 6/6 | 84/87 → 87/87 |
+| `src/core/sandboxDecision.vibe` | 53/55 → 55/55 | 63/72 → 72/72 | 14/15 → 15/15 | 68/76 → 76/76 |
+| `src/core/sequencerDecision.vibe` | 14/16 → 16/16 | 22/28 → 28/28 | 7/8 → 8/8 | 20/23 → 23/23 |
+| `src/core/wiki.vibe` | 14/15 → 15/15 | 20/26 → 22/22 | 10/10 → 10/10 | 26/27 → 27/27 |
+| `src/surfaces/session.vibe` | 60/63 → 63/63 | 17/24 → 24/24 | 19/22 → 22/22 | 66/75 → 75/75 |
+| `src/web/roleView.vibe` | 20/24 → 24/24 | 55/66 → 66/66 | 10/14 → 14/14 | 23/27 → 27/27 |
+| `src/web/wikiView.vibe` | 26/28 → 28/28 | 81/95 → 91/95 | 15/19 → 19/19 | 35/39 → 39/39 |
+| `src/core/sandboxMock.vibe` | 47/47 → 47/47 | 32/45 → 35/45 | 22/23 → 22/23 | 69/72 → 71/72 |
+| `src/web/theatre.vibe` | 45/45 → 45/45 | 32/40 → 39/40 | 7/7 → 7/7 | 48/51 → 51/51 |
+| `src/web/entry.vibe` | 0/8 → 8/8 | 0/4 → 4/4 | 0/0 → 0/0 | 0/8 → 8/8 |
+| `src/core/LiveFactory.vibe` | 77/77 → 77/77 | 25/30 → 30/30 | 20/20 → 20/20 | 84/89 → 89/89 |
+| `src/web/historyView.vibe` | 72/73 → 73/73 | 133/145 → 145/145 | 42/43 → 43/43 | 81/82 → 82/82 |
+
+Dead code deleted: `requestedWiki`'s "rulings" and "roadmap" arms (`src/core/wiki.vibe`). A request naming either page
+matches its id first, so the fallback can only answer "index".
+
+`runningCountPrefix` and `restartsBefore` exist only for proof specifications. VibeLang has no specification-only
+function, so they compile as exported runtime code; reproduction in `~/vl/vibelang-bugs/spec-only-function/`. They are
+tested against the loops they specify, not removed.
+
+Left uncovered in these files, each still counted:
+
+| Where | Why no test reaches it |
+| --- | --- |
+| `src/surfaces/signin.vibe:99` | `stored?.login ?? ""` on a signed-in answer with no stored session; the session is written just before it is read. |
+| `src/surfaces/signin.vibe:127` | The durable wait's own host failing after the poll step's host succeeded (was `:116`); needs a FileSystem fault at one call. |
+| `src/web/wikiView.vibe:53`, three arms | "Connect GitHub." wording; decision 0165's lane owns connect. |
+| `src/web/wikiView.vibe:72` | The outlined status of a decision that isn't Accepted; every decision in the wiki is Accepted. |
+| `src/core/sandboxMock.vibe:41`, `:44` to `:46` | An engine failure other than Refused or Unavailable; each call's execution id is fresh, so none conflicts. |
+| `src/web/theatre.vibe:49` | `WALKTHROUGH[step - 1]?.voice ?? ""`; the step stays within 1 to 10. |
+
+`src/web/startup.vibe:72` to `:75`, listed as reachable last session, are now covered by running the first visit's tour on
+the started page.
+
 ## Chromium merge (vl-fuzz2, 2026-11-10)
 
 `e2e/coverage-reporter.ts` merged the compiler's structure of each source (the zero seed) and the bundle's with
