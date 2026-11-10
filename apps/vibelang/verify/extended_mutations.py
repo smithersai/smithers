@@ -5590,3 +5590,18 @@ cases.extend([('src/history/wireDecision.vibe', *case) for case in [
 ('wire-route-read-method', 'routeKind', 'if (method === "GET" && (pathname', 'if ((pathname', 'a read needs GET'),
 ('wire-route-read-prefix', 'routeKind', 'pathname.startsWith("/api/history/")', 'pathname.startsWith("/api/history")', 'a read stays under the history path'),
 ]])
+
+# Lane vl-proveall3, batch 18: issue and wiki flow policies.
+cases.extend([('src/core/flowPolicyDecision.vibe', *case) for case in [
+('flow-tier-draft', 'operationTier', 'op === "read" || op === "draft" ? "sealed"', 'op === "read" ? "sealed"', 'a draft is sealed'),
+('flow-tier-read', 'operationTier', 'op === "read" || op === "draft" ? "sealed"', 'op === "draft" ? "sealed"', 'a read is sealed'),
+('flow-tier-all', 'operationTier', '? "sealed" : "irreversible"', '? "sealed" : "sealed"', 'a write is irreversible'),
+('flow-keyed-draft', 'keyedOperation', 'op !== "read" && op !== "draft"', 'op !== "read"', 'a draft is not keyed'),
+('flow-keyed-read', 'keyedOperation', 'op !== "read" && op !== "draft"', 'op !== "draft"', 'a read is not keyed'),
+('flow-issue-accept', 'issueModelInvocable', 'op !== "accept" && op !== "decline"', 'op !== "decline"', 'the agent never accepts a VIP'),
+('flow-issue-decline', 'issueModelInvocable', 'op !== "accept" && op !== "decline"', 'op !== "accept"', 'the agent never declines a VIP'),
+('flow-wiki-save', 'wikiModelInvocable', 'return op === "read" || op === "draft"', 'return op === "read" || op === "draft" || op === "save"', 'the agent never saves a page'),
+('flow-wiki-draft', 'wikiModelInvocable', 'return op === "read" || op === "draft"', 'return op === "read"', 'the agent may draft'),
+('flow-deadline-draft', 'readDeadline', 'return op === "read"', 'return op === "read" || op === "draft"', 'a draft has no deadline'),
+('flow-deadline-read', 'readDeadline', 'return op === "read"', 'return op === "draft"', 'a read has a deadline'),
+]])

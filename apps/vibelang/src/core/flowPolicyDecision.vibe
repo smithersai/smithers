@@ -1,0 +1,41 @@
+// Which issue and wiki operations are sealed, keyed, offered to the model, and bounded by a read deadline
+// (0018, third-lane batch 18). `issueFlows.vibe` and `wikiFlows.vibe` build every flow from these.
+
+export type OperationTier = "sealed" | "irreversible"
+
+/** A read or a draft changes nothing outside the run, so it is sealed; every other operation is irreversible. */
+//@ verify
+//@ ensures \result == ((op == "read" || op == "draft") ? "sealed" : "irreversible")
+export function operationTier(op: string): OperationTier {
+  return op === "read" || op === "draft" ? "sealed" : "irreversible"
+}
+
+/** An irreversible operation is keyed by its request and operation, so a retry never writes twice. */
+//@ verify
+//@ ensures \result == (operationTier(op) == "irreversible")
+export function keyedOperation(op: string): boolean {
+  return op !== "read" && op !== "draft"
+}
+
+/** The agent may run every issue operation except accepting or declining a VIP, which needs a person. */
+//@ verify
+//@ ensures \result == (op != "accept" && op != "decline")
+export function issueModelInvocable(op: string): boolean {
+  return op !== "accept" && op !== "decline"
+}
+
+/** The agent may only read the wiki and draft: it never saves or proposes a page itself. */
+//@ verify
+//@ ensures \result == (op == "read" || op == "draft")
+//@ ensures \result ==> operationTier(op) == "sealed" && !keyedOperation(op)
+export function wikiModelInvocable(op: string): boolean {
+  return op === "read" || op === "draft"
+}
+
+/** Only a read answers a waiting person, so only a read has a deadline. */
+//@ verify
+//@ ensures \result == (op == "read")
+//@ ensures \result ==> operationTier(op) == "sealed"
+export function readDeadline(op: string): boolean {
+  return op === "read"
+}

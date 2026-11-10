@@ -691,7 +691,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-3265 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+3270 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -930,6 +930,11 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/flowDecision.vibe:227` | `tourWait` | pure logic | Proved: Reply start/composition/settlement and Tour active/ready/one-speaker/terminal ordering models, exact closed invariants and at-most-one stage bounds; append order, tour terminal events, reading time, first undispatched source index, exact private visit/hold identities and scalar walk control choices; proved. |
 | `src/core/flowDecision.vibe:238` | `tourControlChoice` | pure logic | Proved: Reply start/composition/settlement and Tour active/ready/one-speaker/terminal ordering models, exact closed invariants and at-most-one stage bounds; append order, tour terminal events, reading time, first undispatched source index, exact private visit/hold identities and scalar walk control choices; proved. |
 | `src/core/flowDecision.vibe:247` | `nextTourStep` | pure logic | Proved: Reply start/composition/settlement and Tour active/ready/one-speaker/terminal ordering models, exact closed invariants and at-most-one stage bounds; append order, tour terminal events, reading time, first undispatched source index, exact private visit/hold identities and scalar walk control choices; proved. |
+| `src/core/flowPolicyDecision.vibe:9` | `operationTier` | pure logic | Proved which issue and wiki operations are sealed (read, draft) or irreversible and keyed, that the agent is never offered a VIP accept or decline or a wiki save or proposal, and that only a read has a deadline (0018 third-lane batch 18). |
+| `src/core/flowPolicyDecision.vibe:16` | `keyedOperation` | pure logic | Proved which issue and wiki operations are sealed (read, draft) or irreversible and keyed, that the agent is never offered a VIP accept or decline or a wiki save or proposal, and that only a read has a deadline (0018 third-lane batch 18). |
+| `src/core/flowPolicyDecision.vibe:23` | `issueModelInvocable` | pure logic | Proved which issue and wiki operations are sealed (read, draft) or irreversible and keyed, that the agent is never offered a VIP accept or decline or a wiki save or proposal, and that only a read has a deadline (0018 third-lane batch 18). |
+| `src/core/flowPolicyDecision.vibe:31` | `wikiModelInvocable` | pure logic | Proved which issue and wiki operations are sealed (read, draft) or irreversible and keyed, that the agent is never offered a VIP accept or decline or a wiki save or proposal, and that only a read has a deadline (0018 third-lane batch 18). |
+| `src/core/flowPolicyDecision.vibe:39` | `readDeadline` | pure logic | Proved which issue and wiki operations are sealed (read, draft) or irreversible and keyed, that the agent is never offered a VIP accept or decline or a wiki save or proposal, and that only a read has a deadline (0018 third-lane batch 18). |
 | `src/core/flows.vibe:49` | `callback@49` | wiring | Tour threads active/ready/one-speaker/terminal state; terminal-event and reading-time policies call flowDecision; unanswered source order and conversation guards call conversation. Private visit/hold counters use proved exact BigInt increments; first-visit, paused-wait, requested seek and reading-clock step choices are proved. Full optional restored-cursor composition, Flow execution, word tokenization, docs regexp and reply-id slice remain unproved. |
 | `src/core/flows.vibe:50` | `callback@49/callback@50` | pure logic | Tour threads active/ready/one-speaker/terminal state; terminal-event and reading-time policies call flowDecision; unanswered source order and conversation guards call conversation. Private visit/hold counters use proved exact BigInt increments; first-visit, paused-wait, requested seek and reading-clock step choices are proved. Full optional restored-cursor composition, Flow execution, word tokenization, docs regexp and reply-id slice remain unproved. |
 | `src/core/flows.vibe:51` | `callback@49/then` | wiring | Tour threads active/ready/one-speaker/terminal state; terminal-event and reading-time policies call flowDecision; unanswered source order and conversation guards call conversation. Private visit/hold counters use proved exact BigInt increments; first-visit, paused-wait, requested seek and reading-clock step choices are proved. Full optional restored-cursor composition, Flow execution, word tokenization, docs regexp and reply-id slice remain unproved. |
@@ -1015,20 +1020,20 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/issueFixtureDecision.vibe:47` | `fixtureParticipation` | pure logic | Proved first matching issue, refusal precedence, draft defaults, participation, engine error reason and the fixture GitHub id (0018 third-lane batch 16). |
 | `src/core/issueFixtureDecision.vibe:52` | `fixtureErrorReason` | pure logic | Proved first matching issue, refusal precedence, draft defaults, participation, engine error reason and the fixture GitHub id (0018 third-lane batch 16). |
 | `src/core/issueFixtureDecision.vibe:60` | `fixtureIdentity` | pure logic | Proved first matching issue, refusal precedence, draft defaults, participation, engine error reason and the fixture GitHub id (0018 third-lane batch 16). |
-| `src/core/issueFlows.vibe:16` | `callback@16` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/issueFlows.vibe:21` | `callback@16/idempotencyKey` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/issueFlows.vibe:28` | `callback@16/callback@28` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/issueFlows.vibe:32` | `callback@32` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/issueFlows.vibe:34` | `issueFlow` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/issueFlows.vibe:34` | `issueFlow/callback@34` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/issueFlows.vibe:35` | `callback@35` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/issueFlows.vibe:37` | `callback@35/callback@37` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/issueFlows.vibe:38` | `callback@35/callback@37/callback@38` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/issueFlows.vibe:38` | `callback@35/callback@37/callback@38/callback@38` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/issueFlows.vibe:50` | `authorizeIssue` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/issueFlows.vibe:50` | `authorizeIssue/callback@50` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/issueFlows.vibe:59` | `issueExecutionId` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/issueFlows.vibe:65` | `issueRecoveryId` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/issueFlows.vibe:17` | `callback@17` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/issueFlows.vibe:22` | `callback@17/idempotencyKey` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/issueFlows.vibe:29` | `callback@17/callback@29` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/issueFlows.vibe:33` | `callback@33` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/issueFlows.vibe:35` | `issueFlow` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/issueFlows.vibe:35` | `issueFlow/callback@35` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/issueFlows.vibe:36` | `callback@36` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/issueFlows.vibe:38` | `callback@36/callback@38` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/issueFlows.vibe:39` | `callback@36/callback@38/callback@39` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/issueFlows.vibe:39` | `callback@36/callback@38/callback@39/callback@39` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/issueFlows.vibe:51` | `authorizeIssue` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/issueFlows.vibe:51` | `authorizeIssue/callback@51` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/issueFlows.vibe:60` | `issueExecutionId` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/issueFlows.vibe:66` | `issueRecoveryId` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/issueGraphDecision.vibe:24` | `issueAncestorAt` | pure logic | Specification measure only: zero steps retain the start; each positive step uses the first matching record parent, root zero is absorbing and missing records return -1. Each step clause is proved independently and mutated. |
 | `src/core/issueGraphDecision.vibe:28` | `issueAncestorAt/callback@28` | pure logic | Specification measure only: zero steps retain the start; each positive step uses the first matching record parent, root zero is absorbing and missing records return -1. Each step clause is proved independently and mutated. |
 | `src/core/issueGraphDecision.vibe:39` | `canLinkIssues` | pure logic | Accepted links have positive distinct existing child identities and a bounded first-match parent path reaching the root without the child; issuesAfter proves from this guarantee that the link keeps the issues a forest (0022, 0018 fifth lane). |
@@ -1461,20 +1466,20 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/WikiFactory.vibe:91` | `makeWikiFactory/act/callback@91` | effectful shell | Wiring: the memory engine over the fixture host, the schema decode and the role gate (authorizeWiki, proved in conversation.vibe); an identity conflict reads as conflict, any other engine failure as failed. |
 | `src/core/WikiFactory.vibe:95` | `makeWikiFactory/act/callback@95` | pure logic | Wiring: the memory engine over the fixture host, the schema decode and the role gate (authorizeWiki, proved in conversation.vibe); an identity conflict reads as conflict, any other engine failure as failed. |
 | `src/core/WikiFactory.vibe:101` | `makeWikiFactory/read` | pure logic | Wiring: the memory engine over the fixture host, the schema decode and the role gate (authorizeWiki, proved in conversation.vibe); an identity conflict reads as conflict, any other engine failure as failed. |
-| `src/core/wikiFlows.vibe:17` | `callback@17` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/wikiFlows.vibe:22` | `callback@17/idempotencyKey` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/wikiFlows.vibe:29` | `callback@17/callback@29` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/wikiFlows.vibe:33` | `callback@33` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/wikiFlows.vibe:35` | `wikiEditFlow` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/wikiFlows.vibe:35` | `wikiEditFlow/callback@35` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/wikiFlows.vibe:36` | `callback@36` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/wikiFlows.vibe:38` | `callback@36/callback@38` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/wikiFlows.vibe:39` | `callback@36/callback@38/callback@39` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/wikiFlows.vibe:39` | `callback@36/callback@38/callback@39/callback@39` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/wikiFlows.vibe:51` | `authorizeWiki` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/wikiFlows.vibe:51` | `authorizeWiki/callback@51` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/wikiFlows.vibe:60` | `wikiExecutionId` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/wikiFlows.vibe:66` | `wikiRecoveryId` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/wikiFlows.vibe:18` | `callback@18` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/wikiFlows.vibe:23` | `callback@18/idempotencyKey` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/wikiFlows.vibe:30` | `callback@18/callback@30` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/wikiFlows.vibe:34` | `callback@34` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/wikiFlows.vibe:36` | `wikiEditFlow` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/wikiFlows.vibe:36` | `wikiEditFlow/callback@36` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/wikiFlows.vibe:37` | `callback@37` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/wikiFlows.vibe:39` | `callback@37/callback@39` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/wikiFlows.vibe:40` | `callback@37/callback@39/callback@40` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/wikiFlows.vibe:40` | `callback@37/callback@39/callback@40/callback@40` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/wikiFlows.vibe:52` | `authorizeWiki` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/wikiFlows.vibe:52` | `authorizeWiki/callback@52` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/wikiFlows.vibe:61` | `wikiExecutionId` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/wikiFlows.vibe:67` | `wikiRecoveryId` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/wikiLinks.vibe:3` | `wikiLink` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/wikiPageDecision.vibe:19` | `pageIndex` | pure logic | Proved first page by id, the editable rule, the designs alias, page links, the longest named id (earliest among ties), the first id with a prefix, the agent's request precedence, the wiki unwritten mark, the fixture repository's verdict and review numbers, and each refusal's HTTP status (0018 third-lane batch 9). |
 | `src/core/wikiPageDecision.vibe:31` | `editable` | pure logic | Proved first page by id, the editable rule, the designs alias, page links, the longest named id (earliest among ties), the first id with a prefix, the agent's request precedence, the wiki unwritten mark, the fixture repository's verdict and review numbers, and each refusal's HTTP status (0018 third-lane batch 9). |
@@ -4823,3 +4828,20 @@ choices now live in `src/history/wireDecision.vibe`; `pageRequestOf` and `histor
 The kernel tests failed first against stubs (6 failed); the two host tests passed before and after the change.
 `pathOf` stays a boundary: native `encodeURIComponent` throws on a lone surrogate. 10 Dafny obligations; 21 mutations,
 all rejected in their intended function.
+
+## Third-lane batch 18: issue and wiki flow policies
+
+`src/core/issueFlows.vibe` and `src/core/wikiFlows.vibe` each chose an action's tier, its idempotency key, whether the
+model may invoke the flow and its read deadline with inline conditions. Those choices now live in
+`src/core/flowPolicyDecision.vibe`; both modules call them.
+
+| Function | What its contract states |
+| --- | --- |
+| `operationTier` | `read` and `draft` are sealed; every other operation is irreversible. |
+| `keyedOperation` | Keyed exactly when irreversible, so a retried write never runs twice. |
+| `issueModelInvocable` | Every issue operation except `accept` and `decline` (a VIP decision needs a person). |
+| `wikiModelInvocable` | Only `read` and `draft`; each is sealed and unkeyed. |
+| `readDeadline` | Only `read`, which is sealed. |
+
+`test/flowPolicyDecision.test.vibe` states the expected operation lists for all 13 issue and 4 wiki operations.
+The refactor keeps each flow's tier, key, model offer and deadline. 11 mutations, one per clause.
