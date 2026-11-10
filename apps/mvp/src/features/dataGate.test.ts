@@ -16,7 +16,7 @@ const source = `
   import { DomainsStore } from "./domains/store"
   import { SecretsStore } from "./secrets/store"
   import { FleetStore } from "./fleet/store"
-  import { RunsStore } from "./runs/store"
+  import { RunsStore } from "./runs/store.vibe"
   const config = { origin: "https://unused.test" }
   const layers = {
     Plugins: Plugins.layer(), HomeStore: HomeStore.layer, FilesStore: FilesStore.layer,

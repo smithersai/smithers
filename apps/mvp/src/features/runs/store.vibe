@@ -1,0 +1,1086 @@
+import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
+import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db"
+import { BrowserEngine } from "@smthrs/platform-browser"
+import { evictOnRefusal, repositoryAccessChanges, revokingSource, wipeAuthority } from "../issues/source"
+import { RemoteReadFailed, RemoteRunsClient, RepoRunsFailed } from "./api"
+import { isRemoteRun, JOURNAL_PAGE, REMOTE_RUN_SHAPE_ROUTE, RUN_LIST_LIMIT, settled } from "./contract"
+import { ACTIONS_SHAPE_ROUTE } from "../actions/contract"
+import { anyOf } from "../repo/gate"
+import {
+  CloudRun,
+  UNATTRIBUTED_RUN_KINDS,
+  FORM,
+  type Inspection,
+  type RepoName,
+  RepoRunForm,
+  RepoRunRow,
+  RepoRunsLoaded,
+  RunChange,
+  RunPage,
+  RunRow,
+  RunView,
+  VIEW,
+} from "./schema"
+import { routeTiming, type RouteTiming } from "./timing"
+import { domainOutcomeOf, hasDomainOutcome } from "./todoRun"
+import { repoId } from "../repo/contract"
+import { AuthStore } from "../auth/store"
+import type { By, Gated, Source } from "../repo/gate"
+import { RepoStore } from "../repo/store"
+import { cloudRunList, memberRunSource, whenSignedIn } from "./source"
+import { codeOf } from "../../errorCode"
+import { randomUUID } from "./store.platform"
+
+/** Electric's mapper between snake_case columns and camelCase fields, shared by this module's shapes. */
+const snakeCamel = ElectricCollection.snakeCamelMapper()
+
+// Runs on this tab (decision 0014 §1 and §3, docs/features/runs.md#the-browser): the list of this device's runs, each
+// open run's read, and the run view, all local collections read from this device's engine through `BrowserEngine`. A
+// run's page follows the engine as it works: every event the leader commits reads the open run, and the list while it
+// shows, again, at most once per `FOLLOW_EVERY`; nothing polls. No value of a run reaches a record: a read is counted and
+// logged by its outcome, its event count and its size.
+//
+// A run Smithers runs on Cloudflare, a TODO's (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare), reads the
+// same way from ChatApi (`RemoteRunsClient`), which reads the engine there, and is followed through Electric: its row
+// of the engine's change feed, whose revision moves with the run, reads the open run again on each change, at most once
+// per `FOLLOW_EVERY`. It is never one of this device's runs.
+//
+// The list shows the runs on Cloudflare this person may read beside this device's (`cloudRuns`, ruling FLOW-13): read
+// from ChatApi when the list opens, and again whenever one of its unsettled runs moves on Cloudflare, followed through
+// the same change feed a run's page follows. A run started elsewhere shows the next time the list opens.
+
+/** A read of one run, a page of its journal at a time, from where its page reads runs. */
+type Reader = (
+  runId: string,
+  read: { readonly afterSeq?: number; readonly limit: number },
+) => Inspection!(RemoteReadFailed | BrowserEngine.RequestRefused | BrowserEngine.EngineUnavailable)
+
+/** Where a run on Cloudflare is followed from: ChatApi's origin. */
+export interface RunsConfig {
+  readonly origin: string
+}
+
+/** How often an open run, and the list, are read again while the engine works. */
+export const FOLLOW_EVERY = Duration.millis(200)
+
+/** Reads of runs from the tab, by `read` (`run`, `list`) and `outcome`. */
+export const reads = Metric.counter("smithers_run_reads", {
+  description: "Reads of this device's runs from the tab, by read and outcome",
+  incremental: true,
+})
+
+/** Remote change batches received, including those ignored while their run is hidden. No run content is recorded. */
+export const followChanges = Metric.counter("smithers_run_follow_changes", {
+  description: "Remote run changes received by whether their run is open",
+  incremental: true,
+})
+
+/**
+ * The run pages that show with no repository's say (the data gate's `also`): one read from this device's own engine,
+ * and one holding no read (loading, not found, not started, unavailable), which has nothing of a run to hide.
+ */
+export const pageShowsAlone = (own: Record<string, any>) =>
+  Query.or(Query.or(Query.eq(own.personal, true), Query.eq(own.system, true)), Query.isNull(own.inspection))
+
+/** The run of `view`, joined to its read: what the run page shows. `pages` are the reads the data gate shows. */
+export const pageQuery = (view: Collection.Collection<RunView, string>, pages: Source<RunPage>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ view: view.tanstack })
+      .innerJoin({ page: pages.tanstack }, ({ view, page }) => Query.eq(view.runId, page.id))
+      .select(({ view, page }) => ({ view, page }))
+      .findOne()
+  )
+
+/** The run the list shows opened in place, joined to its read. */
+export const expandedQuery = (view: Collection.Collection<RunView, string>, pages: Source<RunPage>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ view: view.tanstack })
+      .innerJoin({ page: pages.tanstack }, ({ view, page }) => Query.eq(view.expanded, page.id))
+      .select(({ page }) => ({ page }))
+      .findOne()
+  )
+
+/** The view's one row. */
+export const viewQuery = (view: Collection.Collection<RunView, string>) =>
+  LiveQuery.make((q) => q.from({ view: view.tanstack }).findOne())
+
+/** Every run of the list. */
+export const runsQuery = (runs: Collection.Collection<RunRow, string>) =>
+  LiveQuery.make((q) => q.from({ run: runs.tanstack }))
+
+/** Every run on Cloudflare the list holds, as the data gate shows them. */
+export const cloudRunsQuery = (rows: Source<CloudRun>) => LiveQuery.make((q) => q.from({ run: rows.tanstack }))
+
+/** How many unsettled runs on Cloudflare one read of the list follows: the newest. */
+export const CLOUD_FOLLOWS = 6
+
+/** How many completed answers or drafts one read of the list reads the results of, newest first. */
+export const OUTCOME_READS = 10
+
+/** Every repository run the device holds, as the data gate shows them: the list filters it to the repository it shows. */
+export const repoRunsQuery = (rows: Source<RepoRunRow>) => LiveQuery.make((q) => q.from({ run: rows.tanstack }))
+
+/** The Run form's one row. */
+export const formQuery = (form: Collection.Collection<RepoRunForm, string>) =>
+  LiveQuery.make((q) => q.from({ form: form.tanstack }))
+
+/** Every repository whose runs this tab has loaded. */
+export const repoRunsLoadedQuery = (loaded: Collection.Collection<RepoRunsLoaded, string>) =>
+  LiveQuery.make((q) => q.from({ repo: loaded.tanstack }))
+
+/** A list row from the engine's summary of a run. */
+const rowOf = (run: Inspection["children"][number] | Omit<Inspection["run"], "input" | "result">): RunRow => ({
+  id: run.runId,
+  flow: run.flowName,
+  status: run.status,
+  cancelRequested: run.cancelRequestedAtMs !== null,
+  createdAtMs: run.createdAtMs,
+  startedAtMs: run.startedAtMs,
+  finishedAtMs: run.finishedAtMs,
+  seq: run.lastSeq,
+  origin: run.origin,
+  ...("result" in run && hasDomainOutcome(run.flowName) && run.status === "completed"
+    ? { outcome: domainOutcomeOf(run.flowName, run.result) }
+    : {}),
+})
+
+/** Puts `row` into `collection`, replacing the one under its key. */
+const put = <A extends { readonly id: string }>(collection: Collection.Collection<A, string>, row: A) =>
+  effect {
+    const current = try collection.get(row.id)
+    if (Option.isNone(current)) return try Effect.asVoid(collection.insert(row))
+    try Effect.asVoid(collection.update(row.id, (draft) => void Object.assign(draft, row)))
+  }
+
+type Read = "run" | "list" | "cloud" | "outcome"
+
+/**
+ * The reads that follow a run's first page: the rest of its journal (`page`), a run it started (`child`), the rest of
+ * that run's journal (`child_page`), and More (`more`). They aren't counted; one that fails is logged, and the page
+ * keeps what it read.
+ */
+type FollowingRead = "page" | "child" | "child_page" | "more"
+
+/**
+ * A failed read's code, never a message: the tag the engine refused it with, why the engine is down, else the
+ * failure's own (`codeOf`).
+ */
+export const readCode = (failure: unknown): string =>
+  failure instanceof BrowserEngine.RequestRefused
+    ? codeOf({ code: failure.error })
+    : failure instanceof BrowserEngine.EngineUnavailable
+    ? failure.reason
+    : codeOf(failure)
+
+/**
+ * Logs one read as `run.read`: at Warn with its `errorCode`, and ChatApi's `status` for a run on Cloudflare, when it
+ * couldn't reach the run (`unavailable`); else at Debug, since not found and not started are answers about the run.
+ */
+const logRead = (act: Read | FollowingRead, outcome: string, startedAt: number, events?: number, failure?: unknown) =>
+  effect {
+    try (outcome === "unavailable" ? Effect.logWarning : Effect.logDebug)("run.read").pipe(Effect.annotateLogs({
+      feature: "runs",
+      act,
+      outcome,
+      durationMs: (try Clock.currentTimeMillis) - startedAt,
+      ...(events === undefined ? {} : { events }),
+      ...(failure === undefined ? {} : { errorCode: readCode(failure) }),
+      ...(failure instanceof RemoteReadFailed && failure.status !== undefined ? { status: failure.status } : {}),
+    }))
+  }
+
+/** Counts and logs one read of the engine: its outcome and, for a run, how many events it held. */
+const recordRead = (read: Read, outcome: string, startedAt: number, events?: number, failure?: unknown) =>
+  Effect.andThen(
+    Metric.update(Metric.withAttributes(reads, { read, outcome }), 1),
+    logRead(read, outcome, startedAt, events, failure),
+  )
+
+/** Logs a following read that failed (`FollowingRead`). */
+const recordFollowing = (act: FollowingRead, failure: unknown, startedAt: number) =>
+  logRead(act, stateOf(failure), startedAt, undefined, failure)
+
+/**
+ * Waits for a repository's runs to load: the device's rows restored and the first sync answered. A first sync that
+ * fails still settles the list, which then shows the device's rows as if loaded, so it is logged as
+ * `runs.repo_runs.load`.
+ */
+export const repoRunsSynced = (rows: {
+  readonly restored: void!Collection.LoadFailed
+  readonly preload: void!Collection.LoadFailed
+}) =>
+  effect {
+    // expected: restore failures are logged by Collection
+    try Effect.ignore(rows.restored)
+    try rows.preload.pipe(
+      Effect.catch((failure) =>
+        Effect.logWarning("runs.repo_runs.load").pipe(
+          Effect.annotateLogs({ feature: "runs", outcome: "failed", errorCode: codeOf(failure) }),
+        )
+      ),
+    )
+  }
+
+/**
+ * The runs' state for one tab:
+ * - `runs`: this device's runs, newest first, as the engine last listed them;
+ * - `pages`: each open run as the engine last read it;
+ * - `view`: the run this tab shows, the step and tab selected, an act in flight and why one was refused;
+ * - `readRun`, `readList`, `readMore`: read the engine again.
+ */
+export class RunsStore extends Context.Service<
+  RunsStore,
+  {
+    readonly scope: Scope.Scope
+    readonly steerRevision: Ref.Ref<number>
+    readonly steerNamespace: string
+    readonly runs: Collection.Collection<RunRow, string>
+    readonly pages: Collection.Collection<RunPage, string>
+    readonly view: Collection.Collection<RunView, string>
+    readonly page: Effect.Success<ReturnType<typeof pageQuery>>
+    /** The run reads whose run may show (the data gate): what anything shown of a run joins, a transcript included. */
+    readonly shownPages: Gated<RunPage>
+    readonly expandedPage: Effect.Success<ReturnType<typeof expandedQuery>>
+    readonly viewRow: Effect.Success<ReturnType<typeof viewQuery>>
+    readonly list: Effect.Success<ReturnType<typeof runsQuery>>
+    /** The runs on Cloudflare this person may read, as ChatApi last listed them. */
+    readonly cloudRuns: Collection.Collection<CloudRun, string>
+    readonly cloudList: Effect.Success<ReturnType<typeof cloudRunsQuery>>
+    /** Reads the runs on Cloudflare again; a read that fails keeps what the list showed. */
+    readonly readCloud: void!!
+    /** Starts `readCloud` in the store's scope and returns at once: the list's route never waits for ChatApi. */
+    readonly loadCloud: void!!
+    /**
+     * The repositories' runs on Cloudflare (docs/features/actions.md), as the device holds them: empty until a list
+     * opens (`openRepoRuns`), then synced by Electric and kept on the device.
+     */
+    readonly repoRunList: Effect.Success<ReturnType<typeof repoRunsQuery>>
+    /** The repositories whose runs have loaded: until then a list of none says nothing (`repoRunsLoaded`). */
+    readonly repoRunsLoaded: Effect.Success<ReturnType<typeof repoRunsLoadedQuery>>
+    /** Starts syncing this repository's runs, once per repository. */
+    readonly openRepoRuns: (owner: string, name: string) => void!!
+    /** The runs page's Run form (docs/features/actions.md#running-a-flow-by-hand). */
+    readonly form: Collection.Collection<RepoRunForm, string>
+    readonly formRow: Effect.Success<ReturnType<typeof formQuery>>
+    /** Reads `repo`'s flows a person runs by hand into the form, choosing none. */
+    readonly loadRepoFlows: (repo: RepoName) => void!!
+    /** Chooses `flow` and reads its form at the form's branch's head. */
+    readonly chooseRepoFlow: (flow: string) => void!!
+    /** Sets the branch a run starts at; `chooseRepoFlow` reads the form there. */
+    readonly setRunRef: (ref: string) => void!!
+    /** The page left: a Run still in flight no longer moves this tab. */
+    readonly closeRepoRuns: void!!
+    readonly loadRun: (runId: string, repo: RepoName | null) => void!!
+    readonly beginRoute: (runId: string) => void!!
+    readonly rendered: (runId: string) => void!!
+    readonly readRun: (runId: string) => void!!
+    readonly readList: void!!
+    readonly warmList: void!!
+    readonly readMore: (runId: string) => void!!
+    /**
+     * Follows a run on Cloudflare (`isRemoteRun`, or one `cloud` marked) for as long as the store lives: each change of
+     * its row in the engine's change feed reads it again while the page shows it, and, for a repository's run, each run
+     * it started too. Once per run; a local run needs none.
+     */
+    readonly follow: (runId: string) => void!!
+    /** Marks `runId` a repository's run, read and followed on Cloudflare (docs/features/actions.md). */
+    readonly cloud: (runId: string) => void!!
+  }
+>()("@smthrs/mvp/runs/RunsStore") {
+  /**
+   * The store over this tab's `BrowserEngine` and ChatApi at `config.origin`, following the engine's events from when it
+   * is built, and each run on Cloudflare once opened, until its scope closes.
+   */
+  static readonly layer = (config: RunsConfig) =>
+    Layer.effect(
+      RunsStore,
+      effect {
+        const auth = try Effect.serviceOption(AuthStore)
+        const repos = try RepoStore
+        const timing = try routeTiming
+        const attempts = new Map<string, RouteTiming>()
+        const scope = try Effect.scope
+        const engine = try BrowserEngine.BrowserEngine
+        const remote = try RemoteRunsClient
+        /**
+         * Where the page of run `rootId` reads a run, it or one it started: ChatApi when the root runs on Cloudflare,
+         * else this device's engine.
+         */
+        const reader = (rootId: string, attempt = attempts.get(rootId)): Reader => (id, read) =>
+          effect {
+            try (attempt?.record("inspection", "start") ?? Effect.void)
+            const request: ReturnType<Reader> = onCloud(rootId) ? remote.inspect(id, read) : engine.inspect(id, read)
+            const result = try Effect.result(request)
+            try (attempt?.record(
+              "inspection",
+              result._tag === "Success" ? "ready" : "failed",
+              result._tag === "Success" ? result.success.journal.events.length : 0,
+            ) ?? Effect.void)
+            return try (result._tag === "Success" ? Effect.succeed(result.success) : Effect.fail(result.failure))
+          }
+        /** Repository runs this tab opened: each, and the runs it started, read and followed on Cloudflare. */
+        const cloudRoots = new Set<string>()
+        /** Whether the page of `rootId` reads Cloudflare: a TODO's run, or a repository's. */
+        const onCloud = (rootId: string) => isRemoteRun(rootId) || cloudRoots.has(rootId)
+        const runs = try Collection.local<RunRow, string>({ id: "runs", schema: RunRow, getKey: (row) => row.id })
+        const pages = try Collection.local<RunPage, string>({
+          id: "run-pages",
+          schema: RunPage,
+          getKey: (row) => row.id,
+        })
+        const view = try Collection.local<RunView, string>({
+          id: "run-view",
+          schema: RunView,
+          getKey: (row) => row.id,
+          initialData: [{
+            id: VIEW,
+            runId: null,
+            listOpen: false,
+            selected: null,
+            tab: "steps",
+            acting: null,
+            refusal: null,
+          }],
+        })
+
+        const generations = new Map<string, number>()
+        const readRun = (runId: string, changed?: ReadonlySet<string>): void!! =>
+          effect {
+            const held = Option.getOrThrow(try view.get(VIEW))
+            if (held.runId === runId && held.at != null) return
+            const generation = (generations.get(runId) ?? 0) + 1
+            generations.set(runId, generation)
+            const startedAt = try Clock.currentTimeMillis
+            const attempt = attempts.get(runId)
+            const source = reader(runId, attempt)
+            // Read from this device's engine: the person's own run. From Cloudflare: its root's repository's (`attributed`).
+            const local = !onCloud(runId)
+            const read = try Effect.result(source(runId, { limit: JOURNAL_PAGE }))
+            if (generations.get(runId) !== generation) return
+            const afterRead = Option.getOrThrow(try view.get(VIEW))
+            if (afterRead.runId === runId && afterRead.at != null) return
+            if (read._tag === "Success") {
+              const inspection = read.success
+              const current = try pages.get(runId)
+              // A run read again keeps the pages More read only while the first page still ends where they begin.
+              let kept: { more: ReadonlyArray<Inspection["journal"]["events"][number]>; hasMore: boolean } = Option
+                .match(current, {
+                  onNone: () => ({ more: [], hasMore: inspection.journal.hasMore }),
+                  onSome: (page) =>
+                    page.more.length > 0 && inspection.journal.hasMore
+                      ? { more: page.more as Inspection["journal"]["events"], hasMore: page.hasMore }
+                      : { more: [], hasMore: inspection.journal.hasMore },
+                })
+              // Publish the first inspection before reading any other page or child. The known graph is useful now.
+              const cached = Option.isSome(current) ? current.value.descendants as ReadonlyArray<Inspection> ?? [] : []
+              const publish = (descendants: ReadonlyArray<Inspection>) => effect {
+                if (generations.get(runId) !== generation) {
+                  return
+                }
+                const shown = Option.getOrThrow(try view.get(VIEW))
+                if (shown.runId === runId && shown.at != null) return
+                // Keep every reachable cached sibling until its replacement arrives, including nested runs.
+                const known = new Map([...cached, ...descendants].map((child) => [child.run.runId, child]))
+                const visible: Inspection[] = []
+                const visited = new Set([runId])
+                const pending = inspection.children.map((child) => child.runId)
+                for (let index = 0; index < pending.length; index++) {
+                  const id = pending[index]!
+                  if (visited.has(id)) continue
+                  visited.add(id)
+                  const child = known.get(id)
+                  if (child === undefined) continue
+                  visible.push(child)
+                  pending.push(...child.children.map((nested) => nested.runId))
+                }
+                try put(pages, {
+                  id: runId,
+                  state: "read",
+                  inspection,
+                  ...kept,
+                  descendants: visible,
+                  ...(try attributed(runId, inspection, local)),
+                })
+              }
+              try publish([])
+              try (attempt?.record("page", "rows", 1) ?? Effect.void)
+              // Read finite pages through this inspection's snapshot, never poll or retry.
+              let after = kept.more.at(-1)?.seq ?? inspection.journal.nextSeq
+              // An earlier fully read page can have new events beyond it now.
+              if (inspection.run.lastSeq > after && inspection.journal.hasMore) kept = { ...kept, hasMore: true }
+              while (kept.hasMore && after < inspection.run.lastSeq) {
+                const next = try Effect.result(source(runId, { afterSeq: after, limit: JOURNAL_PAGE }))
+                if (next._tag === "Failure") {
+                  try recordFollowing("page", next.failure, startedAt)
+                  break
+                }
+                const fresh = next.success.journal.events.filter((event) => event.seq > after)
+                if (fresh.length === 0) break
+                kept = { more: [...kept.more, ...fresh], hasMore: next.success.journal.hasMore }
+                after = fresh.at(-1)!.seq
+              }
+              // Child journals carry their own identities. Never join children by display name.
+              const descendants: Inspection[] = []
+              const seen = new Set([runId])
+              const pending = [...inspection.children.map((child) => child.runId)]
+              for (let i = 0; i < pending.length; i++) {
+                const childId = pending[i]!
+                if (seen.has(childId)) continue
+                seen.add(childId)
+                const previous = Option.isSome(current)
+                  ? (current.value.descendants as ReadonlyArray<Inspection> | undefined)?.find((read) =>
+                    read.run.runId === childId
+                  )
+                  : undefined
+                if (previous !== undefined && changed !== undefined && !changed.has(childId)) {
+                  descendants.push(previous)
+                  pending.push(...previous.children.map((child) => child.runId))
+                  continue
+                }
+                const child = try Effect.result(source(childId, { limit: JOURNAL_PAGE }))
+                if (child._tag === "Failure") {
+                  try recordFollowing("child", child.failure, startedAt)
+                  continue
+                }
+                const childIndex = descendants.length
+                const firstEnd = child.success.journal.nextSeq
+                const retained = child.success.journal.hasMore && previous !== undefined
+                  ? previous.journal.events.filter((event) => event.seq > firstEnd)
+                  : []
+                const events = [...child.success.journal.events, ...retained]
+                let cursor = events.at(-1)?.seq ?? firstEnd
+                let hasMore = child.success.journal.hasMore && cursor < child.success.run.lastSeq
+                descendants.push({
+                  ...child.success,
+                  journal: { ...child.success.journal, events: [...events], nextSeq: cursor, hasMore },
+                })
+                try publish(descendants)
+                while (hasMore && cursor < child.success.run.lastSeq) {
+                  const next = try Effect.result(source(childId, { afterSeq: cursor, limit: JOURNAL_PAGE }))
+                  if (next._tag === "Failure") {
+                    try recordFollowing("child_page", next.failure, startedAt)
+                    break
+                  }
+                  const fresh = next.success.journal.events.filter((event) => event.seq > cursor)
+                  if (fresh.length === 0) break
+                  events.push(...fresh)
+                  cursor = fresh.at(-1)!.seq
+                  hasMore = next.success.journal.hasMore
+                }
+                descendants[childIndex] = {
+                  ...child.success,
+                  journal: { ...child.success.journal, events, nextSeq: cursor, hasMore },
+                }
+                try publish(descendants)
+                pending.push(...child.success.children.map((child) => child.runId))
+              }
+              if (generations.get(runId) !== generation) return
+              const latestView = Option.getOrThrow(try view.get(VIEW))
+              if (latestView.runId === runId && latestView.at != null) return
+              const owner = try attributed(runId, inspection, local)
+              try put(pages, { id: runId, state: "read", inspection, ...kept, descendants, ...owner })
+              // A run on Cloudflare whose root this tab can't place shows nothing until it can: the list of runs on
+              // Cloudflare may name its repository. One read of it at a time for each such run.
+              if (
+                owner.repoId === undefined && owner.personal === undefined && owner.system !== true
+                && !placing.has(runId)
+              ) {
+                placing.add(runId)
+                try Effect.forkIn(readCloud.pipe(Effect.ensuring(Effect.sync(() => placing.delete(runId)))), scope, {
+                  startImmediately: true,
+                })
+              }
+              // A run on Cloudflare is never one of this device's runs.
+              if (!onCloud(runId)) try put(runs, rowOf(inspection.run))
+              // A repository's run works in the runs it started, its jobs: each is followed, and its change reads the run.
+              if (cloudRoots.has(runId)) {
+                for (const child of descendants) try Effect.forkIn(follow(child.run.runId, runId), scope)
+              }
+              return try recordRead("run", "read", startedAt, inspection.journal.events.length)
+            }
+            const state = stateOf(read.failure)
+            // A run this device's engine never held may be one on Cloudflare, such as a system flow an Admin opened from
+            // the list or a link: if ChatApi answers it, it is read and followed there from now on.
+            if (state === "not_found" && !onCloud(runId)) {
+              const there = try Effect.result(remote.inspect(runId, { limit: 1 }))
+              if (there._tag === "Success") {
+                cloudRoots.add(runId)
+                try Effect.forkIn(follow(runId), scope, { startImmediately: true })
+                return try readRun(runId, changed)
+              }
+            }
+            // A read that couldn't reach the run leaves a page that has read it as it was: the next change reads it
+            // again. Only an answer about the run itself (not found, not started) replaces what the page shows.
+            const shown = try pages.get(runId)
+            if (state !== "unavailable" || Option.isNone(shown) || shown.value.state !== "read") {
+              try put(pages, {
+                id: runId,
+                state,
+                inspection: null,
+                more: [],
+                hasMore: false,
+                repoId: undefined,
+                personal: undefined,
+                system: undefined,
+              })
+            }
+            try recordRead("run", state, startedAt, undefined, read.failure)
+          }.pipe(Effect.orDie)
+
+        const readMore = (runId: string) =>
+          effect {
+            const held = Option.getOrThrow(try view.get(VIEW))
+            if (held.runId === runId && held.at != null) return
+            const current = try pages.get(runId)
+            if (Option.isNone(current) || current.value.inspection === null) return
+            const page = current.value
+            const events = [
+              ...(page.inspection as Inspection).journal.events,
+              ...(page.more as Inspection["journal"]["events"]),
+            ]
+            const afterSeq = events.at(-1)?.seq ?? -1
+            const startedAt = try Clock.currentTimeMillis
+            const read = try Effect.result(reader(runId)(runId, { afterSeq, limit: JOURNAL_PAGE }))
+            if (read._tag === "Failure") return try recordFollowing("more", read.failure, startedAt)
+            const latestView = Option.getOrThrow(try view.get(VIEW))
+            if (latestView.runId === runId && latestView.at != null) return
+            // More contributes events to the current page, never its pre-read snapshot.
+            const latest = try pages.get(runId)
+            if (Option.isNone(latest) || latest.value.inspection === null) return
+            const inspection = latest.value.inspection as Inspection
+            const more = new Map(
+              (latest.value.more as Inspection["journal"]["events"]).map((event) => [event.seq, event]),
+            )
+            for (const event of read.success.journal.events) {
+              if (event.seq > inspection.journal.nextSeq) more.set(event.seq, event)
+            }
+            const latestEnd = (latest.value.more as Inspection["journal"]["events"]).at(-1)?.seq
+              ?? inspection.journal.nextSeq
+            try put(pages, {
+              ...latest.value,
+              more: [...more.values()].sort((a, b) => a.seq - b.seq),
+              hasMore: latestEnd >= read.success.journal.nextSeq ? latest.value.hasMore : read.success.journal.hasMore,
+            })
+          }.pipe(Effect.orDie)
+
+        const readList = effect {
+          const startedAt = try Clock.currentTimeMillis
+          const revision = Option.getOrThrow(try view.get(VIEW)).listRevision ?? 0
+          try view.update(VIEW, (row) => {
+            row.listReady = false
+          })
+          const read = try Effect.result(engine.list({ limit: RUN_LIST_LIMIT }))
+          try view.update(VIEW, (row) => {
+            row.listLoaded = true
+          })
+          if (read._tag === "Failure") return try recordRead("list", "unavailable", startedAt, undefined, read.failure)
+          const listedIds = new Set(read.success.runs.map((run) => run.runId))
+          const previous = try runs.toArray
+          const previousById = new Map(previous.map((row) => [row.id, row]))
+          const stale = previous.filter((row) => !listedIds.has(row.id)).map((row) => row.id)
+          if (stale.length > 0) try Effect.asVoid(runs.delete(stale))
+          for (const run of read.success.runs) {
+            const row = rowOf(run)
+            const cached = previousById.get(run.runId)
+            // List summaries have no result. A detail read can establish a completed answer or draft's outcome; keep that finite
+            // result only for the same journal version. Opening Runs must never await a second read per row.
+            const outcome = hasDomainOutcome(run.flowName) && run.status === "completed"
+              ? cached?.seq === run.lastSeq ? cached.outcome ?? "unknown" : "unknown"
+              : undefined
+            try put(runs, outcome === undefined ? row : { ...row, outcome })
+          }
+          try view.update(VIEW, (row) => {
+            row.listReady = (row.listRevision ?? 0) === revision
+          })
+          try recordRead("list", "read", startedAt)
+          // A completed answer or draft whose work failed must not read Done: the newest few are read once, in the
+          // background, for their finite result. The list itself never waits for them.
+          const unknown = (try runs.toArray)
+            .filter((row) => hasDomainOutcome(row.flow) && row.status === "completed" && row.outcome === "unknown")
+            .sort((left, right) => right.createdAtMs - left.createdAtMs)
+            .slice(0, OUTCOME_READS)
+            .filter((row) => !outcomeRead.has(`${row.id}@${row.seq}`))
+          for (const row of unknown) outcomeRead.add(`${row.id}@${row.seq}`)
+          if (unknown.length > 0) try Effect.forkIn(Effect.forEach(unknown, readOutcome, { discard: true }), scope)
+        }.pipe(Effect.orDie)
+
+        /** Runs whose result one read already established or tried, by id and journal version. */
+        const outcomeRead = new Set<string>()
+        /** Reads one completed answer's or draft's result, and keeps only its finite outcome on the list's row. */
+        const readOutcome = (row: RunRow) =>
+          effect {
+            const startedAt = try Clock.currentTimeMillis
+            const read = try Effect.result(engine.inspect(row.id, { limit: 1 }))
+            if (read._tag === "Failure") {
+              return try recordRead("outcome", "unavailable", startedAt, undefined, read.failure)
+            }
+            const run = read.success.run
+            const current = try runs.get(row.id)
+            if (Option.isNone(current) || current.value.seq !== run.lastSeq || !hasDomainOutcome(run.flowName)) return
+            try put(runs, { ...current.value, outcome: domainOutcomeOf(run.flowName, run.result) })
+            try recordRead("outcome", "read", startedAt)
+          }.pipe(Effect.orDie)
+
+        // A hover reads the engine without opening the page. Its click reuses that snapshot; concurrent hovers share
+        // the read, and engine events below invalidate it even while the list is hidden.
+        const listWarming = try Semaphore.make(1)
+        const warmList = Semaphore.withPermits(listWarming, 1)(effect {
+          if (Option.getOrThrow(try view.get(VIEW)).listReady) return
+          try readList
+        })
+
+        // Presentation clock only: no engine polling, dispatch, retry or background job.
+        try Stream.tick(Duration.seconds(1)).pipe(
+          Stream.runForEach(() => effect {
+            const current = Option.getOrThrow(try view.get(VIEW))
+            if (current.runId === null || current.at != null) return
+            const now = try Clock.currentTimeMillis
+            try view.update(VIEW, (draft) => {
+              draft.now = now
+            }).pipe(Effect.orDie)
+          }),
+          Effect.forkScoped,
+        )
+
+        // Every event the engine commits reads the open run, and the list while it shows, again.
+        try engine.events.pipe(
+          Stream.groupedWithin(Number.MAX_SAFE_INTEGER, FOLLOW_EVERY),
+          Stream.runForEach((events) =>
+            effect {
+              try view.update(VIEW, (row) => {
+                row.listRevision = (row.listRevision ?? 0) + 1
+                row.listReady = false
+              }).pipe(Effect.orDie)
+              const current = Option.getOrThrow(try view.get(VIEW))
+              const executions = new Set(events.map((event) => event.executionId))
+              if (current.runId !== null) try readRun(current.runId, executions)
+              if (current.listOpen) {
+                try readList
+                // The run opened in the list follows its engine too.
+                if (current.expanded != null && current.expanded !== current.runId) {
+                  try readRun(current.expanded, executions)
+                }
+              }
+            }
+          ),
+          Effect.forkScoped,
+        )
+
+        // Each run on Cloudflare this tab opened, followed once: its row of the engine's change feed through Electric.
+        const followed = new Set<string>()
+        const following = try Semaphore.make(1)
+        /** The pages each followed run's change reads again: its own, and those of the runs that started it. */
+        const readers = new Map<string, Set<string>>()
+        const follow = (runId: string, rootId: string = runId): void!! =>
+          Semaphore.withPermits(following, 1)(effect {
+            if (!onCloud(rootId)) return
+            const pagesOf = readers.get(runId) ?? new Set<string>()
+            readers.set(runId, pagesOf.add(rootId))
+            const attempt = attempts.get(rootId)
+            if (followed.has(runId)) {
+              try (attempt?.record("changes", "reused") ?? Effect.void)
+              return
+            }
+            followed.add(runId)
+            try (attempt?.record("changes", "start") ?? Effect.void)
+            const changes = try ElectricCollection.make<RunChange>({
+              id: `remote-run:${runId}`,
+              schema: RunChange,
+              getKey: (row) => row.runId,
+              syncMode: "eager",
+              shape: {
+                url: `${config.origin}${REMOTE_RUN_SHAPE_ROUTE}?run=${encodeURIComponent(runId)}`,
+                columnMapper: snakeCamel,
+              },
+            }).pipe(Scope.provide(scope))
+            try (attempt?.record("changes", "ready") ?? Effect.void)
+            let firstRows = true
+            // The run moved on Cloudflare: read it again while the page shows it.
+            try changes.changes({ initial: true }).pipe(
+              Stream.tap((batch) => effect {
+                if (!firstRows || batch.length === 0) return
+                firstRows = false
+                try (attempt?.record("changes", "rows", batch.length) ?? Effect.void)
+              }),
+              Stream.filter((batch) => batch.length > 0),
+              Stream.groupedWithin(Number.MAX_SAFE_INTEGER, FOLLOW_EVERY),
+              Stream.runForEach(() =>
+                effect {
+                  const current = Option.getOrThrow(try view.get(VIEW))
+                  const pagesOf = readers.get(runId)!
+                  const shown = current.runId !== null && pagesOf.has(current.runId)
+                    ? current.runId
+                    : current.listOpen && current.expanded != null && pagesOf.has(current.expanded)
+                    ? current.expanded
+                    : null
+                  const listed = current.listOpen && cloudListed.has(runId)
+                  try Metric.update(
+                    Metric.withAttributes(followChanges, { showing: shown === null && !listed ? "false" : "true" }),
+                    1,
+                  )
+                  // The shown run moved, or a run it started did: the shown run is read again, and of its runs only that one.
+                  if (shown !== null) try readRun(shown, runId === shown ? undefined : new Set([runId]))
+                  // A run the list shows moved: the list of runs on Cloudflare is read again.
+                  if (listed) try readCloud
+                }
+              ),
+              Effect.forkIn(scope, { startImmediately: true }),
+            )
+          })
+
+        // The runs on Cloudflare this person may read, beside this device's own (ruling FLOW-13).
+        const cloudRuns = try Collection.local<CloudRun, string>({
+          id: "cloud-runs",
+          schema: CloudRun,
+          getKey: (row) => row.runId,
+        })
+        /** The runs the list of runs on Cloudflare last showed: a change of one reads the list again. */
+        const cloudListed = new Set<string>()
+        const cloudReading = try Semaphore.make(1)
+        const readCloud: void!! = Semaphore.withPermits(cloudReading, 1)(
+          effect {
+            const startedAt = try Clock.currentTimeMillis
+            const read = try Effect.result(cloudRunList(remote.list, auth))
+            try view.update(VIEW, (row) => {
+              row.cloudLoaded = true
+            })
+            // A list that couldn't be read keeps what it showed: signed out, a Guest, or ChatApi unreachable.
+            if (read._tag === "Failure") {
+              return try recordRead("cloud", stateOf(read.failure), startedAt, undefined, read.failure)
+            }
+            const listed = new Set(read.success.map((run) => run.runId))
+            const stale = (try cloudRuns.toArray).filter((row) => !listed.has(row.runId)).map((row) => row.runId)
+            if (stale.length > 0) try Effect.asVoid(cloudRuns.delete(stale))
+            cloudListed.clear()
+            for (const run of read.success) {
+              const held = try cloudRuns.get(run.runId)
+              try (Option.isNone(held)
+                ? Effect.asVoid(cloudRuns.insert(run))
+                : Effect.asVoid(cloudRuns.update(run.runId, (draft) => void Object.assign(draft, run))))
+              cloudListed.add(run.runId)
+              // Its page, and its details in the list, read it on Cloudflare.
+              if (!isRemoteRun(run.runId)) cloudRoots.add(run.runId)
+            }
+            // The newest unsettled runs are followed, so the list moves with them.
+            const live = read.success.filter((run) => !settled(run.status)).slice(0, CLOUD_FOLLOWS)
+            for (const run of live) try Effect.forkIn(follow(run.runId), scope, { startImmediately: true })
+            try recordRead("cloud", "read", startedAt)
+          }.pipe(Effect.orDie),
+        )
+
+        // A repository's runs sync only once a tab opens a repository's list: Electric's rows, kept on the device, shown
+        // through a collection of this tab's that follows them.
+        const persistence = try Persistence.Persistence
+        const shownRepoRuns = try Collection.local<RepoRunRow, string>({
+          id: "repo-runs-shown",
+          schema: RepoRunRow,
+          getKey: (row) => row.id,
+        })
+        const loadedRepoRuns = try Collection.local<RepoRunsLoaded, string>({
+          id: "repo-runs-loaded",
+          schema: RepoRunsLoaded,
+          getKey: (row) => row.id,
+        })
+        // The data gate (decision 0110, 2026-11-03; repo/gate.ts): which repository each run read on Cloudflare is of, and
+        // what of the runs shows. A run's repository is its root run's: the topmost run of its inspection's chain this tab
+        // can place, by that run's Cloudflare row (`repo`) or its repository row (`execution`). A run read from this
+        // device's engine is the person's own. One this tab can't place shows nothing, wherever it is opened.
+        /** Runs read on Cloudflare this tab couldn't place, whose read of the list of runs on Cloudflare is on its way. */
+        const placing = new Set<string>()
+        const repositoryOf = (
+          id: string,
+          cloud: ReadonlyMap<string, CloudRun>,
+          executions: ReadonlyMap<string, string>,
+        ) => {
+          const named = cloud.get(id)?.repo
+          return named != null ? `github/${named}`.toLowerCase() : executions.get(id)
+        }
+        /** Whose run `runId`'s read `inspection` is: `{ personal }` read from this device's engine, else its root's repository. */
+        const attributed = (runId: string, inspection: Inspection, local: boolean) =>
+          effect {
+            if (local) {
+              return {
+                repoId: undefined,
+                personal: true as boolean | undefined,
+                system: undefined as boolean | undefined,
+              }
+            }
+            const cloud = new Map((try cloudRuns.toArray).map((run) => [run.runId, run]))
+            const executions = new Map((try shownRepoRuns.toArray).map((run) => [run.execution, run.repoId]))
+            // Up the chain as far as this tab has the reads: each run's parent, from its own read, else its page's.
+            let found = repositoryOf(runId, cloud, executions)
+            let parent = (inspection.run as { readonly parentRunId?: string | null }).parentRunId ?? null
+            const seen = new Set([runId])
+            while (parent !== null && !seen.has(parent)) {
+              seen.add(parent)
+              found = repositoryOf(parent, cloud, executions) ?? found
+              const page = Option.getOrUndefined(try pages.get(parent))
+              const read = page?.inspection as
+                | { readonly run?: { readonly parentRunId?: string | null } }
+                | null
+                | undefined
+              parent = read?.run?.parentRunId ?? null
+            }
+            const listed = cloud.get(runId)
+            const system = found === undefined && listed?.repo === null && UNATTRIBUTED_RUN_KINDS[listed.kind] !== null
+            return { repoId: found, personal: undefined as boolean | undefined, system: system ? true : undefined }
+          }
+        /** Places again each read on Cloudflare: a list or repository row that arrived may name its root's repository. */
+        const placeAgain = effect {
+          for (const page of try pages.toArray) {
+            if (page.inspection === null || page.personal === true) continue
+            const owner = try attributed(page.id, page.inspection as Inspection, false)
+            // Only the attribution: a read on its way meanwhile keeps what it wrote.
+            if (owner.repoId !== page.repoId || owner.system !== page.system) {
+              try Effect.ignore(pages.update(page.id, (draft) => {
+                draft.repoId = owner.repoId
+                draft.system = owner.system
+              }))
+            }
+          }
+        }.pipe(Effect.orDie)
+        try Stream.mergeAll(
+          [Stream.map(cloudRuns.changes(), () => undefined), Stream.map(shownRepoRuns.changes(), () => undefined)],
+          { concurrency: "unbounded" },
+        ).pipe(Stream.runForEach(() => placeAgain), Effect.forkScoped({ startImmediately: true }))
+        /** `rows` as the repository authority allows them to show. */
+        const gated = <A extends object & { readonly repoId?: string | null | undefined }>(
+          rows: Source<A>,
+          by: By = "repoId",
+          also?: (row: Record<string, any>) => ReturnType<typeof Query.eq>,
+        ) => repos.gate(rows, by, also)
+        // A read with no content shows as it is: loading, not found, not started, unavailable.
+        // A read with no content (loading, not found, not started, unavailable) and a read from this device's own engine
+        // are no repository's: they show as they are. One query each, never a union (repo/gate.ts `gate`).
+        const shownPages = try gated(pages, "repoId", pageShowsAlone)
+        // A run on Cloudflare that names no repository shows only if its kind is a deployment's own (UNATTRIBUTED_RUN_KINDS).
+        const unattributed = Object.entries(UNATTRIBUTED_RUN_KINDS).flatMap(([kind, why]) => why === null ? [] : [kind])
+        const shownCloud = try gated(
+          cloudRuns as unknown as Source<CloudRun & { readonly repoId?: string }>,
+          "repo",
+          (run) => Query.and(Query.isNull(run.repo), anyOf(unattributed.map((kind) => Query.eq(run.kind, kind)))),
+        )
+        // A refused repository's run reads and Cloudflare rows go from this tab; their pages read again if it returns.
+        try repos.registerCache(["run-pages", "cloud-runs"], (id) => effect {
+          const reads = (try pages.toArray).filter((page) => page.repoId === id).map((page) => page.id)
+          if (reads.length > 0) try Effect.ignore(pages.delete(reads))
+          const listed = (try cloudRuns.toArray)
+            .filter((run) => run.repo !== null && `github/${run.repo}`.toLowerCase() === id).map((run) => run.runId)
+          if (listed.length > 0) try Effect.ignore(cloudRuns.delete(listed))
+        })
+
+        // The runs page's Run form: the repository's flows a person runs by hand, and the chosen one's form, read from
+        // ChatApi (docs/features/actions.md#running-a-flow-by-hand). This tab's only.
+        const form = try Collection.local<RepoRunForm, string>({
+          id: "repo-run-form",
+          schema: RepoRunForm,
+          getKey: (row) => row.id,
+          initialData: [{
+            id: FORM,
+            repo: null,
+            flows: [],
+            defaultBranch: null,
+            flow: null,
+            ref: null,
+            schema: null,
+            state: "idle",
+            refusal: null,
+            token: null,
+          }],
+        })
+        const setForm = (fields: Partial<Omit<RepoRunForm, "id">>) =>
+          form.update(FORM, (draft) => void Object.assign(draft, fields)).pipe(Effect.asVoid, Effect.orDie)
+        // The latest read wins: a slower answer for an earlier choice changes nothing.
+        const formGeneration = try Ref.make(0)
+        const nextGeneration = Ref.updateAndGet(formGeneration, (n) => n + 1)
+        const isLatest = (generation: number) => Effect.map(Ref.get(formGeneration), (n) => n === generation)
+        const loadRepoFlows = (repo: RepoName) =>
+          effect {
+            const generation = try nextGeneration
+            try setForm({
+              repo,
+              flows: [],
+              defaultBranch: null,
+              flow: null,
+              ref: null,
+              schema: null,
+              state: "loading",
+              refusal: null,
+              token: null,
+            })
+            // A visitor sees the form's Sign in without the 401 a request would log.
+            const read = try Effect.result(
+              whenSignedIn(remote.flows(repo), Effect.fail(new RepoRunsFailed({ code: "authentication" })), auth),
+            )
+            if (!(try isLatest(generation))) return
+            try (read._tag === "Success"
+              ? setForm({
+                flows: read.success.flows,
+                defaultBranch: read.success.defaultBranch,
+                ref: read.success.defaultBranch,
+                state: "ready",
+              })
+              : setForm({ state: "refused", refusal: read.failure.code ?? "unavailable" }))
+          }
+        const chooseRepoFlow = (flow: string) =>
+          effect {
+            const current = Option.getOrThrow(try form.get(FORM))
+            // A Run in flight keeps the form it was started from.
+            if (current.repo === null || current.ref === null || current.state === "starting") return
+            const generation = try nextGeneration
+            try setForm({ flow, schema: null, state: "loading", refusal: null })
+            const read = try Effect.result(remote.inputs(current.repo, flow, current.ref))
+            if (!(try isLatest(generation))) return
+            try (read._tag === "Success"
+              ? setForm({ schema: read.success.inputs, state: "ready" })
+              : setForm({ state: "refused", refusal: read.failure.code ?? "unavailable" }))
+          }
+
+        const opening = try Semaphore.make(1)
+        const opened = new Set<string>()
+        const repoRuns = new Map<string, { readonly evict: void!! }>()
+        const openRepoRuns = (owner: string, name: string, route?: RouteTiming) =>
+          Semaphore.withPermits(opening, 1)(effect {
+            try repos.refusalsKnown
+            const repo = `${owner}/${name}`.toLowerCase()
+            const attempt = route ?? (try timing.begin)
+            if (opened.has(repo)) return try attempt.record("repo-runs", "reused")
+            try attempt.record("repo-runs", "start")
+            const rows = try ElectricCollection.make<RepoRunRow>({
+              id: `repo-runs:${repo}`,
+              schema: RepoRunRow,
+              getKey: (row) => row.id,
+              syncMode: "eager",
+              persist: { schemaVersion: 1 },
+              shape: {
+                url: `${config.origin}${ACTIONS_SHAPE_ROUTE}?repo=${encodeURIComponent(repo)}`,
+                columnMapper: snakeCamel,
+              },
+            }).pipe(
+              Effect.provideService(
+                ShapeSource.ShapeSource,
+                memberRunSource(
+                  Option.isSome(auth)
+                    ? revokingSource(try ShapeSource.ShapeSource, auth.value, repos, repoId(owner, name))
+                    : try ShapeSource.ShapeSource,
+                  auth,
+                  Option.some(repos),
+                  repoId(owner, name),
+                ),
+              ),
+              Scope.provide(scope),
+              Effect.provideService(Persistence.Persistence, persistence),
+              Effect.orDie,
+            )
+            try attempt.record("repo-runs", "ready")
+            repoRuns.set(repoId(owner, name), rows)
+            if (Option.isSome(auth)) {
+              // A refusal drops the repository's runs from the device, and from what this tab shows of them.
+              try evictOnRefusal(
+                wipeAuthority(auth.value, repositoryAccessChanges(auth.value, repos, repoId(owner, name))),
+                [rows],
+              ).pipe(
+                Effect.forkIn(scope, { startImmediately: true }),
+              )
+            }
+            let firstRows = true
+            opened.add(repo)
+            try rows.changes({ initial: true }).pipe(
+              Stream.tap((batch) => effect {
+                if (!firstRows || batch.length === 0) return
+                firstRows = false
+                try attempt.record("repo-runs", "rows", batch.length)
+              }),
+              Stream.runForEach((batch) =>
+                Effect.forEach(batch, (change) =>
+                  change.type === "delete"
+                    ? Effect.asVoid(shownRepoRuns.delete(String(change.key)))
+                    : put(shownRepoRuns, change.value))
+              ),
+              Effect.orDie,
+              Effect.forkIn(scope, { startImmediately: true }),
+            )
+            // Loaded: the device's rows restored and the first sync answered, or failed. A slow shape leaves the list saying
+            // nothing rather than that the repository has no runs.
+            try effect {
+              try repoRunsSynced(rows)
+              try Effect.orDie(loadedRepoRuns.insert({ id: repoId(owner, name) }))
+              try attempt.record("repo-runs", "loaded", (try rows.toArray).length)
+            }.pipe(Effect.forkIn(scope, { startImmediately: true }))
+          })
+
+        try repos.registerCache(["repo-runs", "repo-runs-shown"], (id) => {
+          const [owner, name] = id.slice("github/".length).split("/") as [string, string]
+          return Effect.andThen(openRepoRuns(owner, name), Effect.suspend(() => repoRuns.get(id)?.evict ?? Effect.void))
+        })
+
+        return RunsStore.of({
+          scope,
+          steerRevision: try Ref.make(0),
+          steerNamespace: randomUUID(),
+          runs,
+          pages,
+          view,
+          page: try pageQuery(view, shownPages as unknown as Source<RunPage>),
+          shownPages: shownPages as unknown as Gated<RunPage>,
+          expandedPage: try expandedQuery(view, shownPages as unknown as Source<RunPage>),
+          viewRow: try viewQuery(view),
+          list: try runsQuery(runs),
+          cloudRuns,
+          cloudList: try cloudRunsQuery(shownCloud as unknown as Source<CloudRun>),
+          readCloud,
+          loadCloud: Effect.asVoid(Effect.forkIn(readCloud, scope, { startImmediately: true })),
+          repoRunList: try repoRunsQuery(try gated(shownRepoRuns)),
+          repoRunsLoaded: try repoRunsLoadedQuery(loadedRepoRuns),
+          openRepoRuns,
+          form,
+          formRow: try formQuery(form),
+          loadRepoFlows,
+          chooseRepoFlow,
+          setRunRef: (ref) => setForm({ ref }),
+          closeRepoRuns: setForm({ token: null }),
+          // Reads and live subscriptions belong to the store's scope, never the router's pending navigation.
+          loadRun: (runId, repo) =>
+            effect {
+              if (Option.isNone(try pages.get(runId))) {
+                try put(pages, { id: runId, state: "loading", inspection: null, more: [], hasMore: false })
+              }
+              if (repo !== null) {
+                try Effect.forkIn(openRepoRuns(repo.owner, repo.name, attempts.get(runId)), scope, {
+                  startImmediately: true,
+                })
+              }
+              try Effect.forkIn(readRun(runId), scope, { startImmediately: true })
+              try Effect.forkIn(follow(runId), scope, { startImmediately: true })
+            }.pipe(Effect.orDie),
+          beginRoute: (runId) => effect {
+            attempts.set(runId, try timing.begin)
+            try attempts.get(runId)!.record("page", "ready", (try pages.toArray).length)
+          },
+          rendered: (runId) => attempts.get(runId)?.rendered ?? Effect.void,
+          readRun,
+          readList,
+          warmList,
+          readMore,
+          follow: (runId) => follow(runId),
+          cloud: (runId) => Effect.sync(() => void cloudRoots.add(runId)),
+        })
+      },
+    )
+}
+
+/**
+ * A page's state from why its run couldn't be read: one no TODO started, or this person may not read, or this engine
+ * never held, is `not_found`; one on Cloudflare its TODO just started, `not_started`; anything else, `unavailable`.
+ */
+export const stateOf = (failure: unknown): "not_found" | "not_started" | "unavailable" => {
+  if (failure instanceof RemoteReadFailed) {
+    if (failure.code === "not_started") return "not_started"
+    return failure.status === 401 || failure.status === 403 || failure.status === 404 ? "not_found" : "unavailable"
+  }
+  return failure instanceof BrowserEngine.RequestRefused && failure.error === "@smthrs/engine-store/RunNotFound"
+    ? "not_found"
+    : "unavailable"
+}

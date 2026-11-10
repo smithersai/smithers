@@ -1,0 +1,45 @@
+import { ShapeSource } from "@smthrs/effect-electric"
+import type { AuthStore } from "../auth/store"
+import type { RepoStore } from "../repo/store"
+
+/** Repository flow runs require a Member, including on a public repository. No authority means no request. */
+export const memberRunSource = (
+  source: ShapeSource.Source,
+  auth: Option.Option<AuthStore["Service"]>,
+  repos: Option.Option<RepoStore["Service"]>,
+  id: string,
+): ShapeSource.Source =>
+  ShapeSource.gated(
+    source,
+    Option.isNone(auth) || Option.isNone(repos)
+      ? Stream.succeed(false)
+      : Stream.zipLatestWith(auth.value.sessionState.rows, repos.value.rolesState.rows, (sessions, roles) => {
+        const session = sessions[0]!
+        const row = roles.find((role) => role.id === id)
+        const role = row?.own ? session.role : row?.role
+        return session.status === "signed_in" && row?.synced !== false
+          && (role === "member" || role === "maintainer" || role === "admin")
+      }).pipe(Stream.changes),
+  )
+
+/** `read` once sign-in resolves to signed in, else `visitor`: a visitor's authenticated read would only log a 401. */
+export const whenSignedIn = <A, E, R, A2, E2, R2>(
+  read: A!E!R,
+  visitor: A2!E2!R2,
+  auth: Option.Option<AuthStore["Service"]>,
+): (A | A2)!(E | E2)!(R | R2) =>
+  Option.isNone(auth)
+    ? read
+    : auth.value.sessionState.rows.pipe(
+      Stream.filter((rows) => rows[0]!.status === "signed_in" || rows[0]!.status === "signed_out"),
+      Stream.runHead,
+      Effect.flatMap((rows): (A | A2)!(E | E2)!(R | R2) =>
+        Option.isSome(rows) && rows.value[0]!.status === "signed_in" ? read : visitor
+      ),
+    )
+
+/** Wait for sign-in to resolve before reading the authenticated cloud index. */
+export const cloudRunList = <A, E, R>(
+  read: ReadonlyArray<A>!E!R,
+  auth: Option.Option<AuthStore["Service"]>,
+): ReadonlyArray<A>!E!R => whenSignedIn(read, Effect.succeed([] as ReadonlyArray<A>), auth)

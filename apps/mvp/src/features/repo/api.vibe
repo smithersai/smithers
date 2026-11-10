@@ -1,0 +1,255 @@
+import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
+import { repoRoleRoute } from "../auth/contract"
+import { RepoRoleAnswer } from "../auth/schema"
+import { aboutRoute, blobRoute, LAUNCH_ROUTE, refsRoute, REPOS_ROUTE, treeRoute } from "./contract"
+import { About, CloneAccepted, CloneLaunched, RefusalBody, Refs, TreeListing } from "./schema"
+
+// RepoApi's routes as the browser calls them (docs/features/repo.md#routes), through Effect's HttpClient. Each request
+// has one deadline covering the whole exchange, its body included.
+
+/**
+ * RepoApi didn't answer as the contract says: no whole answer within the deadline, or no network (`status` absent), or
+ * a refusal (`status`, with RepoApi's `code`, for a file over the limit its `size`, and how long RepoApi asked to wait
+ * when it sent `Retry-After`), or a body outside the contract (`status` with no `code`).
+ */
+export error RepoRefused {
+  status?: number
+  code?: string
+  size?: number
+  retryAfterMillis?: number
+}
+
+/** How long the app gives RepoApi for one whole request: the tab's client and the engine worker's reads alike. */
+export const REQUEST_WITHIN = "15 seconds"
+
+/** A file's bytes as RepoApi answered them. */
+export interface Blob {
+  readonly bytes: Uint8Array
+}
+
+const decodeRefusal = Schema.decodeUnknownOption(Schema.fromJsonString(RefusalBody))
+
+/** `Retry-After` in delta-seconds, as milliseconds; RepoApi sends no other form. */
+const retryAfter = (value: string | undefined): { readonly retryAfterMillis?: number } =>
+  value !== undefined && /^\d+$/.test(value.trim()) ? { retryAfterMillis: Number(value.trim()) * 1000 } : {}
+
+/** A refusal from a non-2xx answer: its status, its `Retry-After`, and the `code` and `size` of its body. */
+const refusedBy = (response: HttpClientResponse.HttpClientResponse, status = response.status) =>
+  effect {
+    try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+    const body = decodeRefusal(try Effect.orElseSucceed(response.text, () => ""))
+    throw new RepoRefused({
+      status,
+      ...retryAfter(response.headers["retry-after"]),
+      ...Option.match(body, {
+        onNone: () => ({}),
+        onSome: ({ code, size }) => (size === undefined ? { code } : { code, size }),
+      }),
+    })
+  }
+
+/** Sends `request` and answers its response when `ok` says it's the one wanted; any other status is refused. */
+const exchange = <A, R>(
+  request: HttpClientRequest.HttpClientRequest,
+  within: Duration.Input,
+  ok: (status: number) => boolean,
+  read: (response: HttpClientResponse.HttpClientResponse) => A!RepoRefused!R,
+) =>
+  effect {
+    const client = try HttpClient.HttpClient
+    const response = try client.execute(request).pipe(Effect.mapError(() => new RepoRefused({})))
+    if (!ok(response.status)) return try refusedBy(response)
+    try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+    return try read(response)
+  }.pipe(
+    // Interrupting the request aborts its fetch, so a stalled body stops too.
+    Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new RepoRefused({})) }),
+  )
+
+/** Reads a JSON body with `schema`; a body outside it is refused with the response's status. */
+const json = <A>(schema: Schema.Codec<A, unknown>) => (response: HttpClientResponse.HttpClientResponse) =>
+  response.json.pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(schema)),
+    Effect.mapError(() => new RepoRefused({ status: response.status })),
+  )
+
+/**
+ * `POST /api/repos`: asks for a clone of `owner/name`, which RepoApi persists and answers at once. `202` a new attempt;
+ * `200` one is running or done. `postLaunch` starts it.
+ */
+export const postClone = (
+  origin: string,
+  repository: { readonly owner: string; readonly name: string },
+  within: Duration.Input,
+) =>
+  effect {
+    return try exchange(
+      HttpClientRequest.post(`${origin}${REPOS_ROUTE}`).pipe(HttpClientRequest.bodyJsonUnsafe(repository)),
+      within,
+      (status) => status === 200 || status === 202,
+      json(CloneAccepted),
+    )
+  } |> withSpan(%, "repo.clone.post")
+
+/** `POST /api/repos/launch`: starts the clone attempt `cloneId` a request persisted. `202` launched; `200` it settled. */
+export const postLaunch = (
+  origin: string,
+  attempt: { readonly owner: string; readonly name: string; readonly cloneId: string },
+  within: Duration.Input,
+) =>
+  effect {
+    return try exchange(
+      HttpClientRequest.post(`${origin}${LAUNCH_ROUTE}`).pipe(HttpClientRequest.bodyJsonUnsafe(attempt)),
+      within,
+      (status) => status === 200 || status === 202,
+      json(CloneLaunched),
+    )
+  } |> withSpan(%, "repo.clone.launch.post")
+
+/** `GET /api/repos/<owner>/<name>/tree/<sha>`: every file's path at `sha`. */
+export const getTree = (
+  origin: string,
+  repository: { readonly owner: string; readonly name: string; readonly sha: string },
+  within: Duration.Input,
+) =>
+  effect {
+    return try exchange(
+      HttpClientRequest.get(
+        `${origin}${try Effect.orDie(
+          Effect.try({ try: () => treeRoute(repository.owner, repository.name, repository.sha), catch: (e) => e }),
+        )}`,
+      ),
+      within,
+      (status) => status === 200,
+      json(TreeListing),
+    )
+  } |> withSpan(%, "repo.tree.get")
+
+/** `GET /api/repos/<owner>/<name>/blob/<sha>/<path>`: a file's bytes at `sha`. */
+export const getBlob = (
+  origin: string,
+  file: { readonly owner: string; readonly name: string; readonly sha: string; readonly path: string },
+  within: Duration.Input,
+) =>
+  effect {
+    return try exchange(
+      HttpClientRequest.get(
+        `${origin}${try Effect.orDie(
+          Effect.try({ try: () => blobRoute(file.owner, file.name, file.sha, file.path), catch: (e) => e }),
+        )}?optional=true`,
+      ),
+      within,
+      (status) => status === 200 || status === 204,
+      (response) =>
+        response.headers["x-file-state"] === "too_large"
+          ? refusedBy(response, 413)
+          // Keep the file-state contract while absence travels as a successful HTTP response.
+          : response.status === 204
+          ? Effect.fail(new RepoRefused({ status: 404, code: "not_found" }))
+          : response.arrayBuffer.pipe(
+            Effect.map((buffer): Blob => ({ bytes: new Uint8Array(buffer) })),
+            Effect.mapError(() => new RepoRefused({ status: response.status })),
+          ),
+    )
+  } |> withSpan(%, "repo.blob.get")
+
+/** `GET /api/repos/<owner>/<name>/refs`: the default branch, its head, and every branch and tag. */
+export const getRefs = (
+  origin: string,
+  repository: { readonly owner: string; readonly name: string },
+  within: Duration.Input,
+) =>
+  effect {
+    return try exchange(
+      HttpClientRequest.get(
+        `${origin}${try Effect.orDie(
+          Effect.try({ try: () => refsRoute(repository.owner, repository.name), catch: (e) => e }),
+        )}`,
+      ),
+      within,
+      (status) => status === 200 || status === 204,
+      (response) =>
+        response.status === 204
+          ? Effect.fail(new RepoRefused({ status: 404, code: "not_found" }))
+          : json(Refs)(response),
+    )
+  } |> withSpan(%, "repo.refs.get")
+
+/** `GET /api/repos/<owner>/<name>/about`: what GitHub says of the repository, cloned or not. */
+export const getAbout = (
+  origin: string,
+  repository: { readonly owner: string; readonly name: string },
+  within: Duration.Input,
+) =>
+  effect {
+    return try exchange(
+      HttpClientRequest.get(
+        `${origin}${try Effect.orDie(
+          Effect.try({ try: () => aboutRoute(repository.owner, repository.name), catch: (e) => e }),
+        )}`,
+      ),
+      within,
+      (status) => status === 200,
+      json(About),
+    )
+  } |> withSpan(%, "repo.about.get")
+
+/**
+ * `GET /api/repos/<owner>/<name>/role`: the person's role on the repository and whether it is the deployment's own
+ * (decision 0079, worker/home/Api.ts).
+ */
+export const getRole = (
+  origin: string,
+  repository: { readonly owner: string; readonly name: string },
+  within: Duration.Input,
+) =>
+  effect {
+    return try exchange(
+      HttpClientRequest.get(
+        `${origin}${try Effect.orDie(
+          Effect.try({ try: () => repoRoleRoute(repository.owner, repository.name), catch: (e) => e }),
+        )}`,
+      ),
+      within,
+      (status) => status === 200,
+      json(RepoRoleAnswer),
+    )
+  } |> withSpan(%, "repo.role.get")
+
+/**
+ * RepoApi's client, as a service: the one way the browser asks for a clone and reads a repository. Tests of a RepoApi
+ * that fails provide a faulty one; every other test uses the real one.
+ */
+export class RepoClient extends Context.Service<
+  RepoClient,
+  {
+    readonly clone: (owner: string, name: string) => CloneAccepted!RepoRefused
+    readonly launch: (owner: string, name: string, cloneId: string) => CloneLaunched!RepoRefused
+    readonly tree: (owner: string, name: string, sha: string) => TreeListing!RepoRefused
+    readonly blob: (owner: string, name: string, sha: string, path: string) => Blob!RepoRefused
+    readonly refs: (owner: string, name: string) => Refs!RepoRefused
+    readonly about: (owner: string, name: string) => About!RepoRefused
+    /** Who the person is on the repository: their role there, and whether it is the deployment's own. */
+    readonly role: (owner: string, name: string) => RepoRoleAnswer!RepoRefused
+  }
+>()("@smthrs/mvp/repo/RepoClient") {
+  /** The real client: RepoApi at `origin`, with `within` for each whole request. */
+  static readonly layer = (options: { readonly origin: string; readonly within: Duration.Input }) =>
+    Layer.effect(
+      RepoClient,
+      Effect.map(HttpClient.HttpClient, (client) => {
+        const withClient = Effect.provideService(HttpClient.HttpClient, client)
+        return RepoClient.of({
+          clone: (owner, name) => withClient(postClone(options.origin, { owner, name }, options.within)),
+          launch: (owner, name, cloneId) =>
+            withClient(postLaunch(options.origin, { owner, name, cloneId }, options.within)),
+          tree: (owner, name, sha) => withClient(getTree(options.origin, { owner, name, sha }, options.within)),
+          blob: (owner, name, sha, path) =>
+            withClient(getBlob(options.origin, { owner, name, sha, path }, options.within)),
+          refs: (owner, name) => withClient(getRefs(options.origin, { owner, name }, options.within)),
+          about: (owner, name) => withClient(getAbout(options.origin, { owner, name }, options.within)),
+          role: (owner, name) => withClient(getRole(options.origin, { owner, name }, options.within)),
+        })
+      }),
+    )
+}

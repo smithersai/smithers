@@ -1,0 +1,496 @@
+import { Uuid } from "@smthrs/crypto"
+import { FlowRuntime, Interpreter } from "@smthrs/flow"
+import { EngineStore } from "@smthrs/flows"
+import { codeOf } from "../../errorCode"
+import { asker } from "../../flows/askingTab"
+import { RunCredentials } from "../../flows/credentials"
+import { declarationOf as declared } from "../../flows/declarations"
+import type { Door } from "../../flows/dispatch"
+import { type FlowName, names } from "../../flows/registry"
+import { closeAnswer } from "../agent/close"
+import { AnswerReference } from "../agent/reference"
+import { FLOW_CODE } from "../flows-ui/reference"
+import { requesterOf } from "../../flows/requests"
+import {
+  listed,
+  RUN_LIST_LIMIT,
+  retriedRunId,
+  runsChannel,
+  settled,
+  STEER_ID_NAMESPACE,
+  STEER_QUEUE_WITHIN,
+  REPO_RUN_ID_NAMESPACE,
+} from "./contract"
+import {
+  Cancel,
+  CancelRun,
+  CancelPending,
+  Inspect,
+  InspectRun,
+  List,
+  ListRuns,
+  QueueSteer,
+  Resume,
+  ResumeRun,
+  Retry,
+  RetryFrom,
+  RetryFromRun,
+  RetryRun,
+  RepoRun,
+  RepoRunRefused,
+  RunActRefused,
+  StartRepoRun,
+  Steer,
+  SteerStepRefused,
+} from "./flows"
+import { RemoteRunsClient } from "./api"
+import { steersQueued } from "./metrics"
+import { type RepoName, type RunsCall, SteerKept } from "./schema"
+import { RUNS_REFUSALS } from "../actions/contract"
+import { retryable } from "./retry"
+import { startRoot } from "./start"
+
+// What the acts on runs and the run reads do (decision 0014 §2 and §6, docs/features/runs.md#acts): each reads the run
+// through the engine's own `RunInspection` (`@smthrs/engine-store`, which the browser engine provides to every flow it
+// registers) and acts through its `FlowRuntime`. Only an engine's host imports this module.
+
+/** Acts on runs, by `act` (`cancel`, `retry`, `retry_from`, `resume`), `host` and `outcome`. */
+export const acts = Metric.counter("smithers_run_acts", {
+  description: "Acts on runs, by act, host and outcome",
+  incremental: true,
+})
+
+type Act = "cancel" | "retry" | "retry_from" | "resume"
+
+/** Records an act: `run.act` with its outcome, and its count. Ids and codes only. */
+const recordAct = (act: Act, runId: string, outcome: string, host: "local" | "remote" = "local") =>
+  Effect.andThen(
+    Metric.update(Metric.withAttributes(acts, { act, host, outcome }), 1),
+    Effect.logWithLevel(
+      outcome === "requested" || outcome === "retried" || outcome === "resumed" || outcome === "settled"
+        ? "Info"
+        : "Warn",
+    )("run.act").pipe(Effect.annotateLogs({ feature: "runs", act, runId, outcome, host })),
+  )
+
+/** Refuses `act` on `runId` with `code`, recorded. */
+const refuse = (act: Act, runId: string, code: RunActRefused["code"]) =>
+  Effect.andThen(recordAct(act, runId, code), Effect.fail(new RunActRefused({ code })))
+
+/** The run's summary, or `not_found`. */
+const summaryOf = (act: Act | undefined, runId: string) =>
+  effect {
+    const inspection = try EngineStore.RunInspection.RunInspection
+    const read = try inspection.inspect(runId, { limit: 1 }).pipe(
+      Effect.map(Option.some),
+      // expected: a run the engine never held answers not_found, which the act refuses and records below
+      Effect.catchTag("@smthrs/engine-store/RunNotFound", () => Effect.succeed(Option.none())),
+      // A store that can't be read fails the act's step: the person's page says the engine couldn't be reached.
+      Effect.orDie,
+    )
+    if (Option.isSome(read)) return read.value
+    return try (act === undefined
+      ? Effect.fail(new RunActRefused({ code: "not_found" }))
+      : refuse(act, runId, "not_found"))
+  }
+
+/** The declaration this engine runs `flow` with, or none. */
+const declarationOf = (flow: string) =>
+  (names as ReadonlyArray<string>).includes(flow) ? declared(flow as FlowName) : undefined
+
+/**
+ * Stop on a repository's run on Cloudflare: ChatApi's stop route, which its Durable Object answers
+ * (docs/features/actions.md#acts), or a TODO's external agent (docs/features/runs.md#stopping-a-todos-agent). A refusal
+ * for who asks is `forbidden`, one for the run `not_found`, an agent that isn't working `settled`; a route that couldn't
+ * answer fails the step, and the page says the engine couldn't be reached.
+ */
+const cancelCloud = (runId: string) =>
+  effect {
+    const answer = try Effect.result((try RemoteRunsClient).stop(runId))
+    if (answer._tag === "Success") {
+      try recordAct("cancel", runId, answer.success.outcome, "remote")
+      return { outcome: answer.success.outcome }
+    }
+    const { status } = answer.failure
+    if (status === 401 || status === 403) {
+      return try Effect.andThen(
+        recordAct("cancel", runId, "forbidden", "remote"),
+        new RunActRefused({ code: "forbidden" }),
+      )
+    }
+    if (status === 404) {
+      return try Effect.andThen(
+        recordAct("cancel", runId, "not_found", "remote"),
+        new RunActRefused({ code: "not_found" }),
+      )
+    }
+    // A TODO's external agent that isn't working any more: it ended.
+    if (status === 409) {
+      return try Effect.andThen(
+        recordAct("cancel", runId, "settled", "remote"),
+        new RunActRefused({ code: "settled" }),
+      )
+    }
+    try recordAct("cancel", runId, "unavailable", "remote")
+    return try Effect.die(answer.failure)
+  }
+
+/**
+ * `run/cancel/request`: Stop. A settled run answers its status; a fence from the future is stale. A run on Cloudflare
+ * (`host: "cloud"`) is stopped there.
+ */
+export const cancel = (
+  { runId, seq, host }: { readonly runId: string; readonly seq: number; readonly host?: "cloud" },
+) =>
+  effect {
+    if (host === "cloud") return try cancelCloud(runId)
+    const { run } = try summaryOf("cancel", runId)
+    if (settled(run.status)) {
+      if (run.flowName === AnswerReference._tag) try closeAnswer({ answerId: runId })
+      try recordAct("cancel", runId, "settled")
+      return { outcome: "settled" as const, status: run.status }
+    }
+    if (seq > run.lastSeq) return try refuse("cancel", runId, "stale")
+    const flow = declarationOf(run.flowName)
+    if (flow === undefined) return try refuse("cancel", runId, "not_here")
+    // A cancellation the store couldn't record leaves the run going: the step fails, and the person sees it.
+    try Effect.orDie((try FlowRuntime.FlowRuntime).interrupt(flow, runId))
+    try recordAct("cancel", runId, "requested")
+    if (run.flowName === AnswerReference._tag) {
+      // The flow engine retries this durable step while cleanup is pending. Only its real terminal receipt allows
+      // settlement, including after reload or from a run page that never opened the branch conversation.
+      throw new CancelPending()
+    }
+    return { outcome: "requested" as const, status: run.status }
+  }
+
+/** `run/resume/drive`: Resume. Only a run that hasn't settled and hasn't moved since the page read it. */
+export const resume = ({ runId, seq }: { readonly runId: string; readonly seq: number }) =>
+  effect {
+    const { run } = try summaryOf("resume", runId)
+    if (settled(run.status)) return try refuse("resume", runId, "settled")
+    if (seq !== run.lastSeq) return try refuse("resume", runId, "stale")
+    const flow = declarationOf(run.flowName)
+    if (flow === undefined) return try refuse("resume", runId, "not_here")
+    try (try FlowRuntime.FlowRuntime).resume(flow, runId)
+    try recordAct("resume", runId, "resumed")
+    return { resumed: true }
+  }
+
+/** A stored payload with what `version` asks: `current` drops the revision a person's flow pinned. */
+export const versioned = (flow: string, payload: unknown, version: "pinned" | "current"): unknown => {
+  if (version === "pinned" || flow !== "flow/run" || typeof payload !== "object" || payload === null) return payload
+  // The latest: neither the revision nor the flow it ran.
+  const { revision: _revision, flowId: _flowId, ...rest } = payload as Record<string, unknown>
+  return rest
+}
+
+/**
+ * The child of a `flow/run` whose payload holds the revision its load pinned: `flow/run/code`, which runs that revision's
+ * code, or `flow/run/prompt` in a run recorded before code ran in the realm, whose history stays readable.
+ */
+const PINNED_CHILDREN: ReadonlyArray<string> = [FLOW_CODE, "flow/run/prompt"]
+
+/**
+ * What a run of your flow (`flow/run`) ran: the flow id and revision its load pinned, as its pinned child's payload holds
+ * them, or none when it never got that far. A pinned Retry runs exactly those, even when the run named no revision or the
+ * flow's name went to another flow since.
+ */
+const ranRevision = (children: ReadonlyArray<{ readonly runId: string; readonly flowName: string }>) =>
+  effect {
+    const child = children.find((each) => PINNED_CHILDREN.includes(each.flowName))
+    if (child === undefined) return undefined
+    const read = try Effect.result((try EngineStore.RunInspection.RunInspection).payload(child.runId))
+    if (read._tag === "Failure") {
+      // The pinned child's payload couldn't be read, so the retry runs the run's own payload, without the revision.
+      try Effect.logWarning("run.retry.revision").pipe(
+        Effect.annotateLogs({ feature: "runs", outcome: "unread", errorCode: codeOf(read.failure) }),
+      )
+      return undefined
+    }
+    const { flowId, revision } = read.success.payload as { readonly flowId?: unknown; readonly revision?: unknown }
+    return typeof flowId === "string" && typeof revision === "number" ? { flowId, revision } : undefined
+  }
+
+/** The run id a repository's run started by step `executionId` gets: the same for a step run again. */
+const startIdOf = (executionId: string) => Uuid.v5(REPO_RUN_ID_NAMESPACE, executionId).pipe(Effect.orDie)
+
+/** `owner/name` as a repository. */
+const repoOf = (path: string): RepoName => {
+  const [owner, name] = path.split("/") as [string, string]
+  return { owner, name }
+}
+
+/**
+ * Retry on a repository's run on Cloudflare: ChatApi's runs route starts its flow again at its commit, every job or
+ * only those that didn't pass (docs/features/actions.md#acts). A refusal for who asks is `forbidden`; for the run,
+ * `not_found`, `not_settled` or `nothing_failed`; a route that couldn't answer fails the step.
+ */
+const retryCloud = (runId: string, repo: string, failed: boolean) =>
+  effect {
+    const id = try startIdOf((try FlowRuntime.FlowInstance).executionId)
+    const answer = try Effect.result((try RemoteRunsClient).start(repoOf(repo), { id, retryOf: runId, failed }))
+    if (answer._tag === "Success") {
+      try recordAct("retry", runId, "retried", "remote")
+      return answer.success
+    }
+    const { code, status } = answer.failure
+    const refusal = status === 401 || status === 403
+      ? "forbidden" as const
+      : code === "not_settled" || code === "nothing_failed"
+      ? code
+      : status === 404 || status === 409
+      ? "not_found" as const
+      : undefined
+    try recordAct("retry", runId, refusal ?? "unavailable", "remote")
+    if (refusal === undefined) return try Effect.die(answer.failure)
+    throw new RunActRefused({ code: refusal })
+  }
+
+/** Starts of a repository's flow by hand from this device, by `outcome`. */
+export const repoRunStarts = Metric.counter("smithers_repo_run_requests", {
+  description: "repo/run starts of a repository's flow by hand, by outcome",
+  incremental: true,
+})
+
+/**
+ * `repo/run/start`: ChatApi starts a repository's flow by hand under an id derived from this step's run, so the step
+ * run again starts nothing new. Records `repo.run.start` with its outcome, never an input.
+ */
+export const startRepoRun = (payload: {
+  readonly repo: string
+  readonly flow: string
+  readonly ref: string
+  readonly input?: Readonly<Record<string, string | number | boolean>>
+}) =>
+  effect {
+    const id = try startIdOf((try FlowRuntime.FlowInstance).executionId)
+    const answer = try Effect.result((try RemoteRunsClient).start(repoOf(payload.repo), {
+      id,
+      flow: payload.flow,
+      ref: payload.ref,
+      ...(payload.input === undefined ? {} : { input: payload.input }),
+    }))
+    const outcome = answer._tag === "Success" ? "started" : answer.failure.code ?? "unavailable"
+    try Metric.update(Metric.withAttributes(repoRunStarts, { outcome }), 1)
+    try Effect.logWithLevel(answer._tag === "Success" ? "Info" : "Warn")("repo.run.start").pipe(
+      Effect.annotateLogs({ feature: "runs", flow: payload.flow, outcome }),
+    )
+    if (answer._tag === "Success") return answer.success
+    const code = answer.failure.code
+    const known = code !== undefined && (RUNS_REFUSALS as ReadonlyArray<string>).includes(code)
+    // A refusal is the run's answer; no answer at all fails the step.
+    if (!known || code === "unavailable") return try Effect.die(answer.failure)
+    throw new RepoRunRefused({ code: code as RepoRunRefused["code"] })
+  }.pipe(Effect.withSpan("repo.run.start"))
+
+/**
+ * `run/retry/start`: Retry. A settled run of a retryable flow, again, as a new run of its own. A repository's run on
+ * Cloudflare (`host: "cloud"`) runs again there.
+ */
+export const retry = ({ failed, host, repo, runId, version }: {
+  readonly runId: string
+  readonly version: "pinned" | "current"
+  readonly host?: "cloud"
+  readonly repo?: string
+  readonly failed?: boolean
+}) =>
+  effect {
+    if (host === "cloud") {
+      if (repo === undefined) return try refuse("retry", runId, "not_found")
+      return try retryCloud(runId, repo, failed === true)
+    }
+    const { run, children } = try summaryOf("retry", runId)
+    if (!settled(run.status)) return try refuse("retry", runId, "not_settled")
+    if (!retryable(run.flowName)) return try refuse("retry", runId, "not_retryable")
+    // A retryable flow is a registered one, so this engine runs it.
+    const flow = declared(run.flowName as FlowName)
+    // The run was read a moment ago: a store that can't read it now is a defect, not an answer.
+    const stored = try Effect.orDie((try EngineStore.RunInspection.RunInspection).payload(runId))
+    const ran = version === "pinned" && run.flowName === "flow/run" ? try ranRevision(children) : undefined
+    const original = ran === undefined ? stored.payload : { ...(stored.payload as object), ...ran }
+    // The engine stored the payload encoded by the flow's own schema; a registered flow's schema needs no service.
+    const codec = Schema.toCodecJson(flow.payloadSchema) as unknown as Schema.Codec<unknown, unknown>
+    const payload = try Schema.decodeUnknownEffect(codec)(versioned(run.flowName, original, version)).pipe(
+      Effect.catch(() => refuse("retry", runId, "not_retryable")),
+    )
+    const instance = try FlowRuntime.FlowInstance
+    const retried = retriedRunId(instance.executionId)
+    try startRoot(flow, retried, payload)
+    try recordAct("retry", runId, "retried")
+    return { runId: retried }
+  }
+
+/** What Retry from here answers for each of the engine's refusals (`FlowRuntime.RetryFromRefused`). */
+const retryFromRefusals: Readonly<Record<FlowRuntime.RetryFromRefusalCode, RunActRefused["code"]>> = {
+  unsupported: "not_here",
+  not_found: "not_found",
+  other_flow: "not_here",
+  not_settled: "not_settled",
+  step_not_found: "step_not_run",
+  step_not_run: "step_not_run",
+}
+
+/**
+ * `run/retry/from/start`: Retry from here (ruling FLOW-11). A settled run of a retryable flow, again as a new run of its
+ * own, from its step `step`: the engine replays every step that finished before `step` began, with the run's own
+ * input, and runs `step` and everything after it (`FlowRuntime.retryFrom`). A person's flow replays its load, so the
+ * new run follows the revision the run pinned. The new run is `<act>/run`, so the act run again starts nothing new.
+ */
+export const retryFrom = ({ runId, step }: { readonly runId: string; readonly step: string }) =>
+  effect {
+    const { run } = try summaryOf("retry_from", runId)
+    if (!settled(run.status)) return try refuse("retry_from", runId, "not_settled")
+    if (!retryable(run.flowName)) return try refuse("retry_from", runId, "not_retryable")
+    const runtime = try FlowRuntime.FlowRuntime
+    if (runtime.retryFrom === undefined) return try refuse("retry_from", runId, "not_here")
+    const retried = retriedRunId((try FlowRuntime.FlowInstance).executionId)
+    // A retryable flow is a registered one, so this engine runs it.
+    try runtime.retryFrom(declared(run.flowName as FlowName), { source: runId, step, executionId: retried }).pipe(
+      Effect.catchTag(
+        "@smthrs/flow/FlowRuntime/RetryFromRefused",
+        (refused) => refuse("retry_from", runId, retryFromRefusals[refused.code]),
+      ),
+    )
+    try recordAct("retry_from", runId, "retried")
+    return { runId: retried }
+  }
+
+/** `run/list/read`: the newest runs a person lists, acts on runs left out. */
+export const list = () =>
+  effect {
+    // A store that can't be read fails the read: the agent hears it failed, never an empty list.
+    const inspection = try EngineStore.RunInspection.RunInspection
+    const runs: Array<EngineStore.RunInspection.RunList["runs"][number]> = []
+    let cursor: string | undefined
+    do {
+      const page = try Effect.orDie(
+        inspection.list({ limit: RUN_LIST_LIMIT, ...(cursor === undefined ? {} : { cursor }) }),
+      )
+      runs.push(...page.runs.filter((run) => listed(run.flowName)))
+      cursor = page.cursor ?? undefined
+    } while (runs.length < RUN_LIST_LIMIT && cursor !== undefined)
+    return {
+      runs: runs.slice(0, RUN_LIST_LIMIT).map((run) => ({
+        runId: run.runId,
+        flow: run.flowName,
+        status: run.status,
+        createdAtMs: run.createdAtMs,
+        finishedAtMs: run.finishedAtMs,
+        seq: run.lastSeq,
+      })),
+    }
+  }
+
+/** `run/inspect/read`: one run, compact: its steps by action, and its result's text. */
+export const inspect = ({ runId }: { readonly runId: string }) =>
+  effect {
+    const { run, steps } = try summaryOf(undefined, runId)
+    return {
+      runId: run.runId,
+      flow: run.flowName,
+      status: run.status,
+      seq: run.lastSeq,
+      steps: steps.map((step) => ({ nodeId: step.nodeId, action: step.action, status: step.status })),
+      result: run.result?.text ?? null,
+    }
+  }
+
+/** The tabs of this browser, as a steer step reaches them: only the tab that started a request answers. */
+export class TabRuns extends Context.Service<
+  TabRuns,
+  {
+    /** Asks the tab that started `requester` to queue `call`'s message; none when no tab answered within the wait. */
+    readonly ask: (
+      call: { readonly requester: string; readonly call: RunsCall },
+    ) => Option.Option<{ readonly door: Door; readonly kept: boolean }>!!
+  }
+>()("@smthrs/mvp/runs/TabRuns") {
+  /** Over the runs channel of engine `name` (`TabChannel`), waiting `within` (`STEER_QUEUE_WITHIN` unless set). */
+  static readonly layerChannel = (options: { readonly name: string; readonly within?: Duration.Input }) =>
+    Layer.effect(
+      TabRuns,
+      effect {
+        const ask = try asker<RunsCall, typeof SteerKept>({
+          channel: runsChannel(options.name),
+          output: SteerKept,
+          within: options.within ?? STEER_QUEUE_WITHIN,
+        })
+        return TabRuns.of({
+          ask: ({ requester, call }) =>
+            ask(requester, call).pipe(Effect.map(Option.map(({ door, output }) => ({ door, kept: output.kept })))),
+        })
+      },
+    )
+}
+
+/**
+ * What `run/steer/queue` does (docs/features/runs.md#steering): derive the message's id from the run, so a step run
+ * again names the same message, and ask the tab that started the run, the person's or the one whose agent asked, to put
+ * it in the device's outbox; answer `requested`. A run that isn't the person's own press, the agent's call among them,
+ * hands the tab its run credential with the message, so ChatApi reads who sent it from that (decision 0017 slice 0).
+ * Records a span `runs.steer.queue`, a log line and a count of `steersQueued` by door and outcome, never the message. A
+ * tab gone, an outbox that wouldn't take it, or a run with no credential to send fails `SteerStepRefused`.
+ */
+export const queueSteer = (payload: { readonly runId: string; readonly body: string }) =>
+  effect {
+    const startedAt = try Clock.currentTimeMillis
+    const { executionId } = try FlowRuntime.FlowInstance
+    const requester = requesterOf(executionId)
+    const via = executionId !== requester ? "agent" : "person"
+    const steerId = try Uuid.v5(STEER_ID_NAMESPACE, executionId).pipe(Effect.orDie)
+    const credential = try Effect.result((try RunCredentials).bearer)
+    // A run that has no credential to send queues nothing: its message never goes in the person's session.
+    const reply = credential._tag === "Failure" ? Option.none() : try (try TabRuns).ask({
+      requester,
+      call: {
+        kind: "steer",
+        steer: {
+          id: steerId,
+          runId: payload.runId,
+          body: payload.body,
+          ...(Option.isSome(credential.success) ? { credential: credential.success.value } : {}),
+        },
+      },
+    })
+    const door: Door | "unknown" = via === "agent"
+      ? "agent"
+      : Option.match(reply, { onNone: () => "unknown" as const, onSome: (answered) => answered.door })
+    const outcome = credential._tag === "Failure"
+      ? "no_credential" as const
+      : Option.isNone(reply)
+      ? "tab_gone" as const
+      : reply.value.kept
+      ? "kept" as const
+      : "not_kept" as const
+    try Metric.update(Metric.withAttributes(steersQueued, { door, outcome }), 1)
+    try Effect.annotateCurrentSpan({ steerId, runId: payload.runId, via, door, outcome })
+    try Effect.logWithLevel(outcome === "kept" ? "Info" : "Warn")("runs.steer.queue").pipe(
+      Effect.annotateLogs({
+        steerId,
+        runId: payload.runId,
+        via,
+        door,
+        outcome,
+        durationMs: (try Clock.currentTimeMillis) - startedAt,
+        feature: "runs",
+      }),
+    )
+    if (outcome !== "kept") throw new SteerStepRefused({ reason: outcome })
+    return { steerId, status: "requested" as const }
+  }.pipe(Effect.withSpan("runs.steer.queue"))
+
+/**
+ * The acts and reads, registered with their steps, and `run/steer` asking through the host's `TabRuns`. Needs the
+ * engine's `FlowRuntime` and `RunInspection`.
+ */
+export const registration = Layer.mergeAll(
+  Interpreter.layerWithImplementations(Steer, QueueSteer.toLayer(queueSteer)),
+  Interpreter.layerWithImplementations(Cancel, CancelRun.toLayer(cancel)),
+  Interpreter.layerWithImplementations(Retry, RetryRun.toLayer(retry)),
+  Interpreter.layerWithImplementations(RetryFrom, RetryFromRun.toLayer(retryFrom)),
+  Interpreter.layerWithImplementations(Resume, ResumeRun.toLayer(resume)),
+  Interpreter.layerWithImplementations(List, ListRuns.toLayer(list)),
+  Interpreter.layerWithImplementations(Inspect, InspectRun.toLayer(inspect)),
+  Interpreter.layerWithImplementations(RepoRun, StartRepoRun.toLayer(startRepoRun)),
+)

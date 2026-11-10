@@ -1,0 +1,149 @@
+import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
+import { held, OutboxWrites } from "../../outbox"
+import { RemoteRunsClient } from "./api"
+import { STEER_FINAL, STEER_REFUSALS, type SteerRefusal } from "./contract"
+import { steerSends } from "./metrics"
+import { type SteerSending, SteerSending as SendingRow, type SteerSent, SteerSent as SentRow } from "./schema"
+
+// Steers in the device's one outbox (docs/features/runs.md#steering, decision 0002 §3). A `run/steer` step's tab puts the
+// message in the outbox (steers.ts `queue`); the outbox stores it, then sends it through the `run-steer` mutation here,
+// to ChatApi's steer route, with the library's backoff, across reloads, from whichever tab leads. Once the route takes
+// it, the message is Sent on this device until the run's journal shows it; a refusal keeps it Not sent, with why, on the
+// device (`steer-sent`), so a reload or another tab still shows the words it couldn't send.
+
+/** The outbox's names for steers: the collection of their optimistic rows, and the mutation that sends them. */
+export const STEER_SENDING = "steer-sending"
+export const RUN_STEER = "run-steer"
+
+/**
+ * Steers on this device:
+ * - `sending`: messages the outbox holds, as the optimistic rows of their outbox writes; in memory, restored by the
+ *   outbox;
+ * - `sent`: messages the route took (`sent`) or refused (`not_sent`), kept on the device.
+ */
+export class SteerWrites extends Context.Service<
+  SteerWrites,
+  {
+    readonly sending: Collection.Collection<SteerSending, string>
+    readonly sent: Collection.Collection<SteerSent, string>
+  }
+>()("@smthrs/mvp/runs/SteerWrites") {
+  /**
+   * The collections, and the outbox's `run-steer` mutation, sending through `RemoteRunsClient` with the services this
+   * layer was built with, added to the writes below it (`OutboxWrites.adding`). Built below chat's store, which builds
+   * the outbox.
+   */
+  static readonly layer = Layer.effectContext(
+    effect {
+      const sending = try Collection.local<SteerSending, string>({
+        id: STEER_SENDING,
+        schema: SendingRow,
+        getKey: (row) => row.id,
+      })
+      const sent = try Collection.persisted<SteerSent, string>({
+        id: "steer-sent",
+        schema: SentRow,
+        getKey: (row) => row.id,
+        schemaVersion: 1,
+      })
+      const context = try Effect.context<RemoteRunsClient>()
+      const mutation: Outbox.Mutation<never> = (params) => send(sent, params).pipe(Effect.provideContext(context))
+      const writes = try OutboxWrites.adding({
+        collections: { [STEER_SENDING]: sending },
+        mutations: { [RUN_STEER]: mutation },
+        orderingKeys: { [RUN_STEER]: (rows) => (rows as ReadonlyArray<SteerSending>).map((row) => `run:${row.runId}`) },
+      })
+      return Context.make(SteerWrites, SteerWrites.of({ sending, sent })).pipe(Context.add(OutboxWrites, writes))
+    },
+  )
+}
+
+/**
+ * Keeps `row` on the device as `status`, with `reason` when Not sent: inserted, or, when a send replayed after a crash
+ * finds it there, its status replaced. Never its credential. The send settles only once the device stored it: a store
+ * that fails sends it again (`Outbox.Retry`), and the route answers a repeated id as it did.
+ */
+export const keep = (
+  sent: Collection.Collection<SteerSent, string>,
+  row: SteerSending,
+  status: SteerSent["status"],
+  reason: SteerRefusal | null,
+) =>
+  effect {
+    const { id, runId, body, queuedAt } = row
+    const kept = try (Option.isNone(try sent.get(row.id))
+      ? sent.insert({ id, runId, body, queuedAt, status, reason })
+      : sent.update(row.id, (draft) => {
+        draft.status = status
+        draft.reason = reason
+      })).pipe(Effect.orDie)
+    try kept.persisted.pipe(Effect.mapError(() => new Outbox.Retry({})))
+  }
+
+/**
+ * Why the route refused a steer for good: the code its body names when it is one, else its status. Anything else (no
+ * answer, a deadline, 429 full, 5xx) is sent again.
+ */
+export const finalReasonOf = (status: number | undefined, code: string | undefined): SteerRefusal | undefined => {
+  const named = (STEER_REFUSALS as ReadonlyArray<string>).includes(code ?? "") ? (code as SteerRefusal) : undefined
+  const reason = named ?? (status === 400
+    ? "invalid"
+    : status === 401
+    ? "authentication"
+    : status === 403
+    ? "forbidden"
+    : status === 404
+    ? "not_found"
+    : status === 413
+    ? "too_large"
+    : undefined)
+  return reason !== undefined && (STEER_FINAL as ReadonlyArray<string>).includes(reason) ? reason : undefined
+}
+
+/**
+ * Sends one queued steer. ChatApi took it (202, or 200 for one it had): Sent, and done. A session steer's `401` while its
+ * person is still signed in is held (`held`): sent again, until they sign in again. A final refusal: Not sent with why,
+ * and never sent again. Anything else is sent again. Records the send as a span `run.steer.send`, a log line and a
+ * count of `steerSends` by outcome, never the message.
+ */
+export const send = (
+  sent: Collection.Collection<SteerSent, string>,
+  { rows }: { readonly rows: ReadonlyArray<unknown> },
+) => {
+  const row = rows[0] as SteerSending
+  return effect {
+    const startedAt = try Clock.currentTimeMillis
+    const answer = try Effect.result(
+      (try RemoteRunsClient).steer(row.runId, { id: row.id, body: row.body }, row.credential),
+    )
+    const status = answer._tag === "Success" ? undefined : answer.failure.status
+    const code = answer._tag === "Success" ? undefined : answer.failure.code
+    const holding = answer._tag === "Failure" && answer.failure.sessionCheck === "same_person"
+    const reason = answer._tag === "Success" || holding ? undefined : finalReasonOf(status, code)
+    const outcome = answer._tag === "Success"
+      ? answer.success.existing ? "existing" : "taken"
+      : holding
+      ? "held"
+      : reason === undefined
+      ? "retry"
+      : "refused"
+    try Metric.update(Metric.withAttributes(steerSends, { outcome }), 1)
+    try Effect.annotateCurrentSpan({ outcome })
+    try Effect.logWithLevel(answer._tag === "Success" ? "Info" : "Warn")("run.steer.send").pipe(
+      Effect.annotateLogs({
+        outcome,
+        ...(status === undefined ? {} : { status }),
+        ...(reason === undefined ? {} : { code: reason }),
+        durationMs: (try Clock.currentTimeMillis) - startedAt,
+      }),
+    )
+    if (answer._tag === "Success") return try keep(sent, row, "sent", null)
+    if (holding) return try held()
+    if (reason === undefined) throw new Outbox.Retry(status === undefined ? {} : { status })
+    try keep(sent, row, "not_sent", reason)
+    throw new Outbox.Refused({ status: status! })
+  }.pipe(
+    Effect.annotateLogs({ feature: "runs", steerId: row.id, runId: row.runId }),
+    withSpan("run.steer.send", { attributes: { steerId: row.id, runId: row.runId } }),
+  )
+}

@@ -1,9 +1,0 @@
-import { Metric } from "effect"
-
-// What the sandbox tools count in the browser (docs/observability.md#browser). No attribute carries an id or content.
-
-/** Sandbox tool calls this browser's engine ran, by `tool` and `outcome`: `done`, the failure, or the refusal. */
-export const calls = Metric.counter("smithers_web_sandbox_calls", {
-  description: "Sandbox tool calls from this browser, by tool and outcome",
-  incremental: true,
-})
