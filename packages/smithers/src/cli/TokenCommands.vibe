@@ -11,6 +11,7 @@
  * @since 1.0.0
  */
 
+import * as Platform from "./TokenCommands.platform.ts"
 import * as ScopedToken from "@smthrs/control/ScopedToken"
 import { Effect } from "effect"
 import { Cli, z } from "incur"
@@ -50,19 +51,19 @@ export const mint = (
   },
   environment: Record<string, string | undefined>
 ): Effect.Effect<MintedToken, CliError.UsageError> =>
-  Effect.gen(function*() {
+  effect {
     const key = environment["SMITHERS_TOKEN"]?.trim()
     if (key === undefined || key.length === 0) {
-      return yield* new CliError.UsageError({ message: "Set SMITHERS_TOKEN to the gateway credential to mint from" })
+      throw new CliError.UsageError({ message: "Set SMITHERS_TOKEN to the gateway credential to mint from" })
     }
     const ttlMillis = duration(options.ttl)
     // An expiry past the last date JavaScript can represent has no ISO form.
     if (ttlMillis === undefined || Number.isNaN(new Date(Date.now() + ttlMillis).getTime())) {
-      return yield* new CliError.UsageError({
+      throw new CliError.UsageError({
         message: `--ttl must be a positive duration such as 30s, 15m, 1h, or 2d, not ${options.ttl}`
       })
     }
-    const minted = yield* ScopedToken.mint({
+    const minted = try ScopedToken.mint({
       key,
       scopes: options.scope,
       ttlMillis,
@@ -77,7 +78,7 @@ export const mint = (
       ...(minted.claims.runId === undefined ? {} : { runId: minted.claims.runId }),
       ...(minted.claims.flowId === undefined ? {} : { flowId: minted.claims.flowId })
     }
-  })
+  }
 
 /**
  * Builds the `token` command group.
@@ -100,7 +101,7 @@ export const createTokenCli = (config: Bridge.Runtime = {}) =>
       run: (context) =>
         Presentation.guard(
           context,
-          () => Effect.runPromise(mint(context.options, config.environment ?? process.env)),
+          () => Effect.runPromise(mint(context.options, config.environment ?? Platform.environment())),
           { render: (minted) => ({ human: minted.token }) }
         )
     })

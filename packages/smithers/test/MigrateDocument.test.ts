@@ -1,7 +1,7 @@
 /** `smthrs migrate --json` prints the same document the migrate package writes to report.json. */
 import * as Report from "@smthrs/migrate/Report"
 import { expect, it } from "vitest"
-import * as Migrate from "../src/commands/Migrate.ts"
+import * as Migrate from "../src/commands/Migrate.vibe"
 
 it("prints the report.json document for a migration report", () => {
   const report = new Report.MigrationReport({

@@ -1,0 +1,145 @@
+/**
+ * Host access for the adjacent VibeLang module: the signal handlers this
+ * executable installs when it is loaded, failure reporting on stderr, and the
+ * teardown that maps an exit to the process status.
+ *
+ * @since 0.1.0
+ */
+
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import * as Redaction from "@smthrs/journal/Redaction"
+import { Cause, Exit, Runtime } from "effect"
+import { CliError as EffectCliError } from "effect/cli"
+import * as CliError from "../CliError.vibe"
+import * as Failure from "../internal/Failure.ts"
+import * as Argv from "./Argv.ts"
+
+let signalExitCode: 130 | 143 | undefined
+
+const onSigint = () => {
+  signalExitCode = 130
+}
+
+const onSigterm = () => {
+  signalExitCode = 143
+}
+
+process.once("SIGINT", onSigint)
+process.once("SIGTERM", onSigterm)
+
+/**
+ * A CLI failure is a sentence for the operator, on stderr.
+ *
+ * Effect's default error reporting logs the cause through the runtime logger,
+ * which writes to STDOUT with a timestamp and a stack. For a command-line tool
+ * that is two bugs at once: a script reading `--json` gets a log line in its
+ * document, and an operator gets a stack trace where the contract promised a
+ * migration message. Reporting is therefore disabled below and the message is
+ * written here instead.
+ */
+const verboseRequested = (): boolean => {
+  try {
+    return Argv.parse(process.argv.slice(2)).verbose
+  } catch {
+    return false
+  }
+}
+
+const report = (error: unknown): void => {
+  const message = error instanceof CliError.UsageError ||
+      error instanceof CliError.UnsupportedError ||
+      error instanceof CliError.ResourceLimitError ||
+      error instanceof CliError.RenderingError
+    ? error.message
+    // A refused database open is a defect by design: `NodeDatabase.layer` keeps
+    // the `never` error channel eleven packages compose against, so the refusal
+    // arrives here rather than as a typed failure. Render it by its contract
+    // code, which is what the release policy promises an operator and what a
+    // script greps for; the tagged-error name is an implementation detail of
+    // how the value travelled.
+    : NodeDatabase.isUnsupportedDatabase(error)
+    ? `${error.code}: ${error.message}`
+    : Failure.operatorLine(error, verboseRequested())
+  // A failure sentence is written here rather than logged, so it misses the
+  // redacting logger below. It is still a line an operator reads and a
+  // collector keeps, so it takes the same rules (the release policy).
+  process.stderr.write(`${String(Redaction.redactDiagnostic(message))}\n`)
+}
+
+/**
+ * Maps the program's exit, and any signal that arrived, to the process status.
+ *
+ * @private
+ * @since 0.1.0
+ */
+export const teardown: Runtime.Teardown = (exit, onExit) => {
+  process.removeListener("SIGINT", onSigint)
+  process.removeListener("SIGTERM", onSigterm)
+
+  if (signalExitCode !== undefined) {
+    onExit(signalExitCode)
+    return
+  }
+  if (Exit.isSuccess(exit)) {
+    onExit(typeof process.exitCode === "number" ? process.exitCode : Number(process.exitCode ?? 0))
+    return
+  }
+  if (Cause.hasInterruptsOnly(exit.cause)) {
+    process.stderr.write("smthrs: startup was interrupted without a signal\n")
+    onExit(1)
+    return
+  }
+
+  const error = Cause.squash(exit.cause)
+  if (EffectCliError.isCliError(error)) {
+    // `effect/cli` renders its own help and usage output; only the
+    // status is this module's to decide.
+    onExit(error._tag === "ShowHelp" && error.errors.length === 0 ? 0 : 2)
+    return
+  }
+  report(error)
+  if (
+    error instanceof CliError.UsageError ||
+    error instanceof CliError.UnsupportedError ||
+    error instanceof CliError.ResourceLimitError ||
+    error instanceof CliError.RenderingError
+  ) {
+    onExit(CliError.exitCode(error))
+    return
+  }
+  onExit(Runtime.getErrorExitCode(error))
+}
+
+/**
+ * @private
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const argv = (): Array<string> => process.argv.slice(2)
+
+/**
+ * @private
+ * @since 0.1.0
+ */
+export const cwd = (): string => process.cwd()
+
+/**
+ * @private
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const stdin = (): typeof process.stdin => process.stdin
+
+/**
+ * @private
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const stderr = (): typeof process.stderr => process.stderr
+
+/**
+ * @private
+ * @since 0.1.0
+ * @throws {never}
+ */
+export const environment = (): NodeJS.ProcessEnv => process.env

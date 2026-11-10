@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs"
 import { expect, it } from "vitest"
+import { sourceText } from "../../repo-targets/test-utils/source-readers.mjs"
 import * as Root from "../src/index.ts"
 
 const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8")
@@ -7,7 +8,7 @@ const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8")
 it("documents available runtime names in the affected namespaces", () => {
   for (const name of ["Command", "Detached", "NodeControl", "Providers"] as const) {
     const line = readme.split("\n").find((row) => row.startsWith(`| \`${name}\``))!
-    const source = readFileSync(new URL(`../src/${name}.ts`, import.meta.url), "utf8")
+    const source = sourceText(new URL(`../src/${name}.ts`, import.meta.url))
     const types = new Set([
       ...[...source.matchAll(/export (?:interface|type) (\w+)/g)].map((match) => match[1]),
       ...[...source.matchAll(/export type \{([^}]+)\}/g)].flatMap((match) =>

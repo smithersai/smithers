@@ -4,7 +4,7 @@ import { Cause, Effect, Exit, Fiber, Stream } from "effect"
 import { Writable } from "node:stream"
 import { stripVTControlCharacters } from "node:util"
 import { describe, expect, it, vi } from "vitest"
-import * as RunProgress from "../src/cli/RunProgress.ts"
+import * as RunProgress from "../src/cli/RunProgress.vibe"
 
 const policy = (progress: Audience.Policy["progress"]): Audience.Policy => ({
   audience: progress === "silent" ? "agent" : "human",

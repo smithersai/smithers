@@ -29,7 +29,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import * as CliError from "../src/CliError.vibe"
 import * as Suggest from "../src/Suggest.ts"
 import * as Checklist from "../src/suggest/Checklist.ts"
-import * as Ui from "../src/Ui.ts"
+import * as Ui from "../src/Ui.vibe"
 
 const staged: Array<string> = []
 

@@ -12,7 +12,7 @@ import * as CliError from "../CliError.vibe"
 import * as Environment from "../Environment.ts"
 import * as Forensics from "../Forensics.vibe"
 import * as BoundedEvents from "../internal/BoundedEvents.vibe"
-import * as Ui from "../Ui.ts"
+import * as Ui from "../Ui.vibe"
 import { packageVersion } from "../Version.ts"
 import * as Globals from "./Globals.vibe"
 

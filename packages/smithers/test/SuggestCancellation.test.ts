@@ -6,7 +6,7 @@ import { PassThrough, Writable } from "node:stream"
 import { expect, it } from "vitest"
 import * as Suggest from "../src/Suggest.ts"
 import * as Checklist from "../src/suggest/Checklist.ts"
-import * as Ui from "../src/Ui.ts"
+import * as Ui from "../src/Ui.vibe"
 
 const options = {
   root: "/repo",

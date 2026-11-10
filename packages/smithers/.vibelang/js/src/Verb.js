@@ -90,6 +90,7 @@ export const names = shipped.map((entry) => entry.name);
  * @category getters
  * @since 1.0.0
  * @deprecated Use Cli.makeCli; removed in #3634 phase 2.
+ * @throws {never}
  */
 export const find = (name) => shipped.find((entry) => entry.name === name);
 /**

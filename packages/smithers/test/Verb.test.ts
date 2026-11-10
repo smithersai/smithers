@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest"
 import { makeCli } from "../src/Cli.ts"
-import { cli } from "../src/Command.ts"
+import { cli } from "../src/Command.vibe"
 import * as Unsupported from "../src/Unsupported.ts"
 import * as Verb from "../src/Verb.ts"
 

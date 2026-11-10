@@ -18,7 +18,7 @@ import { Cli } from "incur"
 import { describe, expect, it } from "vitest"
 import * as Bridge from "../src/cli/ControlBridge.ts"
 import { createApprovalsCli, createFlowCli, createRunsCli } from "../src/cli/ControlCommands.ts"
-import { cli } from "../src/Command.ts"
+import { cli } from "../src/Command.vibe"
 import * as Output from "../src/Output.ts"
 import { packageVersion } from "../src/Version.ts"
 

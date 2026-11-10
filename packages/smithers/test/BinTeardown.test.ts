@@ -56,7 +56,7 @@ const load = async (): Promise<Entrypoint> => {
   // These assertions exercise the Effect runtime teardown owned by the
   // transition entrypoint. The public bin now dispatches canonical commands
   // through Incur, whose lifecycle is covered by UnifiedEntry.test.ts.
-  await import("../src/cli/LegacyBin.ts")
+  await import("../src/cli/LegacyBin.vibe")
   const call = runMain.mock.calls[0]
   expect(runMain).toHaveBeenCalledTimes(1)
   if (call === undefined) throw new Error("the entrypoint did not start a Node runtime")

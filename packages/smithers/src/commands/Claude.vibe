@@ -6,6 +6,7 @@
  * @deprecated Use canonical flow and runs commands through Cli.makeCli; removed in #3634 phase 2.
  */
 
+import * as Platform from "./Claude.platform.ts"
 import { Control as ControlService, type ControlSchema } from "@smthrs/control"
 import { Console, Effect, Option, Stream } from "effect"
 import { type Argument, Command, Flag } from "effect/cli"
@@ -18,7 +19,7 @@ import { Output } from "../Output.ts"
 import * as Project from "../Project.ts"
 import * as Verb from "../Verb.ts"
 import * as RunReads from "./RunReads.vibe"
-import * as Settlement from "./Settlement.ts"
+import * as Settlement from "./Settlement.vibe"
 
 /**
  * What the command group borrows from the root tree it is composed into.
@@ -39,15 +40,15 @@ const claudeSession = Flag.String("session").pipe(
 )
 
 const sessionId = (raw: Option.Option<string>): string =>
-  Option.getOrElse(raw, () => process.env["CLAUDE_CODE_SESSION_ID"] ?? "unknown")
+  Option.getOrElse(raw, () => Platform.environment()["CLAUDE_CODE_SESSION_ID"] ?? "unknown")
 
 /** Forces JSON rendering: every mirror verb prints a machine document. */
 const renderJson = (value: unknown) =>
-  Effect.gen(function*() {
-    const output = yield* Output
-    const rendered = yield* output.render(value, "json")
-    yield* Console.log(rendered.text)
-  })
+  effect {
+    const output = try Output
+    const rendered = try output.render(value, "json")
+    try Console.log(rendered.text)
+  }
 
 /**
  * The `claude` command group.
@@ -64,23 +65,25 @@ export const make = <E, R>({ guard, required }: Options<E, R>) => {
       Flag.withDescription("Only include events after this sequence number")
     )
   }, (config) =>
-    Effect.gen(function*() {
-      yield* guard
-      const control = yield* ControlService.Control
-      const projectRoot = yield* Project.ProjectRoot
+    effect {
+      try guard
+      const control = try ControlService.Control
+      const projectRoot = try Project.ProjectRoot
       // Following a run is subscribing: every tick re-asserts the entry, so a
       // registry lost to a crash repairs itself on the next frame.
-      yield* Effect.sync(() => ClaudeMirror.subscribe(projectRoot, config.runId, sessionId(config.session)))
-      const collected = yield* RunReads.events(control, config.runId)
-      const run = yield* RunReads.summary(control, config.runId)
+      try Effect.sync(() => ClaudeMirror.subscribe(projectRoot, config.runId, sessionId(config.session)))
+      const collected = try RunReads.events(control, config.runId)
+      const run = try RunReads.summary(control, config.runId)
       const digest = Forensics.digest(collected, config.runId)
-      yield* renderJson(
-        ClaudeMirror.frame(config.runId, run, collected, {
-          afterSeq: config.afterSeq,
-          parked: { question: digest.parkedQuestion, approval: digest.parkedApproval }
-        })
+      try renderJson(
+        try sync(() =>
+          ClaudeMirror.frame(config.runId, run, collected, {
+            afterSeq: config.afterSeq,
+            parked: { question: digest.parkedQuestion, approval: digest.parkedApproval }
+          })
+        )
       )
-    })).pipe(Command.withDescription("Print one mirror frame for a run"))
+    }).pipe(Command.withDescription("Print one mirror frame for a run"))
 
   const nodeWait = Command.make("node-wait", {
     runId: required("run-id"),
@@ -90,17 +93,17 @@ export const make = <E, R>({ guard, required }: Options<E, R>) => {
       Flag.withDescription("Maximum time in milliseconds to wait for the node to settle")
     )
   }, (config) =>
-    Effect.gen(function*() {
-      yield* guard
-      const node = yield* Effect.gen(function*() {
-        const control = yield* ControlService.Control
-        yield* RunReads.existing(control, config.runId)
+    effect {
+      try guard
+      const node = try (effect {
+        const control = try ControlService.Control
+        try RunReads.existing(control, config.runId)
         const history = BoundedEvents.empty<ControlSchema.ControlEvent>()
         let afterSequence: number | undefined
         let terminal: ControlSchema.RunSummary | undefined
         for (;;) {
           const previousLength = history.values.length
-          yield* BoundedEvents.collectInto(
+          try BoundedEvents.collectInto(
             control.watch({
               runId: config.runId,
               follow: false,
@@ -119,26 +122,26 @@ export const make = <E, R>({ guard, required }: Options<E, R>) => {
             const event = history.values[index]!
             if (afterSequence === undefined || event.sequence > afterSequence) afterSequence = event.sequence
           }
-          const node = NodeOutput.find(history.values, config.nodeId)
+          const node = try sync(() => NodeOutput.find(history.values, config.nodeId))
           if (node !== undefined && node.outcome !== "pending") return { ...node, timedOut: false }
           if (terminal !== undefined) {
             return { nodeId: config.nodeId, outcome: "vanished", status: terminal.status, timedOut: false }
           }
-          const run = yield* RunReads.summary(control, config.runId)
-          if (run !== undefined && ClaudeMirror.isTerminal(run.status)) {
+          const run = try RunReads.summary(control, config.runId)
+          if (run !== undefined && (try sync(() => ClaudeMirror.isTerminal(run.status)))) {
             // Completion can land after our history snapshot. Read its final
             // suffix before concluding that the requested node never appeared.
             terminal = run
             continue
           }
-          yield* Effect.sleep("250 millis")
+          try Effect.sleep("250 millis")
         }
       }).pipe(Effect.timeoutOrElse({
         duration: config.timeout,
         orElse: () => Effect.succeed({ nodeId: config.nodeId, outcome: "pending", timedOut: true })
       }))
-      yield* renderJson(node)
-    })).pipe(Command.withDescription("Block until one node settles"))
+      try renderJson(node)
+    }).pipe(Command.withDescription("Block until one node settles"))
 
   const monitor = Command.make("monitor", {
     session: claudeSession,
@@ -151,26 +154,26 @@ export const make = <E, R>({ guard, required }: Options<E, R>) => {
       Flag.withDescription("Maximum number of runs in the monitor frame")
     )
   }, (config) =>
-    Effect.gen(function*() {
-      yield* guard
+    effect {
+      try guard
       if (!Number.isSafeInteger(config.limit) || config.limit <= 0) {
-        return yield* Effect.fail(
-          new CliError.UsageError({
-            message: `--limit must be a positive integer; got ${JSON.stringify(String(config.limit))}`
-          })
-        )
+        throw new CliError.UsageError({
+          message: `--limit must be a positive integer; got ${JSON.stringify(String(config.limit))}`
+        })
       }
-      const control = yield* ControlService.Control
-      const projectRoot = yield* Project.ProjectRoot
+      const control = try ControlService.Control
+      const projectRoot = try Project.ProjectRoot
       const followed = config.allRuns
         ? undefined
         : new Set(
-          ClaudeMirror.readSubscriptions(projectRoot)
-            .filter((entry) => entry.sessionId === sessionId(config.session))
-            .map((entry) => entry.runId)
+          try sync(() =>
+            ClaudeMirror.readSubscriptions(projectRoot)
+              .filter((entry) => entry.sessionId === sessionId(config.session))
+              .map((entry) => entry.runId)
+          )
         )
       type Transition = NonNullable<ReturnType<typeof ClaudeMirror.transition>>
-      const ring = yield* Stream.runFold(
+      const ring = try Stream.runFold(
         control.watch({ follow: false }),
         () => ({ values: [] as Array<Transition | undefined>, next: 0, count: 0 }),
         (state, event) => {
@@ -185,35 +188,35 @@ export const make = <E, R>({ guard, required }: Options<E, R>) => {
       for (let offset = 0; offset < ring.count; offset++) {
         const index = (ring.next - ring.count + offset + config.limit) % config.limit
         const line = ring.values[index]
-        if (line !== undefined) yield* Console.log(JSON.stringify(line))
+        if (line !== undefined) try Console.log(JSON.stringify(line))
       }
-    })).pipe(Command.withDescription("Print notable run transitions as NDJSON"))
+    }).pipe(Command.withDescription("Print notable run transitions as NDJSON"))
 
   const subscribe = Command.make("subscribe", {
     runId: required("run-id"),
     session: claudeSession
   }, (config) =>
-    Effect.gen(function*() {
-      yield* guard
-      const projectRoot = yield* Project.ProjectRoot
-      const entries = yield* Effect.sync(() =>
+    effect {
+      try guard
+      const projectRoot = try Project.ProjectRoot
+      const entries = try Effect.sync(() =>
         ClaudeMirror.subscribe(projectRoot, config.runId, sessionId(config.session))
       )
-      yield* renderJson({ subscriptions: entries.length })
-    })).pipe(Command.withDescription("Follow a run in this session's mirror"))
+      try renderJson({ subscriptions: entries.length })
+    }).pipe(Command.withDescription("Follow a run in this session's mirror"))
 
   const unsubscribe = Command.make("unsubscribe", {
     runId: required("run-id"),
     session: claudeSession
   }, (config) =>
-    Effect.gen(function*() {
-      yield* guard
-      const projectRoot = yield* Project.ProjectRoot
-      const entries = yield* Effect.sync(() =>
+    effect {
+      try guard
+      const projectRoot = try Project.ProjectRoot
+      const entries = try Effect.sync(() =>
         ClaudeMirror.unsubscribe(projectRoot, config.runId, sessionId(config.session))
       )
-      yield* renderJson({ subscriptions: entries.length })
-    })).pipe(Command.withDescription("Stop following a run in this session's mirror"))
+      try renderJson({ subscriptions: entries.length })
+    }).pipe(Command.withDescription("Stop following a run in this session's mirror"))
 
   return Command.make("claude").pipe(
     Command.withDescription(Verb.find("claude")!.help),

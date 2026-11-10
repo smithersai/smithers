@@ -30,7 +30,7 @@ const reviewed: ReadonlyArray<readonly [file: string, line: string, why: string]
     "an AbortSignal reason; the interrupt is reported by exit status 130/143"
   ],
   [
-    "src/Ui.ts",
+    "src/Ui.vibe",
     "catch: (cause) => cause instanceof Error ? cause : new Error(Failure.unknownSentence, { cause })",
     "the generic sentence around a thrown non-Error"
   ],

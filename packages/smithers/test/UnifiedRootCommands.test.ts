@@ -40,8 +40,8 @@ vi.mock("../src/commands/Doctor.vibe", () => ({
   fromControl: ports.doctorFromControl
 }))
 vi.mock("../src/commands/Gc.vibe", () => ({ sweep: ports.sweep }))
-vi.mock("../src/commands/Migrate.ts", async (load) => ({
-  ...await load<typeof import("../src/commands/Migrate.ts")>(),
+vi.mock("../src/commands/Migrate.vibe", async (load) => ({
+  ...await load<typeof import("../src/commands/Migrate.vibe")>(),
   run: ports.migrate,
   // The report encoding is the migrate package's; this suite pins the routing.
   document: (report: unknown) => report

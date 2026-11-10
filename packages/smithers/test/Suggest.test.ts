@@ -22,7 +22,7 @@ import * as CliError from "../src/CliError.vibe"
 import * as Providers from "../src/Providers.ts"
 import * as Suggest from "../src/Suggest.ts"
 import * as Checklist from "../src/suggest/Checklist.ts"
-import * as Ui from "../src/Ui.ts"
+import * as Ui from "../src/Ui.vibe"
 
 /** A repository with one match for most of the checklist, held-back included. */
 const project = Checklist.memoryRepository("/repo", {

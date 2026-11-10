@@ -14,11 +14,11 @@ import { text } from "node:stream/consumers"
 import * as CliError from "../CliError.vibe"
 import * as NodeOutput from "../NodeOutput.ts"
 import * as Project from "../Project.ts"
-import * as Ui from "../Ui.ts"
+import * as Ui from "../Ui.vibe"
 import * as Unsupported from "../Unsupported.ts"
 import * as FlowCatalog from "./FlowCatalog.vibe"
 import * as RunReads from "./RunReads.vibe"
-import * as Settlement from "./Settlement.ts"
+import * as Settlement from "./Settlement.vibe"
 /**
  * Resolve a supplied flow name or an interactive selection.
  * @category constructors

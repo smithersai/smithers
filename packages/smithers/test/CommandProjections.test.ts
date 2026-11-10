@@ -30,11 +30,11 @@ import { PassThrough, Writable } from "node:stream"
 import { afterEach, describe, expect, it } from "vitest"
 import * as ClaudeMirror from "../src/ClaudeMirror.ts"
 import * as CliError from "../src/CliError.vibe"
-import { cli } from "../src/Command.ts"
+import { cli } from "../src/Command.vibe"
 import * as NodeControl from "../src/NodeControl.ts"
 import * as Output from "../src/Output.ts"
 import * as Project from "../src/Project.ts"
-import * as Ui from "../src/Ui.ts"
+import * as Ui from "../src/Ui.vibe"
 import { packageVersion } from "../src/Version.ts"
 
 const runCommand = Command.runWith(cli, { version: packageVersion })

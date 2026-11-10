@@ -20,12 +20,11 @@
  * @since 1.0.0-rc.0
  */
 
+import * as Platform from "./Ui.platform.ts"
 import * as clack from "@clack/prompts"
 import * as Audience from "@smthrs/build-cli/Audience"
 import { Context, Effect, Layer, Option } from "effect"
 import type { Readable, Writable } from "node:stream"
-import { Writable as WritableStream } from "node:stream"
-import { stripVTControlCharacters } from "node:util"
 import type * as Environment from "./Environment.ts"
 import * as Failure from "./internal/Failure.ts"
 import { packageVersion } from "./Version.ts"
@@ -228,7 +227,7 @@ export const isInteractive = (
 export const levelWord = (level: Check["level"]): string => level === "ok" ? "ok  " : level === "warn" ? "warn" : "fail"
 
 const write = (output: Writable, line: string): void => {
-  output.write(`${stripVTControlCharacters(line)}\n`)
+  output.write(`${Platform.stripControl(line)}\n`)
 }
 
 /**
@@ -311,14 +310,14 @@ export const make = (options: Options): Service => {
               const cleanup = Promise.resolve(iterator.return?.())
               // A rejection after the wait has nobody left to report to.
               cleanup.catch(() => {})
-              let timer: ReturnType<typeof setTimeout> | undefined
+              let timer: Platform.Timer | undefined
               await Promise.race([
                 cleanup,
                 new Promise<void>((resolve) => {
-                  timer = setTimeout(resolve, cleanupTimeoutMillis)
+                  timer = Platform.setTimer(resolve, cleanupTimeoutMillis)
                 })
               ])
-              clearTimeout(timer)
+              Platform.clearTimer(timer)
               return { items: collected, stopped: true }
             }
             if (next.done) {
@@ -344,16 +343,16 @@ export const make = (options: Options): Service => {
         } finally {
           if (onAbort !== undefined) signal.removeEventListener("abort", onAbort)
           if (!finished && !cleanupStarted) {
-            let timer: ReturnType<typeof setTimeout> | undefined
+            let timer: Platform.Timer | undefined
             try {
               await Promise.race([
                 Promise.resolve(iterator.return?.()).catch(() => {}),
                 new Promise<void>((resolve) => {
-                  timer = setTimeout(resolve, cleanupTimeoutMillis)
+                  timer = Platform.setTimer(resolve, cleanupTimeoutMillis)
                 })
               ])
             } finally {
-              clearTimeout(timer)
+              Platform.clearTimer(timer)
             }
           }
         }
@@ -481,11 +480,8 @@ export const renderChecklist = (
   options: { readonly interactive: boolean; readonly columns?: number | undefined }
 ): string => {
   const chunks: Array<string> = []
-  const sink = new WritableStream({
-    write(chunk, _encoding, callback) {
-      chunks.push(String(chunk))
-      callback()
-    }
+  const sink = Platform.memorySink((chunk) => {
+    chunks.push(chunk)
   })
   Object.assign(sink, { columns: options.columns ?? 80 })
   Effect.runSync(make({ output: sink, interactive: options.interactive }).checklist(title, checks))
@@ -501,9 +497,9 @@ export const renderChecklist = (
 export const layer = (environment: Environment.Source): Layer.Layer<Ui> =>
   Layer.sync(Ui, () =>
     make({
-      output: process.stdout,
-      input: process.stdin,
-      interactive: isInteractive(process.stdout, process.stdin, environment)
+      output: Platform.stdout(),
+      input: Platform.stdin(),
+      interactive: isInteractive(Platform.stdout(), Platform.stdin(), environment)
     }))
 
 /**
@@ -514,15 +510,15 @@ export const layer = (environment: Environment.Source): Layer.Layer<Ui> =>
  * @category accessors
  * @since 1.0.0-rc.0
  */
-export const current: Effect.Effect<Service> = Effect.gen(function*() {
-  const provided = yield* Effect.serviceOption(Ui)
+export const current: Effect.Effect<Service> = effect {
+  const provided = try Effect.serviceOption(Ui)
   if (Option.isSome(provided)) return provided.value
   return make({
-    output: process.stdout,
-    input: process.stdin,
-    interactive: isInteractive(process.stdout, process.stdin, process.env)
+    output: Platform.stdout(),
+    input: Platform.stdin(),
+    interactive: isInteractive(Platform.stdout(), Platform.stdin(), Platform.environment())
   })
-})
+}
 
 /**
  * Required-input prompts use stderr so piping a document leaves stdin usable.
@@ -530,8 +526,8 @@ export const current: Effect.Effect<Service> = Effect.gen(function*() {
  * @category accessors
  * @since 1.0.0-rc.0
  */
-export const prompting: Effect.Effect<Service> = Effect.gen(function*() {
-  const provided = yield* Effect.serviceOption(Ui)
+export const prompting: Effect.Effect<Service> = effect {
+  const provided = try Effect.serviceOption(Ui)
   if (Option.isSome(provided)) return provided.value
-  return make({ output: process.stderr, input: process.stdin, interactive: process.stdin.isTTY === true })
-})
+  return make({ output: Platform.stderr(), input: Platform.stdin(), interactive: Platform.stdin().isTTY === true })
+}

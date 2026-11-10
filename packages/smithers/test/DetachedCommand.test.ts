@@ -8,7 +8,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { cli } from "../src/Command.ts"
+import { cli } from "../src/Command.vibe"
 import * as Detached from "../src/Detached.ts"
 import * as ExecutorOwnership from "../src/ExecutorOwnership.vibe"
 import * as NodeControl from "../src/NodeControl.ts"

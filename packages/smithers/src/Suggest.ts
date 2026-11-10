@@ -38,7 +38,7 @@ import * as Providers from "./Providers.ts"
 import * as Brief from "./suggest/Brief.ts"
 import * as Checklist from "./suggest/Checklist.ts"
 import * as SuggestFlow from "./suggest/SuggestFlow.ts"
-import * as Ui from "./Ui.ts"
+import * as Ui from "./Ui.vibe"
 
 /**
  * What one implementation wrote, and which question it answered.

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, 
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { cli } from "../src/Command.ts"
+import { cli } from "../src/Command.vibe"
 import { Version } from "../src/index.ts"
 import * as Unsupported from "../src/Unsupported.ts"
 import {

@@ -44,7 +44,7 @@ const bootstrap = async (): Promise<void> => {
       if (legacy !== undefined) {
         installEffectResolution()
         process.argv.splice(2, process.argv.length - 2, ...legacy)
-        await import("./cli/LegacyBin.ts")
+        await import("./cli/LegacyBin.vibe")
       } else {
         const { main } = await import("./cli/Entry.vibe")
         // Environment CRUD can bootstrap natively. Durable and protocol commands

@@ -12,10 +12,10 @@ import { makeCli } from "../src/Cli.ts"
 import * as Bridge from "../src/cli/ControlBridge.ts"
 import { createRunsCli } from "../src/cli/ControlCommands.ts"
 import * as Presentation from "../src/cli/Presentation.ts"
-import * as RunProgress from "../src/cli/RunProgress.ts"
+import * as RunProgress from "../src/cli/RunProgress.vibe"
 import * as CommandStatus from "../src/internal/CommandStatus.vibe"
 import * as Serve from "../src/Serve.vibe"
-import * as Ui from "../src/Ui.ts"
+import * as Ui from "../src/Ui.vibe"
 
 const ports = vi.hoisted(() => ({
   runWith: vi.fn(),
@@ -32,7 +32,7 @@ const ports = vi.hoisted(() => ({
 // Host transports are bounded doubles, so these tests never open a database,
 // worktree, or listener. The bug consent cases drive the unified `bug` verb
 // through its typed command; routing-only cases use a bounded handler.
-vi.mock("../src/Command.ts", () => ({ cli: "legacy" }))
+vi.mock("../src/Command.vibe", () => ({ cli: "legacy" }))
 vi.mock("effect/cli", async (load) => {
   const actual = await load<typeof import("effect/cli")>()
   return { ...actual, Command: { ...actual.Command, runWith: ports.runWith } }

@@ -2,7 +2,7 @@
 import { readdirSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { cli } from "../src/Command.ts"
+import { cli } from "../src/Command.vibe"
 import * as Unsupported from "../src/Unsupported.ts"
 import * as Verb from "../src/Verb.ts"
 import { executable, inEmptyDirectory, processBudget, refusal, run, runIn } from "./support/bin.ts"

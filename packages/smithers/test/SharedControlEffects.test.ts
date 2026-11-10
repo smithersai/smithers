@@ -3,10 +3,10 @@ import { Control } from "@smthrs/control"
 import * as TestControl from "@smthrs/control/test/TestControl"
 import { Effect, Layer, Option } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Launch from "../src/commands/Launch.ts"
+import * as Launch from "../src/commands/Launch.vibe"
 import * as RunControl from "../src/commands/RunControl.ts"
 import * as Project from "../src/Project.ts"
-import * as Ui from "../src/Ui.ts"
+import * as Ui from "../src/Ui.vibe"
 
 const flow = {
   flowId: "demo/ship",

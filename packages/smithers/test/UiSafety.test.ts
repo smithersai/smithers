@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { PassThrough, Writable } from "node:stream"
 import { describe, expect, it } from "vitest"
-import * as Ui from "../src/Ui.ts"
+import * as Ui from "../src/Ui.vibe"
 
 describe("plain terminal safety", () => {
   it("removes supplied terminal controls across plain renderers", async () => {

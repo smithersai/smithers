@@ -25,7 +25,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import * as CliError from "../src/CliError.vibe"
 import * as Suggest from "../src/Suggest.ts"
 import * as Checklist from "../src/suggest/Checklist.ts"
-import * as Ui from "../src/Ui.ts"
+import * as Ui from "../src/Ui.vibe"
 
 /**
  * A repository with exactly one small match, so the pick has one candidate

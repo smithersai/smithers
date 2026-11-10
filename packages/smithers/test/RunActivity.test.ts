@@ -8,7 +8,7 @@ import { Schema } from "effect"
 import { Writable } from "node:stream"
 import { describe, expect, it } from "vitest"
 import * as RunActivity from "../src/cli/RunActivity.vibe"
-import * as RunProgress from "../src/cli/RunProgress.ts"
+import * as RunProgress from "../src/cli/RunProgress.vibe"
 
 const runId = "run-7"
 const entry = `registry/entry/${"a".repeat(64)}/sweep`

@@ -6,6 +6,7 @@
  * @since 1.0.0
  */
 
+import * as Platform from "./RunProgress.platform.ts"
 import * as clack from "@clack/prompts"
 import * as Audience from "@smthrs/build-cli/Audience"
 import type { ControlSchema } from "@smthrs/control"
@@ -13,7 +14,6 @@ import { callEventKey, nativeCallEvent, openCallIndex } from "@smthrs/gateway/Di
 import * as Redaction from "@smthrs/journal/Redaction"
 import { Cause, Context, Effect, Exit, HashMap, HashSet, Stream } from "effect"
 import type { Writable } from "node:stream"
-import { stripVTControlCharacters } from "node:util"
 import { causeLine } from "../internal/Failure.ts"
 import { flowNameOf } from "./RunActivity.vibe"
 
@@ -120,7 +120,7 @@ const record = (value: unknown): Record<string, unknown> =>
  */
 export const text = (value: unknown, maximum = 180): string => {
   if (typeof value !== "string") return ""
-  const safe = String(Redaction.redactDiagnostic(stripVTControlCharacters(value)))
+  const safe = String(Redaction.redactDiagnostic(Platform.stripControl(value)))
     .replace(/[\p{Cc}\p{Cf}]/gu, " ")
     .replace(/\s+/g, " ")
     .trim()
@@ -131,7 +131,7 @@ const logLines = (value: unknown): ReadonlyArray<Line> => {
   if (typeof value !== "string") return []
   // Redact before splitting: a token assignment must not be split into an
   // innocuous key and an unlabelled secret on the following line.
-  const safe = String(Redaction.redactDiagnostic(stripVTControlCharacters(value)))
+  const safe = String(Redaction.redactDiagnostic(Platform.stripControl(value)))
   let count = 0
   const shown: Array<Line> = []
   for (const line of safe.matchAll(/[^\r\n]+/g)) {
@@ -437,7 +437,7 @@ export interface Renderer {
  */
 export const make = (runId: string, options: Options): Renderer => {
   if (options.policy.progress === "silent") return { event: () => {}, close: () => {} }
-  const destination: Writable = options.output ?? process.stderr
+  const destination: Writable = options.output ?? Platform.stderr()
   // Clack's timer and cleanup write outside the event callback. Give those
   // paths the same closed-stream guard as immediate lifecycle rendering so
   // closing stderr cannot leave a timer or signal listener behind.
@@ -570,18 +570,13 @@ export const observe = <E, R>(
   runId: string,
   silent = false
 ): Stream.Stream<ControlSchema.ControlEvent, E, R> =>
-  Stream.unwrap(Effect.gen(function*() {
-    const configured = yield* Configuration
+  Stream.unwrap(effect {
+    const configured = try Configuration
     const options = configured ?? {
-      policy: Audience.resolve({
-        env: process.env,
-        stdin: process.stdin.isTTY === true,
-        stdout: process.stdout.isTTY === true,
-        stderr: process.stderr.isTTY === true
-      })
+      policy: try sync(() => Audience.resolve(Platform.terminal()))
     }
     if (silent || options.policy.progress === "silent") return events
-    const renderer = yield* Effect.acquireRelease(
+    const renderer = try Effect.acquireRelease(
       Effect.sync(() => make(runId, options)),
       (renderer, exit) =>
         Effect.sync(() =>
@@ -593,4 +588,4 @@ export const observe = <E, R>(
         )
     )
     return Stream.tap(events, (event) => Effect.sync(() => renderer.event(event)))
-  }))
+  })

@@ -9,7 +9,7 @@ import { TestClock } from "effect/testing"
 import { spawnSync } from "node:child_process"
 import { hostname } from "node:os"
 import { describe, expect, it } from "vitest"
-import * as Settlement from "../src/commands/Settlement.ts"
+import * as Settlement from "../src/commands/Settlement.vibe"
 import * as ExecutorOwnership from "../src/ExecutorOwnership.vibe"
 
 describe("Settlement", () => {

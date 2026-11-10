@@ -33,7 +33,7 @@ beforeEach(() => {
     stderr += String(chunk)
     return true
   })
-  vi.doMock("../src/cli/LegacyBin.ts", () => {
+  vi.doMock("../src/cli/LegacyBin.vibe", () => {
     legacy = process.argv.slice(2)
     return {}
   })

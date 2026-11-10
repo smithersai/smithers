@@ -8,13 +8,13 @@
  * @since 1.0.0
  */
 
+import * as Platform from "./Settlement.platform.ts"
 import { type Control as ControlService, ControlError, type ControlSchema } from "@smthrs/control"
 import * as HostLiveness from "@smthrs/platform-node/HostLiveness"
 import { Ownership } from "@smthrs/run-store"
 import { Cause, Clock, Duration, Effect, Option, Schema, Stream } from "effect"
-import { hostname } from "node:os"
 import * as RunActivity from "../cli/RunActivity.vibe"
-import * as RunProgress from "../cli/RunProgress.ts"
+import * as RunProgress from "../cli/RunProgress.vibe"
 import * as CliError from "../CliError.vibe"
 import * as ExecutorOwnership from "../ExecutorOwnership.vibe"
 import * as CommandStatus from "../internal/CommandStatus.vibe"
@@ -120,23 +120,23 @@ const releasedPark = (
   runId: string,
   decisions: () => ReadonlyArray<ControlSchema.ControlEvent>
 ) =>
-  Effect.gen(function*() {
-    const deadline = (yield* Clock.currentTimeMillis) + Duration.toMillis(releasedParkGrace)
+  effect {
+    const deadline = (try Clock.currentTimeMillis) + Duration.toMillis(releasedParkGrace)
     for (;;) {
-      const listed = yield* control.list({ _tag: "runs", filters: { runId } })
+      const listed = try control.list({ _tag: "runs", filters: { runId } })
       const run = listed._tag === "runs" ? listed.items.find((item) => item.runId === runId) : undefined
       if (run === undefined || run.status !== "parked" || run.waitingReason !== "released") {
         return Option.none<Settlement>()
       }
-      if ((yield* Clock.currentTimeMillis) >= deadline) {
+      if ((try Clock.currentTimeMillis) >= deadline) {
         return Option.some<Settlement>({
           kind: "control.run.parked",
           cause: releasedCause(runId, run.flowId, decisions())
         })
       }
-      yield* Effect.sleep(Duration.seconds(1))
+      try Effect.sleep(Duration.seconds(1))
     }
-  })
+  }
 
 /**
  * The settlement a wait reports when its follow ended without one: the run's
@@ -149,8 +149,8 @@ const unsettled = (
   runId: string,
   decisions: () => ReadonlyArray<ControlSchema.ControlEvent>
 ) =>
-  Effect.gen(function*() {
-    const listed = yield* control.list({ _tag: "runs", filters: { runId } }).pipe(
+  effect {
+    const listed = try control.list({ _tag: "runs", filters: { runId } }).pipe(
       Effect.mapError((error) => watchFailure(error, runId, "settlement"))
     )
     const run = listed._tag === "runs" ? listed.items.find((item) => item.runId === runId) : undefined
@@ -160,14 +160,12 @@ const unsettled = (
     if (run?.status === "parked" && run.waitingReason === "released") {
       return { kind: "control.run.parked", cause: releasedCause(runId, run.flowId, decisions()) }
     }
-    return yield* Effect.fail(
-      new ControlError.TransportError({
-        message: `The event stream for run ${JSON.stringify(runId)} ended before the run settled; it is ` +
-          `${run?.status ?? "not found"}. Read it with \`smthrs runs show ${runId}\`.`,
-        retryable: true
-      })
-    )
-  })
+    throw new ControlError.TransportError({
+      message: `The event stream for run ${JSON.stringify(runId)} ended before the run settled; it is ` +
+        `${run?.status ?? "not found"}. Read it with \`smthrs runs show ${runId}\`.`,
+      retryable: true
+    })
+  }
 
 /**
  * Waits for the run to settle and reports the event kind that settled it.
@@ -186,11 +184,11 @@ export const awaitRun = (
   afterSequence: number | undefined,
   quiet: boolean
 ): Effect.Effect<Settlement, ControlError.TransportError> =>
-  Effect.gen(function*() {
+  effect {
     // Only run decisions are kept: they name what a release interrupted.
     const decisions: Array<ControlSchema.ControlEvent> = []
     const seen = () => decisions
-    const found = yield* RunProgress.observe(
+    const found = try RunProgress.observe(
       control.watch(afterSequence === undefined ? { runId } : { runId, afterSequence }),
       runId,
       quiet
@@ -213,8 +211,8 @@ export const awaitRun = (
       // interruption of this command itself (a signal) never reaches here.
       Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.succeed(undefined) : Effect.failCause(cause))
     )
-    return found ?? (yield* unsettled(control, runId, seen))
-  })
+    return found ?? (try unsettled(control, runId, seen))
+  }
 
 /**
  * Finds the greatest sequence in a stream without retaining its history.
@@ -300,12 +298,12 @@ export const awaitHandOff = (
   host: ControlSchema.RunHost,
   afterSequence: number | undefined
 ) =>
-  Effect.gen(function*() {
-    const deadline = (yield* Clock.currentTimeMillis) + Duration.toMillis(handOffWait)
+  effect {
+    const deadline = (try Clock.currentTimeMillis) + Duration.toMillis(handOffWait)
     const read = control.list({ _tag: "runs", filters: { runId } }).pipe(
       Effect.map((listed) => listed._tag === "runs" ? listed.items.find((item) => item.runId === runId) : undefined)
     )
-    const takenUp = yield* control.watch(afterSequence === undefined ? { runId } : { runId, afterSequence }).pipe(
+    const takenUp = try control.watch(afterSequence === undefined ? { runId } : { runId, afterSequence }).pipe(
       Stream.filter((event) => event.kind === "control.run.claimed" || settled(event.kind)),
       Stream.take(1),
       Stream.runCollect,
@@ -313,31 +311,29 @@ export const awaitHandOff = (
       Effect.timeoutOption(handOffWait),
       Effect.map((events) => Option.isSome(events) && globalThis.Array.from(events.value).length > 0)
     )
-    let summary = yield* read
+    let summary = try read
     // The host re-admits the released executions on its next sweep after it
     // takes the resume up. Until then the run still reads as the park it left,
     // which would tell the operator to resume again.
     while (
       takenUp && summary?.status === "parked" && summary.waitingReason === "released" &&
-      (yield* Clock.currentTimeMillis) < deadline
+      (try Clock.currentTimeMillis) < deadline
     ) {
-      yield* Effect.sleep(Duration.millis(250))
-      summary = yield* read
+      try Effect.sleep(Duration.millis(250))
+      summary = try read
     }
     if (summary !== undefined && (takenUp || summary.status !== "parked")) return summary
     const seconds = Duration.toSeconds(handOffWait)
-    return yield* Effect.fail(
-      new CliError.Refused({
-        fault: "wait",
-        code: "resume_not_taken_up",
-        message: `Run ${runId} is parked by process ${host.pid} on ${host.hostId}, which is still alive, so the ` +
-          `resume was handed to that process. It did not take the resume up within ${seconds} seconds. The request ` +
-          `stays recorded and the process takes it up when it next polls; \`smthrs runs show ${runId}\` shows when. ` +
-          `If process ${host.pid} is stuck, stop it, then run \`smthrs runs resume ${runId}\` again to resume the ` +
-          `run here.`
-      })
-    )
-  })
+    throw new CliError.Refused({
+      fault: "wait",
+      code: "resume_not_taken_up",
+      message: `Run ${runId} is parked by process ${host.pid} on ${host.hostId}, which is still alive, so the ` +
+        `resume was handed to that process. It did not take the resume up within ${seconds} seconds. The request ` +
+        `stays recorded and the process takes it up when it next polls; \`smthrs runs show ${runId}\` shows when. ` +
+        `If process ${host.pid} is stuck, stop it, then run \`smthrs runs resume ${runId}\` again to resume the ` +
+        `run here.`
+    })
+  }
 
 const decodeOwner = Schema.decodeUnknownOption(Schema.fromJsonString(Ownership.OwnerId))
 
@@ -353,7 +349,7 @@ export const awaitOwnedRun = (
   afterSequence: number | undefined,
   quiet: boolean
 ) =>
-  Effect.gen(function*() {
+  effect {
     // A run that had already settled when the verb reached it has no
     // settlement event left to wait for, and the receipt carries the answer.
     // Without this, `smthrs run --resume <run-id>` against a run that
@@ -363,27 +359,30 @@ export const awaitOwnedRun = (
     if (receipt._tag === "Terminal") return { kind: `control.run.${receipt.status}` }
     // A plan awaiting its approval has no executor to wait for.
     if (receipt._tag === "Parked") return { kind: "control.run.waiting-approval" }
-    const ownsExecutor = yield* ExecutorOwnership.ExecutorOwnership
+    const ownsExecutor = try ExecutorOwnership.ExecutorOwnership
     if (!ownsExecutor || receipt._tag !== "Accepted" || receipt.runId === undefined) return undefined
     // A local executor can drive runs without owning this one. Approval
     // decisions delegate to the existing host; waiting here would hold the
     // operator's command open until that other process finishes its work.
     if (receipt.handedTo !== undefined) return undefined
-    const listed = yield* control.list({ _tag: "runs", filters: { runId: receipt.runId } })
+    const listed = try control.list({ _tag: "runs", filters: { runId: receipt.runId } })
     const run = listed._tag === "runs" ? listed.items.find((item) => item.runId === receipt.runId) : undefined
     const owner = decodeOwner(run?.ownerId ?? run?.parkedBy)
-    if (Option.isSome(owner) && (owner.value.hostId !== hostname() || owner.value.pid !== process.pid)) {
+    if (
+      Option.isSome(owner) &&
+      (owner.value.hostId !== (try sync(() => Platform.hostname())) || owner.value.pid !== Platform.pid())
+    ) {
       // A park names the host that parked, not the one that resumes it. The
       // control plane takes a park only after a same-host dead-pid probe, so
       // once the parker has exited, the decision this process recorded has
       // restarted the run on this process's executor. Returning here ended
       // the process and its driver, and the run stayed parked (case03).
       const parkerExited = run?.ownerId === undefined &&
-        !(yield* HostLiveness.isAlive({ hostId: hostname() })(owner.value))
+        !(try (try sync(() => HostLiveness.isAlive({ hostId: Platform.hostname() })))(owner.value))
       if (!parkerExited) return undefined
     }
-    return yield* awaitRun(control, receipt.runId, afterSequence, quiet)
-  })
+    return try awaitRun(control, receipt.runId, afterSequence, quiet)
+  }
 
 /**
  * The park a decision answers, or nothing for a plan-level decision.

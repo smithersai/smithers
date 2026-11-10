@@ -5,7 +5,7 @@ import * as Doctor from "../src/Doctor.ts"
 import * as Forensics from "../src/Forensics.vibe"
 import { errorCode } from "../src/internal/ErrorCode.ts"
 import { hasTable } from "../src/internal/SqliteTable.ts"
-import * as Ui from "../src/Ui.ts"
+import * as Ui from "../src/Ui.vibe"
 
 describe("shared helpers", () => {
   it("quotes follow-up arguments exactly as Forensics does", () => {

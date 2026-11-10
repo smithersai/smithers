@@ -12,7 +12,7 @@ import { PassThrough, Writable } from "node:stream"
 import { stripVTControlCharacters } from "node:util"
 import { describe, expect, it, vi } from "vitest"
 import * as Doctor from "../src/Doctor.ts"
-import * as Ui from "../src/Ui.ts"
+import * as Ui from "../src/Ui.vibe"
 import { packageVersion } from "../src/Version.ts"
 
 interface Terminal {

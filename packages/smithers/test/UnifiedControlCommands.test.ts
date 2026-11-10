@@ -50,8 +50,8 @@ vi.mock("../src/cli/ControlBridge.ts", async (load) => ({
   hasRecords: ports.hasRecords
 }))
 // Routing doubles return Effects; handler behavior is covered independently by CommandHandlers.
-vi.mock("../src/commands/Launch.ts", async (load) => ({
-  ...await load<typeof import("../src/commands/Launch.ts")>(),
+vi.mock("../src/commands/Launch.vibe", async (load) => ({
+  ...await load<typeof import("../src/commands/Launch.vibe")>(),
   start: ports.start,
   execute: ports.execute,
   resume: ports.resume,
@@ -73,8 +73,8 @@ vi.mock("../src/history/History.ts", async (load) => ({
   reconcile: ports.reconcile,
   prepare: ports.prepare
 }))
-vi.mock("../src/cli/RunProgress.ts", async (load) => ({
-  ...await load<typeof import("../src/cli/RunProgress.ts")>(),
+vi.mock("../src/cli/RunProgress.vibe", async (load) => ({
+  ...await load<typeof import("../src/cli/RunProgress.vibe")>(),
   make: ports.progress
 }))
 

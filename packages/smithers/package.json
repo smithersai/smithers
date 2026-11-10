@@ -103,8 +103,8 @@
     },
     "./CodexAuth": null,
     "./Command": {
-      "types": "./src/Command.ts",
-      "vibelang-source": "./src/Command.ts",
+      "types": "./.vibe/declarations/src/Command.d.vibe.ts",
+      "vibelang-source": "./src/Command.vibe",
       "default": "./.vibelang/js/src/Command.js"
     },
     "./Detached": {
@@ -193,8 +193,8 @@
       "default": "./.vibelang/js/src/Suggest.js"
     },
     "./Ui": {
-      "types": "./src/Ui.ts",
-      "vibelang-source": "./src/Ui.ts",
+      "types": "./.vibe/declarations/src/Ui.d.vibe.ts",
+      "vibelang-source": "./src/Ui.vibe",
       "default": "./.vibelang/js/src/Ui.js"
     },
     "./Unsupported": {
@@ -263,8 +263,8 @@
       "default": "./.vibelang/js/src/cli/HistoryCommands.js"
     },
     "./cli/LegacyBin": {
-      "types": "./src/cli/LegacyBin.ts",
-      "vibelang-source": "./src/cli/LegacyBin.ts",
+      "types": "./.vibe/declarations/src/cli/LegacyBin.d.vibe.ts",
+      "vibelang-source": "./src/cli/LegacyBin.vibe",
       "default": "./.vibelang/js/src/cli/LegacyBin.js"
     },
     "./cli/Presentation": {
@@ -273,13 +273,13 @@
       "default": "./.vibelang/js/src/cli/Presentation.js"
     },
     "./cli/RunProgress": {
-      "types": "./src/cli/RunProgress.ts",
-      "vibelang-source": "./src/cli/RunProgress.ts",
+      "types": "./.vibe/declarations/src/cli/RunProgress.d.vibe.ts",
+      "vibelang-source": "./src/cli/RunProgress.vibe",
       "default": "./.vibelang/js/src/cli/RunProgress.js"
     },
     "./cli/TokenCommands": {
-      "types": "./src/cli/TokenCommands.ts",
-      "vibelang-source": "./src/cli/TokenCommands.ts",
+      "types": "./.vibe/declarations/src/cli/TokenCommands.d.vibe.ts",
+      "vibelang-source": "./src/cli/TokenCommands.vibe",
       "default": "./.vibelang/js/src/cli/TokenCommands.js"
     },
     "./evaluation/EvalCli": {

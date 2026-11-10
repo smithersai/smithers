@@ -9,6 +9,7 @@
  * @since 1.0.0
  */
 
+import * as Platform from "./Migrate.platform.ts"
 import * as MigrateCommand from "@smthrs/migrate/flow/Command"
 import * as Report from "@smthrs/migrate/Report"
 import { Effect, Layer, Schema } from "effect"
@@ -87,39 +88,41 @@ export const run = (
   options: Options,
   globals: Globals.Options
 ): Effect.Effect<Parked | Reported, CliError.UnsupportedError> =>
-  Effect.gen(function*() {
-    yield* Globals.guard(globals)
-    const environment = globals.environment ?? process.env
+  effect {
+    try Globals.guard(globals)
+    const environment = globals.environment ?? Platform.environment()
     const target = options.target
     // `legacyDatabases`, not `legacyState`: the 0.x-project guard is not
     // gated on `.flows/` being absent, and the project being migrated has
     // one by definition.
-    const databases = Project.legacyDatabases(target).map(Legacy.read)
-    const refusal = Legacy.refusal(databases)
-    if (refusal !== undefined) return yield* Effect.fail(new CliError.UnsupportedError({ message: refusal }))
-    const migrateOptions = MigrateCommand.optionsOf(
-      {
-        root: target,
-        scan: options.scan,
-        apply: options.apply,
-        seat: options.seat,
-        allowUnsafe: options.allowUnsafe,
-        acknowledgeRunState: options.acknowledgeRunState,
-        allowNoVcs: options.allowNoVcs,
-        keepOldSources: options.keepOldSources,
-        unit: options.unit,
-        maxRepairRounds: options.maxRepairRounds,
-        reportDir: options.reportDir,
-        flowsDir: options.flowsDir,
-        verifyInstall: options.verifyInstall,
-        verifyFormat: options.verifyFormat,
-        verifyTypecheck: options.verifyTypecheck ?? [],
-        verifyTest: options.verifyTest
-      },
-      target,
-      environment
+    const databases = try sync(() => Project.legacyDatabases(target).map(Legacy.read))
+    const refusal = try sync(() => Legacy.refusal(databases))
+    if (refusal !== undefined) throw new CliError.UnsupportedError({ message: refusal })
+    const migrateOptions = try sync(() =>
+      MigrateCommand.optionsOf(
+        {
+          root: target,
+          scan: options.scan,
+          apply: options.apply,
+          seat: options.seat,
+          allowUnsafe: options.allowUnsafe,
+          acknowledgeRunState: options.acknowledgeRunState,
+          allowNoVcs: options.allowNoVcs,
+          keepOldSources: options.keepOldSources,
+          unit: options.unit,
+          maxRepairRounds: options.maxRepairRounds,
+          reportDir: options.reportDir,
+          flowsDir: options.flowsDir,
+          verifyInstall: options.verifyInstall,
+          verifyFormat: options.verifyFormat,
+          verifyTypecheck: options.verifyTypecheck ?? [],
+          verifyTest: options.verifyTest
+        },
+        target,
+        environment
+      )
     )
-    const outcome = yield* Effect.result(MigrateCommand.runNode(migrateOptions, {
+    const outcome = try Effect.result(MigrateCommand.runNode(migrateOptions, {
       environment,
       evaluator: NodeControl.layerSeatEvaluator(environment).pipe(
         Layer.provide(NodeControl.layerRebuildableRequestExecutor(NodeControl.environmentDispatcher(environment)))
@@ -136,18 +139,16 @@ export const run = (
           ...(error.details === undefined ? {} : { details: error.details })
         }
       }
-      return yield* Effect.fail(
-        new CliError.UnsupportedError({
-          message: `smithers-migrate: ${error.message}${error.details === undefined ? "" : `\n${error.details}`}`
-        })
-      )
+      throw new CliError.UnsupportedError({
+        message: `smithers-migrate: ${error.message}${error.details === undefined ? "" : `\n${error.details}`}`
+      })
     }
     return {
       _tag: "Reported" as const,
       report: outcome.success,
-      reportDirectory: MigrateCommand.reportDirectory(migrateOptions)
+      reportDirectory: try sync(() => MigrateCommand.reportDirectory(migrateOptions))
     }
-  })
+  }
 
 /**
  * The report as the JSON document `smithers-migrate --json` prints, so a

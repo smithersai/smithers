@@ -63,7 +63,7 @@ export * as CliError from "./CliError.vibe"
  * @since 1.0.0
  * @deprecated Use Cli.makeCli and commands/Launch or commands/RunControl; removed in #3634 phase 2.
  */
-export * as Command from "./Command.ts"
+export * as Command from "./Command.vibe"
 /**
  * @category presentation
  * @since 1.0.0
@@ -153,7 +153,7 @@ export * as Suggest from "./Suggest.ts"
  * @category output
  * @since 1.0.0-rc.0
  */
-export * as Ui from "./Ui.ts"
+export * as Ui from "./Ui.vibe"
 /**
  * @category refusals
  * @since 1.0.0

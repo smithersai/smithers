@@ -4,7 +4,7 @@ import * as ScopedToken from "@smthrs/control/ScopedToken"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import { makeCli } from "../src/Cli.ts"
-import * as TokenCommands from "../src/cli/TokenCommands.ts"
+import * as TokenCommands from "../src/cli/TokenCommands.vibe"
 
 const key = "gateway-root-secret"
 

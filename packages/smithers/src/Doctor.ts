@@ -25,7 +25,7 @@ import * as Legacy from "./Legacy.ts"
 import * as NodeControl from "./NodeControl.ts"
 import * as Project from "./Project.ts"
 import { starterSeats } from "./Providers.ts"
-import * as Ui from "./Ui.ts"
+import * as Ui from "./Ui.vibe"
 
 /**
  * The outcome of one check.

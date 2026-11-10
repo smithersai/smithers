@@ -10,11 +10,11 @@
  * @since 1.0.0
  */
 
+import * as Platform from "./Runner.platform.ts"
 import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect, Layer } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { Cli, z } from "incur"
-import { join } from "node:path"
 import type * as Bridge from "../cli/ControlBridge.ts"
 import * as Presentation from "../cli/Presentation.ts"
 import * as Config from "../runner/Config.ts"
@@ -32,29 +32,29 @@ import type * as Session from "../runner/Session.ts"
  * @since 1.0.0
  */
 export const serve = (path: string, options: { readonly read?: () => Machine.Reading } = {}) =>
-  Effect.gen(function*() {
-    const config = yield* Config.load(path)
-    const token = yield* Config.readToken(config.stateDir)
+  effect {
+    const config = try Config.load(path)
+    const token = try Config.readToken(config.stateDir)
     const controls = new Map<string, Session.Control>()
     const host = Host.layer({ origin: config.origin, token }).pipe(Layer.provide(FetchHttpClient.layer))
     const engine = NodeRuntime.layerHost(
       {
-        filename: join(config.stateDir, "engine.db"),
+        filename: Platform.engineDatabase(config.stateDir),
         workspaceRoot: config.stateDir,
         owner: { hostId: `runner-${config.name}` },
         shutdownTimeoutMs: 10_000
       },
       Job.registration(config, controls).pipe(Layer.provide(host))
     )
-    yield* Effect.logInfo("runner.serve").pipe(
+    try Effect.logInfo("runner.serve").pipe(
       Effect.annotateLogs({
         runner: config.name,
         capacity: config.capacity,
         profiles: Object.keys(config.profiles).length
       })
     )
-    return yield* Serve.loop(config, controls, options.read).pipe(Effect.provide(Layer.merge(engine, host)))
-  })
+    return try Serve.loop(config, controls, options.read).pipe(Effect.provide(Layer.merge(engine, host)))
+  }
 
 /**
  * Builds the `runner` command group.

@@ -9,7 +9,7 @@ import { makeCli } from "../src/Cli.ts"
 import * as Argv from "../src/cli/Argv.ts"
 import { agentArguments, legacyArguments } from "../src/cli/Compatibility.ts"
 import { connectionOptions } from "../src/cli/ControlBridge.ts"
-import { cli } from "../src/Command.ts"
+import { cli } from "../src/Command.vibe"
 import { executionRunId } from "../src/history/ExecutionTarget.vibe"
 import * as Output from "../src/Output.ts"
 
