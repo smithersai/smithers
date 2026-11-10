@@ -9,8 +9,8 @@ import { modelService } from "./fixtures.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
 
 const http = runSync(Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
-const call = async (origin: string, path: string, init: { readonly method?: "GET" | "POST" | "DELETE"; readonly body?: string } = {}) => {
-  const request = HttpClientRequest.make(init.method ?? "GET")(`${origin}${path}`).pipe(init.body === undefined ? (same) => same : HttpClientRequest.bodyText(init.body, "application/json"))
+const call = async (origin: string, path: string, init: { readonly method?: "GET" | "POST" | "DELETE"; readonly body?: string; readonly headers?: Record<string, string> } = {}) => {
+  const request = HttpClientRequest.make(init.method ?? "GET")(`${origin}${path}`).pipe(HttpClientRequest.setHeaders(init.headers ?? {}), init.body === undefined ? (same) => same : HttpClientRequest.bodyText(init.body, "application/json"))
   const response = await runPromise(http.execute(request))
   return { status: response.status, body: await runPromise(response.text) }
 }
@@ -27,6 +27,14 @@ it("the API Worker's production object bodies answer through workerd", { timeout
       const api = try acquireRelease(serveApiObjects({
         CHAT_MODEL: JSON.stringify({ protocol: "openai-chat", baseUrl: model, modelId: "deterministic", credential: "BENCH" }),
         SMITHERS_MODEL_KEY_BENCH: "benchmark-only", SMITHERS_MODEL_KEY_BENCH_ORIGIN: model,
+      }), (served) => promise(served.dispose))
+      // Sign-in configured with fixture-only secrets: no GitHub request is made by what this benchmark calls.
+      const signedIn = try acquireRelease(serveApiObjects({
+        CHAT_MODEL: JSON.stringify({ protocol: "openai-chat", baseUrl: model, modelId: "deterministic", credential: "BENCH" }),
+        SMITHERS_MODEL_KEY_BENCH: "benchmark-only", SMITHERS_MODEL_KEY_BENCH_ORIGIN: model,
+        GITHUB_CLIENT_ID: "Iv1.bench", GITHUB_CLIENT_SECRET: "benchmark-only", VIBELANG_ORIGIN: "http://127.0.0.1",
+        VIBELANG_INITIAL_MAINTAINER_ID: "1", SESSION_SECRET: "benchmark-only-signing-secret-32-chars",
+        SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       }), (served) => promise(served.dispose))
       provide LiveFactory(api.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
         const factory = try Factory
@@ -124,9 +132,27 @@ it("the API Worker's production object bodies answer through workerd", { timeout
           const rerun = await call(api.origin, `/api/actions/runs/${id}/rerun`, { method: "POST", body: JSON.stringify({ id: next }) })
           expect([rerun.status, JSON.parse(rerun.body)]).toEqual([202, { id: next }])
         })
+        const signedInAccounts = workload(bench, "api-objects-signed-in-accounts", "async", async () => {
+          const session = await call(signedIn.origin, "/api/auth/session")
+          expect([session.status, JSON.parse(session.body)]).toEqual([200, { id: "", login: "", role: "viewer", available: false }])
+          const roles = await call(signedIn.origin, "/api/roles")
+          // Configured sign-in refuses a signed-out caller (403); disabled sign-in answers 503.
+          expect([roles.status, JSON.parse(roles.body)]).toEqual([403, { refusal: "forbidden" }])
+          expect(await object(signedIn.origin, "accounts", "project", "draftWiki", ["2", "roadmap", "Bench", `k-${++run}`])).toBe("forbidden")
+        })
+        const ownedRun = workload(bench, "api-objects-owned-action-run", "async", async () => {
+          const id = `a-owned-${++run}`
+          const props = { "x-bench-props": JSON.stringify({ actionOwner: "7", actionName: "Bench" }) }
+          const started = await call(api.origin, "/api/actions/runs", { method: "POST", headers: props, body: JSON.stringify({ id, flow: "vibelang/Tour", input: null, door: "button" }) })
+          expect([started.status, JSON.parse(started.body)]).toEqual([202, { id }])
+          const read = await call(api.origin, `/api/actions/runs/${id}`)
+          // Trusted props are an agent acting for its owner (the alarm's callback): the run is the agent's.
+          expect(JSON.parse(read.body)).toMatchObject({ id, flow: "vibelang/Tour", door: "button", actor: "agent" })
+          expect((await call(api.origin, `/api/actions/runs/${id}`, { method: "DELETE", headers: props })).status).toBe(200)
+        })
         const results = []
-        for (const each of [conversation, unbound, unconfigured, identity, budget, runs, history, tour, agentTools, historyWrite, actionRuns]) results.push(try tryPromise(() => each.run(slow)))
-        try artifact("api-objects", "Vitest built-in bench; the production bodies of worker/Api.vibe in real workerd SQLite through apiFetch, LiveFactory HTTP and alarms: posts, tour start/pause/resume/end, wiki open, an agent reply calling the history and wiki tools, a guest history write, and an action run started, read, followed, cancelled and rerun; deterministic HTTP model service.", ["No GitHub: History reads through an injected faulty client.", "Sign-in unconfigured, so every caller is a viewer: tool and history writes measure the refusal path.", "Objects reach each other by fetch, not Alchemy RPC.", "Deterministic model; no inference latency."], results)
+        for (const each of [conversation, unbound, unconfigured, identity, budget, runs, history, tour, agentTools, historyWrite, actionRuns, signedInAccounts, ownedRun]) results.push(try tryPromise(() => each.run(slow)))
+        try artifact("api-objects", "Vitest built-in bench; the production bodies of worker/Api.vibe in real workerd SQLite through apiFetch, LiveFactory HTTP and alarms: posts, tour start/pause/resume/end, wiki open, an agent reply calling the history and wiki tools, a guest history write, and an action run started, read, followed, cancelled and rerun, one started with an agent's trusted props, and ProjectAccounts with sign-in configured; deterministic HTTP model service.", ["No GitHub: History reads through an injected faulty client.", "Every caller is signed out (a viewer): signing in needs GitHub (0165), so tool, history and draft writes measure their refusal path, also on the instance with sign-in configured.", "Objects reach each other by fetch, not Alchemy RPC.", "Deterministic model; no inference latency."], results)
       }
     }
   }))

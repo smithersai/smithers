@@ -70,7 +70,15 @@ executed in both keeps its Vitest structure. Cross-runtime credit requires ident
 declaration ranges; branch credit requires the same type and ordered arm ranges. Missing/non-finite columns never
 establish execution. The one exception is Istanbul's implicit `else` arm of an `if` without `else`, which has no
 coordinates in either runtime; it matches by its branch's complete range. Before 2026-11-09 it made every such `if`
-uncredited across runtimes (`worker/apiObjects.vibe` branches 37.29% before, 57.63% after, same run). Complementary hits on exactly matching branch arms may combine; different shapes stay uncovered.
+uncredited across runtimes (`worker/apiObjects.vibe` branches 37.29% before, 57.63% after, same run).
+
+**API objects (2026-11-10).** `bench/api-workerd.bench.vibe` drives `worker/apiObjects.vibe` through tours, wiki
+open, an agent reply that calls the history and wiki tools, history writes, action runs (one with an agent's trusted
+entry props) and ProjectAccounts with sign-in configured from fixture-only secrets. The benchmark host built that
+configuration without a `Scope`, so `Accounts.configured()` answered `undefined` and the configured branch never ran;
+it is now scoped as `test/workerd/accounts.vibe` is. Lines 120, 229 and 246 to 248 stay uncovered: they run only in a
+reply for a signed-in owner (its role read, an announced agent action, a wiki draft for that owner), and signing in
+needs GitHub (0165). Complementary hits on exactly matching branch arms may combine; different shapes stay uncovered.
 Executable lines are statement start lines, as in Istanbul; a declaration's hit never executes its whole nested body.
 A line no benchmark should run is excluded only with its reason recorded in `merge-coverage.ts` and here:
 `scripts/mythical-seed.vibe` line 103 (`Refused` guard) is unreachable from real input because `intentsOf`
