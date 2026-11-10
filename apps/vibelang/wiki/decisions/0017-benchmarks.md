@@ -346,6 +346,30 @@ strict per-file gate exits 1 for 102 files. Merged benchmark-only coverage is 6,
 deadline, participation and a cross-origin sandbox principal). Issues and Wiki keep 130 and 59, almost all GitHub
 success paths.
 
+**Receipt (2026-11-10, lane vl-bench2, `4e4241d4`).** `pnpm bench:coverage` on a 4-vCPU box through `run-heavy`,
+with `node bench/merge-coverage.ts` run even after a failed workload: 93/96 files and 196/204 tests pass, 2 files and 7
+tests skipped (opt-in). The single failure is `bench/scripts.bench.vibe`, the box image's git 2.39 named under
+"Off-host runs"; it passes on nyc-01's git 2.43. The merge unions 167 files (104 with workerd evidence, 98 with
+Chromium) and exits 1 on the strict gate. Statement-start lines from the merged map: `worker/` 2,157/2,380 (90.63%),
+`src/` 5,261/5,379, `src/` + `worker/` 7,418/7,759 (95.61%). Opt-in GitHub workloads did not run in this receipt, so
+`worker/PublicReads.vibe:38-39` (cache write and eviction failures) count as uncovered here, although
+`public-cache-eviction-failure` executes the eviction failure when `BENCH_PUBLIC_GITHUB=1`.
+
+The remaining `worker/` lines, by reason:
+
+| Lines | Reason |
+|---|---|
+| `Issues.vibe` 131, `Wiki.vibe` 59 | A signed-in person's delegated GitHub reads and writes: owner-only (GitHub sign-in). |
+| `apiObjects.vibe` 252-254 | An agent action run's wiki draft for its owner. `vibelang/Post`'s least role is above viewer (proved `catalogDecision`), and a workerd owner gains a role only by GitHub sign-in: owner-only. Its viewer refusal through a conversation reply is `api-objects-owned-agent-tools`. |
+| `SandboxAccounts.vibe` 7, `SandboxMachine.vibe` 3 | Container bindings, present only with a sandbox image: real Cloudflare Containers (VL-35). |
+| `WikiDraft.vibe`, `VipDraft.vibe`, `SpecificationReviewers.vibe` 2 each | Usage fallbacks unreachable in production, above. |
+| `Reply.vibe` 369-370 | A non-busy `StartReply` refusal: a reply id is derived from its post, so only an empty id or a full sequence (2^53-1 events) reaches it. Defensive. |
+| `HistoryActions.vibe` 26, 39, 44; `Objects.vibe` 114, 250-251; `apiObjects.vibe` 122 | Default arms, default parameters and routing defects no production caller reaches. |
+| `budgetDecision.vibe` 60-61 | The superseded `charge` helper, above. |
+
+`worker/Tour.vibe`'s `spoken` (line 6 above) had no production caller and is deleted on main by `5467d0b8`, as
+production code the product never runs.
+
 ## Off-host runs (lane vl-gatefix, 2026-11-10)
 
 The complete receipts above ran on an idle 48-core nyc-01. On nyc-01 at load 80 to 95 and on a 4-vCPU box,
