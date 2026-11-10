@@ -220,8 +220,9 @@ html { overflow-anchor: none; }
 .vl-role-dialog[data-state="closed"] { display:none; }
 @media (max-width:600px) {
   .vl-nav-role, .vl-visit-as { display:none; }
-  .vl-app:has(.vl-visit) { --vl-header-height:92px; }
-  .vl-top:has(.vl-visit) { min-height:var(--vl-header-height); }
+  /* The identity tools wrap the nav to a second row in mock and live mode alike; surfaces start below both rows. */
+  .vl-app:has(.vl-identity-tools) { --vl-header-height:92px; }
+  .vl-top:has(.vl-identity-tools) { min-height:var(--vl-header-height); }
   .vl-nav:has(.vl-identity-tools) { max-width:calc(100vw - 64px); flex-wrap:wrap; justify-content:flex-end; row-gap:4px; }
   .vl-top .vl-logo img { height:20px; }
   .vl-docs[data-maximized="true"], .vl-docs[data-driving="true"] { inset-block-start:var(--vl-header-height, 60px); }
