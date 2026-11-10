@@ -5,7 +5,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 
 /**
  * The names a shell keeps: POSIX "name", a letter or underscore followed by

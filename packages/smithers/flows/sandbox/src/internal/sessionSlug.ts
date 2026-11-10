@@ -31,6 +31,7 @@ const prefixLength = 40
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const sessionSlug = (session: string): string => {
   let djb2 = 5381

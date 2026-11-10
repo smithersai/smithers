@@ -12,7 +12,7 @@ import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Stream from "effect/Stream"
-import { decodeBase64Bytes } from "../internal/base64.ts"
+import { decodeBase64Bytes } from "../internal/base64.vibe"
 import { environmentInput } from "../internal/environmentInput.vibe"
 import { checkEnvironmentNames } from "../internal/environmentNames.vibe"
 import { envPrefix } from "../internal/envPrefix.ts"
@@ -20,8 +20,9 @@ import { parentOf } from "../internal/guestPath.ts"
 import { linuxFileSystem } from "../internal/linuxFileSystem.ts"
 import { gather, type GatheredRun, remoteProcessOf } from "../internal/localProcess.vibe"
 import { rootedAt } from "../internal/rootedPath.ts"
-import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 import type { Session } from "../Sandbox/Session.vibe"
+import * as $platform from "./existing.platform.ts"
 
 /**
  * One program to run inside a container: the request half of
@@ -156,7 +157,7 @@ export const existing = (options: ExistingOptions): Session => {
       (plan) =>
         Effect.mapError(
           options.spawner.spawn(ChildProcess.make(plan.file, [...plan.args], {
-            env: ChildProcessEnvironment.make(process.env, plan.env),
+            env: ChildProcessEnvironment.make($platform.environment(), plan.env),
             extendEnv: false,
             ...stdin === undefined ? {} : { stdin }
           })),
@@ -182,16 +183,16 @@ export const existing = (options: ExistingOptions): Session => {
     id: container,
     remoteId: container,
     workdir,
-    spawn: Effect.fnUntraced(function*(command, spawnOptions) {
-      yield* checkEnvironmentNames(spawnOptions.env)
+    spawn: effect (command, spawnOptions) => {
+      try checkEnvironmentNames(spawnOptions.env)
       const input = environmentInput(envPrefix(spawnOptions.env), spawnOptions.stdin)
-      const handle = yield* launch(
+      const handle = try launch(
         `${input.script}exec ${input.prefix}/bin/sh -c ${CommandLine.quote(command)}`,
         resolveCwd(spawnOptions.cwd ?? ""),
         input.stdin
       )
       return remoteProcessOf(handle, command)
-    }),
+    },
     readFile: (path) =>
       Effect.flatMap(read(path), (result) =>
         result.code === 0

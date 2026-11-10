@@ -5,8 +5,8 @@
  */
 
 import * as Effect from "effect/Effect"
-import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
-import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.vibe"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 import type { TestScript } from "../RemoteChildProcessSpawner/TestScript.ts"
 import type { Session } from "./Session.vibe"
 import type { TestSessionProvider } from "./TestSessionProvider.ts"

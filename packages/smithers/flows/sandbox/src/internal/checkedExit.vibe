@@ -5,7 +5,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 
 /**
  * Passes `result` through when its command exited 0, and fails with `code`

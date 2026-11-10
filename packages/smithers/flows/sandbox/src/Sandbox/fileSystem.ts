@@ -11,9 +11,9 @@ import * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import * as Stream from "effect/Stream"
-import { platformReason, refusalReason } from "../internal/platformReason.ts"
+import { platformReason, refusalReason } from "../internal/platformReason.vibe"
 import { rootedAt } from "../internal/rootedPath.ts"
-import type { ProviderError, ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import type { ProviderError, ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 import type { Session } from "./Session.vibe"
 
 const decoder = new TextDecoder()
@@ -268,6 +268,7 @@ const unsupportedExit = 13
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const fileSystem = (session: Session): FileSystem.FileSystem => {
   const quote = CommandLine.quote

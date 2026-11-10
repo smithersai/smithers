@@ -32,10 +32,11 @@ import type * as Scope from "effect/Scope"
 import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
 import { concat } from "../internal/concat.ts"
-import { elapsed } from "../internal/deadline.ts"
-import { platformFailure } from "../internal/platformReason.ts"
-import type { Provider, RemoteProcess } from "./Provider.ts"
-import type { ProviderError } from "./ProviderError.ts"
+import { elapsed } from "../internal/deadline.vibe"
+import { platformFailure } from "../internal/platformReason.vibe"
+import type { Provider, RemoteProcess } from "./Provider.vibe"
+import * as $platform from "./layer.platform.ts"
+import type { ProviderError } from "./ProviderError.vibe"
 
 const MODULE = "ChildProcess"
 
@@ -75,7 +76,7 @@ const guestEnvironment = (
   env: Readonly<Record<string, string | Redacted.Redacted<string> | undefined>> | undefined
 ): Record<string, string | undefined> | undefined => {
   if (env === undefined) return undefined
-  const host = globalThis.process?.env
+  const host = $platform.hostEnvironment()
   const guest: Record<string, string | undefined> = {}
   for (const [name, value] of Object.entries(env)) {
     const upper = name.toUpperCase()
@@ -273,86 +274,85 @@ const pidAllocator = (): () => ProcessId => {
   return () => ProcessId(nextPid++)
 }
 
-const handleOf = (
+const handleOf = effect (
   command: string,
   child: ChildProcess.Command,
   process: RemoteProcess,
   allocatePid: () => ProcessId,
   provider: Provider
-): Effect.Effect<ChildProcessHandle, never, Scope.Scope> =>
-  Effect.gen(function*() {
-    let running = true
-    const rawStdout = Stream.mapError(process.stdout, platformError("stdout", command))
-    const rawStderr = Stream.mapError(process.stderr, platformError("stderr", command))
-    const options = rightmostOptions(child)
-    const stdout = outputStream(rawStdout, options.stdout)
-    const stderr = outputStream(rawStderr, options.stderr)
-    const completed = yield* Deferred.make<ExitCode, PlatformError.PlatformError>()
-    // Either settlement of the provider's exit observation — a code or a
-    // failure — means the remote process is gone, so both clear `running`:
-    // a handle whose exit could not be read must not keep reporting itself
-    // as a live process.
-    const observeExit = process.exitCode.pipe(
-      Effect.mapError((error) => {
-        running = false
-        return platformError("exitCode", command)(error)
-      }),
-      Effect.map((code) => {
-        running = false
-        return ExitCode(code)
-      })
-    )
-    // Observe completion independently of whether a caller awaits `exitCode`.
-    // The Deferred memoizes the one provider observation for every waiter, and
-    // the scoped fiber cannot outlive the remote session that owns it.
-    yield* Effect.forkScoped(Deferred.into(observeExit, completed))
-    const kill = provider.kill
-    const signalled: (signal: ChildProcess.Signal) => Effect.Effect<void, PlatformError.PlatformError> =
-      kill === undefined
-        ? () => Effect.fail(noKill(command))
-        : (signal) => Effect.mapError(kill(process, signal), platformError("kill", command))
-    if (kill !== undefined) {
-      // Closing a process scope asks the provider to stop THAT command before
-      // the provider's own release finalizer tears down whatever it owns. A
-      // process this side has already seen exit is left alone: the pid it
-      // named may belong to someone else by now.
-      //
-      // `running` is what this side has SEEN, and it lags what happened.
-      // `ChildProcessSpawner.string` and `lines` are `Stream.mkString` and
-      // `Stream.runCollect` over stdout alone: they close the process scope
-      // the moment the output ends, which is before the forked observation of
-      // the exit has landed, so a command that finished cleanly is signalled
-      // anyway. That signal is harmless, but waiting on it is not — a provider
-      // whose `kill` is slow charged every `string` caller the full
-      // `signalWithin` bound after its command had already exited. So the wait
-      // also ends the moment the exit observation arrives: the signal is still
-      // sent for a process that may still be alive, and a process that turns
-      // out to have finished stops costing anybody time.
-      yield* Effect.addFinalizer(() =>
-        running
-          ? Effect.ignore(
-            Effect.raceFirst(
-              kill(process, rightmostOptions(child).killSignal ?? defaultSignal),
-              Effect.raceFirst(Effect.ignore(Deferred.await(completed)), elapsed(signalWithin))
-            )
-          )
-          : Effect.void
-      )
-    }
-    return makeHandle({
-      pid: allocatePid(),
-      exitCode: Deferred.await(completed),
-      isRunning: Effect.sync(() => running),
-      kill: (options) => signalled(options?.killSignal ?? rightmostOptions(child).killSignal ?? defaultSignal),
-      stdin: Sink.fail(noStdin(command)),
-      stdout,
-      stderr,
-      all: Stream.merge(stdout, stderr),
-      getInputFd: () => Sink.drain,
-      getOutputFd: () => Stream.empty,
-      unref: Effect.succeed(Effect.void)
+): Effect.Effect<ChildProcessHandle, never, Scope.Scope> => {
+  let running = true
+  const rawStdout = Stream.mapError(process.stdout, platformError("stdout", command))
+  const rawStderr = Stream.mapError(process.stderr, platformError("stderr", command))
+  const options = rightmostOptions(child)
+  const stdout = outputStream(rawStdout, options.stdout)
+  const stderr = outputStream(rawStderr, options.stderr)
+  const completed = try Deferred.make<ExitCode, PlatformError.PlatformError>()
+  // Either settlement of the provider's exit observation — a code or a
+  // failure — means the remote process is gone, so both clear `running`:
+  // a handle whose exit could not be read must not keep reporting itself
+  // as a live process.
+  const observeExit = process.exitCode.pipe(
+    Effect.mapError((error) => {
+      running = false
+      return platformError("exitCode", command)(error)
+    }),
+    Effect.map((code) => {
+      running = false
+      return ExitCode(code)
     })
+  )
+  // Observe completion independently of whether a caller awaits `exitCode`.
+  // The Deferred memoizes the one provider observation for every waiter, and
+  // the scoped fiber cannot outlive the remote session that owns it.
+  try Effect.forkScoped(Deferred.into(observeExit, completed))
+  const kill = provider.kill
+  const signalled: (signal: ChildProcess.Signal) => Effect.Effect<void, PlatformError.PlatformError> =
+    kill === undefined
+      ? () => Effect.fail(noKill(command))
+      : (signal) => Effect.mapError(kill(process, signal), platformError("kill", command))
+  if (kill !== undefined) {
+    // Closing a process scope asks the provider to stop THAT command before
+    // the provider's own release finalizer tears down whatever it owns. A
+    // process this side has already seen exit is left alone: the pid it
+    // named may belong to someone else by now.
+    //
+    // `running` is what this side has SEEN, and it lags what happened.
+    // `ChildProcessSpawner.string` and `lines` are `Stream.mkString` and
+    // `Stream.runCollect` over stdout alone: they close the process scope
+    // the moment the output ends, which is before the forked observation of
+    // the exit has landed, so a command that finished cleanly is signalled
+    // anyway. That signal is harmless, but waiting on it is not — a provider
+    // whose `kill` is slow charged every `string` caller the full
+    // `signalWithin` bound after its command had already exited. So the wait
+    // also ends the moment the exit observation arrives: the signal is still
+    // sent for a process that may still be alive, and a process that turns
+    // out to have finished stops costing anybody time.
+    try Effect.addFinalizer(() =>
+      running
+        ? Effect.ignore(
+          Effect.raceFirst(
+            kill(process, rightmostOptions(child).killSignal ?? defaultSignal),
+            Effect.raceFirst(Effect.ignore(Deferred.await(completed)), elapsed(signalWithin))
+          )
+        )
+        : Effect.void
+    )
+  }
+  return makeHandle({
+    pid: allocatePid(),
+    exitCode: Deferred.await(completed),
+    isRunning: Effect.sync(() => running),
+    kill: (options) => signalled(options?.killSignal ?? rightmostOptions(child).killSignal ?? defaultSignal),
+    stdin: Sink.fail(noStdin(command)),
+    stdout,
+    stderr,
+    all: Stream.merge(stdout, stderr),
+    getInputFd: () => Sink.drain,
+    getOutputFd: () => Stream.empty,
+    unref: Effect.succeed(Effect.void)
   })
+}
 
 /**
  * Opens one provider session and adapts it, reporting whether the open
@@ -374,18 +374,18 @@ export const makeOpened = (
   Effect.map(provider.open(provider.session), () => {
     const allocatePid = pidAllocator()
     return makeSpawner(
-      Effect.fnUntraced(function*(command: ChildProcess.Command) {
-        yield* validateCommand(command, provider.stdin === true)
+      effect (command: ChildProcess.Command) => {
+        try validateCommand(command, provider.stdin === true)
         const rendered = CommandLine.render(command)
         const input = stdinStream(leftmostOptions(command))
-        const stdin = input === undefined ? undefined : yield* collectStdin(rendered, input)
-        const started = yield* provider.spawn(rendered, {
+        const stdin = input === undefined ? undefined : try collectStdin(rendered, input)
+        const started = try provider.spawn(rendered, {
           cwd: CommandLine.cwd(command),
           env: guestEnvironment(CommandLine.env(command)),
           ...stdin === undefined ? {} : { stdin }
         }).pipe(Effect.mapError(platformError("spawn", rendered)))
-        return yield* handleOf(rendered, command, started, allocatePid, provider)
-      })
+        return try handleOf(rendered, command, started, allocatePid, provider)
+      }
     )
   })
 

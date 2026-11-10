@@ -9,6 +9,7 @@
  *
  * @category utils
  * @since 0.1.0
+ * @throws {never}
  */
 export const concat = (chunks: ReadonlyArray<Uint8Array>): Uint8Array => {
   let length = 0

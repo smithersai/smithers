@@ -35,8 +35,8 @@
 import { Fault } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderError.ts"
-import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderError.vibe"
+import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 import type { Session } from "../Sandbox/Session.vibe"
 
 /**

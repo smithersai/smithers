@@ -67,6 +67,7 @@ const seed = (() => {
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const uniquePosixCommands = (): Commands => {
   // Six digits give the collision space of concurrent workers room that a

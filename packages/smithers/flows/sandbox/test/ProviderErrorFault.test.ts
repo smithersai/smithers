@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Fault } from "@smthrs/flow"
 import { Schema } from "effect"
-import { ProviderError, ProviderErrorCode } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError, ProviderErrorCode } from "../src/RemoteChildProcessSpawner/ProviderError.vibe"
 
 const classes = {
   unavailable: "infra",

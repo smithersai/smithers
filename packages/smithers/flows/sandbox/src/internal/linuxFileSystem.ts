@@ -13,7 +13,7 @@ import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import * as Stream from "effect/Stream"
 import type { Session } from "../Sandbox/Session.vibe"
-import { refusalReason } from "./platformReason.ts"
+import { refusalReason } from "./platformReason.vibe"
 
 const encoder = new TextEncoder()
 const validMode = (mode: number): boolean => Number.isInteger(mode) && mode >= 0 && mode <= 0o7777
@@ -28,6 +28,7 @@ const validOwner = (id: number): boolean => Number.isInteger(id) && id >= -1 && 
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const linuxFileSystem = (session: Session, guest: string): Partial<FileSystem.FileSystem> => {
   const badArgument = (method: string, description: string) =>

@@ -10,6 +10,6 @@
  * @since 0.1.0
  */
 
-export * from "./check.ts"
+export * from "./check.vibe"
 export * from "./posixCommands.ts"
 export * from "./workSeed.ts"

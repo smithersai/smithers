@@ -1,0 +1,29 @@
+/**
+ * Host access for the adjacent VibeLang module.
+ *
+ * @since 1.0.0
+ */
+
+import * as Effect from "effect/Effect"
+
+/**
+ * The longest delay a platform timer holds. Node and browsers fire a longer
+ * one, `Infinity` included, after 1 millisecond.
+ */
+const longestTimer = 2_147_483_647
+
+/**
+ * Completes after `millis` on the platform's own timer, waiting in
+ * timer-sized steps when one timer cannot hold the whole delay.
+ *
+ * @private
+ * @since 1.0.0
+ */
+export const waited = (millis: number): Effect.Effect<void> =>
+  Effect.callback<void>((resume) => {
+    const timer = setTimeout(
+      () => resume(millis > longestTimer ? waited(millis - longestTimer) : Effect.void),
+      Math.min(millis, longestTimer)
+    )
+    return Effect.sync(() => clearTimeout(timer))
+  })

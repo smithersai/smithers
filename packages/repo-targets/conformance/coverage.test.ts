@@ -646,7 +646,7 @@ describe("coverage conformance", () => {
       "smithers/flows/sandbox/src/AwsSandbox/make.ts": 1,
       // Container and Kubernetes now share execSession's process registry.
       // The same spawn-before-kill provenance guarantee needs one hint here.
-      "smithers/flows/sandbox/src/internal/execSession.ts": 1,
+      "smithers/flows/sandbox/src/internal/execSession.vibe": 1,
       // Session paths are absolute beneath an absolute root, so parent
       // creation is skipped only for the filesystem root. The second guard is
       // the same opaque-process provenance check as the remote providers.
@@ -655,7 +655,7 @@ describe("coverage conformance", () => {
       "smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts": 1,
       // `spawn` is the only source of a `RemoteProcess`, and it records every
       // one it returns, so the scripted provider's kill lookup cannot miss.
-      "smithers/flows/sandbox/src/RemoteChildProcessSpawner/TestRemote.ts": 1,
+      "smithers/flows/sandbox/src/RemoteChildProcessSpawner/TestRemote.vibe": 1,
       // Every runtime this package supports carries Web Crypto, so the
       // `Math.random` fallback the conformance nonce keeps for a host without
       // it is unreachable from any supported host.

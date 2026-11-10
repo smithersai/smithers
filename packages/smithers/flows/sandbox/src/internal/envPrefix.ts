@@ -19,6 +19,7 @@ import * as CommandLine from "@smthrs/kernel/CommandLine"
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const envPrefix = (env: Readonly<Record<string, string | undefined>> | undefined): ReadonlyArray<string> => {
   const entries = Object.entries(env ?? {})

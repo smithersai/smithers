@@ -3,7 +3,7 @@ import { Effect, Exit, Sink, Stream } from "effect"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import * as Scope from "effect/Scope"
 import { envPrefix } from "../src/internal/envPrefix.ts"
-import { execSession, type ExecSessionOptions } from "../src/internal/execSession.ts"
+import { execSession, type ExecSessionOptions } from "../src/internal/execSession.vibe"
 import type { GatheredRun } from "../src/internal/localProcess.vibe"
 import { pidDirectory } from "../src/internal/pidDirectory.ts"
 

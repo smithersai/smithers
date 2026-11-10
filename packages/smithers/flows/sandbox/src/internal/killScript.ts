@@ -102,6 +102,7 @@ export const cancelledStatus = 143
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const cancelGuard = (pidfile: string): string =>
   `if [ -e ${cancelMarker(pidfile)} ]; then exit ${cancelledStatus}; fi`
@@ -126,6 +127,7 @@ export const cancelGuard = (pidfile: string): string =>
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const killScript = (pidfile: string, signal: string): string =>
   `: > ${cancelMarker(pidfile)} || exit 1; ` +
@@ -149,6 +151,7 @@ export const killScript = (pidfile: string, signal: string): string =>
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const hostKillScript = (pid: number, signal: string): string =>
   `p=${pid}; ` +

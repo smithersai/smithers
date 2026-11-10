@@ -19,10 +19,10 @@
 
 import * as Effect from "effect/Effect"
 import { attemptIn } from "../internal/attempt.vibe"
-import { encodeBase64 } from "../internal/base64.ts"
+import { encodeBase64 } from "../internal/base64.vibe"
 import { recordedNetwork } from "../internal/microsandboxNetwork.ts"
-import { runGuest } from "../internal/microsandboxProcess.ts"
-import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import { runGuest } from "../internal/microsandboxProcess.vibe"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 import type { Sdk } from "./Sdk.ts"
 
 const attempt = attemptIn("microsandbox")

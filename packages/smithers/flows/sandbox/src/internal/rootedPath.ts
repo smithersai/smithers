@@ -19,8 +19,11 @@
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
-export const rootedAt = (workdir: string): (path: string) => string => {
+export const rootedAt = (workdir: string):
+/** @throws {never} */
+(path: string) => string => {
   // Interpret separators using the guest path dialect, independently of the
   // machine driving it. A POSIX guest may legally have backslashes in a name.
   const windows = /^(?:[A-Za-z]:[\\/]|\\\\)/.test(workdir)

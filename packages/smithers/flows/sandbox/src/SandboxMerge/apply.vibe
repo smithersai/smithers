@@ -9,9 +9,10 @@ import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import type { Work } from "../Sandbox/Work.ts"
+import type { Work } from "../Sandbox/Work.vibe"
 import { Conflicted, Merged, MergeError, type Outcome } from "./Outcome.vibe"
 import { make as repositoryAt, output, type Repository } from "./Repository.vibe"
+import * as $platform from "./apply.platform.ts"
 import { recordConflicts, type Strategy } from "./Strategy.vibe"
 
 /**
@@ -58,7 +59,7 @@ export interface ApplyOptions<E = never, R = never> {
  * @since 1.0.0
  */
 export const changeIdOf = (key: string): Effect.Effect<string> =>
-  Effect.promise(() => globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(key))).pipe(
+  Effect.promise(() => $platform.sha256(key)).pipe(
     Effect.map((digest) =>
       Array.from(new Uint8Array(digest).slice(0, 16), (byte) => byte.toString(16).padStart(2, "0")).join("")
         .replace(/[0-9a-f]/g, (digit) => "zyxwvutsrqponmlk"[Number.parseInt(digit, 16)]!)
@@ -84,9 +85,9 @@ const single = (repository: Repository, revision: string) =>
 
 /** The change's current state, read from the repository. */
 const outcomeOf = (repository: Repository, change: string) =>
-  Effect.gen(function*() {
+  effect {
     const found = lines(
-      yield* repository.jj([
+      try repository.jj([
         "log",
         "--no-graph",
         "-r",
@@ -96,7 +97,7 @@ const outcomeOf = (repository: Repository, change: string) =>
       ])
     )
     if (found.length !== 1) {
-      return yield* new MergeError({
+      throw new MergeError({
         reason: "vcs_failed",
         message: `the change ${change} names ${found.length} commits; resolve the divergence with jj`
       })
@@ -104,10 +105,10 @@ const outcomeOf = (repository: Repository, change: string) =>
     const [commit, conflict, onto] = found[0]!.split("\t") as [string, string, string]
     if (conflict !== "true") return new Merged({ change, commit, onto })
     const paths = lines(
-      yield* repository.jj(["file", "list", "-r", commit, "-T", "if(conflict, path.display() ++ \"\\n\")"])
+      try repository.jj(["file", "list", "-r", commit, "-T", "if(conflict, path.display() ++ \"\\n\")"])
     )
     return new Conflicted({ change, commit, onto, paths })
-  })
+  }
 
 /**
  * Lands `work` in the host repository as one jj change on `onto`.
@@ -152,52 +153,52 @@ export const apply = <E = never, R = never>(
   return Effect.flatMap(
     RepositoryMutation,
     (mutation) =>
-      Effect.gen(function*() {
-        const repository = yield* repositoryAt(options.repository)
-        const change = yield* changeIdOf(options.key)
+      effect {
+        const repository = try repositoryAt(options.repository)
+        const change = try changeIdOf(options.key)
         // Fetch before the fences: network latency must not block local snapshots.
         // The fenced reads below re-check presence and resolve the refreshed onto.
         if (
           options.fetch !== false
-          && (yield* single(repository, `change_id(${change})`)).length === 0
-          && (yield* single(repository, work.base)).length === 0
+          && (try single(repository, `change_id(${change})`)).length === 0
+          && (try single(repository, work.base)).length === 0
         ) {
-          yield* repository.jj(["git", "fetch", ...(options.fetch ?? [])])
+          try repository.jj(["git", "fetch", ...(options.fetch ?? [])])
         }
-        return yield* mutation.run(
+        return try mutation.run(
           "sandbox apply",
           options.repository,
-          Effect.gen(function*() {
-            const spawner = yield* ChildProcessSpawner
-            const fs = yield* FileSystem.FileSystem
+          effect {
+            const spawner = try ChildProcessSpawner
+            const fs = try FileSystem.FileSystem
             const pending = `smithers-sandbox/${change}`
-            const exists = (yield* single(repository, `change_id(${change})`)).length > 0
-            const interrupted = (yield* single(repository, `bookmarks(exact:"${pending}")`)).length > 0
+            const exists = (try single(repository, `change_id(${change})`)).length > 0
+            const interrupted = (try single(repository, `bookmarks(exact:"${pending}")`)).length > 0
             if (!exists) {
-              if ((yield* single(repository, work.base)).length === 0) {
-                return yield* new MergeError({
+              if ((try single(repository, work.base)).length === 0) {
+                throw new MergeError({
                   reason: "base_not_found",
                   message: `the work's base ${work.base} is not in ${options.repository}`
                 })
               }
             }
-            const onto = yield* single(repository, options.onto)
+            const onto = try single(repository, options.onto)
             if (onto.length !== 1) {
-              return yield* new MergeError({
+              throw new MergeError({
                 reason: "onto_unresolved",
                 message: `${options.onto} names ${onto.length} commits in ${options.repository}`
               })
             }
             if (!exists) {
-              const gitDir = (yield* repository.jj(["git", "root"])).trim()
+              const gitDir = (try repository.jj(["git", "root"])).trim()
               const git = (args: ReadonlyArray<string>, env?: Record<string, string>, stdin?: string) =>
                 output(spawner, "git", ["--git-dir", gitDir, ...args], { cwd: options.repository, env, stdin })
               // A private index, so the repository's own index and working copy are untouched.
               const index = { GIT_INDEX_FILE: `${gitDir}/smithers-sandbox-${change}.index` }
-              const tree = yield* Effect.ensuring(
-                Effect.gen(function*() {
-                  yield* git(["read-tree", work.base], index)
-                  yield* Effect.mapError(
+              const tree = try Effect.ensuring(
+                effect {
+                  try git(["read-tree", work.base], index)
+                  try Effect.mapError(
                     git(["apply", "--cached", "--binary", "-"], index, work.patch),
                     (cause) =>
                       new MergeError({
@@ -206,39 +207,39 @@ export const apply = <E = never, R = never>(
                         cause
                       })
                   )
-                  return (yield* git(["write-tree"], index)).trim()
-                }),
+                  return (try git(["write-tree"], index)).trim()
+                },
                 Effect.ignore(fs.remove(index.GIT_INDEX_FILE, { force: true }))
               )
               // jj's built-in defaults set both to "", so an unconfigured identity reads as empty.
-              const name = (yield* repository.jj(["config", "get", "user.name"])).trim()
-              const email = (yield* repository.jj(["config", "get", "user.email"])).trim()
+              const name = (try repository.jj(["config", "get", "user.name"])).trim()
+              const email = (try repository.jj(["config", "get", "user.email"])).trim()
               const signature = `${name || "Smithers"} <${email || "sandbox@smithers.invalid"}> ${
-                Math.floor((yield* Clock.currentTimeMillis) / 1000)
+                Math.floor((try Clock.currentTimeMillis) / 1000)
               } +0000`
               // jj takes the change id from the commit's `change-id` header on import.
-              const commit = (yield* git(
+              const commit = (try git(
                 ["hash-object", "-t", "commit", "-w", "--stdin"],
                 undefined,
                 `tree ${tree}\nparent ${work.base}\nauthor ${signature}\ncommitter ${signature}\nchange-id ${change}\n\n${
                   options.message.endsWith("\n") ? options.message : `${options.message}\n`
                 }`
               )).trim()
-              yield* git(["update-ref", `refs/heads/${pending}`, commit])
-              yield* repository.jj(["git", "import"])
+              try git(["update-ref", `refs/heads/${pending}`, commit])
+              try repository.jj(["git", "import"])
             }
             if (!exists || interrupted) {
-              yield* repository.jj(["rebase", "-r", `change_id(${change})`, "-d", onto[0]!])
-              yield* repository.jj(["bookmark", "delete", pending])
+              try repository.jj(["rebase", "-r", `change_id(${change})`, "-d", onto[0]!])
+              try repository.jj(["bookmark", "delete", pending])
             }
             // Export may have failed after the pending bookmark was deleted.
             // Recover that phase even when the change already exists.
-            yield* repository.jj(["git", "export"])
-            const landed = yield* outcomeOf(repository, change)
+            try repository.jj(["git", "export"])
+            const landed = try outcomeOf(repository, change)
             return landed
-          })
+          }
         )
-      })
+      }
   ).pipe(
     Effect.catchTag(
       "@smthrs/jj/JjError",
@@ -246,8 +247,10 @@ export const apply = <E = never, R = never>(
     ),
     Effect.flatMap((landed) =>
       landed._tag === "Conflicted"
-        ? Effect.flatMap(repositoryAt(options.repository), (repository) =>
-          (options.strategy ?? recordConflicts).onConflict(landed, repository))
+        ? Effect.flatMap(
+          repositoryAt(options.repository),
+          (repository) => (options.strategy ?? recordConflicts).onConflict(landed, repository)
+        )
         : Effect.succeed(landed)
     )
   )

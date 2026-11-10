@@ -22,7 +22,7 @@
  */
 
 export * from "./layer.vibe"
-export * from "./make.ts"
+export * from "./make.vibe"
 export * from "./Options.vibe"
 export * from "./Reporter.vibe"
 export * from "./SandboxUnhealthy.vibe"

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, Exit } from "effect"
-import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.vibe"
 import * as Sandbox from "../src/Sandbox/index.ts"
 
 describe("Sandbox.job retained lifecycle", () => {

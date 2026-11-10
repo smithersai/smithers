@@ -1,6 +1,6 @@
 import { Duration, Effect, Fiber } from "effect"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { elapsed } from "../src/internal/deadline.ts"
+import { elapsed } from "../src/internal/deadline.vibe"
 
 // Fake timers stand in for the platform's: the behavior under test is what
 // happens after 24.8 days, which no real clock can wait for.

@@ -5,7 +5,7 @@
  */
 
 import * as Schema from "effect/Schema"
-import { Unchanged } from "../Sandbox/Work.ts"
+import { Unchanged } from "../Sandbox/Work.vibe"
 
 /**
  * The work is one conflict-free jj change on `onto`.

@@ -6,10 +6,10 @@
 
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
-import { type Host, hostContext, type LayerHostOptions } from "./layerHost.ts"
+import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
+import { type Host, hostContext, type LayerHostOptions } from "./layerHost.vibe"
 import type { Provider } from "./Provider.vibe"
-import { capture, type CaptureError, type CheckoutOptions, resolveBase, Work } from "./Work.ts"
+import { capture, type CaptureError, type CheckoutOptions, resolveBase, Work } from "./Work.vibe"
 
 /**
  * Which session to hold, where its checkout is, and what its work is

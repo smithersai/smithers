@@ -15,7 +15,7 @@ import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as ContainerSandbox from "../src/ContainerSandbox/index.ts"
-import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.vibe"
 import type { Session } from "../src/Sandbox/index.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 import { platform } from "./helpers/containedPlatform.ts"

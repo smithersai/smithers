@@ -4,7 +4,7 @@ import { ChildProcess } from "effect/process"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
-import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.vibe"
 import * as Sandbox from "../src/Sandbox/index.ts"
 import * as SandboxHealth from "../src/SandboxHealth/index.ts"
 

@@ -19,6 +19,7 @@
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const rootedAt = (workdir) => {
     // Interpret separators using the guest path dialect, independently of the

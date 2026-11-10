@@ -5,7 +5,7 @@
  */
 
 import * as PlatformError from "effect/PlatformError"
-import type { ProviderError, ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import type { ProviderError, ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 
 /**
  * The one mapping from a provider's closed code set onto the reasons
@@ -44,17 +44,18 @@ export const platformReason: Record<ProviderErrorCode, PlatformError.SystemError
  * @category constructors
  * @since 0.1.0
  */
-export const platformFailure = (method: string, command: string) =>
-(
-  error: ProviderError
-): PlatformError.PlatformError =>
-  PlatformError.systemError({
-    _tag: platformReason[error.code],
-    module: "ChildProcess",
-    method,
-    description: `\`${command}\`: ${error.message}`,
-    cause: error
-  })
+export const platformFailure =
+  (method: string, command: string) =>
+  (
+    error: ProviderError
+  ): PlatformError.PlatformError =>
+    PlatformError.systemError({
+      _tag: platformReason[error.code],
+      module: "ChildProcess",
+      method,
+      description: `\`${command}\`: ${error.message}`,
+      cause: error
+    })
 
 /**
  * The reason a refused utility gives, in the vocabulary of the platform

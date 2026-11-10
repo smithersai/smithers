@@ -219,6 +219,7 @@ const unsupportedExit = 13;
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const fileSystem = (session) => {
     const quote = CommandLine.quote;

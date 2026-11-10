@@ -94,6 +94,7 @@ export const cancelledStatus = 143;
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const cancelGuard = (pidfile) => `if [ -e ${cancelMarker(pidfile)} ]; then exit ${cancelledStatus}; fi`;
 /**
@@ -116,6 +117,7 @@ export const cancelGuard = (pidfile) => `if [ -e ${cancelMarker(pidfile)} ]; the
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const killScript = (pidfile, signal) => `: > ${cancelMarker(pidfile)} || exit 1; ` +
     `n=0; while [ ! -s ${pidfile} ] && [ "$n" -lt ${pidfileWaitSeconds} ]; do sleep 1; n=$((n+1)); done; ` +
@@ -137,6 +139,7 @@ export const killScript = (pidfile, signal) => `: > ${cancelMarker(pidfile)} || 
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const hostKillScript = (pid, signal) => `p=${pid}; ` +
     `if command -v pgrep >/dev/null 2>&1; then ${pgrepKids}; else ${procKids}; fi; ` +

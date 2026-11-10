@@ -8,10 +8,10 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Deferred, Duration, Effect, Fiber, Stream } from "effect"
-import { defaultCheckTimeout, elapsed } from "../src/internal/deadline.ts"
+import { defaultCheckTimeout, elapsed } from "../src/internal/deadline.vibe"
 import * as ProviderConformance from "../src/ProviderConformance/index.ts"
 import * as RemoteChildProcessSpawner from "../src/RemoteChildProcessSpawner/index.ts"
-import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.vibe"
 
 const commands: ProviderConformance.Commands = {
   writes: "greet",

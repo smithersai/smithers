@@ -5,7 +5,7 @@
  */
 
 import type * as Effect from "effect/Effect"
-import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 
 /**
  * A cheap round-trip proving that the remote sandbox is alive.

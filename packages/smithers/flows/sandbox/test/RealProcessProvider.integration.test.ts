@@ -5,8 +5,8 @@ import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import * as ProviderConformance from "../src/ProviderConformance/index.ts"
 import * as RemoteChildProcessSpawner from "../src/RemoteChildProcessSpawner/index.ts"
-import type { Provider, RemoteProcess } from "../src/RemoteChildProcessSpawner/Provider.ts"
-import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import type { Provider, RemoteProcess } from "../src/RemoteChildProcessSpawner/Provider.vibe"
+import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.vibe"
 import * as SandboxHealth from "../src/SandboxHealth/index.ts"
 
 // Real process startup and V8 coverage can contend with other Vitest workers;

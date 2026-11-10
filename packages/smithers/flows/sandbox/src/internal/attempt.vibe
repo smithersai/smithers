@@ -5,7 +5,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 import { providerFailure } from "./localProcess.vibe"
 
 /**

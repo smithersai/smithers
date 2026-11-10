@@ -7,7 +7,7 @@
 import * as Effect from "effect/Effect"
 import { attemptIn } from "../internal/attempt.vibe"
 import { removeMachine } from "../internal/microsandboxRemove.ts"
-import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 import { holderLabel, ownerLabel, providerLabel, providerName } from "./labels.ts"
 import type { Sdk } from "./Sdk.ts"
 

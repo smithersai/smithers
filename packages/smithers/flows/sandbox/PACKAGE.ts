@@ -53,9 +53,9 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/rootedPath.ts",
         "src/internal/environmentNames.vibe"
       ],
-      service: ["src/MicrosandboxSandbox/make.ts", "src/Sandbox/layerHost.ts"],
+      service: ["src/MicrosandboxSandbox/make.ts", "src/Sandbox/layerHost.vibe"],
       storageOrEgress: [
-        "src/internal/microsandboxProcess.ts",
+        "src/internal/microsandboxProcess.vibe",
         "src/MicrosandboxSandbox/Sdk.ts",
         "//packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts"
       ]
@@ -75,14 +75,14 @@ const securityReview = Smithers.SecurityReview({
         "RemoteChildProcessSpawner rendering an Effect ChildProcess argv into one shell string where an argument, cwd, or pipeline segment is not quoted as a single word."
       ],
       paths: [
-        "src/RemoteChildProcessSpawner/layer.ts",
-        "src/internal/execSession.ts",
+        "src/RemoteChildProcessSpawner/layer.vibe",
+        "src/internal/execSession.vibe",
         "src/internal/envPrefix.ts",
         "src/internal/environmentCommand.ts",
         "src/internal/environmentInput.vibe",
         "src/internal/environmentNames.vibe",
         "src/internal/killScript.ts",
-        "src/internal/stdinRedirect.ts",
+        "src/internal/stdinRedirect.vibe",
         "src/internal/linuxFileSystem.ts",
         "src/Sandbox/fileSystem.ts",
         "src/AwsSandbox/make.ts",
@@ -104,7 +104,7 @@ const securityReview = Smithers.SecurityReview({
         "Environment values placed on host argv instead of the stdin env-file or manifest, where `ps` on the host shows them."
       ],
       paths: [
-        "src/CommandSandbox/make.ts",
+        "src/CommandSandbox/make.vibe",
         "src/ContainerSandbox/make.ts",
         "src/KubernetesSandbox/make.ts",
         "src/AwsSandbox/make.ts",
@@ -144,7 +144,7 @@ const securityReview = Smithers.SecurityReview({
         "DirectorySandbox handing the child more than ChildProcessEnvironment's narrow bootstrap set plus caller env."
       ],
       paths: [
-        "src/RemoteChildProcessSpawner/layer.ts",
+        "src/RemoteChildProcessSpawner/layer.vibe",
         "src/DirectorySandbox/make.ts",
         "src/VercelSandbox/**",
         "src/DaytonaSandbox/**",
@@ -179,8 +179,8 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/internal/killScript.ts",
         "src/internal/pidDirectory.ts",
-        "src/internal/execSession.ts",
-        "src/internal/microsandboxProcess.ts",
+        "src/internal/execSession.vibe",
+        "src/internal/microsandboxProcess.vibe",
         "src/MicrosandboxSandbox/reap.vibe",
         "src/DirectorySandbox/make.ts",
         "src/AwsSandbox/make.ts"
@@ -227,11 +227,11 @@ const securityReview = Smithers.SecurityReview({
         "Captured secret values printed in a snapshot refusal instead of only the file paths."
       ],
       paths: [
-        "src/internal/stdinRedirect.ts",
+        "src/internal/stdinRedirect.vibe",
         "src/internal/boundedMessage.ts",
         "src/SandboxHealth/**",
         "src/SandboxSupervision/**",
-        "src/RemoteChildProcessSpawner/ProviderError.ts",
+        "src/RemoteChildProcessSpawner/ProviderError.vibe",
         "src/MicrosandboxSandbox/snapshots.vibe"
       ]
     }

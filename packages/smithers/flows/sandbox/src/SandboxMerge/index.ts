@@ -20,9 +20,9 @@
  * @since 1.0.0
  */
 
-import type { Work } from "../Sandbox/Work.ts"
+import type { Work } from "../Sandbox/Work.vibe"
 
-export * from "./apply.ts"
+export * from "./apply.vibe"
 export * from "./Outcome.vibe"
 export type { Repository } from "./Repository.vibe"
 export * from "./Strategy.vibe"

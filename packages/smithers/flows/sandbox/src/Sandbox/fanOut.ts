@@ -6,7 +6,7 @@
 
 import * as Effect from "effect/Effect"
 import type { Scope } from "effect/Scope"
-import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 import type { Session } from "./Session.vibe"
 
 /**

@@ -12,9 +12,9 @@ import { Deferred, Effect, Fiber, Logger, Option, PlatformError, Ref, Schedule, 
 import { ChildProcess } from "effect/process"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { TestClock } from "effect/testing"
-import { elapsed } from "../src/internal/deadline.ts"
+import { elapsed } from "../src/internal/deadline.vibe"
 import * as RemoteChildProcessSpawner from "../src/RemoteChildProcessSpawner/index.ts"
-import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.vibe"
 import * as SandboxHealth from "../src/SandboxHealth/index.ts"
 import * as SandboxSupervision from "../src/SandboxSupervision/index.ts"
 

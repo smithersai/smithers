@@ -13,10 +13,10 @@ import * as Queue from "effect/Queue"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
 import type { Sdk } from "../MicrosandboxSandbox/Sdk.ts"
-import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
-import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.vibe"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 import { concat } from "./concat.ts"
-import { elapsed } from "./deadline.ts"
+import { elapsed } from "./deadline.vibe"
 import { finalizeWithin } from "./finalizeWithin.vibe"
 import { hostKillScript } from "./killScript.ts"
 import { linuxSignalNumber } from "./linuxSignals.vibe"
@@ -124,24 +124,22 @@ export const runGuest = (
   Effect.flatMap(
     start(sandbox, request, microsandboxFailure("unavailable", message), beforeStart),
     (handle) =>
-      Effect.gen(function*() {
+      (effect {
         const stdout: Array<Uint8Array> = []
         const stderr: Array<Uint8Array> = []
         for (;;) {
-          const event = yield* Effect.tryPromise({
+          const event = try tryPromise({
             try: () => handle.recv(),
             catch: microsandboxFailure("unavailable", message)
           })
           if (event === null) {
-            return yield* Effect.fail(
-              microsandboxFailure("unavailable", `${message}: the command ended without reporting its status`)(
-                undefined
-              )
+            throw microsandboxFailure("unavailable", `${message}: the command ended without reporting its status`)(
+              undefined
             )
           }
           if (event === undefined) {
-            return yield* Effect.fail(
-              microsandboxFailure("unavailable", `${message}: the guest could not start ${request.program}`)(undefined)
+            throw microsandboxFailure("unavailable", `${message}: the guest could not start ${request.program}`)(
+              undefined
             )
           }
           if (event.kind === "stdout") stdout.push(event.data)
@@ -219,13 +217,13 @@ export const signalGuest = (
         try: () => command.handle.signal(number),
         catch: microsandboxFailure("unknown", `the signal ${signal} could not be delivered in ${machine}`)
       })
-    return Effect.gen(function*() {
-      const walked = yield* Effect.exit(walk)
+    return effect {
+      const walked = try exit(walk)
       if (command.ended) return
-      const grouped = yield* Effect.exit(group)
+      const grouped = try exit(group)
       if (Exit.isSuccess(walked) || Exit.isSuccess(grouped)) return
-      return yield* walked
-    })
+      return try walked
+    }
   })
 
 /**
@@ -233,18 +231,17 @@ export const signalGuest = (
  * tree, a bounded wait for the exit, then `SIGKILL` to whatever ignored it.
  * Failures are logged by provider, operation, and code only.
  */
-const terminate = (command: GuestCommand, machine: string): Effect.Effect<void> =>
-  Effect.gen(function*() {
-    const deliver = (signal: Signal) =>
-      Effect.ignore(
-        signalGuest(command, signal, machine).pipe(
-          Effect.tapError((error) => warnTeardown("microsandbox", "kill", error))
-        )
+const terminate = effect (command: GuestCommand, machine: string): Effect.Effect<void> => {
+  const deliver = (signal: Signal) =>
+    Effect.ignore(
+      signalGuest(command, signal, machine).pipe(
+        Effect.tapError((error) => warnTeardown("microsandbox", "kill", error))
       )
-    yield* deliver("SIGTERM")
-    yield* Effect.raceFirst(Effect.asVoid(Effect.exit(Deferred.await(command.exit))), elapsed(terminationGraceMs))
-    if (!command.ended) yield* deliver("SIGKILL")
-  })
+    )
+  try deliver("SIGTERM")
+  try Effect.raceFirst(Effect.asVoid(Effect.exit(Deferred.await(command.exit))), elapsed(terminationGraceMs))
+  if (!command.ended) try deliver("SIGKILL")
+}
 
 /**
  * Starts one command whose scope is its lifetime and streams its output.
@@ -276,81 +273,79 @@ export const spawnGuest = (
   ProviderError,
   Scope.Scope
 > =>
-  Effect.uninterruptibleMask((restore) =>
-    Effect.gen(function*() {
-      const handle = yield* restore(
-        start(
-          sandbox,
-          request,
-          microsandboxFailure("spawn_error", `\`${names.command}\` could not run in ${names.machine}`),
-          beforeStart
-        )
-      )
-      const stdout = yield* Queue.unbounded<Uint8Array, ProviderError | Cause.Done>()
-      const stderr = yield* Queue.unbounded<Uint8Array, ProviderError | Cause.Done>()
-      const command: GuestCommand = {
+  Effect.uninterruptibleMask(effect (restore) => {
+    const handle = try restore(
+      start(
         sandbox,
-        beforeStart,
-        handle,
-        exit: yield* Deferred.make<number, ProviderError>(),
-        pid: undefined,
-        ended: false
-      }
-      const lost = microsandboxFailure(
-        "unavailable",
-        `the microVM ${names.machine} ended before \`${names.command}\` reported its status`
+        request,
+        microsandboxFailure("spawn_error", `\`${names.command}\` could not run in ${names.machine}`),
+        beforeStart
       )
-      const unstarted = microsandboxFailure(
-        "spawn_error",
-        `the guest could not start \`${names.command}\` in ${names.machine}`
-      )
-      const drain = Effect.gen(function*() {
-        for (;;) {
-          const event = yield* Effect.tryPromise({ try: () => handle.recv(), catch: lost })
-          if (event === null) return yield* Effect.fail(lost(undefined))
-          if (event === undefined) {
-            // The guest refused to start the command, so there is no process
-            // to signal and never will be an exit.
-            command.ended = true
-            return yield* Effect.fail(unstarted(undefined))
-          }
-          switch (event.kind) {
-            case "started":
-              command.pid = event.pid
-              break
-            case "stdout":
-              yield* Queue.offer(stdout, event.data)
-              break
-            case "stderr":
-              yield* Queue.offer(stderr, event.data)
-              break
-            case "exited":
-              command.ended = true
-              yield* Queue.end(stdout)
-              yield* Queue.end(stderr)
-              yield* Deferred.succeed(command.exit, event.code)
-              return
-          }
+    )
+    const stdout = try Queue.unbounded<Uint8Array, ProviderError | Cause.Done>()
+    const stderr = try Queue.unbounded<Uint8Array, ProviderError | Cause.Done>()
+    const command: GuestCommand = {
+      sandbox,
+      beforeStart,
+      handle,
+      exit: try Deferred.make<number, ProviderError>(),
+      pid: undefined,
+      ended: false
+    }
+    const lost = microsandboxFailure(
+      "unavailable",
+      `the microVM ${names.machine} ended before \`${names.command}\` reported its status`
+    )
+    const unstarted = microsandboxFailure(
+      "spawn_error",
+      `the guest could not start \`${names.command}\` in ${names.machine}`
+    )
+    const drain = (effect {
+      for (;;) {
+        const event = try tryPromise({ try: () => handle.recv(), catch: lost })
+        if (event === null) throw lost(undefined)
+        if (event === undefined) {
+          // The guest refused to start the command, so there is no process
+          // to signal and never will be an exit.
+          command.ended = true
+          throw unstarted(undefined)
         }
-      }).pipe(
-        Effect.catch((error) =>
-          Effect.all([Queue.fail(stdout, error), Queue.fail(stderr, error), Deferred.fail(command.exit, error)])
-        )
-      )
-      // Registered before the termination finalizer so it closes after it:
-      // finalizers run in reverse, and termination waits on the exit this
-      // fiber observes.
-      yield* Effect.forkScoped(drain)
-      yield* Effect.addFinalizer(() =>
-        command.ended
-          ? Effect.void
-          : finalizeWithin(terminate(command, names.machine), `microsandbox ${names.machine} command`)
-      )
-      const process: RemoteProcess = {
-        stdout: Stream.fromQueue(stdout),
-        stderr: Stream.fromQueue(stderr),
-        exitCode: Deferred.await(command.exit)
+        switch (event.kind) {
+          case "started":
+            command.pid = event.pid
+            break
+          case "stdout":
+            try Queue.offer(stdout, event.data)
+            break
+          case "stderr":
+            try Queue.offer(stderr, event.data)
+            break
+          case "exited":
+            command.ended = true
+            try Queue.end(stdout)
+            try Queue.end(stderr)
+            try Deferred.succeed(command.exit, event.code)
+            return
+        }
       }
-      return { process, command }
-    })
-  )
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.all([Queue.fail(stdout, error), Queue.fail(stderr, error), Deferred.fail(command.exit, error)])
+      )
+    )
+    // Registered before the termination finalizer so it closes after it:
+    // finalizers run in reverse, and termination waits on the exit this
+    // fiber observes.
+    try Effect.forkScoped(drain)
+    try Effect.addFinalizer(() =>
+      command.ended
+        ? Effect.void
+        : finalizeWithin(terminate(command, names.machine), `microsandbox ${names.machine} command`)
+    )
+    const process: RemoteProcess = {
+      stdout: Stream.fromQueue(stdout),
+      stderr: Stream.fromQueue(stderr),
+      exitCode: Deferred.await(command.exit)
+    }
+    return { process, command }
+  })

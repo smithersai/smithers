@@ -3,9 +3,11 @@ import { build } from "esbuild"
 import { webcrypto } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { runInNewContext } from "node:vm"
+import vibelang from "vibelang-unplugin/esbuild"
 
 it("runs remote commands with and without guest environment in a browser runtime", async () => {
   const bundle = await build({
+    plugins: [vibelang({ root: fileURLToPath(new URL("..", import.meta.url)) })],
     stdin: {
       contents: `
         import * as Effect from "effect/Effect"

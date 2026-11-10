@@ -11,17 +11,17 @@ import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Stream from "effect/Stream"
 import { boundedCheck } from "../internal/boundedCheck.vibe"
-import { defaultCheckTimeout, elapsed } from "../internal/deadline.ts"
+import { defaultCheckTimeout, elapsed } from "../internal/deadline.vibe"
 import { describeExit } from "../internal/describeExit.vibe"
 import * as check_ from "../ProviderConformance/check.vibe"
 import type { Commands } from "../ProviderConformance/Commands.vibe"
 import type { Violation } from "../ProviderConformance/Violation.ts"
-import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
-import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.vibe"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 import { commandProvider } from "../Sandbox/commandProvider.vibe"
 import type { Provider } from "../Sandbox/Provider.vibe"
 import type { Session } from "../Sandbox/Session.vibe"
-import { capture, resolveBase } from "../Sandbox/Work.ts"
+import { capture, resolveBase } from "../Sandbox/Work.vibe"
 import { uniquePosixCommands } from "./posixCommands.ts"
 import type { WorkSeed } from "./workSeed.ts"
 
@@ -201,11 +201,11 @@ const script = (
 
 /** Writes the seed's bundle into the session and checks its base out. */
 const seedCheckout = (live: Session, seed: WorkSeed) =>
-  Effect.gen(function*() {
-    yield* live.writeFile(`${live.workdir}/${workFixture.bundle}`, seed.bundle)
-    yield* script(live, workFixture.seed, { SMITHERS_CONFORMANCE_BASE: seed.base })
+  effect {
+    try live.writeFile(`${live.workdir}/${workFixture.bundle}`, seed.bundle)
+    try script(live, workFixture.seed, { SMITHERS_CONFORMANCE_BASE: seed.base })
     return `${live.workdir}/${workFixture.checkout}`
-  })
+  }
 
 /**
  * The work checks: one session makes every kind of edit and the guest's own
@@ -218,16 +218,16 @@ const checkWork = (
   deadline: Duration.Input,
   seed: WorkSeed
 ): Effect.Effect<ReadonlyArray<Violation>> =>
-  Effect.gen(function*() {
-    const worked = yield* inSession(provider, session, deadline, (live) =>
-      Effect.gen(function*() {
-        const checkout = yield* seedCheckout(live, seed)
-        const base = yield* resolveBase(live, { checkout })
-        yield* script(live, workFixture.edits, {})
-        const work = yield* capture(live, { checkout, base })
+  effect {
+    const worked = try inSession(provider, session, deadline, (live) =>
+      effect {
+        const checkout = try seedCheckout(live, seed)
+        const base = try resolveBase(live, { checkout })
+        try script(live, workFixture.edits, {})
+        const work = try capture(live, { checkout, base })
         if (work._tag === "Unchanged") return { base, work: work._tag }
-        yield* live.writeFile(`${live.workdir}/${workFixture.patch}`, new TextEncoder().encode(work.patch))
-        const trees = yield* script(live, workFixture.verify, { SMITHERS_CONFORMANCE_BASE: work.base })
+        try live.writeFile(`${live.workdir}/${workFixture.patch}`, new TextEncoder().encode(work.patch))
+        const trees = try script(live, workFixture.verify, { SMITHERS_CONFORMANCE_BASE: work.base })
         const [expected, actual] = trees.split(" ")
         return {
           base,
@@ -237,14 +237,14 @@ const checkWork = (
           reproduced: expected === actual,
           trees
         }
-      }))
-    const idle = yield* inSession(provider, session, deadline, (live) =>
-      Effect.gen(function*() {
-        const checkout = yield* seedCheckout(live, seed)
-        const base = yield* resolveBase(live, { checkout })
-        const work = yield* capture(live, { checkout, base })
+      })
+    const idle = try inSession(provider, session, deadline, (live) =>
+      effect {
+        const checkout = try seedCheckout(live, seed)
+        const base = try resolveBase(live, { checkout })
+        const work = try capture(live, { checkout, base })
         return { base, work: work._tag, workBase: work.base }
-      }))
+      })
     const found: Array<Violation | undefined> = [
       Exit.isSuccess(worked) && worked.value.base === seed.base && worked.value.work === "Changed" &&
         worked.value.workBase === seed.base && worked.value.renamed === true && worked.value.reproduced === true
@@ -265,7 +265,7 @@ const checkWork = (
         }
     ]
     return found.filter((violation): violation is Violation => violation !== undefined)
-  })
+  }
 
 /**
  * Names the suite's session key and declared capabilities.
@@ -372,148 +372,171 @@ export const check = (
   provider: Provider,
   options: CheckOptions = {}
 ): Effect.Effect<ReadonlyArray<Violation>> =>
-  Effect.gen(function*() {
+  effect {
     const session = options.session ?? "sandbox-conformance"
     const deadline = options.checkTimeout ?? defaultCheckTimeout
-    const roundTrips = yield* inSession(provider, session, deadline, (live) =>
-      Effect.gen(function*() {
+    const roundTrips = try inSession(provider, session, deadline, (live) =>
+      effect {
         const path = `${live.workdir}/conformance-bytes.bin`
-        yield* live.writeFile(path, conformanceBytes)
-        return yield* live.readFile(path)
-      }))
-    const empty = yield* inSession(provider, session, deadline, (live) =>
-      Effect.gen(function*() {
+        try live.writeFile(path, conformanceBytes)
+        return try live.readFile(path)
+      })
+    const empty = try inSession(provider, session, deadline, (live) =>
+      effect {
         const path = `${live.workdir}/conformance-empty.bin`
-        yield* live.writeFile(path, new Uint8Array())
-        return yield* live.readFile(path)
-      }))
-    const large = yield* inSession(provider, session, deadline, (live) =>
-      Effect.gen(function*() {
+        try live.writeFile(path, new Uint8Array())
+        return try live.readFile(path)
+      })
+    const large = try inSession(provider, session, deadline, (live) =>
+      effect {
         const path = `${live.workdir}/conformance-large.bin`
-        yield* live.writeFile(path, largeBytes)
-        return yield* live.readFile(path)
-      }))
-    const absent = yield* inSession(provider, session, deadline, (live) =>
-      Effect.flip(live.readFile(`${live.workdir}/conformance-absent`)))
-    const parents = yield* inSession(provider, session, deadline, (live) =>
-      Effect.gen(function*() {
+        try live.writeFile(path, largeBytes)
+        return try live.readFile(path)
+      })
+    const absent = try inSession(
+      provider,
+      session,
+      deadline,
+      (live) => Effect.flip(live.readFile(`${live.workdir}/conformance-absent`))
+    )
+    const parents = try inSession(provider, session, deadline, (live) =>
+      effect {
         const path = `${live.workdir}/conformance/deep/tree/leaf.txt`
-        yield* live.writeFile(path, conformanceBytes)
-        return yield* live.readFile(path)
-      }))
-    const workdir = yield* inSession(provider, session, deadline, (live) =>
-      Effect.map(run(live, "pwd"), (answer) => ({ answer, expected: `${live.workdir}\n#0` })))
-    const relativeCwd = yield* inSession(provider, session, deadline, (live) =>
-      Effect.gen(function*() {
-        yield* run(live, "mkdir -p conformance-sub")
-        const answer = yield* run(live, "pwd", { cwd: "conformance-sub" })
+        try live.writeFile(path, conformanceBytes)
+        return try live.readFile(path)
+      })
+    const workdir = try inSession(
+      provider,
+      session,
+      deadline,
+      (live) => Effect.map(run(live, "pwd"), (answer) => ({ answer, expected: `${live.workdir}\n#0` }))
+    )
+    const relativeCwd = try inSession(provider, session, deadline, (live) =>
+      effect {
+        try run(live, "mkdir -p conformance-sub")
+        const answer = try run(live, "pwd", { cwd: "conformance-sub" })
         return { answer, expected: `${live.workdir}/conformance-sub\n#0` }
-      }))
-    const environment = yield* inSession(provider, session, deadline, (live) =>
-      run(live, `printf '%s' "$SANDBOX_CONFORMANCE"`, { env: { SANDBOX_CONFORMANCE: "delivered" } }))
-    const deletedEnvironment = yield* inSession(provider, session, deadline, (live) =>
-      Effect.gen(function*() {
+      })
+    const environment = try inSession(
+      provider,
+      session,
+      deadline,
+      (live) => run(live, `printf '%s' "$SANDBOX_CONFORMANCE"`, { env: { SANDBOX_CONFORMANCE: "delivered" } })
+    )
+    const deletedEnvironment = try inSession(provider, session, deadline, (live) =>
+      effect {
         // HOME comes from the guest, never from a command default. Check its
         // presence first so deleting an already-absent variable cannot pass.
-        const before = yield* run(live, `printf '%s' "\${HOME+present}"`)
-        const after = yield* Effect.scoped(Effect.matchEffect(
+        const before = try run(live, `printf '%s' "\${HOME+present}"`)
+        const after = try Effect.scoped(Effect.matchEffect(
           live.spawn(`printf '%s' "\${HOME+present}"`, { env: { HOME: undefined } }),
           {
-            onFailure: (error) =>
-              Effect.succeed(error),
+            onFailure: (error) => Effect.succeed(error),
             onSuccess: output
           }
         ))
         return { before, after }
-      }))
-    const unusableEnvironment = yield* inSession(provider, session, deadline, (live) =>
-      Effect.flip(run(live, "true", { env: { "not-a-shell-name": "x" } })))
-    const stdin = yield* inSession(provider, session, deadline, (live) =>
-      Effect.gen(function*() {
+      })
+    const unusableEnvironment = try inSession(
+      provider,
+      session,
+      deadline,
+      (live) => Effect.flip(run(live, "true", { env: { "not-a-shell-name": "x" } }))
+    )
+    const stdin = try inSession(provider, session, deadline, (live) =>
+      effect {
         // Compared through a file, not through stdout: a transport whose
         // process output is a pseudo-terminal cannot carry these bytes back
         // on stdout, and that is a documented property of output, not a
         // failure of input.
-        const status = yield* run(live, "cat > conformance-stdin.bin", { stdin: conformanceBytes })
-        const copied = yield* live.readFile(`${live.workdir}/conformance-stdin.bin`)
+        const status = try run(live, "cat > conformance-stdin.bin", { stdin: conformanceBytes })
+        const copied = try live.readFile(`${live.workdir}/conformance-stdin.bin`)
         return { status, copied }
-      }))
-    const stderr = yield* inSession(provider, session, deadline, (live) =>
-      Effect.scoped(Effect.flatMap(live.spawn(`printf 'to-stderr' >&2`, {}), everything)))
-    const fileToProcess = yield* inSession(provider, session, deadline, (live) =>
-      Effect.gen(function*() {
-        yield* live.writeFile(`${live.workdir}/conformance-cross.bin`, conformanceBytes)
+      })
+    const stderr = try inSession(
+      provider,
+      session,
+      deadline,
+      (live) => Effect.scoped(Effect.flatMap(live.spawn(`printf 'to-stderr' >&2`, {}), everything))
+    )
+    const fileToProcess = try inSession(provider, session, deadline, (live) =>
+      effect {
+        try live.writeFile(`${live.workdir}/conformance-cross.bin`, conformanceBytes)
         // BSD `wc` pads its count, so whitespace is not part of the answer.
-        return (yield* run(live, "wc -c < conformance-cross.bin")).replaceAll(/\s+/g, "")
-      }))
-    const processToFile = yield* inSession(provider, session, deadline, (live) =>
-      Effect.gen(function*() {
-        yield* run(live, "printf 'from-process' > conformance-produced.txt")
-        return new TextDecoder().decode(yield* live.readFile(`${live.workdir}/conformance-produced.txt`))
-      }))
-    const reacquired = yield* boundedCheck(
+        return (try run(live, "wc -c < conformance-cross.bin")).replaceAll(/\s+/g, "")
+      })
+    const processToFile = try inSession(provider, session, deadline, (live) =>
+      effect {
+        try run(live, "printf 'from-process' > conformance-produced.txt")
+        return new TextDecoder().decode(try live.readFile(`${live.workdir}/conformance-produced.txt`))
+      })
+    const reacquired = try boundedCheck(
       Effect.andThen(
         Effect.scoped(Effect.asVoid(provider.acquire(session))),
-        Effect.scoped(Effect.flatMap(provider.acquire(session), (live) =>
-          run(live, "printf 'again'")))
+        Effect.scoped(Effect.flatMap(provider.acquire(session), (live) => run(live, "printf 'again'")))
       ),
       deadline
     )
     const interrupted = options.provides?.interrupt === true
-      ? yield* inSession(provider, session, deadline, (live) =>
-        Effect.gen(function*() {
-          const path = (name: string) =>
-            `${live.workdir}/${name}`
-          const running = yield* Effect.forkChild(
-            Effect.scoped(Effect.flatMap(live.spawn(interruptFixture.command, {}), (process) =>
-              process.exitCode))
+      ? try inSession(provider, session, deadline, (live) =>
+        effect {
+          const path = (name: string) => `${live.workdir}/${name}`
+          const running = try Effect.forkChild(
+            Effect.scoped(Effect.flatMap(live.spawn(interruptFixture.command, {}), (process) => process.exitCode))
           )
           let started = false
           while (!started) {
-            started = (yield* lookup(live, path(interruptFixture.started))) === "present"
+            started = (try lookup(live, path(interruptFixture.started))) === "present"
             if (!started) {
-              yield* elapsed(100)
+              try elapsed(100)
             }
           }
-          yield* Fiber.interrupt(running)
-          yield* elapsed(interruptFixture.settleMs)
+          try Fiber.interrupt(running)
+          try elapsed(interruptFixture.settleMs)
           return {
-            survived: yield* lookup(live, path(interruptFixture.survived)),
-            child: yield* lookup(live, path(interruptFixture.child))
+            survived: try lookup(live, path(interruptFixture.survived)),
+            child: try lookup(live, path(interruptFixture.child))
           }
-        }))
+        })
       : undefined
     const sentinel = options.isolation?.hostSentinel
     const hidden = sentinel === undefined ?
       undefined :
-      yield* inSession(provider, session, deadline, (live) =>
-        Effect.gen(function*() {
+      try inSession(provider, session, deadline, (live) =>
+        effect {
           return {
-            read: yield* lookup(live, sentinel),
-            probe: yield* status(live, `test -e ${CommandLine.quote(sentinel)}`)
+            read: try lookup(live, sentinel),
+            probe: try status(live, `test -e ${CommandLine.quote(sentinel)}`)
           }
-        }))
+        })
     const probe = options.isolation?.egressProbe
     const egress = probe === undefined
       ? undefined
-      : yield* inSession(provider, session, deadline, (live) =>
-        status(live, probe))
+      : try inSession(provider, session, deadline, (live) => status(live, probe))
     const released = options.provides?.ephemeral === true
-      ? yield* boundedCheck(
+      ? try boundedCheck(
         Effect.andThen(
-          Effect.scoped(Effect.flatMap(provider.acquire(session), (live) =>
-            live.writeFile(`${live.workdir}/conformance-ephemeral.bin`, conformanceBytes))),
-          Effect.scoped(Effect.flatMap(provider.acquire(session), (live) =>
-            lookup(live, `${live.workdir}/conformance-ephemeral.bin`)))
+          Effect.scoped(
+            Effect.flatMap(
+              provider.acquire(session),
+              (live) => live.writeFile(`${live.workdir}/conformance-ephemeral.bin`, conformanceBytes)
+            )
+          ),
+          Effect.scoped(
+            Effect.flatMap(
+              provider.acquire(session),
+              (live) => lookup(live, `${live.workdir}/conformance-ephemeral.bin`)
+            )
+          )
         ),
         deadline
       )
       : undefined
-    const workChecks = options.work === undefined ? [] : yield* checkWork(provider, session, deadline, options.work)
+    const workChecks = options.work === undefined ? [] : try checkWork(provider, session, deadline, options.work)
     // The delegated suite gets the same deadline. It used to be called outside
     // every race this generator sets up, so a provider that hung on spawn hung
     // both public entry points despite `checkTimeout` promising otherwise.
-    const spawnChecks = yield* check_.check(
+    const spawnChecks = try check_.check(
       commandProvider(provider, {
         session,
         ...options.provides === undefined ? {} : { provides: options.provides }
@@ -643,10 +666,8 @@ export const check = (
       }
     ]
     return [
-      ...found.filter((violation): violation is Violation =>
-        violation !== undefined
-      ),
+      ...found.filter((violation): violation is Violation => violation !== undefined),
       ...workChecks,
       ...spawnChecks
     ]
-  })
+  }

@@ -9,13 +9,13 @@ import * as Effect from "effect/Effect"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import { encodeBase64 } from "../internal/base64.ts"
+import { encodeBase64 } from "../internal/base64.vibe"
 import { pidDirectory } from "../internal/pidDirectory.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
-import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 import type { Provider } from "./Provider.vibe"
 import type { Session } from "./Session.vibe"
-import { capture, type CheckoutOptions, Work } from "./Work.ts"
+import { capture, type CheckoutOptions, Work } from "./Work.vibe"
 
 /**
  * Schema for the identity needed to reattach a retained job.

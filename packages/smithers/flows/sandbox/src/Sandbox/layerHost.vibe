@@ -12,9 +12,9 @@ import * as Path from "effect/Path"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type * as Scope from "effect/Scope"
 import { rootedAt } from "../internal/rootedPath.ts"
-import { make } from "../RemoteChildProcessSpawner/layer.ts"
-import type { Provider as RemoteProvider } from "../RemoteChildProcessSpawner/Provider.ts"
-import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import { make } from "../RemoteChildProcessSpawner/layer.vibe"
+import type { Provider as RemoteProvider } from "../RemoteChildProcessSpawner/Provider.vibe"
+import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 import * as SandboxHealth from "../SandboxHealth/index.ts"
 import { fileSystem } from "./fileSystem.ts"
 import type { Provider } from "./Provider.vibe"
@@ -127,10 +127,10 @@ export const hostContext = (
   session: Session,
   options: { readonly health?: SandboxHealth.ProbeOptions | undefined } = {}
 ): Effect.Effect<Context.Context<Host>, never, Scope.Scope> =>
-  Effect.gen(function*() {
+  (effect {
     const view = spawnerView(session)
-    const spawner = yield* make(view)
-    const path = yield* Path.Path
+    const spawner = try make(view)
+    const path = try Path.Path
     return Context.make(ChildProcessSpawner, spawner).pipe(
       Context.add(FileSystem.FileSystem, fileSystem(session)),
       Context.add(Path.Path, guestPath(path, session.workdir)),

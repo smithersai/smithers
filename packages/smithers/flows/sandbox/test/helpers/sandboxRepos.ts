@@ -13,7 +13,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as DirectorySandbox from "../../src/DirectorySandbox/index.ts"
-import { ProviderError } from "../../src/RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../../src/RemoteChildProcessSpawner/ProviderError.vibe"
 import type * as Sandbox from "../../src/Sandbox/index.ts"
 import { platform } from "./containedPlatform.ts"
 

@@ -61,10 +61,10 @@
  * @since 0.1.0
  */
 
-export * from "./layer.ts"
-export * from "./Provider.ts"
-export * from "./ProviderError.ts"
-export * from "./TestRemote.ts"
+export * from "./layer.vibe"
+export * from "./Provider.vibe"
+export * from "./ProviderError.vibe"
+export * from "./TestRemote.vibe"
 export * from "./TestRemoteProvider.ts"
 export * from "./TestRemoteState.ts"
 export * from "./TestScript.ts"

@@ -10,6 +10,7 @@
  *
  * @category utils
  * @since 0.1.0
+ * @throws {never}
  */
 export const parentOf = (path: string): string | undefined => {
   const separator = path.lastIndexOf("/")

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Option, Stream } from "effect"
 import { linuxFileSystem } from "../src/internal/linuxFileSystem.ts"
-import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.vibe"
 import type { Session } from "../src/Sandbox/Session.vibe"
 
 const bytes = new TextEncoder()

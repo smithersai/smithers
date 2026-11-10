@@ -8,8 +8,9 @@
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Effect from "effect/Effect"
 import type * as Scope from "effect/Scope"
-import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 import { finalizeWithin } from "./finalizeWithin.vibe"
+import * as $platform from "./stdinRedirect.platform.ts"
 
 /**
  * The slice of a session the redirect needs: somewhere to put the bytes, and
@@ -30,21 +31,6 @@ export interface StdinTarget {
 
 /** The session-private directory staged input lives in, below the workspace. */
 const stagingDirectory = ".smthrs-stdin"
-
-/**
- * An unguessable file name.
- *
- * A per-session counter was not one. It reset on every acquire, so a
- * reattached machine — a resumed Vercel sandbox, an adopted ECS task, a
- * leftover container — started again at `.smthrs-stdin-0` and could read or
- * overwrite the previous incarnation's staged input. Standard input is where a
- * caller puts a script, a patch, or a credential blob.
- */
-const staged = (): string => {
-  const bytes = new Uint8Array(16)
-  globalThis.crypto.getRandomValues(bytes)
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
-}
 
 /**
  * Builds a per-session redirect: hands back a function that stages a
@@ -94,12 +80,12 @@ export const stdinRedirect = (target: StdinTarget): (
   const directory = `${target.workdir.replace(/\/+$/, "")}/${stagingDirectory}`
   return (command, stdin) => {
     if (stdin === undefined) return Effect.succeed(command)
-    return Effect.gen(function*() {
-      const file = `${directory}/${staged()}`
+    return effect {
+      const file = `${directory}/${$platform.staged()}`
       // The name is claimed, and its removal registered, before anything is
       // written to it: a chunked write that fails partway has already put
       // bytes on the machine.
-      yield* Effect.addFinalizer(() =>
+      try Effect.addFinalizer(() =>
         finalizeWithin(
           Effect.ignore(
             target.remove(file).pipe(
@@ -111,8 +97,8 @@ export const stdinRedirect = (target: StdinTarget): (
           `stdin file ${file}`
         )
       )
-      yield* target.writeFile(file, stdin)
+      try target.writeFile(file, stdin)
       return `(\n${command}\n) < ${CommandLine.quote(file)}`
-    })
+    }
   }
 }

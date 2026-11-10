@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit } from "effect"
 import * as Scope from "effect/Scope"
-import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.vibe"
 import * as Sandbox from "../src/Sandbox/index.ts"
 
 const decoder = new TextDecoder()

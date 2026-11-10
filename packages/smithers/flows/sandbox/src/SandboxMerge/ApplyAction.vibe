@@ -7,8 +7,8 @@
 import { Action, RetryPolicy } from "@smthrs/flow"
 import { isGitLockContention } from "@smthrs/jj"
 import * as Schema from "effect/Schema"
-import { Work } from "../Sandbox/Work.ts"
-import { apply } from "./apply.ts"
+import { Work } from "../Sandbox/Work.vibe"
+import { apply } from "./apply.vibe"
 import { MergeError, Outcome } from "./Outcome.vibe"
 
 /**

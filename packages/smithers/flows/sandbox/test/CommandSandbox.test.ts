@@ -19,7 +19,7 @@ import { afterAll } from "vitest"
 import * as CommandSandbox from "../src/CommandSandbox/index.ts"
 import { pidDirectory } from "../src/internal/pidDirectory.ts"
 import { sessionSlug } from "../src/internal/sessionSlug.ts"
-import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.vibe"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 import { platform } from "./helpers/containedPlatform.ts"
 

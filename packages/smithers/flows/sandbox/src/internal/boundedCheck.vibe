@@ -7,8 +7,8 @@
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
-import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
-import { expired } from "./deadline.ts"
+import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
+import { expired } from "./deadline.vibe"
 
 /**
  * Races observation of a detached check, never its resource-owning scope.

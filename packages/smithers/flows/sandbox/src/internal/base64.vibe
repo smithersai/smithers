@@ -7,7 +7,7 @@
 import * as Effect from "effect/Effect"
 import * as Base64 from "effect/encoding/Base64"
 import * as Result from "effect/Result"
-import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
 
 const decoder = new TextDecoder()
 const encoder = new TextEncoder()

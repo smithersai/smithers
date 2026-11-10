@@ -9,7 +9,7 @@ import type * as Effect from "effect/Effect"
 import type { Signal } from "effect/process/ChildProcess"
 import type { Scope } from "effect/Scope"
 import type * as Stream from "effect/Stream"
-import type { ProviderError } from "./ProviderError.ts"
+import type { ProviderError } from "./ProviderError.vibe"
 
 /**
  * A started remote process, in the same three pieces a local child process

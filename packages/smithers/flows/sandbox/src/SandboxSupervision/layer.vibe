@@ -6,8 +6,8 @@
 
 import * as Layer from "effect/Layer"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import type { Provider } from "../RemoteChildProcessSpawner/Provider.ts"
-import { make } from "./make.ts"
+import type { Provider } from "../RemoteChildProcessSpawner/Provider.vibe"
+import { make } from "./make.vibe"
 import type { Options } from "./Options.vibe"
 
 /**

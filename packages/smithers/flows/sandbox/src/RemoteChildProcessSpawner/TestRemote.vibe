@@ -7,8 +7,8 @@
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
-import { Provider, type RemoteProcess } from "./Provider.ts"
-import type { ProviderError } from "./ProviderError.ts"
+import { Provider, type RemoteProcess } from "./Provider.vibe"
+import type { ProviderError } from "./ProviderError.vibe"
 import type { TestRemoteProvider } from "./TestRemoteProvider.ts"
 import type { TestRemoteState } from "./TestRemoteState.ts"
 import type { TestScript } from "./TestScript.ts"
@@ -83,16 +83,16 @@ const makeTestRemote = (options: TestRemoteOptions = {}): TestRemoteProvider => 
             })
         )
         : Effect.fail(options.openFailure),
-    spawn: Effect.fnUntraced(function*(command: string, spawnOptions) {
+    spawn: effect (command: string, spawnOptions) => {
       state.commands.push(command)
       state.inputs.push(spawnOptions.stdin)
       const current = script(command)
-      if (current.failure !== undefined) return yield* Effect.fail(current.failure)
+      if (current.failure !== undefined) throw current.failure
       if (current.pending === true) {
         // A pending command runs until something stops it, and a `kill` that
         // works is what stops it. Modelling that as `Effect.never` would make
         // every provider look like one whose signal goes nowhere.
-        const exit = yield* Deferred.make<number, ProviderError>()
+        const exit = try Deferred.make<number, ProviderError>()
         const process: RemoteProcess = {
           stdout: Stream.never,
           stderr: Stream.never,
@@ -109,7 +109,7 @@ const makeTestRemote = (options: TestRemoteOptions = {}): TestRemoteProvider => 
       }
       started.set(process, command)
       return process
-    }),
+    },
     ...options.kill === true || options.killFailure !== undefined
       ? {
         kill: (process: RemoteProcess, signal: string) =>

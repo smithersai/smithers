@@ -5,7 +5,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import { elapsed } from "./deadline.ts"
+import { elapsed } from "./deadline.vibe"
 
 /**
  * Gives one cleanup operation five seconds, then warns with its resource name.

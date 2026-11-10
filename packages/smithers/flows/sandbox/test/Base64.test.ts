@@ -10,8 +10,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Result } from "effect"
 import { Base64 } from "effect/encoding"
-import { decodeBase64, decodeBase64Bytes, encodeBase64, encodeBase64Bytes } from "../src/internal/base64.ts"
-import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import { decodeBase64, decodeBase64Bytes, encodeBase64, encodeBase64Bytes } from "../src/internal/base64.vibe"
+import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.vibe"
 
 const decoder = new TextDecoder()
 const encoder = new TextEncoder()

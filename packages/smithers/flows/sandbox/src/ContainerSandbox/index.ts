@@ -11,5 +11,5 @@
  * @since 0.1.0
  */
 
-export * from "./existing.ts"
+export * from "./existing.vibe"
 export * from "./make.ts"

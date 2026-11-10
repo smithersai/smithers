@@ -10,7 +10,8 @@
 
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.vibe"
+import * as $platform from "./deadline.platform.ts"
 
 /**
  * Completes after `duration` on the platform's own timer. An infinite
@@ -22,23 +23,8 @@ import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
  */
 export const elapsed = (duration: Duration.Input): Effect.Effect<void> => {
   const millis = Duration.toMillis(duration)
-  return millis === Infinity ? Effect.never : waited(millis)
+  return millis === Infinity ? Effect.never : $platform.waited(millis)
 }
-
-/**
- * The longest delay a platform timer holds. Node and browsers fire a longer
- * one, `Infinity` included, after 1 millisecond.
- */
-const longestTimer = 2_147_483_647
-
-const waited = (millis: number): Effect.Effect<void> =>
-  Effect.callback<void>((resume) => {
-    const timer = setTimeout(
-      () => resume(millis > longestTimer ? waited(millis - longestTimer) : Effect.void),
-      Math.min(millis, longestTimer)
-    )
-    return Effect.sync(() => clearTimeout(timer))
-  })
 
 /**
  * A deadline on the wall clock, not the ambient `Clock`.

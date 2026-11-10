@@ -24,6 +24,7 @@ const validOwner = (id) => Number.isInteger(id) && id >= -1 && id < 0xffffffff;
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const linuxFileSystem = (session, guest) => {
     const badArgument = (method, description) => PlatformError.badArgument({ module: "FileSystem", method, description });

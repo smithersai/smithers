@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import type { ProviderError } from "./ProviderError.ts"
+import type { ProviderError } from "./ProviderError.vibe"
 
 /**
  * One scripted response used by `TestRemote.make`.

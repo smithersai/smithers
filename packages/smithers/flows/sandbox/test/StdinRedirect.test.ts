@@ -17,8 +17,8 @@ import { spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { stdinRedirect } from "../src/internal/stdinRedirect.ts"
-import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import { stdinRedirect } from "../src/internal/stdinRedirect.vibe"
+import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.vibe"
 
 /**
  * A target that records what it was asked to do, and can fail the write the

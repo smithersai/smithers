@@ -18,7 +18,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { cancelGuard, cancelledStatus, cancelMarker, hostKillScript, killScript } from "../src/internal/killScript.ts"
 import * as RemoteChildProcessSpawner from "../src/RemoteChildProcessSpawner/index.ts"
-import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.vibe"
 import * as SandboxHealth from "../src/SandboxHealth/index.ts"
 
 const reason = (error: unknown): string =>
