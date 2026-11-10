@@ -89,9 +89,10 @@ The members and the value each one carries across the seam:
 | `interruptUnsafe`       | no       | None.                                                                                                                                      |
 | `resume`                | no       | None.                                                                                                                                      |
 | `resumeSignal`          | yes      | None.                                                                                                                                      |
-| `actionExecute`         | no       | Encoded. `makeUnsafe` decodes it through the action's `exitSchemaPartial`.                                                                 |
+| `actionExecute`         | no       | Encoded. `makeUnsafe` decodes it through `Action.exitSchemasFor(serialization, action).exitSchemaPartial`.                                 |
 | `actionReplayKey`       | yes      | None.                                                                                                                                      |
 | `encodeEngineError`     | yes      | None.                                                                                                                                      |
+| `serialization`         | yes      | None. The `RpcSerialization` the driver stores action results with; absent means `RpcSerialization.json` (VIP-44).                         |
 | `actionRetryOrigin`     | yes      | None.                                                                                                                                      |
 | `actionLatestAttempt`   | yes      | None.                                                                                                                                      |
 | `actionSnapshot`        | yes      | None.                                                                                                                                      |

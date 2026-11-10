@@ -17,7 +17,7 @@ attempt (392b6cd8262d), which was never landed.
 | --- | --- | --- |
 | 1 | `@smthrs/canonical` `sortCollections` | f4b973ab2789 |
 | 2 | `ExecutionIds` sorts before encoding | e119afb8dd32 |
-| 3 | One shared payload identity for every hashing site | pending |
+| 3 | One shared payload identity for every hashing site | bcf8076a4ff4 |
 | 4 | Action results through `RpcSerialization.codecFor` | pending |
 | 5 | `layerMemory` snapshot sorts | pending |
 | 6 | `smithers-build` payloads have a JSON codec | pending |
@@ -61,3 +61,25 @@ its own payload. Two tests are committed as expected failures (TEST-5) in
 `flow/test/FlowChild.test.ts` and `flow/test/Trampoline.test.ts`. Plan ASTs that
 carry collections need the callee schema; that belongs with the task and
 workflow VIPs.
+
+## Row 4: stored results through `RpcSerialization.codecFor`
+
+`Action.executeEncoded` encodes with `codecFor` of the `RpcSerialization` in
+context (default `json`, unchanged bytes); `Action.exitSchemasFor` decodes;
+`FlowEngine.Encoded.serialization` carries the driver's serializer to
+dispatch. `layerMemory` stores any of the six serializers (property test over
+all six). `EngineStore.layer` stores json, ndjson, jsonRpc and ndJsonRpc,
+which share one `codecFor` and so store identical bytes, and refuses
+schema-binary (default and fingerprinted) and custom codecs when built
+(`UnstorableSerialization`).
+
+Not built yet, and why: VIP-44 "Stored values" stores an Rpc `Exit` frame with
+a per-entry `contentType` and a reader table, which makes schema-binary and a
+custom (superjson) serializer storable. engine-store keeps results as JSON
+values in `outcome_json`/`error_json`/cache rows, so binary needs a bytes
+column and frame encoding through `ActionPersistence`; a custom JSON codec
+needs `contentType` recorded per entry (the attempt row's `meta_json` and the
+cache entry's meta can carry it with no migration) and read back before decode,
+including `CallFacts` and `StepFacts`. Until then the store refuses those
+serializers loudly; nothing is stored under a codec it cannot read back.
+`DurableDeferred` results still use the fixed JSON codec.

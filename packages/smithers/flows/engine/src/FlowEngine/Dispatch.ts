@@ -16,6 +16,7 @@ import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Predicate from "effect/Predicate"
 import * as Result from "effect/Result"
+import * as RpcSerialization from "effect/rpc/RpcSerialization"
 import * as Schema from "effect/Schema"
 import { renderDiagnostic } from "../internal/Diagnostic.ts"
 import { toJsonExit } from "../internal/JsonExit.ts"
@@ -351,7 +352,13 @@ const runAttempt = (
   const execute = action.tier === "compensable"
     ? executeCompensable(options, instance, input)
     : settleTimedOut(driverExecute(options, input))
-  return StepTrace.observed(execute, { run: instance.executionId, flow: instance.flow._tag, name: action.name, key, attempt }).pipe(
+  return StepTrace.observed(execute, {
+    run: instance.executionId,
+    flow: instance.flow._tag,
+    name: action.name,
+    key,
+    attempt
+  }).pipe(
     Effect.provideService(Action.CurrentAttempt, attempt),
     Effect.provideService(CurrentActionParent, { executionId: instance.executionId, key }),
     // DECIDED: the implementation gets the dispatch's own key. Durable state
@@ -386,7 +393,9 @@ const decodeOutcome = <Success extends Schema.Constraint, Error extends Schema.C
   recorded: Exit.Exit<unknown, unknown>
 ) =>
   Effect.orDie(
-    Schema.decodeEffect(action.exitSchemaPartial)(toJsonExit(encodeEngineFailures(options, recorded))).pipe(
+    Schema.decodeEffect(
+      Action.exitSchemasFor(options.serialization ?? RpcSerialization.json, action).exitSchemaPartial
+    )(toJsonExit(encodeEngineFailures(options, recorded))).pipe(
       Effect.map((decoded) =>
         Exit.isFailure(recorded) && Exit.isFailure(decoded)
           ? Exit.failCause(Cause.fromReasons(decoded.cause.reasons.map((reason, index) => {

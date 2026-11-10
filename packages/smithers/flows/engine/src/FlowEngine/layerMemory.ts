@@ -15,6 +15,7 @@ import * as Fiber from "effect/Fiber"
 import * as FiberMap from "effect/FiberMap"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
+import * as RpcSerialization from "effect/rpc/RpcSerialization"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
@@ -101,6 +102,8 @@ interface Memory {
   readonly scope: Scope.Scope
   /** The port this engine answers as, which every body it drives is given. */
   readonly engine: () => Port
+  /** The serializer action results are stored with, read once when the layer is built. */
+  readonly serialization: RpcSerialization.RpcSerialization["Service"]
   /**
    * Registrations by tag. They stack: the last still-open one serves, and a
    * closed inner registration is spliced back out so the outer one serves
@@ -147,9 +150,15 @@ interface Memory {
   readonly missedWakes: Set<string>
 }
 
-const makeMemory = (scope: Scope.Scope, clocks: FiberMap.FiberMap<string>, engine: () => Port): Memory => ({
+const makeMemory = (
+  scope: Scope.Scope,
+  clocks: FiberMap.FiberMap<string>,
+  engine: () => Port,
+  serialization: RpcSerialization.RpcSerialization["Service"]
+): Memory => ({
   scope,
   engine,
+  serialization,
   flows: new Map(),
   executions: new Map(),
   executionLocks: new Map(),
@@ -836,7 +845,8 @@ const runAction = (
   actionInstance.waiting = waitingBefore
   return restore(action.executeEncoded.pipe(
     Flow.intoResult,
-    Effect.provideService(FlowRuntime.FlowInstance, actionInstance)
+    Effect.provideService(FlowRuntime.FlowInstance, actionInstance),
+    Effect.provideService(RpcSerialization.RpcSerialization, memory.serialization)
   )).pipe(
     Effect.onExit((exit) => recordSettlement(memory, owner, actionId, exit)),
     Effect.ensuring(Effect.sync(() => {
@@ -978,6 +988,7 @@ const scheduleClock = (memory: Memory, flow: Flow.Any, options: Parameters<Encod
 
 /** The driver `makeUnsafe` adapts: every member answers from `memory`. */
 const adapter = (memory: Memory): Encoded => ({
+  serialization: memory.serialization,
   register: (flow, execute) => register(memory, flow, execute),
   execute: (flow, options) => execute(memory, flow, options),
   interrupt: (flow, executionId) => interrupt(memory, flow, executionId),
@@ -1019,7 +1030,12 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
     // The ceiling this engine is built under bounds every admission, join,
     // poll, and resume it answers, whatever context later calls it.
     const host = yield* CapabilitySet.current
-    const memory = makeMemory(scope, yield* FiberMap.make<string>(), () => engine)
+    // Results never leave memory, so any serializer can store them (VIP-44).
+    const serialization = Option.getOrElse(
+      yield* Effect.serviceOption(RpcSerialization.RpcSerialization),
+      () => RpcSerialization.json
+    )
+    const memory = makeMemory(scope, yield* FiberMap.make<string>(), () => engine, serialization)
     const engine: Port = bindHostCeiling(host, makeUnsafe(adapter(memory)))
     return engine
   })

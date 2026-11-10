@@ -1735,6 +1735,7 @@ version.
 | `AttemptEvidenceQuarantined`              | `attempt_evidence_quarantined`                                       | `keyDigest`, `attempt`, `path`, `recordedDigest`, `measuredDigest` |
 | `CacheConflictDetected`                   | `cache_conflict_detected`                                            | `keyDigest`, `recordedRunId`                                       |
 | `CacheCorruptionDetected`                 | `cache_corruption_detected`                                          | `keyDigest`, `path`, `recordedDigest`, `measuredDigest`            |
+| `UnstorableSerialization`                 | `unstorable_serialization`                                           | `contentType`                                                      |
 | `RetentionError`, `RetentionErrorCode`    | `scan_failed`, `delete_failed`                                       |                                                                    |
 | `RunCatalogError`, `RunCatalogErrorCode`  | `invalid_options`, `invalid_cursor`, `source_changed`, `list_failed` | `cause` when a decode or store operation failed.                   |
 | `IrreversibleRetryRequiresIdempotencyKey` | re-exported from [`@smthrs/flow`](/api/flow)'s `Action`              |                                                                    |

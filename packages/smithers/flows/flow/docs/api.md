@@ -111,6 +111,17 @@ Scope helpers are `scope`, `provideScope`, `addFinalizer`, `withRollback`, and `
 
 The declared form takes the same two literals `Flow.make` does, lowered into the annotation bag by the same code: `capabilities`, the capability ceiling the dispatch runs under, and `effects`, the effect envelope from [`@smthrs/plan`](/api/plan#effects). They are literals so a catalog can project a declaration's authority from source text without importing the module. An action is a leaf, so its envelope encloses nothing: `Graph.build` checks it against the envelope the calling flow granted, and records `capability_outside_grant` for every capability the caller does not hold.
 
+### Stored results
+
+An action's results are stored in the representation Effect's `RpcSerialization` injects (VIP-44). `executeEncoded` encodes a success and each typed failure with `codecFor` of the `RpcSerialization` in context, else `RpcSerialization.json`, whose `codecFor` is `Schema.toCodecJson`. `exitSchemasFor(serialization, action)` returns the `{ exitSchema, exitSchemaPartial }` that decode them; under `RpcSerialization.json` they are the action's own `exitSchema` and `exitSchemaPartial`, so the default stores exactly what it always has.
+
+| Host                     | Serializers it stores with                                                                                                                                      |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FlowEngine.layerMemory` | any; read once when the layer is built                                                                                                                          |
+| `EngineStore.layer`      | those whose `codecFor` is the JSON codec: `json`, `ndjson`, `jsonRpc`, `ndJsonRpc`. Any other is refused when the store is built with `UnstorableSerialization` |
+
+Identity never goes through the serializer: run ids and keys hash `Flow.payloadSnapshot`, so changing serializers never changes an id.
+
 Omitting `capabilities` inherits the caller's authority. Declaring `capabilities: []`
 denies every guarded host operation. Each declaration intersects with every
 ancestor and the ambient host ceiling; `*` permits any capability within those
