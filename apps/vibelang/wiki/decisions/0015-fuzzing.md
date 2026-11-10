@@ -214,8 +214,13 @@ Remeasured 2026-11-10 by `pnpm fuzz:coverage` at `b938c72d` (`coverage/fuzz-unit
 Issues fell from the first measurement (153/154 and 205/217; 246/271 and 376/440): their journaled-proposal and read
 paths are reached by random sequences only when a 5 s budget affords enough executions, and this run afforded fewer.
 They need steered targets, as `objects/steered-host` did for Objects. The merged `coverage/fuzz` map also
-double-counts the web files: Chromium's map gives `src/web/startupDecision.vibe` 36 branches against Node's 18, and
-istanbul's merge keeps both sets, so the report gate shows 33/36 for a file Node alone covers 18/18.
+double-counted the web files: Vite's minified bundle folds `src/web/startupDecision.vibe`'s `if`s into ternaries, so
+Chromium's map has 18 other branches beside Node's 18, and Istanbul's `merge` kept both, reporting 33/36 for a file
+Node alone covers 18/18. Fixed 2026-11-10: `fuzz/coverage.vibe` merges with `test/support/coverageUnion.ts`, the
+benchmark gate's merge (0017) moved into one module. Node's structure is the gate for a file Node executed; Chromium
+credits a statement, function or branch arm only at the identical source range after source maps; a file only
+Chromium executed is gated on Chromium's structure. `test/fuzzCoverage.test.vibe` failed on the old merge. On the
+same two reports the gate's failures fell from 342 to 332. `pnpm test:coverage` has no cross-runtime merge.
 
 Not reached, with the reason; none is excluded:
 

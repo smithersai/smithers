@@ -1,7 +1,7 @@
 // @vitest-environment node
 // Literal source ranges exercise the report merger, never contribute execution hits for production files.
 import { it, expect } from "@effect/vitest"
-import { metrics, unionEvidence, normalizeEndColumns } from "../bench/merge-coverage.ts"
+import { metrics, unionEvidence, normalizeEndColumns } from "./support/coverageUnion.ts"
 
 const outer = { start: { line: 1, column: 0 }, end: { line: 5, column: 1 } }
 const inner = { start: { line: 3, column: 2 }, end: { line: 4, column: 10 } }

@@ -64,7 +64,7 @@ per-module counters it reads 66.84% (`test/workerdCoverageShape.test.ts` guards 
 
 **The merged gate.** Vitest's own threshold check is off in this command, because workerd evidence exists only after
 the process exits. `bench/merge-coverage.ts` then remaps each dump through each module's compiler map, unions it
-with the Vitest map and enforces 100% lines, branches, functions and statements per file across `src/`, `worker/`,
+with the Vitest map (`test/support/coverageUnion.ts`, shared with the fuzz gate, 0015) and enforces 100% lines, branches, functions and statements per file across `src/`, `worker/`,
 `infra/` and `scripts/`. A file with no Node-side execution is gated on its workerd-remapped structure. A file
 executed in both keeps its Vitest structure. Cross-runtime credit requires identical complete statement or function
 declaration ranges; branch credit requires the same type and ordered arm ranges. Missing/non-finite columns never

@@ -7,6 +7,7 @@ import coverageApi from "istanbul-lib-coverage"
 import reportApi from "istanbul-lib-report"
 // @ts-expect-error The pinned Istanbul tool ships no declarations.
 import untypedReports from "istanbul-reports"
+import { mergeByPosition, type FileCoverageJSON } from "../test/support/coverageUnion.ts"
 
 interface Count { readonly total: number; readonly covered: number; readonly pct: number | "Unknown" }
 interface CoverageMap {
@@ -25,12 +26,13 @@ export effect function main() {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
   const root = try path.fromFileUrl(new URL("../", import.meta.url))
-  const coverage = try Effect.try(() => createCoverageMap({}))
+  const inputs: Array<Record<string, FileCoverageJSON>> = []
   for (const directory of ["coverage/fuzz-unit", "coverage/fuzz-browser"]) {
     const source = try fs.readFileString(path.join(root, directory, "coverage-final.json"))
-    const json = try Effect.try(() => JSON.parse(source))
-    try Effect.try(() => coverage.merge(json))
+    inputs.push(try Effect.try(() => JSON.parse(source) as Record<string, FileCoverageJSON>))
   }
+  // Node's statement structure is the gate; Chromium credits it only at identical source ranges (0015).
+  const coverage = try Effect.try(() => createCoverageMap(mergeByPosition(inputs[0]!, inputs.slice(1))))
   try Effect.try(() => coverage.filter((file) => file.startsWith(root) && /\/(?:src|worker)\/.*\.vibe$/.test(file) && file !== path.join(root, "worker/Api.vibe")))
   const directory = path.join(root, "coverage/fuzz")
   try fs.makeDirectory(directory, { recursive: true })

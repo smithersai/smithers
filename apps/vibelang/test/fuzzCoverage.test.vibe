@@ -1,0 +1,55 @@
+// @vitest-environment node
+// Literal source ranges exercise the fuzz gate's report merge; they never contribute hits for production files.
+import { it, expect } from "@effect/vitest"
+// @ts-expect-error The pinned Istanbul tool ships no declarations.
+import coverageApi from "istanbul-lib-coverage"
+import { mergeByPosition } from "./support/coverageUnion.ts"
+
+const file = "/app/src/web/fixture.vibe"
+const range = (line: number, start: number, endLine: number, end: number) => ({ start: { line, column: start }, end: { line: endLine, column: end } })
+const implicit = { start: {}, end: {} }
+const empty = { path: file, statementMap: {}, fnMap: {}, branchMap: {}, s: {}, f: {}, b: {} }
+
+// startupDecision.vibe's shape: Node keeps two `if`s; the minified Chromium bundle folds them into one ternary.
+const node = {
+  [file]: {
+    ...empty,
+    statementMap: { "0": range(16, 2, 16, 36), "1": range(16, 24, 16, 36) }, s: { "0": 3, "1": 1 },
+    branchMap: { "0": { loc: range(16, 2, 16, 36), type: "if", locations: [range(16, 2, 16, 36), implicit] } }, b: { "0": [1, 2] },
+  },
+}
+const chromium = {
+  [file]: {
+    ...empty,
+    statementMap: { "0": range(18, 2, 18, 15) }, s: { "0": 1 },
+    branchMap: { "0": { loc: range(16, 6, 18, 15), type: "cond-expr", locations: [range(16, 31, 16, 36), range(17, 6, 18, 15)] } }, b: { "0": [1, 0] },
+  },
+}
+interface Count { readonly covered: number; readonly total: number }
+const createCoverageMap = (coverageApi as { createCoverageMap(input: unknown): { fileCoverageFor(file: string): { toSummary(): Readonly<Record<"branches" | "statements", Count>> } } }).createCoverageMap
+// The fuzz gate's merge of the Vitest (Node) report with the Chromium report, summarized as the gate reads it.
+const summary = (unit: Record<string, unknown>, browser: Record<string, unknown>) => createCoverageMap(mergeByPosition(unit as never, [browser as never])).fileCoverageFor(file).toSummary()
+
+it("a source Node covers fully stays fully covered when Chromium's bundle has another branch shape", () => {
+  const merged = summary(node, chromium)
+  expect([merged.branches.covered, merged.branches.total]).toEqual([2, 2])
+  expect([merged.statements.covered, merged.statements.total]).toEqual([2, 2])
+})
+
+it("Chromium credits a Node statement or arm only at the identical source range", () => {
+  const partial = { [file]: { ...node[file], s: { "0": 1, "1": 0 }, b: { "0": [0, 1] } } }
+  const same = { [file]: { ...node[file], s: { "0": 0, "1": 4 }, b: { "0": [5, 0] } } }
+  expect(summary(partial, same).branches.covered).toBe(2)
+  expect(summary(partial, same).statements.covered).toBe(2)
+  expect(summary(partial, chromium).branches.covered).toBe(1)
+  expect(summary(partial, chromium).statements.covered).toBe(1)
+})
+
+it("a source only Chromium executes is gated on Chromium's structure", () => {
+  const unexecuted = { [file]: { ...node[file], s: { "0": 0, "1": 0 }, b: { "0": [0, 0] } } }
+  for (const unit of [{}, unexecuted]) {
+    const merged = summary(unit, chromium)
+    expect([merged.branches.covered, merged.branches.total]).toEqual([1, 2])
+    expect([merged.statements.covered, merged.statements.total]).toEqual([1, 1])
+  }
+})

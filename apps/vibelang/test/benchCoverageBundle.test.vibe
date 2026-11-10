@@ -5,7 +5,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices"
 import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
 import { build, parseAstAsync } from "vite"
 import convert from "ast-v8-to-istanbul"
-import { normalizeEndColumns } from "../bench/merge-coverage.ts"
+import { normalizeEndColumns } from "./support/coverageUnion.ts"
 import { node, run } from "./support/processes.vibe"
 
 it.live("source-coverage builds never credit a skipped return after bundling", () => scoped(effect {

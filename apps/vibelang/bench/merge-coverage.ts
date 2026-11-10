@@ -7,7 +7,8 @@
 // inspector disables the Profiler domain, so its bundles carry Istanbul counters dumped over the inspector
 // (test/support/workerdCoverage.ts, per compiled module); Chromium executes the unminified source-coverage build, dumped with its precise Profiler
 // API into coverage/bench/chromium-raw (bench/browser.spec.ts). This script remaps both to source, credits them by
-// location, and enforces 100% lines, branches, functions and statements per file:
+// location (test/support/coverageUnion.ts, shared with the fuzz gate), and enforces 100% lines, branches, functions
+// and statements per file:
 //
 // - A file with no Vitest-recorded execution is gated on its workerd-remapped structure (all four metrics).
 // - A file executed in both keeps its Vitest structure. Cross-runtime hits require identical complete source
@@ -21,6 +22,7 @@ import { fileURLToPath } from "node:url"
 import { parseAstAsync } from "vite"
 import astV8ToIstanbul from "ast-v8-to-istanbul"
 import { sourceCoverage } from "../test/support/workerdCoverage.ts"
+import { mergeByPosition, metrics, normalizeEndColumns, type FileCoverageJSON } from "../test/support/coverageUnion.ts"
 
 const require = createRequire(import.meta.url)
 
@@ -33,31 +35,6 @@ interface CoverageMap {
 interface FileCoverage {
   path: string
   toJSON(): FileCoverageJSON
-}
-interface FileCoverageJSON {
-  path: string
-  statementMap: Record<string, { start: Position; end: Position }>
-  fnMap: Record<string, { name: string; decl: { start: Position; end: Position }; loc?: { start: Position; end: Position } }>
-  branchMap: Record<string, { loc: { start: Position; end: Position }; type: string; locations: Array<Arm> }>
-  s: Record<string, number>
-  f: Record<string, number>
-  b: Record<string, Array<number>>
-}
-interface Position { line: number; column: number | null }
-/** A branch arm. Istanbul writes an `if` without `else` as an arm with no coordinates at all: `{ start: {}, end: {} }`. */
-interface Arm { start: Partial<Position>; end: Partial<Position> }
-/** Same open-ended sentinel normalization as the coverage lane's patched V8 provider; no hit is changed. */
-export function normalizeEndColumns(json: FileCoverageJSON, source: string): FileCoverageJSON {
-  const copy = structuredClone(json)
-  const lines = source.split(/\r?\n/)
-  const normalize = (range: Arm | undefined) => {
-    const position = range?.end
-    if (position?.column === Infinity && position.line !== undefined && lines[position.line - 1] !== undefined) position.column = lines[position.line - 1]!.length
-  }
-  for (const loc of Object.values(copy.statementMap)) normalize(loc)
-  for (const fn of Object.values(copy.fnMap)) { normalize(fn.decl); normalize(fn.loc) }
-  for (const branch of Object.values(copy.branchMap)) { normalize(branch.loc); for (const loc of branch.locations) normalize(loc) }
-  return copy
 }
 
 const libCoverage = require("istanbul-lib-coverage") as {
@@ -173,98 +150,18 @@ function uncoveredLines(json: FileCoverageJSON): Array<number> {
   return [...lines.entries()].filter(([, hits]) => hits === 0).map(([line]) => line).sort((x, y) => x - y)
 }
 
-export function metrics(json: FileCoverageJSON) {
-  const total = { lines: 0, statements: 0, functions: 0, branches: 0 }
-  const covered = { lines: 0, statements: 0, functions: 0, branches: 0 }
-  const lineHits = new Map<number, number>()
-  // Istanbul defines executable lines by statement starts. A multi-line outer declaration does not execute
-  // every nested body; spreading its hit over the entire range would credit unreachable statements.
-  for (const [id, loc] of Object.entries(json.statementMap)) {
-    const line = loc.start.line
-    lineHits.set(line, Math.max(lineHits.get(line) ?? 0, json.s[id] ?? 0))
-  }
-  total.lines = lineHits.size
-  covered.lines = [...lineHits.values()].filter((hits) => hits > 0).length
-  total.statements = Object.keys(json.s).length
-  covered.statements = Object.values(json.s).filter((hits) => hits > 0).length
-  total.functions = Object.keys(json.f).length
-  covered.functions = Object.values(json.f).filter((hits) => hits > 0).length
-  for (const hits of Object.values(json.b)) {
-    total.branches += hits.length
-    covered.branches += hits.filter((hit) => hit > 0).length
-  }
-  return { total, covered }
-}
-
-/** Credits a Vitest-structured file with evidence for the same source from another runtime, by location. */
-export function unionEvidence(base: FileCoverageJSON, evidence: FileCoverageJSON): FileCoverageJSON {
-  const json = JSON.parse(JSON.stringify(base)) as FileCoverageJSON
-  const location = (loc: Arm) => {
-    const coordinates = [loc.start.line, loc.start.column, loc.end.line, loc.end.column]
-    if (!coordinates.every(value => typeof value === "number" && Number.isSafeInteger(value) && value >= 0)) return undefined
-    return JSON.stringify(coordinates)
-  }
-  const statements = new Set(Object.entries(evidence.statementMap).filter(([id]) => (evidence.s[id] ?? 0) > 0).map(([, loc]) => location(loc)).filter(key => key !== undefined))
-  const evidenceFns = new Set(Object.entries(evidence.fnMap).filter(([id]) => (evidence.f[id] ?? 0) > 0).map(([, fn]) => location(fn.decl)).filter(key => key !== undefined))
-  const branchKey = (branch: FileCoverageJSON["branchMap"][string]) => {
-    // The implicit else arm has no range in either runtime; it is identified by its branch's complete range.
-    const implicit = (arm: Arm) => [arm.start.line, arm.start.column, arm.end.line, arm.end.column].every(value => value === undefined)
-    const loc = location(branch.loc), arms = branch.locations.map(arm => implicit(arm) ? "implicit" : location(arm))
-    return loc === undefined || arms.some(key => key === undefined) ? undefined : JSON.stringify([branch.type, loc, arms])
-  }
-  const evidenceBranches = new Map<string, Array<ReadonlyArray<number>>>()
-  for (const [id, branch] of Object.entries(evidence.branchMap)) {
-    const key = branchKey(branch)
-    if (key === undefined) continue
-    const list = evidenceBranches.get(key) ?? []
-    list.push(evidence.b[id] ?? [])
-    evidenceBranches.set(key, list)
-  }
-  for (const [id, loc] of Object.entries(json.statementMap)) {
-    if ((json.s[id] ?? 0) > 0) continue
-    const key = location(loc)
-    if (key !== undefined && statements.has(key)) json.s[id] = 1
-  }
-  for (const [id, fn] of Object.entries(json.fnMap)) {
-    if ((json.f[id] ?? 0) > 0) continue
-    const key = location(fn.decl)
-    if (key !== undefined && evidenceFns.has(key)) json.f[id] = 1
-  }
-  for (const [id, branch] of Object.entries(json.branchMap)) {
-    const hits = json.b[id] ?? []
-    if (hits.every((hit) => hit > 0)) continue
-    const key = branchKey(branch)
-    if (key === undefined) continue
-    const candidates = evidenceBranches.get(key) ?? []
-    // Every arm must have the same ordered source range, not just the same line and number of arms.
-    json.b[id] = hits.map((hit, index) => hit > 0 || candidates.some(candidate => candidate.length === hits.length && (candidate[index] ?? 0) > 0) ? 1 : 0)
-  }
-  return json
-}
-
 async function main() {
   const vitestFinal = "coverage/bench/coverage-final.json"
   if (!existsSync(vitestFinal)) throw new Error("coverage/bench/coverage-final.json missing: run vitest coverage first")
   const base = libCoverage.createCoverageMap(JSON.parse(readFileSync(vitestFinal, "utf8")))
   const evidences: ReadonlyArray<CoverageMap> = [await workerdEvidence(), await chromiumEvidence()]
 
-  const combined: Record<string, FileCoverageJSON> = {}
+  const vitest: Record<string, FileCoverageJSON> = {}
   for (const file of base.files()) {
     if (!sourceFile(file)) continue
-    combined[file] = base.fileCoverageFor(file).toJSON()
+    vitest[file] = base.fileCoverageFor(file).toJSON()
   }
-  for (const evidenceMap of evidences) {
-    for (const file of evidenceMap.files()) {
-      const evidence = evidenceMap.fileCoverageFor(file).toJSON()
-      const existing = combined[file]
-      if (existing === undefined || metrics(existing).covered.statements === 0) {
-        // No Node-side execution: the other runtime's structure is the gate for all four metrics.
-        combined[file] = evidence
-        continue
-      }
-      combined[file] = unionEvidence(existing, evidence)
-    }
-  }
+  const combined = mergeByPosition(vitest, evidences.map((evidence) => evidence.toJSON() as unknown as Record<string, FileCoverageJSON>))
 
   const failures: Array<string> = []
   const rows: Array<{ file: string; lines: string; statements: string; functions: string; branches: string; uncovered: string }> = []
