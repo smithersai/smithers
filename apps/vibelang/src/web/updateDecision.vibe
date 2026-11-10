@@ -1,4 +1,5 @@
 // Decisions inside the web update, over plain values: Escape's ladder, the applied event and the step after every message. `update` reads the model and builds Commands.
+import type { Message } from "./main.vibe"
 
 export type EscapeRoute = "tour" | "palette" | "docs" | "splash"
 export type EscapeKind = "tour" | "palette" | "splash" | "role" | "issue-dialog" | "slash" | "menu" | "issues" | "actions" | "wiki" | "none" | "sandbox" | "docs"
@@ -127,14 +128,15 @@ export function wikiAfterEvent(id: string, known: boolean, current: string): str
 
 export interface AfterUpdate { readonly kind: "issues" | "measure" | "none"; readonly closeDialog: boolean; readonly clearRetry: boolean }
 
-/** After any message: a changed person or role re-gates the issue dialog; otherwise a running tour remeasures, except after a measurement or a focus return. */
+/** After any message: a changed person or role re-gates the issue dialog; otherwise a running tour remeasures, except after a measurement or a focus return.
+ * `message` is the real web `Message` union, read through main.vibe's declaration, so a tag named here must exist. */
 //@ verify
 //@ ensures hasIssues && (roleChanged || personChanged) ==> \result.kind == "issues" && \result.closeDialog == (dialogOpen && !permitted) && \result.clearRetry == personChanged
-//@ ensures !(hasIssues && (roleChanged || personChanged)) && tour && tag != "MeasuredTheatre" && tag != "FocusedPrompt" && tag != "RemeasureTheatre" ==> \result == { kind: "measure", closeDialog: false, clearRetry: false }
-//@ ensures !(hasIssues && (roleChanged || personChanged)) && !(tour && tag != "MeasuredTheatre" && tag != "FocusedPrompt" && tag != "RemeasureTheatre") ==> \result == { kind: "none", closeDialog: false, clearRetry: false }
-export function afterUpdate(hasIssues: boolean, roleChanged: boolean, personChanged: boolean, dialogOpen: boolean, permitted: boolean, tour: boolean, tag: string): AfterUpdate {
+//@ ensures !(hasIssues && (roleChanged || personChanged)) && tour && message._tag != "MeasuredTheatre" && message._tag != "FocusedPrompt" && message._tag != "RemeasureTheatre" ==> \result == { kind: "measure", closeDialog: false, clearRetry: false }
+//@ ensures !(hasIssues && (roleChanged || personChanged)) && !(tour && message._tag != "MeasuredTheatre" && message._tag != "FocusedPrompt" && message._tag != "RemeasureTheatre") ==> \result == { kind: "none", closeDialog: false, clearRetry: false }
+export function afterUpdate(hasIssues: boolean, roleChanged: boolean, personChanged: boolean, dialogOpen: boolean, permitted: boolean, tour: boolean, message: Message): AfterUpdate {
   if (hasIssues && (roleChanged || personChanged)) return { kind: "issues", closeDialog: dialogOpen && !permitted, clearRetry: personChanged }
-  if (tour && tag !== "MeasuredTheatre" && tag !== "FocusedPrompt" && tag !== "RemeasureTheatre") return { kind: "measure", closeDialog: false, clearRetry: false }
+  if (tour && message._tag !== "MeasuredTheatre" && message._tag !== "FocusedPrompt" && message._tag !== "RemeasureTheatre") return { kind: "measure", closeDialog: false, clearRetry: false }
   return { kind: "none", closeDialog: false, clearRetry: false }
 }
 

@@ -1320,15 +1320,18 @@ const STRING_SPLIT = `function {:axiom} StringSplit(s: string, d: string): seq<s
 // is the soundness condition — cmp must be a total preorder, otherwise no sorted
 // permutation exists and the axiom would be vacuous. Callers discharge it (e.g.
 // `(a,b) => a.k - b.k` is total + transitive by linear arithmetic).
+// Membership in both directions follows from the multiset clause; Dafny does not derive it unaided, so it is stated.
 // Bare `.sort()`: permutation only, no sortedness (JS default order is type-dependent).
 const SEQ_SORT = `function {:axiom} SeqSort<T(==,!new)>(s: seq<T>): seq<T>
   ensures multiset(SeqSort(s)) == multiset(s)
+  ensures forall x: T :: x in SeqSort(s) <==> x in s
   ensures |SeqSort(s)| == |s|`;
 
 const SEQ_SORT_BY = `function {:axiom} SeqSortBy<T(==,!new)>(s: seq<T>, cmp: (T, T) -> int): seq<T>
   requires forall a: T, b: T :: cmp(a, b) <= 0 || cmp(b, a) <= 0
   requires forall a: T, b: T, c: T :: cmp(a, b) <= 0 && cmp(b, c) <= 0 ==> cmp(a, c) <= 0
   ensures multiset(SeqSortBy(s, cmp)) == multiset(s)
+  ensures forall x: T :: x in SeqSortBy(s, cmp) <==> x in s
   ensures |SeqSortBy(s, cmp)| == |s|
   ensures forall i: int, j: int :: 0 <= i <= j < |SeqSortBy(s, cmp)| ==> cmp(SeqSortBy(s, cmp)[i], SeqSortBy(s, cmp)[j]) <= 0`;
 

@@ -3824,6 +3824,8 @@ with `tsx`, `typescript` and `@types/node` at monorepo versions. `lemmascript-cl
 uses `Schema.*`, because LemmaScript's checker does not see the VibeLang compiler's types, and `schema` declarations are not
 TypeScript. The tagged-match reader needs a literal `_tag` on every member, so it declines the real table.
 Reproduction: `~/vl/vibelang-bugs/lemmascript-vibe-typed-message` on nyc-01.
+Fixed in the thirty-second batch: a proof module names the real `Message` through `import type` and main.vibe's emitted
+declaration. The table in `main.vibe` itself is still unproved; see that batch.
 
 ### Twenty-second batch: account arms of `update` on plain types
 
@@ -4032,3 +4034,35 @@ Tool gaps fixed:
 
 Not proved here: the cookies' regexps and the URL parse (regexp.ts, uri-codec.ts); the catalog's command names and
 titles, which are labels. A mock chunk may end inside a surrogate pair mid-stream; the joined reply is whole.
+
+### Thirty-second batch: the real `Message` union in proofs
+
+A proved module can now name the web app's real `Message` union, all 100 tags with their payloads, and Dafny checks it as
+a 100-constructor datatype. `afterUpdate` in `updateDecision.vibe` takes `message: Message` instead of `tag: string`.
+Its contract is unchanged in meaning: after any message, a running tour remeasures unless the message is
+`MeasuredTheatre`, `FocusedPrompt` or `RemeasureTheatre`. A tag spelled wrong in that function or its contract is now a
+type error, where before it compared false and the proof passed. The four tag mutations now mutate `message._tag`, and
+83 of 83 `updateDecision.vibe` mutations are rejected.
+
+What made it possible:
+
+| Piece | Where | Test |
+| --- | --- | --- |
+| `const X = defineMessageUnion({ Tag: { field: Schema.X } })` is read as a `_tag` union with a typed `X.match`, on the same lines | `packages/lemmascript/tools/src/message-union.ts` | fixtures `message-union.ts`, `message-union-wrong.ts`; `tests/message-union.test.ts` |
+| A type named by an import is read from the declaration it aliases, and a project `.d.ts` outside `node_modules` is user code | `extract.ts` | fixture `declared-union/` with its wrong twin |
+| A type-only import of a `.vibe` module (`import type { Message } from "./main.vibe"`) stages VibeLang's emitted declaration beside the importer, with absolute specifiers into one emitted tree; a module also imported for values keeps its staged copy | `verify/declarations.py`, `check.py`, `mutations.py` | `harness_test.TypeOnlyImports` |
+| `main.vibe` calls `String.prototype.toWellFormed` (ES2024). The app's `lib` did not include it; the full typecheck passed only because Cloudflare's worker types declare it globally. `tsconfig.json` now lists `ES2024.String`, so `main.vibe` typechecks on its own. | `tsconfig.json` | `pnpm typecheck` |
+
+Every run survives the sort. `newestFirst` in `modelDecision.vibe` now also states membership in both directions: each
+input run is in the result and each result run was in the input. With the existing length and order clauses, `mergeRuns`
+can neither drop nor invent a run. This closes `lemmascript-sort-membership`. `lsc`'s sort axioms stated only multiset
+equality, and Dafny does not derive `x in r <==> x in s` from that unaided. Both sort axioms now state membership too.
+The new clause follows from the multiset clause, so the axiom assumes nothing new (fixtures `sort-membership.ts` and its
+wrong twin, which sorts a different list). Mutation `newest-first-keeps-every-run` sorts a copy that repeats the first
+run in place of the last; the membership clause rejects it. 151 of 151 `modelDecision.vibe` mutations are rejected.
+
+Not proved: the `Message.match` table in `update` and the arm bodies still inline there. `main.vibe` is not in
+LemmaScript's subset (schemas, Effect commands), so `update` cannot be read as written. With the real union available,
+the next step is to move model-only arms into a proved function in a decision module that switches on
+`message._tag`. That function needs a plain frame of the model, the same method batches 22 to 31 used.
+

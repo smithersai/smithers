@@ -569,9 +569,11 @@ export function mergeRunAt<R extends RunClock>(current: ReadonlyArray<R>, index:
   return current
 }
 
-/** The runs list shows the newest start first. */
+/** The runs list shows the newest start first, and every run survives the sort: nothing is dropped, nothing added. */
 //@ verify
 //@ ensures \result.length == runs.length
+//@ ensures forall(i, 0 <= i && i < runs.length ==> \result.includes(runs[i]))
+//@ ensures forall(i, 0 <= i && i < \result.length ==> runs.includes(\result[i]))
 //@ ensures forall(i, 0 < i && i < \result.length ==> \result[i - 1].started >= \result[i].started)
 export function newestFirst<R extends RunClock>(runs: ReadonlyArray<R>): ReadonlyArray<R> {
   return [...runs].sort((a, b) => b.started - a.started)

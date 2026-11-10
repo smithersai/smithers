@@ -9,6 +9,8 @@ contract and assertion stays byte-identical, and each case must match exactly on
 """
 import json, pathlib, re, sys
 from mutation_edit import executable_matches, flatten_imports, function_span
+from declarations import stage as stage_declarations, parses_as_typescript, value_imports
+declarations={}
 root=pathlib.Path(__file__).resolve().parent
 from extended_mutations import cases as extended_cases
 from web_mutations import cases as web_cases
@@ -156,18 +158,25 @@ unknown=selected-{name for module,name,*_ in cases}
 if unknown: raise SystemExit('Unknown mutations: '+', '.join(sorted(unknown)))
 contracts=lambda text:[line for line in text.splitlines() if line.lstrip().startswith('//@')]
 out.mkdir(parents=True,exist_ok=True)
-def stage_dependencies(dependencies,out):
-    """Copy every `.vibe` file the mutant imports, and theirs in turn, flattened beside it as `name.vibe.ts`."""
-    pending,seen=list(dependencies.items()),{}
+def stage_dependencies(text,dependencies,out):
+    """Copy every `.vibe` file `text` imports for values, and theirs in turn, flattened beside it as `name.vibe.ts`.
+    A module imported only with `import type` that is not TypeScript syntax gets its emitted declaration instead
+    (declarations.py)."""
+    pending,seen=[(text,dependencies)],{}
     while pending:
-        spec,path=pending.pop()
-        if spec in seen:
-            if seen[spec]!=path: raise SystemExit(f'two imports share the file name {spec}')
-            continue
-        seen[spec]=path
-        text,more=flatten_imports(path.read_text(),path.parent)
-        (out/f'{spec}.ts').write_text(text)
-        pending.extend(more.items())
+        importer,found=pending.pop()
+        values={pathlib.Path(spec).name for spec in value_imports(importer)}
+        for spec,path in found.items():
+            if spec not in values and not parses_as_typescript(path):
+                declarations.setdefault(out/f'{spec}.d.ts',path)
+                continue
+            if spec in seen:
+                if seen[spec]!=path: raise SystemExit(f'two imports share the file name {spec}')
+                continue
+            seen[spec]=path
+            copied,more=flatten_imports(path.read_text(),path.parent)
+            (out/f'{spec}.ts').write_text(copied)
+            pending.append((copied,more))
 
 manifest={}
 for module,name,fn,old,new,claim in cases:
@@ -187,8 +196,10 @@ for module,name,fn,old,new,claim in cases:
     if contracts(broken)!=contracts(source): raise SystemExit(f'{name}: mutation changed a contract')
     broken,dependencies=flatten_imports(broken,(root.parent/module).parent)
     (out/f'{name}.ts').write_text(broken)
-    stage_dependencies(dependencies,out)
+    stage_dependencies(broken,dependencies,out)
     manifest[name]={'source':module,'function':fn,'claim':claim,'before':old,'after':new}
 if modules and not manifest: raise SystemExit('No mutations in: '+', '.join(sorted(modules)))
+# Beside the mutants, not among them: the mutant typecheck reads every .ts under OUT.
+stage_declarations(root.parent, declarations, out.with_name(out.name+'.declarations'))
 (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 print(f'{len(manifest)} executable-only mutations written to {out}')

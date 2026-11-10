@@ -3,6 +3,7 @@
 import atexit, concurrent.futures, hashlib, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time
 from sources import production_sources, VERIFY, dafny_keywords, dafny_name
 from proof_additions import add_proof_steps, insertion_names
+from declarations import stage as stage_declarations, copied_imports, declared_imports
 from mutation_targets import POSTCONDITIONS, ASSERTIONS, postcondition_line, case_assertion_line
 ROOT=pathlib.Path(__file__).resolve().parent
 APP=pathlib.Path(os.environ.get("VIBELANG_VERIFY_ROOT", str(ROOT.parent))).resolve()
@@ -12,7 +13,7 @@ if len(sys.argv)>1:
  for candidate in sources:
   if not candidate.exists(): raise SystemExit(f'Not found: {candidate}')
   if not candidate.is_relative_to(APP): raise SystemExit(f'Source must be inside {APP}')
-  selected += [candidate] if candidate.is_file() else sorted(p for p in candidate.rglob('*.ts') if not p.name.endswith('.vibe.ts') and not any(x in {'.tools','node_modules','.checks'} for x in p.relative_to(candidate).parts))
+  selected += [candidate] if candidate.is_file() else sorted(p for p in candidate.rglob('*.ts') if not p.name.endswith(('.vibe.ts','.d.ts')) and not any(x in {'.tools','node_modules','.checks'} for x in p.relative_to(candidate).parts))
  selected=list(dict.fromkeys(selected))
  source=sources[0] if len(sources)==1 else APP
 else:
@@ -28,9 +29,15 @@ proof_sources.mkdir()
 (proof_sources/'tsconfig.json').write_text(json.dumps({'extends':str(APP/'tsconfig.json'),'files':[],'include':[],'exclude':[]}))
 # LemmaScript reads TypeScript. A `.vibe` module written in its verifiable subset is TypeScript syntax, so the run
 # proves an exact `.ts` copy of its text, staged with this run's artifacts; reports name the `.vibe` file and line.
+# A type-only import of a module that is not TypeScript syntax (`import type { Message } from "./main.vibe"`) reads the module's emitted declaration instead,
+# `x.vibe.d.ts` beside the copy, so a proved module can name the types of a module outside the subset (declarations.py).
+declarations={}
 def stage_imports(original, staged):
  # An import of a proved module is read by LemmaScript for its contracts only: `./x.vibe` resolves to this `x.vibe.ts` copy.
- for spec in re.findall(r'from "(\.[^"]*\.vibe)"',original.read_text()):
+ text=original.read_text()
+ for spec in declared_imports(text, original.parent):
+  declarations[(staged.parent/spec).with_name(pathlib.Path(spec).name+'.d.ts')]=(original.parent/spec).resolve()
+ for spec in copied_imports(text, original.parent):
   dep=(original.parent/spec).resolve(); copy=(staged.parent/spec).with_name(pathlib.Path(spec).name+'.ts')
   if not dep.exists(): raise SystemExit(f'Missing proof import {spec} of {original}')
   copy.parent.mkdir(parents=True,exist_ok=True)
@@ -46,6 +53,7 @@ for original in selected:
   stage_imports(original, staged)
  else: files.append(original)
 if not files: raise SystemExit(f'No annotated production modules or TypeScript files under {source}')
+stage_declarations(APP, declarations, run/'declarations')
 config=APP/('.verify-'+run.name+'.config.json')
 config.write_text(json.dumps({'string-semantics':'javascript-utf16','dafny-library':'local','proof-dir':str(run.relative_to(APP)),'run-log':False}))
 atexit.register(lambda: config.unlink(missing_ok=True))

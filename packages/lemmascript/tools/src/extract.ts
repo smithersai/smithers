@@ -5,6 +5,7 @@
  * The only strings are //@ annotation expressions (parsed later by specparser).
  */
 
+import { desugarMessageUnions } from "./message-union.js";
 import { Project, Node, FunctionDeclaration, InterfaceDeclaration, SourceFile, TypeAliasDeclaration, Type, SyntaxKind, Expression, ElementAccessExpression, ScriptTarget, VariableDeclaration, ts } from "ts-morph";
 import type { TypeDeclInfo, VariantInfo } from "./types.js";
 import { initTypeParser } from "./types.js";
@@ -2577,14 +2578,18 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   function resolveTypeNodeRefs(tn: Node | undefined) {
     if (!tn) return;
     if (Node.isTypeReference(tn)) {
-      const sym = tn.getTypeName().getSymbol();
+      // An imported name's symbol is the import; its declarations are the aliased symbol's.
+      const named = tn.getTypeName().getSymbol();
+      const sym = named?.isAlias() ? named.getAliasedSymbol() ?? named : named;
       if (sym) {
         for (const d of sym.getDeclarations()) {
-          // Skip ambient/built-in declarations: `.d.ts` files (lib.dom.d.ts,
+          // Skip ambient/built-in declarations: library `.d.ts` files (lib.dom.d.ts,
           // node_modules typings) describe runtime/host types, not user code
           // — backends map these directly (`Map<K,V>` → `map<K,V>`) without
-          // needing the interface dump.
-          if (d.getSourceFile().getFilePath().endsWith(".d.ts")) continue;
+          // needing the interface dump. A project's own declaration file, such
+          // as a module's emitted declaration read through `import type`, is
+          // user code and is read.
+          if (d.getSourceFile().isDeclarationFile() && d.getSourceFile().isInNodeModules()) continue;
           let added: TypeDeclInfo | null = null;
           if (Node.isTypeAliasDeclaration(d) && !knownTypeNames.has(d.getName())) {
             const extra: TypeDeclInfo[] = [];
@@ -2957,5 +2962,7 @@ if (process.argv[1]?.match(/extract\.(ts|js)$/)) {
   const file = process.argv[2];
   if (!file) { console.error("Usage: extract <file.ts>"); process.exit(1); }
   const proj = new Project({ compilerOptions: { strict: true, target: ScriptTarget.ESNext, lib: ["lib.esnext.d.ts"] } });
-  console.log(JSON.stringify(extractModule(proj.addSourceFileAtPath(file)), null, 2));
+  const sourceFile = proj.addSourceFileAtPath(file);
+  desugarMessageUnions(sourceFile);
+  console.log(JSON.stringify(extractModule(sourceFile), null, 2));
 }

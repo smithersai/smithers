@@ -95,7 +95,8 @@ expect_failure \
   npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/empty-string-union-wrong.ts"
 
 # A string-literal union widens to `string` and to a superset union; a constant
-# imported from another module keeps its declared value. Each wrong twin must
+# imported from another module keeps its declared value; a Foldkit `defineMessageUnion` is read as a `_tag`
+# union and its `match` table proved. Each wrong twin must
 # fail on a proof obligation, not on a resolution error.
 expect_proof_failure() {
   local message="$1"
@@ -111,13 +112,19 @@ expect_proof_failure() {
     exit 1
   fi
 }
-for name in union-to-string string-union-subset generic-bound-array; do
+for name in union-to-string string-union-subset generic-bound-array message-union sort-membership; do
   cp "tools/fixtures/$name.ts" "tools/fixtures/$name-wrong.ts" "$fixture_dir/"
   npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name.ts"
   expect_proof_failure \
     "a wrong twin verified ($name)" \
     npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name-wrong.ts"
 done
+# A tagged union declared in a project's own `.d.ts` (a module's emitted declaration) and imported with `import type`.
+cp -R tools/fixtures/declared-union "$fixture_dir/"
+npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/declared-union/use.ts"
+expect_proof_failure \
+  "a wrong twin verified (declared-union)" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/declared-union/use-wrong.ts"
 cp -R tools/fixtures/imported-const tools/fixtures/imported-const-wrong tools/fixtures/imported-const-collision "$fixture_dir/"
 npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/imported-const/use.ts"
 expect_proof_failure \

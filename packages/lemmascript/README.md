@@ -26,6 +26,9 @@ tests read are unchanged except for the patches listed below.
 | A two-parameter `map` callback binds the element's index (`map-index.ts`) | Offered upstream later |
 | A record field declared `real` (`type real = number`) is a Dafny `real`; it was an integer, which proved false claims about fractional values (`real-field.ts`) | Offered upstream later |
 | A generic interface or object alias keeps its type parameters (`generic-record.ts`) | Offered upstream later |
+| A Foldkit `const X = defineMessageUnion({ Tag: { field: Schema.X } })` is read as a `_tag` union with a typed `X.match`, so the table and its arms are proved; payload fields read are `Schema.String`, `Number`, `Boolean`, `Literal`, `Literals`, `Array`, `optionalKey` and a schema named by an identifier that is also its type, and any other is refused by name (`message-union.ts`, `tools/src/message-union.ts`) | Offered upstream later |
+| A type named by an import is read from its declaration, and a project's own `.d.ts` (not `node_modules`) is user code: a tagged union in a module's emitted declaration, imported with `import type`, is a datatype rather than an abstract type (`declared-union/`) | Offered upstream later |
+| A sorted copy (`[...xs].sort(cmp)`, `.sort()`) states membership in both directions as well as the permutation, so `xs.includes(r[i])` and `r.includes(xs[i])` are provable (`sort-membership.ts`) | Offered upstream later |
 
 Each patch is offered back upstream later. Will decides any GitHub contribution.
 

@@ -127,6 +127,35 @@ class MutationLocation(unittest.TestCase):
         source='return x > 0 ? x > 0 : false'
         self.assertEqual(len(executable_matches(source, 'x > 0')), 2)
 
+class TypeOnlyImports(unittest.TestCase):
+    def test_a_type_only_import_is_not_staged_as_a_copy(self):
+        from declarations import type_imports, value_imports
+        text = 'import type { Message } from "./main.vibe"\nimport { a } from "./a.vibe"\nimport type {\n  B,\n} from "../b.vibe"\nimport { type C } from "./c.vibe"\n'
+        self.assertEqual(type_imports(text), ['./main.vibe', '../b.vibe'])
+        self.assertEqual(sorted(value_imports(text)), ['./a.vibe', './c.vibe'])
+        self.assertEqual(value_imports('import type { M } from "./m.vibe"\nimport { f } from "./m.vibe"\n'), ['./m.vibe'])
+
+    def test_a_type_only_import_reads_a_declaration_only_when_the_module_is_not_typescript(self):
+        from declarations import copied_imports, declared_imports
+        app = ROOT.parent
+        text = 'import type { Epic } from "./mythical.vibe"\nimport type { Message } from "../web/main.vibe"\n'
+        self.assertEqual(copied_imports(text, app / 'src/history'), ['./mythical.vibe'])
+        self.assertEqual(declared_imports(text, app / 'src/history'), ['../web/main.vibe'])
+
+    def test_a_declaration_is_staged_with_absolute_specifiers_and_never_beside_a_copy(self):
+        from declarations import stage
+        app = ROOT.parent
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            folder = pathlib.Path(folder)
+            (folder / 'copied.vibe.ts').write_text('export {}\n')
+            written = stage(app, {folder / 'main.vibe.d.ts': app / 'src/web/main.vibe', folder / 'copied.vibe.d.ts': app / 'src/core/roles.vibe'}, folder / 'declarations')
+            self.assertEqual(written, [folder / 'main.vibe.d.ts'])
+            self.assertFalse((folder / 'copied.vibe.d.ts').exists())
+            text = (folder / 'main.vibe.d.ts').read_text()
+            self.assertIn('export type Message = typeof Message.Type', text)
+            self.assertNotRegex(text, r'(?:from|import\()\s*"\.')
+            self.assertRegex(text, r'from "/[^"]*/declarations/tree/src/core/conversation\.vibe"')
+
 class TargetedPostconditions(unittest.TestCase):
     def test_selection_is_confined_to_the_named_function(self):
         from mutation_targets import postcondition_line

@@ -4899,10 +4899,10 @@ cases.extend([
     ('src/web/updateDecision.vibe', 'after-close-open', 'afterUpdate', 'closeDialog: dialogOpen && !permitted', 'closeDialog: !permitted', 'no dialog to close'),
     ('src/web/updateDecision.vibe', 'after-close-permitted', 'afterUpdate', 'closeDialog: dialogOpen && !permitted', 'closeDialog: dialogOpen', 'a permitted dialog stays'),
     ('src/web/updateDecision.vibe', 'after-retry', 'afterUpdate', 'clearRetry: personChanged', 'clearRetry: roleChanged', 'a new person clears the retry'),
-    ('src/web/updateDecision.vibe', 'after-tour', 'afterUpdate', 'if (tour && tag', 'if (tag', 'only a running tour remeasures'),
-    ('src/web/updateDecision.vibe', 'after-tag-MeasuredTheatre', 'afterUpdate', ' && tag !== "MeasuredTheatre"', '', 'a measurement does not remeasure'),
-    ('src/web/updateDecision.vibe', 'after-tag-FocusedPrompt', 'afterUpdate', ' && tag !== "FocusedPrompt"', '', 'a measurement does not remeasure'),
-    ('src/web/updateDecision.vibe', 'after-tag-RemeasureTheatre', 'afterUpdate', ' && tag !== "RemeasureTheatre"', '', 'a measurement does not remeasure'),
+    ('src/web/updateDecision.vibe', 'after-tour', 'afterUpdate', 'if (tour && message._tag', 'if (message._tag', 'only a running tour remeasures'),
+    ('src/web/updateDecision.vibe', 'after-tag-MeasuredTheatre', 'afterUpdate', ' && message._tag !== "MeasuredTheatre"', '', 'a measurement does not remeasure'),
+    ('src/web/updateDecision.vibe', 'after-tag-FocusedPrompt', 'afterUpdate', ' && message._tag !== "FocusedPrompt"', '', 'a measurement does not remeasure'),
+    ('src/web/updateDecision.vibe', 'after-tag-RemeasureTheatre', 'afterUpdate', ' && message._tag !== "RemeasureTheatre"', '', 'a measurement does not remeasure'),
     ('src/web/updateDecision.vibe', 'after-measure', 'afterUpdate', 'return { kind: "measure"', 'return { kind: "none"', 'a running tour measures'),
     ('src/web/tourDecision.vibe', 'tour-min-max', 'minimizedSandbox', 'pane === "max" ? "pane" : pane', 'pane', 'a maximized sandbox shrinks'),
     ('src/web/tourDecision.vibe', 'tour-start-guard', 'startedTour', '  if (state.tour) return { started: false, resetClient: false, state }\n', '', 'a second Learn more changes nothing'),
@@ -5126,7 +5126,8 @@ cases.extend([
  ('src/web/modelDecision.vibe', 'merge-run-append', 'mergeRunAt', 'if (index < 0) return [...current, next]', 'if (index < 0) return current', 'a new run is kept'),
  ('src/web/modelDecision.vibe', 'merge-run-accept', 'mergeRunAt', 'if (acceptSnapshot(current[index]!.state, current[index]!.at, next.at)) return [...current.slice(0, index), next, ...current.slice(index + 1)]', 'if (acceptSnapshot(current[index]!.state, current[index]!.at, next.at)) return current', 'an accepted snapshot replaces'),
  ('src/web/modelDecision.vibe', 'merge-run-refuse', 'mergeRunAt', '  return current\n}\n\n/** The runs list', '  return [...current.slice(0, index), next, ...current.slice(index + 1)]\n}\n\n/** The runs list', 'a refused snapshot cannot roll back'),
- ('src/web/modelDecision.vibe', 'newest-first-order', 'newestFirst', 'b.started - a.started', 'a.started - b.started', 'newest start first')])
+ ('src/web/modelDecision.vibe', 'newest-first-order', 'newestFirst', 'b.started - a.started', 'a.started - b.started', 'newest start first'),
+ ('src/web/modelDecision.vibe', 'newest-first-keeps-every-run', 'newestFirst', '[...runs].sort', 'runs.slice(0, 1).concat(runs.slice(0, runs.length - 1)).sort', 'every run survives the sort')])
 # Lane vl-proveall3, batch 2 (0018 "Third-lane batch 2").
 cases.extend([('src/history/pageDecision.vibe', *case) for case in [
 ('page-start-zero', 'pageStart', 'from > 0 ? from : 0', 'from', 'a page never starts before the first commit'),
