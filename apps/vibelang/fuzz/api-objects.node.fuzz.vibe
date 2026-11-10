@@ -32,6 +32,8 @@ const FLOWS = [Post._tag, Tour._tag, "vibelang/history/Plan", "vibelang/sandbox/
 const ROLES = ["viewer", "new", "community", "contributor", "maintainer"]
 const step = (op: typeof OPS[number], fields: Partial<Step> = {}): Step =>
   ({ op, room: 0, pick: 0, text: "Hello", kind: "conversation", mode: "ok", trusted: "1", signed: true, crossOrigin: false, ...fields })
+/** Reads that answer 200 for anyone while every object is reachable; any other status there is a broken route. */
+const ALWAYS_OK: ReadonlySet<typeof OPS[number]> = new Set(["read", "events", "history", "history-events", "actions", "commands", "runs", "run-events", "health", "session", "sandbox"])
 /** Ops whose requests reach each namespace: the walk that a fault in it answers. */
 const REACHES: Record<Kind, ReadonlyArray<typeof OPS[number]>> = {
   conversation: ["post", "read", "events", "wiki", "tour", "tour-control", "end-tour", "run", "run-events", "start"],
@@ -223,6 +225,9 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
         if (response === undefined) return
         const status = response.status
         if (status === 500) throw new Finding({ report: `${step.op}: 500` })
+        if (healthy() && ALWAYS_OK.has(step.op) && status !== 200) throw new Finding({ report: `${step.op}: ${status} with every object reachable` })
+        // A note needs a signed-in maintainer; with sign-in unconfigured every note is forbidden.
+        if (healthy() && step.op === "history-write" && !input.signIn && status !== 403) throw new Finding({ report: `history-write: ${status} without sign-in` })
         // 503 is a product answer only for an unreachable object, or an account route while sign-in is unconfigured.
         if (status === 503 && healthy() && !(accountRoute(route.path.split("?")[0]!) && !input.signIn)) throw new Finding({ report: `${step.op}: 503 with every object reachable` })
         if (step.op === "post" && status === 200 && healthy()) {
