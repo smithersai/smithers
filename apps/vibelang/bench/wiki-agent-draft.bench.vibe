@@ -1,0 +1,61 @@
+// @vitest-environment node
+// A person's agent drafts and replays a wiki edit through the production reply/tool binding and product wiki flows.
+import { it, expect } from "@effect/vitest"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { WikiDrafting } from "../src/core/WikiWriter.vibe"
+import { logOver } from "../worker/ObjectStorage.vibe"
+import { world, request, history } from "../test/support/actionObjects.vibe"
+import { scriptedModel } from "../fuzz/model-server.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("the agent drafts a wiki edit twice and leaves one person-owned draft for review", async ({ bench }) => {
+  const result = await workload(bench, "wiki-agent-draft-replay", "async", () => runPromise(scoped(effect {
+    const w = try world()
+    provide MockFactory, history {
+      const device = try Factory
+      try device.accounts!.choose("maintainer")
+      const wiki = device.wiki!
+      const before = try wiki.read("roadmap")
+      const product = try Mythical
+      const ask = "Measured agent draft for bench2."
+      const input = JSON.stringify({ page: "roadmap", ask })
+      const code = [
+        "`".repeat(3) + "cell",
+        `const first = await ctx.call("vibelang/wiki/draft", ${input});`,
+        `const again = await ctx.call("vibelang/wiki/draft", ${input});`,
+        "ctx.done(JSON.stringify({first, again}));",
+        "`".repeat(3),
+      ].join("\n")
+      const scripted = try scriptedModel([{ kind: "stream", pieces: [code], prompt: 3, completion: 4 }])
+      const object = try w.object("wiki-draft")
+      const admitted = try object.host.start(request("wiki-draft", "vibelang/Post", { text: "Draft an edit to the roadmap." }, w.person.id), "maintainer")
+      const drafting: WikiDrafting.Shape = { draft: effect (page, text, key) => {
+        try wiki.act({ op: "draft", page, text, key, base: "" })
+      } }
+      provide ActionDevice = device, WikiDrafting = drafting {
+        for (let turn = 0; turn < 2; turn++) try object.host.alarm(w.spend, { model: scripted.model, unusable: "" }, product)
+      }
+      const stored = try wiki.read("roadmap")
+      const reply = (try object.sequencer.read(0)).entries.find((entry) => entry.author === "agent")
+      const panes = (try logOver(object.storage).read()).filter((event) => event.type === "PaneOpened")
+      const calls = try scripted.calls
+      try Effect.try(() => {
+        expect(admitted).toBeNull()
+        expect(reply).toMatchObject({ done: true, error: "" })
+        const answer = JSON.parse(reply!.text)
+        const review = { page: "roadmap", review: "#wiki-draft-roadmap" }
+        expect(answer).toEqual({ first: review, again: review })
+        expect(stored.draft?.text.split(ask)).toHaveLength(2)
+        expect(stored.review).toBeUndefined()
+        expect(stored.pages.find((page) => page.id === "roadmap")?.source).toBe(before.pages.find((page) => page.id === "roadmap")?.source)
+        expect(panes.length).toBeGreaterThan(0)
+        expect(panes.every((event) => event.id === reply!.id && event.url === "/wiki/roadmap")).toBe(true)
+        expect(calls).toBe(1)
+      })
+    }
+  }))).run(slow)
+  await runPromise(artifact("wiki-agent-draft-replay", "Vitest built-in bench; a fresh SQLite action host and MockFactory wiki per sample. The scripted HTTP model's cell calls the production wiki draft tool twice with the same request; WikiDrafting delegates to the product's actual wiki edit flows. Checks the finished reply returns both review links, one draft contains the requested addition once, the source is unchanged, no review is submitted, every pane event belongs to the active reply, and one model request.", ["Product fixture wiki repository and memory engine, not GitHub.", "Scripted model; no inference latency.", "Node SQLite/KV/alarm adapter, not workerd scheduling."], result))
+})

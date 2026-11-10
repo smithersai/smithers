@@ -306,12 +306,13 @@ which bounds that history to a day's steps; `test/accountsRetention.test.vibe` p
 
 **Actions, replies and history tools (2026-11-10, lane vl-bench2).** `bench/action-tour-repeat.bench.vibe` presses
 Tour twice before its alarm on the production action hosts; the second press finds the tour running (`ActionRuns`
-line 53), so the accepted-but-queued recovery at lines 54-61 stays uncovered. The deterministic model service (`bench/fixtures.vibe`)
+line 53). The later `action-crash-retry` workload stops a host after acceptance and retries it over the same store, covering recovery. The deterministic model service (`bench/fixtures.vibe`)
 gains three phrases: "Bench empty." (an empty answer), "Bench throws." (a cell that throws) and "Bench history." (a cell
 that pages an epic, a commit and a search, then calls Plan and Note). `bench/reply-outcomes.bench.vibe` and
 `bench/agent-history.bench.vibe` post them to the API Worker's objects in workerd. Cancelling a post's reply while
-it runs stays uncovered (`worker/ActionRuns.vibe` 145-148): the reply runs within the alarm that dispatches it, so
-cancelling it mid-run needs a model held mid-answer.
+it runs is now measured by `action-reply-interrupted`: the scripted HTTP model pauses after its first SSE fragment,
+the person cancels, and a fresh host drives later alarms without another model request or a completed answer.
+The latch and joins have deadlines.
 
 **Issues and wiki with GitHub unreachable (2026-11-10, lane vl-bench2).** Decision 0030 bounds a signed-in person's
 issue and wiki reads, so `bench/accounts-offline.bench.vibe` now sends them with GitHub an offline HttpClient, an
@@ -340,3 +341,41 @@ its parent checks for executed passing workloads instead of requiring the stale 
 bug made the first-visit tour workload fail: the shared init script marked every navigation as returning, overriding
 the workload's `bench:first-visit` session flag. The shared script now honors that flag, so the existing automatic-tour
 assertion exercises an actual first visit. No application tour behavior changed.
+
+
+
+**Cancellation during model streaming and browser setup (2026-11-10, lane vl-bench2, Codex).** The interrupted-reply
+benchmark previously held budget admission, before the model answered. Its loopback HTTP model now pauses between
+SSE fragments; cancellation must leave the entry and registered run cancelled through a host restart, with one model
+request and no completed answer. The new regression first failed at its bounded pause wait when the scripted
+endpoint ignored the latch.
+
+The overlay over "Ask the agent" was a benchmark setup race with the intentional first-visit tour. Main's returning
+visitor setup removed that race, but also suppressed the arms workload's deliberate first-visit reload. That
+workload failed first at its `first-visit-auto-tour` assertion (15 s, no Walkthrough). The shared init script now
+honors its explicit session flag, including the fresh contexts used to time first render and Command-K. No product
+tour behavior changes.
+
+ 
+**Independent worker continuation (2026-11-10, Codex, base 0b937f1d plus benchmark patch).** The full benchmark-only
+run passed 75 files / 156 tests, including eight Chromium journeys. A further wiki agent draft/replay workload
+passed timed and instrumented; its counters join by exact source position with the full run, with identical
+src/worker bytes verified by SHA-256. This is one full run plus one additive benchmark, not a single 76-file run.
+Combined: 2,067/2,321 worker lines (89.06%), 7,208/7,636 src+worker lines (94.39%); the strict gate remains red.
+ActionRuns (120/120), Budget (22/22) and WikiTools (9/9) now have full line coverage.
+
+The new wiki workload runs the real reply, tool binding and product fixture wiki flows. Its model cell drafts
+the same page twice; both review links, one stored addition, unchanged source, no submission, active-actor pane
+events and one model request are checked. Node SQLite and the fixture wiki engine are measured, with scripted
+model answers; neither GitHub nor inference latency is measured.
+
+The remaining HistoryActions lines 26,39,44 are defensive Post/Tour refusals on the history-only host, which
+ActionRuns never routes there. Objects 114 is its unused default no-op wake callback; 250-251 are invariant failures
+for child-flow/round routing that Reply and Tour never perform. No direct coverage-only invocation was added;
+these guards remain counted. Account participation/origin, startup faults, reply restart/error edges and the
+credentialed GitHub hosts remain open. No threshold or denominator was reduced.
+
+Main independently landed the same first-visit init correction in e8a2845563a8 while this measurement ran.
+The continuation keeps that shared init and additionally marks the first-render workload's own fresh contexts as
+returning visitors. The live UI-only run passed three samples on deployment 6a3c8b517c at 15:42 UTC (07:42 PST),
+without a model call; raw sample times and limitations are in the benchmark wiki.

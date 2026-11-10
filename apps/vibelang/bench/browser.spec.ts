@@ -28,6 +28,7 @@ test("first render, Command-K and per-keystroke browser latency", async ({ brows
   const samples = []
   for (let run = 0; run < 3; run++) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: "dark" })
+    await context.addInitScript(() => localStorage.setItem("vibelang:toured", "yes"))
     let coverage: (() => Promise<void>) | undefined
     try {
       const page = await context.newPage()
@@ -49,7 +50,7 @@ test("first render, Command-K and per-keystroke browser latency", async ({ brows
     } finally { try { if (coverage) await coverage() } finally { await context.close() } }
   }
   await save(live ? "live-browser" : "local-browser", { origin: baseURL, browserVersion: browser.version(), samples }, [
-    live ? "Default production backend selection; UI-only navigation and keys make no model call. Fresh context, shared browser/OS caches and automation overhead; no forced cold cache." : "Product mock mode, fresh browser context, shared browser/OS caches and automation overhead; no forced cold cache.",
+    live ? "Default production backend selection; UI-only navigation and keys make no model call. Fresh context marked as a returning visitor to suppress the automatic tour, shared browser/OS caches and automation overhead; no forced cold cache." : "Product mock mode, fresh browser context marked as a returning visitor to suppress the automatic tour, shared browser/OS caches and automation overhead; no forced cold cache.",
   ])
 })
 

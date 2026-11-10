@@ -3612,3 +3612,60 @@ steps; the stop's output holds the command and its answer).
 
 Limitations: the sandbox is the product's in-memory machine, not a container; history is the committed seed in
 memory; each sample includes building `MockFactory`, so the first sample (1,116 ms) carries the seed load.
+
+
+## Cancellation after the model starts streaming (2026-11-10, nyc-01, Codex)
+
+`bench/action-interrupted.bench.vibe` now holds the loopback HTTP model after its first SSE fragment rather than
+holding budget admission. It cancels the registered reply, releases the remaining fragments, rebuilds the action
+host over the same SQLite storage, and drives two later alarms. Every sample checks one model request, no completed
+answer, a cancelled entry and a cancelled run. This uses the production HTTP adapter, agent and execution host;
+the deterministic endpoint supplies no inference latency. The latch and fiber joins have deadlines.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| action-crash-retry | 212.1 | 3 | `2026-11-10T15-40-04.117Z-action-crash-retry.json` |
+| action-reply-interrupted | 850.6 | 3 | `2026-11-10T15-40-06.806Z-action-reply-interrupted.json` |
+
+Method: Vitest built-in bench on shared nyc-01 (load about 20); fresh SQLite object stores per sample, exact result
+checks included. The second workload also measures a conversation log fault that fails an open reply. These are
+observations with three samples, not a regression threshold or an inference benchmark.
+
+The browser overlay failure is a setup race with the intentional automatic tour after 1.2 s. Ordinary browser
+workloads visit as returning people; the arms journey explicitly requests a first visit for its last navigation.
+The shared init now honors that request and also covers the first-render workload's separately created contexts.
+The first-visit regression failed before the correction because no Walkthrough appeared. This corrects the
+benchmark setup; the product tour still starts on a first visit.
+
+ 
+## Agent wiki draft replay (2026-11-10, nyc-01)
+
+`bench/wiki-agent-draft.bench.vibe`, Vitest built-in bench, fresh SQLite action host and product MockFactory wiki
+per sample. The scripted model's cell calls the production wiki draft tool twice with the same page and request.
+WikiDrafting delegates to the actual wiki edit flows. Every sample checks a finished reply with both review links,
+one stored draft containing the addition once, unchanged repository source, no submitted review, pane events
+belonging to the active reply, and one model request.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| wiki-agent-draft-replay | 617.0 | 3 | `2026-11-10T16-11-13.389Z-wiki-agent-draft-replay.json` |
+
+Limitations: product fixture repository and memory wiki engine, not GitHub; scripted model, no inference latency;
+Node SQLite/KV/alarm adapter, not workerd scheduling. Shared-host observations, no tail percentile claimed.
+
+Benchmark-only coverage on 0b937f1d plus the continuation patch: full 75-file/156-test run, including all eight
+Chromium journeys, plus this instrumented benchmark (one file/one test). Identical production bytes were checked
+before exact-location union; combined 2,067/2,321 worker lines (89.06%) and 7,208/7,636 src+worker lines (94.39%).
+ActionRuns, Budget and WikiTools have full line coverage; the unchanged strict whole-codebase gate remains red.
+
+Live UI-only run at 2026-11-10 15:42:09 UTC (07:42 PST), deployment `6a3c8b517c`, Chromium 151.0.7922.34:
+fresh returning-visitor contexts from nyc-01, shared browser/OS caches, visible heading, focused Command-K prompt
+and asserted typed value. No model call. `2026-11-10T15-42-09.996Z-live-browser.json` retains all machine/version data.
+
+| Sample | First render ms | Command-K ms | Keystroke ms |
+| --- | ---: | ---: | ---: |
+| 1 | 1123.9 | 27.4 | 21.3 |
+| 2 | 385.4 | 32.6 | 26.9 |
+| 3 | 427.4 | 42.4 | 13.2 |
+
+Network, browser caches and automation are uncontrolled; three observations establish no percentile.
