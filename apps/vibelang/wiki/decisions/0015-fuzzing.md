@@ -379,3 +379,31 @@ The browser targets ran at the sixth campaign's seed (20261113) and budget (20 s
 ### Seventh campaign
 
 Seed 20261114, 20 seconds per target, at `b5f6b215`, from 02:12:54 to 02:50:00 UTC on 2026-11-10 (37.1 minutes). The flow exited 0: 173 receipts and 36,457,699 recorded executions, none at zero, none falsified. The browser phase ran: 5 passed. `objects/conversation-host`, which failed from the default seed in the seventh session, passed with 49 executions. Under the campaign's load, `api-objects/world` ran 1 execution in 20 seconds, and the browser targets ran 1 to 3 each. No new findings. Log: `~/vl/vl-fuzzpkg.campaign7.log` on nyc-01.
+
+## Status, 2026-11-10 (ninth session)
+
+**Goal 3 is still unmet.** Fuzz-only coverage across `src/` and `worker/` is 6,745/7,421 lines (90.89%) and 6,625/8,087 branches (81.92%); 62 of 149 files are at 100% of both. `pnpm fuzz:coverage` exits 1 on its 301 failing per-file gates.
+
+### Product findings fixed
+
+| Finding | Fix | Regression |
+| --- | --- | --- |
+| A wiki read while GitHub fails answered 503 after the flow's 120-second retry window | The read flow declares the engine's `deadline` (`wikiReadDeadline`, 5 seconds). `executeWiki` recognizes the journaled `DeadlineExceeded` defect with `RetryPolicy.errorTag` (it arrives as an `Error` named by its tag, not as the class) and answers `unavailable`; the page shows "The wiki didn't load" and Retry. Writes keep the 120-second window, and their retries stay in the durable flow | `test/wikiReadDeadline.test.vibe`: 503 by 10 virtual seconds (122 before the fix); a GitHub that recovers on its third answer still serves the page |
+| A reply whose Budget, Accounts or History object is unreachable never settled | `answer` runs `compose` under `Deadline.bound` (`replyDeadline`, 5 minutes from the journaled start). Expiry is a defect that `answer` already settles as `ReplyFailed` with `failed`: the person sees it and Retry, like any failed reply | `test/replyDeadline.test.vibe`: `Posted`, `ReplyStarted`, `ReplyFailed` within 10 virtual minutes (no settlement after 120 before the fix) |
+| `@smthrs/integrations` never logged or counted a failed GitHub revoke: `revoke(token) catch () => record(...)` returned the `record` Effect as data (compiler warning EK0508) | `catch effect () => try record("revoke", "failed")` | `Delegation.test.vibe`: "a failed revoke is logged and counted as revoke failed" |
+
+Open, for the lead: the wiki draft, VIP draft and specification reviewers charge their spend under `patient` (`worker/WikiDraft.vibe`, `VipDraft.vibe`, `SpecificationReviewers.vibe`), so a draft request waits forever while the Budget object is unreachable. A draft's deadline must cover a model call, so it is not the read's 5 seconds.
+
+### Suite changes
+
+- `accountsObject` takes its GitHub client, as `historyObject` does. `api-objects/world` reaches the alarm's wiki draft both ways and asserts that the signed-in maintainer's draft succeeds (see "Lines fuzzing cannot execute, continued"). `worker/apiObjects.vibe`: 193/193 lines, 59/59 branches.
+- `web/screen-answers` (`fuzz/main-screens.fuzz.vibe`): builds a screen with the person's gestures, then delivers the answers its Commands send back, in any order, while other Commands are outstanding (update alone), from a Model that may lack its optional fields. An answer for a request the screen no longer waits on must change nothing. A mutant without `FailedWikiEdit`'s request check is found in 84 executions. `src/web/main.vibe` under the web targets alone at 5 seconds: 725/815 branch arms before, 732 to 740 after (it varies by run); 741/815 in the merged run.
+- Corpus: 707efb6c made `Model.theatre` required, so five saved values in `web/subscriptions`, `web/view-branches` and `web/view-models` no longer decoded and those targets failed before running. Each value now carries the model's initial theatre.
+
+### `src/web/main.vibe`: what is left
+
+74 branch arms. Most are `??` defaults for optional Model fields that every real path sets (`wikiEditRequest ?? 0`, `failedMedia ?? []`), DOM effects only a browser reaches (scroll, `history.pushState`, key and resize subscriptions), and live-mode Command bodies. `ClickedRetry` of a failed post is still not reached by `web/screen-answers`.
+
+### Eighth campaign
+
+Seed 20261115, `FUZZ_BUDGET=20 seconds`, 05:50:18 to 06:24:57 UTC (34.7 minutes). Exit 0: 177 receipts, 33,019,349 executions, none at zero, none falsified; browser phase 5 passed. `web/screen-answers` ran 369 executions. Log: `~/vl/vl-fuzzpkg.campaign8.log`.
