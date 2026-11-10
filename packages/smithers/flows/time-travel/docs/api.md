@@ -21,7 +21,7 @@ const program = Effect.gen(function*() {
 | Import                                   | Source                                                                                                                                      | Notes                                                                                |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `@smthrs/time-travel`                    | [src/index.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/src/index.ts)                           | The barrel is a browser-contract entry point and bundles without a `node:` built-in. |
-| `@smthrs/time-travel/SqlTimeTravelStore` | [src/SqlTimeTravelStore.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/src/SqlTimeTravelStore.ts) | Runs on an injected SQLite or PostgreSQL `SqlClient`.                                |
+| `@smthrs/time-travel/SqlTimeTravelStore` | [src/SqlTimeTravelStore.vibe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/src/SqlTimeTravelStore.vibe) | Runs on an injected SQLite or PostgreSQL `SqlClient`.                                |
 
 The barrel exports `TimeTravel` and `ReadOnlyTimeTravel` flat, and
 the other modules as namespaces. It re-exports the rest of the `TimeTravel`

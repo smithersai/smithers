@@ -20,7 +20,7 @@ import * as RunStore from "@smthrs/run-store/RunStore"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as EffectBoundary from "../src/EffectBoundary.ts"
+import * as EffectBoundary from "../src/EffectBoundary.vibe"
 import * as Migrations from "../src/Migrations.vibe"
 import { TimeTravelError } from "../src/TimeTravelError.vibe"
 

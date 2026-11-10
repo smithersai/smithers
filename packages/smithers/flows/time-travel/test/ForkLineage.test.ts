@@ -15,8 +15,8 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as TimeTravelMigrations from "../src/Migrations.vibe"
-import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
-import { TimeTravel } from "../src/TimeTravel.ts"
+import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.vibe"
+import { TimeTravel } from "../src/TimeTravel.vibe"
 
 const seed = (runId: string) =>
   Effect.gen(function*() {

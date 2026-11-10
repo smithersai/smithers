@@ -3,7 +3,7 @@ import type { Entry } from "@smthrs/journal/JournalEvent"
 import { CacheStore } from "@smthrs/step-cache"
 import { Effect, Layer, Option } from "effect"
 import { describe, expect, it } from "vitest"
-import { ReadOnlyTimeTravel, TimeTravel } from "../src/TimeTravel.ts"
+import { ReadOnlyTimeTravel, TimeTravel } from "../src/TimeTravel.vibe"
 
 const record = {
   runId: "run",

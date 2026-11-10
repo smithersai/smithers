@@ -304,58 +304,54 @@ export const guard = <A, E, R>(
   description: Description,
   action: Effect.Effect<A, E, R>
 ): Effect.Effect<A, E | TimeTravelError, R | Journal.Journal> =>
-  Effect.gen(function*() {
-    const validated = yield* Schema.decodeUnknownEffect(Description)(description).pipe(
+  effect {
+    const validated = try Schema.decodeUnknownEffect(Description)(description).pipe(
       Effect.mapError((cause) => error("invalid", "effect boundary description is invalid", cause))
     )
     if (reservedKinds.has(validated.kind)) {
-      return yield* Effect.fail(error("invalid", `effect ${validated.id} uses the reserved kind ${validated.kind}`))
+      throw error("invalid", `effect ${validated.id} uses the reserved kind ${validated.kind}`)
     }
     // The terminal record lands at sourceSeq + 1, and the journal refuses
     // MAX_SAFE_INTEGER, so the last seq that can settle is two below it.
     if (validated.sourceSeq >= Number.MAX_SAFE_INTEGER - 1) {
-      return yield* Effect.fail(error("invalid", `effect ${validated.id} has no terminal source sequence`))
+      throw error("invalid", `effect ${validated.id} has no terminal source sequence`)
     }
     if (validated.tier === "irreversible" && validated.idempotencyKey === undefined) {
-      return yield* Effect.fail(
-        error("invalid", `irreversible effect ${validated.id} requires an idempotency key`)
-      )
+      throw error("invalid", `irreversible effect ${validated.id} requires an idempotency key`)
     }
-    const journal = yield* Journal.Journal
-    return yield* Effect.uninterruptibleMask((restore) =>
-      Effect.gen(function*() {
-        const intended = yield* emit(journal, validated, "intended")
+    const journal = try Journal.Journal
+    return try Effect.uninterruptibleMask((restore) =>
+      effect {
+        const intended = try emit(journal, validated, "intended")
         if (intended._tag === "Duplicate") {
           // `already_crossed` rather than `busy`: the closed code list exists so
           // a caller can branch on WHY, and `busy` is the code a contended run
           // raises. A re-armed effect and a rewind holding the run are different
           // answers to "why was this refused", and they need different codes.
-          return yield* Effect.fail(
-            error(
-              "already_crossed",
-              `effect ${validated.id} already crossed its durable boundary; refusing to execute it again`
-            )
+          throw error(
+            "already_crossed",
+            `effect ${validated.id} already crossed its durable boundary; refusing to execute it again`
           )
         }
-        const actionExit = yield* Effect.exit(restore(action))
+        const actionExit = try Effect.exit(restore(action))
         if (Exit.isSuccess(actionExit)) {
           const value = actionExit.value
-          return yield* emit(journal, validated, "succeeded", value).pipe(
+          return try emit(journal, validated, "succeeded", value).pipe(
             Effect.as(value),
             Effect.catch((cause) => settleUnrecordedSuccess(journal, validated, value, cause))
           )
         }
-        yield* emit(journal, validated, "unknown").pipe(
+        try emit(journal, validated, "unknown").pipe(
           Effect.catchCause((cause) =>
             Effect.logWarning("time-travel: failed to persist unknown effect boundary", cause).pipe(
               Effect.annotateLogs({ runId: validated.runId, step: validated.id })
             )
           )
         )
-        return yield* Effect.failCause(actionExit.cause)
-      })
+        return try Effect.failCause(actionExit.cause)
+      }
     )
-  })
+  }
 
 const BoundaryRecord = Schema.Struct({
   ...effectFields,
@@ -436,7 +432,7 @@ const conflict = (id: string, detail: string): TimeTravelError =>
 export const fromRecords = (
   records: ReadonlyArray<EffectRecord>
 ): Effect.Effect<ReadonlyArray<EffectRecord>, TimeTravelError> =>
-  Effect.gen(function*() {
+  effect {
     const grouped = new Map<string, Array<EffectRecord>>()
     for (const record of records) {
       const group = grouped.get(record.id)
@@ -450,42 +446,34 @@ export const fromRecords = (
       for (const next of group.slice(1)) {
         for (const field of identityFields) {
           if (latest[field] !== next[field]) {
-            return yield* Effect.fail(
-              conflict(
-                id,
-                `${field} is ${String(latest[field])} at seq ${latest.seq} and ` +
-                  `${String(next[field])} at seq ${next.seq}`
-              )
+            throw conflict(
+              id,
+              `${field} is ${String(latest[field])} at seq ${latest.seq} and ` +
+                `${String(next[field])} at seq ${next.seq}`
             )
           }
         }
         if (next.seq === latest.seq) {
           if (next.status !== latest.status) {
-            return yield* Effect.fail(
-              conflict(id, `records at seq ${next.seq} report both ${latest.status} and ${next.status}`)
-            )
+            throw conflict(id, `records at seq ${next.seq} report both ${latest.status} and ${next.status}`)
           }
           if (!Equal.equals(latest, next)) {
-            return yield* Effect.fail(conflict(id, `records at seq ${next.seq} differ`))
+            throw conflict(id, `records at seq ${next.seq} differ`)
           }
           continue
         }
         if (latest.status !== "intended") {
-          return yield* Effect.fail(
-            conflict(id, `${next.status} at seq ${next.seq} follows terminal ${latest.status} at seq ${latest.seq}`)
-          )
+          throw conflict(id, `${next.status} at seq ${next.seq} follows terminal ${latest.status} at seq ${latest.seq}`)
         }
         if (next.status === "intended") {
-          return yield* Effect.fail(
-            conflict(id, `intended at seq ${next.seq} repeats intended at seq ${latest.seq}`)
-          )
+          throw conflict(id, `intended at seq ${next.seq} repeats intended at seq ${latest.seq}`)
         }
         latest = next
       }
       folded.push(latest)
     }
     return folded.sort((left, right) => left.seq - right.seq)
-  })
+  }
 
 /**
  * Decodes boundary entries and folds them with {@link fromRecords}: one record
@@ -497,11 +485,11 @@ export const fromRecords = (
 export const fromEntries = (
   entries: ReadonlyArray<JournalEvent.Entry>
 ): Effect.Effect<ReadonlyArray<EffectRecord>, TimeTravelError> =>
-  Effect.gen(function*() {
+  effect {
     const records: Array<EffectRecord> = []
     for (const entry of entries) {
-      const decoded = yield* decodeEntry(entry)
+      const decoded = try decodeEntry(entry)
       if (decoded !== undefined) records.push(decoded)
     }
-    return yield* fromRecords(records)
-  })
+    return try fromRecords(records)
+  }

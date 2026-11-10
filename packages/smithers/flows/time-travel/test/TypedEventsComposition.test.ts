@@ -5,7 +5,7 @@ import * as JournalMigrations from "@smthrs/journal/Migrations"
 import * as RunMigrations from "@smthrs/run-store/Migrations"
 import * as Effect from "effect/Effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
+import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.vibe"
 
 describe("history authority in a minimal composition", () => {
   it.effect("forks real SQLite history without requiring the engine spawn-edge extension", () =>

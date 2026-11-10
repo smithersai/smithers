@@ -30,7 +30,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
+import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.vibe"
 import type * as TimeTravelStore from "../src/TimeTravelStore.vibe"
 import { joinDrive } from "./JoinDrive.ts"
 

@@ -5,7 +5,7 @@ import { Journal, JournalEvent, SqlJournal } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
+import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.vibe"
 
 const owner = { hostId: "host-a", pid: 1234, nonce: "nonce" } as const
 

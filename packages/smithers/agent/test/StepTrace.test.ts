@@ -17,8 +17,8 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { expectTypeOf } from "vitest"
 import { describe, expect, it } from "vitest"
-import * as SqlTimeTravelStore from "../../flows/time-travel/src/SqlTimeTravelStore.ts"
-import * as TimeTravel from "../../flows/time-travel/src/TimeTravel.ts"
+import * as SqlTimeTravelStore from "../../flows/time-travel/src/SqlTimeTravelStore.vibe"
+import * as TimeTravel from "../../flows/time-travel/src/TimeTravel.vibe"
 import {
   answer,
   cell,

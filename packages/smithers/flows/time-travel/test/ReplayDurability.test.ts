@@ -14,7 +14,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Replay from "../src/internal/Replay.vibe"
 import * as Migrations from "../src/Migrations.vibe"
-import { TimeTravel } from "../src/TimeTravel.ts"
+import { TimeTravel } from "../src/TimeTravel.vibe"
 import { jjInstalled, parkSealedFlow, runRealEngine, withRealFixture } from "./RealTimeTravelHarness.ts"
 
 const services = (filename: string) => {

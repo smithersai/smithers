@@ -11,7 +11,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { forkCreatedEventType, type LineageEdge } from "../src/Frame.vibe"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.vibe"
-import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
+import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.vibe"
 import { TimeTravelError } from "../src/TimeTravelError.vibe"
 import type * as TimeTravelStore from "../src/TimeTravelStore.vibe"
 

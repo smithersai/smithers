@@ -48,7 +48,7 @@
  * @category services
  * @since 0.1.0
  */
-export { ReadOnlyTimeTravel, TimeTravel } from "./TimeTravel.ts"
+export { ReadOnlyTimeTravel, TimeTravel } from "./TimeTravel.vibe"
 
 /**
  * The `TimeTravel` module's types, re-exported so a caller annotates a
@@ -68,7 +68,7 @@ export type {
   RewindOptions,
   RewindResult,
   Service
-} from "./TimeTravel.ts"
+} from "./TimeTravel.vibe"
 
 /**
  * The derived fork workspace name and the default history cap, beside the
@@ -77,7 +77,7 @@ export type {
  * @category constructors
  * @since 1.0.0
  */
-export { defaultMaxHistoryEntries, forkWorkspaceName } from "./TimeTravel.ts"
+export { defaultMaxHistoryEntries, forkWorkspaceName } from "./TimeTravel.vibe"
 
 /**
  * @category models
@@ -107,13 +107,13 @@ export * as MemoryTimeTravelStore from "./MemoryTimeTravelStore.vibe"
  * @category layers
  * @since 0.1.0
  */
-export * as SqlTimeTravelStore from "./SqlTimeTravelStore.ts"
+export * as SqlTimeTravelStore from "./SqlTimeTravelStore.vibe"
 
 /**
  * @category models
  * @since 0.1.0
  */
-export * as EffectBoundary from "./EffectBoundary.ts"
+export * as EffectBoundary from "./EffectBoundary.vibe"
 
 /**
  * @category services

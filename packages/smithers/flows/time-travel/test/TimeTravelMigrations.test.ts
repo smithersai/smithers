@@ -13,7 +13,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Migrations from "../src/Migrations.vibe"
-import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
+import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.vibe"
 
 const database = (filename: string) => Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename }))
 

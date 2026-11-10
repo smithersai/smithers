@@ -30,8 +30,8 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import * as Migrations from "../src/Migrations.vibe"
-import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
-import { TimeTravel } from "../src/TimeTravel.ts"
+import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.vibe"
+import { TimeTravel } from "../src/TimeTravel.vibe"
 import { joinDrive } from "./JoinDrive.ts"
 
 export const jjInstalled = spawnSync("jj", ["--version"], { stdio: "ignore" }).status === 0

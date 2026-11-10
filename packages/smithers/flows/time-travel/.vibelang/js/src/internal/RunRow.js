@@ -10,6 +10,7 @@ import { error } from "../TimeTravelError.js";
  *
  * @since 0.1.0
  * @category constructors
+ * @throws {never}
  */
 export const snapshotOf = (row) => ({
     status: row.status,

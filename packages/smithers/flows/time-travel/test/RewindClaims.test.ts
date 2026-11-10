@@ -9,7 +9,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import type { LineageEdge } from "../src/Frame.vibe"
 import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.vibe"
-import * as Rewind from "../src/internal/Rewind.ts"
+import * as Rewind from "../src/internal/Rewind.vibe"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.vibe"
 import { TimeTravelStore } from "../src/TimeTravelStore.vibe"
 

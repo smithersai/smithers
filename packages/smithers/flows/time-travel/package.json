@@ -50,8 +50,8 @@
       "default": "./.vibelang/js/src/CompensationHandlers.js"
     },
     "./EffectBoundary": {
-      "types": "./src/EffectBoundary.ts",
-      "vibelang-source": "./src/EffectBoundary.ts",
+      "types": "./.vibe/declarations/src/EffectBoundary.d.vibe.ts",
+      "vibelang-source": "./src/EffectBoundary.vibe",
       "default": "./.vibelang/js/src/EffectBoundary.js"
     },
     "./Frame": {
@@ -70,13 +70,13 @@
       "default": "./.vibelang/js/src/Migrations.js"
     },
     "./SqlTimeTravelStore": {
-      "types": "./src/SqlTimeTravelStore.ts",
-      "vibelang-source": "./src/SqlTimeTravelStore.ts",
+      "types": "./.vibe/declarations/src/SqlTimeTravelStore.d.vibe.ts",
+      "vibelang-source": "./src/SqlTimeTravelStore.vibe",
       "default": "./.vibelang/js/src/SqlTimeTravelStore.js"
     },
     "./TimeTravel": {
-      "types": "./src/TimeTravel.ts",
-      "vibelang-source": "./src/TimeTravel.ts",
+      "types": "./.vibe/declarations/src/TimeTravel.d.vibe.ts",
+      "vibelang-source": "./src/TimeTravel.vibe",
       "default": "./.vibelang/js/src/TimeTravel.js"
     },
     "./TimeTravelError": {

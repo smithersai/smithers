@@ -20,7 +20,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
+import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.vibe"
 
 /**
  * The one sealed atom the fork replays. It is a DECLARED action, so the same

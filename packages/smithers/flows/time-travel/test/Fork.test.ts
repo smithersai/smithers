@@ -10,8 +10,8 @@ import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Memory from "../src/MemoryTimeTravelStore.vibe"
 import * as Migrations from "../src/Migrations.vibe"
-import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
-import * as TimeTravel from "../src/TimeTravel.ts"
+import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.vibe"
+import * as TimeTravel from "../src/TimeTravel.vibe"
 
 describe("fork", () => {
   it.effect("creates unique immutable prefix copies", () =>

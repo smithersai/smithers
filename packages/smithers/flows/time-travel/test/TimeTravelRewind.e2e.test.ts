@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process"
 import { writeFileSync } from "node:fs"
 import { readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { TimeTravel } from "../src/TimeTravel.ts"
+import { TimeTravel } from "../src/TimeTravel.vibe"
 import {
   jjInstalled,
   Journal,

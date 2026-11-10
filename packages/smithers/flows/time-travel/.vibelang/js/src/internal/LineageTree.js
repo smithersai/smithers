@@ -20,6 +20,7 @@
  *
  * @since 0.1.0
  * @category combinators
+ * @throws {never}
  */
 export const descendants = (edges, runId, frame) => {
     const attached = [];

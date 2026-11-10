@@ -13,7 +13,7 @@ import * as Layer from "effect/Layer"
 import { TestClock } from "effect/testing"
 import * as CompensationHandlers from "../src/CompensationHandlers.vibe"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.vibe"
-import { layerWith } from "../src/TimeTravel.ts"
+import { layerWith } from "../src/TimeTravel.vibe"
 import { TimeTravelStore } from "../src/TimeTravelStore.vibe"
 
 const dependencies = (store: TimeTravelStore["Service"]) =>

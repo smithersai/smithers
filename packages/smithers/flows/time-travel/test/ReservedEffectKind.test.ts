@@ -13,7 +13,7 @@ import { EventTypes } from "@smthrs/engine-store/EventTypes"
 import * as Journal from "@smthrs/journal/Journal"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as EffectBoundary from "../src/EffectBoundary.ts"
+import * as EffectBoundary from "../src/EffectBoundary.vibe"
 
 describe("EffectBoundary.guard reserved kinds", () => {
   it.effect("refuses the engine's child-spawn kind before journaling or running the action", () =>

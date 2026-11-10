@@ -16,8 +16,8 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import * as References from "effect/References"
-import * as EffectBoundary from "../src/EffectBoundary.ts"
-import type { EffectRecord } from "../src/EffectBoundary.ts"
+import * as EffectBoundary from "../src/EffectBoundary.vibe"
+import type { EffectRecord } from "../src/EffectBoundary.vibe"
 import { error } from "../src/TimeTravelError.vibe"
 
 const record = (

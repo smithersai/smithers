@@ -6,8 +6,8 @@ import { CacheStore } from "@smthrs/step-cache"
 import { Effect, Layer, Schema } from "effect"
 import * as Replay from "../src/internal/Replay.vibe"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.vibe"
-import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
-import { ReadOnlyTimeTravel, TimeTravel } from "../src/TimeTravel.ts"
+import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.vibe"
+import { ReadOnlyTimeTravel, TimeTravel } from "../src/TimeTravel.vibe"
 import { TimeTravelError } from "../src/TimeTravelError.vibe"
 
 const database = Layer.provideMerge(EngineMigrations.layer, TestDatabase.layer)

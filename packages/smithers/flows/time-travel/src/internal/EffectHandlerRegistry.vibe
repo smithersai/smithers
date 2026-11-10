@@ -9,7 +9,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { Assessment, Classification, type Handler } from "../CompensationHandlers.vibe"
-import { EffectRecord, EffectTier } from "../EffectBoundary.ts"
+import { EffectRecord, EffectTier } from "../EffectBoundary.vibe"
 import { error, type TimeTravelError } from "../TimeTravelError.vibe"
 
 export {

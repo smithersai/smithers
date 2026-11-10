@@ -17,7 +17,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Frame from "../src/Frame.vibe"
 import * as SnapshotProjector from "../src/internal/SnapshotProjector.vibe"
-import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
+import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.vibe"
 import * as TimeTravelStore from "../src/TimeTravelStore.vibe"
 
 const run = <A>(

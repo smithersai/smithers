@@ -13,7 +13,7 @@ import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as Fork from "../src/internal/Fork.vibe"
-import { TimeTravel } from "../src/TimeTravel.ts"
+import { TimeTravel } from "../src/TimeTravel.vibe"
 import { awaitCheckpoint, jjInstalled, killHard, runReal, runState, withRealFixture } from "./RealTimeTravelHarness.ts"
 
 const childFixture = fileURLToPath(new URL("./fixtures/fork-crash-child.ts", import.meta.url))

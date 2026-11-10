@@ -89,7 +89,7 @@ it("documents the rewind rate limiter as a knob the composition supplies", () =>
 })
 
 it("states the two source coordinates a guarded effect must reserve", () => {
-  expect(read("../src/EffectBoundary.ts")).toContain("reserve two consecutive source sequences")
+  expect(read("../src/EffectBoundary.vibe")).toContain("reserve two consecutive source sequences")
 })
 
 it("places the fork marker and subsequent child records after the inclusive prefix", () => {

@@ -8,7 +8,7 @@ import { existsSync } from "node:fs"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { workspaceNameFor } from "../src/internal/Fork.vibe"
-import { TimeTravel } from "../src/TimeTravel.ts"
+import { TimeTravel } from "../src/TimeTravel.vibe"
 import { jjInstalled, runReal, runState, withRealFixture } from "./RealTimeTravelHarness.ts"
 
 describe.skipIf(!jjInstalled)("real public fork chain", () => {

@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import * as EffectHandlerRegistry from "../../src/internal/EffectHandlerRegistry.vibe"
-import * as Rewind from "../../src/internal/Rewind.ts"
+import * as Rewind from "../../src/internal/Rewind.vibe"
 import { TimeTravelStore } from "../../src/TimeTravelStore.vibe"
 import { runReal } from "../RealTimeTravelHarness.ts"
 

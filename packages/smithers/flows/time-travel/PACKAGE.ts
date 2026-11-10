@@ -45,7 +45,7 @@ const securityReview = Smithers.SecurityReview({
         "A `Dialect.jsonText` JSON path or a `json_extract` path built from a runtime value instead of a fixed string.",
         "A DELETE or UPDATE on flows_journal_events, flows_attempts, flows_time_travel_* without a `run_id =` or `child_run_id =` bound predicate."
       ],
-      paths: ["src/SqlTimeTravelStore.ts", "src/migrations/**", "src/Migrations.vibe"]
+      paths: ["src/SqlTimeTravelStore.vibe", "src/migrations/**", "src/Migrations.vibe"]
     },
     {
       id: "truncate-owner-fence",
@@ -58,10 +58,10 @@ const securityReview = Smithers.SecurityReview({
         "A Lease.withHeldLease body that keeps mutating after the heartbeat fiber reports `fence_lost`."
       ],
       paths: [
-        "src/SqlTimeTravelStore.ts",
+        "src/SqlTimeTravelStore.vibe",
         "src/MemoryTimeTravelStore.vibe",
         "src/internal/Lease.vibe",
-        "src/internal/Rewind.ts"
+        "src/internal/Rewind.vibe"
       ]
     },
     {
@@ -70,11 +70,11 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A crashed rewind's recovery pass rolls back compensations or restores jj state underneath a run another engine is actively executing.",
       lookFor: [
-        "A path in Recovery.ts that calls a handler rollback or Compensation.restorePreparedWorkspace before `acquire` returned a claimed or self-owned row.",
+        "A path in Recovery.vibe that calls a handler rollback or Compensation.restorePreparedWorkspace before `acquire` returned a claimed or self-owned row.",
         "A steal from a `running` row without liveness evidence that the recorded owner is dead.",
         "An exit path after the claim that leaves the row `running` under the recovery owner with no heartbeat."
       ],
-      paths: ["src/internal/Recovery.ts", "src/internal/Lease.vibe", "src/internal/RunRow.ts"]
+      paths: ["src/internal/Recovery.vibe", "src/internal/Lease.vibe", "src/internal/RunRow.ts"]
     },
     {
       id: "compensation-fail-closed",
@@ -91,8 +91,8 @@ const securityReview = Smithers.SecurityReview({
         "src/CompensationHandlers.vibe",
         "src/internal/EffectHandlerRegistry.vibe",
         "src/internal/Compensation.vibe",
-        "src/internal/Rewind.ts",
-        "src/TimeTravel.ts"
+        "src/internal/Rewind.vibe",
+        "src/TimeTravel.vibe"
       ]
     },
     {
@@ -105,7 +105,7 @@ const securityReview = Smithers.SecurityReview({
         "`Effect.annotateLogs`, `Effect.annotateCurrentSpan`, or `Effect.log*` passed an effect's `input`, `output`, a receipt, or `detail_json`.",
         "Audit detail or receipt JSON returned from a public read verb (`replay`, `inspect`) to a caller that only needs the frame."
       ],
-      paths: ["src/TimeTravelError.vibe", "src/EffectBoundary.ts", "src/internal/**", "src/TimeTravel.ts"]
+      paths: ["src/TimeTravelError.vibe", "src/EffectBoundary.vibe", "src/internal/**", "src/TimeTravel.vibe"]
     },
     {
       id: "fork-workspace-path",
@@ -117,7 +117,7 @@ const securityReview = Smithers.SecurityReview({
         "The directory passed to `jj.workspaceAdd` built from anything other than `options.workspaceRoot` and the sanitized name.",
         "A jj change id or operation id read from the journal or audit detail passed to `jj.restore`/`jj.opRestore` without shape validation that rules out a leading `-`."
       ],
-      paths: ["src/internal/Fork.vibe", "src/internal/Compensation.vibe", "src/internal/Recovery.ts", "src/TimeTravel.ts"]
+      paths: ["src/internal/Fork.vibe", "src/internal/Compensation.vibe", "src/internal/Recovery.vibe", "src/TimeTravel.vibe"]
     },
     {
       id: "lineage-edge-provenance",
@@ -130,11 +130,11 @@ const securityReview = Smithers.SecurityReview({
         "The child loop in the truncate transaction deleting `flows_journal_events`/`flows_attempts` for a child run id without confirming the child row names this run as its parent."
       ],
       paths: [
-        "src/EffectBoundary.ts",
-        "src/SqlTimeTravelStore.ts",
+        "src/EffectBoundary.vibe",
+        "src/SqlTimeTravelStore.vibe",
         "src/MemoryTimeTravelStore.vibe",
         "src/internal/LineageTree.ts",
-        "src/internal/Rewind.ts"
+        "src/internal/Rewind.vibe"
       ]
     },
     {
@@ -151,9 +151,9 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/JournalPages.vibe",
         "src/internal/HistoryLimit.vibe",
         "src/internal/SnapshotProjector.vibe",
-        "src/internal/Rewind.ts",
+        "src/internal/Rewind.vibe",
         "src/Frame.vibe",
-        "src/TimeTravel.ts"
+        "src/TimeTravel.vibe"
       ]
     }
   ]

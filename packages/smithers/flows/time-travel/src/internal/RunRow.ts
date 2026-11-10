@@ -12,6 +12,7 @@ import { error, type TimeTravelError } from "../TimeTravelError.vibe"
  *
  * @since 0.1.0
  * @category constructors
+ * @throws {never}
  */
 export const snapshotOf = (row: RunStore.RunRow): RunStore.RunSnapshot => ({
   status: row.status,

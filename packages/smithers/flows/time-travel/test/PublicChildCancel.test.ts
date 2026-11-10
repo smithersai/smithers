@@ -10,8 +10,8 @@ import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import * as Migrations from "../src/Migrations.vibe"
-import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
-import * as TimeTravel from "../src/TimeTravel.ts"
+import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.vibe"
+import * as TimeTravel from "../src/TimeTravel.vibe"
 
 const owner: Ownership.OwnerId = { hostId: "child-host", pid: 7, nonce: "child-owner" }
 const position = { runId: "run", frame: { lineageId: "run/root", seq: 0 } }

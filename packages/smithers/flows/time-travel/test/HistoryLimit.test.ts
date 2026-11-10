@@ -18,7 +18,7 @@ import * as Logger from "effect/Logger"
 import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.vibe"
 import * as Fork from "../src/internal/Fork.vibe"
 import * as HistoryLimit from "../src/internal/HistoryLimit.vibe"
-import * as Rewind from "../src/internal/Rewind.ts"
+import * as Rewind from "../src/internal/Rewind.vibe"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.vibe"
 import { TimeTravelStore } from "../src/TimeTravelStore.vibe"
 

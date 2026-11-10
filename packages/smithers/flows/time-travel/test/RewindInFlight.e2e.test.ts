@@ -8,7 +8,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
 import { fileURLToPath } from "node:url"
-import { TimeTravel } from "../src/TimeTravel.ts"
+import { TimeTravel } from "../src/TimeTravel.vibe"
 import {
   awaitCheckpoint,
   jjInstalled,

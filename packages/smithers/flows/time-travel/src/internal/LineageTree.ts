@@ -22,6 +22,7 @@ import type { Frame, LineageEdge } from "../Frame.vibe"
  *
  * @since 0.1.0
  * @category combinators
+ * @throws {never}
  */
 export const descendants = (
   edges: ReadonlyArray<LineageEdge>,

@@ -48,9 +48,9 @@ import * as Compensation from "./internal/Compensation.vibe"
 import * as EffectHandlerRegistry from "./internal/EffectHandlerRegistry.vibe"
 import * as ForkOperation from "./internal/Fork.vibe"
 import * as HistoryLimit from "./internal/HistoryLimit.vibe"
-import * as Recovery from "./internal/Recovery.ts"
+import * as Recovery from "./internal/Recovery.vibe"
 import * as Replay from "./internal/Replay.vibe"
-import * as Rewind from "./internal/Rewind.ts"
+import * as Rewind from "./internal/Rewind.vibe"
 import * as SnapshotProjector from "./internal/SnapshotProjector.vibe"
 import { error, type TimeTravelError } from "./TimeTravelError.vibe"
 import { type Rebinding, StepOverride, TimeTravelStore } from "./TimeTravelStore.vibe"
@@ -265,23 +265,23 @@ const validatePageSize = (verb: string, pageSize: number | undefined): Effect.Ef
 /** The shared fold and input contract behind both history-reading layers. */
 const replayWith =
   (historyLimit: number) => <S>(position: Position, projection: Projection<S>, options?: ReplayOptions) =>
-    Effect.gen(function*() {
-      const decoded = yield* validatePosition(position)
-      yield* Effect.annotateCurrentSpan({
+    effect {
+      const decoded = try validatePosition(position)
+      try Effect.annotateCurrentSpan({
         runId: decoded.runId,
         lineageId: decoded.frame.lineageId,
         seq: decoded.frame.seq
       })
       const pageSize = options?.pageSize
-      yield* validatePageSize("replay", pageSize)
-      const maxEntries = yield* HistoryLimit.resolve(options?.maxHistoryEntries, historyLimit)
-      return yield* Replay.rederive(decoded.frame, projection, {
+      try validatePageSize("replay", pageSize)
+      const maxEntries = try HistoryLimit.resolve(options?.maxHistoryEntries, historyLimit)
+      return try Replay.rederive(decoded.frame, projection, {
         runId: decoded.runId,
         engineEvents: options?.engineEvents,
         ...(pageSize === undefined ? {} : { pageSize }),
         maxEntries
       })
-    })
+    }
 
 /**
  * Composes history reads without startup recovery or mutation dependencies.
@@ -294,13 +294,13 @@ export const readOnly: Layer.Layer<
   ReadOnlyTimeTravel,
   never,
   Journal.Journal | CacheStore.CacheStore
-> = Layer.effect(ReadOnlyTimeTravel)(Effect.gen(function*() {
-  const services = yield* Effect.context<Journal.Journal | CacheStore.CacheStore>()
+> = Layer.effect(ReadOnlyTimeTravel)(effect {
+  const services = try Effect.context<Journal.Journal | CacheStore.CacheStore>()
   const rederive = replayWith(defaultMaxHistoryEntries)
   const replay = <S>(position: Position, projection: Projection<S>, options?: ReplayOptions) =>
     rederive(position, projection, options).pipe(Effect.provideContext(services))
   return { replay, inspect: <S>(position: Position, projection: Projection<S>) => replay(position, projection) }
-}))
+})
 
 /**
  * The injectable contracts the three operations read and write through.
@@ -335,12 +335,12 @@ const workspaceRoot = ".flows/forks"
 // Distinguish incarnations in one realm even when an injected clock and
 // random source repeat. Host entropy still distinguishes separate realms.
 let ownerOrdinal = 0n
-const mintOwner: Effect.Effect<OwnerId> = Effect.gen(function*() {
-  const nowMs = yield* Clock.currentTimeMillis
-  const entropy = yield* Random.nextIntBetween(0, 0x7fffffff)
+const mintOwner: Effect.Effect<OwnerId> = effect {
+  const nowMs = try Clock.currentTimeMillis
+  const entropy = try Random.nextIntBetween(0, 0x7fffffff)
   const incarnation = `${nowMs}:${entropy}:${++ownerOrdinal}`
   return { hostId: `time-travel:${incarnation}`, pid: 0, nonce: `time-travel:${incarnation}` }
-})
+}
 
 /**
  * What a rewind rate limiter answers: whether one more rewind may start, and
@@ -427,19 +427,20 @@ export interface Options {
  * A `running` row that records no owner yields no evidence: there is nothing
  * to be alive or dead, and `steal` refuses such a snapshot regardless.
  */
-const recoveryEvidence = (isAlive: Ownership.LivenessCheck) =>
-(
-  row: RunStore.RunRow,
-  claimant: OwnerId,
-  nowMs: number
-): Effect.Effect<Ownership.LivenessEvidence | undefined> => {
-  const expectedOwner = row.owner
-  if (expectedOwner === null) return Effect.succeed(undefined)
-  return Effect.map(
-    isAlive(expectedOwner, { claimant, heartbeatAtMs: row.heartbeatAtMs, nowMs }),
-    (alive) => alive ? undefined : { expectedOwner, checkedAtMs: nowMs, kind: "lease-expired" as const }
-  )
-}
+const recoveryEvidence =
+  (isAlive: Ownership.LivenessCheck) =>
+  (
+    row: RunStore.RunRow,
+    claimant: OwnerId,
+    nowMs: number
+  ): Effect.Effect<Ownership.LivenessEvidence | undefined> => {
+    const expectedOwner = row.owner
+    if (expectedOwner === null) return Effect.succeed(undefined)
+    return Effect.map(
+      isAlive(expectedOwner, { claimant, heartbeatAtMs: row.heartbeatAtMs, nowMs }),
+      (alive) => alive ? undefined : { expectedOwner, checkedAtMs: nowMs, kind: "lease-expired" as const }
+    )
+  }
 
 /**
  * Builds the service over the ambient contracts under an explicit policy,
@@ -455,16 +456,16 @@ const recoveryEvidence = (isAlive: Ownership.LivenessCheck) =>
 export const makeWith = (
   options: Options = {}
 ): Effect.Effect<Service, TimeTravelError, Requirements | Scope.Scope> =>
-  Effect.gen(function*() {
-    const scope = yield* Effect.scope
-    const compensationTimeout = yield* Effect.try({
+  effect {
+    const scope = try Effect.scope
+    const compensationTimeout = try Effect.try({
       try: () => Duration.fromInputUnsafe(options.compensationTimeout ?? Compensation.defaultTimeout),
       catch: (cause) => error("invalid", "compensationTimeout must be a finite positive duration", cause)
     })
     if (!Duration.isFinite(compensationTimeout) || Duration.toMillis(compensationTimeout) <= 0) {
-      return yield* Effect.fail(error("invalid", "compensationTimeout must be a finite positive duration"))
+      throw error("invalid", "compensationTimeout must be a finite positive duration")
     }
-    const recoveryTimeout = yield* Effect.try({
+    const recoveryTimeout = try Effect.try({
       try: () =>
         options.recoveryTimeout === undefined
           ? Duration.times(compensationTimeout, 10)
@@ -472,11 +473,11 @@ export const makeWith = (
       catch: (cause) => error("invalid", "recoveryTimeout must be a finite positive duration", cause)
     })
     if (!Duration.isFinite(recoveryTimeout) || Duration.toMillis(recoveryTimeout) <= 0) {
-      return yield* Effect.fail(error("invalid", "recoveryTimeout must be a finite positive duration"))
+      throw error("invalid", "recoveryTimeout must be a finite positive duration")
     }
-    const services = yield* Effect.context<Requirements>()
-    const historyLimit = yield* HistoryLimit.resolve(options.maxHistoryEntries, HistoryLimit.defaultMaxHistoryEntries)
-    const owner = yield* mintOwner
+    const services = try Effect.context<Requirements>()
+    const historyLimit = try HistoryLimit.resolve(options.maxHistoryEntries, HistoryLimit.defaultMaxHistoryEntries)
+    const owner = try mintOwner
     const liveness = recoveryEvidence(options.isAlive ?? Ownership.leaseLiveness())
     const rateLimit = options.rateLimit
     // The contribution door (see `CompensationHandlers`): handlers come from the composition that owns the effect boundary, and the
@@ -487,8 +488,8 @@ export const makeWith = (
     // member dropped from that copy — the descriptor, say — silently widened
     // resolution to kind alone, which is exactly the drift the descriptor
     // exists to refuse. One shape cannot drop anything.
-    const contributed = yield* Effect.serviceOption(CompensationHandlers)
-    const registry = yield* EffectHandlerRegistry.make(Option.getOrElse(contributed, () => []))
+    const contributed = try Effect.serviceOption(CompensationHandlers)
+    const registry = try EffectHandlerRegistry.make(Option.getOrElse(contributed, () => []))
 
     const provided = <A>(
       effect: Effect.Effect<
@@ -507,7 +508,7 @@ export const makeWith = (
     // finished or rolled back before this service accepts new work. An audit
     // whose run is still held elsewhere is declined rather than closed, so it
     // survives for the next build to pick up.
-    const recovery = yield* Effect.forkChild(
+    const recovery = try Effect.forkChild(
       Effect.interruptible(provided(Recovery.recover({
         owner,
         compensationTimeout,
@@ -515,18 +516,18 @@ export const makeWith = (
       }))),
       { startImmediately: true }
     )
-    const outcomes = yield* Fiber.join(recovery).pipe(
+    const outcomes = try Fiber.join(recovery).pipe(
       Effect.timeout(recoveryTimeout),
-      Effect.catchTag("TimeoutError", (cause) =>
-        Effect.fail(error("compensation_failed", "startup recovery exceeded its deadline", cause))),
-      Effect.onError(() =>
-        Fiber.interrupt(recovery)
-      )
+      Effect.catchTag(
+        "TimeoutError",
+        (cause) => Effect.fail(error("compensation_failed", "startup recovery exceeded its deadline", cause))
+      ),
+      Effect.onError(() => Fiber.interrupt(recovery))
     )
     // A `Failed` outcome closes an audit terminally. Discarding the array made
     // that invisible to the composition, so an operator learned about a rewind
     // recovery could not finish only by reading the audit table by hand.
-    yield* Effect.forEach(
+    try Effect.forEach(
       outcomes.filter((outcome) => outcome._tag === "Failed"),
       (outcome) =>
         Effect.logError("time-travel: startup recovery closed an audit as failed").pipe(
@@ -563,14 +564,14 @@ export const makeWith = (
      * createFork. If the sweep already recorded the intent forgotten, nothing
      * durable says that late lane exists.
      */
-    const reclaimForkLanes = Effect.gen(function*() {
-      const store = yield* TimeTravelStore
-      const jj = yield* Jj
-      const nowMs = yield* Clock.currentTimeMillis
-      const abandoned = yield* store.abandonForkIntents(
+    const reclaimForkLanes = effect {
+      const store = try TimeTravelStore
+      const jj = try Jj
+      const nowMs = try Clock.currentTimeMillis
+      const abandoned = try store.abandonForkIntents(
         nowMs - Duration.toMillis(ForkOperation.intentStaleAfter)
       )
-      yield* Effect.forEach(
+      try Effect.forEach(
         abandoned,
         (intent) => {
           const workspaceName = ForkOperation.workspaceNameFor(intent.childRunId)
@@ -585,8 +586,8 @@ export const makeWith = (
         },
         { discard: true }
       )
-    })
-    yield* provided(reclaimForkLanes)
+    }
+    try provided(reclaimForkLanes)
 
     /**
      * Folds the run's journal into its frame anchors before a verb reads them.
@@ -622,30 +623,30 @@ export const makeWith = (
       inspect: <S>(position: Position, projection: Projection<S>) =>
         Effect.fn("TimeTravel.inspect")(() => rederive(position, projection, undefined))(),
       fork: (position, options) =>
-        Effect.fn("TimeTravel.fork")(function*() {
-          const decoded = yield* validatePosition(position)
-          yield* Effect.annotateCurrentSpan({
+        Effect.fn("TimeTravel.fork")(effect () => {
+          const decoded = try validatePosition(position)
+          try Effect.annotateCurrentSpan({
             runId: decoded.runId,
             lineageId: decoded.frame.lineageId,
             seq: decoded.frame.seq
           })
-          yield* validatePageSize("fork", options?.pageSize)
+          try validatePageSize("fork", options?.pageSize)
           // The lane path is `${workspaceRoot}/${name}`, so an empty root
           // would place the lane at the filesystem root.
           if (options?.workspaceRoot === "") {
-            return yield* Effect.fail(error("invalid", "fork workspaceRoot must be a non-empty path"))
+            throw error("invalid", "fork workspaceRoot must be a non-empty path")
           }
           // Decoded before anything durable, like the page size: an untyped
           // caller's malformed override refuses rather than editing nothing.
-          const override = options?.override === undefined ? undefined : yield* Schema.decodeUnknownEffect(
+          const override = options?.override === undefined ? undefined : try Schema.decodeUnknownEffect(
             StepOverride
           )(options.override).pipe(
             Effect.mapError((cause) =>
               error("invalid", "fork override must name a step key digest and a JSON result", cause)
             )
           )
-          const maxEntries = yield* HistoryLimit.resolve(options?.maxHistoryEntries, historyLimit)
-          return yield* provided(
+          const maxEntries = try HistoryLimit.resolve(options?.maxHistoryEntries, historyLimit)
+          return try provided(
             // The anchors a fork restores from are a projection of the engine's
             // own records, folded on demand: an ordinary engine run writes
             // journal rows, never this package's tables.
@@ -663,15 +664,15 @@ export const makeWith = (
           )
         })(),
       rewind: (position, options) =>
-        Effect.fn("TimeTravel.rewind")(function*() {
-          const decoded = yield* validatePosition(position)
-          yield* Effect.annotateCurrentSpan({
+        Effect.fn("TimeTravel.rewind")(effect () => {
+          const decoded = try validatePosition(position)
+          try Effect.annotateCurrentSpan({
             runId: decoded.runId,
             lineageId: decoded.frame.lineageId,
             seq: decoded.frame.seq
           })
-          const maxEntries = yield* HistoryLimit.resolve(options?.maxHistoryEntries, historyLimit)
-          return yield* provided(
+          const maxEntries = try HistoryLimit.resolve(options?.maxHistoryEntries, historyLimit)
+          return try provided(
             // The validation phase runs before anything durable: a refused page
             // size, a history past the cap, or a frame that is not on this run's
             // lineage leaves no claim, no audit row, and no refreshed anchor
@@ -722,7 +723,7 @@ export const makeWith = (
           )
         })()
     }
-  })
+  }
 
 /**
  * Builds the service over the ambient contracts under the default policy,

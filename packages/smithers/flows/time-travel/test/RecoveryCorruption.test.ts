@@ -7,10 +7,10 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.vibe"
-import * as Recovery from "../src/internal/Recovery.ts"
-import type { AuditDetail } from "../src/internal/Rewind.ts"
+import * as Recovery from "../src/internal/Recovery.vibe"
+import type { AuditDetail } from "../src/internal/Rewind.vibe"
 import * as Migrations from "../src/Migrations.vibe"
-import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
+import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.vibe"
 import { TimeTravelStore } from "../src/TimeTravelStore.vibe"
 
 const owner = { hostId: "recovery-corruption", pid: 0, nonce: "recovery-corruption" } as const
