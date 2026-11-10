@@ -218,6 +218,43 @@ it.live("actions/mock-factories", () => run("actions/mock-factories", Role, (rol
   }
 })))
 
+/** A tour whose event stream closes after it starts, before it ends, fails its run; it never passes or hangs. */
+it.live("actions/mock-tour-stream", () => run("actions/mock-tour-stream", Schema.Struct({ role: Role, actor: Schema.Literals(["person", "agent"]) }), (input) => scoped(effect {
+  const closing = Layer.effect(Factory, map(Factory, (factory) => Object.assign(Object.create(factory) as Factory.Shape, {
+    events: (conversation: string, from: number) => factory.events(conversation, from).pipe(Stream.takeUntil((event) => event.type === "TourStarted")),
+  }))).pipe(Layer.provide(mockFactoryFor(input.role)))
+  provide Layer.provideMerge(MockActions({ role: input.role, actor: input.actor, conversation: "home" }), closing) {
+    const actions = try Actions
+    const id = try actions.start("vibelang/Tour", null, "button")
+    const last = (try followed(actions, id)).at(-1)
+    return last?.state === "failed" && last.result === "Action failed"
+  }
+})))
+
+/** Before a started run's fiber first runs (the scheduler does not yield here), a cancel settles it cancelled and its
+ * tour never begins; a different person signing in fails it `forbidden`, since a person's run never runs as another. */
+it.live("actions/mock-before-run", () => run("actions/mock-before-run", Schema.Struct({ first: Role, then: Role, cancel: Schema.Boolean }), (input) => scoped(effect {
+  provide Layer.provideMerge(MockActions({ role: input.first, actor: "person", conversation: "home" }), mockFactoryFor(input.first)) {
+    const actions = try Actions
+    const accounts = (try Factory).accounts!
+    const owner = (try accounts.current()).id
+    const outcome = try Effect.provideService(effect {
+      const id = try actions.start(input.cancel ? "vibelang/Tour" : "vibelang/history/Plan", { how: "append", epic: "", newEpic: "Fuzz", target: "", title: "Fuzz", task: "" }, "button")
+      if (input.cancel) try actions.cancel(id)
+      else try Effect.orDie(accounts.choose(input.then))
+      return id
+    }, References.PreventSchedulerYield, true).pipe(Effect.result)
+    if (outcome._tag === "Failure") return outcome.failure.code === "forbidden" && !allowed(input.first, registration(input.cancel ? "vibelang/Tour" : "vibelang/history/Plan"))
+    const last = (try followed(actions, outcome.success)).at(-1)
+    if (input.cancel) {
+      const begun = try Effect.timeoutOption(Stream.runHead((try Factory).events("home", 0).pipe(Stream.filter((event) => event.type === "TourStarted"))), "300 millis")
+      return last?.state === "cancelled" && last.steps.length === 0 && Option.isNone(begun)
+    }
+    const other = (try accounts.current()).id !== owner
+    return other ? last?.state === "failed" && last.steps.length === 0 : last?.state === "passed"
+  }
+})))
+
 /** A world whose scope has closed refuses new runs as `closed`, and reads what it had. */
 it.live("actions/mock-closed", () => run("actions/mock-closed", Role, (role) => effect {
   const scope = try Scope.make()

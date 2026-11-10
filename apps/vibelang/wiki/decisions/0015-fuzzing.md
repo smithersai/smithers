@@ -654,6 +654,32 @@ What is left: 2 lines and 16 arms. Unchanged from the list above: `MockActions` 
 reached only if the catalog lacks a flow the registry marks runnable. Covered or removed since the list above:
 `backend` 61 and 83, `catalog` 23, `MockActions` 33, `MockMythical` 78, `schemas` 92, `seed` 355.
 
+### Third session
+
+Finding, fixed: a mock tour action cancelled before its run's fiber started settled `cancelled`, yet the tour then
+began in the conversation (`TourStarted`, `WalkthroughDriven`, `ReplyDelta` after the cancel). `cancel` interrupted
+only the engine's execution, which had not started, and recorded the cancellation; the queued fiber then read
+`queued`, ran the flow and began the tour. `MockActions.cancel` now interrupts the run's own fiber first, then the
+engine's execution. `test/actions.test.vibe` ("a tour cancelled before its run starts never begins") and
+`actions/mock-before-run` failed before the fix and pass after. The live host records the cancellation before ending
+the tour (`worker/ActionRuns.vibe` `cancel`), a different design not changed here.
+
+| Target | File | Exercises | Arm reached |
+| --- | --- | --- | --- |
+| `actions/mock-tour-stream` | `fuzz/actions-mock.node.fuzz.vibe` | a Factory whose event stream closes right after `TourStarted`: the tour action fails, never passes or hangs | `MockActions` 102 |
+| `actions/mock-before-run` | same | with scheduler yields off (`References.PreventSchedulerYield`), a cancel or a different person's sign-in before the run's fiber runs: cancelled and no tour, or `forbidden` | `MockActions` 117 |
+| `actions/live-follow-stream` | `fuzz/actions-live.node.fuzz.vibe` | a run's event stream that also carries another run's request, for fuzzed run ids: only the followed run is yielded; an ill-formed id is `input` before any request | `LiveActions` 66 |
+
+Removed: `MockActions` 130. `authorize` admits only runnable names, and `prepare` already answers `not-found` for any
+other, so the catalog lookup after the role check could not fail. Mutants, each caught and restored: the guide passes
+a tour whose stream closed (`actions/mock-tour-stream`), follow yields the first run instead of the followed one
+(`actions/live-follow-stream`). Their values stay in `fuzz/__fuzz__/`.
+
+What is left: 2 lines and 12 arms. `MockActions` 68 (a person without a login: no account has one) and 112 (a cancel
+recorded between `start`'s request and its fork); `mythical` 377, 411 (the lines), 562 (proved fallbacks);
+`signin` 101, 173; `mcp` 36, 38; `flows` 248, 257; `commands` 351; `seed` 437; `history/tools` 93, the fallback
+after an exhaustive match that VL-37 removes in the compiler.
+
 ## Measurable on any machine (lane vl-gatefix, 2026-11-10)
 
 - `surfaces/cli-arguments` and `surfaces/mcp-arguments` spawn a process per execution: replay and the first execution

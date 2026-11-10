@@ -125,3 +125,20 @@ describe("registered actions", () => {
   }, 60_000)
 
 })
+
+describe("cancel before a run starts", () => {
+  it.live("a tour cancelled before its run starts never begins", () => effect {
+    provide MockActions({ role: "viewer", actor: "person", conversation: "home" }).pipe(Layer.provideMerge(MockFactory)) {
+      const actions = try Actions
+      const id = try actions.start("vibelang/Tour", null, "button")
+      try actions.cancel(id)
+      const begun = try Effect.timeoutOption(Stream.runHead((try Factory).events("home", 0).pipe(Stream.filter((event) => event.type === "TourStarted"))), "1 second")
+      const run = try actions.read(id)
+      try Effect.try(() => {
+        expect(run.state).toBe("cancelled")
+        expect(Option.isNone(begun)).toBe(true)
+      })
+    }
+  })
+})
+

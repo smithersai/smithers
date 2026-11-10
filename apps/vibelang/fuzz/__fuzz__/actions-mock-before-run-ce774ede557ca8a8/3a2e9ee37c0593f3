@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 32
+bias 2
+null-prototype false
+key 2812108484
+tape ghsn1hqhbNyTvwqy
+schedule-key 873230142
+schedule 
+signature "ReturnedFalse"
+path 
+codec "json"
+value "{\"first\":\"maintainer\",\"then\":\"maintainer\",\"cancel\":true}"
+# ReturnedFalse
+# {"first":"maintainer","then":"maintainer","cancel":true}
