@@ -39,7 +39,8 @@ it reads `HttpClient` from context.
   recording does not hold dies with `UnrecordedRequestError`. `since=` (a flow's admission time) is keyed out.
 - **Identity.** Recording runs write to `codeplanesmithers/smithers-vibelang-e2e` (repository id 1443081815) only, as
   the smithers.sh GitHub App's installation on `codeplanesmithers` (installation 146401045). GitHub records that
-  installation as `smitherspreviewrelease[bot]`; the person's delegation names `codeplanesmithers`, the repository's
+  installation as `smitherspreviewrelease[bot]` (user id 297525718), which is the person's id in the tests because
+  the wiki host checks a review's author id; the person's delegation names `codeplanesmithers`, the repository's
   owner, so the delegation writes upstream without a fork. The token is minted at record time and only read from the
   environment.
 - **Size.** A run's label (the names it creates) is fixed at record time and stored in the recording, so a replay asks
@@ -55,9 +56,11 @@ it reads `HttpClient` from context.
 | --- | --- | --- | --- |
 | `test/issues.github.test.vibe`: new, split (with its sub-issue link), comment, commit, uncommit, read, through smithers.sh's real delegation host | `issues.json` | 92 | 637 KB |
 | `test/issues.github.test.vibe`: VIP proposal (branch, commit, review, issue), through the delegation | `issues-proposal.json` | 48 | 222 KB |
+| `test/wikiEdit.github.test.vibe`: a contributor's proposal and a maintainer's save on a disposable base branch, through the delegation | `wiki.json` | 62 | 117 KB |
 | `test/mainLog.github.test.vibe`: main's first-parent log | `main-log.json` | 1 | 200 KB |
 
-All three ran skipped in CI before. They now run on every `pnpm test`, without a token, in about 2.5 s.
+All four ran skipped in CI before (the issues and wiki tests could not write at all since decision 0165, because they
+put a token on the principal). They now run on every `pnpm test`, without a token, in about 3 s.
 
 ## Bug found by real GitHub
 
@@ -73,9 +76,8 @@ so `issues/steered-host`'s "GitHub never showed the VIP" case still means what i
 
 - `test/issuesDelegated.coverage.test.vibe` and `test/wikiDelegated.coverage.test.vibe` still run their happy-path
   cases on the in-memory GitHub; their fault cases (wrapped client services) stay as they are. Each happy case moves
-  to a recording when its state can be built on the test repository.
-- `test/wikiEdit.github.test.vibe` still authenticates with a token on the principal (pre-0165) and is skipped
-  without `GITHUB_TEST_TOKEN`; it moves to the delegation and a recording next.
+  to a recording when its state can be built on the test repository. `bench/issues-delegated.bench.vibe` and
+  `bench/wiki-delegated.bench.vibe` (another lane, 2026-11-10) also run on the in-memory GitHub.
 - Fuzz targets generate requests a recording cannot hold. They keep the in-memory GitHub; whether a protocol fake may
   serve a generated happy path is Will's to rule.
 - The doubles `~/vl/review-tests.REPORT.md` finding 3 lists for device sign-in, accounts, the model provider and

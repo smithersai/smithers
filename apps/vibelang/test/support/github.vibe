@@ -15,6 +15,8 @@ import { HttpRecording } from "@smthrs/testing"
 export const TEST_REPOSITORY = { owner: "codeplanesmithers", name: "smithers-vibelang-e2e", id: 1443081815, api: "https://api.github.com" } as const
 /** Who GitHub says wrote what a recording run created: the App's installation, not a person. */
 export const TEST_AUTHOR = "smitherspreviewrelease[bot]"
+/** Its GitHub user id: a host that checks a review's author compares it with the person's id. */
+export const TEST_AUTHOR_ID = 297525718
 /** A person the test repository can assign: its owner. */
 export const TEST_ASSIGNEE = "codeplanesmithers"
 

@@ -629,7 +629,7 @@ The unit gate still fails below 100%. No file below is excluded and no threshold
 | `worker/SpecificationReviewers.vibe` | Stays unbound by decision 0027. | None until it is bound |
 | `worker/VipDraft.vibe`, model paths of `worker/Reply.vibe` | A model credential reference in the environment. | `test/live.workerd.test.vibe` covers Reply, opt-in on `CEREBRAS_API_KEY`. `test/vipDraft.test.vibe` covers `VipDraft`, opt-in on the same key |
 | GitHub read, write, VIP proposal and label paths of `worker/Issues.vibe` (`githubHost`) | Covered. The happy paths replay real GitHub through smithers.sh's delegation (`test/issues.github.test.vibe`, recordings `issues.json` and `issues-proposal.json`, [0032](0032-record-replay.md)); the fault cases stay on the in-memory GitHub as wrapped client services. | `test/issues.github.test.vibe` (replay, no token) |
-| GitHub write paths of `worker/Wiki.vibe` | A real GitHub token for the test repository, until the wiki test moves to the delegation and a recording ([0032](0032-record-replay.md), remaining). | `test/wikiEdit.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
+| GitHub write paths of `worker/Wiki.vibe` | Covered. A proposal and a save replay real GitHub through smithers.sh's delegation (recording `wiki.json`, [0032](0032-record-replay.md)). | `test/wikiEdit.github.test.vibe` (replay, no token) |
 
 ## Lane vl-coverage2 (2026-11-09)
 
