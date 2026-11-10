@@ -111,6 +111,10 @@ Landing stays the merge queue's: Approve is the person's decision; the lane enqu
 `Mythical: m<n>` trailer; the queue lands it on `vibe`; the green cut moves `main`; Fold maps it back, into the commit
 the trailer names, else as a new commit appended to the epic of its scope.
 
+The trailer is the first `Mythical: m<n>` line of the message's trailer paragraph: its last paragraph after the title,
+when every line there is a `Key: value` trailer (git's form). A squash body or prose that quotes a trailer names no
+commit (`test/sequencerTrailer.test.vibe`).
+
 ## The view
 
 `/history` is its own Foldkit program (`src/web/historyApp.vibe`, `historyView.vibe`), the designer's design

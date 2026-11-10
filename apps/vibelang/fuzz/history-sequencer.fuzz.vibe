@@ -5,7 +5,7 @@
 import { it } from "@effect/vitest"
 import { empty, MAX_TITLE, type History } from "../src/history/mythical.vibe"
 import { areaOf } from "../src/history/seed.vibe"
-import { make, memoryStore, trailerOf, type How } from "../src/history/Sequencer.vibe"
+import { make, memoryStore, type How } from "../src/history/Sequencer.vibe"
 import { run, Int, Text, same } from "./run.vibe"
 
 const Title = Schema.Union([Text, Schema.Literals(["", "  ", "fix(compiler): a".repeat(14), "feat(wiki): " + "😀".repeat(120), "docs: " + "x".repeat(194) + "😀", "Mythical: m1"])])
@@ -13,7 +13,7 @@ const Op = Schema.Union([
   Schema.Struct({ op: Schema.Literal("plan"), how: Schema.Literals(["append", "insert", "amend"]), epic: Int, newEpic: Schema.Literals(["", "Fuzz", "long"]), target: Int, title: Title }),
   Schema.Struct({ op: Schema.Literal("approve"), target: Int }),
   Schema.Struct({ op: Schema.Literal("start"), target: Int }),
-  Schema.Struct({ op: Schema.Literal("fold"), sha: Int, title: Title, trailer: Schema.Literals(["none", "named", "unknown"]), target: Int }),
+  Schema.Struct({ op: Schema.Literal("fold"), sha: Int, title: Title, trailer: Schema.Literals(["none", "named", "unknown", "squash", "quoted"]), target: Int }),
   Schema.Struct({ op: Schema.Literal("bootstrap"), seed: Schema.Literals(["empty", "epic", "full"]) }),
 ])
 
@@ -68,8 +68,12 @@ it.live("history/sequencer-operations", () => run("history/sequencer-operations"
       case "fold": {
         const sha = `f${step.sha}`
         const named = pick(step.target)
-        const trailer = step.trailer === "none" ? "" : `\n\nMythical: ${step.trailer === "named" ? named : "m999"}\n`
-        const message = step.title + trailer
+        // A squash keeps a folded commit's trailer in its body; a quote names one in prose. Neither is the trailer
+        // paragraph, so neither names a commit.
+        const body = step.trailer === "squash" ? `\n\n* a\n\nMythical: ${named}\n\n* b\n\nCo-Authored-By: Ada <ada@example.com>\n`
+          : step.trailer === "quoted" ? `\n\nThe plan said\nMythical: ${named}\nof another change.\n`
+          : step.trailer === "none" ? "" : `\n\nMythical: ${step.trailer === "named" ? named : "m999"}\n`
+        const message = step.title + body
         const answer = try sequencer.fold({ sha, change: "", title: step.title, message })
         const after = try sequencer.read()
         if (before.real.some((r) => r.sha === sha)) { if (answer.refusal !== "duplicate" || after.seq !== before.seq) return false; break }
@@ -79,8 +83,9 @@ it.live("history/sequencer-operations", () => run("history/sequencer-operations"
         const into = after.commits.find((c) => c.id === answer.id)!
         // Folded into the commit its trailer names only when that commit was approved or landed; else a new commit
         // appended to the epic of its scope's area.
-        // The trailer is the message's first `Mythical: m<n>` line (a title may be one).
-        const target = before.commits.find((c) => c.id === trailerOf(message))
+        // Only the trailer paragraph names a commit; a title alone (even `Mythical: m1`) never does.
+        const named_ = step.trailer === "named" ? named : step.trailer === "unknown" ? "m999" : ""
+        const target = before.commits.find((c) => c.id === named_)
         const intoNamed = target !== undefined && (target.state === "approved" || target.state === "landed")
         if (intoNamed ? answer.id !== target.id : after.epics.find((e) => e.id === into.epic)?.title !== areaOf(into.title)) return false
         if (!intoNamed && (into.title.length > MAX_TITLE || (step.title.length > MAX_TITLE && !whole(into.title)))) return false

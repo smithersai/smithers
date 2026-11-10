@@ -516,15 +516,11 @@ takes a few minutes longer.
 | `"bad id!"` was expected to be refused as a conversation | oracle | Any nonempty id is one (the wire encodes it); `""` is the refused case |
 | Page 1 of a one-commit epic was expected to count its commits | oracle | Past an epic's end the page is empty |
 | A tour asked for after a post never settled | oracle | Whether the post's reply still runs is timing (a viewer's post run is accepted, its record refused): the tour is refused and settles, or begins and the target cancels it |
+| `trailerOf` read the first `Mythical: m<n>` line anywhere in a message, so a squash or a body quoting another commit's trailer folded into the commit it named | product | `history/sequencer-operations`, with squash and quoted bodies. `trailerOf` reads only the trailer paragraph (0020); `test/sequencerTrailer.test.vibe` red, then green; the counterexample is in `fuzz/__fuzz__/` |
+| `deferredActions` (`src/actions/agent.vibe`) had no caller outside its own test | dead code? | No: `src/web/backend.vibe` builds the web backend's actions with it. Kept; `actions/mock-steered` checks it answers what the service it selects answers |
 
 ### Not fixed: recorded for their owners
 
-- `trailerOf` (`src/history/Sequencer.vibe`) reads the first `Mythical: m<n>` line anywhere in a message, not the
-  trailer paragraph. A squash of two changes, or a body that quotes another commit's trailer, folds into the first one
-  named. 0020 says "the trailer"; which line wins is the mythical history's call.
-- `deferredActions` (`src/actions/agent.vibe`) has no caller outside its own test (`test/actionProxy.test.vibe`).
-  `actions/mock-steered` checks it answers what the service it selects answers; whether it is dead code is its owner's
-  call.
 - `api-objects/world` (vl-fuzzpkg) failed once in the full run at host load 110: "alarm did not return", its 300 ms
   alarm bound. Its value was not committed.
 

@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 23
+bias 5
+null-prototype true
+key 3292352743
+tape RAefKJTJYi09y6N1XquKbZs1jNlHqfZwCsHaN-AVycHha9t7cbRqP5X4svX6gbD_2IE4VCV3afXNYANuveVIegAAAAAAAAAAAAAAAAAAAAA1HWIUWZ_gSCXWOLYQyf4IuZGFVEBGycFN7xep7Ju29s7LMOoPUy1sIHUsXJiVRZhiHdbrWkf3zipcAMhdpxEQ0Vhl3AyGv85eniRteHBGdbSmby283hDOJ3tX4N6eKIHEpqyGpaFz6fnY4R_g0dEOQBXlYLaQY7WWxQMFo1n7ZtwEvjVOXyiLX32fmYoCFYiClagNFqeledVeLSRzLG4gIGdUXu2lAKlY-kD302HLJlvQbr1-ctGG7qEA4Tj9DCYGvaJlnHHOGsbTWWgNyuOX9tguieSXP_lBN1-bkY7R7yeCY9vExsNiBzSDQjXDFsTeQZAxoIttjo2uKcem3HYN6bB_WjGCMfN7joxiYclkiM9qo1aRKsXfpiKr70d57_3FPSGb9-4bqpV3rKLGjzUihjt1X05jm5yGNu48UBC4pt1-rqVy1EJeG42z-5SaLaieNHqXcKbKQ3eUwzFi1nBtunarSmNpzw8kEMm07DZaAQV96APhpx0VG0ausfCt5MkooaFmqftj0g
+schedule-key 1888189485
+schedule 
+signature "ReturnedFalse"
+path 3.3.9.10.10.11.11
+codec "json"
+value "[{\"op\":\"bootstrap\",\"seed\":\"epic\"},{\"op\":\"plan\",\"how\":\"append\",\"epic\":0,\"newEpic\":\"\",\"target\":0,\"title\":\"Mythical: m1\"},{\"op\":\"start\",\"target\":19},{\"op\":\"bootstrap\",\"seed\":\"full\"},{\"op\":\"approve\",\"target\":24},{\"op\":\"plan\",\"how\":\"insert\",\"epic\":1,\"newEpic\":\"Fuzz\",\"target\":12,\"title\":\"fix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): a\"},{\"op\":\"bootstrap\",\"seed\":\"full\"},{\"op\":\"bootstrap\",\"seed\":\"epic\"},{\"op\":\"fold\",\"sha\":4,\"title\":\"]B}^X92H;%c !'a\",\"trailer\":\"squash\",\"target\":26}]"
+# ReturnedFalse
+# [{"op":"bootstrap","seed":"epic"},{"op":"plan","how":"append","epic":0,"newEpic":"","target":0,"title":"Mythical: m1"},{"op":"start","target":19},{"op":"bootstrap","seed":"full"},{"op":"approve","target":24},{"op":"plan","how":"insert","epic":1,"newEpic":"Fuzz","target":12,"title":"fix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): afix(compiler): a"},{"op":"bootstrap","seed":"full"},{"op":"bootstrap","seed":"epic"},{"op":"fold","sha":4,"title":"]B}^X92H;%c !'a","trailer":"squash","target":26}]
