@@ -70,6 +70,8 @@ export interface Fake {
   /** Commit-pinned reads see this text: main advanced after the first read. */
   pinnedText: string | undefined
   contentStatus: number
+  /** A branch lookup answers this status when it is not 200. */
+  refStatus: number
 }
 
 function seedIssue(fake: Fake, number: number, state: "open" | "closed", labels: Array<string>, body: string, assignees: Array<{ id: number; login: string }>): void {
@@ -88,7 +90,7 @@ export function seed(): Fake {
     pulls: [], forks: {}, branches: { "o/r": { main: "a".repeat(40) } }, commits: {}, pullAdditions: {},
     writes: 0, nextId: 1000, nextIssue: 100, nextPull: 600, nextSha: 1,
     forbiddenNext: false, endlessIssues: false, endlessTimeline: false, endlessReviews: false, malformedIssues: false,
-    endlessComments: false, dropAssignees: false, noMain: false, files: {}, pinnedText: undefined, contentStatus: 200,
+    endlessComments: false, dropAssignees: false, noMain: false, files: {}, pinnedText: undefined, contentStatus: 200, refStatus: 200,
   }
   seedIssue(fake, 1, "open", [], "A plain issue", [])
   fake.comments[1] = [{ id: 900, node_id: "comment-900", body: "First note", user: { id: 8, login: "reviewer" }, created_at: "2026-01-02T00:00:00Z", updated_at: "2026-01-02T00:00:00Z", issue_url: `${API}/repos/o/r/issues/1` }]
@@ -275,6 +277,7 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       { id: 2, node_id: "rev-2", user: null, body: "note", state: "COMMENTED", commit_id: "d".repeat(40) },
     ], fake.endlessReviews)
     if (refOne && request.method === "GET") {
+      if (fake.refStatus !== 200) return try jsonResponse(request, fake.refStatus, { message: "Refused" })
       const sha = fake.noMain && refOne[3] === "main" ? undefined : fake.branches[`${refOne[1]}/${refOne[2]}`]?.[refOne[3]!]
       return try (sha === undefined ? jsonResponse(request, 404, { message: "Not Found" }) : jsonResponse(request, 200, { ref: `refs/heads/${refOne[3]}`, object: { sha, type: "commit" } }))
     }
@@ -300,7 +303,7 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       if (file === undefined) return try jsonResponse(request, 404, { message: "Not Found" })
       const pinned = /^[0-9a-f]{40}$/.test(url.searchParams.get("ref") ?? "") && fake.pinnedText !== undefined
       const text = pinned ? fake.pinnedText! : file
-      return try jsonResponse(request, 200, { type: "file", encoding: "base64", content: Base64.encode(text), sha: `sha-${text.length}` })
+      return try jsonResponse(request, 200, { type: "file", encoding: "base64", content: Base64.encode(text), sha: `sha-${text.length}` }, { etag: `"sha-${text.length}"` })
     }
     if (path === "/graphql" && request.method === "POST") {
       const input = (body?.variables as { input: { branch: { repositoryNameWithOwner: string; branchName: string }; expectedHeadOid: string; message: { headline: string; body?: string }; fileChanges: { additions: Array<{ path: string; contents: string }> } } }).input

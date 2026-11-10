@@ -1,6 +1,9 @@
 // A post's run and its agent-started reply, answered by a scripted model on a real local socket, under a ledger that
 // admits, refuses, or is unavailable, and a person whose role may change before the reply runs.
 import { it } from "@effect/vitest"
+import { FlowRuntime } from "@smthrs/flow"
+import { Unavailable } from "../src/core/Factory.vibe"
+import * as HistoryActions from "../worker/HistoryActions.vibe"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
 import { ActionDevice } from "../src/actions/execution.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
@@ -363,6 +366,43 @@ it.live("actions/steered-runs", () => run("actions/steered-runs", Text, (text) =
       try alarms(early, 2)
       const spoke = (try early.sequencer.read(0)).entries.filter((entry) => entry.author === "agent" && !entry.done)
       if (child !== "running" || spoke.length !== 0 || (try state(early, "early-reply")) !== "cancelled") throw new Finding({ report: `a reply cancelled before it spoke: run was ${child}, is ${try state(early, "early-reply")}, ${spoke.length} entries running` })
+
+      // A tour reads no input: a door that sends null still starts it.
+      const plain = try fresh("plain")
+      const nulled = try plain.host.start(request("plain", Tour._tag, null, w.person.id), "maintainer")
+      if (nulled !== null || (try state(plain, "plain")) !== "running") throw new Finding({ report: `a tour with null input answered ${nulled}` })
+
+      // The history the run reads is unavailable: its receipt is a failure, and its run settles failed.
+      const unread = try fresh("unread")
+      const dark = new Proxy(product, { get: (target, name) => name === "outline" ? () => fail(new Unavailable({ reason: "history" })) : Reflect.get(target, name) })
+      if ((try unread.host.start(request("unread", Show._tag, {}, w.person.id), "maintainer")) !== null) throw new Finding({ report: "a history read was refused" })
+      for (let turn = 0; turn < 3; turn++) try exit(unread.host.alarm(w.spend, model, dark))
+      if ((try state(unread, "unread")) !== "failed") throw new Finding({ report: `a history read of an unavailable history is ${try state(unread, "unread")}` })
+
+      // The model refuses the post's reply: the reply ends with an error, and the agent's run settles failed.
+      const refusing = try scriptedModel([{ kind: "status", status: 400, code: "content_policy" }])
+      const declined = try fresh("declined")
+      if ((try declined.host.start(request("declined", Post._tag, { text: "Question" }, w.person.id), "maintainer")) !== null) throw new Finding({ report: "a post was refused" })
+      for (let turn = 0; turn < 3; turn++) {
+        const outcome = try exit(declined.host.alarm(w.spend, { model: refusing.model, unusable: "" }, product))
+        if (outcome._tag === "Failure") throw new Finding({ report: `alarm ${turn} failed on a refused reply` })
+      }
+      const declinedRun = try state(declined, "declined-reply")
+      if (declinedRun !== "failed") throw new Finding({ report: `a refused reply's run is ${declinedRun}` })
+
+      // The engine cannot record a cancellation: cancelling a queued history run answers cancel-failed, and it stays queued.
+      const stuck = try fresh("stuck")
+      if ((try stuck.host.start(request("stuck", Show._tag, {}, w.person.id), "maintainer")) !== null) throw new Finding({ report: "a history read was refused" })
+      const jammed = { ...HistoryActions.make("stuck", stuck.storage), cancel: () => Effect.fail(new FlowRuntime.CancelRequestFailed({ code: "cancel_request_failed", executionId: "stuck", reason: "journal unavailable" })) }
+      const waiting = try state(stuck, "stuck")
+      const kept = try Runs.cancel("stuck", stuck.storage, stuck.sequencer, "stuck", "maintainer", jammed, w.authority, w.person.id)
+      if (kept !== "cancel-failed" || waiting !== "queued" || (try state(stuck, "stuck")) !== waiting) throw new Finding({ report: `a cancellation the engine refused answered ${kept}, its run ${try state(stuck, "stuck")}` })
+
+      // A request that names no owner asks the authority for the signed-out role at every step.
+      const ownerless = Runs.callerOf({ id: "ownerless", flow: Show._tag, input: {}, door: "agent", actor: "agent" }, w.authority)
+      if (ownerless.current === undefined) throw new Finding({ report: "a caller has no current role" })
+      const caller = try ownerless.current()
+      if (caller.role !== "viewer" || caller.name !== "Guest" || !caller.agent) throw new Finding({ report: `an ownerless caller is ${caller.role} ${caller.name}` })
     }
   }
   return true

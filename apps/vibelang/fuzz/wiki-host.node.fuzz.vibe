@@ -3,6 +3,8 @@
 // with each reason, journaled and recovered.
 import { it } from "@effect/vitest"
 import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { TestClock } from "effect/testing"
+import { GitHub } from "@smthrs/integrations"
 import { WebCrypto } from "@smthrs/crypto"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import { wikiPermission } from "../src/core/conversation.vibe"
@@ -13,6 +15,7 @@ import { WikiHost } from "../src/core/wikiFlows.vibe"
 import { WikiFailure, WikiState, type WikiRequest } from "../src/core/wikiSchemas.vibe"
 import { executeWiki, githubWikiHost, serveWiki, wikiFailureOf, WikiAuthority, type WikiRepository } from "../worker/Wiki.vibe"
 import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
+import { PublicReads } from "../worker/PublicReads.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { API, fakeClient, forked, seed } from "./issues-node-fake.vibe"
 import { delegated, reach, reached } from "./delegated.vibe"
@@ -158,7 +161,27 @@ it.live("wiki/served-failures", () => run("wiki/served-failures", Served, (input
   return true
 }))
 
-const WIKI_SCENARIOS = ["recover", "changed-payload", "missing-page", "lost", "default-host", "served-reasons", "refusals", "connected", "store", "delegated"] as const
+/**
+ * Runs `program` under a test clock stepped 250 ms at a time, letting real promises settle 10 ms between steps, so a
+ * flow's retries and deadlines pass in virtual time. A program still running after `limitSeconds` is a finding.
+ */
+effect function stepped<A, E>(program: A!E!never, limitSeconds: number) {
+  return try Effect.provide(effect {
+    const fiber = try forkChild(program)
+    for (let step = 0; step < limitSeconds * 4 && fiber.pollUnsafe() === undefined; step++) {
+      try TestClock.withLive(sleep("10 millis"))
+      try TestClock.adjust("250 millis")
+    }
+    const exit = fiber.pollUnsafe()
+    if (exit === undefined) {
+      try Fiber.interrupt(fiber)
+      throw new Finding({ report: `a flow outlived ${limitSeconds} virtual seconds` })
+    }
+    return try exit
+  }, TestClock.layer())
+}
+
+const WIKI_SCENARIOS = ["recover", "changed-payload", "missing-page", "lost", "default-host", "served-reasons", "refusals", "connected", "store", "delegated", "signed-out", "deadline"] as const
 const Steered = Schema.Struct({
   pick: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 31 })),
   text: Schema.Literals(["Edited text.", "Another edit.", "# Page\n\nNew words.\n"]),
@@ -232,6 +255,10 @@ const steeredScenario = (scenario: typeof WIKI_SCENARIOS[number], pick: number, 
       const bare = try githubWikiHost(repo).pipe(Effect.provideService(WikiAuthority, connected), Effect.provideService(HttpClient.HttpClient, fakeClient(fake)))
       const proposed = try Effect.result(bare.perform(proposal).pipe(Effect.provide(WebCrypto.layer)) as typeof WikiState.Type!WikiFailure)
       if (reasonOf(proposed) !== "connect") throw new Finding({ report: `a connected proposal with no storage answered ${reasonOf(proposed)}` })
+      // An unconnected person on a host with no storage: nothing keeps the text, and the host asks to connect.
+      const unconnected = try githubWikiHost(repo).pipe(Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, fakeClient(fake)))
+      const asked = try Effect.result(unconnected.perform(proposal).pipe(Effect.provide(WebCrypto.layer)) as typeof WikiState.Type!WikiFailure)
+      if (reasonOf(asked) !== "connect") throw new Finding({ report: `an unconnected proposal with no storage answered ${reasonOf(asked)}` })
       break
     }
     case "served-reasons": {
@@ -309,6 +336,17 @@ const steeredScenario = (scenario: typeof WIKI_SCENARIOS[number], pick: number, 
       const advanced = try via({ ...proposal, key: `advanced-${pick}` })
       fake.pinnedText = undefined
       if (reasonOf(advanced) !== "conflict") throw new Finding({ report: `a proposal behind an advanced main answered ${reasonOf(advanced)}` })
+      // A blank text, a repository without its base branch, and a branch read GitHub refuses: each stops before a write.
+      const blank = try via({ ...proposal, text: "  ", key: `blank-${pick}` })
+      if (reasonOf(blank) !== "empty") throw new Finding({ report: `a blank delegated proposal answered ${reasonOf(blank)}` })
+      fake.noMain = true
+      const headless = try via({ ...proposal, key: `headless-${pick}` })
+      fake.noMain = false
+      if (reasonOf(headless) !== "missing") throw new Finding({ report: `a proposal with no base branch answered ${reasonOf(headless)}` })
+      fake.refStatus = 403
+      const unread = try via({ ...proposal, key: `unread-${pick}` })
+      fake.refStatus = 200
+      if (reasonOf(unread) !== "forbidden") throw new Finding({ report: `a proposal whose branch read GitHub refused answered ${reasonOf(unread)}` })
       if (fake.pulls.length !== pullsBefore) throw new Finding({ report: "a refused proposal opened a review" })
       // The person's kept text is the one proposed, so the review replaces it.
       try promise(() => storage.put(`wiki/draft/7/${page}`, { page, text }))
@@ -316,6 +354,14 @@ const steeredScenario = (scenario: typeof WIKI_SCENARIOS[number], pick: number, 
       if ((try promise(() => storage.get(`wiki/draft/7/${page}`))) !== undefined) throw new Finding({ report: "a proposed text stayed kept after its review opened" })
       if ((try Ref.get(authorized)) === 0) throw new Finding({ report: "a delegated proposal skipped its authority" })
       if (proposed._tag !== "Success" || proposed.success.review === undefined || !fake.pulls.some((pull) => proposed.success.review!.endsWith(`/pull/${pull.number}`))) throw new Finding({ report: `a delegated proposal answered ${reasonOf(proposed)}` })
+      // GitHub reports the review under another person: no evidence of this person's proposal. The flow retries until
+      // its window closes, in virtual time, and the person gets unavailable.
+      const stranger: WikiAuthority.Shape = { current: () => succeed({ ...person, id: "99" }) }
+      const foreign = try stepped(Effect.result(executeWiki("wiki-delegated", storage, { ...proposal, key: `foreign-${pick}` }, repo).pipe(
+        Effect.provideService(WikiAuthority, stranger), Effect.provideService(HttpClient.HttpClient, site.http), Effect.provideService(GitHubDelegate, site.delegate),
+        Effect.provide(WebCrypto.layer), Effect.mapError((error) => error._tag === "WikiFailure" ? error : new WikiFailure({ reason: error._tag })),
+      )), 150)
+      if (reasonOf(foreign) !== "unavailable") throw new Finding({ report: `a review under another author answered ${reasonOf(foreign)}` })
       // The delegation ends at smithers.sh: the read falls back to the public page and reports the loss.
       try site.end()
       const lostBefore = try Ref.get(lost)
@@ -371,6 +417,45 @@ const steeredScenario = (scenario: typeof WIKI_SCENARIOS[number], pick: number, 
       }
       store.fail()
       if (reasonOf(try execute({ ...proposal, recovery: "r1" })) !== "connect") throw new Finding({ report: "the healed recovery did not retry the proposal" })
+      break
+    }
+    case "signed-out": {
+      // A visitor reads through the site's cached public client. When GitHub then refuses, the last good copy answers,
+      // marked with when GitHub confirmed it; through HTTP the visitor is a viewer, and a proposal is forbidden.
+      const cache = try GitHub.ReadCache.make({ store: try GitHub.ReadCache.memoryStore(), upstream: fakeClient(fake), freshFor: 0 })
+      const visitor: WikiAuthority.Shape = { current: () => succeed(undefined) }
+      const visiting = <A, E, R>(program: A!E!R) => program.pipe(
+        Effect.provideService(WikiAuthority, visitor), Effect.provideService(PublicReads, { client: cache }),
+        Effect.provideService(HttpClient.HttpClient, fakeClient(fake)), Effect.provide(WebCrypto.layer),
+      )
+      const readAs = (key: string) => Effect.result(visiting(executeWiki("wiki-visitor", storage, { op: "read", page, base: "", text: "", key }, repo)).pipe(
+        Effect.mapError((error) => error._tag === "WikiFailure" ? error : new WikiFailure({ reason: error._tag })),
+      ))
+      const fresh = try readAs(`fresh-${pick}`)
+      if (fresh._tag !== "Success" || fresh.success.stale !== undefined || fresh.success.role !== "viewer") throw new Finding({ report: `a visitor's read answered ${reasonOf(fresh)}` })
+      fake.contentStatus = 503
+      const kept = try readAs(`kept-${pick}`)
+      fake.contentStatus = 200
+      if (kept._tag !== "Success" || kept.success.stale === undefined || !kept.success.pages.some((entry) => entry.source.includes("repository text"))) throw new Finding({ report: `a visitor's read while GitHub refused answered ${reasonOf(kept)}` })
+      const serve = effect (body: unknown) => {
+        const web = try HttpClientRequest.toWeb(HttpClientRequest.bodyText(HttpClientRequest.post("https://fuzz.invalid/api/wiki"), JSON.stringify(body)))
+        const response = try Effect.provideService(visiting(serveWiki("wiki-visitor", storage, repo)), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
+        return { status: response.status, text: try promise(() => HttpServerResponse.toWeb(response).text()) }
+      }
+      const served = try serve({ op: "read", page, base: "", text: "", key: `served-${pick}` })
+      if (served.status !== 200 || (try Effect.try(() => JSON.parse(served.text) as { role?: string })).role !== "viewer") throw new Finding({ report: `a visitor's served read answered ${served.status}` })
+      const refused = try serve({ ...proposal, key: `visitor-${pick}` })
+      if (refused.status !== 403 || (try Effect.try(() => JSON.parse(refused.text) as { reason?: string })).reason !== "forbidden") throw new Finding({ report: `a visitor's proposal was served as ${refused.status}` })
+      break
+    }
+    case "deadline": {
+      // GitHub never answers a read: the read flow's engine deadline settles it, and the person gets unavailable.
+      const silent: WikiHost.Shape = { perform: () => Effect.never }
+      const deadline = try stepped(Effect.result(executeWiki("wiki-deadline", storage, { op: "read", page, base: "", text: "", key: `deadline-${pick}` }, repo).pipe(
+        Effect.provideService(WikiAuthority, authority), Effect.provideService(WikiHost, silent), Effect.provideService(HttpClient.HttpClient, fakeClient(fake)), Effect.provide(WebCrypto.layer),
+        Effect.mapError((error) => error._tag === "WikiFailure" ? error : new WikiFailure({ reason: error._tag })),
+      )), 30)
+      if (reasonOf(deadline) !== "unavailable") throw new Finding({ report: `a read past its deadline answered ${reasonOf(deadline)}` })
       break
     }
   }
