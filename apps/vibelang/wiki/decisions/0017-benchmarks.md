@@ -325,3 +325,11 @@ strict per-file gate exits 1 for 102 files. Merged benchmark-only coverage is 6,
 deadline, participation and a cross-origin sandbox principal). Issues and Wiki keep 130 and 59, almost all GitHub
 success paths.
 
+## Off-host runs (lane vl-gatefix, 2026-11-10)
+
+The complete receipts above ran on an idle 48-core nyc-01. On nyc-01 at load 80 to 95 and on a 4-vCPU box,
+`bench/browser.bench.vibe` failed on Playwright's 120 s web-server limit before any check, so the merged gate had no
+Chromium evidence; on a box, `bench/artifact.vibe` also refused every artifact because a packed tree has no `jj`
+checkout. The web-server limit is now `E2E_SERVER_SECONDS` (default 600 s, and the local global deadline grows with
+it), and the artifact takes `BENCH_REVISION` where there is no checkout. The command for a box is in 0016,
+"Measuring every gate".

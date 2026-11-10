@@ -13,8 +13,9 @@ brick                                   state         proof
 1c  dogfooding surfaces                 done (mock)   CLI, MCP server and skill over Factory; 21 surface tests plus the existing
                                                       25 tests; emitted CLI + stdio McpClient + exact schema parity (0009).
                                                       Live mode uses LiveFactory at VIBELANG_FACTORY_URL (0010).
-1d  formal proof gates                 done (local)  0018: seventeen marked production modules, 962/962 current mutations rejected;
-                                                      proof, mutation and inventory gates run in PACKAGE.ts. Whole-app work is 1g.
+1d  formal proof gates                 done (local)  0018: 33 marked production modules verify; 1601/1601 current mutations rejected
+                                                      (vl-audit-vl29, 2026-11-10); proof, mutation and inventory gates run in PACKAGE.ts.
+                                                      Whole-app work is 1g.
 1f  Learn more: live app tutorial        done (local)  0014/VL-31: ten theatre steps, exact subtitles, optional sound, pause and seek;
                                                       Mock/live share one durable flow; scene, flow, workerd and browser checks
 1g  every suite covers the whole app    started       VL-29: unit, fuzz and benchmark coverage at 100% each; proofs of
@@ -101,7 +102,8 @@ brick                                   state         proof
   each workerd isolate's Istanbul counters with Node's V8 report by source position: 44.88% lines, 29.46% branches
   (Node alone: 13.01%, 4.64%). 137 of 160 files remain below 100%.
 
-- **Benchmarks (0017, vl-bench): not done.** Hosted-broker main `ca292c70`: 54 files / 128 behavior checks pass; independent source-profile coverage is 5,827/7,036 src/worker lines (82.82%), with 95 files below strict thresholds. Twenty added groups, explicit sync/async runner controls and validated local/live observations are retained. No unit/fuzz counters, src/worker exclusions or tolerance changes. Exact future Container/GitHub/OAuth/deployed-API cases remain in 0017.
+- **Benchmarks (0017, vl-bench): not done.** vl-bench's last receipt: 6,760/7,468 lines (90.52%), 100 files below
+  strict thresholds; vl-audit-vl29's merge without Chromium evidence: 109 of 159 files below (2026-11-10). Earlier, hosted-broker main `ca292c70`: 54 files / 128 behavior checks pass; independent source-profile coverage was 5,827/7,036 src/worker lines (82.82%), with 95 files below strict thresholds. Twenty added groups, explicit sync/async runner controls and validated local/live observations are retained. No unit/fuzz counters, src/worker exclusions or tolerance changes. Exact future Container/GitHub/OAuth/deployed-API cases remain in 0017.
 
 - **Both acceptance gates (0027, lane vl-gates): implemented locally.** Maintainer-person VIP approval; Astra, Sol, Fable and Opus same-revision LGTM/A- or better specification acceptance; keep acceptance on edits and retain prior reset history, real flows, proofs/mutations, scenes, browser and workerd routes. Lead deploys.
 
@@ -127,6 +129,8 @@ brick                                   state         proof
   findings of the 2026-11-10 security review fixed with failing-first tests; deployment adds `BROKER_LIMIT`. Lead
   deploys.
 - **Test quality (0015, lane vl-test-quality): landed.** Review findings 1, 2 and 4 to 11 fixed with mutation checks; sign-in wall-clock waits and the protocol-double ruling (finding 3) open.
+
+- **Every VL-29 gate measurable (0016 "Measuring every gate", lane vl-gatefix): landed.** One `run-heavy` command per gate runs on a 4-vCPU box: web-server limit from `E2E_SERVER_SECONDS`, Chromium evidence stored once per run, `BENCH_REVISION` off a checkout, relative `lsc`, fuzz install check, fuzz roster equal to the unit gate's, proof inventory read from `//@ verify`. Box image needs Node 26 and git >= 2.41 (lead).
 
 - **Public reads (0031, lane vl-public-reads): implemented locally.** Signed-out wiki, issue and history reads go through
   smithers.sh's App (0165 addendum), cached with ETags and served stale when GitHub refuses; `GITHUB_TOKEN` is gone.

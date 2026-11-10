@@ -604,3 +604,15 @@ Each mutant changed one line, ran one target, and was restored: a session cookie
 pair (`history/sequencer-operations`), a live failure code replaced by `unavailable` (`actions/live-faults`), a search
 query read from the wrong parameter (`history/wire-paths`), and GitHub's slow-down interval ignored
 (`signin/steered`, after steering its interval above five seconds). Each target failed.
+
+## Measurable on any machine (lane vl-gatefix, 2026-11-10)
+
+- `surfaces/cli-arguments` and `surfaces/mcp-arguments` spawn a process per execution: replay and the first execution
+  take 4.6 s on an idle 4-vCPU box, so at the 5 s coverage budget they ran none (`NoExecution`). They declare
+  `REPLAY_FLOOR` (15 s), as `issues`, `objects`, `wiki` and `actions` steered targets do. `NoExecution` still fails a
+  target that executes nothing.
+- The gate's roster is the unit gate's: every file under `src/`, `worker/`, `scripts/` and `infra/`, with no exclusion.
+  `worker/Api.vibe` and the `scripts/` and `infra/` files count, and fail, until a target reaches them (VL-14).
+- `pnpm fuzz` checks the flow's dependencies first (`scripts/fuzz-preflight.vibe`); install them with
+  `--filter "@smithers/release-workflows..."` beside the app's filter. The browser stage's web-server limit is
+  `E2E_SERVER_SECONDS` (default 600 s). Commands per gate: 0016, "Measuring every gate".
