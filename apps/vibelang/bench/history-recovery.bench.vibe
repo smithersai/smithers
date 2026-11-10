@@ -100,3 +100,41 @@ it("history rejects malformed next events without losing sequence progress", asy
   }).run(quick)
   await runPromise(artifact("history-malformed-replay", "Vitest built-in bench; ten invalid event shapes across all seven event kinds, each checked as next, duplicate and gap. Invalid next content advances only the cursor; duplicates/gaps retain the original object and full state.", ["Pure replay boundary, deliberately malformed events; not storage transport corruption or authenticated admission."], result))
 })
+
+
+it("folds unannotated main commits into their scope's epic exactly once", async ({ bench }) => {
+  const result = await workload(bench, "history-fold-unannotated", "async", async () => {
+    await runPromise(scoped(effect {
+      const store = try memoryStore()
+      const history = try make(store)
+      const first = { sha: "cccccccccccc", change: "first-change", title: "fix(compiler): First fix", message: "No mythical trailer" }
+      const second = { sha: "dddddddddddd", change: "second-change", title: "fix(compiler): Second fix", message: "Mythical: m999\n" }
+      const one = try history.fold(first)
+      const two = try history.fold(second)
+      const beforeDuplicate = try history.read()
+      const duplicate = try history.fold(second)
+      const afterDuplicate = try history.read()
+      const recovered = try make(store)
+      const restored = try recovered.read()
+      const events = try store.since(0)
+      try Effect.try(() => {
+        expect([one, two, duplicate]).toEqual([{ id: "m1", refusal: null }, { id: "m2", refusal: null }, { id: "", refusal: "duplicate" }])
+        expect(restored).toEqual({
+          seq: 5, main: second.sha, epics: [{ id: "e1", title: "The compiler" }],
+          commits: [
+            { id: "m1", epic: "e1", rank: 0, title: first.title, state: "landed", task: "", lane: "", notes: [] },
+            { id: "m2", epic: "e1", rank: 1, title: second.title, state: "landed", task: "", lane: "", notes: [] },
+          ],
+          real: [
+            { sha: first.sha, change: first.change, title: first.title, mythical: "m1" },
+            { sha: second.sha, change: second.change, title: second.title, mythical: "m2" },
+          ],
+        })
+        expect(events.map(event => event.type)).toEqual(["EpicOpened", "Planned", "Folded", "Planned", "Folded"])
+        expect(events.map(event => event.seq)).toEqual([1, 2, 3, 4, 5])
+        expect(afterDuplicate).toBe(beforeDuplicate)
+      })
+    }))
+  }).run(quick)
+  await runPromise(artifact("history-fold-unannotated", "Vitest built-in bench; the production history sequencer over its real memory store. Fold a main commit with no Mythical trailer into a newly opened compiler epic, then one with an unknown trailer into the same epic; repeat the second SHA and reopen the sequencer. Exact independent retained history, five event kinds/cursors, one epic and duplicate no-op identity checked. Fresh store each callback; initialization and assertions included.", ["In-memory history import; no GitHub read, repository mutation, storage IO or actual merge queue."], result))
+})

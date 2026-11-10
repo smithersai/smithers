@@ -1,0 +1,101 @@
+// @vitest-environment node
+// The real startup wrapper and budget over the object-storage ledger; only the ledger's reads are faulty.
+import { it, expect } from "@effect/vitest"
+import { HttpServerResponse } from "effect/http"
+import * as Startup from "../worker/ObjectStartup.vibe"
+import * as Budget from "../worker/Budget.vibe"
+import { ledgerOver } from "../worker/ObjectStorage.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const identity = { id: { toString: () => "benchmark-budget" } } as never
+
+it("a failed object startup stays inspectable and a new call recovers its real budget", async ({ bench }) => {
+  const result = await workload(bench, "object-startup-recovery", "async", async () => {
+    await runPromise(scoped(effect {
+      const storage = try Effect.try(() => objectStorage())
+      const real = ledgerOver(storage)
+      try real.write({ spent: 2 })
+      let unavailable = true
+      let reads = 0
+      const faulty: Budget.Ledger = {
+        ...real,
+        read: effect key => {
+          reads++
+          if (unavailable) try Effect.die(new Error("private ledger detail"))
+          return try real.read(key)
+        },
+      }
+      const api = try Startup.make("Budget", identity, effect {
+        try Startup.step("storage", faulty.read(Budget.SPENT))
+        return try Budget.make(faulty, 10)
+      }, { admit: true, spend: true })
+      const refused = try exit(api.admit("answer", 5))
+      const failed = try api.health()
+      const beforeHealth = reads
+      try api.health()
+      try api.health()
+      const afterHealth = reads
+      // The failing HTTP forwarding path must not reveal the ledger's private failure.
+      const forwarded = try Startup.make("History", identity, effect {
+        try Startup.step("storage", faulty.read(Budget.SPENT))
+        return { fetch: succeed(HttpServerResponse.text("ready")) }
+      }, { fetch: true })
+      const response = try forwarded.fetch
+      unavailable = false
+      const admitted = try api.admit("answer", 5)
+      try api.spend("answer", 5, true, 5)
+      try api.spend("answer", 5, true, 5)
+      const spent = try real.read(Budget.SPENT)
+      const reserved = try real.read(Budget.RESERVED)
+      const hold = try real.read("hold/answer")
+      const recorded = try real.read("reply/answer")
+      const ready = try api.health()
+      try Effect.try(() => {
+        expect(refused._tag).toBe("Failure")
+        expect(failed).toEqual({ objectClass: "Budget", objectId: "benchmark-budget", codeVersion: "unknown", startup: "failed", step: "storage" })
+        expect(JSON.stringify(failed)).not.toContain("private ledger detail")
+        expect(afterHealth).toBe(beforeHealth)
+        expect(response.status).toBe(503)
+        expect(response.headers["cache-control"]).toBe("no-store")
+        expect(admitted).toBe(true)
+        expect(spent).toBe(7)
+        expect(reserved).toBe(0)
+        expect(hold).toBe(0)
+        expect(recorded).toBe(5)
+        expect(ready).toEqual({ ...failed, startup: "ready" })
+      })
+    }))
+  }).run(slow)
+  await runPromise(artifact("object-startup-recovery", "Vitest built-in bench; production ObjectStartup wrapper and Budget over the real object-storage ledger. An injected faulty Ledger read fails initialization; health remains available without retrying and HTTP forwarding returns 503. Restore the ledger, call again, reserve five tokens, settle the reported five twice and require exactly seven total tokens, one five-token receipt and no remaining hold and ready health with stable identity. Three fresh scoped hosts, initialization and assertions included.", ["Node SQLite/KV host adapter and wrapper over the real budget; no workerd RPC, host eviction, network or model. Deliberate ledger failure; this is initialization/recovery overhead, not normal request latency."], result))
+})
+
+it("a call expires while startup is held in a storage critical section, then recovers", async ({ bench }) => {
+  const result = await workload(bench, "object-startup-wait-deadline", "async", async () => {
+    await runPromise(scoped(effect {
+      const gate = try Deferred.make<void>()
+      const storage = try Effect.try(() => objectStorage())
+      const ledger = ledgerOver(storage)
+      const held: Budget.Ledger = { ...ledger, read: effect key => { uninterruptible { try Deferred.await(gate); return try ledger.read(key) } } }
+      const api = try Startup.make("Budget", identity, effect {
+        try Startup.step("storage", held.read(Budget.SPENT))
+        return try Budget.make(ledger, 10)
+      }, { admit: true, spend: true })
+      const refused = try exit(api.admit("deadline", 1))
+      const waiting = try api.health()
+      // Release before assertions so even a failed assertion closes the initializer's scope.
+      try Deferred.succeed(gate, undefined)
+      // Join the first initializer after its deadline; its timeout can settle only after the critical section ends.
+      try exit(api.admit("deadline", 1))
+      const admitted = try api.admit("deadline", 1)
+      const recovered = try api.health()
+      try Effect.try(() => {
+        expect(refused._tag).toBe("Failure")
+        expect(waiting).toMatchObject({ startup: "starting", step: "storage" })
+        expect(admitted).toBe(true)
+        expect(recovered).toMatchObject({ startup: "ready", step: "storage" })
+      })
+    }))
+  }).run(slow)
+  await runPromise(artifact("object-startup-wait-deadline", "Vitest built-in bench; real ObjectStartup call deadline while an injected Ledger read is held in an uninterruptible storage critical section. Health must remain starting at storage, the waiting call fails, then releasing the ledger lets the next call admit and health become ready. Three fresh hosts; real five-second deadline, initialization, recovery and assertions included.", ["Includes the designed five-second deadline, not a CPU-throughput observation. Node memory storage, no actual disk stall, workerd scheduling or network. The latch is always released before assertions."], result))
+})

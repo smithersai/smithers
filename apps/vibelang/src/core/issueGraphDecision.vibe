@@ -1,0 +1,277 @@
+// The issue graph's decisions (wiki/decisions/0022-issues-and-vips.md, 0018 "Fifth proofs lane"). An issue's one edge
+// is its parent; GitHub sub-issues are the only edges the product reads or writes. Every write that changes the graph
+// goes through `issuesAfter` in the mock. The live Worker uses the same `canLinkIssues` check and asks GitHub to
+// write the corresponding edges; GitHub owns their storage and identity allocation. `issuesAfter` proves the local
+// invariant: from a forest, every accepted write leads to a forest, so no sequence of these writes creates a cycle.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). The functions below `issuesAfter` are specification only: nothing calls them at run time,
+// and `verify/proof_additions.py` supplies their checked induction steps.
+import { approveVip, declineVip, setCommitment, type IssueNote, type IssueOperation, type IssueRecord, type Role } from "./conversation.vibe"
+
+/**
+ * Specification measure only: the first-match parent reached after exactly steps links; missing nodes are -1. Opaque:
+ * proofs reason from its contract, and only `canLinkIssues`, which walks it link by link, sees its body.
+ */
+//@ verify
+//@ opaque
+//@ requires steps >= 0
+//@ ensures steps == 0 ==> \result == start
+//@ ensures steps > 0 && issueAncestorAt(items, start, steps - 1) == 0 ==> \result == 0
+//@ ensures steps > 0 && issueAncestorAt(items, start, steps - 1) != 0 && forall(i, 0 <= i && i < items.length ==> items[i].number != issueAncestorAt(items, start, steps - 1)) ==> \result == -1
+//@ ensures steps > 0 && issueAncestorAt(items, start, steps - 1) != 0 ==> forall(i, 0 <= i && i < items.length && items[i].number == issueAncestorAt(items, start, steps - 1) && forall(j, 0 <= j && j < i ==> items[j].number != issueAncestorAt(items, start, steps - 1)) ==> \result == items[i].parent)
+//@ decreases steps
+export function issueAncestorAt(items: ReadonlyArray<IssueRecord>, start: number, steps: number): number {
+  if (steps <= 0) return start
+  const previous = issueAncestorAt(items, start, steps - 1)
+  if (previous === 0) return 0
+  const found = items.find((item) => item.number === previous)
+  if (found === undefined) return -1
+  return found.parent
+}
+
+/** Each issue has one parent. Reject self links, missing parents and any cycle, including malformed input trees. */
+//@ verify
+//@ reveal issueAncestorAt
+//@ ensures \result ==> child > 0 && parent > 0 && child != parent
+//@ ensures \result ==> exists(i, 0 <= i && i < items.length && items[i].number == child)
+//@ ensures \result ==> exists(k, 0 <= k && k <= items.length + 1 && issueAncestorAt(items, parent, k) == 0 && forall(t, 0 <= t && t < k ==> issueAncestorAt(items, parent, t) != child))
+export function canLinkIssues(items: ReadonlyArray<IssueRecord>, child: number, parent: number): boolean {
+  if (parent <= 0 || child <= 0 || child === parent || !items.some((i) => i.number === child)) return false
+  let next = parent
+  let steps = 0
+  while (next !== 0 && steps <= items.length) {
+    //@ invariant 0 <= steps && steps <= items.length + 1
+    //@ invariant next == issueAncestorAt(items, parent, steps)
+    //@ invariant forall(k, 0 <= k && k < steps ==> issueAncestorAt(items, parent, k) != child)
+    //@ decreases items.length + 1 - steps
+    if (next === child) return false
+    const found = items.find((i) => i.number === next)
+    if (found === undefined) return false
+    next = found.parent
+    steps += 1
+  }
+  return next === 0
+}
+
+/** One write to an existing issue, as the host authorized it. `note` is the event line the write adds. */
+export interface IssueEdit {
+  readonly op: IssueOperation
+  readonly number: number
+  readonly parent: number
+  readonly assignee: string
+  readonly text: string
+  readonly note: string
+  readonly actor: string
+  readonly role: Role
+  readonly kind: string
+  readonly at: string
+}
+
+/** Whether `op` creates an issue: a new one, a proposal, or a split under its parent. */
+//@ verify
+//@ ensures \result == (op == "new" || op == "propose" || op == "split")
+export function issueCreates(op: IssueOperation): boolean {
+  return op === "new" || op === "propose" || op === "split"
+}
+
+/** The next number within JavaScript's safe integer capacity; the mock's retained positive identities satisfy this domain. */
+//@ verify
+//@ requires forall(i, 0 <= i && i < items.length ==> 0 < items[i].number && items[i].number < 9007199254740991)
+//@ ensures 0 < \result && \result <= 9007199254740991
+//@ ensures forall(i, 0 <= i && i < items.length ==> items[i].number < \result)
+export function nextIssueNumber(items: ReadonlyArray<IssueRecord>): number {
+  let top = 0
+  let i = 0
+  while (i < items.length) {
+    //@ invariant 0 <= i && i <= items.length
+    //@ invariant 0 <= top && top < 9007199254740991
+    //@ invariant forall(j, 0 <= j && j < i ==> items[j].number <= top)
+    //@ decreases items.length - i
+    if (items[i]!.number > top) top = items[i]!.number
+    i++
+  }
+  return top + 1
+}
+
+/** `issue`'s notes and one more at their end. */
+//@ verify
+//@ ensures \result.length == issue.notes.length + 1
+function noted(issue: IssueRecord, author: string, text: string, event: boolean): ReadonlyArray<IssueNote> {
+  return [...issue.notes, { age: "just now", author, text, event }]
+}
+
+/** An existing issue after `edit`. Only a link changes its parent; nothing changes its number. */
+//@ verify
+//@ requires edit.op != "commit" || edit.assignee != ""
+//@ ensures \result.number == issue.number
+//@ ensures \result.parent == (edit.op == "link" ? edit.parent : issue.parent)
+export function editedIssue(issue: IssueRecord, edit: IssueEdit): IssueRecord {
+  if (edit.op === "comment") return { ...issue, comments: issue.comments + 1, notes: noted(issue, edit.actor, edit.text, false) }
+  if (edit.op === "commit") return { ...setCommitment(issue, edit.assignee, true), notes: noted(issue, edit.actor, edit.note, true) }
+  if (edit.op === "uncommit") return { ...setCommitment(issue, "", false), notes: noted(issue, edit.actor, edit.note, true) }
+  if (edit.op === "link") return { ...issue, parent: edit.parent, notes: noted(issue, edit.actor, edit.note, true) }
+  if (edit.op === "accept") return { ...approveVip(issue, edit.role, edit.kind, edit.actor, edit.at), notes: noted(issue, edit.actor, edit.note, true) }
+  if (edit.op === "decline") return { ...declineVip(issue), notes: noted(issue, edit.actor, edit.note, true) }
+  return issue
+}
+
+/**
+ * The issues after one accepted write. A created issue goes first, under the split issue or else at the root; any
+ * other write edits each issue numbered `edit.number`.
+ *
+ * From a forest, every write the host accepts leads to a forest, so no sequence of writes creates a cycle. A forest's
+ * numbers are positive, every parent is the root (0) or an issue, and no issue is its own ancestor. The premises are
+ * the host's checks before it writes: a created issue takes `nextIssueNumber`, a split's issue exists, and a link
+ * passed `canLinkIssues`, whose guarantee is the link premise word for word.
+ */
+//@ verify
+//@ requires edit.op != "commit" || edit.assignee != ""
+//@ ensures issueCreates(edit.op) ==> \result.length == items.length + 1 && \result[0].number == created.number && \result[0].parent == (edit.op == "split" ? edit.number : 0) && forall(i, 0 <= i && i < items.length ==> \result[i + 1] == items[i])
+//@ ensures !issueCreates(edit.op) ==> \result.length == items.length && forall(i, 0 <= i && i < items.length ==> \result[i].number == items[i].number && \result[i].parent == (items[i].number == edit.number && edit.op == "link" ? edit.parent : items[i].parent))
+//@ ensures forall(i, 0 <= i && i < items.length ==> items[i].number > 0) && forall(i, 0 <= i && i < items.length ==> items[i].parent == 0 || exists(j, 0 <= j && j < items.length && items[j].number == items[i].parent)) && forall(i, forall(k, 0 <= i && i < items.length && k >= 1 ==> issueAncestorAt(items, items[i].number, k) != items[i].number)) && (!issueCreates(edit.op) || (created.number > 0 && forall(i, 0 <= i && i < items.length ==> items[i].number < created.number))) && (edit.op != "split" || exists(j, 0 <= j && j < items.length && items[j].number == edit.number)) && (edit.op != "link" || (edit.number > 0 && edit.parent > 0 && edit.number != edit.parent && exists(i, 0 <= i && i < items.length && items[i].number == edit.number) && exists(k, 0 <= k && k <= items.length + 1 && issueAncestorAt(items, edit.parent, k) == 0 && forall(t, 0 <= t && t < k ==> issueAncestorAt(items, edit.parent, t) != edit.number)))) ==> forall(i, 0 <= i && i < \result.length ==> \result[i].number > 0)
+//@ ensures forall(i, 0 <= i && i < items.length ==> items[i].number > 0) && forall(i, 0 <= i && i < items.length ==> items[i].parent == 0 || exists(j, 0 <= j && j < items.length && items[j].number == items[i].parent)) && forall(i, forall(k, 0 <= i && i < items.length && k >= 1 ==> issueAncestorAt(items, items[i].number, k) != items[i].number)) && (!issueCreates(edit.op) || (created.number > 0 && forall(i, 0 <= i && i < items.length ==> items[i].number < created.number))) && (edit.op != "split" || exists(j, 0 <= j && j < items.length && items[j].number == edit.number)) && (edit.op != "link" || (edit.number > 0 && edit.parent > 0 && edit.number != edit.parent && exists(i, 0 <= i && i < items.length && items[i].number == edit.number) && exists(k, 0 <= k && k <= items.length + 1 && issueAncestorAt(items, edit.parent, k) == 0 && forall(t, 0 <= t && t < k ==> issueAncestorAt(items, edit.parent, t) != edit.number)))) ==> forall(i, 0 <= i && i < \result.length ==> \result[i].parent == 0 || exists(j, 0 <= j && j < \result.length && \result[j].number == \result[i].parent))
+//@ ensures forall(i, 0 <= i && i < items.length ==> items[i].number > 0) && forall(i, 0 <= i && i < items.length ==> items[i].parent == 0 || exists(j, 0 <= j && j < items.length && items[j].number == items[i].parent)) && forall(i, forall(k, 0 <= i && i < items.length && k >= 1 ==> issueAncestorAt(items, items[i].number, k) != items[i].number)) && (!issueCreates(edit.op) || (created.number > 0 && forall(i, 0 <= i && i < items.length ==> items[i].number < created.number))) && (edit.op != "split" || exists(j, 0 <= j && j < items.length && items[j].number == edit.number)) && (edit.op != "link" || (edit.number > 0 && edit.parent > 0 && edit.number != edit.parent && exists(i, 0 <= i && i < items.length && items[i].number == edit.number) && exists(k, 0 <= k && k <= items.length + 1 && issueAncestorAt(items, edit.parent, k) == 0 && forall(t, 0 <= t && t < k ==> issueAncestorAt(items, edit.parent, t) != edit.number)))) ==> forall(i, forall(k, 0 <= i && i < \result.length && k >= 1 ==> issueAncestorAt(\result, \result[i].number, k) != \result[i].number))
+export function issuesAfter(items: ReadonlyArray<IssueRecord>, created: IssueRecord, edit: IssueEdit): ReadonlyArray<IssueRecord> {
+  if (issueCreates(edit.op)) return [{ ...created, parent: edit.op === "split" ? edit.number : 0 }, ...items]
+  return items.map((issue) => issue.number === edit.number ? editedIssue(issue, edit) : issue)
+}
+
+/** Specification only: the first issue numbered `number` among the first `end`, when one is. */
+//@ verify
+//@ requires 0 <= end && end <= items.length
+//@ ensures exists(i, 0 <= i && i < end && items[i].number == number) ==> exists(i, 0 <= i && i < end && items[i].number == number && forall(j, 0 <= j && j < i ==> items[j].number != number))
+//@ decreases end
+export function issueFirstNumbered(items: ReadonlyArray<IssueRecord>, number: number, end: number): boolean {
+  return end <= 0 ? true : issueFirstNumbered(items, number, end - 1)
+}
+
+/** Specification only: one more link is the parent of where `steps` links reach. */
+//@ verify
+//@ requires steps >= 0
+//@ ensures issueAncestorAt(items, start, steps + 1) == issueAncestorAt(items, issueAncestorAt(items, start, steps), 1)
+export function issueAncestorStep(items: ReadonlyArray<IssueRecord>, start: number, steps: number): boolean {
+  return true
+}
+
+/** Specification only: `a + b` links are `a` links, then `b` more. */
+//@ verify
+//@ requires a >= 0 && b >= 0
+//@ ensures issueAncestorAt(items, start, a + b) == issueAncestorAt(items, issueAncestorAt(items, start, a), b)
+//@ decreases b
+export function issueAncestorJoin(items: ReadonlyArray<IssueRecord>, start: number, a: number, b: number): boolean {
+  return b <= 0 ? true : issueAncestorJoin(items, start, a, b - 1)
+}
+
+/** Specification only: the root stays the root. */
+//@ verify
+//@ requires steps >= 0
+//@ ensures issueAncestorAt(items, 0, steps) == 0
+//@ decreases steps
+export function issueRootStays(items: ReadonlyArray<IssueRecord>, steps: number): boolean {
+  return steps <= 0 ? true : issueRootStays(items, steps - 1)
+}
+
+/** Specification only: when every number is positive, a missing issue (-1) stays missing. */
+//@ verify
+//@ requires steps >= 0
+//@ requires forall(i, 0 <= i && i < items.length ==> items[i].number > 0)
+//@ ensures issueAncestorAt(items, -1, steps) == -1
+//@ decreases steps
+export function issueMissingStays(items: ReadonlyArray<IssueRecord>, steps: number): boolean {
+  return steps <= 0 ? true : issueMissingStays(items, steps - 1)
+}
+
+/** Specification only: no link from `start` reaches a positive number that no issue has and no issue names as parent. */
+//@ verify
+//@ requires steps >= 0
+//@ requires fresh > 0 && start != fresh
+//@ requires forall(i, 0 <= i && i < items.length ==> items[i].number != fresh && items[i].parent != fresh)
+//@ ensures issueAncestorAt(items, start, steps) != fresh
+//@ decreases steps
+export function issueAvoids(items: ReadonlyArray<IssueRecord>, start: number, fresh: number, steps: number): boolean {
+  return steps <= 0 ? true : issueAvoids(items, start, fresh, steps - 1)
+}
+
+/** Specification only: a positive number whose links reach the root, when every number is positive, is an issue. */
+//@ verify
+//@ requires forall(i, 0 <= i && i < items.length ==> items[i].number > 0)
+//@ requires number > 0 && steps >= 0 && issueAncestorAt(items, number, steps) == 0
+//@ ensures exists(j, 0 <= j && j < items.length && items[j].number == number)
+export function issueRootedExists(items: ReadonlyArray<IssueRecord>, number: number, steps: number): boolean {
+  return true
+}
+
+/** Specification only: when only `child`'s parent changes, a walk that never stands on `child`, before or after, is unchanged. */
+//@ verify
+//@ requires steps >= 0
+//@ requires after.length == items.length
+//@ requires forall(i, 0 <= i && i < items.length ==> after[i].number == items[i].number && after[i].parent == (items[i].number == child ? parent : items[i].parent))
+//@ ensures forall(t, 0 <= t && t < steps ==> issueAncestorAt(items, start, t) != child || issueAncestorAt(after, start, t) != child) ==> issueAncestorAt(after, start, steps) == issueAncestorAt(items, start, steps)
+//@ decreases steps
+export function issueLinkFrame(items: ReadonlyArray<IssueRecord>, after: ReadonlyArray<IssueRecord>, child: number, parent: number, start: number, steps: number): boolean {
+  return steps <= 0 ? true : issueLinkFrame(items, after, child, parent, start, steps - 1)
+}
+
+/** Specification only: with one issue added in front, a walk that never stands on its number is unchanged. */
+//@ verify
+//@ requires steps >= 0
+//@ requires after.length == items.length + 1
+//@ requires forall(i, 0 <= i && i < items.length ==> after[i + 1] == items[i])
+//@ ensures forall(t, 0 <= t && t < steps ==> issueAncestorAt(items, start, t) != after[0].number) ==> issueAncestorAt(after, start, steps) == issueAncestorAt(items, start, steps)
+//@ decreases steps
+export function issueAddFrame(items: ReadonlyArray<IssueRecord>, after: ReadonlyArray<IssueRecord>, start: number, steps: number): boolean {
+  return steps <= 0 ? true : issueAddFrame(items, after, start, steps - 1)
+}
+
+/** Specification only: when numbers and parents are unchanged, so is every walk. */
+//@ verify
+//@ requires steps >= 0
+//@ requires after.length == items.length
+//@ requires forall(i, 0 <= i && i < items.length ==> after[i].number == items[i].number && after[i].parent == items[i].parent)
+//@ ensures issueAncestorAt(after, start, steps) == issueAncestorAt(items, start, steps)
+//@ decreases steps
+export function issueSameEdges(items: ReadonlyArray<IssueRecord>, after: ReadonlyArray<IssueRecord>, start: number, steps: number): boolean {
+  return steps <= 0 ? true : issueSameEdges(items, after, start, steps - 1)
+}
+
+/** Specification only: after the link, the child's walk passes through the parent's old walk and never returns to the child. */
+//@ verify
+//@ requires child > 0 && steps >= 1
+//@ requires exists(i, 0 <= i && i < items.length && items[i].number == child)
+//@ requires 0 <= root && issueAncestorAt(items, parent, root) == 0 && forall(t, 0 <= t && t < root ==> issueAncestorAt(items, parent, t) != child)
+//@ requires after.length == items.length
+//@ requires forall(i, 0 <= i && i < items.length ==> after[i].number == items[i].number && after[i].parent == (items[i].number == child ? parent : items[i].parent))
+//@ ensures issueAncestorAt(after, child, steps) != child
+export function issueLinkChildFree(items: ReadonlyArray<IssueRecord>, after: ReadonlyArray<IssueRecord>, child: number, parent: number, root: number, steps: number): boolean {
+  return true
+}
+
+/**
+ * Specification only: a link `canLinkIssues` accepts creates no cycle. Its premises are that check's guarantees;
+ * `root` is the number of links after which the parent's walk reaches the root without passing the child.
+ */
+//@ verify
+//@ requires child > 0 && parent > 0 && child != parent
+//@ requires exists(i, 0 <= i && i < items.length && items[i].number == child)
+//@ requires 0 <= root && issueAncestorAt(items, parent, root) == 0 && forall(t, 0 <= t && t < root ==> issueAncestorAt(items, parent, t) != child)
+//@ requires after.length == items.length
+//@ requires forall(i, 0 <= i && i < items.length ==> after[i].number == items[i].number && after[i].parent == (items[i].number == child ? parent : items[i].parent))
+//@ requires forall(i, forall(k, 0 <= i && i < items.length && k >= 1 ==> issueAncestorAt(items, items[i].number, k) != items[i].number))
+//@ ensures forall(i, forall(k, 0 <= i && i < after.length && k >= 1 ==> issueAncestorAt(after, after[i].number, k) != after[i].number))
+export function issueLinkAcyclic(items: ReadonlyArray<IssueRecord>, after: ReadonlyArray<IssueRecord>, child: number, parent: number, root: number): boolean {
+  return true
+}
+
+/** Specification only: an issue added in front with a number no issue has or names, under the root or an issue, creates no cycle. */
+//@ verify
+//@ requires after.length == items.length + 1
+//@ requires forall(i, 0 <= i && i < items.length ==> after[i + 1] == items[i])
+//@ requires after[0].number > 0 && forall(i, 0 <= i && i < items.length ==> items[i].number < after[0].number)
+//@ requires after[0].parent == 0 || exists(j, 0 <= j && j < items.length && items[j].number == after[0].parent)
+//@ requires forall(i, 0 <= i && i < items.length ==> items[i].parent == 0 || exists(j, 0 <= j && j < items.length && items[j].number == items[i].parent))
+//@ requires forall(i, forall(k, 0 <= i && i < items.length && k >= 1 ==> issueAncestorAt(items, items[i].number, k) != items[i].number))
+//@ ensures forall(i, forall(k, 0 <= i && i < after.length && k >= 1 ==> issueAncestorAt(after, after[i].number, k) != after[i].number))
+export function issueAddAcyclic(items: ReadonlyArray<IssueRecord>, after: ReadonlyArray<IssueRecord>): boolean {
+  return true
+}

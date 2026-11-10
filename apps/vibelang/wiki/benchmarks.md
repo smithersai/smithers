@@ -3614,6 +3614,53 @@ Limitations: the sandbox is the product's in-memory machine, not a container; hi
 memory; each sample includes building `MockFactory`, so the first sample (1,116 ms) carries the seed load.
 
 
+## Remaining-gap workloads (2026-11-10, nyc-01)
+
+Vitest built-in bench, Node 26.5.0, 15:54–15:55 UTC. Launch load 39.48 on the shared host; two cores reserved through
+run-heavy. Each callback checks its result. Raw samples, machine, tool versions and exact source revisions are in
+`bench/results/` under the artifact names below. Values are ms per whole workload; no tail percentile is claimed.
+
+| Workload | Samples | Min | Median | Max |
+| --- | ---: | ---: | ---: | ---: |
+| `mock-agent-actions` | 3 | 231.419 | 281.474 | 5054.654 |
+| `mock-agent-content` | 3 | 291.146 | 291.296 | 304.106 |
+| `history-fold-unannotated` | 282 | 0.275 | 0.313 | 3.806 |
+| `object-startup-recovery` | 3 | 6.571 | 8.434 | 17.309 |
+| `object-startup-wait-deadline` | 3 | 5027.695 | 5027.798 | 5027.867 |
+| `api-objects-health` | 3 | 8.537 | 9.952 | 11.756 |
+
+`mock-agent-actions` runs Plan, an unknown action and a queued command after identity changes through real
+BrowserFactory/MockActions and durable replies. `mock-agent-content` files one issue, splits #38 into three linked
+children and refuses a draft of the generated decisions index. Both use the shipped scripted agent and memory host;
+no backend, inference, GitHub or browser layout. Initialization, streaming waits and assertions are included. The
+first action journey took 5,054.654 ms; the next two took 231.419 and 281.474 ms. This includes lazy initialization;
+the cause of that cold-sample difference has not been isolated. It remains a finding, not a normal-latency claim.
+
+`history-fold-unannotated` folds a commit with no Mythical trailer and one with an unknown trailer, reuses one scope
+epic, repeats the second SHA and reopens the real memory store. It compares the complete retained history and five
+ordered events. No GitHub read, repository write or disk IO. Warmup follows `quick` in `bench/artifact.vibe`; each
+measured callback gets a fresh store and includes assertions.
+
+`object-startup-recovery` uses the production startup wrapper and budget over the real object-storage ledger. A
+faulty ledger read fails startup; health does not restart it, HTTP forwarding answers 503, then restoring the ledger
+and calling again recovers and charges a duplicate reply once. `object-startup-wait-deadline` holds an
+uninterruptible ledger read through the real five-second call deadline, releases it and retries. Its approximately
+five-second duration includes that designed deadline. These are Node memory-host wrapper costs, without workerd
+scheduling, disk stalls, network or inference.
+
+`api-objects-health` makes two warm HTTP health reads in local workerd after the other API workloads. It checks all
+five production objects are ready, the fixture build identity, and stable object identities. One sample includes
+both reads and assertions. Startup, remote RPC, production contention, WAN and model inference are absent.
+
+Artifacts:
+
+- `2026-11-10T15-55-07.638Z-mock-agent-actions.json` (source `17cb9e5345ed`).
+- `2026-11-10T15-55-08.706Z-mock-agent-content.json` (source `17cb9e5345ed`).
+- `2026-11-10T15-55-00.577Z-history-fold-unannotated.json` (source `17cb9e5345ed`).
+- `2026-11-10T15-55-10.800Z-object-startup-recovery.json` (source `17cb9e5345ed`).
+- `2026-11-10T15-55-26.021Z-object-startup-wait-deadline.json` (source `17cb9e5345ed`).
+- `2026-11-10T15-54-58.609Z-api-objects.json` (source `17cb9e5345ed`).
+
 ## Cancellation after the model starts streaming (2026-11-10, nyc-01, Codex)
 
 `bench/action-interrupted.bench.vibe` now holds the loopback HTTP model after its first SSE fragment rather than
@@ -3862,3 +3909,184 @@ The full coverage percentages remain the c5bbf81b source receipt, separate from 
 | api-objects-owned-action-run | 3 | 435.60 | 414.51–467.02 |
 | budget-faulty-ledger-recovery | 3 | 3.05 | 1.49–5.94 |
 | public-content-stale-copy | 1 | 36157.02 | 36157.02–36157.02 |
+
+
+## Public reads and retained-operation workloads (2026-11-10, nyc-01)
+
+Vitest built-in bench, Node 26.5.0, approximately 16:28–16:45 UTC on shared nyc-01, two cores per run through
+run-heavy. Exact timestamps, source revisions, machine/tool versions and raw samples are in the named artifacts.
+Values are ms per complete workload, including assertions. No tail percentile is claimed.
+
+| Workload | Samples | Min | Median | Max |
+| --- | ---: | ---: | ---: | ---: |
+| `github-issues-public-read` | 1 | 4978.198 | 4978.198 | 4978.198 |
+| `github-wiki-public-read` | 1 | 511.222 | 511.222 | 511.222 |
+| `sandbox-host-recovery` | 3 | 7.480 | 8.509 | 25.636 |
+| `mock-agent-retained-journal` | 3 | 330.885 | 339.209 | 355.168 |
+| `mock-reply-tour-contention` | 3 | 1487.969 | 1504.275 | 1537.397 |
+| `post-dispatch-scan 10` | 1807 | 0.033 | 0.047 | 4.126 |
+| `active-tour-projection 10` | 4580 | 0.012 | 0.023 | 0.404 |
+| `post-dispatch-scan 1000` | 1457 | 0.038 | 0.074 | 0.841 |
+| `active-tour-projection 1000` | 1612 | 0.031 | 0.061 | 0.728 |
+| `post-dispatch-scan 100000` | 9 | 10.116 | 11.504 | 13.462 |
+| `active-tour-projection 100000` | 41 | 1.826 | 2.470 | 3.183 |
+| `authorization-journal` | 2620 | 0.023 | 0.025 | 5.546 |
+| `api-objects-owned-agent-tools` | 3 | 643.529 | 647.878 | 675.006 |
+| `web-wiki-state` | 543 | 0.163 | 0.172 | 1.666 |
+
+Public reads require `BENCH_GITHUB_READS=1`. They use actual anonymous GitHub GETs through the production durable
+issue/wiki read flows and product ETag cache, with a local product MockAccounts contributor and real local SQLite/KV.
+Issues: list, selected timeline/comments compared with the provider and exact durable receipt replay. Wiki: actual
+bytes/revision compared with the provider, retained page projection and restored local draft. No GitHub write, real
+login or inference is measured. Public data, rate limits and provider/cache state vary. One callback per provider
+journey; only counts are retained. Without the flag these two cases skip and add no coverage.
+
+Sandbox recovery uses the production writer, product memoryMachines, a retained memory store adapter and TestClock.
+It checks Stop receipts for exhausted minutes and lost leases, recovery after a failed emergency stop, revoked
+pending starts, and one held command whose uncertainty survives replay without another machine call. No real
+Container, disk persistence, eviction or billing duration. Three fresh five-case corpora.
+
+The retained-journal workload uses the real MockFactory over a healthy memory journal seeded with retained events.
+It checks a half-answer fails visibly before the next post answers, one resumed tour, and an ownerless sandbox
+refusal. The contention workload delays real Digest computation to open both Reply/Tour race windows, checks one
+ordered reply and actual contention/tour log outcomes, and releases every latch on exit. These are controlled
+recovery/fault overhead measurements; no actual process kill, browser localStorage durability, natural race
+frequency, backend or inference latency is claimed.
+
+Dispatch inputs are constructed outside timing. One scan workload checks four queues (last/middle/none/all pending);
+one projection workload checks started/driven/ended tours at the stated entry count. These measure pure array/Set
+scanning and state projection. Authorization replay checks an exact accepted event changes only the cursor and
+keeps authority, while refusing a viewer. The owner-bound agent-tool workload runs production workerd objects with
+a deterministic HTTP model; it reaches the account draft RPC and refuses an unregistered viewer.
+`web-wiki-state` additionally checks Escape preserves a pending Save and emits no work. No network/rendering cost
+is represented by the pure state corpora.
+
+Artifacts:
+
+- `2026-11-10T16-26-56.316Z-github-issues-public-read.json` (source `e3694c38d72b`).
+- `2026-11-10T16-26-56.965Z-github-wiki-public-read.json` (source `e3694c38d72b`).
+- `2026-11-10T16-41-07.087Z-sandbox-host-recovery.json` (source `79b8dd42c639`).
+- `2026-11-10T16-41-05.806Z-mock-agent-retained-journal.json` (source `79b8dd42c639`).
+- `2026-11-10T16-46-56.996Z-mock-reply-tour-contention.json` (source `9a30c25893d3`).
+- `2026-11-10T16-41-08.307Z-dispatch-10.json` (source `79b8dd42c639`).
+- `2026-11-10T16-41-08.702Z-dispatch-1000.json` (source `79b8dd42c639`).
+- `2026-11-10T16-41-09.177Z-dispatch-100000.json` (source `79b8dd42c639`).
+- `2026-11-10T16-46-48.547Z-authorization-journal.json` (source `9a30c25893d3`).
+- `2026-11-10T16-26-41.280Z-api-objects.json` (source `e3694c38d72b`).
+- `2026-11-10T16-26-45.831Z-web-wiki-state.json` (source `e3694c38d72b`).
+
+
+**Latest coverage receipt, 2026-11-10.** Full benchmark-only collection at `62cbbccd` on `f765f8ed`, nyc-01,
+16:54–17:23 UTC (08:54–09:23 PST), two cores: 83 files / 174 checks passed; strict gate exit 1. Source hashes all
+matched during collection. An additive web-state/DOM/action-proxy run at `95de2858` passed 3 files / 13 checks;
+all production bytes matched the full-run input before the existing position merge. This combines two runs.
+Combined src lines 5,216/5,318 (98.08%), worker 2,138/2,321 (92.12%), total 7,354/7,639 (96.27%). The strict
+all-metric requirement remains unmet in 108 files; counts retain the source-map limitations in 0017. Instrumented
+and e2e fault-workload durations are not benchmark timings.
+
+The added pure sandbox update corpus checks slash start, exact emitted operation, allowance notices, new-month
+reset and stale response fences. Added DOM scenes check issue cards and GitHub connection recovery controls.
+The action selection proxy measures a complete binding/recovery journey over product MockActions, with two explicit
+20 ms cancellation deadlines and scripted reply delays; it is not proxy CPU cost. Default embedded-device refusals
+are measured separately from bound sandbox workflows. Methods and exact result checks are in their artifacts.
+Older public-wiki artifact counts named `sourceBytes` are JavaScript UTF-16 string lengths; subsequent artifacts
+use `sourceUtf16Length`. Source/revision comparisons are exact; no actual page text is retained in artifacts.
+
+Raw maps, generated source bytes, hashes and per-file metrics are retained in the lane report's evidence directory.
+GitHub write success, real Container costs, specification-only functions, source-map shape blockers and remaining
+error/invariant paths stay counted and open. Documentation is generated again for publication; coverage receipts
+refer to their recorded snapshots, not to the later generated wiki text.
+
+
+The explicit-session corpus checks malformed/wrong-origin/non-session configuration, live-layer selection against
+the real local Worker and a refused local connection. It uses fixture cookie syntax, not an authenticated provider
+session. Worker/directory startup is excluded; layer construction, real health/failed connection and assertions are
+included. The plain-command corpus runs a fresh product mock backend through reply/read, history Plan/Start/Note,
+and sandbox start/replay/stop, checking literal output, exact identity/generation and whole-minute display with fractional usage. Its
+settings IO, durable flows and scripted reply delays are included; CLI process/IPC startup, provider writes and
+Containers are measured elsewhere or remain unmeasured. Both use three unwarmed callbacks, with no tail-percentile
+claim. The issue DOM corpus includes the generic failure alert with no unrelated GitHub action.
+
+
+The daily-reservation corpora measure concurrent admission under a ten-token cap, exact reported/unknown/excess
+settlement, duplicate charging and charged-key refusal; four faulty ledger counts and a retained charged hold
+exercise fail-closed recovery. Exact receipts and global spent/reserved/overshoot totals are checked. Real Budget,
+semaphore and Node object-storage KV code; three unwarmed complete corpora, including initialization/assertions.
+This excludes provider/workerd/UTC-rollover latency and does not claim an actual corruption or crash. The Worker
+Budget workload separately performs five real RPCs per callback, checking admission and settlement replay.
+
+
+**Additional normal observations, 2026-11-10, nyc-01.** These retain their individual artifact timestamps and
+source revisions; they are not one simultaneous run. Node 26.5.0, the existing Vitest harness, two reserved cores
+on a shared host. Values are min/median/max milliseconds; no tail-percentile claim. Instrumented durations are
+excluded. Raw machine/toolchain/method records are retained with each artifact in the lane report's evidence.
+
+| Workload | Callbacks | Min ms | Median ms | Max ms | Artifact |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `web-sandbox-state` | 538 | 0.085 | 0.176 | 1.154 | `2026-11-10T18-06-13.480Z-web-sandbox-state.json` |
+| `issue-chat-cards` | 14 | 5.597 | 7.116 | 10.283 | `2026-11-10T18-33-24.649Z-issue-chat-cards.json` |
+| `action-deferred-binding` | 3 | 121.201 | 129.028 | 216.471 | `2026-11-10T18-06-15.622Z-action-deferred-binding.json` |
+| `action-device-unbound` | 3 | 0.206 | 0.233 | 0.691 | `2026-11-10T18-06-15.792Z-action-device-unbound.json` |
+| `surface-backend-session` | 3 | 7.362 | 8.990 | 48.443 | `2026-11-10T18-31-59.656Z-surface-backend-session.json` |
+| `surface-plain-commands` | 3 | 330.825 | 330.955 | 921.401 | `2026-11-10T18-30-48.468Z-surface-plain-commands.json` |
+| `budget-reservation-contention` | 3 | 2.836 | 3.335 | 10.565 | `2026-11-10T18-47-12.059Z-budget-reservation-contention.json` |
+| `budget-ledger-recovery` | 3 | 1.564 | 1.852 | 2.639 | `2026-11-10T18-47-12.176Z-budget-ledger-recovery.json` |
+
+Sandbox state is pure reduction with exact emitted commands/notices; cards are four Happy DOM/Foldkit scenes,
+with fixture/event setup excluded and no browser layout/paint. The deferred-action journey includes two explicit
+20 ms cancellation waits and scripted replies; unbound-device cost is three typed default-service refusals.
+Backend selection includes malformed configuration, real workerd health and a failed local connection; Worker and
+directory setup are excluded. Plain commands include fresh settings/layers, registered flows, replies, history and
+sandbox formatting; process/IPC startup and actual Containers are excluded. Budget corpora use real semaphore and
+accounting code over the Node KV adapter, including all setup/assertions. Ledger faults produce accounting defects
+and leave the backing store unchanged; seeded retained state is not evidence of an actual crash or corruption.
+These whole-corpus measurements are not individual operation latencies. Complete correctness checks and additional
+limitations are in 0017 and the named artifacts.
+
+
+The later complete collection at `de20c189` (`c5bbf81b` base), 18:54–19:20 UTC, passed 87 files / 182 checks;
+all 265 input hashes matched. Src/worker lines are 7,429/7,716 (96.28%), with the strict gate still failing in
+111 files across all source scopes. Its roster adds 77 runtime lines relative to the older receipt. Full maps,
+exact inputs and per-file counts are retained; instrumented durations are not timings.
+
+The additive reply recovery corpus checks streamed preview replacement through the actual Reply/agent/QuickJS
+pipeline, exact requests/token settlement and safe failure tags, including a revoked native Proxy. Node KV/memory
+engine and deterministic HTTP/SSE model; three unwarmed full corpora include setup/assertions and exclude actual
+inference/WAN. `fault-coverage-draft-spend` is an opt-in **counts-only** set (BENCH_FAULTS=1, or coverage mode): one
+real draft charging policy exhausts against an unreachable Effect settlement service, bounded at four minutes.
+It checks requests, admissions, attempts, refusal, warning and ledger state. It retains and publishes no duration.
+
+
+The mock specification journey requests all four named reviewers through the shipped agent, poster-bound issue
+read and registered flows, checking literal replies, matching journal entries, revision, four sequence advances
+and unchanged source text. Three unwarmed complete journeys include setup/scripted delays/assertions; the reviewers
+are product fixture behavior, without actual model, backend or GitHub latency.
+
+
+**Combined receipt after two additive collections, 2026-11-10.** The full `de20c189` run passed 87 files / 182
+checks. The reply/fault add-on passed 2 files / 3 checks; the mock specification add-on passed 1 file / 1 check.
+All 265 original input hashes still match after both collections. The existing position merge joins their real
+hits: src 5,252/5,342 (98.32%), worker 2,183/2,374 (91.95%), total **7,435/7,716 (96.36%)**. This combines one
+complete run and two additive runs; it is not a single 90-file execution. The strict four-metric goal remains open
+in 111 files. No line/threshold/merge rule changed. Later documentation regeneration is outside this frozen receipt.
+
+Additional completed normal observations, nyc-01, Node 26.5.0, two reserved cores/shared host, three unwarmed
+callbacks. Min/median/max milliseconds; methods below, no tail-percentile claim. Each raw artifact keeps its own
+source revision, machine and toolchain.
+
+| Workload | Callbacks | Min ms | Median ms | Max ms | Artifact |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `reply-agent-recovery` | 3 | 89.870 | 118.780 | 314.408 | `2026-11-10T19-26-06.552Z-reply-agent-recovery.json` |
+| `reply-safe-failure-tags` | 3 | 0.124 | 0.147 | 0.420 | `2026-11-10T19-26-06.706Z-reply-safe-failure-tags.json` |
+| `mock-agent-specification` | 3 | 280.045 | 293.491 | 419.984 | `2026-11-10T19-41-04.373Z-mock-agent-specification.json` |
+
+Reply recovery is a two-world corpus through the real memory engine, agent/QuickJS and sequencer over Node KV,
+with deterministic HTTP/SSE model responses: preview replacement plus a provider-credit failure and exact reported
+or ceiling settlement. Setup, serving, metrics and assertions are included; actual inference/WAN are excluded.
+Safe tags include five classifications and native revoked-Proxy allocation. Mock specification review includes
+all four product fixture reviewers, exact literal replies/journal changes and scripted delays. These are whole
+corpora, not per-token/individual-call latency. Initialization/shared-host/cold-sample variation remains included.
+
+The separately named draft fault artifact contains **counts only**: 12 settlement attempts, one admission, one
+model request, one warning, zero charged tokens and the retained 327,680-token ceiling in the instrumented sample.
+Its approximately two-minute policy is a configured deadline; no observed fault duration is published.

@@ -1,0 +1,77 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { Reply, Tours } from "../src/core/flows.vibe"
+import * as Objects from "../worker/Objects.vibe"
+import * as Budget from "../worker/Budget.vibe"
+import { readerOver } from "../worker/HistoryObject.vibe"
+import { HistoryTools } from "../worker/HistoryTools.vibe"
+import { ChatModel, registration, Replies, REASONS, REPLY_CEILING, Spend, tagOf } from "../worker/Reply.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { ledgerOver, logOver } from "../worker/ObjectStorage.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { cell, scriptedModel, type Scripted } from "../fuzz/model-server.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const unavailableHistory = readerOver(() => fail(new Unreachable({ what: "history" })), () => fail(new Unreachable({ what: "history" })))
+
+effect function answer(scripts: ReadonlyArray<Scripted>) {
+  const scripted = try scriptedModel(scripts)
+  const kv = try Effect.try(() => objectStorage())
+  const storage = kv as unknown as Objects.Storage
+  const sequencer = try Objects.conversation(storage)
+  const ledger = ledgerOver(storage)
+  const budget = try Budget.make(ledger, 1_000_000)
+  const spend: Spend.Shape = { admit: (_day, reply, ceiling) => budget.admit(reply, ceiling), spend: (_day, reply, tokens, reported, ceiling) => budget.spend(reply, tokens, reported, ceiling) }
+  const flows = registration.pipe(
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provide(Layer.mergeAll(
+      Layer.succeed(Replies, Objects.repliesOf(sequencer)), Layer.succeed(Tours, Objects.toursOf(sequencer)), Layer.succeed(Spend, spend),
+      Layer.succeed(ChatModel, { model: scripted.model, unusable: "" }), Layer.succeed(HistoryTools, { history: unavailableHistory }),
+    )),
+  )
+  const engine = Context.get(try Layer.build(flows), FlowRuntime.FlowRuntime)
+  try sequencer.post("one", "Bench", "Answer briefly.")
+  const ended = try exit(engine.execute(Reply, { executionId: "reply/m1", payload: { post: "m1" } }).pipe(Effect.timeout("20 seconds")))
+  const snapshot = try sequencer.read(0)
+  return { ended, entries: snapshot.entries, types: (try logOver(storage).read()).map(event => event.type), calls: try scripted.calls, spent: try ledger.read(Budget.SPENT), reserved: try ledger.read(Budget.RESERVED) }
+}
+
+it("the streamed reply replaces a failed cell's preview and accounts for an unreported provider failure", async ({ bench }) => {
+  const result = await workload(bench, "reply-agent-recovery", "async", async () => {
+    await runPromise(scoped(effect {
+      provide WebCrypto.layer {
+        const restarted = try answer([
+          { kind: "stream", pieces: ["```cell\nctx.done(\"First\" + missing);\n```"], prompt: 10, completion: 5 },
+          { kind: "stream", pieces: [cell("\"Second\"")], prompt: 10, completion: 5 },
+        ])
+        const refused = try answer([{ kind: "status", status: 402, code: "insufficient_quota" }])
+        try Effect.try(() => {
+          expect(restarted.ended._tag).toBe("Success")
+          expect(restarted.entries.map(entry => [entry.author, entry.text, entry.done, entry.error])).toEqual([["person", "Answer briefly.", true, ""], ["agent", "Second", true, ""]])
+          expect(restarted.types.filter(type => type === "ReplyRestarted")).toHaveLength(1)
+          expect(restarted.types.at(-1)).toBe("ReplyFinished")
+          expect(restarted.types).not.toContain("ReplyFailed")
+          expect([restarted.calls, restarted.spent, restarted.reserved]).toEqual([2, 30, 0])
+          expect(refused.ended._tag).toBe("Success")
+          expect(refused.entries.find(entry => entry.author === "agent")).toMatchObject({ done: true, error: REASONS.credit })
+          expect([refused.calls, refused.spent, refused.reserved]).toEqual([1, REPLY_CEILING, 0])
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("reply-agent-recovery", "Vitest built-in bench; three fresh two-world corpora through the production Reply registration, real agent/QuickJS, sequencer and Budget, using the deterministic local HTTP/SSE model. First a streamed cell previews First then fails; the retry must replace it with exactly Second, one restart, one finish, two model requests, thirty reported tokens and no hold. Then a real local 402 model response must settle a credit failure, one request, the configured ceiling charge and no hold. Setup, serving, engine, metrics and assertions included.", ["Node memory engine and object-storage KV adapter; deterministic model overhead without inference/WAN. History is an explicit unavailable Effect service and is not called by these cells. No actual provider spending or process restart; three unwarmed whole recovery corpora, not per-token/operation latency."], result))
+})
+
+it("failure classification tolerates unreadable tags without returning private messages", async ({ bench }) => {
+  const result = await workload(bench, "reply-safe-failure-tags", "async", async () => {
+    await runPromise(effect {
+      const unreadable = try Effect.try(() => Proxy.revocable({}, {}))
+      try Effect.try(() => unreadable.revoke())
+      try Effect.try(() => expect([tagOf(null), tagOf({ message: "private" }), tagOf({ _tag: 7 }), tagOf({ _tag: "Transport", message: "private" }), tagOf(unreadable.proxy)]).toEqual(["defect", "defect", "defect", "Transport", "defect"]))
+    })
+  }).run(slow)
+  await runPromise(artifact("reply-safe-failure-tags", "Vitest built-in bench; five literal classification cases per callback: null, message-only, numeric tag, valid tag with private message and a native revoked Proxy. Require only safe tag/defect labels and no throwing getter propagation. Proxy construction/revocation and assertions included; three unwarmed callbacks.", ["Pure error-boundary overhead and allocation, no logger transport, provider, request interception or inference."], result))
+})

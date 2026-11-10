@@ -84,6 +84,11 @@
       "vibelang-source": "./src/FixtureStore.ts",
       "default": "./.vibelang/js/src/FixtureStore.js"
     },
+    "./HttpRecording": {
+      "types": "./src/HttpRecording.ts",
+      "vibelang-source": "./src/HttpRecording.ts",
+      "default": "./.vibelang/js/src/HttpRecording.js"
+    },
     "./FlowEngineLike": {
       "types": "./.vibe/declarations/src/FlowEngineLike.d.vibe.ts",
       "vibelang-source": "./src/FlowEngineLike.vibe",
@@ -314,6 +319,16 @@
         "require": {
           "types": "./dist/cjs/FixtureStore.d.ts",
           "default": "./dist/cjs/FixtureStore.js"
+        }
+      },
+      "./HttpRecording": {
+        "import": {
+          "types": "./dist/esm/HttpRecording.d.ts",
+          "default": "./dist/esm/HttpRecording.js"
+        },
+        "require": {
+          "types": "./dist/cjs/HttpRecording.d.ts",
+          "default": "./dist/cjs/HttpRecording.js"
         }
       },
       "./FlowEngineLike": {

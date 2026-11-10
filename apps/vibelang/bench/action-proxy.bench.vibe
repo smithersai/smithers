@@ -1,0 +1,66 @@
+import { it, expect } from "@effect/vitest"
+import { Actions } from "../src/actions/Actions.vibe"
+import { deferredActions } from "../src/actions/agent.vibe"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const settled = (actions: Actions.Shape, id: string) => Stream.runLast(actions.follow(id).pipe(Stream.takeUntil(run => run.state !== "running" && run.state !== "queued"), Stream.timeout("15 seconds")))
+
+it("deferred action binding forwards product runs and cancels unbound calls", async ({ bench }) => {
+  const result = await workload(bench, "action-deferred-binding", "async", async () => {
+    await runPromise(scoped(effect {
+      provide MockActions({ role: "contributor", actor: "agent" }).pipe(Layer.provide(MockFactory)) {
+        const product = try Actions
+        const proxy = try deferredActions()
+        const abandoned = try Effect.timeoutOption(proxy.actions.command("/post Cancelled before binding", "agent"), "20 millis")
+        const abandonedFollow = try Effect.timeoutOption(Stream.runLast(proxy.actions.follow("not-admitted")), "20 millis")
+        const before = try product.runs("vibelang/Post")
+        try proxy.resolve(product)
+        const catalog = try proxy.actions.list()
+        const commands = try proxy.actions.commands()
+        const id = try proxy.actions.command("/post How do services compose?", "agent")
+        const result = try settled(proxy.actions, id)
+        const read = try proxy.actions.read(id)
+        const again = try proxy.actions.rerun(id)
+        const repeated = try settled(proxy.actions, again)
+        const runs = try proxy.actions.runs("vibelang/Post")
+        const tour = try proxy.actions.start("vibelang/Tour", {}, "agent")
+        try proxy.actions.cancel(tour)
+        const cancelled = try settled(proxy.actions, tour)
+        const missing = try Effect.flip(proxy.actions.read("missing-run"))
+        try Effect.try(() => {
+          expect(Option.isNone(abandoned)).toBe(true)
+          expect(Option.isNone(abandonedFollow)).toBe(true)
+          expect(before).toEqual([])
+          expect(catalog.some(flow => flow.name === "vibelang/Post")).toBe(true)
+          expect(commands.some(command => command.command === "/post")).toBe(true)
+          expect(Option.isSome(result) && result.value.state).toBe("passed")
+          expect(read).toMatchObject({ id, door: "agent", flow: "vibelang/Post", state: "passed" })
+          expect(again).not.toBe(id)
+          expect(Option.isSome(repeated) && repeated.value.state).toBe("passed")
+          expect(runs.map(run => run.id)).toEqual([again, id])
+          expect(Option.isSome(cancelled) && cancelled.value.state).toBe("cancelled")
+          expect(missing.code).toBe("not-found")
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("action-deferred-binding", "Vitest built-in bench; fresh deferred selection proxy over real product MockActions/MockFactory each callback. Cancel a command and follow before binding, bind, list commands/catalog, post and await settlement, read, rerun and inspect exact run order, start/cancel a tour and refuse a missing run. Three unwarmed callbacks; exact outputs asserted inside timing.", ["Product memory host, no provider/network/real inference. Includes two intentional 20 ms cancellation deadlines, scripted reply delays and service initialization; this is a whole binding/recovery journey, not per-call proxy CPU cost."], result))
+})
+
+it("an embedded action host without a device refuses every sandbox operation", async ({ bench }) => {
+  const result = await workload(bench, "action-device-unbound", "async", async () => {
+    await runPromise(effect {
+      const device = try ActionDevice
+      const started = try Effect.flip(device.startSandbox("bench", "start"))
+      const stopped = try Effect.flip(device.stopSandbox("bench", "stop", 1))
+      const command = try Effect.flip(device.sandboxCommand("bench", "command", "pwd", 1))
+      try Effect.try(() => {
+        for (const refused of [started, stopped, command]) expect(refused).toMatchObject({ _tag: "Refused", refusal: "forbidden" })
+      })
+    })
+  }).run(slow)
+  await runPromise(artifact("action-device-unbound", "Vitest built-in bench; resolve the product's default embedded ActionDevice and call start, stop and command, checking all three exact typed forbidden refusals every callback. Three unwarmed callbacks.", ["Default service refusal overhead only; no device binding, durable engine, container, network or request interception. Bound-device workflows are benchmarked separately."], result))
+})

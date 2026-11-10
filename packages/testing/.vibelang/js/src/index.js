@@ -49,6 +49,12 @@ export * as BuiltinScript from "./BuiltinScript.js";
 export * as Fixture from "./Fixture.js";
 /** @since 0.0.0 @category services */
 export * as FixtureStore from "./FixtureStore.js";
+/**
+ * Record, replay or pass through every request an `HttpClient` makes.
+ *
+ * @since 1.0.0
+ */
+export * as HttpRecording from "./HttpRecording.js";
 /** @since 0.0.0 @category layers */
 export * as MemoryEngine from "./MemoryEngine.js";
 /** @since 0.0.0 @category layers */

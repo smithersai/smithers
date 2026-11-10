@@ -730,27 +730,3 @@ export function replayEvent(history: History, event: Event): History {
   if (history.seq === 9007199254740991) return history
   return apply(history, event)
 }
-
-/** Replays validated events over a validated snapshot, including one already at capacity.
- */
-//@ verify
-//@ requires 0 <= initial.seq && initial.seq <= 9007199254740991
-//@ requires forall(i, 0 <= i && i < initial.commits.length ==> 0 <= initial.commits[i].rank && initial.commits[i].rank < initial.seq)
-//@ requires forall(i, 0 <= i && i < events.length ==> 0 <= events[i].seq && events[i].seq <= 9007199254740991 && (events[i].type != "Planned" || (0 <= events[i].rank && events[i].rank < events[i].seq)))
-//@ ensures initial.seq <= \result.seq && \result.seq <= 9007199254740991 && \result.seq <= initial.seq + events.length
-//@ ensures forall(i, 0 <= i && i < \result.commits.length ==> 0 <= \result.commits[i].rank && \result.commits[i].rank < \result.seq)
-//@ ensures forall(i, 0 <= i && i < events.length ==> events[i].seq == initial.seq + i + 1) ==> \result.seq == initial.seq + events.length
-export function replayHistory(initial: History, events: ReadonlyArray<Event>): History {
-  let history = initial
-  let i = 0
-  while (i < events.length) {
-    //@ invariant 0 <= i && i <= events.length
-    //@ invariant initial.seq <= history.seq && history.seq <= 9007199254740991 && history.seq <= initial.seq + i
-    //@ invariant forall(j, 0 <= j && j < history.commits.length ==> 0 <= history.commits[j].rank && history.commits[j].rank < history.seq)
-    //@ invariant forall(j, 0 <= j && j < events.length ==> events[j].seq == initial.seq + j + 1) ==> history.seq == initial.seq + i
-    //@ decreases events.length - i
-    history = replayEvent(history, events[i]!)
-    i++
-  }
-  return history
-}

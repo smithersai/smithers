@@ -115,6 +115,9 @@ it("wiki editing state fences late responses, cancellation and uncertain submiss
     expect(edited.wikiEdit?.text).toBe("after")
     const sent = update(edited, Message.SubmittedWikiEdit()).model
     expect(sent.wikiEdit?.submission).toMatchObject({ op: "save", page: "index", base: "before", text: "after" })
+    const escaped = update(sent, Message.PressedEscape())
+    expect(escaped.model).toBe(sent)
+    expect(commands(escaped)).toEqual([])
     expect(update(sent, Message.CanceledWikiEdit()).model).toBe(sent)
     expect(update(sent, Message.UpdatedWikiEdit({ value: "wrong" })).model).toBe(sent)
     expect(update(sent, Message.CompletedWikiEdit({ request: 1, page: "index", source: "before", revision: "r", review: "" })).model).toBe(sent)
@@ -136,5 +139,29 @@ it("wiki editing state fences late responses, cancellation and uncertain submiss
     expect(update(waiting, Message.FailedWiki({ request: 2 })).model.wikiStatus).toBe("error")
     expect(update(model, Message.SucceededWiki()).model).toBe(model)
   }).run(quick)
-  await runPromise(artifact("web-wiki-state", "Vitest built-in bench; wiki editor begin/type/submit/cancel, immutable uncertain request, stale completion/failure fences, five exact failure labels and unwritten correction, unchanged observed source with review, filter/location and page-open failure identity. Exact model fields asserted each callback.", ["Pure update-state cost; does not execute emitted services or simulate browser dialogs/network. Native and SQLite wiki journeys run separately."], result))
+  await runPromise(artifact("web-wiki-state", "Vitest built-in bench; wiki editor begin/type/submit/cancel, Escape preserves a pending Save without emitting work, immutable uncertain request, stale completion/failure fences, five exact failure labels and unwritten correction, unchanged observed source with review, filter/location and page-open failure identity. Exact model fields asserted each callback.", ["Pure update-state cost; does not execute emitted services or simulate browser dialogs/network. Native and SQLite wiki journeys run separately."], result))
+})
+
+
+it("sandbox slash start and allowance notices retain exact operation state", async ({ bench }) => {
+  const result = await workload(bench, "web-sandbox-state", "sync", () => {
+    const model: Model = { ...signed(initial(), "contributor"), surface: "splash", palette: true, draft: "/sandbox", sandboxRequest: 2 }
+    const sent = update(model, Message.SubmittedDraft())
+    expect(sent.model).toMatchObject({ surface: "chat", palette: false, draft: "", sandboxPane: "pane", sandboxBusy: true, sandboxOperation: "start", sandboxRequest: 3 })
+    expect(commands(sent)).toEqual(["SandboxAction", "ClosePalette"])
+    expect(sent.commands?.[0]).toMatchObject({ args: { conversation: model.conversation, operationId: "bench/sandbox/3", request: 3, kind: "start", generation: 0, command: "" } })
+    expect(sent.commands?.[1]).toMatchObject({ args: { dock: true } })
+    const snapshot = { id: "box-bench", generation: 1, sequence: 1, status: "running" as const, role: "contributor" as const, allowance: 60, used: 56, remaining: 4, resetAt: 123, output: "" }
+    const loaded = update(sent.model, Message.LoadedSandbox({ conversation: model.conversation, request: 3, snapshot })).model
+    expect(loaded).toMatchObject({ sandbox: snapshot, sandboxBusy: false, sandboxOperation: "", minuteNotice: "4 minutes left", warnedMonth: 123 })
+    const retained = update(loaded, Message.LoadedSandbox({ conversation: model.conversation, request: 3, snapshot: { ...snapshot, sequence: 2, remaining: 3, used: 57 }, polled: true })).model
+    expect(retained.minuteNotice).toBe("4 minutes left")
+    const empty = update(retained, Message.LoadedSandbox({ conversation: model.conversation, request: 3, snapshot: { ...snapshot, sequence: 3, status: "stopped", used: 60, remaining: 0 } })).model
+    expect(empty.minuteNotice).toBe("Out of minutes — box-bench stopped")
+    const reset = update(empty, Message.LoadedSandbox({ conversation: model.conversation, request: 3, snapshot: { ...snapshot, sequence: 4, status: "stopped", used: 0, remaining: 60, resetAt: 456 } })).model
+    expect(reset.minuteNotice).toBe("")
+    expect(update(reset, Message.LoadedSandbox({ conversation: model.conversation, request: 2, snapshot })).model).toBe(reset)
+    expect(update(reset, Message.LoadedSandbox({ conversation: "other", request: 3, snapshot })).model).toBe(reset)
+  }).run(quick)
+  await runPromise(artifact("web-sandbox-state", "Vitest built-in bench; submit /sandbox from the palette, assert the exact start operation and dock command, then reduce running, repeated-low, exhausted and new-month snapshots. Check operation completion, once-per-month notice retention, exhaustion text, clearing and stale room/request fences each callback.", ["Pure update-state corpus with valid snapshots; emitted services, clocks, containers and DOM are outside this timing. Service recovery and browser sandbox journeys have separate workloads."], result))
 })

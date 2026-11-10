@@ -1,10 +1,34 @@
 import { describe, expect, it } from "@effect/vitest"
-import { canLinkIssues } from "../src/core/conversation.vibe"
-import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
+import { canLinkIssues, nextIssueNumber } from "../src/core/issueGraphDecision.vibe"
+import { fixtureIssues, makeIssueFactory } from "../src/core/IssuesFactory.vibe"
+import type { IssueRecord } from "../src/core/conversation.vibe"
 const Choice = Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 0, maximum: 100 }))
+const writes = Arbitrary.schema(Schema.Array(Schema.Struct({ op: Schema.Literals(["new", "split", "link", "commit", "uncommit", "comment"]), a: Choice, b: Choice })).check(Schema.isMaxLength(10)))
+
+/** A forest: positive numbers, every parent the root or an issue, and every issue's walk reaches the root. */
+function forest(items: ReadonlyArray<IssueRecord>): boolean {
+  return items.every((item) => {
+    if (item.number <= 0) return false
+    let current = item.number
+    for (let steps = 0; steps <= items.length; steps++) {
+      if (current === 0) return true
+      const record = items.find((record) => record.number === current)
+      if (record === undefined) return false
+      current = record.parent
+    }
+    return false
+  })
+}
+
 const cases = Arbitrary.schema(Schema.Struct({ parents: Schema.Array(Choice).check(Schema.isMaxLength(12)), child: Choice, parent: Choice }))
 
 describe("issue trees", () => {
+  it("numbers an empty store from one and scans unsorted retained issue numbers", () => {
+    expect(nextIssueNumber([])).toBe(1)
+    expect(nextIssueNumber([{ ...fixtureIssues[0]!, number: Number.MAX_SAFE_INTEGER - 1 }])).toBe(Number.MAX_SAFE_INTEGER)
+    expect(nextIssueNumber([9, 3, 9, 1].map((number) => ({ ...fixtureIssues[0]!, number })))).toBe(10)
+  })
+
   it.effect("accepted links preserve a rooted acyclic tree for every issue", () => effect {
     const result = try Arbitrary.checkEffect(cases, ({ parents, child, parent }) => {
       const items = parents.map((seed, index) => ({ ...fixtureIssues[0]!, number: index + 1, parent: seed % (index + 1) }))
@@ -25,6 +49,23 @@ describe("issue trees", () => {
       }
       return next.every((item) => item.number === target || item.parent === items.find((old) => old.number === item.number)!.parent)
     }, { runs: 500 })
+    try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+  })
+
+  it.effect("no sequence of checked writes to the mock makes an issue its own ancestor", () => effect {
+    try Effect.try(() => expect(forest(fixtureIssues)).toBe(true))
+    const result = try Arbitrary.checkEffect(writes, (sequence) => scoped(effect {
+      const api = try makeIssueFactory("maintainer")
+      let key = 0
+      for (const write of sequence) {
+        const numbers = (try api.read()).items.map((item) => item.number)
+        const pick = (choice: number) => numbers[choice % numbers.length]!
+        key += 1
+        try Effect.result(api.act({ op: write.op, number: pick(write.a), parent: write.op === "link" ? pick(write.b) : 0, title: "Split", text: "Text", assignee: "Will", example: "", prior: "", key: `write-${key}` }))
+        if (!forest((try api.read()).items)) return false
+      }
+      return true
+    }), { runs: 60 })
     try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
   })
 })

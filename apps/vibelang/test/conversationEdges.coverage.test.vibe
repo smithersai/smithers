@@ -2,9 +2,10 @@
 // carry that no current decision emits, and the helper functions the proofs name (0005).
 import { describe, expect, it } from "@effect/vitest"
 import {
-  acknowledgedPending, apply, declineVip, empty, grantPolicy, holdRemaining, issueAncestorAt, pendingCount,
+  acknowledgedPending, apply, declineVip, empty, grantPolicy, holdRemaining, pendingCount,
   type Conversation, type Event, type IssueRecord, type Pending,
 } from "../src/core/conversation.vibe"
+import { issueAncestorAt } from "../src/core/issueGraphDecision.vibe"
 
 const replay = (events: ReadonlyArray<Event>, from: Conversation = empty) => events.reduce(apply, from)
 const requested: Event = { type: "ActionRequested", seq: 1, id: "a1", flow: "vibelang/Post", door: "button", actor: "person", at: 5 }

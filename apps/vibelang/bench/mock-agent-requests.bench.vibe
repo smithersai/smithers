@@ -1,0 +1,141 @@
+// The shipped mock agent takes the same registered actions and issue flows as the person. No backend or model.
+import { it, expect } from "@effect/vitest"
+import { FetchHttpClient } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockJournal } from "../src/core/MockJournal.vibe"
+import type { Event } from "../src/core/conversation.vibe"
+import { Actions } from "../src/actions/Actions.vibe"
+import { replyIdOf } from "../src/core/tourDecision.vibe"
+import { BrowserFactory } from "../src/web/backend.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+/** Read the exact post's terminal reply, bounded independently of the benchmark runner. */
+effect function answer(factory: Factory.Shape, room: string) {
+  const post = (try factory.read(room, 0)).entries.find(entry => entry.clientId === "a")!
+  const events = Array.from(try Stream.runCollect(factory.events(room, 0).pipe(
+    Stream.takeUntil(event => (event.type === "ReplyFinished" || event.type === "ReplyFailed") && event.id === replyIdOf(post.id)),
+    Stream.timeout("15 seconds"),
+  )))
+  const reply = (try factory.read(room, 0)).entries.find(entry => entry.inReplyTo === post.id)!
+  try Effect.try(() => { expect(reply.done).toBe(true); expect(reply.error).toBe("") })
+  return { text: reply.text, events }
+}
+
+effect function ask(factory: Factory.Shape, room: string, prompt: string) {
+  try factory.post(room, "a", "Benchmark", prompt)
+  return try answer(factory, room)
+}
+
+it("the mock agent requests a registered action and refuses unknown or borrowed authority", async ({ bench }) => {
+  const result = await workload(bench, "mock-agent-actions", "async", async () => {
+    await runPromise(scoped(effect {
+      provide BrowserFactory("http://benchmark.invalid", true, "maintainer").pipe(Layer.provide(FetchHttpClient.layer)) {
+        const factory = try Factory
+        const actions = try Actions
+        const planned = try ask(factory, "plan", 'run /plan {"how":"append","epic":"","newEpic":"Benchmark","target":"","title":"Measure","task":"Check"}')
+        const rows = try actions.runs("vibelang/history/Plan")
+        const unknown = try ask(factory, "unknown", "run /nothing")
+        // Keep a reply queued behind a tour while the person changes identity. It must keep the poster's authority.
+        try factory.tour("borrowed")
+        try factory.post("borrowed", "a", "Benchmark", "run /history")
+        try factory.accounts!.choose("contributor")
+        try factory.endTour("borrowed")
+        const borrowed = try answer(factory, "borrowed")
+        try Effect.try(() => {
+          expect([planned.text, unknown.text, borrowed.text]).toEqual(["Plan requested.", "Action unavailable.", "Action unavailable."])
+          expect(rows).toHaveLength(1)
+          expect(rows[0]).toMatchObject({ flow: "vibelang/history/Plan", door: "agent", actor: "agent" })
+          expect(planned.events.filter(event => event.type === "ActionRequested")).toMatchObject([{ id: rows[0]!.id, flow: "vibelang/history/Plan", door: "agent", actor: "agent" }])
+          expect(unknown.events.some(event => event.type === "ActionRequested")).toBe(false)
+          expect(borrowed.events.some(event => event.type === "ActionRequested")).toBe(false)
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("mock-agent-actions", "Vitest built-in bench; real BrowserFactory forced to product mock mode, registered MockActions and the durable reply engine. Each fresh engine posts a Plan command and an unknown command, then holds a history command behind a tour while the person changes identity. Exact answers, the one agent-owned run and its matching conversation event, and no requested action after either refusal are checked. Three whole journeys; initialization and assertions included.", ["Shipped scripted agent and in-memory flow host; no inference, backend, GitHub, browser layout or paint. The tour is explicitly ended, not paced to completion."], result))
+})
+
+it("the mock agent files and splits issues and names an unavailable wiki draft", async ({ bench }) => {
+  const result = await workload(bench, "mock-agent-content", "async", async () => {
+    await runPromise(scoped(effect {
+      provide BrowserFactory("http://benchmark.invalid", true, "maintainer").pipe(Layer.provide(FetchHttpClient.layer)) {
+        const factory = try Factory
+        const before = try factory.issues!.read()
+        const filed = try ask(factory, "file", "File an issue: Benchmark request")
+        const made = try factory.issues!.read()
+        const issue = made.items.find(item => item.title === "Benchmark request")!
+        const split = try ask(factory, "split", "Split #38 into three children, linked under it.")
+        const after = try factory.issues!.read()
+        const draft = try ask(factory, "draft", "Draft an edit to the wiki decisions page")
+        try Effect.try(() => {
+          expect(made.items).toHaveLength(before.items.length + 1)
+          expect(issue).toMatchObject({ body: "Benchmark request", state: "open", parent: 0 })
+          expect(filed.text).toBe(`Filed #${issue.number}.\n\n[Open issue](#issue-${issue.number})`)
+          expect(split.text).toBe("Split #38 into three children, linked under it.\n\n[Open #38](#issue-38)")
+          expect(after.items).toHaveLength(made.items.length + 3)
+          expect(after.items.filter(item => !made.items.some(old => old.number === item.number)).map(item => [item.title, item.parent]).sort()).toEqual([
+            ["Check module cycles", 38], ["Document module imports", 38], ["Resolve module exports", 38],
+          ])
+          expect(draft.text).toBe("Couldn't draft that edit.")
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("mock-agent-content", "Vitest built-in bench; the real product mock agent and issue/wiki durable flows. Each fresh engine files one issue, splits #38 into three children, and tries to draft the generated decisions index, which has no repository page to edit. Checks exact reply links, one new issue with the requested body, exactly three named children linked to #38, and the draft failure. Three whole journeys; initialization and assertions included.", ["Product in-memory issue/wiki repository and scripted agent; no GitHub, model, browser rendering or provider latency."], result))
+})
+
+
+it("retained mock replies fail visibly and retained tours resume without losing the next post", async ({ bench }) => {
+  const result = await workload(bench, "mock-agent-retained-journal", "async", async () => {
+    await runPromise(scoped(effect {
+      const { mockFactoryFor } = try promise(() => import("../src/core/MockFactory.vibe"))
+      // A healthy in-memory journal adapter, seeded with the records a previous host retained.
+      const journals = try Ref.make(new Map<string, ReadonlyArray<Event>>([
+        ["demo-interrupted", [
+          { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Benchmark", text: "install" },
+          { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" },
+          { type: "ReplyDelta", seq: 3, id: "r1", text: "Half" },
+        ]],
+        ["tour-retained", [{ type: "TourStarted", seq: 1, id: "t1" }]],
+        ["demo-ownerless", [{ type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Benchmark", text: "start a sandbox" }]],
+      ]))
+      const journal: MockJournal.Shape = {
+        read: room => Ref.get(journals).pipe(Effect.map(all => all.get(room) ?? [])),
+        write: (room, events) => Ref.update(journals, all => new Map(all).set(room, events)),
+      }
+      provide mockFactoryFor("contributor").pipe(Layer.provide(Layer.succeed(MockJournal, journal))) {
+        const factory = try Factory
+        try factory.post("demo-interrupted", "fresh", "Benchmark", "install")
+        const post = (try factory.read("demo-interrupted", 0)).entries.find(entry => entry.clientId === "fresh")!
+        const events = Array.from(try Stream.runCollect(factory.events("demo-interrupted", 0).pipe(
+          Stream.takeUntil(event => event.type === "ReplyFinished" && event.id === replyIdOf(post.id)), Stream.timeout("15 seconds"),
+        )))
+        const snapshot = try factory.read("demo-interrupted", 0)
+        const old = snapshot.entries.find(entry => entry.id === "r1")!
+        const next = snapshot.entries.find(entry => entry.inReplyTo === post.id)!
+        const walked = Array.from(try Stream.runCollect(factory.events("tour-retained", 0).pipe(Stream.takeUntil(event => event.type === "WalkthroughDriven"), Stream.timeout("15 seconds"))))
+        try factory.endTour("tour-retained")
+        const toured = Array.from(try Stream.runCollect(factory.events("tour-retained", 0).pipe(Stream.takeUntil(event => event.type === "TourEnded"), Stream.timeout("15 seconds"))))
+        try Stream.runDrain(factory.events("demo-ownerless", 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished" && event.id === "r1"), Stream.timeout("15 seconds")))
+        const ownerless = (try factory.read("demo-ownerless", 0)).entries.find(entry => entry.inReplyTo === "m1")!
+        const saved = try Ref.get(journals)
+        try Effect.try(() => {
+          expect(old).toMatchObject({ text: "Half", done: true, error: "The agent failed. Try again." })
+          expect(next.done).toBe(true)
+          expect(next.error).toBe("")
+          expect(next.text.length > 20 && next.text.toLowerCase().includes("vibelang")).toBe(true)
+          expect(snapshot.entries).toHaveLength(4)
+          expect(events.slice(0, 5).map(event => event.type)).toEqual(["Posted", "ReplyStarted", "ReplyDelta", "ReplyFailed", "Posted"])
+          expect(events.map(event => event.seq)).toEqual(events.map((_, index) => index + 1))
+          expect(saved.get("demo-interrupted")).toEqual(events)
+          expect(walked.map(event => event.type)).toEqual(["TourStarted", "WalkthroughDriven"])
+          expect(toured.filter(event => event.type === "TourStarted")).toHaveLength(1)
+          expect(toured.filter(event => event.type === "TourEnded")).toHaveLength(1)
+          expect(toured.some(event => event.type === "ReplyFailed")).toBe(false)
+          expect([ownerless.done, ownerless.error, ownerless.text]).toEqual([true, "", "Couldn't start a sandbox"])
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("mock-agent-retained-journal", "Vitest built-in bench; real MockFactory over a healthy memory journal adapter seeded with a half-finished reply, an active tour and an unanswered ownerless sandbox request. The half-answer becomes a visible failure and the next post answers once; the active tour resumes one run and ends without failure; the ownerless request cannot start a sandbox. Exact ordered/persisted event log, retained half text, four entries, terminal states, tour counts and owner refusal checked. Three new scoped engines and stores, initialization and assertions included.", ["Seeded retained records over an in-memory journal adapter, not an actual process kill, browser reload or localStorage durability. Shipped scripted agent, no model, backend or real Container."], result))
+}, 120_000)

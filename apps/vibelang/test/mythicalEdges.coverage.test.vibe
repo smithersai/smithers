@@ -2,7 +2,8 @@
 // counted and changes nothing), a log at capacity, tasks and lanes past the length limit, and lookups of ids that
 // are not there.
 import { describe, expect, it } from "@effect/vitest"
-import { decide, hasCommit, MAX_TITLE, rankOf, replayHistory, taskOf, type Event, type History } from "../src/history/mythical.vibe"
+import { decide, hasCommit, MAX_TITLE, rankOf, taskOf, type Event, type History } from "../src/history/mythical.vibe"
+import { replayHistory } from "../src/history/replayDecision.vibe"
 import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
 
 /** The compiler (m1, m2) and Docs (m3), all landed, with no task. */

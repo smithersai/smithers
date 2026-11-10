@@ -5,11 +5,9 @@ import { selectModelTurns } from "../src/core/sequenceDecision.vibe"
 // published to every follower. The Durable Object that hosts it (Objects.vibe) supplies the log and the dispatch; nothing here names
 // Cloudflare.
 import {
-  apply,
   empty,
   isReplying,
   isTouring,
-  replayLog,
   roleOf,
   type GrantMode,
   type Role,
@@ -19,6 +17,7 @@ import {
   type Event,
 } from "../src/core/conversation.vibe"
 import { decide, type Intent, type Refusal } from "../src/core/decide.vibe"
+import { recordedConversation, replayLog } from "../src/core/replayDecision.vibe"
 import { endsTour, replyIdOf, touring, unanswered } from "../src/core/flows.vibe"
 import { appends, startAnswer } from "../src/core/flowDecision.vibe"
 import { EventSchema, type ReadSnapshot } from "../src/core/schemas.vibe"
@@ -78,10 +77,11 @@ export effect function make(log: Log, dispatch?: Dispatch) {
   /** Decides `intent` against the current state; an accepted event is written, applied and published. */
   effect function record(intent: Intent, owner?: string) {
     const current = try state()
-    const decision = decide(current.conversation, intent)
+    const step = recordedConversation(empty, current.conversation, current.log, intent)
+    const decision = step.decision
     if (!decision.ok) return decision
     try log.write(decision.event, owner)
-    try Ref.set(loaded, { conversation: apply(current.conversation, decision.event), log: [...current.log, decision.event] })
+    try Ref.set(loaded, { conversation: step.conversation, log: step.log })
     try PubSub.publish(published, decision.event)
     return decision
   }

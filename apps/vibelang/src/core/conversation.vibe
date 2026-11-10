@@ -866,45 +866,6 @@ export function issuePolicyAction(op: IssueOperation): Action {
   return "merge"
 }
 
-/** Specification measure only: the first-match parent reached after exactly steps links; missing nodes are -1. */
-//@ verify
-//@ requires steps >= 0
-//@ ensures steps == 0 ==> \result == start
-//@ ensures steps > 0 && issueAncestorAt(items, start, steps - 1) == 0 ==> \result == 0
-//@ ensures steps > 0 && issueAncestorAt(items, start, steps - 1) != 0 && forall(i, 0 <= i && i < items.length ==> items[i].number != issueAncestorAt(items, start, steps - 1)) ==> \result == -1
-//@ ensures steps > 0 && issueAncestorAt(items, start, steps - 1) != 0 ==> forall(i, 0 <= i && i < items.length && items[i].number == issueAncestorAt(items, start, steps - 1) && forall(j, 0 <= j && j < i ==> items[j].number != issueAncestorAt(items, start, steps - 1)) ==> \result == items[i].parent)
-//@ decreases steps
-export function issueAncestorAt(items: ReadonlyArray<IssueRecord>, start: number, steps: number): number {
-  if (steps <= 0) return start
-  const previous = issueAncestorAt(items, start, steps - 1)
-  if (previous === 0) return 0
-  const found = items.find((item) => item.number === previous)
-  if (found === undefined) return -1
-  return found.parent
-}
-
-/** Each issue has one parent. Reject self links, missing parents and any cycle, including malformed input trees. */
-//@ verify
-//@ ensures \result ==> child > 0 && parent > 0 && child != parent
-//@ ensures \result ==> exists(i, 0 <= i && i < items.length && items[i].number == child)
-//@ ensures \result ==> exists(k, 0 <= k && k <= items.length + 1 && issueAncestorAt(items, parent, k) == 0 && forall(t, 0 <= t && t < k ==> issueAncestorAt(items, parent, t) != child))
-export function canLinkIssues(items: ReadonlyArray<IssueRecord>, child: number, parent: number): boolean {
-  if (parent <= 0 || child <= 0 || child === parent || !items.some((i) => i.number === child)) return false
-  let next = parent
-  let steps = 0
-  while (next !== 0 && steps <= items.length) {
-    //@ invariant 0 <= steps && steps <= items.length + 1
-    //@ invariant next == issueAncestorAt(items, parent, steps)
-    //@ invariant forall(k, 0 <= k && k < steps ==> issueAncestorAt(items, parent, k) != child)
-    //@ decreases items.length + 1 - steps
-    if (next === child) return false
-    const found = items.find((i) => i.number === next)
-    if (found === undefined) return false
-    next = found.parent
-    steps += 1
-  }
-  return next === 0
-}
 /** Commitment changes neither the issue identity nor its tree or content. */
 //@ verify
 //@ requires !committed || assignee != ""
@@ -965,25 +926,6 @@ export function unansweredSelection(conversation: Conversation): UnansweredSelec
   return { indexes, posts: indexes.map((i) => conversation.entries[i]!.id) }
 }
 
-/** Replay a retained JavaScript array from a zero cursor; each entry advances by at most one. */
-//@ verify
-//@ requires initial.seq == 0
-//@ requires events.length <= 4294967295
-//@ ensures 0 <= \result.seq && \result.seq <= events.length
-//@ ensures forall(j, 0 <= j && j < events.length ==> events[j].seq == j + 1) ==> \result.seq == events.length
-export function replayLog(initial: Conversation, events: ReadonlyArray<Event>): Conversation {
-  let current = initial
-  let i = 0
-  while (i < events.length) {
-    //@ invariant 0 <= i && i <= events.length
-    //@ invariant 0 <= current.seq && current.seq <= i
-    //@ invariant forall(j, 0 <= j && j < events.length ==> events[j].seq == j + 1) ==> current.seq == i
-    //@ decreases events.length - i
-    current = apply(current, events[i]!)
-    i++
-  }
-  return current
-}
 
 /** Specification-only prefix measure; executable removal never calls this recursion. */
 //@ verify
@@ -1037,6 +979,7 @@ export function vipDocumentMatches(issueAuthor: number, reviewAuthor: number, pa
 //@ ensures (kind != "person" || role != "maintainer" || actor == "" || at == "" || issue.vip != "In review") ==> \result == issue
 //@ ensures kind == "person" && role == "maintainer" && actor != "" && at != "" && issue.vip == "In review" ==> \result.vip == "Accepted" && \result.approvedBy == actor && \result.approvedAt == at
 //@ ensures \result.task == issue.task && \result.state == issue.state && \result.number == issue.number
+//@ ensures \result.parent == issue.parent
 export function approveVip(issue: IssueRecord, role: Role, kind: string, actor: string, at: string): IssueRecord {
   if (kind !== "person" || role !== "maintainer" || actor === "" || at === "" || issue.vip !== "In review") return issue
   return { ...issue, vip: "Accepted", approvedBy: actor, approvedAt: at }
@@ -1045,6 +988,7 @@ export function approveVip(issue: IssueRecord, role: Role, kind: string, actor: 
 //@ ensures issue.vip != "In review" ==> \result == issue
 //@ ensures issue.vip == "In review" ==> \result.vip == "Declined" && \result.state == "closed"
 //@ ensures \result.task == issue.task && \result.number == issue.number
+//@ ensures \result.parent == issue.parent
 export function declineVip(issue: IssueRecord): IssueRecord {
   return issue.vip === "In review" ? { ...issue, vip: "Declined", state: "closed" } : issue
 }

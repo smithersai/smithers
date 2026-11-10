@@ -1,0 +1,102 @@
+// Replaying the mythical history's journal (wiki/decisions/0020-mythical-history.md, 0018 "Fifth proofs lane"). The
+// sequencer (Sequencer.vibe) keeps the live history in memory and the journal in its store. On load it replays the
+// journal with `replayHistory`; on each intent it records with `recordedHistory`. Both move the history with the same
+// step, `replayEvent`, so the live history is always exactly the replay of the journal written so far:
+// `replayHistory` is the left fold `replayedHistory`, and `recordedHistory` extends that fold by the accepted event.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). `apply`, `decideWithinCapacity` and `replayEvent` are proved in mythical.vibe; here they are
+// their contracts. Functions marked "specification only" never run.
+import { decideWithinCapacity, replayEvent, type Decision, type Event, type History, type Intent } from "./mythical.vibe"
+
+/**
+ * Specification only: replay's step, made total. Inside `replayEvent`'s domain, where every validated history and
+ * event lies, it is `replayEvent`. Opaque: proofs see its contract, not its body, so the fold below is reasoned about by its shape.
+ */
+//@ verify
+//@ opaque
+//@ ensures 0 <= history.seq && history.seq <= 9007199254740991 && 0 <= event.seq && event.seq <= 9007199254740991 ==> \result == replayEvent(history, event)
+export function replayStep(history: History, event: Event): History {
+  return 0 <= history.seq && history.seq <= 9007199254740991 && 0 <= event.seq && event.seq <= 9007199254740991 ? replayEvent(history, event) : history
+}
+
+/** Specification only: the history after replaying the first `count` events of `events` over `initial`, in order. */
+//@ verify
+//@ requires 0 <= count && count <= events.length
+//@ decreases count
+export function replayedHistory(initial: History, events: ReadonlyArray<Event>, count: number): History {
+  return count <= 0 ? initial : replayStep(replayedHistory(initial, events, count - 1), events[count - 1]!)
+}
+
+/** Replays validated events over a validated snapshot, including one already at capacity.
+ */
+//@ verify
+//@ requires 0 <= initial.seq && initial.seq <= 9007199254740991
+//@ requires forall(i, 0 <= i && i < initial.commits.length ==> 0 <= initial.commits[i].rank && initial.commits[i].rank < initial.seq)
+//@ requires forall(i, 0 <= i && i < events.length ==> 0 <= events[i].seq && events[i].seq <= 9007199254740991 && (events[i].type != "Planned" || (0 <= events[i].rank && events[i].rank < events[i].seq)))
+//@ ensures initial.seq <= \result.seq && \result.seq <= 9007199254740991 && \result.seq <= initial.seq + events.length
+//@ ensures forall(i, 0 <= i && i < \result.commits.length ==> 0 <= \result.commits[i].rank && \result.commits[i].rank < \result.seq)
+//@ ensures forall(i, 0 <= i && i < events.length ==> events[i].seq == initial.seq + i + 1) ==> \result.seq == initial.seq + events.length
+//@ ensures \result == replayedHistory(initial, events, events.length)
+export function replayHistory(initial: History, events: ReadonlyArray<Event>): History {
+  let history = initial
+  let i = 0
+  while (i < events.length) {
+    //@ invariant 0 <= i && i <= events.length
+    //@ invariant initial.seq <= history.seq && history.seq <= 9007199254740991 && history.seq <= initial.seq + i
+    //@ invariant forall(j, 0 <= j && j < history.commits.length ==> 0 <= history.commits[j].rank && history.commits[j].rank < history.seq)
+    //@ invariant forall(j, 0 <= j && j < events.length ==> events[j].seq == initial.seq + j + 1) ==> history.seq == initial.seq + i
+    //@ invariant history == replayedHistory(initial, events, i)
+    //@ decreases events.length - i
+    history = replayEvent(history, events[i]!)
+    i++
+  }
+  return history
+}
+
+/** One intent on the live history: the sequencer's decision, and the history after it. */
+export interface Recorded {
+  readonly decision: Decision
+  readonly history: History
+}
+
+/**
+ * Records `intent` on the live `history`: an accepted event moves it exactly as replaying that event does, and a
+ * refused intent leaves it as it was.
+ */
+//@ verify
+//@ opaque
+//@ requires 0 <= history.seq && history.seq <= 9007199254740991
+//@ ensures \result.decision == decideWithinCapacity(history, intent)
+//@ ensures !\result.decision.ok ==> \result.history == history
+//@ ensures \result.decision.ok ==> \result.history == replayEvent(history, \result.decision.event)
+export function recordedHistory(history: History, intent: Intent): Recorded {
+  const decision = decideWithinCapacity(history, intent)
+  if (!decision.ok) return { decision, history }
+  return { decision, history: replayEvent(history, decision.event) }
+}
+
+/** Specification only: two journals that agree on their first `count` events replay those events to the same history. */
+//@ verify
+//@ requires 0 <= count && count <= journal.length && count <= next.length
+//@ requires forall(i, 0 <= i && i < count ==> next[i] == journal[i])
+//@ ensures replayedHistory(initial, next, count) == replayedHistory(initial, journal, count)
+//@ decreases count
+export function replayedHistoryPrefix(initial: History, journal: ReadonlyArray<Event>, next: ReadonlyArray<Event>, count: number): boolean {
+  return count <= 0 ? true : replayedHistoryPrefix(initial, journal, next, count - 1)
+}
+
+/**
+ * Specification only: replay equivalence. While the live history is the replay of the journal, recording an intent
+ * keeps it so: an accepted event is appended to the journal and the history is then the replay of the longer journal;
+ * a refused intent changes neither.
+ */
+//@ verify
+//@ requires history == replayedHistory(initial, journal, journal.length)
+//@ requires 0 <= history.seq && history.seq <= 9007199254740991
+//@ requires recordedHistory(history, intent).decision.ok ==> next.length == journal.length + 1 && forall(i, 0 <= i && i < journal.length ==> next[i] == journal[i]) && next[journal.length] == recordedHistory(history, intent).decision.event
+//@ requires !recordedHistory(history, intent).decision.ok ==> next == journal
+//@ ensures recordedHistory(history, intent).history == replayedHistory(initial, next, next.length)
+export function liveHistoryReplays(initial: History, journal: ReadonlyArray<Event>, history: History, intent: Intent, next: ReadonlyArray<Event>): boolean {
+  return true
+}

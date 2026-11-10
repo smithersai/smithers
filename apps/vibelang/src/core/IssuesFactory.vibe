@@ -3,7 +3,8 @@ import { fixtureSpecification, fixtureSpecificationHistory, performSpecification
 import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { FlowRuntime } from "@smthrs/flow"
-import { applyIssues, canLinkIssues, emptyIssues, issuePermission, setCommitment, approveVip, declineVip, type IssueRecord, type Role } from "./conversation.vibe"
+import { canLinkIssues, issueCreates, issuesAfter, nextIssueNumber } from "./issueGraphDecision.vibe"
+import { applyIssues, emptyIssues, issuePermission, type IssueRecord, type Role } from "./conversation.vibe"
 import { IssueHost, issueFlow, issueRegistration, authorizeIssue, issueExecutionId } from "./issueFlows.vibe"
 import { IssueFailure, IssueRequest, type IssuesApi, vipIssueBody } from "./issueSchemas.vibe"
 
@@ -30,6 +31,18 @@ export const fixtureIssues: ReadonlyArray<IssueRecord> = [
   item(33, "Install fails behind a proxy", { state: "closed", author: "maya", labels: ["bug"], age: "3w", comments: 4 }),
   item(31, "Rename effect to fx", { state: "closed", author: "will", age: "3w", comments: 7 }),
 ]
+
+/** The event line an edit adds to its issue's notes. */
+function noteOf(request: IssueRequest): string {
+  switch (request.op) {
+    case "commit": return `committed this as a task and assigned ${request.assignee}`
+    case "uncommit": return "uncommitted this task"
+    case "link": return `linked this under #${request.parent}`
+    case "accept": return "accepted this VIP"
+    case "decline": return "declined this VIP"
+    default: return ""
+  }
+}
 
 export interface FixturePerson { readonly id: string; readonly login: string; readonly role: Role; readonly kind?: "person" | "agent" }
 export type FixtureIdentity = Role | (() => FixturePerson!!)
@@ -61,7 +74,7 @@ export effect function fixtureHost(identity: FixtureIdentity, state: Ref.Ref<typ
       if (request.key === "") throw new IssueFailure({ reason: "invalid", unwritten: true })
       if (request.op === "draft") return { ...before, draft: { title: request.title.trim() || "Tuple patterns", summary: request.text.trim() || "Bind the elements of a tuple in one pattern.", example: request.example.trim() || "const pair = [1, 2]", prior: request.prior.trim() || "Rust tuple patterns\nTypeScript tuple types" } }
       const issue = before.items.find((i) => i.number === request.number)
-      const creating = request.op === "new" || request.op === "propose" || request.op === "split"
+      const creating = issueCreates(request.op)
       if (!creating && issue === undefined) throw new IssueFailure({ reason: "missing", unwritten: true })
       if (creating && request.title.trim() === "") throw new IssueFailure({ reason: "title", unwritten: true })
       if (request.op === "propose" && (request.text.trim() === "" || request.example.trim() === "" || request.prior.trim() === "")) throw new IssueFailure({ reason: "incomplete", unwritten: true })
@@ -72,29 +85,11 @@ export effect function fixtureHost(identity: FixtureIdentity, state: Ref.Ref<typ
       if ((request.op === "accept" || request.op === "decline") && issue?.vip !== "In review") throw new IssueFailure({ reason: "review", unwritten: true })
       const now = try Clock.currentTimeMillis
       const actor = person.login
-      let selected = 0
-      let items = before.items
-      if (creating) {
-        const number = Math.max(...items.map((i) => i.number)) + 1
-        selected = number
-        const vip = request.op === "propose"
-        items = [item(number, request.title.trim(), { body: vip ? vipIssueBody(request) : request.text, author: actor, age: "just now", parent: request.op === "split" ? request.number : 0, vip: vip ? "In review" : "", path: vip ? `docs/design/vips/${number}.md` : "", review: vip ? `https://github.com/smithersai/vibelang/pull/${number}` : "" }), ...items]
-      } else {
-        // Every other operation returned or was created above: what is left is one of the six updates below.
-        const op = request.op
-        items = items.map((i) => {
-          if (i.number !== request.number) return i
-          const event = (text: string, change: Partial<IssueRecord>): IssueRecord => ({ ...i, ...change, notes: [...i.notes, { age: "just now", author: actor, text, event: true }] })
-          switch (op) {
-            case "comment": return { ...i, comments: i.comments + 1, notes: [...i.notes, { age: "just now", author: actor, text: request.text.trim(), event: false }] }
-            case "commit": return event(`committed this as a task and assigned ${request.assignee}`, setCommitment(i, request.assignee, true))
-            case "uncommit": return event("uncommitted this task", setCommitment(i, "", false))
-            case "link": return event(`linked this under #${request.parent}`, { parent: request.parent })
-            case "accept": return event("accepted this VIP", approveVip(i, person.role, person.kind ?? "person", actor, new Date(now).toISOString()))
-            case "decline": return event("declined this VIP", declineVip(i))
-          }
-        })
-      }
+      // The proved transition (issueGraphDecision.vibe): from a forest, these checked writes keep a forest.
+      const selected = creating ? nextIssueNumber(before.items) : 0
+      const vip = request.op === "propose"
+      const created = creating ? item(selected, request.title.trim(), { body: vip ? vipIssueBody(request) : request.text, author: actor, age: "just now", vip: vip ? "In review" : "", path: vip ? `docs/design/vips/${selected}.md` : "", review: vip ? `https://github.com/smithersai/vibelang/pull/${selected}` : "" }) : issue!
+      const items = issuesAfter(before.items, created, { op: request.op, number: request.number, parent: request.parent, assignee: request.assignee, text: request.op === "comment" ? request.text.trim() : "", note: noteOf(request), actor, role: person.role, kind: person.kind ?? "person", at: request.op === "accept" ? new Date(now).toISOString() : "" })
       const next = { ...before, ...applyIssues(before, { type: "IssuesObserved", seq: before.seq + 1, items }) }
       try Ref.set(state, next)
       return selected === 0 ? next : { ...next, selected }

@@ -133,6 +133,37 @@ class IsolatedCoreBudget(unittest.TestCase):
             self.assertIn('--isolate-assertions', calls[0])
             self.assertLessEqual(int(calls[0][calls[0].index('--cores') + 1]), 2)
 
+
+class PositiveProofTimeLimits(unittest.TestCase):
+    def test_history_headroom_does_not_change_mutant_or_other_module_limits(self):
+        from mutation_targets import time_limit
+        self.assertEqual(time_limit('replayDecision', False, 'src/history/replayDecision.vibe'), 180)
+        self.assertEqual(time_limit('replayDecision', False, 'src/core/replayDecision.vibe'), 60)
+        self.assertEqual(time_limit('replay-order', True, 'src/history/replayDecision.vibe'), 120)
+        self.assertEqual(time_limit('history-live-stale', True, 'src/history/replayDecision.vibe'), 30)
+
+    def test_real_invocation_selects_the_positive_budget_by_module_path(self):
+        for module, limit in [('src/history/replayDecision.vibe', 180), ('src/core/replayDecision.vibe', 60)]:
+            with self.subTest(module=module), tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+                app = pathlib.Path(folder)
+                source = app / module
+                source.parent.mkdir(parents=True)
+                (app / 'tsconfig.json').write_text(json.dumps({'extends': str(ROOT.parent / 'tsconfig.json')}))
+                source.write_text('//@ verify\n//@ ensures \\result == input\nexport function same(input: number): number { return input }\n')
+                env = {k: v for k, v in os.environ.items() if k != 'VERIFY_MUTATION_MANIFEST'}
+                env['VIBELANG_VERIFY_ROOT'] = str(app)
+                result = subprocess.run([sys.executable, str(ROOT / 'check.py')], capture_output=True, text=True, env=env, timeout=120)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                summaries = list((app / 'verify/.checks').glob('run-*/summary.json'))
+                self.assertEqual(len(summaries), 1)
+                calls = [c['argv'] for c in json.loads(summaries[0].read_text())['commands'] if pathlib.Path(c['argv'][0]).name == 'dafny']
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(calls[0][calls[0].index('--verification-time-limit') + 1], str(limit))
+                source.write_text('//@ verify\n//@ ensures \\result == input\nexport function same(input: number): number { return input + 1 }\n')
+                wrong = subprocess.run([sys.executable, str(ROOT / 'check.py')], capture_output=True, text=True, env=env, timeout=120)
+                self.assertNotEqual(wrong.returncode, 0, wrong.stdout + wrong.stderr)
+                self.assertIn('a postcondition could not be proved', wrong.stdout)
+
 class SourceArguments(unittest.TestCase):
     def test_extra_missing_source_is_not_ignored(self):
         with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
@@ -233,6 +264,36 @@ class TargetedAssertions(unittest.TestCase):
         ambiguous = source.replace('      assert valid;', '      assert valid;\n      assert valid;', 1)
         with self.assertRaises(ValueError): case_assertion_line(ambiguous, 'target', 'Delta', 'valid')
 
+class TargetedInvariants(unittest.TestCase):
+    def test_an_invariant_is_selected_inside_the_named_method(self):
+        from mutation_targets import invariant_line
+        generated = 'method other()\n{\n  while true\n    invariant kept\n  {\n  }\n}\nmethod target()\n{\n  while true\n    invariant (0 <= i)\n    invariant (kept)\n  {\n  }\n}\n'
+        self.assertEqual(invariant_line(generated, 'target', 'kept'), 12)
+        for function, clause in [('missing', 'kept'), ('target', 'different')]:
+            with self.assertRaises(ValueError): invariant_line(generated, function, clause)
+        ambiguous = generated.replace('    invariant (kept)', '    invariant (kept)\n    invariant (kept)', 1)
+        with self.assertRaises(ValueError): invariant_line(ambiguous, 'target', 'kept')
+
+    def test_every_targeted_invariant_names_a_mutation(self):
+        from mutation_targets import INVARIANTS
+        from extended_mutations import cases
+        names = {case[1] for case in cases}
+        self.assertTrue(INVARIANTS)
+        self.assertLessEqual(set(INVARIANTS), names)
+
+class MutantTimeLimits(unittest.TestCase):
+    def test_a_named_slow_mutant_gets_its_own_limit_and_others_keep_thirty_seconds(self):
+        from mutation_targets import TIME_LIMITS, time_limit
+        self.assertEqual(time_limit('replay-order', True), 120)
+        self.assertEqual(time_limit('any-other-mutant', True), 30)
+        self.assertEqual(time_limit('replay-order', False), 60)
+        self.assertTrue(all(isinstance(v, int) and 30 < v <= 300 for v in TIME_LIMITS.values()))
+
+    def test_every_time_limit_names_a_mutation(self):
+        from mutation_targets import TIME_LIMITS
+        from extended_mutations import cases
+        self.assertLessEqual(set(TIME_LIMITS), {case[1] for case in cases})
+
 class FunctionAssertions(unittest.TestCase):
     def test_unguarded_assertion_is_confined_to_one_function(self):
         from mutation_targets import case_assertion_line
@@ -241,6 +302,15 @@ class FunctionAssertions(unittest.TestCase):
         with self.assertRaises(ValueError): case_assertion_line(source, 'missing', None, 'kept')
         with self.assertRaises(ValueError): case_assertion_line(source, 'target', None, 'missing')
         with self.assertRaises(ValueError): case_assertion_line(source.replace('  assert kept;', '  assert kept;\n  assert kept;', 1), 'target', None, 'kept')
+
+class FailureLocation(unittest.TestCase):
+    def test_a_failure_in_an_opaque_function_is_attributed_to_it(self):
+        from sources import enclosing_symbol
+        lines = ['function before(): int', '{ 0 }', 'opaque function step(n: int): int', '  ensures step(n) == n', '{', '  n', '}', 'lemma after_ensures()']
+        self.assertEqual(enclosing_symbol(lines, 6), 'step')
+        self.assertEqual(enclosing_symbol(lines, 2), 'before')
+        self.assertEqual(enclosing_symbol(lines, 8), 'after_ensures')
+        self.assertIsNone(enclosing_symbol(['// header'], 1))
 
 class CheckedProofAdditions(unittest.TestCase):
     def test_induction_only_adds_checked_steps_to_the_named_empty_lemma(self):
@@ -263,6 +333,16 @@ class CheckedProofAdditions(unittest.TestCase):
         self.assertEqual(insertion_names('src/core/sandboxDecision.vibe'), ['runningCountPrefix_ensures'])
         for invalid in [source + source, source.replace('{\n}', '{\n  assert valid;\n}')]:
             with self.assertRaises(ValueError): add_proof_steps(invalid, 'src/core/sandboxDecision.vibe')
+
+    def test_a_lemma_that_only_reveals_takes_steps_after_its_reveals(self):
+        from proof_additions import add_proof_steps, LEMMA_STEPS
+        (prefix, prefix_steps), (signature, steps) = LEMMA_STEPS['src/history/replayDecision.vibe']
+        source = prefix + '\n  ensures valid\n{\n}\n' + signature + '\n  requires valid\n  ensures valid\n{\n  reveal replayStep();\n}\n'
+        result = add_proof_steps(source, 'src/history/replayDecision.vibe')
+        self.assertEqual(result.replace(steps, '', 1).replace(prefix_steps, '', 1), source)
+        self.assertLess(result.index('reveal replayStep();'), result.index(steps))
+        for invalid in [source.replace('reveal replayStep();', 'assert valid;'), source.replace('reveal replayStep();', 'reveal replayStep();\n  assert valid;')]:
+            with self.assertRaises(ValueError): add_proof_steps(invalid, 'src/history/replayDecision.vibe')
 
 class MutationModuleFilter(unittest.TestCase):
     def run_mutations(self, *args):

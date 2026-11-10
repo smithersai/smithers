@@ -1,6 +1,8 @@
 import type { TurnInput } from "../src/core/sequenceDecision.vibe"
 import type { AskProgress } from "../src/surfaces/commandDecision.vibe"
 import { it, expect } from "@effect/vitest"
+import { apply, empty } from "../src/core/conversation.vibe"
+import { decide } from "../src/core/decide.vibe"
 import { reserve, settle } from "../worker/budgetDecision.vibe"
 import { appends, endsTourEvent, startAnswer, readingHold } from "../src/core/flowDecision.vibe"
 import { failureCode, reasonCode } from "../worker/replyReasons.vibe"
@@ -207,4 +209,20 @@ it("ordered prompt selection and command reply collection", async ({ bench }) =>
     expect(C.commandError("Other", "offline", "Refused", "forbidden", "other")).toBe("other")
   }).run(quick)
   await runPromise(artifact("context-command-policies", "Vitest built-in bench; prompt eligibility, first duplicate identity, source-order indexes/windowing and correlated CLI/MCP collection through unrelated events, restart, finish/failure. Complete expected selections, answer fields/event numbers and outcome/error precedence checked.", ["Small in-process decision corpus, no model/IPC or service execution. Assertions included; large transcript cost is measured separately."], result))
+})
+
+
+it("an accepted authorization advances only the journal cursor and preserves its authority", async ({ bench }) => {
+  const result = await workload(bench, "authorization-journal", "sync", () => {
+    const before = apply(empty, { type: "RoleGranted", seq: 1, id: "maintainer", by: "maintainer", role: "maintainer", mode: "person" })
+    const allowed = decide(before, { type: "Authorize", id: "check", by: "maintainer", action: "settings" })
+    expect(allowed).toEqual({ ok: true, event: { type: "ActionAuthorized", seq: 2, id: "check", by: "maintainer", action: "settings" } })
+    if (!allowed.ok) return
+    const after = apply(before, allowed.event)
+    expect(after).toEqual({ ...before, seq: 2 })
+    expect(after.roles).toBe(before.roles)
+    expect(after.entries).toBe(before.entries)
+    expect(decide(before, { type: "Authorize", id: "check", by: "", action: "settings" })).toEqual({ ok: false, refusal: "forbidden" })
+  }).run(quick)
+  await runPromise(artifact("authorization-journal", "Vitest built-in bench; apply a trusted role event, decide an allowed settings authorization, apply its exact numbered event, then reject a viewer. Check the complete accepted event, sequence-only state change and retained role/entry identities. Fresh state per callback; setup and assertions included.", ["Pure policy and event replay, not sign-in, a remote permission check or settings IO; assertions dominate these small operations."], result))
 })
