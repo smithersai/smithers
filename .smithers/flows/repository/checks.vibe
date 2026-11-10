@@ -324,7 +324,10 @@ export const captureChecks = (options: ImmutableSourceOptions, work: typeof Work
         // scope was admitted above, so this selection cannot refuse.
         const scopes = new Map<typeof Check.Type, ReadonlyArray<string>>()
         for (const check of semantic) {
-          scopes.set(check, try orDie(Effect.try({ try: () => selectedComparison(comparison, check).paths, catch: (cause) => cause })))
+          scopes.set(
+            check,
+            try orDie(Effect.try({ try: () => selectedComparison(comparison, check).paths, catch: (cause) => cause }))
+          )
         }
         const scopeOf = (check: typeof Check.Type) => scopes.get(check) ?? []
         const contexts = try Effect.forEach(semantic, (check) =>
@@ -343,25 +346,26 @@ export const captureChecks = (options: ImmutableSourceOptions, work: typeof Work
             (scoped.some((name) => deleted.has(name)) || rulePaths(check.rule).some((name) => deleted.has(name)))
         })
         const baseContexts = baseChecks.length ?
-          try withCapturedCommit(options, comparison.base, work.evidence.source.operationId, (baseRoot) =>
-            Effect.forEach(baseChecks, (check) =>
-              captureCheckContext(options, baseRoot, {
-                source: comparison.base,
-                check,
-                paths: scopeOf(check).filter((name) => deleted.has(name)),
-                ruleInputs: rulePaths(check.rule).filter((name) =>
-                  deleted.has(name)
-                ),
-                deadlineAt: work.deadlineAt
-              }))) :
+          try withCapturedCommit(
+            options,
+            comparison.base,
+            work.evidence.source.operationId,
+            (baseRoot) =>
+              Effect.forEach(baseChecks, (check) =>
+                captureCheckContext(options, baseRoot, {
+                  source: comparison.base,
+                  check,
+                  paths: scopeOf(check).filter((name) => deleted.has(name)),
+                  ruleInputs: rulePaths(check.rule).filter((name) => deleted.has(name)),
+                  deadlineAt: work.deadlineAt
+                }))
+          ) :
           []
         // Real committed deletions need the same complete preimage evidence as
         // materialized proposals. An absent/refused historical file is not a deletion proof.
         for (const name of selected) {
           if (deleted.has(name)) {
-            const before = baseContexts.flatMap((context) =>
-              context.files
-            ).find((file) => file.path === name)
+            const before = baseContexts.flatMap((context) => context.files).find((file) => file.path === name)
             if (!before || before.truncated || (sha256(before.text)) !== before.digest) {
               throw invalid("A deleted source has no complete captured base preimage")
             }
@@ -374,9 +378,11 @@ export const captureChecks = (options: ImmutableSourceOptions, work: typeof Work
         }
         return { work, comparison, contexts, baseContexts, searched: try probeCheckLocations(options, root) }
       })
-  }).pipe(Effect.mapError((error) =>
-    error instanceof CodingError ? error : invalid("The check comparison could not be captured")
-  ))
+  }).pipe(
+    Effect.mapError((error) =>
+      error instanceof CodingError ? error : invalid("The check comparison could not be captured")
+    )
+  )
 
 export const executeCommand = (
   options: ImmutableSourceOptions,
@@ -453,7 +459,7 @@ const comparisonContextFailure = (
     if (
       deleted.some((path) =>
         baseContext.files.find((file) => file.path === path)?.text !==
-          comparison.changes.find((change) => change.path === path)?.before
+        comparison.changes.find((change) => change.path === path)?.before
       )
     ) return "Deleted source differs from its captured base preimage"
   }

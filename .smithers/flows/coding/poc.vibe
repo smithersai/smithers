@@ -77,13 +77,38 @@ export const Poc = Flow.make("coding/Poc", {
   error: Error,
   body: Node.capture({}, (input) =>
     CapturePocSource.call(input).pipe(
-      Node.bindPlanned(Node.capture({}, (source) =>
-        DraftPoc.call({ input, source }).pipe(Node.bindPlanned(Node.capture({}, (draft) =>
-          MaterializePoc.call({ source, draft }).pipe(Node.bindPlanned(Node.capture({}, (changes) =>
-            ReviewPoc.call({ input, source: source.revision, draftExplanation: draft.explanation, changes }).pipe(
-              Node.bindPlanned(Node.capture({}, (review) =>
-                RetainPoc.call({ source, changes, review })))
-            )))))))))
+      Node.bindPlanned(
+        Node.capture(
+          {},
+          (source) =>
+            DraftPoc.call({ input, source }).pipe(
+              Node.bindPlanned(
+                Node.capture(
+                  {},
+                  (draft) =>
+                    MaterializePoc.call({ source, draft }).pipe(
+                      Node.bindPlanned(
+                        Node.capture(
+                          {},
+                          (changes) =>
+                            ReviewPoc.call({
+                              input,
+                              source: source.revision,
+                              draftExplanation: draft.explanation,
+                              changes
+                            }).pipe(
+                              Node.bindPlanned(
+                                Node.capture({}, (review) => RetainPoc.call({ source, changes, review }))
+                              )
+                            )
+                        )
+                      )
+                    )
+                )
+              )
+            )
+        )
+      )
     ))
 })
 
@@ -108,7 +133,9 @@ const preview = (files: typeof PocChanges.Type["files"]) =>
 export const materializePoc = ({ source, draft }: { source: PocSource; draft: PocDraft }) =>
   Effect.mapError(
     effect {
-      if (source.digest !== sourceDigest({ revision: source.revision, files: source.files, writable: source.writable })) {
+      if (
+        source.digest !== sourceDigest({ revision: source.revision, files: source.files, writable: source.writable })
+      ) {
         throw invalid("POC source contents do not match their captured digest")
       }
       const files = new Map(source.files.map((file) => [file.path, file.content]))
@@ -162,7 +189,7 @@ export const materializePoc = ({ source, draft }: { source: PocSource; draft: Po
         Digest.canonical(
           unchanged.map((file) => [file.path, decodeLenient(file.content)])
         ) !==
-          Digest.canonical(Object.entries(initial).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
+        Digest.canonical(Object.entries(initial).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
       ) {
         throw invalid("POC transaction unexpectedly altered its source host")
       }
@@ -184,7 +211,10 @@ export const materializePoc = ({ source, draft }: { source: PocSource; draft: Po
     (error) =>
       error instanceof CodingError
         ? error
-        : new CodingError({ code: "execution", message: "POC workspace transaction could not produce measured changes" })
+        : new CodingError({
+          code: "execution",
+          message: "POC workspace transaction could not produce measured changes"
+        })
   )
 
 export const pocModels = evidenceOnly(Layer.mergeAll(DraftPoc.layer, ReviewPoc.layer))

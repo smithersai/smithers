@@ -64,7 +64,7 @@ const securityReview = Smithers.SecurityReview({
         "src/walkthrough/walkthroughPath.ts",
         "src/review/buildFileFilter.ts",
         "src/io.ts",
-        "src/workflow/reviewActions.ts"
+        "src/workflow/reviewActions.vibe"
       ]
     },
     {

@@ -35,7 +35,15 @@ import {
   stale
 } from "./correction-policy.ts"
 import { digest, stepMemory, withoutMemory } from "./correction.trusted.ts"
-import { CodingError, CorrectionResult, Implementation, Plan, receiptMatches, Result, ValidatedChange } from "./schema.ts"
+import {
+  CodingError,
+  CorrectionResult,
+  Implementation,
+  Plan,
+  receiptMatches,
+  Result,
+  ValidatedChange
+} from "./schema.ts"
 export { CorrectionResult } from "./schema.ts"
 export {
   adoptChange,
@@ -149,8 +157,12 @@ const repairChecks = (
             check.id,
             tier === "slow" ?
               result.pipe(
-                Node.bindPlanned(Node.capture({}, (receipt) =>
-                  RecordSlow.call({ plan, index, implementation: group.implementation, check, receipt })))
+                Node.bindPlanned(
+                  Node.capture(
+                    {},
+                    (receipt) => RecordSlow.call({ plan, index, implementation: group.implementation, check, receipt })
+                  )
+                )
               ) :
               result
           ]
@@ -196,27 +208,34 @@ const RepairPass = Flow.make("coding/RepairPass", {
         Node.bindPlanned(Node.capture({}, (context) =>
           SelectRepair.call(context).pipe(
             Node.bindPlanned(
-              Node.capture({}, (selection) =>
-                PrepareRepair.call({ context, selection, memoryRevision: plan.memoryRevision }))
+              Node.capture(
+                {},
+                (selection) => PrepareRepair.call({ context, selection, memoryRevision: plan.memoryRevision })
+              )
             )
           ))),
         Node.bindPlanned(Node.capture({}, (repair) =>
           Implement.call(repair.request).pipe(
-            Node.bindPlanned(Node.capture({}, (edited) =>
-              ReadHistory.call({ changeIds: ids(plan, previous), phase: "edited", dependency: edited }).pipe(
-                Node.bindPlanned(Node.capture({}, (read) =>
-                  ReturnTip.call({ plan, previous, repair, edited, read }))),
-                Node.bindPlanned(Node.capture({}, (operation) =>
-                  ApplyNative.call({ operation }))),
-                Node.bindPlanned(
-                  Node.capture(
-                    {},
-                    (returned) =>
-                      ReadHistory.call({ changeIds: ids(plan, previous), phase: "tip", dependency: returned })
+            Node.bindPlanned(
+              Node.capture(
+                {},
+                (edited) =>
+                  ReadHistory.call({ changeIds: ids(plan, previous), phase: "edited", dependency: edited }).pipe(
+                    Node.bindPlanned(
+                      Node.capture({}, (read) => ReturnTip.call({ plan, previous, repair, edited, read }))
+                    ),
+                    Node.bindPlanned(Node.capture({}, (operation) => ApplyNative.call({ operation }))),
+                    Node.bindPlanned(
+                      Node.capture(
+                        {},
+                        (returned) =>
+                          ReadHistory.call({ changeIds: ids(plan, previous), phase: "tip", dependency: returned })
+                      )
+                    ),
+                    Node.bindPlanned(Node.capture({}, (read) => Refresh.call({ plan, previous, repair, edited, read })))
                   )
-                ),
-                Node.bindPlanned(Node.capture({}, (read) => Refresh.call({ plan, previous, repair, edited, read })))
-              )))
+              )
+            )
           ))),
         // The refreshed list is a runtime value; a child boundary materializes it
         // before the fixed-width validation graph expands.
@@ -255,14 +274,22 @@ const Round: RoundFlow = Flow.make("coding/CorrectionRound", {
         Node.capture({}, (outcome) => RecordLearning.call({ plan: cursor.plan, round: cursor.round, outcome }))
       ),
       Node.branch({
-        if: Node.capture({}, (outcome) =>
-          outcome.blocked !== null || outcome.stalled !== null || outcome.result?.status === "validated" ||
-          cursor.round >= cursor.maxRounds),
-        then: Node.capture({}, (outcome) =>
-          Finish.call({ cursor, outcome }).pipe(Node.bindPlanned(Node.capture({}, (result) =>
-            Flow.done(result))))),
-        else: Node.capture({}, (outcome) =>
-          Round.to({ ...cursor, round: cursor.round + 1, previous: outcome.result, streaks: outcome.streaks }))
+        if: Node.capture(
+          {},
+          (outcome) =>
+            outcome.blocked !== null || outcome.stalled !== null || outcome.result?.status === "validated" ||
+            cursor.round >= cursor.maxRounds
+        ),
+        then: Node.capture(
+          {},
+          (outcome) =>
+            Finish.call({ cursor, outcome }).pipe(Node.bindPlanned(Node.capture({}, (result) => Flow.done(result))))
+        ),
+        else: Node.capture(
+          {},
+          (outcome) =>
+            Round.to({ ...cursor, round: cursor.round + 1, previous: outcome.result, streaks: outcome.streaks })
+        )
       })
     ))
 })
@@ -355,53 +382,53 @@ export const correctionLayers = Layer.mergeAll(
     return result
   }),
   RunRound.toLayer(effect (cursor) => {
-      const instance = try FlowRuntime.FlowInstance
-      const runtime = try FlowRuntime.FlowRuntime
-      // The pass identity predates the stall fields, so a resumed pass reattaches.
-      const { plan, maxRounds, round, previous } = cursor
-      const executionId = digest(
-        Digest.canonical(["coding/correction-pass/v1", instance.executionId, { plan, maxRounds, round, previous }])
-      )
-      const execute: Result!(typeof Error.Type | FlowRuntime.FlowCycleDetected | FlowRuntime.StoreUnavailable) = cursor.previous === null
-        ? runtime.execute(ObservePlan, { executionId, payload: { plan: cursor.plan } })
-        : runtime.execute(RepairPass, { executionId, payload: { plan: cursor.plan, previous: cursor.previous } })
-      const settled = execute.pipe(
-        Effect.flatMap(Schema.decodeUnknownEffect(Result)),
-        Effect.map((result): Pass => ({ result, blocked: null })),
-        Effect.catchCause((cause) => {
-          if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt
-          // Preserve declared step failures and their recovery class. Turning
-          // them into a blocked result makes delivery replace the original fault
-          // with invalid_receipt when it refuses the unvalidated request.
-          for (const reason of cause.reasons) {
-            if (Cause.isFailReason(reason) && isStepFailure(reason.error)) return Effect.fail(reason.error)
-          }
-          const early = cause.reasons.find((reason) =>
-            Cause.isFailReason(reason) && reason.error instanceof EarlyFeedback
-          )
-          if (early && Cause.isFailReason(early) && early.error instanceof EarlyFeedback) {
-            const result = early.error.result
-            return acknowledgeFeedback(cursor.previous === null ? ObservePlan : RepairPass, executionId).pipe(
-              Effect.as<Pass>({ result, blocked: null }),
-              Effect.catchCause((ack) =>
-                Cause.hasInterruptsOnly(ack) ?
-                  Effect.interrupt :
-                  Effect.succeed<Pass>({
-                    result,
-                    blocked: {
-                      executionId,
-                      message: `Obsolete checks have not acknowledged cancellation: ${Cause.pretty(ack).slice(0, 8192)}`
-                    }
-                  })
-              )
+    const instance = try FlowRuntime.FlowInstance
+    const runtime = try FlowRuntime.FlowRuntime
+    // The pass identity predates the stall fields, so a resumed pass reattaches.
+    const { plan, maxRounds, round, previous } = cursor
+    const executionId = digest(
+      Digest.canonical(["coding/correction-pass/v1", instance.executionId, { plan, maxRounds, round, previous }])
+    )
+    const execute: Result!(typeof Error.Type | FlowRuntime.FlowCycleDetected | FlowRuntime.StoreUnavailable) = cursor.previous === null
+      ? runtime.execute(ObservePlan, { executionId, payload: { plan: cursor.plan } })
+      : runtime.execute(RepairPass, { executionId, payload: { plan: cursor.plan, previous: cursor.previous } })
+    const settled = execute.pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(Result)),
+      Effect.map((result): Pass => ({ result, blocked: null })),
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt
+        // Preserve declared step failures and their recovery class. Turning
+        // them into a blocked result makes delivery replace the original fault
+        // with invalid_receipt when it refuses the unvalidated request.
+        for (const reason of cause.reasons) {
+          if (Cause.isFailReason(reason) && isStepFailure(reason.error)) return Effect.fail(reason.error)
+        }
+        const early = cause.reasons.find((reason) =>
+          Cause.isFailReason(reason) && reason.error instanceof EarlyFeedback
+        )
+        if (early && Cause.isFailReason(early) && early.error instanceof EarlyFeedback) {
+          const result = early.error.result
+          return acknowledgeFeedback(cursor.previous === null ? ObservePlan : RepairPass, executionId).pipe(
+            Effect.as<Pass>({ result, blocked: null }),
+            Effect.catchCause((ack) =>
+              Cause.hasInterruptsOnly(ack) ?
+                Effect.interrupt :
+                Effect.succeed<Pass>({
+                  result,
+                  blocked: {
+                    executionId,
+                    message: `Obsolete checks have not acknowledged cancellation: ${Cause.pretty(ack).slice(0, 8192)}`
+                  }
+                })
             )
-          }
-          return Effect.succeed<Pass>({
-            result: null,
-            blocked: { executionId, message: Cause.pretty(cause).slice(0, 8192) }
-          })
+          )
+        }
+        return Effect.succeed<Pass>({
+          result: null,
+          blocked: { executionId, message: Cause.pretty(cause).slice(0, 8192) }
         })
-      )
-      return observeRound(cursor, executionId, try settled)
+      })
+    )
+    return observeRound(cursor, executionId, try settled)
   })
 )

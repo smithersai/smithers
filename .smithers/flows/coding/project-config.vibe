@@ -198,8 +198,7 @@ export effect function loadProject(
     offset += chunk.length
   }
   const input = try Effect.try({
-    try: () =>
-      JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown,
+    try: () => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown,
     catch: () => fail("expected UTF-8 JSON")
   })
   // Do not print operator configuration contents in startup diagnostics.

@@ -173,10 +173,10 @@ export const normalEvents = (input: SetupInput) =>
     input.draft.steps.some((step) => step.id === "feature" && (step.mode === "automatic" || step.mode === "approved"))
       ? [{ type: "issues", actions: ["opened", "edited", "reopened", "labeled"] }] :
       []
-    : [{ type: "issues", actions: ["opened", "edited", "reopened", "labeled"] }, {
-      type: "issue_comment",
-      actions: ["created"]
-    }]
+    : [
+      { type: "issues", actions: ["opened", "edited", "reopened", "labeled"] },
+      { type: "issue_comment", actions: ["created"] }
+    ]
 export const activationLayers = Layer.mergeAll(
   Interpreter.layer(RegisterCandidate),
   Interpreter.layer(WaitTrial),

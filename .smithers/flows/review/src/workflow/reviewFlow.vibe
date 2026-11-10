@@ -19,7 +19,6 @@ import { ReviewFailure } from "./reviewFailureSchema.vibe"
  */
 import { type Action, Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import * as Schema from "effect/Schema"
 import { NativeReviewAgentOutput } from "./nativeReviewAgentOutputSchema.vibe"
 import {
   ApplyVerdicts,
@@ -27,8 +26,8 @@ import {
   MAX_VERIFIABLE_FINDINGS,
   MergeFileBatch,
   RenderWalkthrough
-} from "./reviewActions.ts"
-import { NarrateChanges, ReviewFile, VerifyFindings } from "./reviewAgentActions.ts"
+} from "./reviewActions.vibe"
+import { NarrateChanges, ReviewFile, VerifyFindings } from "./reviewAgentActions.vibe"
 import { NarrateReviewPayload, ReviewFilesPayload, ReviewResult, VerifyReviewPayload } from "./reviewSchemas.vibe"
 
 /**

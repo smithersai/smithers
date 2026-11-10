@@ -70,9 +70,8 @@ export const pocSource = (options: PocHostOptions) =>
             current.head.kind !== "resolved" || !sameRevision(current.head, source) || !base ||
             base.kind !== "resolved" ||
             base.commitId !== plan.base.commitId || base.treeId !== plan.base.treeId ||
-            base.parentCommitIds.length !== plan.base.parentCommitIds.length || base.parentCommitIds.some((id, i) =>
-              id !== plan.base.parentCommitIds[i]
-            )
+            base.parentCommitIds.length !== plan.base.parentCommitIds.length ||
+            base.parentCommitIds.some((id, i) => id !== plan.base.parentCommitIds[i])
           ) {
             throw fail("The POC source head or plan base changed; capture and plan again")
           }

@@ -260,100 +260,96 @@ export const cleanupLayers = Layer.mergeAll(
   Interpreter.layer(RecheckHistory),
   validateProposalLayer,
   PrepareDescription.toLayer(effect ({ previous, atom, description }) => {
-      const native = try NativeCoding, instance = try FlowRuntime.FlowInstance
-      const current = try native.read([atom.changeId])
-      const target = current.revisions.find((value) => value.changeId === atom.changeId)
-      if (
-        current.operationId !== previous.operationId || current.head.kind !== "resolved" ||
-        !sameCode(current.head, previous) ||
-        target?.kind !== "resolved" || target.treeId !== atom.treeId
-      ) throw stale("History changed before its final description rewrite")
-      return {
-        operation: "describe" as const,
-        requestId: requestIdFor(instance.executionId, "final-description"),
-        expectedOperationId: current.operationId,
-        target,
-        description
-      }
+    const native = try NativeCoding, instance = try FlowRuntime.FlowInstance
+    const current = try native.read([atom.changeId])
+    const target = current.revisions.find((value) => value.changeId === atom.changeId)
+    if (
+      current.operationId !== previous.operationId || current.head.kind !== "resolved" ||
+      !sameCode(current.head, previous) ||
+      target?.kind !== "resolved" || target.treeId !== atom.treeId
+    ) throw stale("History changed before its final description rewrite")
+    return {
+      operation: "describe" as const,
+      requestId: requestIdFor(instance.executionId, "final-description"),
+      expectedOperationId: current.operationId,
+      target,
+      description
     }
-  ),
+  }),
   ConfirmDescription.toLayer(effect ({ input, operation }) => {
-      const native = try NativeCoding
-      const current = try native.read([input.atom.changeId])
-      const changed = current.revisions.find((value) => value.changeId === input.atom.changeId)
-      const expectedHead = operation.status === "accepted" ? operation.head : input.previous
-      if (
-        !("treeId" in expectedHead) || current.operationId !== operation.operationId ||
-        current.head.kind !== "resolved" || !sameCode(current.head, expectedHead) ||
-        current.head.treeId !== input.previous.treeId || changed?.kind !== "resolved" ||
-        changed.treeId !== input.atom.treeId ||
-        // JJ adds a terminal newline; the native describe operation uses the
-        // same comparison for its unchanged receipt.
-        changed.description?.replace(/\n+$/, "") !== input.description.replace(/\n+$/, "")
-      ) {
-        throw stale("Final description did not preserve the native source and requested description")
-      }
-      return shape(current.head)
+    const native = try NativeCoding
+    const current = try native.read([input.atom.changeId])
+    const changed = current.revisions.find((value) => value.changeId === input.atom.changeId)
+    const expectedHead = operation.status === "accepted" ? operation.head : input.previous
+    if (
+      !("treeId" in expectedHead) || current.operationId !== operation.operationId ||
+      current.head.kind !== "resolved" || !sameCode(current.head, expectedHead) ||
+      current.head.treeId !== input.previous.treeId || changed?.kind !== "resolved" ||
+      changed.treeId !== input.atom.treeId ||
+      // JJ adds a terminal newline; the native describe operation uses the
+      // same comparison for its unchanged receipt.
+      changed.description?.replace(/\n+$/, "") !== input.description.replace(/\n+$/, "")
+    ) {
+      throw stale("Final description did not preserve the native source and requested description")
     }
-  ),
+    return shape(current.head)
+  }),
   RefreshHistory.toLayer(effect ({ admission, head }) => {
-      const native = try NativeCoding
-      const original = admission.request.outcome.result!.changes
-      const ids = [
-        admission.request.plan.base.changeId,
-        ...original.flatMap((change) => change.implementation.atoms.map((atom) => atom.changeId))
-      ]
-      const revisions: Array<NativeRevision> = []
-      // The existing native point-read protocol accepts 100 IDs per request.
-      // Every batch must observe the same operation and source head.
-      for (let offset = 0; offset < ids.length; offset += 100) {
-        const current = try native.read(ids.slice(offset, offset + 100))
-        if (
-          current.head.kind !== "resolved" || !sameCode(current.head, head) || current.operationId !== head.operationId
-        ) throw stale("Final history moved before revalidation")
-        revisions.push(...current.revisions)
-      }
-      const base = revisions.find((value) => value.changeId === admission.request.plan.base.changeId)
-      if (base?.kind !== "resolved" || !sameCode(base, admission.request.plan.base)) {
-        throw stale("Final cleanup changed the validated base")
-      }
-      let parent = admission.request.plan.base
-      const refreshed: Array<Implementation> = []
-      for (const change of original) {
-        const previous = parent, atoms: Array<Revision> = []
-        for (const old of change.implementation.atoms) {
-          const atom = revisions.find((value) => value.changeId === old.changeId)
-          if (
-            atom?.kind !== "resolved" || atom.treeId !== old.treeId || atom.parentCommitIds.length !== 1 ||
-            atom.parentCommitIds[0] !== parent.commitId
-          ) {
-            throw stale("Final cleanup changed an atom's source tree, identity or linear ownership")
-          }
-          parent = shape(atom)
-          atoms.push(parent)
-        }
-        refreshed.push({ ...change.implementation, parent: previous, atoms, head: parent })
-      }
-      return refreshed
-    }
-  ),
-  FinishCleanup.toLayer(effect (input) => {
-      if (input.result.status !== "validated" || input.result.findings.length !== 0) {
-        throw new CodingError({
-          code: "invalid_receipt",
-          message: "Final history's real checks requested changes; it cannot be appended"
-        })
-      }
-      const native = try NativeCoding
-      const current = try native.read()
+    const native = try NativeCoding
+    const original = admission.request.outcome.result!.changes
+    const ids = [
+      admission.request.plan.base.changeId,
+      ...original.flatMap((change) => change.implementation.atoms.map((atom) => atom.changeId))
+    ]
+    const revisions: Array<NativeRevision> = []
+    // The existing native point-read protocol accepts 100 IDs per request.
+    // Every batch must observe the same operation and source head.
+    for (let offset = 0; offset < ids.length; offset += 100) {
+      const current = try native.read(ids.slice(offset, offset + 100))
       if (
-        current.head.kind !== "resolved" || !sameCode(current.head, input.head) ||
-        current.head.treeId !== input.admission.validatedHead.treeId
-      ) {
-        throw stale("The cleaned history changed after final validation")
-      }
-      return { ...input, head: shape(current.head) }
+        current.head.kind !== "resolved" || !sameCode(current.head, head) || current.operationId !== head.operationId
+      ) throw stale("Final history moved before revalidation")
+      revisions.push(...current.revisions)
     }
-  )
+    const base = revisions.find((value) => value.changeId === admission.request.plan.base.changeId)
+    if (base?.kind !== "resolved" || !sameCode(base, admission.request.plan.base)) {
+      throw stale("Final cleanup changed the validated base")
+    }
+    let parent = admission.request.plan.base
+    const refreshed: Array<Implementation> = []
+    for (const change of original) {
+      const previous = parent, atoms: Array<Revision> = []
+      for (const old of change.implementation.atoms) {
+        const atom = revisions.find((value) => value.changeId === old.changeId)
+        if (
+          atom?.kind !== "resolved" || atom.treeId !== old.treeId || atom.parentCommitIds.length !== 1 ||
+          atom.parentCommitIds[0] !== parent.commitId
+        ) {
+          throw stale("Final cleanup changed an atom's source tree, identity or linear ownership")
+        }
+        parent = shape(atom)
+        atoms.push(parent)
+      }
+      refreshed.push({ ...change.implementation, parent: previous, atoms, head: parent })
+    }
+    return refreshed
+  }),
+  FinishCleanup.toLayer(effect (input) => {
+    if (input.result.status !== "validated" || input.result.findings.length !== 0) {
+      throw new CodingError({
+        code: "invalid_receipt",
+        message: "Final history's real checks requested changes; it cannot be appended"
+      })
+    }
+    const native = try NativeCoding
+    const current = try native.read()
+    if (
+      current.head.kind !== "resolved" || !sameCode(current.head, input.head) ||
+      current.head.treeId !== input.admission.validatedHead.treeId
+    ) {
+      throw stale("The cleaned history changed after final validation")
+    }
+    return { ...input, head: shape(current.head) }
+  })
 )
 export const cleanupModels = evidenceOnly(Layer.mergeAll(ReviewHistory.layer, RepairHistory.layer))

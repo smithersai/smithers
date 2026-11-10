@@ -1,12 +1,12 @@
 /** Review through the ordinary flow registry and host; result includes the custom walkthrough. */
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { PrepareReview } from "./src/workflow/reviewActions.ts"
+import { PrepareReview } from "./src/workflow/reviewActions.vibe"
 import { ReviewFailure } from "./src/workflow/reviewFailureSchema.vibe"
-import { ReviewFiles } from "./src/workflow/reviewFlow.ts"
+import { ReviewFiles } from "./src/workflow/reviewFlow.vibe"
 import { ReviewInput } from "./src/workflow/reviewInputSchema.vibe"
 import { ReviewResult } from "./src/workflow/reviewSchemas.vibe"
-export { layer } from "./src/workflow/reviewLayer.ts"
+export { layer } from "./src/workflow/reviewLayer.vibe"
 
 export default Flow.make("review", {
   description:

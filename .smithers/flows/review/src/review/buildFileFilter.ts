@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path"
 import { mergeBase } from "../git/mergeBase.ts"
-import { runCommand } from "../git/runCommand.ts"
+import { runCommand } from "../git/runCommand.vibe"
 import { runGit } from "../git/runGit.ts"
 import { io, runIo } from "../io.ts"
 import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.vibe"

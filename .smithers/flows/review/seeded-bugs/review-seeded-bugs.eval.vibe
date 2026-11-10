@@ -19,9 +19,9 @@ const scorer = Scorer.make({
   score: ({ output, groundTruth }) =>
     Effect.sync(() => ({
       score: scoreCorpus([groundTruth as (typeof labels)[number]], {
-        [(groundTruth as (typeof labels)[number]).fixture]: output as ReviewFinding[],
-      }).f1,
-    })),
+        [(groundTruth as (typeof labels)[number]).fixture]: output as ReviewFinding[]
+      }).f1
+    }))
 })
 
 export const suite = Suite.make({
@@ -30,9 +30,9 @@ export const suite = Suite.make({
   cases: labels.map((label) => ({
     name: label.fixture,
     input: label.fixture,
-    expected: label,
+    expected: label
   })),
-  bindings: [Binding.make({ scorer, appliesTo: target })],
+  bindings: [Binding.make({ scorer, appliesTo: target })]
 })
 
 export const executor: CaseExecutor.Service = CaseExecutor.make((entry) =>
@@ -44,7 +44,7 @@ export const executor: CaseExecutor.Service = CaseExecutor.make((entry) =>
       output: result.findings,
       stepKey: `review-seeded-bugs/${label.fixture}`,
       latencyMs: 0,
-      target,
+      target
     }
   })
 )

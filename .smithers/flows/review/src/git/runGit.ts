@@ -1,4 +1,4 @@
-import { runCommand } from "./runCommand.ts"
+import { runCommand } from "./runCommand.vibe"
 
 /**
  * Runs one `git` command in `repoDir` with unquoted paths, returning stdout and

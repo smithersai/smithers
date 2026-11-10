@@ -19,8 +19,7 @@ export interface PoolOptions {
 }
 
 /** Separate repositories prevent a jj abandon/rebase in one working copy moving a neighbor's changes. */
-export const prepareWorkspace = (checkout: string, root: string, cgroup: string, memoryMib: number) =>
-  `set -eu
+export const prepareWorkspace = (checkout: string, root: string, cgroup: string, memoryMib: number) => `set -eu
 # Fail closed when the image cannot enforce a per-agent OOM boundary.
 test -f /sys/fs/cgroup/cgroup.controllers
 grep -qw memory /sys/fs/cgroup/cgroup.controllers

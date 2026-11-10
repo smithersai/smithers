@@ -243,12 +243,14 @@ export const PreparePlan = Flow.make("coding/PreparePlan", {
                                     ),
                                     else: Node.capture({}, () => draft())
                                   }),
-                                  Node.bindPlanned(Node.capture({}, (draft) =>
-                                    VerifyContext.call({ context: current, draft }).pipe(
-                                      Node.bindPlanned(
-                                        Node.capture({}, (context) => FinalizePlan.call({ input, context, draft }))
-                                      )
-                                    )))
+                                  Node.bindPlanned(
+                                    Node.capture({}, (draft) =>
+                                      VerifyContext.call({ context: current, draft }).pipe(
+                                        Node.bindPlanned(
+                                          Node.capture({}, (context) => FinalizePlan.call({ input, context, draft }))
+                                        )
+                                      ))
+                                  )
                                 )
                               }))
                             )
@@ -277,9 +279,8 @@ export const preparePlanLayer = (toolMs: number | undefined) =>
 const invalid = (message: string) => new CodingError({ code: "invalid_plan", message })
 export const sameCode = (left: Revision, right: Revision) =>
   left.changeId === right.changeId && left.commitId === right.commitId && left.treeId === right.treeId &&
-  left.parentCommitIds.length === right.parentCommitIds.length && left.parentCommitIds.every((id, i) =>
-    id === right.parentCommitIds[i]
-  )
+  left.parentCommitIds.length === right.parentCommitIds.length &&
+  left.parentCommitIds.every((id, i) => id === right.parentCommitIds[i])
 /**
  * One revision a planning context captured, as the tree now reports it.
  *

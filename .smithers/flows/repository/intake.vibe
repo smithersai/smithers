@@ -289,9 +289,9 @@ export effect function screenEvent(
   })
   if (reason !== undefined) {
     throw new CodingError({
-        code: incomplete !== undefined ? "invalid_request" : "unavailable",
-        message: `Jev could not screen this event: ${reason}`
-      })
+      code: incomplete !== undefined ? "invalid_request" : "unavailable",
+      message: `Jev could not screen this event: ${reason}`
+    })
   }
   return { payload: ignored ? input.payload as Schema.Json : redactPayload(input.payload, withheld), screening }
 }

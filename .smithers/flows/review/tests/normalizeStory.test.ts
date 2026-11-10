@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { ChangedFile } from "../src/walkthrough/changedFileSchema.ts"
-import { normalizeStory } from "../src/walkthrough/normalizeStory.ts"
+import { normalizeStory } from "../src/walkthrough/normalizeStory.vibe"
 
 function file(path: string, insertions = 1): ChangedFile {
   return { path, status: "modified", insertions, deletions: 0, diff: "", reviewed: true, excludeReason: "" }

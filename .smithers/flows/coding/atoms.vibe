@@ -76,9 +76,8 @@ const stale = (message: string) => new CodingError({ code: "stale_revision", mes
 /** Operation IDs are read-view identities; exact commit/tree/parents identify unchanged code. */
 const sameCode = (left: Revision, right: Revision) =>
   left.changeId === right.changeId && left.commitId === right.commitId && left.treeId === right.treeId &&
-  left.parentCommitIds.length === right.parentCommitIds.length && left.parentCommitIds.every((id, i) =>
-    id === right.parentCommitIds[i]
-  )
+  left.parentCommitIds.length === right.parentCommitIds.length &&
+  left.parentCommitIds.every((id, i) => id === right.parentCommitIds[i])
 
 effect function readParent(parent: Revision, changeId?: string) {
   const read = try readNative([...new Set([parent.changeId, ...(changeId ? [changeId] : [])])])

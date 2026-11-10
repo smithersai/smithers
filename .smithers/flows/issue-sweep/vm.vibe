@@ -123,8 +123,7 @@ const goChecksum = "let s=\"\";process.stdin.on(\"data\",(d)=>s+=d).on(\"end\",(
  * `cargo test` downloads nothing. Playwright's Chromium, with its system
  * libraries, is the version apps/mvp pins.
  */
-export const provisionScript = (revision: string): string =>
-  `set -eux
+export const provisionScript = (revision: string): string => `set -eux
 mkdir -p ${guestHome}/.config/jj
 printf '[user]\\nname = "issue-sweep agent"\\nemail = "issue-sweep@smithers.invalid"\\n' > ${guestHome}/.config/jj/config.toml
 curl -fsSL https://github.com/jj-vcs/jj/releases/download/v0.39.0/jj-v0.39.0-aarch64-unknown-linux-musl.tar.gz | tar -xz -C /usr/local/bin ./jj

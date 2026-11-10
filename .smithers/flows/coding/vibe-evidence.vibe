@@ -321,8 +321,8 @@ const readRequestEvidence = (input: typeof VibeInput.Type, expectedRequest?: typ
       if (
         Option.isNone(preparedInput) || preparedInput.value.prompt !== payload.value.prompt ||
         preparedInput.value.feedback !== (request.route === undefined
-            ? initialFeedback
-            : leafFeedback(request.route, initialFeedback)) ||
+          ? initialFeedback
+          : leafFeedback(request.route, initialFeedback)) ||
         plan.observedHead === undefined ||
         plan.prompt !== payload.value.prompt
       ) {

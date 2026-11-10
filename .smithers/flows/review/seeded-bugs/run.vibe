@@ -89,14 +89,14 @@ import {
   $rmSync,
   $set_process_exitCode,
   $tmpdir,
-  $writeFileSync,
+  $writeFileSync
 } from platform
 
 /** Live evals use the CLI's normal credential/alias resolver, rather than review-specific provider code. */
 const liveSeats = () =>
   NativeEquipment.layerSeatResolver($process_env()).pipe(
     Layer.provide(RequestExecutor.layer),
-    Layer.provide(FetchHttpClient.layer),
+    Layer.provide(FetchHttpClient.layer)
   )
 const corpusDir = $join($importMetaDirname(import.meta.url), "corpus")
 const baselinePath = $join($importMetaDirname(import.meta.url), "baseline.json")
@@ -116,10 +116,10 @@ export async function runFixture(label: PlantedBugLabel, layer: ReturnType<typeo
           // Verification is off so the score measures the reviewer, not a
           // second seat's willingness to drop its findings.
           verify: false,
-          out: $join(workRoot, "walkthrough.html"),
+          out: $join(workRoot, "walkthrough.html")
         } as never,
-        { executionId: `review-seeded-${label.fixture}-${Date.now()}` },
-      ) |> Effect.provide(%, layer) |> Effect.orDie(%),
+        { executionId: `review-seeded-${label.fixture}-${Date.now()}` }
+      ) |> Effect.provide(%, layer) |> Effect.orDie(%)
     )
     return {
       fixture: label.fixture,
@@ -131,8 +131,8 @@ export async function runFixture(label: PlantedBugLabel, layer: ReturnType<typeo
         severity: comment.severity,
         content: comment.content,
         category: comment.category,
-        confidence: comment.confidence,
-      })),
+        confidence: comment.confidence
+      }))
     }
   } finally {
     $rmSync(workRoot, { recursive: true, force: true, maxRetries: 30, retryDelay: 200 })
@@ -170,14 +170,14 @@ function renderScorecard(labels: readonly PlantedBugLabel[], score: CorpusScore,
     "## Fixtures",
     "",
     "| Fixture | Label | Findings | TP | FP | FN |",
-    "| --- | --- | ---: | ---: | ---: | ---: |",
+    "| --- | --- | ---: | ---: | ---: | ---: |"
   ]
   for (const fixture of score.fixtures) {
     const label = labelsByFixture.get(fixture.fixture)
     lines.push(
       `| ${fixture.fixture} | ${
         label ? labelKind(label) : "unknown"
-      } | ${fixture.findings} | ${fixture.matches} | ${fixture.falsePositives} | ${fixture.falseNegatives} |`,
+      } | ${fixture.findings} | ${fixture.matches} | ${fixture.falsePositives} | ${fixture.falseNegatives} |`
     )
   }
   lines.push("")
@@ -214,7 +214,7 @@ export async function main(argv: readonly string[] = $process_argv_slice(2)): Pr
     $mkdirSync(reportDir, { recursive: true })
     $writeFileSync(
       $join(reportDir, "report.json"),
-      JSON.stringify({ generatedAt, labels, runs, findingsByFixture, score }, null, 2),
+      JSON.stringify({ generatedAt, labels, runs, findingsByFixture, score }, null, 2)
     )
     $writeFileSync($join(reportDir, "SCORECARD.md"), scorecard)
     $process_stdout_write(`${scorecard}\nreport: ${reportDir}\n`)
@@ -244,7 +244,7 @@ export async function main(argv: readonly string[] = $process_argv_slice(2)): Pr
   $process_stdout_write(`\n${disagreements.map((line) => `  ${line}`).join("\n")}\n`)
   $process_stdout_write(
     `\nreview-seeded-bugs: ${disagreements.length} disagreement(s) with ${baselinePath}\n`
-      + "re-record with `node .smithers/flows/review/seeded-bugs/run.ts --update` only when the change is intended\n",
+      + "re-record with `node .smithers/flows/review/seeded-bugs/run.ts --update` only when the change is intended\n"
   )
   return 1
 }

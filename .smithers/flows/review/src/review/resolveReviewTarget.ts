@@ -1,5 +1,5 @@
 import { join, resolve } from "node:path"
-import { runCommand } from "../git/runCommand.ts"
+import { runCommand } from "../git/runCommand.vibe"
 import { runGit } from "../git/runGit.ts"
 import { io, runIo } from "../io.ts"
 import { normalizeOpenCodeReviewInput } from "../workflow/normalizeOpenCodeReviewInput.ts"

@@ -225,7 +225,9 @@ export effect function loadRepositoryFlows(
       path.relative(repositoryPath, path.resolve(path.dirname(descriptor.path), entry.path)).split(path.sep).join("/")
     )
     // An inspection that throws is a defect, as it was inside Effect.gen.
-    const inspection = try orDie(Effect.try(() => built?.executables.find((entry) => entry.descriptor.name === descriptor.name)?.inspect?.()))
+    const inspection = try orDie(
+      Effect.try(() => built?.executables.find((entry) => entry.descriptor.name === descriptor.name)?.inspect?.())
+    )
     const metadata = {
       ...(dependencies.length === 0 ? {} : { dependencies }),
       ...(inspection === undefined ? {} : { inspection }),

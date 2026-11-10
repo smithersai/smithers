@@ -306,9 +306,9 @@ export effect function captureCheckContext(options: ImmutableSourceOptions, root
       continue
     }
     if (reads.length >= maxReads || Date.now() >= input.deadlineAt) {
-      const omitted = pending.slice(index).find((item) =>
-        item.required || /(?:^|\/)(?:AGENTS|CONTRIBUTING)\.md$/i.test(item.path)
-      ) ?? item
+      const omitted =
+        pending.slice(index).find((item) => item.required || /(?:^|\/)(?:AGENTS|CONTRIBUTING)\.md$/i.test(item.path)) ??
+          item
       reads.push({
         path: omitted.path,
         from: omitted.from,

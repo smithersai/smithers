@@ -87,7 +87,10 @@ const bad = (message: string) => new WrappedFailed({ code: "bad_envelope", messa
 
 /** Reads `result` and `session_id` from one `claude -p --output-format json` envelope. */
 export effect function parseClaude(stdout: string, session?: string): Launched!WrappedFailed {
-  const envelope = try Effect.try({ try: () => JSON.parse(stdout) as unknown, catch: () => bad(`not JSON: ${stdout.slice(0, 200)}`) })
+  const envelope = try Effect.try({
+    try: () => JSON.parse(stdout) as unknown,
+    catch: () => bad(`not JSON: ${stdout.slice(0, 200)}`)
+  })
   if (typeof envelope !== "object" || envelope === null) throw bad("envelope is not an object")
   const { is_error, result, session_id } = envelope as Record<string, unknown>
   if (typeof result !== "string" || typeof session_id !== "string") {
@@ -268,14 +271,10 @@ export effect function launch(input: LaunchInput, options: LaunchOptions = {}): 
   const command = try commandFor(input)
   options.observe?.(command)
   if (input.harness === "codex") {
-    const status = run({ executable: command.executable, args: ["login", "status"] }, {
-      cwd: input.cwd,
-      stdin: "",
-      timeoutMs: 15_000,
-      maxBytes: 16 * 1024,
-      env: options.env,
-      includeStderr: true
-    }) catch effect (error) => {
+    const status = run(
+      { executable: command.executable, args: ["login", "status"] },
+      { cwd: input.cwd, stdin: "", timeoutMs: 15_000, maxBytes: 16 * 1024, env: options.env, includeStderr: true }
+    ) catch effect (error) => {
       throw error.code === "exit_nonzero" && / exited 1:.*not logged in/is.test(error.message) ?
         new WrappedFailed({ code: "signed_out", message: "Run `codex login --device-auth` on the workspace" }) :
         error

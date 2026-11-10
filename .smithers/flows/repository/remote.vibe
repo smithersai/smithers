@@ -49,7 +49,8 @@ export class RepositoryRemote extends Context.Service<RepositoryRemote, {
   readonly workspaceId: string
   readonly source?: (("github" | "smithers-cloud")!CodingError)
   readonly registrations: (Schema.Json!CodingError)
-  readonly history: ({ records: ReadonlyArray<typeof Record.Type>; sources: ReadonlyArray<typeof SourceStatus.Type> }!CodingError)
+  readonly history:
+    ({ records: ReadonlyArray<typeof Record.Type>; sources: ReadonlyArray<typeof SourceStatus.Type> }!CodingError)
   readonly register: (job: JobKey, input: Schema.Json) => (Schema.Json!CodingError)
   readonly pause: (job: JobKey) => (Schema.Json!CodingError)
   readonly dispatches: (job: JobKey) => (Schema.Json!CodingError)

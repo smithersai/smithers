@@ -6,16 +6,7 @@ import { RunStore } from "@smthrs/run-store"
 import { atomError } from "./atoms.vibe"
 import { EarlyFeedback } from "./feedback-schema.vibe"
 import { canonical, digest, receiptMatches, recalled, runLifecycle } from "./feedback.trusted.ts"
-import {
-  Check,
-  CodingError,
-  type Finding,
-  Implementation,
-  Plan,
-  Receipt,
-  Result,
-  ValidatedChange
-} from "./schema.ts"
+import { Check, CodingError, type Finding, Implementation, Plan, Receipt, Result, ValidatedChange } from "./schema.ts"
 import { Assess, FastGate, Implement, receiptFindings, RunCheck, ValidatePlan } from "./workflow.vibe"
 export { EarlyFeedback } from "./feedback-schema.vibe"
 
@@ -96,9 +87,8 @@ effect function interruptOnFeedback(plan: Plan) {
     for (const receipt of group.receipts) findings.push(...try recordedFindings(plan, index, group, receipt))
   }
   if (
-    !findings.length || !changes.some((group) =>
-      group.receipts.some((receipt) => canonical(receipt) === canonical(trigger))
-    )
+    !findings.length ||
+    !changes.some((group) => group.receipts.some((receipt) => canonical(receipt) === canonical(trigger)))
   ) {
     throw invalid("The first actionable feedback has no corresponding exact check receipt")
   }

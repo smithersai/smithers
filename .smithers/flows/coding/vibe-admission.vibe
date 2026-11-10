@@ -64,10 +64,13 @@ export const AdmitVibe = Flow.make("coding/AdmitVibe", {
         ReadLander.call({ phase: "admission" }).pipe(
           Node.branch({
             if: Node.capture({}, (lander) => lander === "backend"),
-            then: Node.capture({}, () =>
-              PublishVibeSource.child({ source: evidence.originalSource, phase: "original" }).pipe(
-                Node.andThen(VerifyVibe.child(evidence))
-              )),
+            then: Node.capture(
+              {},
+              () =>
+                PublishVibeSource.child({ source: evidence.originalSource, phase: "original" }).pipe(
+                  Node.andThen(VerifyVibe.child(evidence))
+                )
+            ),
             else: Node.capture({}, () => VerifyVibe.child(evidence))
           })
         )))

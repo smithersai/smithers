@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import type { PullRequestTarget } from "../../src/github/resolvePullRequest.ts"
-import { supersedePriorReviews } from "../../src/github/supersedePriorReviews.ts"
+import { supersedePriorReviews } from "../../src/github/supersedePriorReviews.vibe"
 
 type GhCall = {
   repoDir: string

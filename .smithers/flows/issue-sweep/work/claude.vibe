@@ -52,9 +52,7 @@ export effect function reserveRemoteAccount(
           }),
           () => Effect.succeed(undefined)
         ), { concurrency: 4 })
-      const ready = checked.filter((account): account is string =>
-        account !== undefined
-      )
+      const ready = checked.filter((account): account is string => account !== undefined)
       return {
         ...pools,
         claude: {
@@ -62,9 +60,7 @@ export effect function reserveRemoteAccount(
           ready,
           unavailable: [
             ...pools.claude.unavailable,
-            ...pools.claude.ready.filter((account) =>
-              !logins.has(account)
-            )
+            ...pools.claude.ready.filter((account) => !logins.has(account))
               .map((label) => ({ label, state: "no usable remote login" }))
           ]
         }
@@ -111,8 +107,7 @@ export effect function claudeInGuest(
   login: string,
   where: string,
   prompt: string,
-  onExit: (stdout: string, stderr: string, code: number) => void!{ readonly message: string } = () =>
-    Effect.void
+  onExit: (stdout: string, stderr: string, code: number) => void!{ readonly message: string } = () => Effect.void
 ) {
   const fs = try FileSystem.FileSystem
   const path = try Path.Path
@@ -121,45 +116,50 @@ export effect function claudeInGuest(
   const guestToken = `${guestClaudeHome}/oauth-token`
   const redact = (text: string) => login === "" ? text : text.replaceAll(login, "[redacted]")
   return try ensuring(
-    Effect.mapError(effect {
-      try fs.makeDirectory(guestClaudeHome, { recursive: true })
-      try fs.chmod(guestClaudeHome, 0o700)
-      try fs.writeFileString(guestToken, login, { flag: "wx", mode: 0o600 })
-      const [command, args] = claudeCommand(prompt, checkout, guestClaudeHome)
-      const [stdout, stderr, code] = try Effect.timeoutOrElse(
-        scoped(effect {
-          const spawner = try ChildProcessSpawner
-          const handle = try spawner.spawn(ChildProcess.make(command, args))
-          return try.all [
-            Stream.mkString(Stream.decodeText(handle.stdout)),
-            Stream.mkString(Stream.decodeText(handle.stderr)),
-            handle.exitCode
-          ]
-        }),
-        {
-          duration: budget,
-          orElse: () =>
-            Effect.fail(new ClaudeFailed({ message: `claude on ${where}: no answer within ${Duration.format(budget)}` }))
+    Effect.mapError(
+      effect {
+        try fs.makeDirectory(guestClaudeHome, { recursive: true })
+        try fs.chmod(guestClaudeHome, 0o700)
+        try fs.writeFileString(guestToken, login, { flag: "wx", mode: 0o600 })
+        const [command, args] = claudeCommand(prompt, checkout, guestClaudeHome)
+        const [stdout, stderr, code] = try Effect.timeoutOrElse(
+          scoped(effect {
+            const spawner = try ChildProcessSpawner
+            const handle = try spawner.spawn(ChildProcess.make(command, args))
+            return try.all [
+              Stream.mkString(Stream.decodeText(handle.stdout)),
+              Stream.mkString(Stream.decodeText(handle.stderr)),
+              handle.exitCode
+            ]
+          }),
+          {
+            duration: budget,
+            orElse: () =>
+              Effect.fail(
+                new ClaudeFailed({ message: `claude on ${where}: no answer within ${Duration.format(budget)}` })
+              )
+          }
+        )
+        const decoded = Schema.decodeUnknownOption(Result)(stdout.trim().split("\n").at(-1)!)
+        const failedResult = decoded._tag === "Some" &&
+          (decoded.value.is_error === true ||
+            (decoded.value.subtype !== undefined && decoded.value.subtype !== "success"))
+        try onExit(redact(stdout), redact(stderr), code === 0 && failedResult ? 1 : Number(code))
+        if (
+          code !== 0 || decoded._tag === "None" || decoded.value.is_error === true ||
+          (decoded.value.subtype !== undefined && decoded.value.subtype !== "success") ||
+          !decoded.value.result?.trim()
+        ) {
+          throw new ClaudeFailed({
+            message: `${account} on ${where}: Claude failed (exit ${code}): ${
+              redact((stderr || stdout).trim().split("\n").slice(-5).join("\n"))
+            }`
+          })
         }
-      )
-      const decoded = Schema.decodeUnknownOption(Result)(stdout.trim().split("\n").at(-1)!)
-      const failedResult = decoded._tag === "Some" &&
-        (decoded.value.is_error === true ||
-          (decoded.value.subtype !== undefined && decoded.value.subtype !== "success"))
-      try onExit(redact(stdout), redact(stderr), code === 0 && failedResult ? 1 : Number(code))
-      if (
-        code !== 0 || decoded._tag === "None" || decoded.value.is_error === true ||
-        (decoded.value.subtype !== undefined && decoded.value.subtype !== "success") ||
-        !decoded.value.result?.trim()
-      ) {
-        throw new ClaudeFailed({
-          message: `${account} on ${where}: Claude failed (exit ${code}): ${
-            redact((stderr || stdout).trim().split("\n").slice(-5).join("\n"))
-          }`
-        })
-      }
-      return { agent: "claude" as const, account, report: redact(decoded.value.result.trim()) }
-    }, (cause) => new ClaudeFailed({ message: redact(cause.message) })),
+        return { agent: "claude" as const, account, report: redact(decoded.value.result.trim()) }
+      },
+      (cause) => new ClaudeFailed({ message: redact(cause.message) })
+    ),
     orDie(Effect.mapError(
       fs.remove(guestClaudeHome, { recursive: true, force: true }),
       () => new ClaudeFailed({ message: `${account}: could not remove the guest Claude login` })

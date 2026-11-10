@@ -206,7 +206,10 @@ effect function bodyPatterns(invocation: typeof Executable.Invocation.Type) {
       catch: () => undefined
     })
     const body = try Schema.decodeUnknownEffect(Body)(first)
-    return try Effect.try({ try: () => body.patterns.map((pattern) => Label.parse(pattern, "")), catch: () => undefined })
+    return try Effect.try({
+      try: () => body.patterns.map((pattern) => Label.parse(pattern, "")),
+      catch: () => undefined
+    })
   }
   return parsed catch effect () => {
     throw invalid("The registered security body needs 1 to 16 review target labels")
@@ -228,50 +231,52 @@ const hostSafe = (cause: unknown): string =>
 export const reviewSecurity = (options: SecurityReviewOptions, invocation: typeof Executable.Invocation.Type) =>
   Effect.mapError(
     effect {
-    const { implementation, check } = Schema.decodeUnknownEffect(Input)(invocation.input) catch effect () => {
-      throw invalid("Check input must identify the implemented revision and declared check")
-    }
-    if (invocation.flow !== check.flow) throw invalid("The registered check flow does not match the plan")
-    const patterns = try bodyPatterns(invocation)
-    const base = reviewBase(implementation)
-    if (base === undefined) throw invalid("The security review needs the one commit the change applies to")
-    const resolver = try SeatResolver.SeatResolver
-    return try withImmutableSource(
-      options,
-      implementation.head,
-      (_head, headRoot) =>
-        withImmutableCommit(options, base, (_base, baseRoot) =>
-          Effect.tryPromise({
-            try: async (signal) => {
-              const source = exportedSource({ [base]: baseRoot, [implementation.head.commitId]: headRoot }, signal)
-              const prepared = TrustedReview.governing(
-                await TrustedReview.prepareSource(source, {
-                  policyRevision: base,
-                  revision: implementation.head.commitId,
-                  patterns,
-                  required: true
+      const { implementation, check } = Schema.decodeUnknownEffect(Input)(invocation.input) catch effect () => {
+        throw invalid("Check input must identify the implemented revision and declared check")
+      }
+      if (invocation.flow !== check.flow) throw invalid("The registered check flow does not match the plan")
+      const patterns = try bodyPatterns(invocation)
+      const base = reviewBase(implementation)
+      if (base === undefined) throw invalid("The security review needs the one commit the change applies to")
+      const resolver = try SeatResolver.SeatResolver
+      return try withImmutableSource(
+        options,
+        implementation.head,
+        (_head, headRoot) =>
+          withImmutableCommit(options, base, (_base, baseRoot) =>
+            Effect.tryPromise({
+              try: async (signal) => {
+                const source = exportedSource({ [base]: baseRoot, [implementation.head.commitId]: headRoot }, signal)
+                const prepared = TrustedReview.governing(
+                  await TrustedReview.prepareSource(source, {
+                    policyRevision: base,
+                    revision: implementation.head.commitId,
+                    patterns,
+                    required: true
+                  })
+                )
+                // A change with no reviewable path (none, or only private job paths) has nothing a required review could pass on.
+                if (prepared.changed.length === 0) {
+                  return receipt(implementation, check, prepared, undefined, emptyChange)
+                }
+                if (prepared.policies.length === 0) {
+                  return receipt(implementation, check, prepared, undefined, ungoverned)
+                }
+                const reviewed = await TrustedReview.reviewPrepared(prepared, {
+                  root: headRoot,
+                  findingsStore: options.store,
+                  transport: seatTransport(resolver),
+                  signal
                 })
-              )
-              // A change with no reviewable path (none, or only private job paths) has nothing a required review could pass on.
-              if (prepared.changed.length === 0) {
-                return receipt(implementation, check, prepared, undefined, emptyChange)
-              }
-              if (prepared.policies.length === 0) return receipt(implementation, check, prepared, undefined, ungoverned)
-              const reviewed = await TrustedReview.reviewPrepared(prepared, {
-                root: headRoot,
-                findingsStore: options.store,
-                transport: seatTransport(resolver),
-                signal
-              })
-              return receipt(implementation, check, prepared, reviewed)
-            },
-            catch: (cause) =>
-              new CodingError({
-                code: "execution",
-                message: `The security review could not read its policy or source: ${hostSafe(cause)}`
-              })
-          }))
-    )
+                return receipt(implementation, check, prepared, reviewed)
+              },
+              catch: (cause) =>
+                new CodingError({
+                  code: "execution",
+                  message: `The security review could not read its policy or source: ${hostSafe(cause)}`
+                })
+            }))
+      )
     },
     (error) =>
       error instanceof CodingError ? error : new CodingError({
@@ -316,45 +321,49 @@ export const emptyAudit = "The audit selected no file; a required security audit
 export const auditSecurity = (options: SecurityReviewOptions, invocation: typeof Executable.Invocation.Type) =>
   Effect.mapError(
     effect {
-    const patterns = try bodyPatterns(invocation)
-    const native = try NativeCoding
-    const { head } = native.read() catch effect (error) => {
-      throw new CodingError({ code: "execution", message: error.message })
-    }
-    const commitId = head.parentCommitIds.length === 1 ? head.parentCommitIds[0]! : undefined
-    if (commitId === undefined) throw invalid("The security audit needs the one commit the workspace is on")
-    const resolver = try SeatResolver.SeatResolver
-    return try withImmutableCommit(options, commitId, (_tree, root) =>
-      Effect.tryPromise({
-        try: async (signal): Promise<AuditResult> => {
-          const prepared = TrustedReview.governing(
-            await TrustedReview.prepareSource(exportedSource({ [commitId]: root }, signal), {
-              policyRevision: commitId,
-              revision: commitId,
-              patterns,
-              required: true
+      const patterns = try bodyPatterns(invocation)
+      const native = try NativeCoding
+      const { head } = native.read() catch effect (error) => {
+        throw new CodingError({ code: "execution", message: error.message })
+      }
+      const commitId = head.parentCommitIds.length === 1 ? head.parentCommitIds[0]! : undefined
+      if (commitId === undefined) throw invalid("The security audit needs the one commit the workspace is on")
+      const resolver = try SeatResolver.SeatResolver
+      return try withImmutableCommit(options, commitId, (_tree, root) =>
+        Effect.tryPromise({
+          try: async (signal): Promise<AuditResult> => {
+            const prepared = TrustedReview.governing(
+              await TrustedReview.prepareSource(exportedSource({ [commitId]: root }, signal), {
+                policyRevision: commitId,
+                revision: commitId,
+                patterns,
+                required: true
+              })
+            )
+            const reviewed = prepared.policies.length === 0 ? undefined : await TrustedReview.reviewPrepared(prepared, {
+              root,
+              findingsStore: options.store,
+              transport: seatTransport(resolver),
+              signal
             })
-          )
-          const reviewed = prepared.policies.length === 0 ? undefined : await TrustedReview.reviewPrepared(prepared, {
-            root,
-            findingsStore: options.store,
-            transport: seatTransport(resolver),
-            signal
-          })
-          const { evidence, messages } = summarize(prepared, reviewed, reviewed === undefined ? emptyAudit : undefined)
-          return {
-            status: messages.length === 0 ? "passed" : "failed",
-            commitId,
-            evidence: JSON.stringify(evidence),
-            findings: messages.map((message) => message.slice(0, 2_000))
-          }
-        },
-        catch: (cause) =>
-          new CodingError({
-            code: "execution",
-            message: `The security audit could not read its policy or source: ${hostSafe(cause)}`
-          })
-      }))
+            const { evidence, messages } = summarize(
+              prepared,
+              reviewed,
+              reviewed === undefined ? emptyAudit : undefined
+            )
+            return {
+              status: messages.length === 0 ? "passed" : "failed",
+              commitId,
+              evidence: JSON.stringify(evidence),
+              findings: messages.map((message) => message.slice(0, 2_000))
+            }
+          },
+          catch: (cause) =>
+            new CodingError({
+              code: "execution",
+              message: `The security audit could not read its policy or source: ${hostSafe(cause)}`
+            })
+        }))
     },
     (error) =>
       error instanceof CodingError ? error : new CodingError({

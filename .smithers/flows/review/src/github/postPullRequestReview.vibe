@@ -1,4 +1,3 @@
-import { Effect, Logger } from "effect"
 import type { PullRequestReviewPayload } from "./buildPullRequestReview.ts"
 import type { PullRequestTarget } from "./resolvePullRequest.ts"
 import { runGh as defaultRunGh } from "./runGh.ts"
@@ -65,12 +64,12 @@ export async function postPullRequestReview(
     if (payload.comments.length === 0) throw error
     // Surface why the inline batch failed before falling back, or the reason
     // (rate limit, bad anchor, transient 5xx) is unrecoverable afterwards.
-    await Effect.runPromise(
-      Effect.logWarning(
+    await runPromise(
+      logWarning(
         `smithers-review: inline comment batch failed, folding ${payload.comments.length} finding(s) into the body: ${
           (error as Error).message.slice(0, 300)
         }`
-      ).pipe(Effect.provideService(Logger.LogToStderr, true))
+      ).pipe(provideService(Logger.LogToStderr, true))
     )
     const fallback: PullRequestReviewPayload = {
       ...payload,

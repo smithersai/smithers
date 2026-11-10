@@ -9,7 +9,9 @@ type Result = {
   readonly fault?: "factory" | "infra"
 }
 export interface CommandReceipts {
-  readonly begin: (argv: readonly [string, ...Array<string>]) => (((result: Result) => void!unknown) | undefined)!unknown
+  readonly begin: (
+    argv: readonly [string, ...Array<string>]
+  ) => (((result: Result) => void!unknown) | undefined)!unknown
   readonly read: (runId: string) => (CommandReceipt | undefined)!unknown
 }
 

@@ -5,7 +5,7 @@ import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.
 import { effectivePath } from "./effectivePath.ts"
 import { mergeBase } from "./mergeBase.ts"
 import { parseGitDiff } from "./parseGitDiff.ts"
-import { runCommand } from "./runCommand.ts"
+import { runCommand } from "./runCommand.vibe"
 import { runGit } from "./runGit.ts"
 
 const DIFF_CONTEXT_LINES = 3

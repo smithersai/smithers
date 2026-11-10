@@ -171,10 +171,7 @@ export const makeAccountPicker = (
 export const accountHome = (account: string) => `${homeDirectory()}/.smithers/accounts/${account}`
 
 /** Reads both pools from the rotators on this machine. */
-export const readPools = all({
-  codex: readPool("codex"),
-  claude: readPool("claude")
-}, { concurrency: 2 })
+export const readPools = all({ codex: readPool("codex"), claude: readPool("claude") }, { concurrency: 2 })
 
 const reservations = makeReservations(perAccount)
 export const reserveAccount = makeAccountPicker(perAccount, readPools, reservations)

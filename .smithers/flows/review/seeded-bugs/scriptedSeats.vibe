@@ -25,7 +25,7 @@ const prepared: Route.PreparedRequest = {
   url: "https://example.invalid/v1/messages",
   publicHeaders: { "content-type": "application/json" },
   body: new TextEncoder().encode("{}"),
-  bodyText: "{}",
+  bodyText: "{}"
 }
 
 /** What the scripted model was asked, flattened into one searchable string. */
@@ -46,7 +46,7 @@ export function scriptedModel(answer: (ask: Ask) => unknown): Model.Model {
           ...request.system.map((part) => part.text),
           ...request.messages.flatMap((message) =>
             message.content.flatMap((part) => (part.type === "text" ? [part.text] : []))
-          ),
+          )
         ].join("\n")
         const value = answer(ask)
         if (value === undefined) {
@@ -57,7 +57,7 @@ export function scriptedModel(answer: (ask: Ask) => unknown): Model.Model {
             // `invalid_request` rather than a retryable code: the boundary would spend
             // its whole transport ladder on a retryable refusal, and what these
             // tests drive is the caught failure, not the ladder.
-            new ModelError.ModelError({ code: "invalid_request", message: "scripted model refused" }),
+            new ModelError.ModelError({ code: "invalid_request", message: "scripted model refused" })
           )
         }
         // A backtick run in `value` would close the ```cell fence early, so each
@@ -68,9 +68,9 @@ export function scriptedModel(answer: (ask: Ask) => unknown): Model.Model {
           ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "cell" }),
           ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "cell", text: "```cell\n" + cell + "\n```" }),
           ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "cell" }),
-          ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" }),
+          ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
         ])
-      }),
+      })
   })
 }
 
@@ -85,8 +85,8 @@ export function scriptedSeats(answer: (ask: Ask) => unknown): Layer.Layer<SeatRe
           modelId: SCRIPTED_MODEL_ID,
           model,
           route: { prepare: () => Effect.succeed(prepared) } as FlowEngineLike.RouteResolver,
-          contextWindowTokens: 200_000,
-        }),
-      ),
+          contextWindowTokens: 200_000
+        })
+      )
   })
 }

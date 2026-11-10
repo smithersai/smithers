@@ -431,9 +431,11 @@ export const triggerLayers = Layer.mergeAll(
         ...(plan.testRunId === undefined ? {} : { testRunId: plan.testRunId }),
         registration
       }
-    }).pipe(Effect.mapError((error) =>
-      error instanceof CodingError ? error : unavailable("The exact schedule could not be registered")
-    ))
+    }).pipe(
+      Effect.mapError((error) =>
+        error instanceof CodingError ? error : unavailable("The exact schedule could not be registered")
+      )
+    )
   ),
   Fire.toLayer(({ request, dispatchKey, deadlineAt }) =>
     (effect {

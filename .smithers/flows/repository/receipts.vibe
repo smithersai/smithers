@@ -173,11 +173,11 @@ export effect function priorSetupReceipt(input: SetupInput, operation: "evaluate
         if (runs.length !== 1 || !runs[0] || !receipt.trialIssue || !receipt.sourceRevision) {
           throw invalid("The trial has no single retained live job")
         }
-        const job = try completedJob(runs[0], { ...input, sourceRevision: receipt.sourceRevision }, {
-          source: receipt.trialIssue.source,
-          issueNumber: receipt.trialIssue.number,
-          trial: true
-        })
+        const job = try completedJob(
+          runs[0],
+          { ...input, sourceRevision: receipt.sourceRevision },
+          { source: receipt.trialIssue.source, issueNumber: receipt.trialIssue.number, trial: true }
+        )
         if (!job || !receipt.evidence.includes(`execution:${job.executionId}`)) {
           throw invalid("The trial's actual job result is unavailable")
         }

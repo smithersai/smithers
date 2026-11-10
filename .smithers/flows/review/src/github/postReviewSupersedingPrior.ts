@@ -1,8 +1,8 @@
 import type { PullRequestReviewPayload } from "./buildPullRequestReview.ts"
-import { postPullRequestReview } from "./postPullRequestReview.ts"
+import { postPullRequestReview } from "./postPullRequestReview.vibe"
 import type { PullRequestTarget } from "./resolvePullRequest.ts"
 import { runGh as defaultRunGh } from "./runGh.ts"
-import { supersedePriorReviews } from "./supersedePriorReviews.ts"
+import { supersedePriorReviews } from "./supersedePriorReviews.vibe"
 
 /**
  * Publish one review to the PR and retire the ones it replaces, in that order.

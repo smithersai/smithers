@@ -394,9 +394,9 @@ export const changeLayers = (options: ImmutableSourceOptions) =>
           checks.push(baseline)
           const results = record(baseline.output).results
           if (
-            !Array.isArray(results) || !results.some((check) =>
-              record(check).policy === "required" && record(check).status === "failed"
-            ) || results.some((check) => record(check).status === "error")
+            !Array.isArray(results) ||
+            !results.some((check) => record(check).policy === "required" && record(check).status === "failed") ||
+            results.some((check) => record(check).status === "error")
           ) {
             return finish("needs-maintainer", "The regression baseline did not establish the reported failure", false)
           }
@@ -457,17 +457,21 @@ export const changeLayers = (options: ImmutableSourceOptions) =>
         if (JSON.stringify(changed) !== JSON.stringify(expected)) {
           throw invalid("The native change includes files outside the checked proposal")
         }
-        try withImmutableSource(options, head, (_tree, root) =>
-          Effect.forEach(prepared.draft.proposal, (file) =>
-            effect {
-              const target = try admitSourcePath(options, root, file.path)
-              const actual = try options.fs.readFileString(target).pipe(
-                Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(null))
-              )
-              if (actual !== file.content) {
-                throw invalid("The native change's bytes differ from the checked proposal")
-              }
-            }, { discard: true }))
+        try withImmutableSource(
+          options,
+          head,
+          (_tree, root) =>
+            Effect.forEach(prepared.draft.proposal, (file) =>
+              effect {
+                const target = try admitSourcePath(options, root, file.path)
+                const actual = try options.fs.readFileString(target).pipe(
+                  Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(null))
+                )
+                if (actual !== file.content) {
+                  throw invalid("The native change's bytes differ from the checked proposal")
+                }
+              }, { discard: true })
+        )
         const runtime = try FlowRuntime.FlowRuntime, executionId = try currentExecutionId
         const checked = try runtime.execute(CheckStep, {
           executionId: `${executionId}-fresh-checks`,

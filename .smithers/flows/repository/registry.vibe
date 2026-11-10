@@ -120,31 +120,31 @@ export const runningRepositoryPolicy = effect {
  * production was in, because nothing installed these at all.
  */
 export const authoringBodies: (ReadonlyMap<string, string>!Error!FileSystem.FileSystem) = effect {
-    const compiled = typeof __SMITHERS_CREATE_FLOW_PACK__ === "undefined" ? undefined : __SMITHERS_CREATE_FLOW_PACK__
-    const fs = try FileSystem.FileSystem
-    const bodies = new Map<string, string>()
-    for (const name of [...FLOW_AUTHORING_PACK, ...firstPartyPrompts]) {
-      const text = compiled === undefined
-        ? try fs.readFileString(modulePath(authoringSource(name))).pipe(
-          Effect.mapError((cause) => new Error(`The built-in flow ${name} could not be read: ${cause.message}`))
-        )
-        : Object.hasOwn(compiled, name) && typeof compiled[name] === "string" ?
-        compiled[name]
-        : try Effect.fail(new Error(`The deployed host carries no body for the built-in flow ${name}`))
-      if (text.trim() === "") throw new Error(`The built-in flow ${name} has an empty body`)
-      bodies.set(name, text)
-    }
-    // A control session cannot start another agent inside one cell call: that
-    // nested run would join the journal transaction held by the parent call.
-    // Ship the same stage instructions in the entry prompt so the parent can
-    // work through them and use its own durable `ask` approval boundary.
-    const entry = bodies.get(FLOW_AUTHORING_ENTRY)!
-    const stages = FLOW_AUTHORING_STAGES.map((name, index) =>
-      `## Stage ${index + 1}: ${name}\n\n${MarkdownFlow.loadBody(bodies.get(name)!, "").text.trim()}`
-    )
-    bodies.set(FLOW_AUTHORING_ENTRY, `${entry.trimEnd()}\n\n${stages.join("\n\n")}\n`)
-    return bodies
+  const compiled = typeof __SMITHERS_CREATE_FLOW_PACK__ === "undefined" ? undefined : __SMITHERS_CREATE_FLOW_PACK__
+  const fs = try FileSystem.FileSystem
+  const bodies = new Map<string, string>()
+  for (const name of [...FLOW_AUTHORING_PACK, ...firstPartyPrompts]) {
+    const text = compiled === undefined
+      ? try fs.readFileString(modulePath(authoringSource(name))).pipe(
+        Effect.mapError((cause) => new Error(`The built-in flow ${name} could not be read: ${cause.message}`))
+      )
+      : Object.hasOwn(compiled, name) && typeof compiled[name] === "string" ?
+      compiled[name]
+      : try Effect.fail(new Error(`The deployed host carries no body for the built-in flow ${name}`))
+    if (text.trim() === "") throw new Error(`The built-in flow ${name} has an empty body`)
+    bodies.set(name, text)
   }
+  // A control session cannot start another agent inside one cell call: that
+  // nested run would join the journal transaction held by the parent call.
+  // Ship the same stage instructions in the entry prompt so the parent can
+  // work through them and use its own durable `ask` approval boundary.
+  const entry = bodies.get(FLOW_AUTHORING_ENTRY)!
+  const stages = FLOW_AUTHORING_STAGES.map((name, index) =>
+    `## Stage ${index + 1}: ${name}\n\n${MarkdownFlow.loadBody(bodies.get(name)!, "").text.trim()}`
+  )
+  bodies.set(FLOW_AUTHORING_ENTRY, `${entry.trimEnd()}\n\n${stages.join("\n\n")}\n`)
+  return bodies
+}
 
 /**
  * The packaged defaults' files, keyed by their POSIX path relative to the flows
@@ -152,22 +152,22 @@ export const authoringBodies: (ReadonlyMap<string, string>!Error!FileSystem.File
  * constant compiled into the bundle, else this checkout's own files.
  */
 export const shippedDefaults: (Readonly<Record<string, string>>!Error!FileSystem.FileSystem) = (effect {
-    if (typeof __SMITHERS_BUILTIN_DEFAULTS__ !== "undefined") return __SMITHERS_BUILTIN_DEFAULTS__
-    const fs = try FileSystem.FileSystem
-    const files: Record<string, string> = {}
-    for (const name of builtinDefaults) {
-      const directory = modulePath(`../${name}/`)
-      // Only flow.ts and src/ ship. A recursive listing of the whole directory
-      // follows a workspace package's node_modules links without end.
-      const top = try fs.readDirectory(directory)
-      const source = top.includes("src") ? try fs.readDirectory(`${directory}src`, { recursive: true }) : []
-      const listed = [...top, ...source.map((entry) => `src/${entry.replaceAll("\\", "/")}`)]
-      for (const relative of listed.filter(shipsWithDefault).sort()) {
-        files[`${name}/${relative}`] = try fs.readFileString(`${directory}${relative}`)
-      }
+  if (typeof __SMITHERS_BUILTIN_DEFAULTS__ !== "undefined") return __SMITHERS_BUILTIN_DEFAULTS__
+  const fs = try FileSystem.FileSystem
+  const files: Record<string, string> = {}
+  for (const name of builtinDefaults) {
+    const directory = modulePath(`../${name}/`)
+    // Only flow.ts and src/ ship. A recursive listing of the whole directory
+    // follows a workspace package's node_modules links without end.
+    const top = try fs.readDirectory(directory)
+    const source = top.includes("src") ? try fs.readDirectory(`${directory}src`, { recursive: true }) : []
+    const listed = [...top, ...source.map((entry) => `src/${entry.replaceAll("\\", "/")}`)]
+    for (const relative of listed.filter(shipsWithDefault).sort()) {
+      files[`${name}/${relative}`] = try fs.readFileString(`${directory}${relative}`)
     }
-    return files
-  }).pipe(Effect.mapError((cause) => new Error(`The packaged default flows could not be read: ${cause.message}`)))
+  }
+  return files
+}).pipe(Effect.mapError((cause) => new Error(`The packaged default flows could not be read: ${cause.message}`)))
 
 /**
  * The optional coding routes a configured host serves (`configuredCodingRoutes`).

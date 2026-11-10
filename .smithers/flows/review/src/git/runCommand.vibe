@@ -1,4 +1,3 @@
-import { Effect, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { io, runIo } from "../io.ts"
 
@@ -17,19 +16,20 @@ export const runCommand = async (
 ): Promise<CommandResult> => {
   const { spawner } = io()
   return runIo(
-    Effect.scoped(Effect.gen(function*() {
-      const child = yield* spawner.spawn(ChildProcess.make(command, args, {
+    scoped(effect {
+      const child = try spawner.spawn(ChildProcess.make(command, args, {
         cwd,
         stdin: input === undefined ? "ignore" : Stream.succeed(new TextEncoder().encode(input))
       }))
       const text = (stream: typeof child.stdout) => stream.pipe(Stream.decodeText(), Stream.mkString)
-      return yield* Effect.all({ stdout: text(child.stdout), stderr: text(child.stderr), exitCode: child.exitCode }, {
-        concurrency: "unbounded"
-      })
-    })).pipe(
-      Effect.timeout(timeoutMs),
+      return try all(
+        { stdout: text(child.stdout), stderr: text(child.stderr), exitCode: child.exitCode },
+        { concurrency: "unbounded" }
+      )
+    }).pipe(
+      timeout(timeoutMs),
       Effect.catch((error) =>
-        Effect.succeed({ stdout: "", stderr: error.message, exitCode: error._tag === "TimeoutError" ? 124 : 127 })
+        succeed({ stdout: "", stderr: error.message, exitCode: error._tag === "TimeoutError" ? 124 : 127 })
       )
     )
   )

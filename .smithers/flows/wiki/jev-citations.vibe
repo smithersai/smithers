@@ -222,8 +222,11 @@ export effect function checkCitations(
 ): PageCitations!WikiError!Evaluator.Evaluator {
   const requests = citationRequests(evidence, review)
   if (!requests.length) return { verdict: "supported" as const, citations: [] }
-  const answered = try forEach(batches(requests), (batch) =>
-    citationClassifier.evaluateAll(batch.map((request) => request.state)), { concurrency: 1 })
+  const answered = try forEach(
+    batches(requests),
+    (batch) => citationClassifier.evaluateAll(batch.map((request) => request.state)),
+    { concurrency: 1 }
+  )
   const answers: Array<{ readonly support: Classifier.ChoiceAnswer<typeof CitationChoice.Type> }> = []
   for (const answer of answered.flat()) {
     if (Result.isFailure(answer)) throw citationCheckUnavailable(evidence, answer.failure)

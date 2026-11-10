@@ -198,9 +198,7 @@ export effect function importDocs(
   const base = path.join(root, directory)
   try fs.makeDirectory(base, { recursive: true })
   for (
-    const stale of (try fs.readDirectory(base)).filter((entry) =>
-      !names.includes(entry)
-    )
+    const stale of (try fs.readDirectory(base)).filter((entry) => !names.includes(entry))
   ) {
     try fs.remove(path.join(base, stale), { recursive: true })
   }
@@ -286,7 +284,10 @@ export effect function publishedPages(root: string) {
     const text = fs.readFileString(path.join(base, name, "source.json")) catch effect () => {
       throw refuse(name, `${directory}/${name} has no import receipt`)
     }
-    const json = try Effect.try({ try: () => JSON.parse(text) as unknown, catch: () => refuse(name, "source.json is not JSON") })
+    const json = try Effect.try({
+      try: () => JSON.parse(text) as unknown,
+      catch: () => refuse(name, "source.json is not JSON")
+    })
     const receipt = Schema.decodeUnknownEffect(Receipt)(json) catch effect () => {
       throw refuse(name, `${directory}/${name} has no import receipt`)
     }

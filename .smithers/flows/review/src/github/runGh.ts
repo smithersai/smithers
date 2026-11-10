@@ -1,4 +1,4 @@
-import { runCommand } from "../git/runCommand.ts"
+import { runCommand } from "../git/runCommand.vibe"
 
 /**
  * The gh executable this process spawns.

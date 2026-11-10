@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import type { PullRequestReviewPayload } from "../../src/github/buildPullRequestReview.ts"
 import { listPullRequestFiles, type PullRequestFile } from "../../src/github/listPullRequestFiles.ts"
-import { postPullRequestReview } from "../../src/github/postPullRequestReview.ts"
+import { postPullRequestReview } from "../../src/github/postPullRequestReview.vibe"
 import { type PullRequestTarget, resolvePullRequest } from "../../src/github/resolvePullRequest.ts"
 
 type GhCall = {

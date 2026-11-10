@@ -209,9 +209,11 @@ export effect function receiveFeedback(input: typeof ReceiveFeedback.payloadSche
     targetLineageId: owner.value.flowId === todoFlowId ? owner.value.rootId : lineage(owner.value.rootId),
     boundary,
     wouldIdle: true
-  }).pipe(Effect.mapError(() =>
-    new CodingError({ code: "unavailable", message: `Request feedback at ${boundary} could not be read` })
-  ))
+  }).pipe(
+    Effect.mapError(() =>
+      new CodingError({ code: "unavailable", message: `Request feedback at ${boundary} could not be read` })
+    )
+  )
   return { boundary, messages: receipt.notifications }
 }
 export const feedbackLayer = ReceiveFeedback.toLayer(receiveFeedback)

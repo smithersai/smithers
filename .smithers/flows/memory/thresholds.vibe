@@ -58,6 +58,5 @@ export const stable = (value: unknown): string => `${JSON.stringify(sorted(value
 export const write = (root: string, thresholds: MemoryCalibration.Thresholds, receipt: unknown) =>
   tryPromise({
     try: () => writeThresholds(root, stable(thresholds), stable(receipt)),
-    catch: (cause) =>
-      new ThresholdsInvalid({ path: thresholdsPath(root), message: `write failed: ${String(cause)}` })
+    catch: (cause) => new ThresholdsInvalid({ path: thresholdsPath(root), message: `write failed: ${String(cause)}` })
   })

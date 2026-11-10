@@ -180,13 +180,20 @@ effect function readJson(response: HttpClientResponse.HttpClientResponse) {
     throw invalid("Landing API response exceeds its bounded size")
   }
   const decoder = new TextDecoder("utf-8", { fatal: true })
-  const captured = Stream.runFoldEffect(response.stream, () => ({ bytes: 0, text: "" }), (state, chunk) =>
-    state.bytes + chunk.length > maximumBodyBytes
-      ? Effect.fail(invalid("Landing API response is invalid or exceeds its bounded size"))
-      : Effect.try({
-        try: () => ({ bytes: state.bytes + chunk.length, text: state.text + decoder.decode(chunk, { stream: true }) }),
-        catch: () => invalid("Landing API response is invalid or exceeds its bounded size")
-      })) catch effect (error) => {
+  const captured = Stream.runFoldEffect(
+    response.stream,
+    () => ({ bytes: 0, text: "" }),
+    (state, chunk) =>
+      state.bytes + chunk.length > maximumBodyBytes
+        ? Effect.fail(invalid("Landing API response is invalid or exceeds its bounded size"))
+        : Effect.try({
+          try: () => ({
+            bytes: state.bytes + chunk.length,
+            text: state.text + decoder.decode(chunk, { stream: true })
+          }),
+          catch: () => invalid("Landing API response is invalid or exceeds its bounded size")
+        })
+  ) catch effect (error) => {
     throw error instanceof CodingError ? error : unavailable("Landing API response could not be read")
   }
   return try Effect.try({
@@ -197,295 +204,300 @@ effect function readJson(response: HttpClientResponse.HttpClientResponse) {
 
 /** Construct over the host's selected Node/Bun HttpClient. Never follows redirects. */
 export effect function make(options: Options) {
-    const client = try HttpClient.HttpClient
-    const url = try Effect.try({
-      try: () => new URL(options.apiBaseUrl),
-      catch: () => unavailable("Landing API binding is invalid")
-    })
-    if (
-      !/^https?:$/.test(url.protocol) || url.username || url.password || url.search || url.hash ||
-      !url.pathname.endsWith("/api") || options.apiBaseUrl !== url.href.replace(/\/$/, "") ||
-      !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(options.repositorySlug) ||
-      options.repositorySlug.split("/").some((part) => part === "." || part === "..") ||
-      !Schema.is(SourcePublication.fields.workspaceId)(options.workspaceId) ||
-      !Schema.is(boundedId)(options.repositoryId) ||
-      !Redacted.value(options.token).trim() || /[\r\n]/.test(Redacted.value(options.token))
-    ) {
-      throw unavailable("Landing requires the exact provisioned repository, API and credential binding")
-    }
-    const base = `${options.apiBaseUrl}/repos/${options.repositorySlug.split("/").map(encodeURIComponent).join("/")}`
-    const send = <A>(
-      request: HttpClientRequest.HttpClientRequest,
-      expectedStatus: ReadonlyArray<number>,
-      schema: Schema.Codec<A>
-    ) =>
-      (effect {
-        const response = HttpClient.withScope(client).execute(
-          request.pipe(HttpClientRequest.bearerToken(options.token), HttpClientRequest.acceptJson)
-        ) catch effect () => {
-          throw unavailable("Landing API request could not be acknowledged; retry the same durable request")
-        }
-        if (!expectedStatus.includes(response.status)) {
-          // Do not expose remote response bodies, request headers or credential-bearing errors.
-          // A bounded API error code is an identifier, not a body.
-          const body = readJson(response) catch () => undefined
-          const code = typeof body === "object" && body !== null && "code" in body &&
-              typeof body.code === "string" && errorCode.test(body.code) ?
-            ` ${body.code}` :
-            ""
-          if (response.status === 409) {
-            throw new CodingError({
-              code: "stale_revision",
-              message:
-                `Landing policy or the pinned source/main changed; inspect this exact landing before replanning (HTTP 409${code})`
-            })
-          }
-          throw unavailable(
-            `Landing API did not acknowledge the required operation (HTTP ${response.status}${code})`
-          )
-        }
-        const value = try readJson(response)
-        return Schema.decodeUnknownEffect(schema)(value) catch effect (error) => {
-          throw error instanceof CodingError ? error : invalid("Landing API receipt does not match the required protocol")
-        }
-      }).pipe(
-        Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
-        Effect.scoped,
-        Effect.timeoutOrElse({
-          duration: "90 seconds",
-          orElse: () =>
-            Effect.fail(unavailable("Landing API exceeded its request deadline; retry the same durable request"))
-        }),
-        Effect.catchCause((cause) => {
-          if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
-          const error = Cause.squash(cause)
-          return Effect.fail(
-            error instanceof CodingError
-              ? error
-              : unavailable("Landing API request failed before a receipt could be verified")
-          )
-        })
-      )
-    const json = (request: HttpClientRequest.HttpClientRequest, value: object) =>
-      HttpClientRequest.bodyJsonUnsafe(request, value)
-    const validatePreparation = effect (value: AppendPreparation, input: AppendPreparationInput) => {
-      if (
-        value.target_bookmark !== input.target_bookmark || value.expected_commit_id !== input.expected_commit_id ||
-        value.source_commit_id !== input.source_commit_id ||
-        value.source_base_commit_id !== input.source_base_commit_id ||
-        value.changes.at(-1)?.commit_id !== input.source_commit_id || new Set(value.changes.map((change) =>
-            change.change_id
-          )).size !== value.changes.length ||
-        new Set(value.changes.map((change) => change.commit_id)).size !== value.changes.length
-      ) throw invalid("Native append preparation does not identify the exact ordered source")
-      return value
-    }
-    const checkIdentity = effect (value: typeof LandingResponse.Type, requestId: string, preparation: AppendPreparation) => {
-      if (!(value.request_id === requestId && same(value.change_ids, preparation.changes.map((change) => change.change_id)))) {
-        throw invalid("Landing receipt does not identify this exact request and native stack")
+  const client = try HttpClient.HttpClient
+  const url = try Effect.try({
+    try: () => new URL(options.apiBaseUrl),
+    catch: () => unavailable("Landing API binding is invalid")
+  })
+  if (
+    !/^https?:$/.test(url.protocol) || url.username || url.password || url.search || url.hash ||
+    !url.pathname.endsWith("/api") || options.apiBaseUrl !== url.href.replace(/\/$/, "") ||
+    !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(options.repositorySlug) ||
+    options.repositorySlug.split("/").some((part) => part === "." || part === "..") ||
+    !Schema.is(SourcePublication.fields.workspaceId)(options.workspaceId) ||
+    !Schema.is(boundedId)(options.repositoryId) ||
+    !Redacted.value(options.token).trim() || /[\r\n]/.test(Redacted.value(options.token))
+  ) {
+    throw unavailable("Landing requires the exact provisioned repository, API and credential binding")
+  }
+  const base = `${options.apiBaseUrl}/repos/${options.repositorySlug.split("/").map(encodeURIComponent).join("/")}`
+  const send = <A>(
+    request: HttpClientRequest.HttpClientRequest,
+    expectedStatus: ReadonlyArray<number>,
+    schema: Schema.Codec<A>
+  ) =>
+    (effect {
+      const response = HttpClient.withScope(client).execute(
+        request.pipe(HttpClientRequest.bearerToken(options.token), HttpClientRequest.acceptJson)
+      ) catch effect () => {
+        throw unavailable("Landing API request could not be acknowledged; retry the same durable request")
       }
-      return { requestId: value.request_id, number: value.number }
-    }
-    const readMain = effect {
-      const cursors = new Set<string>(), candidates: Array<string> = []
-      let cursor = ""
-      // Existing bookmark pagination, bounded to 10,000 entries. Incomplete pages refuse.
-      for (let page = 0; page < 100; page++) {
-        const response = try send(
-          HttpClientRequest.get(`${base}/bookmarks`).pipe(
-            HttpClientRequest.setUrlParams({ limit: "100", ...(cursor === "" ? {} : { cursor }) })
-          ),
-          [200],
-          BookmarkPage
+      if (!expectedStatus.includes(response.status)) {
+        // Do not expose remote response bodies, request headers or credential-bearing errors.
+        // A bounded API error code is an identifier, not a body.
+        const body = readJson(response) catch () => undefined
+        const code = typeof body === "object" && body !== null && "code" in body &&
+            typeof body.code === "string" && errorCode.test(body.code) ?
+          ` ${body.code}` :
+          ""
+        if (response.status === 409) {
+          throw new CodingError({
+            code: "stale_revision",
+            message:
+              `Landing policy or the pinned source/main changed; inspect this exact landing before replanning (HTTP 409${code})`
+          })
+        }
+        throw unavailable(
+          `Landing API did not acknowledge the required operation (HTTP ${response.status}${code})`
         )
-        for (const bookmark of response.items) if (bookmark.name === "main") candidates.push(bookmark.target_commit_id)
-        if (response.next_cursor === "") {
-          if (candidates.length !== 1 || !Schema.is(Resolved.fields.commitId)(candidates[0])) {
-            throw invalid("Repository must have one unambiguous immutable local main bookmark")
-          }
-          return candidates[0]
-        }
-        if (cursors.has(response.next_cursor) || response.items.length === 0) {
-          throw invalid("Bookmark traversal is incomplete or cyclic")
-        }
-        cursors.add(response.next_cursor)
-        cursor = response.next_cursor
       }
-      throw invalid("Bookmark traversal exceeded its bounded page count")
-    }
-    const readPolicy = effect {
-      const reply = try send(
-        HttpClientRequest.get(`${base}/contents/.smithers/factory.json`).pipe(
-          HttpClientRequest.setUrlParams({ ref: "main" })
-        ),
-        [200, 404],
-        Schema.Union([Contents, Missing])
-      )
-      if ("code" in reply) return undefined
-      const policy = Schema.decodeUnknownEffect(Schema.fromJsonString(DeclaredPolicy))(reply.content) catch effect () => {
-        throw invalid("The declared factory projection on main is not valid JSON")
+      const value = try readJson(response)
+      return Schema.decodeUnknownEffect(schema)(value) catch effect (error) => {
+        throw error instanceof CodingError ? error : invalid("Landing API receipt does not match the required protocol")
       }
-      return policy.github
-    }
-    const readDelivery = Effect.map(
-      readPolicy,
-      (github): Delivery => github?.changes === "send-upstream" ? "pull-request" : "append"
+    }).pipe(
+      Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+      Effect.scoped,
+      Effect.timeoutOrElse({
+        duration: "90 seconds",
+        orElse: () =>
+          Effect.fail(unavailable("Landing API exceeded its request deadline; retry the same durable request"))
+      }),
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
+        const error = Cause.squash(cause)
+        return Effect.fail(
+          error instanceof CodingError
+            ? error
+            : unavailable("Landing API request failed before a receipt could be verified")
+        )
+      })
     )
-    // GitHub is the only writer of main in a `mirror: "pull"` repository, so a
-    // base is pinned only from an observation made after this request: request
-    // a pull, wait for it to settle, and refuse unless main equals GitHub's tip.
-    const mainPull = `${base}/github/main-pull`
-    const awaitFreshMain = effect {
-      const requested = try send(HttpClientRequest.post(mainPull), [202], MainPull)
-      for (let attempt = 0; attempt < mainPullAttempts; attempt++) {
-        try sleep(mainPullIntervalMs)
-        const status = try send(HttpClientRequest.get(mainPull), [200], MainPull)
-        // A failure finished after the request is refused: it may be a claim that
-        // was already running, which is still evidence main is not fresh now. A
-        // failure keeps pending (and backing off) until a pull succeeds.
-        const failed = status.state === "failed" && status.last_checked_at !== null &&
-          status.last_checked_at !== requested.last_checked_at
-        if (failed || !status.pending) {
-          if (status.fresh && Schema.is(Resolved.fields.commitId)(status.smithers_head)) {
-            return status.smithers_head
-          }
-          throw unavailable(
-            `GitHub main pull did not observe a fresh main (${status.state}${
-              status.last_error ? `: ${status.last_error.slice(0, 500)}` : ""
-            }); retry once it is fresh`
-          )
+  const json = (request: HttpClientRequest.HttpClientRequest, value: object) =>
+    HttpClientRequest.bodyJsonUnsafe(request, value)
+  const validatePreparation = effect (value: AppendPreparation, input: AppendPreparationInput) => {
+    if (
+      value.target_bookmark !== input.target_bookmark || value.expected_commit_id !== input.expected_commit_id ||
+      value.source_commit_id !== input.source_commit_id ||
+      value.source_base_commit_id !== input.source_base_commit_id ||
+      value.changes.at(-1)?.commit_id !== input.source_commit_id ||
+      new Set(value.changes.map((change) => change.change_id)).size !== value.changes.length ||
+      new Set(value.changes.map((change) => change.commit_id)).size !== value.changes.length
+    ) throw invalid("Native append preparation does not identify the exact ordered source")
+    return value
+  }
+  const checkIdentity = effect (
+    value: typeof LandingResponse.Type,
+    requestId: string,
+    preparation: AppendPreparation
+  ) => {
+    if (
+      !(value.request_id === requestId && same(value.change_ids, preparation.changes.map((change) => change.change_id)))
+    ) {
+      throw invalid("Landing receipt does not identify this exact request and native stack")
+    }
+    return { requestId: value.request_id, number: value.number }
+  }
+  const readMain = effect {
+    const cursors = new Set<string>(), candidates: Array<string> = []
+    let cursor = ""
+    // Existing bookmark pagination, bounded to 10,000 entries. Incomplete pages refuse.
+    for (let page = 0; page < 100; page++) {
+      const response = try send(
+        HttpClientRequest.get(`${base}/bookmarks`).pipe(
+          HttpClientRequest.setUrlParams({ limit: "100", ...(cursor === "" ? {} : { cursor }) })
+        ),
+        [200],
+        BookmarkPage
+      )
+      for (const bookmark of response.items) if (bookmark.name === "main") candidates.push(bookmark.target_commit_id)
+      if (response.next_cursor === "") {
+        if (candidates.length !== 1 || !Schema.is(Resolved.fields.commitId)(candidates[0])) {
+          throw invalid("Repository must have one unambiguous immutable local main bookmark")
         }
+        return candidates[0]
       }
-      throw unavailable("GitHub main pull is still pending; retry once it is fresh")
-    }
-    const pinMain = effect {
-      if ((try readPolicy)?.mirror !== "pull") return try readMain
-      const observed = try awaitFreshMain, main = try readMain
-      if (main !== observed) {
-        throw new CodingError({
-          code: "stale_revision",
-          message: "Main moved after the GitHub main pull observed it; retry the base pin"
-        })
+      if (cursors.has(response.next_cursor) || response.items.length === 0) {
+        throw invalid("Bookmark traversal is incomplete or cyclic")
       }
-      return main
+      cursors.add(response.next_cursor)
+      cursor = response.next_cursor
     }
-    // Only a repository without a stack delivers the ordinary way; a frozen or
-    // rebuilding stack makes the delivery wait (a retryable refusal).
-    const readStack = effect {
-      const reply = try send(HttpClientRequest.get(`${base}/mythical`), [200, 404], Schema.Union([StackState, Missing]))
-      if (!("state" in reply) || reply.state === "absent") return false
-      if (reply.state === "active") return true
-      throw unavailable(`The repository's mythical stack is ${reply.state}; deliver again once it is active`)
+    throw invalid("Bookmark traversal exceeded its bounded page count")
+  }
+  const readPolicy = effect {
+    const reply = try send(
+      HttpClientRequest.get(`${base}/contents/.smithers/factory.json`).pipe(
+        HttpClientRequest.setUrlParams({ ref: "main" })
+      ),
+      [200, 404],
+      Schema.Union([Contents, Missing])
+    )
+    if ("code" in reply) return undefined
+    const policy = Schema.decodeUnknownEffect(Schema.fromJsonString(DeclaredPolicy))(reply.content) catch effect () => {
+      throw invalid("The declared factory projection on main is not valid JSON")
     }
-    const submitLane = effect (submission: LaneSubmission) => {
-      const body = Schema.decodeUnknownEffect(LaneSubmission)(submission) catch effect () => {
-        throw invalid("A lane submission requires exact commits and this workspace")
-      }
-      const receipt = try send(json(HttpClientRequest.put(`${base}/mythical/lanes`), body), [200, 202], LaneReceipt)
-      if (receipt.source !== submission.source) throw invalid("The stack service acknowledged another source")
-      return receipt
-    }
-    const service: BackendLanding = {
-      kind: "backend",
-      binding: { repositoryId: options.repositoryId, workspaceId: options.workspaceId },
-      readMain,
-      pinMain,
-      readDelivery,
-      readStack,
-      submitLane,
-      openPull: effect (identity, commitId, runId) => {
-          if (
-            !Schema.is(Resolved.fields.commitId)(commitId) || !runId || runId.length > 1024 || /[\r\n`]/.test(runId)
-          ) {
-            throw invalid("A pull request requires the exact landing tip and this run's identity")
-          }
-          const pull = try send(
-            json(HttpClientRequest.put(`${base}/landings/${identity.number}/github/pull`), {
-              commit_id: commitId,
-              run_id: runId
-            }),
-            [200, 201],
-            GitHubPull
-          )
-          if (
-            pull.landing_number !== identity.number || pull.head_sha !== commitId ||
-            pull.head_ref !== `smithers/landing-${identity.number}`
-          ) {
-            throw invalid("GitHub pull request receipt does not carry this exact landing tip")
-          }
-          return pull
-        },
-      prepare: effect (input) => {
-        const request = Schema.decodeUnknownEffect(AppendPreparationInput)(input) catch effect () => {
-          throw invalid("Append preparation requires exact immutable commits")
+    return policy.github
+  }
+  const readDelivery = Effect.map(
+    readPolicy,
+    (github): Delivery => github?.changes === "send-upstream" ? "pull-request" : "append"
+  )
+  // GitHub is the only writer of main in a `mirror: "pull"` repository, so a
+  // base is pinned only from an observation made after this request: request
+  // a pull, wait for it to settle, and refuse unless main equals GitHub's tip.
+  const mainPull = `${base}/github/main-pull`
+  const awaitFreshMain = effect {
+    const requested = try send(HttpClientRequest.post(mainPull), [202], MainPull)
+    for (let attempt = 0; attempt < mainPullAttempts; attempt++) {
+      try sleep(mainPullIntervalMs)
+      const status = try send(HttpClientRequest.get(mainPull), [200], MainPull)
+      // A failure finished after the request is refused: it may be a claim that
+      // was already running, which is still evidence main is not fresh now. A
+      // failure keeps pending (and backing off) until a pull succeeds.
+      const failed = status.state === "failed" && status.last_checked_at !== null &&
+        status.last_checked_at !== requested.last_checked_at
+      if (failed || !status.pending) {
+        if (status.fresh && Schema.is(Resolved.fields.commitId)(status.smithers_head)) {
+          return status.smithers_head
         }
-        const result = try send(
-          json(HttpClientRequest.post(`${base}/landings/append/prepare`), request),
-          [200],
-          AppendPreparation
+        throw unavailable(
+          `GitHub main pull did not observe a fresh main (${status.state}${
+            status.last_error ? `: ${status.last_error.slice(0, 500)}` : ""
+          }); retry once it is fresh`
         )
-        return try validatePreparation(result, input)
-      },
-      create: effect (requestId, preparation, description) => {
-          if (
-            !Schema.is(SourcePublication.fields.requestId)(requestId) || !description.trim() ||
-            new TextEncoder().encode(description).length > 32_768
-          ) {
-            throw invalid("Landing creation requires a stable request identity and a bounded final description")
-          }
-          const title = description.split(/\r?\n/, 1)[0]!
-          if (title.length > 255) throw invalid("The final landing subject exceeds 255 characters")
-          const response = try send(
-            json(HttpClientRequest.put(`${base}/landings/requests/${requestId}`), {
-              title,
-              body: description,
-              target_bookmark: preparation.target_bookmark,
-              change_ids: preparation.changes.map((change) => change.change_id)
-            }),
-            [200, 201],
-            LandingResponse
-          )
-          return try checkIdentity(response, requestId, preparation)
-        },
-      queue: effect (identity, preparation, request) => {
-          if (
-            request.commit_id !== preparation.source_commit_id ||
-            request.source_base_commit_id !== preparation.source_base_commit_id ||
-            request.expected_commit_id !== preparation.expected_commit_id ||
-            new TextEncoder().encode(request.description).length > 32_768
-          ) {
-            throw invalid("Append request does not match its recorded preparation")
-          }
-          const response = try send(
-            json(HttpClientRequest.put(`${base}/landings/${identity.number}/land/append`), request),
-            [202],
-            QueueResponse
-          )
-          try checkIdentity(response, identity.requestId, preparation)
-          if (response.number !== identity.number) throw invalid("Append queue returned another landing")
-          return { ...identity, taskId: response.task_id, preparation, request }
-        },
-      observe: effect (queued) => {
-          const observation = try send(
-            HttpClientRequest.get(`${base}/landings/${queued.number}/land/append`),
-            [200],
-            AppendObservation
-          )
-          const request = observation.request
-          if (
-            observation.task_id !== queued.taskId ||
-            !same(request.change_ids, queued.preparation.changes.map((change) => change.commit_id)) ||
-            request.expected_commit_id !== queued.request.expected_commit_id ||
-            request.append.source_commit_id !== queued.request.commit_id ||
-            request.append.source_base_commit_id !== queued.request.source_base_commit_id ||
-            request.append.description !== queued.request.description ||
-            observation.status === "landed" && observation.result.landed_count !== queued.preparation.changes.length
-          ) {
-            throw invalid("Native append observation does not match this exact queued request")
-          }
-          return observation
-        }
+      }
     }
-    return service
+    throw unavailable("GitHub main pull is still pending; retry once it is fresh")
+  }
+  const pinMain = effect {
+    if ((try readPolicy)?.mirror !== "pull") return try readMain
+    const observed = try awaitFreshMain, main = try readMain
+    if (main !== observed) {
+      throw new CodingError({
+        code: "stale_revision",
+        message: "Main moved after the GitHub main pull observed it; retry the base pin"
+      })
+    }
+    return main
+  }
+  // Only a repository without a stack delivers the ordinary way; a frozen or
+  // rebuilding stack makes the delivery wait (a retryable refusal).
+  const readStack = effect {
+    const reply = try send(HttpClientRequest.get(`${base}/mythical`), [200, 404], Schema.Union([StackState, Missing]))
+    if (!("state" in reply) || reply.state === "absent") return false
+    if (reply.state === "active") return true
+    throw unavailable(`The repository's mythical stack is ${reply.state}; deliver again once it is active`)
+  }
+  const submitLane = effect (submission: LaneSubmission) => {
+    const body = Schema.decodeUnknownEffect(LaneSubmission)(submission) catch effect () => {
+      throw invalid("A lane submission requires exact commits and this workspace")
+    }
+    const receipt = try send(json(HttpClientRequest.put(`${base}/mythical/lanes`), body), [200, 202], LaneReceipt)
+    if (receipt.source !== submission.source) throw invalid("The stack service acknowledged another source")
+    return receipt
+  }
+  const service: BackendLanding = {
+    kind: "backend",
+    binding: { repositoryId: options.repositoryId, workspaceId: options.workspaceId },
+    readMain,
+    pinMain,
+    readDelivery,
+    readStack,
+    submitLane,
+    openPull: effect (identity, commitId, runId) => {
+      if (
+        !Schema.is(Resolved.fields.commitId)(commitId) || !runId || runId.length > 1024 || /[\r\n`]/.test(runId)
+      ) {
+        throw invalid("A pull request requires the exact landing tip and this run's identity")
+      }
+      const pull = try send(
+        json(HttpClientRequest.put(`${base}/landings/${identity.number}/github/pull`), {
+          commit_id: commitId,
+          run_id: runId
+        }),
+        [200, 201],
+        GitHubPull
+      )
+      if (
+        pull.landing_number !== identity.number || pull.head_sha !== commitId ||
+        pull.head_ref !== `smithers/landing-${identity.number}`
+      ) {
+        throw invalid("GitHub pull request receipt does not carry this exact landing tip")
+      }
+      return pull
+    },
+    prepare: effect (input) => {
+      const request = Schema.decodeUnknownEffect(AppendPreparationInput)(input) catch effect () => {
+        throw invalid("Append preparation requires exact immutable commits")
+      }
+      const result = try send(
+        json(HttpClientRequest.post(`${base}/landings/append/prepare`), request),
+        [200],
+        AppendPreparation
+      )
+      return try validatePreparation(result, input)
+    },
+    create: effect (requestId, preparation, description) => {
+      if (
+        !Schema.is(SourcePublication.fields.requestId)(requestId) || !description.trim() ||
+        new TextEncoder().encode(description).length > 32_768
+      ) {
+        throw invalid("Landing creation requires a stable request identity and a bounded final description")
+      }
+      const title = description.split(/\r?\n/, 1)[0]!
+      if (title.length > 255) throw invalid("The final landing subject exceeds 255 characters")
+      const response = try send(
+        json(HttpClientRequest.put(`${base}/landings/requests/${requestId}`), {
+          title,
+          body: description,
+          target_bookmark: preparation.target_bookmark,
+          change_ids: preparation.changes.map((change) => change.change_id)
+        }),
+        [200, 201],
+        LandingResponse
+      )
+      return try checkIdentity(response, requestId, preparation)
+    },
+    queue: effect (identity, preparation, request) => {
+      if (
+        request.commit_id !== preparation.source_commit_id ||
+        request.source_base_commit_id !== preparation.source_base_commit_id ||
+        request.expected_commit_id !== preparation.expected_commit_id ||
+        new TextEncoder().encode(request.description).length > 32_768
+      ) {
+        throw invalid("Append request does not match its recorded preparation")
+      }
+      const response = try send(
+        json(HttpClientRequest.put(`${base}/landings/${identity.number}/land/append`), request),
+        [202],
+        QueueResponse
+      )
+      try checkIdentity(response, identity.requestId, preparation)
+      if (response.number !== identity.number) throw invalid("Append queue returned another landing")
+      return { ...identity, taskId: response.task_id, preparation, request }
+    },
+    observe: effect (queued) => {
+      const observation = try send(
+        HttpClientRequest.get(`${base}/landings/${queued.number}/land/append`),
+        [200],
+        AppendObservation
+      )
+      const request = observation.request
+      if (
+        observation.task_id !== queued.taskId ||
+        !same(request.change_ids, queued.preparation.changes.map((change) => change.commit_id)) ||
+        request.expected_commit_id !== queued.request.expected_commit_id ||
+        request.append.source_commit_id !== queued.request.commit_id ||
+        request.append.source_base_commit_id !== queued.request.source_base_commit_id ||
+        request.append.description !== queued.request.description ||
+        observation.status === "landed" && observation.result.landed_count !== queued.preparation.changes.length
+      ) {
+        throw invalid("Native append observation does not match this exact queued request")
+      }
+      return observation
+    }
+  }
+  return service
 }
 export const layer = (options: Options) => Layer.effect(Landing)(make(options))

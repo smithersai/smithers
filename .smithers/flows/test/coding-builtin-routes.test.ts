@@ -748,7 +748,7 @@ test("a packaged review whose modules changed on disk is refused before its comp
   await Effect.gen(function*() {
     const builtins = yield* provisionBuiltins(stateRoot, policy)
     const root = join(stateRoot, "builtin-flows", policy)
-    const helper = join(root, "review", "src", "workflow", "reviewFlow.ts")
+    const helper = join(root, "review", "src", "workflow", "reviewFlow.vibe")
     yield* Effect.promise(async () => writeFile(helper, `${await readFile(helper, "utf8")}\n// changed\n`))
     const registry = yield* Registry.make({
       sources: [{ root, source: "repository-host", naming: "path", system: true }]
@@ -756,7 +756,7 @@ test("a packaged review whose modules changed on disk is refused before its comp
     const descriptor = yield* registry.get("review")
     assert.equal(
       descriptor.body._tag === "Module" &&
-        descriptor.body.imports?.some((entry) => entry.path === "src/workflow/reviewFlow.ts"),
+        descriptor.body.imports?.some((entry) => entry.path === "src/workflow/reviewFlow.vibe"),
       true
     )
     const built = yield* Executable.catalog({ delegates: [], load: builtins.load }).pipe(

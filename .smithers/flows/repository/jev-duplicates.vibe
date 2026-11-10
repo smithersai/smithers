@@ -177,8 +177,8 @@ export effect function jevDuplicates(
   const candidates = duplicateCandidates(work)
   if (!candidates.length) return duplicateObservation(work, classification, [])
   const states = duplicateStates(work)
-  const answered = (try Effect.forEach(batches(states), (batch) =>
-    pairClassifier.evaluateAll(batch), { concurrency: 1 })).flat()
+  const answered =
+    (try Effect.forEach(batches(states), (batch) => pairClassifier.evaluateAll(batch), { concurrency: 1 })).flat()
   if (answered.length !== candidates.length) {
     throw failed("Jev answered a different number of prior records than it was asked about")
   }

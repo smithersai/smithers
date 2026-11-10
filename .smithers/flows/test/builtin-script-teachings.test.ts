@@ -16,8 +16,8 @@ const owners: Readonly<Record<keyof typeof BuiltinScript.teachings, string>> = {
   "coding/review-final-history": "coding/vibe-cleanup.vibe",
   "coding/review-lens": "coding/review-check.vibe",
   "review/change": "review/change/flow.mdx",
-  "review/file": "review/src/workflow/reviewAgentActions.ts",
-  "review/verify": "review/src/workflow/reviewAgentActions.ts",
+  "review/file": "review/src/workflow/reviewAgentActions.vibe",
+  "review/verify": "review/src/workflow/reviewAgentActions.vibe",
   "wiki/review-page": "wiki/workflow.vibe",
   conflict: "coding/todo-conflict-schema.vibe"
 }

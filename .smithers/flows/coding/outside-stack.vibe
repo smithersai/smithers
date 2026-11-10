@@ -159,319 +159,320 @@ const parseAtoms = (text: string): Array<Atom> =>
 
 /** The jj implementation over the repository the host serves. */
 export effect function make(options: Options) {
-    const native = try NativeCoding, spawner = try ChildProcessSpawner.ChildProcessSpawner
-    const fs = try FileSystem.FileSystem
-    const root = options.repositoryPath
-    const jj = effect (args: ReadonlyArray<string>) => {
-      const result = Effect.provideService(
-        runSourceProcess(
-          { repositoryPath: root, fs, environment: options.environment },
-          ["jj", "--no-pager", "--color=never", ...args],
-          root,
-          jjMinutes * 60_000
-        ),
-        ChildProcessSpawner.ChildProcessSpawner,
-        spawner
-      ) catch effect (error) => {
-        throw error instanceof CodingError
-          ? error
-          : unavailable(`jj could not run on this host: ${bounded(String(error), 500)}`)
-      }
-      if (result.exitCode !== 0 || result.stdout.truncated) {
-        throw unavailable(`jj ${args[0]} refused: ${bounded(result.stderr.text)}`)
-      }
-      return result.stdout.text
+  const native = try NativeCoding, spawner = try ChildProcessSpawner.ChildProcessSpawner
+  const fs = try FileSystem.FileSystem
+  const root = options.repositoryPath
+  const jj = effect (args: ReadonlyArray<string>) => {
+    const result = Effect.provideService(
+      runSourceProcess(
+        { repositoryPath: root, fs, environment: options.environment },
+        ["jj", "--no-pager", "--color=never", ...args],
+        root,
+        jjMinutes * 60_000
+      ),
+      ChildProcessSpawner.ChildProcessSpawner,
+      spawner
+    ) catch effect (error) => {
+      throw error instanceof CodingError
+        ? error
+        : unavailable(`jj could not run on this host: ${bounded(String(error), 500)}`)
     }
-    const log = (revset: string, template: string) => jj(["log", "--no-graph", "-r", revset, "-T", template])
-    const commitOf = effect (revset: string, what: string) => {
-      const found = lines(try log(revset, "commit_id ++ \"\\n\""))
-      if (found.length !== 1) throw invalid(`${what} must resolve to one commit`)
-      return found[0]!
+    if (result.exitCode !== 0 || result.stdout.truncated) {
+      throw unavailable(`jj ${args[0]} refused: ${bounded(result.stderr.text)}`)
     }
-    const changeRevset = (changeIds: ReadonlyArray<string>) => changeIds.map((id) => `change_id(${id})`).join(" | ")
-    /** The visible commits that now carry these change ids, in order; undefined when one is divergent or gone. */
-    const current = effect (changeIds: ReadonlyArray<string>) => {
-      const found = parseAtoms(try log(changeRevset(changeIds), atomTemplate))
-      const atoms = changeIds.map((id) => found.filter((atom) => atom.changeId === id))
-      return atoms.every((matches) => matches.length === 1) ? atoms.map((matches) => matches[0]!) : undefined
+    return result.stdout.text
+  }
+  const log = (revset: string, template: string) => jj(["log", "--no-graph", "-r", revset, "-T", template])
+  const commitOf = effect (revset: string, what: string) => {
+    const found = lines(try log(revset, "commit_id ++ \"\\n\""))
+    if (found.length !== 1) throw invalid(`${what} must resolve to one commit`)
+    return found[0]!
+  }
+  const changeRevset = (changeIds: ReadonlyArray<string>) => changeIds.map((id) => `change_id(${id})`).join(" | ")
+  /** The visible commits that now carry these change ids, in order; undefined when one is divergent or gone. */
+  const current = effect (changeIds: ReadonlyArray<string>) => {
+    const found = parseAtoms(try log(changeRevset(changeIds), atomTemplate))
+    const atoms = changeIds.map((id) => found.filter((atom) => atom.changeId === id))
+    return atoms.every((matches) => matches.length === 1) ? atoms.map((matches) => matches[0]!) : undefined
+  }
+  const revisions = effect (changeIds: ReadonlyArray<string>) => {
+    const read = native.read(changeIds) catch effect (error) => {
+      throw unavailable(`The stack could not be read: ${error.message}`)
     }
-    const revisions = effect (changeIds: ReadonlyArray<string>) => {
-      const read = native.read(changeIds) catch effect (error) => {
-        throw unavailable(`The stack could not be read: ${error.message}`)
-      }
-      const found = changeIds.map((id) => read.revisions.find((entry) => entry.changeId === id))
-      if (!found.every((entry) => entry !== undefined && entry.kind === "resolved")) {
-        throw invalid("The stack's commits are not resolved revisions")
-      }
-      return found.map((entry) => ({
-        changeId: entry.changeId,
-        commitId: entry.commitId,
-        treeId: entry.treeId,
-        operationId: read.operationId,
-        parentCommitIds: [...entry.parentCommitIds]
-      }))
+    const found = changeIds.map((id) => read.revisions.find((entry) => entry.changeId === id))
+    if (!found.every((entry) => entry !== undefined && entry.kind === "resolved")) {
+      throw invalid("The stack's commits are not resolved revisions")
     }
-    const refuse = (stack: OutsideStack, reason: typeof RefusalReason.Type, message: string) =>
-      new StackRefused({ stack: stack.id, reason, message, findings: [] })
-    /** The author's commits as they were enqueued, oldest first, by change id. */
-    const chain = effect (stack: OutsideStack) => {
-        const known = lines(try log(`present(${stack.base}) | present(${stack.head})`, "commit_id ++ \"\\n\""))
-        if (known.length !== new Set([stack.base, stack.head]).size) {
-          throw refuse(stack, "stale", `${stack.id}: its base or head no longer exists in this repository`)
-        }
-        // Bounded: an unrelated head must not read the whole history.
-        const atoms = parseAtoms(
-          try jj([
-            "log",
-            "--no-graph",
-            "-n",
-            String(maximumAtoms + 1),
-            "-r",
-            `${stack.base}..${stack.head}`,
-            "-T",
-            atomTemplate
-          ])
-        ).toReversed()
-        if (atoms.length === 0) {
-          throw refuse(stack, "empty", `${stack.id}: ${stack.head} adds nothing to ${stack.base}`)
-        }
-        if (atoms.length > maximumAtoms) {
-          throw refuse(stack, "not_linear", `${stack.id}: more than ${maximumAtoms} commits`)
-        }
-        const linear = atoms.every((atom, index) =>
-          atom.parents.length === 1 && atom.parents[0] === (index === 0 ? stack.base : atoms[index - 1]!.commitId)
-        ) && atoms.at(-1)!.commitId === stack.head
-        if (!linear) {
-          throw refuse(
-            stack,
-            "not_linear",
-            `${stack.id}: ${stack.base}..${stack.head} is not one line of commits on its base`
-          )
-        }
-        return atoms
-      }
-    const rebase = effect (changeId: string, destination: string) => {
-      try jj(["rebase", "-s", `change_id(${changeId})`, "-d", destination])
+    return found.map((entry) => ({
+      changeId: entry.changeId,
+      commitId: entry.commitId,
+      treeId: entry.treeId,
+      operationId: read.operationId,
+      parentCommitIds: [...entry.parentCommitIds]
+    }))
+  }
+  const refuse = (stack: OutsideStack, reason: typeof RefusalReason.Type, message: string) =>
+    new StackRefused({ stack: stack.id, reason, message, findings: [] })
+  /** The author's commits as they were enqueued, oldest first, by change id. */
+  const chain = effect (stack: OutsideStack) => {
+    const known = lines(try log(`present(${stack.base}) | present(${stack.head})`, "commit_id ++ \"\\n\""))
+    if (known.length !== new Set([stack.base, stack.head]).size) {
+      throw refuse(stack, "stale", `${stack.id}: its base or head no longer exists in this repository`)
     }
-    /**
-     * Where a stack goes back to: the visible commit of its base's change.
-     * The enqueued base commit may be hidden (an amend in place, or our own
-     * rebase of the stack it was built on); rebasing onto it would make it
-     * visible again beside its rewrite.
-     */
-    const baseOf = effect (stack: OutsideStack) => {
-        const change = lines(try log(stack.base, "change_id ++ \"\\n\""))[0]!
-        const [atom] = (try current([change])) ?? []
-        return atom?.commitId
-      }
-    const tip = effect (target: string, expected?: string) => {
-        const commit = try commitOf(target, `The ${target} bookmark`)
-        if (expected !== undefined && commit !== expected) {
-          throw evicted(`${target} moved from ${expected} to ${commit} before admission`)
-        }
-        const change = lines(try log(commit, "change_id ++ \"\\n\""))[0]!
-        const [revision] = try revisions([change])
-        // A divergent change id could name another commit than the bookmark's.
-        if (revision!.commitId !== commit) {
-          throw invalid(`${target} is ${commit}, but its change reads as ${revision!.commitId}`)
-        }
-        return revision!
-      }
-    /** Whether `commit` is still the one visible commit of its change. */
-    const visible = effect (commit: string) => {
-        const change = lines(try log(commit, "change_id ++ \"\\n\""))[0]!
-        const [atom] = (try current([change])) ?? []
-        return atom?.commitId === commit
-      }
-    const apply = effect (stack: OutsideStack, parent: Revision) => {
-        // A parent rewritten since it was admitted is gone from the tip's line;
-        // rebasing onto it would make the hidden commit visible again.
-        if (!(try visible(parent.commitId))) {
-          throw evicted(`${parent.commitId} was rewritten during admission; the tip's line is gone`)
-        }
-        const enqueued = try chain(stack)
-        const changeIds = enqueued.map((atom) => atom.changeId)
-        // The base's change, not its commit: an amend in place below keeps the base on the tip's line.
-        const base = try baseOf(stack)
-        if (base === undefined) {
-          throw refuse(stack, "stale", `${stack.id}: its base's change is divergent or gone`)
-        }
-        if (lines(try log(`${base} & ::${parent.commitId}`, "commit_id ++ \"\\n\"")).length === 0) {
-          throw refuse(
-            stack,
-            "base_not_on_tip",
-            `${stack.id}: its base ${stack.base} is not on the tip; it was built on work the tip does not carry`
-          )
-        }
-        const found = try current(changeIds)
-        if (found === undefined) {
-          throw refuse(
-            stack,
-            "stale",
-            `${stack.id}: a change was abandoned or made divergent after it was enqueued`
-          )
-        }
-        let atoms = found
-        // A stack the tip already carries is not applied again, and never moved off the tip.
-        const carried = lines(try log(`(${changeRevset(changeIds)}) & ::${parent.commitId}`, "change_id ++ \"\\n\""))
-        if (carried.length > 0) {
-          throw refuse(
-            stack,
-            "already_applied",
-            `${stack.id}: ${carried.length} of its changes are already on the tip`
-          )
-        }
-        const shaped = atoms.every((atom, index) =>
-          index === 0 || (atom.parents.length === 1 && atom.parents[0] === atoms[index - 1]!.commitId)
+    // Bounded: an unrelated head must not read the whole history.
+    const atoms = parseAtoms(
+      try jj([
+        "log",
+        "--no-graph",
+        "-n",
+        String(maximumAtoms + 1),
+        "-r",
+        `${stack.base}..${stack.head}`,
+        "-T",
+        atomTemplate
+      ])
+    ).toReversed()
+    if (atoms.length === 0) {
+      throw refuse(stack, "empty", `${stack.id}: ${stack.head} adds nothing to ${stack.base}`)
+    }
+    if (atoms.length > maximumAtoms) {
+      throw refuse(stack, "not_linear", `${stack.id}: more than ${maximumAtoms} commits`)
+    }
+    const linear =
+      atoms.every((atom, index) =>
+        atom.parents.length === 1 && atom.parents[0] === (index === 0 ? stack.base : atoms[index - 1]!.commitId)
+      ) && atoms.at(-1)!.commitId === stack.head
+    if (!linear) {
+      throw refuse(
+        stack,
+        "not_linear",
+        `${stack.id}: ${stack.base}..${stack.head} is not one line of commits on its base`
+      )
+    }
+    return atoms
+  }
+  const rebase = effect (changeId: string, destination: string) => {
+    try jj(["rebase", "-s", `change_id(${changeId})`, "-d", destination])
+  }
+  /**
+   * Where a stack goes back to: the visible commit of its base's change.
+   * The enqueued base commit may be hidden (an amend in place, or our own
+   * rebase of the stack it was built on); rebasing onto it would make it
+   * visible again beside its rewrite.
+   */
+  const baseOf = effect (stack: OutsideStack) => {
+    const change = lines(try log(stack.base, "change_id ++ \"\\n\""))[0]!
+    const [atom] = (try current([change])) ?? []
+    return atom?.commitId
+  }
+  const tip = effect (target: string, expected?: string) => {
+    const commit = try commitOf(target, `The ${target} bookmark`)
+    if (expected !== undefined && commit !== expected) {
+      throw evicted(`${target} moved from ${expected} to ${commit} before admission`)
+    }
+    const change = lines(try log(commit, "change_id ++ \"\\n\""))[0]!
+    const [revision] = try revisions([change])
+    // A divergent change id could name another commit than the bookmark's.
+    if (revision!.commitId !== commit) {
+      throw invalid(`${target} is ${commit}, but its change reads as ${revision!.commitId}`)
+    }
+    return revision!
+  }
+  /** Whether `commit` is still the one visible commit of its change. */
+  const visible = effect (commit: string) => {
+    const change = lines(try log(commit, "change_id ++ \"\\n\""))[0]!
+    const [atom] = (try current([change])) ?? []
+    return atom?.commitId === commit
+  }
+  const apply = effect (stack: OutsideStack, parent: Revision) => {
+    // A parent rewritten since it was admitted is gone from the tip's line;
+    // rebasing onto it would make the hidden commit visible again.
+    if (!(try visible(parent.commitId))) {
+      throw evicted(`${parent.commitId} was rewritten during admission; the tip's line is gone`)
+    }
+    const enqueued = try chain(stack)
+    const changeIds = enqueued.map((atom) => atom.changeId)
+    // The base's change, not its commit: an amend in place below keeps the base on the tip's line.
+    const base = try baseOf(stack)
+    if (base === undefined) {
+      throw refuse(stack, "stale", `${stack.id}: its base's change is divergent or gone`)
+    }
+    if (lines(try log(`${base} & ::${parent.commitId}`, "commit_id ++ \"\\n\"")).length === 0) {
+      throw refuse(
+        stack,
+        "base_not_on_tip",
+        `${stack.id}: its base ${stack.base} is not on the tip; it was built on work the tip does not carry`
+      )
+    }
+    const found = try current(changeIds)
+    if (found === undefined) {
+      throw refuse(
+        stack,
+        "stale",
+        `${stack.id}: a change was abandoned or made divergent after it was enqueued`
+      )
+    }
+    let atoms = found
+    // A stack the tip already carries is not applied again, and never moved off the tip.
+    const carried = lines(try log(`(${changeRevset(changeIds)}) & ::${parent.commitId}`, "change_id ++ \"\\n\""))
+    if (carried.length > 0) {
+      throw refuse(
+        stack,
+        "already_applied",
+        `${stack.id}: ${carried.length} of its changes are already on the tip`
+      )
+    }
+    const shaped = atoms.every((atom, index) =>
+      index === 0 || (atom.parents.length === 1 && atom.parents[0] === atoms[index - 1]!.commitId)
+    )
+    if (!shaped) {
+      throw refuse(stack, "stale", `${stack.id}: its commits no longer form one line; enqueue the new head`)
+    }
+    // Only a stack already on the parent can carry our own conflicted rebase.
+    const onParent = atoms[0]!.parents.length === 1 && atoms[0]!.parents[0] === parent.commitId
+    // The author may have rewritten the stack since it was enqueued: only
+    // the enqueued content is admitted. A rebase (ours on a replay, or the
+    // author's) changes no atom's own diff; a conflicted atom is ours and
+    // is restored below.
+    const rewritten: Array<string> = []
+    for (const [index, atom] of atoms.entries()) {
+      if (atom.commitId === enqueued[index]!.commitId || (atom.conflict && onParent)) continue
+      const diff = try jj([
+        "interdiff",
+        "--name-only",
+        "--from",
+        enqueued[index]!.commitId,
+        "--to",
+        atom.commitId
+      ])
+      if (lines(diff).length > 0) rewritten.push(atom.changeId)
+    }
+    if (rewritten.length > 0) {
+      throw refuse(
+        stack,
+        "stale",
+        `${stack.id}: ${rewritten.length} of its changes were rewritten after it was enqueued; enqueue the new head`
+      )
+    }
+    // A replay after a crash finds the stack already on the parent.
+    if (atoms[0]!.parents.length !== 1 || atoms[0]!.parents[0] !== parent.commitId) {
+      // jj refuses to rewrite these, and that refusal must not fail the rest of the batch.
+      // `immutable()` is a redefinable alias; jj's rewrite check reads immutable_heads().
+      const frozen = lines(
+        try log(`(${changeRevset(changeIds)}) & ::(immutable_heads() | root())`, "change_id ++ \"\\n\"")
+      )
+      if (frozen.length > 0) {
+        throw refuse(
+          stack,
+          "immutable",
+          `${stack.id}: ${frozen.length} of its changes are immutable here, so it cannot move onto the tip`
         )
-        if (!shaped) {
-          throw refuse(stack, "stale", `${stack.id}: its commits no longer form one line; enqueue the new head`)
-        }
-        // Only a stack already on the parent can carry our own conflicted rebase.
-        const onParent = atoms[0]!.parents.length === 1 && atoms[0]!.parents[0] === parent.commitId
-        // The author may have rewritten the stack since it was enqueued: only
-        // the enqueued content is admitted. A rebase (ours on a replay, or the
-        // author's) changes no atom's own diff; a conflicted atom is ours and
-        // is restored below.
-        const rewritten: Array<string> = []
-        for (const [index, atom] of atoms.entries()) {
-          if (atom.commitId === enqueued[index]!.commitId || (atom.conflict && onParent)) continue
-          const diff = try jj([
-            "interdiff",
-            "--name-only",
-            "--from",
-            enqueued[index]!.commitId,
-            "--to",
-            atom.commitId
-          ])
-          if (lines(diff).length > 0) rewritten.push(atom.changeId)
-        }
-        if (rewritten.length > 0) {
-          throw refuse(
-            stack,
-            "stale",
-            `${stack.id}: ${rewritten.length} of its changes were rewritten after it was enqueued; enqueue the new head`
-          )
-        }
-        // A replay after a crash finds the stack already on the parent.
-        if (atoms[0]!.parents.length !== 1 || atoms[0]!.parents[0] !== parent.commitId) {
-          // jj refuses to rewrite these, and that refusal must not fail the rest of the batch.
-          // `immutable()` is a redefinable alias; jj's rewrite check reads immutable_heads().
-          const frozen = lines(
-            try log(`(${changeRevset(changeIds)}) & ::(immutable_heads() | root())`, "change_id ++ \"\\n\"")
-          )
-          if (frozen.length > 0) {
-            throw refuse(
-              stack,
-              "immutable",
-              `${stack.id}: ${frozen.length} of its changes are immutable here, so it cannot move onto the tip`
-            )
-          }
-          try rebase(changeIds[0]!, parent.commitId)
-          const rebased = try current(changeIds)
-          if (rebased === undefined) throw invalid(`${stack.id} could not be read after rebasing`)
-          atoms = rebased
-        }
-        const conflicted = atoms.filter((atom) => atom.conflict)
-        if (conflicted.length > 0) {
-          const listed = jj(["resolve", "--list", "-r", conflicted[0]!.commitId]) catch () => undefined
-          const paths = listed === undefined
-            ? [] as Array<string>
-            : lines(listed).map((line) => line.split(/\s{2,}|\t/, 1)[0]!)
-          try rebase(changeIds[0]!, base)
-          throw refuse(
-            stack,
-            "conflict",
-            `${stack.id} conflicts with the tip: ${bounded(paths.join(", ") || conflicted[0]!.changeId)}`
-          )
-        }
-        const applied = try revisions(changeIds)
-        const head = applied.at(-1)!
-        const linear = applied.every((atom, index) =>
-          atom.commitId === atoms[index]!.commitId && atom.parentCommitIds.length === 1 &&
-          atom.parentCommitIds[0] === (index === 0 ? parent.commitId : applied[index - 1]!.commitId)
-        )
-        if (!linear) {
-          try rebase(changeIds[0]!, base)
-          throw invalid(`${stack.id} is not one line on the tip after rebasing`)
-        }
-        const writes = lines(try jj(["diff", "--name-only", "--from", parent.commitId, "--to", head.commitId]))
-        return { change: stack.id, parent, atoms: applied, head, reads: [], writes }
       }
-    /**
-     * Moving a stack back must never move the target: if it now points at the
-     * stack or above it (someone landed it, or set the tip onto it), the stack
-     * stays where it is and the move is `evicted`. An author's own bookmarks
-     * on the stack move back with it.
-     */
-    const unpinned = effect (target: string, stack: OutsideStack, rootChange: string) => {
-        const pinned = lines(
-          try log(
-            `bookmarks(exact:${JSON.stringify(target)}) & change_id(${rootChange})::`,
-            "local_bookmarks.map(|b| b.name()).join(\",\") ++ \"\\n\""
-          )
-        )
-        if (pinned.length > 0) {
-          throw evicted(`${stack.id} is under ${target}; it is not moved back`)
-        }
+      try rebase(changeIds[0]!, parent.commitId)
+      const rebased = try current(changeIds)
+      if (rebased === undefined) throw invalid(`${stack.id} could not be read after rebasing`)
+      atoms = rebased
+    }
+    const conflicted = atoms.filter((atom) => atom.conflict)
+    if (conflicted.length > 0) {
+      const listed = jj(["resolve", "--list", "-r", conflicted[0]!.commitId]) catch () => undefined
+      const paths = listed === undefined
+        ? [] as Array<string>
+        : lines(listed).map((line) => line.split(/\s{2,}|\t/, 1)[0]!)
+      try rebase(changeIds[0]!, base)
+      throw refuse(
+        stack,
+        "conflict",
+        `${stack.id} conflicts with the tip: ${bounded(paths.join(", ") || conflicted[0]!.changeId)}`
+      )
+    }
+    const applied = try revisions(changeIds)
+    const head = applied.at(-1)!
+    const linear = applied.every((atom, index) =>
+      atom.commitId === atoms[index]!.commitId && atom.parentCommitIds.length === 1 &&
+      atom.parentCommitIds[0] === (index === 0 ? parent.commitId : applied[index - 1]!.commitId)
+    )
+    if (!linear) {
+      try rebase(changeIds[0]!, base)
+      throw invalid(`${stack.id} is not one line on the tip after rebasing`)
+    }
+    const writes = lines(try jj(["diff", "--name-only", "--from", parent.commitId, "--to", head.commitId]))
+    return { change: stack.id, parent, atoms: applied, head, reads: [], writes }
+  }
+  /**
+   * Moving a stack back must never move the target: if it now points at the
+   * stack or above it (someone landed it, or set the tip onto it), the stack
+   * stays where it is and the move is `evicted`. An author's own bookmarks
+   * on the stack move back with it.
+   */
+  const unpinned = effect (target: string, stack: OutsideStack, rootChange: string) => {
+    const pinned = lines(
+      try log(
+        `bookmarks(exact:${JSON.stringify(target)}) & change_id(${rootChange})::`,
+        "local_bookmarks.map(|b| b.name()).join(\",\") ++ \"\\n\""
+      )
+    )
+    if (pinned.length > 0) {
+      throw evicted(`${stack.id} is under ${target}; it is not moved back`)
+    }
+  }
+  const restore = effect (target: string, stack: OutsideStack, implementation: Implementation) => {
+    const first = implementation.atoms[0]!.changeId
+    const [atom] = (try current([first])) ?? []
+    if (atom === undefined) throw invalid(`${stack.id}: its first change is divergent or gone`)
+    const base = try baseOf(stack)
+    if (base === undefined) throw invalid(`${stack.id}: its base's change is divergent or gone`)
+    if (atom.parents.length === 1 && atom.parents[0] === base) return
+    try unpinned(target, stack, first)
+    try rebase(first, base)
+  }
+  const advance = effect (target: string, expected: string, heads: ReadonlyArray<string>) => {
+    const head = heads.at(-1) ?? expected
+    const now = try commitOf(target, `The ${target} bookmark`)
+    if (now === head) return head
+    if (now !== expected) throw evicted(`${target} moved from ${expected} to ${now} during admission`)
+    if (head === expected) return head
+    // A head rewritten since it was gated is not what the checks measured;
+    // setting the bookmark over it would make the hidden commit visible again.
+    for (const admitted of heads) {
+      if (!(try visible(admitted))) {
+        throw evicted(`${admitted} was rewritten during admission; its checks measured another commit`)
       }
-    const restore = effect (target: string, stack: OutsideStack, implementation: Implementation) => {
-        const first = implementation.atoms[0]!.changeId
-        const [atom] = (try current([first])) ?? []
-        if (atom === undefined) throw invalid(`${stack.id}: its first change is divergent or gone`)
-        const base = try baseOf(stack)
-        if (base === undefined) throw invalid(`${stack.id}: its base's change is divergent or gone`)
-        if (atom.parents.length === 1 && atom.parents[0] === base) return
-        try unpinned(target, stack, first)
-        try rebase(first, base)
+    }
+    // Without --allow-backwards jj refuses a move that is not a fast-forward.
+    try jj(["bookmark", "set", target, "-r", head])
+    const landed = try commitOf(target, `The ${target} bookmark`)
+    if (landed !== head) throw invalid(`${target} is ${landed}, not ${head}`)
+    return landed
+  }
+  const sweep = effect (target: string, stacks: ReadonlyArray<OutsideStack>, start: string) => {
+    // The starting tip may have been amended in place during the run; its change still names it.
+    const startChange = lines(try log(start, "change_id ++ \"\\n\""))[0]!
+    const [now] = (try current([startChange])) ?? []
+    const tip = now?.commitId ?? start
+    for (const stack of stacks.toReversed()) {
+      const enqueued = chain(stack) catch effect (error) => match (error) {
+        when { _tag: "coding/StackRefused" }: [];
+        default: throw error;
       }
-    const advance = effect (target: string, expected: string, heads: ReadonlyArray<string>) => {
-        const head = heads.at(-1) ?? expected
-        const now = try commitOf(target, `The ${target} bookmark`)
-        if (now === head) return head
-        if (now !== expected) throw evicted(`${target} moved from ${expected} to ${now} during admission`)
-        if (head === expected) return head
-        // A head rewritten since it was gated is not what the checks measured;
-        // setting the bookmark over it would make the hidden commit visible again.
-        for (const admitted of heads) {
-          if (!(try visible(admitted))) {
-            throw evicted(`${admitted} was rewritten during admission; its checks measured another commit`)
-          }
-        }
-        // Without --allow-backwards jj refuses a move that is not a fast-forward.
-        try jj(["bookmark", "set", target, "-r", head])
-        const landed = try commitOf(target, `The ${target} bookmark`)
-        if (landed !== head) throw invalid(`${target} is ${landed}, not ${head}`)
-        return landed
+      const [root] = enqueued
+      if (root === undefined) continue
+      const [atom] = (try current([root.changeId])) ?? []
+      // Only a stack this run moved: one now above the tip it started from.
+      if (
+        atom === undefined ||
+        lines(try log(`${atom.commitId} & (${tip}:: ~ ${tip})`, "commit_id")).length === 0
+      ) {
+        continue
       }
-    const sweep = effect (target: string, stacks: ReadonlyArray<OutsideStack>, start: string) => {
-        // The starting tip may have been amended in place during the run; its change still names it.
-        const startChange = lines(try log(start, "change_id ++ \"\\n\""))[0]!
-        const [now] = (try current([startChange])) ?? []
-        const tip = now?.commitId ?? start
-        for (const stack of stacks.toReversed()) {
-          const enqueued = chain(stack) catch effect (error) => match (error) {
-            when { _tag: "coding/StackRefused" }: [];
-            default: throw error;
-          }
-          const [root] = enqueued
-          if (root === undefined) continue
-          const [atom] = (try current([root.changeId])) ?? []
-          // Only a stack this run moved: one now above the tip it started from.
-          if (
-            atom === undefined ||
-            lines(try log(`${atom.commitId} & (${tip}:: ~ ${tip})`, "commit_id")).length === 0
-          ) {
-            continue
-          }
-          const base = try baseOf(stack)
-          if (base === undefined || (atom.parents.length === 1 && atom.parents[0] === base)) continue
-          try unpinned(target, stack, root.changeId)
-          try rebase(root.changeId, base)
-        }
-      }
-    const service: OutsideStacksService = { tip, apply, restore, advance, sweep }
-    return service
+      const base = try baseOf(stack)
+      if (base === undefined || (atom.parents.length === 1 && atom.parents[0] === base)) continue
+      try unpinned(target, stack, root.changeId)
+      try rebase(root.changeId, base)
+    }
+  }
+  const service: OutsideStacksService = { tip, apply, restore, advance, sweep }
+  return service
 }
 export const layer = (options: Options) => Layer.effect(OutsideStacks)(make(options))
 

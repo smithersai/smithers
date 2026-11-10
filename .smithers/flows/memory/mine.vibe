@@ -84,7 +84,9 @@ const record = (value: unknown): Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null ? value as Readonly<Record<string, unknown>> : {}
 
 /** One JSONL line's row and payload, or `undefined` when the line (or its `payload_json`) is not JSON. */
-const parseLine = (line: string): { readonly parsed: Readonly<Record<string, unknown>>; readonly payload: unknown } | undefined => {
+const parseLine = (
+  line: string
+): { readonly parsed: Readonly<Record<string, unknown>>; readonly payload: unknown } | undefined => {
   try {
     const parsed = record(JSON.parse(line))
     const payload: unknown = typeof parsed.payload_json === "string" ? JSON.parse(parsed.payload_json) : parsed.payload
@@ -126,28 +128,31 @@ export const marker = (runId: string): string => `<!-- memory/mine run=${runId} 
  * are kept and the section follows them.
  */
 const appendPage = (input: Input, decisions: ReadonlyArray<MemoryMine.Cited>) =>
-  Effect.mapError(effect {
-    if (decisions.length === 0) return null
-    const fs = try FileSystem.FileSystem
-    const path = try Path.Path
-    const relative = `${MemoryMine.decisionsDirectory}/${input.item}.md`
-    const file = path.join(input.root, relative)
-    const existing = (try fs.exists(file)) ? try fs.readFileString(file) : `# Decisions: ${input.item}\n`
-    if (existing.split("\n").includes(marker(input.runId))) return null
-    const section = [
-      "",
-      marker(input.runId),
-      `## Run ${input.runId}`,
-      "",
-      ...decisions.map((entry) =>
-        `- Decision: ${line(entry.text)} (journal: run \`${input.runId}\`, event ${entry.seq})`
-      ),
-      ""
-    ].join("\n")
-    try fs.makeDirectory(path.dirname(file), { recursive: true })
-    try fs.writeFileString(file, `${existing.endsWith("\n") ? existing : `${existing}\n`}${section}`)
-    return relative
-  }, (error) => new MineFailed({ code: "wiki_failed", message: error.message }))
+  Effect.mapError(
+    effect {
+      if (decisions.length === 0) return null
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const relative = `${MemoryMine.decisionsDirectory}/${input.item}.md`
+      const file = path.join(input.root, relative)
+      const existing = (try fs.exists(file)) ? try fs.readFileString(file) : `# Decisions: ${input.item}\n`
+      if (existing.split("\n").includes(marker(input.runId))) return null
+      const section = [
+        "",
+        marker(input.runId),
+        `## Run ${input.runId}`,
+        "",
+        ...decisions.map((entry) =>
+          `- Decision: ${line(entry.text)} (journal: run \`${input.runId}\`, event ${entry.seq})`
+        ),
+        ""
+      ].join("\n")
+      try fs.makeDirectory(path.dirname(file), { recursive: true })
+      try fs.writeFileString(file, `${existing.endsWith("\n") ? existing : `${existing}\n`}${section}`)
+      return relative
+    },
+    (error) => new MineFailed({ code: "wiki_failed", message: error.message })
+  )
 
 /**
  * Mines one finished run: its journal rows or JSONL transcript in; accepted
