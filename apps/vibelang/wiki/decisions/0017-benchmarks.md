@@ -491,8 +491,14 @@ the generated wiki matches its preserved browser source map, SHA-256
 57798ff1e3204e9cfdf589e89c44f839b3f29a0f80d85783805bf8059416bfd1. No source exclusion or threshold change.
 This is a full collection plus an explicitly recorded correction, not one green full-roster invocation.
 
-The draft usage-report fallbacks still need a faulty journal-recovery workload: SDK usageOf can fail
-AccountingUnavailable during journal recovery. This continuation has not exercised that boundary. The legacy
+The draft usage-report fallbacks (`worker/WikiDraft.vibe:62`, `worker/VipDraft.vibe:60`,
+`worker/SpecificationReviewers.vibe:53`) are unreachable in the production composition, so no benchmark runs them
+(lane vl-bench2, 2026-11-10). Each meter is `Budget.make({})`, without a spend ledger. `usageOf` fails only when
+journal recovery fails, and recovery with no `Journal` service returns an empty ledger
+(`packages/smithers/agent/src/Budget.ts`, `recoverUsage`). No production layer provides `@smthrs/journal`'s
+`Journal`: `CloudflareRuntime` supplies `JournalDecode.Identity` only, and the memory engine supplies none. A
+workload that injected a failing `Journal` would measure a composition production never builds, so it would be a
+coverage-only call. The lines remain counted; deleting the defensive catch is a product change outside this lane. The legacy
 budgetDecision.charge helper is superseded by reservations. These lines remain counted; no artificial successful service, direct coverage-only call or deletion was introduced. Person-owned
 GitHub paths, a matching native VIP fixture, actual Container execution and the previously named unreachable
 routing guards remain as recorded above. A fresh full coverage receipt is still needed for later main changes.
