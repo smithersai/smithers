@@ -77,7 +77,7 @@ const securityReview = Smithers.SecurityReview({
         "A maxResponseBytes, requestTimeout, or depth/node limit that a caller can set above the documented maximum or to a non-finite value.",
         "snapshotEntry reading accessors or prototype properties instead of own data descriptors, so a getter runs during admission."
       ],
-      paths: ["src/RemoteCacheStore.vibe", "src/internal/CacheAdmission.vibe", "src/internal/SqlCacheStore.ts"]
+      paths: ["src/RemoteCacheStore.vibe", "src/internal/CacheAdmission.vibe", "src/internal/SqlCacheStore.vibe"]
     },
     {
       id: "sql-parameterization-and-fences",
@@ -89,7 +89,7 @@ const securityReview = Smithers.SecurityReview({
         "An evict or sweep that reads provenance first and then deletes without the provenance predicate in the same DELETE.",
         "sweepExpired deleting ledger rows without canReclaimRecorded approval or without re-checking created_at_ms in the DELETE."
       ],
-      paths: ["src/internal/SqlCacheStore.ts", "src/migrations/**"]
+      paths: ["src/internal/SqlCacheStore.vibe", "src/migrations/**"]
     },
     {
       id: "docs-credential-examples",
