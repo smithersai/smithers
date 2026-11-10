@@ -1,0 +1,67 @@
+// @vitest-environment node
+// Real indexed action hosts: legacy ownership, child reply cancellation and faulty downstream start services.
+import { expect, it } from "@effect/vitest"
+import type { RunRequest } from "../src/actions/wire.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import * as Directory from "../worker/ActionDirectory.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { world, request, history } from "./support/actionObjects.vibe"
+
+it.live("a legacy tour without an owner is admitted as a guest and can be cancelled", () => scoped(effect {
+  const w = try world()
+  const { owner, ...body } = request("legacy-tour", "vibelang/Tour", {}, w.person.id)
+  expect(owner).toBe(w.person.id)
+  expect(try w.directory.start(body, "maintainer")).toBeNull()
+  expect(try w.directory.cancel(body.id, "maintainer")).toBeNull()
+  expect(try w.directory.list("vibelang/Tour")).toMatchObject([{ id: body.id, state: "cancelled" }])
+}))
+
+it.live("cancelling a settled reply checks its registered parent and keeps the failed answer", () => scoped(effect {
+  const w = try world()
+  const body = request("settled-post", "vibelang/Post", { text: "Answer once." }, w.person.id)
+  expect(try w.directory.start(body, "maintainer")).toBeNull()
+  const obj = try w.object(body.id)
+  provide history {
+    try obj.host.alarm(w.spend, w.model, try Mythical)
+  }
+  const before = try w.directory.list("vibelang/Reply")
+  expect(before).toMatchObject([{ id: body.id + "-reply", state: "failed" }])
+  expect(try w.directory.cancel(body.id + "-reply", "maintainer", w.person.id)).toBeNull()
+  expect(try w.directory.list("vibelang/Reply")).toEqual(before)
+}), 60_000)
+
+/** All host operations are real; only the downstream start service is faulty. */
+effect function failingDirectory(w: Effect.Success<ReturnType<typeof world>>, start: Directory.Runs["start"]) {
+  const storage = (try w.object("fault-index")).storage
+  return Directory.directory("fault-index", storage, {
+    request: effect (id) => { const obj = try w.object(id); return try promise(() => obj.storage.get<RunRequest>("action/request")) },
+    read: effect (id) => try Runs.read((try w.object(id)).sequencer),
+    start,
+    cancel: effect (id, role, owner) => try Effect.mapError((try w.object(id)).host.cancel(id, role, owner), () => new Unreachable({ what: "action" })),
+  }, w.authority)
+}
+
+it.live("a downstream unavailable answer stays a failure and does not invent a run or an identity conflict", () => scoped(effect {
+  const w = try world()
+  const directory = try failingDirectory(w, () => Effect.fail(new Unreachable({ what: "action" })))
+  const result = try Effect.exit(directory.start(request("unreachable-start", "vibelang/Tour", {}, w.person.id), "maintainer"))
+  expect(Exit.isFailure(result)).toBe(true)
+  if (Exit.isFailure(result)) expect(Cause.pretty(result.cause)).toContain("Unreachable")
+  expect(try directory.list("")).toEqual([])
+}))
+
+it.live("two downstream defects retain both causes instead of becoming an identity conflict", () => scoped(effect {
+  const w = try world()
+  const directory = try failingDirectory(w, () => Effect.failCause(Cause.combine(
+    Cause.die(new Error("first start failure")),
+    Cause.die(new Error("second start failure")),
+  )))
+  const result = try Effect.exit(directory.start(request("broken-start", "vibelang/Tour", {}, w.person.id), "maintainer"))
+  expect(Exit.isFailure(result)).toBe(true)
+  if (Exit.isFailure(result)) {
+    expect(Cause.pretty(result.cause)).toContain("first start failure")
+    expect(Cause.pretty(result.cause)).toContain("second start failure")
+  }
+  expect(try directory.list("")).toEqual([])
+}))

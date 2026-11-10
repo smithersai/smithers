@@ -2167,3 +2167,18 @@ The newly measured fuzz-preflight script has zero native-loader coverage
 despite its two passing process-boundary runs. The existing
 coverage-native-loader reproduction records the provider's PARSE_ERROR on
 raw effect syntax; no exclusion or emitted-JavaScript substitution was added.
+
+## Action directory failure boundaries (lane vl-coverage2, 2026-11-10)
+
+A legacy ownerless Tour is admitted as a guest and cancelled through the
+real indexed host. A completed no-model Post reply can be cancelled under
+its registered parent's permission without changing its settled result.
+Faulty downstream start services retain an Unreachable failure or both
+defects in a compound cause; neither invents a run or answers conflict.
+Every other operation uses the real accounts, index, per-run hosts and SQLite.
+
+The four new cases pass. Mutating the cause mapping and removing the parent
+permission alias makes three fail, with the ownerless control still passing.
+After restoring the source, the five-file group passes 36 tests and
+worker/ActionDirectory.vibe is 100%: 40/40 lines, 22/22 functions,
+55/55 statements and 30/30 branches. No production code changed.
