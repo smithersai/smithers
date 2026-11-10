@@ -88,3 +88,19 @@ export function savedWikiPages(pages: ReadonlyArray<WikiPage>, page: string, sou
 export function wikiReviewLinks(review: string): boolean {
   return review !== ""
 }
+
+/** The editor's starting source: the first copy of the page the repository returned, else the build's embedded copy. */
+//@ verify
+//@ ensures forall(i, 0 <= i && i < observed.length ==> observed[i].id != page) ==> \result == embedded
+//@ ensures !forall(i, 0 <= i && i < observed.length ==> observed[i].id != page) ==> exists(i, 0 <= i && i < observed.length && observed[i].id == page && observed[i].source == \result && forall(k, 0 <= k && k < i ==> observed[k].id != page))
+export function knownSource(observed: ReadonlyArray<WikiPage>, page: string, embedded: string): string {
+  let j = 0
+  while (j < observed.length) {
+    //@ invariant 0 <= j && j <= observed.length
+    //@ invariant forall(k, 0 <= k && k < j ==> observed[k].id != page)
+    //@ decreases observed.length - j
+    if (observed[j]!.id === page) return observed[j]!.source
+    j++
+  }
+  return embedded
+}

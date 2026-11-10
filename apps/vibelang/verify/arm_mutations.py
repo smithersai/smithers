@@ -32,4 +32,8 @@ cases = [
 (W, 'wiki-saved-last', 'savedWikiPages', 'return [...kept, { id: page, source, revision }]', 'return kept', 'the saved page is listed'),
 (W, 'wiki-saved-revision', 'savedWikiPages', '{ id: page, source, revision }', '{ id: page, source, revision: "" }', 'the saved page keeps its revision'),
 (W, 'wiki-review-links', 'wikiReviewLinks', 'return review !== ""', 'return true', 'no review, no link'),
+(W, 'wiki-source-observed', 'knownSource', 'if (observed[j]!.id === page) return observed[j]!.source', 'if (observed[j]!.id === page) return embedded', 'an observed copy wins over the embedded one'),
+(W, 'wiki-source-match', 'knownSource', 'if (observed[j]!.id === page) return', 'if (observed[j]!.id !== page) return', "only that page's own copy is read"),
+(W, 'wiki-source-embedded', 'knownSource', '  return embedded\n}', '  return ""\n}', 'an unobserved page starts from the embedded copy'),
+(W, 'wiki-source-first', 'knownSource', '  while (j < observed.length) {', '  if (observed.length > 1) return observed[observed.length - 1]!.source\n  while (j < observed.length) {', 'the first observed copy is read'),
 ]

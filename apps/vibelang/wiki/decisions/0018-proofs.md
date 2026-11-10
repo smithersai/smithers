@@ -2571,9 +2571,8 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/web/main.vibe:928` | `execute/callback@928` | effectful shell | Calls proved six-field surface/tour projections, pane/media/response guards, scroll/focus policies and conversation transitions. Full Model composition, account/People transitions, numeric counter domains, retry selection and command execution remain unproved. |
 | `src/web/main.vibe:931` | `execute/callback@931` | pure logic | Calls proved six-field surface/tour projections, pane/media/response guards, scroll/focus policies and conversation transitions. Full Model composition, account/People transitions, numeric counter domains, retry selection and command execution remain unproved. |
 | `src/web/main.vibe:932` | `execute/callback@932` | pure logic | Calls proved six-field surface/tour projections, pane/media/response guards, scroll/focus policies and conversation transitions. Full Model composition, account/People transitions, numeric counter domains, retry selection and command execution remain unproved. |
-| `src/web/main.vibe:937` | `knownWikiSource` | pure logic | Calls proved six-field surface/tour projections, pane/media/response guards, scroll/focus policies and conversation transitions. Full Model composition, account/People transitions, numeric counter domains, retry selection and command execution remain unproved. |
-| `src/web/main.vibe:938` | `knownWikiSource/callback@938` | pure logic | Calls proved six-field surface/tour projections, pane/media/response guards, scroll/focus policies and conversation transitions. Full Model composition, account/People transitions, numeric counter domains, retry selection and command execution remain unproved. |
-| `src/web/main.vibe:938` | `knownWikiSource/callback@938` | pure logic | Calls proved six-field surface/tour projections, pane/media/response guards, scroll/focus policies and conversation transitions. Full Model composition, account/People transitions, numeric counter domains, retry selection and command execution remain unproved. |
+| `src/web/main.vibe:937` | `knownWikiSource` | pure logic | Calls the proved knownSource (wikiEditorDecision): the first observed copy of the page, else the embedded one; beginWikiEdit reads it only for a wikiEditable page, which is always embedded. |
+| `src/web/main.vibe:938` | `knownWikiSource/callback@938` | pure logic | Calls the proved knownSource (wikiEditorDecision): the first observed copy of the page, else the embedded one; beginWikiEdit reads it only for a wikiEditable page, which is always embedded. |
 | `src/web/main.vibe:943` | `beginWikiEdit` | pure logic | Calls the proved wikiBeginPlan and openedWikiEditor (wikiEditorDecision); the role rights are the proved wikiPermission; wikiEditable and the embedded page list are data. |
 | `src/web/main.vibe:959` | `execute` | effectful shell | Calls proved six-field surface/tour projections, pane/media/response guards, scroll/focus policies and conversation transitions. Full Model composition, account/People transitions, numeric counter domains, retry selection and command execution remain unproved. |
 | `src/web/main.vibe:962` | `execute/callback@962` | pure logic | Calls proved six-field surface/tour projections, pane/media/response guards, scroll/focus policies and conversation transitions. Full Model composition, account/People transitions, numeric counter domains, retry selection and command execution remain unproved. |
@@ -3049,12 +3048,13 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/web/viewport.vibe:56` | `transcriptViewport/touchEnd` | pure logic | Calls the proved pause, scroll, follow and key steps in screenDecision. Host boundaries: DOM reads and writes, touch lookup and the PageUp distance (Math.floor). |
 | `src/web/viewport.vibe:57` | `transcriptViewport/scrolled` | pure logic | Calls the proved pause, scroll, follow and key steps in screenDecision. Host boundaries: DOM reads and writes, touch lookup and the PageUp distance (Math.floor). |
 | `src/web/viewport.vibe:63` | `transcriptViewport/follow` | effectful shell | Calls the proved pause, scroll, follow and key steps in screenDecision. Host boundaries: DOM reads and writes, touch lookup and the PageUp distance (Math.floor). |
-| `src/web/wikiEditorDecision.vibe:27` | `wikiBeginPlan` | pure logic | Proved editor opening plan and the fresh editor, Cancel only without a waiting submission, exact first and repeated submissions (key kept, new recovery key), the saved page listed once and last, and review links (0018 fourth-lane batch 1). |
-| `src/web/wikiEditorDecision.vibe:38` | `openedWikiEditor` | pure logic | Proved editor opening plan and the fresh editor, Cancel only without a waiting submission, exact first and repeated submissions (key kept, new recovery key), the saved page listed once and last, and review links (0018 fourth-lane batch 1). |
-| `src/web/wikiEditorDecision.vibe:45` | `wikiEditCloses` | pure logic | Proved editor opening plan and the fresh editor, Cancel only without a waiting submission, exact first and repeated submissions (key kept, new recovery key), the saved page listed once and last, and review links (0018 fourth-lane batch 1). |
-| `src/web/wikiEditorDecision.vibe:59` | `submittedWikiEdit` | pure logic | Proved editor opening plan and the fresh editor, Cancel only without a waiting submission, exact first and repeated submissions (key kept, new recovery key), the saved page listed once and last, and review links (0018 fourth-lane batch 1). |
-| `src/web/wikiEditorDecision.vibe:70` | `savedWikiPages` | pure logic | Proved editor opening plan and the fresh editor, Cancel only without a waiting submission, exact first and repeated submissions (key kept, new recovery key), the saved page listed once and last, and review links (0018 fourth-lane batch 1). |
-| `src/web/wikiEditorDecision.vibe:88` | `wikiReviewLinks` | pure logic | Proved editor opening plan and the fresh editor, Cancel only without a waiting submission, exact first and repeated submissions (key kept, new recovery key), the saved page listed once and last, and review links (0018 fourth-lane batch 1). |
+| `src/web/wikiEditorDecision.vibe:27` | `wikiBeginPlan` | pure logic | Proved editor opening plan and the fresh editor, Cancel only without a waiting submission, exact first and repeated submissions (key kept, new recovery key), the saved page listed once and last, review links (0018 fourth-lane batch 1), and the starting source: the first observed copy, else the embedded one (batch 2). |
+| `src/web/wikiEditorDecision.vibe:38` | `openedWikiEditor` | pure logic | Proved editor opening plan and the fresh editor, Cancel only without a waiting submission, exact first and repeated submissions (key kept, new recovery key), the saved page listed once and last, review links (0018 fourth-lane batch 1), and the starting source: the first observed copy, else the embedded one (batch 2). |
+| `src/web/wikiEditorDecision.vibe:45` | `wikiEditCloses` | pure logic | Proved editor opening plan and the fresh editor, Cancel only without a waiting submission, exact first and repeated submissions (key kept, new recovery key), the saved page listed once and last, review links (0018 fourth-lane batch 1), and the starting source: the first observed copy, else the embedded one (batch 2). |
+| `src/web/wikiEditorDecision.vibe:59` | `submittedWikiEdit` | pure logic | Proved editor opening plan and the fresh editor, Cancel only without a waiting submission, exact first and repeated submissions (key kept, new recovery key), the saved page listed once and last, review links (0018 fourth-lane batch 1), and the starting source: the first observed copy, else the embedded one (batch 2). |
+| `src/web/wikiEditorDecision.vibe:70` | `savedWikiPages` | pure logic | Proved editor opening plan and the fresh editor, Cancel only without a waiting submission, exact first and repeated submissions (key kept, new recovery key), the saved page listed once and last, review links (0018 fourth-lane batch 1), and the starting source: the first observed copy, else the embedded one (batch 2). |
+| `src/web/wikiEditorDecision.vibe:88` | `wikiReviewLinks` | pure logic | Proved editor opening plan and the fresh editor, Cancel only without a waiting submission, exact first and repeated submissions (key kept, new recovery key), the saved page listed once and last, review links (0018 fourth-lane batch 1), and the starting source: the first observed copy, else the embedded one (batch 2). |
+| `src/web/wikiEditorDecision.vibe:96` | `knownSource` | pure logic | Proved editor opening plan and the fresh editor, Cancel only without a waiting submission, exact first and repeated submissions (key kept, new recovery key), the saved page listed once and last, review links (0018 fourth-lane batch 1), and the starting source: the first observed copy, else the embedded one (batch 2). |
 | `src/web/wikiView.vibe:14` | `wikiPane` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/wikiView.vibe:15` | `wikiPane/callback@15` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/wikiView.vibe:23` | `wikiPane/callback@23` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
@@ -4949,3 +4949,42 @@ The arms that call one proved function or return one fixed value, each with its 
 
 Not proved here: the keys' text (`${session}-wiki-${serial}`, number formatting); `toWellFormed`; the wiki's embedded
 page list and `wikiEditable`.
+
+
+### Fourth-lane batch 2: the wiki editor's starting source
+
+`knownSource` in `wikiEditorDecision.vibe` decides the text a new editor starts from. When the repository has returned
+the page, the editor starts from the first copy it returned; otherwise it starts from the build's embedded copy.
+`knownWikiSource` in `main.vibe` calls it. `beginWikiEdit` reads a source only for a page that passes `wikiEditable`,
+and every such page is embedded, so the embedded lookup always finds it. It now reads `""` instead of failing on `!`
+if that ever stops holding. Four mutations (`wiki-source-observed`, `wiki-source-match`, `wiki-source-embedded`,
+`wiki-source-first`) are rejected. `test/inlineArms.test.vibe` pins both cases through `update`.
+
+`WikiLocationChanged`'s leave branch is a fixed value over the proved `wikiLocationLeaves`: the splash, docs as a pane
+and the issues dialog closed. It is listed as a fixed value.
+
+The inventory on main was stale when this batch regenerated it: eight unproved rows from other lanes' recent code
+(`issueFlow`, `wikiEditFlow`, `revisedSpecificationState`, five in `worker/PublicReads.vibe`) were missing from it.
+They now appear. This lane's modules add no unproved row.
+
+
+### Fourth-lane resumption on nyc-02: formal translation remains open
+
+The two decision modules now contain 10 annotated functions and 17 proof units; their 34 executable mutations
+exercise the stated contracts. The wiki-source regression also pins duplicate observed pages and an empty first
+source, which must win over both a later copy and the embedded source.
+
+A fresh, six-line probe of the real Schema `Model` type states only that `{ ...model, docs }` returns the supplied
+`docs`. It passes strict TypeScript checking; LemmaScript generates `type Schema.optionalKey(==)`, which Dafny
+rejects as syntax. The minimal source and diagnostics are recorded under
+`~/vl/vibelang-bugs/lemmascript-schema-model-translation/`. This is a tool failure, so it counts as neither a
+proof nor a mutation rejected on its contract. No workaround was added.
+
+The account, actions, Escape and tour-control translations remain property-tested and **not formally proved**.
+Foldkit command construction and `issueScreen`/`issueFacts`' host projections remain boundaries too. The lane is
+in progress until those translations can be read by the proof tool. The real `Message` union support in batch 32
+does not resolve this separate Schema Model boundary.
+
+The required two-worker Dafny cap landed independently on main as `1d363cd434ff` while this lane was testing.
+The rebase retains that implementation. Full production verification uses `CHECK_JOBS=1`; mutation checking uses
+`CHECK_JOBS=2`, with one Dafny worker per mutant.

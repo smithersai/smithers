@@ -935,7 +935,7 @@ export const EndTourCommand = Command.define("EndTour", {
 
 /** The editor's starting source: the repository-observed overlay, else the build's embedded copy. */
 function knownWikiSource(model: Model, page: string): string {
-  return model.wikiPages?.find((observed) => observed.id === page)?.source ?? pages.find((entry) => entry.id === page)!.source
+  return WikiEditorDecision.knownSource(model.wikiPages ?? [], page, pages.find((entry) => entry.id === page)?.source ?? "")
 }
 
 /** Minimal failure text; the request and its flow carry the detail. */

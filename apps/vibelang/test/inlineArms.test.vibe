@@ -47,3 +47,22 @@ describe("the wiki editor's submission", () => {
     expect(again.wikiEdit?.submission).toEqual({ ...sent, recovery: "u-wiki-retry-2" })
   })
 })
+
+describe("the wiki editor's starting text", () => {
+  it("opens on the page as last saved, not the build's copy", () => {
+    const shown: Model = { ...maintainer, client: { ...maintainer.client, conversation: { ...maintainer.client.conversation, pane: "/wiki/index" } }, wikiPages: [{ id: "roadmap", source: "other", revision: "r1" }, { id: "index", source: "saved text", revision: "r2" }] }
+    const opened = update(shown, Message.ClickedEditWiki()).model
+    expect(opened.wikiEdit).toMatchObject({ page: "index", base: "saved text", text: "saved text" })
+  })
+  it("keeps the first observed copy, including an empty source", () => {
+    const shown: Model = { ...maintainer, client: { ...maintainer.client, conversation: { ...maintainer.client.conversation, pane: "/wiki/index" } }, wikiPages: [{ id: "index", source: "", revision: "r1" }, { id: "index", source: "later copy", revision: "r2" }] }
+    const opened = update(shown, Message.ClickedEditWiki()).model
+    expect(opened.wikiEdit).toMatchObject({ page: "index", base: "", text: "" })
+  })
+  it("opens an unsaved page on the build's copy", () => {
+    const shown: Model = { ...maintainer, client: { ...maintainer.client, conversation: { ...maintainer.client.conversation, pane: "/wiki/index" } }, wikiPages: [{ id: "roadmap", source: "other", revision: "r1" }] }
+    const opened = update(shown, Message.ClickedEditWiki()).model
+    expect(opened.wikiEdit?.base).not.toBe("other")
+    expect(opened.wikiEdit?.base.length).toBeGreaterThan(0)
+  })
+})
