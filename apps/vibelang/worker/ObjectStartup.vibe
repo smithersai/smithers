@@ -14,7 +14,11 @@ export interface Status {
   /** The step startup is in, or the last it reached: a stuck or failed object names where. */
   readonly step: Step
 }
-export interface Health { readonly health: () => Status!! }
+/**
+ * The object's start-up as it stands. With `patience`, it first waits that long for the current start-up to settle: a
+ * health read is often what wakes an evicted object, and its initializer has not run a step yet when the read arrives.
+ */
+export interface Health { readonly health: (patience?: Duration.Input) => Status!! }
 export error ObjectStartupFailed { objectClass: string; objectId: string; codeVersion: string }
 const starts = Metric.counter("vibelang_object_startup_steps", { incremental: true })
 /** The starting object's step recorder; it exists only while an initializer runs. */
@@ -93,7 +97,11 @@ export effect function make<A extends object, E, R>(objectClass: string, state: 
       Effect.withSpan("vibelang.object.startup.wait"),
     )
   }
-  const health = () => sync(() => status)
+  // Waiting never starts or retries a start-up: a failed or still-running one is reported as it stands.
+  const health = (patience?: Duration.Input) => effect {
+    if (patience !== undefined) Deferred.await(ready).pipe(Effect.timeout(patience)) catch () => undefined
+    return status
+  }
   const known = new Set<string>(["health", ...Object.keys(members)])
   const api = new Proxy({ health, ...Object.fromEntries(Object.keys(members).map(name => [name, undefined])) }, {
     get: (_target, property: string | symbol) => {

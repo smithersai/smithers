@@ -20,16 +20,30 @@ const secret = Redacted.make("v".repeat(32))
 const sites: ReadonlyArray<GitHub.PublicRead.Site> = [{ origin, secret, reads: [{ repository: "smithersai/smithers", repositoryId: 1 }, { repository: "smithersai/vibelang", repositoryId: 2 }] }]
 const INDEX = "/repos/smithersai/smithers/contents/apps/vibelang/wiki/index.md"
 
-interface World { limited: boolean; readonly seen: Array<{ readonly path: string; readonly authorization: string | undefined; readonly etag: string | undefined }> }
+interface World {
+  limited: boolean
+  readonly seen: Array<{ readonly path: string; readonly authorization: string | undefined; readonly etag: string | undefined }>
+  /** How long GitHub takes to answer: production's 100-issue pages take about 0.85 seconds, a 304 of one as long. */
+  delay?: Duration.Input
+  /** How many pages the issue list spans, linked as GitHub links them: by repository id, with a cursor. */
+  readonly pages?: number
+}
 const answer = (request: HttpClientRequest.HttpClientRequest, status: number, body: string, headers: Record<string, string> = {}) =>
   HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(status === 304 ? HttpServerResponse.empty({ status, headers }) : HttpServerResponse.text(body, { status, headers, contentType: "application/json" })))
 
 /** The injected GitHub: one wiki page, an empty issue tracker, one commit on main; `limited` spends its rate limit. */
 function github(world: World): HttpClient.HttpClient {
-  return HttpClient.make((request, url) => Effect.sync(() => {
+  return HttpClient.make((request, url) => effect {
     const path = url.pathname
     const etag = request.headers["if-none-match"]
     world.seen.push({ path: path + url.search, authorization: request.headers["authorization"], etag })
+    if (world.delay !== undefined) try sleep(world.delay)
+    const page = Number(url.searchParams.get("page") ?? "1")
+    if (path === "/repos/smithersai/vibelang/issues" && page < (world.pages ?? 1)) {
+      const next = `https://api.github.com/repositories/2/issues?state=all&sort=created&direction=asc&per_page=100&after=Y3Vyc29yOnYyOp${page}%3D&page=${page + 1}`
+      const tag = `"page-${page}"`
+      return etag === tag ? answer(request, 304, "", { etag: tag }) : answer(request, 200, "[]", { etag: tag, link: `<${next}>; rel="next"` })
+    }
     if (world.limited) return answer(request, 403, JSON.stringify({ message: "API rate limit exceeded" }), { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1999999999" })
     const tag = `"${path.length}"`
     if (etag === tag) return answer(request, 304, "", { etag: tag })
@@ -37,7 +51,7 @@ function github(world: World): HttpClient.HttpClient {
     if (path === "/repos/smithersai/vibelang/issues" || path === "/repos/smithersai/vibelang/assignees") return answer(request, 200, "[]", { etag: tag })
     if (path === "/repos/smithersai/vibelang/commits") return answer(request, 200, JSON.stringify([{ sha: "a".repeat(40), commit: { message: "First" }, parents: [] }]), { etag: tag })
     return answer(request, 404, JSON.stringify({ message: "Not Found" }))
-  }))
+  })
 }
 
 /** The object's network: smithers.sh's real route, reached in-process. */
@@ -116,6 +130,40 @@ describe("signed-out reads through smithers.sh", () => {
       expect(world.seen.every((seen) => seen.authorization === "Bearer ghs_installation_2")).toBe(true)
     })
   })
+
+  it.effect("issues: production's shape, five pages at 0.9 seconds each, answers within the read deadline from the copies it holds", () => scoped(effect {
+    const world: World = { limited: false, seen: [], pages: 5 }
+    const { storage, reads } = try object(world)
+    const filled = try get(publicIssues("issues-public-reads-slow", storage, reads), "/api/issues")
+    try TestClock.adjust("10 minutes")
+    world.delay = "900 millis"
+    const served = effect function () {
+      const fiber = try forkChild(get(publicIssues("issues-public-reads-slow", storage, reads), "/api/issues"))
+      let elapsed = 0
+      while (fiber.pollUnsafe() === undefined && elapsed < 60_000) {
+        try TestClock.withLive(sleep("20 millis"))
+        try TestClock.adjust("100 millis")
+        elapsed += 100
+      }
+      const exit = fiber.pollUnsafe()
+      return { elapsed, status: exit?._tag === "Success" ? exit.value.status : exit?._tag, body: exit?._tag === "Success" ? exit.value.body : {} }
+    }
+    const slow = try served()
+    // The revalidations the read stopped waiting for finish on their own; the next read finds them confirmed. Each
+    // reaches GitHub asynchronously: wait, in real time, until all six have, before moving virtual time.
+    for (let turn = 0; turn < 250 && world.seen.length < 12; turn += 1) try TestClock.withLive(sleep("20 millis"))
+    try TestClock.adjust("5 seconds")
+    const next = try served()
+    try Effect.try(() => {
+      expect(filled.status).toBe(200)
+      expect([slow.status, slow.body.stale]).toEqual([200, 0])
+      expect(slow.elapsed).toBeLessThan(5_000)
+      expect([next.status, next.body.stale]).toEqual([200, undefined])
+      // GitHub's next links name the repository by id; the object asks for each page by name, through smithers.sh.
+      expect(world.seen.filter((seen) => seen.path.startsWith("/repos/smithersai/vibelang/issues?")).length).toBe(10)
+      expect(world.seen.every((seen) => seen.authorization === "Bearer ghs_installation_2")).toBe(true)
+    })
+  }))
 
   it.effect("history: main's log keeps folding from the last good copy while GitHub refuses", () => effect {
     const world: World = { limited: false, seen: [] }

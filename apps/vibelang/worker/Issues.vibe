@@ -13,7 +13,7 @@ import { IssueHost, issueFlows, issueRegistration, authorizeIssue, issueExecutio
 import { IssueFailure, IssueRequest, vipDocument, vipIssueBody } from "../src/core/issueSchemas.vibe"
 import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
-import { PublicReads } from "./PublicReads.vibe"
+import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
 
 /** `kind: "agent"` marks a device sign-in (decision 0028); agents never approve, accept, decline or merge. */
 export interface Principal { readonly id: string; readonly login: string; readonly role: Role; readonly connection?: Connection; readonly kind?: "person" | "agent" }
@@ -134,7 +134,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
       const work = effect {
         if (request.op === "read") {
           // A signed-out read GitHub refused answers the last good copy, marked with when GitHub last confirmed it (0031).
-          const observed = try GitHub.ReadCache.observeStale(read(request.number))
+          const observed = try GitHub.ReadCache.observeStale(read(request.number), { patience: READ_PATIENCE })
           return observed.stale === undefined ? observed.value : { ...observed.value, stale: observed.stale }
         }
         if (actor === undefined || request.key === "") throw new IssueFailure({ reason: "sign-in" })

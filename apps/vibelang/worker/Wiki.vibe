@@ -17,7 +17,7 @@ export interface WikiRepository extends Repository { readonly root: string; read
 export const wikiRepository: WikiRepository = { owner: "smithersai", name: "smithers", api: "https://api.github.com", agent: "", root: "apps/vibelang/wiki" }
 import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
-import { PublicReads } from "./PublicReads.vibe"
+import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
 
 export service WikiAuthority {
   current(): (Principal | undefined)!WikiFailure
@@ -86,7 +86,7 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
       const work = effect {
         if (request.op === "read") {
           // A signed-out read GitHub refused answers the last good copy, marked with when GitHub last confirmed it (0031).
-          const observed = try GitHub.ReadCache.observeStale(readSource(path))
+          const observed = try GitHub.ReadCache.observeStale(readSource(path), { patience: READ_PATIENCE })
           const state = try note({ id: request.page, source: observed.value.text, revision: observed.value.sha })
           const draft = try loadDraft(actor?.id ?? "", request.page)
           const answer = draft === undefined ? state : { ...state, draft }

@@ -5,6 +5,12 @@ import { GitHub } from "@smthrs/integrations"
 import { HttpClient } from "effect/http"
 import type { KeyValue } from "./ObjectStorage.vibe"
 
+/**
+ * How long a signed-out wiki or issue read waits for GitHub to revalidate the copies it holds, inside the read flows'
+ * 5-second deadline. After, it answers those copies marked stale, and their revalidations finish on their own (0031).
+ */
+export const READ_PATIENCE = "3 seconds"
+
 export interface ReadSetup { readonly origin: string; readonly brokerOrigin: string; readonly secret: Redacted.Redacted<string> }
 
 /** The client every signed-out GitHub read uses, where an object provides one. */

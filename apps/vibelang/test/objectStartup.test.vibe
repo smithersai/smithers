@@ -26,6 +26,26 @@ describe("inspectable object startup", () => {
     const ready = try api.health()
     try Effect.try(() => { expect(answer).toBe("pong"); expect(ready.startup).toBe("ready") })
   }))
+  it.effect("health asked with patience waits for startup to settle, and no longer", () => scoped(effect {
+    const api = try Startup.make("History", state, effect {
+      try sleep("300 millis")
+      return { ping: () => succeed("pong") }
+    }, { ping: true })
+    const woken = try forkChild(api.health("1500 millis"))
+    try TestClock.adjust("300 millis")
+    const settled = try Fiber.join(woken)
+    const stuck = try Startup.make("Budget", state, Effect.never as { ping: () => string!! }!!, { ping: true })
+    const waiting = try forkChild(stuck.health("1500 millis"))
+    try TestClock.adjust("1499 millis")
+    const early = waiting.pollUnsafe()
+    try TestClock.adjust("1 millis")
+    const bounded = try Fiber.join(waiting)
+    try Effect.try(() => {
+      expect(settled).toMatchObject({ objectClass: "History", startup: "ready" })
+      expect(early).toBeUndefined()
+      expect(bounded).toMatchObject({ objectClass: "Budget", startup: "starting", step: "begin" })
+    })
+  }))
   it.effect("bounds a stuck startup, keeps health available and refuses ordinary calls", () => scoped(effect {
     const api = try Startup.make("ProjectAccounts", state, Effect.never as { ping: () => string!! }!!, { ping: true })
     try TestClock.adjust("6 seconds")

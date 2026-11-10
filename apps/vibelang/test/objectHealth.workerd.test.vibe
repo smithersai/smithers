@@ -6,7 +6,9 @@ beforeAll(async () => { server = await runPromise(serveApiObjects({ VIBELANG_COM
 afterAll(async () => { await server?.dispose() })
 const read = (path: string) => HttpClient.get(server.origin + path).pipe(Effect.timeout("8 seconds"))
 describe("production object health in workerd", () => {
-  it.live("reports each actual instance's code without awaiting its startup", () => effect {
+  // Production 2026-11-10: the health read itself woke each evicted object and read its status before the initializer
+  // ran a step, so every object said starting at initialize while the same objects answered their routes.
+  it.live("reports each actual instance's code and the startup it settled, as a cold object wakes", () => effect {
     const response = try read("/api/health/objects?conversation=probe")
     const health = (try response.json) as { readonly objects: Record<string, { readonly objectClass: string; readonly objectId: string; readonly codeVersion: string; readonly startup: string }> }
     try Effect.try(() => {
@@ -18,6 +20,7 @@ describe("production object health in workerd", () => {
         expect(status.codeVersion).toBe("fixture-version")
         expect(["starting", "ready", "failed"]).toContain(status.startup)
       }
+      for (const name of ["Budget", "ProjectAccounts", "ActionIndex", "Conversation"]) expect(health.objects[name]?.startup, name).toBe("ready")
     })
     const session = try read("/api/auth/session")
     try Effect.try(() => expect(session.status).toBe(200))

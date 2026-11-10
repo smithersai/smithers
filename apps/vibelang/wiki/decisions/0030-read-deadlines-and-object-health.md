@@ -57,6 +57,16 @@ real persisted corrupt state/results, and action outcomes that fail their schema
 
 Browser auth projects use separate workerd stores: roles and successful write receipts must not leak across browsers.
 
+## Amendment: health waits for the start-up it wakes (2026-11-10, lane vl-public-reads)
+
+After the 05:42 deploy, a first `/api/health/objects` read reported Budget, History and ActionIndex `unreachable` and
+the others `starting` at `initialize`, while a read one second later reported all five `ready`. The health read was what
+woke each evicted object: it read the status before the initializer ran a step, and reaching a cold object took over
+two seconds. `health(patience)` now waits up to `HEALTH_PATIENCE` (2 seconds) for the current start-up to settle and
+reports it as it stands after; it never starts or retries one. Each probe's bound is `HEALTH_BUDGET` (4.5 seconds), so
+the probe holds both a cold reach and the wait. `test/objectHealth.workerd.test.vibe` fails against the deployed call
+(`Budget` reads `starting`) and passes with it; `test/objectStartup.test.vibe` bounds the wait.
+
 ## Amendment: start-up under Alchemy's bridge (2026-11-10, lane vl-startup-hang)
 
 Deployed as `4827dd9d63`, every object stayed `starting` and every route but `/api/health` answered 503 after five

@@ -326,6 +326,10 @@ effect function accountFetch(accounts: Namespace<AccountsShape>, runtime: Runtim
   return try reached(runtime, "accounts", object.fetch(request))
 }
 
+/** How long a health read waits for an object's start-up to settle, and its whole budget per object. */
+export const HEALTH_PATIENCE = "2 seconds"
+export const HEALTH_BUDGET = "4500 millis"
+
 /** The API Worker's fetch: account routes reach ProjectAccounts, the rest the HTTP protocol. */
 export function apiFetch(namespaces: { readonly conversations: Namespace<ConversationShape>; readonly accounts: Namespace<AccountsShape>; readonly actions: Namespace<ActionDirectoryShape>; readonly histories: Namespace<HistoryShape>; readonly budgets: Namespace<BudgetShape> }, gateway: Gateway<RuntimeContext>, commit: string | undefined, executionProps: Record<string, unknown>!!) {
   const { conversations, accounts, actions, histories, budgets } = namespaces
@@ -337,8 +341,10 @@ export function apiFetch(namespaces: { readonly conversations: Namespace<Convers
       const inspect = <S extends ObjectStartup.Health>(namespace: Namespace<S>, name: string, objectClass: string) => withSpan(effect {
         const result = try exit(effect {
           const object = try objectOf(namespace, name, objectClass)
-          return try reached(runtime, objectClass, object.health())
-        }.pipe(Effect.timeout("2 seconds")))
+          // A health read often wakes an evicted object: it waits 2 seconds for that start-up to settle, and reaching a
+          // cold object took over 2 seconds in production (2026-11-10), so the budget holds both.
+          return try reached(runtime, objectClass, object.health(HEALTH_PATIENCE))
+        }.pipe(Effect.timeout(HEALTH_BUDGET)))
         const outcome = result._tag === "Success" ? "observed" : "unreachable"
         try Metric.update(Metric.withAttributes(Metric.counter("vibelang_object_health_reads", { incremental: true }), { objectClass, outcome }), 1)
         try Effect.logInfo("vibelang.object.health").pipe(Effect.annotateLogs({ objectClass, outcome }))
