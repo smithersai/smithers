@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Fresh lsc generation + Dafny verification. Never trusts saved .dfy files."""
 import atexit, concurrent.futures, hashlib, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time
-from sources import production_sources, require_proved, VERIFY, dafny_keywords, dafny_name
+from sources import production_sources, require_proved, VERIFY, dafny_keywords, dafny_name, enclosing_symbol
 from proof_additions import add_proof_steps, insertion_names
 from declarations import stage as stage_declarations, copied_imports, declared_imports
-from mutation_targets import POSTCONDITIONS, ASSERTIONS, postcondition_line, case_assertion_line
+from mutation_targets import POSTCONDITIONS, ASSERTIONS, INVARIANTS, postcondition_line, case_assertion_line, invariant_line, time_limit
 ROOT=pathlib.Path(__file__).resolve().parent
 APP=pathlib.Path(os.environ.get("VIBELANG_VERIFY_ROOT", str(ROOT.parent))).resolve()
 if len(sys.argv)>1:
@@ -93,7 +93,8 @@ def verify(item):
    if ts.parent != manifest_path.parent: raise SystemExit('Proof additions only apply to generated mutants')
    proof_source=json.loads(manifest_path.read_text())[ts.stem]['source']
   raw=text
-  text=add_proof_steps(raw,proof_source)
+  # The checked induction steps belong to this app, not another project that happens to use its file names.
+  text=add_proof_steps(raw,proof_source) if APP == ROOT.parent else raw
   if text != raw:
    dfy.write_text(text)
    dfy.with_suffix('.proof.json').write_text(json.dumps({'source':proof_source,'insertions':insertion_names(proof_source),'raw_sha256':hashlib.sha256(raw.encode()).hexdigest(),'checked_sha256':hashlib.sha256(text.encode()).hexdigest()}))
@@ -125,13 +126,18 @@ def verify(item):
      case, clause = ASSERTIONS[ts.stem]
      line = case_assertion_line(text, target, case, clause)
      flags.extend(['--isolate-assertions','--filter-position',':'+str(line)])
+    elif ts.stem in INVARIANTS:
+     line=invariant_line(text,target,INVARIANTS[ts.stem])
+     flags.extend(['--isolate-assertions','--filter-position',':'+str(line)])
     elif ts.stem in POSTCONDITIONS:
      line=postcondition_line(text,target,POSTCONDITIONS[ts.stem])
      flags.extend(['--isolate-assertions','--filter-position',':'+str(line)])
-   # Every assertion in the full conversation and decide relations is checked, without a symbol/position filter.
-   isolate = not mutations and origin in {APP/'src/core/conversation.vibe',APP/'src/core/decide.vibe'}
+   # Every assertion in the full conversation and decide relations, and in the conversation replay that imports their
+   # contracts, is checked, without a symbol/position filter.
+   isolate = not mutations and origin in {APP/'src/core/conversation.vibe',APP/'src/core/decide.vibe',APP/'src/core/replayDecision.vibe'}
    if isolate: flags.append('--isolate-assertions')
-   c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','2' if isolate else '1','--verification-time-limit','30' if mutations else '60','--error-limit','0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work,3600 if isolate else 180)
+   limit=time_limit(ts.stem,bool(mutations),proof_source)
+   c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','2' if isolate else '1','--verification-time-limit',str(limit),'--error-limit','0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work,3600 if isolate else max(180,limit+60))
    code=c;out+=o
  if hashlib.sha256(original).hexdigest() != initial_hashes[ts]:
   code=2;out+='ERROR: source changed after strict typechecking started\n'
@@ -144,10 +150,7 @@ def verify(item):
  if dfy.exists():
   dl=dfy.read_text().splitlines()
   for m in re.finditer(r'[^\n]*\.dfy\((\d+),\d+\): (?:Error|Related location):[^\n]*',out):
-   line=int(m.group(1)); sym=None
-   for s in dl[:line][::-1]:
-    sm=re.match(r'(?:ghost )?(?:function|method|lemma)\s+(\w+)',s)
-    if sm: sym=sm.group(1);break
+   line=int(m.group(1)); sym=enclosing_symbol(dl,line)
    if sym:
     name=re.sub(r'_ensures$', '', sym)
     for n,fn in funcs:

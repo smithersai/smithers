@@ -1,0 +1,79 @@
+// Cold starts must reproduce every field of a live run, including a partial reply and a seeded history.
+import { expect, it } from "@effect/vitest"
+import { type Event } from "../src/core/conversation.vibe"
+import * as Conversation from "../worker/Sequencer.vibe"
+import * as History from "../src/history/Sequencer.vibe"
+import { empty } from "../src/history/mythical.vibe"
+
+it.effect("a cold conversation restores a partial reply, its restart and its settled answer exactly", () => effect {
+  const events = try Ref.make<ReadonlyArray<Event>>([])
+  const log = { read: () => Ref.get(events), write: (event: Event) => Ref.update(events, (before) => [...before, event]) }
+  const live = try Conversation.make(log)
+  try live.post("first", "Ada", "A question")
+  try live.start("m1")
+  try live.append("r1", 1, 0, "partial")
+  const partial = try live.snapshot()
+  const resumed = try Conversation.make(log)
+  const restored = try resumed.snapshot()
+  try Effect.try(() => {
+    expect(partial.entries.at(-1)?.text).toBe("partial")
+    expect(restored).toEqual(partial)
+  })
+  try resumed.restart("r1", 2)
+  try resumed.append("r1", 2, 0, "complete")
+  try resumed.finish("r1", "complete answer")
+  const settled = try resumed.snapshot()
+  const cold = try Conversation.make(log)
+  const reloaded = try cold.snapshot()
+  try Effect.try(() => {
+    expect(settled.entries.at(-1)).toMatchObject({ text: "complete answer", done: true })
+    expect(reloaded).toEqual(settled)
+  })
+  const before = try Ref.get(events)
+  try cold.post("first", "Ada", "duplicate")
+  const after = try Ref.get(events)
+  const unchanged = try cold.snapshot()
+  try Effect.try(() => {
+    expect(after).toEqual(before)
+    expect(unchanged).toEqual(settled)
+  })
+})
+
+it.effect("a seeded history restores task, lane, notes, approval and folded commit through cold starts", () => effect {
+  const store = try History.memoryStore()
+  const live = try History.make(store)
+  try live.bootstrap({ ...empty, seq: 1, epics: [{ id: "e1", title: "Compiler" }] })
+  const planned = try live.plan({ how: "append", epic: "e1", newEpic: "", target: "", title: "One", task: "t1" })
+  try Effect.try(() => expect(planned).toEqual({ id: "m1", refusal: null }))
+  for (const intent of [
+    { type: "Start", id: "m1", lane: "lane-1" },
+    { type: "AddNote", id: "m1", section: "evidence", text: "Checked", by: "Ada" },
+    { type: "Approve", id: "m1", by: "Ada" },
+  ] as const) {
+    const accepted = try live.record(intent)
+    try Effect.try(() => expect(accepted.ok).toBe(true))
+  }
+  const approved = try live.read()
+  const resumed = try History.make(store)
+  const restored = try resumed.read()
+  try Effect.try(() => {
+    expect(approved.commits[0]).toMatchObject({ state: "approved", task: "t1", lane: "lane-1" })
+    expect(approved.commits[0]?.notes).toHaveLength(2)
+    expect(restored).toEqual(approved)
+  })
+  const commit = { sha: "abc123", change: "change1", title: "fix: one", message: "fix: one\n\nMythical: m1" }
+  const folded = try resumed.fold(commit)
+  const settled = try resumed.read()
+  const cold = try History.make(store)
+  const reloaded = try cold.read()
+  const duplicate = try cold.fold(commit)
+  const unchanged = try cold.read()
+  try Effect.try(() => {
+    expect(folded).toEqual({ id: "m1", refusal: null })
+    expect(settled.commits[0]?.state).toBe("landed")
+    expect(settled.real).toHaveLength(1)
+    expect(reloaded).toEqual(settled)
+    expect(duplicate.refusal).toBe("duplicate")
+    expect(unchanged).toEqual(settled)
+  })
+})

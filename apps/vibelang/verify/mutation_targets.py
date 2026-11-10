@@ -628,3 +628,33 @@ POSTCONDITIONS.update({
     'receive-gap': '((event.seq_ > (client.conversation.seq_ + 1)) ==> res.gap)',
     'receive-gap-frame': '((event.seq_ > (client.conversation.seq_ + 1)) ==> ((res.conversation == client.conversation) && (res.pending == client.pending)))',
 })
+
+# A loop invariant the mutant breaks, checked alone: unisolated, the loop's one verification condition carries the
+# imported contract of `apply` and times out instead of failing (replay-skip and replay-order on a 4-vCPU box, 2026-11-10).
+INVARIANTS = {'replay-skip': 'current == replayedLog(initial, events, i)',
+              'replay-order': 'current == replayedLog(initial, events, i)'}
+
+def invariant_line(generated, function, contains):
+    import re
+    lines = generated.splitlines()
+    starts = [i for i, line in enumerate(lines) if re.match(r'(?:ghost )?method '+re.escape(function)+r'(?:<[^>(]*>)?\(', line)]
+    if len(starts) != 1: raise ValueError('Missing or ambiguous target method '+function)
+    start = starts[0]
+    end = next((i for i in range(start+1, len(lines)) if re.match(r'(?:ghost )?(?:method|function|lemma) ', lines[i])), len(lines))
+    matches = [i+1 for i in range(start+1, end) if lines[i].lstrip().startswith('invariant ') and contains in lines[i]]
+    if len(matches) != 1: raise ValueError(f'Expected one loop invariant, got {len(matches)}: {contains}')
+    return matches[0]
+
+
+# Seconds Dafny may spend on each check of a named mutant. A timeout never counts as a rejection, so a mutant whose one
+# isolated check is a contract failure Dafny needs about 30 s to find gets headroom: replay-order took 24-31 s alone on a
+# 4-vCPU box and timed out at 30 s under load (2026-11-10); replay-skip timed out the same way. Unnamed mutants keep 30 s,
+# and positive proofs default to 60 s (PROOF_TIME_LIMITS below).
+TIME_LIMITS = {'replay-order': 120, 'replay-skip': 120}
+
+# Whole-suite history composition hit 60 s although the same module completed in 38-42 s alone.
+# Positive headroom is module-specific; it never changes a mutant's budget or rejection criteria.
+PROOF_TIME_LIMITS = {'src/history/replayDecision.vibe': 180}
+
+def time_limit(stem, mutation, source=None):
+    return TIME_LIMITS.get(stem, 30) if mutation else PROOF_TIME_LIMITS.get(source, 60)

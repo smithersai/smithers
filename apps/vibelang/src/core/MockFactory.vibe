@@ -16,8 +16,9 @@ import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Digest, SecureRandom } from "effect/crypto"
 import { Action, FlowRuntime, Interpreter } from "@smthrs/flow"
-import { apply, empty, isTouring, tourWalkthrough, type Conversation, type Event } from "./conversation.vibe"
-import { decide, type Decision, type Intent } from "./decide.vibe"
+import { empty, isTouring, tourWalkthrough, type Conversation, type Event } from "./conversation.vibe"
+import { type Decision, type Intent } from "./decide.vibe"
+import { recordedConversation, replayLog } from "./replayDecision.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
 import { TourControlBody } from "./wire.vibe"
 import {
@@ -228,9 +229,9 @@ return Layer.effect(Factory, effect {
   function recorder(state: Ref.Ref<State>, gate: Semaphore.Semaphore, conversation: string) {
     return (intent: Intent) => Semaphore.withPermits(gate, 1)(Effect.uninterruptible(effect {
       const decision = try Ref.modify(state, (current): readonly [Decision, State] => {
-        const decided = decide(current.conversation, intent)
-        if (!decided.ok) return [decided, current]
-        return [decided, { conversation: apply(current.conversation, decided.event), log: [...current.log, decided.event] }]
+        const step = recordedConversation(empty, current.conversation, current.log, intent)
+        if (!step.decision.ok) return [step.decision, current]
+        return [step.decision, { conversation: step.conversation, log: step.log }]
       })
       if (decision.ok) try journal.write(conversation, (try Ref.get(state)).log)
       if (decision.ok) try PubSub.publish(published, { conversation, event: decision.event })
@@ -283,7 +284,7 @@ return Layer.effect(Factory, effect {
       const existing = all.get(conversation)
       if (existing !== undefined) return existing
       const retained = try journal.read(conversation)
-      const restored = retained.reduce(apply, empty)
+      const restored = replayLog(empty, retained)
       try Ref.update(ids, value => Math.max(value, restored.seq))
       const state = try Ref.make<State>({ conversation: restored, log: retained })
       const gate = try Semaphore.make(1)

@@ -1,6 +1,7 @@
 import { it } from "@effect/vitest"
 import { fixtureIssues, makeIssueFactory } from "../src/core/IssuesFactory.vibe"
-import { applyIssues, canLinkIssues, issuePermission } from "../src/core/conversation.vibe"
+import { applyIssues, issuePermission } from "../src/core/conversation.vibe"
+import { canLinkIssues } from "../src/core/issueGraphDecision.vibe"
 import { IssueRequest, IssuesState } from "../src/core/issueSchemas.vibe"
 import { run, Int, Text, same } from "./run.vibe"
 

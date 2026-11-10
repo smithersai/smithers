@@ -36,6 +36,7 @@ brick                                   state         proof
 
 - **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 2,508 executable items. Seventeen modules carry contracts and 962 current mutant copies match actual Dafny rejections; unproved logic and tool boundaries remain explicit.
 - **Proofs outside the web app (0018, lane vl-proveall3): in progress.** Proved: sequencer, follow and command arguments; pages, docs paths, prompt form, protocol limits and the session origin; mock chunks, the cookie rule and catalog roles; the bootstrap seed's choices; the sandbox meter delay. Three defects fixed: two surrogate-pair cuts, and a long history search that never showed its matches.
+- **Issue-graph acyclicity and replay equivalence (0018, lane vl-proveall5): done.** No sequence of issue writes creates a cycle, and replaying a conversation's or the history's journal reproduces the live state; both proved over the real decision functions. LemmaScript gains `//@ opaque`, `//@ reveal` and the constants a copied contract names.
 
 - **Proofs strong enough to catch real bugs (0018, lane vl-proof-strengthen): done.** `decide` is tied to the role policy for every grant and action; the day's budget reserves each call's ceiling under its lock (twenty concurrent admissions no longer pass the limit); unreported usage is charged its ceiling; runs, walkthroughs and the meter step are framed; the harness no longer counts a callee's precondition or trusts an unmarked import.
 

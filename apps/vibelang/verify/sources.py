@@ -30,3 +30,11 @@ def dafny_name(name: str, keywords=None) -> str:
     if name in (dafny_keywords() if keywords is None else keywords): return name + '_'
     if name.startswith('_'): return 'i' + name
     return name
+
+
+def enclosing_symbol(generated_lines, line):
+    """The generated Dafny function, method or lemma whose declaration precedes 1-based `line`, `opaque` included."""
+    for text in generated_lines[:line][::-1]:
+        match = re.match(r'(?:(?:ghost|opaque) )?(?:function|method|lemma)\s+(\w+)', text)
+        if match: return match.group(1)
+    return None

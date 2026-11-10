@@ -1,0 +1,86 @@
+// Replaying a conversation's journal (wiki/decisions/0003-one-state-machine.md, 0018 "Fifth proofs lane"). A
+// conversation's sequencer (worker/Sequencer.vibe, and the mock's rooms in MockFactory.vibe) keeps the conversation and
+// its log in memory and writes each accepted event to the journal. On load it replays the journal with `replayLog`;
+// on each intent it records with `recordedConversation`. Both apply the same events with the same `apply`, so the
+// live conversation is always exactly the replay of its log: `replayLog` is the left fold `replayedLog`, and
+// `recordedConversation` extends that fold by the accepted event.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). `apply` and `decide` are proved in conversation.vibe and decide.vibe; here they are their
+// contracts. Functions marked "specification only" never run.
+import { apply, type Conversation, type Event } from "./conversation.vibe"
+import { decide, type Decision, type Intent } from "./decide.vibe"
+
+/**
+ * Specification only: one conversation step, made total. Below the cursor's capacity, where every replayed and
+ * recorded conversation lies, it is `apply`. Opaque: proofs see its contract, not its body, so the fold below is reasoned about by its shape.
+ */
+//@ verify
+//@ opaque
+//@ ensures 0 <= conversation.seq && conversation.seq < 9007199254740991 ==> \result == apply(conversation, event)
+export function conversationStep(conversation: Conversation, event: Event): Conversation {
+  return 0 <= conversation.seq && conversation.seq < 9007199254740991 ? apply(conversation, event) : conversation
+}
+
+/** Specification only: the conversation after replaying the first `count` events of `events` over `initial`, in order. */
+//@ verify
+//@ requires 0 <= count && count <= events.length
+//@ decreases count
+export function replayedLog(initial: Conversation, events: ReadonlyArray<Event>, count: number): Conversation {
+  return count <= 0 ? initial : conversationStep(replayedLog(initial, events, count - 1), events[count - 1]!)
+}
+
+/** Specification only: two logs that agree on their first `count` events replay those events to the same conversation. */
+//@ verify
+//@ requires 0 <= count && count <= log.length && count <= next.length
+//@ requires forall(i, 0 <= i && i < count ==> next[i] == log[i])
+//@ ensures replayedLog(initial, next, count) == replayedLog(initial, log, count)
+//@ decreases count
+export function replayedLogPrefix(initial: Conversation, log: ReadonlyArray<Event>, next: ReadonlyArray<Event>, count: number): boolean {
+  return count <= 0 ? true : replayedLogPrefix(initial, log, next, count - 1)
+}
+
+/** Replay a retained JavaScript array from a zero cursor; each entry advances by at most one. */
+//@ verify
+//@ requires initial.seq == 0
+//@ requires events.length <= 4294967295
+//@ ensures 0 <= \result.seq && \result.seq <= events.length
+//@ ensures forall(j, 0 <= j && j < events.length ==> events[j].seq == j + 1) ==> \result.seq == events.length
+//@ ensures \result == replayedLog(initial, events, events.length)
+export function replayLog(initial: Conversation, events: ReadonlyArray<Event>): Conversation {
+  let current = initial
+  let i = 0
+  while (i < events.length) {
+    //@ invariant 0 <= i && i <= events.length
+    //@ invariant 0 <= current.seq && current.seq <= i
+    //@ invariant forall(j, 0 <= j && j < events.length ==> events[j].seq == j + 1) ==> current.seq == i
+    //@ invariant current == replayedLog(initial, events, i)
+    //@ decreases events.length - i
+    current = apply(current, events[i]!)
+    i++
+  }
+  return current
+}
+
+/** One intent on the live conversation: the sequencer's decision, and the conversation and log after it. */
+export interface Recorded {
+  readonly decision: Decision
+  readonly conversation: Conversation
+  readonly log: ReadonlyArray<Event>
+}
+
+/**
+ * Records `intent` on the live conversation and its log. An accepted event is applied and appended; a refused intent
+ * changes neither. Replay equivalence: while the conversation is the replay of its log, it stays so.
+ */
+//@ verify
+//@ requires 0 <= conversation.seq && conversation.seq <= 9007199254740991
+//@ ensures \result.decision == decide(conversation, intent)
+//@ ensures !\result.decision.ok ==> \result.conversation == conversation && \result.log == log
+//@ ensures \result.decision.ok ==> \result.conversation == apply(conversation, \result.decision.event) && \result.log.length == log.length + 1 && forall(i, 0 <= i && i < log.length ==> \result.log[i] == log[i]) && \result.log[log.length] == \result.decision.event
+//@ ensures conversation == replayedLog(initial, log, log.length) ==> \result.conversation == replayedLog(initial, \result.log, \result.log.length)
+export function recordedConversation(initial: Conversation, conversation: Conversation, log: ReadonlyArray<Event>, intent: Intent): Recorded {
+  const decision = decide(conversation, intent)
+  if (!decision.ok) return { decision, conversation, log }
+  return { decision, conversation: apply(conversation, decision.event), log: [...log, decision.event] }
+}
