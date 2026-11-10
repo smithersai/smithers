@@ -290,7 +290,9 @@ class Parser {
         this.expect("punc", ")");
         return { kind: "emptyCollection", collectionType: name as "Set" | "Map", tsType };
       }
-      if (t.value === "forall" || t.value === "exists") {
+      // A quantifier is `forall(` or `exists(`; a bare `forall` or `exists` is a TypeScript name like any other.
+      const opens = this.tokens[this.pos + 1];
+      if ((t.value === "forall" || t.value === "exists") && opens?.type === "punc" && opens.value === "(") {
         const q = t.value as "forall" | "exists";
         this.advance();
         this.expect("punc", "(");

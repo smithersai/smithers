@@ -77,7 +77,7 @@ fi
 npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/optional-binder-collisions.ts"
 
 # Object spreads of conditionals and field subsets, and exhaustive tagged-message tables.
-for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread empty-string-union safe-slice-suffix map-index real-field generic-record; do
+for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread empty-string-union safe-slice-suffix map-index real-field generic-record quantifier-names; do
   cp "tools/fixtures/$name.ts" "$fixture_dir/$name.ts"
   npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name.ts"
 done
@@ -112,13 +112,18 @@ expect_proof_failure() {
     exit 1
   fi
 }
-for name in union-to-string string-union-subset generic-bound-array message-union sort-membership filter-index; do
+for name in union-to-string string-union-subset generic-bound-array message-union sort-membership filter-index string-case; do
   cp "tools/fixtures/$name.ts" "tools/fixtures/$name-wrong.ts" "$fixture_dir/"
   npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name.ts"
   expect_proof_failure \
     "a wrong twin verified ($name)" \
     npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name-wrong.ts"
 done
+# Unicode case mapping changes non-ASCII text and its length; the model must not prove otherwise.
+cp tools/fixtures/string-case-length-wrong.ts "$fixture_dir/"
+expect_proof_failure \
+  "a case mapping proved a non-ASCII string keeps its length" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/string-case-length-wrong.ts"
 # A tagged union declared in a project's own `.d.ts` (a module's emitted declaration) and imported with `import type`.
 cp -R tools/fixtures/declared-union "$fixture_dir/"
 npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/declared-union/use.ts"

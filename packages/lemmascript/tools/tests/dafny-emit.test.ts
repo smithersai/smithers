@@ -142,3 +142,12 @@ for (const [helper, value] of [
     for (const name of scalar) assert.ok(DAFNY_HELPER_NAMES.has(name), name);
   });
 }
+
+test("every Dafny reserved word a TypeScript name can take is escaped", () => {
+  // Each was checked against Dafny 4.11's parser: `function f(w: bool): bool { w }` does not parse.
+  for (const name of ["assigned", "hide", "ORDINAL"]) {
+    const dafny = emitDafnyFile(moduleWith({ kind: "const", name, type: { kind: "int" }, value: { kind: "num", value: 1 } }), "reserved.ts");
+    assert.match(dafny, new RegExp(`\\bconst ${name}_\\b`));
+    assert.doesNotMatch(dafny, new RegExp(`\\bconst ${name}\\b(?!_)`));
+  }
+});

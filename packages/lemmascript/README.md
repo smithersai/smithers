@@ -32,6 +32,9 @@ tests read are unchanged except for the patches listed below.
 | A type named by an import is read from its declaration, and a project's own `.d.ts` (not `node_modules`) is user code: a tagged union in a module's emitted declaration, imported with `import type`, is a datatype rather than an abstract type (`declared-union/`) | Offered upstream later |
 | A sorted copy (`[...xs].sort(cmp)`, `.sort()`) states membership in both directions as well as the permutation, so `xs.includes(r[i])` and `r.includes(xs[i])` are provable (`sort-membership.ts`) | Offered upstream later |
 | A filtered list states its predicate and membership for each element by index (`r[i]`), proved from the local `SeqFilter`'s body under `dafny-library: local` (`filter-index.ts`) | Offered upstream later |
+| Dafny names `assigned`, `hide` and `ORDINAL` are escaped like other reserved words | Offered upstream later |
+| Bare `forall` and `exists` identifiers remain names; only a following `(` starts a contract quantifier (`quantifier-names.ts`) | Offered upstream later |
+| String casing is exact on ASCII strings and unconstrained on non-ASCII strings; false Unicode value/length claims must fail (`string-case*.ts`) | Offered upstream later |
 
 Each patch is offered back upstream later. Will decides any GitHub contribution.
 
