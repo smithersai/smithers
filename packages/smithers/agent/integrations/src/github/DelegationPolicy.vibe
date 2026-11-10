@@ -107,17 +107,24 @@ export function validRead(read: Read): boolean {
 const QUERY = /^[A-Za-z0-9._~%=&:+,-]*$/
 export const MAX_READ_PATH = 2048
 /**
- * The listed repository a public GET reads, or undefined: `/repos/<owner>/<name>` or one of its read collections, safe
- * segments and a plain query. No person takes part, so no fork is admitted.
+ * The listed repository a public GET reads, or undefined: `/repos/<owner>/<name>` or `/repositories/<id>` (the form
+ * GitHub's `rel="next"` links take), or one of its read collections, safe segments and a plain query. No person takes
+ * part, so no fork is admitted.
  */
 export function publicRead(reads: ReadonlyArray<Read>, path: string): Read | undefined {
   if (path.length > MAX_READ_PATH) return undefined
   const mark = path.indexOf("?")
   const pathname = mark < 0 ? path : path.slice(0, mark)
-  if (!QUERY.test(mark < 0 ? "" : path.slice(mark + 1)) || !pathname.startsWith("/repos/") || !safePath(pathname.slice(1))) return undefined
-  const [owner, name, ...rest] = pathname.slice("/repos/".length).split("/")
+  if (!QUERY.test(mark < 0 ? "" : path.slice(mark + 1)) || !safePath(pathname.slice(1))) return undefined
+  const byId = pathname.startsWith("/repositories/")
+  if (!byId && !pathname.startsWith("/repos/")) return undefined
+  const segments = pathname.slice(byId ? "/repositories/".length : "/repos/".length).split("/")
+  // An id is matched as GitHub writes it: decimal digits with no leading zero.
+  const id = byId ? segments.shift()! : ""
+  if (byId && !/^[1-9][0-9]*$/.test(id)) return undefined
+  const [owner, name] = byId ? ["", ""] : [segments.shift(), segments.shift()]
   if (owner === undefined || name === undefined) return undefined
-  const read = reads.find((entry) => validRead(entry) && same(entry.repository, `${owner}/${name}`))
-  const tail = rest.join("/")
+  const read = reads.find((entry) => validRead(entry) && (byId ? String(entry.repositoryId) === id : same(entry.repository, `${owner}/${name}`)))
+  const tail = segments.join("/")
   return read !== undefined && (tail === "" || READS.some((collection) => tail === collection || tail.startsWith(collection + "/"))) ? read : undefined
 }
