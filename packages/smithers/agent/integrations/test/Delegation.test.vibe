@@ -618,3 +618,36 @@ it.effect("the router opens a person's object only for a call that site signed f
     expect([...wrongMethod.opened, ...large.opened, ...oversized.opened]).toEqual([])
   })
 })
+it.effect("an expired delegation neither blocks the last Disconnect from revoking the token nor outlives it", () => effect {
+  const f = try fixture()
+  try f.server.install({ origin: other, login: "ada", tokens: { accessToken: Redacted.make("second"), refreshToken: null, expiresAt: null } })
+  // The first site's delegation lapses; the person connects the other site again, which renews only its own row.
+  try TestClock.adjust("30 days")
+  try f.server.install({ origin: other, login: "ada", tokens: { accessToken: Redacted.make("third"), refreshToken: null, expiresAt: null } })
+  const listed = try f.server.connections()
+  try f.server.revoke(other)
+  const rows = try f.store.list("delegation/")
+  const credential = try f.store.get("credential")
+  try Effect.try(() => {
+    expect(listed.map((row) => row.origin)).toEqual([other])
+    expect(f.world.revoked).toEqual(["stored-token", "second", "third"])
+    expect(rows).toEqual([])
+    expect(credential).toBeUndefined()
+  })
+})
+it.effect("listing connections deletes the delegations that expired", () => effect {
+  const f = try fixture()
+  try TestClock.adjust("30 days")
+  const listed = try f.server.connections()
+  const rows = try f.store.list("delegation/")
+  try Effect.try(() => {
+    expect(listed).toEqual([])
+    expect(rows).toEqual([])
+  })
+})
+it.effect("an unreadable delegation row does not keep the token after the last Disconnect", () => effect {
+  const f = try fixture()
+  try f.store.put("delegation/corrupt", { origin: 1 })
+  try f.server.revoke(origin)
+  try Effect.try(() => expect(f.world.revoked).toEqual(["stored-token"]))
+})
