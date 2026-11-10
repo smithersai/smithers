@@ -8,7 +8,7 @@ import {
   MAX_BLOB_BYTES,
   textOf,
 } from "../../src/features/repo/contract.ts"
-import type { About, AboutCommit, AboutEntry } from "../../src/features/repo/schema.ts"
+import type { About, AboutCommit, AboutEntry } from "../../src/features/repo/schema.vibe"
 
 // What GitHub says of a repository (docs/features/repo.md#about), read one of two ways through `@smthrs/integrations`'
 // `GitHubClient`:

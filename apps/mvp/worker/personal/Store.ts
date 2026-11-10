@@ -1,7 +1,7 @@
 import * as WriteAuthority from "../WriteAuthority.ts"
 import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
-import type { ModelTier } from "../../src/features/model/contract.ts"
+import type { ModelTier } from "../../src/features/model/contract.vibe"
 import type { ConnectionKind, Protocol, SavedConnection } from "../../src/features/personal-model/contract.ts"
 
 // The personal model tables (db/migrations/0056_personal_models.ts, 0065_model_tiers.ts and 0075_model_connections.ts,

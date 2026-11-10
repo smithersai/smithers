@@ -109,7 +109,11 @@ export const repoId = (owner: string, name: string): string => `github/${owner}/
  */
 export const cloneExecutionId = (id: string, cloneId: string): string => `repo-clone:${id}:${cloneId}`
 
-/** Whether `path` is a file path RepoApi reads: relative, bounded, with no empty, `.` or `..` segment. */
+/**
+ * Whether `path` is a file path RepoApi reads: relative, bounded, with no empty, `.` or `..` segment.
+ *
+ * @throws {never}
+ */
 export const isFilePath = (path: string): boolean => {
   if (path.length === 0 || path.length > MAX_PATH_LENGTH) return false
   const segments = path.split("/")

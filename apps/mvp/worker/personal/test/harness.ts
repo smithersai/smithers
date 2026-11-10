@@ -11,7 +11,7 @@ import { ConfigProvider, Context, type Duration, Effect, Exit, Layer, Logger, Me
 import { FetchHttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
-import type { ModelTier } from "../../../src/features/model/contract.ts"
+import type { ModelTier } from "../../../src/features/model/contract.vibe"
 import { type ConnectionKind, keyTail, PERSONAL_MODELS_TABLE, type Protocol } from "../../../src/features/personal-model/contract.ts"
 import * as Actor from "../../Actor.vibe"
 import * as Flows from "../../Flows.vibe"

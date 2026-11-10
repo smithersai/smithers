@@ -1,7 +1,7 @@
 import { MAX_VIEW_TEXT_BYTES } from "../src/features/docs/contract.ts"
 import { cutText } from "../src/features/docs/text.ts"
 import { isRepository } from "../src/features/repo/contract.ts"
-import type { ViewProps } from "../src/features/views/schema.ts"
+import type { ViewProps } from "../src/features/views/schema.vibe"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { type PresentationRealm, ViewCode } from "@smthrs/views"
 import { Cause, Clock, Config, Data, Effect, type Layer, Metric, Option, Redacted, Schema } from "effect"
@@ -17,7 +17,7 @@ import {
   VIEWS_ROUTE,
   VIEWS_TABLE,
 } from "../src/features/views/contract.ts"
-import { acceptedValues, formRefusal } from "../src/features/views/form.ts"
+import { acceptedValues, formRefusal } from "../src/features/views/form.vibe"
 import {
   type FormValues,
   type FormWrite,
@@ -27,7 +27,7 @@ import {
   type RepoWrite,
   StateWrite,
   ViewWrite,
-} from "../src/features/views/schema.ts"
+} from "../src/features/views/schema.vibe"
 import { checkUrl } from "../src/features/web/url.ts"
 import { Sessions } from "#vibelang/emitted/worker/Actor"
 import { askingOf, branchAccess, canView } from "./branch/Access.ts"

@@ -6,7 +6,7 @@ import { Model, ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs
 import { HostModel, HostModelUnusable } from "@smthrs/model-host"
 import { Cause, Config, Duration, Effect, Exit, type Layer, Metric, Option, Schema, Stream } from "effect"
 import type { SqlClient } from "effect/sql"
-import { MODEL_ROUTE, type ModelRole } from "../src/features/model/contract.ts"
+import { MODEL_ROUTE, type ModelRole } from "../src/features/model/contract.vibe"
 import { canAsk, Sessions } from "#vibelang/emitted/worker/Actor"
 import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import { FlowStarter } from "#vibelang/emitted/worker/Flows"

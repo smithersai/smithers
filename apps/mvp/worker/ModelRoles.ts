@@ -3,7 +3,7 @@ import { HostModel, HostModelUnusable } from "@smthrs/model-host"
 import { ConfiguredModel } from "@smthrs/rpc"
 import { Config, Effect, Option, Result, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import { MODEL_ROLES, type ModelRole, type ModelTier } from "../src/features/model/contract.ts"
+import { MODEL_ROLES, type ModelRole, type ModelTier } from "../src/features/model/contract.vibe"
 
 // Which of the deployment's models answers each role (docs/features/model-endpoint.md#roles): the model an admin set
 // in `model_roles`, read on every call, else the deployment's defaults. The summary role's own default comes first

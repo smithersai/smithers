@@ -1,6 +1,6 @@
 import { ModelRequest } from "@smthrs/model"
 import { Config, Effect, Metric, Schema } from "effect"
-import { MODEL_TIERS, type ModelRole } from "../src/features/model/contract.ts"
+import { MODEL_TIERS, type ModelRole } from "../src/features/model/contract.vibe"
 
 // Which tier answers each role, and how hard its model thinks (decision 0107, docs/features/model-endpoint.md#tiers).
 // The one place a role meets a tier: the model endpoint reads it for a person's own models (`PersonalModels.open`) and

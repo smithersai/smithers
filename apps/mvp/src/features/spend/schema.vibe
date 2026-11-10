@@ -1,4 +1,3 @@
-import { Schema } from "effect"
 import { SANDBOX_LIMIT_BOUNDS } from "./contract"
 
 // Spend alerts' rows (docs/features/spend-alerts.md): the `spend_alerts` row Electric delivers, and this device's mark
@@ -92,7 +91,8 @@ export const SetChannelRequest = Schema.Struct({
 })
 export type SetChannelRequest = typeof SetChannelRequest.Type
 
-const bounded = ([minimum, maximum]: readonly [number, number]) => Schema.Int.check(Schema.isBetween({ minimum, maximum }))
+const bounded = ([minimum, maximum]: readonly [number, number]) =>
+  Schema.Int.check(Schema.isBetween({ minimum, maximum }))
 
 /** The sandbox limits an Admin sets (`POST /api/sandbox-limits`'s body), each a whole number within its bounds. */
 export const SandboxLimitsRequest = Schema.Struct({

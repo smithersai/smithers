@@ -36,7 +36,7 @@ import * as RepoRoles from "../github/RepoRoles.ts"
 import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"
 import { mayChange, mayConfigure, mayRead, mayRetryAny, viaOf } from "#vibelang/emitted/worker/stack/Access"
 import * as Stack from "./Stack.ts"
-import type { TodoStatusRead } from "../../src/features/todos/schema.ts"
+import type { TodoStatusRead } from "../../src/features/todos/schema.vibe"
 
 // The stack's routes in ChatApi (decision 0016 §1, docs/features/todos.md#routes):
 //

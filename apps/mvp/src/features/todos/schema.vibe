@@ -1,4 +1,3 @@
-import { Schema } from "effect"
 import {
   NOT_SENT_REASONS,
   STACK_OPS,
@@ -73,11 +72,7 @@ export const TodoRequest = Schema.Struct({
 })
 export type TodoRequest = typeof TodoRequest.Type
 
-/**
- * A request row's key: `<todo id>/<revision>`.
- *
- * @throws {never}
- */
+/** A request row's key: `<todo id>/<revision>`. */
 export const requestKey = (row: TodoRequest): string => `${row.todoId}/${row.revision}`
 
 /**
@@ -175,7 +170,15 @@ export type StackView = typeof StackView.Type
  * landed, so what the device kept may show and nothing is called missing. `unverified`: a reached server couldn't
  * verify the session, so no TODO shows; a pending check (`unknown`) and a failed network still show what the device has.
  */
-export const ACCESS_STATES = ["unknown", "unverified", "allowed", "syncing", "unavailable", "sign_in", "forbidden"] as const
+export const ACCESS_STATES = [
+  "unknown",
+  "unverified",
+  "allowed",
+  "syncing",
+  "unavailable",
+  "sign_in",
+  "forbidden",
+] as const
 export const Access = Schema.Struct({ id: Schema.String, status: Schema.Literals(ACCESS_STATES) })
 export type Access = typeof Access.Type
 

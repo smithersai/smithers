@@ -1,5 +1,14 @@
-import { Option, Schema } from "effect"
-import { ARCS_FROM, MARK_LENGTH, MARK_SUMMARY_LENGTH, MOST_COVERED, SEGMENT_EVERY, SEGMENT_SPANS, SEGMENT_WINDOW, TITLE_LENGTH, TITLE_WORDS } from "./contract"
+import {
+  ARCS_FROM,
+  MARK_LENGTH,
+  MARK_SUMMARY_LENGTH,
+  MOST_COVERED,
+  SEGMENT_EVERY,
+  SEGMENT_SPANS,
+  SEGMENT_WINDOW,
+  TITLE_LENGTH,
+  TITLE_WORDS,
+} from "./contract"
 import { isGenericSummary, revisionOf, safeTimelineText, segmentRevision } from "./identity"
 
 // Phases and arcs (ruling FE-19, decision 0138). A span is stored as a mark on the message it starts at: what it's called,
@@ -42,7 +51,9 @@ export interface SegmentItem {
   /** Earlier items represented by this persisted rolling summary; fresh items represent one. */
   readonly covered?: number
 }
-interface Unit extends SegmentItem { readonly mark: Option.Option<Mark> }
+interface Unit extends SegmentItem {
+  readonly mark: Option.Option<Mark>
+}
 
 const EXCERPT = 180
 const clip = (text: string) => {
@@ -50,15 +61,17 @@ const clip = (text: string) => {
   return safe.length > EXCERPT ? `${safe.slice(0, EXCERPT - 1)}…` : safe
 }
 /** A message's summary while it still describes its text. */
-const said = (row: PhaseRow) => row.summary && (!row.summaryRevision || row.summaryRevision === revisionOf(row)) ? row.summary : clip(row.text)
+const said = (row: PhaseRow) =>
+  row.summary && (!row.summaryRevision || row.summaryRevision === revisionOf(row)) ? row.summary : clip(row.text)
 
-/**
- * Every exchange that has settled, in order, up to the first that hasn't: phases never read a moving tail.
- *
- * @throws {never}
- */
-export const exchangeUnits = (rows: ReadonlyArray<PhaseRow & { readonly arc?: string | null | undefined }>, mark: "phase" | "arc" = "phase"): ReadonlyArray<Unit> => {
-  const answers = new Map(rows.flatMap(row => row.role === "assistant" && row.questionId ? [[row.questionId, row] as const] : []))
+/** Every exchange that has settled, in order, up to the first that hasn't: phases never read a moving tail. */
+export const exchangeUnits = (
+  rows: ReadonlyArray<PhaseRow & { readonly arc?: string | null | undefined }>,
+  mark: "phase" | "arc" = "phase",
+): ReadonlyArray<Unit> => {
+  const answers = new Map(
+    rows.flatMap(row => row.role === "assistant" && row.questionId ? [[row.questionId, row] as const] : []),
+  )
   const units: Array<Unit> = []
   for (const row of rows) {
     if (row.role !== "user") continue
@@ -66,17 +79,19 @@ export const exchangeUnits = (rows: ReadonlyArray<PhaseRow & { readonly arc?: st
     const answer = answers.get(row.id)
     if (answer === undefined || (answer.status !== "done" && answer.status !== "failed")) break
     // The answer's own words: a summary drops the details a span's sentence must get right.
-    units.push({ id: row.id, text: `Asked: ${said(row)}\nAnswered: ${answer.status === "failed" ? "failed" : clip(answer.text)}`, mark: parseMark(row[mark]) })
+    units.push({
+      id: row.id,
+      text: `Asked: ${said(row)}\nAnswered: ${answer.status === "failed" ? "failed" : clip(answer.text)}`,
+      mark: parseMark(row[mark]),
+    })
   }
   return units
 }
 
-/**
- * The closed phases, in order, as items for arcs.
- *
- * @throws {never}
- */
-export const phaseUnits = (rows: ReadonlyArray<PhaseRow & { readonly arc?: string | null | undefined }>): ReadonlyArray<Unit> =>
+/** The closed phases, in order, as items for arcs. */
+export const phaseUnits = (
+  rows: ReadonlyArray<PhaseRow & { readonly arc?: string | null | undefined }>,
+): ReadonlyArray<Unit> =>
   rows.flatMap(row => {
     const mark = parseMark(row.phase)
     return Option.isSome(mark) && mark.value.closed
@@ -121,16 +136,26 @@ export const planOf = (units: ReadonlyArray<Unit>, level: Level): SegmentPlan | 
   // model summaries; carry them forward as weighted items, then add only new work. A restarted device reads the
   // identical checkpoint and names the identical call, without an in-memory accumulator or a second ledger.
   const rolling = waiting > window && covered > 0
-    ? open.map(({ index, mark }) => ({ id: units[index]!.id, text: `${mark.title}: ${mark.summary}`, covered: mark.covered }))
+    ? open.map(({ index, mark }) => ({
+      id: units[index]!.id,
+      text: `${mark.title}: ${mark.summary}`,
+      covered: mark.covered,
+    }))
     : []
   const fresh = rolling.length === 0
     ? Math.min(window, Math.floor(waiting / every) * every)
-    : Math.min(window - rolling.length, Math.max(1, Math.floor((window - rolling.length) / every)) * every, Math.floor((waiting - covered) / every) * every)
+    : Math.min(
+      window - rolling.length,
+      Math.max(1, Math.floor((window - rolling.length) / every)) * every,
+      Math.floor((waiting - covered) / every) * every,
+    )
   const read = (rolling.length === 0 ? 0 : covered) + fresh
   const after = rolling.length === 0 ? start : start + covered
-  const items: ReadonlyArray<SegmentItem> = [...rolling, ...units.slice(after, after + fresh).map(({ id, text }) => ({ id, text }))]
+  const items: ReadonlyArray<SegmentItem> = [
+    ...rolling,
+    ...units.slice(after, after + fresh).map(({ id, text }) => ({ id, text })),
+  ]
   return { level, anchorId, revision: segmentRevision(anchorId, level, read), items, full: items.length >= window }
-
 }
 
 /** How many of the conversation's own items a plan reads: a rolling summary stands for all it covers. */
@@ -144,7 +169,11 @@ export type PlanRefusal = "closed" | "stale"
  * items: the plan's generation, checked under the record's lock. A device that read older marks is refused here, however
  * its claim went. It answers the ids of the items the call stands for, oldest first.
  */
-export const checkPlan = (units: ReadonlyArray<Unit>, anchorId: string, read: number): ReadonlyArray<string> | PlanRefusal => {
+export const checkPlan = (
+  units: ReadonlyArray<Unit>,
+  anchorId: string,
+  read: number,
+): ReadonlyArray<string> | PlanRefusal => {
   const { start, covered } = generationOf(units)
   const anchor = units.findIndex(unit => unit.id === anchorId)
   if (anchor !== -1 && anchor < start) return "closed"
@@ -152,13 +181,18 @@ export const checkPlan = (units: ReadonlyArray<Unit>, anchorId: string, read: nu
   return units.slice(start, start + read).map(unit => unit.id)
 }
 
-const NAMELESS = /^(?:(?:the )?(?:conversation|chat|discussion|session|general|misc(?:ellaneous)?|other|various)(?: (?:topics|tasks|questions|work))?|phase \d+|arc \d+|part \d+)[.!]?$/i
-const plain = (text: unknown) => typeof text === "string" ? safeTimelineText(text).replace(/\s+/g, " ").replace(/^["'“‘]+|["'”’]+$/g, "").trim() : ""
+const NAMELESS =
+  /^(?:(?:the )?(?:conversation|chat|discussion|session|general|misc(?:ellaneous)?|other|various)(?: (?:topics|tasks|questions|work))?|phase \d+|arc \d+|part \d+)[.!]?$/i
+const plain = (text: unknown) =>
+  typeof text === "string" ? safeTimelineText(text).replace(/\s+/g, " ").replace(/^["'“‘]+|["'”’]+$/g, "").trim() : ""
 /** A title: at most {@link TITLE_WORDS} plain words naming the work. A longer one keeps its first words. */
 export const cleanTitle = (value: unknown): string | undefined => {
   const words = plain(value).replace(/[.]+["'”’]*$/, "").split(" ").filter(Boolean).slice(0, TITLE_WORDS)
   const title = words.join(" ")
-  return title !== "" && title.length <= TITLE_LENGTH && !/[<>`]/.test(title) && !NAMELESS.test(title) && !isGenericSummary(title) ? title : undefined
+  return title !== "" && title.length <= TITLE_LENGTH && !/[<>`]/.test(title) && !NAMELESS.test(title)
+      && !isGenericSummary(title)
+    ? title
+    : undefined
 }
 /** Items that must follow a span before it closes: a boundary called on the last two items is only a guess. */
 export const CLOSES_AFTER = 3
@@ -183,20 +217,36 @@ const jsonOf = (text: string) => {
 }
 
 /** What a device says of a span: where it starts and what it's called. How far it runs and whether it closed is the server's. */
-export interface StoredSpan { readonly id: string; readonly title: string; readonly summary: string }
+export interface StoredSpan {
+  readonly id: string
+  readonly title: string
+  readonly summary: string
+}
 
 /**
  * The stored marks of `spans` over `ids`, the items the call stands for: `undefined` unless they run in order from the
  * first item with clean words. A span covers the items up to the next. It closes once at least {@link CLOSES_AFTER}
  * items follow it, which is what shows its boundary was real; input capacity never closes a span.
  */
-export const sealSpans = (spans: ReadonlyArray<StoredSpan>, ids: ReadonlyArray<string>): ReadonlyArray<{ readonly id: string; readonly mark: string }> | undefined => {
+export const sealSpans = (
+  spans: ReadonlyArray<StoredSpan>,
+  ids: ReadonlyArray<string>,
+): ReadonlyArray<{ readonly id: string; readonly mark: string }> | undefined => {
   const froms = spans.map(span => ids.indexOf(span.id))
-  const ordered = froms[0] === 0 && froms.every((from, index) => from !== -1 && (index === 0 || from > froms[index - 1]!))
-  if (!ordered || spans.some(span => cleanTitle(span.title) !== span.title || cleanSpanSummary(span.summary) !== span.summary)) return undefined
+  const ordered = froms[0] === 0
+    && froms.every((from, index) => from !== -1 && (index === 0 || from > froms[index - 1]!))
+  if (
+    !ordered
+    || spans.some(span => cleanTitle(span.title) !== span.title || cleanSpanSummary(span.summary) !== span.summary)
+  ) return undefined
   return spans.map((span, index) => {
     const from = froms[index]!, next = froms[index + 1] ?? ids.length
-    const mark: Mark = { title: span.title, summary: span.summary, closed: index < spans.length - 1 && ids.length - next >= CLOSES_AFTER, covered: next - from }
+    const mark: Mark = {
+      title: span.title,
+      summary: span.summary,
+      closed: index < spans.length - 1 && ids.length - next >= CLOSES_AFTER,
+      covered: next - from,
+    }
     return { id: span.id, mark: JSON.stringify(mark) }
   })
 }
@@ -207,11 +257,17 @@ export const sealSpans = (spans: ReadonlyArray<StoredSpan>, ids: ReadonlyArray<s
  */
 export const cleanSpans = (text: string, plan: Pick<SegmentPlan, "items">): ReadonlyArray<StoredSpan> | undefined => {
   const answer = decodeAnswer(jsonOf(text))
-  if (Option.isNone(answer) || answer.value.spans.length === 0 || answer.value.spans.length > SEGMENT_SPANS) return undefined
+  if (Option.isNone(answer) || answer.value.spans.length === 0 || answer.value.spans.length > SEGMENT_SPANS) {
+    return undefined
+  }
   const spans = answer.value.spans
   const count = plan.items.length
   const froms = spans.map((span, index) => index === 0 ? 1 : span.from)
-  if (froms.some((from, index) => !Number.isInteger(from) || from < 1 || from > count || (index > 0 && from <= froms[index - 1]!))) return undefined
+  if (
+    froms.some((from, index) =>
+      !Number.isInteger(from) || from < 1 || from > count || (index > 0 && from <= froms[index - 1]!)
+    )
+  ) return undefined
   // A span with no usable title joins the one before it: one bad title shouldn't cost the rest. The first has none before it.
   const usable = spans.flatMap((span, index) => {
     const title = cleanTitle(span.title), summary = cleanSpanSummary(span.summary)

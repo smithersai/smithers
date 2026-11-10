@@ -8,7 +8,7 @@ import {
   SANDBOX_LIMIT_COLUMNS,
   SANDBOX_LIMITS_TABLE,
 } from "../../src/features/spend/contract.ts"
-import { SandboxLimitsRequest } from "../../src/features/spend/schema.ts"
+import { SandboxLimitsRequest } from "../../src/features/spend/schema.vibe"
 import { refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor"
 import { readBounded } from "#vibelang/emitted/worker/Body"
 import { codeOf } from "#vibelang/emitted/worker/ErrorCode"

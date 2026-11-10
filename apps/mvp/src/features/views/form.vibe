@@ -1,4 +1,4 @@
-import { type JsonSchema, Option, Schema, type SchemaAST, SchemaRepresentation } from "effect"
+import { type JsonSchema, SchemaRepresentation } from "effect"
 import type { FormValues } from "./schema"
 
 // The agent's forms (decision 0004 §3, docs/features/views.md#forms): the rules `ui/form`'s step and ChatApi share. A
@@ -18,7 +18,9 @@ const documentOf = (schema: Readonly<Record<string, unknown>>): Readonly<Record<
 /** The form's input, as an Effect Schema, or `undefined` for a schema Effect's importer can't read. */
 const inputOf = (schema: Readonly<Record<string, unknown>>): Schema.Top | undefined => {
   try {
-    return SchemaRepresentation.fromJsonSchemaDocument(documentOf(schema) as unknown as JsonSchema.Document<"draft-2020-12">)
+    return SchemaRepresentation.fromJsonSchemaDocument(
+      documentOf(schema) as unknown as JsonSchema.Document<"draft-2020-12">,
+    )
     // expected: a schema the importer can't read refuses the form
   } catch {
     return undefined
@@ -63,7 +65,10 @@ export const formRefusal = (schema: Readonly<Record<string, unknown>>): FormRefu
 }
 
 /** The submitted values, when the form's own schema takes them; `undefined` otherwise. */
-export const acceptedValues = (schema: Readonly<Record<string, unknown>>, values: FormValues): FormValues | undefined => {
+export const acceptedValues = (
+  schema: Readonly<Record<string, unknown>>,
+  values: FormValues,
+): FormValues | undefined => {
   const input = inputOf(schema)
   if (input === undefined) return undefined
   const fields = new Set(Object.keys(propertiesOf(schema)))

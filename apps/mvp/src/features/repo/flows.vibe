@@ -1,6 +1,5 @@
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
-import { Context, type Effect, Layer, Schema } from "effect"
 import { COPY_KINDS, isFilePath, isRepository, MAX_BLOB_BYTES, SHA_PATTERN } from "./contract"
 import { About, CloneAccepted, CloneLaunched, Refs, TreeListing } from "./schema"
 
@@ -125,7 +124,10 @@ export const ReadAbout = Action.make("repo/ReadAbout", {
   success: About,
   error: ReadFailure,
   retryPolicy: RetryPolicy.make({
-    initialMs: 1_000, factor: 1, maxMs: 15 * 60_000, maxAttempts: 3,
+    initialMs: 1_000,
+    factor: 1,
+    maxMs: 15 * 60_000,
+    maxAttempts: 3,
     retryable: [{ tag: "@smthrs/mvp/repo/RepoReadUnavailable" }],
   }),
 })
@@ -136,8 +138,8 @@ export const ReadAbout = Action.make("repo/ReadAbout", {
  * per wait (1 second without a hint); none for a repository that isn't there or a spent read budget.
  */
 export const RepoAbout = Flow.make("repo/about", {
-  description: "What GitHub says of a public repository (owner/name), cloned or not: description, topics, languages, " +
-    "latest release, contributors, counts, newest commit, top folder and README.",
+  description: "What GitHub says of a public repository (owner/name), cloned or not: description, topics, languages, "
+    + "latest release, contributors, counts, newest commit, top folder and README.",
   modelInvocable: false,
   payload: refsPayload,
   success: About,
@@ -147,8 +149,8 @@ export const RepoAbout = Flow.make("repo/about", {
 
 /** `repo/tree { repo, revision }`: every file's path at a commit. */
 export const RepoTree = Flow.make("repo/tree", {
-  description: "List every file path of a cloned repository (owner/name) at a full commit SHA. Answers " +
-    "{ paths, truncated }; truncated is true when the listing stopped before the end.",
+  description: "List every file path of a cloned repository (owner/name) at a full commit SHA. Answers "
+    + "{ paths, truncated }; truncated is true when the listing stopped before the end.",
   modelInvocable: true,
   payload: treePayload,
   success: TreeListing,
@@ -158,8 +160,8 @@ export const RepoTree = Flow.make("repo/tree", {
 
 /** `repo/read { repo, revision, path }`: one file at a commit. */
 export const RepoRead = Flow.make("repo/read", {
-  description: "Read one file of a cloned repository (owner/name) at a full commit SHA. Answers " +
-    `{ state: "text", contents, size }, or { state, size } for a binary file or one over ${MAX_BLOB_BYTES} bytes.`,
+  description: "Read one file of a cloned repository (owner/name) at a full commit SHA. Answers "
+    + `{ state: "text", contents, size }, or { state, size } for a binary file or one over ${MAX_BLOB_BYTES} bytes.`,
   modelInvocable: true,
   payload: readPayload,
   success: FileRead,
@@ -169,10 +171,10 @@ export const RepoRead = Flow.make("repo/read", {
 
 /** `repo/refs { repo }`: the default branch, its head commit, and every branch and tag with its commit. */
 export const RepoRefs = Flow.make("repo/refs", {
-  description: "List a cloned repository's (owner/name) branches and tags. Answers { defaultBranch, head, branches, " +
-    "tags, truncated }: head is the default branch's commit SHA, and each branch and tag is { name, sha }. Read at a " +
-    "branch with its sha in repo/tree and repo/read; open one with app/navigate at /<owner>/<repo>/tree/<name>. A " +
-    "repository not cloned here fails: say so, and clone it only when the person asks for that.",
+  description: "List a cloned repository's (owner/name) branches and tags. Answers { defaultBranch, head, branches, "
+    + "tags, truncated }: head is the default branch's commit SHA, and each branch and tag is { name, sha }. Read at a "
+    + "branch with its sha in repo/tree and repo/read; open one with app/navigate at /<owner>/<repo>/tree/<name>. A "
+    + "repository not cloned here fails: say so, and clone it only when the person asks for that.",
   modelInvocable: true,
   payload: refsPayload,
   success: Refs,
@@ -226,10 +228,10 @@ export const CopyText = Action.make("repo/copy/write", {
 
 /** `repo/copy { repo, what, revision?, path?, kind?, line?, lineEnd? }`: puts what a Copy button copies on the clipboard. */
 export const RepoCopy = Flow.make("repo/copy", {
-  description: "Copy to the clipboard of the person's tab. what: permalink (the app link to path at revision, a full " +
-    "SHA; kind tree for a directory, else blob; line and lineEnd add ?L=), path, contents (the text of the file at " +
-    "path and revision), or clone-url (the URL git clone takes). Answers { copied }: false when the tab has closed " +
-    "or its clipboard refused. RepoCopyRefused when a needed revision or path is missing, or the file isn't text.",
+  description: "Copy to the clipboard of the person's tab. what: permalink (the app link to path at revision, a full "
+    + "SHA; kind tree for a directory, else blob; line and lineEnd add ?L=), path, contents (the text of the file at "
+    + "path and revision), or clone-url (the URL git clone takes). Answers { copied }: false when the tab has closed "
+    + "or its clipboard refused. RepoCopyRefused when a needed revision or path is missing, or the file isn't text.",
   modelInvocable: true,
   payload: copyPayload,
   success: Copied,
@@ -290,28 +292,34 @@ export const LaunchClone = Action.make("repo/clone/launch", {
 
 /** `repo/clone { repo }`: asks RepoApi to clone a public GitHub repository into Code Storage. */
 export const RepoCloneRequest = Flow.make("repo/clone", {
-  description: "Clone a public GitHub repository (owner/name) so it can be browsed and read. Needs a signed-in Member. " +
-    "Answers { id, txid, attempt } when a clone started, or { id, txid: null, status } when it is already cloning or " +
-    "ready. Cloning takes seconds to minutes; repo/refs answers once it is ready. Only when the person asks to clone " +
-    "or import one: opening or showing a repository's page never needs it. " +
-    "RepoCloneRefused says why it may not: sign_in, forbidden, limit, invalid or not_configured.",
+  description: "Clone a public GitHub repository (owner/name) so it can be browsed and read. Needs a signed-in Member. "
+    + "Answers { id, txid, attempt } when a clone started, or { id, txid: null, status } when it is already cloning or "
+    + "ready. Cloning takes seconds to minutes; repo/refs answers once it is ready. Only when the person asks to clone "
+    + "or import one: opening or showing a repository's page never needs it. "
+    + "RepoCloneRefused says why it may not: sign_in, forbidden, limit, invalid or not_configured.",
   modelInvocable: true,
   payload: clonePayload,
   success: CloneAccepted,
   error: CloneFailure,
-  body: Node.capture({ request: RequestClone.name, launch: LaunchClone.name }, (payload) =>
-    RequestClone.call(payload).pipe(
-      // The request's answer is the flow's: the launch only starts what it persisted.
-      Node.bindPlanned(Node.capture({ launch: LaunchClone.name }, (accepted) =>
-        LaunchClone.call({ repo: payload.repo, cloneId: accepted.cloneId }).pipe(Node.andThen(Node.succeed(accepted))))),
-    )),
+  body: Node.capture(
+    { request: RequestClone.name, launch: LaunchClone.name },
+    (payload) =>
+      RequestClone.call(payload).pipe(
+        // The request's answer is the flow's: the launch only starts what it persisted.
+        Node.bindPlanned(
+          Node.capture(
+            { launch: LaunchClone.name },
+            (accepted) =>
+              LaunchClone.call({ repo: payload.repo, cloneId: accepted.cloneId }).pipe(
+                Node.andThen(Node.succeed(accepted)),
+              ),
+          ),
+        ),
+      ),
+  ),
 }).annotate(Flow.Placement, Placement.client())
 
-/**
- * `owner/name` as its two parts; `RepoName` has checked it.
- *
- * @throws {never}
- */
+/** `owner/name` as its two parts; `RepoName` has checked it. */
 export const parts = (repo: string): readonly [string, string] => {
   const [owner, name] = repo.split("/") as [string, string]
   return [owner, name]

@@ -1,5 +1,3 @@
-import { Config, Schema } from "effect"
-
 // The model endpoint's contract between the browser's agent and ChatApi (docs/features/model-endpoint.md): the one
 // home of the values both sides share, and of the settings that belong to a role. It imports only `effect`, which
 // every side has.
@@ -45,7 +43,10 @@ export const TIER_FALLBACKS: Readonly<Record<ModelTier, ReadonlyArray<ModelTier>
 export const AGENT_LIVE_SECONDS = 30
 
 /** `ANSWER_TURN_LIVE_SECONDS`: an integer of at least five seconds (the engine pulses each second), {@link AGENT_LIVE_SECONDS} when unset. */
-export const agentLiveSeconds = Config.schema(Schema.Int.check(Schema.isGreaterThanOrEqualTo(5)), "ANSWER_TURN_LIVE_SECONDS")
+export const agentLiveSeconds = Config.schema(
+  Schema.Int.check(Schema.isGreaterThanOrEqualTo(5)),
+  "ANSWER_TURN_LIVE_SECONDS",
+)
   .pipe(Config.withDefault(AGENT_LIVE_SECONDS))
 
 /** A quota or credit refusal needs intervention; a plain rate limit can recover with backoff. */

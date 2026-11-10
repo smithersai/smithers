@@ -1,6 +1,6 @@
 import { type ModelProxy, Pricing } from "@smthrs/model"
 import { Config, Duration, Effect, Metric, Schema } from "effect"
-import type { ModelRole } from "../src/features/model/contract.ts"
+import type { ModelRole } from "../src/features/model/contract.vibe"
 import * as Flows from "#vibelang/emitted/worker/Flows"
 import * as SpendAlert from "./flows/SpendAlert.ts"
 

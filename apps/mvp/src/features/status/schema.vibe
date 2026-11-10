@@ -1,4 +1,3 @@
-import { Schema } from "effect"
 import { MAX_ANSWER_LENGTH, MAX_OPTION_LENGTH, MAX_OPTIONS, MAX_PROMPT_LENGTH } from "./contract"
 
 // Agent status's rows and wire shapes (decision 0015): the run's report, a person's answer, the `runs` row Electric
@@ -22,7 +21,9 @@ export const Need = Schema.Struct({
   kind: NeedKind,
   prompt: Schema.Trim.check(Schema.isBetweenLength(1, MAX_PROMPT_LENGTH)),
   options: Schema.optional(
-    Schema.Array(Schema.Trim.check(Schema.isBetweenLength(1, MAX_OPTION_LENGTH))).check(Schema.isMaxLength(MAX_OPTIONS)),
+    Schema.Array(Schema.Trim.check(Schema.isBetweenLength(1, MAX_OPTION_LENGTH))).check(
+      Schema.isMaxLength(MAX_OPTIONS),
+    ),
   ),
 })
 export type Need = typeof Need.Type
@@ -32,7 +33,9 @@ export const Wait = Schema.Struct({
   execution: Schema.String.check(Schema.isMaxLength(512)),
   kind: NeedKind,
   prompt: Schema.String.check(Schema.isMaxLength(MAX_PROMPT_LENGTH)),
-  options: Schema.Array(Schema.String.check(Schema.isMaxLength(MAX_OPTION_LENGTH))).check(Schema.isMaxLength(MAX_OPTIONS)),
+  options: Schema.Array(Schema.String.check(Schema.isMaxLength(MAX_OPTION_LENGTH))).check(
+    Schema.isMaxLength(MAX_OPTIONS),
+  ),
 })
 export type Wait = typeof Wait.Type
 
@@ -47,7 +50,11 @@ export type Decision = typeof Decision.Type
  * An answer: the words or option for a question; for an approval, `true` (Approve) or `false` (Deny), or a `Decision`
  * with a note.
  */
-export const AnswerValue = Schema.Union([Schema.String.check(Schema.isMaxLength(MAX_ANSWER_LENGTH)), Schema.Boolean, Decision])
+export const AnswerValue = Schema.Union([
+  Schema.String.check(Schema.isMaxLength(MAX_ANSWER_LENGTH)),
+  Schema.Boolean,
+  Decision,
+])
 export type AnswerValue = typeof AnswerValue.Type
 
 /**
@@ -97,11 +104,7 @@ export const Run = Schema.Struct({
 })
 export type Run = typeof Run.Type
 
-/**
- * Whether a run's row holds a question still open: it needs the person, and nobody has answered it.
- *
- * @throws {never}
- */
+/** Whether a run's row holds a question still open: it needs the person, and nobody has answered it. */
 export const isOpen = (run: Pick<Run, "status" | "answeredAt">): boolean =>
   run.status === "needs_you" && run.answeredAt === null
 

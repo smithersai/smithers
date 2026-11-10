@@ -1,4 +1,3 @@
-import { Schema } from "effect"
 import { CAPACITY_REASONS, CLONE_STAGES, FAILURES, STATUSES } from "./contract"
 
 // The repository feature's rows and RepoApi's answers, as the Effect Schemas they are checked with. Constants the
@@ -114,7 +113,11 @@ export const About = Schema.Struct({
   archived: Schema.Boolean,
   languages: Schema.Array(Schema.Struct({ name: Schema.String, bytes: Schema.Number })),
   release: Schema.NullOr(
-    Schema.Struct({ tag: Schema.String, name: Schema.NullOr(Schema.String), publishedAt: Schema.NullOr(Schema.String) }),
+    Schema.Struct({
+      tag: Schema.String,
+      name: Schema.NullOr(Schema.String),
+      publishedAt: Schema.NullOr(Schema.String),
+    }),
   ),
   releases: Schema.NullOr(Schema.Number),
   contributors: Schema.Array(Schema.Struct({ login: Schema.String, avatarUrl: Schema.String })),

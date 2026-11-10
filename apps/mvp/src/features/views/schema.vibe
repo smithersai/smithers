@@ -1,5 +1,4 @@
 import { Interactions, WebPage } from "@smthrs/views"
-import { Schema } from "effect"
 import { MAX_PATH, MAX_VIEW_TEXT_BYTES } from "../docs/contract"
 import { isRepository } from "../repo/contract"
 import { MAX_URL_LENGTH } from "../web/contract"
@@ -63,8 +62,8 @@ export type ViewProps = typeof ViewProps.Type
 
 /** Whether `value` is a JSON object of at most {@link MAX_VIEW_JSON_BYTES} bytes. */
 const isBoundedObject = (value: unknown) =>
-  typeof value === "object" && value !== null && !Array.isArray(value) &&
-  new TextEncoder().encode(JSON.stringify(value)).length <= MAX_VIEW_JSON_BYTES
+  typeof value === "object" && value !== null && !Array.isArray(value)
+  && new TextEncoder().encode(JSON.stringify(value)).length <= MAX_VIEW_JSON_BYTES
 
 /** A JSON object of at most {@link MAX_VIEW_JSON_BYTES} bytes. */
 export const BoundedObject = Schema.Record(Schema.String, Schema.Unknown).check(Schema.makeFilter(isBoundedObject))
@@ -204,7 +203,15 @@ const placeFields = {
 }
 
 /** `POST /api/views` for an outside page: a view to add, by an id its writer chose, so a step run again adds it once. */
-export const PageWrite = Schema.Struct({ ...placeFields, template: Schema.Literals(PAGE_TEMPLATES), props: Schema.Struct({ ...PageProps.fields, repository: Schema.optional(Repository), path: Schema.optional(DocsPath) }) })
+export const PageWrite = Schema.Struct({
+  ...placeFields,
+  template: Schema.Literals(PAGE_TEMPLATES),
+  props: Schema.Struct({
+    ...PageProps.fields,
+    repository: Schema.optional(Repository),
+    path: Schema.optional(DocsPath),
+  }),
+})
 export type PageWrite = typeof PageWrite.Type
 
 /** `POST /api/views` for a form: its props; it starts open. */

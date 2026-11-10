@@ -17,9 +17,9 @@ import {
   TELEMETRY_ROUTE,
 } from "../src/features/chat/contract.ts"
 import { ANSWERS_ROUTE } from "../src/features/agent/contract.ts"
-import { MODEL_ROLES, MODEL_ROUTE, type ModelRole } from "../src/features/model/contract.ts"
+import { MODEL_ROLES, MODEL_ROUTE, type ModelRole } from "../src/features/model/contract.vibe"
 import { VIEWS_ROUTE, VIEWS_SHAPE_ROUTE } from "../src/features/views/contract.ts"
-import { FormValues } from "../src/features/views/schema.ts"
+import { FormValues } from "../src/features/views/schema.vibe"
 import { WEB_PREVIEW_ROUTE } from "../src/features/web/contract.ts"
 import { RUNS_ROUTE, RUNS_SHAPE_ROUTE } from "../src/features/status/contract.ts"
 import { ACK_ROUTE, NOTIFICATIONS_SHAPE_ROUTE, WATCHES_ROUTE } from "../src/features/attention/contract.ts"

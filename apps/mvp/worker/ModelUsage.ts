@@ -1,6 +1,6 @@
 import { Duration, Effect } from "effect"
 import { SqlClient } from "effect/sql"
-import type { ModelRole } from "../src/features/model/contract.ts"
+import type { ModelRole } from "../src/features/model/contract.vibe"
 
 // What served model calls spend (docs/features/model-endpoint.md#budget). Before the model runs, a call reserves its
 // worst case against the deployment's budget for the UTC day; when it ends, it settles to what it spent, or keeps the

@@ -11,7 +11,7 @@ import {
   Report as ReportSchema,
   type RunAnswer,
   RunAnswer as RunAnswerSchema,
-} from "../src/features/status/schema.ts"
+} from "../src/features/status/schema.vibe"
 import { type Actor, boundTo, refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor"
 import { askingOnAnswer } from "./branch/Access.ts"
 import { readBounded } from "#vibelang/emitted/worker/Body"
