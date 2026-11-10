@@ -474,7 +474,15 @@ function _eraseGenerics(tsType: string): string {
   }
   if (tsType.endsWith("[]")) return _eraseGenerics(tsType.slice(0, -2)) + "[]";
   if (_typeParamMap.has(tsType)) return _typeParamMap.get(tsType)!;
-  return tsType;
+  // Inside a type expression (`ReadonlyArray<T>`, `readonly T[]`, `Map<K, T>`,
+  // `[T, number]`) the parameter is one identifier token. Leave property names
+  // (`{ T: number }`) and qualified names (`NS.T`) alone.
+  return tsType.replace(/[A-Za-z_$][\w$]*/g, (token, offset: number, text: string) => {
+    const bound = _typeParamMap.get(token);
+    if (bound === undefined) return token;
+    if (text[offset - 1] === "." || /^\s*\??\s*:/.test(text.slice(offset + token.length))) return token;
+    return bound;
+  });
 }
 
 function extractExpr(node: Expression): RawExpr {
@@ -2721,8 +2729,13 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
     // WRAPPERS (`Out[]`/`Msg | undefined` → `Out`/`Msg`), so a function returning
     // a local `Out[]` keeps `Out`. Wrappers only — never dig into generic args
     // (`Omit<FilePathOptions, …>` must not pull in the inner type).
+    // `ReadonlyArray<Out>`, `Array<Out>` and `readonly Out[]` are the same array wrapper.
     for (const name of sigTypes) {
-      const base = name.replace(/\s*\|\s*(undefined|null)\s*$/, "").replace(/(\[\])+$/, "").trim();
+      let base = name.replace(/\s*\|\s*(undefined|null)\s*$/, "").trim();
+      for (let prior = ""; prior !== base; ) {
+        prior = base;
+        base = base.replace(/^readonly\s+/, "").replace(/(\[\])+$/, "").replace(/^(?:Readonly)?Array<(.+)>$/, "$1").trim();
+      }
       if (base !== name && /^[A-Za-z_]\w*$/.test(base)) markType(base);
     }
     typeDecls.splice(0, typeDecls.length, ...typeDecls.filter(d => neededTypes.has(d.name) || declaredNames.has(d.name)));

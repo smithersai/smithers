@@ -477,11 +477,11 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       return { model: { ...model, wikiEdit: { ...model.wikiEdit, ...step.state, ...(step.submission === "clear" ? { submission: undefined } : {}) } } }
     },
     ClickedWiki: ({ page }) => visitWiki(model, page),
-    WikiLocationChanged: ({ page }) => page === "/" ? { model: { ...model, surface: "splash", docs: "pane", ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } } : visitWiki(model, page),
+    WikiLocationChanged: ({ page }) => UpdateDecision.wikiLocationLeaves(page) ? { model: { ...model, surface: "splash", docs: "pane", ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } } : visitWiki(model, page),
     FilteredWiki: ({ value }) => ({ model: { ...model, wikiQuery: value } }),
     FailedWiki: ({ request }) => ({ model: model.wikiRequest !== undefined && ModelDecision.wikiFailureApplies(request, model.wikiRequest, model.wikiStatus === "loading") ? { ...model, wikiStatus: "error" } : model }),
     SucceededWiki: () => ({ model }),
-    ClickedDocs: () => ({ model: { ...model, ...toggleScreenDocs(model) }, ...(model.docs === "max" && model.client.conversation.pane.startsWith("/wiki/") ? { commands: [RevealWiki({})] } : {}) }),
+    ClickedDocs: () => ({ model: { ...model, ...toggleScreenDocs(model) }, ...(UpdateDecision.docsRevealsWiki(model.docs, model.client.conversation.pane) ? { commands: [RevealWiki({})] } : {}) }),
     ClickedSplash: () => ({ model: { ...model, ...showSplash(model), ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } }),
     ClickedChat: () => minimizeSplash(model),
     UpdatedDraft: ({ value }) => {
@@ -516,8 +516,9 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     SubmittedDraft: () => submit(model),
     SucceededPost: () => ({ model }),
     ClickedRetry: ({ clientId }) => {
-      const waiting = model.client.pending.find((post) => post.clientId === clientId && post.error !== "")
-      if (!waiting) return { model }
+      const index = UpdateDecision.retryIndex(model.client.pending, clientId)
+      const waiting = model.client.pending[index]
+      if (index < 0 || !waiting) return { model }
       return {
         model: { ...model, client: Machine.retryPost(model.client, clientId) },
         commands: [PostMessage({ conversation: model.conversation, clientId, name: model.name, text: waiting.text }), FocusComposer({})],
@@ -670,10 +671,11 @@ function withCommands(result: Update.Return<Model, Message, Factory | Actions>):
 }
 /** A click and a browser deep link request the same durable wiki flow; the event alone moves the pane. */
 function visitWiki(model: Model, page: string): WithCommands<Update.Return<Model, Message, Factory>> {
-  const opening = model.stream !== "open"
-  const request = (model.wikiRequest ?? 0) + 1
-  return { model: { ...model, wikiEdit: model.wikiEdit?.submission === undefined ? undefined : model.wikiEdit, wikiRequest: request, sandboxPane: model.sandboxPane === "max" ? "pane" : model.sandboxPane ?? "closed", ...(accountOf(model).people === "max" ? { account: { ...accountOf(model), people: "pane" as const } } : {}), surface: "chat", palette: false, wikiQuery: "", wikiRequested: page, wikiStatus: "loading", following: false,
-    stream: "open", epoch: opening ? model.epoch + 1 : model.epoch, from: opening ? model.client.conversation.seq : model.from,
+  const account = accountOf(model)
+  const visit = UpdateDecision.visitedWiki({ stream: model.stream, epoch: model.epoch, from: model.from, seq: model.client.conversation.seq, request: model.wikiRequest ?? 0, sandboxPane: model.sandboxPane ?? "closed", people: account.people, saving: model.wikiEdit?.submission !== undefined })
+  const request = visit.request
+  return { model: { ...model, wikiEdit: visit.keepEdit ? model.wikiEdit : undefined, wikiRequest: request, sandboxPane: visit.sandboxPane, ...(visit.people === account.people ? {} : { account: { ...account, people: visit.people } }), surface: "chat", palette: false, wikiQuery: "", wikiRequested: page, wikiStatus: "loading", following: false,
+    stream: "open", epoch: visit.epoch, from: visit.from,
   }, commands: [OpenWikiCommand({ conversation: model.conversation, page, request })] }
 
 }

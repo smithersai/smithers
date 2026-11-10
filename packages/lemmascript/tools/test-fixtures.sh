@@ -111,11 +111,11 @@ expect_proof_failure() {
     exit 1
   fi
 }
-for name in union-to-string string-union-subset; do
+for name in union-to-string string-union-subset generic-bound-array; do
   cp "tools/fixtures/$name.ts" "tools/fixtures/$name-wrong.ts" "$fixture_dir/"
   npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name.ts"
   expect_proof_failure \
-    "a widened string-union member verified as another member ($name)" \
+    "a wrong twin verified ($name)" \
     npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name-wrong.ts"
 done
 cp -R tools/fixtures/imported-const tools/fixtures/imported-const-wrong tools/fixtures/imported-const-collision "$fixture_dir/"

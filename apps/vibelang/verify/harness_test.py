@@ -91,6 +91,24 @@ class GenericFunctions(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 class MutationLocation(unittest.TestCase):
+    def test_a_generic_function_is_found_and_ends_at_the_next_generic_function(self):
+        from mutation_edit import function_span
+        source = 'export function a<R extends X>(xs: R[]): number {\n  return 1\n}\nexport function b<R extends X>(xs: R[]): number {\n  return 2\n}\n'
+        start, end = function_span(source, 'a')
+        self.assertEqual(source[start:end], 'export function a<R extends X>(xs: R[]): number {\n  return 1\n}\n')
+        start, end = function_span(source, 'b')
+        self.assertIn('return 2', source[start:end])
+        self.assertIsNone(function_span(source, 'c'))
+
+    def test_a_parent_folder_import_is_copied_beside_the_mutant(self):
+        from mutation_edit import flatten_imports
+        folder = ROOT.parent / 'src/web'
+        text, deps = flatten_imports('import { a } from "../core/conversation.vibe"\nimport { b } from "./x.vibe"\n', folder)
+        self.assertEqual(text, 'import { a } from "./conversation.vibe"\nimport { b } from "./x.vibe"\n')
+        self.assertEqual(deps['conversation.vibe'], (ROOT.parent / 'src/core/conversation.vibe').resolve())
+        with self.assertRaises(SystemExit):
+            flatten_imports('import { a } from "../core/x.vibe"\nimport { b } from "./x.vibe"\n', folder)
+
     def test_contract_text_is_not_an_executable_match(self):
         from mutation_edit import executable_matches
         source='  return x > 0\n}\n//@ ensures \\result == (x > 0)\n'

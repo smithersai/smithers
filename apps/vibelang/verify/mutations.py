@@ -8,7 +8,7 @@ src/core/conversation.vibe, which LemmaScript reads as TypeScript, changed in ex
 contract and assertion stays byte-identical, and each case must match exactly once inside its function.
 """
 import json, pathlib, re, sys
-from mutation_edit import executable_matches
+from mutation_edit import executable_matches, flatten_imports, function_span
 root=pathlib.Path(__file__).resolve().parent
 from extended_mutations import cases as extended_cases
 from web_mutations import cases as web_cases
@@ -162,10 +162,9 @@ for module,name,fn,old,new,claim in cases:
     if modules and module not in modules: continue
     source=(root.parent/module).read_text()
     if selected and name not in selected: continue
-    match=re.search(r'^(?:export )?function '+fn+r'(?:<[^>(]*>)?\(',source,re.M)
-    if not match: raise SystemExit(f'Missing function {fn}')
-    start=match.start(); following=re.search(r'^(?:export )?function \w+(?:<[^>(]*>)?\(',source[match.end():],re.M)
-    end=match.end()+following.start() if following else len(source)
+    span=function_span(source,fn)
+    if not span: raise SystemExit(f'Missing function {fn}')
+    start,end=span
     body=source[start:end]
     matches=executable_matches(body,old)
     if len(matches)!=1: raise SystemExit(f'{name}: expected 1 executable match, found {len(matches)}')
@@ -173,9 +172,10 @@ for module,name,fn,old,new,claim in cases:
     edited=body[:at]+new+body[at+len(old):]
     broken='// Executable mutation: '+claim+'. Contracts are unchanged.\n'+source[:start]+edited+source[end:]
     if contracts(broken)!=contracts(source): raise SystemExit(f'{name}: mutation changed a contract')
+    broken,dependencies=flatten_imports(broken,(root.parent/module).parent)
     (out/f'{name}.ts').write_text(broken)
-    for spec in re.findall(r'from "\./([^"/]*\.vibe)"',broken):
-        (out/f'{spec}.ts').write_text(((root.parent/module).parent/spec).read_text())
+    for spec,path in dependencies.items():
+        (out/f'{spec}.ts').write_text(path.read_text())
     manifest[name]={'source':module,'function':fn,'claim':claim,'before':old,'after':new}
 if modules and not manifest: raise SystemExit('No mutations in: '+', '.join(sorted(modules)))
 (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')

@@ -20,6 +20,7 @@ tests read are unchanged except for the patches listed below.
 | An exhaustive `X.match(value, { Tag: ({ field }) => result })` table over a `_tag` union, in return position, read as a `switch` | Offered upstream later |
 | A string-literal union member spelled `""` gets a valid Dafny constructor name, and one spelled `none` stays the union's own constructor rather than Option's `None` | Offered upstream later |
 | A string-literal union value widens where TypeScript allows it: to a `string` slot, and to a union holding all of its members, in arguments, fields, returns and `==` | Offered upstream later |
+| A `<T extends Bound>` parameter inside a type expression (`ReadonlyArray<T>`, `readonly T[]`) reads as its bound, and an array-wrapped signature type keeps its declaration | Offered upstream later |
 | A constant imported by name from another module (`import { LIMIT as L }`) is declared with its value, with the constants its initializer reads; a name that collides with another constant is refused | Offered upstream later |
 | `//@ safe-slice` also clamps one-argument array slices and every string slice like JavaScript (`safe-slice-suffix.ts`) | Offered upstream later |
 | A two-parameter `map` callback binds the element's index (`map-index.ts`) | Offered upstream later |

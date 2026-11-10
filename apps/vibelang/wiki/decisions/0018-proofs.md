@@ -3881,3 +3881,32 @@ Fixed in `packages/lemmascript`, each with a fixture that verifies and a wrong t
 
 `operationOf` in `paneDecision.vibe` existed only to route around the subset gap; `startSandboxAction` now records `operation: kind` and its contract says the same. Its two mutations went with it; `pane-sandbox-operation` now mutates `operation: kind`. `roleDialogCloses` keeps the `PersonRole` parameter: every caller passes a role, and the narrower type states that. `MAX_TEXT` stays in `decide.vibe`, the only module that reads it.
 
+### Thirty-first batch: wiki visit, docs reveal, retry, the runs merge and the fixed-value arms
+
+`updateDecision.vibe` proves `visitedWiki` (the next request number; a maximized sandbox or people pane docks; only a saving editor stays; a broken stream reopens from the conversation's end with a new epoch), `wikiLocationLeaves` (only `/` leaves the wiki), `docsRevealsWiki` (shrinking maximized docs over a `/wiki/` page reveals it) and `retryIndex` (the first failed post with that id, or -1 when none waits). `visitWiki`, `ClickedWiki`, `WikiLocationChanged`, `ClickedDocs` and `ClickedRetry` call them.
+
+`modelDecision.vibe` proves the runs merge: `runIndex` finds a run's id; `mergeRunAt` appends a new run, replaces a known one only when `acceptSnapshot` accepts the snapshot, and leaves every other run as it was; `newestFirst` keeps every run and orders by start, newest first. `mergeRuns` in `actionModel.vibe` is now a loop over these three, so `LoadedActions` (epoch fence already proved), `StartedAction` and `ChangedAction` merge through proved steps. Membership after the sort is not stated: the open `lemmascript-sort-membership` gap. This needed a new `lsc` patch: a `<R extends RunClock>` parameter inside `ReadonlyArray<R>` reads as its bound (fixtures `generic-bound-array.ts`, `generic-bound-array-wrong.ts`).
+
+`ClickedSplash` composes the proved `showSplash` with closing the issues surface; the close is a fixed value, listed below.
+
+The fixed-value arms. Each returns one value that depends on no decision. Its contract is that value; there is no choice for Dafny to prove, so the table states the value and a change to an arm must change its row:
+
+| Arm | Contract |
+| --- | --- |
+| `ObservedMedia` | Returns the model unchanged, no commands. |
+| `LoadedMedia` | Model unchanged; one `ObserveMedia` with the kind and outcome `loaded`. |
+| `ChoseIdentity` | Model unchanged; one `ChooseIdentity` with the chosen role. |
+| `IssueDialogFocused` | Returns the model unchanged, no commands. |
+| `MovedTourFocus` | Model unchanged; one `FocusTourControl` carrying `backward`. |
+| `MeasuredTheatre` | Stores the measured box as `theatreBox`; nothing else changes. |
+| `SucceededPost` | Returns the model unchanged: the stream event, not the post's answer, records the turn. |
+| `FocusedPrompt` | Returns the model unchanged, no commands. |
+| `SucceededWiki` | Returns the model unchanged: the wiki event sets the page ready. |
+| `FilteredWiki` | Stores the filter text as `wikiQuery`; nothing else changes. |
+| `UpdatedTerminal` | Stores the terminal text as `terminalDraft`; nothing else changes. |
+| `SelectedActionStep` | Stores the step key in the actions view; nothing else changes. |
+| `ClickedCancelAction` | Model unchanged; one `CancelAction` for the selected run. |
+| `FailedTourEvents` | Sets `tourError` to `Connection lost`; nothing else changes. |
+| `ClickedSplash` (issues part) | Closes an open issues surface; no issues state stays absent. |
+| `WikiLocationChanged` to `/` | Splash surface, docs `pane`, issues closed as above. |
+

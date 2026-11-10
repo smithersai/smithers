@@ -196,3 +196,69 @@ export function launchKind(starting: boolean, known: boolean, isTour: boolean, s
 export function launchRetries(button: boolean, run: string): boolean {
   return button && run !== ""
 }
+
+export type DockPane = "closed" | "pane" | "max"
+export interface WikiVisitScreen {
+  readonly stream: "open" | "failed"
+  readonly epoch: number
+  readonly from: number
+  readonly seq: number
+  readonly request: number
+  readonly sandboxPane: DockPane
+  readonly people: DockPane
+  readonly saving: boolean
+}
+export interface WikiVisit { readonly request: number; readonly keepEdit: boolean; readonly sandboxPane: DockPane; readonly people: DockPane; readonly epoch: number; readonly from: number }
+
+/** Opening a wiki page takes the next request number, docks a maximized sandbox or people pane beside it, keeps only an editor that is saving, and reopens a broken stream from the conversation's end. */
+//@ verify
+//@ ensures \result.request == state.request + 1
+//@ ensures \result.keepEdit == state.saving
+//@ ensures \result.sandboxPane == (state.sandboxPane == "max" ? "pane" : state.sandboxPane)
+//@ ensures \result.people == (state.people == "max" ? "pane" : state.people)
+//@ ensures state.stream == "open" ==> \result.epoch == state.epoch && \result.from == state.from
+//@ ensures state.stream != "open" ==> \result.epoch == state.epoch + 1 && \result.from == state.seq
+export function visitedWiki(state: WikiVisitScreen): WikiVisit {
+  const opening = state.stream !== "open"
+  return {
+    request: state.request + 1,
+    keepEdit: state.saving,
+    sandboxPane: state.sandboxPane === "max" ? "pane" : state.sandboxPane,
+    people: state.people === "max" ? "pane" : state.people,
+    epoch: opening ? state.epoch + 1 : state.epoch,
+    from: opening ? state.seq : state.from,
+  }
+}
+
+/** The address bar's root leaves the wiki for the splash; any other page opens in the wiki. */
+//@ verify
+//@ ensures \result == (page == "/")
+export function wikiLocationLeaves(page: string): boolean {
+  return page === "/"
+}
+
+/** Shrinking maximized docs that show a wiki page reveals that page in the pane. */
+//@ verify
+//@ ensures \result == (docs == "max" && pane.startsWith("/wiki/"))
+export function docsRevealsWiki(docs: "pane" | "max", pane: string): boolean {
+  return docs === "max" && pane.startsWith("/wiki/")
+}
+
+export interface RetryPost { readonly clientId: string; readonly error: string }
+
+/** Retry resends the first failed post with this id; -1 when no post with that id is waiting. */
+//@ verify
+//@ ensures \result == -1 || (0 <= \result && \result < pending.length && pending[\result].clientId == clientId && pending[\result].error != "")
+//@ ensures \result == -1 ==> forall(j, 0 <= j && j < pending.length ==> !(pending[j].clientId == clientId && pending[j].error != ""))
+//@ ensures \result != -1 ==> forall(j, 0 <= j && j < \result ==> !(pending[j].clientId == clientId && pending[j].error != ""))
+export function retryIndex(pending: ReadonlyArray<RetryPost>, clientId: string): number {
+  let i = 0
+  while (i < pending.length) {
+    //@ invariant 0 <= i && i <= pending.length
+    //@ invariant forall(j, 0 <= j && j < i ==> !(pending[j].clientId == clientId && pending[j].error != ""))
+    //@ decreases pending.length - i
+    if (pending[i]!.clientId === clientId && pending[i]!.error !== "") return i
+    i++
+  }
+  return -1
+}

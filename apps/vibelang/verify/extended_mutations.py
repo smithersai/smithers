@@ -5391,3 +5391,25 @@ cases.extend([('src/surfaces/commandDecision.vibe', *case) for case in [
 ('cmd-failure-action', 'failureMessage', 'tag === "ActionFailure" ? "Action: " + code', 'tag === "ActionFailure" ? "Action: " + reason', 'an action failure names its code'),
 ('cmd-failure-other', 'failureMessage', ': commandError(tag, reason, refused, refusal, message)', ': message', 'other failures keep the Factory mapping'),
 ]])
+
+# Batch 31: wiki visit, docs reveal, retry and the runs merge.
+cases.extend([
+ ('src/web/updateDecision.vibe', 'wiki-visit-request', 'visitedWiki', 'request: state.request + 1', 'request: state.request', 'a visit takes the next request'),
+ ('src/web/updateDecision.vibe', 'wiki-visit-keep', 'visitedWiki', 'keepEdit: state.saving', 'keepEdit: false', 'a saving editor stays'),
+ ('src/web/updateDecision.vibe', 'wiki-visit-sandbox', 'visitedWiki', 'sandboxPane: state.sandboxPane === "max" ? "pane" : state.sandboxPane', 'sandboxPane: state.sandboxPane', 'a maximized sandbox docks'),
+ ('src/web/updateDecision.vibe', 'wiki-visit-people', 'visitedWiki', 'people: state.people === "max" ? "pane" : state.people', 'people: state.people', 'a maximized people pane docks'),
+ ('src/web/updateDecision.vibe', 'wiki-visit-opening', 'visitedWiki', 'const opening = state.stream !== "open"', 'const opening = state.stream === "open"', 'only a broken stream reopens'),
+ ('src/web/updateDecision.vibe', 'wiki-visit-epoch', 'visitedWiki', 'epoch: opening ? state.epoch + 1 : state.epoch', 'epoch: state.epoch', 'reopening bumps the epoch'),
+ ('src/web/updateDecision.vibe', 'wiki-visit-from', 'visitedWiki', 'from: opening ? state.seq : state.from', 'from: state.from', 'reopening follows from the end'),
+ ('src/web/updateDecision.vibe', 'wiki-location-root', 'wikiLocationLeaves', 'return page === "/"', 'return page === ""', 'the root leaves the wiki'),
+ ('src/web/updateDecision.vibe', 'docs-reveal-max', 'docsRevealsWiki', 'return docs === "max" && pane', 'return docs === "pane" && pane', 'only shrinking reveals'),
+ ('src/web/updateDecision.vibe', 'docs-reveal-wiki', 'docsRevealsWiki', 'pane.startsWith("/wiki/")', 'pane.startsWith("/")', 'only a wiki page reveals'),
+ ('src/web/updateDecision.vibe', 'retry-index-error', 'retryIndex', 'pending[i]!.error !== ""', 'pending[i]!.error === ""', 'only a failed post retries'),
+ ('src/web/updateDecision.vibe', 'retry-index-id', 'retryIndex', 'pending[i]!.clientId === clientId &&', 'pending[i]!.clientId !== clientId &&', 'retry matches the id'),
+ ('src/web/updateDecision.vibe', 'retry-index-none', 'retryIndex', '  return -1\n}\n', '  return 0\n}\n', 'no match retries nothing'),
+ ('src/web/modelDecision.vibe', 'run-index-id', 'runIndex', 'if (runs[i]!.id === id) return i', 'if (runs[i]!.id !== id) return i', 'the index names the same run'),
+ ('src/web/modelDecision.vibe', 'run-index-none', 'runIndex', '  return -1\n}\n\n/** One incoming', '  return 0\n}\n\n/** One incoming', 'a new run has no index'),
+ ('src/web/modelDecision.vibe', 'merge-run-append', 'mergeRunAt', 'if (index < 0) return [...current, next]', 'if (index < 0) return current', 'a new run is kept'),
+ ('src/web/modelDecision.vibe', 'merge-run-accept', 'mergeRunAt', 'if (acceptSnapshot(current[index]!.state, current[index]!.at, next.at)) return [...current.slice(0, index), next, ...current.slice(index + 1)]', 'if (acceptSnapshot(current[index]!.state, current[index]!.at, next.at)) return current', 'an accepted snapshot replaces'),
+ ('src/web/modelDecision.vibe', 'merge-run-refuse', 'mergeRunAt', '  return current\n}\n\n/** The runs list', '  return [...current.slice(0, index), next, ...current.slice(index + 1)]\n}\n\n/** The runs list', 'a refused snapshot cannot roll back'),
+ ('src/web/modelDecision.vibe', 'newest-first-order', 'newestFirst', 'b.started - a.started', 'a.started - b.started', 'newest start first')])
