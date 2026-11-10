@@ -105,7 +105,9 @@ browser cookie on callback and consent. A host journals only screened requests a
 the same `400`, so an unauthenticated caller writes nothing. The store's conditional writes are the single-use points,
 so a host needs no lock across requests. A Connect whose consent page nobody answers holds a live token pair, which
 counts toward GitHub's ten tokens per person and App: `insert` never prunes `consent/` records, and each callback
-drains up to `CONSENT_RELEASE` expired ones through `Store.drain` and revokes their access tokens. The registry
+drains up to `CONSENT_RELEASE` expired ones through `Store.drain` and revokes their access tokens. A host that reads
+an identity from a token it then discards, such as a device-flow sign-in, revokes it with `discard(github, token)`
+inside its durable step. The registry
 must list only origins the deployment serves: subdomains and custom domains, never wildcard suffix matching.
 All origins must be canonical HTTPS origins; `localDevelopment` explicitly permits loopback HTTP for local hosts.
 No path, userinfo, query or fragment is accepted as an origin. Use a distinct secret per origin.

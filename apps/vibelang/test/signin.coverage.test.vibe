@@ -239,3 +239,21 @@ describe("the device route's refusals", () => {
     }
   }), 60_000)
 })
+
+describe("the device token", () => {
+  const post = (origin: string, token: string) => HttpClientRequest.post(origin + "/api/auth/device").pipe(HttpClientRequest.setHeader("origin", origin), HttpClientRequest.bodyJsonUnsafe({ token }))
+  it.live("is revoked once the identity is read, whether or not it names a person, so it never counts toward GitHub's ten", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const { origin, revoked } = try world()
+      provide FetchHttpClient.layer {
+        const http = try HttpClient.HttpClient
+        const issued = try http.execute(post(origin, "device-token-9"))
+        const stranger = try http.execute(post(origin, "stranger"))
+        try Effect.try(() => {
+          expect([issued.status, stranger.status]).toEqual([200, 401])
+          expect(revoked).toEqual(["device-token-9", "stranger"])
+        })
+      }
+    }
+  }), 60_000)
+})

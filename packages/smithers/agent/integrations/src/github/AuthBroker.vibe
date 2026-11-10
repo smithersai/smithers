@@ -95,8 +95,11 @@ effect function record(step: string, outcome: string) {
 
 const revocationRetry = RetryPolicy.make({ initialMs: 100, factor: 2, maxMs: 1_000, maxAttempts: 3 })
 
-/** A token stays in the identity step's closure; the cleanup action journals only null or a fixed failure. */
-effect function discard(github: Auth.GitHubAuth["Service"], token: Redacted.Redacted<string>) {
+/**
+ * Revokes a token nobody keeps, as a durable action with retries, so it never counts toward GitHub's ten tokens per
+ * person and App. Call it inside a flow step. The token stays in the closure; the action journals only null.
+ */
+export effect function discard(github: Auth.GitHubAuth["Service"], token: Redacted.Redacted<string>) {
   const revocation = try Effect.orDie(Effect.try(() => Action.make({
     name: "auth/broker/revoke", success: Schema.Null, error: Schema.Null,
     retryPolicy: revocationRetry,

@@ -177,7 +177,8 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
   }
 
   /** The journal stores only the step name and null; credentials stay in this host's encrypted records. */
-  effect function mutation<A>(step: typeof Mutation.payloadSchema.Type.step, body: A!!) {
+  /** `body` may run durable actions of its own, such as revoking a token nobody keeps. */
+  effect function mutation<A, R>(step: typeof Mutation.payloadSchema.Type.step, body: A!!R) {
     const executionId = try postExecutionId("account")
     let result: A | undefined
     const registration = Interpreter.layerWithImplementations(Mutation, ApplyMutation.toLayer(() => withSpan(effect {
@@ -236,8 +237,11 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
     if (path === "/api/auth/device" && request.method === "POST") return try mutation("device", effect {
       const body = decodeDeviceToken(bodyText) catch () => undefined
       if (body === undefined) return json({ error: "body" }, 400)
-      // Any GitHub failure closes the sign-in; the journal and logs carry only the outcome.
-      const person = setup.github.user(Redacted.make(body.token)) catch () => null
+      // Any GitHub failure closes the sign-in; the journal and logs carry only the outcome. The CLI keeps the session
+      // cookie, never the token, so the token is revoked once read: it must not evict the person's GitHub connection.
+      const token = Redacted.make(body.token)
+      const person = setup.github.user(token) catch () => null
+      try GitHub.Auth.Broker.discard(setup.github, token)
       try Effect.logInfo("vibelang.account.device").pipe(Effect.annotateLogs({ outcome: person === null ? "refused" : "issued" }))
       if (person === null || !Number.isSafeInteger(person.id) || person.id <= 0) return json({ error: "sign-in" }, 401)
       const id = String(person.id)
