@@ -1,5 +1,5 @@
 // Markdown (src/web/markdown.vibe) on the block forms the reply cases leave out, and a reply's link drawn in the chat.
-import { expect, role, scene, given } from "foldkit/scene"
+import { expect, role, scene, given, selector } from "foldkit/scene"
 import { describe, it } from "@effect/vitest"
 import { expect as assert } from "vitest"
 import { newClient, receive } from "../src/core/conversation.vibe"
@@ -39,6 +39,14 @@ describe("a reply in the chat", () => {
   const started = receive(posted, { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" })
   const written = receive(started, { type: "ReplyDelta", seq: 3, id: "r1", text: "Read [the guide](https://vibelang.smithers.sh/docs/intro) first." })
   const replied: Model = { ...home, surface: "chat", client: receive(written, { type: "ReplyFinished", seq: 4, id: "r1" }) }
+
+  it("draws a fenced block as code, not as inline code", () => {
+    const fenced: Model = { ...home, surface: "chat", client: receive(receive(started, { type: "ReplyDelta", seq: 3, id: "r1", text: "Run it:\n\n```vibe\nconst x = 1\n```" }), { type: "ReplyFinished", seq: 4, id: "r1" }) }
+    scene({ update, view }, given(fenced),
+      expect(selector("pre.vl-code.sui-md-pre")).toContainText("const x = 1"),
+      expect(selector("pre code.sui-md-inline-code")).not.toExist(),
+    )
+  })
 
   it("draws a Markdown link with its target", () => {
     scene({ update, view }, given(replied),

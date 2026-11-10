@@ -227,3 +227,25 @@ it.live("?agent=mock starts the mock history even when storage refuses to rememb
     })
   }
 }), 30_000)
+
+it.live("?agent=live forgets a stored mock choice and asks the server", () => scoped(effect {
+  const { node, window } = try host()
+  try sync(() => {
+    window.localStorage.setItem("vibelang.agent", "mock")
+    window.history.replaceState(null, "", "/history?agent=live")
+  })
+  let probes = 0
+  const client = HttpClient.make((request) => {
+    probes++
+    return fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+  })
+  provide Layer.mergeAll(page, Layer.succeed(HttpClient.HttpClient, client)) {
+    const { application, flags } = try historyMain()
+    try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+    try promise(() => vi.waitFor(() => {
+      expect(node.querySelector("[data-surface='history']")?.getAttribute("data-mode")).not.toBe("mock")
+      expect(probes).toBeGreaterThan(0)
+    }, { timeout: 5000 }))
+    try Effect.try(() => expect(window.localStorage.getItem("vibelang.agent")).toBeNull())
+  }
+}), 30_000)
