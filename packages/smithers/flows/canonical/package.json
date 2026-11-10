@@ -28,7 +28,8 @@
     "./BoundedJson": "./src/BoundedJson.ts",
     "./IssuePath": "./src/IssuePath.ts",
     "./ReadonlyMap": "./src/ReadonlyMap.ts",
-    "./Serializer": "./src/Serializer.ts"
+    "./Serializer": "./src/Serializer.ts",
+    "./sortCollections": "./src/sortCollections.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -124,6 +125,16 @@
         "require": {
           "types": "./dist/cjs/Serializer.d.ts",
           "default": "./dist/cjs/Serializer.js"
+        }
+      },
+      "./sortCollections": {
+        "import": {
+          "types": "./dist/esm/sortCollections.d.ts",
+          "default": "./dist/esm/sortCollections.js"
+        },
+        "require": {
+          "types": "./dist/cjs/sortCollections.d.ts",
+          "default": "./dist/cjs/sortCollections.js"
         }
       }
     }

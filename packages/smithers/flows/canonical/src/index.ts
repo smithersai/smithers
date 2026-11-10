@@ -37,6 +37,15 @@ export { CanonicalError, canonicalize } from "./Serializer.ts"
 export type { CanonicalErrorCode } from "./Serializer.ts"
 
 /**
+ * Copies a value with every `Set` and `Map` in sorted order, so equal
+ * collections encode to equal bytes before they are hashed (VIP-44).
+ *
+ * @since 1.0.0
+ * @category transformations
+ */
+export { sortCollections } from "./sortCollections.ts"
+
+/**
  * Object-shape guard for values crossing a wire boundary.
  *
  * @since 1.0.0

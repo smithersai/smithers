@@ -181,6 +181,23 @@ return a string.
 fix, and [Convert a value the serializer refuses](./guides/prepare-a-value.md)
 shows what to send instead.
 
+## Sets and maps
+
+`Canonical` refuses a `Set` or a `Map`, and a schema codec turns each into an
+array in insertion order. Hash a payload that holds them through its schema
+after [`sortCollections`](./api.md#sortcollections), which orders their
+entries, so equal collections produce one document:
+
+```ts
+import { Canonical, sortCollections } from "@smthrs/canonical"
+import * as Schema from "effect/Schema"
+
+const Tags = Schema.ReadonlySet(Schema.String)
+const encode = Schema.encodeSync(Schema.toCodecJson(Tags))
+const document = Schema.decodeUnknownSync(Canonical)(encode(sortCollections(new Set(["b", "a"]))))
+// => '["a","b"]'
+```
+
 ## Pin the bytes you depend on
 
 Output changes are digest changes, so treat this contract the way you treat a

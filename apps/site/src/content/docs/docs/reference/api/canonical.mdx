@@ -8,10 +8,10 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs)
 
-The package provides canonical serialization, its schema and errors, bounded JSON admission, and an array-excluding record guard.
+The package provides canonical serialization, its schema and errors, collection sorting for durable identity, bounded JSON admission, and an array-excluding record guard.
 
 ```ts
-import { Canonical, CanonicalError, canonicalize } from "@smthrs/canonical"
+import { Canonical, CanonicalError, canonicalize, sortCollections } from "@smthrs/canonical"
 import type { CanonicalErrorCode } from "@smthrs/canonical"
 ```
 
@@ -191,6 +191,37 @@ shape or a host's runtime.
 
 Each code, with its cause and its fix, is in
 [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/docs/troubleshooting.md).
+
+## sortCollections
+
+```ts
+const sortCollections: <A>(value: A) => A
+```
+
+Copies a value with every `Set`'s entries and every `Map`'s entries in sorted
+order, at every depth. `Schema.ReadonlySet` and `Schema.ReadonlyMap` encode in
+insertion order and `Canonical` keeps array order, so equal sets would
+otherwise hash differently. Durable identity (VIP-44) runs it before the
+payload codec: sort, `Schema.toCodecJson`, `Canonical`, SHA-256.
+
+- Entries are ordered by a stable text rank of their sorted value, compared in
+  UTF-16 code units. A `Map` orders by key, then by value.
+- Arrays keep their order. Object keys are left to `Canonical`.
+- It walks the value, not a Schema. It visits every own data property,
+  enumerable or not, and a copy keeps its prototype, descriptors, and frozen,
+  sealed or non-extensible state. Private `#fields` and internal slots are
+  unreachable: a class that keeps a collection there orders it in its own
+  encoder.
+- It copies only objects that reach a collection; everything else keeps its
+  reference. Cycles and shared references survive. Accessors are never
+  invoked. The input is never mutated.
+
+```ts
+import { sortCollections } from "@smthrs/canonical"
+
+const order = sortCollections({ tags: new Set(["b", "a"]), steps: ["b", "a"] })
+const tags = [...order.tags] // ["a", "b"]; order.steps stays ["b", "a"]
+```
 
 ## isRecord
 
