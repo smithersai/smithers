@@ -30,7 +30,6 @@ import * as Route from "@smthrs/model/Route"
 import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, Option, Redacted, Schema } from "effect"
-import { envVar, environment } from "./live-smoke.platform.ts"
 
 /**
  * The real HTTP transport: the kernel's guarded client (always-allow, since
@@ -43,7 +42,7 @@ import { envVar, environment } from "./live-smoke.platform.ts"
 export const executorLayer = RequestExecutor.layer.pipe(
   Layer.provide(KernelHttpClient.layer),
   Layer.provide(GrantStore.layerNoop),
-  Layer.provide(EgressHttpClient.layer(environment))
+  Layer.provide(EgressHttpClient.layer(process.env))
 )
 
 /**
@@ -56,27 +55,28 @@ export const executorLayer = RequestExecutor.layer.pipe(
  */
 export const liveOpenAiSeats = (apiKey: string) =>
   Layer.effect(SeatResolver.SeatResolver)(
-    effect {
-      const executor = try RequestExecutor.RequestExecutor
+    Effect.gen(function*() {
+      const executor = yield* RequestExecutor.RequestExecutor
       return SeatResolver.make({
-        resolve: effect (id) => {
-          const modelId = Seat.modelIdOf(id)
-          const routeConfig = try Effect.fromResult(Route.openai({ apiKey: Redacted.make(apiKey) })).pipe(
-            Effect.mapError((error) => new Seat.SeatUnresolved({ seat: id, message: error.message }))
-          )
-          const model = try Route.toModel(routeConfig).pipe(
-            Effect.provideService(RequestExecutor.RequestExecutor, executor)
-          )
-          return Seat.make({
-            id,
-            modelId,
-            model,
-            route: FlowEngineLike.routeResolver(routeConfig),
-            contextWindowTokens: SeatResolver.contextWindowTokensFor(modelId)
+        resolve: (id) =>
+          Effect.gen(function*() {
+            const modelId = Seat.modelIdOf(id)
+            const routeConfig = yield* Effect.fromResult(Route.openai({ apiKey: Redacted.make(apiKey) })).pipe(
+              Effect.mapError((error) => new Seat.SeatUnresolved({ seat: id, message: error.message }))
+            )
+            const model = yield* Route.toModel(routeConfig).pipe(
+              Effect.provideService(RequestExecutor.RequestExecutor, executor)
+            )
+            return Seat.make({
+              id,
+              modelId,
+              model,
+              route: FlowEngineLike.routeResolver(routeConfig),
+              contextWindowTokens: SeatResolver.contextWindowTokensFor(modelId)
+            })
           })
-        }
       })
-    }
+    })
   ).pipe(Layer.provide(executorLayer))
 
 /** One model-backed step: answer a question in one short sentence. */
@@ -126,11 +126,11 @@ export const liveLayer = (apiKey: string) =>
     Layer.provideMerge(Agent.layerDefaults),
     // The configured seat judges completions through the same evaluator API.
     Layer.provideMerge(
-      Layer.unwrap(effect {
-        const resolver = try SeatResolver.SeatResolver
-        const seat = try resolver.resolve("openai:gpt-4o-mini")
+      Layer.unwrap(Effect.gen(function*() {
+        const resolver = yield* SeatResolver.SeatResolver
+        const seat = yield* resolver.resolve("openai:gpt-4o-mini")
         return Evaluator.layerFromSeat(seat)
-      }).pipe(Layer.provide(liveOpenAiSeats(apiKey)))
+      })).pipe(Layer.provide(liveOpenAiSeats(apiKey)))
     ),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
@@ -138,19 +138,19 @@ export const liveLayer = (apiKey: string) =>
   )
 
 /**
- * Runs the workflow against a real OpenAI seat. Dies with a plain `Error`
- * when `OPENAI_API_KEY` is unset, so a caller sees an honest refusal instead
- * of a mysterious `SeatUnresolved` three layers down.
+ * Runs the workflow against a real OpenAI seat. Fails at construction with a
+ * plain `Error` when `OPENAI_API_KEY` is unset, so a caller sees an honest
+ * refusal instead of a mysterious `SeatUnresolved` three layers down.
  *
  * @category constructors
  * @since 0.1.0
  */
-export effect function main(question: string) {
-  const apiKey = envVar("OPENAI_API_KEY")
+export const main = (question: string) => {
+  const apiKey = process.env.OPENAI_API_KEY
   if (apiKey === undefined || apiKey === "") {
-    return try die(new Error("Set OPENAI_API_KEY to run this live smoke test"))
+    throw new Error("Set OPENAI_API_KEY to run this live smoke test")
   }
-  return try LiveSmokeWorkflow.execute(
+  return LiveSmokeWorkflow.execute(
     { question },
     { executionId: `live-smoke-${Date.now()}` }
   ).pipe(

@@ -159,7 +159,7 @@ const securityReview = Smithers.SecurityReview({
         "A live smoke test that runs without an explicit opt-in because vitest.config.ts masks only OPENAI_API_KEY."
       ],
       paths: [
-        "examples/12-agent-live-smoke.vibe",
+        "examples/12-agent-live-smoke.ts",
         "examples/13-agent-live-smoke-local.vibe",
         "examples/14-agent-live-smoke-gemini.vibe",
         "test/examples/12-*.test.ts",
