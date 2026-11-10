@@ -210,3 +210,21 @@ test("sidecars stay paired when a project's program reaches another package's na
   assert.deepEqual(listed("lib"), ["src/value.d.vibe.ts"])
   assert.match(readFileSync(join(dir, "app/.vibe/declarations/src/same/main.d.vibe.ts"), "utf8"), /nested/)
 }))
+
+test("a package's published src/test helpers get sidecars; its own test directory does not", () => fixture(dir => {
+  // An export map names .vibe/declarations/src/test/TestJournal.d.vibe.ts for @smthrs/journal/test/TestJournal,
+  // so a consumer without the vibelang-source condition needs that sidecar to exist.
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "test-helper-fixture", type: "module" }))
+  mkdirSync(join(dir, "src/test"), { recursive: true })
+  mkdirSync(join(dir, "test"), { recursive: true })
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({
+    vibe: { sidecarDir: ".vibe/declarations" },
+    compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true, noEmit: true },
+    include: ["src/**/*", "test/**/*"]
+  }))
+  writeFileSync(join(dir, "src/value.vibe"), "export const value = 1\n")
+  writeFileSync(join(dir, "src/test/helper.vibe"), "export const helper = 2\n")
+  writeFileSync(join(dir, "test/support.vibe"), "export const support = 3\n")
+  const [project] = sidecarProjects(dir)
+  assert.deepEqual(project.native.map(file => relative(dir, file)), ["src/test/helper.vibe", "src/value.vibe"])
+}))

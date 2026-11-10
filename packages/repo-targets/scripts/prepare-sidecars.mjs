@@ -21,8 +21,11 @@ const excluded = new Set([
 ])
 const slash = path => path.split("\\").join("/")
 
+// A package's src/test holds published test helpers (an export map names their sidecars), not tests.
+const skipped = (directory, name) => excluded.has(name) && !(name === "test" && basename(directory) === "src")
+
 const nativeFiles = directory => readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
-  if (entry.isSymbolicLink() || excluded.has(entry.name)) return []
+  if (entry.isSymbolicLink() || skipped(directory, entry.name)) return []
   const file = join(directory, entry.name)
   if (entry.isDirectory()) return nativeFiles(file)
   return entry.name.endsWith(".vibe") && !/\.(?:test|spec|bench|test-d|e2e|integration)\.vibe$/.test(entry.name) &&
