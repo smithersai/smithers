@@ -4,6 +4,7 @@ import { it } from "@effect/vitest"
 import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { handle, handleConversations, type Conversations, type Histories } from "../worker/Http.vibe"
 import type { ActionsApi } from "../worker/ActionsHttp.vibe"
+import { signedOutGateway } from "../worker/SandboxHttp.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 import { MAX_POST_BYTES, PostBody } from "../src/core/wire.vibe"
 import { validBodyLength } from "../src/core/protocolDecision.vibe"
@@ -173,7 +174,11 @@ it.live("http/doors", () => run("http/doors", Door, (input) => effect {
   const histories: Histories = { page: () => Effect.fail(failed), write: () => Effect.fail(failed), events: () => Effect.fail(failed) }
   const paths = { list: "/api/actions", commands: "/api/actions/commands", runs: "/api/actions/runs?flow=x", "bad-run": "/api/actions/runs/!", health: "/api/health", sandbox: "/api/sandboxes/room", missing: "/api/nowhere" } as const
   const web = try HttpClientRequest.toWeb(HttpClientRequest.get(`http://fuzz.test${paths[input.path]}`))
-  const provided = Effect.provideService(input.bare ? handleConversations(unused) : handle(unused, histories, undefined, input.actions ? api : undefined, input.commit), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
+  // The sandbox door's gateway records each read and answers one running sandbox.
+  const reads: Array<string> = []
+  const box = { id: "s0", generation: 1, sequence: 0, role: "contributor" as const, status: "running" as const, allowance: 60000, used: 0, remaining: 60000, resetAt: 0, output: "" }
+  const gateway = { ...signedOutGateway, sandbox: (conversation: string) => sync(() => { reads.push(conversation); return box }) }
+  const provided = Effect.provideService(input.bare ? handleConversations(unused) : handle(unused, histories, gateway, input.actions ? api : undefined, input.commit), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
   const response = try provided
   const health = input.path === "health"
   if (health) {
@@ -182,7 +187,12 @@ it.live("http/doors", () => run("http/doors", Door, (input) => effect {
   }
   if (input.path === "missing") return response.status === 404
   if (input.bare) return response.status === 404
-  if (input.path === "sandbox") return response.status < 500
+  if (input.path === "sandbox") {
+    if (response.status !== 200 || reads.length !== 1 || reads[0] !== "room") return false
+    const body = (try promise(() => HttpServerResponse.toWeb(response).json())) as { readonly id?: string; readonly status?: string }
+    return body.id === box.id && body.status === box.status
+  }
+  if (reads.length > 0) return false
   if (!input.actions) return response.status === 503
   if (input.path === "bad-run") return response.status === 404
   if (input.path === "runs") return response.status === (input.fault ? 503 : 200)

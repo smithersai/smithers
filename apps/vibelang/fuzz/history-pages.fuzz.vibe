@@ -11,9 +11,24 @@ export const Request = Schema.Union([
   Schema.Struct({ what: Schema.Literal("search"), query: TextOrBoundary }),
 ])
 
+/** Each request has its own route, whose segment or query decodes back to the request; only text no URL can carry has none. */
 it.live("history/page-paths", () => run("history/page-paths", Request, (request) => {
   const path = pathOf(request)
-  return path === undefined || (typeof path === "string" && path.startsWith("/api/history"))
+  const text = request.what === "outline" ? "" : request.what === "search" ? request.query : request.id
+  let encodable = true
+  try { encodeURIComponent(text) } catch { encodable = false }
+  if (!encodable) return path === undefined
+  if (path === undefined) return false
+  const [pathname, query = ""] = path.split("?") as [string, string?]
+  const params = new URLSearchParams(query)
+  const decoded = (encoded: string): string | undefined => { try { return decodeURIComponent(encoded) } catch { return undefined } }
+  const segment = (prefix: string) => pathname.startsWith(prefix) && !pathname.slice(prefix.length).includes("/") && decoded(pathname.slice(prefix.length)) === text
+  switch (request.what) {
+    case "outline": return path === "/api/history"
+    case "epic": return segment("/api/history/epics/") && params.get("from") === String(request.from) && [...params.keys()].length === 1
+    case "commit": return segment("/api/history/commits/") && query === ""
+    case "search": return pathname === "/api/history/search" && params.get("q") === request.query && [...params.keys()].length === 1
+  }
 }))
 
 it.live("history/pages", () => run("history/pages", Schema.Struct({ history: History, cursor: Int, query: TextOrBoundary, request: Request }), ({ history, cursor, query, request }) => {

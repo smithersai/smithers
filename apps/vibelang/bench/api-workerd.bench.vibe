@@ -2,6 +2,9 @@
 import { it, expect } from "@effect/vitest"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import * as Sse from "effect/encoding/Sse"
+import { EventSchema } from "../src/core/schemas.vibe"
+import { HistoryEvent } from "../src/history/schemas.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { LiveFactory } from "../src/core/LiveFactory.vibe"
 import { serveApiObjects } from "../test/support/workerd.vibe"
@@ -13,6 +16,14 @@ const call = async (origin: string, path: string, init: { readonly method?: "GET
   const request = HttpClientRequest.make(init.method ?? "GET")(`${origin}${path}`).pipe(HttpClientRequest.setHeaders(init.headers ?? {}), init.body === undefined ? (same) => same : HttpClientRequest.bodyText(init.body, "application/json"))
   const response = await runPromise(http.execute(request))
   return { status: response.status, body: await runPromise(response.text) }
+}
+/** The first server-sent event of an events route, decoded with the client's own schema; none within 10 seconds fails. */
+const firstEvent = async <A, I>(url: string, schema: Schema.Codec<A, I>) => {
+  const response = await runPromise(http.execute(HttpClientRequest.get(url)))
+  expect(response.status).toBe(200)
+  const first = await runPromise(response.stream.pipe(Stream.decodeText(), Stream.pipeThroughChannel(Sse.decode()), Stream.runHead, Effect.timeoutOption("10 seconds"), Effect.map(Option.flatten)))
+  expect(Option.isSome(first), url).toBe(true)
+  return await runPromise(Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(Option.getOrThrow(first).data))
 }
 const object = async (origin: string, kind: string, name: string, method: string, args: ReadonlyArray<unknown>) => {
   const answer = await call(origin, `/__object/${kind}/${name}/${method}`, { method: "POST", body: JSON.stringify(args) })
@@ -81,9 +92,11 @@ it("the API Worker's production object bodies answer through workerd", { timeout
           const outline = await call(api.origin, "/api/history")
           expect(outline.status).toBe(200)
           expect((JSON.parse(outline.body) as { readonly seq: number }).seq).toBeGreaterThan(0)
-          const events = await runPromise(http.execute(HttpClientRequest.get(`${api.origin}/api/history/events?after=0`)))
-          expect(events.status).toBe(200)
-          await runPromise(Stream.runDrain(Stream.take(events.stream, 1)).pipe(Effect.timeout("3 seconds"), Effect.ignore))
+          // A fresh world's history log is empty, so a maintainer's plan, written through the object, is the event to read.
+          const after = (JSON.parse(outline.body) as { readonly seq: number }).seq
+          const title = `Bench plan ${++run}`
+          await object(api.origin, "history", "vibelang", "write", ["plan", { how: "append", epic: "", newEpic: title, target: "", title, task: "Task" }, { role: "maintainer", name: "Bench", agent: false }])
+          expect(await firstEvent(`${api.origin}/api/history/events?after=${after}`, HistoryEvent)).toMatchObject({ type: "EpicOpened" })
         })
         const typesUntil = async (room: string, last: string) => Array.from(await runPromise(Stream.runCollect(factory.events(room, 0).pipe(Stream.takeUntil((event) => event.type === last), Stream.timeout("20 seconds"))))).map((event) => event.type)
         const tour = workload(bench, "api-objects-tour", "async", async () => {
@@ -123,9 +136,7 @@ it("the API Worker's production object bodies answer through workerd", { timeout
           const read = await call(api.origin, `/api/actions/runs/${id}`)
           expect(read.status).toBe(200)
           expect(JSON.parse(read.body)).toMatchObject({ id, flow: "vibelang/Tour", door: "button" })
-          const events = await runPromise(http.execute(HttpClientRequest.get(`${api.origin}/api/actions/runs/${id}/events`)))
-          expect(events.status).toBe(200)
-          await runPromise(Stream.runDrain(Stream.take(events.stream, 1)).pipe(Effect.timeout("3 seconds"), Effect.ignore))
+          expect((await firstEvent(`${api.origin}/api/actions/runs/${id}/events`, EventSchema)).seq).toBeGreaterThan(0)
           const cancelled = await call(api.origin, `/api/actions/runs/${id}`, { method: "DELETE" })
           expect(cancelled.status).toBe(200)
           const next = `${id}-again`

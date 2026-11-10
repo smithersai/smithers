@@ -45,8 +45,9 @@ it.live("actions/history-host", () => run("actions/history-host", Input, (input)
       let settled = false
       for (let turn = 0; turn < input.alarms; turn++) settled = (try host.alarm(product, MAINTAINER))._tag === "Settled" || settled
       if (input.cancel) {
+        // Cancelling is idempotent: a held, settled or absent run all answer undefined.
         const cancelled = host.cancel() catch () => "refused"
-        if (cancelled !== undefined && cancelled !== "refused") throw new Finding({ report: "cancel answered a value" })
+        if (cancelled !== undefined) throw new Finding({ report: `cancel answered ${String(cancelled)}` })
       }
       // A receipt is asked for once an alarm settled the run, or once a cancellation was recorded.
       if (!runs) {

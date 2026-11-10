@@ -18,7 +18,11 @@ it.live("reply/reasons", () => run("reply/reasons", Code, (code) => {
 it.live("reply/failure-tags", () => run("reply/failure-tags", Schema.Union([
   Schema.Unknown, Schema.Struct({ _tag: Schema.Unknown }),
   Schema.Struct({ _tag: Schema.Struct({ toString: Schema.Int }) }),
-]), (value) => typeof Reply.tagOf(value) === "string"))
+  Schema.Struct({ _tag: Text }),
+]), (value) => {
+  const tag = typeof value === "object" && value !== null && "_tag" in value ? (value as { readonly _tag: unknown })._tag : undefined
+  return Reply.tagOf(value) === (typeof tag === "string" ? tag : "defect")
+}))
 
 it.live("reply/failure-reasons", () => run("reply/failure-reasons", Schema.Struct({ tag: Schema.Union([Text, Schema.Literals(["@smthrs/agent/Seat/SeatUnresolved", "x/StructuredOutputFailure"])]), code: Code, failed: Schema.Boolean }), ({ tag, code, failed }) => {
   const progress = { ...Reply.started, failed: failed ? code : undefined }

@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "2"
+size 3
+bias 4
+null-prototype false
+key 985659722
+tape 3TJistb-FJU0QLZZsOxZcS0KPlJ7ULQRCN6OZKZAWIh-QRVUTyZDo6OyYsAF8k7cHhBpOoRnR3PIsCzJtAB9skIbSK_OSwx3iB4lKpFhhBv95RdmIr_WS_Gq2qKfWR0LZ9p-2zHIldf2ZleyWeTcX8BAKNVfzbAAJ--pNyjn0D71H4N6IuO7VfJIQVTBrsZ9EKAKiSRfnIrkk6DuUsPLZuK79frCAMjsIzJ5Q51Bhbez-BN_7bdICBxsBvfYgxM2K4mDbtC4GSagkBhFGUG9NT3YFtL_J3eyGPIFKQng8487_LfDY_U5AF36hQgWzh41BTSFDtjjCywOVBlaLsMgk7eJOI4ML9WnAL_86JTYFUVJqOJhhNzIOHdF-LwHGqX15x9CB8BUTQIm3hT4B38tiLLtgsqzsvr9L5O9itHBzGoa2QFTbKcDmDOnGWV1bJUttLEa6hLvC46xJI4CcSoD1pMBNrdrhTbWWtrgbH0wl2_zdLYcFmoTfaBtnoxMTKvVhT-BS9PC8NS5kId2R3Nq5Ewo6fyRZSFJhdfkEhN3moCAozNwx0HnVlGXm89Ox8IE7KCAeOZGeqjCTSIFAf5fhVsSPJ-eg4RXgVryIcDQNq6_UhC8fbPPyfjk0ERLLz54j6W8nPf1g1xlS2b1GRJE-g1vTKQUZ0R99053x0fcFOmbbYKVLBdr236MDf0FL5TZbXImpLRb1GtXlByEtpbhDmCXGDUUIAMAA9OUmGQzzKKVkTSZydA2qHO0xFaCkyzX9a93ogkq3QoxxIK3S3_PnsH95WcAknf0npwhiQ9ZpLFOPv8ezh7dDeqbMuEXV8AfVHSWIm2pXkgbeAShCNSJYCDCvZY_KkXx48Pzn8GJ8Vyhql9MEJkz9B5TrkIXVqYQper4mPP1QsCjrnzdSH-IFDG6rBnP8FxzSEkoHaf6fjMjuqH6LtoYlQ3WJFfYZC98oNXsxkyE72DOLGXFMqGTSkExmjnEaVjmj4wME-9FJmopgH57PA_iLY9m6BKsae3YkIMSK8NntwIttdM3zTehU0MSDmkMB0XySHTuVE_M-m8iND4GKwXH1eW6HXL-p6ELIx9sFA4KJqCR6_FfrujcF6f86-A2jVzTWeIZ9ZTVMTrHV443Dt8Lg8JeyCSl5LcBxkJ3o7gtCf4HOWBxv1FZrHCkJp8r5u2sikkqVHG-ZHuWqYflAth9cKM5klLEgAi2cPZdWEX99Yv-XJau8FKrbknAgUOdUMJLCZtuMgihZfUQ7fYYj7isPsjIzN_3YFGBiCW0kWm1KhGXQsk8Rg6SGg_euXnMNa2uKZ3fgaT7hAbha9UJHrqcE4nYE8PIbeQWJy5LDQmdlr0v0uzuQt7NE5T939Dti4vJNOveb0EpQJQQjmXBk9NXl6cPn3i0fhuv9Zo1iP8c7huhKcKmuCQye4B98x0qAEP0mAOrhORVG4YvPGEPEjIxz2jhuZYPKFJ9_GgNBSyUX-okfnk-7yDXcskGjrcEcVQx6mCI0i3fZsSqohal9-1jsuQDatURH_JN2KsWXozIDJD1WHOWQd_gYX59JXXnHoI-LJTmUQCAkCvRTqO-YKuVYqdbuspDx1LBtGsjDC9SzG7cc1cQG_OAFe-jYkbwExMm6Ni6WMcg4o22r3zQ8rSvNAbKAPJzr1fnTAg8HsSWshM61kyvn-A4t_5Hxrh7kkhC3MToD8hXppCzh7p7vEeLYqjdLP4ZUpVxiZZScNoxB793EvmC7c3fpGqTi6VFwTJV5OJo2GOnZET52cEeJYZ5ho_lAnteUJF8h9jXL-blxfTqmki9eIKfrhhPtykVLn39tSPBdgdhG0FPEpukvKUTRVCzWnv2SHX6XdlswOPnXFOIbS_B0KOrVi0NqFXGL9t35D3cR6XVj51JNAh8xARUHSUFrBRgokdcMJ0I1a9IcH8JylHD8DeW8_9Y1oZgBH4UrkFRqoJWqAumZlcNBZR8hdPQUcLZXHiO96Sg2Hao4R4
+schedule-key 4198252580
+schedule 
+signature "ReturnedFalse"
+path 0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0
+codec "json"
+value "{\"model\":{\"mode\":\"pending\",\"role\":\"community\",\"status\":\"ready\",\"outline\":{\"seq\":0,\"main\":\"\",\"epics\":[],\"open\":[]},\"pages\":[],\"commit\":{\"seq\":0,\"commit\":null,\"real\":[]},\"commitId\":\"\",\"matches\":{\"seq\":0,\"query\":\"\",\"commits\":[]},\"hash\":\"\",\"open\":[],\"filter\":\"\",\"dialog\":false,\"form\":{\"how\":\"append\",\"title\":\"\",\"epic\":\"\",\"newEpic\":\"\",\"target\":\"\",\"task\":\"\"},\"lane\":\"\",\"noteSection\":\"evidence\",\"noteText\":\"\",\"error\":\"\",\"busy\":false,\"epoch\":0,\"latest\":0},\"message\":{\"_tag\":\"SubmittedNote\",\"id\":\"\"}}"
+# ReturnedFalse
+# {"model":{"mode":"pending","role":"community","status":"ready","outline":{"seq":0,"main":"","epics":[],"open":[]},"pages":[],"commit":{"seq":0,"commit":null,"real":[]},"commitId":"","matches":{"seq":0,"query":"","commits":[]},"hash":"","open":[],"filter":"","dialog":false,"form":{"how":"append","title":"","epic":"","newEpic":"","target":"","task":""},"lane":"","noteSection":"evidence","noteText":"","error":"","busy":false,"epoch":0,"latest":0},"message":{"_tag":"SubmittedNote","id":""}}
