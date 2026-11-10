@@ -154,10 +154,8 @@
       "default": "./.vibelang/js/src/MemoryEntries.js"
     },
     "./ModelAuthor": {
-      "types": {
-        "default": "./src/ModelAuthor.ts"
-      },
-      "vibelang-source": "./src/ModelAuthor.ts",
+      "types": "./.vibe/declarations/src/ModelAuthor.d.vibe.ts",
+      "vibelang-source": "./src/ModelAuthor.vibe",
       "default": "./.vibelang/js/src/ModelAuthor.js"
     },
     "./internal/prompts": {

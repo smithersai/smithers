@@ -7,7 +7,7 @@ import * as RecordedModel from "@smthrs/testing/RecordedModel"
 import { Effect, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import type * as Author from "../src/Author.vibe"
-import * as ModelAuthor from "../src/ModelAuthor.ts"
+import * as ModelAuthor from "../src/ModelAuthor.vibe"
 import * as Prompt from "../src/Prompt.ts"
 import { countingEntry, flow, runChain } from "./harness.ts"
 

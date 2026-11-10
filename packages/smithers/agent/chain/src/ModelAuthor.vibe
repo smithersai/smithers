@@ -101,20 +101,20 @@ const describeFailure = (error: unknown): string => {
  * @slop
  */
 export const make = (config: Config): Effect.Effect<Author.Service, never, Model.Model> =>
-  Effect.gen(function*() {
-    const model = yield* Model.Model
+  effect {
+    const model = try Model.Model
     const request = requestFor(config)
     return Author.make({
       author: Effect.fn("ModelAuthor.author")((input) =>
-        Effect.gen(function*() {
-          const events = Array.from(yield* Stream.runCollect(model.stream(request(input))))
-          const settled = ModelEvent.ModelEvent.settledMessage(events)
+        effect {
+          const events = Array.from(try Stream.runCollect(model.stream(request(input))))
+          const settled = try sync(() => ModelEvent.ModelEvent.settledMessage(events))
           // `settledMessage` folds an unsettled stream to stopReason
           // "aborted", so one guard covers interruption, truncation
           // ("length"), filtering, and provider errors alike — none of
           // them may pass as a complete authored output.
           if (settled.message.stopReason !== "stop") {
-            return yield* unavailable(
+            throw unavailable(
               `the model stream settled with stopReason "${settled.message.stopReason}"`,
               settled.message.stopReason
             )
@@ -124,10 +124,10 @@ export const make = (config: Config): Effect.Effect<Author.Service, never, Model
             // A reasoning-only response is a seat failure, not an empty
             // authored script (the harness's sealed steps in
             // packages/smithers/agent/harness/src/CellTurn.ts fail the same way).
-            return yield* unavailable("the model returned no visible text", "no_text")
+            throw unavailable("the model returned no visible text", "no_text")
           }
           return text
-        }).pipe(
+        }.pipe(
           Effect.mapError((error) =>
             error instanceof Author.AuthorError
               ? error
@@ -136,7 +136,7 @@ export const make = (config: Config): Effect.Effect<Author.Service, never, Model
         )
       )
     })
-  })
+  }
 
 /**
  * The production author layer: `Author` from `Model.Model`.
