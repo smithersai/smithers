@@ -394,6 +394,12 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       namespaceId: 71002,
       simple: { limit: 3000, period: 60 }
     })
+    // The hosted-site broker's routes (decision 0165): a sign-in or Connect is at most five requests, so this lets
+    // about 60 a minute share a network.
+    const brokerLimit = yield* Cloudflare.RateLimit("BROKER_LIMIT", {
+      namespaceId: 71003,
+      simple: { limit: 300, period: 60 }
+    })
 
     /**
      * Starts `auth/RecheckRole` on its own Durable Object, one execution per session and the check it replaces, so one
@@ -445,17 +451,23 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         }
         const runtime = yield* RuntimeContext
         const brokerRequest = yield* HttpServerRequest.HttpServerRequest
-        if (AuthBroker.handles(brokerRequest.url)) return yield* brokerObjects.getByName("hosted").fetch(brokerRequest).pipe(Effect.provideService(RuntimeContext, runtime))
-        if (GitHub.Delegation.handles(brokerRequest.url)) return yield* GitHubConnection.route(connectionObjects, connectionSetup).pipe(Effect.provideService(RuntimeContext, runtime))
         const throttle = Effect.flatMap(
           HttpServerRequest.HttpServerRequest,
           Throttle.make({
             shape: { limit: (key) => shapeLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) },
             telemetry: {
               limit: (key) => telemetryLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime))
-            }
+            },
+            broker: { limit: (key) => brokerLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) }
           })
         )
+        // Every hosted site's sign-in shares one object: a network past its allowance never reaches it.
+        if (AuthBroker.handles(brokerRequest.url)) {
+          const limited = yield* throttle
+          if (Option.isSome(limited)) return limited.value
+          return yield* brokerObjects.getByName("hosted").fetch(brokerRequest).pipe(Effect.provideService(RuntimeContext, runtime))
+        }
+        if (GitHub.Delegation.handles(brokerRequest.url)) return yield* GitHubConnection.route(connectionObjects, connectionSetup).pipe(Effect.provideService(RuntimeContext, runtime))
         const checks = Layer.succeed(SignIn.RoleChecks, yield* roleChecks)
         const starter = yield* flowStarter
         return yield* runnerAdmin.admit(

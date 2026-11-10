@@ -15,7 +15,7 @@ import { Node } from "@smthrs/plan"
 import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { leastRole, roleOf, issuePolicyAction, wikiPolicyAction, type Action as PolicyAction } from "../src/core/conversation.vibe"
 import { Identity, viewer, Denied, type Policy } from "../src/core/roles.vibe"
-import { type Storage, postExecutionId } from "./Objects.vibe"
+import { type Storage, postExecutionId, EXECUTION_RETENTION } from "./Objects.vibe"
 import * as Sequencer from "./Sequencer.vibe"
 import { afterOf, eventStream } from "./Http.vibe"
 import { logOver } from "./ObjectStorage.vibe"
@@ -188,7 +188,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       try Effect.logInfo("vibelang.account").pipe(Effect.annotateLogs({ step, outcome }))
       return null
     }, "vibelang.account." + step)))
-    const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Mutation._tag }, registration).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+    const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Mutation._tag, retention: EXECUTION_RETENTION }, registration).pipe(Layer.provide(ObjectDatabase.layer(storage)))
     provide runtime {
       try Effect.orDie((try FlowRuntime.FlowRuntime).execute(Mutation, { executionId, payload: { step } }))
     }
@@ -205,6 +205,22 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
     }),
     Effect.withSpan("vibelang.account.read"),
   )
+
+  /**
+   * A sign-in nobody finished leaves its row; the next start deletes every expired one, as the broker's own store
+   * does, so an unauthenticated caller can hold at most ten minutes of rows.
+   */
+  effect function pruneExpired() {
+    const now = try Clock.currentTimeMillis
+    let pruned = 0
+    for (const [prefix, expiresOf] of [["broker/", (value: unknown) => (value as { readonly claims?: { readonly expires?: unknown } } | undefined)?.claims?.expires], ["sign-in/", (value: unknown) => (value as { readonly expires?: unknown } | undefined)?.expires]] as const) {
+      for (const [key, value] of try promise(() => storage.list({ prefix }))) {
+        const expires = expiresOf(value)
+        if (typeof expires !== "number" || expires <= now) { try remove(key); pruned += 1 }
+      }
+    }
+    try Effect.logInfo("vibelang.account.prune").pipe(Effect.annotateLogs({ pruned }))
+  }
 
   effect function handle(bodyText: string) {
     const request = try HttpServerRequest.HttpServerRequest
@@ -262,6 +278,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       return HttpServerResponse.empty({ status: 303, headers: { ...noStore, location: "/?issues=1" } })
     })
     if (path === "/api/auth/sign-in" && request.method === "GET") return try mutation("start", effect {
+      try pruneExpired()
       if (setup.broker !== undefined && broker === undefined) return json({ error: "sign-in unavailable" }, 503)
       if (broker !== undefined) {
         const pending = try Effect.orDie(broker.begin())

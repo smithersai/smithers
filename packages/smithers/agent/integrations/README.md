@@ -99,7 +99,11 @@ consumption, so corrupt database metadata cannot retarget or extend a grant. Bro
 base64 key and context bound to each digest. `memoryStore()` is ephemeral, for in-memory hosts and protocol tests.
 
 `serve()` supplies `/api/auth/broker/start`, `/api/auth/broker/exchange` and the existing `/api/auth/callback`.
-`handles()` admits only callback state with exactly `broker_` plus a 43-character nonce. The ordinary host sign-in remains separate. The registry
+`handles()` admits only callback state with exactly `broker_` plus a 43-character nonce. The ordinary host sign-in remains separate.
+`screen()` answers whether `serve()` would act on a request: a site's signature on start and exchange, the broker's
+browser cookie on callback and consent. A host journals only screened requests and answers the rest `refusal(origin)`,
+the same `400`, so an unauthenticated caller writes nothing. The store's conditional writes are the single-use points,
+so a host needs no lock across requests. The registry
 must list only origins the deployment serves: subdomains and custom domains, never wildcard suffix matching.
 All origins must be canonical HTTPS origins; `localDevelopment` explicitly permits loopback HTTP for local hosts.
 No path, userinfo, query or fragment is accepted as an origin. Use a distinct secret per origin.

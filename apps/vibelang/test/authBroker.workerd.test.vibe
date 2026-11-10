@@ -169,3 +169,57 @@ it.live("connects through smithers.sh, writes once as the person, and every revo
     })
   }
 }), 120_000)
+
+/** The broker object's settled and running engine executions. */
+effect function executions(broker: string) {
+  const http = try HttpClient.HttpClient
+  const tables = try (try http.get(broker + "/__journal")).json as ReadonlyArray<{ readonly name: string; readonly rows: ReadonlyArray<unknown> }>
+  return tables.find((table) => table.name === "flows_runs")?.rows.length ?? 0
+}
+
+it.live("workerd: a request the broker refuses before writing creates no execution in its one object", () => scoped(effect {
+  const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
+  const broker = host.origin.replace("127.0.0.1", "localhost")
+  const http = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))))
+  try signIn(host.origin).pipe(Effect.provideService(HttpClient.HttpClient, http))
+  const before = try executions(broker).pipe(Effect.provideService(HttpClient.HttpClient, http))
+  const refused = try.all [
+    http.get(broker + GitHub.Auth.Broker.START + "?origin=x&return_to=y"),
+    http.get(broker + GitHub.Auth.Broker.CALLBACK + "?" + new URLSearchParams({ state: "broker_" + "x".repeat(43), code: "c" })),
+    http.get(broker + GitHub.Auth.Broker.CONSENT + "?consent=" + "x".repeat(43)),
+    http.execute(HttpClientRequest.post(broker + GitHub.Auth.Broker.EXCHANGE).pipe(HttpClientRequest.bodyJsonUnsafe({ origin: host.origin, request: "forged" }))),
+    http.execute(HttpClientRequest.post(broker + GitHub.Auth.Broker.CONSENT).pipe(HttpClientRequest.setHeader("sec-fetch-site", "same-origin"), HttpClientRequest.setHeader("origin", "null"), HttpClientRequest.bodyText("consent=x&answer=connect", "application/x-www-form-urlencoded"))),
+  ]
+  const after = try executions(broker).pipe(Effect.provideService(HttpClient.HttpClient, http))
+  try Effect.try(() => {
+    expect(before).toBeGreaterThan(0)
+    expect(refused.map((response) => response.status)).toEqual([400, 400, 400, 400, 400])
+    expect(after).toBe(before)
+  })
+}), 120_000)
+
+it.live("workerd: a slow GitHub exchange in one callback holds no other person's sign-in", () => scoped(effect {
+  const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
+  const broker = host.origin.replace("127.0.0.1", "localhost")
+  const http = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))))
+  const start = try http.get(host.origin + "/api/auth/sign-in")
+  const atBroker = try http.get(start.headers.location!)
+  const browser = atBroker.cookies.cookies["smithers-broker"]!.value
+  const form = try (try http.get(atBroker.headers.location!)).text
+  const approved = try http.get(form.match(/href="([^"]+)"/)![1]!.replaceAll("&amp;", "&"))
+  try http.get(broker + "/__hold")
+  const slow = try Effect.forkChild(http.execute(HttpClientRequest.get(approved.headers.location!).pipe(HttpClientRequest.setHeader("cookie", "smithers-broker=" + browser))))
+  // The held callback is inside GitHub's exchange before the second sign-in starts.
+  try Effect.flatMap(http.get(broker + "/__held"), (response) => response.json).pipe(
+    Effect.flatMap((held) => held === 1 ? Effect.void : Effect.fail("not held")),
+    Effect.retry(Schedule.spaced("50 millis")), Effect.timeout("20 seconds"),
+  )
+  const other = try http.get(host.origin + "/api/auth/sign-in")
+  const otherAtBroker = try http.get(other.headers.location!).pipe(Effect.timeout("10 seconds"))
+  try http.get(broker + "/__release")
+  const released = try Fiber.join(slow).pipe(Effect.timeout("20 seconds"))
+  try Effect.try(() => {
+    expect(otherAtBroker.status).toBe(303)
+    expect(released.status).toBe(303)
+  })
+}), 120_000)

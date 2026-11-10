@@ -64,6 +64,9 @@ export class HostedConnection {
 }
 export class HostedBroker {
   lines: Array<string> = []
+  /** While set, GitHub's token exchange waits: a slow GitHub, with `held` exchanges waiting on it. */
+  gate: { readonly promise: Promise<void>; readonly release: () => void } | undefined
+  held = 0
   tokens = runPromise(tokenService())
   service: Promise<Effect.Success<ReturnType<typeof SmithersBroker.make>>> | undefined
   constructor(readonly state: State, readonly env: Env) {}
@@ -76,6 +79,12 @@ export class HostedBroker {
       ...tokens.github,
       authorizeUrl: ({ state, codeChallenge, redirectUri }) => origin.broker + "/__github?" + new URLSearchParams({ state, challenge: codeChallenge, redirect_uri: redirectUri }),
       exchange: effect ({ code, codeVerifier, redirectUri }) => {
+        const gate = this.gate
+        if (gate !== undefined) {
+          this.held += 1
+          try promise(() => gate.promise)
+          this.held -= 1
+        }
         const key = "github/" + Redacted.value(code)
         const expected = try promise(() => this.state.storage.get(key)) as { challenge: string; redirectUri: string } | undefined
         try promise(() => this.state.storage.delete(key))
@@ -96,6 +105,18 @@ export class HostedBroker {
       } },
     }, github))
     const service = await this.service
+    if (url.pathname === "/__hold") {
+      let release = () => {}
+      const promise = new Promise<void>((resolve) => { release = resolve })
+      this.gate = { promise, release }
+      return HttpServerResponse.toWeb(HttpServerResponse.empty())
+    }
+    if (url.pathname === "/__release") {
+      this.gate?.release()
+      this.gate = undefined
+      return HttpServerResponse.toWeb(HttpServerResponse.empty())
+    }
+    if (url.pathname === "/__held") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(this.held))
     if (url.pathname === "/__logs") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(this.lines))
     if (url.pathname === "/__tokens") {
       const kept = await runPromise(exit(tokens.github.user(tokens.kept.accessToken)))

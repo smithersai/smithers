@@ -399,3 +399,85 @@ it.live("releases the issued pair even when identity lookup fails", () => effect
     expect(stats).toEqual({ live: 1, attempts: 1 })
   })
 })
+
+/** One web request to the broker's host, as a browser or site would send it. */
+effect function webOf(path: string, options: { readonly body?: string; readonly cookie?: string; readonly method?: "GET" | "POST"; readonly headers?: Record<string, string>; readonly streamed?: boolean } = {}, home = "https://smithers.sh") {
+  const method = options.method ?? (options.body === undefined ? "GET" : "POST")
+  return HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(HttpClientRequest.make(method)(home + path).pipe(
+    HttpClientRequest.setHeaders({ cookie: options.cookie ?? "", ...options.headers }),
+    request => options.body === undefined ? request
+      // Streamed: no Content-Length, so only reading the body finds it too long.
+      : options.streamed === true ? HttpClientRequest.bodyStream(request, Stream.make(new TextEncoder().encode(options.body)), { contentType: "application/x-www-form-urlencoded" })
+      : HttpClientRequest.bodyText(request, options.body, "application/x-www-form-urlencoded"),
+  )))
+}
+/** What the host would journal, for one request. */
+effect function screened(broker: ReturnType<typeof durable>, path: string, options: Parameters<typeof webOf>[1] = {}, home = "https://smithers.sh") {
+  return try Broker.screen(broker, "https://smithers.sh").pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, try webOf(path, options, home)))
+}
+it.effect("screens out every request the broker refuses before it writes, and admits each step of a real sign-in and Connect", () => effect {
+  const f = try fixture()
+  const connections: Broker.Connections = { install: () => succeed({ delegation: "d".repeat(43), expires: 1 }) }
+  const keys = try Core.CookieKeys.make({ primary: secret }, "primary")
+  const broker = durable(try Broker.make({ origin: "https://smithers.sh", sites, keys, store: try Broker.memoryStore(), encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), github: f.github, connections }))
+  const next = try f.client.begin({ connect: { person: 7 } })
+  const startPath = Broker.START + "?" + new URLSearchParams({ origin, return_to: next.returnTo })
+  const startAdmitted = try screened(broker, startPath)
+  const started = try call(broker, startPath)
+  const browser = "__Host-smithers-broker=" + started.cookies.cookies["__Host-smithers-broker"]!.value
+  const state = new URL(started.headers.location!).searchParams.get("state")!
+  const callbackPath = Broker.CALLBACK + "?" + new URLSearchParams({ state, code: "github-code" })
+  const callbackAdmitted = try screened(broker, callbackPath, { cookie: browser })
+  const callback = try call(broker, callbackPath, undefined, browser)
+  const consent = new URL(callback.headers.location!).searchParams.get("consent")!
+  const consentCookie = "__Host-smithers-broker=" + callback.cookies.cookies["__Host-smithers-broker"]!.value
+  const consentPath = Broker.CONSENT + "?" + new URLSearchParams({ consent })
+  const form = new URLSearchParams({ consent, answer: "connect" }).toString()
+  const post = { method: "POST" as const, body: form, cookie: consentCookie, headers: { origin: "null", "sec-fetch-site": "same-origin" } }
+  const pageAdmitted = try screened(broker, consentPath, { cookie: consentCookie })
+  const answerAdmitted = try screened(broker, Broker.CONSENT, post)
+  const refusals = [
+    try screened(broker, Broker.START + "?origin=x&return_to=y"),
+    try screened(broker, Broker.START + "?" + new URLSearchParams({ origin: other, return_to: next.returnTo })),
+    try screened(broker, Broker.START + "?" + new URLSearchParams({ origin, return_to: next.returnTo + "0" })),
+    try screened(broker, Broker.START, { method: "POST", body: "{}" }),
+    try screened(broker, callbackPath),
+    try screened(broker, callbackPath, { cookie: browser + "0" }),
+    try screened(broker, Broker.CALLBACK + "?" + new URLSearchParams({ state, code: "" }), { cookie: browser }),
+    try screened(broker, Broker.CALLBACK + "?" + new URLSearchParams({ state, code: "x".repeat(4097) }), { cookie: browser }),
+    try screened(broker, Broker.CALLBACK + "?" + new URLSearchParams({ state: "broker_" + "x".repeat(43), code: "c" }), { cookie: browser }),
+    try screened(broker, consentPath),
+    try screened(broker, Broker.CONSENT + "?consent=short", { cookie: consentCookie }),
+    try screened(broker, Broker.CONSENT, { ...post, headers: { origin: "https://evil.test", "sec-fetch-site": "same-origin" } }),
+    try screened(broker, Broker.CONSENT, { ...post, headers: { origin: "null", "sec-fetch-site": "cross-site" } }),
+    try screened(broker, Broker.CONSENT, { ...post, body: new URLSearchParams({ consent, answer: "maybe" }).toString() }),
+    try screened(broker, Broker.CONSENT, { ...post, body: "x".repeat(2049) }),
+    try screened(broker, Broker.CONSENT, { ...post, cookie: browser }),
+    try screened(broker, Broker.EXCHANGE, { body: "not json" }),
+    try screened(broker, Broker.EXCHANGE, { body: JSON.stringify({ origin, request: "forged" }) }),
+    try screened(broker, Broker.EXCHANGE, { body: JSON.stringify({ origin: other, request: try f.client.redemption(next, "c".repeat(43)) }) }),
+    try screened(broker, Broker.EXCHANGE, { body: JSON.stringify({ origin, request: try f.client.redemption(next, "short") }) }),
+    try screened(broker, Broker.EXCHANGE, { body: JSON.stringify({ padding: "x".repeat(9000) }) }),
+    try screened(broker, Broker.EXCHANGE),
+    try screened(broker, "/no-route"),
+    try screened(broker, Broker.START),
+    try screened(broker, Broker.CONSENT, { ...post, body: "answer=connect" }),
+    try screened(broker, Broker.CONSENT, { ...post, body: form + "&pad=" + "x".repeat(3000), streamed: true }),
+  ]
+  const consentResponse = try Broker.serve(broker, "https://smithers.sh").pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, try webOf(Broker.CONSENT, post)))
+  const handoff = new URLSearchParams(new URL(consentResponse.headers.location!).hash.slice(1)).get("code")!
+  const exchangeBody = JSON.stringify({ origin, request: try f.client.redemption(next, handoff) })
+  const exchangeAdmitted = try screened(broker, Broker.EXCHANGE, { body: exchangeBody })
+  const crossHost = try screened(broker, startPath, {}, "https://foreign.test")
+  const refusal = Broker.refusal("https://smithers.sh")
+  try TestClock.adjust("11 minutes")
+  const staleStart = try screened(broker, startPath)
+  try Effect.try(() => {
+    expect([startAdmitted, callbackAdmitted, pageAdmitted, answerAdmitted, exchangeAdmitted]).toEqual([true, true, true, true, true])
+    expect([started.status, callback.status, consentResponse.status]).toEqual([303, 303, 303])
+    expect(refusals.map((admitted, index) => [index, admitted])).toEqual(refusals.map((_, index) => [index, false]))
+    expect([crossHost, staleStart]).toEqual([false, false])
+    expect(refusal.status).toBe(400)
+    expect(refusal.cookies.cookies["__Host-smithers-broker"]!.value).toBe("")
+  })
+})

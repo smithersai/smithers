@@ -98,7 +98,7 @@ test.each(["coedit seed", "issue"])("a valid paced %s upload lasting over ten se
 test("a throttled 8 MiB telemetry caller consumes no body", async () => {
   let pulls = 0
   let handled = 0
-  const limit = Throttle.make({ shape: { limit: () => Effect.succeed({ success: false }) }, telemetry: { limit: () => Effect.succeed({ success: false }) } })
+  const limit = Throttle.make({ shape: { limit: () => Effect.succeed({ success: false }) }, telemetry: { limit: () => Effect.succeed({ success: false }) }, broker: { limit: () => Effect.succeed({ success: false }) } })
   const check = Effect.flatMap(HttpServerRequest.HttpServerRequest, limit)
   const handler = HttpEffect.toWebHandler(afterBody(Effect.sync(() => {
     handled++
