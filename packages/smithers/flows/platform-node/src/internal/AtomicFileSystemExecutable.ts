@@ -76,8 +76,11 @@ const staged = new Map<string, { readonly path: string; touchedAt: number }>()
  */
 const stagedRoots = new Set<string>()
 const trusted = new Set<string>()
-const installHint = "install @smthrs/platform-node with its native helper, " +
-  "run cargo build --locked --release -p smithers-ffi --bin smithers-jj-export in a source checkout, " +
+// Put the complete source-checkout remedy before bounded CLI diagnostics cut it;
+// the long Cargo flag also survives diagnostic redaction of password-like `-p`.
+const installHint =
+  "first run cargo build --locked --release --package smithers-ffi --bin smithers-jj-export at the repository root; " +
+  "or install @smthrs/platform-node with its native helper, " +
   "or set SMITHERS_WORKSPACE_JJ_EXPORT_BINARY to its absolute path"
 
 const helperName = process.platform === "win32" ? "smithers-jj-export.exe" : "smithers-jj-export"

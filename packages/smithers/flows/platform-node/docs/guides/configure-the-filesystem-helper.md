@@ -36,11 +36,17 @@ The adapter runs `smithers-jj-export --atomic-fs` and uses the first of:
 5. `/usr/local/bin/smithers-jj-export`.
 
 An npm install resolves at step 3. A source checkout of the repository has no
-packaged helper; build one there with:
+packaged helper; from the repository root, build one there with:
 
 ```sh
-cargo build --locked --release -p smithers-ffi --bin smithers-jj-export
+cargo build --locked --release --package smithers-ffi --bin smithers-jj-export
 ```
+
+The build writes `target/release/smithers-jj-export`. With the override unset,
+`pnpm docs:check` and filesystem sandbox tests resolve that build directly.
+Each new workspace needs its own build, unless the helper is installed at
+`/usr/local/bin/smithers-jj-export`. Missing-helper errors lead with the full
+build command so it remains visible in bounded CLI diagnostics.
 
 To run a different helper, name it:
 
