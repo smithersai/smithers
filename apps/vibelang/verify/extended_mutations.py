@@ -5586,6 +5586,7 @@ cases.extend([('src/history/wireDecision.vibe', *case) for case in [
 ('wire-write-plan', 'writeOf', 'if (pathname === "/api/history/plan") return "plan"\n', '', 'plan is a write'),
 ('wire-write-approve', 'writeOf', 'if (pathname === "/api/history/approve") return "approve"\n', '', 'approve is a write'),
 ('wire-write-fold', 'writeOf', 'return "fold"', 'return "note"', 'each path names its own write'),
+('wire-write-export', 'writeOf', 'return "export"', 'return "fold"', 'the export path names the export'),
 ('wire-route-events-method', 'routeKind', '"/api/history/events" && method === "GET"', '"/api/history/events"', 'events are read by GET'),
 ('wire-route-write-method', 'routeKind', 'method === "POST" ? "write" : ""', '"write"', 'a write needs POST'),
 ('wire-route-read-method', 'routeKind', 'if (method === "GET" && (pathname', 'if ((pathname', 'a read needs GET'),
@@ -5654,3 +5655,24 @@ cases.extend([('src/core/conversation.vibe',*case) for case in [
 ]])
 
 cases.append(('src/core/issueGraphDecision.vibe','issues-link-complete','canLinkIssues','return next === 0','return false','a valid bounded parent path which avoids the child must be accepted'))
+
+# Lane vl-mythical-export: the git export's decisions and who may export (wiki/decisions/0020-mythical-history.md).
+cases.extend([('src/history/exportDecision.vibe', *case) for case in [
+('export-last-fold-match', 'lastFold', 'if (real[i]!.mythical === id) return i', 'if (real[i]!.mythical !== id) return i', 'a fold is found only among the commits folded into it'),
+('export-last-fold-first', 'lastFold', 'for (let i = real.length - 1; i >= 0; i--) {', 'for (let i = real.length - 1; i >= 0; i = i - 2) {', 'the last fold wins, whichever came before'),
+('export-tree-source', 'treeSource', 'return at < 0 ? "" : real[at]!.sha', 'return at < 0 ? "" : real[0]!.sha', 'a landed commit takes its last fold\'s tree'),
+('export-reservation', 'treeSource', 'return at < 0 ? "" : real[at]!.sha', 'return at <= 0 ? "" : real[at]!.sha', 'a commit folded once is no reservation'),
+('export-kept-overrun', 'kept', ' && planned[n] === previous[n]) {', ') {', 'a changed commit and everything after it is written again'),
+('export-same-notes', 'same', ' && a.notes === b.notes', '', 'a notes ref that moved is a change'),
+('export-moves-mythical', 'moves', '{ ref: names.mythical, before: published.mythical, after: candidate.mythical }', '{ ref: names.mythical, before: candidate.mythical, after: candidate.mythical }', 'the bookmark moves only from the value read'),
+('export-moves-notes', 'moves', '{ ref: names.notes, before: published.notes, after: candidate.notes }', '{ ref: names.notes, before: published.notes, after: published.notes }', 'the notes ref takes the prepared notes'),
+('export-moves-manifest', 'moves', '{ ref: names.manifest, before: published.manifest, after: candidate.manifest }', '{ ref: names.mythical, before: published.manifest, after: candidate.manifest }', 'the manifest is its own ref'),
+('export-confirm-landed', 'confirmed', 'if (same(observed, candidate)) return "published"', 'if (same(observed, published)) return "published"', 'only the candidate tuple is a publication'),
+('export-confirm-conflict', 'confirmed', '  return "conflict"\n', '  return "unchanged"\n', 'a tuple neither side wrote is a conflict'),
+]])
+cases.extend([('src/history/flowMachine.vibe', *case) for case in [
+('flow-export-agent', 'peopleOnly', ' || action === "export"', '', 'the agent never exports'),
+('flow-least-export', 'leastRole', 'case "export": return "maintainer"', 'case "export": return "contributor"', 'only a maintainer exports'),
+('flow-refusal-export-off', 'historyRefusal', 'if (refusal === "unsupported") return "Export is off."', 'if (refusal === "unsupported") return refusal', 'an off export says so'),
+('flow-refusal-export-check', 'historyRefusal', 'refusal === "tree" || refusal === "linear" || ', 'refusal === "tree" || ', 'every check refusal reads the same'),
+]])

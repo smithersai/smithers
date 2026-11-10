@@ -1,0 +1,53 @@
+// Where the History object publishes the mythical history (worker/HistoryExport.vibe; decision 0020, "The git export"):
+// off unless the setting names a GitHub repository and a token is given. The GitHub path itself runs on a recording in
+// test/export.github.test.vibe.
+import { describe, expect, it } from "@effect/vitest"
+import { HttpClient } from "effect/http"
+import { REF_NAMES } from "../src/history/export.vibe"
+import { exporterOf, OFF, off } from "../worker/HistoryExport.vibe"
+
+/** A client that fails the test if the exporter reaches it: an off export makes no request. */
+const unreachable = HttpClient.make(() => Effect.die("an off export made a request"))
+const token = Redacted.make("token-for-tests")
+
+describe("the export setting", () => {
+  for (const [setting, given] of [
+    [undefined, token],
+    ["off", token],
+    ["", token],
+    ["github:codeplanesmithers", token],
+    ["gitlab:codeplanesmithers/smithers-vibelang-e2e", token],
+    ["github:../x", token],
+    ["github:codeplanesmithers/smithers-vibelang-e2e", undefined],
+  ] as const) {
+    it.effect(`is off for ${JSON.stringify(setting)}${given === undefined ? " without a token" : ""}`, () => effect {
+      const exporter = try exporterOf(setting, given, unreachable)
+      const refused = try Effect.flip(exporter.repository.readRefs([REF_NAMES.mythical]))
+      try Effect.try(() => {
+        expect(exporter).toBe(off)
+        expect(exporter.names).toEqual(REF_NAMES)
+        expect([refused.code, refused.message.endsWith(OFF)]).toEqual(["unsupported", true])
+      })
+    })
+  }
+
+  it.effect("reaches the GitHub API it names, with the token, only when a call is made", () => effect {
+    const seen: Array<string> = []
+    const recording = HttpClient.make((request) => {
+      seen.push(`${request.method} ${request.url} ${request.headers["authorization"] === "Bearer token-for-tests"}`)
+      return Effect.die("stop here")
+    })
+    const github = try exporterOf("github:codeplanesmithers/smithers-vibelang-e2e", token, recording, REF_NAMES, "http://github.test")
+    const before = seen.length
+    try Effect.exit(github.repository.readBlob("e".repeat(40)))
+    try Effect.try(() => {
+      expect(before).toBe(0)
+      expect(seen).toEqual(["GET http://github.test/repos/codeplanesmithers/smithers-vibelang-e2e/git/blobs/" + "e".repeat(40) + " true"])
+    })
+  })
+
+  it.effect("names VibeLang's own refs: the bookmark, its notes and the manifest bookmark", () => effect {
+    const exporter = try exporterOf("github:smithersai/vibelang", token, unreachable)
+    try Effect.try(() => expect(exporter.names).toEqual({ mythical: "refs/heads/mythical", notes: "refs/notes/mythical", manifest: "refs/heads/smithers/history" }))
+  })
+})

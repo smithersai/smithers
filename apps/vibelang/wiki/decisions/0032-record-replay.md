@@ -71,6 +71,7 @@ it reads `HttpClient` from context.
 | `test/issues.github.test.vibe`: a read of seeded tasks (queued, running, done), a verified VIP in review with its reviewer, four claims that each fail one check, a sub-issue, comments and timeline notes; every refusal before a write (title, missing, empty, tree, closed, assignee, review, agent, unnamed maintainer, reused key); an authority with no live check; the stored revision and older gate state | `issues-read.json` | 318 | 806 KB |
 | `test/wikiEdit.github.test.vibe` and `bench/wiki-delegated.bench.vibe`: read, drafted edit kept and cleared, a maintainer's save and proposal on a disposable base branch; then stored and kept-text reads, a visitor's read, refusals before a write (moved base, empty, unchanged, agent save, empty draft, no key), and a contributor's proposal through an authority with no live check | `wiki.json` | 100 | 134 KB |
 | `test/mainLog.github.test.vibe`: main's first-parent log | `main-log.json` | 1 | 200 KB |
+| `test/export.github.test.vibe`: the mythical history's git export (0020): publish, republish nothing, extend, delete its refs | `history-export.json` | 78 | 120 KB |
 
 All of them ran skipped in CI before (the issues and wiki tests could not write at all since decision 0165, because
 they put a token on the principal). They now run on every `pnpm test`, without a token, in about 12 s. Checked red: with
@@ -150,6 +151,11 @@ missing and null, types, numbers, text, roles, labels, assignments, event kinds,
 database identities are bound back into sub-issue requests; opaque SHA allocations are replayed, so branch parents
 and expected-head checks still use the same identities. Commit/parent/merge hashes and stable account/repository ids
 compare exactly; only content blob hashes normalize after their decoded bytes agree.
+
+`OTHER_CONTRACTS` names the real-GitHub recordings of APIs no fuzz target sends the fake, each with its reason, and
+fails when a named file is gone: `history-export.json` (0020), GitHub's Git database API and GraphQL `updateRefs`. The
+export fuzzes `@smthrs/jj`'s memory `Repository`; `GitHub.GitDatabase` checks every object id GitHub answers against the
+hash that repository uses.
 
 GitHub's asynchronous inputs are explicit, separate from normalization: the recordings omit request times, so the
 first observed index visibility and timeline visibility supply the fake's logical-clock publication schedule.

@@ -1,0 +1,76 @@
+// The mythical history's Export flow on the engine in memory, for tests: a sequencer the test tells its story to, and
+// the flow over a repository (the mock's by default, `wrap` to inject a faulty one) and ref names of the test's choice.
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import * as Repository from "@smthrs/jj/Repository"
+import { Digest } from "effect/crypto"
+import { REF_NAMES } from "../../src/history/export.vibe"
+import type { RefNames } from "../../src/history/exportDecision.vibe"
+import { Export, exportRegistration, ExportTarget, Stack } from "../../src/history/flows.vibe"
+import { mockRepository } from "../../src/history/MockMythical.vibe"
+import { empty, type Intent } from "../../src/history/mythical.vibe"
+import { Caller, type Principal } from "../../src/history/roles.vibe"
+import { make, memoryStore, type Sequencer, stackOf } from "../../src/history/Sequencer.vibe"
+
+export const MAINTAINER: Principal = { role: "maintainer", name: "Ada", agent: false }
+
+effect function digestOf() {
+  provide WebCrypto.layer {
+    return try Digest.Digest
+  }
+}
+
+/** Records `intents`, dying on any refusal. */
+export effect function told(sequencer: Sequencer, intents: ReadonlyArray<Intent>) {
+  for (const intent of intents) {
+    const decision = try sequencer.record(intent)
+    if (!decision.ok) return try Effect.die(new Error(`refused ${intent.type}: ${decision.refusal}`))
+  }
+}
+
+export interface WorldOptions {
+  readonly principal?: Principal
+  /** The repository the flow writes; the mock's over the world's sequencer when absent. */
+  readonly repository?: Repository.Repository
+  readonly wrap?: (repository: Repository.Repository) => Repository.Repository
+  readonly names?: RefNames
+}
+
+/** The Export flow for `principal`; each run its own execution unless named. Needs a scope. */
+export effect function world(options: WorldOptions = {}) {
+  const sequencer = try make(try memoryStore())
+  const base = options.repository ?? mockRepository(sequencer)
+  const names = options.names ?? REF_NAMES
+  const repository = (options.wrap ?? ((each) => each))(base)
+  const flows = exportRegistration.pipe(
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provide(Layer.mergeAll(
+      Layer.succeed(Stack, stackOf(sequencer, () => Effect.succeed(empty))),
+      Layer.succeed(Caller, { principal: options.principal ?? MAINTAINER }),
+      Layer.succeed(Repository.Repository, repository),
+      Layer.succeed(ExportTarget, { names }),
+    )),
+    Layer.provide(Layer.succeed(Digest.Digest, try digestOf())),
+  )
+  const engine = Context.get(try Layer.build(flows), FlowRuntime.FlowRuntime)
+  let runs = 0
+  return {
+    sequencer,
+    repository: base,
+    run: (executionId?: string) => engine.execute(Export, { executionId: executionId ?? `export/${++runs}`, payload: {} }),
+    refs: () => Effect.map(base.readRefs([names.mythical, names.notes, names.manifest]), (refs) => refs.map((ref) => ref.oid)),
+  }
+}
+
+/** The bookmark's commits, oldest first, following first parents from `tip`. */
+export effect function chainOf(repository: Repository.Repository, tip: string) {
+  const chain: Array<Repository.CommitHeader> = []
+  let at = tip
+  while (at !== "") {
+    const commit = try repository.readCommit(at)
+    chain.unshift(commit)
+    at = commit.parents[0] ?? ""
+  }
+  return chain
+}

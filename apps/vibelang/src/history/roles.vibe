@@ -12,7 +12,7 @@ export { may } from "./flowMachine.vibe"
 export const ROLES: ReadonlyArray<Role> = ["viewer", "new", "community", "contributor", "maintainer"]
 
 /** Every action on the mythical history. */
-export const ACTIONS: ReadonlyArray<Action> = ["show", "append", "retell", "start", "note", "approve", "fold"]
+export const ACTIONS: ReadonlyArray<Action> = ["show", "append", "retell", "start", "note", "approve", "fold", "export"]
 
 
 

@@ -6,7 +6,7 @@
 //   GET  /api/history/commits/<m>           one commit in full, with the real commits it folds
 //   GET  /api/history/search?q=<text>       commits whose title has the text
 //   GET  /api/history/events?after=<seq>    text/event-stream: `id: <seq>`, `data: <HistoryEvent JSON>`
-//   POST /api/history/<action>            a flow: plan, start, note, approve or fold
+//   POST /api/history/<action>            a flow: plan, start, note, approve, fold or export
 //                                         → 200 Written | 409 Refusal (the sequencer's) | 403 Refusal (forbidden)
 import { Seq } from "../core/schemas.vibe"
 import { historyStatus } from "./flowMachine.vibe"
@@ -18,7 +18,7 @@ import { digitsFrom, idAfter, pageKind, routeKind, writeOf } from "./wireDecisio
 export const HISTORY_PATH = "/api/history"
 
 /** The writes a request may ask for, each one flow. */
-export const WRITES = ["plan", "start", "note", "approve", "fold"] as const
+export const WRITES = ["plan", "start", "note", "approve", "fold", "export"] as const
 export type Write = (typeof WRITES)[number]
 
 /** A route of the history API. A read's kind names its page, so each is counted on its own. */
@@ -78,8 +78,12 @@ export schema StartBody { readonly id: DurableText; readonly lane: DurableText }
 export schema NoteBody { readonly id: DurableText; readonly section: "tried" | "evidence" | "superseded"; readonly text: DurableText }
 export schema ApproveBody { readonly id: DurableText }
 export schema FoldBody {}
+export schema ExportBody {}
 
-/** What a recorded write answers: the commit it wrote (plan), or how many commits of main it folded (fold). */
+/**
+ * What a recorded write answers: the commit it wrote (plan), how many commits of main it folded (fold), or, for an
+ * export, the `mythical` bookmark's tip as `id` and how many commits it wrote as `folded`.
+ */
 export schema Written { readonly id: string; readonly folded: Seq }
 
 /** Why a write was refused: the sequencer's refusal (409), `forbidden` (403), or `unavailable` main (503). */

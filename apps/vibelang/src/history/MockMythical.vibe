@@ -1,15 +1,19 @@
 // The mythical history with no backend and no model (wiki/decisions/0020-mythical-history.md, 0004): the real sequencer
 // over a store in memory, the same flows on `@smthrs/engine`'s engine in memory, bootstrapped from the same snapshot
 // the live History object loads (seed/vibelang.vibe, downloaded only when the mock is built). Its main is the merge
-// queue played by the mock: every approved commit lands on main as a real commit whose message names it.
+// queue played by the mock: every approved commit lands on main as a real commit whose message names it. Its repository
+// is `@smthrs/jj`'s memory repository, holding each commit of that main with a tree of its own, so an export runs
+// whole with no backend.
 import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { FlowRuntime } from "@smthrs/flow"
+import * as Repository from "@smthrs/jj/Repository"
 import { Digest } from "effect/crypto"
 import type { Mode } from "../core/Factory.vibe"
-import { Approve, Bootstrap, Fold, historyRegistration, MainLog, Note, Plan, Stack, Start } from "./flows.vibe"
+import { REF_NAMES } from "./export.vibe"
+import { Approve, Bootstrap, Export, exportRegistration, ExportTarget, Fold, historyRegistration, MainLog, Note, Plan, Stack, Start } from "./flows.vibe"
 import { History as HistorySchema } from "./schemas.vibe"
-import type { History } from "./mythical.vibe"
+import type { History, Real } from "./mythical.vibe"
 import { Mythical, settled } from "./MythicalHistory.vibe"
 import { commitPageOf, epicPageOf, matchesOf, outlineOf } from "./pages.vibe"
 import { Caller, type Principal } from "./roles.vibe"
@@ -42,6 +46,31 @@ export function mockMain(sequencer: Sequencer): MainLog.Shape {
   }
 }
 
+/**
+ * The mock's repository: memory, where each commit of the mock's main resolves by its id to a commit whose tree holds
+ * one file naming it, so every real commit has a tree of its own and an export can check it.
+ */
+export function mockRepository(sequencer: Sequencer): Repository.Repository {
+  const memory = Repository.makeMemory()
+  const indexed = new WeakMap<History, Map<string, Real>>()
+  const made = new Map<string, Repository.CommitHeader>()
+  effect function readCommit(revision: string) {
+    const history = try sequencer.read()
+    const known = indexed.get(history) ?? new Map(history.real.map((real) => [real.sha, real]))
+    indexed.set(history, known)
+    const real = known.get(revision)
+    if (real === undefined) return try memory.readCommit(revision)
+    const kept = made.get(real.sha)
+    if (kept !== undefined) return kept
+    const blob = try memory.writeBlob(`${real.sha} ${real.title}\n`)
+    const tree = try memory.writeTree([{ name: "MAIN", mode: "100644", oid: blob }])
+    const header: Repository.CommitHeader = { oid: real.sha, tree, parents: [], message: `${real.title}\n` }
+    made.set(real.sha, header)
+    return header
+  }
+  return Repository.make({ ...memory, readCommit })
+}
+
 effect function digestOf() {
   provide WebCrypto.layer {
     return try Digest.Digest
@@ -54,12 +83,14 @@ export function MockMythical(principal: Principal, seed: () => History!! = seede
     const sequencer = try make(try memoryStore())
     const digest = try digestOf()
     const executions = try Ref.make(0)
-    const flows = historyRegistration.pipe(
+    const flows = Layer.mergeAll(historyRegistration, exportRegistration).pipe(
       Layer.provideMerge(FlowEngine.layerMemory),
       Layer.provide(Layer.mergeAll(
         Layer.succeed(Stack, stackOf(sequencer, seed)),
         Layer.succeed(MainLog, mockMain(sequencer)),
         Layer.succeed(Caller, { principal, ...(current === undefined ? {} : { current }) }),
+        Layer.succeed(Repository.Repository, mockRepository(sequencer)),
+        Layer.succeed(ExportTarget, { names: REF_NAMES }),
       )),
       Layer.provide(Layer.succeed(Digest.Digest, digest)),
     )
@@ -102,6 +133,11 @@ export function MockMythical(principal: Principal, seed: () => History!! = seede
         const answer = try Effect.orDie(engine.execute(Fold, { executionId: try executionId("fold"), payload: {} }))
         try settled({ id: "", refusal: answer.refusal })
         return answer.folded
+      },
+      publish: effect () => {
+        const answer = try Effect.orDie(engine.execute(Export, { executionId: try executionId("export"), payload: {} }))
+        try settled({ id: "", refusal: answer.refusal })
+        return { mythical: answer.mythical, written: answer.written }
       },
     }
     return service

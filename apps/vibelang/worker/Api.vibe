@@ -53,9 +53,13 @@ const HistoryLive = History.make(effect {
   const state = try Cloudflare.DurableObjectState
   // Read when the Worker deploys and when an object starts. The site holds no GitHub token: main is read through
   // smithers.sh's App with the site's broker key (0031).
-  const { historyObject, readSetup } = try runtime
+  const { exporterOf, historyObject, readSetup } = try runtime
   const reads = try Effect.orDie(readSetup())
-  return historyObject(state, reads, try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
+  const client = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
+  // Publishing the mythical history stays off until Will grants the site a write to VibeLang's repository (0020).
+  const setting = Option.getOrUndefined(try Effect.orDie(Config.option(Config.String("HISTORY_EXPORT"))))
+  const token = Option.getOrUndefined(try Effect.orDie(Config.option(Config.Redacted("HISTORY_EXPORT_TOKEN"))))
+  return historyObject(state, reads, client, try exporterOf(setting, token, client))
 })
 
 const ConversationLive = Conversation.make(effect {

@@ -1,0 +1,349 @@
+// The mythical history's git export (src/history/export.vibe, flows.vibe `vibelang/history/Export`; decision 0020, "The
+// git export"): the flow on the engine in memory over the mock's repository, read back through the same `Repository`
+// service. Every unhappy path injects a faulty `Repository` that wraps the real one.
+import { describe, expect, it } from "@effect/vitest"
+import * as Repository from "@smthrs/jj/Repository"
+import { EXPORTER, messageOf, noteOf, readManifest, REF_NAMES } from "../src/history/export.vibe"
+import type { Intent } from "../src/history/mythical.vibe"
+import { chainOf, told, world } from "./support/exportFlow.vibe"
+
+/** Two epics: m1 landed by two real commits, m2 a planned reservation with a note, m3 landed by one. */
+const STORY: ReadonlyArray<Intent> = [
+  { type: "OpenEpic", id: "e1", title: "compiler" },
+  { type: "OpenEpic", id: "e2", title: "docs" },
+  { type: "Plan", id: "m1", epic: "e1", before: "", title: "feat(compiler): parse effects", task: "issue 1" },
+  { type: "Plan", id: "m2", epic: "e1", before: "", title: "fix(compiler): spans", task: "issue 2" },
+  { type: "Plan", id: "m3", epic: "e2", before: "", title: "docs: the guide", task: "" },
+  { type: "Start", id: "m1", lane: "lane-a" },
+  { type: "Approve", id: "m1", by: "Ada" },
+  { type: "Fold", sha: "a1a1a1a1a1a1", change: "", title: "feat(compiler): parse effects", into: "m1" },
+  { type: "Fold", sha: "a2a2a2a2a2a2", change: "", title: "chore(docs): regenerate", into: "m1" },
+  { type: "AddNote", id: "m2", section: "tried", text: "A cache; it went stale.", by: "Ada" },
+  { type: "Start", id: "m3", lane: "lane-b" },
+  { type: "Approve", id: "m3", by: "Ada" },
+  { type: "Fold", sha: "b1b1b1b1b1b1", change: "", title: "docs: the guide", into: "m3" },
+]
+
+/** Counts the writes a repository receives. */
+function counting(counts: { writes: number; updates: number }) {
+  return (repository: Repository.Repository): Repository.Repository => ({
+    ...repository,
+    writeBlob: (text) => { counts.writes++; return repository.writeBlob(text) },
+    writeTree: (entries) => { counts.writes++; return repository.writeTree(entries) },
+    writeCommit: (commit) => { counts.writes++; return repository.writeCommit(commit) },
+    updateRefs: (transaction) => { counts.updates++; return repository.updateRefs(transaction) },
+  })
+}
+
+const check = (body: () => void) => Effect.try(body)
+
+describe("the export", () => {
+  it.effect("publishes a linear bookmark whose landed commits carry main's trees and whose reservations are empty", () => scoped(effect {
+    const { sequencer, repository, run, refs } = try world()
+    try told(sequencer, STORY)
+    const answer = try run()
+    const [mythical, notes, manifest] = try refs()
+    const chain = try chainOf(repository, mythical!)
+    const trees = [try repository.readCommit("a2a2a2a2a2a2"), try repository.readCommit("b1b1b1b1b1b1")].map((commit) => commit.tree)
+    const note = (oid: string) => effect {
+      const entries = try repository.readTree((try repository.readCommit(notes!)).tree)
+      return try repository.readBlob(entries.find((entry) => entry.name === oid)!.oid)
+    }
+    const m2Note = try note(chain[1]!.oid)
+    const shown = try readManifest(repository, manifest!)
+    try check(() => {
+      expect(answer).toEqual({ mythical, written: 3, refusal: null })
+      // Stack order: e1's m1, m2, then e2's m3; each commit's only parent is the one before it.
+      expect(chain.map((commit) => commit.message)).toEqual(["feat(compiler): parse effects\n\nMythical: m1\nEpic: e1\n", "fix(compiler): spans\n\nMythical: m2\nEpic: e1\n", "docs: the guide\n\nMythical: m3\nEpic: e2\n"])
+      expect(chain.map((commit) => commit.parents.length)).toEqual([0, 1, 1])
+      // m1 takes its last fold's tree (a2), m2 is a reservation (m1's tree), m3 takes b1's.
+      expect(chain.map((commit) => commit.tree)).toEqual([trees[0], trees[0], trees[1]])
+      expect(m2Note).toBe("m2 planned\n\nTried\n- A cache; it went stale. (Ada)\n\nEvidence\n(none)\n\nFolded\n(none)\n\nSuperseded\n(none)\n")
+      expect(shown).toEqual({ schema: 1, main: "b1b1b1b1b1b1", mythical, notes, commits: [
+        ["m1", chain[0]!.oid, "a2a2a2a2a2a2", trees[0]], ["m2", chain[1]!.oid, "", trees[0]], ["m3", chain[2]!.oid, "b1b1b1b1b1b1", trees[1]],
+      ] })
+    })
+  }))
+
+  it.effect("writes nothing when nothing changed, and only what changed after a new commit", () => scoped(effect {
+    const counts = { writes: 0, updates: 0 }
+    const { sequencer, repository, run, refs } = try world({ wrap: counting(counts) })
+    try told(sequencer, STORY)
+    const first = try run()
+    const before = try refs()
+    counts.writes = 0
+    counts.updates = 0
+    const again = try run()
+    const quiet = { ...counts }
+    try told(sequencer, [{ type: "Plan", id: "m4", epic: "e2", before: "", title: "docs: one more", task: "" }])
+    const grown = try run()
+    const after = try refs()
+    const chain = try chainOf(repository, after[0]!)
+    const manifest = try repository.readCommit(after[2]!)
+    try check(() => {
+      expect(again).toEqual({ mythical: first.mythical, written: 0, refusal: null })
+      expect(quiet).toEqual({ writes: 0, updates: 0 })
+      expect(grown.written).toBe(1)
+      expect(chain[2]!.oid).toBe(before[0])
+      // The new manifest's parent is the last one: every publication stays reachable.
+      expect(manifest.parents).toEqual([before[2]])
+    })
+  }))
+
+  it.effect("rewrites from an insert on, keeping the replaced bookmark reachable from the manifest", () => scoped(effect {
+    const { sequencer, repository, run, refs } = try world()
+    try told(sequencer, STORY)
+    try run()
+    const [oldTip] = try refs()
+    try told(sequencer, [{ type: "Plan", id: "m4", epic: "e1", before: "m2", title: "refactor(compiler): split", task: "" }])
+    const answer = try run()
+    const [tip, , manifest] = try refs()
+    const chain = try chainOf(repository, tip!)
+    const kept = try repository.readCommit(manifest!)
+    try check(() => {
+      expect(chain.map((commit) => commit.message.split("\n")[0])).toEqual(["feat(compiler): parse effects", "refactor(compiler): split", "fix(compiler): spans", "docs: the guide"])
+      expect(answer.written).toBe(3)
+      expect(kept.parents).toContain(oldTip)
+    })
+  }))
+
+  it.effect("publishes a history of plans alone as empty reservations on git's empty tree", () => scoped(effect {
+    const { sequencer, repository, run, refs } = try world()
+    try told(sequencer, STORY.slice(0, 5))
+    const answer = try run()
+    const [mythical, , manifest] = try refs()
+    const chain = try chainOf(repository, mythical!)
+    const subject = (try repository.readCommit(manifest!)).message
+    try check(() => {
+      expect(answer.written).toBe(3)
+      expect(chain.map((commit) => commit.tree)).toEqual(Array(3).fill(Repository.EMPTY_TREE))
+      expect(subject).toBe("Mythical history through nothing\n")
+    })
+  }))
+
+  it.effect("answers a history with no commits `nothing`, writing nothing", () => scoped(effect {
+    const counts = { writes: 0, updates: 0 }
+    const { run } = try world({ wrap: counting(counts) })
+    const answer = try run()
+    try check(() => {
+      expect(answer).toEqual({ mythical: "", written: 0, refusal: "nothing" })
+      expect(counts).toEqual({ writes: 0, updates: 0 })
+    })
+  }))
+
+  it.effect("records once per execution: running it again answers the journal", () => scoped(effect {
+    const counts = { writes: 0, updates: 0 }
+    const { sequencer, run } = try world({ wrap: counting(counts) })
+    try told(sequencer, STORY)
+    const first = try run("export/once")
+    const seen = { ...counts }
+    const second = try run("export/once")
+    try check(() => {
+      expect(second).toEqual(first)
+      expect(counts).toEqual(seen)
+      expect(seen.updates).toBe(1)
+    })
+  }))
+})
+
+describe("who may export", () => {
+  for (const principal of [
+    { role: "contributor", name: "Bo", agent: false },
+    { role: "maintainer", name: "Ada", agent: true },
+    { role: "viewer", name: "Guest", agent: false },
+  ] as const) {
+    it.effect(`refuses ${principal.role}${principal.agent ? " (agent)" : ""} forbidden before reaching the repository`, () => scoped(effect {
+      const { sequencer, run } = try world({ principal, wrap: () => Repository.make({
+        ...Repository.makeUnsupported("unused"),
+        readRefs: () => Effect.die("read before authorization"),
+      }) })
+      try told(sequencer, STORY)
+      const answer = try run()
+      try check(() => expect(answer).toEqual({ mythical: "", written: 0, refusal: "forbidden" }))
+    }))
+  }
+})
+
+describe("unhappy repositories", () => {
+  it.effect("answers a repository that can't export `unsupported`", () => scoped(effect {
+    const { sequencer, run } = try world({ wrap: () => Repository.makeUnsupported("publishing the history is off") })
+    try told(sequencer, STORY)
+    const answer = try run()
+    try check(() => expect(answer.refusal).toBe("unsupported"))
+  }))
+
+  it.effect("refuses `conflict` when another writer moved a ref after the export read it, and moves nothing", () => scoped(effect {
+    let raced = false
+    const { sequencer, run, refs } = try world({ wrap: (repository) => ({
+      ...repository,
+      updateRefs: (transaction) => effect {
+        if (!raced) {
+          raced = true
+          // Another writer publishes first: the bookmark now points elsewhere.
+          const tree = try repository.writeTree([])
+          const other = try repository.writeCommit({ tree, parents: [], author: EXPORTER, committer: EXPORTER, message: "someone else\n" })
+          try repository.updateRefs({ operation: "other", updates: [{ ref: REF_NAMES.mythical, before: null, after: other }] })
+        }
+        return try repository.updateRefs(transaction)
+      },
+    }) })
+    try told(sequencer, STORY)
+    const answer = try run()
+    const [mythical, notes, manifest] = try refs()
+    try check(() => {
+      expect(answer.refusal).toBe("conflict")
+      expect([notes, manifest]).toEqual([null, null])
+      expect(mythical).not.toBeNull()
+    })
+  }))
+
+  it.effect("confirms a publication whose answer was lost after it landed", () => scoped(effect {
+    const { sequencer, run, refs } = try world({ wrap: (repository) => ({
+      ...repository,
+      updateRefs: (transaction) => Effect.flatMap(repository.updateRefs(transaction), () => Effect.fail(Repository.repositoryError("unavailable", "updateRefs", "the answer was lost"))),
+    }) })
+    try told(sequencer, STORY)
+    const answer = try run()
+    const [mythical] = try refs()
+    try check(() => expect(answer).toEqual({ mythical, written: 3, refusal: null }))
+  }))
+
+  it.effect("answers `unavailable` when the publication was refused and nothing moved", () => scoped(effect {
+    const { sequencer, run, refs } = try world({ wrap: (repository) => ({
+      ...repository,
+      updateRefs: () => Effect.fail(Repository.repositoryError("unavailable", "updateRefs", "refused")),
+    }) })
+    try told(sequencer, STORY)
+    const answer = try run()
+    const now = try refs()
+    try check(() => {
+      expect(answer).toEqual({ mythical: "", written: 0, refusal: "unavailable" })
+      expect(now).toEqual([null, null, null])
+    })
+  }))
+
+  it.effect("answers `unavailable` when the refs can't be read back, whatever publish said", () => scoped(effect {
+    let reads = 0
+    const { sequencer, run } = try world({ wrap: (repository) => ({
+      ...repository,
+      readRefs: (names) => ++reads > 1 ? Effect.fail(Repository.repositoryError("unavailable", "readRefs", "down")) : repository.readRefs(names),
+    }) })
+    try told(sequencer, STORY)
+    const answer = try run()
+    try check(() => expect(answer.refusal).toBe("unavailable"))
+  }))
+
+  it.effect("refuses `tree` when a landed commit's tree is not its real commit's, and publishes nothing", () => scoped(effect {
+    let reads = 0
+    const { sequencer, run, refs } = try world({ wrap: (repository) => ({
+      ...repository,
+      // The real commit answers one tree to prepare and another to check: the repository, not the plan, decides.
+      readCommit: (revision) => revision === "b1b1b1b1b1b1" && ++reads > 1
+        ? Effect.map(repository.readCommit(revision), (commit) => ({ ...commit, tree: Repository.EMPTY_TREE }))
+        : repository.readCommit(revision),
+    }) })
+    try told(sequencer, STORY)
+    const answer = try run()
+    const now = try refs()
+    try check(() => {
+      expect(answer).toEqual({ mythical: "", written: 0, refusal: "tree" })
+      expect(now).toEqual([null, null, null])
+    })
+  }))
+
+  it.effect("refuses `linear` when a written commit's parent is not the one before it", () => scoped(effect {
+    const { sequencer, run } = try world({ wrap: (repository) => ({
+      ...repository,
+      readCommit: (revision) => Effect.map(repository.readCommit(revision), (commit) => commit.message.includes("Mythical: m2") ? { ...commit, parents: [] } : commit),
+    }) })
+    try told(sequencer, STORY)
+    const answer = try run()
+    try check(() => expect(answer.refusal).toBe("linear"))
+  }))
+
+  it.effect("refuses `notes` when the notes tree lacks a commit's note", () => scoped(effect {
+    const { sequencer, run } = try world({ wrap: (repository) => ({
+      ...repository,
+      readTree: (oid) => Effect.map(repository.readTree(oid), (entries) => entries.length === 3 && entries.every((entry) => entry.name.length === 40) ? entries.slice(1) : entries),
+    }) })
+    try told(sequencer, STORY)
+    const answer = try run()
+    try check(() => expect(answer.refusal).toBe("notes"))
+  }))
+
+  it.effect("refuses `linear` when the manifest names another bookmark than the one prepared", () => scoped(effect {
+    const { sequencer, run } = try world({ wrap: (repository) => ({
+      ...repository,
+      readBlob: (oid) => Effect.map(repository.readBlob(oid), (text) => text.startsWith("{\"schema\":1") ? text.replace(/"mythical":"[0-9a-f]+"/, `"mythical":"${"0".repeat(40)}"`) : text),
+    }) })
+    try told(sequencer, STORY)
+    const answer = try run()
+    try check(() => expect(answer.refusal).toBe("linear"))
+  }))
+
+  it.effect("refuses `linear` when the manifest's commits stop short of the bookmark", () => scoped(effect {
+    const { sequencer, run } = try world({ wrap: (repository) => ({
+      ...repository,
+      readBlob: (oid) => Effect.map(repository.readBlob(oid), (text) => text.startsWith("{\"schema\":1") ? text.replace(/,\["m3"[^\]]*\]/, "") : text),
+    }) })
+    try told(sequencer, STORY)
+    const answer = try run()
+    try check(() => expect(answer.refusal).toBe("linear"))
+  }))
+
+  it.effect("answers `invalid` when the published manifest bookmark holds no manifest", () => scoped(effect {
+    const { sequencer, repository, run } = try world()
+    try told(sequencer, STORY)
+    const tree = try repository.writeTree([])
+    const bare = try repository.writeCommit({ tree, parents: [], author: EXPORTER, committer: EXPORTER, message: "not a manifest\n" })
+    try repository.updateRefs({ operation: "seed", updates: [{ ref: REF_NAMES.manifest, before: null, after: bare }] })
+    const answer = try run()
+    try check(() => expect(answer.refusal).toBe("invalid"))
+  }))
+
+  it.effect("answers `not_found` when a folded real commit is not in the repository", () => scoped(effect {
+    const { sequencer, run } = try world({ wrap: (repository) => ({
+      ...repository,
+      readCommit: (revision) => revision === "a2a2a2a2a2a2" ? Effect.fail(Repository.repositoryError("not_found", "readCommit", "absent")) : repository.readCommit(revision),
+    }) })
+    try told(sequencer, STORY)
+    const answer = try run()
+    try check(() => expect(answer.refusal).toBe("not_found"))
+  }))
+})
+
+describe("refused checks and silent repositories", () => {
+  it.effect("answers `unavailable` when the check can't read the repository, and publishes nothing", () => scoped(effect {
+    const { sequencer, run, refs } = try world({ wrap: (repository) => ({
+      ...repository,
+      readBlob: () => Effect.fail(Repository.repositoryError("unavailable", "readBlob", "down")),
+    }) })
+    try told(sequencer, STORY)
+    const answer = try run()
+    const now = try refs()
+    try check(() => {
+      expect(answer.refusal).toBe("unavailable")
+      expect(now).toEqual([null, null, null])
+    })
+  }))
+
+  it.effect("answers `unavailable` when the repository accepted the publication but moved nothing", () => scoped(effect {
+    const { sequencer, run } = try world({ wrap: (repository) => ({ ...repository, updateRefs: () => Effect.void }) })
+    try told(sequencer, STORY)
+    const answer = try run()
+    try check(() => expect(answer).toEqual({ mythical: "", written: 0, refusal: "unavailable" }))
+  }))
+})
+
+describe("messages and notes", () => {
+  it("names the commit and its epic in trailers, and writes every note section, (none) when empty", () => {
+    const commit = { id: "m7", epic: "e2", rank: 0, title: "fix: x", state: "landed" as const, task: "", lane: "", notes: [
+      { section: "evidence" as const, text: "approved", by: "Ada" },
+      { section: "superseded" as const, text: "the first plan", by: "Bo (agent)" },
+    ] }
+    expect(messageOf(commit)).toBe("fix: x\n\nMythical: m7\nEpic: e2\n")
+    expect(noteOf(commit, [{ sha: "abc", change: "", title: "fix: x", mythical: "m7" }])).toBe(
+      "m7 landed\n\nTried\n(none)\n\nEvidence\n- approved (Ada)\n\nFolded\n- abc fix: x\n\nSuperseded\n- the first plan (Bo (agent))\n",
+    )
+  })
+})

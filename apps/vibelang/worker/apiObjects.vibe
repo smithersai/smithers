@@ -26,6 +26,7 @@ import { type PageRequest, pageOf } from "../src/history/pages.vibe"
 import type { Write } from "../src/history/wire.vibe"
 import type { Principal } from "../src/history/roles.vibe"
 import * as HistoryObject from "./HistoryObject.vibe"
+import { type Exporter, off } from "./HistoryExport.vibe"
 import { chargeKeyOf } from "./budgetDecision.vibe"
 import { afterOf, eventStream, handle, type Conversations, type Histories } from "./Http.vibe"
 import { githubMain } from "./MainLog.vibe"
@@ -132,8 +133,11 @@ function budgetBody(state: ObjectState, limit: number) {
   }
 }
 
-/** VibeLang's history; it reads GitHub's main signed out, through smithers.sh when `reads` names it (0031). */
-function historyBody(state: ObjectState, reads: ReadSetup | undefined, client: HttpClient.HttpClient) {
+/**
+ * VibeLang's history; it reads GitHub's main signed out, through smithers.sh when `reads` names it (0031), and exports
+ * through `exporter`, off unless the deployment names a repository (HistoryExport.vibe).
+ */
+function historyBody(state: ObjectState, reads: ReadSetup | undefined, client: HttpClient.HttpClient, exporter: Exporter = off) {
   return effect {
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
     const sequencer = try ObjectStartup.step("sequencer", HistoryObject.history(state.raw.storage))
@@ -145,9 +149,9 @@ function historyBody(state: ObjectState, reads: ReadSetup | undefined, client: H
       // Each page is computed here, beside the history, so a reader gets only what it shows.
       page: (request: PageRequest) => Effect.map(sequencer.read(), (history) => pageOf(history, request) as unknown),
       write: (name: Write, body: unknown, principal: Principal) =>
-        HistoryObject.write(hostId, state.raw.storage, sequencer, main, principal, name, body),
+        HistoryObject.write(hostId, state.raw.storage, sequencer, main, principal, name, body, undefined, exporter),
       act: (name: Write, body: unknown, principal: Principal, operation: string) =>
-        HistoryObject.write(hostId, state.raw.storage, sequencer, main, principal, name, body, operation),
+        HistoryObject.write(hostId, state.raw.storage, sequencer, main, principal, name, body, operation, exporter),
       fetch: effect {
         const request = try HttpServerRequest.HttpServerRequest
         return eventStream(sequencer.follow(afterOf(new URL(request.url, "http://history.invalid")) ?? 0))

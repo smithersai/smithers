@@ -17,16 +17,16 @@ import { make, memoryStore } from "../src/history/Sequencer.vibe"
 const ORDER: ReadonlyArray<Role> = ["viewer", "new", "community", "contributor", "maintainer"]
 const LEAST: Readonly<Record<Action, Role>> = {
   show: "viewer", append: "contributor", retell: "maintainer", start: "contributor", note: "contributor",
-  approve: "maintainer", fold: "maintainer",
+  approve: "maintainer", fold: "maintainer", export: "maintainer",
 }
 
-/** Whether the table lets `principal` take `action`: the agent never approves or folds. */
+/** Whether the table lets `principal` take `action`: the agent never approves, folds or exports. */
 function allowed(principal: Principal, action: Action): boolean {
-  if (principal.agent && (action === "approve" || action === "fold")) return false
+  if (principal.agent && (action === "approve" || action === "fold" || action === "export")) return false
   return ORDER.indexOf(principal.role) >= ORDER.indexOf(LEAST[action])
 }
 
-const ActionSchema = Schema.Literals(["show", "append", "retell", "start", "note", "approve", "fold"])
+const ActionSchema = Schema.Literals(["show", "append", "retell", "start", "note", "approve", "fold", "export"])
 schema PrincipalSchema { readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"; readonly name: "Ada"; readonly agent: boolean }
 
 effect function holds<A, E>(arbitrary: Arbitrary.Arbitrary<A>, property: (value: A) => boolean | (boolean!E), runs = 400) {
@@ -63,9 +63,9 @@ describe("a history flow's steps", () => {
       )
     }))
 
-  it.effect("never let the agent reach Approve's or Fold's record, whatever its role", () =>
+  it.effect("never let the agent reach Approve's, Fold's or Export's record, whatever its role", () =>
     holds(Walk, ({ action, principal, steps }) =>
-      !(principal.agent && (action === "approve" || action === "fold")) ||
+      !(principal.agent && (action === "approve" || action === "fold" || action === "export")) ||
       walk(action, principal, steps).every((run) => run.records === 0 && run.phase !== "authorized")))
 
   it.effect("record once, but for a fold, which records each new commit of main", () =>

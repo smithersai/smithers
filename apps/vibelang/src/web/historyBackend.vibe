@@ -42,6 +42,7 @@ export function BrowserMythical(origin: string, forceMock: boolean, principal: P
       note: effect (id, section, text) => { try (try ready).mythical.note(id, section, text) },
       approve: effect (id) => { try (try ready).mythical.approve(id) },
       fold: effect () => (try (try ready).mythical.fold()),
+      publish: effect () => (try (try ready).mythical.publish()),
     }
     return Context.make(Mythical, mythical).pipe(Context.add(HistoryBackend, { ready: map(ready, (choice) => choice.mode) }))
   })

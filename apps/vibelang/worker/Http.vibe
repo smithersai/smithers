@@ -14,7 +14,7 @@ import { HistoryEvent as HistoryEventSchema } from "../src/history/schemas.vibe"
 import type { Event as HistoryEvent } from "../src/history/mythical.vibe"
 import type { PageRequest } from "../src/history/pages.vibe"
 import {
-  ApproveBody, FoldBody, historyRouteOf, MAX_WRITE_BYTES, NoteBody, PlanBody, StartBody, statusOf, type HistoryRoute, type Write,
+  ApproveBody, ExportBody, FoldBody, historyRouteOf, MAX_WRITE_BYTES, NoteBody, PlanBody, StartBody, statusOf, type HistoryRoute, type Write,
 } from "../src/history/wire.vibe"
 import type { Unreachable } from "./Unreachable.vibe"
 
@@ -124,6 +124,7 @@ function decodeWrite(write: Write, text: string): unknown!Schema.SchemaError {
     case "note": return Schema.decodeUnknownEffect(Schema.fromJsonString(NoteBody))(text)
     case "approve": return Schema.decodeUnknownEffect(Schema.fromJsonString(ApproveBody))(text)
     case "fold": return Schema.decodeUnknownEffect(Schema.fromJsonString(FoldBody))(text)
+    case "export": return Schema.decodeUnknownEffect(Schema.fromJsonString(ExportBody))(text)
   }
 }
 

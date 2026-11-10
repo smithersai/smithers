@@ -1,0 +1,125 @@
+// The git export's own decisions (wiki/decisions/0020-mythical-history.md, "The git export"): which tree each mythical
+// commit takes, how much of the last export a new one keeps, which refs a publication moves and from what, and what the
+// refs read back after it say. `export.vibe` calls these; nothing here reads or writes a repository.
+//
+//   mythical commit ──treeSource──▶ "" (an empty reservation: its parent's tree) | its last folded real commit
+//   previous oids, planned oids ──kept──▶ how many leading commits are already written
+//   published, candidate ──moves──▶ one compare-and-swap of all three refs, each from its published value
+//   observed, published, candidate ──confirmed──▶ published | unchanged | conflict
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Every function is total.
+
+import type { Real } from "./mythical.vibe"
+
+/** The three refs an export publishes, by value: `""` when a ref does not exist. */
+export interface Refs {
+  readonly mythical: string
+  readonly notes: string
+  readonly manifest: string
+}
+
+/** The three refs' names. */
+export interface RefNames {
+  readonly mythical: string
+  readonly notes: string
+  readonly manifest: string
+}
+
+/** One ref of a publication: the value it must hold now and the value it takes; `""` is absent. */
+export interface Move {
+  readonly ref: string
+  readonly before: string
+  readonly after: string
+}
+
+/**
+ * The index in `real` of the last real commit folded into the mythical commit `id`, or -1 when none is: such a commit
+ * is an empty reservation. A commit that several real commits fold into (a merge's side commits, an amend that landed
+ * again) takes the tree of the last, which is main's tree when it landed.
+ */
+//@ verify
+//@ ensures -1 <= \result && \result < real.length
+//@ ensures \result == -1 <==> forall(i, 0 <= i && i < real.length ==> real[i].mythical != id)
+//@ ensures \result >= 0 ==> real[\result].mythical == id
+//@ ensures \result >= 0 ==> forall(i, \result < i && i < real.length ==> real[i].mythical != id)
+export function lastFold(real: ReadonlyArray<Real>, id: string): number {
+  for (let i = real.length - 1; i >= 0; i--) {
+    //@ invariant -1 <= i && i < real.length
+    //@ invariant forall(k, i < k && k < real.length ==> real[k].mythical != id)
+    //@ decreases i + 1
+    if (real[i]!.mythical === id) return i
+  }
+  return -1
+}
+
+/** The real commit whose tree the mythical commit `id` takes: the sha of its last fold, or `""` for a reservation. */
+//@ verify
+//@ ensures forall(i, 0 <= i && i < real.length ==> real[i].mythical != id) ==> \result == ""
+//@ ensures exists(i, 0 <= i && i < real.length && real[i].mythical == id) ==> exists(j, 0 <= j && j < real.length && real[j].mythical == id && \result == real[j].sha && forall(k, j < k && k < real.length ==> real[k].mythical != id))
+export function treeSource(real: ReadonlyArray<Real>, id: string): string {
+  const at = lastFold(real, id)
+  return at < 0 ? "" : real[at]!.sha
+}
+
+/**
+ * How many leading commits of the `planned` chain the `previous` export already wrote: the length of their common
+ * prefix. A commit's id names its tree, its parent and its message, so a commit at the same place with the same id is
+ * the same commit, and only the ones after the prefix are written.
+ */
+//@ verify
+//@ ensures 0 <= \result && \result <= planned.length && \result <= previous.length
+//@ ensures forall(i, 0 <= i && i < \result ==> planned[i] == previous[i])
+//@ ensures \result < planned.length && \result < previous.length ==> planned[\result] != previous[\result]
+export function kept(previous: ReadonlyArray<string>, planned: ReadonlyArray<string>): number {
+  let n = 0
+  while (n < planned.length && n < previous.length && planned[n] === previous[n]) {
+    //@ invariant 0 <= n && n <= planned.length && n <= previous.length
+    //@ invariant forall(i, 0 <= i && i < n ==> planned[i] == previous[i])
+    //@ decreases planned.length - n
+    n = n + 1
+  }
+  return n
+}
+
+/** Whether two ref tuples hold the same three values. */
+//@ verify
+//@ ensures \result == (a.mythical == b.mythical && a.notes == b.notes && a.manifest == b.manifest)
+export function same(a: Refs, b: Refs): boolean {
+  return a.mythical === b.mythical && a.notes === b.notes && a.manifest === b.manifest
+}
+
+/**
+ * The one compare-and-swap a publication sends: all three refs, each from the value the export read to the value it
+ * prepared. An unchanged ref is checked, not skipped, so a writer who moved any of the three since the read makes the
+ * whole publication fail and nothing moves.
+ */
+//@ verify
+//@ ensures \result.length == 3
+//@ ensures \result[0].ref == names.mythical && \result[0].before == published.mythical && \result[0].after == candidate.mythical
+//@ ensures \result[1].ref == names.notes && \result[1].before == published.notes && \result[1].after == candidate.notes
+//@ ensures \result[2].ref == names.manifest && \result[2].before == published.manifest && \result[2].after == candidate.manifest
+export function moves(names: RefNames, published: Refs, candidate: Refs): ReadonlyArray<Move> {
+  return [
+    { ref: names.mythical, before: published.mythical, after: candidate.mythical },
+    { ref: names.notes, before: published.notes, after: candidate.notes },
+    { ref: names.manifest, before: published.manifest, after: candidate.manifest },
+  ]
+}
+
+/** What the refs read after a publication say: the candidate landed, nothing moved (retry), or another writer won. */
+export type Outcome = "published" | "unchanged" | "conflict"
+
+/**
+ * The publication's outcome from the refs `observed` after it, whatever the publish step answered: a lost answer that
+ * landed is `published`, a refusal that moved nothing is `unchanged`, and any other tuple is someone else's.
+ */
+//@ verify
+//@ ensures \result == "published" <==> same(observed, candidate)
+//@ ensures \result == "unchanged" <==> (!same(observed, candidate) && same(observed, published))
+//@ ensures \result == "conflict" <==> (!same(observed, candidate) && !same(observed, published))
+export function confirmed(observed: Refs, published: Refs, candidate: Refs): Outcome {
+  if (same(observed, candidate)) return "published"
+  if (same(observed, published)) return "unchanged"
+  return "conflict"
+}

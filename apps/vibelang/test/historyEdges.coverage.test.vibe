@@ -14,7 +14,7 @@ const page = (epic: string, seq = 1) => ({ seq, epic, from: 0, total: 0, commits
 const outage = new Unavailable({ reason: "closed" })
 const down = () => Effect.fail(outage)
 function faulty(over: Partial<Mythical.Shape> = {}): Mythical.Shape {
-  return { mode: "mock", outline: down, epic: down, commit: down, search: down, events: () => Stream.fail(outage), plan: down, start: down, note: down, approve: down, fold: down, ...over }
+  return { mode: "mock", outline: down, epic: down, commit: down, search: down, events: () => Stream.fail(outage), plan: down, start: down, note: down, approve: down, fold: down, publish: down, ...over }
 }
 effect function run<A, E, R>(make: () => { readonly effect: A!E!R }) {
   const command = try Effect.try(make)

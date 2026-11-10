@@ -83,6 +83,10 @@ export function LiveMythical(origin: string) {
         try write("approve", { id })
       },
       fold: effect () => (try write("fold", {})).folded,
+      publish: effect () => {
+        const written = try write("export", {})
+        return { mythical: written.id, written: written.folded }
+      },
     }
     return service
   })

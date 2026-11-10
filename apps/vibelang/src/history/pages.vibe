@@ -97,7 +97,7 @@ function headOf(commit: Commit, folds: Map<string, number>): Head {
 }
 
 /** Every commit in stack order; a stored unknown epic keeps the earlier rank-only fallback. */
-function stacked(history: History): ReadonlyArray<Commit> {
+export function stacked(history: History): ReadonlyArray<Commit> {
   const order = new Map(history.epics.map((epic, index) => [epic.id, index]))
   return [...history.commits].sort((a, b) => {
     const epicA = order.get(a.epic)

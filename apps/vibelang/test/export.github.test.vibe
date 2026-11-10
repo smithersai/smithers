@@ -1,0 +1,66 @@
+// The mythical history's git export on real GitHub (wiki/decisions/0020-mythical-history.md, "The git export"; 0032):
+// the Export flow through the Worker's own exporter (worker/HistoryExport.vibe) and `GitHub.GitDatabase`, on the test
+// repository, replayed from test/recordings/history-export.json unless VIBE_GITHUB says otherwise
+// (test/support/github.vibe). The refs live under the run's label and are deleted at the end, through the same
+// compare-and-swap. A replay needs no token and reaches no network.
+import { expect, it } from "@effect/vitest"
+import { githubMain } from "../worker/MainLog.vibe"
+import { exporterOf } from "../worker/HistoryExport.vibe"
+import { readManifest } from "../src/history/export.vibe"
+import { chainOf, told, world } from "./support/exportFlow.vibe"
+import { github, TEST_REPOSITORY } from "./support/github.vibe"
+
+it.live("publishes the bookmark, its notes and its manifest on GitHub, republishes nothing, then extends it", () => scoped(effect {
+  const real = try github("history-export")
+  const names = {
+    mythical: `refs/heads/vibelang-export/${real.label}/mythical`,
+    notes: `refs/notes/vibelang-export-${real.label}`,
+    manifest: `refs/heads/vibelang-export/${real.label}/history`,
+  }
+  const repository = `${TEST_REPOSITORY.owner}/${TEST_REPOSITORY.name}`
+  const exporter = try exporterOf(`github:${repository}`, real.token, real.client, names)
+  // The history folds the test repository's own first commits, so each landed commit's tree is a real tree there.
+  const main = try githubMain(repository, real.client).since("")
+  const [first, second, third] = main
+  if (first === undefined || second === undefined || third === undefined) return try Effect.die(new Error("the test repository needs three commits on main"))
+  const { sequencer, run, refs } = try world({ repository: exporter.repository, names })
+  try told(sequencer, [
+    { type: "OpenEpic", id: "e1", title: "e2e" },
+    { type: "Plan", id: "m1", epic: "e1", before: "", title: "the first two commits", task: "" },
+    { type: "Plan", id: "m2", epic: "e1", before: "", title: "a reservation", task: "" },
+    { type: "Plan", id: "m3", epic: "e1", before: "", title: "the third commit", task: "" },
+    { type: "Start", id: "m1", lane: "e2e" },
+    { type: "Approve", id: "m1", by: "Ada" },
+    { type: "Fold", sha: first.sha, change: "", title: first.title, into: "m1" },
+    { type: "Fold", sha: second.sha, change: "", title: second.title, into: "m1" },
+    { type: "Start", id: "m3", lane: "e2e" },
+    { type: "Approve", id: "m3", by: "Ada" },
+    { type: "Fold", sha: third.sha, change: "", title: third.title, into: "m3" },
+  ])
+  const published = try run()
+  const [mythical, notes, manifest] = try refs()
+  const chain = try chainOf(exporter.repository, mythical!)
+  const trees = [(try exporter.repository.readCommit(second.sha)).tree, (try exporter.repository.readCommit(third.sha)).tree]
+  const shown = try readManifest(exporter.repository, manifest!)
+  const again = try run()
+  try told(sequencer, [{ type: "Plan", id: "m4", epic: "e1", before: "", title: "one more", task: "" }])
+  const grown = try run()
+  const after = try refs()
+  // Clean up through the same compare-and-swap; nothing else in the test repository changed.
+  try exporter.repository.updateRefs({ operation: "e2e-cleanup", updates: [
+    { ref: names.mythical, before: after[0]!, after: null },
+    { ref: names.notes, before: after[1]!, after: null },
+    { ref: names.manifest, before: after[2]!, after: null },
+  ] })
+  const gone = try refs()
+  try Effect.try(() => {
+    expect(published).toEqual({ mythical, written: 3, refusal: null })
+    expect(chain.map((commit) => commit.parents.length)).toEqual([0, 1, 1])
+    expect(chain.map((commit) => commit.tree)).toEqual([trees[0], trees[0], trees[1]])
+    expect(shown.notes).toBe(notes)
+    expect(again).toEqual({ mythical, written: 0, refusal: null })
+    expect(grown.written).toBe(1)
+    expect(after[0]).not.toBe(mythical)
+    expect(gone).toEqual([null, null, null])
+  })
+}), 120_000)

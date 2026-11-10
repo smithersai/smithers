@@ -8,6 +8,12 @@ import type { CommitPage, EpicPage, Matches, Outline } from "./pages.vibe"
 import type { PlanRequest } from "./Sequencer.vibe"
 export { Refused, Unavailable } from "../core/Factory.vibe"
 
+/** What a publication answers: the `mythical` bookmark's tip and how many commits it wrote. */
+export interface Published {
+  readonly mythical: string
+  readonly written: number
+}
+
 /**
  * The mythical history, read by page (pages.vibe): a reader asks only for what it shows. `outline` is the first view;
  * `epic(id, from)` one page of an epic's commits; `commit(id)` one commit in full; `search(text)` the commits whose
@@ -29,6 +35,8 @@ export service Mythical {
   approve(id: string): void!(Unavailable | Refused)
   /** Folds main's new commits; answers how many. */
   fold(): number!(Unavailable | Refused)
+  /** Publishes the history as git refs in its repository (`vibelang/history/Export`): a maintainer's, never the agent's. */
+  publish(): Published!(Unavailable | Refused)
 }
 
 /** A write's answer as a typed failure: the refusal, or nothing once it was recorded. */

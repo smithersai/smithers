@@ -50,6 +50,10 @@ export effect function serveHistory() {
             break
           }
           case "fold": return { id: "", folded: try product.fold(), refusal: null }
+          case "export": {
+            const published = try product.publish()
+            return { id: published.mythical, folded: published.written, refusal: null }
+          }
         }
         return { id: "", folded: 0, refusal: null }
       } catch effect (error) => {

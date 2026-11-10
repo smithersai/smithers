@@ -13,10 +13,10 @@
 export type Role = "viewer" | "new" | "community" | "contributor" | "maintainer"
 
 /**
- * What a person or the agent can do with the mythical history. The bootstrap is no one's: its host runs it once, on
- * first start, and no request reaches it.
+ * What a person or the agent can do with the mythical history. `export` publishes it as git refs. The bootstrap is no
+ * one's: its host runs it once, on first start, and no request reaches it.
  */
-export type Action = "show" | "append" | "retell" | "start" | "note" | "approve" | "fold"
+export type Action = "show" | "append" | "retell" | "start" | "note" | "approve" | "fold" | "export"
 
 /** Who asks: their role, the name notes carry, and whether the agent acts for them. */
 export interface Principal {
@@ -45,10 +45,10 @@ export function standing(role: Role): number {
 
 /**
  * Each action's least role. Appending adds to the story; retelling (an insert or an amend) changes where others'
- * work sits or what it says, so it is a maintainer's.
+ * work sits or what it says, so it is a maintainer's, as is publishing the history to the repository.
  */
 //@ verify
-//@ ensures action == "approve" || action == "fold" || action == "retell" ==> \result == "maintainer"
+//@ ensures action == "approve" || action == "fold" || action == "retell" || action == "export" ==> \result == "maintainer"
 //@ ensures action == "show" ==> \result == "viewer"
 //@ ensures action == "append" || action == "start" || action == "note" ==> \result == "contributor"
 export function leastRole(action: Action): Role {
@@ -60,21 +60,22 @@ export function leastRole(action: Action): Role {
     case "note": return "contributor"
     case "approve": return "maintainer"
     case "fold": return "maintainer"
+    case "export": return "maintainer"
   }
 }
 
-/** Actions only a person takes: people approve; the agent never does, and never folds what landed. */
+/** Actions only a person takes: people approve; the agent never does, never folds what landed, never exports. */
 //@ verify
-//@ ensures \result == (action == "approve" || action == "fold")
+//@ ensures \result == (action == "approve" || action == "fold" || action == "export")
 export function peopleOnly(action: Action): boolean {
-  return action === "approve" || action === "fold"
+  return action === "approve" || action === "fold" || action === "export"
 }
 
 /** Whether `principal` may take `action`: never the agent for a person-only action, else at least its least role. */
 //@ verify
 //@ ensures \result == (!(principal.agent && peopleOnly(action)) && standing(principal.role) >= standing(leastRole(action)))
-//@ ensures principal.agent && (action == "approve" || action == "fold") ==> !\result
-//@ ensures \result && (action == "approve" || action == "fold") ==> principal.role == "maintainer"
+//@ ensures principal.agent && (action == "approve" || action == "fold" || action == "export") ==> !\result
+//@ ensures \result && (action == "approve" || action == "fold" || action == "export") ==> principal.role == "maintainer"
 export function may(principal: Principal, action: Action): boolean {
   if (principal.agent && peopleOnly(action)) return false
   return standing(principal.role) >= standing(leastRole(action))
@@ -145,7 +146,7 @@ export function record(run: Run): Run {
 //@ verify
 //@ ensures \result == (run.records >= 0 && (run.phase == "recorded") == (run.records > 0) && ((run.phase == "authorized" || run.phase == "recorded") ==> may(run.principal, run.action)) && (run.action != "fold" ==> run.records <= 1))
 //@ ensures \result && run.records > 0 ==> may(run.principal, run.action)
-//@ ensures \result && run.principal.agent && (run.action == "approve" || run.action == "fold") ==> run.records == 0 && run.phase != "authorized"
+//@ ensures \result && run.principal.agent && (run.action == "approve" || run.action == "fold" || run.action == "export") ==> run.records == 0 && run.phase != "authorized"
 export function lawful(run: Run): boolean {
   if (run.records < 0 || (run.phase === "recorded") !== (run.records > 0)) return false
   if ((run.phase === "authorized" || run.phase === "recorded") && !may(run.principal, run.action)) return false
@@ -239,7 +240,11 @@ export function historyBadge(state: string): string {
 //@ ensures refusal == "state" ==> \result == "Not in that state."
 //@ ensures refusal == "full" ==> \result == "History full."
 //@ ensures refusal == "unavailable" ==> \result == "The history can't be reached."
-//@ ensures refusal != "forbidden" && refusal != "empty" && refusal != "too-long" && refusal != "duplicate" && refusal != "unknown" && refusal != "state" && refusal != "full" && refusal != "unavailable" ==> \result == refusal
+//@ ensures refusal == "unsupported" ==> \result == "Export is off."
+//@ ensures refusal == "conflict" ==> \result == "The refs moved. Export again."
+//@ ensures refusal == "tree" || refusal == "linear" || refusal == "notes" ==> \result == "The export failed its check."
+//@ ensures refusal == "nothing" ==> \result == "Nothing to export."
+//@ ensures refusal != "forbidden" && refusal != "empty" && refusal != "too-long" && refusal != "duplicate" && refusal != "unknown" && refusal != "state" && refusal != "full" && refusal != "unavailable" && refusal != "unsupported" && refusal != "conflict" && refusal != "tree" && refusal != "linear" && refusal != "notes" && refusal != "nothing" ==> \result == refusal
 export function historyRefusal(refusal: string): string {
   if (refusal === "forbidden") return "Your role can't do that."
   if (refusal === "empty") return "Needs a title."
@@ -249,6 +254,10 @@ export function historyRefusal(refusal: string): string {
   if (refusal === "state") return "Not in that state."
   if (refusal === "full") return "History full."
   if (refusal === "unavailable") return "The history can't be reached."
+  if (refusal === "unsupported") return "Export is off."
+  if (refusal === "conflict") return "The refs moved. Export again."
+  if (refusal === "tree" || refusal === "linear" || refusal === "notes") return "The export failed its check."
+  if (refusal === "nothing") return "Nothing to export."
   return refusal
 }
 

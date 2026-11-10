@@ -8,7 +8,7 @@ import { HISTORY_PATH, historyRouteOf, pageRequestOf, pathOf } from "../src/hist
 import { run, Int, Text } from "./run.vibe"
 
 const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
-const Action = Schema.Literals(["show", "append", "retell", "start", "note", "approve", "fold"])
+const Action = Schema.Literals(["show", "append", "retell", "start", "note", "approve", "fold", "export"])
 const Word = Schema.Union([Text, Schema.Literals(["forbidden", "empty", "too-long", "duplicate", "unknown", "state", "full", "unavailable", "planned", "working", "approved", "landed", "new", "how", "live", "mock"])])
 const Step = Schema.Literals(["authorize", "record", "begin"])
 const Input = Schema.Struct({
@@ -19,8 +19,8 @@ const Input = Schema.Struct({
 
 it.live("history/machine-contracts", () => run("history/machine-contracts", Input, (input) => {
   const principal: M.Principal = { role: input.role, name: input.name, agent: input.agent }
-  const may = !(input.agent && (input.action === "approve" || input.action === "fold")) && M.standing(input.role) >= M.standing(M.leastRole(input.action))
-  if (M.may(principal, input.action) !== may || M.peopleOnly(input.action) !== (input.action === "approve" || input.action === "fold")) return false
+  const may = !(input.agent && (input.action === "approve" || input.action === "fold" || input.action === "export")) && M.standing(input.role) >= M.standing(M.leastRole(input.action))
+  if (M.may(principal, input.action) !== may || M.peopleOnly(input.action) !== (input.action === "approve" || input.action === "fold" || input.action === "export")) return false
   if (M.atLeast(input.role, "contributor") !== (M.standing(input.role) >= 3)) return false
   // A run through any steps stays lawful; it records only after authorization and, but for a fold, once.
   let state = M.begin(input.action, principal)

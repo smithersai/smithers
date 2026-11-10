@@ -1,0 +1,32 @@
+// Mock mode runs the whole export with no backend (VL-13; decision 0020, "The git export"): VibeLang's own bootstrapped
+// history, exported by a maintainer through `Mythical.publish`, onto the mock's memory repository; the agent and a
+// contributor are refused.
+import { expect, it } from "@effect/vitest"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { Mythical, Refused } from "../src/history/MythicalHistory.vibe"
+
+it.effect("exports VibeLang's whole history in mock mode, then again writes nothing", () => scoped(effect {
+  provide MockMythical({ role: "maintainer", name: "Ada", agent: false }) {
+    const mythical = try Mythical
+    const outline = try mythical.outline()
+    const started = Date.now()
+    const first = try mythical.publish()
+    const took = Date.now() - started
+    const again = try mythical.publish()
+    try Effect.logInfo("mock export").pipe(Effect.annotateLogs({ took, written: first.written }))
+    try Effect.try(() => {
+      expect(first.written).toBe(outline.epics.reduce((total, epic) => total + epic.commits, 0))
+      expect(first.mythical).toMatch(/^[0-9a-f]{40}$/)
+      expect(again).toEqual({ mythical: first.mythical, written: 0 })
+    })
+  }
+}), 120_000)
+
+it.effect("refuses the agent and a contributor an export in mock mode", () => scoped(effect {
+  for (const principal of [{ role: "maintainer", name: "Ada", agent: true }, { role: "contributor", name: "Bo", agent: false }] as const) {
+    provide MockMythical(principal) {
+      const refused = try Effect.flip((try Mythical).publish())
+      try Effect.try(() => expect(refused).toEqual(new Refused({ refusal: "forbidden" })))
+    }
+  }
+}), 120_000)

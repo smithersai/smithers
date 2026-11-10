@@ -57,6 +57,7 @@ describe("the History object in local workerd", () => {
         try at(origin, "/api/history/note", JSON.stringify({ id: "m1", section: "tried", text: "x" })),
         try at(origin, "/api/history/approve", JSON.stringify({ id: "m1" })),
         try at(origin, "/api/history/fold", "{}"),
+        try at(origin, "/api/history/export", "{}"),
       ]
       const statuses = answers.map((answer) => answer.status)
       const bodies: Array<unknown> = []
@@ -64,12 +65,12 @@ describe("the History object in local workerd", () => {
       const after = try (try at(origin, "/api/history")).json
       const runs = (try (try at(origin, "/runs/history")).json) as ReadonlyArray<{ readonly run_id: string; readonly status: string }>
       try Effect.try(() => {
-        expect(statuses).toEqual([403, 403, 403, 403, 403])
-        expect(bodies).toEqual(Array(5).fill({ refusal: "forbidden" }))
+        expect(statuses).toEqual([403, 403, 403, 403, 403, 403])
+        expect(bodies).toEqual(Array(6).fill({ refusal: "forbidden" }))
         expect(after).toEqual(before)
         expect(runs.filter((run) => run.run_id.startsWith("history-")).map((run) => [run.run_id.split("/")[0], run.status])).toEqual([
           ["history-plan", "completed"], ["history-start", "completed"], ["history-note", "completed"],
-          ["history-approve", "completed"], ["history-fold", "completed"],
+          ["history-approve", "completed"], ["history-fold", "completed"], ["history-export", "completed"],
         ])
       })
     }

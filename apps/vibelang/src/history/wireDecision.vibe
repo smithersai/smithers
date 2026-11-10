@@ -44,17 +44,18 @@ export function pageKind(rest: string, commit: string, epic: string, fromDigits:
   return ""
 }
 
-export type WriteName = "plan" | "start" | "note" | "approve" | "fold" | ""
+export type WriteName = "plan" | "start" | "note" | "approve" | "fold" | "export" | ""
 
-/** The write a path names: exactly the history path, `/`, and one of the five flows; "" otherwise. */
+/** The write a path names: exactly the history path, `/`, and one of the six flows; "" otherwise. */
 //@ verify
-//@ ensures \result == (pathname == "/api/history/plan" ? "plan" : (pathname == "/api/history/start" ? "start" : (pathname == "/api/history/note" ? "note" : (pathname == "/api/history/approve" ? "approve" : (pathname == "/api/history/fold" ? "fold" : "")))))
+//@ ensures \result == (pathname == "/api/history/plan" ? "plan" : (pathname == "/api/history/start" ? "start" : (pathname == "/api/history/note" ? "note" : (pathname == "/api/history/approve" ? "approve" : (pathname == "/api/history/fold" ? "fold" : (pathname == "/api/history/export" ? "export" : ""))))))
 export function writeOf(pathname: string): WriteName {
   if (pathname === "/api/history/plan") return "plan"
   if (pathname === "/api/history/start") return "start"
   if (pathname === "/api/history/note") return "note"
   if (pathname === "/api/history/approve") return "approve"
   if (pathname === "/api/history/fold") return "fold"
+  if (pathname === "/api/history/export") return "export"
   return ""
 }
 

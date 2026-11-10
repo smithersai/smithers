@@ -7,7 +7,9 @@
 //             event/<seq> every event after it
 import { FlowRuntime } from "@smthrs/flow"
 import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
-import { Approve, Bootstrap, Fold, historyRegistration, MainLog, Note, Plan, Stack, Start } from "../src/history/flows.vibe"
+import * as Repository from "@smthrs/jj/Repository"
+import { Approve, Bootstrap, Export, exportRegistration, ExportTarget, Fold, historyRegistration, MainLog, Note, Plan, Stack, Start } from "../src/history/flows.vibe"
+import { type Exporter, off } from "./HistoryExport.vibe"
 import type { Event, History } from "../src/history/mythical.vibe"
 import { Caller, type Principal, VIEWER } from "../src/history/roles.vibe"
 import { Refused, Unavailable } from "../src/history/MythicalHistory.vibe"
@@ -124,14 +126,16 @@ export function history(storage: Storage) {
   return make(storeOver(storage))
 }
 
-/** The engine for one execution of `flow`, its steps reaching `sequencer` as `principal`. */
-function runtime(hostId: string, executionId: string, flow: string, storage: Storage, sequencer: Sequencer, principal: Principal, main: MainLog.Shape) {
-  return CloudflareRuntime.layer({ hostId, executionId, flow, retention: EXECUTION_RETENTION }, historyRegistration).pipe(
+/** The engine for one execution of `flow`, its steps reaching `sequencer` as `principal`, an export `exporter`. */
+function runtime(hostId: string, executionId: string, flow: string, storage: Storage, sequencer: Sequencer, principal: Principal, main: MainLog.Shape, exporter: Exporter = off) {
+  return CloudflareRuntime.layer({ hostId, executionId, flow, retention: EXECUTION_RETENTION }, Layer.mergeAll(historyRegistration, exportRegistration)).pipe(
     Layer.provide(ObjectDatabase.layer(storage)),
     Layer.provide(Layer.mergeAll(
       Layer.succeed(Stack, stackOf(sequencer, seeded)),
       Layer.succeed(MainLog, main),
       Layer.succeed(Caller, { principal }),
+      Layer.succeed(Repository.Repository, exporter.repository),
+      Layer.succeed(ExportTarget, { names: exporter.names }),
     )),
   )
 }
@@ -157,7 +161,9 @@ export interface Answered {
 /**
  * Runs one write's flow in the request that asks, as `principal`, on the engine in the object's SQLite. An `operation`
  * (an agent's tool call) names its execution, so asking again answers the recorded result instead of writing again;
- * without one (a person's request) each write is its own execution.
+ * without one (a person's request) each write is its own execution. An export writes through `exporter`, off unless
+ * the deployment's setting names a repository (HistoryExport.vibe); it answers the bookmark's tip as `id` and how many
+ * commits it wrote as `folded`.
  */
 export effect function write(
   hostId: string,
@@ -168,13 +174,19 @@ export effect function write(
   name: Write,
   payload: unknown,
   operation?: string,
+  exporter: Exporter = off,
 ) {
   const executionId = operation === undefined ? try postExecutionId(`history-${name}`) : `history-${name}/${operation}`
-  const tag = { plan: Plan, start: Start, note: Note, approve: Approve, fold: Fold }[name]._tag
+  const tag = { plan: Plan, start: Start, note: Note, approve: Approve, fold: Fold, export: Export }[name]._tag
   return try Effect.orDie(effect {
-    provide runtime(hostId, executionId, tag, storage, sequencer, principal, main) {
+    provide runtime(hostId, executionId, tag, storage, sequencer, principal, main, exporter) {
       const engine = try FlowRuntime.FlowRuntime
       const run = { executionId, payload: payload as never }
+      if (name === "export") {
+        const answer = try engine.execute(Export, { executionId, payload: {} })
+        const answered: Answered = { id: answer.mythical, folded: answer.written, refusal: answer.refusal }
+        return answered
+      }
       if (name === "fold") {
         const answer = try engine.execute(Fold, { executionId, payload: {} })
         const answered: Answered = { id: "", folded: answer.folded, refusal: answer.refusal }

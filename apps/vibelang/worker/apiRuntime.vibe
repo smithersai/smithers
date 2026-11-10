@@ -3,6 +3,7 @@
 export * as Accounts from "./Accounts.vibe"
 export { chatModel, dailyTokens } from "./AgentModel.vibe"
 export { accountsObject, actionIndexObject, apiFetch, budgetObject, conversationObject, historyObject, REPOSITORY, sandboxIdentityOf } from "./apiObjects.vibe"
+export { exporterOf } from "./HistoryExport.vibe"
 export { readSetup } from "./PublicReads.vibe"
 export { gatewayWithIdentity, SandboxGateway, SandboxIdentity } from "./SandboxAccounts.vibe"
 export { specificationModels } from "./SpecificationReviewers.vibe"

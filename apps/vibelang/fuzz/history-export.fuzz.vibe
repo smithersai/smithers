@@ -1,0 +1,151 @@
+// The mythical history's git export under arbitrary input (decision 0020, "The git export"): exportDecision.vibe's
+// contracts as executable oracles (Dafny proves the same text; this runs it), the Export flow over random stories on
+// the mock's repository with every result read back through `Repository`, and the setting the Worker reads.
+import { it } from "@effect/vitest"
+import * as Repository from "@smthrs/jj/Repository"
+import { HttpClient } from "effect/http"
+import * as D from "../src/history/exportDecision.vibe"
+import type { Intent, Real } from "../src/history/mythical.vibe"
+import { EXPORTER, REF_NAMES } from "../src/history/export.vibe"
+import { exporterOf, off } from "../worker/HistoryExport.vibe"
+import { chainOf, told, world } from "../test/support/exportFlow.vibe"
+import { run } from "./run.vibe"
+
+const Id = Schema.Literals(["m1", "m2", "m3", ""])
+const Oid = Schema.Literals(["a", "b", "c", ""])
+const RefsSchema = Schema.Struct({ mythical: Oid, notes: Oid, manifest: Oid })
+const Decisions = Schema.Struct({
+  real: Schema.Array(Schema.Struct({ sha: Schema.Literals(["s1", "s2", "s3"]), mythical: Id })).check(Schema.isMaxLength(6)),
+  id: Id,
+  previous: Schema.Array(Oid).check(Schema.isMaxLength(5)),
+  planned: Schema.Array(Oid).check(Schema.isMaxLength(5)),
+  observed: RefsSchema, published: RefsSchema, candidate: RefsSchema,
+})
+
+it.live("history/export-decisions", () => run("history/export-decisions", Decisions, (input) => {
+  const real: ReadonlyArray<Real> = input.real.map((each) => ({ ...each, change: "", title: "t" }))
+  let last = -1
+  real.forEach((each, at) => { if (each.mythical === input.id) last = at })
+  if (D.lastFold(real, input.id) !== last) return false
+  if (D.treeSource(real, input.id) !== (last < 0 ? "" : real[last]!.sha)) return false
+  let prefix = 0
+  while (prefix < input.planned.length && prefix < input.previous.length && input.planned[prefix] === input.previous[prefix]) prefix++
+  if (D.kept(input.previous, input.planned) !== prefix) return false
+  const names = { mythical: "refs/heads/mythical", notes: "refs/notes/mythical", manifest: "refs/heads/smithers/history" }
+  const moves = D.moves(names, input.published, input.candidate)
+  const expected = (["mythical", "notes", "manifest"] as const).map((key) => ({ ref: names[key], before: input.published[key], after: input.candidate[key] }))
+  if (JSON.stringify(moves) !== JSON.stringify(expected)) return false
+  const same = (a: D.Refs, b: D.Refs) => JSON.stringify([a.mythical, a.notes, a.manifest]) === JSON.stringify([b.mythical, b.notes, b.manifest])
+  if (D.same(input.observed, input.published) !== same(input.observed, input.published)) return false
+  const outcome = same(input.observed, input.candidate) ? "published" : same(input.observed, input.published) ? "unchanged" : "conflict"
+  return D.confirmed(input.observed, input.published, input.candidate) === outcome
+}))
+
+/** A random story: up to five commits over two epics, each left planned, worked, approved or landed by 1 to 3 folds. */
+/** What the repository does wrong, if anything, and the refusal the export answers for it. */
+const FAULTS = {
+  none: null, tree: "tree", parent: "linear", note: "notes", manifest: "linear", unreadable: "unavailable", refused: "unavailable", lost: null, race: "conflict", bare: "invalid", short: "linear",
+} as const
+type Fault = keyof typeof FAULTS
+
+function faulty(fault: Fault, first: string) {
+  return (repository: Repository.Repository): Repository.Repository => {
+    let reads = 0
+    switch (fault) {
+      case "tree": return { ...repository, readCommit: (revision) => revision === first && ++reads > 1 ? Effect.map(repository.readCommit(revision), (commit) => ({ ...commit, tree: "f".repeat(40) })) : repository.readCommit(revision) }
+      case "parent": return { ...repository, readCommit: (revision) => Effect.map(repository.readCommit(revision), (commit) => commit.message.includes("Mythical: m1\n") ? { ...commit, parents: ["f".repeat(40)] } : commit) }
+      case "note": return { ...repository, readTree: (oid) => Effect.map(repository.readTree(oid), (entries) => entries.length > 0 && entries.every((entry) => entry.name.length === 40) ? entries.slice(1) : entries) }
+      case "manifest": return { ...repository, readBlob: (oid) => Effect.map(repository.readBlob(oid), (text) => text.startsWith("{\"schema\":1") ? text.replace(/"notes":"[0-9a-f]+"/, `"notes":"${"0".repeat(40)}"`) : text) }
+      // The manifest's commits end last, so dropping the final entry leaves `...]]}` ending one commit short.
+      case "short": return { ...repository, readBlob: (oid) => Effect.map(repository.readBlob(oid), (text) => text.startsWith("{\"schema\":1") ? text.replace(/,?\["m\d+","[0-9a-f]+","[0-9a-f]*","[0-9a-f]+"\]\]\}\n?$/, "]}") : text) }
+      case "unreadable": return { ...repository, readBlob: () => Effect.fail(Repository.repositoryError("unavailable", "readBlob", "down")) }
+      case "refused": return { ...repository, updateRefs: () => Effect.fail(Repository.repositoryError("unavailable", "updateRefs", "refused")) }
+      case "lost": return { ...repository, updateRefs: (transaction) => Effect.flatMap(repository.updateRefs(transaction), () => Effect.fail(Repository.repositoryError("unavailable", "updateRefs", "lost"))) }
+      case "race": return { ...repository, updateRefs: (transaction) => Effect.flatMap(repository.updateRefs({ operation: "other", updates: [{ ref: transaction.updates[2]!.ref, before: transaction.updates[2]!.before, after: transaction.updates[0]!.after }] }), () => repository.updateRefs(transaction)) }
+      default: return repository
+    }
+  }
+}
+
+const Story = Schema.Struct({
+  commits: Schema.Array(Schema.Struct({ epic: Schema.Literals(["e1", "e2"]), state: Schema.Literals(["planned", "working", "approved", "landed"]), folds: Schema.Literals([1, 2, 3]), insert: Schema.Boolean })).check(Schema.isMinLength(1), Schema.isMaxLength(5)),
+  more: Schema.Boolean,
+  fault: Schema.Literals(Object.keys(FAULTS) as Array<Fault>),
+})
+
+function storyOf(input: typeof Story.Type): ReadonlyArray<Intent> {
+  const intents: Array<Intent> = [{ type: "OpenEpic", id: "e1", title: "one" }, { type: "OpenEpic", id: "e2", title: "two" }]
+  let sha = 0
+  input.commits.forEach((commit, at) => {
+    const id = `m${at + 1}`
+    intents.push({ type: "Plan", id, epic: commit.epic, before: commit.insert && at > 0 && input.commits[0]!.epic === commit.epic ? "m1" : "", title: `commit ${at + 1}`, task: "" })
+    if (commit.state === "planned") return
+    intents.push({ type: "Start", id, lane: "fuzz" })
+    if (commit.state === "working") return
+    intents.push({ type: "Approve", id, by: "Fuzz" })
+    if (commit.state === "approved") return
+    for (let fold = 0; fold < commit.folds; fold++) {
+      intents.push({ type: "Fold", sha: (++sha).toString(16).padStart(12, "0"), change: "", title: `real ${sha}`, into: id })
+    }
+  })
+  return intents
+}
+
+it.live("history/export-flow", () => run("history/export-flow", Story, (input) => scoped(effect {
+  const story = storyOf(input)
+  // A commit takes its last fold's tree, so the tree fault tampers the last fold of the story.
+  const landed = [...story].reverse().find((intent) => intent.type === "Fold")
+  // A tree fault needs a real commit to answer it; with none, the story publishes as if nothing were wrong.
+  const fault: Fault = input.fault === "tree" && landed === undefined ? "none" : input.fault
+  const { sequencer, repository, run: exported, refs } = try world({ wrap: faulty(fault, landed?.type === "Fold" ? landed.sha : "") })
+  try told(sequencer, story)
+  if (fault === "bare") {
+    // A manifest bookmark that holds no manifest: the export refuses it rather than guess.
+    const commit = try repository.writeCommit({ tree: Repository.EMPTY_TREE, parents: [], author: EXPORTER, committer: EXPORTER, message: "not a manifest\n" })
+    try repository.updateRefs({ operation: "fuzz", updates: [{ ref: REF_NAMES.manifest, before: null, after: commit }] })
+  }
+  const history = try sequencer.read()
+  const answer = try exported()
+  const [mythical] = try refs()
+  const expected = FAULTS[fault]
+  if (expected !== null) return answer.refusal === expected && (fault === "race" || fault === "bare" || mythical === null)
+  if (answer.refusal !== null || mythical === null || answer.mythical !== mythical || answer.written !== history.commits.length) return false
+  // Linear, in stack order: each commit's only parent is the one before, its tree its last fold's or its parent's.
+  const chain = try chainOf(repository, mythical)
+  let parentTree = Repository.EMPTY_TREE
+  for (const [at, commit] of chain.entries()) {
+    if (commit.parents.length !== (at === 0 ? 0 : 1) || (at > 0 && commit.parents[0] !== chain[at - 1]!.oid)) return false
+    const id = /Mythical: (m\d+)/.exec(commit.message)![1]!
+    const source = D.treeSource(history.real, id)
+    const tree = source === "" ? parentTree : (try repository.readCommit(source)).tree
+    if (commit.tree !== tree) return false
+    parentTree = commit.tree
+  }
+  if (chain.length !== history.commits.length) return false
+  // Again writes nothing; one more commit at the end writes one.
+  const again = try exported()
+  if (again.written !== 0 || again.mythical !== mythical) return false
+  if (!input.more) return true
+  // One more commit: at the end, or before m1, which rewrites the bookmark from there on.
+  const first = history.commits[0]!
+  const front = input.commits[0]!.insert
+  try told(sequencer, [{ type: "Plan", id: `m${history.commits.length + 1}`, epic: front ? first.epic : "e2", before: front ? "m1" : "", title: "one more", task: "" }])
+  const grown = try exported()
+  const after = try chainOf(repository, (try refs())[0]!)
+  return grown.refusal === null && after.length === chain.length + 1 && (front ? grown.written >= 2 || after[0]!.message.startsWith("one more") : grown.written >= 1)
+})))
+
+const Setting = Schema.Struct({
+  setting: Schema.UndefinedOr(Schema.Union([Schema.Literals(["off", "github:codeplanesmithers/smithers-vibelang-e2e", "github:smithersai/vibelang", "github:a/b/c", "github:/x", "gitlab:a/b"]), Schema.String])),
+  token: Schema.Boolean,
+  api: Schema.Boolean,
+})
+
+/** A client that fails the property if building an exporter reaches GitHub. */
+const unreachable = HttpClient.make(() => Effect.die("building an exporter made a request"))
+
+it.live("history/export-setting", () => run("history/export-setting", Setting, ({ setting, token, api }) => effect {
+  const exporter = try exporterOf(setting, token ? Redacted.make("fuzz-token") : undefined, unreachable, REF_NAMES, api ? "http://github.test" : undefined)
+  const github = token && setting !== undefined && /^github:[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/.test(setting)
+  return (exporter === off) === !github
+}))

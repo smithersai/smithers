@@ -46,7 +46,7 @@ it("History browser commands return safe read outages and exact write refusals",
     for (const reason of ["forbidden", "unavailable"] as const) {
       const unavailable = () => fail(new Unavailable({ reason: "Synthetic transport detail" }))
       const write = () => reason === "forbidden" ? fail(new Refused({ refusal: reason })) : unavailable()
-      const faulty: Mythical.Shape = { mode: "live", outline: unavailable, epic: unavailable, commit: unavailable, search: unavailable, events: () => Stream.fail(new Unavailable({ reason: "Synthetic transport detail" })), plan: write, start: write, note: write, approve: write, fold: write }
+      const faulty: Mythical.Shape = { mode: "live", outline: unavailable, epic: unavailable, commit: unavailable, search: unavailable, events: () => Stream.fail(new Unavailable({ reason: "Synthetic transport detail" })), plan: write, start: write, note: write, approve: write, fold: write, publish: write }
       provide Mythical = faulty {
         const reads = try all([execute(() => ReadOutline({})), execute(() => ReadEpic({ id: "e1", from: 0 })), execute(() => ReadCommit({ id: "m1" })), execute(() => ReadMatches({ query: "Measured" }))])
         const writes = try all([execute(() => PlanCommand(plan)), execute(() => StartCommand({ id: "m1", lane: "bench" })), execute(() => NoteCommand({ id: "m1", section: "tried", text: "Evidence" })), execute(() => ApproveCommand({ id: "m1" })), execute(() => FoldCommand({}))])

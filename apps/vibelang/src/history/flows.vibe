@@ -9,6 +9,7 @@
 //   vibelang/history/Note        authorize ─▶ record   what a rebase would lose                        contributor
 //   vibelang/history/Approve     authorize ─▶ record   a person approves the worked commit to land     maintainer, people only
 //   vibelang/history/Fold        authorize ─▶ main ─▶ read ─▶ commits (fold/<sha> each)                maintainer, people only
+//   vibelang/history/Export      authorize ─▶ run (export/prepare, check, publish, confirm)            maintainer, people only
 //   vibelang/history/Bootstrap   load                  the first start loads the bootstrapped history  its host only
 //   vibelang/history/show        authorize ─▶ read     the agent reads the history (tools.vibe)        viewer
 //
@@ -19,7 +20,10 @@
 // (`historyRegistration`); the action host reaches the history through its `HistoryReader`
 // (src/actions/execution.vibe). Every host's authorize step reads who asks from `Caller`.
 import { Action as Step, Flow, Interpreter } from "@smthrs/flow"
+import * as Repository from "@smthrs/jj/Repository"
 import { Node } from "@smthrs/plan"
+import { check, NONE, prepare, publish, readRefs } from "./export.vibe"
+import { confirmed, type RefNames, same } from "./exportDecision.vibe"
 import { authorize, begin, canRecord, historySignature, type Run } from "./flowMachine.vibe"
 import type { History } from "./mythical.vibe"
 import { type Action, ACTIONS, Caller, type Principal, ROLES } from "./roles.vibe"
@@ -61,6 +65,11 @@ export error MainUnavailable { reason: string }
 /** The project's main, as a fold reads it: its first-parent commits after `sha`, oldest first. */
 export service MainLog {
   since(sha: string): ReadonlyArray<MainCommit>!MainUnavailable
+}
+
+/** Where an export writes: the repository's three refs (export.vibe `REF_NAMES` for VibeLang's own). */
+export service ExportTarget {
+  readonly names: RefNames
 }
 
 /** History steps, by step and outcome. */
@@ -119,6 +128,19 @@ export const FoldRead = Step.make("vibelang/history/fold/read", {
 export const FoldCommits = Step.make("vibelang/history/fold/commits", { payload: { commits: Schema.Array(MainCommitSchema) }, success: FoldAnswer })
 /** Loads the bootstrapped history into an empty store: `false` when the history has any event. */
 export const LoadBootstrap = Step.make("vibelang/history/bootstrap/load", { payload: {}, success: Schema.Boolean })
+
+/** An export's answer: the bookmark's tip and how many commits it wrote, or why it was refused. */
+export const ExportAnswer = Schema.Struct({ mythical: Schema.String, written: Schema.Number, refusal: Schema.NullOr(Schema.String) })
+const RefsSchema = Schema.Struct({ mythical: Schema.String, notes: Schema.String, manifest: Schema.String })
+const Prepared = Schema.Struct({ published: RefsSchema, candidate: RefsSchema, written: Schema.Number, refusal: Schema.NullOr(Schema.String) })
+const Checked = Schema.Struct({ checked: Schema.Number, refusal: Schema.NullOr(Schema.String) })
+const Sent = Schema.Struct({ refusal: Schema.NullOr(Schema.String) })
+const Observed = Schema.Struct({ refs: RefsSchema, refusal: Schema.NullOr(Schema.String) })
+type ExportAnswered = typeof ExportAnswer.Type
+
+export const AuthorizeExport = Step.make("vibelang/history/export/authorize", { payload: {}, success: RunSchema })
+/** The export's run: its prepare, check, publish and confirm steps, each journaled under `vibelang/history/export/<step>`. */
+export const RunExport = Step.make("vibelang/history/export/run", { payload: {}, success: ExportAnswer })
 
 // ── the flows ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -194,6 +216,18 @@ export const Fold = Flow.make("vibelang/history/Fold", {
   }))),
 })
 
+export const Export = Flow.make("vibelang/history/Export", {
+  description: "Publishes the mythical history to the repository: the linear `mythical` bookmark, its notes and its manifest, moved together only from the values read.",
+  modelInvocable: false,
+  payload: {},
+  success: ExportAnswer,
+  body: Node.capture({}, () => AuthorizeExport.call({}).pipe(Node.branch({
+    if: Node.capture({}, (run) => canRecord(run)),
+    then: () => RunExport.call({}),
+    else: () => Node.succeed({ mythical: "", written: 0, refusal: "forbidden" }),
+  }))),
+})
+
 export const Bootstrap = Flow.make("vibelang/history/Bootstrap", {
   description: "Loads the mythical history bootstrapped from the project's real history into an empty history.",
   modelInvocable: false,
@@ -251,6 +285,48 @@ effect function foldCommits(commits: ReadonlyArray<MainCommit>) {
   return { folded: count, refusal: null }
 }
 
+/** A repository failure as a step's answer: its code alone, never its message. */
+function refusing<A, R>(body: A!Repository.RepositoryError!R, refused: (code: string) => A) {
+  return Effect.catch(body, (error) => Effect.succeed(refused(error.code)))
+}
+
+/** One export step, journaled as `vibelang/history/export/<name>`, counted by its outcome. */
+function exportStep<S extends Schema.Top, R>(name: string, success: S, body: S["Type"]!!R, outcome: (answer: S["Type"]) => string) {
+  return Step.make({
+    name: `vibelang/history/export/${name}`,
+    success,
+    execute: withSpan(effect {
+      const answer = try body
+      try counted(`export.${name}`, outcome(answer))
+      return answer
+    }, `vibelang.history.export.${name}`),
+  })
+}
+
+/** Export's run: prepare, then (when anything changed) check, publish and confirm, each its own journaled step. */
+effect function runExport() {
+  const names = (try ExportTarget).names
+  const prepared = try exportStep("prepare", Prepared, effect {
+    const history = try (try Stack).read()
+    const empty: typeof Prepared.Type = { published: NONE, candidate: NONE, written: 0, refusal: "nothing" }
+    if (history.commits.length === 0) return empty
+    return try refusing(Effect.map(prepare(history, names), (done): typeof Prepared.Type => ({ ...done, refusal: null })), (refusal): typeof Prepared.Type => ({ ...empty, refusal }))
+  }, (answer) => answer.refusal ?? (same(answer.published, answer.candidate) ? "current" : "written"))
+  const answer = (mythical: string, written: number, refusal: string | null): ExportAnswered => ({ mythical, written, refusal })
+  if (prepared.refusal !== null) return answer("", 0, prepared.refusal)
+  if (same(prepared.published, prepared.candidate)) return answer(prepared.candidate.mythical, 0, null)
+  const { published, candidate } = prepared
+  const checked = try exportStep("check", Checked, refusing(check(published, candidate), (refusal): typeof Checked.Type => ({ checked: 0, refusal })), (answer) => answer.refusal ?? "checked")
+  if (checked.refusal !== null) return answer(published.mythical, 0, checked.refusal)
+  const none: typeof Sent.Type = { refusal: null }
+  const sent = try exportStep("publish", Sent, refusing(Effect.as(publish(names, published, candidate), none), (refusal): typeof Sent.Type => ({ refusal })), (answer) => answer.refusal ?? "sent")
+  // Whatever publish answered, the refs say what happened: a lost answer that landed is a publication.
+  const observed = try exportStep("confirm", Observed, refusing(Effect.map(readRefs(try Repository.Repository, names), (refs): typeof Observed.Type => ({ refs, refusal: null })), (refusal): typeof Observed.Type => ({ refs: NONE, refusal })), (answer) => answer.refusal ?? confirmed(answer.refs, published, candidate))
+  const outcome = observed.refusal === null ? confirmed(observed.refs, published, candidate) : "unchanged"
+  if (outcome === "published") return answer(candidate.mythical, prepared.written, null)
+  return answer(published.mythical, 0, outcome === "conflict" ? "conflict" : (sent.refusal ?? observed.refusal ?? "unavailable"))
+}
+
 /** Bootstrap's load step. */
 effect function loadBootstrap() {
   const loaded = try (try Stack).bootstrap()
@@ -287,3 +363,12 @@ export const historyRegistration = Layer.mergeAll(
   )),
   Interpreter.layerWithImplementations(Bootstrap, LoadBootstrap.toLayer(() => withSpan(loadBootstrap(), "vibelang.history.bootstrap.load"))),
 )
+
+/**
+ * Registers `vibelang/history/Export`, for the hosts that hold a repository: its steps reach the sequencer through
+ * `Stack`, the repository through `@smthrs/jj`'s `Repository`, its refs through `ExportTarget`, who asks through `Caller`.
+ */
+export const exportRegistration = Interpreter.layerWithImplementations(Export, Layer.mergeAll(
+  AuthorizeExport.toLayer(authorizer("export")),
+  RunExport.toLayer(() => withSpan(runExport(), "vibelang.history.export.run")),
+))

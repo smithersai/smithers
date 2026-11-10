@@ -1,0 +1,49 @@
+// Where the History object publishes the mythical history (wiki/decisions/0020-mythical-history.md, "The git export"),
+// from one setting. Publishing to VibeLang's own repository stays off until Will grants the site that write: with no
+// setting, or `off`, the export's repository answers every call `unsupported` and the flow refuses before reading.
+//
+//   HISTORY_EXPORT        off (the default) | github:<owner>/<repo>
+//   HISTORY_EXPORT_TOKEN  a token that may write that repository's refs; required for github:
+import { GitHub } from "@smthrs/integrations"
+import * as Repository from "@smthrs/jj/Repository"
+import { HttpClient } from "effect/http"
+import { REF_NAMES } from "../src/history/export.vibe"
+import type { RefNames } from "../src/history/exportDecision.vibe"
+
+/** Where an export writes: the repository and its three refs. */
+export interface Exporter {
+  readonly repository: Repository.Repository
+  readonly names: RefNames
+}
+
+/** Why the export is off, as every repository call answers it. */
+export const OFF = "publishing the history is off"
+
+/** The export switched off. */
+export const off: Exporter = { repository: Repository.makeUnsupported(OFF), names: REF_NAMES }
+
+const TARGET = /^github:([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100})$/
+
+/**
+ * The exporter `setting` names: off unless it is `github:<owner>/<repo>` and a token is given, then that repository on
+ * GitHub through `GitHub.GitDatabase`, over `client`, at `api` (GitHub's own unless a test names another), with
+ * VibeLang's ref names unless `names` says others.
+ */
+export effect function exporterOf(
+  setting: string | undefined,
+  token: Redacted.Redacted<string> | undefined,
+  client: HttpClient.HttpClient,
+  names: RefNames = REF_NAMES,
+  api?: string,
+) {
+  const target = TARGET.exec(setting ?? "off")
+  if (target === null || token === undefined) {
+    try Effect.logInfo("vibelang.history.export.setting").pipe(Effect.annotateLogs({ outcome: "off" }))
+    return off
+  }
+  const github = try Effect.orDie(Effect.provideService(GitHub.GitHubClient.make({ token: Redacted.value(token), ...(api === undefined ? {} : { apiBaseUrl: api }) }, {}), HttpClient.HttpClient, client))
+  const repository = try Effect.orDie(Effect.provideService(GitHub.GitDatabase.make(target[1]!, target[2]!), GitHub.GitHubClient.GitHubClient, github))
+  try Effect.logInfo("vibelang.history.export.setting").pipe(Effect.annotateLogs({ outcome: "github" }))
+  const exporter: Exporter = { repository, names }
+  return exporter
+}

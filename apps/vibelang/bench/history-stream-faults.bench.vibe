@@ -29,6 +29,7 @@ function failing(counts: { outlines: number; follows: number }) {
       note: (id, section, text, operation) => real.note(id, section, text, operation),
       approve: (id) => real.approve(id),
       fold: () => real.fold(),
+      publish: () => real.publish(),
     }
     return service
   }).pipe(Layer.provide(MockMythical({ role: "maintainer", name: "Benchmark", agent: false }, () => succeed(plannedHistory(10)))))

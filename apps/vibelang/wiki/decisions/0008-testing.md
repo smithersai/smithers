@@ -432,3 +432,9 @@ repairs per-frame NDJSON recovery, JSON-RPC parse replies and terminal stdio fai
 inject faulty Stdio services; the surfaces/mcp-stdio fuzz target sends malformed frames followed by initialize,
 both separately and in one chunk. Production app files are unchanged. See patches/README.md for patch construction
 and removal conditions.
+
+## Tool list: the mythical history's git export (0020)
+
+`@smthrs/jj`, the monorepo's own jj package (`workspace:*`), is a new runtime dependency of this app for its
+`Repository` service (`@smthrs/jj/Repository`), and of `@smthrs/integrations` (`1.0.0-rc.17`) for
+`GitHub.GitDatabase`. No external package is added. Awaiting Will's VL-5 approval.

@@ -28,6 +28,7 @@ it.live("reads, follows, plans, works, notes, approves and folds through the sha
       try client.note(id, "evidence", "The public HTTP lifecycle passed.")
       try client.approve(id)
       const folded = try client.fold()
+      const exported = try client.publish()
       const snapshot = try client.commit(id)
       const events = join event
       const refusal = client.start("m999", "coverage") catch (error) => error._tag === "Refused" ? error.refusal : error.reason
@@ -41,6 +42,8 @@ it.live("reads, follows, plans, works, notes, approves and folds through the sha
       try Effect.try(() => {
         expect(client.mode).toBe("live")
         expect(folded).toBe(1)
+        expect(exported.written).toBe(1)
+        expect(exported.mythical).toMatch(/^[0-9a-f]{40}$/)
         expect(snapshot.commit).toMatchObject({ id, title: plan.title, state: "landed", task: "", lane: "" })
         expect(epic.commits).toMatchObject([{ id, title: plan.title, state: "landed" }])
         expect(found.commits).toEqual([])
@@ -111,11 +114,12 @@ function operation(client: Mythical.Shape, name: string) {
     case "start": return client.start("m1", "coverage")
     case "note": return client.note("m1", "tried", "Boundary")
     case "approve": return client.approve("m1")
+    case "export": return Effect.asVoid(client.publish())
     default: return Effect.asVoid(client.fold())
   }
 }
 
-for (const name of ["outline", "epic", "commit", "search", "events", "plan", "start", "note", "approve", "fold"]) {
+for (const name of ["outline", "epic", "commit", "search", "events", "plan", "start", "note", "approve", "fold", "export"]) {
   it.effect(`${name} reports unavailable transport without returning its contents`, () => effect {
     const broken = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "private transport contents" }) })))
     provide HttpClient.HttpClient = broken {

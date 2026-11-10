@@ -1,0 +1,231 @@
+// The mythical history's git export (wiki/decisions/0020-mythical-history.md, "The git export"): a strictly linear
+// `mythical` bookmark, `refs/notes/mythical` and a manifest bookmark, derived from the history and written through
+// `@smthrs/jj`'s `Repository` service, never a git command. `flows.vibe`'s `vibelang/history/Export` runs these four as
+// journaled steps.
+//
+//   prepare  read the three refs and the last manifest; plan every commit; write the ones not yet written,
+//            each note, the notes commit and the manifest                                    (objects only)
+//   check    read back each new commit: one parent, the one before it; its tree the tree of its last folded
+//            real commit, read from the repository, or its parent's for a reservation; a note for every commit
+//   publish  one compare-and-swap of all three refs, each from the value prepare read          (refs)
+//   confirm  read the refs: the candidate landed, nothing moved, or another writer won
+//
+// A planned, working or approved commit with nothing folded into it is an empty reservation: its tree is its
+// parent's, so the bookmark's tree is always the tree of the last real commit it folds. The commits' author, committer
+// and date are fixed, so the same history is the same commits, and preparing again writes nothing new.
+import * as Repository from "@smthrs/jj/Repository"
+import { kept, moves, type RefNames, type Refs, treeSource } from "./exportDecision.vibe"
+import type { Commit, History, Real } from "./mythical.vibe"
+import { stacked } from "./pages.vibe"
+
+/** Where VibeLang's export lives in its repository. */
+export const REF_NAMES: RefNames = {
+  mythical: "refs/heads/mythical",
+  notes: "refs/notes/mythical",
+  manifest: "refs/heads/smithers/history",
+}
+
+/** Who every exported commit names as author and committer, and when: 2026-11-07, the day of decision 0020. */
+export const EXPORTER: Repository.Person = { name: "VibeLang mythical history", email: "history@vibelang.smithers.sh", seconds: 1794009600 }
+
+/** The manifest's one file. */
+export const MANIFEST_FILE = "manifest.json"
+
+/** No ref: the value of a ref that does not exist. */
+export const NONE: Refs = { mythical: "", notes: "", manifest: "" }
+
+/**
+ * The manifest a publication carries on its own bookmark: main as of the export, the two tips it names, and each
+ * mythical commit in stack order as `[id, commit, real commit whose tree it takes or "", tree]`.
+ */
+export schema Manifest {
+  readonly schema: 1
+  readonly main: string
+  readonly mythical: string
+  readonly notes: string
+  readonly commits: ReadonlyArray<readonly [string, string, string, string]>
+}
+
+const decodeManifest = Schema.decodeUnknownEffect(Schema.fromJsonString(Manifest))
+
+/** A commit's message: its title, then the trailers that name it and its epic. */
+export function messageOf(commit: Commit): string {
+  return `${commit.title}\n\nMythical: ${commit.id}\nEpic: ${commit.epic}\n`
+}
+
+/** One section of a note: its heading, then a line per entry, or `(none)`. */
+function section(heading: string, lines: ReadonlyArray<string>): string {
+  return `${heading}\n${lines.length === 0 ? "(none)\n" : lines.map((line) => `- ${line}\n`).join("")}`
+}
+
+/** A commit's note: its state, then its four sections, as the view shows them; Folded lists the real commits it folds. */
+export function noteOf(commit: Commit, folded: ReadonlyArray<Real>): string {
+  const of = (kind: string) => commit.notes.filter((note) => note.section === kind).map((note) => `${note.text} (${note.by})`)
+  return [
+    `${commit.id} ${commit.state}\n`,
+    section("Tried", of("tried")),
+    section("Evidence", of("evidence")),
+    section("Folded", folded.map((real) => `${real.sha} ${real.title}`)),
+    section("Superseded", of("superseded")),
+  ].join("\n")
+}
+
+/** One planned commit of the chain. */
+interface Link {
+  readonly commit: Commit
+  readonly object: Repository.CommitObject
+  readonly oid: string
+  readonly source: string
+}
+
+/** The manifest the bookmark `oid` points at. */
+export effect function readManifest(repository: Repository.Repository, oid: string) {
+  const commit = try repository.readCommit(oid)
+  const entry = (try repository.readTree(commit.tree)).find((each) => each.name === MANIFEST_FILE)
+  const text = entry === undefined ? "" : try repository.readBlob(entry.oid)
+  return try Effect.mapError(decodeManifest(text), () => Repository.repositoryError("invalid", "readManifest", "the manifest bookmark holds no manifest"))
+}
+
+/** The three refs' values now. */
+export effect function readRefs(repository: Repository.Repository, names: RefNames) {
+  const [mythical, notes, manifest] = try repository.readRefs([names.mythical, names.notes, names.manifest])
+  const refs: Refs = { mythical: mythical?.oid ?? "", notes: notes?.oid ?? "", manifest: manifest?.oid ?? "" }
+  return refs
+}
+
+/** What `prepare` answers: the refs it read, the refs a publication would set, and how many commits it wrote. */
+export interface Prepared {
+  readonly published: Refs
+  readonly candidate: Refs
+  readonly written: number
+}
+
+/**
+ * Plans the export of `history` and writes every object it needs, moving no ref. A commit the last export already
+ * wrote at the same place (`kept`, proved) is not written again; a real commit's tree is read from the repository
+ * once and then taken from the manifest.
+ */
+export effect function prepare(history: History, names: RefNames) {
+  const repository = try Repository.Repository
+  const published = try readRefs(repository, names)
+  const previous = published.manifest === "" ? undefined : try readManifest(repository, published.manifest)
+  const trees = new Map<string, string>((previous?.commits ?? []).filter((entry) => entry[2] !== "").map((entry) => [entry[2], entry[3]]))
+  const chain: Array<Link> = []
+  let parent = ""
+  let parentTree = Repository.EMPTY_TREE
+  for (const commit of stacked(history)) {
+    const source = treeSource(history.real, commit.id)
+    let tree = parentTree
+    if (source !== "") {
+      const known = trees.get(source)
+      tree = known ?? (try repository.readCommit(source)).tree
+      trees.set(source, tree)
+    }
+    const object: Repository.CommitObject = { tree, parents: parent === "" ? [] : [parent], author: EXPORTER, committer: EXPORTER, message: messageOf(commit) }
+    const oid = try Repository.hashCommit(object)
+    chain.push({ commit, object, oid, source })
+    parent = oid
+    parentTree = tree
+  }
+  const keep = kept((previous?.commits ?? []).map((entry) => entry[1]), chain.map((link) => link.oid))
+  for (const link of chain.slice(keep)) {
+    try repository.writeCommit(link.object)
+  }
+
+  // Notes: a blob per commit, written only when the last notes tree lacks it; one tree; a commit only when it changed.
+  const folds = new Map<string, Array<Real>>()
+  for (const real of history.real) folds.set(real.mythical, [...(folds.get(real.mythical) ?? []), real])
+  const notesTree = published.notes === "" ? "" : (try repository.readCommit(published.notes)).tree
+  const noted = new Map((notesTree === "" ? [] : try repository.readTree(notesTree)).map((entry) => [entry.name, entry.oid]))
+  const entries: Array<Repository.TreeEntry> = []
+  for (const link of chain) {
+    const text = noteOf(link.commit, folds.get(link.commit.id) ?? [])
+    const blob = try Repository.hashBlob(text)
+    if (noted.get(link.oid) !== blob) {
+      try repository.writeBlob(text)
+    }
+    entries.push({ name: link.oid, mode: "100644", oid: blob })
+  }
+  let notes = published.notes
+  if ((try Repository.hashTree(entries)) !== notesTree) {
+    const tree = try repository.writeTree(entries)
+    notes = try repository.writeCommit({ tree, parents: published.notes === "" ? [] : [published.notes], author: EXPORTER, committer: EXPORTER, message: "Notes for the mythical history\n" })
+  }
+
+  const mythical = parent
+  const manifest: Manifest = {
+    schema: 1,
+    main: history.main,
+    mythical,
+    notes,
+    commits: chain.map((link) => [link.commit.id, link.oid, link.source, link.object.tree] as const),
+  }
+  let manifestTip = published.manifest
+  if (previous === undefined || JSON.stringify(previous) !== JSON.stringify(manifest)) {
+    const blob = try repository.writeBlob(`${JSON.stringify(manifest)}\n`)
+    const tree = try repository.writeTree([{ name: MANIFEST_FILE, mode: "100644", oid: blob }])
+    // The last manifest, and a bookmark the new one rewrote rather than extended, stay reachable from the new manifest:
+    // a rewrite loses no commit.
+    const rewritten = published.mythical !== "" && !chain.some((link) => link.oid === published.mythical)
+    const parents = [published.manifest, rewritten ? published.mythical : ""].filter((oid) => oid !== "")
+    manifestTip = try repository.writeCommit({ tree, parents, author: EXPORTER, committer: EXPORTER, message: `Mythical history through ${history.main === "" ? "nothing" : history.main}\n` })
+  }
+  const prepared: Prepared = { published, candidate: { mythical, notes, manifest: manifestTip }, written: chain.length - keep }
+  return prepared
+}
+
+/** Why a check refused: a commit that is not the one before it's only child, a tree that is not main's, or a missing note. */
+export type CheckRefusal = "linear" | "tree" | "notes"
+
+/** What `check` answers: how many new commits it read back, or why it refused. */
+export interface Checked {
+  readonly checked: number
+  readonly refusal: string | null
+}
+
+/**
+ * Checks, by reading the repository, every commit the candidate manifest names that the published one does not: its
+ * only parent is the commit before it; its tree is the tree of the real commit it folds, or its parent's tree for an
+ * empty reservation; and the candidate notes hold a note for it. Answers how many it checked, or why it refused.
+ */
+export effect function check(published: Refs, candidate: Refs) {
+  const repository = try Repository.Repository
+  const manifest = try readManifest(repository, candidate.manifest)
+  const old = new Set(published.manifest === "" ? [] : (try readManifest(repository, published.manifest)).commits.map((entry) => entry[1]))
+  let parent = ""
+  let checked = 0
+  let refusal: CheckRefusal | null = manifest.mythical === candidate.mythical && manifest.notes === candidate.notes ? null : "linear"
+  for (const [, oid, source] of manifest.commits) {
+    if (refusal !== null) break
+    if (!old.has(oid)) {
+      const commit = try repository.readCommit(oid)
+      const parents = parent === "" ? [] : [parent]
+      const tree = source === ""
+        ? parent === "" ? Repository.EMPTY_TREE : (try repository.readCommit(parent)).tree
+        : (try repository.readCommit(source)).tree
+      if (commit.parents.length !== parents.length || commit.parents.some((each, at) => each !== parents[at])) refusal = "linear"
+      else if (commit.tree !== tree) refusal = "tree"
+      checked++
+    }
+    parent = oid
+  }
+  if (refusal === null && parent !== candidate.mythical) refusal = "linear"
+  if (refusal === null) {
+    const noted = new Set((try repository.readTree((try repository.readCommit(candidate.notes)).tree)).map((entry) => entry.name))
+    if (!manifest.commits.every((entry) => noted.has(entry[1]))) refusal = "notes"
+  }
+  const result: Checked = { checked, refusal }
+  return result
+}
+
+/** Moves all three refs in one compare-and-swap, each from its published value (`moves`, proved). */
+export effect function publish(names: RefNames, published: Refs, candidate: Refs) {
+  const repository = try Repository.Repository
+  const updates = moves(names, published, candidate).map((move): Repository.RefUpdate => ({
+    ref: move.ref,
+    before: move.before === "" ? null : move.before,
+    // A candidate always names all three: an export with nothing to publish is refused before this.
+    after: move.after,
+  }))
+  try repository.updateRefs({ operation: `vibelang-history-export/${candidate.manifest.slice(0, 12)}`, updates })
+}

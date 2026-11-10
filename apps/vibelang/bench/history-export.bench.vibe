@@ -1,0 +1,106 @@
+// The mythical history's git export (decision 0020, "The git export"): the whole export of VibeLang's own bootstrapped
+// history in mock mode, an export that finds nothing new, an export after one new commit, a refused publication, and
+// the pure decisions it runs on, on the real flow, sequencer and memory repository.
+import { it, expect } from "@effect/vitest"
+import * as Repository from "@smthrs/jj/Repository"
+import { HttpClient } from "effect/http"
+import { confirmed, kept, lastFold, moves, treeSource } from "../src/history/exportDecision.vibe"
+import { EXPORTER, REF_NAMES } from "../src/history/export.vibe"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { exporterOf, off } from "../worker/HistoryExport.vibe"
+import { told, world } from "../test/support/exportFlow.vibe"
+import { artifact, quick, slow, workload } from "./artifact.vibe"
+
+const STORY = [
+  { type: "OpenEpic", id: "e1", title: "compiler" },
+  { type: "Plan", id: "m1", epic: "e1", before: "", title: "feat(compiler): one", task: "" },
+  { type: "Plan", id: "m2", epic: "e1", before: "", title: "fix(compiler): two", task: "" },
+  { type: "Start", id: "m1", lane: "bench" },
+  { type: "Approve", id: "m1", by: "Bench" },
+  { type: "Fold", sha: "a1a1a1a1a1a1", change: "", title: "feat(compiler): one", into: "m1" },
+] as const
+
+it("exports VibeLang's whole history in mock mode, then nothing, then one commit", async ({ bench }) => {
+  const whole = await workload(bench, "history-export-whole", "async", () => runPromise(scoped(effect {
+    provide MockMythical({ role: "maintainer", name: "Bench", agent: false }) {
+      const mythical = try Mythical
+      const first = try mythical.publish()
+      const again = try mythical.publish()
+      try Effect.try(() => {
+        expect(first.written).toBeGreaterThan(5000)
+        expect(again).toEqual({ mythical: first.mythical, written: 0 })
+      })
+    }
+  }))).run(slow)
+  const incremental = await workload(bench, "history-export-incremental", "async", () => runPromise(scoped(effect {
+    const { sequencer, run } = try world()
+    try told(sequencer, STORY)
+    const first = try run()
+    try told(sequencer, [{ type: "Plan", id: "m3", epic: "e1", before: "", title: "docs: three", task: "" }])
+    const grown = try run()
+    try Effect.try(() => expect([first.written, grown.written, grown.refusal]).toEqual([2, 1, null]))
+  }))).run(quick)
+  const refused = await workload(bench, "history-export-refused", "async", () => runPromise(scoped(effect {
+    const { sequencer, run, refs } = try world({ wrap: (repository) => ({ ...repository, updateRefs: () => fail(Repository.repositoryError("unavailable", "updateRefs", "refused")) }) })
+    try told(sequencer, STORY)
+    const answer = try run()
+    const now = try refs()
+    try Effect.try(() => {
+      expect(answer.refusal).toBe("unavailable")
+      expect(now).toEqual([null, null, null])
+    })
+  }))).run(quick)
+  const faults: ReadonlyArray<readonly [string, (repository: Repository.Repository) => Repository.Repository]> = [
+    ["tree", (repository) => { let reads = 0; return { ...repository, readCommit: (revision) => revision === "a1a1a1a1a1a1" && ++reads > 1 ? Effect.map(repository.readCommit(revision), (commit) => ({ ...commit, tree: Repository.EMPTY_TREE })) : repository.readCommit(revision) } }],
+    ["linear", (repository) => ({ ...repository, readCommit: (revision) => Effect.map(repository.readCommit(revision), (commit) => commit.message.includes("Mythical: m2") ? { ...commit, parents: [] } : commit) })],
+    ["notes", (repository) => ({ ...repository, readTree: (oid) => Effect.map(repository.readTree(oid), (entries) => entries.length === 2 && entries.every((entry) => entry.name.length === 40) ? entries.slice(1) : entries) })],
+    ["linear", (repository) => ({ ...repository, readBlob: (oid) => Effect.map(repository.readBlob(oid), (text) => text.startsWith("{\"schema\":1") ? text.replace(/,\["m2"[^\]]*\]/, "") : text) })],
+    ["unavailable", (repository) => ({ ...repository, readBlob: () => fail(Repository.repositoryError("unavailable", "readBlob", "down")) })],
+  ]
+  const refusals = await workload(bench, "history-export-refusals", "async", () => runPromise(scoped(effect {
+    const answers: Array<string | null> = []
+    for (const [, wrap] of faults) {
+      const { sequencer, run } = try world({ wrap })
+      try told(sequencer, STORY)
+      answers.push((try run()).refusal)
+    }
+    // A manifest bookmark that holds no manifest.
+    const bare = try world()
+    try told(bare.sequencer, STORY)
+    const tree = try bare.repository.writeTree([])
+    const commit = try bare.repository.writeCommit({ tree, parents: [], author: EXPORTER, committer: EXPORTER, message: "x\n" })
+    try bare.repository.updateRefs({ operation: "bench", updates: [{ ref: REF_NAMES.manifest, before: null, after: commit }] })
+    answers.push((try bare.run()).refusal)
+    // Plans alone, then an insert that rewrites the bookmark.
+    const plans = try world()
+    try told(plans.sequencer, STORY.slice(0, 3))
+    const first = try plans.run()
+    try told(plans.sequencer, [{ type: "Plan", id: "m3", epic: "e1", before: "m1", title: "docs: zero", task: "" }])
+    const rewritten = try plans.run()
+    try Effect.try(() => {
+      expect(answers).toEqual([...faults.map(([refusal]) => refusal), "invalid"])
+      expect([first.written, rewritten.written, rewritten.refusal]).toEqual([2, 3, null])
+    })
+  }))).run(quick)
+  const decisions = await workload(bench, "history-export-decisions", "sync", () => {
+    const real = Array.from({ length: 6737 }, (_, at) => ({ sha: `${at}`, change: "", title: "t", mythical: `m${at % 5703}` }))
+    const oids = Array.from({ length: 5703 }, (_, at) => `${at}`)
+    expect(lastFold(real, "m1")).toBe(5704)
+    expect(treeSource(real, "m9999")).toBe("")
+    expect(kept(oids, [...oids.slice(0, 5000), "x"])).toBe(5000)
+    const published = { mythical: "a", notes: "b", manifest: "c" }
+    const candidate = { mythical: "d", notes: "b", manifest: "e" }
+    expect(moves(REF_NAMES, published, candidate).map((move) => move.before)).toEqual(["a", "b", "c"])
+    expect(confirmed(candidate, published, candidate)).toBe("published")
+    expect(confirmed(published, published, candidate)).toBe("unchanged")
+  }).run(quick)
+  const setting = await workload(bench, "history-export-setting", "async", () => runPromise(effect {
+    const unreachable = HttpClient.make(() => Effect.die("no request"))
+    const offExporter = try exporterOf(undefined, undefined, unreachable)
+    const github = try exporterOf("github:smithersai/vibelang", Redacted.make("bench"), unreachable)
+    const elsewhere = try exporterOf("github:smithersai/vibelang", Redacted.make("bench"), unreachable, REF_NAMES, "http://github.test")
+    try Effect.try(() => expect([offExporter === off, github === off, elsewhere === off]).toEqual([true, false, false]))
+  })).run(quick)
+  await runPromise(artifact("history-export", "Vitest built-in bench; the real Export flow, sequencer and @smthrs/jj memory repository. Whole: MockMythical bootstraps VibeLang's 5,703-commit history and exports it (every commit, note, notes tree, manifest, tree-equality check by repository reads), then exports again writing nothing. Incremental: a two-commit story, then one appended commit. Refused: a publication the repository refuses, refs unmoved. Refusals: the check refusing a tree, a parent, a note and a short manifest, an unreadable repository, a manifest bookmark with no manifest; plans alone then an insert that rewrites the bookmark. Decisions: lastFold over 6,737 real commits, kept over 5,703 oids. Setting: off and github exporters built with no request.", ["Memory repository only: GitHub's latency and rate limits are not measured; the recorded GitHub run is test/export.github.test.vibe.", "Each whole run rebuilds the mock, so bootstrap time is included."], [whole, incremental, refused, refusals, decisions, setting]))
+})

@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 2
+bias 5
+null-prototype false
+key 1573956089
+tape qJzSjrZMI4SJ7SyiJgWx-9TEBFxHRcJp6nVXFmGFoRhZsUKu4vZTjS-xbVdCIvQg
+schedule-key 326706387
+schedule 
+signature "ReturnedFalse"
+path 1.1.0
+codec "json"
+value "{\"commits\":[{\"epic\":\"e2\",\"state\":\"landed\",\"folds\":2,\"insert\":false}],\"more\":false,\"fault\":\"tree\"}"
+# ReturnedFalse
+# {"commits":[{"epic":"e2","state":"landed","folds":2,"insert":false}],"more":false,"fault":"tree"}

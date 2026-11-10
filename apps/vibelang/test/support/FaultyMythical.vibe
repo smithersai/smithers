@@ -6,7 +6,7 @@ import { HistoryBackend } from "../../src/web/historyBackend.vibe"
 /**
  * A fault the history fault host injects. `outline` fails the page's first load; `empty` answers a history with no
  * epics; `reads` fails the first epic, commit and search read, and the first outline read after the load; `events`
- * ends the first event stream; `writes` fails the first plan, start, note, approve and fold as unreachable.
+ * ends the first event stream; `writes` fails the first plan, start, note, approve, fold and export as unreachable.
  */
 export type HistoryFault = "outline" | "empty" | "reads" | "events" | "writes"
 
@@ -72,6 +72,10 @@ export function faultyMythical<E>(faults: ReadonlyArray<HistoryFault>, layer: La
       fold: effect () => {
         if (first("writes", "fold")) throw unreachable()
         return try real.fold()
+      },
+      publish: effect () => {
+        if (first("writes", "publish")) throw unreachable()
+        return try real.publish()
       },
     }
     return Context.make(Mythical, mythical).pipe(Context.add(HistoryBackend, backend))
