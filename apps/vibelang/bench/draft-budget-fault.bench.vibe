@@ -1,0 +1,120 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { WikiWriter } from "../src/core/WikiWriter.vibe"
+import { wikiWriterLayer, WIKI_CEILING } from "../worker/WikiDraft.vibe"
+import { ChatModel, Spend } from "../worker/Reply.vibe"
+import * as Budget from "../worker/Budget.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { cell, scriptedModel } from "../fuzz/model-server.vibe"
+import { within } from "../test/support/durableWriters.vibe"
+import { ledgerOver } from "../worker/ObjectStorage.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("an unreachable budget ends a completed wiki draft visibly without generating it twice", { timeout: 600_000 }, async ({ bench }) => {
+  const result = await workload(bench, "wiki-draft-budget-deadline", "async", () => runPromise(scoped(effect {
+    const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify({ page: "roadmap", text: "# Retained draft\n" }))], prompt: 3, completion: 4 }])
+    const values = try Ref.make<Readonly<Record<string, number>>>({})
+    const budget = try Budget.make({ read: key => Ref.get(values).pipe(Effect.map(data => data[key])), write: entries => Ref.update(values, data => ({ ...data, ...entries })) }, WIKI_CEILING * 2)
+    let charges = 0
+    const faulty: Spend.Shape = {
+      admit: (_day, reply, ceiling) => budget.admit(reply, ceiling),
+      spend: () => Effect.suspend(() => { charges += 1; return fail(new Unreachable({ what: "budget" })) }),
+    }
+    const counter = Metric.withAttributes(Metric.counter("vibelang_draft_spend_failures", { incremental: true }), { draft: "wiki" })
+    const before = (try Metric.value(counter)).count
+    const layer = wikiWriterLayer.pipe(Layer.provide(Layer.succeed(ChatModel, { model: scripted.model, unusable: "" })), Layer.provide(Layer.succeed(Spend, faulty)))
+    const answer = try within(layer, effect {
+      const result = try Effect.result((try WikiWriter).draft({ page: "roadmap", source: "# Original", ask: "Retain the draft." }))
+      return result._tag === "Failure" ? result.failure.reason : "answered"
+    }).pipe(Effect.timeout("3 minutes"))
+    const counted = (try Metric.value(counter)).count - before
+    const calls = try scripted.calls
+    const ledger = try Ref.get(values)
+    try Effect.try(() => {
+      expect(answer).toBe("budget")
+      expect(charges).toBeGreaterThan(1)
+      expect(counted).toBe(1)
+      expect(calls).toBe(1)
+      expect(ledger[Budget.SPENT] ?? 0).toBe(0)
+      expect(ledger[Budget.RESERVED]).toBe(WIKI_CEILING)
+    })
+  }))).run({ ...slow, iterations: 1 })
+  await runPromise(artifact("wiki-draft-budget-deadline", "One complete real wiki draft whose admitted token charge repeatedly meets an injected faulty Spend service. Actual agent/QuickJS and scripted HTTP model, production writer and memory flow engine, real wall clock and the unmodified two-minute retry policy. Require final budget refusal within a three-minute caller deadline, multiple failed charge attempts, one failure counter, one model request, zero charged tokens and the retained reservation. Setup, policy waits and assertions included.", ["One observation, no tail percentile or throughput claim. The intentional retry wait dominates the duration. Scripted local model has no inference latency; memory journal/ledger, not workerd/SQLite or real Budget RPC/network failure. No GitHub credential or write."], result))
+})
+
+
+it("concurrent calls reserve a shared day, settle once and reopen with exact charges", async ({ bench }) => {
+  const result = await workload(bench, "budget-concurrent-reservation-reopen", "async", () => runPromise(effect {
+    const storage = try Effect.try(() => objectStorage())
+    const ledger = ledgerOver(storage)
+    const budget = try Budget.make(ledger, 1000)
+    const ids = Array.from({ length: 10 }, (_, index) => "call-" + index)
+    const admitted = try Effect.forEach(ids, id => budget.admit(id, 100), { concurrency: "unbounded" })
+    const repeated = try budget.admit(ids[0]!, 100)
+    const full = try budget.admit("overflow", 100)
+    const held = try ledger.read(Budget.RESERVED)
+    try budget.spend(ids[0]!, 30, true, 100)
+    try budget.spend(ids[1]!, 0, false, 100)
+    try budget.spend(ids[2]!, 120, true, 100)
+    try Effect.forEach(ids.slice(3), id => budget.spend(id, 50, true, 100), { concurrency: "unbounded" })
+    const recovered = try Budget.make(ledger, 1000)
+    try Effect.forEach(ids, id => recovered.spend(id, 999, true, 100), { concurrency: "unbounded" })
+    const charged = try recovered.admit(ids[0]!, 100)
+    const tooLarge = try recovered.admit("overflow", 401)
+    const available = try recovered.admit("next", 400)
+    try recovered.spend("next", 400, true, 400)
+    const spent = try ledger.read(Budget.SPENT)
+    const reserved = try ledger.read(Budget.RESERVED)
+    const over = try ledger.read(Budget.OVER)
+    const receipts = try Effect.forEach(ids, id => ledger.read("reply/" + id))
+    try Effect.try(() => {
+      expect(admitted).toEqual(Array(10).fill(true))
+      expect([repeated, full, held]).toEqual([true, false, 1000])
+      expect([charged, tooLarge, available]).toEqual([false, false, true])
+      expect([spent, reserved, over]).toEqual([1000, 0, 20])
+      expect(receipts).toEqual([30, 100, 120, 50, 50, 50, 50, 50, 50, 50])
+    })
+  })).run(slow)
+  await runPromise(artifact("budget-concurrent-reservation-reopen", "Ten concurrent real Budget admissions fill a shared 1,000-token ledger. Check repeated admission and capacity refusal, concurrent settlements with reported, missing and over-ceiling provider usage, fresh Budget reopening, changed-amount settlement replays, charged-call refusal and exact remaining capacity. Three fresh object KV stores; all setup, locks, ledger operations and assertions included.", ["Node object KV adapter, not workerd or disk durability. No model inference, RPC or GitHub request. Fixed small day/call counts; no scalability claim."], result))
+})
+
+it("a faulty ledger refuses invalid accounting without writes and remains recoverable", async ({ bench }) => {
+  const result = await workload(bench, "budget-faulty-ledger-recovery", "async", () => runPromise(effect {
+    const storage = try Effect.try(() => objectStorage())
+    const ledger = ledgerOver(storage)
+    let fault: "held" | "reserved" | "healthy" = "held"
+    const faulty: Budget.Ledger = {
+      read: key => fault === "held" && key === "hold/call" ? succeed(-1) : fault === "reserved" && key === Budget.RESERVED ? succeed(0) : ledger.read(key),
+      write: entries => ledger.write(entries),
+    }
+    const budget = try Budget.make(faulty, 100)
+    const empty = [...storage.kv]
+    const admission = try exit(budget.admit("call", 100))
+    const afterAdmission = [...storage.kv]
+    fault = "healthy"
+    const admitted = try budget.admit("call", 100)
+    const held = [...storage.kv]
+    fault = "reserved"
+    const settlement = try exit(budget.spend("call", 1, true, 100))
+    const afterSettlement = [...storage.kv]
+    fault = "healthy"
+    try budget.spend("call", 1, true, 100)
+    const reopened = try Budget.make(ledger, 100)
+    const replay = try reopened.admit("call", 100)
+    const next = try reopened.admit("next", 99)
+    try reopened.spend("next", 0, true, 99)
+    const totals = try Effect.forEach([Budget.SPENT, Budget.RESERVED, Budget.OVER, "reply/call"], key => ledger.read(key))
+    try Effect.try(() => {
+      expect(Exit.isFailure(admission)).toBe(true)
+      expect(Exit.isFailure(settlement)).toBe(true)
+      if (Exit.isFailure(admission)) expect(Cause.pretty(admission.cause)).toContain("Invalid budget accounting")
+      if (Exit.isFailure(settlement)) expect(Cause.pretty(settlement.cause)).toContain("Invalid budget accounting")
+      expect(afterAdmission).toEqual(empty)
+      expect(afterSettlement).toEqual(held)
+      expect([admitted, replay, next]).toEqual([true, false, true])
+      expect(totals).toEqual([1, 0, 0, 1])
+    })
+  })).run(slow)
+  await runPromise(artifact("budget-faulty-ledger-recovery", "Production Budget and object KV ledger with an injected faulty Effect read service: first a negative held reservation, then a missing aggregate reservation during settlement. Require both accounting refusals with no retained write, release the fault, settle and reopen, then independently admit exactly the remaining 99-token capacity. Three fresh stores, all setup, failures, recovery and assertions included.", ["Node KV adapter, not workerd, disk corruption or real Budget RPC. Only unsuccessful ledger reads are injected; healthy accounting is the production implementation. No model or external request."], result))
+})

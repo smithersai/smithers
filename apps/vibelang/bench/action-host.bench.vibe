@@ -1,5 +1,8 @@
 // @vitest-environment node
 import { it, expect } from "@effect/vitest"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { Factory } from "../src/core/Factory.vibe"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
 import { empty } from "../src/history/mythical.vibe"
 import * as Runs from "../worker/ActionRuns.vibe"
@@ -89,4 +92,30 @@ it("current role is rechecked before a queued action executes", async ({ bench }
     }))
   }).run(slow)
   await runPromise(artifact("action-host-role-downgrade", "Vitest built-in bench; accept a real SQLite-backed history action, revoke its owner's role through product account flows, drive two alarms, then compare the terminal permission refusal and unchanged empty history. Three fresh worlds, setup and assertions included.", ["Product mock identities, no OAuth/provider call. Node SQLite/alarm host; measures admission/recovery overhead without a model."], result))
+})
+
+it("a refused request id keeps its first journaled payload when reused", async ({ bench }) => {
+  const result = await workload(bench, "action-refused-id-conflict", "async", () => runPromise(scoped(effect {
+    const w = try world()
+    const metric = Metric.counter("vibelang_action_start_conflicts", { incremental: true })
+    const before = (try Metric.value(metric)).count
+    provide MockFactory, history {
+      const device = try Factory
+      try device.accounts!.choose("maintainer")
+      provide ActionDevice = device {
+        const original = request("arefused", "vibelang/history/Plan", { nonsense: 1 }, w.person.id)
+        const refused = try w.directory.start(original, "maintainer")
+        const replayed = try w.directory.start(original, "maintainer")
+        const changed = try w.directory.start(request("arefused", "vibelang/Post", { nonsense: 1 }, w.person.id), "maintainer")
+        const listed = try w.directory.list("")
+        const counted = (try Metric.value(metric)).count - before
+        try Effect.try(() => {
+          expect([refused, replayed, changed]).toEqual(["input", "input", "conflict"])
+          expect(listed).toEqual([])
+          expect(counted).toBe(1)
+        })
+      }
+    }
+  }))).run(slow)
+  await runPromise(artifact("action-refused-id-conflict", "Real SQLite action directory and per-run hosts with product MockFactory accounts/history. Submit an invalid Plan, replay it unchanged, then reuse its id for a different Post request. Require input/input/conflict, an empty run list and exactly one native conflict counter; the directory's first journaled request cannot be replaced. Three fresh worlds; setup, durable migrations and assertions included.", ["Product mock identities, not OAuth/GitHub. Node SQLite/KV, not workerd scheduling. No model or external request. Benchmarks main's native ExecutionIdentityConflict refusal fix."], result))
 })
