@@ -57,6 +57,6 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "typescript": "~5.9.3",
-    "vibelang": "0.0.13"
+    "vibelang": "0.0.14-pre.b9285da0f2be"
   }
 }

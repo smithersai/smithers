@@ -446,7 +446,7 @@
   "dependencies": {
     "@smthrs/journal": "1.0.0-rc.16",
     "yjs": "13.6.32",
-    "vibelang-runtime": "0.0.13"
+    "vibelang-runtime": "0.0.14-pre.b9285da0f2be"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -468,8 +468,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.13",
-    "vibelang-vite": "0.0.13",
+    "vibelang": "0.0.14-pre.b9285da0f2be",
+    "vibelang-vite": "0.0.14-pre.b9285da0f2be",
     "vitest": "5.0.0",
     "@smthrs/time-travel": "1.0.0-rc.16",
     "fast-check": "4.9.0"

@@ -245,7 +245,7 @@
     "@smthrs/core": "1.0.0-rc.16",
     "@smthrs/scorers": "1.0.0-rc.16",
     "devalue": "5.9.2",
-    "vibelang-runtime": "0.0.13"
+    "vibelang-runtime": "0.0.14-pre.b9285da0f2be"
   },
   "peerDependencies": {
     "effect": "4.1.1"
@@ -266,8 +266,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.13",
-    "vibelang-vite": "0.0.13",
+    "vibelang": "0.0.14-pre.b9285da0f2be",
+    "vibelang-vite": "0.0.14-pre.b9285da0f2be",
     "vitest": "5.0.0"
   }
 }
