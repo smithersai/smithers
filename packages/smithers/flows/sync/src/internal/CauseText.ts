@@ -28,6 +28,7 @@ const maxCauseTextLength = 512
  *
  * @category encoding
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const boundedText = (text: string): string =>
   text.length <= maxCauseTextLength ? text : `${text.slice(0, maxCauseTextLength)} (truncated)`
@@ -42,6 +43,7 @@ export const boundedText = (text: string): string =>
  *
  * @category encoding
  * @since 1.0.0-rc.0
+ * @throws {never}
  * @throws {never}
  */
 export const causeText = (cause: unknown): string =>
@@ -65,6 +67,7 @@ export const causeText = (cause: unknown): string =>
  *
  * @category encoding
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const causeCode = (cause: unknown): string => {
   if (cause instanceof Error) {

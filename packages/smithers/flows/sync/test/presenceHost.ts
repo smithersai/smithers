@@ -6,7 +6,7 @@
  * sockets by identity, fails against it.
  */
 import * as Effect from "effect/Effect"
-import type * as PresenceRoom from "../src/PresenceRoom.ts"
+import type * as PresenceRoom from "../src/PresenceRoom.vibe"
 
 /** How a raw socket's send or close misbehaves: fail, die, or throw before returning an Effect. */
 export type Fault = "fail" | "die" | "throw" | undefined

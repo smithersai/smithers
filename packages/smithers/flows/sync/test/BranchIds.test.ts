@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import * as BranchIds from "../src/BranchIds.ts"
+import * as BranchIds from "../src/BranchIds.vibe"
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 

@@ -3,7 +3,7 @@ import { Journal } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Deferred, Effect, Layer, Redacted } from "effect"
 import { TestClock } from "effect/testing"
-import * as BranchCommands from "../src/BranchCommands.ts"
+import * as BranchCommands from "../src/BranchCommands.vibe"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
 import * as BranchShare from "../src/BranchShare.ts"
 

@@ -14,6 +14,7 @@
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import { randomUUID as randomUUID$platform } from "./BranchIds.platform.ts"
 
 /**
  * Identifier minting operations.
@@ -47,7 +48,7 @@ export class BranchIds extends Context.Service<BranchIds, Service>()("@smthrs/sy
  * @category constructors
  * @since 0.1.0
  */
-export const makeWebCrypto = (): Service => BranchIds.of({ fresh: Effect.sync(() => crypto.randomUUID()) })
+export const makeWebCrypto = (): Service => BranchIds.of({ fresh: Effect.sync(() => randomUUID$platform()) })
 
 /**
  * Provides {@link makeWebCrypto}.

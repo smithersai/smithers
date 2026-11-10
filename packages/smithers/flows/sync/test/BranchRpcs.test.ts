@@ -14,7 +14,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
-import * as BranchRpcs from "../src/BranchRpcs.ts"
+import * as BranchRpcs from "../src/BranchRpcs.vibe"
 
 const src = new URL("../src/", import.meta.url)
 
@@ -42,7 +42,7 @@ const reachable = (entry: string): ReadonlyArray<string> => {
 
 describe("BranchRpcs", () => {
   it("imports only the wire vocabulary", () => {
-    expect(specifiers(new URL("BranchRpcs.ts", src)).filter((specifier) => specifier.startsWith("."))).toEqual([
+    expect(specifiers(new URL("BranchRpcs.vibe", src)).filter((specifier) => specifier.startsWith("."))).toEqual([
       "./BranchProtocol.ts",
       "./SyncError.ts",
       "./SyncRpcs.ts"
@@ -50,9 +50,9 @@ describe("BranchRpcs", () => {
   })
 
   it("reaches no branch service and never the journal service", () => {
-    const files = reachable("BranchRpcs.ts")
+    const files = reachable("BranchRpcs.vibe")
     expect(files).toContain("BranchProtocol.ts")
-    for (const service of ["BranchCommands.ts", "BranchPresence.ts", "BranchShare.ts", "internal/Admission.ts"]) {
+    for (const service of ["BranchCommands.vibe", "BranchPresence.vibe", "BranchShare.ts", "internal/Admission.ts"]) {
       expect(files).not.toContain(service)
     }
     const external = files.flatMap((file) => specifiers(new URL(file, src))).filter((specifier) =>

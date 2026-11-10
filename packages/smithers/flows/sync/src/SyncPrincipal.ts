@@ -90,6 +90,7 @@ export const workspace = (
  *
  * @category predicates
  * @since 0.1.0
+ * @throws {never}
  */
 export const isWorkspace = (principal: Principal): principal is Workspace => principal._tag === "Workspace"
 

@@ -38,7 +38,7 @@ export * as SyncRpcs from "./SyncRpcs.ts"
  * @category rpc
  * @since 0.1.0
  */
-export * as BranchRpcs from "./BranchRpcs.ts"
+export * as BranchRpcs from "./BranchRpcs.vibe"
 
 /**
  * @category services
@@ -86,25 +86,25 @@ export * as SyncAuth from "./SyncAuth.vibe"
  * @category services
  * @since 0.1.0
  */
-export * as BranchPresence from "./BranchPresence.ts"
+export * as BranchPresence from "./BranchPresence.vibe"
 
 /**
  * @category services
  * @since 0.1.0
  */
-export * as BranchCommands from "./BranchCommands.ts"
+export * as BranchCommands from "./BranchCommands.vibe"
 
 /**
  * @category services
  * @since 0.1.0
  */
-export * as BranchServer from "./BranchServer.ts"
+export * as BranchServer from "./BranchServer.vibe"
 
 /**
  * @category services
  * @since 0.1.0
  */
-export * as BranchIds from "./BranchIds.ts"
+export * as BranchIds from "./BranchIds.vibe"
 
 /**
  * @category protocol
@@ -116,13 +116,13 @@ export * as PresenceProtocol from "./PresenceProtocol.vibe"
  * @category services
  * @since 1.0.0-rc.17
  */
-export * as PresenceRoom from "./PresenceRoom.ts"
+export * as PresenceRoom from "./PresenceRoom.vibe"
 
 /**
  * @category services
  * @since 1.0.0-rc.17
  */
-export * as PresenceSocket from "./PresenceSocket.ts"
+export * as PresenceSocket from "./PresenceSocket.vibe"
 
 /**
  * @category services

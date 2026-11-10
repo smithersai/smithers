@@ -29,7 +29,7 @@ const produced = (): ReadonlySet<string> => {
   const codes = new Set<string>()
   for (const entry of readdirSync(dir, { recursive: true })) {
     const relative = String(entry)
-    if (!relative.endsWith(".ts")) continue
+    if (!relative.endsWith(".ts") && !relative.endsWith(".vibe")) continue
     for (const match of readFileSync(join(dir, relative), "utf8").matchAll(/code: "([a-z_]+)"/gu)) {
       codes.add(match[1]!)
     }

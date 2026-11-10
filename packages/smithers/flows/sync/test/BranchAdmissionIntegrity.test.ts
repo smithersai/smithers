@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Deferred, Effect, Fiber, Layer, Redacted } from "effect"
-import * as BranchCommands from "../src/BranchCommands.ts"
+import * as BranchCommands from "../src/BranchCommands.vibe"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
 import * as BranchShare from "../src/BranchShare.ts"
 

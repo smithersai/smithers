@@ -10,9 +10,9 @@ import { Journal } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Deferred, Effect, Exit, Fiber, Layer, Redacted, Result, Schema, type Scope, Stream } from "effect"
 import { TestClock } from "effect/testing"
-import * as BranchCommands from "../src/BranchCommands.ts"
-import * as BranchIds from "../src/BranchIds.ts"
-import * as BranchPresence from "../src/BranchPresence.ts"
+import * as BranchCommands from "../src/BranchCommands.vibe"
+import * as BranchIds from "../src/BranchIds.vibe"
+import * as BranchPresence from "../src/BranchPresence.vibe"
 import {
   Announcement,
   type BranchId,
@@ -24,7 +24,7 @@ import {
   SayCommand,
   ShareClaims
 } from "../src/BranchProtocol.ts"
-import * as BranchRpcs from "../src/BranchRpcs.ts"
+import * as BranchRpcs from "../src/BranchRpcs.vibe"
 import * as BranchShare from "../src/BranchShare.ts"
 import { SyncError } from "../src/SyncError.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"

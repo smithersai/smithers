@@ -13,6 +13,7 @@ const utf8 = new TextEncoder();
  *
  * @category limits
  * @since 1.0.0-rc.17
+ * @throws {never}
  */
 export const fits = (text, max) => text.length <= max && utf8.encode(text).byteLength <= max;
 /**
@@ -34,5 +35,6 @@ export const participantOf = (participant) => ({
  *
  * @category encoding
  * @since 1.0.0-rc.17
+ * @throws {never}
  */
 export const rosterFrame = (self, participants) => `{"type":"roster","self":${JSON.stringify(self)},"participants":${participants}}`;

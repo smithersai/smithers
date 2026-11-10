@@ -36,6 +36,7 @@ const journalCodes: Readonly<Record<string, "backpressure" | "closed" | "decode_
  *
  * @category encoding
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const journalErrorCode = (
   cause: unknown

@@ -16,9 +16,9 @@ const slug = (heading: string): string => heading.toLowerCase().replace(/[^a-z0-
 
 /** Barrel-exported modules whose source calls a journal write method. */
 const journalWriters = Array.from(
-  read("src/index.ts").matchAll(/export \* as (\w+) from "\.\/(\w+)\.ts"/g),
-  ([, name]) => name!
-).filter((name) => /\.(?:emitLossy|emitDurable|emitDurableUnfenced|checkpoint|compact)\(/.test(read(`src/${name}.ts`)))
+  read("src/index.ts").matchAll(/export \* as (\w+) from "\.\/(\w+\.(?:ts|vibe))"/g),
+  ([, name, file]) => [name!, file!] as const
+).filter(([, file]) => /\.(?:emitLossy|emitDurable|emitDurableUnfenced|checkpoint|compact)\(/.test(read(`src/${file}`))).map(([name]) => name)
 
 describe("README layout", () => {
   it("keeps License as the closing section", () => {
@@ -100,7 +100,7 @@ describe("copyable secret reads", () => {
 })
 
 describe("branch server authorization", () => {
-  const server = read("src/BranchServer.ts")
+  const server = read("src/BranchServer.vibe")
   /** Procedures whose handler body raises its own SyncError or inspects the principal. */
   const handlers = Array.from(server.matchAll(/^ {6}"(Branch\.\w+)": /gm), (match) => [match[1]!, match.index] as const)
   const enforcing = handlers
@@ -112,7 +112,7 @@ describe("branch server authorization", () => {
     expect(enforcing).toEqual(["Branch.CreateBranch", "Branch.MintShare"])
   })
 
-  it.each(["src/BranchServer.ts", "docs/concepts/branches.md"])("%s does not deny the adapter's own checks", (file) => {
+  it.each(["src/BranchServer.vibe", "docs/concepts/branches.md"])("%s does not deny the adapter's own checks", (file) => {
     expect(read(file)).not.toMatch(/no authorization logic/)
     expect(read(file)).not.toMatch(/face (?:exactly )?the same rules/)
   })

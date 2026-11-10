@@ -39,6 +39,7 @@ export const workspace = (capabilityId, expiresAtMs = Number.POSITIVE_INFINITY) 
  *
  * @category predicates
  * @since 0.1.0
+ * @throws {never}
  */
 export const isWorkspace = (principal) => principal._tag === "Workspace";
 /**

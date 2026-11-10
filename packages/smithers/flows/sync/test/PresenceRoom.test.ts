@@ -12,7 +12,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Metric from "effect/Metric"
 import * as PresenceProtocol from "../src/PresenceProtocol.vibe"
-import * as PresenceRoom from "../src/PresenceRoom.ts"
+import * as PresenceRoom from "../src/PresenceRoom.vibe"
 import { hostOver, makeHost, type TestSocket } from "./presenceHost.ts"
 
 const { CloseCode } = PresenceProtocol

@@ -39,6 +39,7 @@ import {
   maxParticipants,
   type Participant
 } from "./PresenceProtocol.vibe"
+import { randomUUID as randomUUID$platform } from "./PresenceRoom.platform.ts"
 
 /**
  * One socket the host holds open, shaped like Alchemy's `Cloudflare.WebSocket`.
@@ -217,24 +218,24 @@ export const connections = <S extends RoomSocket<R>, R = never>(
  * the rest hear again without it.
  */
 const publish = <S extends RoomSocket<R>, R>(host: RoomHost<S, R>, gone: Set<string>): Effect.Effect<void, never, R> =>
-  Effect.gen(function*() {
+  effect {
     while (true) {
-      const live = (yield* connections(host)).filter((connection) => !gone.has(connection.participant.id))
+      const live = (try connections(host)).filter((connection) => !gone.has(connection.participant.id))
       const participants = JSON.stringify(live.map((connection) => participantOf(connection.participant)))
       const failed: Array<Connection<S>> = []
       for (const connection of live) {
         const frame = rosterFrame(connection.participant.id, participants)
-        if (!(yield* attempt(() => connection.socket.send(frame)))) failed.push(connection)
+        if (!(try attempt(() => connection.socket.send(frame)))) failed.push(connection)
       }
       if (failed.length === 0) return
       for (const connection of failed) {
         gone.add(connection.participant.id)
         forget(connection.socket)
-        yield* opened(-1)
-        yield* Effect.logDebug("presence.gone").pipe(Effect.annotateLogs({ connection: connection.participant.id }))
+        try opened(-1)
+        try Effect.logDebug("presence.gone").pipe(Effect.annotateLogs({ connection: connection.participant.id }))
       }
     }
-  })
+  }
 
 /**
  * Forgets `socket`, closes it with `code`, and tells the others. Answers the
@@ -246,15 +247,15 @@ const remove = <S extends RoomSocket<R>, R>(
   socket: S,
   code: number
 ): Effect.Effect<string | undefined, never, R> =>
-  Effect.gen(function*() {
+  effect {
     const attachment = attachmentOf(socket)
     if (attachment !== undefined) forget(socket)
-    yield* attempt(() => socket.close(code, ""))
+    try attempt(() => socket.close(code, ""))
     if (attachment === undefined) return undefined
-    yield* opened(-1)
-    yield* publish(host, new Set([attachment.id]))
+    try opened(-1)
+    try publish(host, new Set([attachment.id]))
     return attachment.id
-  })
+  }
 
 /**
  * Joins an accepted socket as `identity`: keeps a fresh connection id, the
@@ -277,9 +278,9 @@ export const join = <S extends RoomSocket<R>, R = never>(
   socket: S,
   identity: Identity
 ): Effect.Effect<"joined" | "full", never, R> =>
-  Effect.gen(function*() {
+  (effect {
     if (identity.data !== undefined && !fits(identity.data, maxDataBytes)) {
-      return yield* Effect.die(
+      return try Effect.die(
         PlatformError.badArgument({
           module: "PresenceRoom",
           method: "join",
@@ -288,7 +289,7 @@ export const join = <S extends RoomSocket<R>, R = never>(
       )
     }
     if (attachmentOf(socket) !== undefined) {
-      return yield* Effect.die(
+      return try Effect.die(
         PlatformError.badArgument({
           module: "PresenceRoom",
           method: "join",
@@ -296,14 +297,14 @@ export const join = <S extends RoomSocket<R>, R = never>(
         })
       )
     }
-    const joined = yield* joinedOf(host)
+    const joined = try joinedOf(host)
     if (joined.length >= maxParticipants) {
-      yield* attempt(() => socket.close(CloseCode.full, "full"))
-      yield* Effect.annotateCurrentSpan({ "smithers.presence.outcome": "full" })
-      yield* Metric.update(Metric.withAttributes(joins, { outcome: "full" }), 1)
+      try attempt(() => socket.close(CloseCode.full, "full"))
+      try Effect.annotateCurrentSpan({ "smithers.presence.outcome": "full" })
+      try Metric.update(Metric.withAttributes(joins, { outcome: "full" }), 1)
       return "full" as const
     }
-    const id = crypto.randomUUID()
+    const id = try Effect.sync(() => randomUUID$platform())
     const attachment: Attachment = {
       presence: 1,
       id,
@@ -315,14 +316,14 @@ export const join = <S extends RoomSocket<R>, R = never>(
       seq: joined.reduce((last, { attachment }) => Math.max(last, attachment.seq), 0) + 1
     }
     socket.serializeAttachment(attachment)
-    yield* opened(1)
-    yield* Effect.annotateCurrentSpan({
+    try opened(1)
+    try Effect.annotateCurrentSpan({
       "smithers.presence.outcome": "joined",
       "smithers.presence.connection": id,
       "smithers.presence.participants": joined.length + 1
     })
-    yield* Metric.update(Metric.withAttributes(joins, { outcome: "joined" }), 1)
-    yield* publish(host, new Set())
+    try Metric.update(Metric.withAttributes(joins, { outcome: "joined" }), 1)
+    try publish(host, new Set())
     return "joined" as const
   }).pipe(Effect.withSpan("presence.join"))
 
@@ -341,7 +342,7 @@ export const receive = <S extends RoomSocket<R>, R = never>(
   socket: S,
   message: string | ArrayBuffer | ArrayBufferView
 ): Effect.Effect<void, never, R> =>
-  Effect.gen(function*() {
+  effect {
     const attachment = attachmentOf(socket)
     if (attachment === undefined) return
     const refuse = (code: number, outcome: "unsupported" | "too_big") =>
@@ -349,14 +350,14 @@ export const receive = <S extends RoomSocket<R>, R = never>(
         Metric.update(Metric.withAttributes(frames, { outcome }), 1),
         remove(host, socket, code)
       )
-    if (typeof message !== "string") return yield* refuse(CloseCode.unsupported, "unsupported")
-    if (!fits(message, maxFrameBytes)) return yield* refuse(CloseCode.tooBig, "too_big")
+    if (typeof message !== "string") return try refuse(CloseCode.unsupported, "unsupported")
+    if (!fits(message, maxFrameBytes)) return try refuse(CloseCode.tooBig, "too_big")
     const frame = decodeClientFrame(message)
-    if (frame === undefined) return yield* refuse(CloseCode.unsupported, "unsupported")
+    if (frame === undefined) return try refuse(CloseCode.unsupported, "unsupported")
     socket.serializeAttachment({ ...attachment, state: frame.state })
-    yield* Metric.update(Metric.withAttributes(frames, { outcome: "state" }), 1)
-    yield* publish(host, new Set())
-  })
+    try Metric.update(Metric.withAttributes(frames, { outcome: "state" }), 1)
+    try publish(host, new Set())
+  }
 
 /**
  * Forgets a socket after the host saw it close or fail, and sends the roster
@@ -370,13 +371,13 @@ export const leave = <S extends RoomSocket<R>, R = never>(
   host: RoomHost<S, R>,
   socket: S
 ): Effect.Effect<void, never, R> =>
-  Effect.gen(function*() {
+  effect {
     const attachment = attachmentOf(socket)
     if (attachment === undefined) return
     forget(socket)
-    yield* opened(-1)
-    yield* publish(host, new Set([attachment.id]))
-  })
+    try opened(-1)
+    try publish(host, new Set([attachment.id]))
+  }
 
 /**
  * Closes one connection with `code`, forgets it, and sends the roster to the
@@ -403,16 +404,16 @@ export const evict = <S extends RoomSocket<R>, R = never>(
   principal: string,
   code: number = CloseCode.noAccess
 ): Effect.Effect<number, never, R> =>
-  Effect.gen(function*() {
-    const evicted = (yield* connections(host)).filter((connection) => connection.participant.principal === principal)
+  (effect {
+    const evicted = (try connections(host)).filter((connection) => connection.participant.principal === principal)
     for (const connection of evicted) {
       forget(connection.socket)
-      yield* attempt(() => connection.socket.close(code, ""))
+      try attempt(() => connection.socket.close(code, ""))
     }
-    yield* Effect.annotateCurrentSpan({ "smithers.presence.evicted": evicted.length })
+    try Effect.annotateCurrentSpan({ "smithers.presence.evicted": evicted.length })
     if (evicted.length === 0) return 0
-    yield* opened(-evicted.length)
-    yield* Metric.update(evictions, evicted.length)
-    yield* publish(host, new Set(evicted.map((connection) => connection.participant.id)))
+    try opened(-evicted.length)
+    try Metric.update(evictions, evicted.length)
+    try publish(host, new Set(evicted.map((connection) => connection.participant.id)))
     return evicted.length
   }).pipe(Effect.withSpan("presence.evict", { attributes: { "smithers.presence.close_code": code } }))

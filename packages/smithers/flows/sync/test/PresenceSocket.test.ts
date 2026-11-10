@@ -16,8 +16,8 @@ import * as Socket from "effect/socket/Socket"
 import * as Stream from "effect/Stream"
 import * as TestClock from "effect/testing/TestClock"
 import * as PresenceProtocol from "../src/PresenceProtocol.vibe"
-import * as PresenceRoom from "../src/PresenceRoom.ts"
-import * as PresenceSocket from "../src/PresenceSocket.ts"
+import * as PresenceRoom from "../src/PresenceRoom.vibe"
+import * as PresenceSocket from "../src/PresenceSocket.vibe"
 import { makeHost } from "./presenceHost.ts"
 
 type Listener = (event: Socket.WebSocketEvent) => void

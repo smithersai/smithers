@@ -35,6 +35,7 @@ const journalCodes = {
  *
  * @category encoding
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const journalErrorCode = (cause) => {
     if (!(cause instanceof Error))

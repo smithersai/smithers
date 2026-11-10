@@ -22,11 +22,11 @@ import type * as Layer from "effect/Layer"
 import type * as Rpc from "effect/rpc/Rpc"
 import type * as RpcGroup from "effect/rpc/RpcGroup"
 import * as Stream from "effect/Stream"
-import * as BranchCommands from "./BranchCommands.ts"
-import * as BranchIds from "./BranchIds.ts"
-import * as BranchPresence from "./BranchPresence.ts"
+import * as BranchCommands from "./BranchCommands.vibe"
+import * as BranchIds from "./BranchIds.vibe"
+import * as BranchPresence from "./BranchPresence.vibe"
 import { BranchId, type Participant } from "./BranchProtocol.ts"
-import { BranchRpcs } from "./BranchRpcs.ts"
+import { BranchRpcs } from "./BranchRpcs.vibe"
 import * as BranchShare from "./BranchShare.ts"
 import * as Admission from "./internal/Admission.ts"
 import { SyncError } from "./SyncError.ts"
@@ -103,18 +103,18 @@ export const layerHandlers: Layer.Layer<
   | BranchCommands.BranchCommands
   | BranchIds.BranchIds
 > = BranchRpcs.toLayer(
-  Effect.gen(function*() {
-    const share = yield* BranchShare.BranchShare
-    const presence = yield* BranchPresence.BranchPresence
-    const commands = yield* BranchCommands.BranchCommands
-    const ids = yield* BranchIds.BranchIds
+  effect {
+    const share = try BranchShare.BranchShare
+    const presence = try BranchPresence.BranchPresence
+    const commands = try BranchCommands.BranchCommands
+    const ids = try BranchIds.BranchIds
 
     return BranchRpcs.of({
       "Branch.CreateBranch": ({ ttlMs }) =>
-        Effect.gen(function*() {
-          const principal = yield* SyncPrincipal.SyncPrincipal
+        effect {
+          const principal = try SyncPrincipal.SyncPrincipal
           if (!SyncPrincipal.isWorkspace(principal)) {
-            return yield* new SyncError({
+            return try new SyncError({
               code: "unauthorized",
               message: "Creating a branch requires an authenticated workspace principal"
             })
@@ -123,40 +123,40 @@ export const layerHandlers: Layer.Layer<
           // typed `Effect<string>`, so a host id source yielding "" turned an
           // asserted `BranchId` into a schema defect inside `mint` rather than
           // the `SyncError` this handler declares.
-          const branchId = yield* Admission.decode(BranchId, yield* ids.fresh, "invalid_request")
-          const capability = yield* share.mint({
+          const branchId = try Admission.decode(BranchId, try ids.fresh, "invalid_request")
+          const capability = try share.mint({
             branchId,
-            capabilityId: yield* ids.fresh,
+            capabilityId: try ids.fresh,
             access: "write",
             ttlMs
           })
           return { branchId: capability.claims.branchId, capability }
-        }),
+        },
       "Branch.MintShare": ({ capability, access, ttlMs }) =>
-        Effect.gen(function*() {
-          const claims = yield* share.verify(capability, {
+        effect {
+          const claims = try share.verify(capability, {
             branchId: capability.claims.branchId,
             access: "write"
           })
-          const capabilityId = yield* ids.fresh
-          const nowMs = yield* Clock.currentTimeMillis
+          const capabilityId = try ids.fresh
+          const nowMs = try Clock.currentTimeMillis
           // ID generation may outlast the parent. Refuse before minting, and
           // pass the absolute ceiling so the signing clock cannot extend it.
           if (nowMs >= claims.expiresAtMs) {
-            return yield* new SyncError({
+            return try new SyncError({
               code: "unauthorized",
               message: "The share capability has expired"
             })
           }
           // A link never outlives the capability it was minted from.
-          return yield* share.mint({
+          return try share.mint({
             branchId: claims.branchId,
             capabilityId,
             access,
             ttlMs,
             maxExpiresAtMs: claims.expiresAtMs
           })
-        }),
+        },
       "Branch.Submit": (payload) => commands.submit(payload),
       "Branch.Announce": (payload) => presence.announce(payload),
       "Branch.Leave": (payload) => Effect.as(presence.leave(payload), null),
@@ -198,5 +198,5 @@ export const layerHandlers: Layer.Layer<
           Stream.map((participants) => ({ participants }))
         )
     })
-  })
+  }
 )

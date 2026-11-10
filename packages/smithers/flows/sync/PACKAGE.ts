@@ -117,7 +117,7 @@ const securityReview = Smithers.SecurityReview({
         "A minted child `expiresAtMs` not capped by `maxExpiresAtMs`, or a `ttlMs` above `maximumBranchTtlMs` accepted.",
         "An id source other than `crypto.randomUUID` in a non-test layer, making branch ids guessable."
       ],
-      paths: ["src/BranchServer.ts", "src/BranchRpcs.ts", "src/BranchShare.ts", "src/BranchIds.ts"]
+      paths: ["src/BranchServer.vibe", "src/BranchRpcs.vibe", "src/BranchShare.ts", "src/BranchIds.vibe"]
     },
     {
       id: "branch-write-integrity",
@@ -129,7 +129,7 @@ const securityReview = Smithers.SecurityReview({
         "`Branch.Leave` or `announce` letting one capability remove or overwrite a `participantId` it did not announce.",
         "A command admitted before `share.verify`, or a permit taken before authorization."
       ],
-      paths: ["src/BranchCommands.ts", "src/BranchPresence.ts", "src/BranchServer.ts"]
+      paths: ["src/BranchCommands.vibe", "src/BranchPresence.vibe", "src/BranchServer.vibe"]
     },
     {
       id: "resource-bounds",
@@ -143,8 +143,8 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/SyncServer.ts",
-        "src/BranchCommands.ts",
-        "src/BranchPresence.ts",
+        "src/BranchCommands.vibe",
+        "src/BranchPresence.vibe",
         "src/SyncProtocol.ts",
         "src/internal/PolicyOptions.ts"
       ]

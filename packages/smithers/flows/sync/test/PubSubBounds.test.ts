@@ -15,7 +15,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { JournalEvent } from "@smthrs/journal"
 import { Deferred, Effect, Fiber, Redacted, Stream } from "effect"
-import * as BranchPresence from "../src/BranchPresence.ts"
+import * as BranchPresence from "../src/BranchPresence.vibe"
 import type { BranchId, ParticipantId, ShareCapability } from "../src/BranchProtocol.ts"
 import * as BranchShare from "../src/BranchShare.ts"
 import * as RunCatalog from "../src/RunCatalog.ts"

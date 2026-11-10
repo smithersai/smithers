@@ -27,6 +27,7 @@ const maxCauseTextLength = 512;
  *
  * @category encoding
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const boundedText = (text) => text.length <= maxCauseTextLength ? text : `${text.slice(0, maxCauseTextLength)} (truncated)`;
 /**
@@ -39,6 +40,7 @@ export const boundedText = (text) => text.length <= maxCauseTextLength ? text : 
  *
  * @category encoding
  * @since 1.0.0-rc.0
+ * @throws {never}
  * @throws {never}
  */
 export const causeText = (cause) => boundedText(cause instanceof Error ? `${cause.name}: ${cause.message}` : Object.prototype.toString.call(cause));
@@ -58,6 +60,7 @@ export const causeText = (cause) => boundedText(cause instanceof Error ? `${caus
  *
  * @category encoding
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const causeCode = (cause) => {
     if (cause instanceof Error) {

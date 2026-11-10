@@ -102,13 +102,13 @@ const empty: ReadonlyArray<Participant> = []
  * @since 1.0.0-rc.17
  */
 export const connect = (url: string): Effect.Effect<Connection, never, Scope.Scope | Socket.WebSocketConstructor> =>
-  Effect.gen(function*() {
-    const construct = yield* Socket.WebSocketConstructor
-    const status = yield* Effect.acquireRelease(
+  effect {
+    const construct = try Socket.WebSocketConstructor
+    const status = try Effect.acquireRelease(
       SubscriptionRef.make<Status>({ _tag: "Connecting" }),
       (ref) => PubSub.shutdown(ref.pubsub)
     )
-    const roster = yield* Effect.acquireRelease(
+    const roster = try Effect.acquireRelease(
       SubscriptionRef.make(empty),
       (ref) => PubSub.shutdown(ref.pubsub)
     )
@@ -163,39 +163,39 @@ export const connect = (url: string): Effect.Effect<Connection, never, Scope.Sco
     }
 
     /** One connection, from dialing to its close. */
-    const session: Effect.Effect<Outcome> = Effect.scoped(Effect.gen(function*() {
-      const events = yield* Queue.unbounded<Event>()
-      yield* Effect.acquireRelease(Effect.sync(() => dial(events)), (hangUp) => Effect.sync(hangUp))
+    const session: Effect.Effect<Outcome> = Effect.scoped(effect {
+      const events = try Queue.unbounded<Event>()
+      try Effect.acquireRelease(Effect.sync(() => dial(events)), (hangUp) => Effect.sync(hangUp))
       let opened = false
       while (true) {
-        const event = yield* Queue.take(events)
+        const event = try Queue.take(events)
         if (event._tag === "Close") return { code: event.code, opened }
         const frame = typeof event.data === "string" ? decodeServerFrame(event.data) : undefined
         if (frame === undefined) continue
-        yield* SubscriptionRef.set(roster, frame.participants)
+        try SubscriptionRef.set(roster, frame.participants)
         if (!opened) {
           opened = true
           live.open = true
           writeState()
-          yield* SubscriptionRef.set(status, { _tag: "Open", self: frame.self })
+          try SubscriptionRef.set(status, { _tag: "Open", self: frame.self })
         }
       }
-    }))
+    })
 
-    const run = Effect.gen(function*() {
+    const run = effect {
       let attempt = 0
       while (true) {
-        const outcome = yield* session
-        if ((yield* SubscriptionRef.get(roster)).length > 0) yield* SubscriptionRef.set(roster, empty)
+        const outcome = try session
+        if ((try SubscriptionRef.get(roster)).length > 0) try SubscriptionRef.set(roster, empty)
         attempt = outcome.opened ? 1 : attempt + 1
         const delay = isFinal(outcome.code) ? undefined : reconnectDelay(attempt)
-        if (delay === undefined) return yield* SubscriptionRef.set(status, { _tag: "Closed", code: outcome.code })
-        yield* SubscriptionRef.set(status, { _tag: "Offline", attempt, code: outcome.code })
-        yield* Effect.sleep(delay)
-        yield* SubscriptionRef.set(status, { _tag: "Connecting" })
+        if (delay === undefined) return try SubscriptionRef.set(status, { _tag: "Closed", code: outcome.code })
+        try SubscriptionRef.set(status, { _tag: "Offline", attempt, code: outcome.code })
+        try Effect.sleep(delay)
+        try SubscriptionRef.set(status, { _tag: "Connecting" })
       }
-    })
-    yield* Effect.forkScoped(run)
+    }
+    try Effect.forkScoped(run)
 
     return {
       set: (state) =>
@@ -214,4 +214,4 @@ export const connect = (url: string): Effect.Effect<Connection, never, Scope.Sco
       roster: SubscriptionRef.changes(roster),
       status: SubscriptionRef.changes(status)
     }
-  })
+  }

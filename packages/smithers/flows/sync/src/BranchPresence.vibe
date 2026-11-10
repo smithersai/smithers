@@ -264,11 +264,11 @@ export const makeMemory = (
 const makeResolved = (
   { changesCapacity, leaseMs, maxParticipants, sourcesReady }: Resolved
 ): Effect.Effect<Service, never, BranchShare.BranchShare> =>
-  Effect.gen(function*() {
-    const startedAtMs = yield* Clock.currentTimeMillis
-    const share = yield* BranchShare.BranchShare
+  effect {
+    const startedAtMs = try Clock.currentTimeMillis
+    const share = try BranchShare.BranchShare
     const roster = new Map<BranchId, Map<string, Seat>>()
-    const changes = yield* PubSub.sliding<BranchId>(changesCapacity)
+    const changes = try PubSub.sliding<BranchId>(changesCapacity)
 
     const expire = (branchId: BranchId, nowMs: number) => {
       const branch = roster.get(branchId)
@@ -363,13 +363,13 @@ const makeResolved = (
       }
     }
 
-    const announce = Effect.fn("BranchPresence.announce")(function*(supplied: Announcement) {
+    const announce = Effect.fn("BranchPresence.announce")(effect (supplied: Announcement) => {
       const detached = detachAnnouncement(supplied)
-      yield* Effect.annotateCurrentSpan({
+      try Effect.annotateCurrentSpan({
         branchId: detached.branchId,
         participantId: detached.participantId
       })
-      const claims = yield* share.verify(detached.capability, {
+      const claims = try share.verify(detached.capability, {
         branchId: detached.branchId,
         access: "write"
       })
@@ -378,33 +378,30 @@ const makeResolved = (
       // requires a `NonEmptyString`: without this the constructor threw a
       // defect out of an operation whose type promises a `SyncError`.
       if (detached.displayName.length === 0) {
-        return yield* Effect.fail(
-          new SyncError({ code: "invalid_request", message: "A participant's display name must not be empty" })
-        )
+        throw new SyncError({ code: "invalid_request", message: "A participant's display name must not be empty" })
       }
       if (detached.where !== undefined && !Schema.is(PresenceWhere)(detached.where)) {
-        return yield* Effect.fail(new SyncError({ code: "invalid_request", message: "Invalid presence location" }))
+        throw new SyncError({ code: "invalid_request", message: "Invalid presence location" })
       }
       if (detached.sessionId !== undefined && detached.sessionId.length === 0) {
-        return yield* Effect.fail(new SyncError({ code: "invalid_request", message: "Invalid presence session" }))
+        throw new SyncError({ code: "invalid_request", message: "Invalid presence session" })
       }
       let cursor: Cursor | null = null
       if (detached.cursor !== null) {
         const { cardId, offset } = detached.cursor
         if (typeof cardId !== "string" || cardId.length === 0) {
-          return yield* Effect.fail(
-            new SyncError({ code: "invalid_request", message: "A cursor's card ID must not be empty" })
-          )
+          throw new SyncError({ code: "invalid_request", message: "A cursor's card ID must not be empty" })
         }
         if (typeof offset !== "number" || !Number.isSafeInteger(offset) || offset < 0) {
-          return yield* Effect.fail(
-            new SyncError({ code: "invalid_request", message: "A cursor's offset must be a nonnegative safe integer" })
-          )
+          throw new SyncError({
+            code: "invalid_request",
+            message: "A cursor's offset must be a nonnegative safe integer"
+          })
         }
         cursor = new Cursor({ cardId, offset })
       }
       const announcement = { ...detached, cursor }
-      const nowMs = yield* Clock.currentTimeMillis
+      const nowMs = try Clock.currentTimeMillis
       // Run-out leases are dropped before the cap is judged, so a branch that
       // has simply been busy over time is never refused for a stale roster.
       live(announcement.branchId, nowMs)
@@ -416,15 +413,13 @@ const makeResolved = (
         seat.participant.participantId === announcement.participantId && seat.capabilityId !== claims.capabilityId
       )
       if (foreignActor || (held !== undefined && held.capabilityId !== claims.capabilityId)) {
-        return yield* Effect.fail(heldByAnother(announcement.participantId))
+        throw heldByAnother(announcement.participantId)
       }
       if (held === undefined && branch.size >= maxParticipants) {
-        return yield* Effect.fail(
-          new SyncError({
-            code: "backpressure",
-            message: `Branch ${announcement.branchId} already holds ${maxParticipants} participants`
-          })
-        )
+        throw new SyncError({
+          code: "backpressure",
+          message: `Branch ${announcement.branchId} already holds ${maxParticipants} participants`
+        })
       }
       const participant = new Participant({
         branchId: announcement.branchId,
@@ -443,15 +438,15 @@ const makeResolved = (
       })
       branch.set(seatKey(announcement), { participant, capabilityId: claims.capabilityId })
       roster.set(announcement.branchId, branch)
-      yield* PubSub.publish(changes, announcement.branchId)
+      try PubSub.publish(changes, announcement.branchId)
       return detach(participant)
     })
 
-    const leave = Effect.fn("BranchPresence.leave")(function*(supplied: LeaveRequest) {
+    const leave = Effect.fn("BranchPresence.leave")(effect (supplied: LeaveRequest) => {
       const request = detachLeave(supplied)
-      yield* Effect.annotateCurrentSpan({ branchId: request.branchId, participantId: request.participantId })
-      const claims = yield* share.verify(request.capability, { branchId: request.branchId, access: "write" })
-      const branch = expire(request.branchId, yield* Clock.currentTimeMillis)
+      try Effect.annotateCurrentSpan({ branchId: request.branchId, participantId: request.participantId })
+      const claims = try share.verify(request.capability, { branchId: request.branchId, access: "write" })
+      const branch = expire(request.branchId, try Clock.currentTimeMillis)
       if (branch !== undefined) {
         const keys = request.sessionId === undefined
           ? [...branch].filter(([, seat]) => seat.participant.participantId === request.participantId)
@@ -460,32 +455,32 @@ const makeResolved = (
         for (const key of keys) {
           const held = branch.get(key)
           if (held !== undefined && held.capabilityId !== claims.capabilityId) {
-            return yield* Effect.fail(heldByAnother(request.participantId))
+            throw heldByAnother(request.participantId)
           }
         }
         for (const key of keys) branch.delete(key)
         if (branch.size === 0) roster.delete(request.branchId)
       }
-      yield* PubSub.publish(changes, request.branchId)
+      try PubSub.publish(changes, request.branchId)
     })
 
-    const list = Effect.fn("BranchPresence.list")(function*(supplied: RosterRequest) {
+    const list = Effect.fn("BranchPresence.list")(effect (supplied: RosterRequest) => {
       const request = detachRoster(supplied)
-      yield* Effect.annotateCurrentSpan({ branchId: request.branchId })
-      yield* share.verify(request.capability, { branchId: request.branchId, access: "read" })
-      return live(request.branchId, yield* Clock.currentTimeMillis)
+      try Effect.annotateCurrentSpan({ branchId: request.branchId })
+      try share.verify(request.capability, { branchId: request.branchId, access: "read" })
+      return live(request.branchId, try Clock.currentTimeMillis)
     })
 
-    const presenceOn = Effect.fn("BranchPresence.presenceOn")(function*(supplied: RosterRequest) {
+    const presenceOn = Effect.fn("BranchPresence.presenceOn")(effect (supplied: RosterRequest) => {
       const request = detachRoster(supplied)
-      yield* share.verify(request.capability, { branchId: request.branchId, access: "read" })
-      const nowMs = yield* Clock.currentTimeMillis
-      if (nowMs - startedAtMs < leaseMs || !(yield* sourcesReady(request.branchId))) return "unknown" as const
+      try share.verify(request.capability, { branchId: request.branchId, access: "read" })
+      const nowMs = try Clock.currentTimeMillis
+      if (nowMs - startedAtMs < leaseMs || !(try sourcesReady(request.branchId))) return "unknown" as const
       return live(request.branchId, nowMs).length === 0 ? "empty" as const : "present" as const
     })
 
     return BranchPresence.of({ announce, leave, list, presenceOn, changes: Stream.fromPubSub(changes), leaseMs })
-  })
+  }
 
 /**
  * Provides the in-memory, lease-expiring presence registry under the default

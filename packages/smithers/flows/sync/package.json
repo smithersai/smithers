@@ -42,18 +42,18 @@
     "./internal/*": null,
     "./*/index": null,
     "./BranchCommands": {
-      "types": "./src/BranchCommands.ts",
-      "vibelang-source": "./src/BranchCommands.ts",
+      "types": "./.vibe/declarations/src/BranchCommands.d.vibe.ts",
+      "vibelang-source": "./src/BranchCommands.vibe",
       "default": "./.vibelang/js/src/BranchCommands.js"
     },
     "./BranchIds": {
-      "types": "./src/BranchIds.ts",
-      "vibelang-source": "./src/BranchIds.ts",
+      "types": "./.vibe/declarations/src/BranchIds.d.vibe.ts",
+      "vibelang-source": "./src/BranchIds.vibe",
       "default": "./.vibelang/js/src/BranchIds.js"
     },
     "./BranchPresence": {
-      "types": "./src/BranchPresence.ts",
-      "vibelang-source": "./src/BranchPresence.ts",
+      "types": "./.vibe/declarations/src/BranchPresence.d.vibe.ts",
+      "vibelang-source": "./src/BranchPresence.vibe",
       "default": "./.vibelang/js/src/BranchPresence.js"
     },
     "./BranchProjection": {
@@ -67,13 +67,13 @@
       "default": "./.vibelang/js/src/BranchProtocol.js"
     },
     "./BranchRpcs": {
-      "types": "./src/BranchRpcs.ts",
-      "vibelang-source": "./src/BranchRpcs.ts",
+      "types": "./.vibe/declarations/src/BranchRpcs.d.vibe.ts",
+      "vibelang-source": "./src/BranchRpcs.vibe",
       "default": "./.vibelang/js/src/BranchRpcs.js"
     },
     "./BranchServer": {
-      "types": "./src/BranchServer.ts",
-      "vibelang-source": "./src/BranchServer.ts",
+      "types": "./.vibe/declarations/src/BranchServer.d.vibe.ts",
+      "vibelang-source": "./src/BranchServer.vibe",
       "default": "./.vibelang/js/src/BranchServer.js"
     },
     "./BranchShare": {
@@ -87,13 +87,13 @@
       "default": "./.vibelang/js/src/PresenceProtocol.js"
     },
     "./PresenceRoom": {
-      "types": "./src/PresenceRoom.ts",
-      "vibelang-source": "./src/PresenceRoom.ts",
+      "types": "./.vibe/declarations/src/PresenceRoom.d.vibe.ts",
+      "vibelang-source": "./src/PresenceRoom.vibe",
       "default": "./.vibelang/js/src/PresenceRoom.js"
     },
     "./PresenceSocket": {
-      "types": "./src/PresenceSocket.ts",
-      "vibelang-source": "./src/PresenceSocket.ts",
+      "types": "./.vibe/declarations/src/PresenceSocket.d.vibe.ts",
+      "vibelang-source": "./src/PresenceSocket.vibe",
       "default": "./.vibelang/js/src/PresenceSocket.js"
     },
     "./RunCatalog": {
