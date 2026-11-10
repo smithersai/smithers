@@ -5195,3 +5195,25 @@ cases.extend([('src/actions/catalogDecision.vibe', *case) for case in [
 ('catalog-input-tour', 'inputOf', 'name === tags.tour ? "none"', 'name === tags.endTour ? "none"', 'a tour takes no input'),
 ('catalog-input-post', 'inputOf', 'name === tags.post ? "text"', 'name === tags.tour ? "text"', 'a post takes text'),
 ]])
+# Lane vl-proveall3, batch 4 (0018 "Third-lane batch 4").
+cases.extend([('src/history/seedDecision.vibe', *case) for case in [
+('seed-area-empty', 'areaIndex', 'if (scope === "") return -1', 'if (false) return -1', 'an empty scope names no area'),
+('seed-area-first', 'areaIndex', 'if (areas[i]!.scopes.includes(scope)) return i', 'if (areas[i]!.scopes.includes(scope)) return areas.length - 1', 'the first area that names the scope wins'),
+('seed-area-step', 'areaIndex', '    i++\n', '    i += 2\n', 'every area is read'),
+('seed-entry-regenerated', 'entryUse', 'if (regenerated) return "skip"', 'if (false) return "skip"', 'regenerated docs tell nothing'),
+('seed-entry-landed', 'entryUse', 'if (state === "landed") return "landed"', 'if (state === "landed") return "attempt"', 'a landed entry is claimed'),
+('seed-entry-withdrawn', 'entryUse', ' || state === "withdrawn"', '', 'a withdrawn entry is an attempt'),
+('seed-entry-open', 'entryUse', '  return "skip"\n}', '  return "attempt"\n}', 'open work is no attempt'),
+('seed-join-previous', 'joins', 'if (regenerated && hasPrevious) return "previous"', 'if (regenerated) return "previous"', 'a first regenerated commit is its own'),
+('seed-join-order', 'joins', 'if (revertsKnown) return "reverted"', 'if (revertsKnown && !entryKnown) return "reverted"', 'a revert joins what it reverts before an entry'),
+('seed-join-entry', 'joins', 'if (entryKnown) return "entry"', 'if (false) return "entry"', 'a known entry keeps its commits together'),
+('seed-fit-max', 'lastFitEnd', 'if (ends[end - 1]! <= max) return ends[end - 1]!', 'if (ends[end - 1]! < max) return ends[end - 1]!', 'a sentence ending at the limit fits'),
+('seed-fit-last', 'lastFitEnd', 'return lastFitEnd(ends, max, end - 1)', 'return -1', 'an earlier sentence that fits is found'),
+('seed-cut-fit', 'sentenceCut', 'if (fit >= 1) return fit', 'if (fit >= 1) return fit - 1', 'the cut keeps every sentence that fits'),
+('seed-cut-first', 'sentenceCut', 'ends.length > 0 ? ends[0]! : length', 'length', 'a long note keeps only its first sentence'),
+('seed-cut-note', 'sentenceCut', 'return first <= maxNote ? first : -1', 'return first', 'a first sentence over the note limit is dropped'),
+('seed-evidence-trailer', 'evidenceStep', 'if (trailer) return "start"', 'if (trailer && !open) return "start"', 'a trailer always starts a paragraph'),
+('seed-evidence-open', 'evidenceStep', 'if (open && !blank && !ownLine) return "wrap"', 'if (!blank && !ownLine) return "wrap"', 'only an open paragraph wraps'),
+('seed-evidence-own', 'evidenceStep', 'if (open && !blank && !ownLine) return "wrap"', 'if (open && !blank) return "wrap"', 'a line of its own never wraps'),
+('seed-title-read', 'foldedTitle', 'stored === "" ? own : stored', 'stored', 'an empty stored title reads as the commit\'s own'),
+]])

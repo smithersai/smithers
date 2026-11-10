@@ -42,6 +42,7 @@ const shellBoundaries = {
   'src/history/roles.vibe': 'may, leastRole, peopleOnly and standing are proved in flowMachine.vibe; this module re-exports them and builds the role tables from them (0020).',
 };
 const boundaries = {
+  "src/history/seedDecision.vibe": "Proved first area naming a scope, which queue entries count, exact join precedence (regenerated docs, revert, landed entry, new), the last sentence end that fits and the note cut (else a short first sentence, else dropped), the evidence paragraph step (a line wraps only onto an open paragraph) and how a fold reads back a stored title (0018 third-lane batch 4).",
   "src/actions/catalogDecision.vibe": "Proved exact least role (tours public; approve and fold maintainer; else contributor) and input kind for each flow tag (0018 third-lane batch 3).",
   "src/core/tourDecision.vibe": "Proved exact docs-path admission (no scheme, host, query, dot segment or //), running tour and reply id (0018 third-lane batch 2).",
   "src/history/pageDecision.vibe": "Proved page start, exact page count (none past the end, at most a page) and the pair-safe search clip (0018 third-lane batch 2).",
@@ -72,6 +73,11 @@ const boundaries = {
 };
 const functionBoundaries = {
   "src/web/actionModel.vibe:completions": "Calls the proved slashMatches (modelDecision): exactly the commands whose text starts with the draft's first word while the menu is open and that word starts with /; none otherwise. Reading the draft's first word is a native regexp outside the proof.",
+  "src/history/seed.vibe:areaOf": "Calls the proved first area naming the scope (seedDecision areaIndex); the scope regexps stay boundaries (regexp.ts).",
+  "src/history/seed.vibe:wholeSentences": "Calls the proved note cut (seedDecision sentenceCut); the sentence-boundary regexps and trimming stay boundaries (regexp.ts).",
+  "src/history/seed.vibe:evidenceOf": "Calls the proved evidence paragraph step (seedDecision evidenceStep); the trailer and own-line regexps stay boundaries (regexp.ts).",
+  "src/history/seed.vibe:intentsOf": "Fold titles read back through the proved foldedTitle: an empty stored title is the mythical commit's own. Intent order is the loop order; that every intent is accepted is tested, not proved.",
+  "src/history/seed.vibe:seedOf": "Calls the proved entry use and join precedence (seedDecision entryUse, joins). Not proved: the commit graph walk, the claim of the oldest landed entry, epic order and id numbering (Maps, regexps).",
   "src/history/seed.vibe:pushOnce": "Calls the proved note-line admission (stackDecision admitsLine).",
   "src/actions/catalog.vibe:registration": "Calls the proved least role and input kind (catalogDecision); titles and command names are labels.",
   "src/core/accountCookies.vibe:validSessionCookie": "Calls the proved local-origin and cookie acceptance rule; the URL parse and cookie regexps stay boundaries (uri-codec.ts, regexp.ts).",

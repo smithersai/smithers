@@ -8,6 +8,10 @@
 // `intentsOf` turns a seed into the history machine's intents (mythical.vibe), which the Bootstrap flow records.
 import { apply, decideWithinCapacity, empty, type History, type Intent, MAX_NOTE, MAX_TITLE, type Section } from "./mythical.vibe"
 import { admitsLine, pairCut } from "./stackDecision.vibe"
+import { type Area, areaIndex, entryUse, evidenceStep, foldedTitle, joins, sentenceCut } from "./seedDecision.vibe"
+
+// An area is the proved decision module's (seedDecision.vibe); this module names the bootstrap's areas.
+export type { Area }
 
 /** A commit reachable from main, as the generator reads it; `parents` first parent first. */
 export interface RawCommit {
@@ -119,12 +123,6 @@ export const MAX_SEED_NOTES = 4
 /** The most characters a seeded note line holds. */
 export const MAX_SEED_NOTE = 300
 
-/** An epic of the bootstrap and the scopes (`type(scope):` or `scope:`) whose commits it tells. */
-export interface Area {
-  readonly title: string
-  readonly scopes: ReadonlyArray<string>
-}
-
 /** The epics, by what part of VibeLang they tell. A commit whose scope none names goes to `Foundations`. */
 export const AREAS: ReadonlyArray<Area> = [
   {
@@ -209,12 +207,8 @@ export function scopeOf(title: string): string {
 
 /** The title of the epic a commit with `title` belongs to. */
 export function areaOf(title: string): string {
-  const scope = scopeOf(title)
-  if (scope === "") return FOUNDATIONS
-  for (const area of AREAS) {
-    if (area.scopes.includes(scope)) return area.title
-  }
-  return FOUNDATIONS
+  const index = areaIndex(scopeOf(title), AREAS)
+  return index < 0 ? FOUNDATIONS : AREAS[index]!.title
 }
 
 /**
@@ -252,10 +246,8 @@ export function wholeSentences(text: string, max: number): string {
   const ended = endsSentence(trimmed) ? trimmed : `${trimmed}.`
   if (ended.length <= max) return ended
   const ends = [...ended.matchAll(BOUNDARY)].map((match) => match.index + match[0].length)
-  const fits = ends.filter((end) => end <= max)
-  if (fits.length > 0) return ended.slice(0, fits[fits.length - 1])
-  const first = ended.slice(0, ends[0] ?? ended.length)
-  return first.length <= MAX_NOTE ? first : ""
+  const cut = sentenceCut(ends, ended.length, max, MAX_NOTE)
+  return cut < 0 ? "" : ended.slice(0, cut)
 }
 
 /** The title of a commit with no description. */
@@ -282,10 +274,11 @@ export function evidenceOf(description: string): ReadonlyArray<string> {
   for (const raw of description.split("\n")) {
     const line = raw.trim()
     const match = TRAILERS.exec(line)
-    if (match !== null) {
+    const step = evidenceStep(match !== null, open, line === "", OWN_LINE.test(line))
+    if (step === "start" && match !== null) {
       paragraphs.push(`${match[1]}: ${match[2]}`)
       open = true
-    } else if (open && line !== "" && !OWN_LINE.test(line)) {
+    } else if (step === "wrap") {
       paragraphs[paragraphs.length - 1] += ` ${line}`
     } else {
       open = false
@@ -296,8 +289,6 @@ export function evidenceOf(description: string): ReadonlyArray<string> {
 
 const REGENERATED = /^chore\(docs\): regenerate\b/
 
-/** The queue states a note tells: how a change landed, or how an attempt at it ended. */
-const COUNTED: ReadonlyArray<string> = ["landed", "rejected", "superseded", "withdrawn"]
 const REVERT = /^Revert "(.+)"$/
 
 /** One mythical commit while grouping: its real commits and the queue entry it came from. */
@@ -327,8 +318,9 @@ export function seedOf(repository: string, commits: ReadonlyArray<RawCommit>, en
   const attempts = new Map<string, Array<QueueEntry>>()
   for (const entry of entries) {
     for (const title of entry.titles) {
-      if (REGENERATED.test(title) || !COUNTED.includes(entry.state)) continue
-      const into = entry.state === "landed" ? landed : attempts
+      const use = entryUse(REGENERATED.test(title), entry.state)
+      if (use === "skip") continue
+      const into = use === "landed" ? landed : attempts
       const list = into.get(title) ?? []
       if (!list.includes(entry)) list.push(entry)
       into.set(title, list)
@@ -347,12 +339,13 @@ export function seedOf(repository: string, commits: ReadonlyArray<RawCommit>, en
     const entry = landed.get(title)?.shift()
     const reverted = REVERT.exec(title)
     const previous = groups[groups.length - 1]
+    const join = joins(REGENERATED.test(title), previous !== undefined, reverted !== null && byTitle.has(reverted[1]!), entry !== undefined && byEntry.has(entry.id))
     let group: Group | undefined
-    if (REGENERATED.test(title) && previous !== undefined) group = previous
-    else if (reverted !== null && byTitle.has(reverted[1]!)) {
-      group = byTitle.get(reverted[1]!)!
+    if (join === "previous") group = previous
+    else if (join === "reverted") {
+      group = byTitle.get(reverted![1]!)!
       pushOnce(group.tried, `Reverted in ${commit.sha.slice(0, SHA_LENGTH)}.`)
-    } else if (entry !== undefined && byEntry.has(entry.id)) group = byEntry.get(entry.id)!
+    } else if (join === "entry") group = byEntry.get(entry!.id)!
     if (group === undefined) {
       group = { title, entry: entry?.id ?? "", real: [], tried: [], evidence: [] }
       groups.push(group)
@@ -441,7 +434,7 @@ export function intentsOf(seed: Seed): ReadonlyArray<Intent> {
     }
   }
   for (const real of seed.real) {
-    intents.push({ type: "Fold", sha: real.sha, change: real.change, title: real.title === "" ? titles.get(real.into) ?? "" : real.title, into: real.into })
+    intents.push({ type: "Fold", sha: real.sha, change: real.change, title: foldedTitle(real.title, titles.get(real.into) ?? ""), into: real.into })
   }
   for (const epic of seed.epics) {
     for (const commit of epic.commits) {

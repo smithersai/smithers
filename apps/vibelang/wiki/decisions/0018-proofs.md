@@ -682,7 +682,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-3098 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+3104 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -1557,32 +1557,38 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/history/schemas.vibe:51` | `callback@51` | wiring | Rank bounds call proved validRank/validRanks; Schema safe-integer and JSON decoding remain runtime boundaries (unsafe-integer.ts, json-codec.ts). |
 | `src/history/schemas.vibe:89` | `decodeStoredHistory` | effectful shell | Rank bounds call proved validRank/validRanks; Schema safe-integer and JSON decoding remain runtime boundaries (unsafe-integer.ts, json-codec.ts). |
 | `src/history/schemas.vibe:90` | `decodeStoredHistory/callback@90` | wiring | Rank bounds call proved validRank/validRanks; Schema safe-integer and JSON decoding remain runtime boundaries (unsafe-integer.ts, json-codec.ts). |
-| `src/history/seed.vibe:31` | `bucketsOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:34` | `bucketsOf/callback@34` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/history/seed.vibe:35` | `bucketsOf/callback@35` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/history/seed.vibe:53` | `bucketsOf/callback@53` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:200` | `scopeOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:211` | `areaOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:225` | `sanitize` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:241` | `endsSentence` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:249` | `wholeSentences` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:254` | `wholeSentences/callback@254` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:255` | `wholeSentences/callback@255` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:265` | `titleOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:279` | `evidenceOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:294` | `evidenceOf/callback@294` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:294` | `evidenceOf/callback@294` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/history/seed.vibe:312` | `pushOnce` | pure logic | Calls the proved note-line admission (stackDecision admitsLine). |
-| `src/history/seed.vibe:324` | `seedOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:386` | `seedOf/callback@386` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:387` | `seedOf/callback@386/callback@387` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:395` | `seedOf/callback@395` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:410` | `clip` | pure logic | Calls the proved pair-safe cut (stackDecision pairCut), so a clipped title or note never ends in half a character; the native trimEnd is outside the proof. |
-| `src/history/seed.vibe:415` | `notesOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:421` | `notesOf/callback@421` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/history/seed.vibe:422` | `notesOf/callback@422` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/history/seed.vibe:433` | `intentsOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:461` | `replay` | pure logic | Calls proved capacity decision and apply; safe-limit overflow fixed by failing-first regressions. Complete intent-fold/refusal-order contracts and arbitrary malformed starting snapshots remain unproved. |
+| `src/history/seed.vibe:35` | `bucketsOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/history/seed.vibe:38` | `bucketsOf/callback@38` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/history/seed.vibe:39` | `bucketsOf/callback@39` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/history/seed.vibe:57` | `bucketsOf/callback@57` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/history/seed.vibe:198` | `scopeOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/history/seed.vibe:209` | `areaOf` | pure logic | Calls the proved first area naming the scope (seedDecision areaIndex); the scope regexps stay boundaries (regexp.ts). |
+| `src/history/seed.vibe:219` | `sanitize` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/history/seed.vibe:235` | `endsSentence` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/history/seed.vibe:243` | `wholeSentences` | pure logic | Calls the proved note cut (seedDecision sentenceCut); the sentence-boundary regexps and trimming stay boundaries (regexp.ts). |
+| `src/history/seed.vibe:248` | `wholeSentences/callback@248` | pure logic | Calls the proved note cut (seedDecision sentenceCut); the sentence-boundary regexps and trimming stay boundaries (regexp.ts). |
+| `src/history/seed.vibe:257` | `titleOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/history/seed.vibe:271` | `evidenceOf` | pure logic | Calls the proved evidence paragraph step (seedDecision evidenceStep); the trailer and own-line regexps stay boundaries (regexp.ts). |
+| `src/history/seed.vibe:287` | `evidenceOf/callback@287` | pure logic | Calls the proved evidence paragraph step (seedDecision evidenceStep); the trailer and own-line regexps stay boundaries (regexp.ts). |
+| `src/history/seed.vibe:287` | `evidenceOf/callback@287` | wiring | Calls the proved evidence paragraph step (seedDecision evidenceStep); the trailer and own-line regexps stay boundaries (regexp.ts). |
+| `src/history/seed.vibe:303` | `pushOnce` | pure logic | Calls the proved note-line admission (stackDecision admitsLine). |
+| `src/history/seed.vibe:315` | `seedOf` | pure logic | Calls the proved entry use and join precedence (seedDecision entryUse, joins). Not proved: the commit graph walk, the claim of the oldest landed entry, epic order and id numbering (Maps, regexps). |
+| `src/history/seed.vibe:379` | `seedOf/callback@379` | pure logic | Calls the proved entry use and join precedence (seedDecision entryUse, joins). Not proved: the commit graph walk, the claim of the oldest landed entry, epic order and id numbering (Maps, regexps). |
+| `src/history/seed.vibe:380` | `seedOf/callback@379/callback@380` | pure logic | Calls the proved entry use and join precedence (seedDecision entryUse, joins). Not proved: the commit graph walk, the claim of the oldest landed entry, epic order and id numbering (Maps, regexps). |
+| `src/history/seed.vibe:388` | `seedOf/callback@388` | pure logic | Calls the proved entry use and join precedence (seedDecision entryUse, joins). Not proved: the commit graph walk, the claim of the oldest landed entry, epic order and id numbering (Maps, regexps). |
+| `src/history/seed.vibe:403` | `clip` | pure logic | Calls the proved pair-safe cut (stackDecision pairCut), so a clipped title or note never ends in half a character; the native trimEnd is outside the proof. |
+| `src/history/seed.vibe:408` | `notesOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/history/seed.vibe:414` | `notesOf/callback@414` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/history/seed.vibe:415` | `notesOf/callback@415` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/history/seed.vibe:426` | `intentsOf` | pure logic | Fold titles read back through the proved foldedTitle: an empty stored title is the mythical commit's own. Intent order is the loop order; that every intent is accepted is tested, not proved. |
+| `src/history/seed.vibe:454` | `replay` | pure logic | Calls proved capacity decision and apply; safe-limit overflow fixed by failing-first regressions. Complete intent-fold/refusal-order contracts and arbitrary malformed starting snapshots remain unproved. |
+| `src/history/seedDecision.vibe:22` | `areaIndex` | pure logic | Proved first area naming a scope, which queue entries count, exact join precedence (regenerated docs, revert, landed entry, new), the last sentence end that fits and the note cut (else a short first sentence, else dropped), the evidence paragraph step (a line wraps only onto an open paragraph) and how a fold reads back a stored title (0018 third-lane batch 4). |
+| `src/history/seedDecision.vibe:47` | `entryUse` | pure logic | Proved first area naming a scope, which queue entries count, exact join precedence (regenerated docs, revert, landed entry, new), the last sentence end that fits and the note cut (else a short first sentence, else dropped), the evidence paragraph step (a line wraps only onto an open paragraph) and how a fold reads back a stored title (0018 third-lane batch 4). |
+| `src/history/seedDecision.vibe:66` | `joins` | pure logic | Proved first area naming a scope, which queue entries count, exact join precedence (regenerated docs, revert, landed entry, new), the last sentence end that fits and the note cut (else a short first sentence, else dropped), the evidence paragraph step (a line wraps only onto an open paragraph) and how a fold reads back a stored title (0018 third-lane batch 4). |
+| `src/history/seedDecision.vibe:81` | `lastFitEnd` | pure logic | Proved first area naming a scope, which queue entries count, exact join precedence (regenerated docs, revert, landed entry, new), the last sentence end that fits and the note cut (else a short first sentence, else dropped), the evidence paragraph step (a line wraps only onto an open paragraph) and how a fold reads back a stored title (0018 third-lane batch 4). |
+| `src/history/seedDecision.vibe:98` | `sentenceCut` | pure logic | Proved first area naming a scope, which queue entries count, exact join precedence (regenerated docs, revert, landed entry, new), the last sentence end that fits and the note cut (else a short first sentence, else dropped), the evidence paragraph step (a line wraps only onto an open paragraph) and how a fold reads back a stored title (0018 third-lane batch 4). |
+| `src/history/seedDecision.vibe:117` | `evidenceStep` | pure logic | Proved first area naming a scope, which queue entries count, exact join precedence (regenerated docs, revert, landed entry, new), the last sentence end that fits and the note cut (else a short first sentence, else dropped), the evidence paragraph step (a line wraps only onto an open paragraph) and how a fold reads back a stored title (0018 third-lane batch 4). |
+| `src/history/seedDecision.vibe:127` | `foldedTitle` | pure logic | Proved first area naming a scope, which queue entries count, exact join precedence (regenerated docs, revert, landed entry, new), the last sentence end that fits and the note cut (else a short first sentence, else dropped), the evidence paragraph step (a line wraps only onto an open paragraph) and how a fold reads back a stored title (0018 third-lane batch 4). |
 | `src/history/Sequencer.vibe:14` | `checkedHistory` | effectful shell | Calls the proved history machine, rank validation, capacity guard and foldTarget, the proved stackDecision plan step, pair-safe fold title and first epic by title, and the followDecision replay cut. Decodes storage/replay/follow/bootstrap with redacted errors. The `Mythical:` trailer regexp (regexp.ts), locking, store-before-publish and PubSub delivery remain runtime boundaries. |
 | `src/history/Sequencer.vibe:14` | `checkedHistory/callback@14` | wiring | Calls the proved history machine, rank validation, capacity guard and foldTarget, the proved stackDecision plan step, pair-safe fold title and first epic by title, and the followDecision replay cut. Decodes storage/replay/follow/bootstrap with redacted errors. The `Mythical:` trailer regexp (regexp.ts), locking, store-before-publish and PubSub delivery remain runtime boundaries. |
 | `src/history/Sequencer.vibe:15` | `checkedEvents` | effectful shell | Calls the proved history machine, rank validation, capacity guard and foldTarget, the proved stackDecision plan step, pair-safe fold title and first epic by title, and the followDecision replay cut. Decodes storage/replay/follow/bootstrap with redacted errors. The `Mythical:` trailer regexp (regexp.ts), locking, store-before-publish and PubSub delivery remain runtime boundaries. |
@@ -4110,4 +4116,25 @@ The inline arms named in the last report, and what each now calls:
 Still not proved: the `Message.match` table and the arm bodies inside `main.vibe` (batch 32), the remaining wiki-editor
 arms, and the translation helpers `runEscape`, `runAccount`, `accountCommand`, `runActions`, `actionCommand`,
 `runTourControl`, `issueScreen`, `issueFacts`.
+
+
+### Third-lane batch 4: the bootstrap seed's decisions
+
+`seed.vibe` builds a mythical history from main's commits and the merge queue. Its regular expressions, Maps and the commit graph walk stay outside LemmaScript; the choices they feed now live in `src/history/seedDecision.vibe`, and `seed.vibe` calls them.
+
+| Function | What its contract states | Called from |
+| --- | --- | --- |
+| `areaIndex` | The first area whose scopes include the scope; -1 for an empty scope or one no area names, and then no area names it. | `areaOf` |
+| `entryUse` | Regenerated docs and open entries count for nothing; `landed` is claimed; `rejected`, `superseded` and `withdrawn` are attempts. | `seedOf` |
+| `joins` | Exact precedence: regenerated docs join the commit before them only when there is one; then a revert joins what it reverts; then a landed entry's later commits join its first; else a new commit. | `seedOf` |
+| `lastFitEnd` | Defined recursively: the last of the first `end` sentence ends that is at most `max`, else -1; never above `max`. | `sentenceCut` |
+| `sentenceCut` | With every end at least 1: after the last sentence that fits; else after the first sentence when it is within the note limit; else -1 (the note is dropped, never cut mid-sentence). | `wholeSentences` |
+| `evidenceStep` | A trailer starts a paragraph; a nonblank line that starts nothing of its own wraps; anything else closes. A wrap needs an open paragraph, so `paragraphs[length - 1]` exists. | `evidenceOf` |
+| `foldedTitle` | A fold's stored title, or the mythical commit's own when the seed stored it empty. | `intentsOf` |
+
+`lastFitEnd_ensures` and `sentenceCut_ensures` get checked induction steps from `proof_additions.py`. The refactor keeps behavior: the existing seed tests and the committed VibeLang history snapshot replay unchanged, and `test/seedDecision.test.vibe` pins each decision and its seed behavior.
+
+Not proved: `bucketsOf`'s graph walk, `scopeOf`, `sanitize` and the boundary regexps (regexp.ts), the oldest-landed-entry claim and epic numbering (Maps), `clip`'s `trimEnd`, and that every intent of a seed is accepted (tested on the snapshot).
+
+Mutations: 19 in `seedDecision.vibe`.
 

@@ -1,0 +1,94 @@
+// Third-lane batch 4 (0018): the bootstrap's decisions, proved in seedDecision, as seed.vibe uses them.
+import { describe, expect, it } from "@effect/vitest"
+import { MAX_NOTE } from "../src/history/mythical.vibe"
+import { AREAS, areaOf, evidenceOf, FOUNDATIONS, intentsOf, type QueueEntry, type RawCommit, seedOf, wholeSentences } from "../src/history/seed.vibe"
+import { areaIndex, entryUse, evidenceStep, foldedTitle, joins, lastFitEnd, sentenceCut } from "../src/history/seedDecision.vibe"
+
+function linear(descriptions: ReadonlyArray<string>): ReadonlyArray<RawCommit> {
+  return descriptions.map((description, index) => ({
+    sha: `${index + 1}`.padStart(12, "a"),
+    change: `c${index + 1}`,
+    description,
+    parents: index === 0 ? [] : [`${index}`.padStart(12, "a")],
+  }))
+}
+
+function entry(id: string, state: string, titles: ReadonlyArray<string>): QueueEntry {
+  return { id, lane: `lane-${id}`, state, reason: "", gate: "", titles }
+}
+
+describe("an area", () => {
+  const areas = [{ title: "A", scopes: ["x", "y"] }, { title: "B", scopes: ["y", "z"] }]
+  it("is the first that names the scope, and none for an empty or unknown scope", () => {
+    expect([areaIndex("y", areas), areaIndex("z", areas), areaIndex("", areas), areaIndex("w", areas)]).toEqual([0, 1, -1, -1])
+    expect(areaIndex("", [{ title: "Empty", scopes: [""] }])).toBe(-1)
+  })
+  it("titles every commit of a scope the areas name, and Foundations for the rest", () => {
+    for (const area of AREAS) expect(areaOf(`fix(${area.scopes[0]}): a`)).toBe(AREAS[areaIndex(area.scopes[0]!, AREAS)]!.title)
+    expect(areaOf("fix(nothing-names-this): a")).toBe(FOUNDATIONS)
+  })
+})
+
+describe("a queue entry", () => {
+  it("counts when it landed or ended, never for regenerated docs or open work", () => {
+    expect(["landed", "rejected", "superseded", "withdrawn", "queued", ""].map((state) => entryUse(false, state)))
+      .toEqual(["landed", "attempt", "attempt", "attempt", "skip", "skip"])
+    expect(entryUse(true, "landed")).toBe("skip")
+  })
+  it("leaves no note when it is still queued", () => {
+    const seed = seedOf("r", linear(["feat: a"]), [entry("q1", "queued", ["feat: a"])])
+    expect(seed.epics[0]!.commits[0]!.notes).toEqual([])
+  })
+})
+
+describe("the commit a step joins", () => {
+  it("prefers regenerated docs, then a revert, then a known entry, else a new commit", () => {
+    expect(joins(true, true, true, true)).toBe("previous")
+    expect(joins(true, false, true, true)).toBe("reverted")
+    expect(joins(false, true, false, true)).toBe("entry")
+    expect(joins(true, false, false, false)).toBe("new")
+  })
+  it("makes a first regenerated-docs commit its own", () => {
+    const seed = seedOf("r", linear(["chore(docs): regenerate the index", "feat: a"]), [])
+    expect(seed.epics.flatMap((epic) => epic.commits).map((commit) => commit.title)).toEqual(["chore(docs): regenerate the index", "feat: a"])
+  })
+})
+
+describe("a note's sentences", () => {
+  it("are cut after the last that fits, else after a short first, else dropped", () => {
+    expect(lastFitEnd([5, 9, 14], 10, 3)).toBe(9)
+    expect(lastFitEnd([5, 9, 14], 4, 3)).toBe(-1)
+    expect(sentenceCut([5, 9, 14], 20, 10, 50)).toBe(9)
+    expect(sentenceCut([30, 40], 50, 10, 35)).toBe(30)
+    expect(sentenceCut([30, 40], 50, 10, 25)).toBe(-1)
+    expect(sentenceCut([], 50, 10, 60)).toBe(50)
+    expect(sentenceCut([], 50, 10, 40)).toBe(-1)
+  })
+  it("never come back longer than the limit or the note's own limit", () => {
+    expect(wholeSentences("One. Two. Three is long.", 9)).toBe("One. Two.")
+    expect(wholeSentences("x".repeat(MAX_NOTE - 1), 10)).toBe(`${"x".repeat(MAX_NOTE - 1)}.`)
+    expect(wholeSentences("x".repeat(MAX_NOTE), 10)).toBe("")
+  })
+})
+
+describe("evidence", () => {
+  it("starts on a trailer, wraps only onto an open paragraph, and closes on anything else", () => {
+    expect(evidenceStep(true, false, false, true)).toBe("start")
+    expect(evidenceStep(false, true, false, false)).toBe("wrap")
+    expect([evidenceStep(false, false, false, false), evidenceStep(false, true, true, false), evidenceStep(false, true, false, true)]).toEqual(["close", "close", "close"])
+  })
+  it("never wraps a line that comes before any trailer", () => {
+    expect(evidenceOf("prose first\nTests: pass")).toEqual(["Tests: pass."])
+  })
+})
+
+describe("a fold's title", () => {
+  it("is the mythical commit's own when the seed stored it empty", () => {
+    expect([foldedTitle("", "a"), foldedTitle("b", "a"), foldedTitle("", "")]).toEqual(["a", "b", ""])
+  })
+  it("folds each real commit of a seed under its own title", () => {
+    const seed = seedOf("r", linear(["feat: a", "chore(docs): regenerate"]), [])
+    const folds = intentsOf(seed).filter((intent) => intent.type === "Fold")
+    expect(folds.map((fold) => fold.type === "Fold" ? fold.title : "")).toEqual(["feat: a", "chore(docs): regenerate"])
+  })
+})

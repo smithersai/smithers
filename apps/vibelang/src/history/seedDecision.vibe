@@ -1,0 +1,129 @@
+// The bootstrap's own decisions (wiki/decisions/0020-mythical-history.md, 0018 third-lane batch 4): which epic a scope
+// tells, which queue entries a seed counts, which mythical commit a step of main joins, where a note's sentences are
+// cut, how an evidence paragraph grows, and how a fold reads back its stored title. `seed.vibe`
+// calls these; its regular expressions, maps and the commit graph walk stay outside the proof.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
+
+/** An epic of the bootstrap and the scopes (`type(scope):` or `scope:`) whose commits it tells. */
+export interface Area {
+  readonly title: string
+  readonly scopes: ReadonlyArray<string>
+}
+
+/** The first area that names `scope`, or -1 when the scope is empty or no area names it. */
+//@ verify
+//@ ensures -1 <= \result && \result < areas.length
+//@ ensures scope == "" ==> \result == -1
+//@ ensures \result >= 0 ==> areas[\result].scopes.includes(scope)
+//@ ensures \result >= 0 ==> forall(i, 0 <= i && i < \result ==> !areas[i].scopes.includes(scope))
+//@ ensures \result == -1 && scope != "" ==> forall(i, 0 <= i && i < areas.length ==> !areas[i].scopes.includes(scope))
+export function areaIndex(scope: string, areas: ReadonlyArray<Area>): number {
+  if (scope === "") return -1
+  let i = 0
+  while (i < areas.length) {
+    //@ invariant 0 <= i && i <= areas.length
+    //@ invariant forall(j, 0 <= j && j < i ==> !areas[j].scopes.includes(scope))
+    //@ decreases areas.length - i
+    if (areas[i]!.scopes.includes(scope)) return i
+    i++
+  }
+  return -1
+}
+
+/** What a seed makes of one title of a queue entry. */
+export type EntryUse = "skip" | "landed" | "attempt"
+
+/**
+ * A regenerated-docs title, or an entry still open, tells nothing; a landed entry is claimed by the commit with its
+ * title; a rejected, superseded or withdrawn one is an attempt at it.
+ */
+//@ verify
+//@ ensures regenerated ==> \result == "skip"
+//@ ensures !regenerated && state == "landed" ==> \result == "landed"
+//@ ensures !regenerated && (state == "rejected" || state == "superseded" || state == "withdrawn") ==> \result == "attempt"
+//@ ensures state != "landed" && state != "rejected" && state != "superseded" && state != "withdrawn" ==> \result == "skip"
+export function entryUse(regenerated: boolean, state: string): EntryUse {
+  if (regenerated) return "skip"
+  if (state === "landed") return "landed"
+  if (state === "rejected" || state === "superseded" || state === "withdrawn") return "attempt"
+  return "skip"
+}
+
+/** Which mythical commit a step of main joins. */
+export type Joins = "previous" | "reverted" | "entry" | "new"
+
+/**
+ * A regenerated-docs commit joins the one before it; a revert joins the commit it reverts; a commit whose landed entry
+ * already has a mythical commit joins that one; any other commit is its own.
+ */
+//@ verify
+//@ ensures regenerated && hasPrevious ==> \result == "previous"
+//@ ensures !(regenerated && hasPrevious) && revertsKnown ==> \result == "reverted"
+//@ ensures !(regenerated && hasPrevious) && !revertsKnown && entryKnown ==> \result == "entry"
+//@ ensures !(regenerated && hasPrevious) && !revertsKnown && !entryKnown ==> \result == "new"
+export function joins(regenerated: boolean, hasPrevious: boolean, revertsKnown: boolean, entryKnown: boolean): Joins {
+  if (regenerated && hasPrevious) return "previous"
+  if (revertsKnown) return "reverted"
+  if (entryKnown) return "entry"
+  return "new"
+}
+
+/** The last of the first `end` sentence ends that fits in `max`, or -1 when none does. */
+//@ verify
+//@ requires 0 <= end && end <= ends.length
+//@ decreases end
+//@ ensures end == 0 ==> \result == -1
+//@ ensures end > 0 ==> \result == (ends[end - 1] <= max ? ends[end - 1] : lastFitEnd(ends, max, end - 1))
+//@ ensures \result == -1 || \result <= max
+//@ ensures forall(j, 0 <= j && j < end ==> ends[j] > max) ==> \result == -1
+export function lastFitEnd(ends: ReadonlyArray<number>, max: number, end: number): number {
+  if (end <= 0) return -1
+  if (ends[end - 1]! <= max) return ends[end - 1]!
+  return lastFitEnd(ends, max, end - 1)
+}
+
+/**
+ * Where a note too long for `max` is cut, given its sentence ends in order (each at least 1) and its `length`: after
+ * the last sentence that fits; when none fits, after its first sentence if that is at most `maxNote` units; else -1,
+ * and the note is dropped, never cut mid-sentence.
+ */
+//@ verify
+//@ requires forall(i, 0 <= i && i < ends.length ==> ends[i] >= 1)
+//@ ensures lastFitEnd(ends, max, ends.length) >= 1 ==> \result == lastFitEnd(ends, max, ends.length)
+//@ ensures lastFitEnd(ends, max, ends.length) < 1 && ends.length > 0 ==> \result == (ends[0] <= maxNote ? ends[0] : -1)
+//@ ensures lastFitEnd(ends, max, ends.length) < 1 && ends.length == 0 ==> \result == (length <= maxNote ? length : -1)
+//@ ensures \result == -1 || \result <= max || \result <= maxNote
+export function sentenceCut(ends: ReadonlyArray<number>, length: number, max: number, maxNote: number): number {
+  const fit = lastFitEnd(ends, max, ends.length)
+  if (fit >= 1) return fit
+  const first = ends.length > 0 ? ends[0]! : length
+  return first <= maxNote ? first : -1
+}
+
+/** What one line of a commit message does to its evidence. */
+export type EvidenceStep = "start" | "wrap" | "close"
+
+/**
+ * A `Validation:`-style line starts a paragraph; a nonblank line that starts nothing of its own wraps onto an open
+ * paragraph; anything else closes it. A line only wraps onto a paragraph that is open, so there is one to extend.
+ */
+//@ verify
+//@ ensures trailer ==> \result == "start"
+//@ ensures !trailer && open && !blank && !ownLine ==> \result == "wrap"
+//@ ensures !trailer && !(open && !blank && !ownLine) ==> \result == "close"
+//@ ensures \result == "wrap" ==> open
+export function evidenceStep(trailer: boolean, open: boolean, blank: boolean, ownLine: boolean): EvidenceStep {
+  if (trailer) return "start"
+  if (open && !blank && !ownLine) return "wrap"
+  return "close"
+}
+
+/** A stored real-commit title read back: `""` is the mythical commit's own. */
+//@ verify
+//@ ensures stored == "" ==> \result == own
+//@ ensures stored != "" ==> \result == stored
+export function foldedTitle(stored: string, own: string): string {
+  return stored === "" ? own : stored
+}

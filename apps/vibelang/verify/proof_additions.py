@@ -18,6 +18,12 @@ LEMMA_STEPS = {
         ('lemma restartsBefore_ensures(log: seq<Event>, reply: string, end: int)',
          '  if end > 0 {\n    restartsBefore_ensures(log, reply, end - 1);\n  }\n'),
     ],
+    'src/history/seedDecision.vibe': [
+        ('lemma lastFitEnd_ensures(ends: seq<int>, max: int, end: int)',
+         '  if end > 0 {\n    lastFitEnd_ensures(ends, max, end - 1);\n  }\n'),
+        ('lemma sentenceCut_ensures(ends: seq<int>, length: int, max: int, maxNote: int)',
+         '  lastFitEnd_ensures(ends, max, |ends|);\n'),
+    ],
     'src/core/sandboxDecision.vibe': [
         ('lemma runningCountPrefix_ensures(sandboxes: seq<SandboxEntry>, end: int)',
          '  if end > 0 {\n    runningCountPrefix_ensures(sandboxes, end - 1);\n  }\n'),
