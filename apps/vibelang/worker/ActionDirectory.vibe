@@ -39,8 +39,11 @@ export function directory(hostId: string, storage: Storage, runs: Runs, authorit
   effect function list(flow: string) {
     const stored = try promise(() => storage.list({ prefix: "action-index/" }))
     const ids = [...stored.values()] as ReadonlyArray<string>
+    const indexed = new Set(ids)
     const rows = try Effect.orDie(all(ids.map((id) => runs.read(id)), { concurrency: 4 }))
-    return rows.flat().filter((run) => flow === "" || run.flow === flow).sort((a, b) => b.started - a.started)
+    // A run the agent starts inside another run is announced in that run's conversation too: each indexed run is listed
+    // once, from its own conversation.
+    return rows.flatMap((read, at) => read.filter((run) => run.id === ids[at] || !indexed.has(run.id))).filter((run) => flow === "" || run.flow === flow).sort((a, b) => b.started - a.started)
   }
   effect function start(request: RunRequest, role: Role) {
     const currentRole = try authority.role(request.owner ?? "")

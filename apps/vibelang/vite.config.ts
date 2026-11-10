@@ -1,6 +1,7 @@
 // Stays .ts: Vite and Vitest load their config through Vite's config loader, which bundles JS/TS files only.
 import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
+import { quickjsModule } from "./quickjs.vite.ts"
 
 // The browser picks the mock Factory (no backend, no model) unless its origin's API says it is live
 // (wiki/decisions/0004-mock-mode.md, 0010-live-agent.md). `--mode e2e` adds the fault-injection page the recovery tests
@@ -8,7 +9,7 @@ import { configDefaults, defineConfig } from "vitest/config"
 const WORKERD = "test/**/*.workerd.test.{ts,vibe}"
 
 export default defineConfig(({ mode }) => ({
-  plugins: [vibelang()],
+  plugins: [vibelang(), quickjsModule],
   // pnpm may bind optional Vitest peers differently; every test must use the CLI's suite context.
   resolve: { dedupe: ["vitest"] },
   build: {

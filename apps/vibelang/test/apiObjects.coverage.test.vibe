@@ -1,0 +1,305 @@
+// @vitest-environment node
+// The API Worker's object bodies (worker/apiObjects.vibe) as a person and the agent reach them: every route through
+// `apiFetch`, the conversation's alarm running the agent's tools, an action run, the sandbox gateway's identity, and each
+// namespace unbound or unreachable. The objects run over SQLite storage in one process (test/support/apiWorld.vibe).
+import { describe, expect, it } from "@effect/vitest"
+import { RuntimeContext } from "alchemy/RuntimeContext"
+import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { sandboxIdentityOf } from "../worker/apiObjects.vibe"
+import { ORIGIN, runtime, UNDRAFTABLE, withAbsentGitHub, world, type Kind } from "./support/apiWorld.vibe"
+
+type World = Effect.Success<ReturnType<typeof world>>
+type Method = "GET" | "POST" | "DELETE"
+interface Options {
+  /** Sends the session cookie and this origin; false is a visitor with neither. */
+  readonly signed?: boolean
+  readonly crossOrigin?: boolean
+  /** The trusted props an action run's own request carries. */
+  readonly props?: Record<string, unknown>
+}
+interface Answer { readonly status: number; readonly body: any; readonly type: string | null }
+
+/** A browser over `w`: it keeps the cookies the API sets and sends them while signed. */
+function browser(w: World) {
+  const jar = new Map<string, string>()
+  const ask = effect (method: Method, path: string, body?: unknown, options: Options = {}) => {
+    const signed = options.signed ?? true
+    let request = HttpClientRequest.make(method)(`${ORIGIN}${path}`)
+    if (signed || options.crossOrigin === true) request = HttpClientRequest.setHeader(request, "origin", options.crossOrigin === true ? "https://elsewhere.invalid" : ORIGIN)
+    if (signed && jar.size > 0) request = HttpClientRequest.setHeader(request, "cookie", [...jar].map(([name, value]) => `${name}=${value}`).join("; "))
+    if (body !== undefined) {
+      const text = JSON.stringify(body)
+      request = HttpClientRequest.setHeader(HttpClientRequest.bodyText(request, text, "application/json"), "content-length", String(text.length))
+    }
+    const response = HttpServerResponse.toWeb(try w.fetchOf(HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(request)), options.props ?? {}))
+    for (const cookie of response.headers.getSetCookie()) {
+      const pair = cookie.split(";")[0]!
+      jar.set(pair.slice(0, pair.indexOf("=")), pair.slice(pair.indexOf("=") + 1))
+    }
+    const type = response.headers.get("content-type")
+    // An event stream never ends; its status and type are the answer.
+    if (type === "text/event-stream") {
+      try promise(() => response.body?.cancel() ?? Promise.resolve())
+      const answer: Answer = { status: response.status, body: undefined, type }
+      return answer
+    }
+    const text = try promise(() => response.text())
+    const answer: Answer = { status: response.status, body: text === "" ? undefined : try Effect.orDie(Effect.try(() => JSON.parse(text))), type }
+    return answer
+  }
+  /** GitHub sends the person back with the state the sign-in stored; the callback sets the session cookie. */
+  const signIn = effect {
+    expect((try ask("GET", "/api/auth/sign-in")).status).toBe(302)
+    const storage = try w.storageOf("accounts", "project")
+    const state = [...(try promise(() => storage.list({ prefix: "sign-in/" }))).keys()].at(-1)!.slice("sign-in/".length)
+    expect((try ask("GET", `/api/auth/callback?state=${encodeURIComponent(state)}&code=code`)).status).toBe(302)
+  }
+  return { ask, signIn }
+}
+
+/** A request for `path` as the platform hands it to an object, with `headers`. */
+effect function serverRequest(path: string, headers: Record<string, string> = {}) {
+  return HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(HttpClientRequest.setHeaders(HttpClientRequest.get(`${ORIGIN}${path}`), headers)))
+}
+
+/** `member` of the `kind` object `name`, called as its namespace's stub would. */
+function call(w: World, kind: Kind, name: string, member: string, ...args: Array<unknown>) {
+  return Effect.flatMap(w.object(kind, name), (api) => (api[member] as (...input: Array<unknown>) => Effect.Effect<unknown, unknown, RuntimeContext | Scope.Scope>)(...args))
+    .pipe(Effect.provideService(RuntimeContext, runtime), Effect.scoped)
+}
+
+const POST = { clientId: "c1", name: "Guest", text: "Hello" }
+const NOTE = { id: "m1", section: "tried", text: "Tried it." }
+const RUN = { id: "a1", flow: "vibelang/Post", input: { text: "Hi" }, door: "button" }
+const OWNER = { actionOwner: "1", actionName: "one" }
+type Entry = { readonly author: string; readonly name: string; readonly text: string; readonly error: string; readonly clientId: string }
+
+/** The conversation's entries, and the agent's reply to its first post parsed: the cell's tool results. */
+effect function replyOf(w: World, room: string) {
+  const snapshot = (try call(w, "conversation", room, "read", 0)) as { readonly entries: ReadonlyArray<Entry> }
+  const reply = snapshot.entries.find((entry) => entry.author === "agent")!
+  const tools = (try Effect.orDie(Effect.try(() => JSON.parse(reply.text)))) as Record<string, any>
+  return { entries: snapshot.entries, reply, tools }
+}
+
+describe("without sign-in", () => {
+  it.live("account routes say sign-in is off, and a visitor reads but cannot write", () => scoped(effect {
+    const w = try world(false, 1000000, "tools")
+    const { ask } = browser(w)
+    expect(try ask("GET", "/api/auth/sign-in")).toMatchObject({ status: 503, body: { error: "sign-in unavailable" } })
+    expect(try ask("GET", "/api/auth/session")).toMatchObject({ status: 200, body: { id: "", role: "viewer", available: false } })
+    expect(try ask("GET", "/api/issues", undefined, { signed: false })).toMatchObject({ status: 404, body: { reason: "missing" } })
+    expect(try ask("GET", "/api/wiki", undefined, { signed: false })).toMatchObject({ status: 404, body: { reason: "missing" } })
+    expect((try ask("GET", "/api/history")).status).toBe(200)
+    expect(try ask("POST", "/api/history/note", NOTE)).toMatchObject({ status: 403, body: { refusal: "forbidden" } })
+    expect(try ask("POST", "/api/actions/runs", RUN, { props: OWNER })).toMatchObject({ status: 403, body: { code: "forbidden" } })
+    expect(try ask("GET", "/api/health")).toMatchObject({ status: 200, body: { ok: true, commit: "fuzz-commit" } })
+  }))
+
+  it.live("the accounts object grants nothing and drafts nothing", () => scoped(effect {
+    const w = try world(false, 1000000, "tools")
+    expect(try call(w, "accounts", "project", "draftWiki", "1", "rulings", "Shorter.", "k1")).toBe("forbidden")
+    expect(try call(w, "accounts", "project", "role", "1")).toBe("viewer")
+    expect(try call(w, "accounts", "project", "allowed", "1", "sandbox")).toBe(false)
+    expect(try call(w, "accounts", "project", "current", "cookie")).toEqual({ id: "", login: "", role: "viewer" })
+    expect(try call(w, "accounts", "project", "participation", undefined)).toBeUndefined()
+  }))
+
+  it.live("a visitor's post is the guest's, and the agent answers it with its draft refused", () => scoped(effect {
+    const w = try world(false, 1000000, "tools")
+    const { ask } = browser(w)
+    expect((try ask("POST", "/api/conversations/room0/posts", POST)).status).toBe(200)
+    try call(w, "conversation", "room0", "alarm")
+    const { entries, reply, tools } = try replyOf(w, "room0")
+    expect(entries[0]).toMatchObject({ author: "person", name: "Guest", text: "Hello" })
+    expect(reply.error).toBe("")
+    expect(tools.draft.error.message).toContain("forbidden")
+  }))
+})
+
+describe("signed in", () => {
+  it.live("a person posts under their login; another site's post and a visitor's are told apart", () => scoped(effect {
+    const w = try world(true, 1000000, "tools")
+    const { ask, signIn } = browser(w)
+    try signIn
+    expect(try ask("GET", "/api/auth/session")).toMatchObject({ status: 200, body: { id: "1", login: "one", role: "maintainer", available: true } })
+    expect((try ask("POST", "/api/conversations/room0/posts", POST)).status).toBe(200)
+    expect(try ask("POST", "/api/conversations/room0/posts", { ...POST, clientId: "c2" }, { crossOrigin: true })).toMatchObject({ status: 409, body: { refusal: "forbidden" } })
+    expect((try ask("POST", "/api/conversations/room1/posts", POST, { signed: false })).status).toBe(200)
+    const room0 = (try ask("GET", "/api/conversations/room0")).body as { readonly entries: ReadonlyArray<Entry> }
+    expect(room0.entries.map((entry) => [entry.clientId, entry.name])).toEqual([["c1", "one"]])
+    expect((try ask("GET", "/api/conversations/room1")).body.entries[0]).toMatchObject({ clientId: "c1", name: "Guest" })
+  }))
+
+  it.live("the conversation's routes reach its object", () => scoped(effect {
+    const w = try world(true, 1000000, "tools")
+    const { ask } = browser(w)
+    expect((try ask("POST", "/api/conversations/room0/wiki", { page: "rulings" })).status).toBe(200)
+    expect((try ask("POST", "/api/conversations/room0/tour")).status).toBe(200)
+    expect(try ask("POST", "/api/conversations/room0/tour-control", { action: "pause", step: 1 })).toMatchObject({ status: 409, body: { refusal: "not-replying" } })
+    expect((try ask("DELETE", "/api/conversations/room0/tour")).status).toBe(200)
+    expect(try ask("GET", "/api/conversations/room0/events?after=1")).toMatchObject({ status: 200, type: "text/event-stream" })
+    expect(try ask("GET", "/api/history/events")).toMatchObject({ status: 200, type: "text/event-stream" })
+  }))
+
+  it.live("a forwarded stream with a cursor the API never checked starts at the beginning", () => scoped(effect {
+    const w = try world(true, 1000000, "tools")
+    const request = try serverRequest("/events?after=x")
+    for (const [kind, name] of [["conversation", "room0"], ["history", "vibelang"]] as const) {
+      const api = try w.object(kind, name)
+      const response = HttpServerResponse.toWeb((try Effect.provideService(api.fetch as Effect.Effect<HttpServerResponse.HttpServerResponse>, HttpServerRequest.HttpServerRequest, request)) as never)
+      expect(response.headers.get("content-type")).toBe("text/event-stream")
+      try promise(() => response.body!.cancel())
+    }
+  }))
+
+  it.live("the person writes the history; another site and a visitor are refused", () => scoped(effect {
+    const w = try world(true, 1000000, "tools")
+    const { ask, signIn } = browser(w)
+    try signIn
+    expect(try ask("POST", "/api/history/note", NOTE)).toMatchObject({ status: 200, body: { id: "m1", folded: 0 } })
+    expect(try ask("POST", "/api/history/note", NOTE, { crossOrigin: true })).toMatchObject({ status: 403, body: { refusal: "forbidden" } })
+    expect(try ask("POST", "/api/history/note", NOTE, { signed: false })).toMatchObject({ status: 403, body: { refusal: "forbidden" } })
+  }))
+
+  it.live("a fresh History incarnation reads the history it bootstrapped", () => scoped(effect {
+    const w = try world(true, 1000000, "tools")
+    const { ask } = browser(w)
+    const before = (try ask("GET", "/api/history")).body
+    w.restart()
+    expect((try ask("GET", "/api/history")).body).toEqual(before)
+  }))
+
+  it.live("the agent answers its owner's post with every tool, as that person", () => scoped(effect {
+    const w = try world(true, 1000000, "tools")
+    const { ask, signIn } = browser(w)
+    try signIn
+    expect((try ask("POST", "/api/conversations/room0/posts", POST)).status).toBe(200)
+    try call(w, "conversation", "room0", "alarm")
+    const { reply, tools } = try replyOf(w, "room0")
+    expect(reply.error).toBe("")
+    expect(tools.draft).toEqual({ page: "rulings", review: "#wiki-draft-rulings" })
+    expect(tools.undrafted.error.message).toContain("draft")
+    expect(tools.show.ok).not.toBe(false)
+    expect(tools.listed.ok).not.toBe(false)
+    expect(tools.started.ok).not.toBe(false)
+  }))
+
+  it.live("a post recorded without an owner is answered as a guest's", () => scoped(effect {
+    const w = try world(true, 1000000, "tools")
+    expect(try call(w, "conversation", "room2", "post", "d1", "Guest", "Hi")).toBeNull()
+    try call(w, "conversation", "room2", "alarm")
+    const { tools } = try replyOf(w, "room2")
+    expect(tools.draft.error.message).toContain("forbidden")
+  }))
+
+  it.live("a later alarm answers as the unanswered post's owner, not an earlier poster", () => scoped(effect {
+    const w = try world(true, 1000000, "tools")
+    const { ask, signIn } = browser(w)
+    try signIn
+    expect((try ask("POST", "/api/conversations/room0/posts", POST)).status).toBe(200)
+    try call(w, "conversation", "room0", "alarm")
+    expect(try call(w, "conversation", "room0", "post", "d1", "Guest", "Hi")).toBeNull()
+    // The first alarm after the post starts its reply; the platform fires the next, which runs it.
+    let replies: ReadonlyArray<Entry> = []
+    for (let alarm = 0; alarm < 3 && replies.length < 2; alarm++) {
+      try call(w, "conversation", "room0", "alarm")
+      const snapshot = (try call(w, "conversation", "room0", "read", 0)) as { readonly entries: ReadonlyArray<Entry> }
+      replies = snapshot.entries.filter((entry) => entry.author === "agent")
+    }
+    expect(replies.length).toBe(2)
+    const second = (try Effect.orDie(Effect.try(() => JSON.parse(replies[1]!.text)))) as Record<string, any>
+    expect(second.draft.error.message).toContain("forbidden")
+  }))
+
+  it.live("the agent's draft is unavailable when the accounts object is lost during its run", () => scoped(effect {
+    for (const [id, mode] of [["a2", "unbound-later"], ["a3", "faulty-later"]] as const) {
+      const w = try world(true, 1000000, "draft")
+      const { ask } = browser(w)
+      expect((try ask("POST", "/api/actions/runs", { ...RUN, id }, { props: OWNER })).status).toBe(202)
+      // The alarm checks its owner's role twice (four calls); the agent's draft, the fifth, finds accounts gone.
+      w.fault("accounts", mode, 4)
+      try call(w, "conversation", `action-${id}`, "alarm")
+      w.fault("accounts", "ok", 1)
+      const { tools } = try replyOf(w, `action-${id}`)
+      expect([mode, tools.draft.error.message]).toEqual([mode, expect.stringContaining("unavailable")])
+    }
+  }))
+
+  it.live("the maintainer's own wiki draft is drafted, and an undraftable ask is refused", () => scoped(effect {
+    const w = try world(true, 1000000, "tools")
+    expect(try call(w, "accounts", "project", "draftWiki", "1", "rulings", "Shorter.", "k1")).toBeNull()
+    expect(try call(w, "accounts", "project", "draftWiki", "1", "rulings", UNDRAFTABLE, "k2")).toBe("draft")
+  }))
+
+  it.live("an action run starts, runs, reruns and cancels through the directory", () => scoped(effect {
+    const w = try world(true, 1000000, "tools")
+    const { ask } = browser(w)
+    expect(try ask("POST", "/api/actions/runs", RUN, { props: OWNER })).toMatchObject({ status: 202, body: { id: "a1" } })
+    // A reply's id names its post's action conversation: none until the agent answers.
+    expect(try ask("GET", "/api/actions/runs/a1-reply")).toMatchObject({ status: 404, body: { code: "not-found" } })
+    expect(try ask("DELETE", "/api/actions/runs/a1-reply", undefined, { props: OWNER })).toMatchObject({ status: 404, body: { code: "not-found" } })
+    try call(w, "conversation", "action-a1", "alarm")
+    expect(try ask("GET", "/api/actions/runs/a1-reply")).toMatchObject({ status: 200, body: { id: "a1-reply", flow: "vibelang/Reply", state: "passed" } })
+    const run = (try ask("GET", "/api/actions/runs/a1")).body as { readonly steps: ReadonlyArray<{ readonly name: string }> }
+    expect(run).toMatchObject({ id: "a1", flow: "vibelang/Post", state: "passed" })
+    expect(run.steps.map((step) => step.name)).toContain("vibelang/post/record")
+    // The run's agent started a second post run; its announcement in a1's conversation is not listed again.
+    const listed = (try ask("GET", "/api/actions/runs?flow=vibelang%2FPost")).body as ReadonlyArray<{ readonly id: string; readonly door: string }>
+    expect(listed.map((row) => row.door).sort()).toEqual(["agent", "button"])
+    expect(new Set(listed.map((row) => row.id)).size).toBe(2)
+    expect(try ask("GET", "/api/actions/runs/a1/events")).toMatchObject({ status: 200, type: "text/event-stream" })
+    expect(try ask("POST", "/api/actions/runs/a1/rerun", { id: "a2" }, { props: OWNER })).toMatchObject({ status: 202, body: { id: "a2" } })
+    expect((try ask("DELETE", "/api/actions/runs/a1", undefined, { props: OWNER })).status).toBe(200)
+  }))
+
+  it.live("an action host with no default entrypoint cannot run the agent", () => scoped(effect {
+    const w = try world(true, 1000000, "tools")
+    const exit = try Effect.exit(call(w, "conversation", "orphan", "alarm"))
+    expect(Exit.isFailure(exit) && Cause.pretty(exit.cause)).toContain("no default entrypoint")
+  }))
+
+  it.live("the sandbox gateway trusts an action's owner by their grant, and a person by their cookie", () => scoped(effect {
+    const w = try world(true, 1000000, "tools")
+    const { ask, signIn } = browser(w)
+    try signIn
+    const session = (try ask("GET", "/api/auth/session")).body as { readonly id: string }
+    expect(session.id).toBe("1")
+    const storage = try w.storageOf("accounts", "project")
+    const cookies = [...(try promise(() => storage.list({ prefix: "session/" }))).keys()]
+    expect(cookies.length).toBe(1)
+    const identityOf = effect (props: Record<string, unknown>, cookie: string) => {
+      const request = try serverRequest("/api/sandboxes/room0", cookie === "" ? {} : { cookie, origin: ORIGIN })
+      const identity = sandboxIdentityOf(w.namespaces.accounts, succeed(props))
+      return try withAbsentGitHub(effect {
+        return { principal: try identity.request(), maintainer: try identity.role("1"), stranger: try identity.role("2") }
+      }).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request), Effect.provideService(RuntimeContext, runtime))
+    }
+    expect(try identityOf({ actionOwner: "1" }, "")).toEqual({ principal: { owner: "1", role: "maintainer" }, maintainer: "maintainer", stranger: "viewer" })
+    expect(try identityOf({ actionOwner: "2" }, "")).toEqual({ principal: { owner: "2", role: "viewer" }, maintainer: "maintainer", stranger: "viewer" })
+    expect((try identityOf({}, "")).principal).toEqual({ owner: "", role: "viewer" })
+  }))
+})
+
+describe("an unreachable object", () => {
+  it.live("answers 503 naming it, on every route that reaches it", () => scoped(effect {
+    const w = try world(true, 1000000, "tools")
+    const { ask } = browser(w)
+    for (const mode of ["unbound", "faulty"] as const) {
+      w.fault("conversation", mode, 1)
+      expect(try ask("GET", "/api/conversations/room0")).toMatchObject({ status: 503, body: { error: "conversation" } })
+      expect(try ask("POST", "/api/conversations/room0/posts", POST)).toMatchObject({ status: 503, body: { error: "conversation" } })
+      w.fault("conversation", "ok", 1)
+      w.fault("history", mode, 1)
+      expect(try ask("GET", "/api/history")).toMatchObject({ status: 503, body: { error: "history" } })
+      w.fault("history", "ok", 1)
+      w.fault("actions", mode, 1)
+      expect(try ask("GET", "/api/actions/runs")).toMatchObject({ status: 503, body: { code: "unavailable" } })
+      w.fault("actions", "ok", 1)
+      w.fault("accounts", mode, 1)
+      expect(try ask("POST", "/api/conversations/room0/posts", POST)).toMatchObject({ status: 503, body: { error: "accounts" } })
+      expect(try ask("GET", "/api/auth/session")).toMatchObject({ status: 503, body: { error: "accounts" } })
+      w.fault("accounts", "ok", 1)
+    }
+  }))
+})

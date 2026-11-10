@@ -19,7 +19,7 @@ import * as ActionRuns from "./ActionRuns.vibe"
 import * as ActionDirectory from "./ActionDirectory.vibe"
 import * as Accounts from "./Accounts.vibe"
 import { postName, type Identity } from "../src/core/roles.vibe"
-import { HttpClient, HttpServerRequest } from "effect/http"
+import { HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
 import { type PageRequest, pageOf } from "../src/history/pages.vibe"
 import type { Write } from "../src/history/wire.vibe"
@@ -314,6 +314,12 @@ export function sandboxIdentityOf(namespace: Namespace<AccountsShape>, execution
   }
 }
 
+/** ProjectAccounts' answer to an account route; a call that fails to reach it is `Unreachable`. */
+effect function accountFetch(accounts: Namespace<AccountsShape>, runtime: RuntimeContext["Service"], request: HttpServerRequest.HttpServerRequest) {
+  const object = try objectOf(accounts, "project", "accounts")
+  return try reached(runtime, "accounts", object.fetch(request))
+}
+
 /** The API Worker's fetch: account routes reach ProjectAccounts, the rest the HTTP protocol. */
 export function apiFetch(namespaces: { readonly conversations: Namespace<ConversationShape>; readonly accounts: Namespace<AccountsShape>; readonly actions: Namespace<ActionDirectoryShape>; readonly histories: Namespace<HistoryShape> }, gateway: Gateway<RuntimeContext>, commit: string | undefined, executionProps: Record<string, unknown>!!) {
   const { conversations, accounts, actions, histories } = namespaces
@@ -321,10 +327,8 @@ export function apiFetch(namespaces: { readonly conversations: Namespace<Convers
     const runtime = try RuntimeContext
     const request = try HttpServerRequest.HttpServerRequest
     const path = new URL(request.url, "http://api.invalid").pathname
-    if (accountRoute(path)) {
-      const object = try Effect.orDie(objectOf(accounts, "project", "accounts"))
-      return try Effect.orDie(reached(runtime, "accounts", object.fetch(request)))
-    }
+    // An unreachable accounts object answers 503 naming it, as every other object's routes do (Http.vibe).
+    if (accountRoute(path)) return accountFetch(accounts, runtime, request) catch (error) => HttpServerResponse.jsonUnsafe({ error: error.what }, { status: 503, headers: { "cache-control": "no-store" } })
     const api: Conversations = {
       post: (conversation, body) => effect {
         const object = try objectOf(conversations, conversation, "conversation")

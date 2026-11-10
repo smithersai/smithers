@@ -692,6 +692,29 @@ binding and a failing container. It covers the owner's start, command, read, ala
 the account; signed-out, policy-denied and viewer refusals at the gateway and at the object; unavailable bindings and
 containers; and an unused account's alarm. No bug found.
 
+**`worker/apiObjects.vibe` (2026-11-10).** 9/193 lines, 0/59 branches, 7/86 functions and 9/225 statements → 100%
+of all four in Node, with no workerd. `test/apiObjects.coverage.test.vibe` (17 cases) drives every API route through
+`apiFetch` signed in, signed out and from another origin; the conversation and action-run alarms with the scripted
+model running the agent's tools; the sandbox gateway's identity; and each namespace unbound or unreachable, including
+the accounts object lost mid-run. The in-process world moved out of `fuzz/api-objects.node.fuzz.vibe` into
+`test/support/apiWorld.vibe`, which both now import, and gained a draft-only agent.
+
+- **The unit suite could not run the agent's cells.** `vite.config.ts` did not resolve `#quickjs.wasm`, so every
+  agent cell in a unit test failed with `flows/harness/SandboxError` and the reply read "The agent failed". The fuzz
+  config's resolver moved to `quickjs.vite.ts`, which both configs use.
+- **Bug fixed: an agent-started run was listed twice.** A run the agent starts inside another run is announced in that
+  run's conversation, and `ActionDirectory.list` flattened every indexed run's conversation, so `/api/actions/runs`,
+  the CLI and the agent's `vibelang/actions/List` returned it twice (the web pane merges by id). Each indexed run is now
+  listed once, from its own conversation. Red first: the list held the agent's run id twice.
+- **Bug fixed: account routes answered 500 for an unreachable accounts object.** `apiFetch` died on `Unreachable` for
+  `/api/auth/*` and the other account routes; they now answer 503 `{ "error": "accounts" }`, as every other object's
+  routes do. Red first: the request failed with the `Unreachable` defect.
+- **Fuzz target fix.** Its requests carried no `content-length`, so every post and wiki open answered 413 and the walk
+  never accepted a post. The unit tests run in Node (`@vitest-environment node`), because happy-dom's `Headers` drops
+  `set-cookie` and no session could be signed in.
+- **Found, kept:** losing the accounts object while the agent runs fails its whole reply ("The agent failed. Try
+  again."), not just the tool: the history tools' role lookup (`identity.role`, line 239) dies. The person can retry.
+
 **A reply-started tour stayed parked (fixed 2026-11-09).** A reply refused `busy` by a tour accepted after its
 dispatch ran that tour as its own child execution. Ending the tour woke only the tour the answer loop started, so the
 child stayed parked forever with no `vibelang.tour.run` outcome, though the reply still answered. Now each room has one
