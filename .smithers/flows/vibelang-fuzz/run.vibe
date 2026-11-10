@@ -14,7 +14,7 @@ export effect function runStage(stage: "prepare" | "build" | "targets" | "browse
   const { seed } = settings
   const budget = stage === "browser" ? settings.browserBudget : settings.budget
   const bootstrap: Record<string, string> = {}
-  for (const name of ["PATH", "HOME", "USER", "LANG", "TERM", "TMPDIR", "SHELL"]) {
+  for (const name of ["PATH", "HOME", "USER", "LANG", "TERM", "TMPDIR", "SHELL", "E2E_SERVER_SECONDS"]) {
     const value = try Config.option(Config.String(name))
     if (Option.isSome(value)) bootstrap[name] = value.value
   }

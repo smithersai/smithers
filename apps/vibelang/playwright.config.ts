@@ -9,6 +9,9 @@ const deployed = process.env.E2E_BASE_URL
 const port = Number(process.env.E2E_4525 ?? process.env.E2E_4527 ?? process.env.E2E_4518 ?? process.env.E2E_4519 ?? process.env.E2E_4522 ?? process.env.E2E_PORT ?? process.env.E2E_4521 ?? process.env.E2E_4510 ?? process.env.E2E_4508 ?? process.env.E2E_4505 ?? process.env.E2E_4501 ?? process.env.E2E_4516 ?? process.env.E2E_4511 ?? process.env.E2E_4502 ?? 4173)
 // Share the selected lane port with every local fault host.
 process.env.E2E_PORT = String(port)
+// The web server's start includes the site build: minutes on a 4-vCPU box or a loaded host. E2E_SERVER_SECONDS sets it.
+// Preview listens on 127.0.0.1, the address polled: a box resolves localhost to ::1 first, so it never answered there.
+const serverMs = Number(process.env.E2E_SERVER_SECONDS ?? 600) * 1000
 
 export default defineConfig({
   testDir: "e2e",
@@ -33,5 +36,5 @@ export default defineConfig({
   ],
   // The local e2e build also serves the fault-injection pages the recovery tests use, even when the rest run against a
   // deployment.
-  webServer: { command: `pnpm build --mode e2e && pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`, url: `http://127.0.0.1:${port}`, reuseExistingServer: false, timeout: 120_000 },
+  webServer: { command: `pnpm build --mode e2e && pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`, url: `http://127.0.0.1:${port}`, reuseExistingServer: false, timeout: serverMs },
 })
