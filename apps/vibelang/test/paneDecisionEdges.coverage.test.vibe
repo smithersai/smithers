@@ -1,6 +1,7 @@
-// The wiki editor's submit plan and error words (src/web/paneDecision.vibe), on every arm their contracts state.
+// The wiki editor's submit plan and error words, and the sandbox pane's periodic read (src/web/paneDecision.vibe),
+// on every arm their contracts state.
 import { describe, expect, it } from "@effect/vitest"
-import { wikiEditErrorText, wikiSubmitPlan } from "../src/web/paneDecision.vibe"
+import { polledFailure, polledSandbox, wikiEditErrorText, wikiSubmitPlan } from "../src/web/paneDecision.vibe"
 
 describe("submitting the wiki editor", () => {
   it.each([
@@ -27,5 +28,25 @@ describe("the wiki editor's error words", () => {
     ["", "Couldn't save. Retry."],
   ] as const)("%j reads %j", (reason, words) => {
     expect(wikiEditErrorText(reason)).toBe(words)
+  })
+})
+
+describe("the open sandbox pane's periodic read", () => {
+  const idleFailure = { pane: "pane", operation: "", busy: false, error: "closed" } as const
+  const failedStart = { pane: "pane", operation: "start", busy: false, error: "closed" } as const
+  const waitingStop = { pane: "closed", operation: "stop", busy: true, error: "" } as const
+  it("ends a failed read", () => {
+    expect(polledSandbox(idleFailure, false)).toEqual({ pane: "pane", operation: "", busy: false, error: "" })
+  })
+  it("keeps a failed start's reason so its alert and Retry stay", () => {
+    expect(polledSandbox(failedStart, false)).toEqual(failedStart)
+  })
+  it("keeps an operation waiting, and still opens the pane when told to", () => {
+    expect(polledSandbox(waitingStop, true)).toEqual({ ...waitingStop, pane: "pane" })
+  })
+  it("names a failed read only when no operation is waiting or failed", () => {
+    expect(polledFailure({ ...idleFailure, error: "" }, "offline")).toEqual({ ...idleFailure, error: "offline" })
+    expect(polledFailure(failedStart, "offline")).toEqual(failedStart)
+    expect(polledFailure(waitingStop, "offline")).toEqual(waitingStop)
   })
 })

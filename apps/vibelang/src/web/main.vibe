@@ -235,8 +235,9 @@ export const Message = defineMessageUnion({
   StoppedSandbox: {},
   UpdatedTerminal: { value: Schema.String },
   SubmittedTerminal: {},
-  LoadedSandbox: { conversation: Schema.String, request: Schema.Number, snapshot: SandboxSnapshot },
-  FailedSandbox: { conversation: Schema.String, request: Schema.Number, reason: Schema.String },
+  // `polled`: the pane's periodic read, which never ends or clears an operation (PaneDecision.polledSandbox).
+  LoadedSandbox: { conversation: Schema.String, request: Schema.Number, snapshot: SandboxSnapshot, polled: Schema.optionalKey(Schema.Boolean) },
+  FailedSandbox: { conversation: Schema.String, request: Schema.Number, reason: Schema.String, polled: Schema.optionalKey(Schema.Boolean) },
   ClickedActions: {},
   MaximizedActions: {},
   SelectedAction: { name: Schema.String },
@@ -440,15 +441,16 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     StoppedSandbox: () => sandboxAction(model, "stop"),
     UpdatedTerminal: ({ value }) => ({ model: { ...model, terminalDraft: value } }),
     SubmittedTerminal: () => sandboxAction(model, "command"),
-    LoadedSandbox: ({ conversation, request, snapshot }) => {
+    LoadedSandbox: ({ conversation, request, snapshot, polled }) => {
       if (!currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0)) return { model }
       const zero = ModelDecision.sandboxOutOfMinutes(snapshot.remaining, snapshot.id, snapshot.status)
       const low = ModelDecision.sandboxLowMinutes(snapshot.remaining, model.warnedMonth ?? null, snapshot.resetAt)
-      const result = PaneDecision.loadedSandbox(sandboxResult(model), ModelDecision.sandboxPaneOpens(snapshot.status, model.sandbox?.status ?? null))
+      const opens = ModelDecision.sandboxPaneOpens(snapshot.status, model.sandbox?.status ?? null)
+      const result = polled === true ? PaneDecision.polledSandbox(sandboxResult(model), opens) : PaneDecision.loadedSandbox(sandboxResult(model), opens)
       const notice = PaneDecision.sandboxNotice(zero, low, model.sandbox?.resetAt !== snapshot.resetAt)
       return { model: { ...model, sandbox: snapshot, sandboxPane: result.pane, sandboxBusy: result.busy, sandboxOperation: result.operation, sandboxError: result.error, minuteNotice: minuteNotice(notice, snapshot.id, snapshot.remaining, model.minuteNotice ?? ""), warnedMonth: PaneDecision.warnedMonthAfter(low, snapshot.resetAt, model.warnedMonth ?? 0) } }
     },
-    FailedSandbox: ({ conversation, request, reason }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0) ? { model } : (() => { const result = PaneDecision.failedSandbox(sandboxResult(model), reason); return { model: { ...model, sandboxBusy: result.busy, sandboxError: result.error } } })(),
+    FailedSandbox: ({ conversation, request, reason, polled }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0) ? { model } : (() => { const result = polled === true ? PaneDecision.polledFailure(sandboxResult(model), reason) : PaneDecision.failedSandbox(sandboxResult(model), reason); return { model: { ...model, sandboxBusy: result.busy, sandboxError: result.error } } })(),
     ClickedEditWiki: () => beginWikiEdit(model),
     ClickedWikiDraft: ({ page }) => beginWikiEdit(model, page),
     // The store keeps only well-formed text (DurableText): an unpaired surrogate becomes U+FFFD as it is typed, never at save.
@@ -1227,8 +1229,8 @@ export function subscriptions(keys: EventTarget, page?: Document) {
             const factory = try Factory
             return effect {
               const snapshot = try factory.sandbox(conversation)
-              return try message(() => Message.LoadedSandbox({ conversation, request, snapshot }))
-            } catch effect (e) => { return try message(() => Message.FailedSandbox({ conversation, request, reason: e._tag === "Refused" ? e.refusal : e.reason })) }
+              return try message(() => Message.LoadedSandbox({ conversation, request, snapshot, polled: true }))
+            } catch effect (e) => { return try message(() => Message.FailedSandbox({ conversation, request, reason: e._tag === "Refused" ? e.refusal : e.reason, polled: true })) }
           })
           return Stream.when(live ? read.pipe(Stream.repeat(Schedule.spaced("1 second"))) : read, sync(() => active))
         },

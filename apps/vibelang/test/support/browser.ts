@@ -203,3 +203,21 @@ export function hrefOf(css: string): string | undefined {
 export function detachedDocument(): Document {
   return document.implementation.createHTMLDocument("detached")
 }
+
+/** The button whose accessible label or text is `label`, if the page shows one. */
+function labelled(label: string): HTMLButtonElement | undefined {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(element => element.getAttribute("aria-label") === label || element.textContent?.trim() === label)
+}
+export function hasButton(label: string): boolean {
+  return labelled(label) !== undefined
+}
+/** Clicks the button labelled `label`; throws when the page shows none, so a wait can retry. */
+export function clickButton(label: string): void {
+  const button = labelled(label)
+  if (button === undefined) throw new Error(`no button ${label}`)
+  button.click()
+}
+export function pageText(): string {
+  return document.body.textContent ?? ""
+}
+
