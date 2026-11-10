@@ -11,15 +11,18 @@ import { pages } from "../src/core/wiki.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { objectStorage } from "./support/objectStorage.ts"
 
-/** Steps virtual time a second at a time, letting real promises (WebCrypto, storage) settle between steps. */
+/**
+ * Steps virtual time 250 ms at a time, letting real promises (WebCrypto, storage) settle for 20 ms between steps. A
+ * loaded host that settles late only delays the next retry by a step; the retry schedule has 2 seconds of slack.
+ */
 effect function settleWithin<A, E>(fiber: Fiber.Fiber<A, E>, limitSeconds: number) {
   let elapsed = 0
-  while (fiber.pollUnsafe() === undefined && elapsed < limitSeconds) {
-    try TestClock.withLive(sleep("5 millis"))
-    try TestClock.adjust("1 second")
-    elapsed += 1
+  while (fiber.pollUnsafe() === undefined && elapsed < limitSeconds * 1000) {
+    try TestClock.withLive(sleep("20 millis"))
+    try TestClock.adjust("250 millis")
+    elapsed += 250
   }
-  try TestClock.withLive(sleep("5 millis"))
+  try TestClock.withLive(sleep("20 millis"))
   return { elapsed, exit: fiber.pollUnsafe() }
 }
 
@@ -55,7 +58,7 @@ describe("a wiki read while GitHub fails", () => {
     const failing: WikiHost.Shape = { perform: () => Effect.suspend(() => { attempts += 1; return Effect.fail(new WikiFailure({ reason: "unavailable", code: "unavailable" })) }) }
     const { elapsed, exit } = try settleWithin(try read(failing), 180)
     try Effect.try(() => {
-      expect(elapsed).toBeLessThanOrEqual(10)
+      expect(elapsed).toBeLessThanOrEqual(10_000)
       expect(attempts).toBeGreaterThan(1)
       expect(exit?._tag === "Failure" ? Cause.pretty(exit.cause) : exit?._tag).toBe("Success")
     })
