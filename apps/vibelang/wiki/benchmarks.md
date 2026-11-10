@@ -3408,6 +3408,23 @@ and held server shutdown (decision 0030).
 Limitations: no GitHub latency or answer; in-memory storage; the person has no GitHub connection, so writes stop
 before GitHub.
 
+## Browser: issues and panel arms (2026-11-10, nyc-01)
+
+Playwright, real Chromium, production build, one serial sample per action, 12:48 UTC, load average 33–37 on 32 cores (`bench/browser.spec.ts`; `bench/browser.bench.vibe` runs all eight workloads and requires eight passes).
+
+| Workload | Artifact | Actions (ms) |
+| --- | --- | --- |
+| local-issues-actions | `2026-11-10T12-48-25.315Z-local-issues-actions.json` | open 104, list keys 306, search 102, issue 65, commit dialog Escape 74, commit 130, comment 31, uncommit 72, agent VIP draft 1,212, VIP steps and submit 271, specification revision and review 232, Home 70 |
+| local-arms-actions | `2026-11-10T12-48-32.640Z-local-arms-actions.json` | tour start 136, Tab focus 14, resize 40, sound 154, Skip and Back 622, Exit 758, Escape with nothing open 19, run and step 1,660, action input 129, Maximize 164, slash arrows 89, Escape on Issues 598, wiki link and Back 686, first-visit tour 1,725 |
+
+**local-issues-actions.** A maintainer's Issues screen through the product fixture flows: list keys, search, an issue's post and links, the commit dialog's Escape and commit, a comment, uncommit, an agent-drafted VIP through its steps to submission, a specification revision and a review request, and Home. Each step checks the resulting screen.
+
+**local-arms-actions.** Tour focus, resize and orientation, sound, Skip and Back, Exit; Escape with nothing open; the Actions panel's run, step, input and Maximize; slash-menu arrows; Escape on Issues; an in-content wiki link with browser Back; and a first visit whose tour starts on its own (1.2 s by design).
+
+Limitations: one sample per action, no percentile; scripted waits and automation included; product mock and fixture flows, no network, OAuth or model.
+
+**Coverage collector fix.** Chromium coverage was dumped once, at the end of each workload. V8 precise coverage reports only the current document's scripts, so every workload that navigates mid-journey (history, sandbox, roles, wiki, issues) lost the counts from before its navigation. Each workload now dumps before every navigation. On the same Node and workerd evidence, this and the two workloads above raise `src/` + `worker/` from 6,660 to 6,778 of 7,551 lines; `src/web/main.vibe` from 71 to 25 uncovered lines, `issuesView.vibe` from 20 to 8, `historyApp.vibe` from 14 to 3.
+
 ## CLI startup (2026-11-10, nyc-01)
 
 Vitest built-in bench, local, `bench/cli-startup.bench.vibe`. Five emitted CLI processes per command, no warmup, each

@@ -5,10 +5,14 @@ import * as NodeServices from "@effect/platform-node/NodeServices"
 import { run } from "../test/support/processes.vibe"
 import { workload } from "./artifact.vibe"
 
-it("real Chromium first render, Command-K and keystroke", async ({ bench }) => {
+// Playwright bounds the child: 120 s to build and start the web server, then 300 s for every workload
+// (bench/playwright.config.ts). This test waits for that bound, not Vitest's 120 s default.
+const PLAYWRIGHT_BOUND_MS = 120_000 + 300_000 + 30_000
+
+it("real Chromium browser workloads, first render to issues and panel arms", async ({ bench }) => {
   await workload(bench, "chromium", "async", async () => {
     const result = await runPromise(Effect.provide(run("pnpm", ["exec", "playwright", "test", "--config", "bench/playwright.config.ts"], { BENCH_LIVE: "0" }), NodeServices.layer))
     expect(result.status, result.stdout + result.stderr).toBe(0)
-    expect(result.stdout).toContain("6 passed")
+    expect(result.stdout).toContain("8 passed")
   }).run({ iterations: 1, time: 0, warmup: false })
-})
+}, PLAYWRIGHT_BOUND_MS)
