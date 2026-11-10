@@ -4042,3 +4042,16 @@ accounting code over the Node KV adapter, including all setup/assertions. Ledger
 and leave the backing store unchanged; seeded retained state is not evidence of an actual crash or corruption.
 These whole-corpus measurements are not individual operation latencies. Complete correctness checks and additional
 limitations are in 0017 and the named artifacts.
+
+
+The later complete collection at `de20c189` (`c5bbf81b` base), 18:54–19:20 UTC, passed 87 files / 182 checks;
+all 265 input hashes matched. Src/worker lines are 7,429/7,716 (96.28%), with the strict gate still failing in
+111 files across all source scopes. Its roster adds 77 runtime lines relative to the older receipt. Full maps,
+exact inputs and per-file counts are retained; instrumented durations are not timings.
+
+The additive reply recovery corpus checks streamed preview replacement through the actual Reply/agent/QuickJS
+pipeline, exact requests/token settlement and safe failure tags, including a revoked native Proxy. Node KV/memory
+engine and deterministic HTTP/SSE model; three unwarmed full corpora include setup/assertions and exclude actual
+inference/WAN. `fault-coverage-draft-spend` is an opt-in **counts-only** set (BENCH_FAULTS=1, or coverage mode): one
+real draft charging policy exhausts against an unreachable Effect settlement service, bounded at four minutes.
+It checks requests, admissions, attempts, refusal, warning and ledger state. It retains and publishes no duration.

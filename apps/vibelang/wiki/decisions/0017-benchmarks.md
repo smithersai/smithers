@@ -591,3 +591,24 @@ claim; the actual Worker companion uses the same named reservation/settlement AP
 After main's reservation change, `worker/budgetDecision.vibe`'s legacy `charge` function (lines 59–62 at c5bbf81b)
 has no src/worker callers. It remains counted; no direct invocation was added merely to credit this unused helper.
 It is an additional retained legacy/proof boundary, separate from the already named browser/Node source-map lines.
+
+
+**Complete current receipt and additive reply recovery (2026-11-10, Codex).** At `de20c189` on `c5bbf81b`, all
+87 benchmark files / 182 checks passed in the 18:54–19:20 UTC collection. All 265 input hashes matched. Src lines
+5,251/5,342 (98.30%), worker 2,178/2,374 (91.74%), total 7,429/7,716 (96.28%); 111/164 files still miss at least
+one strict metric. This later source roster adds 77 runtime lines, so the percentage is not directly comparable
+to the older base. Raw maps, exact sources and every per-file count are in the lane report's retained evidence.
+
+Further reply corpora run the actual Reply flow, agent/QuickJS and sequencer over the Node KV/memory engine with
+the local deterministic HTTP/SSE model. A cell whose preview says First then fails must be replaced by exactly
+Second, with one restart, one finish, two model calls, thirty reported tokens and no hold. A local 402 response
+must settle the credit failure, one request and the configured ceiling charge. The tag boundary additionally
+handles a native revoked Proxy and other malformed inputs without propagating its getter exception. Three
+unwarmed complete corpora; initialization/serving/assertions included, no inference/WAN latency claim.
+
+`fault-coverage-draft-spend` is separately named and **counts only**. BENCH_COVERAGE=1 or BENCH_FAULTS=1 enables
+one wiki draft whose real Budget admits but whose injected Spend settlement remains unreachable. The shipped
+approximately two-minute retry policy must exhaust within the four-minute test deadline. Check one model request,
+one admission, multiple settlement attempts, the exact budget refusal, one fixed wiki/unreachable warning, zero
+charges and the original retained ceiling. It records no duration; none is quoted. The runtime is Node with local
+HTTP model and memory/KV storage, not the browser e2e fault build. New hits join only against unchanged source bytes.
