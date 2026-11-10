@@ -43,10 +43,21 @@ export effect function modelService() {
       `let drafted; try { drafted = await ctx.call("vibelang/wiki/draft", { page: "roadmap", ask: "Bench" }); } catch (error) { drafted = String(error && error.message || error); }`,
       `ctx.done(JSON.stringify({ outline: outline.seq > 0, started, drafted }));`,
     ].join("\n")
+    // "Bench history." asks for a reply that pages the history (an epic, a commit, a search) and tries Plan and Note.
+    const history = [
+      `const outline = await ctx.call("vibelang/history/show", { what: "outline" });`,
+      `const epic = await ctx.call("vibelang/history/show", { what: "epic", id: outline.epics[0].id, from: 0 });`,
+      `const commit = await ctx.call("vibelang/history/show", { what: "commit", id: epic.commits[0].id });`,
+      `const found = await ctx.call("vibelang/history/show", { what: "search", query: epic.commits[0].title });`,
+      `const planned = await ctx.call("vibelang/history/Plan", { how: "append", epic: "", newEpic: "Bench", target: "", title: "Bench", task: "Bench" });`,
+      `const noted = await ctx.call("vibelang/history/Note", { id: epic.commits[0].id, section: "tried", text: "Bench" });`,
+      `ctx.done(JSON.stringify({ epic: epic.epic === outline.epics[0].id && epic.commits.length > 0, commit: commit.commit !== null && commit.commit.id === epic.commits[0].id, found: found.commits.some((head) => head.id === epic.commits[0].id), planned, noted }));`,
+    ].join("\n")
     const cell = tour
       ? `${fence}cell\nctx.done({stops:["Deterministic tour 1.","Deterministic tour 2.","Deterministic tour 3.","Deterministic tour 4.","Deterministic tour 5."]});\n${fence}`
       : body.includes("Bench tools.") ? `${fence}cell\n${tools}\n${fence}`
       // "Bench empty." answers with no text; "Bench throws." runs a cell that throws (bench/reply-outcomes.bench.vibe).
+      : body.includes("Bench history.") ? `${fence}cell\n${history}\n${fence}`
       : body.includes("Bench empty.") ? `${fence}cell\nctx.done("");\n${fence}`
       : body.includes("Bench throws.") ? `${fence}cell\nthrow new Error("bench");\n${fence}`
       : `${fence}cell\nctx.done("Deterministic answer.");\n${fence}`
