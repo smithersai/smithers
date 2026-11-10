@@ -680,6 +680,11 @@ recorded between `start`'s request and its fork); `mythical` 377, 411 (the lines
 `signin` 101, 173; `mcp` 36, 38; `flows` 248, 257; `commands` 351; `seed` 437; `history/tools` 93, the fallback
 after an exhaustive match that VL-37 removes in the compiler.
 
+`surfaces/run-wait` (`fuzz/surfaces-commands.node.fuzz.vibe`) injects an `Actions` whose follow stream is a fuzzed list
+of run states: `run --wait` answers the id only when the first settled state is `passed`, and fails "Action failed."
+when the stream ends empty or unsettled or settles otherwise. It reaches `commands` 351 (no run seen). Mutant caught and
+restored: waiting without `takeUntil`, which reads the stream's last run instead of its first settled one.
+
 ## Measurable on any machine (lane vl-gatefix, 2026-11-10)
 
 - `surfaces/cli-arguments` and `surfaces/mcp-arguments` spawn a process per execution: replay and the first execution

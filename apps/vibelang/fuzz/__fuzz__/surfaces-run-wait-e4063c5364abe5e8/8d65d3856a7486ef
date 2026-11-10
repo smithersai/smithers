@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 32
+bias 2
+null-prototype false
+key 2812108484
+tape ghsn1hqhbNyTvwqyYUZSJngi621zm38jUCer70xwRlFBNwuP
+schedule-key 873230142
+schedule 
+signature "ReturnedFalse"
+path 1.2.3
+codec "json"
+value "[\"cancelled\",\"passed\"]"
+# ReturnedFalse
+# ["cancelled","passed"]
