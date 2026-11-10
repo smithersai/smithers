@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import * as RunnerCmd from "../src/commands/Runner.vibe"
 import * as Admission from "../src/runner/Admission.ts"
-import * as Config from "../src/runner/Config.ts"
+import * as Config from "../src/runner/Config.vibe"
 import type * as Machine from "../src/runner/Machine.ts"
 import * as Host from "./fixtures/runner/host.ts"
 

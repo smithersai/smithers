@@ -12,11 +12,8 @@
 
 import * as AgentRunner from "@smthrs/agent/AgentRunner"
 import { Effect, Schema } from "effect"
-import { createHash, randomBytes } from "node:crypto"
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { homedir } from "node:os"
-import { isAbsolute, join, resolve } from "node:path"
 import * as Admission from "./Admission.ts"
+import * as $platform from "./Config.platform.ts"
 
 const NonEmpty = Schema.String.check(Schema.isMinLength(1))
 const EnvName = Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/))
@@ -139,7 +136,8 @@ export class RunnerConfigError extends Schema.TaggedError<RunnerConfigError>()("
  * @category constants
  * @since 1.0.0
  */
-export const defaultStateDir = (home: string = homedir()): string => join(home, ".smithers", "runner")
+export const defaultStateDir = (home: string = $platform.homedir()): string =>
+  $platform.join(home, ".smithers", "runner")
 
 /**
  * Where the runner's token lives under `stateDir`.
@@ -147,10 +145,10 @@ export const defaultStateDir = (home: string = homedir()): string => join(home, 
  * @category constructors
  * @since 1.0.0
  */
-export const tokenFile = (stateDir: string): string => join(stateDir, "runner-token")
+export const tokenFile = (stateDir: string): string => $platform.join(stateDir, "runner-token")
 
 const expand = (path: string, home: string): string =>
-  path === "~" ? home : path.startsWith("~/") ? join(home, path.slice(2)) : resolve(path)
+  path === "~" ? home : path.startsWith("~/") ? $platform.join(home, path.slice(2)) : $platform.resolve(path)
 
 const decodeConfig = Schema.decodeUnknownEffect(Schema.fromJsonString(Config))
 
@@ -161,22 +159,22 @@ const decodeConfig = Schema.decodeUnknownEffect(Schema.fromJsonString(Config))
  * @category constructors
  * @since 1.0.0
  */
-export const check = (config: Config, home: string = homedir()): Effect.Effect<Checked, RunnerConfigError> =>
-  Effect.gen(function*() {
-    const url = yield* Effect.try({
+export const check = (config: Config, home: string = $platform.homedir()): Effect.Effect<Checked, RunnerConfigError> =>
+  effect {
+    const url = try Effect.try({
       try: () => new URL(config.origin),
       catch: () => new RunnerConfigError({ message: "origin is not a URL" })
     })
     const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
     if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) {
-      return yield* new RunnerConfigError({ message: "origin must be https, or http on localhost" })
+      throw new RunnerConfigError({ message: "origin must be https, or http on localhost" })
     }
     if (url.pathname !== "/" || url.search !== "" || url.hash !== "") {
-      return yield* new RunnerConfigError({ message: "origin must be an origin, with no path" })
+      throw new RunnerConfigError({ message: "origin must be an origin, with no path" })
     }
     for (const [repository, { mirror }] of Object.entries(config.repositories)) {
-      if (!isAbsolute(mirror)) {
-        return yield* new RunnerConfigError({ message: `repositories.${repository}.mirror must be an absolute path` })
+      if (!(try sync(() => $platform.isAbsolute(mirror)))) {
+        throw new RunnerConfigError({ message: `repositories.${repository}.mirror must be an absolute path` })
       }
     }
     return {
@@ -192,7 +190,7 @@ export const check = (config: Config, home: string = homedir()): Effect.Effect<C
       },
       stateDir: expand(config.stateDir ?? defaultStateDir(home), home)
     }
-  })
+  }
 
 /**
  * Reads and checks `runner.json` at `path`.
@@ -200,9 +198,9 @@ export const check = (config: Config, home: string = homedir()): Effect.Effect<C
  * @category constructors
  * @since 1.0.0
  */
-export const load = (path: string, home: string = homedir()): Effect.Effect<Checked, RunnerConfigError> =>
+export const load = (path: string, home: string = $platform.homedir()): Effect.Effect<Checked, RunnerConfigError> =>
   Effect.try({
-    try: () => readFileSync(path, "utf8"),
+    try: () => $platform.readFileSync(path, "utf8"),
     catch: () => new RunnerConfigError({ message: "the configuration file can't be read" })
   }).pipe(
     Effect.flatMap((text) =>
@@ -219,7 +217,7 @@ export const load = (path: string, home: string = homedir()): Effect.Effect<Chec
  * @category constructors
  * @since 1.0.0
  */
-export const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex")
+export const sha256 = (text: string): string => $platform.sha256(text)
 
 /**
  * Makes the runner's token: 32 random bytes as base64url in
@@ -236,11 +234,11 @@ export const makeToken = (
   Effect.try({
     try: () => {
       const file = tokenFile(stateDir)
-      if (existsSync(file) && options.rotate !== true) return undefined
-      mkdirSync(stateDir, { recursive: true, mode: 0o700 })
-      const token = randomBytes(32).toString("base64url")
-      writeFileSync(file, `${token}\n`, { mode: 0o600 })
-      chmodSync(file, 0o600)
+      if ($platform.existsSync(file) && options.rotate !== true) return undefined
+      $platform.mkdirSync(stateDir, { recursive: true, mode: 0o700 })
+      const token = $platform.randomBytes(32).toString("base64url")
+      $platform.writeFileSync(file, `${token}\n`, { mode: 0o600 })
+      $platform.chmodSync(file, 0o600)
       return { sha256: sha256(token), file }
     },
     catch: () => new RunnerConfigError({ message: "the token file can't be written" })
@@ -260,7 +258,7 @@ export const makeToken = (
  */
 export const readToken = (stateDir: string): Effect.Effect<string, RunnerConfigError> =>
   Effect.try({
-    try: () => readFileSync(tokenFile(stateDir), "utf8").trim(),
+    try: () => $platform.readFileSync(tokenFile(stateDir), "utf8").trim(),
     catch: () => new RunnerConfigError({ message: "no runner token; run `smthrs runner token` first" })
   }).pipe(
     Effect.flatMap((token) =>

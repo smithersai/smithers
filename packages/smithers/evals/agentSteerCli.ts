@@ -19,7 +19,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as RunnerCmd from "../src/commands/Runner.vibe"
-import * as Config from "../src/runner/Config.ts"
+import * as Config from "../src/runner/Config.vibe"
 import * as Host from "../test/fixtures/runner/host.ts"
 
 /** What one case did, by profile: whether it passed, and the evidence. */

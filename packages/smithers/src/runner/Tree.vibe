@@ -11,7 +11,7 @@
  */
 
 import { Effect } from "effect"
-import { execFileSync } from "node:child_process"
+import * as $platform from "./Tree.platform.ts"
 
 /** One process: its parent, whether it is a zombie, its CPU seconds so far, and its start time as `ps` prints it. */
 interface Entry {
@@ -38,17 +38,8 @@ export const cpuOf = (text: string): number => {
 /** Every process on the host by pid, or none when `ps` can't answer: a table it couldn't read proves nothing gone. */
 const table = (): Map<number, Entry> | undefined => {
   const entries = new Map<number, Entry>()
-  let text: string
-  try {
-    text = execFileSync("/bin/ps", ["-A", "-o", "pid=,ppid=,stat=,time=,lstart="], {
-      env: { LC_ALL: "C", TZ: "UTC", PATH: "/usr/bin:/bin" },
-      encoding: "utf8",
-      timeout: 5000,
-      maxBuffer: 16 * 1024 * 1024
-    })
-  } catch {
-    return undefined
-  }
+  const text = $platform.processTable()
+  if (text === undefined) return undefined
   for (const line of text.split("\n")) {
     const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.+?)\s*$/.exec(line)
     if (match !== null) {
@@ -61,15 +52,6 @@ const table = (): Map<number, Entry> | undefined => {
     }
   }
   return entries
-}
-
-const alive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (cause) {
-    return (cause as { readonly code?: string }).code !== "ESRCH"
-  }
 }
 
 /**
@@ -145,7 +127,7 @@ export const watch = (root: number): Tree => {
     if (entries === undefined) return undefined
     return [...seen].filter(([pid, started]) => {
       const entry = entries.get(pid)
-      return entry !== undefined && entry.started === started && !entry.zombie && alive(pid)
+      return entry !== undefined && entry.started === started && !entry.zombie && $platform.alive(pid)
     }).map(([pid]) => pid)
   }
   return {
@@ -157,7 +139,7 @@ export const watch = (root: number): Tree => {
         const pids = living() ?? []
         for (const pid of pids) {
           try {
-            process.kill(pid, signal)
+            $platform.kill(pid, signal)
           } catch {
             // Gone between the read and the signal.
           }
@@ -177,29 +159,29 @@ export const watch = (root: number): Tree => {
  * @since 1.0.0
  */
 export const stop = (tree: Tree, options: { readonly graceMs: number; readonly settleMs: number }) =>
-  Effect.gen(function*() {
+  effect {
     const startedAt = Date.now()
-    yield* tree.observe
-    const interrupted = yield* tree.signal("SIGINT")
+    try tree.observe
+    const interrupted = try tree.signal("SIGINT")
     const until = (ms: number) =>
-      Effect.gen(function*() {
+      effect {
         const deadline = Date.now() + ms
         while (Date.now() < deadline) {
-          if (yield* tree.gone) return true
-          yield* Effect.sleep(100)
+          if (try tree.gone) return true
+          try Effect.sleep(100)
         }
-        return yield* tree.gone
-      })
-    const quick = yield* until(options.graceMs)
-    const killed = quick ? 0 : yield* tree.signal("SIGKILL")
-    const gone = quick || (yield* until(options.settleMs))
+        return try tree.gone
+      }
+    const quick = try until(options.graceMs)
+    const killed = quick ? 0 : try tree.signal("SIGKILL")
+    const gone = quick || (try until(options.settleMs))
     // Counts only: what it saw, what it signalled, and whether anything was left, never a command or a path.
-    yield* Effect.logInfo("runner.tree").pipe(Effect.annotateLogs({
-      ...(yield* tree.stats),
+    try Effect.logInfo("runner.tree").pipe(Effect.annotateLogs({
+      ...(try tree.stats),
       interrupted,
       killed,
       gone,
       durationMs: Date.now() - startedAt
     }))
     return gone
-  })
+  }

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { admin } from "../src/internal/backend/Admin.ts"
+import { admin } from "../src/internal/backend/Admin.vibe"
 import { Client, object } from "../src/internal/backend/Client.ts"
 import { local } from "../src/internal/backend/Local.ts"
 import { misc } from "../src/internal/backend/Misc.ts"

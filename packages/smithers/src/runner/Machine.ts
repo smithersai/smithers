@@ -11,7 +11,7 @@ import type * as AgentRunner from "@smthrs/agent/AgentRunner"
 import { statfsSync } from "node:fs"
 import { availableParallelism, loadavg } from "node:os"
 import { packageVersion } from "../Version.ts"
-import type * as Config from "./Config.ts"
+import type * as Config from "./Config.vibe"
 
 /**
  * What the runner reads of its machine before each claim: its CPUs, the

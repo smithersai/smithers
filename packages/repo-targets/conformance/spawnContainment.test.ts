@@ -144,7 +144,7 @@ describe("child-process containment conformance", () => {
       + "runs launchd on a Mac. No durable process ledger or hard-kill recovery guarantee."
     ],
     [
-      "smithers/src/runner/Tree.ts",
+      "smithers/src/runner/Tree.platform.ts",
       "Decision 0136's runner process-tree observer, inside the CLI host boundary. "
       + "It only starts /bin/ps with fixed arguments, a minimal environment, a 5-second timeout "
       + "and a 16-MiB output cap. An unreadable table proves nothing gone; pid/start-time "

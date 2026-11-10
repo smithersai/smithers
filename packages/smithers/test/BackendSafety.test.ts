@@ -8,7 +8,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { admin } from "../src/internal/backend/Admin.ts"
+import { admin } from "../src/internal/backend/Admin.vibe"
 import { Client, esc, type Values } from "../src/internal/backend/Client.ts"
 import * as ProductApi from "../src/internal/backend/ProductApi.ts"
 import { resources } from "../src/internal/backend/Resources.ts"

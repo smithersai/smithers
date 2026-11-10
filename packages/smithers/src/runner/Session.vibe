@@ -42,25 +42,12 @@ import * as AgentRunner from "@smthrs/agent/AgentRunner"
 import * as Transcript from "@smthrs/agent/Transcript"
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import { Cause, Deferred, Effect, Exit, Fiber, type Latch, Option, Queue, Schema, Stream } from "effect"
-import {
-  chmodSync,
-  closeSync,
-  existsSync,
-  fsyncSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-  writeSync
-} from "node:fs"
-import { dirname } from "node:path"
-import type * as Config from "./Config.ts"
+import type * as Config from "./Config.vibe"
 import * as Credential from "./Credential.vibe"
 import * as Host from "./Host.vibe"
+import * as $platform from "./Session.platform.ts"
 import * as Spool from "./Spool.ts"
-import * as Tree from "./Tree.ts"
+import * as Tree from "./Tree.vibe"
 import * as Workspace from "./Workspace.ts"
 
 /**
@@ -213,7 +200,7 @@ const decodeCheckpoint = Schema.decodeUnknownOption(Schema.fromJsonString(Checkp
 
 const readCheckpoint = (checkout: Workspace.Checkout): Checkpoint | undefined => {
   try {
-    return Option.getOrUndefined(decodeCheckpoint(readFileSync(checkout.checkpoint, "utf8")))
+    return Option.getOrUndefined(decodeCheckpoint($platform.readFileSync(checkout.checkpoint, "utf8")))
   } catch {
     return undefined
   }
@@ -222,15 +209,15 @@ const readCheckpoint = (checkout: Workspace.Checkout): Checkpoint | undefined =>
 const writeCheckpoint = (checkout: Workspace.Checkout, checkpoint: Checkpoint) =>
   Effect.sync(() => {
     const temporary = `${checkout.checkpoint}.tmp`
-    writeFileSync(temporary, JSON.stringify(checkpoint), { mode: 0o600 })
-    chmodSync(temporary, 0o600)
-    renameSync(temporary, checkout.checkpoint)
+    $platform.writeFileSync(temporary, JSON.stringify(checkpoint), { mode: 0o600 })
+    $platform.chmodSync(temporary, 0o600)
+    $platform.renameSync(temporary, checkout.checkpoint)
   })
 
 /** The runner's own environment, as an agent or a hook inherits it. */
 const inherited = (): Record<string, string> =>
   Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] =>
+    Object.entries($platform.environment()).filter((entry): entry is [string, string] =>
       entry[1] !== undefined && !entry[0].startsWith("SMITHERS_RUNNER_")
     )
   )
@@ -241,20 +228,20 @@ const inherited = (): Record<string, string> =>
  * names, or `undefined` when it exits non-zero.
  */
 const prestart = (argv: ReadonlyArray<string>, cwd: string, env: Record<string, string>) =>
-  Effect.scoped(Effect.gen(function*() {
-    const handle = yield* ScopedProcess.spawn({ command: argv[0]!, args: argv.slice(1), cwd, env })
+  Effect.scoped(effect {
+    const handle = try ScopedProcess.spawn({ command: argv[0]!, args: argv.slice(1), cwd, env })
     const chunks: Array<Uint8Array> = []
     const collect = (keep: boolean) => {
       let size = 0
       return Stream.runForEach((chunk: Uint8Array) =>
-        Effect.gen(function*() {
+        effect {
           size += chunk.byteLength
-          if (size > 1024 * 1024) return yield* Effect.fail(new Error("prestart output limit"))
+          if (size > 1024 * 1024) throw new Error("prestart output limit")
           if (keep) chunks.push(chunk)
-        })
+        }
       )
     }
-    const [code] = yield* Effect.all([
+    const [code] = try Effect.all([
       handle.exitCode,
       handle.stdout.pipe(collect(true)),
       handle.stderr.pipe(collect(false))
@@ -262,14 +249,14 @@ const prestart = (argv: ReadonlyArray<string>, cwd: string, env: Record<string, 
     if (code !== 0) return undefined
     const set: Record<string, string> = {}
     let account: string | undefined
-    for (const line of Buffer.concat(chunks).toString().split("\n")) {
+    for (const line of (try sync(() => $platform.concatText(chunks))).split("\n")) {
       const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line.trim())
       if (match === null) continue
       if (match[1] === "account") account = match[2]
       else set[match[1]!] = match[2]!
     }
     return { env: set, account }
-  })).pipe(
+  }).pipe(
     Effect.timeout("60 seconds"),
     Effect.catch(() => Effect.succeed(undefined)),
     Effect.tap((result) =>
@@ -322,10 +309,13 @@ export const work = (
   job: JobPayload,
   control: Control
 ): Effect.Effect<AgentRunner.Outcome, never, Host.Host> =>
-  Effect.gen(function*() {
+  effect {
     const startedAt = Date.now()
-    const { origin } = AgentRunner.parseKey(job.key)
-    const checkout = Workspace.of(config.stateDir, origin)
+    // A throw here is a defect, as it was in the generator this replaced.
+    const { origin } = try Effect.orDie(
+      Effect.try({ try: () => AgentRunner.parseKey(job.key), catch: (cause) => cause })
+    )
+    const checkout = try sync(() => Workspace.of(config.stateDir, origin))
     const report = (outcome: AgentRunner.Outcome, fields: Record<string, string | number | boolean> = {}) =>
       Effect.logInfo("runner.session").pipe(
         Effect.annotateLogs({
@@ -338,36 +328,36 @@ export const work = (
         Effect.as(outcome)
       )
     const repository = config.repositories[job.task.repository]
-    if (repository === undefined) return yield* report(failed("workspace"))
+    if (repository === undefined) return try report(failed("workspace"))
     const profile = config.profiles[job.task.agent.profile]
-    if (profile === undefined) return yield* report(failed("refused"))
+    if (profile === undefined) return try report(failed("refused"))
     // A checkout whose mark says it was still being made when the runner stopped is incomplete, whatever its
     // directory holds: it is made again. No agent ran in it, since the mark goes, durably, only once it is complete,
     // before the record that an agent is about to run is written. Both there (a machine that lost the mark's removal
     // but kept the record) is never discarded: the record wins, and the mark goes.
-    const incomplete = existsSync(checkout.provisioning) && !existsSync(checkout.started)
-    if (!Workspace.exists(checkout) || incomplete) {
+    const incomplete = $platform.existsSync(checkout.provisioning) && !$platform.existsSync(checkout.started)
+    if (!(try sync(() => Workspace.exists(checkout))) || incomplete) {
       // Gone after an agent was about to run in it (its record, or its session checkpoint): that work is lost. Else
       // no agent ran (a claim handed back before the checkout was begun, or one whose making was cut short), so the
       // checkout is made, costing no generation or restart; an incomplete one's directory is discarded first, as part
       // of the same controlled attempt.
-      if (!incomplete && (existsSync(checkout.started) || existsSync(checkout.checkpoint))) {
-        return yield* report(failed("machine_lost"))
+      if (!incomplete && ($platform.existsSync(checkout.started) || $platform.existsSync(checkout.checkpoint))) {
+        return try report(failed("machine_lost"))
       }
-      const ended = yield* provision(repository.mirror, job, checkout, control).pipe(
+      const ended = try provision(repository.mirror, job, checkout, control).pipe(
         Effect.ensuring(Effect.sync(() => Credential.forget(job)))
       )
       // Not made: the mark stays until the job's settlement forgets the checkout, so a runner that stops before then
       // discards whatever `jj workspace add` left rather than taking it for a checkout.
-      if (ended !== undefined) return yield* report(ended.outcome, ended.fields)
+      if (ended !== undefined) return try report(ended.outcome, ended.fields)
     }
     // The checkout is complete: its mark goes, then the record that an agent is about to run in it is kept, each
     // through to disk (the directory entry included) before the next.
-    yield* Effect.sync(() => {
-      durablyRemove(checkout.provisioning)
-      durably(checkout.started, `${job.key}\n`)
+    try Effect.sync(() => {
+      $platform.durablyRemove(checkout.provisioning)
+      $platform.durably(checkout.started, `${job.key}\n`)
     })
-    if (Date.now() >= job.deadline) return yield* report(failed("timeout"))
+    if (Date.now() >= job.deadline) return try report(failed("timeout"))
     const saved = readCheckpoint(checkout)
     const same = saved !== undefined && saved.generation === job.generation
     const base = { ...inherited(), ...profile.env }
@@ -377,10 +367,10 @@ export const work = (
     } else {
       const hook = profile.prestart === undefined
         ? { env: {}, account: undefined }
-        : yield* prestart(profile.prestart, checkout.dir, base)
-      if (hook === undefined) return yield* report(failed("refused"))
+        : try prestart(profile.prestart, checkout.dir, base)
+      if (hook === undefined) return try report(failed("refused"))
       chosen = hook
-      yield* writeCheckpoint(checkout, {
+      try writeCheckpoint(checkout, {
         generation: job.generation,
         env: hook.env,
         ...(hook.account === undefined ? {} : { account: hook.account }),
@@ -399,7 +389,7 @@ export const work = (
     let outcome: { readonly outcome: AgentRunner.Outcome; readonly stop: string }
     while (true) {
       // Suspended, the work waits for the host to take the runner again, a stop, the claim lost, or the deadline.
-      const waited = yield* control.authorization.latch.await.pipe(
+      const waited = try control.authorization.latch.await.pipe(
         Effect.as("open" as const),
         Effect.raceFirst(Deferred.await(control.cancel).pipe(Effect.as("cancel" as const))),
         Effect.raceFirst(Deferred.await(control.dropped).pipe(Effect.as("dropped" as const))),
@@ -420,11 +410,11 @@ export const work = (
         }
         break
       }
-      outcome = yield* Effect.scoped(Effect.gen(function*() {
-        const spool = yield* Spool.open({ stateDir: config.stateDir, key: job.key, claim: job.claim, scrub })
-        yield* Effect.forkScoped(spool.upload)
+      outcome = try Effect.scoped(effect {
+        const spool = try Spool.open({ stateDir: config.stateDir, key: job.key, claim: job.claim, scrub })
+        try Effect.forkScoped(spool.upload)
         const kept = readCheckpoint(checkout)
-        return yield* session({
+        return try session({
           profile,
           job,
           checkout,
@@ -445,16 +435,16 @@ export const work = (
           scrub,
           spool
         })
-      }))
+      })
       if (outcome.stop !== "suspended") break
       const kept = readCheckpoint(checkout)
       resume = kept !== undefined && kept.generation === job.generation ? kept.sessionId : resume
-      yield* Effect.logWarning("runner.session").pipe(Effect.annotateLogs({ job: job.key, outcome: "suspended" }))
+      try Effect.logWarning("runner.session").pipe(Effect.annotateLogs({ job: job.key, outcome: "suspended" }))
     }
     const fields: Record<string, string> = { stop: outcome.stop }
     if (chosen.account !== undefined) fields.account = chosen.account
-    return yield* report(outcome.outcome, fields)
-  })
+    return try report(outcome.outcome, fields)
+  }
 
 /**
  * How long a checkout waits for a credential the host couldn't issue, when
@@ -464,36 +454,6 @@ const provisionWaitSeconds = (attempt: number): number => Math.min(300, 15 * 2 *
 
 /** Time left before the deadline below which a checkout isn't tried again: the job ends `timeout`. */
 const PROVISION_LAST_TRY_MS = 1000
-
-/** Writes `text` to `path` (mode `0600`, its directory made), and through to disk, the directory's entry too. */
-const durably = (path: string, text: string): void => {
-  mkdirSync(dirname(path), { recursive: true })
-  const file = openSync(path, "w", 0o600)
-  try {
-    writeSync(file, text)
-    fsyncSync(file)
-  } finally {
-    closeSync(file)
-  }
-  const dir = openSync(dirname(path), "r")
-  try {
-    fsyncSync(dir)
-  } finally {
-    closeSync(dir)
-  }
-}
-
-/** Removes `path`, if there, and writes the removal of its directory's entry through to disk. */
-const durablyRemove = (path: string): void => {
-  if (!existsSync(path)) return
-  rmSync(path, { force: true })
-  const dir = openSync(dirname(path), "r")
-  try {
-    fsyncSync(dir)
-  } finally {
-    closeSync(dir)
-  }
-}
 
 /** How a job ended before its agent ran, and what its log line adds. */
 interface Ended {
@@ -520,24 +480,24 @@ const provision = (
   checkout: Workspace.Checkout,
   control: Control
 ): Effect.Effect<Ended | undefined, never, Host.Host> =>
-  Effect.gen(function*() {
+  effect {
     const ended = (outcome: AgentRunner.Outcome, fields: Record<string, string | number> = {}): Ended => ({
       outcome,
       fields
     })
-    const host = yield* Host.Host
-    yield* Effect.sync(() => durably(checkout.provisioning, `${job.key}\n`))
+    const host = try Host.Host
+    try Effect.sync(() => $platform.durably(checkout.provisioning, `${job.key}\n`))
     for (let attempt = 1;; attempt++) {
       // The whole attempt, its wait for the mirror and a fetch that stalls included, gives way to a Stop, the claim
       // lost, or the deadline: interrupted, its git or jj is killed (decision 0148).
       // A directory an attempt cut short left (the mark says no agent ran in it) is discarded within the attempt.
-      const once = Effect.suspend(() => {
+      const once = effect {
         const make = Workspace.create(mirror, job.task.base, checkout, Credential.forJob(host, job))
-        return Workspace.exists(checkout) && !existsSync(checkout.started)
+        return try ((try sync(() => Workspace.exists(checkout))) && !$platform.existsSync(checkout.started)
           ? Workspace.discard(mirror, checkout).pipe(Effect.andThen(make))
-          : make
-      })
-      const attempted = yield* Effect.exit(once).pipe(
+          : make)
+      }
+      const attempted = try Effect.exit(once).pipe(
         Effect.map((exit) => ({ _tag: "attempted" as const, exit })),
         Effect.raceFirst(Deferred.await(control.cancel).pipe(Effect.as({ _tag: "cancel" as const }))),
         Effect.raceFirst(Deferred.await(control.dropped).pipe(Effect.as({ _tag: "dropped" as const }))),
@@ -570,10 +530,10 @@ const provision = (
       const left = job.deadline - Date.now()
       if (left <= PROVISION_LAST_TRY_MS) return ended(failed("timeout"), { credential: "unavailable" })
       const waitMs = Math.min(waitSeconds * 1000, Math.floor(left / 2))
-      yield* Effect.logInfo("runner.workspace").pipe(
+      try Effect.logInfo("runner.workspace").pipe(
         Effect.annotateLogs({ job: job.key, credential: "unavailable", attempt, waitMs })
       )
-      const waited = yield* Effect.sleep(waitMs).pipe(
+      const waited = try Effect.sleep(waitMs).pipe(
         Effect.as("waited" as const),
         Effect.raceFirst(Deferred.await(control.cancel).pipe(Effect.as("cancel" as const))),
         Effect.raceFirst(Deferred.await(control.dropped).pipe(Effect.as("dropped" as const)))
@@ -582,7 +542,7 @@ const provision = (
         return ended({ _tag: "Cancelled", processTreeGone: true }, { stop: waited })
       }
     }
-  })
+  }
 
 /** One agent process and its session, in the caller's scope: how it ended, and the stop reason or end code. */
 const session = (options: {
@@ -597,12 +557,12 @@ const session = (options: {
   readonly scrub: (text: string) => string
   readonly spool: Spool.Spool
 }) =>
-  Effect.gen(function*() {
+  effect {
     const { checkout, control, job, profile } = options
     const retry = (kind: "refusal" | "exit" | "error"): AgentRunner.Outcome | undefined =>
       profile.retryOn?.includes(kind) === true ? { _tag: "Retryable" } : undefined
     const ended = (outcome: AgentRunner.Outcome, stop: string) => ({ outcome, stop })
-    const spawned = yield* Effect.exit(ScopedProcess.spawn({
+    const spawned = try Effect.exit(ScopedProcess.spawn({
       command: profile.argv[0]!,
       args: profile.argv.slice(1),
       cwd: checkout.dir,
@@ -612,13 +572,13 @@ const session = (options: {
       forceKillAfter: 15_000
     }))
     if (Exit.isFailure(spawned)) {
-      yield* Effect.logWarning("runner.spawn").pipe(Effect.annotateLogs(spawnFailureOf(spawned.cause)))
+      try Effect.logWarning("runner.spawn").pipe(Effect.annotateLogs(spawnFailureOf(spawned.cause)))
       return ended(failed("refused"), "spawn")
     }
     const handle = spawned.value
     const tree = Tree.watch(handle.targetPid)
     // Each look at the tree also counts its CPU time, which the host's stall rule reads from the heartbeat.
-    yield* tree.observe.pipe(
+    try tree.observe.pipe(
       Effect.andThen(Effect.sync(() => {
         control.stats.cpuSeconds = tree.cpuSeconds()
       })),
@@ -627,16 +587,16 @@ const session = (options: {
       Effect.forkScoped
     )
     // Every way out stops the whole tree, the agent's detached tools included.
-    yield* Effect.addFinalizer(() => Tree.stop(tree, { graceMs: 2000, settleMs: 5000 }).pipe(Effect.ignore))
-    const lines = yield* Queue.unbounded<string>()
+    try Effect.addFinalizer(() => Tree.stop(tree, { graceMs: 2000, settleMs: 5000 }).pipe(Effect.ignore))
+    const lines = try Queue.unbounded<string>()
     const encoder = new TextEncoder()
-    yield* Stream.fromQueue(lines).pipe(
+    try Stream.fromQueue(lines).pipe(
       Stream.map((line) => encoder.encode(`${line}\n`)),
       Stream.run(handle.stdin),
       Effect.ignore,
       Effect.forkScoped
     )
-    yield* Stream.runDrain(handle.stderr).pipe(Effect.ignore, Effect.forkScoped)
+    try Stream.runDrain(handle.stderr).pipe(Effect.ignore, Effect.forkScoped)
     let lastUpdate = Date.now()
     let current = ""
     let previous = ""
@@ -653,7 +613,7 @@ const session = (options: {
     let awaiting: Array<string> = []
     const steerLog = (id: string, fields: Record<string, string | number | boolean>) =>
       Effect.logInfo("runner.steer").pipe(Effect.annotateLogs({ job: job.key, steer: id, ...fields }))
-    const client = yield* Acp.make({
+    const client = try Acp.make({
       incoming: Stream.splitLines(Stream.decodeText(handle.stdout)),
       send: (line) => Queue.offer(lines, line)
     }, {
@@ -661,7 +621,7 @@ const session = (options: {
       onUpdate: (update) =>
         Effect.andThen(
           loading ? Effect.void : options.spool.append(update.kind, update.update),
-          Effect.gen(function*() {
+          effect {
             lastUpdate = Date.now()
             if (awaiting.length > 0) {
               // The agent's first word after a steer was handed over: it read it.
@@ -671,8 +631,8 @@ const session = (options: {
                 ledger[id] = "delivered"
                 control.delivered.add(id)
               }
-              yield* save()
-              for (const id of read) yield* steerLog(id, { outcome: "delivered" })
+              try save()
+              for (const id of read) try steerLog(id, { outcome: "delivered" })
             }
             const text = Acp.messageText(update)
             if (Option.isSome(text)) {
@@ -692,7 +652,7 @@ const session = (options: {
               previous = current
               current = ""
             }
-          })
+          }
         )
     })
     const failure = (error: Acp.AcpError) =>
@@ -713,17 +673,17 @@ const session = (options: {
     const isSignal = (value: unknown): value is Signal =>
       value === "cancel" || value === "dropped" || value === "deadline" || value === "suspended"
     const stopped = (cause: Signal, sessionId: string | undefined, turn: Fiber.Fiber<unknown, unknown> | undefined) =>
-      Effect.gen(function*() {
+      effect {
         // Seen before the cancel: an agent may end its own helpers on a cancel and orphan the commands they ran
         // (one adapter does), which no later look at the tree finds under the agent.
-        yield* tree.observe
+        try tree.observe
         // A stop the host asked for is marked in the transcript before the agent hears it.
-        if (cause === "cancel") yield* options.spool.append(Transcript.KINDS.cancel, {})
-        if (sessionId !== undefined) yield* client.cancel(sessionId).pipe(Effect.ignore)
-        if (turn !== undefined) yield* Fiber.await(turn).pipe(Effect.timeout("30 seconds"), Effect.ignore)
+        if (cause === "cancel") try options.spool.append(Transcript.KINDS.cancel, {})
+        if (sessionId !== undefined) try client.cancel(sessionId).pipe(Effect.ignore)
+        if (turn !== undefined) try Fiber.await(turn).pipe(Effect.timeout("30 seconds"), Effect.ignore)
         // A stop a person asked for: tools that ignore SIGINT (S3's real agents' commands did) get SIGKILL after 5 s,
         // so the tree is gone within a heartbeat and about 10 s.
-        const gone = yield* Tree.stop(tree, { graceMs: STOP_GRACE_MS, settleMs: 5000 })
+        const gone = try Tree.stop(tree, { graceMs: STOP_GRACE_MS, settleMs: 5000 })
         // A dropped claim settles nothing the host keeps: its settlement is fenced off. A suspended one settles
         // nothing yet: the work resumes the session once the host takes the runner again.
         return cause === "deadline"
@@ -731,55 +691,55 @@ const session = (options: {
           : cause === "suspended"
           ? ended({ _tag: "Cancelled", processTreeGone: gone }, "suspended")
           : ended({ _tag: "Cancelled", processTreeGone: gone }, cause === "cancel" ? "cancelled" : "dropped")
-      })
-    const opened = yield* Effect.raceFirst(
-      Effect.gen(function*() {
-        const initialized = yield* client.initialize
+      }
+    const opened = try Effect.raceFirst(
+      effect {
+        const initialized = try client.initialize
         if (options.resume !== undefined && initialized.loadSession) {
           loading = true
-          const loaded = yield* Effect.exit(client.loadSession(options.resume, checkout.dir))
+          const loaded = try Effect.exit(client.loadSession(options.resume, checkout.dir))
           loading = false
           if (Exit.isSuccess(loaded)) {
             return { sessionId: options.resume, text: CONTINUE, steering: initialized.steering }
           }
         }
-        const sessionId = yield* client.newSession(checkout.dir)
+        const sessionId = try client.newSession(checkout.dir)
         checkpoint = { ...checkpoint, sessionId }
-        yield* save()
+        try save()
         return {
           sessionId,
           text: promptOf(job.task, job.generation > 1 || options.resume !== undefined),
           steering: initialized.steering
         }
-      }).pipe(Effect.result),
+      }.pipe(Effect.result),
       signal
     )
-    if (isSignal(opened)) return yield* stopped(opened, undefined, undefined)
+    if (isSignal(opened)) return try stopped(opened, undefined, undefined)
     if (opened._tag === "Failure") return failure(opened.failure)
     const { sessionId, steering, text } = opened.success
     // The turn in flight. A steer may replace it: `replacing` says its end is the cancel the steer asked for, and
     // `turns` takes each turn a steer started.
-    let turn = yield* Effect.forkScoped(client.prompt(sessionId, text))
+    let turn = try Effect.forkScoped(client.prompt(sessionId, text))
     let open = true
     let replacing = false
-    const turns = yield* Queue.unbounded<void>()
+    const turns = try Queue.unbounded<void>()
     const prompt = (steer: AgentRunner.Steer) =>
-      Effect.gen(function*() {
-        turn = yield* Effect.forkScoped(client.prompt(sessionId, `${steer.text}\n\n${STEER_CONTINUE}`))
+      effect {
+        turn = try Effect.forkScoped(client.prompt(sessionId, `${steer.text}\n\n${STEER_CONTINUE}`))
         open = true
         awaiting = [...awaiting, steer.id]
-        yield* Queue.offer(turns, undefined)
-      })
+        try Queue.offer(turns, undefined)
+      }
     /** Hands one steer to the agent: into the turn in flight when it can, else as the next prompt. */
     const handOver = (steer: AgentRunner.Steer) =>
-      Effect.gen(function*() {
+      effect {
         const startedAt = Date.now()
         if (open && steering && profile.steering !== "prompt") {
-          const taken = yield* client.steer(sessionId, steer.text).pipe(Effect.orElseSucceed(() => false))
+          const taken = try client.steer(sessionId, steer.text).pipe(Effect.orElseSucceed(() => false))
           if (taken) {
             awaiting = [...awaiting, steer.id]
-            yield* options.spool.append(Transcript.KINDS.steer, { id: steer.id, mode: "steering" })
-            return yield* steerLog(steer.id, {
+            try options.spool.append(Transcript.KINDS.steer, { id: steer.id, mode: "steering" })
+            return try steerLog(steer.id, {
               mode: "steering",
               outcome: "handed",
               durationMs: Date.now() - startedAt
@@ -792,32 +752,32 @@ const session = (options: {
         if (open) {
           replacing = true
           // Seen before the cancel, so a command the cancel orphans is still stopped with the session.
-          yield* tree.observe
-          yield* client.cancel(sessionId).pipe(Effect.ignore)
-          yield* Fiber.await(turn).pipe(Effect.timeout(STEER_CANCEL_WAIT_MS), Effect.ignore)
+          try tree.observe
+          try client.cancel(sessionId).pipe(Effect.ignore)
+          try Fiber.await(turn).pipe(Effect.timeout(STEER_CANCEL_WAIT_MS), Effect.ignore)
         }
         // Marked before the prompt that carries it, so the agent's answer follows it in the transcript.
-        yield* options.spool.append(Transcript.KINDS.steer, { id: steer.id, mode })
-        yield* prompt(steer)
-        yield* steerLog(steer.id, { mode, outcome: "handed", durationMs: Date.now() - startedAt })
-      })
-    yield* Effect.gen(function*() {
+        try options.spool.append(Transcript.KINDS.steer, { id: steer.id, mode })
+        try prompt(steer)
+        try steerLog(steer.id, { mode, outcome: "handed", durationMs: Date.now() - startedAt })
+      }
+    try effect {
       while (true) {
-        const steer = yield* Queue.take(control.steers)
+        const steer = try Queue.take(control.steers)
         // Never twice: one handed over before a restart, read or not, is the agent's already.
         if (ledger[steer.id] !== undefined) continue
         ledger[steer.id] = "handed"
-        yield* save()
-        yield* handOver(steer)
+        try save()
+        try handOver(steer)
       }
-    }).pipe(Effect.forkScoped)
+    }.pipe(Effect.forkScoped)
     let stop: Acp.StopReason
     while (true) {
       const awaited = turn
-      const first = yield* Effect.raceFirst(Fiber.await(awaited), signal)
-      if (isSignal(first)) return yield* stopped(first, sessionId, turn)
+      const first = try Effect.raceFirst(Fiber.await(awaited), signal)
+      if (isSignal(first)) return try stopped(first, sessionId, turn)
       // Every prompt turn that ends says why, a turn a steer cancelled included.
-      if (Exit.isSuccess(first)) yield* options.spool.append(Transcript.KINDS.turn, { stopReason: first.value })
+      if (Exit.isSuccess(first)) try options.spool.append(Transcript.KINDS.turn, { stopReason: first.value })
       if (awaited !== turn) {
         // A steer replaced the turn while this one ended: the next one is the turn to wait on.
         replacing = false
@@ -826,8 +786,8 @@ const session = (options: {
       if (Exit.isSuccess(first) && first.value === "cancelled" && replacing) {
         // The cancel a steer asked for: wait for the turn it starts.
         replacing = false
-        const next = yield* Effect.raceFirst(Queue.take(turns), signal)
-        if (isSignal(next)) return yield* stopped(next, sessionId, turn)
+        const next = try Effect.raceFirst(Queue.take(turns), signal)
+        if (isSignal(next)) return try stopped(next, sessionId, turn)
         continue
       }
       open = false
@@ -841,27 +801,27 @@ const session = (options: {
       // The turn ended; the agent may still be talking, or a steer may start another turn. Collect once it has been
       // quiet a while.
       const endedAt = Date.now()
-      const quiet = Effect.gen(function*() {
+      const quiet = effect {
         while (Date.now() - lastUpdate < QUIET.afterMs && Date.now() - endedAt < QUIET.maxMs) {
-          yield* Effect.sleep(Math.max(10, Math.min(QUIET.afterMs - (Date.now() - lastUpdate), 1000)))
+          try Effect.sleep(Math.max(10, Math.min(QUIET.afterMs - (Date.now() - lastUpdate), 1000)))
         }
-        yield* Effect.logInfo("runner.quiet").pipe(
+        try Effect.logInfo("runner.quiet").pipe(
           Effect.annotateLogs({ job: job.key, waitedMs: Date.now() - endedAt })
         )
-      })
-      const settled = yield* Effect.raceAll([
+      }
+      const settled = try Effect.raceAll([
         quiet.pipe(Effect.as("quiet" as const)),
         Queue.take(turns).pipe(Effect.as("steered" as const)),
         signal
       ])
       if (settled === "steered") continue
-      if (settled !== "quiet") return yield* stopped(settled, sessionId, undefined)
+      if (settled !== "quiet") return try stopped(settled, sessionId, undefined)
       break
     }
-    yield* Tree.stop(tree, { graceMs: 2000, settleMs: 5000 }).pipe(Effect.ignore)
-    const changes = yield* Effect.exit(Workspace.changes(checkout, job.task.base, job.task.limits, options.mirror))
+    try Tree.stop(tree, { graceMs: 2000, settleMs: 5000 }).pipe(Effect.ignore)
+    const changes = try Effect.exit(Workspace.changes(checkout, job.task.base, job.task.limits, options.mirror))
     if (Exit.isFailure(changes)) return ended(failed("workspace"), stop)
     if (changes.value === undefined) return ended(failed("too_large"), stop)
     const summary = options.scrub(current !== "" ? current : previous)
     return ended({ _tag: "Done", changes: changes.value, summary, usage }, stop)
-  })
+  }

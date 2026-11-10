@@ -4,9 +4,8 @@
  */
 
 import * as Effect from "effect/Effect"
-import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises"
-import { dirname, join, resolve } from "node:path"
 import { UsageError } from "../../CliError.vibe"
+import * as $platform from "./Admin.platform.ts"
 import { chunksOf, esc, pick, query, str, type Values } from "./Client.ts"
 import type { Handler } from "./Resources.ts"
 import { observeOrigin } from "./Session.ts"
@@ -314,12 +313,12 @@ admin["admin user erase"] = async (c, a, o) => {
   })
 }
 admin["admin user export"] = async (c, a) => {
-  const path = resolve(str(a.out))
+  const path = $platform.resolve(str(a.out))
   const response = await c.response("POST", `/api/admin/users/${esc(a.username)}/export`, undefined, {
     stream: true,
     headers: { accept: "application/gzip" }
   })
-  await mkdir(dirname(path), { recursive: true })
+  await $platform.mkdir($platform.dirname(path), { recursive: true })
   let bytes = 0
   async function* body() {
     if (response.body) {
@@ -332,17 +331,17 @@ admin["admin user export"] = async (c, a) => {
   // Each writer owns a private directory on the destination filesystem. Never
   // follow a pre-existing staging name, and publish only a complete archive.
   await Effect.runPromise(Effect.acquireUseRelease(
-    Effect.tryPromise({ try: () => mkdtemp(`${path}.partial-`), catch: (cause) => cause }),
+    Effect.tryPromise({ try: () => $platform.mkdtemp(`${path}.partial-`), catch: (cause) => cause }),
     (directory) =>
       Effect.tryPromise({
         try: async () => {
-          const partial = join(directory, "archive")
-          await writeFile(partial, body(), { mode: 0o600, flag: "wx" })
-          await rename(partial, path)
+          const partial = $platform.join(directory, "archive")
+          await $platform.writeFile(partial, body(), { mode: 0o600, flag: "wx" })
+          await $platform.rename(partial, path)
         },
         catch: (cause) => cause
       }),
-    (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true }))
+    (directory) => Effect.promise(() => $platform.rm(directory, { recursive: true, force: true }))
   ))
   return { username: a.username, path, bytes }
 }

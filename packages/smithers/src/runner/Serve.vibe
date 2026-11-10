@@ -19,11 +19,11 @@
 
 import * as AgentRunner from "@smthrs/agent/AgentRunner"
 import * as Admission from "./Admission.ts"
-import type * as Config from "./Config.ts"
+import type * as Config from "./Config.vibe"
 import * as Host from "./Host.vibe"
 import * as Job from "./Job.vibe"
 import * as Machine from "./Machine.ts"
-import type * as Session from "./Session.ts"
+import type * as Session from "./Session.vibe"
 import * as Workspace from "./Workspace.ts"
 
 const isAccount = Schema.is(AgentRunner.Profile)
