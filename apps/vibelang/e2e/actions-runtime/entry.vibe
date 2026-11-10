@@ -5,6 +5,7 @@ import { faultyFactory, trace } from "../../test/support/FaultyFactory.vibe"
 import { Factory } from "../../src/core/Factory.vibe"
 import { mockFactoryFor } from "../../src/core/MockFactory.vibe"
 import { MockActions } from "../../src/actions/MockActions.vibe"
+import { faultyActions } from "../../test/support/FaultyActions.vibe"
 import type { Role } from "../../src/actions/Actions.vibe"
 import { application } from "../../test/support/application.vibe"
 import { stylesheet } from "../../src/web/styles.vibe"
@@ -34,7 +35,8 @@ const program = await runPromise(effect {
       try Effect.orDie(product.accounts!.signOut())
       return product
     }) : base
-    return application(root, factory, () => {}, undefined, MockActions({ role, actor: "person" }))
+    const actions = MockActions({ role, actor: "person" })
+    return application(root, factory, () => {}, undefined, fault === "actions" ? faultyActions(actions) : actions)
   }
 })
 Runtime.run(program, { flags: succeed({ session: "actions-e2e", mode: "mock" as const, name: "Guest" }) })

@@ -1,5 +1,6 @@
 import { Action, RetryPolicy } from "@smthrs/flow"
 import * as Policy from "./AuthBrokerPolicy.vibe"
+import * as GitHubPage from "./AuthConsent.vibe"
 import type * as Auth from "./Auth.vibe"
 import * as CookieKeys from "../core/CookieKeys.vibe"
 import * as Pkce from "../core/Pkce.vibe"
@@ -18,6 +19,10 @@ export const STATE_PREFIX = "broker_"
 export const HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer" }
 export const REQUEST_TTL = 600_000
 export const CODE_TTL = 60_000
+/** How many abandoned consents one callback releases. */
+export const CONSENT_RELEASE = 10
+/** How long the broker remembers a person's recent tokens and revocations, for `GitHubPage.observe` only. */
+export const PERSON_TTL = 30 * 86_400_000
 export error BrokerRefused {}
 export interface HostedSite { readonly origin: string; readonly secret: Redacted.Redacted<string> }
 export type Keys = Effect.Success<ReturnType<typeof CookieKeys.make>>
@@ -27,6 +32,11 @@ export interface Store {
   readonly take: (key: string, binding: string, now: number) => (string | undefined)!BrokerRefused
   /** Reads a live record and leaves it in place. */
   readonly peek: (key: string, binding: string, now: number) => (string | undefined)!BrokerRefused
+  /**
+   * Removes and answers at most `limit` records under `prefix` that expired by `now`, oldest first. `insert` never
+   * prunes `consent/` records: each holds a live GitHub token the broker must revoke when it drains them.
+   */
+  readonly drain: (prefix: string, now: number, limit: number) => ReadonlyArray<{ readonly key: string; readonly value: string }>!BrokerRefused
 }
 
 /** Exact origins only. Even a real smithers.sh subdomain must appear in the deployment's hosted-site registry. */
@@ -59,6 +69,8 @@ schema Redemption {
 schema Attempt { readonly claims: Claims; readonly verifier: string; readonly expires: number }
 export schema Identity { readonly id: number; readonly login: string; readonly delegation?: string; readonly expires?: number }
 schema Handoff { readonly claims: Claims; readonly expires: number; readonly person: Identity }
+/** What the broker did to one person's tokens: whether it revoked the last one, and when it issued each in the last hour. */
+schema PersonHistory { readonly revoked: boolean; readonly issued: ReadonlyArray<number> }
 schema Consent { readonly claims: Claims; readonly expires: number; readonly person: Identity; readonly access: string; readonly refresh: string | null; readonly tokenExpires: number | null }
 /** The per-person credential custodian. It answers a handle, never a token. */
 export interface Connections {
@@ -69,6 +81,7 @@ const decodeRedemption = Schema.decodeUnknownEffect(Schema.fromJsonString(Redemp
 const decodeAttempt = Schema.decodeUnknownEffect(Schema.fromJsonString(Attempt))
 const decodeHandoff = Schema.decodeUnknownEffect(Schema.fromJsonString(Handoff))
 const decodeConsent = Schema.decodeUnknownEffect(Schema.fromJsonString(Consent))
+const decodePersonHistory = Schema.decodeUnknownEffect(Schema.fromJsonString(PersonHistory))
 const random = /^[A-Za-z0-9_-]{43}$/
 // Digests arbitrary strings through the existing HMAC primitive, with a fixed public domain separator.
 import * as Signature from "../core/Signature.vibe"
@@ -88,8 +101,11 @@ effect function record(step: string, outcome: string) {
 
 const revocationRetry = RetryPolicy.make({ initialMs: 100, factor: 2, maxMs: 1_000, maxAttempts: 3 })
 
-/** A token stays in the identity step's closure; the cleanup action journals only null or a fixed failure. */
-effect function discard(github: Auth.GitHubAuth["Service"], token: Redacted.Redacted<string>) {
+/**
+ * Revokes a token nobody keeps, as a durable action with retries, so it never counts toward GitHub's ten tokens per
+ * person and App. Call it inside a flow step. The token stays in the closure; the action journals only null.
+ */
+export effect function discard(github: Auth.GitHubAuth["Service"], token: Redacted.Redacted<string>) {
   const revocation = try Effect.orDie(Effect.try(() => Action.make({
     name: "auth/broker/revoke", success: Schema.Null, error: Schema.Null,
     retryPolicy: revocationRetry,
@@ -127,6 +143,12 @@ export effect function memoryStore(): Store!! {
       const next = new Map(rows)
       next.delete(key)
       return [row.value, next]
+    }),
+    drain: (prefix, now, limit) => Ref.modify(rows, rows => {
+      const due = Array.from(rows.entries()).filter(([key, row]) => key.startsWith(prefix) && row.expires <= now).sort(([, a], [, b]) => a.expires - b.expires).slice(0, limit)
+      const next = new Map(rows)
+      for (const [key] of due) next.delete(key)
+      return [due.map(([key, row]) => ({ key, value: row.value })), next]
     }),
   }
 }
@@ -186,10 +208,36 @@ export effect function make(options: {
     if (Option.isNone(verified)) throw refused()
     return verified.value.value
   }
-  const openConsent = effect (consent: string, cookie: string | undefined, take: boolean) => {
+  /** The browser that holds this signed cookie is the one this step's value was issued to. */
+  const sameBrowser = effect (purpose: string, cookie: string | undefined, value: string) => {
+    const browser = try options.keys.verify(purpose, cookie)
+    if (Option.isNone(browser) || browser.value.value !== value) throw refused()
+  }
+  const consentBrowser = effect (consent: string, cookie: string | undefined) => {
     if (!random.test(consent)) throw refused()
-    const browser = try options.keys.verify("broker_consent", cookie)
-    if (Option.isNone(browser) || browser.value.value !== consent) throw refused()
+    try sameBrowser("broker_consent", cookie, consent)
+  }
+  const callbackBrowser = effect (state: string, code: string, cookie: string | undefined) => {
+    if (!callbackState(state) || code.length === 0 || code.length > 4096) throw refused()
+    try sameBrowser("broker_browser", cookie, state)
+  }
+  /** Everything `start` checks before it writes: a site's signature, freshness and claims. */
+  const startClaims = effect (origin: string, signed: string) => {
+    const claims = try checked(decodeClaims(try verify(origin, "broker_return", signed)))
+    const now = try fresh(claims.expires, REQUEST_TTL)
+    if (claims.origin !== origin || !random.test(claims.nonce) || !random.test(claims.challenge) || (claims.connect !== undefined && options.connections === undefined)) throw refused()
+    return { claims, now }
+  }
+  /** Everything `exchange` checks before it consumes a code. */
+  const redemptionClaims = effect (origin: string, signed: string) => {
+    const claims = try checked(decodeRedemption(try verify(origin, "broker_exchange", signed)))
+    const now = try fresh(claims.expires, REQUEST_TTL)
+    if (claims.origin !== origin || !random.test(claims.nonce) || !random.test(claims.code)) throw refused()
+    return { claims, now }
+  }
+  const passes = <A>(body: A!BrokerRefused) => Effect.match(body, { onFailure: () => false, onSuccess: () => true })
+  const openConsent = effect (consent: string, cookie: string | undefined, take: boolean) => {
+    try consentBrowser(consent, cookie)
     const key = "consent/" + (try hash(consent))
     const digest = try hash(consent)
     const stored = try (take ? options.store.take : options.store.peek)(key, digest, try Clock.currentTimeMillis)
@@ -198,6 +246,18 @@ export effect function make(options: {
     try fresh(parsed.expires, REQUEST_TTL)
     return parsed
   }
+  /**
+   * A consent nobody answered still holds a live token pair that counts toward GitHub's ten tokens per person. Each
+   * callback, inside its durable step, revokes the access token of up to `CONSENT_RELEASE` consents that expired.
+   */
+  const releaseAbandoned = effect () => {
+    const expired = try options.store.drain("consent/", try Clock.currentTimeMillis, CONSENT_RELEASE)
+    for (const row of expired) {
+      const consent = Effect.flatMap(open(row.key, row.value), (text) => checked(decodeConsent(text))) catch () => undefined
+      try record("release", consent === undefined ? "unreadable" : "revoked")
+      if (consent !== undefined) try discard(options.github, Redacted.make(consent.access))
+    }
+  }
   const writeHandoff = effect (claims: Claims, person: Identity) => {
     const handoff = try options.keys.token
     const codeKey = "code/" + (try hash(handoff))
@@ -205,7 +265,28 @@ export effect function make(options: {
     if (!(try options.store.insert(codeKey, try binding(claims.origin, claims.nonce, claims.challenge), try seal(codeKey, { claims, expires, person }), expires))) throw refused()
     return claims.origin + CALLBACK + "#" + new URLSearchParams({ code: handoff, state: claims.nonce })
   }
+  const githubWeb = GitHubPage.githubOrigin(options.github)
+  /**
+   * Reads, observes and rewrites one person's history at a callback: whether GitHub showed a page, after a revocation
+   * of ours or not. An unreadable history counts as none; it only feeds the counter.
+   */
+  const observePerson = effect (id: number, referer: string | undefined, path: GitHubPage.Path, revokes: boolean) => {
+    const key = "person/" + (try hash(String(id)))
+    const now = try Clock.currentTimeMillis
+    const stored = try options.store.take(key, "person", now)
+    const prior = stored === undefined ? undefined : (Effect.flatMap(open(key, stored), (text) => checked(decodePersonHistory(text))) catch () => undefined)
+    const issued = (prior?.issued ?? []).filter((at) => at > now - GitHubPage.HOUR && at <= now)
+    try GitHubPage.observe({ page: GitHubPage.pageOf(referer, githubWeb), afterRevocation: prior?.revoked ?? false, hourlyTokens: issued.length, path })
+    try options.store.insert(key, "person", try seal(key, { revoked: revokes, issued: [...issued, now] }), now + PERSON_TTL)
+  }
   return {
+    /** Stateless: whether a step's own checks pass before it writes. A host runs durably only what passes (`screen`). */
+    admits: {
+      start: (origin: string, signed: string) => passes(startClaims(origin, signed)),
+      callback: (state: string, code: string, cookie: string | undefined) => passes(callbackBrowser(state, code, cookie)),
+      consent: (consent: string, cookie: string | undefined) => passes(consentBrowser(consent, cookie)),
+      exchange: (origin: string, signed: string) => passes(redemptionClaims(origin, signed)),
+    },
     consentCookie: (consent: string) => options.keys.sign("broker_consent", consent),
     consentPage: (consent: string, cookie: string | undefined) => observed("consent_page", effect {
       const parsed = try openConsent(consent, cookie, false)
@@ -223,9 +304,7 @@ export effect function make(options: {
       return try writeHandoff(parsed.claims, { id: parsed.person.id, login: parsed.person.login, delegation: installed.delegation, expires: installed.expires })
     }),
     start: (origin: string, signed: string) => observed("start", effect {
-      const claims = try checked(decodeClaims(try verify(origin, "broker_return", signed)))
-      const now = try fresh(claims.expires, REQUEST_TTL)
-      if (claims.origin !== origin || !random.test(claims.nonce) || !random.test(claims.challenge) || (claims.connect !== undefined && options.connections === undefined)) throw refused()
+      const { claims, now } = try startClaims(origin, signed)
       const requestKey = "request/" + (try hash(signed))
       if (!(try options.store.insert(requestKey, "used", "", claims.expires))) throw refused()
       const state = STATE_PREFIX + (try options.keys.token)
@@ -236,10 +315,9 @@ export effect function make(options: {
       if (!(try options.store.insert(key, try hash(state), stored, expires))) throw refused()
       return { location: options.github.authorizeUrl({ state, codeChallenge: pair.codeChallenge, redirectUri: options.origin + CALLBACK }), cookie: try options.keys.sign("broker_browser", state) }
     }),
-    callback: (state: string, code: string, cookie: string | undefined) => observed("callback", effect {
-      if (!callbackState(state) || code.length === 0 || code.length > 4096) throw refused()
-      const browser = try options.keys.verify("broker_browser", cookie)
-      if (Option.isNone(browser) || browser.value.value !== state) throw refused()
+    callback: (state: string, code: string, cookie: string | undefined, referer?: string) => observed("callback", effect {
+      try callbackBrowser(state, code, cookie)
+      try releaseAbandoned()
       const key = "attempt/" + (try hash(state))
       const stored = try options.store.take(key, try hash(state), try Clock.currentTimeMillis)
       if (stored === undefined) throw refused()
@@ -250,6 +328,7 @@ export effect function make(options: {
       // A sign-in keeps no token. A connection keeps this one unless the person lookup fails.
       const person = try (pending.claims.connect === undefined ? ensuring(checked(options.github.user(tokens.accessToken)), discard(options.github, tokens.accessToken)) : Effect.tapError(checked(options.github.user(tokens.accessToken)), () => discard(options.github, tokens.accessToken)))
       if (!Number.isSafeInteger(person.id) || person.id <= 0 || !/^[a-zA-Z0-9-]{1,39}$/.test(person.login)) throw refused()
+      try observePerson(person.id, referer, pending.claims.connect === undefined ? "hosted_sign_in" : "connect", pending.claims.connect === undefined || person.id !== pending.claims.connect.person)
       if (pending.claims.connect !== undefined) {
         // GitHub keeps ten tokens per person and App: every token the connection does not keep is revoked.
         if (person.id !== pending.claims.connect.person) { try discard(options.github, tokens.accessToken); throw refused() }
@@ -262,9 +341,7 @@ export effect function make(options: {
       return try writeHandoff(pending.claims, { id: person.id, login: person.login })
     }),
     exchange: (origin: string, signed: string) => observed("exchange", effect {
-      const claims = try checked(decodeRedemption(try verify(origin, "broker_exchange", signed)))
-      const now = try fresh(claims.expires, REQUEST_TTL)
-      if (claims.origin !== origin || !random.test(claims.nonce) || !random.test(claims.code)) throw refused()
+      const { claims, now } = try redemptionClaims(origin, signed)
       const challenge = try checked(Pkce.deriveCodeChallenge(claims.verifier))
       const key = "code/" + (try hash(claims.code))
       const stored = try options.store.take(key, try binding(origin, claims.nonce, challenge), now)
@@ -291,26 +368,68 @@ export const CONSENT_CSP = "default-src 'none'; base-uri 'none'; frame-ancestors
 /** Browsers apply `form-action` to a form's redirects too, so the page must allow the one site its answer returns to. */
 export const consentCsp = (siteOrigin: string) => CONSENT_CSP + " " + siteOrigin
 
+const CONSENT_BODY = 2048
+const EXCHANGE_BODY = 8192
+const cookieNameOf = (origin: string) => origin.startsWith("https:") ? "__Host-smithers-broker" : "smithers-broker"
+function withCookie(origin: string, response: HttpServerResponse.HttpServerResponse, value: string, age: number) {
+  return HttpServerResponse.setCookieUnsafe(response, cookieNameOf(origin), value, {
+    httpOnly: true, secure: origin.startsWith("https:"), sameSite: "lax", path: "/", maxAge: Duration.millis(age),
+  })
+}
+/** The page is no-referrer, so a browser sends `Origin: null`; Sec-Fetch-Site is what web content cannot forge. */
+const consentPost = (request: HttpServerRequest.HttpServerRequest, origin: string) =>
+  (request.headers.origin === origin || request.headers.origin === "null") && request.headers["sec-fetch-site"] === "same-origin" && !(Number(request.headers["content-length"]) > CONSENT_BODY)
+/** The request reads its body once; a second read answers the same text. */
+const bodyOf = (request: HttpServerRequest.HttpServerRequest, limit: number) => checked(request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(limit)), Effect.timeout("3 seconds")))
+const decodeExchange = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ origin: Schema.String, request: Schema.String })))
+
+/** `serve`'s answer to a request `screen` refused: the same 400, clearing the browser cookie. */
+export const refusal = (origin: string) => withCookie(origin, HttpServerResponse.jsonUnsafe({ error: "sign-in" }, { status: 400, headers: HEADERS }), "", 0)
+
+/**
+ * Whether `serve` would act on this request: every stateless check of its step passes. Hosts journal and lock only
+ * these; anything else, and anyone without a site's signature or the broker's browser cookie, writes nothing.
+ */
+export effect function screen(broker: { readonly admits: Effect.Success<ReturnType<typeof make>>["admits"] }, origin: string) {
+  const request = try HttpServerRequest.HttpServerRequest
+  const url = new URL(request.originalUrl, origin)
+  if (url.origin !== origin) return false
+  const cookie = request.cookies[cookieNameOf(origin)]
+  const query = (name: string) => url.searchParams.get(name) ?? ""
+  if (url.pathname === START && request.method === "GET") return try broker.admits.start(query("origin"), query("return_to"))
+  if (url.pathname === CALLBACK && request.method === "GET") return try broker.admits.callback(query("state"), query("code"), cookie)
+  if (url.pathname === CONSENT && request.method === "GET") return try broker.admits.consent(query("consent"), cookie)
+  if (url.pathname === CONSENT && request.method === "POST") {
+    if (!consentPost(request, origin)) return false
+    const form = new URLSearchParams(bodyOf(request, CONSENT_BODY) catch () => "")
+    const answer = form.get("answer")
+    return (answer === "connect" || answer === "cancel") && (try broker.admits.consent(form.get("consent") ?? "", cookie))
+  }
+  if (url.pathname === EXCHANGE && request.method === "POST" && !(Number(request.headers["content-length"]) > EXCHANGE_BODY)) {
+    const body = Effect.flatMap(bodyOf(request, EXCHANGE_BODY), decodeExchange) catch () => undefined
+    return body !== undefined && (try broker.admits.exchange(body.origin, body.request))
+  }
+  return false
+}
+
 /** Shared route adapter; the host runs each invocation as a durable step. No redirect from an unverified request. */
 export effect function serve<R>(broker: Omit<Effect.Success<ReturnType<typeof make>>, "callback" | "consent"> & {
-  readonly callback: (state: string, code: string, cookie: string | undefined) => string!BrokerRefused!R
+  readonly callback: (state: string, code: string, cookie: string | undefined, referer?: string) => string!BrokerRefused!R
   readonly consent: (consent: string, answer: "connect" | "cancel", cookie: string | undefined) => string!BrokerRefused!R
 }, origin: string) {
   const request = try HttpServerRequest.HttpServerRequest
   const url = new URL(request.originalUrl, origin)
-  const cookieName = origin.startsWith("https:") ? "__Host-smithers-broker" : "smithers-broker"
+  const cookieName = cookieNameOf(origin)
   const bad = () => HttpServerResponse.jsonUnsafe({ error: "sign-in" }, { status: 400, headers: HEADERS })
   if (url.origin !== origin) return bad()
-  const cookie = (response: HttpServerResponse.HttpServerResponse, value: string, age: number) => HttpServerResponse.setCookieUnsafe(response, cookieName, value, {
-    httpOnly: true, secure: origin.startsWith("https:"), sameSite: "lax", path: "/", maxAge: Duration.millis(age),
-  })
+  const cookie = (response: HttpServerResponse.HttpServerResponse, value: string, age: number) => withCookie(origin, response, value, age)
   return (effect {
     if (url.pathname === START && request.method === "GET") {
       const start = try broker.start(url.searchParams.get("origin") ?? "", url.searchParams.get("return_to") ?? "")
       return cookie(HttpServerResponse.redirect(start.location, { status: 303, headers: HEADERS }), start.cookie, REQUEST_TTL)
     }
     if (url.pathname === CALLBACK && request.method === "GET") {
-      const location = try broker.callback(url.searchParams.get("state") ?? "", url.searchParams.get("code") ?? "", request.cookies[cookieName])
+      const location = try broker.callback(url.searchParams.get("state") ?? "", url.searchParams.get("code") ?? "", request.cookies[cookieName], request.headers.referer)
       const pendingConsent = location.startsWith(origin + CONSENT) ? new URL(location).searchParams.get("consent") : null
       return cookie(HttpServerResponse.redirect(location, { status: 303, headers: HEADERS }), pendingConsent === null ? "" : try broker.consentCookie(pendingConsent), pendingConsent === null ? 0 : REQUEST_TTL)
     }
@@ -319,18 +438,16 @@ export effect function serve<R>(broker: Omit<Effect.Success<ReturnType<typeof ma
       return HttpServerResponse.text(page.html, { contentType: "text/html; charset=utf-8", headers: { ...HEADERS, "content-security-policy": consentCsp(page.origin) } })
     }
     if (url.pathname === CONSENT && request.method === "POST") {
-      // The page is no-referrer, so a browser sends `Origin: null`; Sec-Fetch-Site is what web content cannot forge.
-      if ((request.headers.origin !== origin && request.headers.origin !== "null") || request.headers["sec-fetch-site"] !== "same-origin" || Number(request.headers["content-length"]) > 2048) return bad()
-      const text = try checked(request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(2048)), Effect.timeout("3 seconds")))
+      if (!consentPost(request, origin)) return bad()
+      const text = try bodyOf(request, CONSENT_BODY)
       const form = new URLSearchParams(text)
       const answer = form.get("answer")
       if (answer !== "connect" && answer !== "cancel") return bad()
       return cookie(HttpServerResponse.redirect(try broker.consent(form.get("consent") ?? "", answer, request.cookies[cookieName]), { status: 303, headers: HEADERS }), "", 0)
     }
     if (url.pathname === EXCHANGE && request.method === "POST") {
-      if (Number(request.headers["content-length"]) > 8192) return bad()
-      const text = try checked(request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(8192)), Effect.timeout("3 seconds")))
-      const body = try checked(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ origin: Schema.String, request: Schema.String })))(text))
+      if (Number(request.headers["content-length"]) > EXCHANGE_BODY) return bad()
+      const body = try checked(decodeExchange(try bodyOf(request, EXCHANGE_BODY)))
       return HttpServerResponse.jsonUnsafe(try broker.exchange(body.origin, body.request), { headers: HEADERS })
     }
     return HttpServerResponse.empty({ status: 405, headers: HEADERS })
@@ -352,13 +469,17 @@ export effect function sqliteStore(sql: Sql): Store!BrokerRefused {
     insert: (key, binding, value, expires) => checked(effect {
       // Prune expired receipts inside the journaled write, never with a background timer or retry loop.
       const now = try Clock.currentTimeMillis
-      try Effect.try(() => sql.exec("DELETE FROM auth_broker_records WHERE expires <= ?", now))
+      try Effect.try(() => sql.exec("DELETE FROM auth_broker_records WHERE expires <= ? AND substr(key, 1, 8) <> 'consent/'", now))
       const rows = try Effect.try(() => sql.exec("INSERT INTO auth_broker_records (key,binding,value,expires) VALUES (?,?,?,?) ON CONFLICT(key) DO NOTHING RETURNING key", key, binding, value, expires).toArray())
       return rows.length === 1
     }),
     take: (key, binding, now) => checked(effect {
       const rows = try Effect.try(() => sql.exec("DELETE FROM auth_broker_records WHERE key = ? AND binding = ? AND expires > ? RETURNING value", key, binding, now).toArray())
       return rows.length === 1 ? String(rows[0]!.value) : undefined
+    }),
+    drain: (prefix, now, limit) => checked(effect {
+      const rows = try Effect.try(() => sql.exec("DELETE FROM auth_broker_records WHERE key IN (SELECT key FROM auth_broker_records WHERE substr(key, 1, ?) = ? AND expires <= ? ORDER BY expires LIMIT ?) RETURNING key, value, expires", prefix.length, prefix, now, limit).toArray())
+      return rows.sort((a, b) => Number(a.expires) - Number(b.expires)).map(row => ({ key: String(row.key), value: String(row.value) }))
     }),
   }
 }

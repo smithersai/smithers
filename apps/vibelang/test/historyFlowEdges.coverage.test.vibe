@@ -1,0 +1,91 @@
+// The history's Fold and Bootstrap flows at their edges, on the engine in memory over the real sequencer
+// (wiki/decisions/0020-mythical-history.md, 0016): main that can't be read, a commit of main already folded, and a
+// second start's bootstrap. The fault is a faulty `MainLog` service; each outcome is counted.
+import { describe, expect, it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { Digest } from "effect/crypto"
+import { Bootstrap, Fold, historyRegistration, historySteps, MainLog, MainUnavailable, Stack } from "../src/history/flows.vibe"
+import type { History } from "../src/history/mythical.vibe"
+import { Caller } from "../src/history/roles.vibe"
+import { make, type MainCommit, memoryStore, stackOf } from "../src/history/Sequencer.vibe"
+import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+
+const maintainer = { role: "maintainer" as const, name: "Ada", agent: false }
+
+function small(): History {
+  const commits = ["fix(compiler): one"].map((description) => ({ sha: "1".padStart(12, "0"), change: "", description, parents: [] }))
+  return replay(intentsOf(seedOf("o/r", commits, []))).history
+}
+
+const one: MainCommit = { sha: "2".padStart(12, "0"), change: "c2", title: "docs: two", message: "docs: two\n" }
+
+effect function digestOf() {
+  provide WebCrypto.layer {
+    return try Digest.Digest
+  }
+}
+
+/** The history flows on the engine in memory over a real sequencer, reading main from `main`. */
+effect function world(main: MainLog.Shape) {
+  const sequencer = try make(try memoryStore())
+  const digest = try digestOf()
+  const flows = historyRegistration.pipe(
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provide(Layer.mergeAll(
+      Layer.succeed(Stack, stackOf(sequencer, () => Effect.succeed(small()))),
+      Layer.succeed(MainLog, main),
+      Layer.succeed(Caller, { principal: maintainer }),
+    )),
+    Layer.provide(Layer.succeed(Digest.Digest, digest)),
+  )
+  return { sequencer, engine: Context.get(try Layer.build(flows), FlowRuntime.FlowRuntime) }
+}
+
+const count = (step: string, outcome: string) =>
+  Effect.map(Metric.value(Metric.withAttributes(historySteps, { step, outcome })), (state) => Number(state.count))
+
+describe("the Fold and Bootstrap flows", () => {
+  it.effect("fold nothing and answer unavailable when main can't be read", () => scoped(effect {
+    const { sequencer, engine } = try world({ since: () => Effect.fail(new MainUnavailable({ reason: "GitHub down" })) })
+    try engine.execute(Bootstrap, { executionId: "bootstrap", payload: {} })
+    const before = try sequencer.read()
+    const counted = try count("fold", "unavailable")
+    const answer = try engine.execute(Fold, { executionId: "fold", payload: {} })
+    const after = try sequencer.read()
+    const countedAfter = try count("fold", "unavailable")
+    try Effect.try(() => {
+      expect(answer).toEqual({ folded: 0, refusal: "unavailable" })
+      expect(after).toEqual(before)
+      expect(countedAfter).toBe(counted + 1)
+    })
+  }))
+
+  it.effect("count only the commits of main a fold accepts, not one already folded", () => scoped(effect {
+    // main lists the same commit twice, as a re-read after a crash between folds would.
+    const { sequencer, engine } = try world({ since: () => Effect.succeed([one, one]) })
+    const answer = try engine.execute(Fold, { executionId: "fold", payload: {} })
+    const history = try sequencer.read()
+    try Effect.try(() => {
+      expect(answer).toEqual({ folded: 1, refusal: null })
+      expect(history.real.map((real) => real.sha)).toEqual([one.sha])
+    })
+  }))
+
+  it.effect("load the bootstrapped history on the first start only", () => scoped(effect {
+    const { sequencer, engine } = try world({ since: () => Effect.succeed([]) })
+    const exists = try count("bootstrap", "exists")
+    const first = try engine.execute(Bootstrap, { executionId: "bootstrap/1", payload: {} })
+    const loaded = try sequencer.read()
+    const second = try engine.execute(Bootstrap, { executionId: "bootstrap/2", payload: {} })
+    const after = try sequencer.read()
+    const existsAfter = try count("bootstrap", "exists")
+    try Effect.try(() => {
+      expect([first, second]).toEqual([true, false])
+      expect(loaded).toEqual(small())
+      expect(after).toEqual(loaded)
+      expect(existsAfter).toBe(exists + 1)
+    })
+  }))
+})

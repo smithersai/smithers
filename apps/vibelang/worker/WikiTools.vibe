@@ -3,19 +3,20 @@ import { WikiDrafting } from "../src/core/WikiWriter.vibe"
 import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 // Public page tools: a live reply captures its streaming entry id, never a caller-supplied actor.
 import { FlowBinding } from "@smthrs/harness"
+import { toolRefusal } from "../src/core/toolRefusal.vibe"
 import { OpenWiki, openWiki, OpenDocs, openDocs, Tours } from "../src/core/flows.vibe"
 import { pages } from "../src/core/wiki.vibe"
 export const WIKI_INSTRUCTION = "Open VibeLang docs with vibelang/docs/open when asked. Open project wiki pages with vibelang/wiki/open when asked. The tool acts on the conversation's pane. Draft edits with vibelang/wiki/draft; then link [Review it](#wiki-draft-PAGE) so the person can review and submit. Never submit, approve or merge an edit. Available page ids: " + pages.map(page => page.id).join(", ")
 export function wikiTools(actor: string, tours: Tours.Shape, drafting?: WikiDrafting.Shape): FlowBinding.Source {
-  return FlowBinding.source("vibelang-wiki", [FlowBinding.make({
+  return FlowBinding.source("vibelang-wiki", [FlowBinding.make({ publicError: toolRefusal,
     flow: { name: OpenWiki._tag, description: OpenWiki.description, input: OpenWiki.payloadSchema,
       output: OpenWiki.successSchema, capabilities: [], effects: undefined, modelInvocable: true },
     handler: (input: { readonly page: string }) => Effect.provideService(openWiki(actor, input.page), Tours, tours),
-  }), FlowBinding.make({
+  }), FlowBinding.make({ publicError: toolRefusal,
     flow: { name: OpenDocs._tag, description: OpenDocs.description, input: OpenDocs.payloadSchema,
       output: OpenDocs.successSchema, capabilities: [], effects: undefined, modelInvocable: true },
     handler: (input: { readonly path: string }) => Effect.provideService(withSpan(openDocs(actor, input.path), "vibelang.docs.open"), Tours, tours),
-  }), ...(drafting === undefined ? [] : [FlowBinding.make({
+  }), ...(drafting === undefined ? [] : [FlowBinding.make({ publicError: toolRefusal,
     flow: { name: "vibelang/wiki/draft", description: "Draft a wiki edit for the person to review and submit.", input: Schema.Struct({ page: Schema.String, ask: Schema.String }), output: Schema.Struct({ page: Schema.String, review: Schema.String }), capabilities: [], effects: undefined, modelInvocable: true },
     handler: effect (input: { readonly page: string; readonly ask: string }) => {
       if (!pages.some(page => page.id === input.page) || input.page === "decisions") throw new WikiFailure({ reason: "missing" })

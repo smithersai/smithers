@@ -24,6 +24,11 @@ export const realAct = (apiBase: string): GitHub.Delegation.Act => (token) => (p
 
 export effect function make(person: number, hostId: string, storage: ObjectDatabase.Storage, setup: Setup, github: GitHub.Auth.GitHubAuth["Service"], act: GitHub.Delegation.Act = realAct("https://api.github.com")) {
   const store = try Delegation.sqliteStore(storage.sql)
+  // One object per person, named by the router: the first person to reach it owns its rows, nonces and journal, and
+  // a host for anyone else is refused, whatever a URL or RPC argument says.
+  const owner = try store.get("person")
+  if (owner !== undefined && owner !== person) throw new Refused({ reason: "forbidden" })
+  if (owner === undefined) try store.put("person", person)
   const lock = try Semaphore.make(1)
   const serial = Semaphore.withPermits(lock, 1)
   const run = (executionId: string, step: string, execute: string!!) => {

@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 1
+bias 5
+null-prototype true
+key 985659722
+tape 3TJisoVtCsr3VQoBP-gVMfThLgkwH0MUiGws5DJaEX5n2vfrTyZDow
+schedule-key 4198252580
+schedule 
+signature "PropertyError:Finding"
+path 
+codec "json"
+value "{\"op\":\"propose\",\"role\":\"contributor\",\"caller\":\"person\",\"authorize\":\"absent\",\"writer\":false,\"stored\":false,\"fresh\":false,\"base\":\"current\",\"text\":\"Edited text.\",\"main\":\"advanced\"}"
+# PropertyError:Finding
+# {"op":"propose","role":"contributor","caller":"person","authorize":"absent","writer":false,"stored":false,"fresh":false,"base":"current","text":"Edited text.","main":"advanced"}

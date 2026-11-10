@@ -8,6 +8,7 @@ import { ledgerOver, logOver, eventKey } from "../worker/ObjectStorage.vibe"
 import * as HistoryObject from "../worker/HistoryObject.vibe"
 import { empty as emptyHistory } from "../src/history/mythical.vibe"
 import { REASONS } from "../worker/Reply.vibe"
+import { faultyChatModel } from "../test/support/faultyChatModel.vibe"
 import { run, Int, Text } from "./run.vibe"
 
 // The unconfigured reply must finish before reaching a history or a model.
@@ -41,6 +42,7 @@ it.live("storage/log-ledger-and-execution", () => run("storage/log-ledger-and-ex
   return (try promise(() => raw.alarm())) === undefined && (try executions.get("execution")) === undefined && Objects.executionIdOf(`m${id}`) === `reply/m${id}` && Objects.tourExecutionIdOf(`t${id}`) === `tour/t${id}`
 }))
 
+// SQLite and durable-flow replay need more than the 5 s coverage budget on an idle 4-vCPU box.
 it.live("storage/conversation-flows", () => run("storage/conversation-flows", Schema.Struct({ id: Int, text: Text }), ({ id, text }) => effect {
   const { object } = try storage()
   const sequencer = try Objects.conversation(object)
@@ -52,20 +54,20 @@ it.live("storage/conversation-flows", () => run("storage/conversation-flows", Sc
   const duplicate = try Objects.post("fuzz", object, sequencer, `c${id}`, "Guest", "Question " + text)
   if (duplicate !== "duplicate") return false
   const budget = try Objects.budget(object, 100)
-  try budget.spend(`r${id}`, id)
+  try budget.spend(`r${id}`, id, true, 100)
   const spend = { admit: () => succeed(false), spend: () => Effect.void }
-  const model = { model: undefined, unusable: "unset" }
+  const model = try faultyChatModel()
   try Objects.alarm("fuzz", object, sequencer, spend, model, history)
   try Objects.alarm("fuzz", object, sequencer, spend, model, history)
   const snapshot = try sequencer.read(0)
-  if (snapshot.entries[0]?.text !== ("Question " + text).trim() || snapshot.entries[1]?.error !== REASONS.budget || !(try budget.admit())) return false
+  if (snapshot.entries[0]?.text !== ("Question " + text).trim() || snapshot.entries[1]?.error !== REASONS.budget || !(try budget.admit("probe", 1))) return false
   if ((try Objects.tour("fuzz", object, sequencer)) !== null || (try Objects.tour("fuzz", object, sequencer)) !== "busy") return false
   try Objects.alarm("fuzz", object, sequencer, { admit: () => succeed(true), spend: () => Effect.void }, model, history)
   try Objects.alarm("fuzz", object, sequencer, spend, model, history)
   const ended = try Objects.endTour("fuzz", object, sequencer)
   if (ended !== null && ended !== "not-replying") return false
   return (try Objects.endTour("fuzz", object, sequencer)) === "not-replying"
-}))
+}, undefined, { minimum: "30 seconds" }))
 
 it.live("storage/history-snapshot", () => run("storage/history-snapshot", Schema.Struct({ id: Int, text: Text }), ({ id, text }) => effect {
   const { object } = try storage()
@@ -79,7 +81,7 @@ it.live("storage/history-snapshot", () => run("storage/history-snapshot", Schema
   const after = try store.load()
   const sequencer = try HistoryObject.history(object)
   const state = try sequencer.read()
-  return after.base?.epics[0]?.title === "Epic " + text && after.events.length === 1 && state.seq === 2 && state.epics.length === 2 && HistoryObject.principalOf(undefined).role === "viewer"
+  return after.base?.epics[0]?.title === "Epic " + text && after.events.length === 1 && state.seq === 2 && state.epics.length === 2
 }))
 
 import { MainUnavailable } from "../src/history/flows.vibe"

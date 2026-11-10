@@ -5,6 +5,7 @@ import { ActionDevice, deviceRegistration, historyRegistration, prepare, type In
 import { SandboxStart, SandboxStop, SandboxCommand } from "../src/core/flows.vibe"
 import type { RunRequest } from "../src/actions/wire.vibe"
 import { Note, Plan, Start } from "../src/history/flows.vibe"
+import { Caller } from "../src/history/roles.vibe"
 import { type HistoryReader, Show } from "../src/history/tools.vibe"
 import type { Storage } from "./Objects.vibe"
 import { executionStorage, existingReceipt, unrouted } from "./Objects.vibe"
@@ -52,7 +53,8 @@ export function make(hostId: string, storage: Storage, admit: () => boolean!! = 
       if (intent === undefined) return "input"
       return host.start(intent).pipe(Effect.as(null)) catch () => "busy"
     },
-    alarm: (history: HistoryReader) => Effect.provideService(host.alarm(), HistoryAccess, { history }),
+    /** Drives the run, its record steps asking `history` and its authorize steps who `caller` is. */
+    alarm: (history: HistoryReader, caller: Caller.Shape) => host.alarm().pipe(Effect.provideService(HistoryAccess, { history }), Effect.provideService(Caller, caller)),
     cancel: host.cancel,
     receipt: effect (request: RunRequest) => {
       const invocation = try prepare(request.flow, request.input, request.id)

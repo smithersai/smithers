@@ -142,7 +142,7 @@ export schema Model {
   readonly wikiAfter?: string
   readonly wikiRequest?: number
   /** The pane's editor: the page, the repository source it started from, and the person's text. */
-  readonly wikiEdit?: { readonly page: string; readonly base: string; readonly text: string; readonly busy: boolean; readonly error: string; readonly submission?: WikiRequest | undefined } | undefined
+  readonly wikiEdit?: { readonly page: string; readonly base: string; readonly text: string; readonly busy: boolean; readonly error: string; readonly submission?: WikiRequest | undefined; readonly stale?: number } | undefined
   /** The repository-observed sources overlaying the build's embedded pages. */
   readonly wikiPages?: ReadonlyArray<{ readonly id: string; readonly source: string; readonly revision: string }>
   /** The person's open review change for a page, linked until they navigate away. */
@@ -235,8 +235,9 @@ export const Message = defineMessageUnion({
   StoppedSandbox: {},
   UpdatedTerminal: { value: Schema.String },
   SubmittedTerminal: {},
-  LoadedSandbox: { conversation: Schema.String, request: Schema.Number, snapshot: SandboxSnapshot },
-  FailedSandbox: { conversation: Schema.String, request: Schema.Number, reason: Schema.String },
+  // `polled`: the pane's periodic read, which never ends or clears an operation (PaneDecision.polledSandbox).
+  LoadedSandbox: { conversation: Schema.String, request: Schema.Number, snapshot: SandboxSnapshot, polled: Schema.optionalKey(Schema.Boolean) },
+  FailedSandbox: { conversation: Schema.String, request: Schema.Number, reason: Schema.String, polled: Schema.optionalKey(Schema.Boolean) },
   ClickedActions: {},
   MaximizedActions: {},
   SelectedAction: { name: Schema.String },
@@ -263,7 +264,7 @@ export const Message = defineMessageUnion({
   UpdatedWikiEdit: { value: Schema.String },
   CanceledWikiEdit: {},
   SubmittedWikiEdit: {},
-  BeganWikiEdit: { request: Schema.Number, page: Schema.String, source: Schema.String, draft: Schema.String },
+  BeganWikiEdit: { request: Schema.Number, page: Schema.String, source: Schema.String, draft: Schema.String, stale: Schema.optionalKey(Schema.Number) },
   CompletedWikiEdit: { request: Schema.Number, page: Schema.String, source: Schema.String, revision: Schema.String, review: Schema.String },
   FailedWikiEdit: { request: Schema.Number, reason: Schema.String, unwritten: Schema.optionalKey(Schema.Boolean) },
 })
@@ -440,15 +441,16 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     StoppedSandbox: () => sandboxAction(model, "stop"),
     UpdatedTerminal: ({ value }) => ({ model: { ...model, terminalDraft: value } }),
     SubmittedTerminal: () => sandboxAction(model, "command"),
-    LoadedSandbox: ({ conversation, request, snapshot }) => {
+    LoadedSandbox: ({ conversation, request, snapshot, polled }) => {
       if (!currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0)) return { model }
       const zero = ModelDecision.sandboxOutOfMinutes(snapshot.remaining, snapshot.id, snapshot.status)
       const low = ModelDecision.sandboxLowMinutes(snapshot.remaining, model.warnedMonth ?? null, snapshot.resetAt)
-      const result = PaneDecision.loadedSandbox(sandboxResult(model), ModelDecision.sandboxPaneOpens(snapshot.status, model.sandbox?.status ?? null))
+      const opens = ModelDecision.sandboxPaneOpens(snapshot.status, model.sandbox?.status ?? null)
+      const result = polled === true ? PaneDecision.polledSandbox(sandboxResult(model), opens) : PaneDecision.loadedSandbox(sandboxResult(model), opens)
       const notice = PaneDecision.sandboxNotice(zero, low, model.sandbox?.resetAt !== snapshot.resetAt)
       return { model: { ...model, sandbox: snapshot, sandboxPane: result.pane, sandboxBusy: result.busy, sandboxOperation: result.operation, sandboxError: result.error, minuteNotice: minuteNotice(notice, snapshot.id, snapshot.remaining, model.minuteNotice ?? ""), warnedMonth: PaneDecision.warnedMonthAfter(low, snapshot.resetAt, model.warnedMonth ?? 0) } }
     },
-    FailedSandbox: ({ conversation, request, reason }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0) ? { model } : (() => { const result = PaneDecision.failedSandbox(sandboxResult(model), reason); return { model: { ...model, sandboxBusy: result.busy, sandboxError: result.error } } })(),
+    FailedSandbox: ({ conversation, request, reason, polled }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0) ? { model } : (() => { const result = polled === true ? PaneDecision.polledFailure(sandboxResult(model), reason) : PaneDecision.failedSandbox(sandboxResult(model), reason); return { model: { ...model, sandboxBusy: result.busy, sandboxError: result.error } } })(),
     ClickedEditWiki: () => beginWikiEdit(model),
     ClickedWikiDraft: ({ page }) => beginWikiEdit(model, page),
     // The store keeps only well-formed text (DurableText): an unpaired surrogate becomes U+FFFD as it is typed, never at save.
@@ -465,10 +467,10 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       const request: WikiRequest = editing.submission === undefined ? { op, page: editing.page, base: editing.base, text: editing.text, key: `${model.session}-wiki-${serial}` } : { ...editing.submission, recovery: `${model.session}-wiki-retry-${serial}` }
       return { model: { ...model, wikiSerial: serial, wikiEdit: { ...editing, ...PaneDecision.submittingWikiEdit(wikiEditScreen(editing)), submission: request } }, commands: [SubmitWikiEdit({ request, serial: model.wikiEditRequest ?? 0 })] }
     },
-    BeganWikiEdit: ({ request, page, source, draft }) => {
+    BeganWikiEdit: ({ request, page, source, draft, stale }) => {
       const editing = model.wikiEdit
       if (editing === undefined || !PaneDecision.wikiBeginApplies(editing.busy, Machine.currentWikiEditor(page, request, editing.page, model.wikiEditRequest ?? 0))) return { model }
-      return { model: { ...model, wikiEdit: { ...editing, ...PaneDecision.beganWikiEdit(wikiEditScreen(editing), source, draft) } }, commands: [FocusWikiEditor({})] }
+      return { model: { ...model, wikiEdit: { ...editing, ...PaneDecision.beganWikiEdit(wikiEditScreen(editing), source, draft), ...(stale === undefined ? {} : { stale }) } }, commands: [FocusWikiEditor({})] }
     },
     CompletedWikiEdit: ({ request, page, source, revision, review }) => model.wikiEdit === undefined || !Machine.currentWikiEditor(page, request, model.wikiEdit.page, model.wikiEditRequest ?? 0) ? { model } : ({ model: { ...model, wikiEdit: undefined, wikiPages: [...(model.wikiPages ?? []).filter((observed) => observed.id !== page), { id: page, source, revision }], ...(review === "" ? {} : { wikiReview: { page, url: review } }) } }),
     FailedWikiEdit: ({ request, reason, unwritten }) => {
@@ -477,11 +479,11 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       return { model: { ...model, wikiEdit: { ...model.wikiEdit, ...step.state, ...(step.submission === "clear" ? { submission: undefined } : {}) } } }
     },
     ClickedWiki: ({ page }) => visitWiki(model, page),
-    WikiLocationChanged: ({ page }) => page === "/" ? { model: { ...model, surface: "splash", docs: "pane", ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } } : visitWiki(model, page),
+    WikiLocationChanged: ({ page }) => UpdateDecision.wikiLocationLeaves(page) ? { model: { ...model, surface: "splash", docs: "pane", ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } } : visitWiki(model, page),
     FilteredWiki: ({ value }) => ({ model: { ...model, wikiQuery: value } }),
     FailedWiki: ({ request }) => ({ model: model.wikiRequest !== undefined && ModelDecision.wikiFailureApplies(request, model.wikiRequest, model.wikiStatus === "loading") ? { ...model, wikiStatus: "error" } : model }),
     SucceededWiki: () => ({ model }),
-    ClickedDocs: () => ({ model: { ...model, ...toggleScreenDocs(model) }, ...(model.docs === "max" && model.client.conversation.pane.startsWith("/wiki/") ? { commands: [RevealWiki({})] } : {}) }),
+    ClickedDocs: () => ({ model: { ...model, ...toggleScreenDocs(model) }, ...(UpdateDecision.docsRevealsWiki(model.docs, model.client.conversation.pane) ? { commands: [RevealWiki({})] } : {}) }),
     ClickedSplash: () => ({ model: { ...model, ...showSplash(model), ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } }),
     ClickedChat: () => minimizeSplash(model),
     UpdatedDraft: ({ value }) => {
@@ -516,8 +518,9 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     SubmittedDraft: () => submit(model),
     SucceededPost: () => ({ model }),
     ClickedRetry: ({ clientId }) => {
-      const waiting = model.client.pending.find((post) => post.clientId === clientId && post.error !== "")
-      if (!waiting) return { model }
+      const index = UpdateDecision.retryIndex(model.client.pending, clientId)
+      const waiting = model.client.pending[index]
+      if (index < 0 || !waiting) return { model }
       return {
         model: { ...model, client: Machine.retryPost(model.client, clientId) },
         commands: [PostMessage({ conversation: model.conversation, clientId, name: model.name, text: waiting.text }), FocusComposer({})],
@@ -577,7 +580,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
   const before = accountOf(model).identity
   const after = accountOf(next.model).identity
   const issues = next.model.issues
-  const after2 = UpdateDecision.afterUpdate(issues !== undefined, before.role !== after.role, before.id !== after.id, issues !== undefined && issues.dialog !== "", issues === undefined || issues.dialog === "" || Machine.issuePermission(after.role, issues.dialog), next.model.tour, message._tag)
+  const after2 = UpdateDecision.afterUpdate(issues !== undefined, before.role !== after.role, before.id !== after.id, issues !== undefined && issues.dialog !== "", issues === undefined || issues.dialog === "" || Machine.issuePermission(after.role, issues.dialog), next.model.tour, message)
   if (after2.kind === "issues" && issues !== undefined) {
     return { ...next, model: { ...next.model, issues: { ...issues, role: after.role, dialog: after2.closeDialog ? "" : issues.dialog, ...(after2.clearRetry ? { retry: undefined, busy: false } : {}) } }, commands: [...next.commands, ...(after2.closeDialog ? [CloseIssueDialog({})] : [])] }
   }
@@ -670,10 +673,11 @@ function withCommands(result: Update.Return<Model, Message, Factory | Actions>):
 }
 /** A click and a browser deep link request the same durable wiki flow; the event alone moves the pane. */
 function visitWiki(model: Model, page: string): WithCommands<Update.Return<Model, Message, Factory>> {
-  const opening = model.stream !== "open"
-  const request = (model.wikiRequest ?? 0) + 1
-  return { model: { ...model, wikiEdit: model.wikiEdit?.submission === undefined ? undefined : model.wikiEdit, wikiRequest: request, sandboxPane: model.sandboxPane === "max" ? "pane" : model.sandboxPane ?? "closed", ...(accountOf(model).people === "max" ? { account: { ...accountOf(model), people: "pane" as const } } : {}), surface: "chat", palette: false, wikiQuery: "", wikiRequested: page, wikiStatus: "loading", following: false,
-    stream: "open", epoch: opening ? model.epoch + 1 : model.epoch, from: opening ? model.client.conversation.seq : model.from,
+  const account = accountOf(model)
+  const visit = UpdateDecision.visitedWiki({ stream: model.stream, epoch: model.epoch, from: model.from, seq: model.client.conversation.seq, request: model.wikiRequest ?? 0, sandboxPane: model.sandboxPane ?? "closed", people: account.people, saving: model.wikiEdit?.submission !== undefined })
+  const request = visit.request
+  return { model: { ...model, wikiEdit: visit.keepEdit ? model.wikiEdit : undefined, wikiRequest: request, sandboxPane: visit.sandboxPane, ...(visit.people === account.people ? {} : { account: { ...account, people: visit.people } }), surface: "chat", palette: false, wikiQuery: "", wikiRequested: page, wikiStatus: "loading", following: false,
+    stream: "open", epoch: visit.epoch, from: visit.from,
   }, commands: [OpenWikiCommand({ conversation: model.conversation, page, request })] }
 
 }
@@ -959,7 +963,7 @@ export const OpenWikiEditor = Command.define("OpenWikiEditor", {
       if (result._tag === "Failure") return Message.FailedWikiEdit({ request, reason: result.failure.reason })
       const observed = result.success.pages.find((entry) => entry.id === page)
       const draft = result.success.draft !== undefined && result.success.draft.page === page ? result.success.draft.text : ""
-      return observed === undefined ? Message.FailedWikiEdit({ request, reason: "missing" }) : Message.BeganWikiEdit({ request, page, source: observed.source, draft })
+      return observed === undefined ? Message.FailedWikiEdit({ request, reason: "missing" }) : Message.BeganWikiEdit({ request, page, source: observed.source, draft, ...(result.success.stale === undefined ? {} : { stale: result.success.stale }) })
     })
   },
 })
@@ -1225,8 +1229,8 @@ export function subscriptions(keys: EventTarget, page?: Document) {
             const factory = try Factory
             return effect {
               const snapshot = try factory.sandbox(conversation)
-              return try message(() => Message.LoadedSandbox({ conversation, request, snapshot }))
-            } catch effect (e) => { return try message(() => Message.FailedSandbox({ conversation, request, reason: e._tag === "Refused" ? e.refusal : e.reason })) }
+              return try message(() => Message.LoadedSandbox({ conversation, request, snapshot, polled: true }))
+            } catch effect (e) => { return try message(() => Message.FailedSandbox({ conversation, request, reason: e._tag === "Refused" ? e.refusal : e.reason, polled: true })) }
           })
           return Stream.when(live ? read.pipe(Stream.repeat(Schedule.spaced("1 second"))) : read, sync(() => active))
         },

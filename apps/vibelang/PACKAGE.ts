@@ -50,7 +50,10 @@ const proofs = [
   Smithers.glob("//apps/vibelang/worker/**/*.vibe"),
   Smithers.glob("//apps/vibelang/scripts/**/*.vibe"),
   Smithers.file("//apps/vibelang/tsconfig.json"),
-  Smithers.file("//apps/vibelang/wiki/decisions/0018-proofs.md")
+  // A type-only import reads VibeLang's emitted declaration of its module and everything that imports, including the
+  // wiki asset `pnpm wiki:build` generates from the wiki before each proof run (verify/declarations.py).
+  Smithers.glob("//apps/vibelang/wiki/**/*"),
+  Smithers.file("//apps/vibelang/package.json")
 ]
 
 /**
@@ -79,12 +82,15 @@ const test = Smithers.Shell.Test({
   timeout: "20m"
 })
 
-/** Whole-app source coverage, with the same V8 provider and 100% per-file thresholds as the monorepo. */
+/**
+ * Whole-app source coverage, with the same V8 provider and 100% per-file thresholds as the monorepo: the Node suite and
+ * the workerd suite, each workerd isolate measured by Istanbul counters and merged by source position (0016).
+ */
 const coverage = Smithers.Shell.Test({
-  summary: "Measure every .vibe runtime source and fail below 100% lines, branches, functions or statements.",
+  summary: "Measure every .vibe runtime source in Node and inside workerd; fail below 100% lines, branches, functions or statements.",
   shell: "cd apps/vibelang && pnpm test:coverage",
   data: sources,
-  timeout: "30m",
+  timeout: "60m",
   sandbox: { network: "loopback" },
   exclusive: true
 })
@@ -111,6 +117,16 @@ const workerd = Smithers.Shell.Test({
   data: sources,
   timeout: "20m",
   sandbox: { network: "loopback" }
+})
+
+/** The workerd suite's source coverage: Node's V8 report joined with each workerd isolate's counters (0016). */
+const workerdCoverage = Smithers.Shell.Test({
+  summary: "Measure the workerd suite inside workerd and in Node; fail below 100% lines, branches, functions or statements.",
+  shell: "cd apps/vibelang && pnpm test:workerd:coverage",
+  data: sources,
+  timeout: "30m",
+  sandbox: { network: "loopback" },
+  exclusive: true
 })
 
 /**
@@ -188,4 +204,4 @@ const fuzzCoverage = Smithers.Shell.Test({
   exclusive: true
 })
 
-export const Package = Smithers.Package({ targets: { typecheck, test, coverage, browserCoverage, workerd, verify, verifyBroken, bench, benchCoverage, benchLive, fuzz, fuzzCoverage } })
+export const Package = Smithers.Package({ targets: { typecheck, test, coverage, browserCoverage, workerd, workerdCoverage, verify, verifyBroken, bench, benchCoverage, benchLive, fuzz, fuzzCoverage } })

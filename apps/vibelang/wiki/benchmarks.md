@@ -3262,3 +3262,603 @@ Deterministic gate: complete roster of indexed entry reads, `ceil(baseline × 1.
 
 
 Publication continuity: after collection on production parent `ca292c70`, main advanced to `bf596767`. No app src/worker/bench/infra or native benchmark host changed. The browser helper only adds exports unused by benchmarks; new ordinary coverage tests and an unused helper are checked by the full post-rebase unit/typecheck run. MVP deployment/analytics changes do not reach the imported broker host; the private-adapter change emits declarations only. Timing and coverage remain attributed to their exact archived pre-rebase source, never relabeled. The intervening patch and validation receipts are retained with the lane report.
+
+## Device sign-in (2026-11-10, nyc-01)
+
+Vitest built-in bench, three fresh scoped samples each, local. `login` and `logout` run the actual `signIn`/`signOutSurface` over real loopback HTTP to the Accounts object and the identity-provider device fixture (`test/support/deviceSignIn.vibe`). No GitHub credential, no request interception.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| signin-device | 1141.9 | 3 | `2026-11-10T03-17-23.024Z-signin-device.json` |
+| signin-device-refusals | 1200.6 | 3 | `2026-11-10T03-17-26.828Z-signin-device-refusals.json` |
+
+**signin-device.** Start, a pending poll, an authorized poll, a remembered session, and a revoking sign-out. Exact statuses and an empty settings directory are checked.
+
+**signin-device-refusals.** Declined, expired, slow-down back-off to 30 s, a forged stored session, and a waited sign-in the person declines. Exact sentences and the back-off are checked.
+
+Limitations: the identity provider is a local fixture, so GitHub's latency and rate limits are absent; the fixture's poll interval is 0 s, so no poll waits; the slowed flow is not waited out.
+
+## CLI text mode and sandbox faults (2026-11-10, nyc-01)
+
+Vitest built-in bench, local.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| cli-text | 83387.4 | 3 | `2026-11-10T03-55-52.351Z-cli-text.json` |
+| sandbox-faults | 3.7 | 28 | `2026-11-10T03-59-01.249Z-sandbox-faults.json` |
+| sandbox-held-command | 3.7 | 27 | `2026-11-10T03-59-01.594Z-sandbox-held-command.json` |
+
+**cli-text.** 24 emitted CLI processes per sample in text mode with `--mock` and fresh private settings: read, ask, history (epic, commit, unknown epic and commit), plan, start, note, the four sandbox commands, actions, run (waited and invalid input), trace, cancel, rerun, issues, issue, wiki, login and logout. Exit status and the exact first output line are checked. Limitations: mock factory, no network or model; the mock's state lives for one process, so trace, cancel and rerun of a real run, and a command on a live sandbox generation, are measured as refusals; process startup dominates (about 3.5 s per command on a loaded machine), so this is whole-journey cost, not one-command latency.
+
+**sandbox-faults.** `makeSandboxHost` over an in-memory store with the product in-memory machines and a faulty machine service, TestClock time: a start, a repeated start answered by receipt, a start whose provisioning fails, a start that outlasts the allowance while it provisions, and a clock outside the calendar that stops what runs. Exact refusals, the stops issued and the fail-closed ledger are checked. Limitations: no Durable Object storage or container latency; the 2 s provisioning delay is simulated.
+
+**sandbox-held-command.** Two hosts over one store: the first host's command is held inside the machine, the second runs the same operation and records its answer, and the released first host returns that answer. Limitation: one process stands in for two hosts.
+
+## Web sign-in (2026-11-10, nyc-01)
+
+Vitest built-in bench, local. The Accounts object on a real loopback server over in-memory object storage, a fresh object per sample, with an injected GitHub auth service (`test/support/accountsWorld.vibe`).
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| accounts-web-sign-in | 284.6 | 5 | `2026-11-10T04-47-52.486Z-accounts-web-sign-in.json` |
+| accounts-web-refused | 207.4 | 5 | `2026-11-10T04-47-54.243Z-accounts-web-refused.json` |
+
+**accounts-web-sign-in.** The sign-in redirect, the OAuth callback with the state and code GitHub would carry, the session, anonymous and malformed role-event requests, sign-out and the session after it. Exact statuses, redirect and identity are checked.
+
+**accounts-web-refused.** A GitHub code exchange that refuses: the callback answers with the failure redirect, clears the state cookie and sets no session.
+
+Limitations: GitHub is an injected service, so there is no network or GitHub latency; storage is in memory, not Durable Object SQLite. Issue and wiki routes are measured in the next section.
+
+## Signed-in issue and wiki routes (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, 11:08–11:11 UTC, load average 149–163 on 32 cores. The Accounts object on a real loopback server over in-memory object storage, a fresh object per sample, after web sign-in (`bench/issues-wiki-web.bench.vibe`).
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| issues-wiki-web | 3,961.3 | 5 | `2026-11-10T11-11-19.879Z-issues-wiki-web.json` |
+
+**issues-wiki-web.** Sign-in, the issue list, a new issue, a comment, a wiki page read, a Save and the same Save again, through the durable issue and wiki flows with the product's injectable `IssueHost` (in memory) and `WikiHost` (the fixture repository). Exact statuses, role, issue fields, page source and the idempotent Save's review link are checked. Per request, 7 samples with warmup: 56–1,240 ms.
+
+Limitations: injected services, so no GitHub latency (GitHub unreachable is `accounts-github-offline`); in-memory storage, not Durable Object SQLite; the person has not connected GitHub, so Connect GitHub paths and a connected person's write retry window are not measured (0165). The shared host was 5× oversubscribed, so wall times are observations, not a baseline.
+
+## Broker sign-in and Connect GitHub (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/accounts-broker.bench.vibe`. Load average about 110 on 32 cores during the run.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| accounts-broker-connect | 7,580.2 | 3 | `2026-11-10T09-55-12.100Z-accounts-broker-connect.json` |
+| accounts-connect-refused | 1,341.1 | 5 | `2026-11-10T09-55-23.659Z-accounts-connect-refused.json` |
+
+**accounts-broker-connect.** smithers.sh's broker, the site's Accounts object and the person's connection object in
+local workerd on durable SQLite (`test/workerd/authbroker.vibe`), one host for all samples. Each sample signs in
+through the broker, reads the session, the handoff page, an unknown route and a malformed callback, checks five
+Connect and Disconnect refusals, connects GitHub with a wiki page to return to, disconnects, connects with an issue to
+resume, and disconnects. Statuses, return locations, the person's identity and the connection object's revocations
+are checked.
+
+**accounts-connect-refused.** The Accounts object on a loopback server over in-memory storage: an agent's device
+session presses Connect (403), a person on a site with no broker presses Connect (503), then disconnects (303).
+
+Limitations: GitHub is the host's injected token service, so there is no GitHub request or latency. No issue or wiki
+request is made. Broker and site share one workerd process over loopback.
+
+## Account step cost by history (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/accounts-history.bench.vibe`. Load average about 116.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| accounts-step-after-10 | 226.2 | 3 | `2026-11-10T09-42-10.744Z-accounts-step-history.json` |
+| accounts-step-after-150 | 429.1 | 3 | same |
+
+One journaled account step (sign-out without a session) after 10 or 150 earlier steps on a fresh Accounts object.
+Each step builds its own engine runtime, and the journal decodes up to 4,096 recent events, with two canonical
+fingerprints each, as it opens (`SqlJournal`, `sourceEventCache`). A CPU profile of 30 steps after 270 earlier ones
+put 5.3 s in `encodeFingerprint`, against 0.5 s for the first 30. Since `462049cc` Accounts forgets settled steps a
+day after they finish (`EXECUTION_RETENTION`; regression test `test/accountsRetention.test.vibe`), which bounds the
+history to one day's steps; the per-open decode itself is a `@smthrs/journal` cost and is not changed here.
+
+Limitations: node:sqlite in memory, and the fixture prepares every statement on each call; all steps fall within one
+day, so retention deletes nothing in this benchmark; wall time is observational.
+
+## Tour repeat, failed replies and the agent's history tools (2026-11-10, nyc-01)
+
+Vitest built-in bench, local. Load average 115 to 140 during the runs.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| action-tour-repeat | 1,177.7 | 3 | `2026-11-10T11-37-26.712Z-action-tour-repeat.json` |
+| reply-outcomes | 7,106.5 | 3 | `2026-11-10T11-33-47.014Z-reply-outcomes.json` |
+| agent-history-tools | 3,863.8 | 3 | `2026-11-10T11-35-45.227Z-agent-history-tools.json` |
+
+**action-tour-repeat** (`bench/action-tour-repeat.bench.vibe`). The production action index and per-run hosts over
+node:sqlite object storage, a fresh world per sample. A maintainer starts Tour, then starts the same request again
+before its alarm: the second press joins the running tour. One running Tour run and one open guide entry are
+checked. A press that finds its tour accepted after its host stopped is action-crash-retry.
+
+**reply-outcomes** (`bench/reply-outcomes.bench.vibe`). The API Worker's production objects in workerd with the
+deterministic model service. Two posts per sample: the model answers "Bench empty." with an empty result and "Bench
+throws." with a cell that throws. Each reply ends in ReplyFailed with the person's reason ("The model returned no
+answer.", "The agent failed. Try again.") and a done agent entry carrying it.
+
+**agent-history-tools** (`bench/agent-history.bench.vibe`). Same host. For "Bench history." the model's cell reads the
+outline, the first epic's page, that page's first commit and a search for its title, then calls Plan and Note. Each
+page is checked against the one before it; both writes are refused `forbidden` for a signed-out guest.
+
+Limitations: deterministic model, so no inference latency; objects reach each other by fetch, not Alchemy RPC; the
+guest's Plan and Note measure their refusal, not a history write; the tour itself does not run in action-tour-repeat.
+
+## Runs interrupted partway (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/action-interrupted.bench.vibe`. Load average about 50.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| action-crash-retry | 314.5 | 3 | `2026-11-10T13-28-37.109Z-action-crash-retry.json` |
+| action-reply-interrupted | 719.5 | 3 | `2026-11-10T13-28-39.420Z-action-reply-interrupted.json` |
+
+**action-crash-retry.** The production per-run host over node:sqlite object storage, a fresh world per sample. The
+first host incarnation stops right after the conversation accepts a post (or starts a tour): that write commits and
+every later write on the incarnation dies (`stopsAfter`, `test/support/actionObjects.vibe`). The person's retry
+reaches a fresh incarnation over the same storage. Checked: the first start failed, the retry answers null without
+posting twice, the post run settles passed, the tour keeps one open guide entry, and both retries schedule the alarm.
+
+This workload found a bug, fixed with it: the post's first step traces before the post is accepted, so a stopped host
+leaves the run `running`, and the retry answered null with no alarm and no settlement. The post's run stayed running
+for good and its reply never woke. The retry now recovers a running post or tour as it does a queued one
+(`worker/ActionRuns.vibe`; regression tests in `test/actionRuns.coverage.test.vibe`).
+
+**action-reply-interrupted.** Same host with MockFactory, Mythical history and the scripted model service
+(`fuzz/model-server.vibe`). One post's reply meets a conversation log that dies on its first settle write: the engine
+fails the reply and the host fails its open entry ("Action failed"). Another post's reply is held at spend admission
+while the person cancels it, then released: it ends cancelled, not answered.
+
+Limitations: node:sqlite and an alarm field, not workerd scheduling; the stop is an injected sequencer, not an evicted
+isolate; scripted model, so no inference latency.
+
+## Held reads, host actions and a second tour (2026-11-10, nyc-01)
+
+Vitest built-in bench, local. Load average about 30.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| tour-again | 1,239.4 | 3 | `2026-11-10T14-44-07.367Z-tour-again.json` |
+| budget-corrupt-ledger | 194.7 | 3 | `2026-11-10T14-44-08.378Z-budget-corrupt-ledger.json` |
+| history-actions-host | 708.9 | 3 | `2026-11-10T14-44-12.362Z-history-actions-host.json` |
+| sandbox-actions-host | 840.8 | 3 | `2026-11-10T14-44-15.023Z-sandbox-actions-host.json` |
+| accounts-read-deadline | 6,605.2 | 3 | `2026-11-10T14-44-37.114Z-accounts-read-deadline.json` |
+
+**tour-again** (`bench/tour-again.bench.vibe`). The conversation object's production post, tour, end and alarm over
+node:sqlite object storage with the scripted model service. A person asks a question and presses Learn more before the
+reply starts (busy), presses it again after the reply (the tour greets them), presses Escape, then Learn more again.
+Checked: every answer, the reply's text, and that the second tour greets with the first tour's line.
+
+This workload found a bug, fixed with it: the conversation keeps an ended tour's walkthrough, and a new tour restored
+it as its own, so the second tour resumed the old stop and never greeted. `tourWalkthrough`
+(`src/core/conversation.vibe`, proved) returns a walkthrough only when the running tour drove it; both hosts read it.
+Regression tests: `test/tourAgain.test.vibe` (conversation object and mock mode), both failing without the fix.
+
+**budget-corrupt-ledger** (same file). A day ledger whose spent total no charge could write: admission and a charge both
+stop with Invalid budget accounting, the question's reply ends failed with no text, and the ledger is unchanged.
+
+**history-actions-host** and **sandbox-actions-host** (`bench/history-actions-host.bench.vibe`). The production action
+index and per-run hosts. A maintainer runs Plan, Start, Note and Show as actions, each admitted, driven by one alarm and
+started again as a replay; Show returns the new commit with its note. Then sandbox start, a command that writes a file,
+stop, start again and a command that reads it back at generation 2.
+
+**accounts-read-deadline** (`bench/accounts-read-deadline.bench.vibe`). The Accounts object on a loopback server. A
+signed-in person's new issue waits in the injected `IssueHost` on a latch, as a write GitHub has not answered does;
+the issue list read queued behind it answers 503 `unavailable` after at least 5.9 s, the write then lands, and a later
+read answers 200. The time is the deadline: this checks the bound holds, not throughput.
+
+Limitations: node:sqlite and an alarm field, not workerd scheduling; scripted model, so no inference latency; the held
+write is a latch, not GitHub; MockFactory's in-memory sandbox, not a Container.
+
+## Issues and wiki with GitHub unreachable (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/accounts-offline.bench.vibe`. Load average about 120.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| accounts-github-offline | 11,689.8 | 3 | `2026-11-10T12-22-14.023Z-accounts-github-offline.json` |
+
+The Accounts object on a loopback server over in-memory storage, with GitHub an offline HttpClient. Each sample seeds
+an abandoned sign-in row, starts a sign-in (which clears it), signs a person in, then sends their GET and POST
+`/api/issues` and `/api/wiki` without a GitHub connection. Both reads answer 503 "unavailable" after about 6 s each,
+which is most of the sample; the issue write answers 401 `connect`; the wiki save answers 401 `connect`, marked
+unwritten, and keeps the person's draft. The bound replaces the earlier finding that these reads stayed open past 5 s
+and held server shutdown (decision 0030).
+
+Limitations: no GitHub latency or answer; in-memory storage; the person has no GitHub connection, so writes stop
+before GitHub.
+
+## Browser: issues and panel arms (2026-11-10, nyc-01)
+
+Playwright, real Chromium, production build, one serial sample per action, 12:48 UTC, load average 33–37 on 32 cores (`bench/browser.spec.ts`; `bench/browser.bench.vibe` runs all eight workloads and requires eight passes).
+
+| Workload | Artifact | Actions (ms) |
+| --- | --- | --- |
+| local-issues-actions | `2026-11-10T12-48-25.315Z-local-issues-actions.json` | open 104, list keys 306, search 102, issue 65, commit dialog Escape 74, commit 130, comment 31, uncommit 72, agent VIP draft 1,212, VIP steps and submit 271, specification revision and review 232, Home 70 |
+| local-arms-actions | `2026-11-10T12-48-32.640Z-local-arms-actions.json` | tour start 136, Tab focus 14, resize 40, sound 154, Skip and Back 622, Exit 758, Escape with nothing open 19, run and step 1,660, action input 129, Maximize 164, slash arrows 89, Escape on Issues 598, wiki link and Back 686, first-visit tour 1,725 |
+
+**local-issues-actions.** A maintainer's Issues screen through the product fixture flows: list keys, search, an issue's post and links, the commit dialog's Escape and commit, a comment, uncommit, an agent-drafted VIP through its steps to submission, a specification revision and a review request, and Home. Each step checks the resulting screen.
+
+**local-arms-actions.** Tour focus, resize and orientation, sound, Skip and Back, Exit; Escape with nothing open; the Actions panel's run, step, input and Maximize; slash-menu arrows; Escape on Issues; an in-content wiki link with browser Back; and a first visit whose tour starts on its own (1.2 s by design).
+
+Limitations: one sample per action, no percentile; scripted waits and automation included; product mock and fixture flows, no network, OAuth or model.
+
+**Coverage collector fix.** Chromium coverage was dumped once, at the end of each workload. V8 precise coverage reports only the current document's scripts, so every workload that navigates mid-journey (history, sandbox, roles, wiki, issues) lost the counts from before its navigation. Each workload now dumps before every navigation. On the same Node and workerd evidence, this and the two workloads above raise `src/` + `worker/` from 6,660 to 6,778 of 7,551 lines; `src/web/main.vibe` from 71 to 25 uncovered lines, `issuesView.vibe` from 20 to 8, `historyApp.vibe` from 14 to 3.
+
+## ⌘K mode switch (2026-11-10, nyc-01)
+
+| Benchmark | Artifact | Result |
+| --- | --- | --- |
+| local-arms-actions `command-k-mock-switch` (Playwright, Chromium, production build, one sample, 14:00 UTC, load 27–33) | `2026-11-10T14-00-27.249Z-local-arms-actions.json` | 304 ms from ⌘K to the reloaded page in mock mode |
+| web-mode-switch-command (Vitest built-in bench, happy-dom, 3 samples) | `web-mode-switch-command` | 0.16–1.76 ms per `SwitchMode` command |
+
+The browser step opens ⌘K, submits `/mock`, waits for the reloaded document and checks the `agent=mock` parameter, the
+Mock mode link and a closed dialog. The Node bench checks the command's `FocusedPrompt` message and the window's
+`agent` parameter.
+
+Limitations: one browser sample, no percentile; the reload includes the local preview server. happy-dom changes the
+location without loading a document.
+
+**Coverage collector, reloads the page starts.** A dump before `page.goto` cannot precede a navigation the page starts
+itself. In coverage mode each document now pauses in its own `beforeunload` while the collector dumps, then resumes;
+the request is untouched. Lines that run after `beforeunload` in the navigating command need Node evidence (0017).
+
+## Live issue and wiki clients (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/live-clients.bench.vibe`, 15:08 UTC, load 30-36. The product's `liveIssues` and
+`liveWiki` clients against the Accounts object on a real loopback server, a fresh object per sample, with injected
+sign-in, `IssueHost` and `WikiHost`. Each result is decoded and checked. 7 samples, ms, min / median / max.
+
+| Step | ms |
+| --- | --- |
+| issue list | 76 / 121 / 192 |
+| new issue | 125 / 161 / 268 |
+| wiki page read | 78 / 91 / 170 |
+| wiki Save | 79 / 97 / 191 |
+| the same Save again (idempotent, same review link) | 32 / 41 / 84 |
+| invalid page name, refused before any request | 0 / 0 / 1 |
+| signed-out wiki Save, decoded `sign-in` | 3 / 4 / 5 |
+| signed-out new issue, decoded `sign-in` | 2 / 3 / 5 |
+
+Limitations: loopback HTTP in one Node process, no browser, TLS, edge or GitHub latency; injected product fixtures for
+GitHub; shared host. Raw HTTP on the same routes: `issues-wiki-web` above.
+
+## Fault-path coverage set (2026-11-10, nyc-01)
+
+Not a timing benchmark. `bench/browser-faults.spec.ts` runs seven Chromium workloads on the `e2e` build, each over one
+faulty Effect service, and records which steps passed; its artifacts (`fault-coverage-<name>`, build
+`e2e-fault-coverage`) hold no duration, and none is quoted here (0017). Its Chromium counts join the benchmark coverage
+gate.
+
+| Workload | Fault | Checked result |
+| --- | --- | --- |
+| refusals | post `Unavailable`; tour `Refused` busy | "Send failed" then Retry answers; "Agent busy" then Learn more starts the tour |
+| disconnect | event stream `Unavailable` before #4 | Disconnected, Reconnect, Connected, answer done |
+| tour | tour stream `Unavailable`; tour end `Unavailable` at step 2 | after Exit the composer reads "Send failed"; a second Exit ends the tour |
+| media | empty-state image fails to load | composer still answers |
+| sandbox | every read fails; first start fails | "Couldn't load the sandbox"; "Couldn't start a sandbox", Retry, Running |
+| roles | first role subscription `AccountUnavailable` | "Connection lost." toast, Retry clears it |
+| actions | first Actions `list()` fails | "Couldn't load runs", Retry loads the Tour action |
+
+**Defect found and fixed.** A failed sandbox start, stop or command lost its alert and Retry within a second: the open
+pane's one-second read ended the operation and cleared its failure. Fixed in `src/web/paneDecision.vibe`
+(`polledSandbox`, `polledFailure`); regression `test/sandboxFailure.runtime.test.vibe`.
+
+## CLI startup (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/cli-startup.bench.vibe`. Five emitted CLI processes per command, no warmup, each
+with `--mock` and fresh private settings, to exit; exit status and the first output line are checked. One more process
+per command runs with a preload that counts the modules Node resolves and names the workspace packages loaded.
+
+| Command | Modules before | Modules now | Median ms before | Median ms now |
+| --- | ---: | ---: | ---: | ---: |
+| `--help` | 1,462 | 864 | 3,082 | 1,810 |
+| `read` | | 865 | 3,330 | 2,083 |
+| `actions` | | 865 | | |
+| `login` | | 1,463 | | |
+
+Medians come from ten interleaved runs of each build at 06:50 UTC (load average 51 on 32 cores); the benchmark
+artifact `2026-11-10T06-45-47.306Z-cli-startup.json` ran at load 88 and is slower for that reason. Node itself
+(`node -e 0`) takes about 40 ms.
+
+**Cause.** Every command loaded the sign-in machinery: `sessionFlow.vibe` imported `@smthrs/platform-node` (the
+durable SQLite host, about 600 modules) and `signin.vibe` imported `@smthrs/integrations` (about 330 modules) at the
+top of the module. Both now load on first use, inside the effect that needs them. `login` and `logout` still load the
+host; no mock command loads the GitHub integration.
+
+**Gate.** The module count, not wall time: each command's count must stay within `ceil(baseline * 1.05)` of
+`bench/baseline.json` `startupModules`, `help`, `read` and `actions` must not load `@smthrs/platform-node`, and
+`login` must. The gate fails on the old imports.
+
+Limitations: wall time is observational on this shared host; the OS file cache is warm after the first process; the
+build is excluded; module counts measure loading, not evaluation cost. What remains per process is mostly module
+loading itself: about 860 modules, about 400 of them TypeScript that Node type-strips on every start. Node's compile
+cache removes that work (about 400 ms) but a `.vibe` entry cannot enable it
+(`~/vl/vibelang-bugs/compile-cache-from-vibe`).
+
+## Decision edges (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/decision-edges.bench.vibe`.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| decision-edges | 0.597 | 168 | `2026-11-10T07-57-46.278Z-decision-edges.json` |
+
+**decision-edges.** One callback checks the Actions panel steps (load and failure epochs, retry, maximize, input,
+slash highlight), account failure text, the issues screen's specification-review action (fresh, saved retry, a
+different saved retry, busy, not allowed), default role, assignee and settled load, history read offsets and dialog
+keys, tour docs paths and specification review recording, each against a written-out expected value.
+
+Limitations: pure decisions in one process; DOM, Commands and HTTP are measured by the browser and HTTP workloads;
+assertion overhead dominates the time.
+
+## Action kinds (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/action-kinds.bench.vibe`.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| action-kinds | 440.4 | 3 | `2026-11-10T08-06-21.914Z-action-kinds.json` |
+
+**action-kinds.** A fresh product `MockActions` over `MockFactory` per sample, as a contributor: history show (the
+outline, then commit m1), a note on m1, and a sandbox's start, command and stop, each started as a button action and
+followed to settlement. Settled state and exact results are checked (the sandbox keeps its id across the three
+steps; the stop's output holds the command and its answer).
+
+Limitations: the sandbox is the product's in-memory machine, not a container; history is the committed seed in
+memory; each sample includes building `MockFactory`, so the first sample (1,116 ms) carries the seed load.
+
+
+## Cancellation after the model starts streaming (2026-11-10, nyc-01, Codex)
+
+`bench/action-interrupted.bench.vibe` now holds the loopback HTTP model after its first SSE fragment rather than
+holding budget admission. It cancels the registered reply, releases the remaining fragments, rebuilds the action
+host over the same SQLite storage, and drives two later alarms. Every sample checks one model request, no completed
+answer, a cancelled entry and a cancelled run. This uses the production HTTP adapter, agent and execution host;
+the deterministic endpoint supplies no inference latency. The latch and fiber joins have deadlines.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| action-crash-retry | 212.1 | 3 | `2026-11-10T15-40-04.117Z-action-crash-retry.json` |
+| action-reply-interrupted | 850.6 | 3 | `2026-11-10T15-40-06.806Z-action-reply-interrupted.json` |
+
+Method: Vitest built-in bench on shared nyc-01 (load about 20); fresh SQLite object stores per sample, exact result
+checks included. The second workload also measures a conversation log fault that fails an open reply. These are
+observations with three samples, not a regression threshold or an inference benchmark.
+
+The browser overlay failure is a setup race with the intentional automatic tour after 1.2 s. Ordinary browser
+workloads visit as returning people; the arms journey explicitly requests a first visit for its last navigation.
+The shared init now honors that request and also covers the first-render workload's separately created contexts.
+The first-visit regression failed before the correction because no Walkthrough appeared. This corrects the
+benchmark setup; the product tour still starts on a first visit.
+
+ 
+## Agent wiki draft replay (2026-11-10, nyc-01)
+
+`bench/wiki-agent-draft.bench.vibe`, Vitest built-in bench, fresh SQLite action host and product MockFactory wiki
+per sample. The scripted model's cell calls the production wiki draft tool twice with the same page and request.
+WikiDrafting delegates to the actual wiki edit flows. Every sample checks a finished reply with both review links,
+one stored draft containing the addition once, unchanged repository source, no submitted review, pane events
+belonging to the active reply, and one model request.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| wiki-agent-draft-replay | 617.0 | 3 | `2026-11-10T16-11-13.389Z-wiki-agent-draft-replay.json` |
+
+Limitations: product fixture repository and memory wiki engine, not GitHub; scripted model, no inference latency;
+Node SQLite/KV/alarm adapter, not workerd scheduling. Shared-host observations, no tail percentile claimed.
+
+Benchmark-only coverage on 0b937f1d plus the continuation patch: full 75-file/156-test run, including all eight
+Chromium journeys, plus this instrumented benchmark (one file/one test). Identical production bytes were checked
+before exact-location union; combined 2,067/2,321 worker lines (89.06%) and 7,208/7,636 src+worker lines (94.39%).
+ActionRuns, Budget and WikiTools have full line coverage; the unchanged strict whole-codebase gate remains red.
+
+Live UI-only run at 2026-11-10 15:42:09 UTC (07:42 PST), deployment `6a3c8b517c`, Chromium 151.0.7922.34:
+fresh returning-visitor contexts from nyc-01, shared browser/OS caches, visible heading, focused Command-K prompt
+and asserted typed value. No model call. `2026-11-10T15-42-09.996Z-live-browser.json` retains all machine/version data.
+
+| Sample | First render ms | Command-K ms | Keystroke ms |
+| --- | ---: | ---: | ---: |
+| 1 | 1123.9 | 27.4 | 21.3 |
+| 2 | 385.4 | 32.6 | 26.9 |
+| 3 | 427.4 | 42.4 | 13.2 |
+
+Network, browser caches and automation are uncontrolled; three observations establish no percentile.
+
+
+## Worker continuation: method and limitations, 2026-11-10
+
+The issue and wiki repositories are public: their ordinary source reads do not require a person's GitHub sign-in.
+`bench/public-github.bench.vibe` opts in with `BENCH_PUBLIC_GITHUB=1` and sends real anonymous GETs through
+production GitHub hosts, durable SQLite execution and PublicReads. Untimed native issue/comments and immutable
+contents reads are the independent oracles. Every sample checks actual identity/content, ordering, comments,
+timeline, revisions and retained storage. One empty application-cache observation and three warm-cache samples
+are retained. Native oracle calls warm transport first; this is no DNS/TLS/OS cold-start or isolated cache-speedup
+claim. Cold includes migrations; warm reads use new durable keys on the growing journal.
+
+A real GitHub read also primes the cache-eviction case. After the actual TTL expires, faulty Effect services
+return an upstream 404 and refuse cache deletion. The operation must remain missing and retain its last-good
+page, rather than turn an authoritative missing response into content. The failure phase is injected; no request
+is intercepted and no synthetic successful provider response is supplied. Its one observation includes 31 seconds
+of intentional waiting. Successful person-owned writes, private draft reads and delegation/reconciliation remain
+deferred; the earlier table's blanket deferral of ordinary public issue/source reads is superseded by this receipt.
+Matching VIP document/reviewer reads still need a real matching native VIP fixture; current public issues supply none.
+
+Additional worker workloads check the full chunked history snapshot/reopen, malformed event refusal and exact
+repair, startup under an expired scope, a caller bounded while critical startup storage waits, safe HTTP refusal
+on failed initialization and explicit next-call recovery. Actual workerd sessions cover participation and
+cross-origin sandbox refusal, and public health reads cover all five object classes. The real reply/agent/QuickJS
+path checks a streamed answer replaced once after its cell fails, all three closed sandbox tools, and a guest's
+List/Start/Read/Cancel of the same public Tour action, including its terminal cancelled state and announcement.
+A wiki draft with an unreachable charge waits through the real two-minute policy, fails budget, logs/counts once,
+charges zero tokens, retains its reservation and makes exactly one model request. Its single observation is dominated by policy waiting.
+A separate ledger workload fills a shared day with ten concurrent calls, checks held/refused admissions, exact
+reported, unreported and over-ceiling charges, then reopens and replays settlement without charging twice.
+A refused action id also keeps its original journal payload on changed-request reuse, with one conflict counter
+and no phantom run, after main's native directory fix.
+
+No new dependency, threshold change, production exclusion, GitHub mutation, live inference or deploy. Product
+MockFactory/Mythical tools are named where used; scripted model endpoints measure agent/flow overhead only.
+Node KV/memory journal cases establish host contracts, not disk durability. Workerd cases bridge objects by fetch
+rather than Alchemy RPC. Every callback checks its result; three samples establish no tail percentile.
+
+The completed f765f8ed source-profile receipt is 2,158/2,321 worker lines (92.98%), 7,281/7,639 src+worker lines
+(95.31%). It combines the 80-file/166-test full benchmark run with explicitly retained focused collections on
+identical source bytes; it is not a single final full-roster run. The strict all-metric gate remains red.
+Main subsequently changed worker, browser/history and SDK auth code, so a fresh rebased receipt follows in the
+benchmark wiki and lane report; these numbers remain labeled with their measured base.
+
+`BENCH_SITE_READS=1` probes https://vibelang.smithers.sh without credentials, mutation or model. At
+2026-11-10 16:49:26 UTC (08:49 PST), deployment 6a3c8b517c returned issues **503 in 5,643 ms** and wiki
+**200 in 2,494 ms**; the content assertion fails and a JSON failure artifact retains only health, fixed routes,
+statuses and durations. Health separately observed starting/unreachable objects. This is a deployed finding,
+not a proved source-level cause; the lead owns deployment and production investigation.
+
+
+## Worker source receipt: c5bbf81b, 2026-11-10
+
+Measured product base c5bbf81b37eee13665edf28252aa0a52aafd8878 plus the worker benchmark patch:
+**2,201/2,374 worker lines (92.71%)**, **7,355/7,716 src+worker lines (95.32%)**.
+The canonical full roster is 7,467/7,846 lines (95.17%); all four unchanged 100% thresholds remain red for 112 files.
+This is a source receipt for that base. Main later changed public-read deadlines/cache behavior and stale UI;
+the landing compatibility checks do not make these counters a measurement of those later changes.
+
+The full benchmark-only collection passed 82 files / 174 tests, with one opt-in deployed-content skip and one
+old Budget RPC benchmark failure after main changed its signature. The corrected API-only collection passed
+independently in both timing and coverage modes, including an exact remaining-capacity check after replay.
+Both failed-case workerd dumps were quarantined; their invalid call earns no coverage. The canonical Node map
+joins the corrected collection by complete source range using the repository's mergeByPosition, before the
+standard workerd/Chromium gate. The complete canonical file roster is preserved. The 155 tracked src/worker
+sources retain SHA-256 faa49b51e12329689c6fa8cb7e679d4258a6a082b2f4803a29aaa76501f72af2;
+the generated wiki matches its preserved browser source map, SHA-256
+57798ff1e3204e9cfdf589e89c44f839b3f29a0f80d85783805bf8059416bfd1. No source exclusion or threshold change.
+This is a full collection plus an explicitly recorded correction, not one green full-roster invocation.
+
+The draft usage-report fallbacks still need a faulty journal-recovery workload: SDK usageOf can fail
+AccountingUnavailable during journal recovery. This continuation has not exercised that boundary. The legacy
+budgetDecision.charge helper is superseded by reservations. These lines remain counted; no artificial successful service, direct coverage-only call or deletion was introduced. Person-owned
+GitHub paths, a matching native VIP fixture, actual Container execution and the previously named unreachable
+routing guards remain as recorded above. A fresh full coverage receipt is still needed for later main changes.
+
+| File | Covered/total lines | Missing lines |
+| --- | ---: | --- |
+| `worker/Accounts.vibe` | 312/312 | — |
+| `worker/ActionDirectory.vibe` | 40/40 | — |
+| `worker/ActionIdentity.vibe` | 14/14 | — |
+| `worker/ActionRuns.vibe` | 120/120 | — |
+| `worker/ActionsHttp.vibe` | 41/41 | — |
+| `worker/AgentModel.vibe` | 9/9 | — |
+| `worker/Api.vibe` | 46/46 | — |
+| `worker/Budget.vibe` | 44/46 | 61, 84 |
+| `worker/GitHubDelegate.vibe` | 4/4 | — |
+| `worker/HistoryActions.vibe` | 30/33 | 26, 39, 44 |
+| `worker/HistoryObject.vibe` | 59/59 | — |
+| `worker/HistoryTools.vibe` | 8/8 | — |
+| `worker/Http.vibe` | 93/93 | — |
+| `worker/Issues.vibe` | 207/298 | 55, 56, 57, 103, 104, 105, 147, 148, 149, 150, 151, 152, 155, 156, 157, 159, 160, 161, 166, 167, 173, 174, 175, 176, 177, 178, 179, 180, 181, 183, 185, 186, 188, 189, 190, 191, 192, 193, 194, 197, 198, 199, 200, 201, 202, 203, 204, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 233, 234, 235, 236, 237, 238, 240, 241, 242, 250, 251, 252, 253, 297, 298, 299, 300, 301, 302 |
+| `worker/MainLog.vibe` | 42/42 | — |
+| `worker/ObjectStartup.vibe` | 60/60 | — |
+| `worker/ObjectStorage.vibe` | 10/10 | — |
+| `worker/Objects.vibe` | 109/112 | 114, 250, 251 |
+| `worker/PublicReads.vibe` | 12/12 | — |
+| `worker/Reply.vibe` | 139/142 | 169, 369, 370 |
+| `worker/SandboxAccounts.vibe` | 4/11 | 12, 13, 14, 15, 22, 23, 24 |
+| `worker/SandboxHttp.vibe` | 30/30 | — |
+| `worker/SandboxMachine.vibe` | 1/4 | 11, 12, 13 |
+| `worker/SandboxTools.vibe` | 11/11 | — |
+| `worker/Sandboxes.vibe` | 22/22 | — |
+| `worker/Sequencer.vibe` | 118/118 | — |
+| `worker/SpecificationReviewers.vibe` | 34/36 | 54, 55 |
+| `worker/Tour.vibe` | 1/2 | 6 |
+| `worker/Unreachable.vibe` | 1/1 | — |
+| `worker/VipDraft.vibe` | 33/35 | 61, 62 |
+| `worker/Wiki.vibe` | 127/175 | 46, 47, 63, 64, 100, 101, 102, 104, 105, 107, 108, 111, 112, 115, 116, 117, 119, 120, 121, 122, 128, 129, 130, 131, 138, 139, 140, 141, 142, 145, 147, 148, 150, 152, 153, 154, 157, 158, 160, 161, 164, 165, 166, 174, 175, 176, 177, 195 |
+| `worker/WikiDraft.vibe` | 35/37 | 63, 64 |
+| `worker/WikiTools.vibe` | 9/9 | — |
+| `worker/accountObject.vibe` | 48/48 | — |
+| `worker/agentContext.vibe` | 1/1 | — |
+| `worker/apiObjects.vibe` | 210/214 | 122, 252, 253, 254 |
+| `worker/budgetDecision.vibe` | 10/12 | 60, 61 |
+| `worker/index.vibe` | 13/13 | — |
+| `worker/liveDispatchDecision.vibe` | 7/7 | — |
+| `worker/machineObject.vibe` | 63/63 | — |
+| `worker/replyProgressDecision.vibe` | 17/17 | — |
+| `worker/replyReasons.vibe` | 7/7 | — |
+
+
+A later focused ledger-fault workload on 868ca298 passed (one executed case, two selector skips).
+It closes Budget's negative-hold and lost-reservation guards, checks no writes on either failure and exact
+remaining capacity after repair/reopening. Budget and both direct app dependencies are byte-identical to
+c5bbf81b (hashes in the module receipt); exact-position module-only union reaches **46/46 Budget lines**,
+52/53 statements, 7/7 functions and 56/58 branches. This module result does not relabel the overall receipt
+as coverage of later main. No changed module's old counters are reused.
+
+
+## Fresh compatibility and stale-copy observations: 479f05a3
+
+Typecheck and full unit passed: 242 files passed / three skipped; 2,105 cases passed, one expected failure,
+four skipped (exit 0). Nine changed benchmark files passed 22 cases with one opt-in production skip (exit 0).
+The final expanded issue/wiki stale-copy journey passed independently in both timing and coverage mode:
+one executed case / four selector skips each, exit 0. The earlier wiki-only version also passed both modes.
+
+The stale journey primes two real anonymous caches, waits through the actual 30-second TTL, then injects only
+upstream 503 responses. Exact pinned native wiki text/blob, the complete issue snapshot and native issue 1,
+the unchanged wiki cursor, the next issue read cursor, and both initial confirmation timestamps are checked.
+The two failed attempts before the runner's 19:39 UTC GitHub quota reset failed during native oracle setup;
+they are not latency observations. The post-reset workload completed and is retained in JSON.
+
+These local timings use nyc-01 under run-heavy (four cores for the latest checks) with a shared host and WAN.
+Setup, complete journeys, correctness checks and policy waits are included except the explicit untimed native
+oracles and workerd host bootstrap named above and in each JSON artifact. The cache cases include a 31-second
+wait; draft settlement expiry includes the real two-minute retry policy. One cold/TTL/deadline observation
+or three warm/ordinary samples establish no tail percentile or isolated cache speedup. Scripted model HTTP/SSE
+measures native agent/flow overhead without inference. Node object KV/memory journal cases establish host
+contracts; actual workerd cases use native objects and SQLite reached through fetch bridges, not Alchemy RPC.
+Every artifact retains the exact callback method, limitations, machine, versions, source revision and samples.
+The full coverage percentages remain the c5bbf81b source receipt, separate from these later compatibility checks.
+
+| Workload | Samples | Mean ms | Range ms |
+| --- | ---: | ---: | ---: |
+| public-issues-cold | 1 | 3361.38 | 3361.38–3361.38 |
+| public-issues-warm | 3 | 330.05 | 315.83–346.51 |
+| public-wiki-cold | 1 | 111.39 | 111.39–111.39 |
+| public-wiki-warm | 3 | 72.45 | 69.81–75.14 |
+| public-cache-eviction-failure | 1 | 31215.53 | 31215.53–31215.53 |
+| workerd-account-session-grants | 3 | 461.23 | 353.58–616.90 |
+| workerd-account-disabled | 3 | 15.39 | 5.87–34.00 |
+| workerd-account-exchange-failure | 3 | 274.78 | 75.19–657.70 |
+| worker-history-snapshot-reopen | 3 | 187.28 | 156.16–247.80 |
+| worker-expired-host-recovery | 3 | 109.23 | 97.97–115.96 |
+| worker-startup-critical-wait | 3 | 5137.43 | 5108.18–5166.10 |
+| worker-startup-failed-storage-retry | 3 | 108.56 | 81.67–139.86 |
+| action-host-recovery | 3 | 831.06 | 653.99–1074.85 |
+| action-host-role-downgrade | 3 | 100.67 | 98.68–104.16 |
+| action-refused-id-conflict | 3 | 79.28 | 76.62–84.05 |
+| worker-corrupt-conversation-reopen | 3 | 3.11 | 0.95–7.28 |
+| worker-chunked-history-overflow | 3 | 31.66 | 10.91–67.55 |
+| wiki-draft-budget-deadline | 1 | 120036.62 | 120036.62–120036.62 |
+| budget-concurrent-reservation-reopen | 3 | 11.73 | 8.20–17.15 |
+| workerd-agent-action-lifecycle | 3 | 1190.05 | 1046.58–1439.32 |
+| reply-stream-restart | 3 | 651.86 | 488.65–968.38 |
+| reply-sandbox-refusals | 3 | 400.49 | 378.06–431.37 |
+| api-objects-health | 3 | 117.23 | 5.72–338.38 |
+| api-objects-conversation | 3 | 414.82 | 344.47–539.11 |
+| api-objects-unbound | 3 | 6.36 | 2.54–13.22 |
+| api-objects-unconfigured-accounts | 3 | 13.54 | 12.35–14.79 |
+| api-objects-sandbox-identity | 3 | 4.15 | 3.87–4.62 |
+| api-objects-budget | 3 | 20.32 | 19.43–21.64 |
+| api-objects-action-directory | 3 | 11.33 | 9.57–14.46 |
+| api-objects-history | 3 | 82.43 | 77.08–88.82 |
+| api-objects-tour | 3 | 766.66 | 739.70–799.27 |
+| api-objects-agent-tools | 3 | 608.45 | 574.12–657.18 |
+| api-objects-history-write | 3 | 65.51 | 60.24–74.98 |
+| api-objects-action-runs | 3 | 651.18 | 637.69–664.30 |
+| api-objects-signed-in-accounts | 3 | 146.39 | 8.65–420.58 |
+| api-objects-owned-action-run | 3 | 435.60 | 414.51–467.02 |
+| budget-faulty-ledger-recovery | 3 | 3.05 | 1.49–5.94 |
+| public-content-stale-copy | 1 | 36157.02 | 36157.02–36157.02 |

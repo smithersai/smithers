@@ -1,13 +1,8 @@
-/**
- * A recorded action outcome that does not match the action's declared schemas
- * is a defect either way, but `orDie` alone reports only the schema mismatch
- * and never the error that actually occurred. The log line below is the one
- * place the recorded exit is named, so it is pinned here.
- */
+/** Persisted outcomes rejected by this build fail with a safe typed diagnostic, without printing journal values. */
 import { describe, expect, it } from "@effect/vitest"
-import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, JournalDecode } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, Effect, Exit, Layer, Logger, References, Schema } from "effect"
+import { Cause, Effect, Exit, Layer, Logger, Metric, References, Schema } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
@@ -22,7 +17,7 @@ const flow = Flow.make("RecordedExitSchemaMismatch/flow", {
 })
 
 describe("a recorded outcome that fails the action's exit schema", () => {
-  effect("dies, and logs the action and the exit that could not be decoded", () => {
+  effect("fails fast with a typed decode error and never logs the recorded payload", () => {
     const logs: Array<
       { readonly message: unknown; readonly logLevel: string; readonly annotations: Readonly<Record<string, unknown>> }
     > = []
@@ -46,15 +41,26 @@ describe("a recorded outcome that fails the action's exit schema", () => {
       actionRetryOrigin: () => Effect.succeedNone
     })
     return Effect.gen(function*() {
+      const metric = Metric.withAttributes(JournalDecode.failures, { stepTag: action.name, boundary: "outcome" })
+      const before = (yield* Metric.value(metric)).count
       const exit = yield* Effect.exit(engine.actionExecute(action, 1))
+      expect((yield* Metric.value(metric)).count - before).toBe(1)
       expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
       const reported = logs.filter((entry) =>
         entry.logLevel === "Error" &&
-        String(entry.message).includes("does not match the action's declared schemas")
+        String(entry.message).includes("smithers.journal.decode.failed")
       )
       expect(reported.length).toBe(1)
       expect(reported[0]?.annotations["action"]).toBe("RecordedExitSchemaMismatch/undeclared-error")
-      expect(String(reported[0]?.annotations["exit"])).toContain("42")
+      expect(reported[0]?.annotations["exit"]).toBeUndefined()
+      expect(reported[0]?.annotations["objectId"]).toBe("unknown")
+      expect(reported[0]?.annotations["codeVersion"]).toBe("unknown")
+      expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({
+        _tag: "JournalDecodeError",
+        stepTag: action.name,
+        objectId: "unknown",
+        codeVersion: "unknown"
+      })
     }).pipe(
       Effect.provideService(
         FlowRuntime.FlowInstance,
@@ -88,23 +94,29 @@ describe("a recorded outcome that fails the action's exit schema", () => {
       actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.fail(circular as never) }))
     })
     return Effect.gen(function*() {
+      const metric = Metric.withAttributes(JournalDecode.failures, { stepTag: action.name, boundary: "outcome" })
+      const before = (yield* Metric.value(metric)).count
       const exit = yield* Effect.exit(engine.actionExecute(action, 1))
+      expect((yield* Metric.value(metric)).count - before).toBe(1)
       expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
       const reported = logs.filter((entry) =>
         entry.logLevel === "Error" &&
-        String(entry.message).includes("does not match the action's declared schemas")
+        String(entry.message).includes("smithers.journal.decode.failed")
       )
       expect(reported.length).toBe(1)
       expect(reported[0]?.annotations["action"]).toBe("RecordedExitSchemaMismatch/circular-error")
-      expect(String(reported[0]?.annotations["exit"])).toContain("[object]")
+      expect(reported[0]?.annotations["exit"]).toBeUndefined()
       expect(String(reported[0]?.annotations["exit"])).not.toContain("self")
+      expect(reported[0]?.annotations["objectId"]).toBe("fixture-object")
+      expect(reported[0]?.annotations["codeVersion"]).toBe("rollback-build")
     }).pipe(
       Effect.provideService(
         FlowRuntime.FlowInstance,
         FlowEngine.makeInstance(flow, "recorded-exit-circular-run")
       ),
       Effect.provide(Layer.succeed(FlowRuntime.FlowRuntime)(engine)),
-      Effect.provide(Logger.layer([capture]))
+      Effect.provide(Logger.layer([capture])),
+      Effect.provideService(JournalDecode.Identity, { objectId: "fixture-object", codeVersion: "rollback-build" })
     )
   })
 })

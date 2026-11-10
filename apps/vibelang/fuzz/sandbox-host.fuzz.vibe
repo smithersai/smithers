@@ -1,9 +1,10 @@
 import { it } from "@effect/vitest"
-import { ALLOWANCES, emptySandboxLedger, type Role } from "../src/core/sandboxDecision.vibe"
+import { ALLOWANCES, emptySandboxLedger, mayStart, type Role } from "../src/core/sandboxDecision.vibe"
 import { makeSandboxHost, type Machines, type Receipt, type SandboxState, type Store } from "../src/core/sandboxHost.vibe"
 import { mockPolicy } from "../src/core/sandboxPolicy.vibe"
 import { Factory, Unavailable } from "../src/core/Factory.vibe"
 import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { TestClock } from "effect/testing"
 import { run, Int, Text } from "./run.vibe"
 
 const Op = Schema.Struct({
@@ -172,7 +173,11 @@ const Recovery = Schema.Struct({
   hugeGeneration: Schema.Boolean,
 })
 
-/** A recovered pending operation is completed or typed-refused, exactly once, without a defect. */
+/**
+ * A recovered pending operation is completed or typed-refused, exactly once, without a defect. After a successful
+ * recovery nothing is pending, the operation's receipt carries its outcome, an already settled one is untouched,
+ * and the machine started at most once.
+ */
 it.live("sandbox/host-recovery", () => run("sandbox/host-recovery", Recovery, ({ role, pending, running, failMachine, owner, sequence, exhausted, refusedReceipt, clockFails, jumpClock, badMeteredAt, hugeGeneration }) => effect {
   const now = try Clock.currentTimeMillis
   const allowance = ALLOWANCES[role] * 60000
@@ -200,7 +205,10 @@ it.live("sandbox/host-recovery", () => run("sandbox/host-recovery", Recovery, ({
     lease: flakyMachines.lease,
     command: flakyMachines.command,
   }
-  const host = try makeSandboxHost(store, jumpClock ? jumping : flakyMachines)
+  const starts = try Ref.make(0)
+  const chosen = jumpClock ? jumping : flakyMachines
+  const counting: Machines = { ...chosen, start: (id, generation) => Effect.andThen(Ref.update(starts, (n) => n + 1), chosen.start(id, generation)) }
+  const host = try makeSandboxHost(store, counting)
   const jumpClockLayer = Layer.succeed(Clock.Clock, {
     currentTimeMillisUnsafe: () => Number.NaN,
     currentTimeMillis: Effect.map(Ref.get(jumped), (yes) => yes ? now + allowance : now),
@@ -214,6 +222,20 @@ it.live("sandbox/host-recovery", () => run("sandbox/host-recovery", Recovery, ({
   const answer = try exit(clocked(host.tick()))
   if (answer._tag === "Failure") {
     if (Cause.hasDies(answer.cause)) return false
+  } else {
+    const after = try Ref.get(store.state)
+    if (after === undefined || after.pending !== null) return false
+    const receipts = try Ref.get(store.receipts)
+    const recovering = pending !== null && pending.operationId === "op-1"
+    if ((try Ref.get(starts)) > (recovering && pending.kind === "start" ? 1 : 0)) return false
+    // A viewer's pending start is dropped with a stop, and a pending command is settled by `current`, not `complete`.
+    const completes = pending !== null && pending.kind !== "command" && !(pending.kind === "start" && !mayStart(role))
+    if (completes && pending.operationId === "op-0" && receipts.get("op-0") !== settled) return false
+    if (recovering && (completes || pending.kind === "command")) {
+      const written = receipts.get("op-1")
+      const outcomes = pending.kind === "command" ? ["command-uncertain"] : pending.kind === "cancel-start" ? ["start-failed"] : pending.kind === "stop" ? [""] : ["", "start-failed"]
+      if (written === undefined || !outcomes.includes(written.refusal) || written.request.kind !== (pending.kind === "cancel-start" ? "start" : pending.kind)) return false
+    }
   }
   const snapshotAnswer = try exit(clocked(host.snapshot("c0")))
   if (snapshotAnswer._tag === "Failure") {
@@ -276,16 +298,16 @@ it.live("sandbox/mock-device-commands", () => run("sandbox/mock-device-commands"
   }
 }))
 
-/** The mock device's real-clock alarm meters a running sandbox exactly as the live object's storage alarm does. */
+/** The mock device meters a running sandbox exactly, on the test clock: 1500 ms running is 1500 ms used. */
 it.live("sandbox/mock-meter-alarm", () => run("sandbox/mock-meter-alarm", Schema.Null, () => effect {
   provide mockFactoryFor("contributor") {
     const factory = try Factory
     const started = try factory.startSandbox("metered", "alarm")
-    try Effect.sleep("1500 millis")
+    try TestClock.adjust("1500 millis")
     const snapshot = try factory.sandbox("metered")
-    return snapshot.status === "running" && snapshot.generation === started.generation && snapshot.used > 0 && snapshot.used < 1
+    return snapshot.status === "running" && snapshot.generation === started.generation && snapshot.used * 60000 === 1500
   }
-}))
+}.pipe(Effect.provide(TestClock.layer()))))
 
 /** The documented limits: an exhausted allowance refuses a start, and a stop for a stopped sandbox records nothing. */
 it.live("sandbox/host-limits", () => run("sandbox/host-limits", Schema.Struct({ stop: Schema.Boolean, role: Schema.Literals(["contributor", "maintainer"]) }), ({ stop, role }) => effect {

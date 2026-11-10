@@ -7,7 +7,7 @@ import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform
 import { notDeployed } from "../src/surfaces/backend.vibe"
 import { REASONS } from "../worker/Reply.vibe"
 import { node, run } from "./support/processes.vibe"
-import { room, serveApi, serveSite, type Served } from "./support/workerd.vibe"
+import { deadline, room, serveApi, serveSite, type Served } from "./support/workerd.vibe"
 import { cliPath, serverPath } from "./surface-host.vibe"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -39,7 +39,7 @@ effect function json(response: HttpClientResponse.HttpClientResponse) {
 
 describe("the API Worker in local workerd", () => {
   let api: Served | undefined
-  beforeAll(async () => { api = await runPromise(serveApi()) }, 120_000)
+  beforeAll(async () => { api = await runPromise(serveApi()) }, deadline(120_000))
   afterAll(async () => { await api?.dispose() })
 
   it.live("answers the protocol's errors: unknown routes, bad cursors, bodies and ids", () => effect {
@@ -96,12 +96,12 @@ describe("the API Worker in local workerd", () => {
         expect(snapshot.entries.map((entry) => entry.error)).toEqual(["", REASONS.unconfigured])
       })
     }
-  }, 120_000)
+  }, deadline(120_000))
 })
 
 describe("the site Worker without the API Worker", () => {
   let site: Served | undefined
-  beforeAll(async () => { site = await runPromise(serveSite()) }, 120_000)
+  beforeAll(async () => { site = await runPromise(serveSite()) }, deadline(120_000))
   afterAll(async () => { await site?.dispose() })
 
   it.live("says the agent is the mock, so the CLI refuses live mode there", () => effect {
@@ -114,7 +114,7 @@ describe("the site Worker without the API Worker", () => {
         expect(result.stderr).toBe(`${notDeployed(site!.origin)}\n`)
       })
     }
-  }, 120_000)
+  }, deadline(120_000))
 })
 
 
@@ -146,7 +146,7 @@ describe("the signed-in CLI process in local workerd", () => {
       SESSION_SECRET: "fixture-only-signing-secret-32-chars", SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       ACCOUNT_DEVICE_FIXTURE: "1",
     }, port))
-  }, 120_000)
+  }, deadline(120_000))
   afterAll(async () => { await device?.dispose() })
 
   /** An external identity provider fixture over a real socket; the shared GitHub adapter makes every request. */
@@ -210,7 +210,7 @@ describe("the signed-in CLI process in local workerd", () => {
         expect(started.stdout + started.stderr + signed.stdout + signed.stderr + logout.stdout + refused.stderr).not.toMatch(/private-device-code|device-token-9|__Host-vibelang-session/)
       })
     }
-  }), 120_000)
+  }), deadline(120_000))
 
   it.live("the CLI waits through the SDK poll flow without journaling a device code, access token or cookie", () => scoped(effect {
     provide platform, NodeHttpServer.layerTest {
@@ -235,7 +235,7 @@ describe("the signed-in CLI process in local workerd", () => {
         expect(result.stdout + result.stderr).not.toContain("private-device-code")
       })
     }
-  }), 120_000)
+  }), deadline(120_000))
 
   it.live("a running stdio MCP server uses a new device session immediately and stops using it on logout", () => scoped(effect {
     provide platform, NodeHttpServer.layerTest {
@@ -285,7 +285,7 @@ describe("the signed-in CLI process in local workerd", () => {
         })
       }
     }
-  }), 120_000)
+  }), deadline(120_000))
 
   it.live("posts as the person's agent while signed in, as Guest after logout, and never prints the cookie", () => effect {
     provide platform {

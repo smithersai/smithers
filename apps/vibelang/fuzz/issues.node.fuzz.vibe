@@ -6,12 +6,16 @@ import { GitHub } from "@smthrs/integrations"
 import { issuePermission } from "../src/core/conversation.vibe"
 import { IssueFailure, IssueRequest, IssuesState } from "../src/core/issueSchemas.vibe"
 import { IssueHost } from "../src/core/issueFlows.vibe"
-import { executeIssues, githubHost, issueFailureOf, publicIssues, serveIssues, verifiedVip, IssueAuthority, type Repository } from "../worker/Issues.vibe"
+import { executeIssues, githubHost, issueFailureOf, publicIssues, serveIssues, verifiedVip, IssueAuthority, type Principal, type Repository } from "../worker/Issues.vibe"
+import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
+import { PublicReads } from "../worker/PublicReads.vibe"
 import { agentLayer, DraftAgent, writer } from "../worker/VipDraft.vibe"
 import { ChatModel, Spend } from "../worker/Reply.vibe"
 import type { Storage } from "../worker/Objects.vibe"
-import { fakeClient, repo, seed, type Fake } from "./issues-node-fake.vibe"
-import { run, Finding, Int } from "./run.vibe"
+import { fakeClient, forked, repo, seed, type Fake } from "./issues-node-fake.vibe"
+import { delegated, reach, reached } from "./delegated.vibe"
+import { run, stepped, Finding, Int } from "./run.vibe"
+import { faultyStore } from "./faulty-store.ts"
 
 // The durable payload contract (DurableText) refuses lone surrogates; direct flow calls hold it.
 const Clean = Schema.String.check(Schema.isMaxLength(120), Schema.isPattern(/^[^\uD800-\uDFFF]*$/))
@@ -34,7 +38,7 @@ const Op = Schema.Struct({
 })
 const Input = Schema.Array(Op).check(Schema.isMaxLength(10))
 
-const reasons = ["forbidden", "sign-in", "connect", "missing", "invalid", "title", "incomplete", "empty", "tree", "assignee", "closed", "review", "unsupported", "unavailable", "partial", "rate-limited", "unknown", "protocol", "no-model", "budget", "draft"]
+const reasons = ["forbidden", "sign-in", "connect", "fork", "install", "missing", "invalid", "title", "incomplete", "empty", "tree", "assignee", "closed", "review", "unsupported", "unavailable", "partial", "rate-limited", "unknown", "protocol", "no-model", "budget", "draft"]
 
 const writerLayer = (drafts: boolean, budget: boolean) => {
   const agent: DraftAgent.Shape = { available: drafts, run: (request) => succeed({ title: request.title, summary: request.text, example: request.example, prior: request.prior }) }
@@ -48,17 +52,20 @@ const noModelWriter = writer.pipe(
 )
 
 /** The durable issues flow over a stateful in-memory GitHub: typed outcomes, idempotent replays, no write without authority. */
-it.live("issues/github-host-operations", () => run("issues/github-host-operations", Input, (ops) => effect {
+const operations = reach()
+const hostOperations = (ops: typeof Input.Type) => effect {
   const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
   const storage = raw as unknown as Storage
   const fake = seed()
-  const principal = try Ref.make<{ id: string; login: string; role: typeof Role.Type; token: Redacted.Redacted<string> } | undefined>(undefined)
+  forked(fake)
+  const site = try delegated(fakeClient(fake), operations)
+  const principal = try Ref.make<Principal | undefined>(undefined)
   const forbidNext = try Ref.make(false)
   const authority: IssueAuthority.Shape = {
     current: () => Ref.get(principal),
     authorize: () => Effect.flatMap(Ref.get(forbidNext), (forbid) => forbid ? Effect.fail(new IssueFailure({ reason: "forbidden" })) : Effect.void),
   }
-  const client = fakeClient(fake)
+  const client = site.http
   const seen = new Map<string, { tag: "Success" | "Failure"; payload: string }>()
   const writes = new Map<string, IssueRequest>()
   const failedWrites = new Map<string, IssueRequest>()
@@ -70,7 +77,7 @@ it.live("issues/github-host-operations", () => run("issues/github-host-operation
     fake.endlessReviews = op.salt % 32 === 7 && op.op === "read" && op.number === 4
     fake.malformedIssues = op.salt % 32 === 9
     try Ref.set(forbidNext, op.salt % 16 === 5)
-    const actor = op.signedOut ? undefined : { id: "7", login: "fuzz", role: op.role, token: Redacted.make(op.noToken ? "" : "token") }
+    const actor: Principal | undefined = op.signedOut ? undefined : { id: "7", login: "fuzz", role: op.role, ...(op.noToken ? {} : { connection: site.connection }) }
     try Ref.set(principal, actor)
     const badKey = op.salt % 32 === 17
     const prior = writes.get(`${op.key % 4}`)
@@ -96,6 +103,7 @@ it.live("issues/github-host-operations", () => run("issues/github-host-operation
     const program = executeIssues("issues-fuzz", storage, request, repo).pipe(
       Effect.provideService(IssueAuthority, authority),
       Effect.provideService(HttpClient.HttpClient, client),
+      Effect.provideService(GitHubDelegate, site.delegate),
     )
     const result = try Effect.result(op.salt % 8 === 3 ? program : Effect.provide(program, op.salt % 8 === 1 ? noModelWriter : writerLayer(op.salt % 4 !== 2, op.salt % 4 !== 1)))
     const permitted = issuePermission(op.signedOut ? "viewer" : op.role, request.op)
@@ -121,11 +129,13 @@ it.live("issues/github-host-operations", () => run("issues/github-host-operation
     if (!recovery) seen.set(identity, { tag: result._tag, payload: payloadJson })
   }
   return true
-}))
+}
+it.live("issues/github-host-operations", () => Effect.andThen(run("issues/github-host-operations", Input, hostOperations), reached("issues/github-host-operations", operations, hostOperations, [{ op: "comment", role: "maintainer", signedOut: false, noToken: false, number: 1, parent: 0, title: "word", text: "word", example: "", prior: "", assignee: "", key: 1, salt: 0 }])))
 
 
 const Direct = Schema.Struct({
-  op: Schema.Literals(["read", "new", "comment", "link", "split", "commit", "uncommit", "accept", "decline", "draft"]),
+  // The specification operations reach githubHost only from a direct caller: executeIssues answers them itself.
+  op: Schema.Literals(["read", "new", "comment", "link", "split", "commit", "uncommit", "accept", "decline", "draft", "spec-revise", "spec-review"]),
   role: Role,
   signedOut: Schema.Boolean,
   noToken: Schema.Boolean,
@@ -141,8 +151,10 @@ const Direct = Schema.Struct({
 })
 
 /** The host itself, without the engine: every refusal is typed before any write, and unjournaled writes complete. */
-it.live("issues/host-perform-boundary", () => run("issues/host-perform-boundary", Direct, (input) => effect {
+const boundary = reach()
+const performBoundary = (input: typeof Direct.Type) => effect {
   const fake = seed()
+  const site = try delegated(fakeClient(fake), boundary)
   fake.endlessComments = input.number === 1 && input.op === "read" && input.blank
   fake.dropAssignees = input.blankKey
   fake.noMain = input.bogus
@@ -151,13 +163,14 @@ it.live("issues/host-perform-boundary", () => run("issues/host-perform-boundary"
   const authority: IssueAuthority.Shape = {
     current: () => Effect.flatMap(Ref.updateAndGet(calls, (n) => n + 1), (n) =>
       Ref.get(authorizeFails).pipe(Effect.as(
-        input.signedOut ? undefined : { id: "7", login: "fuzz", role: (input.demote && n > 1 ? "viewer" : input.role) as typeof Role.Type, token: Redacted.make(input.noToken ? "" : "token") },
+        input.signedOut ? undefined : { id: "7", login: "fuzz", role: (input.demote && n > 1 ? "viewer" : input.role) as typeof Role.Type, ...(input.noToken ? {} : { connection: site.connection }) },
       ))),
     authorize: () => Effect.flatMap(Ref.get(authorizeFails), (forbid) => forbid ? Effect.fail(new IssueFailure({ reason: "forbidden" })) : Effect.void),
   }
   const host = try githubHost(repo).pipe(
     Effect.provideService(IssueAuthority, authority),
-    Effect.provideService(HttpClient.HttpClient, fakeClient(fake)),
+    Effect.provideService(HttpClient.HttpClient, site.http),
+    Effect.provideService(GitHubDelegate, site.delegate),
   )
   const journaled = ["new", "comment", "split", "propose"].includes(input.op)
   // A signed-out caller acts with the viewer role (worker/Issues.vibe: `actor?.role ?? "viewer"`).
@@ -173,11 +186,17 @@ it.live("issues/host-perform-boundary", () => run("issues/host-perform-boundary"
   const call = host.perform as (request: IssueRequest) => typeof IssuesState.Type!IssueFailure
   const performed = call(request).pipe(
     Effect.provideService(IssueAuthority, authority),
-    Effect.provideService(HttpClient.HttpClient, fakeClient(fake)),
+    Effect.provideService(HttpClient.HttpClient, site.http),
   )
   // The Worker's host provides these at worker/Objects.vibe; a role demoted mid-call reaches the write key first.
   const hosted = Effect.provide(performed, WebCrypto.layer)
+  const writesBefore = fake.writes
   const result = try Effect.result(input.withWriter ? Effect.provide(hosted, writerLayer(true, true)) : hosted)
+  if (input.op === "spec-revise" || input.op === "spec-review") {
+    // GitHub holds no specification: the host refuses it, after its read, before any write.
+    if (result._tag === "Success" || fake.writes !== writesBefore) throw new Finding({ report: `githubHost answered ${input.op}` })
+    if (proceeds && [1, 2, 3, 4].includes(input.number) && result.failure.reason !== "unsupported") throw new Finding({ report: `${input.op} on an issue answered ${result.failure.reason}` })
+  }
   if (result._tag === "Failure") {
     if (result.failure._tag !== "IssueFailure" || !reasons.includes(result.failure.reason)) return false
     if (result.failure.reason === "forbidden" && permitted) return false
@@ -186,7 +205,16 @@ it.live("issues/host-perform-boundary", () => run("issues/host-perform-boundary"
   if (!permitted) return false
   if (input.op === "read") return Schema.is(IssuesState)(result.success)
   return ["link", "commit", "uncommit", "accept", "decline"].includes(input.op)
-}))
+}
+const directWitness: typeof Direct.Type = { op: "commit", role: "maintainer", signedOut: false, noToken: false, number: 1, parent: 0, blank: false, blankKey: false, bogus: false, demote: false, assignee: "fuzz", withWriter: false, authorizeFails: false }
+/** Random inputs rarely permit a specification operation on an existing issue; each runs once per execution. */
+const specificationWitnesses = Effect.forEach(["spec-revise", "spec-review"] as const, (op) => effect {
+  if (!(try scoped(performBoundary({ ...directWitness, op })))) throw new Finding({ report: `issues/host-perform-boundary: the ${op} witness failed` })
+})
+it.live("issues/host-perform-boundary", () => run("issues/host-perform-boundary", Direct, performBoundary).pipe(
+  Effect.andThen(reached("issues/host-perform-boundary", boundary, performBoundary, directWitness)),
+  Effect.andThen(specificationWitnesses),
+))
 
 const HttpOp = Schema.Struct({
   method: Schema.Literals(["GET", "POST", "PUT", "DELETE"]),
@@ -198,11 +226,13 @@ const HttpOp = Schema.Struct({
 })
 
 /** The issues HTTP boundary answers every shape with a typed status; failures name their reason. */
-it.live("issues/http-surface", () => run("issues/http-surface", HttpOp, (input) => effect {
+const surface = reach()
+const httpSurface = (input: typeof HttpOp.Type) => effect {
   const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
   const storage = raw as unknown as Storage
   const fake = seed()
-  const authority: IssueAuthority.Shape = { current: () => succeed(input.signedOut ? undefined : { id: "7", login: "fuzz", role: input.role, connection: { person: 1, delegation: "fixture-delegation" } }) }
+  const site = try delegated(fakeClient(fake), surface)
+  const authority: IssueAuthority.Shape = { current: () => succeed(input.signedOut ? undefined : { id: "7", login: "fuzz", role: input.role, connection: site.connection }) }
   const validBody = { op: "comment", number: 1, parent: 0, title: "T", text: "body", example: "", prior: "", assignee: "", key: `k${input.key}` }
   const body = input.body === "empty" ? undefined
     : input.body === "garbage" ? "{not json"
@@ -220,7 +250,8 @@ it.live("issues/http-surface", () => run("issues/http-surface", HttpOp, (input) 
   const counted = try Ref.make(0)
   const response = try Effect.provideService(serveIssues("issues-http", storage, repo, (person) => Ref.update(counted, (n) => n + 1).pipe(Effect.asVoid)).pipe(
     Effect.provideService(IssueAuthority, authority),
-    Effect.provideService(HttpClient.HttpClient, fakeClient(fake)),
+    Effect.provideService(HttpClient.HttpClient, site.http),
+    Effect.provideService(GitHubDelegate, site.delegate),
     Effect.provide(writerLayer(true, true)),
   ), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
 
@@ -233,7 +264,8 @@ it.live("issues/http-surface", () => run("issues/http-surface", HttpOp, (input) 
   if (response.status === 404 || response.status === 405) return text === ""
   const parsed = try Effect.try(() => JSON.parse(text))
   return typeof parsed.reason === "string"
-}))
+}
+it.live("issues/http-surface", () => Effect.andThen(run("issues/http-surface", HttpOp, httpSurface), reached("issues/http-surface", surface, httpSurface, { method: "POST", path: "/api/issues", body: "valid", role: "maintainer", signedOut: false, key: 1 })))
 
 const Evidence = Schema.Struct({
   body: Schema.Literals(["plain", "marked", "bad-path", "bad-review", "foreign-review", "two-markers", "bad-number"] as const),
@@ -271,7 +303,7 @@ it.live("issues/vip-evidence-and-failure-mapping", () => run("issues/vip-evidenc
   return ["unknown", "rate-limited", "unavailable"].includes(expected) ? failure.code === expected : true
 }))
 
-const ISSUE_SCENARIOS = ["validations", "reviews", "resume", "spec", "shapes", "served", "demoted", "refusals", "draft"] as const
+const ISSUE_SCENARIOS = ["validations", "reviews", "resume", "spec", "shapes", "served", "demoted", "refusals", "draft", "store", "running", "delegated", "public"] as const
 const SteeredIssues = Schema.Struct({
   pick: Int,
   title: Schema.Literals(["T", "A title", "Fix the parser"]),
@@ -287,7 +319,8 @@ const SERVED: Record<string, number> = { forbidden: 403, "sign-in": 401, connect
  */
 const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: number, title: typeof SteeredIssues.Type["title"]) => scoped(effect {
   const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
-  const storage = raw as unknown as Storage
+  const store = faultyStore(raw as unknown as Storage)
+  const storage = store.storage
   const fake = seed()
   // Issue 1 is already issue 3's child, so linking it there again writes nothing.
   fake.issues.find((issue) => issue.number === 1)!.parent_issue_url = `${repo.api}/repos/o/r/issues/3`
@@ -301,18 +334,26 @@ const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: n
   }
   const base: IssueRequest = { op: "read", number: 0, parent: 0, title, text: "body", example: "e", prior: "p", assignee: "", key: "" }
   let count = 0
-  const execute = (patch: Partial<IssueRequest>, as: ReadonlyArray<Person | undefined> = [maintainer], drafts = false) => effect {
+  const execute = (patch: Partial<IssueRequest>, as: ReadonlyArray<Person | undefined> = [maintainer], drafts = false, host?: IssueHost.Shape) => effect {
     count += 1
     try Ref.set(principal, [...as])
-    const program = executeIssues("issues-steered", storage, { ...base, key: `s${pick}-${count}`, ...patch } as IssueRequest, repo).pipe(
+    const issues = executeIssues("issues-steered", storage, { ...base, key: `s${pick}-${count}`, ...patch } as IssueRequest, repo)
+    const program = (host === undefined ? issues : Effect.provideService(issues, IssueHost, host)).pipe(
       Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, fakeClient(fake)), Effect.provide(WebCrypto.layer),
       Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: error._tag })),
     )
     return try Effect.result(drafts ? Effect.provide(program, writerLayer(true, true)) : program)
   }
   const reasonOf = (result: Result.Result<unknown, IssueFailure>) => result._tag === "Failure" ? result.failure.reason : "ok"
-  const expect = effect (label: string, wanted: string, patch: Partial<IssueRequest>, as: ReadonlyArray<Person | undefined> = [maintainer]) => {
-    const result = try execute(patch, as)
+  /** One request to a served tracker: its status and body text. */
+  const serveGet = effect (served: HttpServerResponse.HttpServerResponse!unknown!HttpServerRequest.HttpServerRequest, method: "GET" | "POST", body: string | undefined) => {
+    const request = method === "GET" ? HttpClientRequest.get("https://fuzz.invalid/api/issues") : HttpClientRequest.bodyText(HttpClientRequest.post("https://fuzz.invalid/api/issues"), body ?? "")
+    const web = try HttpClientRequest.toWeb(request)
+    const response = try Effect.provideService(served, HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
+    return { status: response.status, text: try promise(() => HttpServerResponse.toWeb(response).text()) }
+  }
+  const expect = effect (label: string, wanted: string, patch: Partial<IssueRequest>, as: ReadonlyArray<Person | undefined> = [maintainer], host?: IssueHost.Shape) => {
+    const result = try execute(patch, as, false, host)
     if (reasonOf(result) !== wanted) throw new Finding({ report: `${label} answered ${reasonOf(result)}, not ${wanted}` })
     return result
   }
@@ -358,6 +399,9 @@ const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: n
     case "reviews": {
       const proposal = fake.issues.find((issue) => issue.number === 4)!
       proposal.labels = [{ name: "vibelang:accepted" }]
+      // A label alone is no approval: before any maintainer accepts it here, the proposal reads as in review.
+      const unapproved = try expect("a read of a proposal accepted only on GitHub", "ok", { op: "read" })
+      if (unapproved._tag === "Success" && unapproved.success.items.find((entry) => entry.number === 4)?.vip !== "In review") throw new Finding({ report: "a GitHub label alone approved a proposal" })
       // Accepted on GitHub, unapproved here: accepting writes nothing and records this maintainer's approval.
       const accepted = try expect("an acceptance of an accepted proposal", "ok", { op: "accept", number: 4 })
       const item = accepted._tag === "Success" ? accepted.success.items.find((entry) => entry.number === 4) : undefined
@@ -366,6 +410,16 @@ const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: n
       const reread = try expect("a read after the approval", "ok", { op: "read" })
       const kept = reread._tag === "Success" ? reread.success.items.find((entry) => entry.number === 4) : undefined
       if (kept?.vip !== "Accepted" || kept.approvedBy !== "fuzz" || kept.approvedAt !== item.approvedAt) throw new Finding({ report: "the approval receipt was lost on a read" })
+      // An approval stored without its time (another writer, or a hand edit) keeps its approver and still decodes.
+      const stored = (try promise(() => storage.get("gates/state"))) as typeof IssuesState.Type
+      try promise(() => storage.put("gates/state", { ...stored, items: stored.items.map((entry) => {
+        if (entry.number !== 4) return entry
+        const { approvedAt: _approvedAt, ...withoutTime } = entry
+        return withoutTime
+      }) }))
+      const handEdited = try expect("a read of an approval stored without its time", "ok", { op: "read" })
+      const edited = handEdited._tag === "Success" ? handEdited.success.items.find((entry) => entry.number === 4) : undefined
+      if (edited?.approvedBy !== "fuzz" || edited.approvedAt !== undefined) throw new Finding({ report: "an approval stored without its time was dropped or given one" })
       proposal.labels = [{ name: "vibelang:declined" }]
       try expect("a decline of a declined open proposal", "connect", { op: "decline", number: 4 })
       proposal.state = "closed"
@@ -475,18 +529,174 @@ const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: n
       }
       break
     }
+    case "store": {
+      // The engine's store refuses to open: the typed failure is served as 503 unavailable, never as a defect.
+      store.fail(/./)
+      const broken = try execute({ op: "read" })
+      if (broken._tag !== "Failure" || reasons.includes(broken.failure.reason)) throw new Finding({ report: `a store that cannot open answered ${reasonOf(broken)}` })
+      const web = try HttpClientRequest.toWeb(HttpClientRequest.bodyText(HttpClientRequest.post("https://fuzz.invalid/api/issues"), JSON.stringify({ ...base, key: `store-${pick}` })))
+      try Ref.set(principal, [maintainer])
+      const response = try Effect.provideService(serveIssues("issues-steered", storage, repo).pipe(
+        Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, fakeClient(fake)), Effect.provide(WebCrypto.layer),
+      ), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
+      const served = try promise(() => HttpServerResponse.toWeb(response).text())
+      if (response.status !== 503 || served !== JSON.stringify({ reason: "unavailable" })) throw new Finding({ report: `a store that cannot open was served as ${response.status}` })
+      // A request opens the engine twice: to poll its key, then to run. Counted on a healthy request, the second open
+      // alone fails, and the flow's own failure is unavailable.
+      store.fail()
+      try expect("a read on a healed store", "ok", { op: "read" })
+      // The healed request migrated the store; the next one only checks its migrations.
+      const mark = store.log.length
+      try expect("a read on a migrated store", "ok", { op: "read" })
+      const opens = store.log.slice(mark).filter((query) => query.includes("flows_migrations")).length
+      if (opens === 0 || opens % 2 !== 0) throw new Finding({ report: `a request opened the store with ${opens} migration statements` })
+      store.fail(/flows_migrations/, opens / 2)
+      try expect("a read whose run cannot open the store", "unavailable", { op: "read" })
+      // The store refuses the run's row: a defect, as Objects.post's store failure is, and nothing is left behind.
+      const key = `store-${pick}`
+      store.fail(/INSERT INTO flows_runs/)
+      const died = try Effect.exit(execute({ op: "read", key }))
+      if (died._tag !== "Failure" || !Cause.hasDies(died.cause)) throw new Finding({ report: "a refused run row was not a defect" })
+      store.fail()
+      try expect("the same read after the store heals", "ok", { op: "read", key })
+      try expect("the same read again, joined", "ok", { op: "read", key })
+      // A failed write's join and recovery read the run's recorded payload and its steps; either read failing is
+      // unavailable, and the healed recovery still retries the write.
+      const write: Partial<IssueRequest> = { op: "new", key: `w-${key}` }
+      try expect("a new issue", "connect", write)
+      const reads: ReadonlyArray<readonly [string, RegExp, Partial<IssueRequest>]> = [
+        ["a join whose payload cannot be read", /FROM flows_runs r WHERE r\.run_id/, write],
+        ["a recovery whose payload cannot be read", /FROM flows_runs r WHERE r\.run_id/, { ...write, recovery: "r1" }],
+        ["a recovery whose steps cannot be read", /SELECT step_key_digest, attempt, state/, { ...write, recovery: "r1" }],
+      ]
+      for (const [label, pattern, patch] of reads) {
+        store.fail(pattern)
+        try expect(label, "unavailable", patch)
+      }
+      store.fail()
+      try expect("the healed recovery", "connect", { ...write, recovery: "r1" })
+      break
+    }
+    case "running": {
+      // A latch holds the write inside GitHub; the person's resume meanwhile sees it running, then completed.
+      const entered = try Deferred.make<void>()
+      const release = try Deferred.make<void>()
+      const created = { seq: 1, items: [], selected: 7 }
+      const host: IssueHost.Shape = {
+        perform: (request) => request.op !== "new" ? succeed({ seq: 1, items: [] }) : Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.as(created)),
+      }
+      const key = `r${pick}`
+      const writing = try Effect.forkScoped(expect("a held new issue", "ok", { op: "new", key }, [maintainer], host))
+      try Deferred.await(entered)
+      const resume = { op: "read" as const, resumeOp: "new", resumeKey: key }
+      const during = try expect("resuming a held write", "ok", resume, [maintainer], host)
+      if (during._tag !== "Success" || during.success.saved?.status !== "running" || during.success.saved.request.key !== key) throw new Finding({ report: `a held write resumed as ${during._tag === "Success" ? during.success.saved?.status : reasonOf(during)}` })
+      try Deferred.succeed(release, undefined)
+      try Fiber.join(writing)
+      const after = try expect("resuming the released write", "ok", resume, [maintainer], host)
+      if (after._tag !== "Success" || after.success.saved?.status !== "completed" || after.success.saved.selected !== 7) throw new Finding({ report: `the released write resumed as ${after._tag === "Success" ? after.success.saved?.status : reasonOf(after)}` })
+      break
+    }
+    case "delegated": {
+      // Connected through smithers.sh's real delegation: the person's own writes reach GitHub and complete.
+      forked(fake)
+      const site = try delegated(fakeClient(fake), reach())
+      const connected: Person = { ...maintainer, connection: site.connection }
+      const via = effect (label: string, wanted: string, patch: Partial<IssueRequest>) => {
+        count += 1
+        try Ref.set(principal, [connected])
+        const result = try Effect.result(executeIssues("issues-steered", storage, { ...base, key: `d${pick}-${count}`, ...patch } as IssueRequest, repo).pipe(
+          Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, site.http), Effect.provideService(GitHubDelegate, site.delegate),
+          Effect.provide(WebCrypto.layer), Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: error._tag })),
+        ))
+        if (reasonOf(result) !== wanted) throw new Finding({ report: `${label} answered ${reasonOf(result)}, not ${wanted}` })
+        return result
+      }
+      const selected = (result: Result.Result<typeof IssuesState.Type, IssueFailure>) => result._tag === "Success" ? result.success.selected : undefined
+      // A draft needs the writer this host was built without.
+      try via("a delegated draft with no writer", "unavailable", { op: "draft" })
+      const made = try via("a delegated new issue", "ok", { op: "new" })
+      const created = fake.issues.find((issue) => issue.number === selected(made))
+      if (created?.title !== title.trim()) throw new Finding({ report: "a delegated new issue was not selected on GitHub" })
+      const split = try via("a delegated split", "ok", { op: "split", number: 1 })
+      const child = fake.issues.find((issue) => issue.number === selected(split))
+      if (child?.parent_issue_url !== `${repo.api}/repos/o/r/issues/1`) throw new Finding({ report: "a delegated split was not linked under its issue" })
+      // GitHub writes the link, then fails the reads after it: the retried split adopts its issue, sees the link, and
+      // writes no second one.
+      const linksBefore = fake.writes
+      fake.dropAfterLink = 3
+      const relinked = try stepped(via("a split whose reads failed after its link", "ok", { op: "split", number: 1 }), 60)
+      fake.dropAfterLink = 0
+      fake.dropping = 0
+      const relinkedChild = fake.issues.find((issue) => issue.number === selected(relinked))
+      if (relinkedChild?.parent_issue_url !== `${repo.api}/repos/o/r/issues/1` || fake.writes - linksBefore !== 2) throw new Finding({ report: `a retried split made ${fake.writes - linksBefore} writes` })
+      const proposed = try via("a delegated proposal", "ok", { ...complete })
+      if (proposed._tag !== "Success" || !proposed.success.items.some((item) => item.number === proposed.success.selected && item.vip !== "")) throw new Finding({ report: "a delegated proposal did not select its VIP" })
+      // GitHub never shows the new issue's VIP marker: no evidence of the proposal, so after the retry window it is unavailable.
+      fake.hideVip = true
+      try stepped(via("a proposal GitHub never showed as a VIP", "unavailable", { ...complete }), 150)
+      fake.hideVip = false
+      // The delegation ends at smithers.sh: the person's read falls back to public issues, and a write asks to connect.
+      try site.end()
+      const lostBefore = try Ref.get(lost)
+      const read = try via("a read after the delegation ended", "ok", { op: "read" })
+      if (read._tag !== "Success" || !read.success.items.some((item) => item.number === 1) || (try Ref.get(lost)) === lostBefore) throw new Finding({ report: "an ended delegation hid public issues or was not reported lost" })
+      try via("a write after the delegation ended", "connect", { op: "new" })
+      break
+    }
+    case "public": {
+      // A visitor reads through the site's cached public client. While GitHub is down, the last good copy answers,
+      // marked with when GitHub confirmed it.
+      const cache = try GitHub.ReadCache.make({ store: try GitHub.ReadCache.memoryStore(), upstream: fakeClient(fake), freshFor: 0 })
+      const visitor: IssueAuthority.Shape = { current: () => succeed(undefined) }
+      const readAs = (key: string) => Effect.result(executeIssues("issues-visitor", storage, { ...base, key }, repo).pipe(
+        Effect.provideService(IssueAuthority, visitor), Effect.provideService(PublicReads, { client: cache }),
+        Effect.provideService(HttpClient.HttpClient, fakeClient(fake)), Effect.provide(WebCrypto.layer),
+        Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: error._tag })),
+      ))
+      const first = try readAs(`fresh-${pick}`)
+      // publicIssues serves the product's own repository, so its first read fills the cache for that address.
+      const servedFresh = try serveGet(publicIssues("issues-public", storage, cache), "GET", undefined)
+      if (servedFresh.status !== 200) throw new Finding({ report: `a served visitor's read answered ${servedFresh.status}` })
+      if (first._tag !== "Success" || first.success.stale !== undefined || first.success.items.length === 0) throw new Finding({ report: `a visitor's read answered ${reasonOf(first)}` })
+      fake.outage = 503
+      const kept = try readAs(`kept-${pick}`)
+      const servedKept = try serveGet(publicIssues("issues-public", storage, cache), "GET", undefined)
+      fake.outage = 200
+      if (kept._tag !== "Success" || kept.success.stale === undefined || kept.success.items.length !== first.success.items.length) throw new Finding({ report: `a visitor's read while GitHub was down answered ${reasonOf(kept)}` })
+      if (servedKept.status !== 200 || (try Effect.try(() => JSON.parse(servedKept.text) as { stale?: number })).stale === undefined) throw new Finding({ report: `a served read while GitHub was down answered ${servedKept.status}` })
+      // Without the site's client the public tracker still serves; a request whose key is not a key is invalid.
+      const quiet: IssueHost.Shape = { perform: () => succeed({ seq: 1, items: [] }) }
+      const direct = publicIssues("issues-public-direct", storage).pipe(Effect.provideService(IssueHost, quiet))
+      const plain = try serveGet(direct, "GET", undefined)
+      if (plain.status !== 200) throw new Finding({ report: `a public read without the site's client answered ${plain.status}` })
+      const malformed = try serveGet(direct, "POST", JSON.stringify({ ...base, key: "not a key" }))
+      if (malformed.status !== 400 || (try Effect.try(() => JSON.parse(malformed.text) as { reason?: string })).reason !== "invalid") throw new Finding({ report: `a request with a malformed key answered ${malformed.status}` })
+      // GitHub never answers a read: the read flow's engine deadline settles it, in virtual time, as unavailable.
+      const silent: IssueHost.Shape = { perform: () => Effect.never }
+      const late = try stepped(execute({ op: "read" }, [maintainer], false, silent), 30)
+      if (reasonOf(late) !== "unavailable") throw new Finding({ report: `a read past its deadline answered ${reasonOf(late)}` })
+      // An issue whose comments never end is read as partial, never as a short thread.
+      fake.endlessComments = true
+      try expect("a read of an issue whose comments never end", "partial", { op: "read", number: 1 })
+      fake.endlessComments = false
+      break
+    }
     case "draft": {
       const drafted = try execute({ op: "draft", title: "A proposal", text: "Why", example: "e", prior: "p" }, [maintainer], true)
       if (drafted._tag !== "Success" || drafted.success.draft?.title !== "A proposal") throw new Finding({ report: `a draft answered ${reasonOf(drafted)}` })
       break
     }
   }
-  if (fake.writes !== writesBefore) throw new Finding({ report: "a maintainer with no delegate wrote to GitHub" })
+  // Only the delegated scenario's person has a delegate; every other scenario writes nothing to GitHub.
+  if (scenario !== "delegated" && fake.writes !== writesBefore) throw new Finding({ report: "a maintainer with no delegate wrote to GitHub" })
   return true
 })
 
 // Every execution runs every scenario on fresh storage, so one execution reaches them all whatever the host load.
+// That makes one execution long: with coverage on an idle 4-vCPU box, replaying the saved value and one fresh
+// execution took the whole 15 s REPLAY_FLOOR (1 execution, then 0 on the next run), so it takes the 60 s floor.
 it.live("issues/steered-host", () => run("issues/steered-host", SteeredIssues, ({ pick, title }) => effect {
   for (const scenario of ISSUE_SCENARIOS) try steeredIssuesScenario(scenario, pick, title)
   return true
-}))
+}, undefined, { minimum: "60 seconds" }), 300000)

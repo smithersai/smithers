@@ -1,0 +1,56 @@
+// The tour's own decisions and the reply id (wiki/decisions/0014-agent-tour.md, 0011-post-flow.md, 0018 third-lane
+// batch 2): which paths the docs pane may show, which tour runs, and which reply answers a post. `flows.vibe` calls
+// these.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript.
+
+import { type Conversation, isTour } from "./conversation.vibe"
+
+/** Whether a UTF-16 code unit may appear in a docs path: a lowercase letter, a digit, `-` or `/`. */
+//@ verify
+//@ ensures \result == ((97 <= unit && unit <= 122) || (48 <= unit && unit <= 57) || unit == 45 || unit == 47)
+export function docsUnit(unit: number): boolean {
+  return (97 <= unit && unit <= 122) || (48 <= unit && unit <= 57) || unit === 45 || unit === 47
+}
+
+/**
+ * Whether `path` is a page of the docs site: it starts with `/`, holds only lowercase letters, digits, `-` and `/`,
+ * and never two `/` in a row. So the pane never leaves the docs origin: no scheme, host, query, fragment, dot segment
+ * or protocol-relative `//`.
+ */
+//@ verify
+//@ ensures \result == (path.length >= 1 && path.charCodeAt(0) == 47 && forall(i, 0 <= i && i < path.length ==> docsUnit(path.charCodeAt(i))) && forall(i, 1 <= i && i < path.length ==> !(path.charCodeAt(i - 1) == 47 && path.charCodeAt(i) == 47)))
+export function docsPath(path: string): boolean {
+  if (path.length === 0 || path.charCodeAt(0) !== 47) return false
+  for (let i = 0; i < path.length; i++) {
+    //@ invariant 0 <= i && i <= path.length
+    //@ invariant forall(j, 0 <= j && j < i ==> docsUnit(path.charCodeAt(j)))
+    //@ invariant forall(j, 1 <= j && j < i ==> !(path.charCodeAt(j - 1) == 47 && path.charCodeAt(j) == 47))
+    //@ decreases path.length - i
+    if (!docsUnit(path.charCodeAt(i))) return false
+    if (i > 0 && path.charCodeAt(i - 1) === 47 && path.charCodeAt(i) === 47) return false
+  }
+  return true
+}
+
+/** The running tour of `conversation`: its id, `""` when none runs. */
+//@ verify
+//@ ensures \result == ((conversation.agent == "working" && isTour(conversation.entries, conversation.replying)) ? conversation.replying : "")
+export function runningTour(conversation: Conversation): string {
+  return conversation.agent === "working" && isTour(conversation.entries, conversation.replying) ? conversation.replying : ""
+}
+
+/**
+ * The reply that answers a post, unchanged across retries: `r` and the post id after its first character, so post
+ * `m7` gets `r7`. Two posts with the same first character never share a reply.
+ */
+//@ verify
+//@ ensures post.length == 0 ==> \result == "r"
+//@ ensures post.length > 0 ==> \result == "r" + post.slice(1)
+//@ ensures \result.length == (post.length == 0 ? 1 : post.length)
+export function replyIdOf(post: string): string {
+  if (post.length === 0) return "r"
+  return "r" + post.slice(1)
+}
+

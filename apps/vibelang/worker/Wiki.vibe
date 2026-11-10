@@ -3,7 +3,7 @@ import { Digest, SecureRandom } from "effect/crypto"
 import { Base64 } from "effect/encoding"
 // The repository's Markdown is the wiki (GH-1, 0021): every edit is the person's own change, journaled once.
 import { GitHub } from "@smthrs/integrations"
-import { Action, FlowRuntime } from "@smthrs/flow"
+import { Action, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { CloudflareRuntime, ObjectDatabase, RunInspection } from "@smthrs/platform-cloudflare"
 import { HttpClient, FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { applyWikiEdits, emptyWikiEdits, wikiPermission, type WikiEdits, type WikiOperation, type WikiPageState } from "../src/core/conversation.vibe"
@@ -17,6 +17,7 @@ export interface WikiRepository extends Repository { readonly root: string; read
 export const wikiRepository: WikiRepository = { owner: "smithersai", name: "smithers", api: "https://api.github.com", agent: "", root: "apps/vibelang/wiki" }
 import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
+import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
 
 export service WikiAuthority {
   current(): (Principal | undefined)!WikiFailure
@@ -54,6 +55,7 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
   const http = try HttpClient.HttpClient
   const writer = try Effect.serviceOption(WikiWriter)
   const delegate = try Effect.serviceOption(GitHubDelegate)
+  const reads = try Effect.serviceOption(PublicReads)
   let edits: WikiEdits = emptyWikiEdits
   let touched = false
   effect function loadDraft(person: string, page: string) {
@@ -83,10 +85,12 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
       if (path === undefined) throw new WikiFailure({ reason: "missing", ...(fresh() ? { unwritten: true } : {}) })
       const work = effect {
         if (request.op === "read") {
-          const file = try readSource(path)
-          const state = try note({ id: request.page, source: file.text, revision: file.sha })
+          // A signed-out read GitHub refused answers the last good copy, marked with when GitHub last confirmed it (0031).
+          const observed = try GitHub.ReadCache.observeStale(readSource(path), { patience: READ_PATIENCE })
+          const state = try note({ id: request.page, source: observed.value.text, revision: observed.value.sha })
           const draft = try loadDraft(actor?.id ?? "", request.page)
-          return draft === undefined ? state : { ...state, draft }
+          const answer = draft === undefined ? state : { ...state, draft }
+          return observed.stale === undefined ? answer : { ...answer, stale: observed.stale }
         }
         if (actor === undefined || request.key === "") throw new WikiFailure({ reason: "sign-in" })
         const key = (name: string) => wikiWriteKey(repo, actor.id, request, name)
@@ -105,7 +109,7 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
         }
         const authorized = <A, E, R>(program: A!E!R) => effect {
           const { connection } = try live
-          return try program.pipe(asPerson(connection, repo.api, http, delegate))
+          return try program.pipe(asPerson(connection, repo.api, http, delegate, reads))
         }
         const permitted = (operation: GitHub.DelegationPolicy.Operation): Action.Keyed<GitHub.Delegation.Receipt, WikiFailure, never> => ({
           find: (name) => effect {
@@ -136,30 +140,32 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
         if (request.text.trim() === "") throw new WikiFailure({ reason: "empty" })
         if (request.text === current.text) throw new WikiFailure({ reason: "empty" })
         const contents = try Effect.try(() => Base64.encode(request.text))
-        if (request.op === "propose" || request.op === "save") {
-          // The person's fork owns the change, derived and verified by smithers.sh; the review is theirs. People merge; the agent never does.
-          const upstream = try authorized(Effect.flatMap(GitHub.GitHubClient.GitHubClient, (api) => api.request("GET", `/repos/${repository}`, undefined, { schema: Schema.Struct({ default_branch: Schema.String }) })))
-          const base = repo.branch ?? upstream.default_branch
-          const head = try GitHub.Refs.getBranch(repo.owner, repo.name, base)
-          if (Option.isNone(head)) throw new WikiFailure({ reason: "missing" })
-          // Compare against the exact commit the new branch will use, even if main advanced after the first read.
-          const pinned = try authorized(readSource(path, head.value.sha))
-          if (pinned.text !== request.base) throw new WikiFailure({ reason: "conflict" })
-          const branch = try Action.once("branch", permitted({ kind: "branch.create", repository, prefix: "vibelang/wiki-", label: request.page.replace(/[^a-z0-9]+/gi, "-").slice(0, 40), at: head.value.sha }), { key: try key("branch") })
-          try Action.once("commit", permitted({ kind: "commit.create", repository, branch: branch.name!, expectedHeadOid: branch.sha!, headline: `Wiki: ${request.page}`, additions: [{ path, contents }], deletions: [] }), { key: try key("commit") })
-          const pull = try Action.once("review", permitted({ kind: "pull.create", repository, head: `${actor.login}:${branch.name!}`, base, title: `Wiki: ${request.page}`, body: `A proposed edit to [${request.page}](https://vibelang.smithers.sh/wiki/${request.page}).` }), { key: try key("review") })
-          // Native evidence before the answer: the PR exists, is the person's, and changes exactly this page.
-          const observedReview = try authorized(GitHub.Proposals.documentReview(repo.owner, repo.name, pull.number!))
-          const authored = actor.id !== "" && observedReview.pipe(Option.exists((review) => String(review.author) === actor.id))
-          const changed = observedReview.pipe(Option.exists((review) => review.files.length === 1 && review.files[0]!.filename === path && review.files[0]!.status === "modified"))
-          if (!authored || !changed) throw new WikiFailure({ reason: "unavailable", code: "unavailable" })
-          const retained = try loadDraft(actor.id, request.page)
-          if (storage !== undefined && retained?.text === request.text) try promise(() => storage.delete(`wiki/draft/${actor.id}/${request.page}`))
-          return { ...edits, review: `https://github.com/${repo.owner}/${repo.name}/pull/${pull.number!}` }
-        }
-        throw new WikiFailure({ reason: "invalid", unwritten: true })
+        // WikiOperation is read, save, propose or draft (wikiSchemas.vibe); read and draft returned above, and every
+        // caller's request is a decoded WikiRequest. A fifth operation fails to compile here.
+        request.op satisfies "propose" | "save"
+        // The person's fork owns the change, derived and verified by smithers.sh; the review is theirs. People merge; the agent never does.
+        const upstream = try authorized(Effect.flatMap(GitHub.GitHubClient.GitHubClient, (api) => api.request("GET", `/repos/${repository}`, undefined, { schema: Schema.Struct({ default_branch: Schema.String }) })))
+        const base = repo.branch ?? upstream.default_branch
+        const head = try GitHub.Refs.getBranch(repo.owner, repo.name, base)
+        if (Option.isNone(head)) throw new WikiFailure({ reason: "missing" })
+        // Compare against the exact commit the new branch will use, even if main advanced after the first read.
+        const pinned = try authorized(readSource(path, head.value.sha))
+        if (pinned.text !== request.base) throw new WikiFailure({ reason: "conflict" })
+        const branch = try Action.once("branch", permitted({ kind: "branch.create", repository, prefix: "vibelang/wiki-", label: request.page.replace(/[^a-z0-9]+/gi, "-").slice(0, 40), at: head.value.sha }), { key: try key("branch") })
+        // The commit the branch was cut from, never the branch's current head: a retry adopts a branch its own commit
+        // advanced, and smithers.sh refuses a key whose operation changed (key_conflict).
+        try Action.once("commit", permitted({ kind: "commit.create", repository, branch: branch.name!, expectedHeadOid: head.value.sha, headline: `Wiki: ${request.page}`, additions: [{ path, contents }], deletions: [] }), { key: try key("commit") })
+        const pull = try Action.once("review", permitted({ kind: "pull.create", repository, head: `${actor.login}:${branch.name!}`, base, title: `Wiki: ${request.page}`, body: `A proposed edit to [${request.page}](https://vibelang.smithers.sh/wiki/${request.page}).` }), { key: try key("review") })
+        // Native evidence before the answer: the PR exists, is the person's, and changes exactly this page.
+        const observedReview = try authorized(GitHub.Proposals.documentReview(repo.owner, repo.name, pull.number!))
+        const authored = actor.id !== "" && observedReview.pipe(Option.exists((review) => String(review.author) === actor.id))
+        const changed = observedReview.pipe(Option.exists((review) => review.files.length === 1 && review.files[0]!.filename === path && review.files[0]!.status === "modified"))
+        if (!authored || !changed) throw new WikiFailure({ reason: "unavailable", code: "unavailable" })
+        const retained = try loadDraft(actor.id, request.page)
+        if (storage !== undefined && retained?.text === request.text) try promise(() => storage.delete(`wiki/draft/${actor.id}/${request.page}`))
+        return { ...edits, review: `https://github.com/${repo.owner}/${repo.name}/pull/${pull.number!}` }
       }
-      const run = (connection: Connection | undefined) => work.pipe(asPerson(connection, repo.api, http, delegate), Effect.mapError((error) => {
+      const run = (connection: Connection | undefined) => work.pipe(asPerson(connection, repo.api, http, delegate, reads), Effect.mapError((error) => {
         const failure = error._tag === "WikiFailure" ? error : wikiFailureOf(error)
         return fresh() && !touched && ["conflict", "empty", "connect"].includes(failure.reason) ? new WikiFailure({ ...failure, unwritten: true }) : failure
       }), Effect.tapError((failure) => failure.reason === "connect" && authority.lost !== undefined ? authority.lost() : Effect.void))
@@ -227,30 +233,38 @@ export effect function executeWiki(hostId: string, storage: Storage, input: Wiki
     const engine = try FlowRuntime.FlowRuntime
     if (!observed.fresh && !failed) {
       const inspection = try RunInspection.RunInspection
-      const recorded = try inspection.payload(executionId).pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
+      const recorded = try inspection.payload(executionId)
       const decoded = Schema.decodeUnknownOption(WikiRequest)(recorded.payload)
       if (Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)) throw new WikiFailure({ reason: "invalid" })
     }
     if (failed) {
       const known = engine.poll(flow, target).pipe(Effect.as(true)) catch () => false
       if (!known) {
-        if (engine.retryFrom === undefined) throw new WikiFailure({ reason: "unavailable" })
+        // CloudflareRuntime's engine store always retries from a step (EngineStore's `retryFrom`).
+        const retryFrom = engine.retryFrom!
         const inspection = try RunInspection.RunInspection
-        const recorded = try inspection.payload(executionId).pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
+        const recorded = try inspection.payload(executionId)
         const decoded = Schema.decodeUnknownOption(WikiRequest)(recorded.payload)
         if (Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)) throw new WikiFailure({ reason: "invalid" })
-        const source = try inspection.inspect(executionId).pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
+        const source = try inspection.inspect(executionId)
         const step = source.steps.find((item) => item.action === `${flow._tag}/perform`)
         if (step === undefined) throw new WikiFailure({ reason: "unavailable" })
-        try engine.retryFrom(flow, { source: executionId, step: step.nodeId, executionId: target }).pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
+        try retryFrom(flow, { source: executionId, step: step.nodeId, executionId: target })
       }
     }
     return try engine.execute(flow, { executionId: target, payload: original })
-  }, runtime(target))).pipe(Effect.mapError((error) => error._tag === "WikiFailure" ? error : new WikiFailure({ reason: "unavailable" })))
+  }, runtime(target))).pipe(
+    Effect.mapError((error) => error._tag === "WikiFailure" ? error : new WikiFailure({ reason: "unavailable" })),
+    // The read flow's engine deadline (0015) settles it as a defect, journaled as an Error named by its tag; the person sees "unavailable" and Retry.
+    Effect.catchDefect((defect) => RetryPolicy.errorTag(defect) === "@smthrs/flow/DeadlineExceeded"
+      ? Effect.logWarning("vibelang.wiki.deadline").pipe(Effect.annotateLogs({ op: payload.op }), Effect.andThen(Metric.update(Metric.withAttributes(Metric.counter("vibelang_wiki_deadline", { incremental: true }), { op: payload.op }), 1)), Effect.andThen(Effect.fail(new WikiFailure({ reason: "unavailable", code: "unavailable" }))))
+      : Effect.die(defect)),
+  )
   return { ...result, role: actor?.role ?? "viewer" }
 }
 
-/** Unconfigured sign-in still leaves the repository's public wiki readable. */
-export function publicWiki(hostId: string, storage: Storage) {
-  return serveWiki(hostId, storage).pipe(Effect.provideService(WikiAuthority, { current: () => Effect.succeed(undefined) }), Effect.provide(FetchHttpClient.layer))
+/** Unconfigured sign-in still leaves the repository's public wiki readable, through `reads` when given. */
+export function publicWiki(hostId: string, storage: Storage, reads?: HttpClient.HttpClient) {
+  const served = serveWiki(hostId, storage).pipe(Effect.provideService(WikiAuthority, { current: () => Effect.succeed(undefined) }))
+  return (reads === undefined ? served : Effect.provideService(served, PublicReads, { client: reads })).pipe(Effect.provide(FetchHttpClient.layer))
 }

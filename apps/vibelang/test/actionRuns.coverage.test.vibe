@@ -7,7 +7,7 @@ import { Mythical } from "../src/history/MythicalHistory.vibe"
 import * as HistoryActions from "../worker/HistoryActions.vibe"
 import * as Objects from "../worker/Objects.vibe"
 import * as Runs from "../worker/ActionRuns.vibe"
-import { world, request, history } from "./support/actionObjects.vibe"
+import { world, request, history, interrupted } from "./support/actionObjects.vibe"
 
 const POST = "vibelang/Post"
 const TOUR = "vibelang/Tour"
@@ -74,6 +74,42 @@ describe("starting a run", () => {
       expect(answer).toBeNull()
       expect(snapshot.entries.filter((entry) => entry.author === "person")).toHaveLength(1)
       expect(rows).toMatchObject([{ id: "raced", state: "passed", result: "null" }])
+      expect(clock.alarmAt).toBeDefined()
+    })
+  }), 60_000)
+
+  it.live("settles a retried post whose host stopped right after accepting it, and wakes its reply", () => scoped(effect {
+    const w = try world()
+    const post = request("stopped", POST, { text: "hello" }, w.person.id)
+    const object = try interrupted(post.id, "post", w.authority)
+    const stopped = try exit(object.first.start(post, "maintainer"))
+    const clock = object.storage as unknown as { alarmAt: number | undefined }
+    const again = try object.restart()
+    const answer = try again.host.start(post, "maintainer")
+    const snapshot = try again.sequencer.read(0)
+    const rows = try Runs.read(again.sequencer)
+    try Effect.try(() => {
+      expect(stopped._tag).toBe("Failure")
+      expect(answer).toBeNull()
+      expect(snapshot.entries.filter((entry) => entry.author === "person").map((entry) => entry.text)).toEqual(["hello"])
+      expect(rows).toMatchObject([{ id: "stopped", state: "passed", result: "null" }])
+      expect(clock.alarmAt).toBeDefined()
+    })
+  }), 60_000)
+
+  it.live("wakes a retried tour whose host stopped right after starting it", () => scoped(effect {
+    const w = try world()
+    const tour = request("stopped-tour", TOUR, null, w.person.id)
+    const object = try interrupted(tour.id, "startTour", w.authority)
+    const stopped = try exit(object.first.start(tour, "maintainer"))
+    const clock = object.storage as unknown as { alarmAt: number | undefined }
+    const again = try object.restart()
+    const answer = try again.host.start(tour, "maintainer")
+    const guides = (try again.sequencer.read(0)).entries.filter((entry) => entry.author === "agent")
+    try Effect.try(() => {
+      expect(stopped._tag).toBe("Failure")
+      expect(answer).toBeNull()
+      expect(guides.map((entry) => entry.done)).toEqual([false])
       expect(clock.alarmAt).toBeDefined()
     })
   }), 60_000)

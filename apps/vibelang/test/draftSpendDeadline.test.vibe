@@ -1,0 +1,106 @@
+// @vitest-environment node
+// A draft's token charge (wiki draft, VIP draft, specification review) when the Budget object is unreachable: the
+// engine retries the charge for about two minutes (0015), then the draft fails visibly with its budget reason, logged
+// and counted under fixed names. The unreachable object is an injected faulty Spend; the model is scripted on a socket.
+import { describe, expect, it } from "@effect/vitest"
+import { TestClock } from "effect/testing"
+import { SpecificationReviewers } from "../src/core/specification.vibe"
+import { unansweredSpecificationReview } from "../src/core/conversation.vibe"
+import { VipWriter } from "../src/core/VipWriter.vibe"
+import { WikiWriter } from "../src/core/WikiWriter.vibe"
+import type { IssueRequest } from "../src/core/issueSchemas.vibe"
+import { ChatModel, Spend } from "../worker/Reply.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { agentLayer, writer } from "../worker/VipDraft.vibe"
+import { wikiAgentLayer, wikiWriter } from "../worker/WikiDraft.vibe"
+import { liveSpecificationReviewers } from "../worker/SpecificationReviewers.vibe"
+import { cell, scriptedModel, type Scripted } from "../fuzz/model-server.vibe"
+import { within } from "./support/durableWriters.vibe"
+
+const VIP: IssueRequest = { op: "draft", key: "d1", number: 0, parent: 0, title: "Tuple patterns", text: "Match on tuples.", example: "case (a, b) -> a", prior: "ML", assignee: "" }
+const PAGE = { page: "roadmap", source: "# Roadmap", ask: "Shorter." }
+const SPEC = { revision: 3, text: "# VIP\n\nA spec.", astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }
+const answering = (output: unknown): Scripted => ({ kind: "stream", pieces: [cell(JSON.stringify(output))], prompt: 3, completion: 4 })
+
+/** A Budget object that admits every draft and never takes a charge. */
+function unreachable() {
+  const log = { charges: 0 }
+  const spend: Spend.Shape = {
+    admit: () => succeed(true),
+    spend: () => Effect.suspend(() => { log.charges += 1; return Effect.fail(new Unreachable({ what: "budget" })) }),
+  }
+  return { log, spend }
+}
+
+/** `program`'s failure reason, or `answered`. */
+effect function reasonOf<A, R>(program: A!{ readonly reason: string }!R) {
+  const result = try Effect.result(program)
+  return result._tag === "Success" ? "answered" : result.failure.reason
+}
+
+/** Steps virtual time a second at a time, letting the socket and real promises settle between steps. */
+effect function settleWithin<A, E>(fiber: Fiber.Fiber<A, E>, limitSeconds: number) {
+  let elapsed = 0
+  while (fiber.pollUnsafe() === undefined && elapsed < limitSeconds) {
+    try TestClock.withLive(sleep("5 millis"))
+    try TestClock.adjust("1 second")
+    elapsed += 1
+  }
+  try TestClock.withLive(sleep("5 millis"))
+  return { elapsed, exit: fiber.pollUnsafe() }
+}
+
+/** Runs one draft whose Budget is unreachable; answers how long it took, how it ended, the charges, logs and count. */
+effect function unreachableDraft(draft: "wiki" | "vip" | "specification") {
+  const { References } = try promise(() => import("effect"))
+  const lines = try Ref.make<ReadonlyArray<string>>([])
+  const capture = Logger.layer([Logger.make(options => {
+    runSync(Ref.update(lines, all => [...all, JSON.stringify({ message: options.message, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })]))
+  })])
+  const { log, spend } = unreachable()
+  const budget = Layer.succeed(Spend, spend)
+  const program = match (draft) {
+    when "wiki": effect {
+      const model = { model: (try scriptedModel([answering({ page: "roadmap", text: "# Shorter\n" })])).model, unusable: "" }
+      const layer = wikiWriter.pipe(Layer.provide(wikiAgentLayer), Layer.provide(Layer.succeed(ChatModel, model)), Layer.provide(budget))
+      return try within(layer, reasonOf(effect { return try (try WikiWriter).draft(PAGE) }))
+    };
+    when "vip": effect {
+      const model = { model: (try scriptedModel([answering({ title: "T", summary: "S", example: "E", prior: "P" })])).model, unusable: "" }
+      const layer = writer.pipe(Layer.provide(agentLayer), Layer.provide(Layer.succeed(ChatModel, model)), Layer.provide(budget))
+      return try within(layer, reasonOf(effect { return try (try VipWriter).draft(VIP) }))
+    };
+    when "specification": effect {
+      const scripted = try scriptedModel([answering({ verdict: "LGTM", grade: "A", review: "Consistent." })])
+      const config = { ...scripted.values, SPEC_REVIEW_SOL: JSON.stringify(scripted.record) }
+      const layer = liveSpecificationReviewers.pipe(Layer.provide(budget), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))))
+      return try within(layer, reasonOf(effect { return try (try SpecificationReviewers).review("sol", SPEC) }))
+    };
+  }
+  const counter = Metric.withAttributes(Metric.counter("vibelang_draft_spend_failures", { incremental: true }), { draft })
+  const before = try Metric.value(counter)
+  const fiber = try forkChild(program.pipe(Effect.provide(capture)))
+  const { elapsed, exit } = try settleWithin(fiber, 600)
+  const after = try Metric.value(counter)
+  const records = (try Ref.get(lines)).filter(line => line.includes("vibelang.draft.spend"))
+  return { elapsed, exit, charges: log.charges, counted: Number(after.count) - Number(before.count), records }
+}
+
+describe("a draft whose Budget object is unreachable", () => {
+  for (const draft of ["wiki", "vip", "specification"] as const) {
+    it.effect(`${draft}: fails visibly within the charge's deadline instead of retrying forever`, () => scoped(effect {
+      const { elapsed, exit, charges, counted, records } = try unreachableDraft(draft)
+      try Effect.try(() => {
+        expect(exit?._tag === "Failure" ? Cause.pretty(exit.cause) : exit?._tag).toBe("Success")
+        expect(exit?._tag === "Success" ? exit.value : undefined).toBe("budget")
+        expect(elapsed).toBeGreaterThanOrEqual(100)
+        expect(elapsed).toBeLessThanOrEqual(180)
+        expect(charges).toBeGreaterThan(1)
+        expect(counted).toBe(1)
+        expect(records).toHaveLength(1)
+        expect(records[0]).toContain(`"draft":"${draft}"`)
+        expect(records[0]).toContain('"outcome":"unreachable"')
+      })
+    }))
+  }
+})

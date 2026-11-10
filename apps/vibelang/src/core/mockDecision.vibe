@@ -33,3 +33,34 @@ export function scriptIndex(prompt: string, scripts: ReadonlyArray<ScriptWords>)
   }
   return -1
 }
+
+/** Where the chunk of `text` that starts at `start` ends: `size` units on, or the end of the text. */
+//@ verify
+//@ requires 0 <= start && start <= text.length && 1 <= size
+//@ ensures \result == (start + size <= text.length ? start + size : text.length)
+//@ ensures start < \result || start == text.length
+export function chunkEnd(text: string, start: number, size: number): number {
+  return start + size <= text.length ? start + size : text.length
+}
+
+/**
+ * `text` in the pieces the mock agent streams: piece `i` is units `i * size` up to `(i + 1) * size`, the last one up to
+ * the end, so joined in order they are `text`, and none is empty.
+ */
+//@ verify
+//@ requires 1 <= size
+//@ ensures forall(i, 0 <= i && i < \result.length ==> 0 <= i * size && i * size < text.length && \result[i] == text.slice(i * size, chunkEnd(text, i * size, size)))
+//@ ensures \result.length * size >= text.length
+export function chunksOf(text: string, size: number): ReadonlyArray<string> {
+  let pieces: ReadonlyArray<string> = []
+  let start = 0
+  while (start < text.length) {
+    //@ invariant 0 <= start && start == pieces.length * size
+    //@ invariant start <= text.length || pieces.length * size - size < text.length
+    //@ invariant forall(i, 0 <= i && i < pieces.length ==> 0 <= i * size && i * size < text.length && pieces[i] == text.slice(i * size, chunkEnd(text, i * size, size)))
+    //@ decreases text.length - start
+    pieces = [...pieces, text.slice(start, chunkEnd(text, start, size))]
+    start = start + size
+  }
+  return pieces
+}

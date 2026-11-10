@@ -32,4 +32,18 @@ describe("authentication configuration fails closed", () => {
       expect(setup?.initialMaintainer).toBe("1")
     })
   })
+
+  // 0029: HTTP reaches the broker only through an injected loopback host. Configuration cannot inject one, so a loopback
+  // origin with a broker secret keeps device flow and reports browser sign-in unavailable.
+  it.effect("a loopback origin keeps device flow, and configuration cannot opt the broker into HTTP", () => effect {
+    const setup = try scoped(configured().pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ ...valid, VIBELANG_ORIGIN: "http://127.0.0.1:8787", AUTH_BROKER_SITE_SECRET: "fixture-only-broker-site-secret-32", AUTH_BROKER_LOCAL_DEVELOPMENT: "true" }))),
+    ))
+    try Effect.try(() => {
+      expect(setup?.origin).toBe("http://127.0.0.1:8787")
+      expect(setup?.broker?.origin).toBe("https://smithers.sh")
+      expect(setup?.broker?.localDevelopment).toBeUndefined()
+    })
+  })
 })

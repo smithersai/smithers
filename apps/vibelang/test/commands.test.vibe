@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as NodeServices from "@effect/platform-node/NodeServices"
-import { Ask, AskOutput, Read } from "../src/surfaces/commands.vibe"
+import { Ask, AskOutput, Read, RunSandbox, StartSandbox, StopSandbox } from "../src/surfaces/commands.vibe"
 import { backend, unreachable } from "../src/surfaces/backend.vibe"
 import { Factory } from "../src/core/Factory.vibe"
-import { MockFactory } from "../src/core/MockFactory.vibe"
+import { MockFactory, mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { mockReply } from "../src/core/mockReplies.vibe"
 
 describe("Factory commands", () => {
@@ -58,6 +58,19 @@ describe("Factory commands", () => {
       })
       const refused = Ask.run({ text: "" }) catch (error) => error.message
       try Effect.try(() => expect(refused).toBe("The message was refused: empty"))
+    }
+  })
+
+  it.live("says the sandbox refused a sandbox command, not a message", () => effect {
+    provide mockFactoryFor("maintainer") {
+      const started = try StartSandbox.run({ operationId: "refusal-start" })
+      try StopSandbox.run({ operationId: "refusal-stop", generation: started.generation })
+      const stopped = RunSandbox.run({ operationId: "refusal-run", generation: started.generation, command: "ls" }) catch (error) => error.message
+      const stale = StopSandbox.run({ operationId: "refusal-stale", generation: started.generation + 1 }) catch (error) => error.message
+      try Effect.try(() => {
+        expect(stopped).toBe("The sandbox refused it: stopped")
+        expect(stale).toBe("The sandbox refused it: stale-generation")
+      })
     }
   })
 

@@ -4,6 +4,8 @@ import type { Repository } from "../worker/Issues.vibe"
 
 export const API = "https://github.invalid"
 export const repo: Repository = { owner: "o", name: "r", api: API, agent: "vibe-agent" }
+/** GitHub's immutable id for o/r: smithers.sh checks it, and a fork's parent, before every write. */
+export const REPOSITORY_ID = 11
 
 export interface FakeIssue {
   id: number
@@ -46,7 +48,7 @@ export interface Fake {
   labels: Array<string>
   assignable: Array<{ id: number; login: string }>
   pulls: Array<FakePull>
-  forks: Record<string, { name: string; owner: { login: string }; default_branch: string; fork?: boolean; parent?: { full_name: string } }>
+  forks: Record<string, { id: number; name: string; owner: { login: string }; default_branch: string; fork: boolean; parent: { id: number; full_name: string } }>
   branches: Record<string, Record<string, string>>
   commits: Record<string, string>
   pullAdditions: Record<string, Array<string>>
@@ -68,6 +70,16 @@ export interface Fake {
   /** Commit-pinned reads see this text: main advanced after the first read. */
   pinnedText: string | undefined
   contentStatus: number
+  /** A branch lookup answers this status when it is not 200. */
+  refStatus: number
+  /** Every GET answers this status when it is not 200: GitHub is down. */
+  outage: number
+  /** After the next sub-issue link, this many GETs answer 503: GitHub wrote the link, then went down for a moment. */
+  dropAfterLink: number
+  /** GETs that still answer 503. */
+  dropping: number
+  /** Issue lists omit the VIP marker of bodies: GitHub has not shown a new issue's body yet. */
+  hideVip: boolean
 }
 
 function seedIssue(fake: Fake, number: number, state: "open" | "closed", labels: Array<string>, body: string, assignees: Array<{ id: number; login: string }>): void {
@@ -86,7 +98,7 @@ export function seed(): Fake {
     pulls: [], forks: {}, branches: { "o/r": { main: "a".repeat(40) } }, commits: {}, pullAdditions: {},
     writes: 0, nextId: 1000, nextIssue: 100, nextPull: 600, nextSha: 1,
     forbiddenNext: false, endlessIssues: false, endlessTimeline: false, endlessReviews: false, malformedIssues: false,
-    endlessComments: false, dropAssignees: false, noMain: false, files: {}, pinnedText: undefined, contentStatus: 200,
+    endlessComments: false, dropAssignees: false, noMain: false, files: {}, pinnedText: undefined, contentStatus: 200, refStatus: 200, outage: 200, dropAfterLink: 0, dropping: 0, hideVip: false,
   }
   seedIssue(fake, 1, "open", [], "A plain issue", [])
   fake.comments[1] = [{ id: 900, node_id: "comment-900", body: "First note", user: { id: 8, login: "reviewer" }, created_at: "2026-01-02T00:00:00Z", updated_at: "2026-01-02T00:00:00Z", issue_url: `${API}/repos/o/r/issues/1` }]
@@ -109,8 +121,24 @@ export function seed(): Fake {
   return fake
 }
 
-const jsonResponse = (request: HttpClientRequest.HttpClientRequest, status: number, body: unknown, headers: Record<string, string> = {}) =>
-  succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } }))))
+/** The person forked o/r on GitHub themselves: smithers.sh never creates a fork (decision 0165). */
+export function forked(fake: Fake, login = "fuzz"): void {
+  fake.forks[`${login}/r`] = { id: 12, name: "r", owner: { login }, default_branch: "main", fork: true, parent: { id: REPOSITORY_ID, full_name: "o/r" } }
+  fake.branches[`${login}/r`] = { ...fake.branches["o/r"] }
+}
+
+/** A JSON answer; a successful GET carries an ETag of its body, as GitHub's do, so a read cache keeps it. */
+const jsonResponse = (request: HttpClientRequest.HttpClientRequest, status: number, body: unknown, headers: Record<string, string> = {}) => {
+  const text = JSON.stringify(body)
+  const etag = request.method === "GET" && status === 200 ? { etag: `"${tagOf(text)}"` } : {}
+  return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(text, { status, headers: { "content-type": "application/json", ...etag, ...headers } }))))
+}
+
+function tagOf(text: string): string {
+  let hash = 0
+  for (let index = 0; index < text.length; index++) hash = (Math.imul(hash, 31) + text.charCodeAt(index)) | 0
+  return `${text.length}-${(hash >>> 0).toString(16)}`
+}
 
 /** An in-memory GitHub over the real client protocol: REST pagination, sub-issues, forks, refs, GraphQL commits. */
 export function fakeClient(fake: Fake): HttpClient.HttpClient {
@@ -131,6 +159,11 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       apply()
       return try jsonResponse(request, status, answer())
     }
+    if (fake.outage !== 200 && request.method === "GET") return try jsonResponse(request, fake.outage, { message: "Unavailable" })
+    if (fake.dropping > 0 && request.method === "GET") {
+      fake.dropping -= 1
+      return try jsonResponse(request, 503, { message: "Unavailable" })
+    }
     const page = (items: ReadonlyArray<unknown>, endless: boolean) =>
       jsonResponse(request, 200, items, endless ? { link: `<${API}${path}?page=2>; rel="next"` } : {})
     const issueOne = /^\/repos\/([^/]+)\/([^/]+)\/issues\/(\d+)$/.exec(path)
@@ -146,7 +179,6 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
     const pullOne = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/.exec(path)
     const pullFiles = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/files$/.exec(path)
     const pullReviews = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/reviews$/.exec(path)
-    const forks = /^\/repos\/([^/]+)\/([^/]+)\/forks$/.exec(path)
     const repoOne = /^\/repos\/([^/]+)\/([^/]+)$/.exec(path)
     const refOne = /^\/repos\/([^/]+)\/([^/]+)\/git\/ref\/heads\/(.+)$/.exec(path)
     const matchingRefs = /^\/repos\/([^/]+)\/([^/]+)\/git\/matching-refs\/heads\/(.+)$/.exec(path)
@@ -154,18 +186,14 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
     const commitOne = /^\/repos\/([^/]+)\/([^/]+)\/git\/commits\/([0-9a-f]+)$/.exec(path)
     if (repoOne && request.method === "GET") {
       const key = `${repoOne[1]}/${repoOne[2]}`
-      if (key === "o/r") return try jsonResponse(request, 200, { name: "r", owner: { login: "o" }, default_branch: "main" })
+      if (key === "o/r") return try jsonResponse(request, 200, { id: REPOSITORY_ID, name: "r", owner: { login: "o" }, default_branch: "main" })
       const existing = fake.forks[key]
       return try (existing === undefined ? jsonResponse(request, 404, { message: "Not Found" }) : jsonResponse(request, 200, existing))
     }
-    if (forks && request.method === "POST") {
-      return try write(201, () => fake.forks[`fuzz/${forks[2]}`], () => {
-        const made = { name: forks[2]!, owner: { login: "fuzz" }, default_branch: "main", fork: true, parent: { full_name: `${forks[1]}/${forks[2]}` } }
-        fake.forks[`fuzz/${forks[2]}`] = made
-        fake.branches[`fuzz/${forks[2]}`] = { ...fake.branches[`${forks[1]}/${forks[2]}`] }
-      })
+    if (issuesList && request.method === "GET") {
+      const shown = fake.hideVip ? fake.issues.map((issue) => ({ ...issue, body: String(issue.body ?? "").replace(/<!-- vibelang:vip [^>]*-->/g, "") })) : fake.issues
+      return try page(fake.malformedIssues ? [{ garbage: true }, ...shown] : shown, fake.endlessIssues)
     }
-    if (issuesList && request.method === "GET") return try page(fake.malformedIssues ? [{ garbage: true }, ...fake.issues] : fake.issues, fake.endlessIssues)
     if (issuesList && request.method === "POST") {
       const number = fake.nextIssue
       const title = String(body?.title ?? "")
@@ -201,6 +229,8 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       const child = fake.issues.find((candidate) => candidate.id === Number(body?.sub_issue_id))
       return try write(200, () => parent, () => {
         if (child !== undefined) child.parent_issue_url = `${API}/repos/o/r/issues/${parent.number}`
+        fake.dropping = fake.dropAfterLink
+        fake.dropAfterLink = 0
       })
     }
     if (timeline && request.method === "GET") return try page([
@@ -250,7 +280,9 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       const number = fake.nextPull
       const headName = String(body?.head ?? "")
       const branch = headName.includes(":") ? headName.split(":")[1]! : headName
-      const sha = fake.branches[`${headName.split(":")[0]}/r`]?.[branch] ?? "b".repeat(40)
+      const sha = fake.branches[`${headName.split(":")[0]}/r`]?.[branch]
+      // GitHub refuses a pull request whose head branch does not exist.
+      if (sha === undefined) return try jsonResponse(request, 422, { message: "Validation Failed", errors: [{ resource: "PullRequest", field: "head", code: "invalid" }] })
       return try write(201, () => fake.pulls.find((pull) => pull.number === number), () => {
         fake.nextPull += 1
         const additions = fake.pullAdditions[sha] ?? []
@@ -273,6 +305,7 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       { id: 2, node_id: "rev-2", user: null, body: "note", state: "COMMENTED", commit_id: "d".repeat(40) },
     ], fake.endlessReviews)
     if (refOne && request.method === "GET") {
+      if (fake.refStatus !== 200) return try jsonResponse(request, fake.refStatus, { message: "Refused" })
       const sha = fake.noMain && refOne[3] === "main" ? undefined : fake.branches[`${refOne[1]}/${refOne[2]}`]?.[refOne[3]!]
       return try (sha === undefined ? jsonResponse(request, 404, { message: "Not Found" }) : jsonResponse(request, 200, { ref: `refs/heads/${refOne[3]}`, object: { sha, type: "commit" } }))
     }

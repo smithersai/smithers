@@ -8,7 +8,7 @@ import { Reply, touring } from "../src/core/flows.vibe"
 import { wikiPath } from "../src/core/wiki.vibe"
 import type { HistoryReader } from "../src/history/tools.vibe"
 import * as Objects from "../worker/Objects.vibe"
-import { run, same, Finding, Int, TextOrBoundary } from "./run.vibe"
+import { run, same, Finding, Int, TextOrBoundary, REPLAY_FLOOR } from "./run.vibe"
 
 const unavailable = () => fail(new Unavailable({ reason: "injected history failure" }))
 const history: HistoryReader = { outline: unavailable, epic: unavailable, commit: unavailable, search: unavailable, plan: unavailable, start: unavailable, note: unavailable }
@@ -21,12 +21,28 @@ effect function storage() {
   return raw as unknown as Objects.Storage
 }
 
+/** The object's storage, except that its next `faults` writes of the held execution's intent reject. */
+function intentWriteFails(object: Objects.Storage, faults: { left: number }): Objects.Storage {
+  return new Proxy(object, {
+    get: (target, name) => {
+      if (name === "put") return (key: string, value: unknown) => {
+        if (key !== ExecutionObject.intentKey || faults.left === 0) return target.put(key, value)
+        faults.left -= 1
+        return Promise.reject(new Error("injected intent write failure"))
+      }
+      const member = Reflect.get(target, name) as unknown
+      return typeof member === "function" ? (member as (...args: ReadonlyArray<unknown>) => unknown).bind(target) : member
+    },
+  })
+}
+
 const Step = Schema.Struct({
   op: Schema.Literals(["post", "repost", "tour", "endTour", "pause", "resume", "seek", "wiki", "alarm", "dispatch"]),
   pick: Int, text: TextOrBoundary, admit: Schema.Boolean,
   page: Schema.Literals(["index", "rulings", "roadmap", "decisions/0015-fuzzing", "nope", ""]),
 })
 
+// The saved conversation replay can spend the 5 s coverage budget before any new execution on a 4-vCPU box.
 it.live("objects/conversation-host", () => run("objects/conversation-host", Schema.Array(Step).check(Schema.isMaxLength(14)), (steps) => effect {
   const object = try storage()
   const sequencer = try Objects.conversation(object)
@@ -88,9 +104,9 @@ it.live("objects/conversation-host", () => run("objects/conversation-host", Sche
     if (!same(try reloaded.snapshot(), try sequencer.snapshot())) throw new Finding({ report: "a fresh incarnation replayed another conversation" })
   }
   return true
-}))
+}, undefined, { minimum: "30 seconds" }))
 
-const OBJECT_SCENARIOS = ["post-behind-tour", "seek-behind-reply", "tour-behind-reply", "wiki-pages", "routing", "unadmitted-receipt"] as const
+const OBJECT_SCENARIOS = ["post-behind-tour", "seek-behind-reply", "tour-behind-reply", "wiki-pages", "routing", "unadmitted-receipt", "tour-seek-end", "tour-during-reply", "tour-dispatch-fault"] as const
 const Scenario = Schema.Struct({ pick: Int, text: TextOrBoundary, admit: Schema.Boolean })
 const PAGES = ["index", "rulings", "nope", "", "decisions/0015-fuzzing"]
 
@@ -162,6 +178,58 @@ const objectScenario = (scenario: typeof OBJECT_SCENARIOS[number], pick: number,
       if (!same(try sequencer.snapshot(), before)) throw new Finding({ report: "a hostless tour wake changed the conversation" })
       break
     }
+    case "tour-seek-end": {
+      // A seek past the last stop ends the walk without waiting out a reading hold: the tour finishes on the next alarm.
+      if ((try Objects.tour("conv", object, sequencer)) !== null) throw new Finding({ report: "a first tour was refused" })
+      try bounded("alarm", Objects.alarm("conv", object, sequencer, spend, model, history))
+      const sought = try bounded("seek", Objects.controlTour("conv", object, sequencer, "seek", 11))
+      if (sought !== null) throw new Finding({ report: `a seek past the last stop answered ${sought}` })
+      try bounded("alarm", Objects.alarm("conv", object, sequencer, spend, model, history))
+      // Finished, not failed: the agent's tour entry is done without an error, and the walkthrough keeps its last step.
+      const after = try sequencer.snapshot()
+      const entry = after.entries.find((item) => item.author === "agent")
+      if (touring(after) !== "" || after.agent !== "idle" || entry?.done !== true || entry.error !== "" || after.walkthrough?.step !== 11) throw new Finding({ report: `the tour did not finish after its last stop (agent ${after.agent})` })
+      break
+    }
+    case "tour-during-reply": {
+      // A latch holds the reply at its admission: the reply's execution holds the object while a tour arrives.
+      if ((try bounded("post", Objects.post("conv", object, sequencer, `c${pick}`, "Guest", "Question"))) !== null) throw new Finding({ report: "a first post was refused" })
+      const entered = try Deferred.make<void>()
+      const release = try Deferred.make<void>()
+      const held = { admit: (_day: string) => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.andThen(spend.admit())), spend: spend.spend }
+      const replying = try Effect.forkScoped(Effect.exit(Objects.alarm("conv", object, sequencer, held, model, history)))
+      try Deferred.await(entered)
+      const during = try bounded("tour", Objects.tour("conv", object, sequencer))
+      if (during !== "busy" || touring(try sequencer.snapshot()) !== "") throw new Finding({ report: `a tour while a reply runs answered ${during}` })
+      try Deferred.succeed(release, undefined)
+      try Fiber.join(replying)
+      // The reply still holds the object's execution; a tour is accepted behind it, and ending it wakes nothing.
+      const intent = try promise(() => object.get<string>(ExecutionObject.intentKey))
+      if (intent === undefined || !intent.includes(Reply._tag)) throw new Finding({ report: "the reply let go of the object before its next alarm" })
+      if ((try bounded("tour", Objects.tour("conv", object, sequencer))) !== null) throw new Finding({ report: "a tour behind a started reply was refused" })
+      if ((try bounded("end tour", Objects.endTour("conv", object, sequencer))) !== null) throw new Finding({ report: "ending a tour behind a reply was refused" })
+      for (let turn = 0; turn < 3; turn++) try bounded("alarm", Objects.alarm("conv", object, sequencer, spend, model, history))
+      const after = try sequencer.snapshot()
+      if (touring(after) !== "" || after.agent !== "idle") throw new Finding({ report: `an ended tour behind a reply left the agent ${after.agent}` })
+      break
+    }
+    case "tour-dispatch-fault": {
+      // The tour is recorded, then its dispatch's intent write fails: a store write failure is a defect (0015), and the
+      // object holds no execution when Escape wakes it (`wakeTour`'s missing intent). Escape still ends the tour.
+      const faults = { left: 1 }
+      const faulty = intentWriteFails(object, faults)
+      const dispatching = try Objects.conversation(faulty)
+      const recorded = try Effect.exit(bounded("tour", Objects.tour("conv", faulty, dispatching)))
+      if (recorded._tag !== "Failure" || faults.left !== 0) throw new Finding({ report: "a tour whose dispatch write failed answered" })
+      if ((try promise(() => object.get<string>(ExecutionObject.intentKey))) !== undefined || touring(try dispatching.snapshot()) === "") throw new Finding({ report: "a failed dispatch left an execution, or no recorded tour" })
+      if ((try bounded("end tour", Objects.endTour("conv", faulty, dispatching))) !== null) throw new Finding({ report: "ending a tour with no execution was refused" })
+      if (touring(try dispatching.snapshot()) !== "" || (try promise(() => object.get<string>(ExecutionObject.intentKey))) !== undefined) throw new Finding({ report: "Escape left a tour with no execution running" })
+      for (let turn = 0; turn < 3; turn++) try bounded("alarm", Objects.alarm("conv", faulty, dispatching, spend, model, history))
+      const after = try dispatching.snapshot()
+      const entry = after.entries.find((item) => item.author === "agent")
+      if (after.agent !== "idle" || entry?.done !== true || entry.error !== "") throw new Finding({ report: `a tour ended with no execution left the agent ${after.agent}` })
+      break
+    }
     case "unadmitted-receipt": {
       // No execution was admitted and none was cancelled: there is no receipt to read, and asking is a defect.
       const intent = try Effect.orDie(ExecutionObject.intent(Reply, { executionId: `reply/m${pick}`, payload: { post: `m${pick}` } }))
@@ -177,4 +245,4 @@ const objectScenario = (scenario: typeof OBJECT_SCENARIOS[number], pick: number,
 it.live("objects/steered-host", () => run("objects/steered-host", Scenario, ({ pick, text, admit }) => effect {
   for (const scenario of OBJECT_SCENARIOS) try objectScenario(scenario, pick, text, admit)
   return true
-}))
+}, undefined, { minimum: REPLAY_FLOOR }))

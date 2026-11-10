@@ -27,6 +27,7 @@ const inputOf = (flow: string, id: string, well: boolean): Schema.Json => !well 
   : {}
 
 /** Random run lifecycles on the real durable objects: only typed refusals, known states, no duplicated run. */
+// Replaying the saved lifecycle plus cold durable-flow setup exceeds 15 s with coverage on an idle 4-vCPU box.
 it.live("actions/object-lifecycles", () => run("actions/object-lifecycles", Input, (ops) => effect {
   const w = try world()
   provide MockFactory, history {
@@ -82,4 +83,4 @@ it.live("actions/object-lifecycles", () => run("actions/object-lifecycles", Inpu
       return true
     }
   }
-}))
+}, undefined, { minimum: "60 seconds" }))

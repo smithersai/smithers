@@ -1,0 +1,63 @@
+// Markdown (src/web/markdown.vibe) on the block forms the reply cases leave out, and a reply's link drawn in the chat.
+import { expect, role, scene, given, selector } from "foldkit/scene"
+import { describe, it } from "@effect/vitest"
+import { expect as assert } from "vitest"
+import { newClient, receive } from "../src/core/conversation.vibe"
+import { compile, toHtml } from "../src/web/markdown.vibe"
+import { init, type Model, update } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+
+describe("lists", () => {
+  it("a numbered list is ordered, a dashed one is not", () => {
+    assert(compile("1. one\n2. two")).toEqual([{ tag: "ol", children: [{ tag: "li", children: ["one"] }, { tag: "li", children: ["two"] }] }])
+    assert(compile("- one")).toEqual([{ tag: "ul", children: [{ tag: "li", children: ["one"] }] }])
+  })
+
+  it("an indented line continues the item above it", () => {
+    assert(compile("- one\n  more of one\n    and more\n- two")).toEqual([{ tag: "ul", children: [
+      { tag: "li", children: ["one more of one and more"] }, { tag: "li", children: ["two"] },
+    ] }])
+  })
+
+  it("a ruling item is its own anchor, so a link can open it", () => {
+    assert(compile("1. **VL-7.** Mock mode always works.")).toEqual([{ tag: "ol", children: [
+      { tag: "li", id: "vl-7", children: [{ tag: "strong", children: ["VL-7."] }, " Mock mode always works."] },
+    ] }])
+    assert(toHtml("- **VL-12.** x")).toContain("<li class=\"sui-md-li\" id=\"vl-12\">")
+  })
+})
+
+describe("tables", () => {
+  it("a table row as the last line, with no separator after it, is prose", () => {
+    assert(compile("| a | b |")).toEqual([{ tag: "p", children: ["| a | b |"] }])
+  })
+})
+
+describe("a reply in the chat", () => {
+  const home = init({ session: "md", mode: "mock", name: "Ada" }).model
+  const posted = receive(newClient, { type: "Posted", seq: 1, id: "m1", clientId: "c1", name: "Ada", text: "Where are the docs?" })
+  const started = receive(posted, { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" })
+  const written = receive(started, { type: "ReplyDelta", seq: 3, id: "r1", text: "Read [the guide](https://vibelang.smithers.sh/docs/intro) first." })
+  const replied: Model = { ...home, surface: "chat", client: receive(written, { type: "ReplyFinished", seq: 4, id: "r1" }) }
+
+  it("draws a fenced block as code, not as inline code", () => {
+    const fenced: Model = { ...home, surface: "chat", client: receive(receive(started, { type: "ReplyDelta", seq: 3, id: "r1", text: "Run it:\n\n```vibe\nconst x = 1\n```" }), { type: "ReplyFinished", seq: 4, id: "r1" }) }
+    scene({ update, view }, given(fenced),
+      expect(selector("pre.vl-code.sui-md-pre")).toContainText("const x = 1"),
+      expect(selector("pre code.sui-md-inline-code")).not.toExist(),
+    )
+  })
+
+  it("draws a heading with its own anchor, so a link can open it", () => {
+    const headed: Model = { ...home, surface: "chat", client: receive(receive(started, { type: "ReplyDelta", seq: 3, id: "r1", text: "## Install steps\n\nRun the installer." }), { type: "ReplyFinished", seq: 4, id: "r1" }) }
+    scene({ update, view }, given(headed),
+      expect(role("heading", { name: "Install steps" })).toHaveAttr("id", "install-steps"),
+    )
+  })
+
+  it("draws a Markdown link with its target", () => {
+    scene({ update, view }, given(replied),
+      expect(role("link", { name: "the guide" })).toHaveAttr("href", "https://vibelang.smithers.sh/docs/intro"),
+    )
+  })
+})

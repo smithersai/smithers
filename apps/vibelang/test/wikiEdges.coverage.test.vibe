@@ -1,0 +1,123 @@
+// The wiki pane at its remaining edges, through the real view and update: a decision page's trail, status and
+// rulings, finding pages by typing, a search that matches nothing, and a failed load's Retry.
+import { Command, click, expect, given, role, scene, selector, text, type } from "foldkit/scene"
+import type { HtmlBuilder } from "foldkit/html"
+import { describe, it } from "@effect/vitest"
+import { pages } from "../src/core/wiki.vibe"
+import { init, Message, OpenWikiCommand, signedOut, update } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+import { wikiPane } from "../src/web/wikiView.vibe"
+
+const home = init({ session: "wiki-edges", mode: "mock", name: "Guest" }).model
+const app = { update, view }
+type Model = typeof home
+const at = (url: string, over: Partial<Model> = {}): Model => ({ ...home, surface: "chat", client: { ...home.client, conversation: { ...home.client.conversation, pane: url } }, ...over })
+const accepted = pages.find((page) => page.decision && page.status === "Accepted" && page.rulings.length > 0)!
+
+describe("a decision page", () => {
+  it("shows Decisions and its number in the trail, its status, and buttons for its rulings", () => {
+    const ruling = accepted.rulings[0]!
+    scene(app, given(at(`/wiki/${accepted.id}`)),
+      expect(role("button", { name: "Decisions" })).toExist(),
+      expect(text(accepted.status)).toHaveClass("sui-badge-success"),
+      click(role("button", { name: ruling })),
+      Command.expectExact(OpenWikiCommand({ conversation: home.conversation, page: `rulings#${ruling.toLowerCase()}`, request: 1 })),
+      Command.resolve(OpenWikiCommand, Message.SucceededWiki()),
+    )
+  })
+})
+
+describe("finding pages", () => {
+  it("typing filters the list and lists any other page that matches", () => {
+    const extra = pages.find((page) => !page.decision && !["index", "rulings", "roadmap", "decisions", "designs/index"].includes(page.id))!
+    scene(app, given(at("/wiki/index")),
+      expect(role("link", { name: extra.label })).toBeAbsent(),
+      type(role("textbox", { name: "Find a page" }), extra.title),
+      expect(role("link", { name: extra.label })).toExist(),
+    )
+  })
+
+  it("a search that matches nothing says so", () => {
+    scene(app, given(at("/wiki/index", { wikiQuery: "zzzz no such page" })),
+      expect(text('No pages match "zzzz no such page"')).toExist(),
+      expect(text("Decisions")).toBeAbsent(),
+    )
+  })
+})
+
+it("a failed load retries the requested page, or the index when none was requested", () => {
+  scene(app, given(at("/wiki/index", { wikiStatus: "error", wikiRequested: "roadmap" })),
+    click(role("button", { name: "Retry" })),
+    Command.expectExact(OpenWikiCommand({ conversation: home.conversation, page: "roadmap", request: 1 })),
+    Command.resolve(OpenWikiCommand, Message.SucceededWiki()),
+  )
+  scene(app, given(at("/wiki/index", { wikiStatus: "error" })),
+    click(role("button", { name: "Retry" })),
+    Command.expectExact(OpenWikiCommand({ conversation: home.conversation, page: "index", request: 1 })),
+    Command.resolve(OpenWikiCommand, Message.SucceededWiki()),
+  )
+})
+
+it("a search matching home pages and others lists them all", () => {
+  const extra = pages.filter((page) => !page.decision && !["index", "rulings", "roadmap", "decisions", "designs/index"].includes(page.id))
+  const query = "e"
+  const matching = extra.filter((page) => `${page.label} ${page.title}`.toLowerCase().includes(query))
+  scene(app, given(at("/wiki/index", { wikiQuery: query })),
+    expect(role("link", { name: "Home" })).toExist(),
+    expect(role("link", { name: matching[0]!.label })).toExist(),
+    expect(role("link", { name: matching[1]!.label })).toExist(),
+  )
+})
+
+it("an edit whose submission failed offers Retry", () => {
+  const roadmap = pages.find((page) => page.id === "roadmap")!
+  const submission = { op: "save" as const, page: "roadmap", base: roadmap.source, text: roadmap.source + "\nMore.", key: "k1" }
+  const maintainer = { ...signedOut, identity: { id: "1", login: "will", role: "maintainer" as const } }
+  scene(app, given(at("/wiki/roadmap", { account: maintainer, wikiEdit: { page: "roadmap", base: roadmap.source, text: submission.text, busy: false, error: "", submission } })),
+    expect(role("button", { name: "Retry" })).toExist(),
+  )
+})
+
+it("a wiki address that names no page lists the pages and shows no page", () => {
+  scene(app, given(at("/wiki/no-such-page")),
+    expect(role("navigation", { name: "Wiki pages" })).toExist(),
+    expect(role("link", { name: "Home" })).toExist(),
+    expect(text("The wiki didn't load")).toBeAbsent(),
+  )
+})
+
+
+it("an archived decision shows Replaced as an outline badge", () => {
+  const archived = { ...accepted, status: "Replaced" }
+  const corpus = pages.map(page => page.id === archived.id ? archived : page)
+  scene({ update, view: (model: Model, h: HtmlBuilder<Message>) => ({ title: "Wiki", body: wikiPane(model, h, corpus) }) }, given(at(`/wiki/${archived.id}`)),
+    expect(selector(".vl-wiki-meta span.sui-badge-outline")).toHaveText("Replaced"),
+  )
+})
+
+it("an editor disconnected from GitHub offers a connection and keeps the person's text", () => {
+  const roadmap = pages.find(page => page.id === "roadmap")!
+  const account = { ...signedOut, identity: { id: "1", login: "will", role: "maintainer" as const } }
+  const edited = roadmap.source + "\nRetain my change.\n"
+  scene(app, given(at("/wiki/roadmap", { account, wikiEdit: { page: "roadmap", base: roadmap.source, text: edited, busy: false, error: "Connect GitHub." } })),
+    expect(role("alert")).toContainText("Connect GitHub."),
+    expect(role("button", { name: "Connect GitHub" })).toHaveAttr("type", "submit"),
+    expect(selector('form[action="/api/auth/connect?wiki-page=roadmap"]')).toHaveAttr("method", "post"),
+    expect(role("textbox", { name: "Edit Roadmap" })).toHaveValue(edited),
+  )
+})
+
+for (const [reason, label, destination] of [
+  ["Fork on GitHub.", "Fork", "https://github.com/smithersai/smithers/fork"],
+  ["Install Smithers on your fork.", "Install", "/api/auth/install"],
+] as const) {
+  it(`an editor told "${reason}" links the person to ${label} and keeps the change`, () => {
+    const roadmap = pages.find(page => page.id === "roadmap")!
+    const account = { ...signedOut, identity: { id: "1", login: "will", role: "maintainer" as const } }
+    const edited = roadmap.source + "\nRetain my change.\n"
+    scene(app, given(at("/wiki/roadmap", { account, wikiEdit: { page: "roadmap", base: roadmap.source, text: edited, busy: false, error: reason } })),
+      expect(role("link", { name: label })).toHaveAttr("href", destination),
+      expect(role("textbox", { name: "Edit Roadmap" })).toHaveValue(edited),
+    )
+  })
+}

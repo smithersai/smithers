@@ -1,5 +1,6 @@
 // The bodies of the API Worker's Durable Objects and its fetch handler. Their Alchemy bindings are worker/Api.vibe; Alchemy
 // is imported for types only here, so a workerd host can bundle and run these bodies.
+import * as ObjectStartup from "./ObjectStartup.vibe"
 import type * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { WikiDrafting } from "../src/core/WikiWriter.vibe"
@@ -19,7 +20,7 @@ import * as ActionRuns from "./ActionRuns.vibe"
 import * as ActionDirectory from "./ActionDirectory.vibe"
 import * as Accounts from "./Accounts.vibe"
 import { postName, type Identity } from "../src/core/roles.vibe"
-import { FetchHttpClient, HttpClient, HttpServerRequest } from "effect/http"
+import { HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
 import { type PageRequest, pageOf } from "../src/history/pages.vibe"
 import type { Write } from "../src/history/wire.vibe"
@@ -28,6 +29,7 @@ import * as HistoryObject from "./HistoryObject.vibe"
 import { chargeKeyOf } from "./budgetDecision.vibe"
 import { afterOf, eventStream, handle, type Conversations, type Histories } from "./Http.vibe"
 import { githubMain } from "./MainLog.vibe"
+import { publicReads, readSetup, type ReadSetup } from "./PublicReads.vibe"
 import * as Objects from "./Objects.vibe"
 import { SandboxIdentity } from "./accountObject.vibe"
 import type { Gateway } from "./SandboxHttp.vibe"
@@ -47,7 +49,7 @@ type Setup = NonNullable<Effect.Success<ReturnType<typeof Accounts.configured>>>
 /** The repository whose history the History object holds. */
 export const REPOSITORY = "vibelang"
 
-export interface ConversationShape {
+export interface ConversationShape extends ObjectStartup.Health {
   readonly startAction: (request: RunRequest, role: Role) => (string | null)!!RuntimeContext
   readonly actionRequest: () => (RunRequest | undefined)!!RuntimeContext
   readonly actionRuns: () => ReadonlyArray<Run>!!RuntimeContext
@@ -61,12 +63,12 @@ export interface ConversationShape {
   readonly alarm: () => void!!RuntimeContext
 }
 
-export interface BudgetShape {
-  readonly admit: () => boolean!!RuntimeContext
-  readonly spend: (reply: string, tokens: number) => void!!RuntimeContext
+export interface BudgetShape extends ObjectStartup.Health {
+  readonly admit: (reply: string, ceiling: number) => boolean!!RuntimeContext
+  readonly spend: (reply: string, tokens: number, reported: boolean, ceiling: number) => void!!RuntimeContext
 }
 
-export interface HistoryShape {
+export interface HistoryShape extends ObjectStartup.Health {
   readonly page: (request: PageRequest) => unknown!!RuntimeContext
   /** A write as the request's signed-in identity (0028); a visitor is a viewer and is refused. */
   readonly write: (name: Write, body: unknown, principal: Principal) => HistoryObject.Answered!!RuntimeContext
@@ -74,14 +76,14 @@ export interface HistoryShape {
   readonly act: (name: Write, body: unknown, principal: Principal, operation: string) => HistoryObject.Answered!!RuntimeContext
 }
 
-export interface AccountsShape {
+export interface AccountsShape extends ObjectStartup.Health {
   readonly draftWiki: (owner: string, page: string, ask: string, key: string) => (string | null)!!RuntimeContext
   readonly role: (owner: string) => import("../src/core/conversation.vibe").Role!!RuntimeContext
   readonly allowed: (actor: string, action: import("../src/core/conversation.vibe").Action) => boolean!!RuntimeContext
   readonly current: (cookie: string | undefined) => Identity!!RuntimeContext
   readonly participation: (cookie: string | undefined) => void!!RuntimeContext
 }
-export interface ActionDirectoryShape {
+export interface ActionDirectoryShape extends ObjectStartup.Health {
   readonly list: (flow: string) => ReadonlyArray<Run>!!RuntimeContext
   readonly start: (request: RunRequest, role: Role) => (string | null)!!RuntimeContext
   readonly rerun: (id: string, next: string, role: Role, owner: string, caller?: { readonly name: string; readonly actor: "person" | "agent" }) => (string | null)!!RuntimeContext
@@ -100,14 +102,14 @@ function reached<A, E>(runtime: RuntimeContext["Service"], what: string, call: A
 /** The same daily token ledger serves conversation answers and explicit VIP drafts. */
 function spendOf(runtime: RuntimeContext["Service"], budgets: Namespace<BudgetShape>, hostId: string): Spend.Shape {
   return {
-    admit: (day) => effect {
+    // The day's object is shared by every conversation and account; the host's own id namespaces each reservation and charge.
+    admit: (day, reply, ceiling) => effect {
       const object = try objectOf(budgets, day, "budget")
-      return try reached(runtime, "budget", object.admit())
+      return try reached(runtime, "budget", object.admit(chargeKeyOf(hostId, reply), ceiling))
     },
-    spend: (day, reply, tokens) => effect {
+    spend: (day, reply, tokens, reported, ceiling) => effect {
       const object = try objectOf(budgets, day, "budget")
-      // The day's object is shared by every conversation and account; the host's own id namespaces the charge.
-      try reached(runtime, "budget", object.spend(chargeKeyOf(hostId, reply), tokens))
+      try reached(runtime, "budget", object.spend(chargeKeyOf(hostId, reply), tokens, reported, ceiling))
     },
   }
 }
@@ -123,20 +125,22 @@ function actionIdentity(namespace: Namespace<AccountsShape>, runtime: RuntimeCon
 }
 
 /** One UTC day's token budget. */
-export function budgetObject(state: ObjectState, limit: number) {
+function budgetBody(state: ObjectState, limit: number) {
   return effect {
-    const budget = try Objects.budget(state.raw.storage, limit)
-    return { admit: () => budget.admit(), spend: budget.spend }
+    const budget = try ObjectStartup.step("storage", Objects.budget(state.raw.storage, limit))
+    return { admit: budget.admit, spend: budget.spend }
   }
 }
 
-/** VibeLang's history; `client` reads GitHub's main. */
-export function historyObject(state: ObjectState, token: string | undefined, client: HttpClient.HttpClient) {
+/** VibeLang's history; it reads GitHub's main signed out, through smithers.sh when `reads` names it (0031). */
+function historyBody(state: ObjectState, reads: ReadSetup | undefined, client: HttpClient.HttpClient) {
   return effect {
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
-    const sequencer = try HistoryObject.history(state.raw.storage)
-    const main = githubMain("smithersai/vibelang", client, token)
-    if ((try sequencer.read()).seq === 0) try HistoryObject.bootstrap(hostId, state.raw.storage, sequencer, main)
+    const sequencer = try ObjectStartup.step("sequencer", HistoryObject.history(state.raw.storage))
+    const main = githubMain("smithersai/vibelang", try publicReads(state.raw.storage, reads).pipe(Effect.provideService(HttpClient.HttpClient, client)))
+    try ObjectStartup.step("bootstrap", effect {
+      if ((try sequencer.read()).seq === 0) try HistoryObject.bootstrap(hostId, state.raw.storage, sequencer, main)
+    })
     return {
       // Each page is computed here, beside the history, so a reader gets only what it shows.
       page: (request: PageRequest) => Effect.map(sequencer.read(), (history) => pageOf(history, request) as unknown),
@@ -152,21 +156,23 @@ export function historyObject(state: ObjectState, token: string | undefined, cli
   }
 }
 
-/** The project's accounts; `setup` is undefined when sign-in is not configured. */
-export function accountsObject(state: ObjectState, budgets: Namespace<BudgetShape>, model: Model, setup: Setup | undefined) {
+/** The project's accounts; `setup` is undefined when sign-in is not configured. `client` reaches GitHub for the wiki and issues. */
+function accountsBody(state: ObjectState, budgets: Namespace<BudgetShape>, model: Model, setup: Setup | undefined, client: HttpClient.HttpClient) {
   return effect {
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
+    // Sign-in unconfigured: the public wiki and issues still read through smithers.sh when the site holds its key (0031).
+    const reads = setup === undefined ? try publicReads(state.raw.storage, try Effect.orDie(readSetup())).pipe(Effect.provideService(HttpClient.HttpClient, client)) : undefined
     if (setup === undefined) return {
       draftWiki: () => succeed("forbidden"),
       current: () => Effect.succeed({ id: "", login: "", role: "viewer" as const }), role: () => succeed("viewer" as const), allowed: () => succeed(false), participation: () => Effect.void,
       fetch: effect {
         const request = try HttpServerRequest.HttpServerRequest
-        if (new URL(request.url, "https://api.invalid").pathname === "/api/issues") return try publicIssues(hostId, state.raw.storage)
-        if (new URL(request.url, "https://api.invalid").pathname === "/api/wiki") return try publicWiki(hostId, state.raw.storage)
+        if (new URL(request.url, "https://api.invalid").pathname === "/api/issues") return try publicIssues(hostId, state.raw.storage, reads)
+        if (new URL(request.url, "https://api.invalid").pathname === "/api/wiki") return try publicWiki(hostId, state.raw.storage, reads)
         return try Accounts.disabled()
       },
     }
-    const accounts = try Effect.orDie(Accounts.make(hostId, state.raw.storage, setup).pipe(Effect.provide(FetchHttpClient.layer)))
+    const accounts = try ObjectStartup.step("accounts", Effect.orDie(Accounts.make(hostId, state.raw.storage, setup).pipe(Effect.provideService(HttpClient.HttpClient, client))))
     return {
       ...accounts,
       draftWiki: (owner: string, page: string, ask: string, key: string) => effect {
@@ -184,11 +190,11 @@ export function accountsObject(state: ObjectState, budgets: Namespace<BudgetShap
 }
 
 /** One conversation; `clientOf` adapts the entrypoint its alarm calls back into. */
-export function conversationObject(state: ObjectState, budgets: Namespace<BudgetShape>, histories: Namespace<HistoryShape>, accounts: Namespace<AccountsShape>, model: Model, clientOf: typeof Cloudflare.toHttpClient) {
+function conversationBody(state: ObjectState, budgets: Namespace<BudgetShape>, histories: Namespace<HistoryShape>, accounts: Namespace<AccountsShape>, model: Model, clientOf: typeof Cloudflare.toHttpClient) {
   return effect {
     // The object's id, the same for every incarnation: the engine's host id (it has none when Alchemy plans).
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
-    const sequencer = try Objects.conversation(state.raw.storage)
+    const sequencer = try ObjectStartup.step("sequencer", Objects.conversation(state.raw.storage))
     const identity = actionIdentity(accounts, try RuntimeContext)
     const actionRuns = ActionRuns.make(hostId, state.raw.storage, sequencer, identity)
 
@@ -254,7 +260,7 @@ export function conversationObject(state: ObjectState, budgets: Namespace<Budget
 }
 
 /** The directory of action runs. */
-export function actionIndexObject(state: ObjectState, accounts: Namespace<AccountsShape>, conversations: Namespace<ConversationShape>) {
+function actionIndexBody(state: ObjectState, accounts: Namespace<AccountsShape>, conversations: Namespace<ConversationShape>) {
   return effect {
     const runtime = try RuntimeContext
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
@@ -314,17 +320,51 @@ export function sandboxIdentityOf(namespace: Namespace<AccountsShape>, execution
   }
 }
 
+/** ProjectAccounts' answer to an account route; a call that fails to reach it is `Unreachable`. */
+effect function accountFetch(accounts: Namespace<AccountsShape>, runtime: RuntimeContext["Service"], request: HttpServerRequest.HttpServerRequest) {
+  const object = try objectOf(accounts, "project", "accounts")
+  return try reached(runtime, "accounts", object.fetch(request))
+}
+
+/** How long a health read waits for an object's start-up to settle, and its whole budget per object. */
+export const HEALTH_PATIENCE = "2 seconds"
+export const HEALTH_BUDGET = "4500 millis"
+
 /** The API Worker's fetch: account routes reach ProjectAccounts, the rest the HTTP protocol. */
-export function apiFetch(namespaces: { readonly conversations: Namespace<ConversationShape>; readonly accounts: Namespace<AccountsShape>; readonly actions: Namespace<ActionDirectoryShape>; readonly histories: Namespace<HistoryShape> }, gateway: Gateway<RuntimeContext>, commit: string | undefined, executionProps: Record<string, unknown>!!) {
-  const { conversations, accounts, actions, histories } = namespaces
+export function apiFetch(namespaces: { readonly conversations: Namespace<ConversationShape>; readonly accounts: Namespace<AccountsShape>; readonly actions: Namespace<ActionDirectoryShape>; readonly histories: Namespace<HistoryShape>; readonly budgets: Namespace<BudgetShape> }, gateway: Gateway<RuntimeContext>, commit: string | undefined, executionProps: Record<string, unknown>!!) {
+  const { conversations, accounts, actions, histories, budgets } = namespaces
   return effect {
     const runtime = try RuntimeContext
+    const incoming = try HttpServerRequest.HttpServerRequest
+    const healthUrl = new URL(incoming.url, "https://api.invalid")
+    if (healthUrl.pathname === "/api/health/objects" && incoming.method === "GET") {
+      const inspect = <S extends ObjectStartup.Health>(namespace: Namespace<S>, name: string, objectClass: string) => withSpan(effect {
+        const result = try exit(effect {
+          const object = try objectOf(namespace, name, objectClass)
+          // A health read often wakes an evicted object: it waits 2 seconds for that start-up to settle, and reaching a
+          // cold object took over 2 seconds in production (2026-11-10), so the budget holds both.
+          return try reached(runtime, objectClass, object.health(HEALTH_PATIENCE))
+        }.pipe(Effect.timeout(HEALTH_BUDGET)))
+        const outcome = result._tag === "Success" ? "observed" : "unreachable"
+        try Metric.update(Metric.withAttributes(Metric.counter("vibelang_object_health_reads", { incremental: true }), { objectClass, outcome }), 1)
+        try Effect.logInfo("vibelang.object.health").pipe(Effect.annotateLogs({ objectClass, outcome }))
+        return result._tag === "Success" ? result.value : { objectClass, objectId: null, codeVersion: null, startup: "unreachable" }
+      }, "vibelang.object.health")
+      const checks = {
+        Budget: inspect(budgets, new Date(try Clock.currentTimeMillis).toISOString().slice(0, 10), "Budget"),
+        ProjectAccounts: inspect(accounts, "project", "ProjectAccounts"),
+        History: inspect(histories, REPOSITORY, "History"),
+        ActionIndex: inspect(actions, "vibelang", "ActionIndex"),
+        Conversation: inspect(conversations, healthUrl.searchParams.get("conversation") ?? "health", "Conversation"),
+      }
+      const objects = try all(checks, { concurrency: "unbounded" })
+      return HttpServerResponse.jsonUnsafe({ commit: commit ?? null, objects }, { headers: { "cache-control": "no-store" } })
+    }
+
     const request = try HttpServerRequest.HttpServerRequest
     const path = new URL(request.url, "http://api.invalid").pathname
-    if (accountRoute(path)) {
-      const object = try Effect.orDie(objectOf(accounts, "project", "accounts"))
-      return try Effect.orDie(reached(runtime, "accounts", object.fetch(request)))
-    }
+    // An unreachable accounts object answers 503 naming it, as every other object's routes do (Http.vibe).
+    if (accountRoute(path)) return accountFetch(accounts, runtime, request) catch (error) => HttpServerResponse.jsonUnsafe({ error: error.what }, { status: 503, headers: { "cache-control": "no-store" } })
     const api: Conversations = {
       post: (conversation, body) => effect {
         const object = try objectOf(conversations, conversation, "conversation")
@@ -414,3 +454,10 @@ export function apiFetch(namespaces: { readonly conversations: Namespace<Convers
     return try handle(api, history, gateway, actionApi, commit).pipe(Effect.provideService(ActionIdentity, actionIdentity(accounts, runtime, trustedOf(try executionProps))))
   }
 }
+
+
+export const budgetObject = (...args: Parameters<typeof budgetBody>) => ObjectStartup.make("Budget", args[0], budgetBody(...args), { admit: true, spend: true })
+export const historyObject = (...args: Parameters<typeof historyBody>) => ObjectStartup.make("History", args[0], historyBody(...args), { page: true, write: true, act: true, fetch: true })
+export const accountsObject = (...args: Parameters<typeof accountsBody>) => ObjectStartup.make("ProjectAccounts", args[0], accountsBody(...args), { draftWiki: true, current: true, role: true, allowed: true, participation: true, fetch: true })
+export const conversationObject = (...args: Parameters<typeof conversationBody>) => ObjectStartup.make("Conversation", args[0], conversationBody(...args), { startAction: true, actionRequest: true, actionRuns: true, cancelAction: true, post: true, read: true, openWiki: true, controlTour: true, tour: true, endTour: true, fetch: true, alarm: true })
+export const actionIndexObject = (...args: Parameters<typeof actionIndexBody>) => ObjectStartup.make("ActionIndex", args[0], actionIndexBody(...args), { list: true, start: true, rerun: true, cancel: true })

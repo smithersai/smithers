@@ -5,7 +5,6 @@ import { resolve } from "node:path"
 
 test("Chromium remapping retains a tree-shaken export and an unvisited nested Effect branch", async ({ context }, info) => {
   // Cold compiler startup and bundle remapping exceed the UI deadline on the shared lane host.
-  // Keep every positive control before the known mapping-defect assertion.
   test.skip(process.env.E2E_BASE_URL !== undefined, "it remaps the local build's source maps, which a deployment does not serve")
   test.setTimeout(120_000)
   const page = await context.newPage()
@@ -35,8 +34,8 @@ test("Chromium remapping retains a tree-shaken export and an unvisited nested Ef
     expect(misses).toContain(9)
     expect(file.toSummary().branches.pct).toBeLessThan(100)
     expect(file.toSummary().functions.pct).toBeLessThan(100)
-    // Earlier setup, unused-export and branch checks must pass independently of the known line defect.
-    test.fail(true, "Known bundled statement mapping defect; ~/vl/vibelang-bugs/coverage-source-ranges, decision 0016")
+    // The e2e build is unminified (decision 0016), so the unvisited `return 9` keeps its own statement. A minified
+    // bundle folds both returns into one and credits it: test/browserCoverageMerge.test.vibe keeps that case.
     expect(misses).toContain(4)
     expect(file.getLineCoverage()[3]).toBeGreaterThan(0)
   } finally {

@@ -1,0 +1,40 @@
+// Which mythical commit a commit of main names (src/history/Sequencer.vibe's trailerOf): only a `Mythical: m<n>` line
+// in the message's trailer paragraph, its last paragraph of `Key: value` lines after the title. A squash or a body
+// that quotes another commit's trailer folds as a new commit, never into the commit the quote names.
+import { describe, expect, it } from "@effect/vitest"
+import { make, memoryStore, trailerOf } from "../src/history/Sequencer.vibe"
+
+describe("the trailer a commit of main names", () => {
+  it("is read from the last paragraph when every line there is a trailer", () => {
+    expect(trailerOf("docs: a\n\nBody.\n\nMythical: m7\nCo-Authored-By: Ada <ada@example.com>\n")).toBe("m7")
+    expect(trailerOf("docs: a\r\n\r\nMythical: m3\r\n")).toBe("m3")
+    expect(trailerOf("docs: a\n\nMythical: m2\n\n\n")).toBe("m2")
+  })
+
+  it("is not read from a squash whose last paragraph names none", () => {
+    expect(trailerOf("feat: two\n\n* first\n\nMythical: m4\n\n* second\n\nCo-Authored-By: Ada <ada@example.com>\n")).toBe("")
+  })
+
+  it("is not read from prose that quotes one, nor from the title", () => {
+    expect(trailerOf("fix: a\n\nThe plan said\nMythical: m4\nbut this is another change.\n")).toBe("")
+    expect(trailerOf("fix: a\n\nQuoted:\n\nMythical: m4\n\nMythical: m9\n")).toBe("m9")
+    expect(trailerOf("Mythical: m4")).toBe("")
+    expect(trailerOf("Mythical: m4\n")).toBe("")
+  })
+
+  it.effect("a squash quoting an approved commit's trailer folds as a new commit", () => effect {
+    const sequencer = try make(try memoryStore())
+    const planned = try sequencer.plan({ how: "append", epic: "", newEpic: "Docs", target: "", title: "docs: one", task: "" })
+    const started = try sequencer.record({ type: "Start", id: planned.id, lane: "lane" })
+    const approved = try sequencer.record({ type: "Approve", id: planned.id, by: "Ada" })
+    const message = `docs: squash\n\n* docs: one\n\nMythical: ${planned.id}\n\n* docs: two\n\nCo-Authored-By: Ada <ada@example.com>\n`
+    const squash = try sequencer.fold({ sha: "s1", change: "", title: "docs: squash", message })
+    const named = try sequencer.fold({ sha: "s2", change: "", title: "docs: one", message: `docs: one\n\nMythical: ${planned.id}\n` })
+    try Effect.try(() => {
+      expect([started.ok, approved.ok]).toEqual([true, true])
+      expect(squash.refusal).toBe(null)
+      expect(squash.id).not.toBe(planned.id)
+      expect(named).toEqual({ id: planned.id, refusal: null })
+    })
+  })
+})

@@ -1,0 +1,62 @@
+// @vitest-environment node
+// Mock mode answers what live answers (VL-13): the same Actions call, for each role, against MockActions over the
+// real MockFactory and against the LiveActions client over the real HTTP handler and SQLite run hosts.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpServer, HttpServerRequest } from "effect/http"
+import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
+import { LiveActions } from "../src/actions/LiveActions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { handle, type ActionsApi } from "../worker/ActionsHttp.vibe"
+import { ActionIdentity } from "../worker/ActionIdentity.vibe"
+import { eventStream } from "../worker/Http.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import { world, history } from "./support/actionObjects.vibe"
+
+const ROLES = ["viewer", "new", "community", "contributor", "maintainer"] as const
+
+effect function code(work: unknown!ActionFailure) { return work.pipe(Effect.as("ok")) catch error => error.code }
+
+/** The code live answers `role` for starting `flow`. */
+effect function live(role: (typeof ROLES)[number], flow: string) {
+  return try scoped(effect {
+    const w = try world()
+    try Effect.orDie(w.accounts.choose(role))
+    provide NodeHttpServer.layerTest, history {
+      const api: ActionsApi = {
+        list: w.directory.list,
+        start: w.directory.start,
+        rerun: w.directory.rerun,
+        cancel: w.directory.cancel,
+        read: effect id => try Runs.read((try w.object(id)).sequencer),
+        events: effect id => eventStream((try w.object(id)).sequencer.follow(0)),
+      }
+      try HttpServer.serveEffect(effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        return try Effect.provideService(handle(api, new URL(request.originalUrl, `http://${request.headers.host ?? "local"}`)), ActionIdentity, w.authority)
+      })
+      provide LiveActions("") {
+        return try code((try Actions).start(flow, {}, "button"))
+      }
+    }
+  })
+}
+
+/** The code mock mode answers `role` for starting `flow`. */
+effect function mock(role: (typeof ROLES)[number], flow: string) {
+  return try scoped(effect {
+    provide MockActions({ role, actor: "person" }).pipe(Layer.provide(MockFactory)) {
+      return try code((try Actions).start(flow, {}, "button"))
+    }
+  })
+}
+
+describe("mock and live actions", () => {
+  it.live("refuse an unknown flow alike, for every role", () => effect {
+    for (const role of ROLES) {
+      const answers = { live: try live(role, "unknown/flow"), mock: try mock(role, "unknown/flow") }
+      try Effect.try(() => expect({ role, ...answers }).toEqual({ role, live: "forbidden", mock: "forbidden" }))
+    }
+  }, 120_000)
+})

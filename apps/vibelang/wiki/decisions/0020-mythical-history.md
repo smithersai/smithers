@@ -82,8 +82,8 @@ the routes).
 
 `LiveMythical` is the `Mythical` layer over it. A live Fold reads GitHub's commit list of `smithersai/vibelang`
 (`worker/MainLog.vibe`, at most ten pages of 100) and walks first parents back to the last folded commit; a merge's side
-commits the pages hold come before it, and one already folded is refused `duplicate`. `GITHUB_TOKEN`, when the
-deployment sets it, raises GitHub's rate limit. Authorization is itself a journaled step, so a refusal is on the record
+commits the pages hold come before it, and one already folded is refused `duplicate`. It reads signed out through
+smithers.sh's App and the object's cache ([0031](0031-public-reads.md)); the site holds no GitHub token. Authorization is itself a journaled step, so a refusal is on the record
 as an acceptance is.
 
 **Observability.** `vibelang.history.<step>` logs and `vibelang_history_steps{step, outcome}` counts, the flows'
@@ -92,7 +92,7 @@ as an acceptance is.
 
 ## Flows and their least roles
 
-Roles come from `src/history/roles.vibe`: each flow reads its least role from `HISTORY_ROLES` and its caller from the
+Roles come from `src/history/roles.vibe`: each flow reads its least role from the proved `leastRole` and its caller from the
 `Caller` service, the one place to swap for decision 0019's policy interface when it lands. A refused caller gets
 `forbidden`; the history is unchanged.
 
@@ -110,6 +110,10 @@ Roles come from `src/history/roles.vibe`: each flow reads its least role from `H
 Landing stays the merge queue's: Approve is the person's decision; the lane enqueues the approved commit with a
 `Mythical: m<n>` trailer; the queue lands it on `vibe`; the green cut moves `main`; Fold maps it back, into the commit
 the trailer names, else as a new commit appended to the epic of its scope.
+
+The trailer is the first `Mythical: m<n>` line of the message's trailer paragraph: its last paragraph after the title,
+when every line there is a `Key: value` trailer (git's form). A squash body or prose that quotes a trailer names no
+commit (`test/sequencerTrailer.test.vibe`).
 
 ## The view
 
@@ -274,8 +278,9 @@ The proof found two bugs before any test did: `apply` accepted a plan into the e
 ## Not yet, and why
 
 - The git export (above).
-- Live writes: until decision 0019's sign-in lands every HTTP caller is a viewer, so Plan, Start, Note, Approve and
-  Fold answer `forbidden` live; reads and the mock work.
+- Live writes on production: 0019's sign-in is on `main` (`worker/apiObjects.vibe` builds the history principal from
+  the session's role), but production predates it, so there every HTTP caller is a viewer and Plan, Start, Note,
+  Approve and Fold answer `forbidden` until the lead deploys; reads and the mock work.
 - A push webhook for Fold, and lane reports as notes: the queue lives on a private server; both need tokens (0019).
 - Moving or dropping a planned commit, splitting or reordering epics: no ruling asks; the log has room for them.
 - Diffs on a commit's page: the projection holds no trees; the page links each real commit on GitHub.

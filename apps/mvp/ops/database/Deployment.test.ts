@@ -17,7 +17,7 @@ test("Alchemy's real Neon migration URI adapter uses verify-full; Electric retai
   expect(migrated.expr).toBe(input)
   const connection = migrated.f(uri)
   expect(Redacted.value(connection)).toBe("postgresql://private-user:private-pass@database.invalid/private-db?sslmode=verify-full&connect_timeout=3")
-  expect(sslFor(connection)?.rejectUnauthorized).toBe(true)
+  expect(sslFor(connection)).toMatchObject({ rejectUnauthorized: true })
   expect(Redacted.value(electric.f(uri))).toContain("sslmode=require")
 })
 

@@ -41,32 +41,45 @@ import type { InfraInterrupt } from "./InfraInterrupt.vibe"
 import { InfraInterruptRetriesExhausted } from "./InfraInterruptRetriesExhausted.vibe"
 import { TypeId } from "./TypeId.ts"
 
+/** One schema's stored-value representation. @private */
+type StoredCodec<S extends Schema.Constraint> = Schema.Codec<
+  S["Type"],
+  unknown,
+  S["DecodingServices"],
+  S["EncodingServices"]
+>
+
 /**
  * The exit schemas an action's stored results encode and decode with under
  * one serializer: `exitSchema` with a typed defect channel, and
- * `exitSchemaPartial` with an opaque one.
+ * `exitSchemaPartial` with an opaque one. The decoded types and schema
+ * services remain those declared by the action; encoded values are unknown.
  *
  * @category models
  * @since 1.0.0
  */
-export interface ExitSchemas {
-  readonly exitSchema: Schema.Exit<any, any, any>
-  readonly exitSchemaPartial: Schema.Exit<any, any, any>
+export interface ExitSchemas<
+  Success extends Schema.Constraint = Schema.Constraint,
+  Error extends Schema.Constraint = Schema.Constraint
+> {
+  readonly exitSchema: Schema.Exit<StoredCodec<Success>, StoredCodec<Error>, Schema.Defect>
+  readonly exitSchemaPartial: Schema.Exit<StoredCodec<Success>, StoredCodec<Error>, Schema.Unknown>
 }
 
 // A declared action mints a fresh inline action per dispatch. Effect caches
 // compiled parsers by AST identity, so codecs and exit schemas are shared per
 // (serializer codec, schema) rather than rebuilt on every dispatch.
 const codecCache = new WeakMap<RpcSerialization.CodecFor, WeakMap<object, Schema.Top>>()
-const exitSchemaCache = new WeakMap<RpcSerialization.CodecFor, WeakMap<object, WeakMap<object, ExitSchemas>>>()
+const exitSchemaCache = new WeakMap<RpcSerialization.CodecFor, WeakMap<object, WeakMap<object, unknown>>>()
 
 /** One schema's stored-value codec under one serializer. @private */
-const codecOf = (codecFor: RpcSerialization.CodecFor, schema: Schema.Constraint): Schema.Top => {
+const codecOf = <S extends Schema.Constraint>(codecFor: RpcSerialization.CodecFor, schema: S): StoredCodec<S> => {
   let bySchema = codecCache.get(codecFor)
   if (bySchema === undefined) codecCache.set(codecFor, bySchema = new WeakMap())
   let codec = bySchema.get(schema)
-  if (codec === undefined) bySchema.set(schema, codec = codecFor(schema as Schema.Top))
-  return codec
+  if (codec === undefined) bySchema.set(schema, codec = codecFor(schema as unknown as Schema.Top))
+  // The codec cache is keyed by this exact schema and codec function.
+  return codec as StoredCodec<S>
 }
 
 /**
@@ -79,10 +92,10 @@ const codecOf = (codecFor: RpcSerialization.CodecFor, schema: Schema.Constraint)
  * @category codecs
  * @since 1.0.0
  */
-export const exitSchemasFor = (
+export const exitSchemasFor = <Success extends Schema.Constraint, Error extends Schema.Constraint>(
   serialization: RpcSerialization.RpcSerialization["Service"],
-  action: { readonly successSchema: Schema.Constraint; readonly errorSchema: Schema.Constraint }
-): ExitSchemas => {
+  action: { readonly successSchema: Success; readonly errorSchema: Error }
+): ExitSchemas<Success, Error> => {
   let bySuccess = exitSchemaCache.get(serialization.codecFor)
   if (bySuccess === undefined) exitSchemaCache.set(serialization.codecFor, bySuccess = new WeakMap())
   let byError = bySuccess.get(action.successSchema)
@@ -97,7 +110,8 @@ export const exitSchemasFor = (
     }
     byError.set(action.errorSchema, cached)
   }
-  return cached
+  // Both schema identities and the serializer codec are part of the cache key.
+  return cached as ExitSchemas<Success, Error>
 }
 
 /**
@@ -207,7 +221,12 @@ const makeInline = <
     : Schema.decodeUnknownSync(Schema.NonEmptyString)(options.implementationVersion)
   const successSchema = options.success ?? (Schema.Void as any as Success)
   const errorSchema = options.error ?? (Schema.Never as any as Error)
-  const exitSchemas = exitSchemasFor(RpcSerialization.json, { successSchema, errorSchema })
+  // Keep the action's existing declared-schema fields; the stored codec only
+  // changes their encoded representation, not their decoded types or services.
+  const exitSchemas = exitSchemasFor(RpcSerialization.json, { successSchema, errorSchema }) as unknown as {
+    readonly exitSchema: Schema.Exit<Success, Error, Schema.Defect>
+    readonly exitSchemaPartial: Schema.Exit<Success, Error, Schema.Unknown>
+  }
   let execute!: Effect.Effect<Success["Type"], Error["Type"], any>
   const attemptTimeoutMs = timeoutMs(options.name, "attemptTimeoutMs", options.attemptTimeoutMs)
   const heartbeatTimeoutMs = timeoutMs(options.name, "heartbeatTimeoutMs", options.heartbeatTimeoutMs)

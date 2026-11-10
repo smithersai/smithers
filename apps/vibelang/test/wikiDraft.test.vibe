@@ -4,7 +4,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { FlowRuntime } from "@smthrs/flow"
 import { WebCrypto } from "@smthrs/crypto"
 import { ChatModel, Spend } from "../worker/Reply.vibe"
-import { WikiDraftAgent, wikiAgentLayer, wikiWriter } from "../worker/WikiDraft.vibe"
+import { WikiDraftAgent, wikiAgentLayer, wikiWriter, WIKI_CEILING } from "../worker/WikiDraft.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 import { WikiWriter } from "../src/core/WikiWriter.vibe"
 import { WikiFailure } from "../src/core/wikiSchemas.vibe"
@@ -40,5 +40,24 @@ it.live("a faulty budget prevents the draft agent and returns a content-free bud
     expect(result).toMatchObject({ _tag: "Failure", failure: { reason: "budget" } })
     expect(ran).toBe(0)
     expect(JSON.stringify(result)).not.toContain("private-draft-ask")
+  })
+}))
+
+
+it.live("charges the ceiling when malformed wiki usage makes the SDK meter unavailable", () => scoped(effect {
+  const charges: Array<{ readonly reported: boolean; readonly ceiling: number }> = []
+  const spend: Spend.Shape = {
+    admit: () => succeed(true),
+    spend: (_day, _reply, _tokens, reported, ceiling) => sync(() => { charges.push({ reported, ceiling }) }),
+  }
+  const faulty: WikiDraftAgent.Shape = { available: true, run: effect (_request, meter) => {
+    try meter.record("invalid", { inputTokens: Number.NaN, outputTokens: 2 }).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" })))
+    throw new WikiFailure({ reason: "draft" })
+  } }
+  const context = try Layer.build(wikiWriter.pipe(Layer.provide(Layer.succeed(WikiDraftAgent, faulty)), Layer.provide(Layer.succeed(Spend, spend))))
+  const result = try attempt(Context.get(context, WikiWriter))
+  try Effect.try(() => {
+    expect(result).toMatchObject({ _tag: "Failure", failure: { reason: "budget" } })
+    expect(charges).toEqual([{ reported: false, ceiling: WIKI_CEILING }])
   })
 }))

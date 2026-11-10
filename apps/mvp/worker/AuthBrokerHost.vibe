@@ -10,6 +10,18 @@ const Step = Flow.make("auth/Broker", {
   payload: { step: Schema.String }, success: Schema.Null, body: () => Node.succeed(null),
 })
 
+/**
+ * Admitted executions are forgotten a day after they settle (`CloudflareRuntime.Options.retention`): every broker
+ * record expires within ten minutes, and each execution names a fresh random id no caller asks for again.
+ */
+export const EXECUTION_RETENTION = { olderThanMs: 86_400_000 }
+
+/**
+ * One object serves every hosted site's sign-in, so nothing here holds a lock: the store's conditional writes are the
+ * single-use points, and a slow GitHub call in one callback never queues another person's sign-in. A request the
+ * broker would refuse before writing (`Broker.screen`) answers its 400 without an execution, so an unauthenticated
+ * caller can create nothing in this object.
+ */
 export effect function make(hostId: string, storage: ObjectDatabase.Storage, setup: {
   readonly origin: string; readonly sites: ReadonlyArray<GitHub.Auth.Broker.HostedSite>; readonly secret: Redacted.Redacted<string>
   readonly encryptionKey: Redacted.Redacted<string>; readonly localDevelopment?: boolean
@@ -18,10 +30,15 @@ export effect function make(hostId: string, storage: ObjectDatabase.Storage, set
     const keys = try Core.CookieKeys.make({ primary: setup.secret }, "primary")
     const store = try Effect.orDie(Broker.sqliteStore(storage.sql))
     const broker = try Effect.orDie(Broker.make({ ...setup, keys, store, github }))
-    const lock = try Semaphore.make(1)
     return { fetch: effect {
       const request = try HttpServerRequest.HttpServerRequest
-      const operation = new URL(request.originalUrl).pathname === Broker.START ? "start" : new URL(request.originalUrl).pathname === Broker.EXCHANGE ? "exchange" : "callback"
+      const pathname = new URL(request.originalUrl).pathname
+      const operation = pathname === Broker.START ? "start" : pathname === Broker.EXCHANGE ? "exchange" : pathname === Broker.CONSENT ? "consent" : "callback"
+      if (!(try Broker.screen(broker, setup.origin))) {
+        try Metric.update(Metric.withAttributes(Metric.counter("smithers_auth_broker_screened", { incremental: true }), { operation }), 1)
+        try Effect.logInfo("auth.broker.screen").pipe(Effect.annotateLogs({ operation, outcome: "refused" }))
+        return Broker.refusal(setup.origin)
+      }
       const executionId = "auth-broker/" + (try keys.token)
       let response = HttpServerResponse.empty({ status: 503, headers: Broker.HEADERS })
       const registration = Layer.effectDiscard(effect {
@@ -34,8 +51,8 @@ export effect function make(hostId: string, storage: ObjectDatabase.Storage, set
           return null
         })
       })
-      provide CloudflareRuntime.layer({ hostId, executionId, flow: Step._tag }, registration).pipe(Layer.provide(ObjectDatabase.layer(storage))) {
-        try Effect.orDie(Semaphore.withPermits(lock, 1)((try FlowRuntime.FlowRuntime).execute(Step, { executionId, payload: { step: operation } })))
+      provide CloudflareRuntime.layer({ hostId, executionId, flow: Step._tag, retention: EXECUTION_RETENTION }, registration).pipe(Layer.provide(ObjectDatabase.layer(storage))) {
+        try Effect.orDie((try FlowRuntime.FlowRuntime).execute(Step, { executionId, payload: { step: operation } }))
       }
       return response
     }.pipe(Effect.provide(StructuredLogger.layerStructuredJson())) }

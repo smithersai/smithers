@@ -1,0 +1,81 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpServer, HttpServerRequest, HttpClient, HttpClientRequest, FetchHttpClient } from "effect/http"
+import * as Objects from "../worker/Objects.vibe"
+import { handle, eventStream, type Conversations, type Histories } from "../worker/Http.vibe"
+import { eventKey } from "../worker/ObjectStorage.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+import type { Event } from "../src/core/conversation.vibe"
+import { MAX_WRITE_BYTES } from "../src/history/wire.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("a malformed retained event refuses replay, and a repaired store reopens at the last valid cursor", async ({ bench }) => {
+  const result = await workload(bench, "worker-corrupt-conversation-reopen", "async", () => runPromise(scoped(effect {
+    const kv = try Effect.try(() => objectStorage())
+    const storage = kv as unknown as Objects.Storage
+    const original = try Objects.conversation(storage)
+    try original.post("one", "Bench", "Retained post")
+    const before = try original.read(0)
+    const key = eventKey(2)
+    try promise(() => kv.put(key, { type: "Posted", seq: 2, id: "m2", clientId: "two", name: "Bench", text: 42 }))
+    const broken = try Objects.conversation(storage)
+    const refused = try exit(broken.read(0))
+    try promise(() => kv.delete(key))
+    const reopened = try Objects.conversation(storage)
+    const after = try reopened.read(0)
+    try Effect.try(() => {
+      expect(refused._tag).toBe("Failure")
+      if (refused._tag === "Failure") expect(String(Cause.squash(refused.cause))).toContain("Invalid conversation events")
+      expect(after).toEqual(before)
+      expect(after.entries.map(entry => entry.text)).toEqual(["Retained post"])
+      expect(after.seq).toBe(1)
+    })
+  }))).run(slow)
+  await runPromise(artifact("worker-corrupt-conversation-reopen", "Real conversation sequencer and object KV log: append a valid person post, inject a malformed persisted next event as a faulty storage service, attempt a new sequencer read, then remove only the injected corruption and reopen. Every sample checks safe replay refusal and exact retained state/cursor after repair. Three fresh stores, setup and assertions included.", ["Node in-memory object KV. Deliberate storage corruption, not a claim of filesystem crash recovery or automatic product repair. No model or external request."], result))
+})
+
+it("a chunked history body over the byte limit is refused before the writer, and chat remains usable", async ({ bench }) => {
+  const result = await workload(bench, "worker-chunked-history-overflow", "async", () => runPromise(scoped(effect {
+    provide NodeHttpServer.layerTest, FetchHttpClient.layer {
+      const events = try Ref.make<ReadonlyArray<Event>>([])
+      const seq = try Sequencer.make({ read: () => Ref.get(events), write: event => Ref.update(events, all => [...all, event]) }, { start: () => Effect.void, tour: () => Effect.void })
+      const conversations: Conversations = {
+        openWiki: () => succeed(null), post: (_id, body) => seq.post(body.clientId, body.name, body.text), read: (_id, after) => seq.read(after),
+        tour: () => seq.startTour(), endTour: () => seq.endTour(), events: () => succeed(eventStream(seq.follow(0))),
+      }
+      const writes = try Ref.make(0)
+      const histories: Histories = {
+        page: () => fail(new Unreachable({ what: "history" })), events: () => fail(new Unreachable({ what: "history" })),
+        write: () => Effect.andThen(Ref.update(writes, n => n + 1), fail(new Unreachable({ what: "history" }))),
+      }
+      const framing = try Ref.make<string | null>("unseen")
+      try HttpServer.serveEffect(effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        if (new URL(request.url, "http://bench.invalid").pathname === "/api/history/plan") try Ref.set(framing, request.headers["content-length"] ?? null)
+        return try handle(conversations, histories)
+      })
+      const server = try HttpServer.HttpServer
+      const origin = HttpServer.formatAddress(server.address).replace("0.0.0.0", "127.0.0.1").replace("[::]", "127.0.0.1")
+      const http = try HttpClient.HttpClient
+      const bytes = new TextEncoder().encode("x".repeat(MAX_WRITE_BYTES + 1))
+      const chunks = Stream.fromIterable([bytes.subarray(0, 1024), bytes.subarray(1024)])
+      const overflow = try http.execute(HttpClientRequest.post(origin + "/api/history/plan").pipe(HttpClientRequest.bodyStream(chunks, { contentType: "application/json" }))).pipe(Effect.timeout("15 seconds"))
+      const body = try overflow.json
+      const posted = try http.execute(HttpClientRequest.post(origin + "/api/conversations/bench/posts").pipe(HttpClientRequest.bodyJsonUnsafe({ clientId: "one", name: "Bench", text: "Still usable" }))).pipe(Effect.timeout("15 seconds"))
+      const snapshot = try seq.read(0)
+      const attempted = try Ref.get(writes)
+      const contentLength = try Ref.get(framing)
+      try Effect.try(() => {
+        expect([overflow.status, body]).toEqual([413, { error: "body size" }])
+        expect(attempted).toBe(0)
+        expect(contentLength).toBeNull()
+        expect(posted.status).toBe(200)
+        expect(snapshot.entries.map(entry => entry.text)).toEqual(["Still usable"])
+      })
+    }
+  }))).run(slow)
+  await runPromise(artifact("worker-chunked-history-overflow", "Production HTTP handler on a real loopback Node HTTP server. Send a two-chunk body, no Content-Length, one byte above the history limit; assert 413/body size before the injected faulty history writer is called. A following real sequencer-backed chat post must succeed and retain exact text. Three fresh servers/stores; startup, transport and assertions included.", ["Node HTTP stream/byte limit, not workerd. Faulty history Effect service never writes; chat uses the real memory sequencer. No request interception, GitHub, model or product state repair."], result))
+})

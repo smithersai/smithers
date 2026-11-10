@@ -1,7 +1,10 @@
 import { expect, it } from "@effect/vitest"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { serveAuthBroker } from "./support/workerd.vibe"
+import { deadline, serveAuthBroker } from "./support/workerd.vibe"
+import { brokerConnect, brokerOf, brokerSignIn } from "./support/brokerWorld.vibe"
 import { GitHub } from "@smthrs/integrations"
+
+const Delegation = GitHub.Delegation
 
 it.live("runs both apps' durable auth hosts in workerd, binding both browser cookies and consuming the handoff", () => scoped(effect {
   const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
@@ -46,25 +49,13 @@ it.live("runs both apps' durable auth hosts in workerd, binding both browser coo
     expect(journal).not.toMatch(/fixture-token|code_verifier|broker_return|\bada\b/)
     expect(handoff).not.toMatch(/fixture-token|ada/)
   })
-}), 120_000)
+}), deadline(120_000))
 
 
 /** Complete both production hosts over HTTP; GitHub is an injected token service, never interception. */
 effect function signIn(hostOrigin: string) {
   const http = try HttpClient.HttpClient
-  const start = try http.get(hostOrigin + "/api/auth/sign-in")
-  const pending = start.cookies.cookies["vibelang-sign-in"]!.value
-  const atBroker = try http.get(start.headers.location!)
-  const browser = atBroker.cookies.cookies["smithers-broker"]!.value
-  const form = try (try http.get(atBroker.headers.location!)).text
-  const approved = try http.get(form.match(/href="([^"]+)"/)![1]!.replaceAll("&amp;", "&"))
-  const callback = try http.execute(HttpClientRequest.get(approved.headers.location!).pipe(HttpClientRequest.setHeader("cookie", "smithers-broker=" + browser)))
-  const fragment = new URLSearchParams(new URL(callback.headers.location!).hash.slice(1))
-  const accepted = try http.execute(HttpClientRequest.post(hostOrigin + GitHub.Auth.Broker.CALLBACK).pipe(
-    HttpClientRequest.setHeader("origin", hostOrigin), HttpClientRequest.setHeader("cookie", "vibelang-sign-in=" + pending),
-    HttpClientRequest.bodyJsonUnsafe({ code: fragment.get("code"), state: fragment.get("state") }),
-  ))
-  const session = accepted.cookies.cookies["vibelang-session"]!.value
+  const { accepted, session } = try brokerSignIn(hostOrigin)
   const identity = try (try http.execute(HttpClientRequest.get(hostOrigin + "/api/auth/session").pipe(HttpClientRequest.setHeader("cookie", "vibelang-session=" + session)))).json
   try Effect.try(() => {
     expect(accepted.status).toBe(200)
@@ -95,7 +86,7 @@ it.live("workerd: twelve broker sign-ins preserve the kept token under GitHub's 
       expect(journal).not.toMatch(/fixture-token|fixture-refresh|code_verifier|\bada\b/)
     })
   }
-}), 120_000)
+}), deadline(120_000))
 
 it.live("workerd: exhausted revocation retries count failure without failing sign-in", () => scoped(effect {
   const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
@@ -117,34 +108,9 @@ it.live("workerd: exhausted revocation retries count failure without failing sig
       expect(JSON.stringify(logs)).not.toMatch(/fixture-token|fixture-refresh|code_verifier|\bada\b/)
     })
   }
-}), 120_000)
+}), deadline(120_000))
 
 
-/** Sign in, then press Connect GitHub through both real hosts; GitHub is an injected token service and client. */
-effect function connected(hostOrigin: string, session: string) {
-  const http = try HttpClient.HttpClient
-  const brokerOrigin = hostOrigin.replace("127.0.0.1", "localhost")
-  const press = try http.execute(HttpClientRequest.post(hostOrigin + "/api/auth/connect").pipe(HttpClientRequest.setHeader("origin", hostOrigin), HttpClientRequest.setHeader("cookie", "vibelang-session=" + session)))
-  const pending = press.cookies.cookies["vibelang-sign-in"]!.value
-  const atBroker = try http.get(press.headers.location!)
-  const browser = atBroker.cookies.cookies["smithers-broker"]!.value
-  const form = try (try http.get(atBroker.headers.location!)).text
-  const approved = try http.get(form.match(/href="([^"]+)"/)![1]!.replaceAll("&amp;", "&"))
-  const callback = try http.execute(HttpClientRequest.get(approved.headers.location!).pipe(HttpClientRequest.setHeader("cookie", "smithers-broker=" + browser)))
-  const consentCookie = callback.cookies.cookies["smithers-broker"]!.value
-  const consent = new URL(callback.headers.location!).searchParams.get("consent")!
-  const page = try (try http.execute(HttpClientRequest.get(callback.headers.location!).pipe(HttpClientRequest.setHeader("cookie", "smithers-broker=" + consentCookie)))).text
-  const answered = try http.execute(HttpClientRequest.post(brokerOrigin + GitHub.Auth.Broker.CONSENT).pipe(
-    HttpClientRequest.setHeader("origin", brokerOrigin), HttpClientRequest.setHeader("sec-fetch-site", "same-origin"), HttpClientRequest.setHeader("cookie", "smithers-broker=" + consentCookie),
-    HttpClientRequest.bodyText(new URLSearchParams({ consent, answer: "connect" }).toString(), "application/x-www-form-urlencoded"),
-  ))
-  const fragment = new URLSearchParams(new URL(answered.headers.location!).hash.slice(1))
-  const accepted = try http.execute(HttpClientRequest.post(hostOrigin + GitHub.Auth.Broker.CALLBACK).pipe(
-    HttpClientRequest.setHeader("origin", hostOrigin), HttpClientRequest.setHeader("cookie", "vibelang-sign-in=" + pending + "; vibelang-session=" + session),
-    HttpClientRequest.bodyJsonUnsafe({ code: fragment.get("code"), state: fragment.get("state") }),
-  ))
-  return { press, page, answered, accepted, location: (try accepted.json) as { readonly location?: string } }
-}
 
 it.live("connects through smithers.sh, writes once as the person, and every revocation stops the next write", () => scoped(effect {
   const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
@@ -159,14 +125,20 @@ it.live("connects through smithers.sh, writes once as the person, and every revo
     ))
     const state = effect { return (try (try http.get(host.origin + "/__connection/state")).json) as { issues: Array<{ title: string }>; revoked: number; connections: Array<{ origin: string }>; journal: unknown; rows: unknown } }
     const unconnected = try issue("before")
-    const first = try connected(host.origin, session)
+    const openedBefore = (try (try http.get(host.origin + "/__opened")).json) as number
+    const forged = try Delegation.signer({ origin: host.origin, brokerOrigin, secret: Redacted.make("not-the-site-secret-but-32-characters") })
+    const call = { person: 9, delegation: "d", mode: "read" as const, key: "", payload: { path: "/repos/smithersai/vibelang" } }
+    const unsigned = try http.execute(HttpClientRequest.post(brokerOrigin + Delegation.ROUTE + "?person=9").pipe(HttpClientRequest.bodyJsonUnsafe({ origin: host.origin, person: 9, request: "", payload: "{}" })))
+    const wronglySigned = try http.execute(HttpClientRequest.post(brokerOrigin + Delegation.ROUTE + "?person=9").pipe(HttpClientRequest.bodyJsonUnsafe(try forged.envelope(call))))
+    const openedAfter = (try (try http.get(host.origin + "/__opened")).json) as number
+    const first = try brokerConnect(host.origin, session)
     const written = try issue("key-1")
     const again = try issue("key-1")
     const afterWrite = try state
     const disconnect = try http.execute(HttpClientRequest.post(host.origin + "/api/auth/disconnect").pipe(HttpClientRequest.setHeader("origin", host.origin), HttpClientRequest.setHeader("cookie", "vibelang-session=" + session)))
     const afterDisconnect = try issue("key-2")
     const revokedOnce = (try state).revoked
-    try connected(host.origin, session)
+    try brokerConnect(host.origin, session)
     const rejoined = try issue("key-3", "Second")
     try http.get(host.origin + "/__connection/end")
     const afterGitHubRevoke = try issue("key-4")
@@ -174,6 +146,8 @@ it.live("connects through smithers.sh, writes once as the person, and every revo
     try Effect.try(() => {
       expect(anonymous.status).toBe(401)
       expect(unconnected.status).toBe(401)
+      expect([unsigned.status, wronglySigned.status]).toEqual([403, 403])
+      expect(openedAfter).toBe(openedBefore)
       expect(first.press.status).toBe(303)
       expect(first.page).toContain("Connect")
       expect(first.answered.status).toBe(303)
@@ -194,4 +168,98 @@ it.live("connects through smithers.sh, writes once as the person, and every revo
       expect(brokerOrigin).not.toBe(host.origin)
     })
   }
-}), 120_000)
+}), deadline(120_000))
+
+// Production, 2026-11-10 (smithers.sh decision 0165, "Revocation and the authorization"): after a Connect, the eighth
+// sign-in-and-out cycle met GitHub's re-authorization page. Here GitHub's stand-in counts new tokens per hour as
+// GitHub documents, and the connection's GitHub answers 401 for any token it no longer holds.
+it.live("workerd: eight sign-in and sign-out cycles keep a person's connection", () => scoped(effect {
+  const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
+  const broker = brokerOf(host.origin)
+  provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+    const http = try HttpClient.HttpClient
+    const asPerson = (session: string) => HttpClientRequest.setHeaders({ origin: host.origin, cookie: "vibelang-session=" + session })
+    const write = (session: string, key: string) => http.execute(HttpClientRequest.post(host.origin + "/api/issues").pipe(asPerson(session),
+      HttpClientRequest.bodyJsonUnsafe({ op: "new", key, number: 0, parent: 0, title: key, text: "private-issue-body", assignee: "", example: "", prior: "" })))
+    const first = try brokerSignIn(host.origin)
+    const connected = try brokerConnect(host.origin, first.session)
+    const before = try write(first.session, "before")
+    let session = first.session
+    const cycles: Array<{ readonly out: number; readonly ended: unknown; readonly page: string; readonly signedIn: number }> = []
+    for (let cycle = 0; cycle < 8; cycle++) {
+      const out = try http.execute(HttpClientRequest.post(host.origin + "/api/auth/sign-out").pipe(asPerson(session)))
+      const ended = (try (try http.execute(HttpClientRequest.get(host.origin + "/api/auth/session").pipe(asPerson(session)))).json as { id: string }).id
+      const next = try brokerSignIn(host.origin)
+      cycles.push({ out: out.status, ended, page: next.github, signedIn: next.accepted.status })
+      session = next.session
+    }
+    const after = try write(session, "after")
+    const tokens = try (try http.get(broker + "/__tokens")).json
+    const state = (try (try http.get(host.origin + "/__connection/state")).json) as { issues: Array<{ title: string }>; connections: Array<{ origin: string }> }
+    try Effect.try(() => {
+      expect([first.github, connected.accepted.status, before.status]).toEqual(["GitHub fixture", 200, 200])
+      expect(cycles.map((cycle) => [cycle.out, cycle.ended, cycle.signedIn])).toEqual(cycles.map(() => [204, "", 200]))
+      // The eighth sign-in is the tenth new token in the hour: GitHub asks again, as it did on production.
+      expect(cycles.map((cycle) => cycle.page)).toEqual([...cycles.slice(1).map(() => "GitHub fixture"), "GitHub fixture: reauthorize"])
+      expect(after.status).toBe(200)
+      expect(state.issues.map((issue) => issue.title)).toEqual(["before", "after"])
+      expect(state.connections.map((row) => row.origin)).toEqual([host.origin])
+      // Every sign-in's token was revoked: the person holds only the pair from before and the connection's.
+      expect(tokens).toMatchObject({ kept: true, live: 2, attempts: 9 })
+    })
+  }
+}), deadline(120_000))
+
+/** The broker object's settled and running engine executions. */
+effect function executions(broker: string) {
+  const http = try HttpClient.HttpClient
+  const tables = try (try http.get(broker + "/__journal")).json as ReadonlyArray<{ readonly name: string; readonly rows: ReadonlyArray<unknown> }>
+  return tables.find((table) => table.name === "flows_runs")?.rows.length ?? 0
+}
+
+it.live("workerd: a request the broker refuses before writing creates no execution in its one object", () => scoped(effect {
+  const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
+  const broker = host.origin.replace("127.0.0.1", "localhost")
+  const http = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))))
+  try signIn(host.origin).pipe(Effect.provideService(HttpClient.HttpClient, http))
+  const before = try executions(broker).pipe(Effect.provideService(HttpClient.HttpClient, http))
+  const refused = try.all [
+    http.get(broker + GitHub.Auth.Broker.START + "?origin=x&return_to=y"),
+    http.get(broker + GitHub.Auth.Broker.CALLBACK + "?" + new URLSearchParams({ state: "broker_" + "x".repeat(43), code: "c" })),
+    http.get(broker + GitHub.Auth.Broker.CONSENT + "?consent=" + "x".repeat(43)),
+    http.execute(HttpClientRequest.post(broker + GitHub.Auth.Broker.EXCHANGE).pipe(HttpClientRequest.bodyJsonUnsafe({ origin: host.origin, request: "forged" }))),
+    http.execute(HttpClientRequest.post(broker + GitHub.Auth.Broker.CONSENT).pipe(HttpClientRequest.setHeader("sec-fetch-site", "same-origin"), HttpClientRequest.setHeader("origin", "null"), HttpClientRequest.bodyText("consent=x&answer=connect", "application/x-www-form-urlencoded"))),
+  ]
+  const after = try executions(broker).pipe(Effect.provideService(HttpClient.HttpClient, http))
+  try Effect.try(() => {
+    expect(before).toBeGreaterThan(0)
+    expect(refused.map((response) => response.status)).toEqual([400, 400, 400, 400, 400])
+    expect(after).toBe(before)
+  })
+}), deadline(120_000))
+
+it.live("workerd: a slow GitHub exchange in one callback holds no other person's sign-in", () => scoped(effect {
+  const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
+  const broker = host.origin.replace("127.0.0.1", "localhost")
+  const http = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))))
+  const start = try http.get(host.origin + "/api/auth/sign-in")
+  const atBroker = try http.get(start.headers.location!)
+  const browser = atBroker.cookies.cookies["smithers-broker"]!.value
+  const form = try (try http.get(atBroker.headers.location!)).text
+  const approved = try http.get(form.match(/href="([^"]+)"/)![1]!.replaceAll("&amp;", "&"))
+  try http.get(broker + "/__hold")
+  const slow = try Effect.forkChild(http.execute(HttpClientRequest.get(approved.headers.location!).pipe(HttpClientRequest.setHeader("cookie", "smithers-broker=" + browser))))
+  // The held callback is inside GitHub's exchange before the second sign-in starts.
+  try Effect.flatMap(http.get(broker + "/__held"), (response) => response.json).pipe(
+    Effect.flatMap((held) => held === 1 ? Effect.void : Effect.fail("not held")),
+    Effect.retry(Schedule.spaced("50 millis")), Effect.timeout("20 seconds"),
+  )
+  const other = try http.get(host.origin + "/api/auth/sign-in")
+  const otherAtBroker = try http.get(other.headers.location!).pipe(Effect.timeout("10 seconds"))
+  try http.get(broker + "/__release")
+  const released = try Fiber.join(slow).pipe(Effect.timeout("20 seconds"))
+  try Effect.try(() => {
+    expect(otherAtBroker.status).toBe(303)
+    expect(released.status).toBe(303)
+  })
+}), deadline(120_000))

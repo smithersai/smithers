@@ -4,6 +4,7 @@
 // which checks who asks, so the agent in the chat is refused what its person may not do, and approving and folding
 // are not tools at all.
 import { FlowBinding } from "@smthrs/harness"
+import { toolRefusal } from "../src/core/toolRefusal.vibe"
 import { Note, Plan, Start } from "../src/history/flows.vibe"
 import { type HistoryReader, note, plan, Show, show, start } from "../src/history/tools.vibe"
 import { operation } from "./SandboxTools.vibe"
@@ -34,14 +35,14 @@ function declared<I extends Schema.Top, O extends Schema.Top>(flow: { readonly _
 /** The history's tools over `history`, for the agent in the chat. */
 export function historyTools(history: HistoryReader): FlowBinding.Source {
   return FlowBinding.source("vibelang-history", [
-    FlowBinding.make({ flow: declared(Show), handler: (input: Parameters<typeof show>[1]) => show(history, input) }),
+    FlowBinding.make({ publicError: toolRefusal, flow: declared(Show), handler: (input: Parameters<typeof show>[1]) => show(history, input) }),
     // Each write is keyed by its call: a call the harness re-executes after a crash records once.
-    FlowBinding.make({ flow: declared(Plan), handler: effect (input: Parameters<typeof plan>[1], call) => { return try plan(history, input, try operation(call)) } }),
-    FlowBinding.make({
+    FlowBinding.make({ publicError: toolRefusal, flow: declared(Plan), handler: effect (input: Parameters<typeof plan>[1], call) => { return try plan(history, input, try operation(call)) } }),
+    FlowBinding.make({ publicError: toolRefusal,
       flow: declared(Start),
       handler: effect (input: { readonly id: string; readonly lane: string }, call) => { return try start(history, input.id, input.lane, try operation(call)) },
     }),
-    FlowBinding.make({
+    FlowBinding.make({ publicError: toolRefusal,
       flow: declared(Note),
       handler: effect (input: { readonly id: string; readonly section: "tried" | "evidence" | "superseded"; readonly text: string }, call) => {
         return try note(history, input.id, input.section, input.text, try operation(call))

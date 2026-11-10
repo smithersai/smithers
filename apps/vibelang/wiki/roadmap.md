@@ -13,8 +13,9 @@ brick                                   state         proof
 1c  dogfooding surfaces                 done (mock)   CLI, MCP server and skill over Factory; 21 surface tests plus the existing
                                                       25 tests; emitted CLI + stdio McpClient + exact schema parity (0009).
                                                       Live mode uses LiveFactory at VIBELANG_FACTORY_URL (0010).
-1d  formal proof gates                 done (local)  0018: seventeen marked production modules, 962/962 current mutations rejected;
-                                                      proof, mutation and inventory gates run in PACKAGE.ts. Whole-app work is 1g.
+1d  formal proof gates                 done (local)  0018: 33 marked production modules verify; 1601/1601 current mutations rejected
+                                                      (vl-audit-vl29, 2026-11-10); proof, mutation and inventory gates run in PACKAGE.ts.
+                                                      Whole-app work is 1g.
 1f  Learn more: live app tutorial        done (local)  0014/VL-31: ten theatre steps, exact subtitles, optional sound, pause and seek;
                                                       Mock/live share one durable flow; scene, flow, workerd and browser checks
 1g  every suite covers the whole app    started       VL-29: unit, fuzz and benchmark coverage at 100% each; proofs of
@@ -34,7 +35,11 @@ brick                                   state         proof
 ```
 
 - **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 2,508 executable items. Seventeen modules carry contracts and 962 current mutant copies match actual Dafny rejections; unproved logic and tool boundaries remain explicit.
-- **Proofs outside the web app (0018, lane vl-proveall3): in progress.** Sequencer, follow and command argument decisions proved; one title-cut defect fixed.
+- **Proofs outside the web app (0018, lane vl-proveall3): in progress.** Proved: sequencer, follow and command arguments; pages, docs paths, prompt form, protocol limits and the session origin; mock chunks, the cookie rule and catalog roles; the bootstrap seed's choices; the sandbox meter delay. Three defects fixed: two surrogate-pair cuts, and a long history search that never showed its matches.
+
+- **Proofs strong enough to catch real bugs (0018, lane vl-proof-strengthen): done.** `decide` is tied to the role policy for every grant and action; the day's budget reserves each call's ceiling under its lock (twenty concurrent admissions no longer pass the limit); unreported usage is charged its ceiling; runs, walkthroughs and the meter step are framed; the harness no longer counts a callee's precondition or trusts an unmarked import.
+
+- **Proofs of the web decision modules (0018, lane vl-proveall2): in progress.** Viewport steps and the history page's guards, merge, reads and arm frames are proved; 75 new mutations rejected. Remaining rows name host or tool boundaries.
 
 - **CLI and MCP sign-in (VL-26): implemented; lead deploys.** 0028: `login`/`logout` run GitHub's device flow through the shared
   integrations auth; the server names the agent's posts `<login> (agent)`, carries the person's role and refuses it
@@ -56,10 +61,17 @@ brick                                   state         proof
   store at v7. This stack uses its own store, `smithers-vibelang-state` (infra/Stack.vibe). Moving apps/mvp to beta.85
   migrates the default store, so that deploy and the migration happen together.
 - **`@smthrs/ui-css`** holds `@smthrs/ui`'s framework-free CSS so React and Foldkit share one stylesheet.
+- **smithers.sh closed-scope check (lane vl-mvp-closed-scope, 2026-11-10): done.** Cold `alchemy dev` checks with and
+  without `17ebb33a`'s bridge hunk ran both reconcile admissions and the actual terminal pump. Reconcile admission is
+  joined inside the request; pumps and socket renewal/expiry use the object's own scope. The terminal check uses a
+  real tmux fixture because the local rootless Docker forge gateway refused its connection. The next smithers.sh
+  deploy adds `github.reconcile.admission` (span and log) and `github_reconcile_admissions` (counter), with fixed names
+  and no payload, and retains the shared bridge fix. Full receipts and scope audit are in the lane report on nyc-01.
 
 - Brick 2 policy and shared authentication: decision [0019](decisions/0019-sign-in-and-roles.md); lane vl-roles.
-- **vl-fuzzpkg, in progress:** `@smthrs/fuzz` landed at 100%. Fuzz-only coverage is 83.7% of lines and 76.9% of branches on a grown denominator, below the 100% goal; screen-building targets reach `main.vibe`'s Escape, walkthrough, role, event and Command branches, and found the wiki editor storing ill-formed text (fixed). Open: Alchemy's `.make` bodies need Alchemy's runtime; `pnpm fuzz:coverage` is bounded by time, so load lowers it (decision 0015).
-- **vl-fuzz2 (0015), scope partly met:** the five view files, the history host and the sequencer are at 100% fuzz-only lines and branches; Objects 111/112 and 47/49, Wiki 137/172 and 196/234, Issues 256/290 and 429/460, action runs 114/117 and 152/168, each gap listed in 0015 (most need the 0165 delegate or a failing engine store). Steered targets run every scenario per execution, so coverage no longer falls with host load. The fuzz gate's Node and Chromium reports merge by source position, as the benchmark gate's do. Fixed: unnamed blank chat links and issue-card buttons, a lost wiki edit text, a tour-behind-a-waiting-reply deadlock, and a seek after a second tour failing in the engine store.
+- **vl-fuzzpkg, in progress:** `@smthrs/fuzz` landed at 100%. Fuzz-only coverage is 90.9% of lines and 81.9% of branches at the ninth session, below the 100% goal; `worker/apiObjects.vibe` is at 100%. Fixed from its findings: a wiki read while GitHub fails answers at the engine's 5-second deadline, and a reply whose Budget, Accounts or History object is unreachable fails visibly at its 5-minute deadline. The eighth 30-minute campaign found nothing. Open: `src/web/main.vibe` (741/815 branches), unbounded draft spends, Alchemy's `.make` bodies (decision 0015).
+- **vl-fuzz2 (0015), scope met but one guard:** fuzz-only, the five view files, the history host, the sequencer, Objects and action runs are at 100% of lines and branches; Issues 452/453 and Wiki 233/234 branches, each open arm the engine-invariant `retryFrom` guard 0015 explains. Steered targets run every scenario per execution, so coverage no longer falls with host load; `stepped` runs retries and deadlines in virtual time. Fixed: unnamed blank chat links and issue-card buttons, a lost wiki edit text, a tour-behind-a-waiting-reply deadlock, a seek after a second tour failing in the engine store, two action-run alarm bugs, and the browser entry's teardown flake.
+- **vl-fuzz3 (0015), scope nearly met:** `src/surfaces`, `src/history` and `src/actions` at 1546/1548 fuzz-only lines and 1122/1142 branches (from 1293/1544 and 821/1142); 25 of 36 files at 100%, each remaining arm listed in 0015 (race guards, fallbacks of total functions, defensive arms). Fixed: sandbox commands' refusals named the message, not the sandbox; a sign-out whose settings can't be removed died instead of answering one sentence.
 
 - **Tour production fixes (vl-tourfix, 0014):** docs and the current paragraph share the maximized pane; live and mock use durable word-count reading holds; Escape retains keyboard control, maximization isolates chat, status announces control, and later replies exclude tour history.
 
@@ -78,6 +90,11 @@ brick                                   state         proof
   reach 100% unit coverage on all four metrics; `src/core/MockFactory.vibe` keeps three race-only or invariant-guarded paths. A mock
   reply interrupted by a reload no longer blocks its conversation. Other files below 100% remain.
 
+- **Unit coverage, third lane (0016, lane vl-coverage3): partial.** Surfaces, history and actions: 17 files missing
+  103 items down to 2 files missing 2 branches, each named in 0016 with its reason (an exhaustive `match`'s
+  no-match arm awaiting Will; a V8 range defect, reproduction `coverage-v8-suspend-else-arm`); four dead fallbacks
+  deleted; the proof inventory no longer fails after a build.
+
 - Brick 6: [0024](decisions/0024-sandboxes.md), sandbox UI and shared lifecycle flows; real Container activation awaits trusted 0019 identity and deployment receipts.
 
 - **Rulings audit (vl-audit):** [rulings status](rulings-status.md) holds each ruling's state, evidence and owner.
@@ -89,7 +106,15 @@ brick                                   state         proof
 
 - **Marketing media (vl-media, 0026):** splash and empty-chat assets remain; VL-31 supersedes the former per-stop Tour placements; designer source preserved in `designs/media/`; browser loading, reduced motion, native failure and phone checks. Lead deploys.
 
-- **Benchmarks (0017, vl-bench): not done.** Hosted-broker main `ca292c70`: 54 files / 128 behavior checks pass; independent source-profile coverage is 5,827/7,036 src/worker lines (82.82%), with 95 files below strict thresholds. Twenty added groups, explicit sync/async runner controls and validated local/live observations are retained. No unit/fuzz counters, src/worker exclusions or tolerance changes. Exact future Container/GitHub/OAuth/deployed-API cases remain in 0017.
+- **Coverage inside workerd (0016, vl-coverage-workerd): measured in every gate, not at 100%.** The workerd suite,
+  unit and fuzz gates join each workerd isolate's Istanbul counters with Node's V8 report by source position;
+  `worker/Api.vibe` runs as Alchemy builds and bridges it. `pnpm test:workerd --coverage` collects and gates both
+  runtimes. Sandbox objects run on real workerd SQLite with a faulty Container service; successful Container
+  execution still needs the authorized binding. Unit: 99.60% lines, 32/163 files below 100%. Fuzz without Chromium:
+  90.97% lines; with diagnostic Chromium credit: 93.29%, 94/163 files below 100% (dated receipts in 0016).
+
+- **Benchmarks (0017, vl-bench): not done.** vl-bench's last receipt: 6,760/7,468 lines (90.52%), 100 files below
+  strict thresholds; vl-audit-vl29's merge without Chromium evidence: 109 of 159 files below (2026-11-10). Earlier, hosted-broker main `ca292c70`: 54 files / 128 behavior checks pass; independent source-profile coverage was 5,827/7,036 src/worker lines (82.82%), with 95 files below strict thresholds. Twenty added groups, explicit sync/async runner controls and validated local/live observations are retained. No unit/fuzz counters, src/worker exclusions or tolerance changes. Exact future Container/GitHub/OAuth/deployed-API cases remain in 0017.
 
 - **Both acceptance gates (0027, lane vl-gates): implemented locally.** Maintainer-person VIP approval; Astra, Sol, Fable and Opus same-revision LGTM/A- or better specification acceptance; keep acceptance on edits and retain prior reset history, real flows, proofs/mutations, scenes, browser and workerd routes. Lead deploys.
 
@@ -102,8 +127,36 @@ brick                                   state         proof
   starts with A, A, A-, A-; edits keep acceptance and receipts. Both explicit revision policies retain proofs and
   negative controls; memory/workerd, CLI/MCP, scene, fuzz, benchmark and browser cases track keep. Lead deploys.
 
+- **Object start-up hang (0030 amendment, lane vl-startup-hang): fixed locally.** Alchemy's bridge gave constructors a
+  closed Scope; patched, with a cold `alchemy dev` regression and named start-up steps. The lead deploys and watches
+  `/api/health/objects`.
 - **Hosted sign-in broker (0029, lane vl-authbroker): implemented locally.** Shared signed-origin/PKCE handoff through
   smithers.sh's existing callback; no new redirect URL. Both apps' local checks precede the lead's coordinated deploy.
 
 - Hosted sign-in cleanup (0029): revoke temporary GitHub tokens in a retried flow action; count exhausted revokes
   without failing sign-in. Failed MVP callbacks hand unkept pairs to its existing sealed cleanup flow.
+
+- **Connect hardening (0029, smithers.sh 0165, lane vl-connect-hardening): implemented and landed.** All nine
+  findings of the 2026-11-10 security review fixed with failing-first tests; deployment adds `BROKER_LIMIT`. Lead
+  deploys.
+- **Test quality (0015, lane vl-test-quality): landed.** Review findings 1, 2 and 4 to 11 fixed with mutation checks; sign-in wall-clock waits and the protocol-double ruling (finding 3) open.
+
+- **VL-29 measurement tooling (0016 "Measuring every gate", lane vl-gatefix).** One `run-heavy` command per gate for a 4-vCPU box: web-server limit from `E2E_SERVER_SECONDS`, Chromium evidence stored once per run, `BENCH_REVISION` off a checkout, relative `lsc`, fuzz install check, fuzz roster equal to the unit gate's, proof inventory read from `//@ verify`. Supported box image needs Node >= 26.4 and git >= 2.41; the current Node 24.22.2/git 2.39.5 image needs an upgrade (lead). Coverage gates remain red until the suite lanes close their measured gaps.
+
+- **Public reads (0031, lane vl-public-reads): implemented locally.** Signed-out wiki, issue and history reads go through
+  smithers.sh's App (0165 addendum), cached with ETags and served stale when GitHub refuses; `GITHUB_TOKEN` is gone.
+  Lead deploys smithers.sh first, with `reads` on vibelang's registry entry.
+
+- **GitHub authorization after sign-out (smithers.sh 0165, lane vl-github-authz): landed.** GitHub's page at the
+  eighth sign-in cycle is its hourly limit of ten new tokens; revoking a token keeps the authorization. Sign-out keeps
+  revoking. `smithers_auth_github_consent` shows it in production; lead deploys.
+
+- **vl-coverage, current continuation (0016): in progress.** The factories' engine seams, both specification revision
+  policies, sandbox error preservation, wiki recovery/archive rendering, total tour lookup and real-jj seed
+  refusal/recovery are tested. The measured unit gaps in this lane are closed apart from the recorded V8 and
+  exhaustive-match branch gaps. Fresh main also exposes the native-loader collection gap for fuzz-preflight.
+  Whole-app coverage remains below 100%; independent unit, Chromium and workerd receipts are in 0016.
+  The lead keeps each strict gate opt-in until its passing commit.
+
+- **Public reads follow-up (0030/0031, lane vl-public-reads):** repository-ID pagination, bounded cold issue reads,
+  cache patience, health that waits briefly for startup, and a `Stale` mark with its confirmation time. The lead deploys.

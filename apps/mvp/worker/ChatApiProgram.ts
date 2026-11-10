@@ -2,6 +2,7 @@ import { GitHub } from "@smthrs/integrations"
 import * as AuthBroker from "./AuthBroker.vibe"
 import * as GitHubConnection from "./GitHubConnection.vibe"
 import * as GitHubConnectionsPage from "./GitHubConnectionsPage.vibe"
+import * as PublicReads from "./PublicReads.vibe"
 import { withRequestRay } from "./RequestRay.ts"
 // ChatApi's program (worker/ChatApi.ts): everything ChatApi serves and hosts. worker/ChatApi.ts loads this module when
 // the Worker first builds its program, not when Cloudflare starts the Worker, so its modules are evaluated then and
@@ -14,7 +15,7 @@ import { CiJob } from "@smthrs/sandbox"
 import { RuntimeContext } from "alchemy"
 import * as Output from "alchemy/Output"
 import { Cause, Effect, Layer, Option, Predicate, Redacted } from "effect"
-import { FetchHttpClient, HttpServerRequest } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpServerRequest } from "effect/http"
 import { HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
@@ -215,6 +216,11 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const bugsApi = yield* BugsApi.make(database)
     const brokerObjects = yield* AuthBroker.HostedAuthBroker
     const connectionObjects = yield* GitHubConnection.GitHubConnection
+    // Read once: the delegation route checks a call's signature against these sites before it addresses an object.
+    const connectionSetup = yield* GitHubConnection.configured().pipe(Effect.orDie)
+    // Signed-out reads for hosted sites through the App (decision 0165, public reads): stateless, before any object.
+    const publicReadHttp = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer))
+    const publicReadSetup = yield* PublicReads.configured().pipe(Effect.provideService(HttpClient.HttpClient, publicReadHttp), Effect.orDie)
     const signIn = yield* SignIn.make(database, options).pipe(Effect.provide(FetchHttpClient.layer))
     // Repositories (docs/features/repo.md): cloning into Code Storage, the `repositories` shape, reads at a commit,
     // cached in this Worker's Cache API, and what GitHub says of a repository, kept in Postgres for every data center.
@@ -392,6 +398,12 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       namespaceId: 71002,
       simple: { limit: 3000, period: 60 }
     })
+    // The hosted-site broker's routes (decision 0165): a sign-in or Connect is at most five requests, so this lets
+    // about 60 a minute share a network.
+    const brokerLimit = yield* Cloudflare.RateLimit("BROKER_LIMIT", {
+      namespaceId: 71003,
+      simple: { limit: 300, period: 60 }
+    })
 
     /**
      * Starts `auth/RecheckRole` on its own Durable Object, one execution per session and the check it replaces, so one
@@ -443,21 +455,24 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         }
         const runtime = yield* RuntimeContext
         const brokerRequest = yield* HttpServerRequest.HttpServerRequest
-        if (AuthBroker.handles(brokerRequest.url)) return yield* brokerObjects.getByName("hosted").fetch(brokerRequest).pipe(Effect.provideService(RuntimeContext, runtime))
-        if (GitHub.Delegation.handles(brokerRequest.url)) {
-          const person = GitHub.Delegation.personOf(brokerRequest.url)
-          if (person === undefined) return HttpServerResponse.empty({ status: 400, headers: GitHub.Auth.Broker.HEADERS })
-          return yield* connectionObjects.getByName(GitHubConnection.nameOf(person)).fetch(brokerRequest).pipe(Effect.provideService(RuntimeContext, runtime), Effect.catchCause(() => Effect.succeed(HttpServerResponse.jsonUnsafe({ reason: "unavailable" }, { status: 503, headers: GitHub.Auth.Broker.HEADERS }))))
-        }
         const throttle = Effect.flatMap(
           HttpServerRequest.HttpServerRequest,
           Throttle.make({
             shape: { limit: (key) => shapeLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) },
             telemetry: {
               limit: (key) => telemetryLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime))
-            }
+            },
+            broker: { limit: (key) => brokerLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) }
           })
         )
+        // Every hosted site's sign-in shares one object: a network past its allowance never reaches it.
+        if (AuthBroker.handles(brokerRequest.url)) {
+          const limited = yield* throttle
+          if (Option.isSome(limited)) return limited.value
+          return yield* brokerObjects.getByName("hosted").fetch(brokerRequest).pipe(Effect.provideService(RuntimeContext, runtime))
+        }
+        if (GitHub.Delegation.handles(brokerRequest.url)) return yield* GitHubConnection.route(connectionObjects, connectionSetup).pipe(Effect.provideService(RuntimeContext, runtime))
+        if (GitHub.PublicRead.handles(brokerRequest.url)) return yield* PublicReads.route(publicReadSetup, publicReadHttp)
         const checks = Layer.succeed(SignIn.RoleChecks, yield* roleChecks)
         const starter = yield* flowStarter
         return yield* runnerAdmin.admit(

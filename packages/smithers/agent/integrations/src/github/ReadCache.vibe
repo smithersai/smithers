@@ -1,0 +1,157 @@
+// A hosted site's cache of public GitHub reads (decision 0165, public reads). Every GET is kept with its ETag and
+// revalidated with a conditional request, which GitHub answers 304 at no rate-limit cost. When GitHub or smithers.sh
+// refuses, the last good copy answers, marked stale. A request to GitHub, once sent, runs to its end detached from the
+// reader and is shared by every reader of its URL, so a reader that stops waiting (its patience spent, or its own
+// deadline) still leaves GitHub's answer stored for the next.
+import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServerResponse } from "effect/http"
+import * as Signature from "../core/Signature.vibe"
+
+/** How long a copy answers without asking GitHub. */
+export const FRESH_FOR = 30_000
+/** The largest body kept, in bytes: under a Durable Object's 2 MB value. */
+export const MAX_ENTRY = 1_048_576
+/** On a stale answer: when GitHub last confirmed the copy, in milliseconds since the epoch. */
+export const STALE = "x-smithers-stale"
+export type Outcome = "fresh" | "revalidated" | "stored" | "stale" | "slow" | "dropped" | "too_large" | "miss_failed"
+
+/** The site's storage. A failure is a miss, never a failed read: implementations catch their own. */
+export interface Store {
+  readonly get: (key: string) => unknown!!
+  readonly put: (key: string, value: unknown) => void!!
+  readonly remove: (key: string) => void!!
+}
+
+/** Real in-memory store for an isolate without storage, and for tests. */
+export effect function memoryStore(): Store!! {
+  const rows = new Map<string, unknown>()
+  return {
+    get: (key) => Effect.sync(() => rows.get(key)),
+    put: (key, value) => Effect.sync(() => { rows.set(key, value) }),
+    remove: (key) => Effect.sync(() => { rows.delete(key) }),
+  }
+}
+
+/** Where a stale answer is reported to the reader that asked. Unprovided, nothing listens and every read waits. */
+export service Stale {
+  readonly mark: (confirmed: number) => void!!
+  /** When this reader stops waiting for GitHub to revalidate a copy it holds, in milliseconds since the epoch. */
+  readonly until?: number
+  static readonly key = "@smthrs/integrations/ReadCache/Stale"
+  static readonly defaultValue = () => ({ mark: (_confirmed: number) => Effect.void })
+}
+
+/**
+ * Runs `program`; `stale` is when GitHub last confirmed the oldest stale copy it was served, or undefined. With
+ * `patience`, the whole program waits that long for revalidations of copies it holds; after, each such copy answers at
+ * once, stale, while its revalidation finishes on its own. A read with no copy always waits.
+ */
+export effect function observeStale<A, E, R>(program: A!E!R, options: { readonly patience?: Duration.Input } = {}) {
+  let stale: number | undefined = undefined
+  const until = options.patience === undefined ? undefined : (try Clock.currentTimeMillis) + Duration.toMillis(Duration.fromInputUnsafe(options.patience))
+  const mark = (confirmed: number) => Effect.sync(() => { stale = stale === undefined ? confirmed : Math.min(stale, confirmed) })
+  const value = try Effect.provideService(program, Stale, until === undefined ? { mark } : { mark, until })
+  return { value, stale }
+}
+
+/** GitHub's rate limit: 429, or 403 with no calls left or a wait named. */
+export function rateLimited(status: number, headers: Readonly<Record<string, string | undefined>>): boolean {
+  return status === 429 || (status === 403 && (headers["x-ratelimit-remaining"] === "0" || headers["retry-after"] !== undefined))
+}
+
+const Entry = Schema.Struct({ etag: Schema.String, body: Schema.String, headers: Schema.Record(Schema.String, Schema.String), confirmed: Schema.Number })
+/** The headers a copy keeps: what a reader of the body needs, such as pagination. */
+const KEPT = ["content-type", "link"]
+type Entry = typeof Entry.Type
+
+/** Fixed vocabulary only: never a URL, body or header. */
+effect function record(outcome: Outcome) {
+  try Metric.update(Metric.withAttributes(Metric.counter("smithers_github_read_cache", { incremental: true }), { outcome }), 1)
+  try Effect.logInfo("github.read_cache").pipe(Effect.annotateLogs({ outcome }))
+}
+
+/** `request` answered from text already read: a response's body can be read once. A 204 or 304 carries no body. */
+const rebuilt = (request: HttpClientRequest.HttpClientRequest, status: number, headers: Readonly<Record<string, string>>, body: string) =>
+  succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(status === 204 || status === 304
+    ? HttpServerResponse.empty({ status, headers })
+    : HttpServerResponse.text(body, { status, headers, contentType: headers["content-type"] ?? "application/json" }))))
+
+/** What one request to GitHub settled as; the reader turns it into its answer. */
+type Settled =
+  | { readonly _tag: "answer"; readonly status: number; readonly headers: Readonly<Record<string, string>>; readonly text: string }
+  | { readonly _tag: "copy"; readonly entry: Entry; readonly stale: boolean }
+  | { readonly _tag: "failed"; readonly failure: HttpClientError.HttpClientError }
+
+/** `upstream`, caching every GET in `store`. Other methods pass through untouched. */
+export effect function make(options: { readonly store: Store; readonly upstream: HttpClient.HttpClient; readonly freshFor?: number; readonly maxEntry?: number }): HttpClient.HttpClient!! {
+  const freshFor = options.freshFor ?? FRESH_FOR
+  const maxEntry = options.maxEntry ?? MAX_ENTRY
+  /** The request to GitHub in flight for each key: a second reader joins it rather than asking again. */
+  const pending = new Map<string, Fiber.Fiber<Settled>>()
+  /** One request to GitHub for `key`, storing what it learns. Never fails: a failure settles as `failed` or the copy. */
+  effect function settle(key: string, entry: Entry | undefined, request: HttpClientRequest.HttpClientRequest) {
+    const sent = entry === undefined ? request : HttpClientRequest.setHeader(request, "if-none-match", entry.etag)
+    const result = try Effect.result(Effect.flatMap(options.upstream.execute(sent), (response) => Effect.map(response.text, (text) => ({ response, text }))))
+    const now = try Clock.currentTimeMillis
+    if (result._tag === "Failure") {
+      if (entry !== undefined) return { _tag: "copy", entry, stale: true } as Settled
+      try record("miss_failed")
+      return { _tag: "failed", failure: result.failure } as Settled
+    }
+    const { response, text } = result.success
+    const headers = response.headers as Readonly<Record<string, string>>
+    if (response.status === 304 && entry !== undefined) {
+      try options.store.put(key, { ...entry, confirmed: now })
+      try record("revalidated")
+      return { _tag: "copy", entry, stale: false } as Settled
+    }
+    if (response.status === 200) {
+      const etag = headers["etag"]
+      if (new TextEncoder().encode(text).length > maxEntry) {
+        if (entry !== undefined) try options.store.remove(key)
+        try record("too_large")
+      } else if (etag !== undefined) {
+        const kept: Record<string, string> = {}
+        for (const name of KEPT) if (headers[name] !== undefined) kept[name] = headers[name]!
+        try options.store.put(key, { etag, body: text, headers: kept, confirmed: now })
+        try record("stored")
+      }
+      return { _tag: "answer", status: 200, headers, text } as Settled
+    }
+    if ((response.status === 404 || response.status === 410) && entry !== undefined) {
+      try options.store.remove(key)
+      try record("dropped")
+    }
+    if (entry !== undefined && (rateLimited(response.status, headers) || response.status === 401 || response.status >= 500)) return { _tag: "copy", entry, stale: true } as Settled
+    return { _tag: "answer", status: response.status, headers, text } as Settled
+  }
+  return HttpClient.make((request, url) => withSpan(effect {
+    if (request.method !== "GET") return try options.upstream.execute(request)
+    const key = "github-read/" + (try Effect.orDie(Signature.computeHmacSha256Hex(url.href, "smithers-github-read-cache-v1")))
+    const entry: Entry | undefined = Schema.decodeUnknownOption(Entry)(try options.store.get(key)).pipe(Option.getOrUndefined)
+    const now = try Clock.currentTimeMillis
+    const reader = try Stale
+    const answer = (copy: Entry, stale: boolean) => rebuilt(request, 200, { ...copy.headers, etag: copy.etag, ...(stale ? { [STALE]: String(copy.confirmed) } : {}) }, copy.body)
+    const staleCopy = effect (copy: Entry, outcome: Outcome) => {
+      try reader.mark(copy.confirmed)
+      try record(outcome)
+      return try answer(copy, true)
+    }
+    if (entry !== undefined && now - entry.confirmed < freshFor) {
+      try record("fresh")
+      return try answer(entry, false)
+    }
+    // Detached and shared: a reader that stops waiting leaves the request to finish and store for the next reader. A
+    // fork is scheduled, never run inline, so the request is recorded before its own end removes it.
+    const known = pending.get(key)
+    const running = known ?? try Effect.forkDetach(ensuring(settle(key, entry, request), sync(() => { pending.delete(key) })))
+    if (known === undefined) pending.set(key, running)
+    const waited = entry === undefined || reader.until === undefined
+      ? Option.some(try Fiber.join(running))
+      : reader.until > now ? try Effect.timeoutOption(Fiber.join(running), reader.until - now) : Option.none<Settled>()
+    if (Option.isNone(waited)) return try staleCopy(entry!, "slow")
+    const settled = waited.value
+    if (settled._tag === "failed") throw settled.failure
+    if (settled._tag === "copy") return settled.stale ? try staleCopy(settled.entry, "stale") : try answer(settled.entry, false)
+    return try rebuilt(request, settled.status, settled.headers, settled.text)
+  }, "github.read_cache"))
+}

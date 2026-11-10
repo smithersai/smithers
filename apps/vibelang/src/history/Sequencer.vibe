@@ -59,10 +59,22 @@ export interface MainCommit {
   readonly message: string
 }
 
-/** A mythical commit a real commit's message names: `Mythical: m<n>`. */
+const TRAILER = /^[A-Za-z0-9][A-Za-z0-9-]*:/
+const CONTINUATION = /^[ \t]/
+const MYTHICAL = /^Mythical:\s*(m\d+)$/
+
+/**
+ * The mythical commit a real commit's message names: the first `Mythical: m<n>` line of its trailer paragraph, the
+ * message's last paragraph after the title when every line there is a `Key: value` trailer (or continues one). A squash
+ * body or prose that quotes a trailer names none.
+ */
 export function trailerOf(message: string): string {
-  const match = /^Mythical:\s*(m\d+)\s*$/m.exec(message)
-  return match === null ? "" : match[1]!
+  const paragraphs = message.split(/\r?\n/).map((line) => line.trimEnd()).join("\n").replace(/\n+$/, "").split(/\n\n+/)
+  if (paragraphs.length < 2) return ""
+  const paragraph = paragraphs[paragraphs.length - 1]!.split("\n")
+  if (!paragraph.every((line, at) => TRAILER.test(line) || (at > 0 && CONTINUATION.test(line)))) return ""
+  const named = paragraph.map((line) => MYTHICAL.exec(line)).find((match) => match !== null)
+  return named === undefined || named === null ? "" : named[1]!
 }
 
 function answered(id: string, decision: Decision): Answer {

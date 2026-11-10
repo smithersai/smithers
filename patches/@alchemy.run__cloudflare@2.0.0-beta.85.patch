@@ -10,3 +10,33 @@ diff --git a/lib/Workers/WorkerProvider.js b/lib/Workers/WorkerProvider.js
                      ? newBindings
                      : undefined, accountId))) {
                  // The immutable script ID is always stable across an update —
+diff --git a/lib/Workers/DurableObjectBridge.js b/lib/Workers/DurableObjectBridge.js
+--- a/lib/Workers/DurableObjectBridge.js
++++ b/lib/Workers/DurableObjectBridge.js
+@@ -48,7 +48,10 @@
+                 return constructor.pipe(Effect.provide(doContext), Effect.flatMap((instance) => Effect.suspend(() => {
+                     const seal = initializeAlarmCallbacks(this.#state);
+                     const instanceContext = Layer.succeed(RuntimeContext, instanceRuntimeContext).pipe(Layer.provideMerge(doContext));
+-                    return instance.pipe(Effect.provide(instanceContext), Effect.ensuring(Effect.sync(seal)));
++                    // The constructor's `Scope` lives as long as this in-memory instance. The
++                    // captured `services` can hold the Worker init's scope, which is closed
++                    // once init returns: work forked into it would be interrupted before it ran.
++                    return instance.pipe(Effect.provideService(Scope.Scope, Scope.makeUnsafe()), Effect.provide(instanceContext), Effect.ensuring(Effect.sync(seal)));
+                 })), Effect.map((instance) => ({
+                     instance,
+                     services: Context.add(services, RuntimeContext, instanceRuntimeContext),
+diff --git a/src/Workers/DurableObjectBridge.ts b/src/Workers/DurableObjectBridge.ts
+--- a/src/Workers/DurableObjectBridge.ts
++++ b/src/Workers/DurableObjectBridge.ts
+@@ -90,7 +90,11 @@
+                       RuntimeContext,
+                       instanceRuntimeContext,
+                     ).pipe(Layer.provideMerge(doContext));
++                    // The constructor's `Scope` lives as long as this in-memory instance. The
++                    // captured `services` can hold the Worker init's scope, which is closed
++                    // once init returns: work forked into it would be interrupted before it ran.
+                     return instance.pipe(
++                      Effect.provideService(Scope.Scope, Scope.makeUnsafe()),
+                       Effect.provide(instanceContext),
+                       Effect.ensuring(Effect.sync(seal)),
+                     );

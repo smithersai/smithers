@@ -27,7 +27,7 @@ if summary['total'] != len(manifest) or p.returncode != 1: raise SystemExit('FAI
 for r in summary['results']:
     item=manifest[pathlib.Path(r['file']).stem]
     try:
-        validate_rejection(r, item['function'])
+        validate_rejection(r, item['function'], item.get('callee_precondition', False))
     except ValueError as error:
         raise SystemExit(f"FAIL: {r['file']}: {error}")
 if production_sources(root.parent) != production or any(hashlib.sha256(p.read_bytes()).hexdigest() != digest for p,digest in before.items()):

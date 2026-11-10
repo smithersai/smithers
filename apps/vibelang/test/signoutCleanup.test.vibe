@@ -1,0 +1,32 @@
+// @vitest-environment node
+// `logout` whose private settings can't be removed (a file the CLI may not delete): one typed sentence, never a defect,
+// in mock and live mode. Found by fuzz target `signin/session-files` (decision 0015, lane vl-fuzz3).
+import { expect, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { settingsDir } from "../src/surfaces/session.vibe"
+import { signOutSurface } from "../src/surfaces/signin.vibe"
+
+const live = Layer.succeed(Factory, { mode: "live" } as unknown as Factory["Service"])
+
+for (const mode of ["mock", "live"] as const) {
+  it.live(`a ${mode} sign-out whose settings can't be removed fails with one sentence`, () => scoped(effect {
+    provide NodeServices.layer {
+      const fs = try FileSystem.FileSystem
+      const directory = try fs.makeTempDirectoryScoped()
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory })), (mode === "mock" ? mockFactoryFor("maintainer") : live) {
+        // The settings file is a directory with something in it: removing it fails.
+        try fs.makeDirectory((try settingsDir()) + (mode === "mock" ? "/mock-session.json" : "/session.json") + "/kept", { recursive: true })
+        const out = try exit(signOutSurface())
+        try Effect.try(() => {
+          expect(out._tag).toBe("Failure")
+          if (out._tag === "Failure") {
+            expect(Cause.hasDies(out.cause)).toBe(false)
+            expect(JSON.stringify(Cause.squash(out.cause))).toContain("The sign-in settings couldn't be written.")
+          }
+        })
+      }
+    }
+  }))
+}

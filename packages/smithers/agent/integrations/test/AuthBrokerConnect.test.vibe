@@ -212,3 +212,42 @@ it.effect("a failed install revokes the token it was handed instead of stranding
     expect(f.revoked).toEqual(["private-github-token"])
   })
 })
+it.effect("an unanswered consent's token is revoked by the next callback once the consent expires", () => effect {
+  const f = try atConsent()
+  try TestClock.adjust("11 minutes")
+  const signIn = try f.client.begin()
+  const start = try f.broker.start(origin, signIn.returnTo)
+  try f.broker.callback(new URL(start.location).searchParams.get("state")!, "code", start.cookie)
+  const abandoned = try exit(f.broker.consentPage(f.consent, f.browser))
+  // Its own token, then the sign-in's.
+  try Effect.try(() => {
+    expect(f.revoked).toEqual(["private-github-token", "private-github-token"])
+    expect(abandoned._tag).toBe("Failure")
+    expect(f.installed).toEqual([])
+  })
+})
+it.effect("a live consent is not released by another callback", () => effect {
+  const f = try atConsent()
+  const signIn = try f.client.begin()
+  const start = try f.broker.start(origin, signIn.returnTo)
+  try f.broker.callback(new URL(start.location).searchParams.get("state")!, "code", start.cookie)
+  const page = try f.broker.consentPage(f.consent, f.browser)
+  try Effect.try(() => {
+    expect(f.revoked).toEqual(["private-github-token"])
+    expect(page.html).toContain("ada")
+  })
+})
+it.effect("an unreadable expired consent is dropped without a revoke, and the callback still signs in", () => effect {
+  const store = try Broker.memoryStore()
+  try store.insert("consent/corrupt", "x", "not sealed", 0)
+  const f = try fixtureWith(store)
+  const signIn = try f.client.begin()
+  const start = try f.broker.start(origin, signIn.returnTo)
+  const location = try f.broker.callback(new URL(start.location).searchParams.get("state")!, "code", start.cookie)
+  const left = try store.drain("consent/", Number.MAX_SAFE_INTEGER, 10)
+  try Effect.try(() => {
+    expect(location.startsWith(origin)).toBe(true)
+    expect(f.revoked).toEqual(["private-github-token"])
+    expect(left).toEqual([])
+  })
+})

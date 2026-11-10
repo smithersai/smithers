@@ -1,0 +1,21 @@
+# Additional accepted API: an unknown deferred completion has no run
+# Source: 53466ad8a7df
+--- before/@smthrs/engine-store/DurableEngineState.d.ts
++++ after/@smthrs/engine-store/DurableEngineState.d.ts
+@@ -67,7 +67,15 @@
+  * @since 0.1.0
+  * @category models
+  */
+-export type CompleteDeferredOutcome = { readonly _tag: "Completed"; readonly digest: DeferredDigest; readonly row: DeferredRow; } | { readonly _tag: "Existing"; readonly digest: DeferredDigest; readonly row: DeferredRow; };
++/**
++ * `NotFound`: the execution has no run. Nothing is stored: a completion
++ * belongs to a run, as a park or a wake does, and a token can name an
++ * execution that was never started.
++ *
++ * @since 1.0.0
++ * @category models
++ */
++export type CompleteDeferredOutcome = { readonly _tag: "Completed"; readonly digest: DeferredDigest; readonly row: DeferredRow; } | { readonly _tag: "Existing"; readonly digest: DeferredDigest; readonly row: DeferredRow; } | { readonly _tag: "NotFound"; };
+ /**
+  * The `JournalEvent.contentDigest` of a stored completion's encoded `exit`
+  * and `metadata` text. The journal fact that announces a completion carries

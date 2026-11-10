@@ -1,3 +1,4 @@
+import { Redaction } from "@smthrs/journal"
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import {
@@ -99,6 +100,7 @@ const expectHelperError = (run: () => unknown, code: AtomicHelperError["code"], 
   expect(thrown).toBeInstanceOf(AtomicHelperError)
   expect(thrown).toMatchObject({ _tag: "@smthrs/platform-node/AtomicHelperError", name: "AtomicHelperError", code })
   expect((thrown as AtomicHelperError).message).toMatch(message)
+  return thrown as AtomicHelperError
 }
 
 describe("default atomic helper resolution", () => {
@@ -472,7 +474,7 @@ describe("default atomic helper resolution", () => {
       "helper_unusable",
       new RegExp(
         `^smithers-jj-export is unusable at SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=${literal}: .*ENOENT.*` +
-          "cargo build --locked --release -p smithers-ffi --bin smithers-jj-export"
+          "cargo build --locked --release --package smithers-ffi --bin smithers-jj-export"
       )
     )
     const binary = join(root, "bin", helperName)
@@ -609,13 +611,22 @@ describe("default atomic helper resolution", () => {
     }
   )
 
-  it("names the build and configuration fix when no helper exists", async () => {
+  it("leads with the complete source-checkout build command when no helper exists", async () => {
     const { packageRoot, root } = await fixture()
-    expectHelperError(
+    await writeFile(join(root, "pnpm-workspace.yaml"), "packages: []\n")
+    const error = expectHelperError(
       () => resolveDefaultExecutable(packageRoot, join(root, "workspace"), join(root, "absent")),
       "helper_missing",
-      /cargo build --locked.*SMITHERS_WORKSPACE_JJ_EXPORT_BINARY/
+      /^smithers-jj-export is missing; first run cargo build --locked --release --package smithers-ffi --bin smithers-jj-export at the repository root;/
     )
+    // The CLI redacts and bounds a flow-load issue to 256 characters.
+    const issue = String(Redaction.redactDiagnostic(
+      `Cannot load flow docs-sync: descriptor-relative filesystem isolation failed closed: ${String(error)}`
+    )).slice(0, 256)
+    expect(issue).toContain(
+      "cargo build --locked --release --package smithers-ffi --bin smithers-jj-export at the repository root"
+    )
+    expect(issue).not.toContain("[REDACTED]")
   })
 
   it("rejects a fallback helper inside the confined project", async () => {

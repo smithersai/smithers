@@ -11,7 +11,7 @@ import { chatModel } from "../worker/AgentModel.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { ChatModel, Spend } from "../worker/Reply.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
-import { agentLayer, DraftAgent, writer, writerLayer } from "../worker/VipDraft.vibe"
+import { agentLayer, DraftAgent, writer, writerLayer, VIP_CEILING } from "../worker/VipDraft.vibe"
 import { objectStorage } from "./support/objectStorage.ts"
 
 const request: IssueRequest = { op: "draft", key: "d1", number: 0, parent: 0, title: "Tuple patterns", text: "Match on tuples in case branches.", example: "case (a, b) -> a", prior: "ML", assignee: "" }
@@ -19,8 +19,8 @@ const outcome = Flow.make("test/vip/outcome", { payload: {}, success: Schema.Str
 
 /** The spend ledger as the writer sees it, recording what it was charged. */
 function ledger(admit: Spend.Shape["admit"] = () => succeed(true)) {
-  const charges: Array<{ readonly day: string; readonly reply: string; readonly tokens: number }> = []
-  const spend: Spend.Shape = { admit, spend: (day, reply, tokens) => sync(() => { charges.push({ day, reply, tokens }) }) }
+  const charges: Array<{ readonly day: string; readonly reply: string; readonly tokens: number; readonly reported: boolean; readonly ceiling: number }> = []
+  const spend: Spend.Shape = { admit, spend: (day, reply, tokens, reported, ceiling) => sync(() => { charges.push({ day, reply, tokens, reported, ceiling }) }) }
   return { charges, spend }
 }
 
@@ -45,6 +45,20 @@ const newStorage = () => objectStorage() as unknown as Storage
 const withAgent = (agent: DraftAgent.Shape, spend: Spend.Shape) => writer.pipe(Layer.provide(Layer.succeed(DraftAgent, agent)), Layer.provide(Layer.succeed(Spend, spend)))
 
 describe("drafting a VIP", () => {
+  it.live("settles the reserved ceiling when malformed usage makes the SDK meter unavailable", () => effect {
+    const { charges, spend } = ledger()
+    const agent: DraftAgent.Shape = { available: true, run: effect (_request, meter) => {
+      try meter.record("invalid", { inputTokens: Number.NaN, outputTokens: 2 }).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" })))
+      throw new IssueFailure({ reason: "draft" })
+    } }
+    const answer = try drafted(newStorage(), withAgent(agent, spend), "invalid-usage")
+    try Effect.try(() => {
+      expect(answer).toEqual({ reason: "budget" })
+      expect(charges).toHaveLength(1)
+      expect(charges[0]).toMatchObject({ reported: false, ceiling: VIP_CEILING })
+    })
+  }, 60_000)
+
   it.live("says there is no model, before admitting or spending anything", () => effect {
     const { charges, spend } = ledger(() => die("admitted without a model"))
     const answer = try drafted(newStorage(), writerLayer.pipe(Layer.provide(Layer.succeed(ChatModel, { model: undefined, unusable: "credential_missing" })), Layer.provide(Layer.succeed(Spend, spend))), "no-model")

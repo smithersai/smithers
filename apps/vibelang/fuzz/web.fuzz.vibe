@@ -37,7 +37,19 @@ it.live("web/update-sequences", () => run("web/update-sequences", Schema.Struct(
   return true
 }))
 
-it.live("web/arbitrary-update", () => run("web/arbitrary-update", Schema.Struct({ model: Model, message: Message }), ({ model, message }) => Schema.is(Model)(update(model, message).model)))
+/** Any message leaves a valid Model; a received event is the state machine's own receive, and a measured box is kept. */
+it.live("web/arbitrary-update", () => run("web/arbitrary-update", Schema.Struct({ model: Model, message: Message }), ({ model, message }) => {
+  const next = update(model, message).model
+  if (!Schema.is(Model)(next)) return false
+  if (message._tag === "ReceivedEvent" && !same(next.client.conversation, M.receive(model.client, message.event).conversation)) return false
+  // The conversation's next post always reaches the client: the Model shows exactly the machine's receive.
+  const posted = { type: "Posted" as const, seq: model.client.conversation.seq + 1, id: "fuzz-next", clientId: "fuzz-next", name: "Guest", text: "next" }
+  const received = update(model, Message.ReceivedEvent({ event: posted })).model.client.conversation
+  if (!same(received, M.receive(model.client, posted).conversation) || received.seq !== posted.seq) return false
+  const box = { x: 1, y: 2, width: 3, height: 4 }
+  const measured = update(model, Message.MeasuredTheatre(box)).model.theatreBox
+  return measured !== undefined && measured.x === box.x && measured.y === box.y && measured.width === box.width && measured.height === box.height
+}))
 
 it.live("web/keys-and-transition", () => run("web/keys-and-transition", Schema.Struct({ key: Schema.Union([TextOrBoundary, Schema.Literals(["k", "K", "Escape"])]), meta: Schema.Boolean, control: Schema.Boolean, before: Model, after: Model }), ({ key, meta, control, before, after }) => {
   const result = keyMessage(key, meta, control)

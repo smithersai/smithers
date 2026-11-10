@@ -10,6 +10,7 @@ import type { HistoryReader } from "../src/history/tools.vibe"
 import { Unavailable } from "../src/history/MythicalHistory.vibe"
 import * as Objects from "../worker/Objects.vibe"
 import { objectStorage } from "./support/objectStorage.ts"
+import { faultyChatModel } from "./support/faultyChatModel.vibe"
 
 const hostId = "objects-coverage"
 
@@ -43,7 +44,7 @@ describe("the conversation object's storage adapters", () => {
     const deleted = try executions.delete("k")
     const missing = try executions.get("k")
     const budget = try Objects.budget(storage, 100)
-    const admitted = try budget.admit()
+    const admitted = try budget.admit("probe", 10)
     const tours = Objects.toursOf(sequencer)
     try tours.wake()
     const execution = try Objects.postExecutionId("probe")
@@ -181,7 +182,7 @@ describe("one alarm of the object", () => {
     const { storage, sequencer } = try world()
     try Objects.post(hostId, storage, sequencer, "c1", "ada", "hello")
     const spend: Spend.Shape = { admit: () => succeed(false), spend: () => Effect.void }
-    const model: ChatModel.Shape = { model: undefined, unusable: "unconfigured" }
+    const model = try faultyChatModel()
     const outcome = try Objects.alarm(hostId, storage, sequencer, spend, model, unavailableHistory)
     const snapshot = try sequencer.read(0)
     try Effect.try(() => {

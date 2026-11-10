@@ -1,5 +1,7 @@
 // Decisions inside the web update: stale-response fences, account retries, the role gate and bounded menu movement.
 
+import { acceptSnapshot } from "../core/conversation.vibe"
+
 export type AccountRetry = "sign-in" | "people" | "grant" | "sign-out" | "roles"
 export type RetryPlan = "resume" | "sign-in" | "command"
 export type PeoplePane = "closed" | "pane" | "max"
@@ -535,3 +537,58 @@ export function selectedRun(state: RunSelection, id: string, known: boolean, flo
 export function followedRun(state: RunSelection, id: string, flow: string): RunSelection {
   return state.run === "" ? state : { ...state, step: "", run: id, selected: flow }
 }
+
+export interface RunClock { readonly id: string; readonly state: string; readonly at: number; readonly started: number }
+
+/** Where a run's id sits in the list; -1 when it is new. */
+//@ verify
+//@ ensures \result == -1 || (0 <= \result && \result < runs.length && runs[\result].id == id)
+//@ ensures \result == -1 ==> forall(j, 0 <= j && j < runs.length ==> runs[j].id != id)
+export function runIndex<R extends RunClock>(runs: ReadonlyArray<R>, id: string): number {
+  let i = 0
+  while (i < runs.length) {
+    //@ invariant 0 <= i && i <= runs.length
+    //@ invariant forall(j, 0 <= j && j < i ==> runs[j].id != id)
+    //@ decreases runs.length - i
+    if (runs[i]!.id === id) return i
+    i++
+  }
+  return -1
+}
+
+/** One incoming snapshot, given where its id sits: a new run is appended; a known run is replaced only while it is live and the snapshot is not older, so a slower response cannot roll back a live card or a terminal receipt. */
+//@ verify
+//@ requires index == -1 || (0 <= index && index < current.length && current[index].id == next.id)
+//@ ensures index == -1 ==> \result.length == current.length + 1 && \result[current.length] == next && forall(i, 0 <= i && i < current.length ==> \result[i] == current[i])
+//@ ensures index != -1 ==> \result.length == current.length && forall(i, 0 <= i && i < current.length && i != index ==> \result[i] == current[i])
+//@ ensures index != -1 && acceptSnapshot(current[index].state, current[index].at, next.at) ==> \result[index] == next
+//@ ensures index != -1 && !acceptSnapshot(current[index].state, current[index].at, next.at) ==> \result[index] == current[index]
+export function mergeRunAt<R extends RunClock>(current: ReadonlyArray<R>, index: number, next: R): ReadonlyArray<R> {
+  if (index < 0) return [...current, next]
+  if (acceptSnapshot(current[index]!.state, current[index]!.at, next.at)) return [...current.slice(0, index), next, ...current.slice(index + 1)]
+  return current
+}
+
+/** The runs list shows the newest start first, and every run survives the sort: nothing is dropped, nothing added. */
+//@ verify
+//@ ensures \result.length == runs.length
+//@ ensures forall(i, 0 <= i && i < runs.length ==> \result.includes(runs[i]))
+//@ ensures forall(i, 0 <= i && i < \result.length ==> runs.includes(\result[i]))
+//@ ensures forall(i, 0 < i && i < \result.length ==> \result[i - 1].started >= \result[i].started)
+export function newestFirst<R extends RunClock>(runs: ReadonlyArray<R>): ReadonlyArray<R> {
+  return [...runs].sort((a, b) => b.started - a.started)
+}
+
+/** What the slash menu needs of a command: the text a draft's first word is matched against. */
+export interface SlashCommand { readonly command: string }
+
+/** The slash menu: while the draft has it open and its first word starts with `/`, exactly the commands whose text
+ * starts with that word; otherwise none. */
+//@ verify
+//@ ensures !(slash && query.startsWith("/")) ==> \result.length == 0
+//@ ensures forall(i, 0 <= i && i < \result.length ==> \result[i].command.startsWith(query) && commands.includes(\result[i]))
+//@ ensures slash && query.startsWith("/") ==> forall(i, 0 <= i && i < commands.length && commands[i].command.startsWith(query) ==> \result.includes(commands[i]))
+export function slashMatches<C extends SlashCommand>(slash: boolean, query: string, commands: ReadonlyArray<C>): ReadonlyArray<C> {
+  return slash && query.startsWith("/") ? commands.filter((entry) => entry.command.startsWith(query)) : []
+}
+

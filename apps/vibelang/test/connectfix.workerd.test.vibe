@@ -1,0 +1,60 @@
+import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { serveConnectfixHost, type Served } from "./support/workerd.vibe"
+let server: Served
+beforeAll(async () => { server = await runPromise(serveConnectfixHost()) })
+afterAll(async () => { await server?.dispose() })
+let object = "direct"
+const get = (path: string, budget: Duration.Input = "8 seconds") => HttpClient.get(server.origin + path + (path.includes("?") ? "&" : "?") + "object=" + object).pipe(Effect.timeout(budget))
+effect function state() { return (try (try get("/__state")).json) as Record<string, unknown> }
+describe("production-shaped account cutover", () => {
+  it.live.each(["direct", "rollback"])("rolls forward over interrupted migration via %s and bounds both reads", (mode) => effect {
+    object = mode
+    try get("/__seed")
+    try tryPromise(() => server.reload({ PHASE: "cutover" }))
+    const pending = try forkChild(get("/api/issues"))
+    let entered = false
+    const until = (try Clock.currentTimeMillis) + 5_000
+    while (!entered && (try Clock.currentTimeMillis) < until) {
+      entered = (try state()).entered === true
+      if (!entered) try sleep("50 millis")
+    }
+    try Effect.try(() => expect(entered).toBe(true))
+    const interrupted = try state()
+    try Effect.try(() => { expect(interrupted.migrated).toBeUndefined(); expect(interrupted.oldRows).toBe(1) })
+    if (mode === "rollback") {
+      try tryPromise(() => server.reload({ PHASE: "rollback" }))
+      try Fiber.interrupt(pending)
+      const rollbackSession = try get("/api/auth/session")
+      try Effect.try(() => expect(rollbackSession.status).toBe(200))
+      const oldRead = try Effect.result(get("/api/issues"))
+      try Effect.try(() => expect(oldRead._tag).toBe("Failure"))
+      const decode = try (try get("/__decode")).json
+      try Effect.try(() => expect(decode).toEqual({ refusal: "payload_changed" }))
+    }
+    try tryPromise(() => server.reload({ PHASE: "fixed" }))
+    try Fiber.interrupt(pending)
+    const session = try get("/api/auth/session")
+    const stored = try state()
+    try Effect.try(() => {
+      expect(session.status).toBe(200)
+      expect(stored.migrated).toBe(true)
+      expect(stored.oldRows).toBe(0)
+    })
+    // Cold issue reads have a 12-second flow and 13-second accounts boundary (0031); wiki keeps its original bound.
+    const timed = (path: string, budget: Duration.Input) => effect {
+      const start = try Clock.currentTimeMillis
+      const response = try get(path, budget)
+      return { response, elapsed: (try Clock.currentTimeMillis) - start }
+    }
+    const reads = try all([timed("/api/issues", "15 seconds"), timed("/api/wiki?page=index", "8 seconds")], { concurrency: "unbounded" })
+    const responses = reads.map(read => read.response)
+    const bodies = try all(responses.map(r => r.json))
+    try Effect.try(() => {
+      expect(responses.map(r => r.status)).toEqual([503, 503])
+      expect(bodies).toEqual([{ reason: "unavailable" }, { reason: "unavailable" }])
+      expect(reads[0]!.elapsed).toBeLessThan(15_000)
+      expect(reads[1]!.elapsed).toBeLessThan(8_000)
+    })
+  }.pipe(Effect.provide(FetchHttpClient.layer)))
+})

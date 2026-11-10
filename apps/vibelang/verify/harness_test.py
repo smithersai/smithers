@@ -1,10 +1,18 @@
 """Regression: an ignored-only proof directory must never pass with zero checked sources."""
-import json, pathlib, subprocess, sys, tempfile, unittest
+import json, os, pathlib, subprocess, sys, tempfile, unittest
 from sources import production_sources
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = pathlib.Path(__file__).resolve().parent
 
 class StrictSourceChecks(unittest.TestCase):
+    def test_a_lone_mutant_gets_its_imports_imports(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            out = pathlib.Path(folder)
+            result = subprocess.run([sys.executable, str(ROOT / 'mutations.py'), str(out), 'page-count-end'], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertTrue((out / 'stackDecision.vibe.ts').exists())
+            self.assertTrue((out / 'mythical.vibe.ts').exists())
+
     def test_a_lemmascript_source_newer_than_its_build_is_stale(self):
         import os, time
         from lsc_fresh import stale
@@ -22,6 +30,25 @@ class StrictSourceChecks(unittest.TestCase):
             self.assertFalse(stale(package))
             os.utime(source, None)
             self.assertTrue(stale(package))
+
+    def test_lsc_is_a_relative_link_that_survives_a_packed_tree(self):
+        # A packed tree (run-heavy on a box) copies an absolute link's target as a file, and ts-morph then can't resolve.
+        from lsc_fresh import link
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            root = pathlib.Path(folder)
+            package, tools = root / 'packages/lemmascript', root / 'apps/vibelang/verify/.tools'
+            (package / 'tools/dist').mkdir(parents=True)
+            (package / 'tools/dist/lsc.js').write_text('built\n')
+            (tools / 'bin').mkdir(parents=True)
+            for stale in ['copy', 'absolute']:
+                lsc = tools / 'bin/lsc'
+                if lsc.is_symlink() or lsc.exists(): lsc.unlink()
+                if stale == 'copy': lsc.write_text('built\n')
+                else: lsc.symlink_to(package / 'tools/dist/lsc.js')
+                link(tools, package)
+                self.assertTrue(lsc.is_symlink(), stale)
+                self.assertEqual(os.readlink(lsc), '../../../../../packages/lemmascript/tools/dist/lsc.js', stale)
+                self.assertEqual(lsc.resolve(), (package / 'tools/dist/lsc.js').resolve(), stale)
 
     def test_a_function_named_by_a_dafny_keyword_is_verified_under_its_escaped_name(self):
         from sources import dafny_keywords, dafny_name
@@ -70,6 +97,42 @@ class StrictSourceChecks(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stdout)
             self.assertIn('TS2322', result.stderr)
 
+class IsolatedCoreBudget(unittest.TestCase):
+    def test_configured_invocation_obeys_core_cap(self):
+        # Check the policy before launching a solver; a failing test must not itself launch more than two cores.
+        import ast
+        tree = ast.parse((ROOT / 'check.py').read_text())
+        found = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name) or node.func.id != 'command': continue
+            if not node.args or not isinstance(node.args[0], ast.List): continue
+            args = node.args[0].elts
+            for i, arg in enumerate(args[:-1]):
+                if isinstance(arg, ast.Constant) and arg.value == '--cores':
+                    value = args[i + 1]
+                    choices = [value.body, value.orelse] if isinstance(value, ast.IfExp) else [value]
+                    found.extend(int(ast.literal_eval(choice)) for choice in choices)
+        self.assertTrue(found, 'No bounded Dafny invocation found')
+        self.assertTrue(all(1 <= n <= 2 for n in found), found)
+
+    def test_isolated_production_proofs_use_at_most_two_cores(self):
+        # Exercise the real production-path selection and inspect the actual Dafny invocation receipt.
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            app = pathlib.Path(folder)
+            (app / 'src/core').mkdir(parents=True)
+            (app / 'tsconfig.json').write_text(json.dumps({'extends': str(ROOT.parent / 'tsconfig.json')}))
+            (app / 'src/core/decide.vibe').write_text('//@ verify\n//@ ensures \\result == input\nexport function same(input: number): number { return input }\n')
+            env = {k: v for k, v in os.environ.items() if k != 'VERIFY_MUTATION_MANIFEST'}
+            env['VIBELANG_VERIFY_ROOT'] = str(app)
+            result = subprocess.run([sys.executable, str(ROOT / 'check.py')], capture_output=True, text=True, env=env, timeout=120)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            summaries = list((app / 'verify/.checks').glob('run-*/summary.json'))
+            self.assertEqual(len(summaries), 1)
+            calls = [c['argv'] for c in json.loads(summaries[0].read_text())['commands'] if pathlib.Path(c['argv'][0]).name == 'dafny']
+            self.assertEqual(len(calls), 1)
+            self.assertIn('--isolate-assertions', calls[0])
+            self.assertLessEqual(int(calls[0][calls[0].index('--cores') + 1]), 2)
+
 class SourceArguments(unittest.TestCase):
     def test_extra_missing_source_is_not_ignored(self):
         with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
@@ -80,7 +143,35 @@ class SourceArguments(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stdout)
             self.assertIn('Not found:', result.stdout + result.stderr)
 
+class GenericFunctions(unittest.TestCase):
+    def test_a_marked_generic_function_is_found_and_proved(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            source = pathlib.Path(folder) / 'generic.ts'
+            source.write_text('//@ verify\n//@ ensures \\result.length == items.length + 1\nexport function added<C>(items: ReadonlyArray<C>, item: C): ReadonlyArray<C> { return [...items, item] }\n')
+            env = {key: value for key, value in os.environ.items() if key not in ('VIBELANG_VERIFY_ROOT', 'VERIFY_MUTATION_MANIFEST')}
+            result = subprocess.run([sys.executable, str(ROOT / 'check.py'), str(source)], capture_output=True, text=True, env=env)
+            self.assertNotIn('was not emitted', result.stdout + result.stderr)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
 class MutationLocation(unittest.TestCase):
+    def test_a_generic_function_is_found_and_ends_at_the_next_generic_function(self):
+        from mutation_edit import function_span
+        source = 'export function a<R extends X>(xs: R[]): number {\n  return 1\n}\nexport function b<R extends X>(xs: R[]): number {\n  return 2\n}\n'
+        start, end = function_span(source, 'a')
+        self.assertEqual(source[start:end], 'export function a<R extends X>(xs: R[]): number {\n  return 1\n}\n')
+        start, end = function_span(source, 'b')
+        self.assertIn('return 2', source[start:end])
+        self.assertIsNone(function_span(source, 'c'))
+
+    def test_a_parent_folder_import_is_copied_beside_the_mutant(self):
+        from mutation_edit import flatten_imports
+        folder = ROOT.parent / 'src/web'
+        text, deps = flatten_imports('import { a } from "../core/conversation.vibe"\nimport { b } from "./x.vibe"\n', folder)
+        self.assertEqual(text, 'import { a } from "./conversation.vibe"\nimport { b } from "./x.vibe"\n')
+        self.assertEqual(deps['conversation.vibe'], (ROOT.parent / 'src/core/conversation.vibe').resolve())
+        with self.assertRaises(SystemExit):
+            flatten_imports('import { a } from "../core/x.vibe"\nimport { b } from "./x.vibe"\n', folder)
+
     def test_contract_text_is_not_an_executable_match(self):
         from mutation_edit import executable_matches
         source='  return x > 0\n}\n//@ ensures \\result == (x > 0)\n'
@@ -90,6 +181,35 @@ class MutationLocation(unittest.TestCase):
         from mutation_edit import executable_matches
         source='return x > 0 ? x > 0 : false'
         self.assertEqual(len(executable_matches(source, 'x > 0')), 2)
+
+class TypeOnlyImports(unittest.TestCase):
+    def test_a_type_only_import_is_not_staged_as_a_copy(self):
+        from declarations import type_imports, value_imports
+        text = 'import type { Message } from "./main.vibe"\nimport { a } from "./a.vibe"\nimport type {\n  B,\n} from "../b.vibe"\nimport { type C } from "./c.vibe"\n'
+        self.assertEqual(type_imports(text), ['./main.vibe', '../b.vibe'])
+        self.assertEqual(sorted(value_imports(text)), ['./a.vibe', './c.vibe'])
+        self.assertEqual(value_imports('import type { M } from "./m.vibe"\nimport { f } from "./m.vibe"\n'), ['./m.vibe'])
+
+    def test_a_type_only_import_reads_a_declaration_only_when_the_module_is_not_typescript(self):
+        from declarations import copied_imports, declared_imports
+        app = ROOT.parent
+        text = 'import type { Epic } from "./mythical.vibe"\nimport type { Message } from "../web/main.vibe"\n'
+        self.assertEqual(copied_imports(text, app / 'src/history'), ['./mythical.vibe'])
+        self.assertEqual(declared_imports(text, app / 'src/history'), ['../web/main.vibe'])
+
+    def test_a_declaration_is_staged_with_absolute_specifiers_and_never_beside_a_copy(self):
+        from declarations import stage
+        app = ROOT.parent
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            folder = pathlib.Path(folder)
+            (folder / 'copied.vibe.ts').write_text('export {}\n')
+            written = stage(app, {folder / 'main.vibe.d.ts': app / 'src/web/main.vibe', folder / 'copied.vibe.d.ts': app / 'src/core/roles.vibe'}, folder / 'declarations')
+            self.assertEqual(written, [folder / 'main.vibe.d.ts'])
+            self.assertFalse((folder / 'copied.vibe.d.ts').exists())
+            text = (folder / 'main.vibe.d.ts').read_text()
+            self.assertIn('export type Message = typeof Message.Type', text)
+            self.assertNotRegex(text, r'(?:from|import\()\s*"\.')
+            self.assertRegex(text, r'from "/[^"]*/declarations/tree/src/core/conversation\.vibe"')
 
 class TargetedPostconditions(unittest.TestCase):
     def test_selection_is_confined_to_the_named_function(self):
@@ -164,10 +284,32 @@ class MutationModuleFilter(unittest.TestCase):
 
 
 class MutationContractFailures(unittest.TestCase):
-    def test_a_broken_capacity_guard_fails_the_callee_domain_contract(self):
+    CALL_ONLY = {'exit': 4, 'output': 'Error: a precondition for this call could not be proved',
+                 'mapped': ['source.vibe:12: function replayEvent [replayEvent; generated line 679]']}
+
+    def test_a_callee_precondition_alone_is_not_a_rejection(self):
         from mutation_results import validate_rejection
-        validate_rejection({'exit': 4, 'output': 'Error: a precondition for this call could not be proved',
-                            'mapped': ['source.vibe:12: function decideWithinCapacity [decideWithinCapacity; generated line 679]']}, 'decideWithinCapacity')
+        with self.assertRaises(ValueError): validate_rejection(self.CALL_ONLY, 'replayEvent')
+
+    def test_a_declared_callee_domain_claim_is_rejected_by_that_precondition(self):
+        from mutation_results import validate_rejection
+        validate_rejection(self.CALL_ONLY, 'replayEvent', callee_precondition=True)
+
+    def test_only_named_mutations_claim_a_callee_domain(self):
+        from mutation_targets import CALLEE_PRECONDITIONS
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            out = pathlib.Path(folder)
+            names = sorted(CALLEE_PRECONDITIONS) + ['decide-blank']
+            result = subprocess.run([sys.executable, str(ROOT / 'mutations.py'), str(out), *names], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            manifest = json.loads((out / 'manifest.json').read_text())
+            self.assertEqual({name for name, item in manifest.items() if item['callee_precondition']}, set(CALLEE_PRECONDITIONS))
+
+    def test_an_import_of_an_unmarked_module_is_refused(self):
+        from sources import require_proved
+        production = production_sources(ROOT.parent)
+        require_proved(ROOT.parent / 'src/core/conversation.vibe', production)
+        with self.assertRaises(SystemExit): require_proved(ROOT.parent / 'src/core/Factory.vibe', production)
 
     def test_invalid_union_destructor_cannot_hide_behind_a_postcondition_failure(self):
         from mutation_results import validate_rejection

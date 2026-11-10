@@ -1,0 +1,56 @@
+// An open Sandboxes pane reads its sandbox every second. A failed start must keep its alert and Retry through those
+// reads: the person has to see that the start failed and be able to try again.
+import { expect, it } from "@effect/vitest"
+import { vi } from "vitest"
+import { Runtime } from "foldkit"
+import { Factory, Unavailable } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { init } from "../src/web/main.vibe"
+import { application } from "./support/application.vibe"
+import { activeId, clickButton, commandK, container, hasAsk, hasButton, pageText, remove, send } from "./support/browser.ts"
+import { overlaid } from "./support/overlaid.vibe"
+
+it.live("a failed start keeps its alert and Retry while the open pane reads every second", () => scoped(effect {
+  provide mockFactoryFor("contributor") {
+    const factory = try Factory
+    // A contributor may start a sandbox.
+    try Effect.orDie(factory.accounts!.choose("contributor"))
+    let starts = 0
+    const failing = Layer.succeed(Factory, overlaid(factory, {
+      startSandbox: (conversation, operationId) => {
+        starts++
+        return starts === 1 ? Effect.fail(new Unavailable({ reason: "closed" })) : factory.startSandbox(conversation, operationId)
+      },
+    }))
+    let latest = init({ session: "will", name: "Will", mode: "mock" }).model
+    const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+    const program = try Effect.try(() => application(node, failing, (model) => { latest = model }))
+    try acquireRelease(
+      sync(() => Runtime.embed(program, { flags: succeed({ session: "will", name: "Will", mode: "mock" as const }) })),
+      (handle) => sync(() => handle.dispose()),
+    )
+    try promise(() => vi.waitFor(() => expect(hasAsk()).toBe(true)))
+    try sync(commandK)
+    try promise(() => vi.waitFor(() => expect(activeId()).toBe("vl-palette-prompt")))
+    try sync(() => send("How do I install it?"))
+    try promise(() => vi.waitFor(() => expect(latest.client.conversation.entries.map((entry) => entry.done)).toEqual([true, true]), { timeout: 4000 }))
+    try promise(() => vi.waitFor(() => expect(latest.sandbox).toBeDefined()))
+    try sync(() => clickButton("Sandboxes"))
+    try promise(() => vi.waitFor(() => expect(latest.sandboxPane).toBe("pane")))
+    try promise(() => vi.waitFor(() => expect(hasButton("New sandbox")).toBe(true)))
+    try sync(() => clickButton("New sandbox"))
+    try promise(() => vi.waitFor(() => expect(latest.sandboxError).toBe("closed")))
+    // Two of the open pane's one-second reads.
+    try sleep("2500 millis")
+    try Effect.try(() => {
+      expect(latest.sandboxError).toBe("closed")
+      expect(pageText()).toContain("Couldn't start a sandbox")
+    })
+    try sync(() => clickButton("Retry"))
+    try promise(() => vi.waitFor(() => expect(latest.sandbox?.status).toBe("running"), { timeout: 4000 }))
+    try Effect.try(() => {
+      expect(latest.sandboxError ?? "").toBe("")
+      expect(starts).toBe(2)
+    })
+  }
+}))

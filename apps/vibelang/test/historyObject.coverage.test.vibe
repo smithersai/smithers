@@ -62,9 +62,8 @@ describe("the history store", () => {
 })
 
 describe("the principal seams and the chat reader", () => {
-  it.effect("answers the default principals until 0019's policy lands", () => effect {
+  it.effect("answers the chat agent's default principal until 0019's policy lands", () => effect {
     try Effect.try(() => {
-      expect(HistoryObject.principalOf(undefined)).toEqual(VIEWER)
       expect(HistoryObject.CHAT_AGENT).toEqual({ ...VIEWER, agent: true })
     })
   })

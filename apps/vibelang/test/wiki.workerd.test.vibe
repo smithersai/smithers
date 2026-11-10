@@ -5,11 +5,11 @@ import { FetchHttpClient, HttpClient } from "effect/http"
 import { Factory } from "../src/core/Factory.vibe"
 import { LiveFactory } from "../src/core/LiveFactory.vibe"
 import { apply, empty } from "../src/core/conversation.vibe"
-import { serveApi, serveSite, type Served } from "./support/workerd.vibe"
+import { deadline, serveApi, serveSite, type Served } from "./support/workerd.vibe"
 
 describe("wiki in live workerd", () => {
   let api: Served | undefined
-  beforeAll(async () => { api = await runPromise(serveApi()) }, 120_000)
+  beforeAll(async () => { api = await runPromise(serveApi()) }, deadline(120_000))
   afterAll(async () => { await api?.dispose() })
   it.live("replays numbered openings, refuses unknown pages and journals each request as a flow", () => effect {
     provide LiveFactory(api!.origin).pipe(Layer.provide(FetchHttpClient.layer)), FetchHttpClient.layer {
@@ -34,7 +34,7 @@ describe("wiki in live workerd", () => {
 
 describe("wiki deployment routes with the real static asset service", () => {
   let site: Served | undefined
-  beforeAll(async () => { site = await runPromise(serveSite(true)) }, 120_000)
+  beforeAll(async () => { site = await runPromise(serveSite(true)) }, deadline(120_000))
   afterAll(async () => { await site?.dispose() })
   it.live("serves known wiki deep links and preserves the landed History entry", () => effect {
     provide FetchHttpClient.layer {

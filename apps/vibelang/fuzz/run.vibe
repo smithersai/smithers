@@ -1,5 +1,6 @@
 // One bounded target, its persistent regressions, and content-free campaign receipts.
 import * as NodeServices from "@effect/platform-node/NodeServices"
+import { TestClock } from "effect/testing"
 import { Fuzz } from "@smthrs/fuzz"
 import { FuzzCorpus } from "@smthrs/testing"
 import { MAX_TEXT } from "../src/core/decide.vibe"
@@ -9,6 +10,11 @@ export error Finding {
   get message() { return this.report }
 }
 export error BudgetInvalid { message: string }
+/** The budget ran out before the property ran once (corpus loading and arbitrary construction share the deadline). */
+export error NoExecution {
+  report: string
+  get message() { return this.report }
+}
 
 const executions = Metric.counter("vibelang_fuzz_executions", { incremental: true })
 
@@ -18,13 +24,15 @@ export effect function run<S extends Schema.Constraint>(
   schema: S,
   property: (input: S["Type"]) => boolean | (boolean!unknown!Scope.Scope),
   execution?: Fuzz.Execution,
-  options?: { readonly revision?: string; readonly codec?: Fuzz.Codec<S["Type"]> },
+  options?: { readonly revision?: string; readonly codec?: Fuzz.Codec<S["Type"]>; readonly minimum?: Duration.Input },
 ) {
   provide NodeServices.layer {
     return try withSpan(effect {
       const began = try Clock.currentTimeMillis
-      const budget = try Config.withDefault(Config.Duration("FUZZ_BUDGET"), name.startsWith("browser/") ? Duration.seconds(25) : Duration.millis(250))
-      if (Duration.toMillis(budget) <= 0) throw new BudgetInvalid({ message: "FUZZ_BUDGET must be positive" })
+      const configured = try Config.withDefault(Config.Duration("FUZZ_BUDGET"), name.startsWith("browser/") ? Duration.seconds(25) : Duration.millis(250))
+      if (Duration.toMillis(configured) <= 0) throw new BudgetInvalid({ message: "FUZZ_BUDGET must be positive" })
+      // The deadline also covers replaying saved failures; a target whose replay outlasts a short budget declares a floor (0015).
+      const budget = options?.minimum === undefined ? configured : Duration.max(configured, Duration.fromInputUnsafe(options.minimum))
       const seed = try Config.withDefault(Config.String("FUZZ_SEED"), "20261107")
       const limit = try Config.option(Config.Int("FUZZ_EXECUTIONS"))
       const path = try Path.Path
@@ -48,9 +56,29 @@ export effect function run<S extends Schema.Constraint>(
       try fs.writeFileString(path.join(receipts, name.replaceAll("/", "--") + ".json"), JSON.stringify({ target: name, seed, budget: Duration.toMillis(budget), outcome: report._tag, began, ended, elapsedMs: ended - began, stats: report.stats }))
       const finding = try Effect.try(() => Fuzz.formatReport(report))
       if (finding !== undefined) throw new Finding({ report: finding })
+      try gate(name, budget, limit, report.stats)
     }, `vibelang.fuzz.${name}`)
   }
 }
+
+/**
+ * A target that never ran its property proves nothing, so it fails and names the load that starved it.
+ * The deadline starts before corpus loading and arbitrary construction; on a loaded host they can spend it all.
+ * `FUZZ_EXECUTIONS=0` is the explicit replay-only mode and passes with zero executions.
+ */
+export effect function gate(name: string, budget: Duration.Duration, limit: Option.Option<number>, stats: { readonly executions: number }) {
+  if (stats.executions > 0 || (Option.isSome(limit) && limit.value === 0)) return
+  const fs = try FileSystem.FileSystem
+  const load = try fs.readFileString("/proc/loadavg").pipe(Effect.map((text) => text.split(" ")[0] ?? "unknown"), Effect.orElseSucceed(() => "unknown"))
+  throw new NoExecution({ report: `${name} ran no execution in ${Duration.toMillis(budget)} ms (host load ${load})` })
+}
+
+/**
+ * Floor for a target whose one execution is seconds long: replaying its saved failure alone takes about 5 s,
+ * so a fresh checkout at the 5 s coverage budget ran no execution even on an idle 4-vCPU box (0015). Browser
+ * targets declare it too: at `FUZZ_BUDGET=5 seconds` two of them replayed their saved failures and never explored.
+ */
+export const REPLAY_FLOOR = "15 seconds"
 
 export const Int = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 31 }))
 export const Text = Schema.String.check(Schema.isMaxLength(120))
@@ -69,4 +97,24 @@ export function same(a: unknown, b: unknown): boolean {
     return value
   }
   try { return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b)) } catch { return false }
+}
+
+/**
+ * Runs `program` under a test clock stepped 250 ms at a time, letting real promises settle 10 ms between steps, so a
+ * flow's retries and deadlines pass in virtual time. A program still running after `limitSeconds` is a finding.
+ */
+export effect function stepped<A, E>(program: A!E!never, limitSeconds: number) {
+  return try Effect.provide(effect {
+    const fiber = try forkChild(program)
+    for (let step = 0; step < limitSeconds * 4 && fiber.pollUnsafe() === undefined; step++) {
+      try TestClock.withLive(sleep("10 millis"))
+      try TestClock.adjust("250 millis")
+    }
+    const exit = fiber.pollUnsafe()
+    if (exit === undefined) {
+      try Fiber.interrupt(fiber)
+      throw new Finding({ report: `a flow outlived ${limitSeconds} virtual seconds` })
+    }
+    return try exit
+  }, TestClock.layer())
 }

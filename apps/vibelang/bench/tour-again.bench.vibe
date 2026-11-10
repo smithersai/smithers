@@ -1,0 +1,89 @@
+// @vitest-environment node
+// Learn more while a question waits for its reply, then a tour, Escape, and Learn more again in the same conversation.
+// The conversation object's own post, tour, end and alarm (worker/Objects.vibe) over node:sqlite object storage, with
+// the scripted model service answering the question.
+import { it, expect } from "@effect/vitest"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import * as Objects from "../worker/Objects.vibe"
+import { world, history } from "../test/support/actionObjects.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { cell, scriptedModel } from "../fuzz/model-server.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("Learn more waits for a question's reply, and starts over after Escape", async ({ bench }) => {
+  const result = await workload(bench, "tour-again", "async", async () => {
+    await runPromise(scoped(effect {
+      const w = try world()
+      provide MockFactory, history {
+        const device = try Factory
+        try device.accounts!.choose("maintainer")
+        const product = try Mythical
+        provide ActionDevice = device {
+        const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
+        const model = { model: scripted.model, unusable: "" }
+        const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+        const sequencer = try Objects.conversation(storage)
+        const agent = effect () => (try sequencer.read(0)).entries.filter((entry) => entry.author === "agent").map((entry) => [entry.done, entry.text] as const)
+        const alarms = effect (count: number) => { for (let turn = 0; turn < count; turn++) try Objects.alarm("room", storage, sequencer, w.spend, model, product) }
+        const posted = try Objects.post("room", storage, sequencer, "q1", "will", "Question?", w.person.id)
+        const waiting = try Objects.tour("room", storage, sequencer)
+        try alarms(2)
+        const touring = try Objects.tour("room", storage, sequencer)
+        try alarms(2)
+        const first = try agent()
+        const ended = try Objects.endTour("room", storage, sequencer)
+        const again = try Objects.tour("room", storage, sequencer)
+        try alarms(3)
+        const second = try agent()
+        try Effect.try(() => {
+          expect([posted, waiting, touring, ended, again]).toEqual([null, "busy", null, null, null])
+          expect(first[0]).toEqual([true, "Answer."])
+          expect(first[1]![0]).toBe(false)
+          expect(first[1]![1].length).toBeGreaterThan(0)
+          expect(second).toEqual([[true, "Answer."], [true, first[1]![1]], [false, first[1]![1]]])
+        })
+        }
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("tour-again", "Vitest built-in bench; the conversation object's production post, tour, end and alarm over node:sqlite object storage with product MockAccounts, MockFactory as the action device, Mythical history and the scripted model service, a fresh world per sample. A person asks a question and presses Learn more before its reply starts: busy. After the reply, Learn more starts the tour, which greets them; Escape ends it, and Learn more again waits for the ended tour's execution, then starts over with the same greeting. Checks every answer, the reply's text and both tours' entries. Regression for a new tour that resumed the ended tour's walkthrough and never greeted.", ["Scripted model; no inference latency.", "Node SQLite/KV/alarm adapter, not workerd scheduling; alarms are called directly."], result))
+})
+
+it("a reply whose day ledger is corrupt fails and spends nothing", async ({ bench }) => {
+  const result = await workload(bench, "budget-corrupt-ledger", "async", async () => {
+    await runPromise(scoped(effect {
+      const w = try world()
+      provide history {
+        const product = try Mythical
+        const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
+        const model = { model: scripted.model, unusable: "" }
+        // The day's ledger holds a spent total no charge could have written.
+        const day = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+        try promise(() => day.put("spent", 1.5))
+        const budget = try Objects.budget(day, 1000)
+        const corrupt = { admit: (_day: string, reply: string, ceiling: number) => budget.admit(reply, ceiling), spend: (_day: string, reply: string, tokens: number, reported: boolean, ceiling: number) => budget.spend(reply, tokens, reported, ceiling) }
+        const admitted = try exit(budget.admit("r1", 10))
+        const charged = try exit(budget.spend("r1", 10, true, 10))
+        const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+        const sequencer = try Objects.conversation(storage)
+        const posted = try Objects.post("room", storage, sequencer, "q1", "will", "Question?", w.person.id)
+        for (let turn = 0; turn < 2; turn++) try exit(Objects.alarm("room", storage, sequencer, corrupt, model, product))
+        const reply = (try sequencer.read(0)).entries.find((entry) => entry.author === "agent")
+        const spent = try promise(() => day.get("spent"))
+        try Effect.try(() => {
+          expect([admitted._tag, charged._tag]).toEqual(["Failure", "Failure"])
+          expect(String(Cause.squash((admitted as Exit.Failure<unknown, unknown>).cause))).toContain("Invalid budget accounting")
+          expect(String(Cause.squash((charged as Exit.Failure<unknown, unknown>).cause))).toContain("Invalid budget accounting")
+          expect(posted).toBeNull()
+          expect(reply).toMatchObject({ done: true, text: "" })
+          expect(reply!.error.length).toBeGreaterThan(0)
+          expect(spent).toBe(1.5)
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("budget-corrupt-ledger", "Vitest built-in bench; the production budget over node:sqlite object storage whose spent total is 1.5, which no charge writes, and the conversation object's post and alarm with the scripted model, a fresh world per sample. Checks admission and a charge both stop with Invalid budget accounting, the question's reply ends failed with no text, and the ledger is unchanged.", ["The corruption is a direct storage write.", "Scripted model; no inference latency.", "Node SQLite/KV/alarm adapter, not workerd scheduling."], result))
+})

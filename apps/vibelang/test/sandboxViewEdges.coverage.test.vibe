@@ -1,0 +1,33 @@
+// The Sandboxes pane (src/web/sandboxView.vibe) for a contributor whose allowance is zero, and the terminal prompt.
+import { expect, given, role, scene, type } from "foldkit/scene"
+import { it } from "@effect/vitest"
+import type { SandboxSnapshot } from "../src/core/Factory.vibe"
+import { init, type Model, update } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+
+const home = init({ session: "sb", mode: "mock", name: "Ada" }).model
+const snapshot = (over: Partial<SandboxSnapshot>): SandboxSnapshot =>
+  ({ id: "", generation: 1, sequence: 1, status: "stopped", role: "contributor", allowance: 600, used: 0, remaining: 600, resetAt: 0, output: "", ...over })
+const pane = (sandbox: SandboxSnapshot): Model => ({ ...home, surface: "chat", sandboxPane: "pane", sandbox })
+
+it("a contributor with no allowance sees an empty meter and cannot start a sandbox", () => {
+  scene({ update, view }, given(pane(snapshot({ allowance: 0, remaining: 0 }))),
+    expect(role("progressbar", { name: "Minutes left" })).toHaveAttr("aria-valuemax", "0"),
+    expect(role("progressbar", { name: "Minutes left" })).toHaveAttr("aria-valuenow", "0"),
+    expect(role("button", { name: "New sandbox" })).toBeDisabled(),
+  )
+})
+
+it("the meter shows what is left of the allowance", () => {
+  scene({ update, view }, given(pane(snapshot({ allowance: 600, remaining: 150 }))),
+    expect(role("progressbar", { name: "Minutes left" })).toHaveAttr("aria-valuenow", "150"),
+    expect(role("button", { name: "New sandbox" })).toBeEnabled(),
+  )
+})
+
+it("typing in a running sandbox's terminal keeps the command as its draft", () => {
+  scene({ update, view }, given(pane(snapshot({ id: "sb1", status: "running", output: "$ ls\n" }))),
+    type(role("textbox", { name: "Terminal command" }), "pwd"),
+    expect(role("textbox", { name: "Terminal command" })).toHaveValue("pwd"),
+  )
+})

@@ -199,6 +199,8 @@ export interface RawFunction {
   contract: string[];     // //@ contract — natural-language description of intent (NOT a spec; provers ignore it)
   decreases: string | null;
   pure: boolean;           // //@ pure — force pure even if syntactically impure
+  opaque: boolean;         // //@ opaque — a pure function whose body only its contract lemma and `//@ reveal` see
+  reveals: string[];       // //@ reveal f — this function's proof sees opaque `f`'s body
   autohavoc: boolean;      // //@ autohavoc — abstract unmodellable exprs to havoc (file-level or per-fn)
   typeAnnotations: { name: string; type: string }[];
   body: RawStmt[];

@@ -122,10 +122,24 @@ export * as Auth from "./github/Auth.vibe"
 export * as Delegation from "./github/Delegation.vibe"
 
 /**
+ * Signed-out GitHub reads for hosted sites, answered by smithers.sh with its App (decision 0165, public reads).
  * @category delegation
  * @since 1.0.0
  */
-export * as DelegationPolicy from "./github/DelegationPolicy.vibe"
+export * as PublicRead from "./github/PublicRead.vibe"
+
+/**
+ * A site cache of public GitHub reads: ETag revalidation and stale answers when GitHub refuses.
+ * @category delegation
+ * @since 1.0.0
+ */
+export * as ReadCache from "./github/ReadCache.vibe"
+
+/**
+ * @category delegation
+ * @since 1.0.0
+ */
 export * as Calls from "./github/Calls.vibe"
+export * as DelegationPolicy from "./github/DelegationPolicy.vibe"
 export * as IssueChanges from "./github/IssueChanges.vibe"
 export * as Proposals from "./github/Proposals.vibe"

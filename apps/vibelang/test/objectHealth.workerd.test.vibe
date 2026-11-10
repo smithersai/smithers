@@ -1,0 +1,33 @@
+import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { serveApiObjects, type Served } from "./support/workerd.vibe"
+let server: Served
+beforeAll(async () => { server = await runPromise(serveApiObjects({ VIBELANG_COMMIT: "fixture-version" })) })
+afterAll(async () => { await server?.dispose() })
+const read = (path: string) => HttpClient.get(server.origin + path).pipe(Effect.timeout("8 seconds"))
+describe("production object health in workerd", () => {
+  // Production 2026-11-10: the health read itself woke each evicted object and read its status before the initializer
+  // ran a step, so every object said starting at initialize while the same objects answered their routes.
+  it.live("reports each actual instance's code and the startup it settled, as a cold object wakes", () => effect {
+    const response = try read("/api/health/objects?conversation=probe")
+    const health = (try response.json) as { readonly objects: Record<string, { readonly objectClass: string; readonly objectId: string; readonly codeVersion: string; readonly startup: string }> }
+    try Effect.try(() => {
+      expect(response.status).toBe(200)
+      expect(Object.keys(health.objects).sort()).toEqual(["ActionIndex", "Budget", "Conversation", "History", "ProjectAccounts"])
+      for (const [name, status] of Object.entries(health.objects)) {
+        expect(status.objectClass).toBe(name)
+        expect(status.objectId).toMatch(/^[a-f0-9]{64}$/)
+        expect(status.codeVersion).toBe("fixture-version")
+        expect(["starting", "ready", "failed"]).toContain(status.startup)
+      }
+      for (const name of ["Budget", "ProjectAccounts", "ActionIndex", "Conversation"]) expect(health.objects[name]?.startup, name).toBe("ready")
+    })
+    const session = try read("/api/auth/session")
+    try Effect.try(() => expect(session.status).toBe(200))
+    const after = (try (try read("/api/health/objects?conversation=probe")).json) as typeof health
+    try Effect.try(() => expect(after.objects.ProjectAccounts?.startup).toBe("ready"))
+    try tryPromise(() => server.reload({ VIBELANG_COMMIT: "next-version" }))
+    const next = (try (try read("/api/health/objects?conversation=probe")).json) as typeof health
+    try Effect.try(() => expect(Object.values(next.objects).every(status => status.codeVersion === "next-version")).toBe(true))
+  }.pipe(Effect.provide(FetchHttpClient.layer)))
+})

@@ -1,0 +1,52 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { serveApiObjects } from "../test/support/workerd.vibe"
+import { scriptedModel } from "../fuzz/model-server.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("a guest's agent starts, announces, reads and cancels the same public action", { timeout: 600_000 }, async ({ bench }) => {
+  await runPromise(scoped(effect {
+    const code = [
+      "`".repeat(3) + "cell",
+      'const list = await ctx.call("vibelang/actions/List", {});',
+      'const started = await ctx.call("vibelang/actions/Start", { flow: "vibelang/Tour", input: null });',
+      'const read = await ctx.call("vibelang/actions/Read", started);',
+      'const cancelled = await ctx.call("vibelang/actions/Cancel", started);',
+      'ctx.done(JSON.stringify({ listed: list.some(action => action.name === "vibelang/Tour"), started, read: { id: read.id, flow: read.flow, actor: read.actor, door: read.door }, cancelled }));',
+      "`".repeat(3),
+    ].join("\n")
+    const scripted = try scriptedModel([{ kind: "stream", pieces: [code], prompt: 3, completion: 4 }])
+    const api = try acquireRelease(serveApiObjects({ CHAT_MODEL: JSON.stringify(scripted.record), ...scripted.values }), api => promise(api.dispose))
+    provide FetchHttpClient.layer, LiveFactory(api.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+      const factory = try Factory
+      const http = try HttpClient.HttpClient
+      let sample = 0
+      const result = try tryPromise(() => workload(bench, "workerd-agent-action-lifecycle", "async", async () => {
+        const room = "bench-agent-actions-" + ++sample
+        await runPromise(factory.post(room, "one", "Bench", "Use the action catalog.").pipe(Effect.timeout("15 seconds")))
+        const events = Array.from(await runPromise(Stream.runCollect(factory.events(room, 0).pipe(
+          Stream.takeUntil(event => event.type === "ReplyFinished" || event.type === "ReplyFailed"), Stream.timeout("30 seconds"),
+        ))))
+        const snapshot = await runPromise(factory.read(room, 0))
+        const reply = snapshot.entries.find(entry => entry.author === "agent")!
+        expect(reply).toMatchObject({ done: true, error: "" })
+        const answer = JSON.parse(reply.text)
+        expect(answer.listed).toBe(true)
+        expect(answer.started.id).toMatch(/^a/)
+        expect(answer.read).toEqual({ id: answer.started.id, flow: "vibelang/Tour", actor: "agent", door: "agent" })
+        expect(answer.cancelled).toEqual(answer.started)
+        const child = await runPromise(http.get(api.origin + "/api/actions/runs/" + answer.started.id).pipe(Effect.timeout("15 seconds")))
+        expect(child.status).toBe(200)
+        expect(await runPromise(child.json)).toMatchObject({ id: answer.started.id, flow: "vibelang/Tour", state: "cancelled", actor: "agent", door: "agent" })
+        expect(events.filter(event => event.type === "ActionRequested" && event.id === answer.started.id)).toMatchObject([{ flow: "vibelang/Tour", actor: "agent", door: "agent" }])
+        expect(events.at(-1)?.type).toBe("ReplyFinished")
+        const calls = await runPromise(scripted.calls)
+        expect(calls).toBe(sample)
+      }).run(slow))
+      try artifact("workerd-agent-action-lifecycle", "Real API object bodies and SQLite in workerd, native agent/QuickJS and scripted HTTP/SSE model. An anonymous ordinary chat post starts its reply; the model uses the real List/Start/Read/Cancel bindings. Check the native child run id, actor/door/flow, one correlated announcement, the terminal cancelled child read through the public API, finished reply and one model request per sample. One host, unique room per sample, three observations; bundling/startup excluded.", ["Caller is an anonymous Viewer, so the child is the publicly permitted Tour. No trusted owner props, OAuth or delegation is supplied. Fetch bridges objects instead of Alchemy RPC; scripted model has no inference latency. No GitHub or Container call."], result)
+    }
+  }))
+})

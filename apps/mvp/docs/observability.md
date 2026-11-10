@@ -159,6 +159,10 @@ Metrics (`src/features/chat/metrics.ts`, `src/boot.ts`, `src/page.ts`, and `@smt
 | `first_run.press` | log, span | `step` = `model`: Open settings pressed on the first run's list |
 | `smithers_web_first_run_presses` | counter | `step` |
 
+Electric’s `electric.shape.request` and `electric.shape.evict` spans are relayed with content-free shape progress: live mode, requested and received offsets, handle, byte count, completeness and row count. These distinguish a missing batch from a completed sync without recording a row or URL. Collection ids are withheld before export and by the relay because they can contain private repository and document names.
+
+The browser relay accepts only records the tab, its engine worker or their SDK code emits. Server-only session issuance, signing-key rotation, reauthentication and token cleanup records stay in ChatApi’s structured Worker logs; they are absent from the browser allowlist.
+
 Every name above, and every attribute, is in the feature's contract (`CHAT_TELEMETRY` in `src/features/chat/contract.ts`, `AUTH_TELEMETRY` in `src/features/auth/contract.ts`, `FIRST_RUN_TELEMETRY` in `src/features/first-run/contract.ts`, `COMMANDS_TELEMETRY` in `src/features/commands/contract.ts`, and the app's own `APP_TELEMETRY` in `src/telemetry.ts`), which the relay keeps ([below](#relayed-browser-records)).
 
 #### The engine worker
@@ -437,13 +441,14 @@ ChatApi's sign-in routes and sessions ([sign-in.md](features/sign-in.md), `worke
 
 A callback's `reason`: `not_configured`, `method`, `state_mismatch` (the state isn't this browser's), `replayed` (its sign-in already finished), `expired` (over 10 minutes), `denied` (the person declined on GitHub), `invalid` (no code), `unreadable` (the sealed verifier didn't open), `sign_out_not_started` (the host didn't record the sign-out of the session this browser held, so GitHub's code was never redeemed), `<step>_<reason>` for GitHub (`exchange_rejected`, `user_unavailable`, `permission_misconfigured`, …), `database`, or `error` (a defect, by its name).
 
-Spans: `auth.sign_in`, `auth.callback`, `auth.handoff`, `auth.arrive`, `auth.sign_out`, `auth.session` and `auth.resolve` (internal, each request that reads the session cookie); `auth.role_check` and `auth.revoke_token` with `smithers.auth.session_id` and `smithers.auth.step`; `GitHubClient.request` (`@smthrs/integrations`) for GitHub's REST calls, the revocation's `DELETE` among them; `OAuthToken.request` (`@smthrs/integrations`) with `oauth.provider` for the code and refresh exchanges; and the SQL statements, placeholders only.
+Spans: `auth.sign_in`, `auth.callback` (with `auth.github.consent` inside a sign-in that succeeded), `auth.handoff`, `auth.arrive`, `auth.sign_out`, `auth.session` and `auth.resolve` (internal, each request that reads the session cookie); `auth.role_check` and `auth.revoke_token` with `smithers.auth.session_id` and `smithers.auth.step`; `GitHubClient.request` (`@smthrs/integrations`) for GitHub's REST calls, the revocation's `DELETE` among them; `OAuthToken.request` (`@smthrs/integrations`) with `oauth.provider` for the code and refresh exchanges; and the SQL statements, placeholders only.
 
 | Metric | Kind | Attributes | Log field |
 |---|---|---|---|
 | `smithers_auth_requests` | counter | `route` (`sign_in`, `callback`, `handoff`, `arrive`, `sign_out`, `session`), `outcome`, `reason` (`none` unless refused or failed) | the route's line |
 | `smithers_auth_role_checks` | counter | `step` and `outcome`: a step's outcome above, or `failed` | `auth.role_check` `step`, `outcome` |
 | `smithers_auth_token_revocations` | counter | `step` and `outcome`: a step's outcome above, or `failed` | `auth.revoke_token` `step`, `outcome` |
+| `smithers_auth_github_consent` | counter | `page` (`shown`: the callback's `Referer` is GitHub's, `skipped`), `after_revocation` (`yes`: smithers.sh revoked one of the person's tokens since their previous sign-in), `hourly_tokens` (`at_limit`: nine or more sign-ins in the hour before, where GitHub asks again; `under_limit`), `path` (`sign_in`; the broker's `hosted_sign_in`, `connect`) | `auth.github.consent`, same fields; Warn `outcome: failed`, `errorCode` when the history didn't read (sign-in goes on) |
 
 **Run credentials** ([sign-in.md](features/sign-in.md#run-credentials)): who acted, as which `act`. No record carries a token, a payload or content; a run is its execution id.
 
@@ -611,11 +616,11 @@ The git loop's routes, flows and tokens, triage, and the browser's issue writes,
 
 | Record | Kind | Where |
 |---|---|---|
-| `github.webhook`, `github.write.request`, `github.shape.<table>`, `github.reconcile.start` | log, span | ChatApi |
+| `github.webhook`, `github.write.request`, `github.shape.<table>`, `github.reconcile.start`, `github.reconcile.admission` | log, span | ChatApi |
 | `github.write`, `github.write.give_up`, `github.apply`, `github.reconcile`, `github.token.mint`, `github.config` | log, span | the `FlowExecution` Durable Object |
 | `github.machine_write.refused` | Warn log | the `FlowExecution` Durable Object: `writeId`, `outcome: refused`, the published `failure`, `cause` (`allow_list`, `installation`, `github_status:<code>`, `lane`, `revoked`, `invalid`, `has_parent`, `superseded`) and `githubStatus` (null when no GitHub answer). Every refusal settlement records its check; installation lookup/mint carries its upstream status when available. No API failure value changes, response messages or payloads. `worker/github/MachineWrite.test.ts` distinguishes a permission 403 from an allow-list miss. |
 | `github.machine_write.done` | Info log | the shared machine-write settlement path, once after a pending write becomes done: `writeId`, `op`, `number` (the issue number), `agent` and `lane` only. Covers create, update, comment and relate, including recovered writes. No title, body, label text or token. `worker/github/MachineWrite.test.ts` checks create and relate for exactly one record with the exact annotations and no private content. |
-| `github_webhooks`, `github_delivery_lag_ms`, `github_write_requests`, `github_writes`, `github_write_ms`, `github_write_unknown`, `github_applies`, `github_reconciles`, `github_reconcile_starts`, `github_reconcile_changed`, `github_sync_age_seconds`, `github_token_mints`, `github_shape_requests` | counters, histograms, gauge | ChatApi and the Durable Object |
+| `github_webhooks`, `github_delivery_lag_ms`, `github_write_requests`, `github_writes`, `github_write_ms`, `github_write_unknown`, `github_applies`, `github_reconciles`, `github_reconcile_starts`, `github_reconcile_admissions`, `github_reconcile_changed`, `github_sync_age_seconds`, `github_token_mints`, `github_shape_requests` | counters, histograms, gauge | ChatApi and the Durable Object |
 | `triage.read`, `triage.decide`, `triage.apply`, `triage.comment` | log, span | the `FlowExecution` Durable Object ([triage](features/issues.md#triage)); `triage.apply` with `dropped: enabler_demoted` is an Error |
 | `triage_runs{outcome}`, `triage_decisions{decision,via}`, `triage_dropped{reason}`, `triage_overrides{from,to}`, `triage_tokens` | counters | the Durable Object; a person's override is counted by `github/Write`. Overrides of the flow are its error rate |
 | `issues.write.queue`, `issues.write.send`, `issues.pending`, `issues.access.refused`, `issues.access.evict`, `smithers_issue_writes`, `smithers_issue_write_sends`, `smithers_issue_pending_actions`, `smithers_issue_access_evictions` | browser | the engine worker and the tab |
@@ -1058,7 +1063,7 @@ The relay doesn't check the values: a caller picks its records' `service.name`, 
 | `packages/effect-electric/test/ShapeProxy.test.ts` | the shape proxy's log line, span, count and 405, a subset request's parameters dropped and never forwarded, and the Electric secret in no log or span |
 | `src/telemetry.test.ts` "the relay keeps everything the browser exports" | the tab's and the engine worker's exports, as `src/boot.ts` and `src/flows/engine.worker.ts` install their exporters, through the real relay with `BROWSER_TELEMETRY`: an answer whose agent calls a flow, asking, a refused ask, sync failing and retried. Nothing is dropped that `WITHHELD` doesn't name, the end-to-end tests' fields arrive, and no engine export comes near 128 KiB |
 | `src/telemetry.test.ts` "the contract" | no field that can carry what someone wrote; every record name is a string literal in the app or the SDK packages it names, or one a library forms (`GET`, `chat agent`, `execute_tool <flow>`) |
-| `src/telemetry-privacy.test.ts` | the real exporter and relay preserve `notifications.pending`, `smithers_notification_acts_dropped` by `act` and `reason`, `auth.run_credential` with `door_timeout`, and every report refusal's `reason`; sensitive URL fields stay removed |
+| `src/telemetry-privacy.test.ts` | the real exporter and relay preserve `notifications.pending`, `smithers_notification_acts_dropped` by `act` and `reason`, `auth.run_credential` with `door_timeout`, and every report refusal's `reason`; sensitive URL fields stay removed; server-only session records are refused, and browser session tags are stripped |
 | `packages/smithers/flows/observability/test/Otlp.test.ts` "exports only the spans `spans` names" | an exporter's `spans` list: only the named spans are sent, a dropped span's children keep its trace and parent id, and logs are sent as before |
 | `packages/smithers/flows/platform-browser/test/BrowserRuntime.test.ts` "run sends the worker's logs, spans and metrics to its telemetry" | `BrowserRuntime.run`'s `telemetry` receives the leader's log, spans and counts |
 | `worker/ExecutionHost.test.ts` "every start and alarm is one log line and one count by outcome, never the payload" | `cloudflare.execution.start` (`accepted`, `duplicate`) and `cloudflare.execution.alarm` (`settled`) lines and their counters, with a sentinel payload absent from every line |
@@ -1333,7 +1338,7 @@ receipt before erasure. Rotation records also include the fixed steps
 `pin_legacy`, `pin_seal`, `reset_seal`, `emergency_prepare` and `compromise`, with completed or failed
 outcomes. No session tag, token, ciphertext, cookie, fingerprint, key secret,
 login or person enters these diagnostics. Relay and raw-diagnostic privacy
-checks live in `src/telemetry-privacy.test.ts`.
+checks live in `src/telemetry-privacy.test.ts`. The relay refuses server-only session records; the browser exporter’s collection-id privacy is covered in `src/telemetryExport.test.ts`.
 
 ### Pending triage reauthorization
 

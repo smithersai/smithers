@@ -1,0 +1,82 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { logOver } from "../worker/ObjectStorage.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import { world, request, history } from "../test/support/actionObjects.vibe"
+import { cell, scriptedModel } from "../fuzz/model-server.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("a streamed answer that fails its cell is replaced once by the next model frame", async ({ bench }) => {
+  const result = await workload(bench, "reply-stream-restart", "async", () => runPromise(scoped(effect {
+    const w = try world()
+    provide MockFactory, history {
+      const device = try Factory
+      const product = try Mythical
+      const scripted = try scriptedModel([
+        { kind: "stream", pieces: ["```cell\nctx.done(\"First\" + missing);\n```"], prompt: 3, completion: 4 },
+        { kind: "stream", pieces: [cell("\"Second\"")], prompt: 5, completion: 6 },
+      ])
+      const object = try w.object("restart")
+      const admitted = try object.host.start(request("restart", "vibelang/Post", { text: "Answer again if the cell fails." }, w.person.id), "maintainer")
+      provide ActionDevice = device {
+        for (let turn = 0; turn < 2; turn++) try object.host.alarm(w.spend, { model: scripted.model, unusable: "" }, product)
+      }
+      const beforeReplay = try logOver(object.storage).read()
+      const snapshot = try object.sequencer.read(0)
+      const runs = try Runs.read(object.sequencer)
+      const calls = try scripted.calls
+      const replayed = try object.host.start(request("restart", "vibelang/Post", { text: "Answer again if the cell fails." }, w.person.id), "maintainer")
+      const afterReplay = try logOver(object.storage).read()
+      try Effect.try(() => {
+        expect([admitted, replayed]).toEqual([null, null])
+        expect(snapshot.entries.filter(entry => entry.author === "person").map(entry => entry.text)).toEqual(["Answer again if the cell fails."])
+        expect(snapshot.entries.filter(entry => entry.author === "agent")).toMatchObject([{ text: "Second", done: true, error: "" }])
+        const replyEvents = beforeReplay.filter(event => event.type.startsWith("Reply"))
+        expect(replyEvents.filter(event => event.type === "ReplyRestarted")).toHaveLength(1)
+        expect(replyEvents.filter(event => event.type === "ReplyDelta").map(event => event.text)).toEqual(["First", "Second"])
+        expect(replyEvents.at(-1)).toMatchObject({ type: "ReplyFinished" })
+        expect(calls).toBe(2)
+        expect(runs.map(run => [run.flow, run.state])).toEqual([["vibelang/Post", "passed"], ["vibelang/Reply", "passed"]])
+        expect(afterReplay).toEqual(beforeReplay)
+      })
+    }
+  }))).run(slow)
+  await runPromise(artifact("reply-stream-restart", "Production SQLite Post/Reply action host, real agent and QuickJS with a scripted HTTP/SSE model. First cell streams First then fails evaluation; the second frame completes Second. Every sample checks the exact streamed pieces, one ReplyRestarted, final visible replacement, two model requests, passed correlated runs, one person post and no new event on replay. Three fresh worlds; setup and assertions included.", ["Scripted model and product MockFactory/MockMythical tools; no inference, GitHub or provider latency. Node SQLite/KV/alarm adapter, not workerd scheduling. Measures the complete retry journey."], result))
+})
+
+it("an agent without sandbox authority reports every tool refusal without starting compute", async ({ bench }) => {
+  const result = await workload(bench, "reply-sandbox-refusals", "async", () => runPromise(scoped(effect {
+    const w = try world()
+    provide MockFactory, history {
+      const device = try Factory
+      const product = try Mythical
+      const code = [
+        "`".repeat(3) + "cell",
+        'const start = await ctx.call("vibelang/sandbox/start", {});',
+        'const stop = await ctx.call("vibelang/sandbox/stop", { generation: 0 });',
+        'const command = await ctx.call("vibelang/sandbox/command", { generation: 0, command: "pwd" });',
+        'ctx.done(JSON.stringify({ start, stop, command }));',
+        "`".repeat(3),
+      ].join("\n")
+      const scripted = try scriptedModel([{ kind: "stream", pieces: [code], prompt: 3, completion: 4 }])
+      const object = try w.object("sandbox-refusal")
+      try object.host.start(request("sandbox-refusal", "vibelang/Post", { text: "Inspect the sandbox." }, w.person.id), "maintainer")
+      provide ActionDevice = device {
+        for (let turn = 0; turn < 2; turn++) try object.host.alarm(w.spend, { model: scripted.model, unusable: "" }, product)
+      }
+      const snapshot = try object.sequencer.read(0)
+      const reply = snapshot.entries.find(entry => entry.author === "agent")
+      const calls = try scripted.calls
+      try Effect.try(() => {
+        expect(reply).toMatchObject({ done: true, error: "" })
+        expect(JSON.parse(reply!.text)).toEqual(Object.fromEntries(["start", "stop", "command"].map(name => [name, { ok: false, error: { code: "flow_failed", hint: "Read error.message: the flow itself says what went wrong, and it is usually fixable in this same cell.", message: "Flow vibelang/sandbox/" + name + " failed: forbidden" } }])))
+        expect(calls).toBe(1)
+      })
+    }
+  }))).run(slow)
+  await runPromise(artifact("reply-sandbox-refusals", "Real SQLite Post/Reply host, agent and QuickJS: one scripted model cell invokes Start, Stop and Command through the production sandbox tool bindings without server-granted SandboxAgent authority. Exact three public forbidden results, settled reply and one model request checked. Three fresh worlds; setup and assertions included.", ["No Container is enabled, no compute or network request to a sandbox. Measures closed-authority tool handling. Scripted model has no inference cost; product mock tools and Node SQLite/KV host."], result))
+})

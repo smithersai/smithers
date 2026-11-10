@@ -14,7 +14,7 @@ import { initial as initialActions } from "../src/web/actionModel.vibe"
 import { initialIssues } from "../src/web/issues.vibe"
 import { accountOf, OpenWikiEditor, CloseIssueDialog, ClosePalette, CloseRoleDialog, EndTourCommand, FocusAccountMenu, FocusWikiEditor, init, Message, type Model, ShowIssueDialog, ShowRoleDialog, SignInAccount, SwitchMode, update } from "../src/web/main.vibe"
 import { application } from "./support/application.vibe"
-import { addElement, activeIs, chatShown, container, dispatchTouch, fire, fullLocation, remove, setLocation, tallPage } from "./support/browser.ts"
+import { addElement, activeIs, chatShown, container, dispatchTouch, dispatchWindow, fire, fullLocation, hrefOf, remove, setLocation, tallPage, textOf } from "./support/browser.ts"
 import { overlaid } from "./support/overlaid.vibe"
 
 const flags = { session: "e", name: "Ada", mode: "mock" as const }
@@ -35,6 +35,16 @@ effect function startedOn(host: HTMLElement!never!never, over: Partial<Model>, a
 }
 const owned = <E extends HTMLElement>(tag: string, id: string) => acquireRelease(sync(() => addElement<E>(tag, id)), (node) => sync(() => node.remove()))
 const settled = (check: () => void) => promise(() => vi.waitFor(check, { timeout: 4000 }))
+/**
+ * An ordering witness: a window resize always answers RemeasureTheatre, and its subscription is declared after every
+ * input one, so once it answers, whatever events dispatched before it in the same block would have answered first.
+ * `act` runs with the witness on every attempt, so listeners that attach late are asked again.
+ */
+const witnessed = (seen: { readonly messages: ReadonlyArray<string> }, act: () => void = () => {}) => effect {
+  const from = seen.messages.length
+  try settled(() => { act(); dispatchWindow("resize"); expect(seen.messages.slice(from)).toContain("RemeasureTheatre") })
+  return seen.messages.slice(from, seen.messages.indexOf("RemeasureTheatre", from))
+}
 const faulty = (over: Parameters<typeof overlaid>[1]) => Layer.effect(Factory, map(Factory, (base) => overlaid(base, over))).pipe(Layer.provide(MockFactory))
 effect function run<A, E, R>(make: () => { readonly effect: A!E!R }) {
   const command = try Effect.try(make)
@@ -95,20 +105,18 @@ describe("touch that ends", () => {
     try acquireRelease(sync(() => tallPage(2000)), (restore) => sync(restore))
     const seen = try started({ following: true })
     try settled(() => expect(chatShown()).toBe(true))
-    try sleep("300 millis")
     return seen
   }
   it.live("an upward drag pauses following", () => scoped(effect {
     const seen = try listening()
-    try sync(() => { dispatchTouch("touchstart", 100); dispatchTouch("touchmove", 120) })
-    try settled(() => expect(seen.model.following).toBe(false))
+    // Each attempt is a whole drag, so a listener that attaches late is asked by the next one.
+    try settled(() => { dispatchTouch("touchstart", 100); dispatchTouch("touchmove", 120); expect(seen.model.following).toBe(false) })
   }))
   for (const end of ["touchend", "touchcancel"] as const) {
     it.live(`a move after ${end} belongs to no gesture and leaves following on`, () => scoped(effect {
       const seen = try listening()
-      try sync(() => { dispatchTouch("touchstart", 100); dispatchTouch(end, 100); dispatchTouch("touchmove", 120) })
-      try sleep("100 millis")
-      try Effect.try(() => expect(seen.model.following).toBe(true))
+      const before = try witnessed(seen, () => { dispatchTouch("touchstart", 100); dispatchTouch(end, 100); dispatchTouch("touchmove", 120) })
+      try Effect.try(() => { expect(before).not.toContain("ScrolledTranscript"); expect(seen.model.following).toBe(true) })
     }))
   }
 })
@@ -127,7 +135,7 @@ describe("streams that break", () => {
     const sandbox = effect () => { polled.push(true); return try Effect.fail(new Unavailable({ reason: "closed" })) }
     const seen = try started({ account: { ...accountOf(home), identity: person } }, undefined, faulty({ accounts: undefined, sandbox }))
     try settled(() => expect(polled.length).toBeGreaterThan(0))
-    try sleep("100 millis")
+    try witnessed(seen)
     try Effect.try(() => expect(accountOf(seen.model).identity).toEqual(person))
   }))
   it.live("a tour event reaches the tour client", () => scoped(effect {
@@ -140,8 +148,8 @@ describe("streams that break", () => {
     const broken: Actions.Shape = { list: fail, commands: fail, runs: fail, read: fail, follow: (id) => { asked.push(id); return Stream.fail(new ActionFailure({ code: "closed" })) }, start: fail, command: fail, rerun: fail, cancel: fail }
     const seen = try started({ actions: { ...initialActions, runs: [run] } }, Layer.succeed(Actions, broken))
     try settled(() => expect(asked).toEqual(["a1"]))
-    try sleep("50 millis")
-    try Effect.try(() => expect(seen.model.actions?.runs).toEqual([run]))
+    const before = try witnessed(seen)
+    try Effect.try(() => { expect(before).not.toContain("ChangedAction"); expect(seen.model.actions?.runs).toEqual([run]) })
   }))
   it.live("a page without a window remeasures its tour when its document resizes, and ignores history", () => scoped(effect {
     // The tour measures its target in the browser's document; the page under test has no window of its own.
@@ -157,11 +165,11 @@ describe("streams that break", () => {
     try settled(() => expect(seen.messages.length).toBeGreaterThan(0))
     const remeasures = () => seen.messages.filter((tag) => tag === "RemeasureTheatre").length
     const wiki = seen.model.wikiRequested
-    try Effect.try(() => { fire(window, "resize"); fire(window, "orientationchange"); fire(windowless, "popstate") })
-    try sleep("300 millis")
-    try Effect.try(() => { expect(remeasures()).toBe(0); expect(seen.messages).not.toContain("WikiLocationChanged"); expect(seen.model.wikiRequested).toBe(wiki) })
-    try Effect.try(() => fire(windowless, "resize"))
-    try settled(() => { expect(remeasures()).toBe(1); expect(seen.model.theatreBox).toMatchObject({ x: 40, y: 100, width: 260, height: 300 }) })
+    // The windowless page's own resize, dispatched last in the same block, is the witness: the browser window's events
+    // and the windowless popstate would have answered before it.
+    try Effect.try(() => { fire(window, "resize"); fire(window, "orientationchange"); fire(windowless, "popstate"); fire(windowless, "resize") })
+    try settled(() => { expect(remeasures()).toBeGreaterThan(0); expect(seen.model.theatreBox).toMatchObject({ x: 40, y: 100, width: 260, height: 300 }) })
+    try Effect.try(() => { expect(remeasures()).toBe(1); expect(seen.messages).not.toContain("WikiLocationChanged"); expect(seen.model.wikiRequested).toBe(wiki) })
     try Effect.try(() => { Object.assign(rect, { top: 150, left: 50, right: 350, bottom: 450 }); fire(windowless, "orientationchange") })
     try settled(() => { expect(remeasures()).toBe(2); expect(seen.model.theatreBox).toMatchObject({ x: 50, y: 150 }) })
   }))
@@ -235,3 +243,10 @@ it.effect("a successful read that omits the page names it missing", () => effect
     try Effect.try(() => expect(answer).toMatchObject({ _tag: "FailedWikiEdit", request: 3, reason: "missing" }))
   }
 })
+
+it.live("a wiki page whose repository Markdown changed shows the repository's text", () => scoped(effect {
+  const client = { ...chat.client, conversation: { ...chat.client.conversation, pane: "/wiki/roadmap" } }
+  try started({ client, wikiPages: [{ id: "roadmap", source: "# Roadmap\n\nChanged in the repository; see the [rulings](rulings.md).", revision: "r2" }] })
+  try settled(() => expect(textOf(".vl-wiki .sui-md")).toContain("Changed in the repository; see the rulings."))
+  try settled(() => expect(hrefOf(".vl-wiki .sui-md a")).toBe("/wiki/rulings"))
+}))

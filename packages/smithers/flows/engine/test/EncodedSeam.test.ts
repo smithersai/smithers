@@ -1,8 +1,9 @@
-import { describe, expect, it } from "@effect/vitest"
+import { describe, expect, expectTypeOf, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import * as Placement from "@smthrs/plan/Placement"
 import { Effect, Schema } from "effect"
 import { readFileSync } from "node:fs"
+import { makeActionExecute } from "../src/FlowEngine/Dispatch.ts"
 import { type FlowEngine, Hosts } from "../src/index.ts"
 import { scriptedEngine } from "./ScriptedEngine.ts"
 
@@ -128,4 +129,19 @@ describe("FlowEngine.Encoded seam", () => {
       { sourceId: "node/progress/1", flush: true }
     ])
   })
+})
+
+it("dispatch retains the action result and pending service types", () => {
+  const contract = (
+    encoded: FlowEngine.Encoded,
+    action: Action.Action<typeof Schema.String, typeof Schema.Number, never>
+  ) => {
+    const dispatched = makeActionExecute(encoded)(action, 0)
+    expectTypeOf<Effect.Success<typeof dispatched>>().toEqualTypeOf<
+      Flow.Complete<string, number> | Flow.Handoff | Flow.Suspended
+    >()
+    expectTypeOf<Effect.Services<typeof dispatched>>().not.toBeAny()
+    expectTypeOf<typeof dispatched>().not.toExtend<Parameters<typeof Effect.runPromise>[0]>()
+  }
+  expect(contract).toBeTypeOf("function")
 })

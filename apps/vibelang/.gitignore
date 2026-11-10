@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-factory/
+dist-e2e/
 test-results*/
 playwright-report/
 .alchemy/

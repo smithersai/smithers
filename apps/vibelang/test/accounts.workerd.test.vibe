@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { room, serveApi, type Served } from "./support/workerd.vibe"
+import { deadline, room, serveApi, type Served } from "./support/workerd.vibe"
 
 let server: Served
 beforeAll(async () => { server = await runPromise(serveApi()) })
@@ -202,7 +202,7 @@ describe("the CLI and MCP device sign-in in real workerd storage", () => {
     GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
     SESSION_SECRET: "fixture-only-signing-secret-32-chars", SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
     ACCOUNT_DEVICE_FIXTURE: "1",
-  })) }, 120_000)
+  })) }, deadline(120_000))
   afterAll(async () => { await device?.dispose() })
   effect function call(path: string, cookie = "", body?: unknown) {
     const client = try HttpClient.HttpClient

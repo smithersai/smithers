@@ -100,6 +100,33 @@ effect function handoff(http: HttpClient.HttpClient, origin: string, code: strin
 const posted = (flow: { readonly code: string; readonly state: string }) => JSON.stringify({ code: flow.code, state: flow.state })
 
 describe("sign-in through the broker", () => {
+  it.live("a later start prunes abandoned sign-ins and forgets account executions a day after they settle", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      provide manual {
+        const { origin, storage } = try serve(true)
+        const http = try HttpClient.HttpClient
+        const keysOf = effect (prefix: string) => Array.from((try promise(() => storage.list({ prefix }))).keys())
+        try http.get(origin + "/api/auth/sign-in")
+        const [abandoned] = try keysOf("broker/")
+        const record = (try promise(() => storage.get(abandoned!))) as { readonly claims: { readonly expires: number } }
+        try promise(() => storage.put(abandoned!, { ...record, claims: { ...record.claims, expires: 1 } }))
+        try promise(() => storage.put("sign-in/stale", { expires: 1, verifier: { nonce: "n", ciphertext: "c" } }))
+        try promise(() => storage.put("sign-in/live", { expires: Number.MAX_SAFE_INTEGER, verifier: { nonce: "n", ciphertext: "c" } }))
+        // Every execution so far settled two days ago.
+        try Effect.try(() => storage.sql.exec("UPDATE flows_runs SET finished_at_ms = 1 WHERE finished_at_ms IS NOT NULL"))
+        try http.get(origin + "/api/auth/sign-in")
+        const brokerRows = try keysOf("broker/")
+        const signInRows = try keysOf("sign-in/")
+        const runs = try Effect.try(() => storage.sql.exec("SELECT run_id FROM flows_runs").toArray())
+        try Effect.try(() => {
+          expect(brokerRows).toHaveLength(1)
+          expect(brokerRows).not.toContain(abandoned)
+          expect(signInRows).toEqual(["sign-in/live"])
+          expect(runs).toHaveLength(1)
+        })
+      }
+    }
+  }), 30_000)
   it.live("carries a person from the broker to a session, once", () => scoped(effect {
     provide NodeHttpServer.layerTest {
       provide manual {

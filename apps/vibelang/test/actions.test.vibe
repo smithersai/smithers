@@ -118,7 +118,8 @@ describe("registered actions", () => {
         expect(run.actor).toBe("agent")
         expect(answer.refusal).toBe(null)
         expect(answer.id).toMatch(/^m[0-9]+$/)
-        expect(run.steps.some(step => step.name === "vibelang/history/Plan/call" && step.state === "passed")).toBe(true)
+        expect(run.steps.some(step => step.name === "vibelang/history/append/record" && step.state === "passed")).toBe(true)
+        expect(run.steps.filter(step => step.state === "passed").map(step => step.name).slice(0, 2)).toEqual(["vibelang/history/append/authorize", "vibelang/history/append/record"])
       })
     }
   }, 60_000)

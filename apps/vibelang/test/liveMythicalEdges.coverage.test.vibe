@@ -1,0 +1,51 @@
+// @vitest-environment node
+// LiveMythical (src/history/LiveMythical.vibe) refuses, before any request, what public HTTP cannot carry: an agent
+// replay's private operation identity, and a page id no URL can encode.
+import { describe, expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientResponse, HttpServerResponse } from "effect/http"
+import { LiveMythical } from "../src/history/LiveMythical.vibe"
+import { Mythical, type Refused, type Unavailable } from "../src/history/MythicalHistory.vibe"
+
+/** A transport that answers 500 and counts what reached it; these refusals must send nothing. */
+function counting() {
+  const seen = { requests: 0 }
+  const client = HttpClient.make((request) => {
+    seen.requests += 1
+    return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({}, { status: 500 }))))
+  })
+  return { layer: LiveMythical("https://history.test").pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client))), seen }
+}
+const reasonOf = <R>(program: void!(Unavailable | Refused)!R) =>
+  Effect.flip(program).pipe(Effect.map((error) => error._tag === "Unavailable" ? `Unavailable: ${error.reason}` : `Refused: ${error.refusal}`))
+
+describe("what public HTTP cannot carry", () => {
+  it.effect.each([
+    ["plan", (client: Mythical["Service"]) => client.plan({ how: "append", epic: "e1", newEpic: "", target: "", title: "t", task: "" }, "replay-1").pipe(Effect.asVoid)],
+    ["start", (client: Mythical["Service"]) => client.start("m1", "lane", "replay-2").pipe(Effect.asVoid)],
+    ["note", (client: Mythical["Service"]) => client.note("m1", "evidence", "text", "replay-3").pipe(Effect.asVoid)],
+  ] as const)("a %s carrying a replay operation is refused without a request", ([_name, call]) => effect {
+    const { layer, seen } = counting()
+    provide layer {
+      const reason = try reasonOf(call(try Mythical))
+      try Effect.try(() => {
+        expect(reason).toBe("Unavailable: history replay unavailable")
+        expect(seen.requests).toBe(0)
+      })
+    }
+  })
+
+  it.effect.each([
+    ["an epic", (client: Mythical["Service"]) => client.epic("\uD800", 0).pipe(Effect.asVoid)],
+    ["a commit", (client: Mythical["Service"]) => client.commit("m\uDFFF").pipe(Effect.asVoid)],
+    ["a search", (client: Mythical["Service"]) => client.search("x\uD800").pipe(Effect.asVoid)],
+  ] as const)("%s named by a lone surrogate has no path and sends nothing", ([_name, call]) => effect {
+    const { layer, seen } = counting()
+    provide layer {
+      const reason = try reasonOf(call(try Mythical))
+      try Effect.try(() => {
+        expect(reason).toBe("Unavailable: history path invalid")
+        expect(seen.requests).toBe(0)
+      })
+    }
+  })
+})

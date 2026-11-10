@@ -4,7 +4,7 @@ import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
 import { MockActions } from "../src/actions/MockActions.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
-import { ActOnIssue, CancelAction, ChooseIdentity, GrantRole, LoadAccount, LoadActions, LoadIssueDetails, LoadIssues, LoadPeople, OpenWikiEditor, ReadAction, RefreshIssueProjection, RunAction, SandboxAction, SignInAccount, SignOutAccount, SubmitWikiEdit } from "../src/web/main.vibe"
+import { ActOnIssue, CancelAction, ChooseIdentity, GrantRole, LoadAccount, LoadActions, LoadIssueDetails, LoadIssues, LoadPeople, OpenWikiEditor, ReadAction, RefreshIssueProjection, RunAction, SandboxAction, SignInAccount, SwitchMode, SignOutAccount, SubmitWikiEdit } from "../src/web/main.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
 
 effect function execute<A, E, R>(make: () => { readonly effect: A!E!R }) {
@@ -58,6 +58,17 @@ it("browser commands share account, issue and wiki services and preserve review 
     }
   }))).run(slow)
   await runPromise(artifact("web-content-commands", "Vitest built-in bench; real Foldkit Command effects over one scoped MockFactory, including identity/grant/readback, issue creation/details/projection, wiki editor/private draft/Save/readback and sign-in/out. Exact messages, source, public author/role and once-only review checked. Three fresh engines; setup, flow execution and assertions included.", ["Effect command boundary without DOM layout/paint; shipped product fixture services, no network/OAuth/GitHub/model. Full journey cost, not per-keystroke latency."], result))
+})
+
+it("⌘K's /mock command loads the page in mock mode and asks for the prompt", async ({ bench }) => {
+  const result = await workload(bench, "web-mode-switch-command", "async", () => runPromise(effect {
+    const switched = try execute(() => SwitchMode({ to: "mock" }))
+    try Effect.try(() => {
+      expect(switched).toEqual({ _tag: "FocusedPrompt" })
+      expect(new URL(window.location.href).searchParams.get("agent")).toBe("mock")
+    })
+  })).run(slow)
+  await runPromise(artifact("web-mode-switch-command", "Vitest built-in bench; the real Foldkit SwitchMode command ⌘K's /mock runs, in happy-dom. Exact message and the window's resulting agent parameter checked. Three samples; assertions included.", ["happy-dom location change, no document load, layout or paint. The browser reload itself is measured in bench/browser.spec.ts (command-k-mock-switch)."], result))
 })
 
 it("browser action and sandbox commands keep run identities and retained terminal bytes", async ({ bench }) => {

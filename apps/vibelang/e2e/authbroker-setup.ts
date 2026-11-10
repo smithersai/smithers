@@ -1,7 +1,7 @@
 // Stays .ts: Playwright loads global setup modules by JS/TS extension only.
 import { spawn } from "node:child_process"
 
-/** One local workerd host for the suite; browser contexts retain separate cookies and nonce/PKCE attempts. */
+/** Each browser project owns durable storage so roles and idempotency receipts cannot leak between projects. */
 export default async function setup() {
   const host = spawn(process.execPath, ["--import=vibelang/register", "e2e/authbroker-host.vibe"], {
     cwd: process.cwd(), detached: true, stdio: ["ignore", "pipe", "pipe"],
@@ -19,11 +19,11 @@ export default async function setup() {
     })
   }
   try {
-    process.env.AUTH_BROKER_TEST_ORIGIN = await new Promise<string>((resolve, reject) => {
+    process.env.AUTH_BROKER_TEST_ORIGINS = await new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(output)), 120_000)
       host.stdout!.on("data", chunk => {
         output += String(chunk)
-        const ready = output.match(/AUTH_BROKER_READY (http:\/\/[^\s]+)/)
+        const ready = output.match(/AUTH_BROKER_READY (\{[^\n]+\})/)
         if (ready) { clearTimeout(timer); resolve(ready[1]!) }
       })
       host.stderr!.on("data", chunk => { output += String(chunk) })

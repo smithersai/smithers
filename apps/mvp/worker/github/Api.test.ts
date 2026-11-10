@@ -953,6 +953,30 @@ describe("the shapes", () => {
     expect(refusing.count(Metrics.reconcileStarts, { outcome: "not_started" })).toBe(2)
   })
 
+  test("every issues read runs its reconcile admission, fresh or stale, with the App or without", async () => {
+    // The admission runs beside the read; its first instruction counts it and opens its span, so a read whose admission
+    // fiber never ran (interrupted before it began, as a fork into a closed scope is) shows a read without a count.
+    await sql(runtime, `INSERT INTO github_sync (repo_id, stream, synced_at, complete) VALUES ('${REPOSITORY.id}', 'issues', now(), true)
+      ON CONFLICT (repo_id, stream) DO UPDATE SET synced_at = now()`)
+    const h = await githubHarness(runtime)
+    expect((await shape(h, ITEMS_SHAPE_ROUTE)).status).toBe(200)
+    expect((await shape(h, ITEM_SUMMARIES_SHAPE_ROUTE)).status).toBe(200)
+    expect((await shape(h, COMMENTS_SHAPE_ROUTE)).status).toBe(200)
+    expect(h.starts).toEqual([])
+    expect(h.count(Metrics.reconcileAdmissions, {})).toBe(2)
+    expect(h.spans.filter((span) => span.name === "github.reconcile.admission")).toHaveLength(2)
+    const off = await githubHarness(runtime, { app: null })
+    expect((await shape(off, ITEMS_SHAPE_ROUTE)).status).toBe(200)
+    expect(off.count(Metrics.reconcileAdmissions, {})).toBe(1)
+    expect(off.spans.filter((span) => span.name === "github.reconcile.admission")).toHaveLength(1)
+    for (const harness of [h, off]) {
+      const admissions = harness.spans.filter((span) => span.name === "github.reconcile.admission")
+      expect(admissions.every((span) => span.attributes.size === 0)).toBe(true)
+      const records = harness.logs.filter((log) => log.message === "github.reconcile.admission")
+      expect(records).toHaveLength(admissions.length)
+    }
+  })
+
   test("concurrent stale reads start exactly one github/Reconcile execution for the bucket", async () => {
     const h = await githubHarness(runtime, { run: true })
     h.github.open("Reconciled issue", "", "sam")

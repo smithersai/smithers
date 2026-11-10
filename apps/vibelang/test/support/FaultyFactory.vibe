@@ -2,9 +2,10 @@ import { IssueFailure } from "../../src/core/issueSchemas.vibe"
 // A transport fault over the product's real MockFactory: posts, replies, replay and live delivery stay real.
 import type { Event } from "../../src/core/conversation.vibe"
 import { Factory, Refused, Unavailable } from "../../src/core/Factory.vibe"
+import { AccountUnavailable, Accounts } from "../../src/core/roles.vibe"
 import { MockFactory } from "../../src/core/MockFactory.vibe"
 
-export type Fault = "wiki" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header"
+export type Fault = "wiki" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "roles" | "tour-events" | "stale"
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -12,11 +13,32 @@ export interface Trace {
   release?: () => void!!
   faulted: boolean
 }
+/** When GitHub last confirmed the copies a `stale` fault serves: 2026-11-10 13:40 UTC. */
+export const STALE_AT = Date.UTC(2026, 10, 10, 13, 40)
+
 export function trace(): Trace {
   return { subscriptions: [], delivered: [], faulted: false }
 }
 
-/** Lose #3 once, or break before #4 mid-reply. Subsequent subscriptions use the unmodified real stream. */
+/** The real accounts, except that a subscription `fails()` names ends at once with AccountUnavailable. */
+function rolesFault(accounts: Accounts.Shape, fails: () => boolean): Accounts.Shape {
+  return {
+    current: () => accounts.current(),
+    members: () => accounts.members(),
+    grant: (id, role) => accounts.grant(id, role),
+    signOut: () => accounts.signOut(),
+    choose: (role) => accounts.choose(role),
+    signInAgent: () => accounts.signInAgent(),
+    participated: (personId) => accounts.participated(personId),
+    events: (after) => fails() ? Stream.fail(new AccountUnavailable({ reason: "roles unavailable" })) : accounts.events(after),
+  }
+}
+
+/**
+ * Lose #3 once, or break before #4 mid-reply. Subsequent subscriptions use the unmodified real stream. `sandbox-read`
+ * fails every sandbox read; `sandbox-start` fails the first start; `roles` ends the first role subscription with AccountUnavailable;
+ * `tour-events` ends the first tour conversation subscription with Unavailable. Each fault happens once.
+ */
 export function faultyFactory(fault: Fault, observation: Trace) {
   return Layer.effect(Factory, effect {
     const base = try Factory
@@ -26,14 +48,30 @@ export function faultyFactory(fault: Fault, observation: Trace) {
       ? Effect.asVoid(Queue.offer(completions, undefined))
       : Effect.asVoid(Deferred.succeed(released, undefined))
     try sync(() => { observation.base = base })
+    // The first call of each named fault point, `fault:point`, fails; later calls are real.
+    const once = new Set<string>()
+    const first = (name: string) => {
+      if (fault !== name.split(":")[0] || once.has(name)) return false
+      once.add(name)
+      return true
+    }
     return {
       mode: fault === "live-header" ? "live" : base.mode,
-      ...(base.accounts === undefined ? {} : { accounts: base.accounts }),
+      ...(base.accounts === undefined ? {} : { accounts: fault !== "roles" ? base.accounts : rolesFault(base.accounts, () => first("roles")) }),
       ...(base.policy === undefined ? {} : { policy: base.policy }),
+      ...(base.wiki === undefined ? {} : { wiki: {
+        read: effect (page) => {
+          const read = try base.wiki!.read(page)
+          return fault === "stale" ? { ...read, stale: STALE_AT } : read
+        },
+        act: base.wiki.act,
+      } }),
       ...(base.issues === undefined ? {} : { issues: {
         read: effect () => {
           if (fault === "issues" && !observation.faulted) { observation.faulted = true; throw new IssueFailure({ reason: "unavailable" }) }
-          return try base.issues!.read()
+          const read = try base.issues!.read()
+          // GitHub refused to refresh: the object serves its last good copy, marked stale (decision 0031).
+          return fault === "stale" ? { ...read, stale: STALE_AT } : read
         },
         act: effect (request) => {
           const result = try base.issues!.act(request)
@@ -75,12 +113,19 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         }
         try base.endTour(conversation)
       },
-      sandbox: base.sandbox,
-      startSandbox: base.startSandbox,
+      sandbox: effect (conversation) => {
+        if (fault === "sandbox-read") throw new Unavailable({ reason: "sandbox unavailable" })
+        return try base.sandbox(conversation)
+      },
+      startSandbox: effect (conversation, operationId) => {
+        if (first("sandbox-start")) throw new Unavailable({ reason: "sandbox unavailable" })
+        return try base.startSandbox(conversation, operationId)
+      },
       stopSandbox: base.stopSandbox,
       sandboxCommand: base.sandboxCommand,
       events: (conversation, after) => Stream.unwrap(effect {
         try sync(() => { observation.subscriptions.push({ conversation, after }) })
+        if (conversation.startsWith("tour-") && first("tour-events")) return Stream.fail(new Unavailable({ reason: "connection interrupted" }))
         const ending = fault === "end" && !observation.faulted
         return base.events(conversation, after).pipe(
           Stream.mapEffect(effect (event) => {

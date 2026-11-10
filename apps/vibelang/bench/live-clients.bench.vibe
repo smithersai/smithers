@@ -1,0 +1,81 @@
+// @vitest-environment node
+// The browser's live issue and wiki clients (src/core/LiveIssues.vibe, src/core/LiveWiki.vibe) against the Accounts
+// object's real HTTP boundary on loopback. Each request carries the site's Origin and, signed in, the session cookie,
+// as a browser on the site sends them; nothing else touches the request. GitHub sign-in, IssueHost and WikiHost are the injected services of
+// bench/issues-wiki-web.bench.vibe, which measures the same routes as raw HTTP.
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { IssueHost } from "../src/core/issueFlows.vibe"
+import { WikiHost } from "../src/core/wikiFlows.vibe"
+import { fixtureWikiHost, makeWikiStore } from "../src/core/WikiFactory.vibe"
+import { liveIssues } from "../src/core/LiveIssues.vibe"
+import { liveWiki } from "../src/core/LiveWiki.vibe"
+import { ORIGIN, github, offline, serve, setupWith, signIn } from "../test/support/accountsWorld.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+const manual = FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })))
+const ADA = { id: "7", login: "ada", role: "maintainer" as const }
+const issue = { op: "new" as const, number: 0, parent: 0, title: "Benchmark task", text: "Measure it", assignee: "", example: "", prior: "", key: "client-new-1" }
+
+/** The issue service answers each write with one open issue carrying the request's fields. */
+const issues: IssueHost.Shape = {
+  perform: (request) => succeed({
+    seq: 1,
+    items: request.op === "read" ? [] : [{
+      number: 7, githubId: 7001, title: request.title, body: request.text, author: "ada", age: "now", state: "open",
+      labels: [], parent: request.parent, task: "", assignee: request.assignee, vip: "", review: "", path: "", comments: 0, notes: [],
+    }],
+    selected: request.op === "read" ? 0 : 7,
+  }),
+}
+
+effect function timed<A, E>(run: A!E) {
+  const start = try Clock.currentTimeMillis
+  const value = try run
+  return { value, ms: (try Clock.currentTimeMillis) - start }
+}
+
+effect function journey() {
+  const wikiHost = try fixtureWikiHost(effect () => ADA, try makeWikiStore())
+  provide Layer.succeed(IssueHost, issues), Layer.succeed(WikiHost, wikiHost) {
+    const { origin } = try serve(setupWith(github([{ id: 7, login: "ada" }]), "7")).pipe(Effect.provideService(HttpClient.HttpClient, offline))
+    provide manual {
+      const http = try HttpClient.HttpClient
+      const { cookie } = try signIn(http, origin, "7")
+      const visitor = http.pipe(HttpClient.mapRequest(HttpClientRequest.setHeader("origin", ORIGIN)))
+      const signed = visitor.pipe(HttpClient.mapRequest(HttpClientRequest.setHeader("cookie", cookie)))
+      const issueClient = try liveIssues(origin).pipe(Effect.provideService(HttpClient.HttpClient, signed))
+      const wikiClient = try liveWiki(origin).pipe(Effect.provideService(HttpClient.HttpClient, signed))
+      const visitorWiki = try liveWiki(origin).pipe(Effect.provideService(HttpClient.HttpClient, visitor))
+      const visitorIssues = try liveIssues(origin).pipe(Effect.provideService(HttpClient.HttpClient, visitor))
+      const list = try timed(issueClient.read())
+      const created = try timed(issueClient.act(issue))
+      const page = try timed(wikiClient.read("index"))
+      const source = page.value.pages.find((entry) => entry.id === "index")?.source ?? ""
+      const edit = { op: "save" as const, page: "index", base: source, text: source + "\nMeasured by the client.\n", key: "client-save-1" }
+      const saved = try timed(wikiClient.act(edit))
+      const again = try timed(wikiClient.act(edit))
+      const invalid = try timed(Effect.flip(wikiClient.read("\uD800")))
+      const visitorSave = try timed(Effect.flip(visitorWiki.act(edit)))
+      const visitorIssue = try timed(Effect.flip(visitorIssues.act(issue)))
+      try Effect.try(() => {
+        expect(list.value).toMatchObject({ role: "maintainer", connected: false, items: [] })
+        expect(created.value).toMatchObject({ role: "maintainer", selected: 7, items: [{ number: 7, title: "Benchmark task", body: "Measure it" }] })
+        expect(source.length).toBeGreaterThan(0)
+        expect(saved.value.review).toMatch(/^https:\/\/github\.com\/smithersai\/vibelang\/pull\/\d+$/)
+        expect(again.value.review).toBe(saved.value.review)
+        expect(invalid.value).toMatchObject({ _tag: "WikiFailure", reason: "invalid", unwritten: true })
+        expect(visitorSave.value).toMatchObject({ _tag: "WikiFailure", reason: "sign-in" })
+        expect(visitorIssue.value).toMatchObject({ _tag: "IssueFailure", reason: "sign-in" })
+      })
+      return { issueListMs: list.ms, issueNewMs: created.ms, wikiReadMs: page.ms, wikiSaveMs: saved.ms, wikiSaveAgainMs: again.ms, invalidPageMs: invalid.ms, signedOutWikiSaveMs: visitorSave.ms, signedOutIssueMs: visitorIssue.ms }
+    }
+  }
+}
+
+it("the browser's live issue and wiki clients read, write and decode refusals over HTTP", async ({ bench }) => {
+  const samples: Array<unknown> = []
+  const result = await workload(bench, "live-clients", "async", async () => { samples.push(await runPromise(scoped(effect { provide NodeHttpServer.layerTest { return try journey() } }))) }).run(quick)
+  await runPromise(artifact("live-clients", "Vitest built-in bench; the product's liveIssues and liveWiki clients against the Accounts object on a real loopback server over in-memory object storage, a fresh object per sample. Signed in: issue list, new issue, wiki page read, Save and the same Save again; an invalid page name refused before any request; signed out: a wiki Save and a new issue refused by the server and decoded. Exact decoded states, review link idempotence and refusal reasons checked; assertions included.", ["Loopback HTTP in one Node process; no browser, TLS, Cloudflare edge or GitHub. Injected sign-in, IssueHost and WikiHost services (product fixtures), so GitHub latency is absent.", "Origin and cookie are set per request as a browser on the site sends them; nyc-01 is shared, so record its load beside these numbers."], { samples, result }))
+}, 120_000)

@@ -979,9 +979,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * Starts `github/Reconcile` when `target`'s issues are older than `SYNC_STALE_MS`, one execution per repository and
      * 5-minute bucket, and waits at most `RECONCILE_START_TIMEOUT` for admission. A bucket admitted for that repository
      * isn't asked again. It never fails the read: each start logs `github.reconcile.start` and counts
-     * `github_reconcile_starts` by outcome (`started`, `timed_out`, `not_started` with its error code).
+     * `github_reconcile_starts` by outcome (`started`, `timed_out`, `not_started` with its error code). Every admission,
+     * stale or not, counts `github_reconcile_admissions` and records `github.reconcile.admission` as it begins.
      */
     const reconcileIfStale = (target: Repository) => Effect.gen(function* () {
+      yield* Metric.update(Metrics.reconcileAdmissions, 1)
+      yield* Effect.logInfo("github.reconcile.admission")
       if (Option.isNone(options.app)) {
         // Local development's synced repository keeps its one issue, read as of its own `updated_at`: an upsert that
         // changes nothing once the row is there, and puts it back if the dev database was reset.
@@ -1029,6 +1032,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         )
       }),
       Effect.withSpan("github.reconcile.start"),
+      Effect.withSpan("github.reconcile.admission"),
     )
 
     /**

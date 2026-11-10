@@ -1,0 +1,102 @@
+// @vitest-environment node
+// The fixture issue and wiki hosts (src/core/IssuesFactory.vibe, WikiFactory.vibe) at the gates a caller of the host
+// reaches without the factory's own checks: an execution that belongs to someone else, a write with no key, a factory
+// restarted over the same repository that reuses a key with changed text, and a draft that names no title.
+import { describe, expect, it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { fixtureHost, makeIssueFactory, makeIssueStore } from "../src/core/IssuesFactory.vibe"
+import { IssueHost, issueFlows, issueRegistration } from "../src/core/issueFlows.vibe"
+import type { IssueRequest } from "../src/core/issueSchemas.vibe"
+import { fixtureWikiHost, makeWikiFactory, makeWikiStore } from "../src/core/WikiFactory.vibe"
+import { WikiHost, wikiEditFlows, wikiEditRegistration } from "../src/core/wikiFlows.vibe"
+
+const blank = { number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "" }
+
+/** The issue flows on a memory engine over `host`, as a worker hosts them, with the execution id the caller picks. */
+effect function issueEngine(host: IssueHost.Shape) {
+  const context = try Layer.build(issueRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(IssueHost, host)), Layer.provide(WebCrypto.layer)))
+  const engine = Context.get(context, FlowRuntime.FlowRuntime)
+  return (executionId: string, payload: IssueRequest) => engine.execute(issueFlows.find((flow) => flow._tag === `vibelang/issues/${payload.op}`)!, { executionId, payload })
+}
+effect function wikiEngine(host: WikiHost.Shape) {
+  const context = try Layer.build(wikiEditRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(WikiHost, host)), Layer.provide(WebCrypto.layer)))
+  const engine = Context.get(context, FlowRuntime.FlowRuntime)
+  return (executionId: string, payload: { op: "read" | "save" | "propose" | "draft"; page: string; base: string; text: string; key: string }) =>
+    engine.execute(wikiEditFlows.find((flow) => flow._tag === `vibelang/wiki/${payload.op}`)!, { executionId, payload })
+}
+
+describe("the fixture issue host", () => {
+  it.effect("refuses an execution that belongs to another person and writes nothing", () => scoped(effect {
+    const store = try makeIssueStore()
+    const before = try Ref.get(store.state)
+    const run = try issueEngine(try fixtureHost("contributor", store.state, store.lock))
+    const error = try Effect.flip(run("issues/fixture-maintainer/new/k1", { ...blank, op: "new", title: "Someone else's", key: "k1" }))
+    const after = try Ref.get(store.state)
+    try Effect.try(() => {
+      expect(error).toMatchObject({ _tag: "IssueFailure", reason: "forbidden" })
+      expect(after).toBe(before)
+    })
+  }))
+
+  it.effect("drafts a VIP that names no title under the example title", () => scoped(effect {
+    const issues = try makeIssueFactory("contributor")
+    const state = try issues.act({ ...blank, op: "draft", text: "Bind both elements at once.", key: "d1" })
+    try Effect.try(() => expect(state.draft).toEqual({
+      title: "Tuple patterns", summary: "Bind both elements at once.", example: "const pair = [1, 2]", prior: "Rust tuple patterns\nTypeScript tuple types",
+    }))
+  }))
+})
+
+describe("the fixture wiki host", () => {
+  it.effect("refuses an execution that belongs to another person, and a write with no key", () => scoped(effect {
+    const store = try makeWikiStore()
+    const run = try wikiEngine(try fixtureWikiHost("maintainer", store))
+    const foreign = try Effect.flip(run("wiki/fixture-contributor/save/k1", { op: "save", page: "roadmap", base: "", text: "x", key: "k1" }))
+    const keyless = try Effect.flip(run("wiki/fixture-maintainer/save/k2", { op: "save", page: "roadmap", base: "", text: "x", key: "" }))
+    const proposals = try Ref.get(store.proposals)
+    try Effect.try(() => {
+      expect(foreign).toMatchObject({ _tag: "WikiFailure", reason: "forbidden" })
+      expect(keyless).toMatchObject({ _tag: "WikiFailure", reason: "invalid", unwritten: true })
+      expect(proposals).toEqual([])
+    })
+  }))
+
+  it.effect("after a restart, the same key with changed text is a conflict and the same text is the same review", () => scoped(effect {
+    const store = try makeWikiStore()
+    const first = try makeWikiFactory("maintainer", store)
+    const base = (try first.read("roadmap")).pages.find((page) => page.id === "roadmap")!.source
+    const opened = try first.act({ op: "propose", page: "roadmap", base, text: base + "\nOne more line.\n", key: "p1" })
+    // A second factory over the same repository has a fresh engine: only the repository remembers the key.
+    const restarted = try makeWikiFactory("maintainer", store)
+    const again = try restarted.act({ op: "propose", page: "roadmap", base, text: base + "\nOne more line.\n", key: "p1" })
+    const changed = try Effect.flip(restarted.act({ op: "propose", page: "roadmap", base, text: base + "\nAnother line.\n", key: "p1" }))
+    const proposals = try Ref.get(store.proposals)
+    try Effect.try(() => {
+      expect(again.review).toBe(opened.review)
+      expect(changed).toMatchObject({ reason: "conflict", unwritten: true })
+      expect(proposals).toHaveLength(1)
+    })
+  }))
+
+  it.effect("after a restart, the same key first sent with changed text or for another page is a conflict", () => scoped(effect {
+    const store = try makeWikiStore()
+    const first = try makeWikiFactory("maintainer", store)
+    const source = (id: string) => effect { return (try first.read(id)).pages.find((page) => page.id === id)!.source }
+    const roadmap = try source("roadmap")
+    const index = try source("index")
+    const text = roadmap + "\nOne more line.\n"
+    try first.act({ op: "propose", page: "roadmap", base: roadmap, text, key: "p1" })
+    // Each restart has a fresh engine, so the request reaches the repository, which remembers the key.
+    const changed = try Effect.flip((try makeWikiFactory("maintainer", store)).act({ op: "propose", page: "roadmap", base: roadmap, text: roadmap + "\nAnother line.\n", key: "p1" }))
+    // The same text, proposed for another page under the same key.
+    const moved = try Effect.flip((try makeWikiFactory("maintainer", store)).act({ op: "propose", page: "index", base: index, text, key: "p1" }))
+    const proposals = try Ref.get(store.proposals)
+    try Effect.try(() => {
+      expect(changed).toMatchObject({ reason: "conflict", unwritten: true })
+      expect(moved).toMatchObject({ reason: "conflict", unwritten: true })
+      expect(proposals).toHaveLength(1)
+    })
+  }))
+})

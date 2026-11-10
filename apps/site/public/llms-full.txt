@@ -3015,6 +3015,10 @@ The members and the value each one carries across the seam:
 | `recordNode`            | yes      | None.                                                                                                                                      |
 | `retryFrom`             | yes      | None.                                                                                                                                      |
 
+`Dispatch.makeActionExecute` preserves each action's decoded success and error
+types. Its effect also retains the services needed to decode a recorded exit;
+using a serializer does not erase those requirements.
+
 `executionId` on `execute` is caller-supplied identity. A repeated id joins the run that already owns it, which is what makes a retried submission idempotent. `round` on `execute` is required: `makeUnsafe` supplies round zero for a fresh execution and the advanced round after a handoff, with `previousExecutionId` naming the round it continues. `poll` answers `Option.none` for a known unsettled execution, and for an execution that belongs to a different flow declaration. Only an execution id no engine knows fails, with `FlowRuntime.FlowExecutionNotFound`. `interrupt`, `interruptUnsafe`, and `resume` treat an unknown execution id as a silent no-op.
 
 `recordNode` takes the records a driven graph makes about itself: the plan it was built from, and every node it scheduled and settled. It is optional because a store that keeps no history has nothing to record and skips journal preflight; a recording store can refuse oversized topology before the walk starts. A store that implements it MUST address the entry by the `sourceId` the record carries, never a minted one: a resumed walk re-derives the same ids, and that is what makes a journal keyed by `(run, source, sequence)` hold one row per node across a resume instead of one per observation. Pass `{ flush: true }` as its second argument for progress that must be durable while an enclosing action keeps running; `makeUnsafe` forwards this option unchanged.
@@ -6745,12 +6749,17 @@ interface Usage {
   readonly tokens: number
   readonly calls: number
   readonly largestCall: number
+  readonly unreported?: number
 }
 ```
 
 The answer to "may this call be made", and what one run has spent so far.
 `largestCall` is what the next call is projected to cost. `calls` counts
-distinct model steps, replays included exactly once.
+distinct model steps, replays included exactly once. `unreported` counts the
+calls whose provider reported no usable token count (`Budget.reportsTokens`), so
+`tokens` is then a lower bound on what the provider charged; it is absent when
+every call reported one, and it survives recovery from the journal and the
+spend ledger.
 
 Before a positive cost is known, a reservation holds the full token allowance.
 `BudgetExceeded.used` remains actual spend; its optional `reserved` field is
@@ -6891,6 +6900,18 @@ they cannot cancel each other or be concealed by total precedence. `record`
 refuses that value, leaves the tally unchanged, and blocks fresh admission until
 the same step supplies a valid record. This validates reported usage; it does
 not reconcile an invoice or recover usage a provider never reported.
+
+### Budget.reportsTokens
+
+```ts
+const reportsTokens: (usage: ModelEvent.Usage) => boolean
+```
+
+Whether a call's usage carries a token count: a total, or both input and
+output. `tokensOf` reads a missing counter as zero, so a call with no count
+would look free; `record` marks it `unreported`, and `Usage.unreported` counts
+such calls so a caller can charge them something else, such as a reserved
+ceiling.
 
 ### Budget errors
 
@@ -22844,7 +22865,7 @@ idempotent.
 | Export                                                       | Signature                                                                                                                | Notes                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `getPull`                                                    | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>`                                           | `GET /repos/{owner}/{repo}/pulls/{number}`, with merge state and size.                                                                                                                                                                                                                                                                                                                                        |
-| `listPulls`                                                  | `(owner, repo, options?: { state?, head?, maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`  | Most recently updated first; `state` defaults to `all`; `head` is a branch of the repository itself, or a fork's `owner:branch`.                                                                                                                                                                                                                                                                                                          |
+| `listPulls`                                                  | `(owner, repo, options?: { state?, head?, maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`  | Most recently updated first; `state` defaults to `all`; `head` is a branch of the repository itself, or a fork's `owner:branch`.                                                                                                                                                                                                                                                                              |
 | `findPullByHead`                                             | `(owner, repo, { head, writeId? }) => Effect<Option<PullRequest>, IntegrationError, GitHubClient>`                       | The earliest-opened pull request from `head`, carrying `writeId`'s marker when given. A listing that runs out of pages without a match fails `poll-failed` with `incomplete: true`.                                                                                                                                                                                                                           |
 | `createPull`                                                 | `(owner, repo, { head, base, title, body, draft? }) => Effect<PullRequest, IntegrationError, GitHubClient>`              | `POST /repos/{owner}/{repo}/pulls`. 422 for no commits, a duplicate or a refused draft. A lost answer fails `outcomeUnknown`.                                                                                                                                                                                                                                                                                 |
 | `closePull`                                                  | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>`                                           | `PATCH` with `state: closed`; a lost answer fails `retryable`.                                                                                                                                                                                                                                                                                                                                                |

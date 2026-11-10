@@ -1,8 +1,12 @@
 // The actual declarations and host bodies; no second graph, schema, or workflow runtime.
-import { Action, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { FlowRuntime, Interpreter } from "@smthrs/flow"
+import type { PlanRequest } from "../history/Sequencer.vibe"
 import { Post, Tour, SandboxCommand, SandboxCommandAction, SandboxStart, SandboxStartAction, SandboxStop, SandboxStopAction } from "../core/flows.vibe"
-import { HistoryAnswer, Note, Plan, Start } from "../history/flows.vibe"
-import { type HistoryReader, note, plan, Show, show, start } from "../history/tools.vibe"
+import {
+  AuthorizeAppend, AuthorizeNote, AuthorizeRetell, AuthorizeShow, AuthorizeStart, authorizer, HistoryAnswer, Note, Plan,
+  planOf, RecordAppend, RecordNote, RecordRetell, RecordStart, Start,
+} from "../history/flows.vibe"
+import { type HistoryReader, note, plan, ReadShow, Show, show, start } from "../history/tools.vibe"
 import { Factory, Refused } from "../core/Factory.vibe"
 import { ActionFailure } from "./Actions.vibe"
 
@@ -31,15 +35,39 @@ export function refused(answer: unknown): boolean {
   return Schema.is(HistoryAnswer)(answer) && answer.refusal !== null
 }
 
-/** History operations still execute their owning API's durable flows, with its policy. */
+/** The run's execution id: a history write's `operation`, so a re-driven run records once. */
+effect function operation() {
+  return (try FlowRuntime.FlowInstance).executionId
+}
+
+/**
+ * History operations execute the history's own flows: the authorize step reads who asks from `Caller`, as on the
+ * History object, and the record step asks the history through `history`, which checks again.
+ */
 export function historyRegistration<R>(history: HistoryReader!never!R) {
-  return Layer.effectDiscard(effect {
-    const engine = try FlowRuntime.FlowRuntime
-    try engine.register(Show, effect (input) => try Action.make({ name: "vibelang/history/show/read", success: Show.successSchema, execute: Effect.orDie(show(try history, input)) }))
-    try engine.register(Plan, effect (input, executionId) => try Action.make({ name: "vibelang/history/Plan/call", success: Plan.successSchema, execute: plan(try history, input, executionId) }))
-    try engine.register(Start, effect (input, executionId) => try Action.make({ name: "vibelang/history/Start/call", success: Start.successSchema, execute: start(try history, input.id, input.lane, executionId) }))
-    try engine.register(Note, effect (input, executionId) => try Action.make({ name: "vibelang/history/Note/call", success: Note.successSchema, execute: note(try history, input.id, input.section, input.text, executionId) }))
-  })
+  effect function planned(request: PlanRequest) {
+    return try plan(try history, planOf(request), try operation())
+  }
+  return Layer.mergeAll(
+    Interpreter.layerWithImplementations(Show, Layer.mergeAll(
+      AuthorizeShow.toLayer(authorizer("show")),
+      ReadShow.toLayer((input) => Effect.orDie(effect { return try show(try history, input) })),
+    )),
+    Interpreter.layerWithImplementations(Plan, Layer.mergeAll(
+      AuthorizeAppend.toLayer(authorizer("append")),
+      AuthorizeRetell.toLayer(authorizer("retell")),
+      RecordAppend.toLayer(planned),
+      RecordRetell.toLayer(planned),
+    )),
+    Interpreter.layerWithImplementations(Start, Layer.mergeAll(
+      AuthorizeStart.toLayer(authorizer("start")),
+      RecordStart.toLayer(effect (input) => try start(try history, input.id, input.lane, try operation())),
+    )),
+    Interpreter.layerWithImplementations(Note, Layer.mergeAll(
+      AuthorizeNote.toLayer(authorizer("note")),
+      RecordNote.toLayer(effect (input) => try note(try history, input.id, input.section, input.text, try operation())),
+    )),
+  )
 }
 export effect function execute(engine: FlowRuntime.FlowRuntime["Service"], invocation: Invocation, id: string) {
   switch (invocation.kind) {

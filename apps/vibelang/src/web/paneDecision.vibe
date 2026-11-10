@@ -42,6 +42,25 @@ export function failedSandbox(state: SandboxResult, reason: string): SandboxResu
   return { ...state, busy: false, error: reason }
 }
 
+/**
+ * The open pane's periodic read. With no operation waiting or failed it is `loadedSandbox`; otherwise only the pane
+ * follows it, and the operation's wait or failure stays until its own result or the next action.
+ */
+//@ verify
+//@ ensures state.operation == "" ==> \result == { ...state, pane: opens ? "pane" : state.pane, operation: "", busy: false, error: "" }
+//@ ensures state.operation != "" ==> \result == { ...state, pane: opens ? "pane" : state.pane }
+export function polledSandbox(state: SandboxResult, opens: boolean): SandboxResult {
+  return state.operation === "" ? loadedSandbox(state, opens) : { ...state, pane: opens ? "pane" : state.pane }
+}
+
+/** The open pane's failed read names its reason only when no operation is waiting or failed. */
+//@ verify
+//@ ensures state.operation == "" ==> \result == { ...state, busy: false, error: reason }
+//@ ensures state.operation != "" ==> \result == state
+export function polledFailure(state: SandboxResult, reason: string): SandboxResult {
+  return state.operation === "" ? failedSandbox(state, reason) : state
+}
+
 /** Out of minutes outranks low; a new reset month clears an old notice; otherwise it stays. */
 //@ verify
 //@ ensures out ==> \result == "out"

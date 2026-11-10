@@ -106,3 +106,119 @@ export function refusingStorage(): Window {
     },
   })
 }
+
+/** The tour journals the page keeps in its local storage (`vibelang:walkthrough:<conversation>`). */
+export function journalKeys(): ReadonlyArray<string> {
+  return Object.keys(window.localStorage).filter((key) => key.startsWith("vibelang:walkthrough:"))
+}
+
+/** A stored journal's events, or undefined when the key holds nothing or text that isn't a JSON array. */
+export function storedJournal(key: string): ReadonlyArray<{ readonly seq: number }> | undefined {
+  const text = window.localStorage.getItem(key)
+  if (text === null) return undefined
+  try {
+    const value: unknown = JSON.parse(text)
+    return Array.isArray(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Removes the stored journals, the finished-tour mark and this tab's tour keys. */
+export function forgetTours(): void {
+  journalKeys().forEach((key) => window.localStorage.removeItem(key))
+  window.localStorage.removeItem("vibelang:toured")
+  for (const key of ["vibelang:tour-session", "vibelang:tour-active"]) window.sessionStorage.removeItem(key)
+}
+
+/** The real window whose local storage refuses only the tour journal's keys; `refused` lists each refused call. */
+export function refusingJournal(): { readonly window: Window; readonly refused: Array<"read" | "write"> } {
+  const refused: Array<"read" | "write"> = []
+  const journal = (key: string) => key.startsWith("vibelang:walkthrough:")
+  const storage = new Proxy(window.localStorage, {
+    get(target, property) {
+      if (property === "getItem") return (key: string) => { if (journal(key)) { refused.push("read"); throw new DOMException("denied", "SecurityError") } return target.getItem(key) }
+      if (property === "setItem") return (key: string, value: string) => { if (journal(key)) { refused.push("write"); throw new DOMException("denied", "SecurityError") } target.setItem(key, value) }
+      const value = Reflect.get(target, property)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+  const page = new Proxy(window, {
+    get(target, property) {
+      if (property === "localStorage") return storage
+      const value = Reflect.get(target, property)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+  return { window: page, refused }
+}
+
+/** The text of the first element matching `css` on the page, or undefined when none matches. */
+export function textOf(css: string): string | undefined {
+  return document.querySelector(css)?.textContent ?? undefined
+}
+
+/** Focuses the first element matching `css`; throws while none is on the page, so a wait can retry it. */
+export function focusOn(css: string): void {
+  document.querySelector<HTMLElement>(css)!.focus()
+}
+
+/** The real window with a recording speech host; `utterances: false` is a browser without SpeechSynthesisUtterance,
+ * `host: false` one without speechSynthesis. */
+export function speakingWindow(utterances: boolean, host = true): { readonly window: Window; readonly calls: Array<string> } {
+  const calls: Array<string> = []
+  const speech = {
+    cancel: () => { calls.push("cancel") },
+    pause: () => { calls.push("pause") },
+    resume: () => { calls.push("resume") },
+    speak: (utterance: { readonly text: string }) => { calls.push(`speak ${utterance.text}`) },
+  }
+  class Utterance { constructor(readonly text: string) {} }
+  const page = new Proxy(window, {
+    get(target, property) {
+      if (property === "speechSynthesis") return host ? speech : undefined
+      if (property === "SpeechSynthesisUtterance") return utterances ? Utterance : undefined
+      const value = Reflect.get(target, property)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+  return { window: page, calls }
+}
+
+/** An element of `className` in the page whose layout box is `box` (Happy DOM lays nothing out). */
+export function framed(tag: string, className: string, box: { readonly top: number; readonly left: number; readonly right: number; readonly bottom: number }): HTMLElement {
+  const node = document.createElement(tag)
+  node.className = className
+  node.getBoundingClientRect = () => DOMRect.fromRect({ x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top })
+  document.body.append(node)
+  return node
+}
+
+/** The href attribute of the first element matching `css`, or undefined. */
+export function hrefOf(css: string): string | undefined {
+  return document.querySelector(css)?.getAttribute("href") ?? undefined
+}
+
+/** A document with no window, as one built off-page has (`defaultView` is null). */
+export function detachedDocument(): Document {
+  return document.implementation.createHTMLDocument("detached")
+}
+
+/** The button whose accessible label or text is `label`, if the page shows one. */
+function labelled(label: string): HTMLButtonElement | undefined {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(element => element.getAttribute("aria-label") === label || element.textContent?.trim() === label)
+}
+export function hasButton(label: string): boolean {
+  return labelled(label) !== undefined
+}
+/** Clicks the button labelled `label`; throws when the page shows none, so a wait can retry. */
+export function clickButton(label: string): void {
+  const button = labelled(label)
+  if (button === undefined) throw new Error(`no button ${label}`)
+  button.click()
+}
+export function pageText(): string {
+  return document.body.textContent ?? ""
+}
+/** The number of child nodes of the first element matching `css`, or undefined when none matches. */
+export function childCount(css: string): number | undefined { return document.querySelector(css)?.childNodes.length }

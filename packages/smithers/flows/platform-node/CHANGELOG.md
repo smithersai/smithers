@@ -12,6 +12,10 @@
 
 ### Fixed
 
+- Missing native-helper errors lead with the complete Cargo build command.
+  The command uses `--package` so diagnostic redaction preserves the package
+  name, and appears before CLI field limits can cut it off.
+
 - Atomic glob preserves dot-class text inside an outer character class and
   recognizes dot segments only when they occupy the whole path segment.
 

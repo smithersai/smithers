@@ -1,0 +1,16 @@
+// Holds one native storage operation across eviction; all other methods retain their native receiver.
+export function holdMigration<A extends { put(key: string, value: unknown): Promise<void>; delete(key: string): Promise<unknown> }>(storage: A): A {
+  return new Proxy(storage, {
+    get(target, property) {
+      if (property === "delete") return async (key: string) => {
+        if (key.startsWith("github/")) {
+          await storage.put("test/migration-entered", true)
+          await new Promise<void>(() => {})
+        }
+        return storage.delete(key)
+      }
+      const value = target[property as keyof A]
+      return typeof value === "function" ? value.bind(target) : value
+    }
+  })
+}

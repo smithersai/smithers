@@ -1,0 +1,44 @@
+// @vitest-environment node
+// A post whose reply the model answers with no text, and one whose answer cell throws: the person reads the matching
+// failure. The API Worker's production objects in workerd with the deterministic model service (bench/fixtures.vibe).
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { REASONS } from "../worker/Reply.vibe"
+import { serveApiObjects } from "../test/support/workerd.vibe"
+import { modelService } from "./fixtures.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("a reply with no answer and a reply whose cell throws fail with their reasons", { timeout: 240_000 }, async ({ bench }) => {
+  await runPromise(scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const model = try modelService()
+      const api = try acquireRelease(serveApiObjects({
+        CHAT_MODEL: JSON.stringify({ protocol: "openai-chat", baseUrl: model, modelId: "deterministic", credential: "BENCH" }),
+        SMITHERS_MODEL_KEY_BENCH: "benchmark-only", SMITHERS_MODEL_KEY_BENCH_ORIGIN: model,
+      }), (served) => promise(served.dispose))
+      provide LiveFactory(api.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+        const factory = try Factory
+        let run = 0
+        const failed = async (text: string) => {
+          const room = `bench-reply-${++run}`
+          await runPromise(factory.post(room, "a", "Bench", text))
+          const events = Array.from(await runPromise(Stream.runCollect(factory.events(room, 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished" || event.type === "ReplyFailed")))))
+          const read = await runPromise(factory.read(room, 0))
+          return { last: events.at(-1), agent: read.entries.filter((entry) => entry.author === "agent") }
+        }
+        const outcomes = workload(bench, "reply-outcomes", "async", async () => {
+          const empty = await failed("Bench empty.")
+          const thrown = await failed("Bench throws.")
+          expect(empty.last).toMatchObject({ type: "ReplyFailed", reason: REASONS.empty })
+          expect(thrown.last).toMatchObject({ type: "ReplyFailed", reason: REASONS.failed })
+          expect([empty.agent, thrown.agent].map((agent) => agent.map((entry) => [entry.done, entry.error]))).toEqual([[[true, REASONS.empty]], [[true, REASONS.failed]]])
+        })
+        const result = try tryPromise(() => outcomes.run(slow))
+        try artifact("reply-outcomes", "Vitest built-in bench; the API Worker's production object bodies in local workerd SQLite through LiveFactory HTTP and alarms, with the deterministic HTTP model service. Each sample posts twice in fresh rooms: the model answers one with an empty result and the other with a cell that throws. Checks the last event is ReplyFailed with the person's reason, and the agent entry is done with that error.", ["Deterministic model; no inference latency.", "Objects reach each other by fetch, not Alchemy RPC."], result)
+      }
+    }
+  }))
+})

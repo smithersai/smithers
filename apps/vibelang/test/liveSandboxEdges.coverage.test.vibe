@@ -1,0 +1,58 @@
+// @vitest-environment node
+// The live Factory's sandbox client against a sandbox server that answers wrongly, over real loopback: a status
+// that is neither success nor a refusal, and a terminal answer that isn't the protocol. Each fails as Unavailable
+// with a reason naming the operation; nothing intercepts the requests.
+import { expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+
+/** One loopback server answering every request with `answer`. */
+effect function answering(answer: HttpServerResponse.HttpServerResponse) {
+  try HttpServer.serveEffect(effect {
+    try HttpServerRequest.HttpServerRequest
+    return answer
+  })
+}
+const reason = <A, R>(program: A!{ readonly _tag: string; readonly reason?: string }!R) => Effect.flip(program).pipe(Effect.map((error) => error.reason ?? error._tag))
+
+it.live.each([500, 404])("a sandbox server answering %s fails every operation with that status", (status) => scoped(effect {
+  provide NodeHttpServer.layerTest {
+    try answering(HttpServerResponse.empty({ status }))
+    provide LiveFactory("") {
+      const factory = try Factory
+      const failures = [
+        try reason(factory.sandbox("c1")),
+        try reason(factory.startSandbox("c1", "op1")),
+        try reason(factory.stopSandbox("c1", "op2", 1)),
+        try reason(factory.sandboxCommand("c1", "op3", "pwd", 1)),
+      ]
+      try Effect.try(() => expect(failures).toEqual([`sandbox answered ${status}`, `sandbox start answered ${status}`, `sandbox stop answered ${status}`, `terminal answered ${status}`]))
+    }
+  }
+}))
+
+it.live.each([
+  ["null", null],
+  ["an object without output", { result: "x" }],
+  ["output that isn't text", { output: 7 }],
+] as const)("a terminal answering %s isn't the protocol", ([_name, body]) => scoped(effect {
+  provide NodeHttpServer.layerTest {
+    try answering(HttpServerResponse.jsonUnsafe(body))
+    provide LiveFactory("") {
+      const failure = try reason((try Factory).sandboxCommand("c1", "op1", "pwd", 1))
+      try Effect.try(() => expect(failure).toBe("terminal is not the protocol"))
+    }
+  }
+}))
+
+it.live("a terminal answering text output returns it", () => scoped(effect {
+  provide NodeHttpServer.layerTest {
+    try answering(HttpServerResponse.jsonUnsafe({ output: "/workspace" }))
+    provide LiveFactory("") {
+      const output = try (try Factory).sandboxCommand("c1", "op1", "pwd", 1)
+      try Effect.try(() => expect(output).toBe("/workspace"))
+    }
+  }
+}))

@@ -1,12 +1,15 @@
 // The GitHub issue host's unjournaled writes (link, commit, uncommit, accept, decline) and reads over a stateful
-// GitHub on the real client protocol, by permitted people and by agents. Each success is checked against GitHub.
+// GitHub on the real client protocol, by permitted people and by agents, through smithers.sh's delegation. Each success
+// is checked against GitHub, and a run in which no write reached GitHub fails.
 import { it } from "@effect/vitest"
 import { HttpClient } from "effect/http"
 import { WebCrypto } from "@smthrs/crypto"
 import { issuePermission } from "../src/core/conversation.vibe"
 import { IssueFailure, IssuesState, type IssueRequest } from "../src/core/issueSchemas.vibe"
-import { githubHost, IssueAuthority, TASK_LABEL } from "../worker/Issues.vibe"
+import { githubHost, IssueAuthority, TASK_LABEL, type Principal } from "../worker/Issues.vibe"
+import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
 import { fakeClient, repo, seed } from "./issues-node-fake.vibe"
+import { delegated, reach, reached } from "./delegated.vibe"
 import { run, Finding } from "./run.vibe"
 
 const REASONS = ["forbidden", "missing", "tree", "assignee", "closed", "review", "unavailable", "partial", "protocol", "connect", "sign-in"]
@@ -21,17 +24,19 @@ const Step = Schema.Struct({
 })
 const Steps = Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(8))
 
-it.live("issues/host-writes", () => run("issues/host-writes", Steps, (steps) => effect {
+const counter = reach()
+const hostWrites = (steps: typeof Steps.Type) => effect {
   const fake = seed()
-  const actor = try Ref.make<{ id: string; login: string; role: typeof Step.Type["role"]; token: Redacted.Redacted<string>; kind: "person" | "agent" } | undefined>(undefined)
+  const site = try delegated(fakeClient(fake), counter)
+  const actor = try Ref.make<Principal | undefined>(undefined)
   const authority: IssueAuthority.Shape = { current: () => Ref.get(actor) }
-  const client = fakeClient(fake)
-  const host = try githubHost(repo).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, client))
+  const client = site.http
+  const host = try githubHost(repo).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, client), Effect.provideService(GitHubDelegate, site.delegate))
   const call = host.perform as (request: IssueRequest) => typeof IssuesState.Type!IssueFailure
   for (const [index, step] of steps.entries()) {
     fake.dropAssignees = step.dropAssignees && step.op === "commit"
     const kind = step.agent ? "agent" as const : "person" as const
-    try Ref.set(actor, { id: "7", login: "fuzz", role: step.role, token: Redacted.make("token"), kind })
+    try Ref.set(actor, { id: "7", login: "fuzz", role: step.role, connection: site.connection, kind })
     const request: IssueRequest = { op: step.op, number: step.number, parent: step.parent, title: "", text: "", example: "", prior: "", assignee: step.assignee, key: `w${index}` }
     const before = fake.issues.find((issue) => issue.number === step.number)
     const wasVip = before !== undefined && /vibelang:vip/.test(before.body ?? "")
@@ -62,4 +67,5 @@ it.live("issues/host-writes", () => run("issues/host-writes", Steps, (steps) => 
     }
   }
   return true
-}))
+}
+it.live("issues/host-writes", () => Effect.andThen(run("issues/host-writes", Steps, hostWrites), reached("issues/host-writes", counter, hostWrites, [{ op: "commit", number: 1, parent: 0, assignee: "fuzz", role: "maintainer", agent: false, dropAssignees: false }])))

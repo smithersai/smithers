@@ -53,3 +53,27 @@ it("a source only Chromium executes is gated on Chromium's structure", () => {
     expect([merged.statements.covered, merged.statements.total]).toEqual([1, 1])
   }
 })
+
+// The same source through Vite's composed map: identical starts, ends inferred from the next mapped token.
+const composed = {
+  [file]: {
+    ...empty,
+    statementMap: { "0": range(16, 2, 16, 40), "1": range(16, 24, 16, 38) }, s: { "0": 2, "1": 1 },
+    fnMap: { "0": { name: "(anonymous_1)", decl: range(15, 61, 15, 70), loc: range(15, 88, 19, 3) } }, f: { "0": 2 },
+    branchMap: { "0": { loc: range(16, 1, 16, 40), type: "if", locations: [range(16, 2, 16, 40), implicit] } }, b: { "0": [1, 1] },
+  },
+}
+const unexecutedArrow = { [file]: { ...node[file], s: { "0": 0, "1": 0 }, b: { "0": [0, 0] }, fnMap: { "0": { name: "(anonymous_1)", decl: range(15, 64, 15, 70), loc: range(15, 88, 19, 1) } }, f: { "0": 0 } } }
+const covered = (unit: Record<string, unknown>, browser: Record<string, unknown>) => {
+  const merged = mergeByPosition({ [file]: { ...(unit[file] as object), s: { "0": 1, "1": 0 }, b: { "0": [0, 0] }, f: { "0": 0 } } } as never, [browser as never])[file]!
+  return { s: merged.s, b: merged.b, f: merged.f }
+}
+
+it("Chromium credits a statement, a function body and an arm at the same start whatever their ends", () => {
+  expect(covered(unexecutedArrow, composed)).toEqual({ s: { "0": 1, "1": 1 }, b: { "0": [1, 1] }, f: { "0": 1 } })
+})
+
+it("Chromium credits nothing that starts elsewhere", () => {
+  const shifted = { [file]: { ...composed[file], statementMap: { "0": range(16, 3, 16, 40), "1": range(16, 25, 16, 38) }, fnMap: { "0": { name: "(anonymous_1)", decl: range(15, 64, 15, 70), loc: range(15, 89, 19, 3) } }, branchMap: { "0": { loc: range(16, 2, 16, 40), type: "if", locations: [range(16, 3, 16, 40), implicit] } } } }
+  expect(covered(unexecutedArrow, shifted)).toEqual({ s: { "0": 1, "1": 0 }, b: { "0": [0, 0] }, f: { "0": 0 } })
+})

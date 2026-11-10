@@ -4,6 +4,9 @@
 
 ### Added
 
+- `@smthrs/agent/Budget` exports `reportsTokens`, and `Usage.unreported`
+  counts the calls whose provider reported no usable token count, live and after
+  recovery, so a caller can tell a free call from an unreported one.
 - `@smthrs/cli/Catalog` exports `catalogDescriptors`, the typed list of
   product API operations, and `@smthrs/cli/CatalogRequest` exports
   `catalogRequest`, which builds one operation's HTTP request and refuses

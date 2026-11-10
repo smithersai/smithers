@@ -1,0 +1,14 @@
+// The unit gate (0016), run by `pnpm test:coverage` after both Vitest runs: the Node suite's report is the structure;
+// the workerd suite's Node report and its workerd isolates' counters credit it by source position
+// (test/support/coverageGate.vibe). Code that runs only inside workerd counts once a workerd test runs it.
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { gate } from "./support/coverageGate.vibe"
+
+export effect function main() {
+  const path = try Path.Path
+  const app = path.dirname(try path.fromFileUrl(new URL("../package.json", import.meta.url)))
+  try gate(app, { suite: "unit", node: ["coverage/unit/coverage-final.json", "coverage/unit/workerd-node/coverage-final.json"], workerd: ["coverage/unit/workerd-raw"], merged: "coverage/unit/merged" })
+}
+
+NodeRuntime.runMain(Effect.provide(main(), NodeServices.layer))

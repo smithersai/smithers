@@ -117,13 +117,19 @@ it.live("sequencer/two-clients-converge", () => effect { return try run("sequenc
   return same(receivedLeft, receivedRight) && receivedLeft.pending.length === 0 && (try service.read(0)).entries.length === 2
 }, (try Effect.try(() => FuzzSimulation.execution()))) })
 
-const Spend = Schema.Struct({ id: Int, tokens: Schema.Union([Schema.Int.check(Schema.isBetween({ minimum: -10, maximum: 100 })), Schema.Literals([-0.5, 0.5, "NaN", "Infinity", "-Infinity"])]) })
+const CEILING = 50
+const Spend = Schema.Struct({ id: Int, reported: Schema.Boolean, tokens: Schema.Union([Schema.Int.check(Schema.isBetween({ minimum: -10, maximum: 100 })), Schema.Literals([-0.5, 0.5, "NaN", "Infinity", "-Infinity"])]) })
+// Each call is charged once: what it reported when usable, else its whole ceiling, never zero for an unusable report.
+const charged = (tokens: number, reported: boolean) => {
+  const rounded = Number.isFinite(tokens) ? Math.round(tokens) : -1
+  return reported && rounded >= 0 ? rounded : CEILING
+}
 it.live("budget/spend-once", () => effect { return try run("budget/spend-once", Schema.Struct({ limit: Int, spend: Schema.Array(Spend).check(Schema.isMaxLength(30)) }), ({ limit, spend }) => effect {
   const stored = try Ref.make<Readonly<Record<string, number>>>({})
   const ledger = try Budget.make({ read: (key) => Effect.map(Ref.get(stored), (state) => state[key]), write: (entries) => Ref.update(stored, (state) => ({ ...state, ...entries })) }, limit)
   const candidates = new Map<number, number[]>()
-  for (const item of spend) candidates.set(item.id, [...(candidates.get(item.id) ?? []), Number.isFinite(Number(item.tokens)) ? Math.max(0, Math.round(Number(item.tokens))) : 0])
-  for concurrent (const item of spend) { try ledger.spend(`r${item.id}`, Number(item.tokens)) }
+  for (const item of spend) candidates.set(item.id, [...(candidates.get(item.id) ?? []), charged(Number(item.tokens), item.reported)])
+  for concurrent (const item of spend) { try ledger.spend(`r${item.id}`, Number(item.tokens), item.reported, CEILING) }
   const values = try Ref.get(stored)
   let sum = 0
   for (const [id, amounts] of candidates) {
@@ -131,8 +137,25 @@ it.live("budget/spend-once", () => effect { return try run("budget/spend-once", 
     if (amount === undefined || !amounts.includes(amount)) return false
     sum += amount
   }
-  if ((values[Budget.SPENT] ?? 0) !== sum || (try ledger.admit()) !== (sum < limit)) return false
-  for (const item of spend) try ledger.spend(`r${item.id}`, Number(item.tokens))
-  if (!same(values, try Ref.get(stored))) return false
+  if ((values[Budget.SPENT] ?? 0) !== sum || (try ledger.admit("probe", 1)) !== (sum + 1 <= limit)) return false
+  for (const item of spend) try ledger.spend(`r${item.id}`, Number(item.tokens), item.reported, CEILING)
+  if (!same({ ...values, [Budget.RESERVED]: 0, "hold/probe": 0 }, { ...(try Ref.get(stored)), [Budget.RESERVED]: 0, "hold/probe": 0 })) return false
   return true
+}, (try Effect.try(() => FuzzSimulation.execution()))) })
+
+// Admissions and settlements interleaved in any order keep the day's charges and open reservations within the limit
+// plus the charges beyond reservations (decision 0018), and an admitted call always fit under the limit.
+const Call = Schema.Struct({ id: Int, ceiling: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 60 })), tokens: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 80 })), reported: Schema.Boolean })
+it.live("budget/admissions-bound", () => effect { return try run("budget/admissions-bound", Schema.Struct({ limit: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 400 })), calls: Schema.Array(Call).check(Schema.isMaxLength(30)) }), ({ limit, calls }) => effect {
+  const stored = try Ref.make<Readonly<Record<string, number>>>({})
+  const ledger = try Budget.make({ read: (key) => Effect.map(Ref.get(stored), (state) => state[key]), write: (entries) => Ref.update(stored, (state) => ({ ...state, ...entries })) }, limit)
+  let bounded = true
+  for concurrent (const call of calls) {
+    const admitted = try ledger.admit(`c${call.id}`, call.ceiling)
+    const state = try Ref.get(stored)
+    if ((state[Budget.SPENT] ?? 0) + (state[Budget.RESERVED] ?? 0) > limit + (state[Budget.OVER] ?? 0)) bounded = false
+    if (admitted) try ledger.spend(`c${call.id}`, call.tokens, call.reported, call.ceiling)
+  }
+  const state = try Ref.get(stored)
+  return bounded && (state[Budget.RESERVED] ?? 0) === 0 && (state[Budget.SPENT] ?? 0) <= limit + (state[Budget.OVER] ?? 0)
 }, (try Effect.try(() => FuzzSimulation.execution()))) })

@@ -6,7 +6,8 @@ import { backend, Backend, Role } from "./web-backends.vibe"
 import { run, Finding } from "./run.vibe"
 
 const WINDOW = "40 millis"
-const ATTACH = "5 millis"
+/** The deadline for the keyboard probe to answer; it never ends a passing run early. */
+const READY = "5 seconds"
 
 const DomEvent = Schema.Struct({
   kind: Schema.Literals(["keydown", "wheel", "touchstart", "touchmove", "touchend", "touchcancel", "scroll", "click-wiki", "click-draft", "click-outside", "popstate", "resize", "orientationchange"]),
@@ -60,23 +61,44 @@ function fire(document: Document, window: Window, links: ReturnType<typeof page>
 
 const Input = Schema.Struct({ model: Model, backend: Backend, role: Role, events: Schema.Array(DomEvent).check(Schema.isMaxLength(12)) })
 
+/**
+ * Every subscription attaches before the events fire: the keyboard subscription, forked after all of them, must answer
+ * Escape with PressedEscape first. Whatever any subscription then emits is a declared Message that leaves a valid Model.
+ */
 it.live("web/subscriptions", () => run("web/subscriptions", Input, ({ model, backend: kind, role, events }) => Effect.provide(effect {
   const document = try (try Experimental.Document.Document).current
   const window = try (try Experimental.Window.Window).current
   const links = try acquireRelease(Effect.orDie(Effect.try(() => page(document))), (links) => sync(links.dispose))
-  const entries = Object.entries(subscriptions(document, document)) as ReadonlyArray<[string, Entry]>
-  const running = try Effect.forEach(entries, ([name, entry]) => effect {
+  const all = subscriptions(document, document) as unknown as Record<string, Entry>
+  const done = try Deferred.make<void>()
+  const seen = new Map<string, Array<Message>>()
+  const collect = (name: string, entry: Entry) => effect {
     const dependencies = entry.modelToDependencies(model)
-    const stream = entry.dependenciesToStream(dependencies, () => dependencies)
-    const fiber = fork Stream.runCollect(stream.pipe(Stream.interruptWhen(Effect.sleep(WINDOW))))
-    return { name, fiber }
-  })
-  try sleep(ATTACH)
+    const bucket: Array<Message> = []
+    seen.set(name, bucket)
+    const stream = entry.dependenciesToStream(dependencies, () => dependencies).pipe(Stream.interruptWhen(Deferred.await(done)))
+    return { name, fiber: fork Stream.runForEach(stream, (message) => sync(() => { bucket.push(message) })) }
+  }
+  const running = try Effect.forEach(Object.entries(all).filter(([name]) => name !== "keyboard"), ([name, entry]) => collect(name, entry))
+  // The keyboard is forked last, so once it answers, every subscription forked before it has attached its listeners.
+  // (A second keyboard instance would see the first's preventDefault and stay silent.)
+  const probe = try collect("keyboard", all.keyboard!)
+  const dom = window as unknown as Constructors
+  const answered = () => seen.get(probe.name)!.some((message) => message._tag === "PressedEscape")
+  const ready = try Effect.timeoutOption(effect {
+    while (!answered()) {
+      try Effect.try(() => document.dispatchEvent(new dom.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })))
+      try sleep("1 millis")
+    }
+  }, READY)
+  if (Option.isNone(ready)) throw new Finding({ report: `keyboard: Escape answered no PressedEscape within ${READY}` })
   try Effect.try(() => { for (const event of events) fire(document, window, links, event) })
-  for (const { name, fiber } of running) {
+  try sleep(WINDOW)
+  try Deferred.succeed(done, undefined)
+  for (const { name, fiber } of [...running, probe]) {
     const result = try exit(Fiber.join(fiber))
     if (result._tag === "Failure") throw new Finding({ report: `${name}: ${Cause.pretty(result.cause)}` })
-    for (const message of result.value) {
+    for (const message of seen.get(name)!) {
       if (!Schema.is(Message)(message)) throw new Finding({ report: `${name}: emitted an undeclared Message` })
       if (!Schema.is(Model)(update(model, message).model)) throw new Finding({ report: `${name}: ${message._tag} left an invalid Model` })
     }

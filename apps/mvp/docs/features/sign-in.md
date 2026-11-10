@@ -713,7 +713,9 @@ serves, with distinct keys of at least 32 characters, and `AUTH_BROKER_ENCRYPTIO
 GitHub client credentials and `SESSION_SECRET` remain. A site has only its own registry key and its own session.
 No redirect URL is added. The deployment adds the `HostedAuthBroker` class/binding through Alchemy.
 
-A site with `grants` in `HOSTED_AUTH_SITES` can also act on GitHub for a person, through `GitHubConnection`, one Durable Object per person ([decision 0165](../decisions/0165-hosted-site-github-delegation.md)). It holds that person's one sealed token and answers signed `POST /api/auth/broker/delegation?person=<id>` calls. `GITHUB_CONNECTION_KEYS` (`{ id: base64 32-byte key }`) and `GITHUB_CONNECTION_KEY_ACTIVE` seal tokens; without them the broker refuses Connect. A person disconnects a site at `/api/auth/connections`. GitHub's `github_app_authorization` webhook ends every delegation.
+A site with `grants` in `HOSTED_AUTH_SITES` can also act on GitHub for a person, through `GitHubConnection`, one Durable Object per person ([decision 0165](../decisions/0165-hosted-site-github-delegation.md)). It holds that person's one sealed token and answers signed `POST /api/auth/broker/delegation?person=<id>` calls. ChatApi's route checks the site's signature, and that the call names that person, before it addresses the object, so an unsigned call creates none and answers 403. `GITHUB_CONNECTION_KEYS` (`{ id: base64 32-byte key }`) and `GITHUB_CONNECTION_KEY_ACTIVE` seal tokens; without them the broker refuses Connect. A person disconnects a site at `/api/auth/connections`. GitHub's `github_app_authorization` webhook ends every delegation.
+
+A site with `reads` (`[{ repository, repositoryId }]`) in `HOSTED_AUTH_SITES` reads those public repositories for its signed-out visitors through the App ([decision 0165, public reads](../decisions/0165-hosted-site-github-delegation.md#addendum-public-reads-2026-11-10-lane-vl-public-reads)). ChatApi answers signed `POST /api/auth/broker/public-read` calls before any Durable Object, with an installation token minted for that repository id alone, read-only, after GitHub confirms the repository is public and still has that id (`worker/PublicReads.vibe`). An invalid `reads` entry or no App answers 503 `unavailable`.
 
 The chosen single-use code and signed-identity alternative, origin/PKCE checks, sixty-second expiry, fragment
 handoff, logging and security review are in [VibeLang decision 0029](../../../vibelang/wiki/decisions/0029-hosted-sign-in-broker.md)
@@ -722,6 +724,15 @@ The new Worker modules are VibeLang; the rule scopes include `.vibe` and exempt 
 from the rule against Cloudflare in portable flows. This lane does not deploy the app.
 
 The shared `httpPolicy` is registered through Alchemy `Telemetry.layer` for ChatApi and HostedAuthBroker, so the HTTP tracer redacts query values before exporting spans. Proxy/native access logs must also omit OAuth query values and callback/exchange bodies.
+
+### GitHub's page at the callback
+
+Each successful callback, ordinary or brokered, records whether GitHub showed the person one of its own pages
+before it, and whether smithers.sh had revoked one of their tokens since their previous sign-in:
+`smithers_auth_github_consent` and the span and log `auth.github.consent`
+([observability](../observability.md)). It answers from production whether our revocations bring GitHub's
+authorization page back ([decision 0165](../decisions/0165-hosted-site-github-delegation.md#revocation-and-the-authorization)).
+A failure to read the history logs `outcome: failed` and never fails sign-in.
 
 ### Tokens from a failed callback
 

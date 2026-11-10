@@ -1,4 +1,5 @@
 import { make, type Setup } from "./GitHubConnectionHost.vibe"
+export type { Setup } from "./GitHubConnectionHost.vibe"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy"
 import { GitHub } from "@smthrs/integrations"
@@ -21,8 +22,12 @@ const Grant = Schema.Struct({
   repository: Schema.String, repositoryId: Schema.Number, scopes: Schema.Array(Schema.Literals(["issues", "proposals"])),
   paths: Schema.Array(Schema.String), branchPrefix: Schema.String, labelPrefix: Schema.String,
 })
-const Sites = Schema.Array(Schema.Struct({ origin: Schema.String, secret: Schema.String.check(Schema.isMinLength(32)), grants: Schema.optional(Schema.Array(Grant)) }))
-/** `grants` is optional so a site with none signs in and holds no delegation scope. */
+const Read = Schema.Struct({ repository: Schema.String, repositoryId: Schema.Number })
+const Sites = Schema.Array(Schema.Struct({ origin: Schema.String, secret: Schema.String.check(Schema.isMinLength(32)), grants: Schema.optional(Schema.Array(Grant)), reads: Schema.optional(Schema.Array(Read)) }))
+/**
+ * `grants` is optional so a site with none signs in and holds no delegation scope. `reads` lists the public repositories
+ * its signed-out visitors read through the App (worker/PublicReads.vibe).
+ */
 export const decodeSites = Schema.decodeUnknownEffect(Schema.fromJsonString(Sites))
 
 export effect function configured() {
@@ -35,7 +40,10 @@ export effect function configured() {
   const home = Option.getOrElse(origin, () => Option.isSome(domain) ? "https://" + domain.value : "")
   const decodedSites = decodeSites(Redacted.value(sites.value)) catch () => undefined
   const decodedKeys = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)))(Redacted.value(keys.value)) catch () => undefined
-  if (decodedSites === undefined || decodedKeys === undefined || decodedKeys[active.value] === undefined || !GitHub.Auth.Broker.canonicalOrigin(home)) return undefined
+  // A grant one keystroke from opening every branch, path or label disables connections (DelegationPolicy.validGrant).
+  const validGrants = decodedSites !== undefined && decodedSites.every((site) => (site.grants ?? []).every(GitHub.DelegationPolicy.validGrant))
+  if (decodedSites !== undefined && !validGrants) try Effect.logWarning("github.connection.config").pipe(Effect.annotateLogs({ outcome: "invalid_grant" }))
+  if (decodedSites === undefined || !validGrants || decodedKeys === undefined || decodedKeys[active.value] === undefined || !GitHub.Auth.Broker.canonicalOrigin(home)) return undefined
   const setup: Setup = {
     origin: home,
     sites: decodedSites.map((site) => ({ origin: site.origin, secret: Redacted.make(site.secret), grants: site.grants ?? [] })),
@@ -63,7 +71,7 @@ export const live = GitHubConnection.make(effect {
     const github = try GitHub.Auth.GitHubAuth.pipe(Effect.provide(GitHub.Auth.layer({ clientId: clientId.value, clientSecret: clientSecret.value }).pipe(Layer.provide(FetchHttpClient.layer))))
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
     const hosts = new Map<number, Effect.Success<ReturnType<typeof make>>>()
-    /** The router names this object by the same person, so one object only ever builds one host. */
+    /** The router names this object by its person; the host refuses any other (GitHubConnectionHost.make). */
     const host = effect (person: number) => {
       const known = hosts.get(person)
       if (known !== undefined) return known
@@ -77,9 +85,9 @@ export const live = GitHubConnection.make(effect {
         const person = Delegation.personOf(request.originalUrl)
         if (person === undefined) return HttpServerResponse.empty({ status: 400, headers: GitHub.Auth.Broker.HEADERS })
         const opened = try Effect.result(host(person))
-        return opened._tag === "Failure"
-          ? HttpServerResponse.jsonUnsafe({ reason: "unavailable" }, { status: 503, headers: GitHub.Auth.Broker.HEADERS })
-          : try opened.success.fetch
+        if (opened._tag === "Success") return try opened.success.fetch
+        const forbidden = opened.failure.reason === "forbidden"
+        return HttpServerResponse.jsonUnsafe({ reason: forbidden ? "forbidden" : "unavailable" }, { status: forbidden ? 403 : 503, headers: GitHub.Auth.Broker.HEADERS })
       },
       install: (input: InstallInput) => outcome(effect {
         return try (try host(input.person)).install({ origin: input.origin, login: input.login, tokens: { accessToken: Redacted.make(input.access), refreshToken: input.refresh === null ? null : Redacted.make(input.refresh), expiresAt: input.expires } })
@@ -90,6 +98,14 @@ export const live = GitHubConnection.make(effect {
     }
   }
 })
+
+/** The delegation route. No person's object is addressed, so none is created, until a configured site's signature admits the call. */
+export function route(objects: Effect.Success<typeof GitHubConnection>, setup: Setup | undefined) {
+  if (setup === undefined) return succeed(HttpServerResponse.empty({ status: 503, headers: GitHub.Auth.Broker.HEADERS }))
+  return Delegation.route({ origin: setup.origin, sites: setup.sites }, (person, request) => objects.getByName(nameOf(person)).fetch(request).pipe(
+    Effect.catchCause(() => succeed(HttpServerResponse.jsonUnsafe(unavailable, { status: 503, headers: GitHub.Auth.Broker.HEADERS }))),
+  ))
+}
 
 /** The broker's custodian: the token crosses to the person's object once and answers a handle. */
 export function connectionsOf(objects: Effect.Success<typeof GitHubConnection>, runtime: Context.Context<RuntimeContext>): GitHub.Auth.Broker.Connections {

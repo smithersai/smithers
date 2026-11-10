@@ -24,4 +24,3 @@ export const gatewayWithIdentity = Layer.unwrap(effect {
     return gatewayOf(namespace, try SandboxIdentity)
   }).pipe(Layer.provide(accountLive), Layer.provide(machineLive))
 })
-export const gatewayLive = gatewayWithIdentity.pipe(Layer.provide(noIdentity))

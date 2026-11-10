@@ -1,0 +1,40 @@
+// Third-lane batch 3 (0018): the mock's chunks, the session cookie rule and the catalog's least roles, proved in
+// mockDecision, accountCookieDecision and catalogDecision, as mockReplies, accountCookies and catalog use them.
+import { describe, expect, it } from "@effect/vitest"
+import { registration } from "../src/actions/catalog.vibe"
+import { cookieAccepted, localOrigin } from "../src/core/accountCookieDecision.vibe"
+import { validSessionCookie } from "../src/core/accountCookies.vibe"
+import { EndTour, Post, Tour } from "../src/core/flows.vibe"
+import { chunks } from "../src/core/mockReplies.vibe"
+import { Approve, Fold, Plan } from "../src/history/flows.vibe"
+
+describe("the mock agent's chunks", () => {
+  it("join to the text, each nonempty and at most 24 units", () => {
+    for (const text of ["", "a", "x".repeat(24), "x".repeat(25), "The mythical history · its epics and open work, a few words at a time."]) {
+      const pieces = chunks(text)
+      expect(pieces.join("")).toBe(text)
+      expect(pieces.every((piece) => piece.length >= 1 && piece.length <= 24)).toBe(true)
+      expect(pieces.length).toBe(Math.ceil(text.length / 24))
+    }
+  })
+})
+
+describe("a session cookie", () => {
+  it("is the host-prefixed one over HTTPS, and the plain one only on this machine", () => {
+    expect(validSessionCookie("https://vibelang.sh", "__Host-vibelang-session=abc")).toBe(true)
+    expect(validSessionCookie("https://vibelang.sh", "vibelang-session=abc")).toBe(false)
+    expect(validSessionCookie("http://localhost:5178", "vibelang-session=abc")).toBe(true)
+    expect(validSessionCookie("http://[::1]:5178", "vibelang-session=abc")).toBe(true)
+    expect(validSessionCookie("http://vibelang.sh", "__Host-vibelang-session=abc")).toBe(false)
+    expect(validSessionCookie("https://vibelang.sh/", "__Host-vibelang-session=abc")).toBe(false)
+    expect([localOrigin(true, "127.0.0.1"), localOrigin(false, "localhost"), localOrigin(true, "example.com")]).toEqual([true, false, false])
+    expect([cookieAccepted(true, true, false, false, true), cookieAccepted(true, false, true, false, true)]).toEqual([false, true])
+  })
+})
+
+describe("the action catalog", () => {
+  it("lets anyone tour, only a maintainer approve or fold, and a contributor the rest", () => {
+    expect([Tour, EndTour, Approve, Fold, Plan, Post].map((flow) => registration(flow._tag).least)).toEqual(["viewer", "viewer", "maintainer", "maintainer", "contributor", "contributor"])
+    expect([Post, Tour, Plan].map((flow) => registration(flow._tag).input)).toEqual(["text", "none", "json"])
+  })
+})

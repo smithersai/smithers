@@ -163,12 +163,13 @@ The OTLP/HTTP JSON exports of the browser's tabs (`smithers-mvp-web`) and engine
 
 ### Throttling
 
-Every Electric shape (`/api/shapes/*`) and the telemetry relay answer anyone, signed in or not, so ChatApi throttles them per network before anything else runs (`worker/Throttle.ts`, decision [0008](../decisions/0008-auth.md) §7.3's edge pre-filter). A network is the IPv4 /24 or IPv6 /48 of `CF-Connecting-IP`; a request without one shares the network `unknown`. Each route has its own Cloudflare Rate Limiting binding, declared in `worker/ChatApi.ts`:
+Every Electric shape (`/api/shapes/*`), the telemetry relay and the hosted-site sign-in broker answer anyone, signed in or not, so ChatApi throttles them per network before anything else runs (`worker/Throttle.ts`, decision [0008](../decisions/0008-auth.md) §7.3's edge pre-filter). A network is the IPv4 /24 or IPv6 /48 of `CF-Connecting-IP`; a request without one shares the network `unknown`. Each route has its own Cloudflare Rate Limiting binding, declared in `worker/ChatApi.ts`:
 
 | Routes | Binding | Per network |
 |---|---|---|
 | `/api/shapes/messages`, `/api/shapes/views`, `/api/shapes/repositories` | `SHAPE_LIMIT` (namespace 71001) | 3,000 requests a minute |
 | `/api/telemetry/v1/*` | `TELEMETRY_LIMIT` (namespace 71002) | 3,000 requests a minute |
+| `/api/auth/broker/start`, `/api/auth/broker/consent`, `/api/auth/broker/exchange`, and `/api/auth/callback` with a `broker_` state | `BROKER_LIMIT` (namespace 71003) | 300 requests a minute |
 
 Past it, ChatApi answers `429 { "code": "rate_limited" }` with `Retry-After: 60` and `Cache-Control: no-store`; the device's shape requests retry under the sync policy. The binding counts per Cloudflare location and approximately, so it bounds bursts and does no accounting. A binding that fails lets the request through: a broken pre-filter must not stop every device syncing. Neither number comes from a load test. While an answer streams, a tab's `messages` shape returns about once a second and its two other shapes about 3 times a minute, and its tab and engine worker export logs every second, traces every 5 s and metrics too: about 70 shape requests and 150 exports a minute. Each limit lets about 20 such tabs share a network, and stops one address from sending more than 50 requests a second. Each decision is counted (`smithers_throttle_decisions`); a binding's failure is also a `chat.throttle` line. Neither records the address or the network.
 

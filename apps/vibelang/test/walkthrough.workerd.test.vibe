@@ -6,7 +6,7 @@ import { Factory } from "../src/core/Factory.vibe"
 import { LiveFactory } from "../src/core/LiveFactory.vibe"
 import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 import { apply, empty } from "../src/core/conversation.vibe"
-import { room, serveApi, type Served } from "./support/workerd.vibe"
+import { deadline, room, serveApi, type Served } from "./support/workerd.vibe"
 let api: Served | undefined
 beforeAll(async () => { api = await runPromise(serveApi()) })
 afterAll(async () => { await api?.dispose() })
@@ -37,4 +37,4 @@ it.live("live walks the same ten destinations, pauses durably, seeks and cancels
       expect(finished.reduce(apply, empty).entries[0]?.text).toBe(WALKTHROUGH.map(step => step.subtitle).join("\n\n"))
     })
   }
-}, 120000)
+}, deadline(120000))

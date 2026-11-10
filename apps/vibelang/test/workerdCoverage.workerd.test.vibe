@@ -1,0 +1,82 @@
+// Execution inside workerd, measured (0016): test/support/coverageObject.vibe's Durable Object runs in local workerd
+// with Istanbul counters, and after the compiler's source map the lines they credit are the lines the requests ran.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { serveCoverageObject } from "./support/workerd.vibe"
+import { sourceCoverage } from "./support/workerdCoverage.ts"
+
+interface SourceCoverage {
+  readonly statementMap: Record<string, { readonly start: { readonly line: number } }>
+  readonly s: Record<string, number>
+}
+
+/**
+ * One measured Worker serves `requests` in order (a number is a request, "reload" replaces its isolate); what it
+ * answered, how many dumps it wrote, which files they measured, and which answer lines ran across all dumps.
+ */
+effect function measured(requests: ReadonlyArray<number | "reload">) {
+  provide NodeServices.layer, FetchHttpClient.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const fixture = try path.fromFileUrl(new URL("./support/coverageObject.vibe", import.meta.url))
+    const source = (try fs.readFileString(fixture)).split("\n")
+    const lineOf = (text: string) => source.findIndex((line) => line.includes(text)) + 1
+    return try scoped(effect {
+      const directory = try fs.makeTempDirectoryScoped()
+      const served = try serveCoverageObject(directory)
+      const answers: Array<string> = []
+      // Stopping the Worker writes its counters; it stops even when a request fails.
+      try ensuring(effect {
+        for (const request of requests) {
+          if (request === "reload") {
+            try tryPromise(() => served.reload({}))
+            continue
+          }
+          const response = try HttpClient.get(`${served.origin}/${request}`)
+          answers.push(try response.text)
+        }
+      }, Effect.orDie(tryPromise(() => served.dispose())))
+      const dumps = try fs.readDirectory(directory)
+      const files = new Set<string>()
+      const ran = new Set<number>()
+      for (const dump of dumps) {
+        const text = try fs.readFileString(path.join(directory, dump))
+        const coverage = try Effect.try(() => (JSON.parse(text) as { readonly coverage: Record<string, unknown> }).coverage)
+        const remapped = try tryPromise(() => sourceCoverage(coverage))
+        const file = try Effect.try(() => remapped.fileCoverageFor(fixture).toJSON() as unknown as SourceCoverage)
+        for (const name of try Effect.try(() => remapped.files())) files.add(path.relative(path.dirname(fixture), name))
+        for (const [id, loc] of Object.entries(file.statementMap)) if ((file.s[id] ?? 0) > 0) ran.add(loc.start.line)
+      }
+      return {
+        answers,
+        dumps: dumps.length,
+        files: [...files],
+        even: ran.has(lineOf(`HttpServerResponse.text("even")`)),
+        odd: ran.has(lineOf(`HttpServerResponse.text("odd")`)),
+      }
+    })
+  }
+}
+
+describe("coverage inside workerd", () => {
+  it.live("credits the Durable Object's even answer, and not its odd one, when the test sends an even number", () => effect {
+    const result = try measured([2])
+    try Effect.try(() => expect(result).toEqual({ answers: ["even"], dumps: 1, files: ["coverageObject.vibe"], even: true, odd: false }))
+  }, 240_000)
+
+  it.live("moves the credit to the odd answer when the test sends an odd number instead", () => effect {
+    const result = try measured([3])
+    try Effect.try(() => expect(result).toEqual({ answers: ["odd"], dumps: 1, files: ["coverageObject.vibe"], even: false, odd: true }))
+  }, 240_000)
+
+  it.live("credits both answers when the test sends both", () => effect {
+    const result = try measured([3, 4])
+    try Effect.try(() => expect(result).toEqual({ answers: ["odd", "even"], dumps: 1, files: ["coverageObject.vibe"], even: true, odd: true }))
+  }, 240_000)
+
+  it.live("keeps what ran before a reload, which replaces the isolate and its counters", () => effect {
+    const result = try measured([2, "reload", 3])
+    try Effect.try(() => expect(result).toEqual({ answers: ["even", "odd"], dumps: 2, files: ["coverageObject.vibe"], even: true, odd: true }))
+  }, 240_000)
+})

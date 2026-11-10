@@ -26,6 +26,7 @@ import { ChatModel, registration, Replies, Spend } from "./Reply.vibe"
 import * as Sequencer from "./Sequencer.vibe"
 import { unanswered } from "../src/core/flows.vibe"
 import type { Refusal } from "../src/core/decide.vibe"
+import { tourWalkthrough } from "../src/core/conversation.vibe"
 import { tourAgentRegistration } from "./Tour.vibe"
 
 /** A conversation object's storage: key-value for the log and the execution's intent, SQLite for the engine. */
@@ -112,7 +113,7 @@ export function postsOf(sequencer: Sequencer.Sequencer): Posts.Shape {
 /** The sequencer as a tour's steps reach it: record, dispatch, end, open, say, settle and wait for the end. */
 export function toursOf(sequencer: Sequencer.Sequencer, wake: () => void!! = () => Effect.void): Tours.Shape {
   return {
-    current: () => Effect.map(sequencer.snapshot(), state => state.walkthrough ?? null),
+    current: () => Effect.map(sequencer.snapshot(), tourWalkthrough),
     drive: sequencer.drive,
     control: sequencer.controlTour,
     start: sequencer.startTour,

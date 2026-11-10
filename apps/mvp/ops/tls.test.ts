@@ -36,8 +36,20 @@ test.each<[string, (fetch: typeof globalThis.fetch, io: { out: (line: string) =>
 
 test.each(["issues/track.mjs", "issue-tracking/seed.mjs", "work-links/link.mjs"])("%s, run as a script, stops with TLS checks off", async (script) => {
   const path = new URL(script, import.meta.url).pathname
-  const failed = await promisify(execFile)(process.execPath, [path, "--origin", "https://localhost:1443"], { env: { PATH: process.env.PATH, ...off } }).catch((error: { code: number; stderr: string }) => error)
+  const failed = await promisify(execFile)(process.execPath, ["--import=vibelang/register", path, "--origin", "https://localhost:1443"], { env: { PATH: process.env.PATH, ...off } }).catch((error: { code: number; stderr: string }) => error)
   expect(failed).toMatchObject({ code: 1, stderr: expect.stringContaining("TLS checks are turned off") })
+})
+
+test.each([
+  { script: "issues/render-fixtures.mjs", stream: "stderr" },
+  { script: "machine-token/issue.ts", stream: "stderr" },
+  { script: "auth/session-keys.ts", stream: "stdout" },
+] as const)("$script refuses unchecked TLS before arguments, config or network access", async ({ script, stream }) => {
+  const path = new URL(script, import.meta.url).pathname
+  const result = await promisify(execFile)(process.execPath, ["--import=vibelang/register", path], {
+    env: { PATH: process.env.PATH, ...off },
+  }).catch((error: { code: number; stdout: string; stderr: string }) => error)
+  expect(result).toMatchObject({ code: 1, [stream]: expect.stringContaining("TLS checks are turned off") })
 })
 
 afterEach(() => vi.unstubAllEnvs())

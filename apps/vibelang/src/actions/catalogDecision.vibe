@@ -1,0 +1,36 @@
+// What the action catalog says of each flow (wiki/decisions/0023-actions.md, 0018 third-lane batch 3): its least role
+// and its input. `catalog.vibe` passes the flows' tags; this file compares names only.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005).
+
+/** The tags of the flows the catalog treats specially. */
+export interface Tags {
+  readonly post: string
+  readonly tour: string
+  readonly endTour: string
+  readonly approve: string
+  readonly fold: string
+}
+
+/**
+ * The least role that runs flow `name`: anyone tours and ends a tour; only a maintainer approves or folds, as the
+ * history's own `leastRole` says (flowMachine.vibe); every other flow needs a contributor.
+ */
+//@ verify
+//@ ensures (name == tags.tour || name == tags.endTour) ==> \result == "viewer"
+//@ ensures name != tags.tour && name != tags.endTour && (name == tags.approve || name == tags.fold) ==> \result == "maintainer"
+//@ ensures name != tags.tour && name != tags.endTour && name != tags.approve && name != tags.fold ==> \result == "contributor"
+export function leastRoleOf(name: string, tags: Tags): "viewer" | "maintainer" | "contributor" {
+  if (name === tags.tour || name === tags.endTour) return "viewer"
+  return name === tags.approve || name === tags.fold ? "maintainer" : "contributor"
+}
+
+/** What flow `name` takes as input: a post's text, nothing for a tour, else JSON. */
+//@ verify
+//@ ensures name == tags.post ==> \result == "text"
+//@ ensures name != tags.post && name == tags.tour ==> \result == "none"
+//@ ensures name != tags.post && name != tags.tour ==> \result == "json"
+export function inputOf(name: string, tags: Tags): "text" | "none" | "json" {
+  return name === tags.post ? "text" : name === tags.tour ? "none" : "json"
+}

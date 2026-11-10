@@ -5,6 +5,7 @@
  * The only strings are //@ annotation expressions (parsed later by specparser).
  */
 
+import { desugarMessageUnions } from "./message-union.js";
 import { Project, Node, FunctionDeclaration, InterfaceDeclaration, SourceFile, TypeAliasDeclaration, Type, SyntaxKind, Expression, ElementAccessExpression, ScriptTarget, VariableDeclaration, ts } from "ts-morph";
 import type { TypeDeclInfo, VariantInfo } from "./types.js";
 import { initTypeParser } from "./types.js";
@@ -40,6 +41,8 @@ function withHavocKey<T>(key: string | null, fn: () => T): T {
  *  after project defaults and source overrides.
  *  Cleared at the start of every `extractModule`. */
 const _externs = new Map<string, import("./rawir.js").RawExtern>();
+/** Constants a copied cross-file contract names from its own module, by the name the contract reads. */
+const _externContractConsts = new Map<string, VariableDeclaration>();
 /** Signature types of *kept* externs, for the imported-type resolver: a type
  *  reachable ONLY through an imported function's signature (e.g. an extern
  *  returning PresentFact that no local signature mentions) must still be
@@ -64,9 +67,11 @@ let _validateDependency: (source: SourceFile) => void = () => {};
 let _destrCounter = 0;
 
 /** Register the call's callee as a cross-file extern if applicable, then
- *  walk the source declaration's body for nested cross-file calls (so the
- *  lifted `requires`/`ensures` see all the symbols they reference). Idempotent
- *  via the `_externs` dedup. */
+ *  walk the source declaration's body for nested calls outside the module being
+ *  extracted (so the lifted `requires`/`ensures` see all the symbols they
+ *  reference). A helper beside the callee, in the callee's own file, is such a
+ *  call: nested calls are judged against `sourceFile`, the extracted module,
+ *  never against the callee's file. Idempotent via the `_externs` dedup. */
 function registerExternIfCrossFile(
   callee: import("ts-morph").PropertyAccessExpression | import("ts-morph").Identifier,
   sourceFile: SourceFile,
@@ -75,6 +80,7 @@ function registerExternIfCrossFile(
   const ext = detectCrossFileExtern(callee, sourceFile, sigTypes);
   if (!ext || _externs.has(ext.qualified)) return;
   _externs.set(ext.qualified, ext);
+  registerContractConstants(callee, ext, sourceFile);
   // Only now that the extern is kept do its signature types become resolver
   // seeds — see `_externSigTypes`.
   _externSigTypes.push(...sigTypes);
@@ -88,15 +94,64 @@ function registerExternIfCrossFile(
     d => d.getSourceFile().getFilePath() !== sourceFile.getFilePath(),
   );
   if (!sourceDecl) return;
-  const sourceSF = sourceDecl.getSourceFile();
   const body = (sourceDecl as any).getBody?.();
   if (!body) return;
   for (const inner of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     const innerCallee = inner.getExpression();
     if (Node.isPropertyAccessExpression(innerCallee) || Node.isIdentifier(innerCallee)) {
-      registerExternIfCrossFile(innerCallee, sourceSF);
+      registerExternIfCrossFile(innerCallee, sourceFile);
     }
   }
+}
+
+/** A module-level const another module may copy: a non-function value with a type the extractor reads. */
+function copyableConst(decl: VariableDeclaration): boolean {
+  if (decl.getSourceFile().getFilePath().endsWith(".d.ts")) return false;
+  const list = decl.getParent();
+  if (!Node.isVariableDeclarationList(list) || !(list.getFlags() & 2 /* const */)) return false;
+  if (!Node.isVariableStatement(list.getParent())) return false;
+  const init = decl.getInitializer();
+  if (!init || Node.isArrowFunction(init) || Node.isFunctionExpression(init)) return false;
+  return !typeToString(decl.getType()).startsWith("__");
+}
+
+/** A copied contract keeps the meaning it has in its own module: every module-level constant of that module it
+ *  names (not as a field) is declared beside it, as `importedConstants` declares a named import. */
+function registerContractConstants(
+  callee: import("ts-morph").PropertyAccessExpression | import("ts-morph").Identifier,
+  ext: import("./rawir.js").RawExtern,
+  sourceFile: SourceFile,
+): void {
+  let symbol = callee.getSymbol();
+  const aliased = symbol?.getAliasedSymbol();
+  if (aliased) symbol = aliased;
+  const home = symbol?.getDeclarations().find(d => d.getSourceFile().getFilePath() !== sourceFile.getFilePath())?.getSourceFile();
+  if (!home) return;
+  const text = [...ext.requires, ...ext.ensures].join("\n");
+  for (const statement of home.getVariableStatements()) {
+    for (const decl of statement.getDeclarations()) {
+      const name = decl.getName();
+      if (!new RegExp(`(?<![.\\w$])${name.replace(/\$/g, "\\$")}(?![\\w$])`).test(text)) continue;
+      if (copyableConst(decl)) {
+        const prior = _externContractConsts.get(name);
+        if (prior && prior !== decl) {
+          throw new Error(`imported const '${name}' from ${home.getBaseName()} collides with another contract's constant in ${prior.getSourceFile().getBaseName()}`);
+        }
+        _externContractConsts.set(name, decl);
+      }
+    }
+  }
+}
+
+/** Whether `name` in `sourceFile` is `decl` itself, declared or imported by name. */
+function sameConstant(sourceFile: SourceFile, name: string, decl: VariableDeclaration): boolean {
+  for (const imp of sourceFile.getImportDeclarations()) {
+    for (const spec of imp.getNamedImports()) {
+      const local = spec.getAliasNode() ?? spec.getNameNode();
+      if (local.getText() === name && crossFileConst(local, sourceFile.getFilePath()) === decl) return true;
+    }
+  }
+  return false;
 }
 
 /** The const declaration an identifier names, when it lives in another module. */
@@ -120,13 +175,15 @@ function crossFileConst(id: Node, currentPath: string): VariableDeclaration | un
  *  it is read by (`import { A as B }` declares `B`), so a contract or body that
  *  reads it resolves to the declared value. A copied name that collides with a
  *  different constant is refused rather than merged. */
-function importedConstants(sourceFile: SourceFile, localNames: ReadonlySet<string>): RawConst[] {
+function importedConstants(sourceFile: SourceFile, localNames: ReadonlySet<string>,
+  named = true, extra: ReadonlyMap<string, VariableDeclaration> = new Map()): RawConst[] {
   const currentPath = sourceFile.getFilePath();
   const out: RawConst[] = [];
   const copied = new Map<string, VariableDeclaration>();
   const copy = (name: string, decl: VariableDeclaration): void => {
     const prior = copied.get(name);
     if (prior === decl) return;
+    if (!prior && localNames.has(name) && sameConstant(sourceFile, name, decl)) return;
     if (prior || localNames.has(name)) {
       throw new Error(`imported const '${name}' from ${decl.getSourceFile().getBaseName()} collides with another constant of that name in ${sourceFile.getBaseName()}`);
     }
@@ -139,7 +196,7 @@ function importedConstants(sourceFile: SourceFile, localNames: ReadonlySet<strin
     }
     out.push({ name, tsType: typeToString(decl.getType()), value: extractExpr(init as Expression) });
   };
-  for (const imp of sourceFile.getImportDeclarations()) {
+  for (const imp of named ? sourceFile.getImportDeclarations() : []) {
     if (imp.isTypeOnly()) continue;
     for (const spec of imp.getNamedImports()) {
       if (spec.isTypeOnly()) continue;
@@ -148,6 +205,7 @@ function importedConstants(sourceFile: SourceFile, localNames: ReadonlySet<strin
       if (decl) copy(local.getText(), decl);
     }
   }
+  for (const [name, decl] of extra) copy(name, decl);
   return out;
 }
 
@@ -474,7 +532,15 @@ function _eraseGenerics(tsType: string): string {
   }
   if (tsType.endsWith("[]")) return _eraseGenerics(tsType.slice(0, -2)) + "[]";
   if (_typeParamMap.has(tsType)) return _typeParamMap.get(tsType)!;
-  return tsType;
+  // Inside a type expression (`ReadonlyArray<T>`, `readonly T[]`, `Map<K, T>`,
+  // `[T, number]`) the parameter is one identifier token. Leave property names
+  // (`{ T: number }`) and qualified names (`NS.T`) alone.
+  return tsType.replace(/[A-Za-z_$][\w$]*/g, (token, offset: number, text: string) => {
+    const bound = _typeParamMap.get(token);
+    if (bound === undefined) return token;
+    if (text[offset - 1] === "." || /^\s*\??\s*:/.test(text.slice(offset + token.length))) return token;
+    return bound;
+  });
 }
 
 function extractExpr(node: Expression): RawExpr {
@@ -870,7 +936,7 @@ function extractExpr(node: Expression): RawExpr {
 // ── Annotation parsing ───────────────────────────────────────
 
 const PREFIX = "//@ ";
-const KEYWORDS = ["requires", "ensures", "contract", "invariant", "decreases", "done_with", "type"] as const;
+const KEYWORDS = ["requires", "ensures", "contract", "invariant", "decreases", "done_with", "type", "reveal"] as const;
 export type AnnotKind = (typeof KEYWORDS)[number];
 interface Annotation { kind: AnnotKind; expr: string }
 
@@ -1099,7 +1165,10 @@ function extractTypeDecl(decl: TypeAliasDeclaration, extraDecls?: TypeDeclInfo[]
     const elem = type.getArrayElementTypeOrThrow();
     return { name, typeParams: tpField, kind: "alias", aliasOf: `${typeToString(elem)}[]` };
   }
-  if (type.isObject() || type.isIntersection()) return extractRecord(name, type, decl, undefined, extraDecls);
+  if (type.isObject() || type.isIntersection()) {
+    const record = extractRecord(name, type, decl, undefined, extraDecls);
+    return record && tpField ? { ...record, typeParams: tpField } : record;
+  }
   // Primitive type alias: type TaskId = number → alias
   const tsType = typeToString(type);
   if (tsType !== name) return { name, kind: "alias", aliasOf: tsType };
@@ -1116,7 +1185,10 @@ function extractInterface(decl: InterfaceDeclaration, extraDecls?: TypeDeclInfo[
       if (match) overrides.set(member.getName(), match[1]);
     }
   }
-  return extractRecord(decl.getName(), decl.getType(), decl, overrides, extraDecls);
+  const record = extractRecord(decl.getName(), decl.getType(), decl, overrides, extraDecls);
+  // A generic record keeps its type parameters, as generic unions do.
+  const typeParams = decl.getTypeParameters().map(tp => tp.getName());
+  return record && typeParams.length > 0 ? { ...record, typeParams } : record;
 }
 
 function extractRecord(name: string, type: Type, locationNode: Node, overrides?: Map<string, string>, extraDecls?: TypeDeclInfo[]): TypeDeclInfo | null {
@@ -1193,10 +1265,13 @@ function findDiscriminant(members: Type[]): string | null {
  *  plain reference text is used: inline object literals (containing `{`)
  *  keep the `__type` marker so record synthesis can handle them. */
 function declaredTypeTextIfBetter(propDecl: Node | undefined, tsType: string): string {
-  if (!tsType.includes("__type") || !propDecl) return tsType;
+  if (!propDecl) return tsType;
   const tn = (propDecl as { getTypeNode?: () => Node | undefined }).getTypeNode?.();
   if (!tn) return tsType;
   const text = tn.getText();
+  // The checker erases `type real = number` to `number`, which would model the field as an integer.
+  if (text === "real" && /^(?:undefined \| )?number(?: \| undefined)?$/.test(tsType)) return text;
+  if (!tsType.includes("__type")) return tsType;
   if (text.includes("__type") || text.includes("{")) return tsType;
   return text;
 }
@@ -2206,6 +2281,8 @@ function extractFunctionInner(fn: FunctionDeclaration, parentAnnotations?: Annot
     contract: annots.filter(a => a.kind === "contract").map(a => a.expr),
     decreases: annots.find(a => a.kind === "decreases")?.expr ?? null,
     pure: hasPureAnnotation(fn, body && Node.isBlock(body) ? body.getStatements() as Node[] : undefined),
+    opaque: hasBareFunctionAnnotation(fn, "opaque", body && Node.isBlock(body) ? body.getStatements() as Node[] : undefined),
+    reveals: annots.filter(a => a.kind === "reveal").map(a => a.expr),
     autohavoc: false,  // set in extractModule (file-level directive or per-function)
     typeAnnotations,
     body: extractedBody,
@@ -2229,7 +2306,26 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   // `extractExpr` during call extraction (only symbols *actually used* end up
   // here), deduped by qualified name.
   _externs.clear();
+  _externContractConsts.clear();
   _externSigTypes.length = 0;
+
+  // A contract may call an imported function that no body calls (a mutant, or a
+  // clause stated in terms of the import). Body extraction would never declare
+  // it, so register every named import a module contract line calls.
+  const contractText = sourceFile.getFullText().split("\n")
+    .filter(line => /^[ \t]*\/\/@[ \t]+(?:requires|ensures|invariant|assert|decreases)\b/.test(line))
+    .join("\n");
+  if (contractText !== "") {
+    for (const imp of sourceFile.getImportDeclarations()) {
+      if (imp.isTypeOnly()) continue;
+      for (const named of imp.getNamedImports()) {
+        if (named.isTypeOnly()) continue;
+        const local = named.getAliasNode() ?? named.getNameNode();
+        if (!Node.isIdentifier(local)) continue;
+        if (new RegExp(String.raw`\b${local.getText()}\s*\(`).test(contractText)) registerExternIfCrossFile(local, sourceFile);
+      }
+    }
+  }
 
   // Match a `//@ <kw>` directive only as the first non-whitespace on a line,
   // so prose mentioning an annotation does not activate it.
@@ -2541,14 +2637,18 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   function resolveTypeNodeRefs(tn: Node | undefined) {
     if (!tn) return;
     if (Node.isTypeReference(tn)) {
-      const sym = tn.getTypeName().getSymbol();
+      // An imported name's symbol is the import; its declarations are the aliased symbol's.
+      const named = tn.getTypeName().getSymbol();
+      const sym = named?.isAlias() ? named.getAliasedSymbol() ?? named : named;
       if (sym) {
         for (const d of sym.getDeclarations()) {
-          // Skip ambient/built-in declarations: `.d.ts` files (lib.dom.d.ts,
+          // Skip ambient/built-in declarations: library `.d.ts` files (lib.dom.d.ts,
           // node_modules typings) describe runtime/host types, not user code
           // — backends map these directly (`Map<K,V>` → `map<K,V>`) without
-          // needing the interface dump.
-          if (d.getSourceFile().getFilePath().endsWith(".d.ts")) continue;
+          // needing the interface dump. A project's own declaration file, such
+          // as a module's emitted declaration read through `import type`, is
+          // user code and is read.
+          if (d.getSourceFile().isDeclarationFile() && d.getSourceFile().isInNodeModules()) continue;
           let added: TypeDeclInfo | null = null;
           if (Node.isTypeAliasDeclaration(d) && !knownTypeNames.has(d.getName())) {
             const extra: TypeDeclInfo[] = [];
@@ -2712,8 +2812,13 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
     // WRAPPERS (`Out[]`/`Msg | undefined` → `Out`/`Msg`), so a function returning
     // a local `Out[]` keeps `Out`. Wrappers only — never dig into generic args
     // (`Omit<FilePathOptions, …>` must not pull in the inner type).
+    // `ReadonlyArray<Out>`, `Array<Out>` and `readonly Out[]` are the same array wrapper.
     for (const name of sigTypes) {
-      const base = name.replace(/\s*\|\s*(undefined|null)\s*$/, "").replace(/(\[\])+$/, "").trim();
+      let base = name.replace(/\s*\|\s*(undefined|null)\s*$/, "").trim();
+      for (let prior = ""; prior !== base; ) {
+        prior = base;
+        base = base.replace(/^readonly\s+/, "").replace(/(\[\])+$/, "").replace(/^(?:Readonly)?Array<(.+)>$/, "$1").trim();
+      }
       if (base !== name && /^[A-Za-z_]\w*$/.test(base)) markType(base);
     }
     typeDecls.splice(0, typeDecls.length, ...typeDecls.filter(d => neededTypes.has(d.name) || declaredNames.has(d.name)));
@@ -2764,7 +2869,11 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
     const name = sym?.getName();
     if (name && !name.startsWith("__") && !knownTypes.has(name) && !builtins.has(name) && (t.isObject() || t.isIntersection())) {
       const extra: TypeDeclInfo[] = [];
-      const info = extractRecord(name, t, locationNode, undefined, extra);
+      // A generic interface is declared once over its own parameters, not over this use's type arguments.
+      const declared = sym?.getDeclarations()[0];
+      const info = declared && Node.isInterfaceDeclaration(declared) && declared.getTypeParameters().length > 0
+        ? extractInterface(declared, extra)
+        : extractRecord(name, t, locationNode, undefined, extra);
       if (info) {
         typeDecls.push(...extra); typeDecls.push(info); knownTypes.add(name);
         // Recursively resolve types referenced in this type's fields
@@ -2896,6 +3005,10 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   // union stringification outside of an extractModule call.
   _synthArrayUnions = null;
 
+  // Constants that copied cross-file contracts name, known only once every body has registered its externs. A
+  // constant this module already declares or imports is the same declaration; any other same-named one is refused.
+  constants.unshift(...importedConstants(sourceFile, new Set(constants.map(c => c.name)), false, _externContractConsts));
+
   return {
     file: sourceFile.getFilePath(),
     typeDecls,
@@ -2912,5 +3025,7 @@ if (process.argv[1]?.match(/extract\.(ts|js)$/)) {
   const file = process.argv[2];
   if (!file) { console.error("Usage: extract <file.ts>"); process.exit(1); }
   const proj = new Project({ compilerOptions: { strict: true, target: ScriptTarget.ESNext, lib: ["lib.esnext.d.ts"] } });
-  console.log(JSON.stringify(extractModule(proj.addSourceFileAtPath(file)), null, 2));
+  const sourceFile = proj.addSourceFileAtPath(file);
+  desugarMessageUnions(sourceFile);
+  console.log(JSON.stringify(extractModule(sourceFile), null, 2));
 }

@@ -7,6 +7,7 @@ import * as Directory from "../../worker/ActionDirectory.vibe"
 import * as Runs from "../../worker/ActionRuns.vibe"
 import * as Identity from "../../worker/ActionIdentity.vibe"
 import * as Objects from "../../worker/Objects.vibe"
+import { chargeKeyOf } from "../../worker/budgetDecision.vibe"
 import { Unreachable } from "../../worker/Unreachable.vibe"
 import { objectStorage } from "./objectStorage.ts"
 
@@ -40,13 +41,43 @@ export effect function world() {
     start: effect (request, role) => try (try object(request.id)).host.start(request, role),
     cancel: effect (id, role, owner) => try Effect.mapError((try object(id)).host.cancel(id, role, owner), () => new Unreachable({ what: "action" })),
   }, authority)
-  const budget = try Objects.budget(storage, 1000)
-  const spend = { admit: (_day: string) => budget.admit(), spend: (_day: string, reply: string, tokens: number) => budget.spend(reply, tokens) }
+  const budget = try Objects.budget(storage, 10_000_000)
+  // The live RPC adapter scopes a daily ledger's keys by host; independent objects may have identical reply ids.
+  const spendFor = (host: string) => ({
+    admit: (_day: string, reply: string, ceiling: number) => budget.admit(chargeKeyOf(host, reply), ceiling),
+    spend: (_day: string, reply: string, tokens: number, reported: boolean, ceiling: number) => budget.spend(chargeKeyOf(host, reply), tokens, reported, ceiling),
+  })
+  const spend = spendFor("world")
   const model = { model: undefined, unusable: "no-model" }
-  return { accounts, person, object, directory, spend, model, authority }
+  return { accounts, person, object, directory, spend, spendFor, model, authority }
 }
 export function request(id: string, flow: string, input: Schema.Json, owner: string): RunRequest {
   return { id, flow, input, door: "button", actor: "person", owner, name: "will" }
 }
 export const history = MockMythical({ role: "maintainer", name: "will", agent: false }, () => succeed(emptyHistory))
 
+type Sequencer = Effect.Success<ReturnType<typeof Objects.conversation>>
+/** The host stops once `write` commits: that write and every later one on this incarnation die, as an evicted object's do. */
+export function stopsAfter(sequencer: Sequencer, write: keyof Sequencer): Sequencer {
+  let stopped = false
+  const halt = () => Effect.die(new Error("host stopped"))
+  const entries = Object.entries(sequencer).map(([key, value]) => {
+    if (typeof value !== "function") return [key, value]
+    const call = value as (...args: Array<unknown>) => unknown!unknown
+    return [key, (...args: Array<unknown>) => stopped ? halt()
+      : key === write ? Effect.andThen(call(...args), Effect.suspend(() => { stopped = true; return halt() }))
+      : call(...args)]
+  })
+  return Object.fromEntries(entries) as Sequencer
+}
+
+/** One object's storage, a first incarnation that stops after `write`, and fresh incarnations over the same storage. */
+export effect function interrupted(id: string, write: keyof Sequencer, authority: Parameters<typeof Runs.make>[3]) {
+  const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+  const first = Runs.make(id, storage, stopsAfter(try Objects.conversation(storage), write), authority)
+  const restart = effect () => {
+    const sequencer = try Objects.conversation(storage)
+    return { sequencer, host: Runs.make(id, storage, sequencer, authority) }
+  }
+  return { storage, first, restart }
+}

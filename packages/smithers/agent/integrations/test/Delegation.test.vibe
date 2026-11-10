@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest"
-import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServerRequest } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { Core, GitHub } from "../src/index.ts"
 import * as Delegation from "../src/github/Delegation.vibe"
@@ -167,7 +167,9 @@ it.effect("reads only allowed GET paths", () => effect {
   const f = try fixture()
   const allowed = try f.call("read", { path: "/repos/smithersai/vibelang" }, "")
   const denied = try f.call("read", { path: "/user" }, "")
-  try Effect.try(() => { expect(allowed).toMatchObject({ id: 11 }); expect(denied).toBe("forbidden") })
+  // GitHub's 404 on a read is an answer, not an outage: the site's helpers read it as none.
+  const absent = try f.call("read", { path: "/repos/smithersai/vibelang/git/ref/heads/none" }, "")
+  try Effect.try(() => { expect(allowed).toMatchObject({ id: 11 }); expect(denied).toBe("forbidden"); expect(absent).toBe("missing") })
 })
 it.effect("limits writes per delegation per hour", () => effect {
   const f = try fixture()
@@ -255,6 +257,20 @@ it.effect("revoking one site keeps the token while another site's delegation liv
   const kept = f.world.revoked.length
   try f.server.revoke(other)
   try Effect.try(() => { expect(kept).toBe(1); expect(f.world.revoked).toEqual(["stored-token", "second"]) })
+})
+it.effect("a failed revoke is logged and counted as revoke failed", () => effect {
+  const f = try fixture(blank({ revokeFails: true }))
+  const outcomes: Array<Readonly<Record<string, unknown>>> = []
+  const logger = Logger.make((entry) => {
+    if (entry.message === "github.delegation" || Array.isArray(entry.message) && entry.message.includes("github.delegation")) outcomes.push(entry.fiber.getRef(References.CurrentLogAnnotations))
+  })
+  provide Logger.CurrentLoggers = new Set([logger]) {
+    try f.server.revoke(origin)
+  }
+  try Effect.try(() => {
+    expect(f.world.revoked).toEqual(["stored-token"])
+    expect(outcomes).toContainEqual({ step: "revoke", outcome: "failed" })
+  })
 })
 it.effect("GitHub's revocation event ends the connection without calling GitHub", () => effect {
   const f = try fixture()
@@ -378,12 +394,12 @@ it.effect("serve answers one refused status per reason and bounds its body", () 
   const stripped = HttpClientRequest.post(brokerOrigin + Delegation.ROUTE).pipe(HttpClientRequest.bodyText("x".repeat(Delegation.MAX_BODY + 1), "application/json"), HttpClientRequest.removeHeader("content-length"))
   const headerless = try Delegation.serve(f.server).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(stripped))))
   const statuses: Array<number> = [wrongMethod.status, large.status, refused.status, headerless.status]
-  for (const reason of ["connect", "install", "fork", "forbidden", "unavailable", "unknown", "key_conflict"] as const) {
+  for (const reason of ["connect", "install", "fork", "forbidden", "unavailable", "unknown", "key_conflict", "missing"] as const) {
     const response = try post({ handle: () => fail(new Delegation.DelegationRefused({ reason })) }, "{}")
     statuses.push(response.status)
   }
   const accepted = try post({ handle: () => succeed({ ok: true }) }, "{}")
-  try Effect.try(() => { expect(statuses).toEqual([405, 413, 403, 413, 401, 401, 401, 403, 503, 409, 409]); expect(accepted.status).toBe(200) })
+  try Effect.try(() => { expect(statuses).toEqual([405, 413, 403, 413, 401, 401, 401, 403, 503, 409, 409, 404]); expect(accepted.status).toBe(200) })
 })
 it.effect("the durable store keeps rows across reopening and claims a nonce once, pruning expired ones", () => effect {
   const { openBrokerSqlite, faultySql } = try promise(() => import("./Fixture.ts"))
@@ -467,6 +483,9 @@ it.live("the site client signs, calls the one route, and maps every answer", () 
   const readRefused = try Effect.result(reader.request("GET", "/repos/smithersai/vibelang"))
   override = { status: 409, body: { reason: "unknown" } }
   const unknownRead = try Effect.result(reader.request("GET", "/repos/smithersai/vibelang"))
+  override = { status: 404, body: { reason: "missing" } }
+  const missingRead = try Effect.result(reader.request("GET", "/repos/smithersai/vibelang/git/ref/heads/none"))
+  const noBranch = try GitHub.Refs.getBranch("smithersai", "vibelang", "none").pipe(Effect.provideService(GitHubClient, reader))
   override = { status: 200, body: "unused" }
   try promise(() => server.close())
   const unreachable = try Effect.result(live(keyed.perform(key)))
@@ -488,7 +507,28 @@ it.live("the site client signs, calls the one route, and maps every answer", () 
     expect([postDie._tag, countDie._tag]).toEqual(["Failure", "Failure"])
     expect(readRefused._tag === "Failure" && Delegation.reasonOf(readRefused.failure)).toBe("connect")
     expect(unknownRead._tag === "Failure" && unknownRead.failure.details?.["outcomeUnknown"]).toBe(true)
+    expect(missingRead._tag === "Failure" && [missingRead.failure.details?.["status"], Delegation.reasonOf(missingRead.failure)]).toEqual([404, "missing"])
+    expect(noBranch).toEqual(Option.none())
     expect(unreachable._tag === "Failure" && unreachable.failure.reason).toBe("unavailable")
+  })
+})
+
+it.effect("a delegated read keeps its query: a read at a commit reads that commit", () => effect {
+  const f = try fixture()
+  // The site's network reaches the broker's own route; the broker's GitHub records each path it is asked for.
+  const http = HttpClient.make((request) => effect {
+    const web = try Effect.orDie(HttpClientRequest.toWeb(request))
+    const answer = try Delegation.serve(f.server).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web)))
+    return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(answer))
+  })
+  const reader = (try Delegation.site({ origin, brokerOrigin, secret })).client(7, f.installed.delegation, http)
+  const path = "/repos/smithersai/vibelang/contents/docs/design/vips/a.md"
+  try reader.request("GET", path, undefined, { query: { ref: "a".repeat(40), skipped: undefined } })
+  try reader.request("GET", `${path}?ref=main`, undefined, { query: { per_page: 1 } })
+  try reader.request("GET", path, undefined, { query: {} })
+  try Effect.try(() => {
+    // The first read proves the repository once (its immutable id), then every read keeps its query.
+    expect(f.world.calls).toEqual(["GET /repos/smithersai/vibelang", `GET ${path}?ref=${"a".repeat(40)}`, `GET ${path}?ref=main&per_page=1`, `GET ${path}`])
   })
 })
 
@@ -529,4 +569,136 @@ it("routes a call by the person named in its URL", () => {
   expect(Delegation.handles("https://smithers.sh" + Delegation.ROUTE + "?person=7")).toBe(true)
   expect(Delegation.handles("https://smithers.sh/api/other")).toBe(false)
   for (const bad of ["", "?person=0", "?person=-1", "?person=1.5", "?person=abc", "?person=99999999999999999999", "?person=9999999999999999"]) expect(Delegation.personOf("https://smithers.sh" + Delegation.ROUTE + bad)).toBeUndefined()
+})
+
+const routed = (body: string, options: { readonly person?: string; readonly method?: "POST" | "GET"; readonly length?: string } = {}) => effect {
+  const opened: Array<number> = []
+  const url = brokerOrigin + Delegation.ROUTE + "?person=" + (options.person ?? "7")
+  let request = options.method === "GET" ? HttpClientRequest.get(url) : HttpClientRequest.post(url).pipe(HttpClientRequest.bodyText(body, "application/json"))
+  if (options.length !== undefined) request = HttpClientRequest.removeHeader(request, "content-length")
+  const delivered = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(request))
+  const server = options.length === undefined ? delivered : delivered.modify({ headers: { ...delivered.headers, "content-length": options.length } })
+  const forwarded: Array<string> = []
+  const response = try Delegation.route({ origin: brokerOrigin, sites }, (person, inner) => effect {
+    opened.push(person)
+    forwarded.push(try inner.text)
+    return HttpServerResponse.jsonUnsafe({ ok: person })
+  }).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, server))
+  const text = try promise(() => HttpServerResponse.toWeb(response).text())
+  return { status: response.status, text, opened, forwarded }
+}
+it.effect("the router opens a person's object only for a call that site signed for that person", () => effect {
+  const site = try Delegation.signer({ origin, brokerOrigin, secret })
+  const forged = try Delegation.signer({ origin, brokerOrigin, secret: Redacted.make("z".repeat(32)) })
+  const foreign = try Delegation.signer({ origin: "https://evil.example", brokerOrigin, secret })
+  const elsewhere = try Delegation.signer({ origin, brokerOrigin: "https://other.example", secret })
+  const call = { person: 7, delegation: "d", mode: "perform" as const, key, payload: create }
+  const signed = JSON.stringify(try site.envelope(call))
+  const accepted = try routed(signed)
+  const refusals = [
+    try routed(JSON.stringify({ origin, person: 7, request: "", payload: JSON.stringify(create) })),
+    try routed(JSON.stringify(try forged.envelope(call))),
+    try routed(JSON.stringify(try foreign.envelope(call))),
+    try routed(JSON.stringify(try elsewhere.envelope(call))),
+    try routed(signed, { person: "8" }),
+    try routed(JSON.stringify(try site.envelope({ ...call, person: 8 }))),
+    try routed(JSON.stringify({ ...(try Effect.try(() => JSON.parse(signed) as Record<string, unknown>)), payload: "{}" })),
+    try routed(JSON.stringify(try site.envelope({ ...call, actor: "agent" }))),
+    try routed("not json"),
+    try routed(signed, { person: "x" }),
+  ]
+  try TestClock.adjust(Delegation.CALL_TTL + 1)
+  const expired = try routed(signed)
+  const wrongMethod = try routed("", { method: "GET" })
+  const large = try routed(signed, { length: String(Delegation.MAX_BODY + 1) })
+  const oversized = try routed("x".repeat(Delegation.MAX_BODY + 1), { length: "1" })
+  try Effect.try(() => {
+    expect(accepted).toEqual({ status: 200, text: JSON.stringify({ ok: 7 }), opened: [7], forwarded: [signed] })
+    for (const refusal of [...refusals, expired]) expect(refusal).toEqual({ status: 403, text: JSON.stringify({ reason: "forbidden" }), opened: [], forwarded: [] })
+    expect([wrongMethod.status, large.status, oversized.status]).toEqual([405, 413, 413])
+    expect([...wrongMethod.opened, ...large.opened, ...oversized.opened]).toEqual([])
+  })
+})
+it.effect("an expired delegation neither blocks the last Disconnect from revoking the token nor outlives it", () => effect {
+  const f = try fixture()
+  try f.server.install({ origin: other, login: "ada", tokens: { accessToken: Redacted.make("second"), refreshToken: null, expiresAt: null } })
+  // The first site's delegation lapses; the person connects the other site again, which renews only its own row.
+  try TestClock.adjust("30 days")
+  try f.server.install({ origin: other, login: "ada", tokens: { accessToken: Redacted.make("third"), refreshToken: null, expiresAt: null } })
+  const listed = try f.server.connections()
+  try f.server.revoke(other)
+  const rows = try f.store.list("delegation/")
+  const credential = try f.store.get("credential")
+  try Effect.try(() => {
+    expect(listed.map((row) => row.origin)).toEqual([other])
+    expect(f.world.revoked).toEqual(["stored-token", "second", "third"])
+    expect(rows).toEqual([])
+    expect(credential).toBeUndefined()
+  })
+})
+it.effect("listing connections deletes the delegations that expired", () => effect {
+  const f = try fixture()
+  try TestClock.adjust("30 days")
+  const listed = try f.server.connections()
+  const rows = try f.store.list("delegation/")
+  try Effect.try(() => {
+    expect(listed).toEqual([])
+    expect(rows).toEqual([])
+  })
+})
+it.effect("an unreadable delegation row does not keep the token after the last Disconnect", () => effect {
+  const f = try fixture()
+  try f.store.put("delegation/corrupt", { origin: 1 })
+  try f.server.revoke(origin)
+  try Effect.try(() => expect(f.world.revoked).toEqual(["stored-token"]))
+})
+it.effect("refuses to serve a registry holding a grant that fails validation", () => effect {
+  const f = try fixture()
+  const made = try Effect.result(Delegation.make({ origin: brokerOrigin, person: 7, sites: [{ origin, secret, grants: [{ ...grants[0]!, branchPrefix: "" }] }], keyring, store: f.store, journal: f.journal, github: f.github, act: () => (program) => program as never }))
+  try Effect.try(() => expect(made._tag === "Failure" ? made.failure.reason : "made").toBe("unavailable"))
+})
+it.effect("GitHub's permanent refusal of a write answers forbidden, never a retry, and costs no write budget", () => effect {
+  const rejected = try fixture(blank({ status: 422 }))
+  const missingUpstream = try fixture(blank({ status: 404 }))
+  const onFork = try fixture(blank({ status: 422 }))
+  const answers = [try rejected.call("perform", create), try missingUpstream.call("perform", create), try onFork.call("perform", branchOp)]
+  // Sixty refusals in one hour, then a write GitHub accepts.
+  for (let index = 0; index < Delegation.WRITES_PER_HOUR; index++) try rejected.call("perform", create, index.toString(16).padStart(64, "0"))
+  delete rejected.world.status
+  const accepted = try rejected.call("perform", create, "e".repeat(64))
+  try Effect.try(() => {
+    expect(answers).toEqual(["forbidden", "forbidden", "forbidden"])
+    expect(accepted).toEqual({ number: 9, id: 5 })
+  })
+})
+it.effect("a write's budget counts each write once, when GitHub accepts it", () => effect {
+  const f = try fixture()
+  for (let index = 0; index < Delegation.WRITES_PER_HOUR; index++) try f.call("perform", create, index.toString(16).padStart(64, "0"))
+  const over = try f.call("perform", create, "e".repeat(64))
+  const replay = try f.call("perform", create, "0".repeat(64))
+  try Effect.try(() => {
+    expect(over).toBe("unavailable")
+    expect(replay).toEqual({ number: 9, id: 5 })
+  })
+})
+it.effect("a read reaches only the grant's repository by its id or the person's fork of it, proven once", () => effect {
+  const read = (f: Effect.Success<ReturnType<typeof fixture>>, path: string, key = "") => f.call("read", { path }, key)
+  const unrelated = try fixture(blank({ fork: { id: 12, fork: false } }))
+  const foreignFork = try fixture(blank({ fork: { id: 12, fork: true, parent: { id: 44 } } }))
+  const taken = try fixture(blank({ upstreamId: 99 }))
+  const fine = try fixture()
+  const answers = [
+    try read(unrelated, "/repos/ada/vibelang/contents/notes/private.md"),
+    try read(foreignFork, "/repos/ada/vibelang/contents/docs/x.md"),
+    try read(taken, "/repos/smithersai/vibelang/issues"),
+  ]
+  const first = try read(fine, "/repos/smithersai/vibelang/issues")
+  const second = try read(fine, "/repos/SmithersAI/VibeLang/issues/1")
+  const ownFork = try read(fine, "/repos/ada/vibelang/contents/docs/x.md")
+  try Effect.try(() => {
+    expect(answers).toEqual(["forbidden", "forbidden", "forbidden"])
+    expect([first, second, ownFork]).toEqual([{}, {}, {}])
+    expect(fine.world.calls.filter((call) => call === "GET /repos/smithersai/vibelang" || call === "GET /repos/SmithersAI/VibeLang")).toHaveLength(1)
+    expect(unrelated.world.calls).not.toContain("GET /repos/ada/vibelang/contents/notes/private.md")
+  })
 })

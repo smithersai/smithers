@@ -1,0 +1,63 @@
+// A reply whose Budget object is unreachable fails visibly at the reply's engine deadline (0015), the same as any
+// failed reply: ReplyFailed, so the person sees it and Retry. The unreachable object is an injected faulty Spend.
+import { describe, expect, it } from "@effect/vitest"
+import { TestClock } from "effect/testing"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import type { Event } from "../src/core/conversation.vibe"
+import { Reply, Tours } from "../src/core/flows.vibe"
+import { faultyChatModel } from "./support/faultyChatModel.vibe"
+import { repliesOf, toursOf } from "../worker/Objects.vibe"
+import { readerOver } from "../worker/HistoryObject.vibe"
+import { HistoryTools } from "../worker/HistoryTools.vibe"
+import { ChatModel, registration, Replies, REASONS, Spend } from "../worker/Reply.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+
+/** Steps virtual time a minute at a time, letting real promises settle between steps. */
+effect function settleWithin<A, E>(fiber: Fiber.Fiber<A, E>, limitMinutes: number) {
+  let elapsed = 0
+  while (fiber.pollUnsafe() === undefined && elapsed < limitMinutes) {
+    try TestClock.withLive(sleep("5 millis"))
+    try TestClock.adjust("1 minute")
+    elapsed += 1
+  }
+  try TestClock.withLive(sleep("5 millis"))
+  return { elapsed, exit: fiber.pollUnsafe() }
+}
+
+describe("a reply whose Budget object is unreachable", () => {
+  it.effect("fails visibly within ten minutes instead of retrying forever", () => scoped(effect {
+    const events = try Ref.make<ReadonlyArray<Event>>([])
+    const sequencer = try Sequencer.make(
+      { read: () => Ref.get(events), write: (event) => Ref.update(events, (events) => [...events, event]) },
+      { start: () => Effect.void, tour: () => Effect.void },
+    )
+    let admissions = 0
+    const unreachable: Spend.Shape = {
+      admit: () => Effect.suspend(() => { admissions += 1; return Effect.fail(new Unreachable({ what: "budget" })) }),
+      spend: () => Effect.fail(new Unreachable({ what: "budget" })),
+    }
+    const model = try faultyChatModel()
+    const flows = registration.pipe(
+      Layer.provideMerge(FlowEngine.layerMemory),
+      Layer.provide(Layer.mergeAll(
+        Layer.succeed(Replies, repliesOf(sequencer)), Layer.succeed(Tours, toursOf(sequencer)), Layer.succeed(Spend, unreachable), Layer.succeed(ChatModel, model),
+        Layer.succeed(HistoryTools, { history: readerOver(() => Effect.fail(new Unreachable({ what: "history" })), () => Effect.fail(new Unreachable({ what: "history" }))) }),
+      )),
+    )
+    const engine = Context.get(try Layer.build(flows), FlowRuntime.FlowRuntime)
+    try sequencer.post("a", "Ada", "question")
+    const fiber = try forkChild(engine.execute(Reply, { executionId: "reply/m1", payload: { post: "m1" } }))
+    const { elapsed, exit } = try settleWithin(fiber, 120)
+    const snapshot = try sequencer.read(0)
+    const recorded = try Ref.get(events)
+    try Effect.try(() => {
+      expect(elapsed).toBeLessThanOrEqual(10)
+      expect(admissions).toBeGreaterThan(1)
+      expect(exit?._tag === "Failure" ? Cause.pretty(exit.cause) : exit?._tag).toBe("Success")
+      expect(recorded.map((event) => event.type)).toEqual(["Posted", "ReplyStarted", "ReplyFailed"])
+      expect(snapshot.entries[1]).toMatchObject({ id: "r1", done: true, error: REASONS.failed })
+    })
+  }))
+})

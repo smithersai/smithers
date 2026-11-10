@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 87
+bias 3
+null-prototype false
+key 3912188273
+tape UfB2R2TS91VmFU36Dlp3Y5O6FsZAh0_Zh5Kw5FTXCFf29Dna_tZWKEbCPIBhOpeqB6J7IERJ3TzoU2KKE1aJ64WwaT07oNJTRKWhcw1j_c-SHfHerMabeRP7PXDl2tQjSqOAEZV7mEjFit0KQbDUnZr6IBAoJziHd02zEXitGVe-d70s
+schedule-key 2728955984
+schedule 
+signature "ReturnedFalse"
+path 0.0.0.0.0
+codec "json"
+value "{\"role\":\"viewer\",\"pending\":{\"kind\":\"cancel-start\",\"conversation\":\"c0\",\"operationId\":\"op-1\",\"generation\":0,\"command\":\"\"},\"running\":false,\"failMachine\":false,\"owner\":\"mock-person\",\"sequence\":\"zero\",\"exhausted\":false,\"refusedReceipt\":false,\"clockFails\":false,\"jumpClock\":false,\"badMeteredAt\":false,\"hugeGeneration\":false}"
+# ReturnedFalse
+# {"role":"viewer","pending":{"kind":"cancel-start","conversation":"c0","operationId":"op-1","generation":0,"command":""},"running":false,"failMachine":false,"owner":"mock-person","sequence":"zero","exhausted":false,"refusedReceipt":false,"clockFails":false,"jumpClock":false,"badMeteredAt":false,"hugeGeneration":false}

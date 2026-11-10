@@ -8,11 +8,12 @@ import * as Budget from "../worker/Budget.vibe"
 import { repliesOf, toursOf } from "../worker/Objects.vibe"
 import { readerOver } from "../worker/HistoryObject.vibe"
 import { HistoryTools } from "../worker/HistoryTools.vibe"
-import { ChatModel, registration, Replies, REASONS, Spend } from "../worker/Reply.vibe"
+import { ChatModel, registration, Replies, REASONS, REPLY_CEILING, Spend } from "../worker/Reply.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 import * as Sequencer from "../worker/Sequencer.vibe"
+import { faultyChatModel } from "./support/faultyChatModel.vibe"
 
-effect function world(limit: number) {
+effect function world(limit: number, configured = false) {
   const events = try Ref.make<ReadonlyArray<Event>>([])
   const ledger = try Ref.make<Readonly<Record<string, number>>>({})
   const sequencer = try Sequencer.make(
@@ -21,8 +22,8 @@ effect function world(limit: number) {
   )
   const budget = try Budget.make({ read: (key) => Ref.get(ledger).pipe(Effect.map((entries) => entries[key])), write: (entries) => Ref.update(ledger, (data) => ({ ...data, ...entries })) }, limit)
   const replies = repliesOf(sequencer)
-  const spend: Spend.Shape = { admit: () => budget.admit(), spend: (_day, reply, tokens) => budget.spend(reply, tokens) }
-  const model = try Effect.provide(chatModel(), ConfigProvider.layer(ConfigProvider.fromUnknown({})))
+  const spend: Spend.Shape = { admit: (_day, reply, ceiling) => budget.admit(reply, ceiling), spend: (_day, reply, tokens, reported, ceiling) => budget.spend(reply, tokens, reported, ceiling) }
+  const model = configured ? try faultyChatModel() : try Effect.provide(chatModel(), ConfigProvider.layer(ConfigProvider.fromUnknown({})))
   const flows = registration.pipe(
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provide(Layer.mergeAll(
@@ -32,12 +33,29 @@ effect function world(limit: number) {
     )),
   )
   const engine = Context.get(try Layer.build(flows), FlowRuntime.FlowRuntime)
-  return { engine, sequencer, events }
+  return { engine, sequencer, events, ledger }
 }
 
 describe("live reply flows", () => {
-  for (const [limit, reason] of [[0, REASONS.budget], [100, REASONS.unconfigured]] as const) {
-    it.live(`settles a persisted post with its actual ${limit === 0 ? "budget" : "configuration"} refusal`, () => scoped(effect {
+  it.live("unconfigured replies never hold the day’s reservations", () => scoped(effect {
+    const w = try world(REPLY_CEILING)
+    for (let i = 0; i < 2; i++) {
+      try w.sequencer.post(`unconfigured-${i}`, "Ada", "question")
+      const snapshot = try w.sequencer.read(0)
+      const post = snapshot.entries.filter((entry) => entry.author === "person").at(-1)!
+      try w.engine.execute(Reply, { executionId: `reply/${post.id}`, payload: { post: post.id } })
+    }
+    const snapshot = try w.sequencer.read(0)
+    const ledger = try Ref.get(w.ledger)
+    try Effect.try(() => {
+      expect(snapshot.entries.filter((entry) => entry.author === "agent").map((entry) => entry.error)).toEqual([REASONS.unconfigured, REASONS.unconfigured])
+      expect(ledger[Budget.RESERVED] ?? 0).toBe(0)
+      expect(ledger[Budget.SPENT] ?? 0).toBe(0)
+    })
+  }))
+
+  for (const [limit, reason] of [[REPLY_CEILING - 1, REASONS.budget], [REPLY_CEILING, REASONS.unconfigured]] as const) {
+    it.live(`settles a persisted post with its actual ${reason === REASONS.budget ? "budget" : "configuration"} refusal`, () => scoped(effect {
       const orders: Array<Readonly<Record<string, unknown>>> = []
       const logger = Logger.make((entry) => {
         if (entry.message === "vibelang.reply.order" || Array.isArray(entry.message) && entry.message.includes("vibelang.reply.order")) {
@@ -45,7 +63,7 @@ describe("live reply flows", () => {
         }
       })
       provide Logger.CurrentLoggers = new Set([logger]), References.MinimumLogLevel = "Debug" {
-        const w = try world(limit)
+        const w = try world(limit, reason === REASONS.budget)
         try w.sequencer.post("a", "Ada", "question")
         const answer = try w.engine.execute(Reply, { executionId: "reply/m1", payload: { post: "m1" } })
         const replayed = try w.engine.execute(Reply, { executionId: "reply/m1", payload: { post: "m1" } })

@@ -76,6 +76,10 @@ function header(h: H, send: Send, name: string, back = "‹ Chat", actions: Read
     h.div([h.Class("sui-page-header-actions")], actions),
   ])])
 }
+/** A copy GitHub refused to refresh (decision 0031): one word, and when GitHub last confirmed it. */
+export function staleMark<M>(h: HtmlBuilder<M>, stale: number | undefined): ReadonlyArray<Html> {
+  return stale === undefined ? [] : [h.span([h.Class("sui-badge sui-badge-outline vl-stale"), h.Title(`As of ${new Date(stale).toISOString().slice(0, 16).replace("T", " ")} UTC`)], ["Stale"])]
+}
 function titleOf(ui: IssuesUi): string { return ui.kind === "All" || ui.kind === "Issues" ? "Issues" : ui.kind }
 export function issuesView(ui: IssuesUi, h: H, send: Send): Html {
   return h.section([h.Class("ix-surface"), h.AriaLabel("Issues pane"), h.Style({ viewTransitionName: "issues" })], [
@@ -120,7 +124,7 @@ function list(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
   const action = propose ? "Propose a VIP" : "New issue"
   const connection = ui.role !== "viewer" && !connected(ui) ? [connect(h, ui)] : ui.data.connected === true ? [disconnect(h)] : []
   const controls = connected(ui) && issuePermission(ui.role, propose ? "propose" : "new") ? [h.button([h.Class("sui-button sui-button-sm sui-button-default"), h.Type("button"), h.OnClick(send(propose ? "vip-form" : "new-form"))], [action])] : []
-  return [header(h, send, titleOf(ui), "‹ Chat", [button(h, send, "Specification", "specification"), button(h, send, "Roles", "roles"), ...connection, ...controls]), ...(ui.error === "" || ui.status === "error" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]), h.div([h.Class("sui-page-body")], [h.div([h.Class("sui-issues-view")], [
+  return [header(h, send, titleOf(ui), "‹ Chat", [...staleMark(h, ui.data.stale), button(h, send, "Specification", "specification"), button(h, send, "Roles", "roles"), ...connection, ...controls]), ...(ui.error === "" || ui.status === "error" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]), h.div([h.Class("sui-page-body")], [h.div([h.Class("sui-issues-view")], [
     h.div([h.Class("sui-issues-header")], [
       h.div([h.Class("sui-issues-filters")], (["open", "closed"] as const).map((state) => h.a([h.Class("sui-issues-filter"), h.Href(`#${state}`), ...(state === ui.state ? [h.AriaCurrent("page")] : []), h.OnClick(send("state", state), { defaultAction: "Prevent" })], [state === "open" ? "◉ Open " : "✓ Closed ", h.span([h.Class("sui-issues-filter-count")], [String(filtered.filter((i) => i.state === state).length)])]))),
       h.div([h.Class("sui-segmented"), h.DataAttribute("size", "sm"), h.Role("radiogroup"), h.AriaLabel("Kind")], (["All", "Issues", "Tasks", "VIPs"] as const).map((kind, index, kinds) => h.button([h.Id(`ix-kind-${kind}`), h.Class("sui-segmented-item"), h.Type("button"), h.Role("radio"), h.AriaChecked(ui.kind === kind), h.Tabindex(ui.kind === kind ? 0 : -1), h.OnClick(send("kind", kind)), h.OnKeyDownPreventDefault((key) => key === "ArrowRight" || key === "ArrowLeft" ? Option.some(send("kind-key", kinds[(index + (key === "ArrowRight" ? 1 : 3)) % 4]!)) : Option.none())], [kind]))),
@@ -145,7 +149,7 @@ function detail(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
     ...(connected(ui) && issuePermission(ui.role, "accept") && i.vip === "In review" ? [h.button([h.Type("button"), h.Class("sui-button sui-button-sm sui-button-destructive"), h.OnClick(send("decline"))], ["Decline"]), button(h, send, "Accept", "accept", true)] : []),
   ]
   const aside = (name: string, content: ReadonlyArray<Html>) => h.div([h.Class("ix-aside-section")], [h.span([h.Class("sui-label")], [name]), ...content])
-  return [header(h, send, `#${i.number}`, "‹ Issues"), h.div([h.Class("sui-page-body")], [h.div([h.Class("sui-item-conv"), h.DataAttribute("aside", "")], [
+  return [header(h, send, `#${i.number}`, "‹ Issues", staleMark(h, ui.data.stale)), h.div([h.Class("sui-page-body")], [h.div([h.Class("sui-item-conv"), h.DataAttribute("aside", "")], [
     h.div([h.Class("sui-item-conv-header")], [h.h1([h.Class("sui-item-conv-title")], [i.title, " ", h.span([h.Class("sui-item-conv-number")], [`#${i.number}`])]), h.div([h.Class("sui-item-conv-meta")], [h.span([h.Class("sui-item-conv-state sui-badge sui-badge-success")], [icon(h, i), i.state === "open" ? "Open" : "Closed"]), ...badges(h, i, false), h.span([], [`${i.author} opened ${when(ui.data.absoluteDates === true, i.age, true)} · ${i.comments} comments`]), h.span([h.Class("sui-item-conv-header-actions")], actions)])]),
     h.div([h.Class("sui-item-conv-main")], [
       h.div([h.Class("sui-item-conv-post")], [h.div([h.Class("sui-item-conv-comment-meta")], [avatar(h, i.author), h.span([h.Class("sui-item-conv-author")], [i.author]), h.span([], [when(ui.data.absoluteDates === true, i.age, true)])]), ...issueBody(ui, h, send, i.body)]),

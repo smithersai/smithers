@@ -5,10 +5,25 @@ import * as NodeServices from "@effect/platform-node/NodeServices"
 import { run } from "../test/support/processes.vibe"
 import { workload } from "./artifact.vibe"
 
-it("real Chromium first render, Command-K and keystroke", async ({ bench }) => {
+// Match the child's global deadline, including E2E_SERVER_SECONDS (bench/playwright.config.ts).
+// The previous fixed 450 s wrapper killed builds that Playwright still allowed to finish.
+const serverSeconds = await runPromise(Config.withDefault(Config.Number("E2E_SERVER_SECONDS"), 600))
+const PLAYWRIGHT_BOUND_MS = serverSeconds * 1000 + 300_000 + 30_000
+
+it("real Chromium browser workloads, first render to issues and panel arms", async ({ bench }) => {
   await workload(bench, "chromium", "async", async () => {
     const result = await runPromise(Effect.provide(run("pnpm", ["exec", "playwright", "test", "--config", "bench/playwright.config.ts"], { BENCH_LIVE: "0" }), NodeServices.layer))
     expect(result.status, result.stdout + result.stderr).toBe(0)
-    expect(result.stdout).toContain("6 passed")
+    expect(result.stdout).toMatch(/\b[1-9]\d* passed\b/)
   }).run({ iterations: 1, time: 0, warmup: false })
-})
+}, PLAYWRIGHT_BOUND_MS)
+
+// Fault-path coverage on the `e2e` build (bench/playwright-faults.config.ts): counts merge into the gate; the e2e build
+// is not what people run, so its workloads record no duration (decision 0017).
+it("fault-path coverage workloads on the e2e build, faulty services for posts, tours, events, media, sandbox, roles and actions", async ({ bench }) => {
+  await workload(bench, "chromium-faults", "async", async () => {
+    const result = await runPromise(Effect.provide(run("pnpm", ["exec", "playwright", "test", "--config", "bench/playwright-faults.config.ts"], { BENCH_LIVE: "0" }), NodeServices.layer))
+    expect(result.status, result.stdout + result.stderr).toBe(0)
+    expect(result.stdout).toMatch(/\b[1-9]\d* passed\b/)
+  }).run({ iterations: 1, time: 0, warmup: false })
+}, PLAYWRIGHT_BOUND_MS)

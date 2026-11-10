@@ -9,6 +9,11 @@ import { freshName, freshNameWhere, userNames } from "./names.js";
 import { renameFreeVar } from "./transform.js";
 import { DEFAULT_OPTIONS, resolveOptions, type LscOptions } from "./config.js";
 
+/** `reveal f();` for each opaque function a proof body may unfold (`//@ opaque`, `//@ reveal`). */
+function revealLines(names: string[]): string[] {
+  return names.map(name => `  reveal ${escapeName(name)}();`);
+}
+
 /** Appended to a function's name for the lemma that carries its `//@ ensures`. */
 export const ENSURES_LEMMA_SUFFIX = "_ensures";
 
@@ -331,11 +336,19 @@ function emitExpr(e: Expr): string {
         // No-arg slice is a full copy; Dafny seq is an immutable value type, so
         // the copy is just the seq itself (the idiom for "copy then mutate").
         if (e.method === "slice" && args.length === 0) return obj;
-        if (e.method === "slice" && args.length === 1) return `${obj}[${args[0]}..]`;
+        if (e.method === "slice" && args.length === 1) {
+          // Under `//@ safe-slice` a suffix clamps like JavaScript: past the end it is empty.
+          if (_useSafeSlice) {
+            needPreamble("SafeSlice");
+            return `SafeSlice(${obj}, ${args[0]}, |${obj}|)`;
+          }
+          return `${obj}[${args[0]}..]`;
+        }
         if (e.method === "slice" && args.length === 2) {
           // JS slice clamps both bounds; Dafny requires `0 <= lo <= hi <= |s|`.
           // Direct slice is default (matches existing case studies that wrote
-          // bounded calls). Files needing JS clamping opt in via `//@ safe-slice`.
+          // bounded calls). Files needing JS clamping opt in via `//@ safe-slice`, which
+          // also covers one-argument and string slices.
           if (_useSafeSlice) {
             needPreamble("SafeSlice");
             return `SafeSlice(${obj}, ${args[0]}, ${args[1]})`;
@@ -368,10 +381,12 @@ function emitExpr(e: Expr): string {
           const s = bind ? fresh("s_map", taken) : obj;
           const idx = fresh("i_map", n => taken(n) || n === s);
           let core: string;
-          if (lam.kind === "lambda" && lam.params.length === 1 &&
+          if (lam.kind === "lambda" && (lam.params.length === 1 || lam.params.length === 2) &&
               lam.body.length === 1 && lam.body[0].kind === "return") {
             const p = escapeName(lam.params[0].name);
-            core = `var ${p} := ${s}[${idx}]; ${emitExpr(lam.body[0].value)}`;
+            // JavaScript passes the element's index as the callback's second argument.
+            const index = lam.params.length === 2 ? ` var ${escapeName(lam.params[1].name)} := ${idx};` : "";
+            core = `var ${p} := ${s}[${idx}];${index} ${emitExpr(lam.body[0].value)}`;
           } else {
             core = `(${args[0]})(${s}[${idx}])`;
           }
@@ -450,6 +465,11 @@ function emitExpr(e: Expr): string {
         }
         if (e.method === "split")   { needPreamble("StringSplit"); return `StringSplit(${obj}, ${args[0]})`; }
         if (e.method === "slice") {
+          // `//@ safe-slice` gives strings the same JavaScript clamping as arrays, negative bounds included.
+          if (_useSafeSlice) {
+            needPreamble("SafeSlice");
+            return `SafeSlice(${obj}, ${args[0]}, ${args.length === 1 ? `|${obj}|` : args[1]})`;
+          }
           // JS negative index: arr.slice(0, -N) → arr[0..|arr|-N]. Transform
           // folds unary minus on a numeric literal into a negative `num` node,
           // but leaves a negated bigint structural — `exactIntegerLiteral`
@@ -912,14 +932,19 @@ function emitDecl(d: Decl): string {
 
     case "def": {
       const tp = d.typeParams.length > 0 ? `<${d.typeParams.join(", ")}>` : "";
-      const lines = [`function ${escapeName(d.name)}${tp}(${paramList(d.params)}): ${tyToDafny(d.returnType)}`];
+      const lines = [`${d.opaque ? "opaque " : ""}function ${escapeName(d.name)}${tp}(${paramList(d.params)}): ${tyToDafny(d.returnType)}`];
       for (const r of d.requires) lines.push(`  requires ${emitExpr(r)}`);
+      // An opaque function's callers reason from its contract, so a non-recursive one carries it on the function,
+      // proved there against the body. A recursive contract names the function again and would instantiate without
+      // bound, so it stays on the companion lemma.
+      const contractOnFunction = d.opaque === true && d.decreases === null;
+      if (contractOnFunction) for (const e of d.ensures) lines.push(`  ensures ${emitExpr(e)}`);
       if (d.decreases) lines.push(`  decreases ${emitExpr(d.decreases)}`);
       lines.push(`{`);
       lines.push(emitPureExpr(d.body, 1));
       lines.push(`}`);
       // Companion lemma for ensures (proof target for LLM)
-      if (d.ensures.length > 0) {
+      if (d.ensures.length > 0 && !contractOnFunction) {
         // Strip constraints like (==) from type params — ghost lemmas don't need them
         const lemmaTP = d.typeParams.length > 0 ? `<${d.typeParams.map(t => t.replace(/\(.*\)/, '')).join(", ")}>` : "";
         lines.push("");
@@ -927,6 +952,7 @@ function emitDecl(d: Decl): string {
         for (const r of d.requires) lines.push(`  requires ${emitExpr(r)}`);
         for (const e of d.ensures) lines.push(`  ensures ${emitExpr(e)}`);
         lines.push(`{`);
+        lines.push(...revealLines([...(d.opaque ? [d.name] : []), ...(d.reveals ?? [])]));
         lines.push(`}`);
       }
       return lines.join("\n");
@@ -940,6 +966,7 @@ function emitDecl(d: Decl): string {
       lines.push(`{`);
       lines.push(`}`);
       lines.push(`by method {`);
+      lines.push(...revealLines(d.reveals ?? []));
       lines.push(emitStmts(d.methodBody, 1));
       lines.push(`}`);
       return lines.join("\n");
@@ -952,6 +979,7 @@ function emitDecl(d: Decl): string {
       for (const e of d.ensures) lines.push(`  ensures ${emitExpr(e)}`);
       if (d.decreases) lines.push(`  decreases ${emitExpr(d.decreases)}`);
       lines.push(`{`);
+      lines.push(...revealLines(d.reveals ?? []));
       lines.push(emitStmts(d.body, 1));
       lines.push(`}`);
       return lines.join("\n");
@@ -1106,6 +1134,8 @@ const SEQ_FILTER_SOME = `function SeqFilterSome<T>(xs: seq<Option<T>>): seq<T>
 const SEQ_FILTER = `function SeqFilter<T(!new)>(p: T -> bool, xs: seq<T>): seq<T>
   ensures |SeqFilter(p, xs)| <= |xs|
   ensures forall x :: x in SeqFilter(p, xs) <==> x in xs && p(x)
+  // By index too: Dafny does not connect \`r[i]\` to the membership clause unaided. Proved from the body, not assumed.
+  ensures forall i :: 0 <= i < |SeqFilter(p, xs)| ==> p(SeqFilter(p, xs)[i]) && SeqFilter(p, xs)[i] in xs
   decreases |xs|
 {
   if |xs| == 0 then []
@@ -1305,15 +1335,18 @@ const STRING_SPLIT = `function {:axiom} StringSplit(s: string, d: string): seq<s
 // is the soundness condition — cmp must be a total preorder, otherwise no sorted
 // permutation exists and the axiom would be vacuous. Callers discharge it (e.g.
 // `(a,b) => a.k - b.k` is total + transitive by linear arithmetic).
+// Membership in both directions follows from the multiset clause; Dafny does not derive it unaided, so it is stated.
 // Bare `.sort()`: permutation only, no sortedness (JS default order is type-dependent).
 const SEQ_SORT = `function {:axiom} SeqSort<T(==,!new)>(s: seq<T>): seq<T>
   ensures multiset(SeqSort(s)) == multiset(s)
+  ensures forall x: T :: x in SeqSort(s) <==> x in s
   ensures |SeqSort(s)| == |s|`;
 
 const SEQ_SORT_BY = `function {:axiom} SeqSortBy<T(==,!new)>(s: seq<T>, cmp: (T, T) -> int): seq<T>
   requires forall a: T, b: T :: cmp(a, b) <= 0 || cmp(b, a) <= 0
   requires forall a: T, b: T, c: T :: cmp(a, b) <= 0 && cmp(b, c) <= 0 ==> cmp(a, c) <= 0
   ensures multiset(SeqSortBy(s, cmp)) == multiset(s)
+  ensures forall x: T :: x in SeqSortBy(s, cmp) <==> x in s
   ensures |SeqSortBy(s, cmp)| == |s|
   ensures forall i: int, j: int :: 0 <= i <= j < |SeqSortBy(s, cmp)| ==> cmp(SeqSortBy(s, cmp)[i], SeqSortBy(s, cmp)[j]) <= 0`;
 

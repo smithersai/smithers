@@ -1,0 +1,597 @@
+// Public reads (decision 0165, addendum): a hosted site's signed-out GitHub reads go through smithers.sh's App and the
+// site's cache. The site's network reaches smithers.sh's real route in-process; GitHub is an injected HttpClient
+// service, the faulty one answering a rate limit. Nothing intercepts a request.
+import { describe, expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { TestClock } from "effect/testing"
+import { Core, GitHub } from "../src/index.ts"
+import * as PublicRead from "../src/github/PublicRead.vibe"
+import * as ReadCache from "../src/github/ReadCache.vibe"
+import * as Delegation from "../src/github/Delegation.vibe"
+import type * as Policy from "../src/github/DelegationPolicy.vibe"
+import { IntegrationError } from "../src/core/IntegrationError.ts"
+
+const origin = "https://vibelang.smithers.sh"
+const other = "https://other.smithers.sh"
+const brokerOrigin = "https://smithers.sh"
+const api = "https://api.github.com"
+const secret = Redacted.make("a".repeat(32))
+const reads: ReadonlyArray<Policy.Read> = [{ repository: "smithersai/vibelang", repositoryId: 11 }]
+const sites: ReadonlyArray<PublicRead.Site> = [{ origin, secret, reads }, { origin: other, secret: Redacted.make("b".repeat(32)), reads }]
+
+interface Seen { readonly path: string; readonly authorization: string | undefined; readonly etag: string | undefined }
+interface Answer { readonly status: number; readonly headers?: Readonly<Record<string, string>>; readonly body?: string }
+interface World { readonly seen: Array<Seen>; answer: (path: string, etag: string | undefined) => Answer; down?: boolean; delay?: Duration.Input }
+const file = (text: string, sha = "s1") => ({ type: "file", encoding: "base64", sha, content: btoa(text) })
+const ok = (body: unknown, etag = "\"v1\""): Answer => ({ status: 200, headers: { "content-type": "application/json", etag, "x-ratelimit-remaining": "4999" }, body: JSON.stringify(body) })
+const notModified = (): Answer => ({ status: 304, headers: { etag: "\"v1\"" } })
+const rateLimited = (): Answer => ({ status: 403, headers: { "content-type": "application/json", "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1999999999" }, body: JSON.stringify({ message: "API rate limit exceeded" }) })
+
+/** The injected GitHub: records each request and answers from the world. */
+function github(world: World): HttpClient.HttpClient {
+  return HttpClient.make((request, url) => effect {
+    const etag = request.headers["if-none-match"]
+    world.seen.push({ path: url.pathname + url.search, authorization: request.headers["authorization"], etag })
+    // A slow GitHub: production's 100-issue pages take about 0.85 seconds, a 304 of one as long.
+    if (world.delay !== undefined) try sleep(world.delay)
+    if (world.down === true) throw new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, description: "connection reset" }) })
+    const answer = world.answer(url.pathname + url.search, etag)
+    const headers = answer.headers ?? {}
+    return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(answer.body === undefined
+      ? HttpServerResponse.empty({ status: answer.status, headers })
+      : HttpServerResponse.text(answer.body ?? "", { status: answer.status, headers, contentType: headers["content-type"] ?? "application/json" })))
+  })
+}
+const installationToken: PublicRead.Token = (read) => Effect.succeed(Redacted.make("installation-" + read.repositoryId))
+
+/** smithers.sh's real route behind the site's network, reached in-process. `down` makes smithers.sh unreachable. */
+function broker(world: World, options: { down?: boolean; token?: typeof installationToken } = {}) {
+  const state = { calls: 0, down: options.down ?? false }
+  const http = HttpClient.make((request) => effect {
+    state.calls += 1
+    if (state.down) return try Effect.fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, description: "unreachable" }) }))
+    const web = try Effect.orDie(HttpClientRequest.toWeb(request))
+    const answer = try PublicRead.route({ origin: brokerOrigin, sites, token: options.token ?? installationToken, github: github(world) }).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web)))
+    return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(answer))
+  })
+  return { http, state }
+}
+
+/** The site's whole read stack: the cache over the signed transport, as vibelang builds it. */
+effect function siteOver(world: World, options: { down?: boolean } = {}) {
+  const network = broker(world, options)
+  const store = try ReadCache.memoryStore()
+  const transport = try PublicRead.site({ origin, brokerOrigin, secret }).pipe(Effect.provideService(HttpClient.HttpClient, network.http))
+  const client = try ReadCache.make({ store, upstream: transport })
+  const readme = GitHub.Contents.getText("smithersai", "vibelang", "README.md").pipe(GitHub.Calls.withToken(Redacted.make(""), api), Effect.provideService(HttpClient.HttpClient, client))
+  return { network, store, client, readme: ReadCache.observeStale(readme) }
+}
+
+describe("a signed-out read through smithers.sh", () => {
+  it.effect("carries smithers.sh's installation token, never the site's, and answers GitHub's content", () => effect {
+    const world: World = { seen: [], answer: () => ok(file("hello")) }
+    const site = try siteOver(world)
+    const answer = try site.readme
+    try Effect.try(() => {
+      expect(Option.getOrUndefined(answer.value)?.text).toBe("hello")
+      expect(answer.stale).toBeUndefined()
+      expect(world.seen).toEqual([{ path: "/repos/smithersai/vibelang/contents/README.md", authorization: "Bearer installation-11", etag: undefined }])
+    })
+  })
+
+  it.effect("follows GitHub's next link, which names the repository by its id, through smithers.sh", () => effect {
+    const first = "/repos/smithersai/vibelang/issues/1/comments?per_page=100"
+    const next = "/repositories/11/issues/1/comments?per_page=100&page=2"
+    const world: World = { seen: [], answer: (path) => path === first ? { ...ok([{ id: 1 }]), headers: { ...ok([]).headers, link: `<${api}${next}>; rel="next"` } } : path === next ? ok([{ id: 2 }], "\"v2\"") : { status: 404 } }
+    const site = try siteOver(world)
+    const listed = effect {
+      const github = try GitHub.GitHubClient.GitHubClient
+      return try github.paginate("/repos/smithersai/vibelang/issues/1/comments")
+    }
+    const page = try listed.pipe(GitHub.Calls.withToken(Redacted.make(""), api), Effect.provideService(HttpClient.HttpClient, site.client))
+    try Effect.try(() => {
+      expect([page.items, page.truncated]).toEqual([[{ id: 1 }, { id: 2 }], false])
+      expect(world.seen.map((seen) => [seen.path, seen.authorization])).toEqual([[first, "Bearer installation-11"], [next, "Bearer installation-11"]])
+    })
+  })
+
+  it.effect("a copy confirmed within 30 seconds answers alone; after, a 304 revalidates it", () => effect {
+    const world: World = { seen: [], answer: (_path, etag) => etag === "\"v1\"" ? notModified() : ok(file("hello")) }
+    const site = try siteOver(world)
+    try site.readme
+    try TestClock.adjust("29 seconds")
+    const fresh = try site.readme
+    try Effect.try(() => expect(site.network.state.calls).toBe(1))
+    try TestClock.adjust("2 seconds")
+    const revalidated = try site.readme
+    try Effect.try(() => {
+      expect(Option.getOrUndefined(fresh.value)?.text).toBe("hello")
+      expect(Option.getOrUndefined(revalidated.value)?.text).toBe("hello")
+      expect(revalidated.stale).toBeUndefined()
+      expect(world.seen.map((seen) => seen.etag)).toEqual([undefined, "\"v1\""])
+    })
+  })
+
+  it.effect("GitHub's rate limit serves the last good copy, marked stale with when GitHub last confirmed it", () => effect {
+    const world: World = { seen: [], answer: () => ok(file("hello")) }
+    const site = try siteOver(world)
+    try site.readme
+    try TestClock.adjust("10 minutes")
+    world.answer = () => rateLimited()
+    const answer = try site.readme
+    try Effect.try(() => {
+      expect(Option.getOrUndefined(answer.value)?.text).toBe("hello")
+      expect(answer.stale).toBe(0)
+      expect(world.seen.at(-1)?.etag).toBe("\"v1\"")
+    })
+  })
+
+  it.effect("GitHub's rate limit with no copy fails rate-limited, as GitHub's own answer does", () => effect {
+    const world: World = { seen: [], answer: () => rateLimited() }
+    const site = try siteOver(world)
+    const failure = try Effect.flip(site.readme)
+    try Effect.try(() => expect(failure.details?.["rateLimited"]).toBe(true))
+  })
+
+  it.effect("smithers.sh unreachable serves the copy stale; with no copy the read fails retryable", () => effect {
+    const world: World = { seen: [], answer: () => ok(file("hello")) }
+    const site = try siteOver(world)
+    try site.readme
+    try TestClock.adjust("1 minute")
+    site.network.state.down = true
+    const answer = try site.readme
+    const empty = try siteOver(world, { down: true })
+    const failure = try Effect.flip(empty.readme)
+    try Effect.try(() => {
+      expect(Option.getOrUndefined(answer.value)?.text).toBe("hello")
+      expect(answer.stale).toBe(0)
+      expect(failure).toBeInstanceOf(IntegrationError)
+      expect(failure.details?.["status"]).toBeUndefined()
+    })
+  })
+
+  it.effect("a 404 drops the copy: a page that is gone is never served stale", () => effect {
+    const world: World = { seen: [], answer: () => ok(file("hello")) }
+    const site = try siteOver(world)
+    try site.readme
+    try TestClock.adjust("1 minute")
+    world.answer = () => ({ status: 404, body: JSON.stringify({ message: "Not Found" }) })
+    const gone = try site.readme
+    world.answer = () => rateLimited()
+    try TestClock.adjust("1 minute")
+    const after = try Effect.flip(site.readme)
+    try Effect.try(() => {
+      expect(Option.isNone(gone.value)).toBe(true)
+      expect(after.details?.["rateLimited"]).toBe(true)
+    })
+  })
+
+  it.effect("a server error serves the copy stale, and a changed file replaces it", () => effect {
+    const world: World = { seen: [], answer: () => ok(file("hello")) }
+    const site = try siteOver(world)
+    try site.readme
+    try TestClock.adjust("1 minute")
+    world.answer = () => ({ status: 502 })
+    const stale = try site.readme
+    world.answer = () => ok(file("changed", "s2"), "\"v2\"")
+    try TestClock.adjust("1 minute")
+    const changed = try site.readme
+    world.answer = () => rateLimited()
+    try TestClock.adjust("1 minute")
+    const kept = try site.readme
+    try Effect.try(() => {
+      expect(stale.stale).toBe(0)
+      expect(Option.getOrUndefined(changed.value)?.text).toBe("changed")
+      expect(Option.getOrUndefined(kept.value)?.text).toBe("changed")
+      expect(kept.stale).toBe(120_000)
+    })
+  })
+})
+
+describe("the cache's edges", () => {
+  it.effect("a body past the size limit is not kept and drops the older copy, so no stale copy outlives it", () => effect {
+    const world: World = { seen: [], answer: () => ok(file("small")) }
+    const network = broker(world)
+    const store = try ReadCache.memoryStore()
+    const transport = try PublicRead.site({ origin, brokerOrigin, secret }).pipe(Effect.provideService(HttpClient.HttpClient, network.http))
+    const client = try ReadCache.make({ store, upstream: transport, maxEntry: 200, freshFor: 0 })
+    const read = GitHub.Contents.getText("smithersai", "vibelang", "README.md").pipe(GitHub.Calls.withToken(Redacted.make(""), api), Effect.provideService(HttpClient.HttpClient, client))
+    try read
+    world.answer = () => ok(file("x".repeat(300)), "\"v2\"")
+    const large = try read
+    world.answer = () => rateLimited()
+    const failure = try Effect.flip(read)
+    try Effect.try(() => {
+      expect(Option.getOrUndefined(large)?.text.length).toBe(300)
+      expect(failure.details?.["rateLimited"]).toBe(true)
+    })
+  })
+  it.effect("a stale copy answers even when no reader observes staleness", () => effect {
+    const world: World = { seen: [], answer: () => ok({ id: 11 }) }
+    const network = broker(world)
+    const transport = try PublicRead.site({ origin, brokerOrigin, secret }).pipe(Effect.provideService(HttpClient.HttpClient, network.http))
+    const client = try ReadCache.make({ store: try ReadCache.memoryStore(), upstream: transport, freshFor: 0 })
+    try client.execute(HttpClientRequest.get(api + "/repos/smithersai/vibelang"))
+    network.state.down = true
+    const stale = try client.execute(HttpClientRequest.get(api + "/repos/smithersai/vibelang"))
+    try Effect.try(() => expect([stale.status, stale.headers[ReadCache.STALE]]).toEqual([200, "0"]))
+  })
+  it.effect("a smithers.sh that never answers fails the read at 10 seconds", () => effect {
+    const silent = HttpClient.make(() => Effect.never)
+    const transport = try PublicRead.site({ origin, brokerOrigin, secret }).pipe(Effect.provideService(HttpClient.HttpClient, silent))
+    const fiber = try forkChild(Effect.flip(transport.execute(HttpClientRequest.get(api + "/repos/smithersai/vibelang"))))
+    // Signing awaits real WebCrypto; let it settle before each step of virtual time.
+    let elapsed = 0
+    while (fiber.pollUnsafe() === undefined && elapsed < 15_000) {
+      try TestClock.withLive(sleep("20 millis"))
+      try TestClock.adjust("1 second")
+      elapsed += 1000
+    }
+    const failure = try Fiber.join(fiber)
+    try Effect.try(() => {
+      expect(failure._tag).toBe("HttpClientError")
+      expect(elapsed).toBe(10_000)
+    })
+  })
+})
+
+describe("a reader's patience", () => {
+  const at = (path: string) => HttpClientRequest.get(api + path)
+  const pages = [1, 2, 3, 4, 5].map((page) => `/repos/smithersai/vibelang/issues?page=${page}`)
+  const bodies = (client: HttpClient.HttpClient) => effect {
+    const read: Array<unknown> = []
+    for (const path of pages) read.push(try (try client.execute(at(path))).json)
+    return read
+  }
+  /** Waits in real time, at most 5 seconds, until GitHub has been asked `count` times: a request reaches it asynchronously. */
+  effect function asked(world: World, count: number) {
+    for (let turn = 0; turn < 1_000 && world.seen.length < count; turn += 1) try TestClock.withLive(sleep("5 millis"))
+  }
+  /** Steps virtual time until `fiber` ends; the elapsed milliseconds. */
+  effect function drive<A, E>(fiber: Fiber.Fiber<A, E>, limit: number) {
+    let elapsed = 0
+    while (fiber.pollUnsafe() === undefined && elapsed < limit) {
+      try TestClock.withLive(sleep("20 millis"))
+      try TestClock.adjust("100 millis")
+      elapsed += 100
+    }
+    return elapsed
+  }
+
+  it.effect("a slow GitHub: once the read's patience is spent its copies answer stale, and their revalidations still land", () => effect {
+    const world: World = { seen: [], answer: (path) => ok({ path, version: 1 }) }
+    const client = try ReadCache.make({ store: try ReadCache.memoryStore(), upstream: github(world) })
+    try bodies(client)
+    try TestClock.adjust("10 minutes")
+    world.delay = "900 millis"
+    world.answer = (path) => ok({ path, version: 2 }, "\"v2\"")
+    const fiber = try forkChild(ReadCache.observeStale(bodies(client), { patience: "2 seconds" }))
+    const elapsed = try drive(fiber, 10_000)
+    const slow = try Fiber.join(fiber)
+    // The revalidations the reader stopped waiting for finish on their own and store GitHub's answer.
+    try asked(world, 10)
+    try TestClock.adjust("2 seconds")
+    const after = try ReadCache.observeStale(bodies(client), { patience: "2 seconds" })
+    try Effect.try(() => {
+      expect(elapsed).toBeLessThanOrEqual(2_100)
+      expect(slow.value.map((body) => (body as { version: number }).version)).toEqual([2, 2, 1, 1, 1])
+      expect(slow.stale).toBe(0)
+      expect(after.value.map((body) => (body as { version: number }).version)).toEqual([2, 2, 2, 2, 2])
+      expect(after.stale).toBeUndefined()
+      // Each page was asked once more, conditionally; nothing was asked twice.
+      expect(world.seen.slice(5).map((seen) => [seen.path, seen.etag])).toEqual(pages.map((path) => [path, "\"v1\""]))
+    })
+  })
+
+  it.effect("without patience a reader waits for GitHub, as before", () => effect {
+    const world: World = { seen: [], answer: (path) => ok({ path, version: 1 }) }
+    const client = try ReadCache.make({ store: try ReadCache.memoryStore(), upstream: github(world) })
+    try bodies(client)
+    try TestClock.adjust("10 minutes")
+    world.delay = "900 millis"
+    world.answer = (path) => ok({ path, version: 2 }, "\"v2\"")
+    const fiber = try forkChild(ReadCache.observeStale(bodies(client)))
+    const elapsed = try drive(fiber, 10_000)
+    const read = try Fiber.join(fiber)
+    try Effect.try(() => {
+      expect(elapsed).toBeGreaterThanOrEqual(4_500)
+      expect(read.value.map((body) => (body as { version: number }).version)).toEqual([2, 2, 2, 2, 2])
+      expect(read.stale).toBeUndefined()
+    })
+  })
+
+  it.effect("concurrent cold readers share one GitHub request, and cancelling one still lets the other receive and cache it", () => effect {
+    const world: World = { seen: [], answer: (path) => ok({ path, version: 1 }), delay: "900 millis" }
+    const client = try ReadCache.make({ store: try ReadCache.memoryStore(), upstream: github(world) })
+    const first = try forkChild(client.execute(at(pages[0]!)))
+    const second = try forkChild(client.execute(at(pages[0]!)))
+    try asked(world, 1)
+    try TestClock.withLive(sleep("50 millis"))
+    try Fiber.interrupt(first)
+    try TestClock.adjust("1 second")
+    const received = try (try Fiber.join(second)).json
+    world.down = true
+    const cached = try (try client.execute(at(pages[0]!))).json
+    try Effect.try(() => {
+      expect(received).toEqual({ path: pages[0], version: 1 })
+      expect(cached).toEqual(received)
+      expect(world.seen).toHaveLength(1)
+    })
+  })
+
+  it.effect("a reader cut off mid-read leaves its GitHub request running, so the copy lands for the next reader", () => effect {
+    const world: World = { seen: [], answer: (path) => ok({ path, version: 1 }), delay: "900 millis" }
+    const client = try ReadCache.make({ store: try ReadCache.memoryStore(), upstream: github(world) })
+    const fiber = try forkChild(client.execute(at(pages[0]!)))
+    try asked(world, 1)
+    try TestClock.adjust("500 millis")
+    try Fiber.interrupt(fiber)
+    try TestClock.adjust("1 second")
+    world.down = true
+    const next = try (try client.execute(at(pages[0]!))).json
+    try Effect.try(() => {
+      expect(next).toEqual({ path: pages[0], version: 1 })
+      expect(world.seen.length).toBe(1)
+    })
+  })
+})
+
+describe("the cache over GitHub directly", () => {
+  const at = (path: string) => HttpClientRequest.get(api + path)
+  effect function cacheOver(world: World, maxEntry?: number) {
+    return try ReadCache.make({ store: try ReadCache.memoryStore(), upstream: github(world), freshFor: 0, ...(maxEntry === undefined ? {} : { maxEntry }) })
+  }
+  it.effect("a secondary limit (403 with retry-after) and a 429 serve the copy stale; the oldest confirmation is reported", () => effect {
+    const world: World = { seen: [], answer: () => ok({ id: 11 }) }
+    const client = try cacheOver(world)
+    try client.execute(at("/repos/smithersai/vibelang/issues"))
+    try TestClock.adjust("1 minute")
+    try client.execute(at("/repos/smithersai/vibelang"))
+    world.answer = (path) => path.endsWith("/issues") ? { status: 403, headers: { "retry-after": "60" } } : path.endsWith("/pulls") ? { status: 403 } : { status: 429 }
+    const both = try ReadCache.observeStale(Effect.all([client.execute(at("/repos/smithersai/vibelang")), client.execute(at("/repos/smithersai/vibelang/issues"))]))
+    const plain = try client.execute(at("/repos/smithersai/vibelang/pulls"))
+    try Effect.try(() => {
+      expect(both.value.map((response) => [response.status, response.headers[ReadCache.STALE]])).toEqual([[200, "60000"], [200, "0"]])
+      expect(both.stale).toBe(0)
+      expect(plain.status).toBe(403)
+    })
+  })
+  it.effect("keeps nothing it cannot revalidate or should not keep: no ETag, a first oversized body, a 404, a write", () => effect {
+    const world: World = { seen: [], answer: () => ({ status: 200, headers: { "content-type": "application/json" }, body: "[]" }) }
+    const client = try cacheOver(world, 10)
+    try client.execute(at("/repos/smithersai/vibelang/issues"))
+    world.answer = () => ok("x".repeat(20))
+    try client.execute(at("/repos/smithersai/vibelang/pulls"))
+    world.answer = () => ({ status: 404 })
+    const gone = try client.execute(at("/repos/smithersai/vibelang/branches"))
+    world.answer = () => ({ status: 201, body: "{}" })
+    const written = try client.execute(HttpClientRequest.post(api + "/repos/smithersai/vibelang/issues"))
+    world.answer = () => ({ status: 502 })
+    const statuses: Array<number> = []
+    for (const path of ["/repos/smithersai/vibelang/issues", "/repos/smithersai/vibelang/pulls", "/repos/smithersai/vibelang/branches"]) statuses.push((try client.execute(at(path))).status)
+    try Effect.try(() => {
+      expect([gone.status, written.status]).toEqual([404, 201])
+      expect(statuses).toEqual([502, 502, 502])
+    })
+  })
+  it.effect("a caller's own conditional request with no copy gets GitHub's 304 as it is", () => effect {
+    const world: World = { seen: [], answer: () => notModified() }
+    const client = try cacheOver(world)
+    const answer = try client.execute(at("/repos/smithersai/vibelang").pipe(HttpClientRequest.setHeader("if-none-match", "\"v1\"")))
+    try Effect.try(() => expect(answer.status).toBe(304))
+  })
+  it("names only its own route", () => {
+    expect(PublicRead.handles("https://smithers.sh/api/auth/broker/public-read")).toBe(true)
+    expect(PublicRead.handles("/api/auth/broker/public-read?x=1")).toBe(true)
+    expect(PublicRead.handles("https://smithers.sh/api/auth/broker/delegation")).toBe(false)
+  })
+})
+
+describe("the site's transport", () => {
+  it.effect("a smithers.sh without the route answers a plain 404: a failed read, never GitHub's 404, so the copy survives", () => effect {
+    const world: World = { seen: [], answer: () => ok(file("hello")) }
+    const site = try siteOver(world)
+    try site.readme
+    try TestClock.adjust("1 minute")
+    // The site deployed before smithers.sh: its network answers the route's URL with a 404 page of its own.
+    const undeployed = HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text("Not Found", { status: 404 })))))
+    const transport = try PublicRead.site({ origin, brokerOrigin, secret }).pipe(Effect.provideService(HttpClient.HttpClient, undeployed))
+    const client = try ReadCache.make({ store: site.store, upstream: transport })
+    const answer = try ReadCache.observeStale(GitHub.Contents.getText("smithersai", "vibelang", "README.md").pipe(GitHub.Calls.withToken(Redacted.make(""), api), Effect.provideService(HttpClient.HttpClient, client)))
+    const empty = try ReadCache.make({ store: try ReadCache.memoryStore(), upstream: transport })
+    const failure = try Effect.flip(GitHub.Contents.getText("smithersai", "vibelang", "README.md").pipe(GitHub.Calls.withToken(Redacted.make(""), api), Effect.provideService(HttpClient.HttpClient, empty)))
+    try Effect.try(() => {
+      expect(Option.getOrUndefined(answer.value)?.text).toBe("hello")
+      expect(answer.stale).toBe(0)
+      expect(failure.details?.["status"]).toBeUndefined()
+    })
+  })
+
+  it.effect("sends only GitHub GETs, never another host or a write, and never the caller's headers", () => effect {
+    const world: World = { seen: [], answer: () => ok({ id: 11 }) }
+    const network = broker(world)
+    const transport = try PublicRead.site({ origin, brokerOrigin, secret }).pipe(Effect.provideService(HttpClient.HttpClient, network.http))
+    const post = try Effect.flip(transport.execute(HttpClientRequest.post(api + "/repos/smithersai/vibelang/issues")))
+    const elsewhere = try Effect.flip(transport.execute(HttpClientRequest.get("https://example.com/repos/smithersai/vibelang")))
+    const read = try transport.execute(HttpClientRequest.get(api + "/repos/smithersai/vibelang").pipe(HttpClientRequest.setHeader("authorization", "Bearer site-token")))
+    try Effect.try(() => {
+      expect(post._tag).toBe("HttpClientError")
+      expect(elsewhere._tag).toBe("HttpClientError")
+      expect(read.status).toBe(200)
+      expect(network.state.calls).toBe(1)
+      expect(world.seen).toEqual([{ path: "/repos/smithersai/vibelang", authorization: "Bearer installation-11", etag: undefined }])
+    })
+  })
+
+  it.effect("a refusal from smithers.sh fails the read; it is never GitHub's answer", () => effect {
+    const world: World = { seen: [], answer: () => ok({ id: 11 }) }
+    const network = broker(world)
+    const transport = try PublicRead.site({ origin, brokerOrigin, secret }).pipe(Effect.provideService(HttpClient.HttpClient, network.http))
+    const refused = try Effect.flip(transport.execute(HttpClientRequest.get(api + "/repos/smithersai/smithers")))
+    try Effect.try(() => {
+      expect(refused._tag).toBe("HttpClientError")
+      expect(world.seen).toEqual([])
+    })
+  })
+})
+
+/** One call to smithers.sh's route; the answer's status, refusal and body. */
+effect function routed(body: string, options: { readonly method?: "POST" | "GET"; readonly length?: string; readonly token?: typeof installationToken; readonly world?: World } = {}) {
+  const world = options.world ?? { seen: [], answer: () => ok({ id: 11 }) }
+  const base = options.method === "GET" ? HttpClientRequest.get(brokerOrigin + PublicRead.ROUTE) : HttpClientRequest.post(brokerOrigin + PublicRead.ROUTE).pipe(HttpClientRequest.bodyText(body, "application/json"))
+  const request = options.length === undefined ? base : HttpClientRequest.setHeader(base, "content-length", options.length)
+  const response = try PublicRead.route({ origin: brokerOrigin, sites, token: options.token ?? installationToken, github: github(world) }).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(try Effect.orDie(HttpClientRequest.toWeb(request)))))
+  const web = HttpServerResponse.toWeb(response)
+  return { status: web.status, refusal: web.headers.get(PublicRead.REFUSAL), etag: web.headers.get("etag"), text: try promise(() => web.text()), seen: world.seen }
+}
+/** A body signed as `origin`'s transport signs it. */
+effect function envelope(path: string, options: { readonly site?: string; readonly key?: Redacted.Redacted<string>; readonly audience?: string; readonly expires?: number; readonly etag?: string; readonly purpose?: string; readonly payload?: string; readonly payloadText?: string; readonly claimText?: string } = {}) {
+  const keys = try Core.CookieKeys.make({ primary: options.key ?? secret }, "primary")
+  const payload = options.payloadText ?? JSON.stringify({ path, ...(options.etag === undefined ? {} : { etag: options.etag }) })
+  const now = try Clock.currentTimeMillis
+  const claim = { audience: options.audience ?? brokerOrigin, route: PublicRead.ROUTE, origin: options.site ?? origin, digest: try PublicRead.digestOf(payload), expires: options.expires ?? now + 30_000 }
+  return JSON.stringify({ origin: options.site ?? origin, request: try keys.sign(options.purpose ?? PublicRead.PURPOSE, options.claimText ?? JSON.stringify(claim)), payload: options.payload ?? payload })
+}
+
+describe("smithers.sh's route", () => {
+  it.effect("answers a signed read with GitHub's status, body and caching headers, and the etag GitHub was sent", () => effect {
+    const world: World = { seen: [], answer: (_path, etag) => etag === "\"v1\"" ? notModified() : ok({ id: 11 }) }
+    const first = try routed(try envelope("/repos/smithersai/vibelang/issues?state=all&per_page=100"), { world })
+    const again = try routed(try envelope("/repos/smithersai/vibelang/issues?state=all&per_page=100", { etag: "\"v1\"" }), { world })
+    try Effect.try(() => {
+      expect(first).toMatchObject({ status: 200, refusal: null, etag: "\"v1\"", text: "{\"id\":11}" })
+      expect(again).toMatchObject({ status: 304, refusal: null, text: "" })
+      expect(world.seen.map((seen) => [seen.path, seen.etag])).toEqual([["/repos/smithersai/vibelang/issues?state=all&per_page=100", undefined], ["/repos/smithersai/vibelang/issues?state=all&per_page=100", "\"v1\""]])
+    })
+  })
+
+  it.effect("refuses, before any GitHub call, every request the site did not sign for this route and repository", () => effect {
+    const now = try Clock.currentTimeMillis
+    const path = "/repos/smithersai/vibelang/contents/README.md"
+    const delegationSigned = try (try Delegation.signer({ origin, brokerOrigin, secret })).envelope({ person: 7, delegation: "d", mode: "read", key: "", payload: { path } })
+    const cases = [
+      "not json",
+      JSON.stringify({ origin, request: "", payload: JSON.stringify({ path }) }),
+      JSON.stringify(delegationSigned),
+      try envelope(path, { purpose: "broker_delegation" }),
+      try envelope(path, { key: Redacted.make("c".repeat(32)) }),
+      try envelope(path, { site: "https://stranger.example" }),
+      try envelope(path, { site: other }),
+      try envelope(path, { audience: "https://elsewhere.example" }),
+      try envelope(path, { expires: now }),
+      try envelope(path, { expires: now + 61_000 }),
+      try envelope(path, { payload: JSON.stringify({ path: "/repos/smithersai/vibelang/contents/OTHER.md" }) }),
+      try envelope(path, { etag: "\"v1\"\r\nx-injected: 1" }),
+      try envelope(path, { claimText: "{\"audience\":1}" }),
+      try envelope(path, { payloadText: "{\"route\":\"elsewhere\"}" }),
+      try envelope("/repos/smithersai/smithers/contents/README.md"),
+      try envelope("/repos/ada/vibelang/contents/README.md"),
+      try envelope("/repos/smithersai/vibelang/hooks"),
+      try envelope("/repos/smithersai/vibelang/contents/../secrets"),
+      try envelope("/repos/smithersai/vibelang/contents/.github/workflows/x.yml"),
+      try envelope("https://evil.example/repos/smithersai/vibelang"),
+      try envelope("/repos/smithersai/vibelang/issues?q=a b"),
+    ]
+    const answers: Array<Effect.Success<ReturnType<typeof routed>>> = []
+    for (const body of cases) answers.push(try routed(body))
+    try Effect.try(() => {
+      // `other` signs with its own key, so the vibelang key's signature fails for it.
+      for (const answer of answers) expect({ status: answer.status, refusal: answer.refusal, text: answer.text }).toEqual({ status: 403, refusal: "forbidden", text: "{\"reason\":\"forbidden\"}" })
+      for (const answer of answers) expect(answer.seen).toEqual([])
+    })
+  })
+
+  it.effect("bounds an unauthenticated request: wrong method, a declared or real body past 8 KiB", () => effect {
+    const get = try routed("", { method: "GET" })
+    const declared = try routed("{}", { length: String(PublicRead.MAX_BODY + 1) })
+    const large = try routed("x".repeat(PublicRead.MAX_BODY + 1))
+    try Effect.try(() => {
+      expect(get.status).toBe(405)
+      expect([declared.status, declared.refusal]).toEqual([413, "forbidden"])
+      expect([large.status, large.refusal]).toEqual([413, "forbidden"])
+    })
+  })
+
+  it.effect("answers unavailable when no token can be had or GitHub cannot be reached", () => effect {
+    const body = try envelope("/repos/smithersai/vibelang")
+    const tokenless = try routed(body, { token: () => Effect.fail(new PublicRead.PublicReadRefused({ reason: "unavailable" })) })
+    const unlisted = try routed(body, { token: () => Effect.fail(new PublicRead.PublicReadRefused({ reason: "forbidden" })) })
+    const down: World = { seen: [], answer: () => ok({}), down: true }
+    const unreachable = try routed(body, { world: down })
+    try Effect.try(() => {
+      expect([tokenless.status, tokenless.refusal]).toEqual([503, "unavailable"])
+      expect([unlisted.status, unlisted.refusal]).toEqual([403, "forbidden"])
+      expect([unreachable.status, unreachable.refusal]).toEqual([503, "unavailable"])
+      expect(unreachable.seen.length).toBe(1)
+    })
+  })
+
+  it.effect("passes GitHub's rate limit through with its headers, for the site to classify", () => effect {
+    const world: World = { seen: [], answer: () => rateLimited() }
+    const answer = try routed(try envelope("/repos/smithersai/vibelang"), { world })
+    try Effect.try(() => expect({ status: answer.status, refusal: answer.refusal }).toEqual({ status: 403, refusal: null }))
+  })
+})
+
+describe("the public read policy", () => {
+  const entries: ReadonlyArray<Policy.Read> = [...reads, { repository: "smithersai/smithers", repositoryId: 0 }, { repository: "bad name", repositoryId: 4 }]
+  it("admits a listed repository's read collections, and nothing else", () => {
+    const admitted = ["/repos/smithersai/vibelang", "/repos/SmithersAI/VibeLang/issues", "/repos/smithersai/vibelang/issues/4/timeline?per_page=100&page=2", "/repos/smithersai/vibelang/contents/docs/a.md?ref=abc", "/repos/smithersai/vibelang/commits?sha=main&per_page=100&page=3", "/repos/smithersai/vibelang/git/ref/heads/main", "/repos/smithersai/vibelang/pulls/3/files", "/repos/smithersai/vibelang/assignees", "/repos/smithersai/vibelang/issues?since=2026-11-10T00%3A00%3A00Z", "/repositories/11", "/repositories/11/issues/4/timeline?per_page=100&page=2", "/repositories/11/issues?state=all&after=Y3Vyc29y%3D&page=2"]
+    const refused = ["/repositories/12/issues", "/repositories/0/issues", "/repositories/4/issues", "/repositories/011/issues", "/repositories/11/hooks", "/repositories/11/contents/a/../b", "/repositories/smithersai/vibelang", "/repositories", "/repos/smithersai/smithers", "/repos/bad name/issues", "/repos/smithersai/vibelang/hooks", "/repos/smithersai/vibelang/collaborators", "/repos/smithersai/vibelang/issuesx", "/repos/smithersai/vibelang/contents/a/../b", "/repos/smithersai/vibelang/contents/%2e%2e/b", "/repos/smithersai/vibelang/contents/.github/x", "/repos/smithersai/vibelang//issues", "/repos/smithersai", "/user", "repos/smithersai/vibelang", "/repos/smithersai/vibelang?q=a#b", "/repos/smithersai/vibelang?q=a b", "/repos/smithersai/vibelang/contents/" + "a".repeat(2048)]
+    for (const path of admitted) expect(GitHub.DelegationPolicy.publicRead(entries, path), path).toEqual(reads[0])
+    for (const path of refused) expect(GitHub.DelegationPolicy.publicRead(entries, path), path).toBeUndefined()
+  })
+  it("loads only owner/name entries with a positive id", () => {
+    expect(GitHub.DelegationPolicy.validRead(reads[0]!)).toBe(true)
+    for (const read of [{ repository: "smithersai/vibelang", repositoryId: 0 }, { repository: "smithersai/vibelang", repositoryId: 1.5 }, { repository: "smithersai", repositoryId: 1 }, { repository: "a/b/c", repositoryId: 1 }, { repository: "", repositoryId: 1 }]) expect(GitHub.DelegationPolicy.validRead(read), read.repository).toBe(false)
+  })
+})
+
+describe("smithers.sh's installation tokens", () => {
+  interface App { mints: number; installationStatus?: number; mintStatus?: number; repository: unknown; expiresAt: number }
+  function appOf(state: App): GitHub.AppAuth.AppAuth {
+    return GitHub.AppAuth.AppAuth.of({
+      jwt: Effect.die("unused"),
+      installation: () => state.installationStatus === undefined ? Effect.succeed({ id: 99 }) : Effect.fail(new IntegrationError("delivery-failed", "no", { status: state.installationStatus })),
+      installationToken: (options: Parameters<GitHub.AppAuth.AppAuth["installationToken"]>[0]) => effect {
+        if (state.mintStatus !== undefined) throw new IntegrationError("delivery-failed", "no", { status: state.mintStatus })
+        state.mints += 1
+        try Effect.try(() => {
+          expect(options).toEqual({ installationId: 99, repositoryIds: [11], permissions: { contents: "read", issues: "read", pull_requests: "read", metadata: "read" } })
+        }).pipe(Effect.orDie)
+        return { token: Redacted.make("minted-" + state.mints), expiresAt: state.expiresAt }
+      },
+    } as never)
+  }
+  effect function tokens(state: App) {
+    const world: World = { seen: [], answer: () => ok(state.repository) }
+    return { world, token: PublicRead.installations(appOf(state), github(world), api) }
+  }
+  it.effect("mints once for the repository's id, checks its id and visibility, and keeps it until 5 minutes before expiry", () => effect {
+    const state: App = { mints: 0, repository: { id: 11, private: false }, expiresAt: 3_600_000 }
+    const { world, token } = try tokens(state)
+    const first = try token(reads[0]!)
+    try TestClock.adjust("54 minutes")
+    const kept = try token(reads[0]!)
+    try TestClock.adjust("2 minutes")
+    const renewed = try token(reads[0]!)
+    try Effect.try(() => {
+      expect([Redacted.value(first), Redacted.value(kept), Redacted.value(renewed)]).toEqual(["minted-1", "minted-1", "minted-2"])
+      expect(world.seen.map((seen) => [seen.path, seen.authorization])).toEqual([["/repos/smithersai/vibelang", "Bearer minted-1"], ["/repos/smithersai/vibelang", "Bearer minted-2"]])
+    })
+  })
+  it.effect("refuses a repository whose id changed or that is private, and says unavailable when GitHub fails", () => effect {
+    const reason = (state: App) => effect {
+      const { token } = try tokens(state)
+      return try Effect.flip(token(reads[0]!)).pipe(Effect.map((error) => error.reason))
+    }
+    const moved = try reason({ mints: 0, repository: { id: 12, private: false }, expiresAt: 3_600_000 })
+    const hidden = try reason({ mints: 0, repository: { id: 11, private: true }, expiresAt: 3_600_000 })
+    const uninstalled = try reason({ mints: 0, installationStatus: 404, repository: {}, expiresAt: 0 })
+    const notInInstallation = try reason({ mints: 0, mintStatus: 422, repository: {}, expiresAt: 0 })
+    const down = try reason({ mints: 0, mintStatus: 500, repository: {}, expiresAt: 0 })
+    const lookupDown = try reason({ mints: 0, installationStatus: 500, repository: {}, expiresAt: 0 })
+    const malformed = try reason({ mints: 0, repository: { id: "11" }, expiresAt: 3_600_000 })
+    try Effect.try(() => expect([moved, hidden, uninstalled, notInInstallation, down, lookupDown, malformed]).toEqual(["forbidden", "forbidden", "forbidden", "forbidden", "unavailable", "unavailable", "unavailable"]))
+  })
+})

@@ -21,11 +21,11 @@ export function usageFits(total: number, input: number, output: number): boolean
   return total >= 0 && total <= 9007199254740991 && input >= 0 && output >= 0 && input <= 9007199254740991 - total && output <= 9007199254740991 - total - input
 }
 
-/** Native safe-integer observations admit only an exact bounded nonnegative integer addition. */
+/** Native safe-integer observations admit only an exact bounded nonnegative integer addition; absent counts admit nothing. */
 //@ verify
-//@ ensures \result == (safeTotal && safeInput && safeOutput && 0 <= total && total <= 9007199254740991 && 0 <= input && 0 <= output && input + output <= 9007199254740991 - total)
-export function validUsage(safeTotal: boolean, safeInput: boolean, safeOutput: boolean, total: number, input: number, output: number): boolean {
-  return safeTotal && safeInput && safeOutput && usageFits(total, input, output)
+//@ ensures \result == (present && safeTotal && safeInput && safeOutput && 0 <= total && total <= 9007199254740991 && 0 <= input && 0 <= output && input + output <= 9007199254740991 - total)
+export function validUsage(present: boolean, safeTotal: boolean, safeInput: boolean, safeOutput: boolean, total: number, input: number, output: number): boolean {
+  return present && safeTotal && safeInput && safeOutput && usageFits(total, input, output)
 }
 
 /** A retry starts the current model text over and retains the visible answer and all accumulated usage. */
@@ -85,6 +85,8 @@ export interface ProgressEvent {
   readonly input: number
   readonly output: number
   readonly code: string
+  /** The provider reported both an input and an output count; without them a settlement is unusable, never free. */
+  readonly present: boolean
   readonly safeTotal: boolean
   readonly safeInput: boolean
   readonly safeOutput: boolean
@@ -100,15 +102,15 @@ export interface ProgressEvent {
 //@ ensures event.kind == "model-delta" && event.textDelta && event.projected == undefined ==> \result.text == state.text
 //@ ensures event.kind == "model-delta" && event.textDelta && event.projected != undefined ==> \result.text == event.projected
 //@ ensures event.kind == "model-delta" && !event.textDelta ==> \result == state
-//@ ensures event.kind == "model-settled" && validUsage(event.safeTotal, event.safeInput, event.safeOutput, state.tokens, event.input, event.output) ==> \result.tokens == state.tokens + event.input + event.output && \result.reply == state.reply && \result.text == state.text && \result.failed == state.failed && \result.usageValid == state.usageValid
-//@ ensures event.kind == "model-settled" && !validUsage(event.safeTotal, event.safeInput, event.safeOutput, state.tokens, event.input, event.output) ==> !\result.usageValid && \result.tokens == state.tokens && \result.reply == state.reply && \result.text == state.text && \result.failed == state.failed
+//@ ensures event.kind == "model-settled" && validUsage(event.present, event.safeTotal, event.safeInput, event.safeOutput, state.tokens, event.input, event.output) ==> \result.tokens == state.tokens + event.input + event.output && \result.reply == state.reply && \result.text == state.text && \result.failed == state.failed && \result.usageValid == state.usageValid
+//@ ensures event.kind == "model-settled" && !validUsage(event.present, event.safeTotal, event.safeInput, event.safeOutput, state.tokens, event.input, event.output) ==> !\result.usageValid && \result.tokens == state.tokens && \result.reply == state.reply && \result.text == state.text && \result.failed == state.failed
 //@ ensures event.kind == "model-failed" ==> \result.failed == event.code && \result.reply == state.reply && \result.text == state.text && \result.tokens == state.tokens && \result.usageValid == state.usageValid
 //@ ensures event.kind != "model-requested" && event.kind != "model-retried" && event.kind != "model-delta" && event.kind != "model-settled" && event.kind != "model-failed" ==> \result == state
 export function advanceProgress(state: ProgressState, event: ProgressEvent): ProgressState {
   if (event.kind === "model-requested" || event.kind === "model-retried") return resetProgress(state)
   if (event.kind === "model-delta") return event.textDelta ? appendProgress(state, event.piece, event.projected) : state
   if (event.kind === "model-settled") {
-    if (!validUsage(event.safeTotal, event.safeInput, event.safeOutput, state.tokens, event.input, event.output)) return invalidProgress(state)
+    if (!validUsage(event.present, event.safeTotal, event.safeInput, event.safeOutput, state.tokens, event.input, event.output)) return invalidProgress(state)
     return chargeProgress(state, event.input, event.output)
   }
   if (event.kind === "model-failed") return failProgress(state, event.code)

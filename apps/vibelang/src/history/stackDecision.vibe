@@ -88,3 +88,10 @@ export function epicByTitle(epics: ReadonlyArray<Epic>, title: string): string {
   }
   return ""
 }
+
+/** Whether a seeded commit's note list takes `line`: a nonempty line not already there, while it holds fewer than `max`. */
+//@ verify
+//@ ensures \result == (line != "" && !lines.includes(line) && lines.length < max)
+export function admitsLine(lines: ReadonlyArray<string>, line: string, max: number): boolean {
+  return line !== "" && !lines.includes(line) && lines.length < max
+}

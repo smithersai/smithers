@@ -41,6 +41,11 @@ export function tab(flags: Flags) {
       if (invalid !== undefined) throw new Finding({ report: `${message._tag}: left an invalid Model: ${invalid}` })
       try settle
     },
+    /** Accepts `message` and leaves its Commands in flight, as the runtime does while a request is out. */
+    hold: effect (message: Message) => {
+      const invalid = accept(message)
+      if (invalid !== undefined) throw new Finding({ report: `${message._tag}: left an invalid Model: ${invalid}` })
+    },
   }
 }
 
@@ -67,7 +72,7 @@ export const Op = Schema.Literals([
   "wiki", "filter-wiki", "wiki-location", "edit-wiki", "wiki-draft", "edit-text", "edit-same", "save-wiki", "cancel-edit",
   "account", "sign-in", "sign-out", "choose", "people", "close-people", "toggle-people", "select-role", "confirm-role", "cancel-role", "dismiss", "retry-account", "resolve-mock", "resolve-live",
   "issues", "issue-ui", "issue-card", "sandboxes", "maximize-sandboxes", "start-sandbox", "stop-sandbox", "terminal", "submit-terminal",
-  "tour", "auto-tour", "pause-tour", "back-stop", "skip-stop", "tour-sound", "end-tour", "measure", "remeasure", "tour-focus", "media", "pump", "noise", "wiki-save", "wiki-no-change", "drive-tour", "tour-event-end", "pick-mode",
+  "tour", "auto-tour", "pause-tour", "back-stop", "skip-stop", "tour-sound", "end-tour", "measure", "remeasure", "tour-focus", "media", "pump", "noise", "wiki-save", "wiki-no-change", "drive-tour", "tour-event-end", "pick-mode", "terminal-run", "issue-key",
 ])
 const ISSUE_ACTIONS = ["retry", "close", "specification", "spec-review", "roles", "list", "select", "kind", "state", "query", "title", "summary", "example", "prior", "comment-text", "parent", "assignee", "cancel", "back", "continue", "new-form", "vip-form", "commit-dialog", "split-dialog", "link-dialog", "kind-key", "focus"]
 const ISSUE_KINDS = ["All", "Issues", "Tasks", "VIPs"]
@@ -180,6 +185,10 @@ export function gesture(model: Model, { op, n, text }: typeof Step.Type): Readon
     case "wiki-save": return [Message.ClickedWiki({ page: editable.id }), Message.ClickedEditWiki(), Message.UpdatedWikiEdit({ value: `${text}!` }), Message.SubmittedWikiEdit()]
     case "wiki-no-change": return [Message.ClickedWiki({ page: editable.id }), Message.ClickedEditWiki(), Message.SubmittedWikiEdit()]
     case "drive-tour": return tourStop(model, n % 10 + 1)
+    // Compound gestures a person makes in one go, which single steps rarely line up: a command typed into a started
+    // sandbox, and a kind chosen from the keyboard in the issues pane.
+    case "terminal-run": return [Message.ClickedSandboxes(), Message.StartedSandbox(), Message.UpdatedTerminal({ value: n % 2 === 0 ? "pwd" : text }), Message.SubmittedTerminal()]
+    case "issue-key": return [Message.ClickedIssues(), Message.IssueUi({ action: "kind-key", value: ISSUE_KINDS[n % ISSUE_KINDS.length]! })]
     case "tour-event-end": return tourEnded(model)
   }
 }

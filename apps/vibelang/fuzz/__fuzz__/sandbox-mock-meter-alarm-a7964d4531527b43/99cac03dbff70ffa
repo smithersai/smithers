@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 35
+bias 5
+null-prototype true
+key 3292352743
+tape 
+schedule-key 1888189485
+schedule 
+signature "ReturnedFalse"
+path 
+codec "json"
+value "null"
+# ReturnedFalse
+# null

@@ -1,4 +1,4 @@
-// A day's ledger at its service boundary: limits, rounding, ordering and retry idempotency.
+// A day's ledger at its service boundary: reservations, limits, rounding, ordering and retry idempotency.
 import { describe, expect, it } from "@effect/vitest"
 import * as Budget from "../worker/Budget.vibe"
 
@@ -11,36 +11,67 @@ effect function ledger() {
 }
 
 describe("daily budget", () => {
-  for (const limit of [0, 1, 10]) {
-    it.effect(`admits only strictly below its ${limit}-token limit`, () => effect {
+  for (const limit of [0, 9, 10, 25]) {
+    it.effect(`admits a 10-token call only while its ceiling fits under the ${limit}-token limit`, () => effect {
       const log = try ledger()
       const budget = try Budget.make(log.service, limit)
-      const before = try budget.admit()
-      try budget.spend("a", limit)
-      const at = try budget.admit()
-      try budget.spend("b", 1)
-      const after = try budget.admit()
+      const before = try budget.admit("a", 10)
+      try budget.spend("a", 4, true, 10)
+      const next = try budget.admit("b", 10)
       try Effect.try(() => {
-        expect(before).toBe(limit > 0)
-        expect(at).toBe(false)
-        expect(after).toBe(false)
+        expect(before).toBe(limit >= 10)
+        expect(next).toBe(4 + 10 <= limit)
       })
     })
   }
-  it.effect("rounds positive spend, clamps negatives, and charges a repeated reply once under concurrent retry", () => effect {
+
+  it.effect("twenty concurrent admissions reserve at most the limit, and a settlement frees its reservation", () => effect {
+    const log = try ledger()
+    const budget = try Budget.make(log.service, 33)
+    const admitted = try all(Array.from({ length: 20 }, (_, i) => budget.admit(`r${i}`, 10)), { concurrency: "unbounded" })
+    const held = try Ref.get(log.data)
+    const winners = admitted.flatMap((ok, i) => ok ? [`r${i}`] : [])
+    try budget.spend(winners[0]!, 3, true, 10)
+    const after = try budget.admit("late", 10)
+    const settled = try Ref.get(log.data)
+    try Effect.try(() => {
+      expect(winners).toHaveLength(3)
+      expect(held[Budget.RESERVED]).toBe(30)
+      expect(after).toBe(true)
+      expect(settled[Budget.SPENT]).toBe(3)
+      expect(settled[Budget.RESERVED]).toBe(30)
+    })
+  })
+
+  it.effect("an admission that runs twice holds one reservation; a charged call is not admitted again", () => effect {
+    const log = try ledger()
+    const budget = try Budget.make(log.service, 15)
+    const first = try budget.admit("a", 10)
+    const again = try budget.admit("a", 10)
+    const held = try Ref.get(log.data)
+    try budget.spend("a", 2, true, 10)
+    const charged = try budget.admit("a", 10)
+    try Effect.try(() => {
+      expect([first, again, charged]).toEqual([true, true, false])
+      expect(held[Budget.RESERVED]).toBe(10)
+    })
+  })
+
+  it.effect("rounds reported spend, charges the ceiling for an unusable report, and charges a repeated reply once under concurrent retry", () => effect {
     const log = try ledger()
     const budget = try Budget.make(log.service, 100)
-    try all(Array.from<unknown, void!!>({ length: 12 }, () => budget.spend("same", 1.6)), { concurrency: "unbounded" })
-    try budget.spend("negative", -3)
-    try budget.spend("negative", 9)
-    try budget.spend("second", 2.4)
+    try all(Array.from<unknown, void!!>({ length: 12 }, () => budget.spend("same", 1.6, true, 10)), { concurrency: "unbounded" })
+    try budget.spend("negative", -3, true, 10)
+    try budget.spend("negative", 9, true, 10)
+    try budget.spend("second", 2.4, true, 10)
+    try budget.spend("silent", 0, false, 10)
     const data = try Ref.get(log.data)
     const restored = try Budget.make(log.service, 4)
-    try restored.spend("same", 99)
-    const admitted = try restored.admit()
+    try restored.spend("same", 99, true, 10)
+    const admitted = try restored.admit("next", 1)
     const final = try Ref.get(log.data)
     try Effect.try(() => {
-      expect(data).toEqual({ spent: 4, "reply/same": 2, "reply/negative": 0, "reply/second": 2 })
+      expect(data).toMatchObject({ spent: 24, reserved: 0, over: 24, "reply/same": 2, "reply/negative": 10, "reply/second": 2, "reply/silent": 10 })
       expect(final).toEqual(data)
       expect(admitted).toBe(false)
     })

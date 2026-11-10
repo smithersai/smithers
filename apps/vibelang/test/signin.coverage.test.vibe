@@ -10,54 +10,10 @@ import { Factory } from "../src/core/Factory.vibe"
 import { mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { readMockSession, readPending, readSession, writePending, writeSession, type PendingDevice } from "../src/surfaces/session.vibe"
 import { signIn, signOutSurface, type LoginInput, SignInFailed } from "../src/surfaces/signin.vibe"
-import * as Accounts from "../worker/Accounts.vibe"
-import type { Storage } from "../worker/Objects.vibe"
-import { objectStorage } from "./support/objectStorage.ts"
+import { configured, live, PERSON, world } from "./support/deviceSignIn.vibe"
 
-const PERSON = { id: 9, login: "fixture-person-9" }
 const NO_WAIT: LoginInput = { wait: false }
 const WAIT: LoginInput = { wait: true }
-const live = Layer.succeed(Factory, { mode: "live" } as unknown as Factory["Service"])
-
-function githubService(): GitHub.Auth.GitHubAuth["Service"] {
-  const refused = (step: "device" | "exchange" | "refresh" | "user") => fail(new GitHub.Auth.GitHubRefused({ step, reason: "rejected" }))
-  return {
-    authorizeUrl: () => "https://github.test/login", exchange: () => refused("exchange"), refresh: () => refused("refresh"),
-    user: (token) => Redacted.value(token) === "device-token-9" ? succeed(PERSON) : refused("user"),
-    permission: () => succeed("read"), revoke: () => Effect.void, deviceCode: () => refused("device"), deviceToken: () => refused("device"),
-  }
-}
-
-/** Serves the real accounts object beside the identity-provider fixture; `grant` is what the token endpoint answers next. */
-effect function world() {
-  const grant = try Ref.make<string>("authorization_pending")
-  const interval = try Ref.make(1)
-  const address = (try HttpServer.HttpServer).address
-  const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
-  const storage = (try Effect.try(() => objectStorage())) as unknown as Storage
-  const accounts = try Accounts.make("signin-test", storage, {
-    origin, initialMaintainer: "1", clientId: "fixture-client-id",
-    signingSecret: Redacted.make("fixture-only-signing-secret-32-chars"),
-    encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
-    github: githubService(),
-  })
-  try HttpServer.serveEffect(effect {
-    const request = try HttpServerRequest.HttpServerRequest
-    const path = new URL(request.url, origin).pathname
-    if (path === "/login/device/code") return HttpServerResponse.jsonUnsafe({ device_code: "private-device-code", user_code: "ABCD-EFGH", verification_uri: origin + "/device", expires_in: 600, interval: try Ref.get(interval) })
-    if (path === "/login/oauth/access_token") {
-      const answer = try Ref.get(grant)
-      return HttpServerResponse.jsonUnsafe(answer === "authorized" ? { access_token: "device-token-9", token_type: "bearer", scope: "read:user" } : answer === "unknown-person" ? { access_token: "stranger", token_type: "bearer", scope: "read:user" } : answer === "slow_down" ? { error: answer, interval: 30 } : { error: answer })
-    }
-    return try accounts.fetch
-  })
-  return { origin, grant, interval }
-}
-
-/** Runs a `login`/`logout` step with this directory and factory origin. */
-function configured(origin: string, directory: string, github = origin) {
-  return ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_FACTORY_URL: origin, VIBELANG_GITHUB_WEB: github, XDG_CONFIG_HOME: directory }))
-}
 
 const message = <A, E, R>(program: A!E!R) => Effect.flip(program).pipe(Effect.map((error) => (error as unknown as SignInFailed).message))
 const pendingFor = (origin: string, over: Partial<PendingDevice> = {}): PendingDevice => ({ origin, clientId: "fixture-client-id", deviceCode: "private-device-code", userCode: "OLDC-ODE1", verificationUri: origin + "/device", intervalSeconds: 1, expiresAt: Date.now() + 600_000, nextPollAt: 0, ...over })
@@ -168,7 +124,7 @@ describe("device sign-in", () => {
     }
   }), 60_000)
 
-  it.live("a wait the person declines fails with one safe sentence and leaves no grant", () => scoped(effect {
+  it.live("a wait the person declines says it was declined and leaves no grant", () => scoped(effect {
     provide NodeServices.layer, NodeHttpServer.layerTest, live {
       const { origin, grant } = try world()
       const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
@@ -177,7 +133,7 @@ describe("device sign-in", () => {
         const failure = try message(signIn(WAIT))
         const left = try readPending()
         try Effect.try(() => {
-          expect(failure).toBe("Sign-in failed.")
+          expect(failure).toBe("Sign-in declined.")
           expect(left).toBeUndefined()
         })
       }
@@ -278,6 +234,24 @@ describe("the device route's refusals", () => {
           expect(oversized.status).toBe(413)
           expect(connect.status).toBe(403)
           expect(wiki.status).toBe(403)
+        })
+      }
+    }
+  }), 60_000)
+})
+
+describe("the device token", () => {
+  const post = (origin: string, token: string) => HttpClientRequest.post(origin + "/api/auth/device").pipe(HttpClientRequest.setHeader("origin", origin), HttpClientRequest.bodyJsonUnsafe({ token }))
+  it.live("is revoked once the identity is read, whether or not it names a person, so it never counts toward GitHub's ten", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const { origin, revoked } = try world()
+      provide FetchHttpClient.layer {
+        const http = try HttpClient.HttpClient
+        const issued = try http.execute(post(origin, "device-token-9"))
+        const stranger = try http.execute(post(origin, "stranger"))
+        try Effect.try(() => {
+          expect([issued.status, stranger.status]).toEqual([200, 401])
+          expect(revoked).toEqual(["device-token-9", "stranger"])
         })
       }
     }

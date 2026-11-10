@@ -6,9 +6,13 @@
 // the gate and other runtimes credit it by source position after source maps:
 //
 // - A file with no base execution is gated on the first evidence structure that has it (all four metrics).
-// - A file executed in the base keeps the base structure. Cross-runtime hits require identical complete source
-//   ranges (and ordered arm ranges for branches). An enclosing statement or another same-line function cannot
-//   establish execution. Different compiler shapes remain uncovered instead of being guessed.
+// - A file executed in the base keeps the base structure. Cross-runtime hits require the identical source start: a
+//   statement's, a function body's (Istanbul's own function key; an arrow's declaration
+//   maps to its parameters in one map and its name in the other), and for branches the same type with the same ordered arm starts. Ends are
+//   not compared: a map composed through Vite infers each end from the next mapped token, so the same `if` arm ends
+//   at column 36 in the compiler's map and 38 in the bundle's (decision 0016). An enclosing statement or another
+//   same-line function starts elsewhere and cannot establish execution. Different compiler shapes remain uncovered
+//   instead of being guessed.
 
 export interface FileCoverageJSON {
   path: string
@@ -64,17 +68,19 @@ export function metrics(json: FileCoverageJSON) {
 export function unionEvidence(base: FileCoverageJSON, evidence: FileCoverageJSON): FileCoverageJSON {
   const json = JSON.parse(JSON.stringify(base)) as FileCoverageJSON
   const location = (loc: Arm) => {
-    const coordinates = [loc.start.line, loc.start.column, loc.end.line, loc.end.column]
+    const coordinates = [loc.start.line, loc.start.column]
     if (!coordinates.every(value => typeof value === "number" && Number.isSafeInteger(value) && value >= 0)) return undefined
     return JSON.stringify(coordinates)
   }
   const statements = new Set(Object.entries(evidence.statementMap).filter(([id]) => (evidence.s[id] ?? 0) > 0).map(([, loc]) => location(loc)).filter(key => key !== undefined))
-  const evidenceFns = new Set(Object.entries(evidence.fnMap).filter(([id]) => (evidence.f[id] ?? 0) > 0).map(([, fn]) => location(fn.decl)).filter(key => key !== undefined))
+  const evidenceFns = new Set(Object.entries(evidence.fnMap).filter(([id]) => (evidence.f[id] ?? 0) > 0).map(([, fn]) => location(fn.loc ?? fn.decl)).filter(key => key !== undefined))
   const branchKey = (branch: FileCoverageJSON["branchMap"][string]) => {
-    // The implicit else arm has no range in either runtime; it is identified by its branch's complete range.
+    // A branch is its type and its ordered arm starts, Istanbul's own key. Its own range is not compared: a logical
+    // expression's start maps to its first operand in one map and an enclosing parenthesis in the other. The implicit
+    // else arm has no range in either runtime; it follows the `if` arm that precedes it.
     const implicit = (arm: Arm) => [arm.start.line, arm.start.column, arm.end.line, arm.end.column].every(value => value === undefined)
-    const loc = location(branch.loc), arms = branch.locations.map(arm => implicit(arm) ? "implicit" : location(arm))
-    return loc === undefined || arms.some(key => key === undefined) ? undefined : JSON.stringify([branch.type, loc, arms])
+    const arms = branch.locations.map(arm => implicit(arm) ? "implicit" : location(arm))
+    return arms.some(key => key === undefined) || arms.every(key => key === "implicit") ? undefined : JSON.stringify([branch.type, arms])
   }
   const evidenceBranches = new Map<string, Array<ReadonlyArray<number>>>()
   for (const [id, branch] of Object.entries(evidence.branchMap)) {
@@ -91,7 +97,7 @@ export function unionEvidence(base: FileCoverageJSON, evidence: FileCoverageJSON
   }
   for (const [id, fn] of Object.entries(json.fnMap)) {
     if ((json.f[id] ?? 0) > 0) continue
-    const key = location(fn.decl)
+    const key = location(fn.loc ?? fn.decl)
     if (key !== undefined && evidenceFns.has(key)) json.f[id] = 1
   }
   for (const [id, branch] of Object.entries(json.branchMap)) {

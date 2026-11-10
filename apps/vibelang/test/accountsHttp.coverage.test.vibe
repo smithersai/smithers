@@ -3,116 +3,12 @@
 // sessions, grants, events and recovery, with an injected GitHub auth service. No request is intercepted.
 import { describe, expect, it } from "@effect/vitest"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
-import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServer, HttpServerRequest } from "effect/http"
 import { GitHub } from "@smthrs/integrations"
 import * as Accounts from "../worker/Accounts.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { objectStorage } from "./support/objectStorage.ts"
-
-const ORIGIN = "https://factory.example"
-
-/** The issues routes take the ambient client; these tests never reach GitHub. */
-const offline = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) })))
-
-interface Person { readonly id: number; readonly login: string }
-
-/** A GitHub auth service with canned people; each step named in `failures` refuses. */
-function github(people: ReadonlyArray<Person>, failures: ReadonlyArray<string> = [], expiresAt: number | null = null): GitHub.Auth.GitHubAuth["Service"] {
-  return {
-    authorizeUrl: ({ state, codeChallenge, redirectUri }) =>
-      `https://github.test/login?state=${state}&code_challenge=${codeChallenge}&redirect_uri=${encodeURIComponent(redirectUri)}`,
-    exchange: ({ code }) => failures.includes("exchange")
-      ? fail(new GitHub.Auth.GitHubRefused({ step: "exchange", reason: "unavailable" }))
-      : succeed({ accessToken: Redacted.make(`token-${Redacted.value(code)}`), expiresAt, refreshToken: null }),
-    refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
-    user: (accessToken) => {
-      if (failures.includes("user")) return fail(new GitHub.Auth.GitHubRefused({ step: "user", reason: "unavailable" }))
-      const id = Number(Redacted.value(accessToken).slice("token-".length))
-      const person = people.find((known) => known.id === id)
-      return person === undefined
-        ? fail(new GitHub.Auth.GitHubRefused({ step: "user", reason: "rejected" }))
-        : succeed({ id: person.id, login: person.login })
-    },
-    permission: () => succeed("read"),
-    revoke: () => Effect.void,
-    // The web sign-in never uses the device flow (the CLI and MCP server do); refuse it like an unavailable GitHub.
-    deviceCode: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
-    deviceToken: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
-  }
-}
-
-function setupWith(githubService: GitHub.Auth.GitHubAuth["Service"], initialMaintainer = "1"): Accounts.Setup {
-  return {
-    origin: ORIGIN,
-    initialMaintainer,
-    clientId: "fixture-client-id",
-    signingSecret: Redacted.make("fixture-only-signing-secret-32-chars"),
-    encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
-    github: githubService,
-  }
-}
-
-function originOf(server: HttpServer.HttpServer["Service"]): string {
-  const address = server.address
-  return address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
-}
-
-/** The object served on a real loopback socket, with the test's principal route beside the product handler. */
-effect function serve(setup: Accounts.Setup) {
-  const storage = try Effect.try(() => objectStorage())
-  const accounts = try Accounts.make("accounts-test", storage as unknown as Storage, setup)
-  const server = try HttpServer.HttpServer
-  try HttpServer.serveEffect(effect {
-    const request = try HttpServerRequest.HttpServerRequest
-    const path = new URL(request.url, ORIGIN).pathname
-    if (path === "/__principal") {
-      const principal = try Accounts.sandboxPrincipal(accounts.current, accounts.allowed)
-      return HttpServerResponse.jsonUnsafe(principal)
-    }
-    return try accounts.fetch
-  })
-  return { accounts, origin: originOf(server), storage }
-}
-
-function get(origin: string, path: string, cookie = "") {
-  return HttpClientRequest.get(origin + path).pipe(
-    HttpClientRequest.setHeader("origin", ORIGIN),
-    HttpClientRequest.setHeader("cookie", cookie),
-  )
-}
-
-function post(origin: string, path: string, body: unknown, cookie = "") {
-  return HttpClientRequest.post(origin + path).pipe(
-    HttpClientRequest.setHeader("origin", ORIGIN),
-    HttpClientRequest.setHeader("cookie", cookie),
-    HttpClientRequest.bodyJsonUnsafe(body),
-  )
-}
-
-function cookieOf(response: HttpClientResponse.HttpClientResponse, name: string): string {
-  const cookie = response.cookies.cookies[name]
-  return cookie === undefined ? "" : `${name}=${cookie.value}`
-}
-
-/** The real redirect dance: sign-in, then the callback with the state and code GitHub would carry. */
-effect function signIn(http: HttpClient.HttpClient, origin: string, code: string) {
-  const start = try http.execute(get(origin, "/api/auth/sign-in"))
-  const location = start.headers["location"] ?? ""
-  const state = new URL(location).searchParams.get("state") ?? ""
-  const callback = try http.execute(get(origin, `${Accounts.CALLBACK}?state=${state}&code=${code}`, cookieOf(start, "__Host-vibelang-sign-in")))
-  return { cookie: cookieOf(callback, Accounts.SESSION), start, callback, state }
-}
-
-effect function untilSse(seen: Ref.Ref<string>) {
-  let attempts = 0
-  while (attempts < 400) {
-    const text = try Ref.get(seen)
-    if (text.includes("\n\n")) return text
-    attempts++
-    try Effect.sleep("25 millis")
-  }
-  return try Ref.get(seen)
-}
+import { ORIGIN, cookieOf, get, github, offline, originOf, post, serve, setupWith, signIn, untilSse } from "./support/accountsWorld.vibe"
 
 describe("sign-in over the object's real HTTP boundary", () => {
   it.live("signs a person in through the real callback, serves their session, and signs them out durably", () => scoped(effect {

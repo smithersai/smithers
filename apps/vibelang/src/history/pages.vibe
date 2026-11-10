@@ -7,6 +7,7 @@
 //   commit <id>              one commit in full: its notes and the real commits it folds
 //   search <text>            commits whose title has the text (or whose id it is), at most `MATCHES`
 import type { Commit, CommitState, History, Real } from "./mythical.vibe"
+import { clipQuery, pageCount, pageStart } from "./pageDecision.vibe"
 
 /** A mythical commit as a list shows it: no notes, only how many it has and how many real commits it folds. */
 export interface Head {
@@ -73,7 +74,7 @@ export const PAGE = 50
 /** The most commits a search answers. */
 export const MATCHES = 100
 
-/** The longest search the history reads; a longer one reads as its first `MAX_QUERY` characters. */
+/** The longest search the history reads; a longer one reads as its first `MAX_QUERY` units, cut between characters. */
 export const MAX_QUERY = 200
 
 /** How many real commits fold into each mythical commit. */
@@ -100,7 +101,7 @@ function headOf(commit: Commit, folds: Map<string, number>): Head {
 /** Every commit in stack order: epics in order, ranks inside each. */
 function stacked(history: History): ReadonlyArray<Commit> {
   const order = new Map(history.epics.map((epic, index) => [epic.id, index]))
-  return [...history.commits].sort((a, b) => (order.get(a.epic) ?? 0) - (order.get(b.epic) ?? 0) || a.rank - b.rank)
+  return [...history.commits].sort((a, b) => order.get(a.epic)! - order.get(b.epic)! || a.rank - b.rank)
 }
 
 export function outlineOf(history: History): Outline {
@@ -123,8 +124,8 @@ export function outlineOf(history: History): Outline {
 export function epicPageOf(history: History, epic: string, from: number): EpicPage {
   const folds = foldCounts(history)
   const all = history.commits.filter((commit) => commit.epic === epic).sort((a, b) => a.rank - b.rank)
-  const start = Math.max(0, Math.floor(from))
-  return { seq: history.seq, epic, from: start, total: all.length, commits: all.slice(start, start + PAGE).map((commit) => headOf(commit, folds)) }
+  const start = pageStart(Math.floor(from))
+  return { seq: history.seq, epic, from: start, total: all.length, commits: all.slice(start, start + pageCount(all.length, start, PAGE)).map((commit) => headOf(commit, folds)) }
 }
 
 export function commitPageOf(history: History, id: string): CommitPage {
@@ -137,12 +138,12 @@ export function commitPageOf(history: History, id: string): CommitPage {
 
 /** Commits whose title has `query` (any case) or whose id it is, at most `MATCHES`, in stack order; `""` finds none. */
 export function matchesOf(history: History, query: string): Matches {
-  const clipped = query.slice(0, MAX_QUERY)
+  const clipped = clipQuery(query, MAX_QUERY)
   const needle = clipped.trim().toLowerCase()
   if (needle === "") return { seq: history.seq, query: clipped, commits: [] }
   const folds = foldCounts(history)
   const found = stacked(history).filter((commit) => commit.id === needle || commit.title.toLowerCase().includes(needle))
-  return { seq: history.seq, query: clipped, commits: found.slice(0, MATCHES).map((commit) => headOf(commit, folds)) }
+  return { seq: history.seq, query: clipped, commits: found.slice(0, pageCount(found.length, 0, MATCHES)).map((commit) => headOf(commit, folds)) }
 }
 
 /** What answers `request`. */

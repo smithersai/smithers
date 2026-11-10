@@ -11,6 +11,7 @@ import { execFileSync } from "child_process";
 import { createRequire } from "module";
 import path from "path";
 import { extractModule } from "./extract.js";
+import { desugarMessageUnions } from "./message-union.js";
 import { resolveModule } from "./resolve.js";
 import { narrowModule } from "./narrow.js";
 import { autoHavocModule } from "./autohavoc.js";
@@ -344,6 +345,18 @@ function runFile(
     : new Project({ compilerOptions: { strict: true, target: ScriptTarget.ESNext, lib: ["lib.esnext.d.ts"] } });
   const sourceFile = project.addSourceFileAtPath(absPath);
   project.resolveSourceFileDependencies();
+  // Foldkit message unions are read as `_tag` unions in this file and every module it imports (message-union.ts).
+  const seen = new Set<SourceFile>();
+  const desugar = (file: SourceFile): void => {
+    if (seen.has(file) || file.isInNodeModules() || file.isDeclarationFile()) return;
+    seen.add(file);
+    desugarMessageUnions(file);
+    for (const declaration of [...file.getImportDeclarations(), ...file.getExportDeclarations()]) {
+      const imported = declaration.getModuleSpecifierSourceFile();
+      if (imported) desugar(imported);
+    }
+  };
+  desugar(sourceFile);
 
   const fullText = sourceFile.getFullText();
   const { options, configFile } = effectiveOptions(absPath, fullText, configPath);

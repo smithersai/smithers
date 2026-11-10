@@ -1,0 +1,18 @@
+// worker/Api.vibe as `alchemy dev` and a deploy run it: Alchemy's own Worker and Durable Object bridges around the
+// Worker's Effect (the virtual entry @alchemy.run/cloudflare's Rolldown source generates, `makeEffectVirtualEntry`).
+// Typechecked with the Worker project (worker/tsconfig.json), which has Cloudflare's types. This suite's host uses Alchemy's rolldown build with per-module counters (0016).
+import { DurableObject, WorkerEntrypoint } from "cloudflare:workers"
+import { makeDurableObjectBridge, makeWorkerBridge } from "@alchemy.run/cloudflare/Bridge"
+import entrypoint from "../../worker/Api.vibe"
+
+// Alchemy's generated entry is untyped JavaScript; the Worker's provider requirement is satisfied at deploy, not here.
+const meta = { entrypoint: entrypoint as unknown as Effect.Effect<Record<string, any>>, stack: { name: "vibelang", stage: "workerd-test" } }
+
+export default makeWorkerBridge(WorkerEntrypoint, meta)
+
+const DurableObjectBridge = makeDurableObjectBridge(DurableObject, meta)
+export class Conversation extends DurableObjectBridge("Conversation") {}
+export class Budget extends DurableObjectBridge("Budget") {}
+export class History extends DurableObjectBridge("History") {}
+export class ProjectAccounts extends DurableObjectBridge("ProjectAccounts") {}
+export class ActionIndex extends DurableObjectBridge("ActionIndex") {}

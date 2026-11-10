@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 37
+bias 2
+null-prototype false
+key 3909676680
+tape i2DYLmQXCw34nKUbr_zlaQILz4OPyhwVMRV1nQ
+schedule-key 438551383
+schedule 
+signature "PropertyError:TimeoutError"
+path 7.0
+codec "json"
+value "{\"role\":\"viewer\",\"text\":\" \",\"title\":\"\",\"actor\":\"person\",\"json\":false}"
+# PropertyError:TimeoutError
+# {"role":"viewer","text":" ","title":"","actor":"person","json":false}

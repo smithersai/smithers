@@ -1,0 +1,69 @@
+// @vitest-environment node
+// A history action runs the history's own flows on the action host (worker/ActionRuns.vibe, HistoryActions.vibe): each
+// journals its authorize step as the person the door identified, at that person's current grant, before it writes or
+// reads. The history the action reaches here acts as a maintainer, so only the action host's own authorize step can
+// refuse a contributor's insert.
+import { describe, expect, it } from "@effect/vitest"
+import type { Run } from "../src/actions/Actions.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import { world, request, history } from "./support/actionObjects.vibe"
+
+/** The names of the run's passed steps, in order. */
+function passed(rows: ReadonlyArray<Run>, id: string): ReadonlyArray<string> {
+  return (rows.find((run) => run.id === id)?.steps ?? []).filter((step) => step.state === "passed").map((step) => step.name)
+}
+
+describe("a history action's caller", () => {
+  it.live("journals each flow's authorize step before its write or read", () => scoped(effect {
+    const w = try world()
+    provide history {
+      const mythical = try Mythical
+      effect function ran(id: string, flow: string, input: Schema.Json) {
+        const open = try w.object(id)
+        const started = try open.host.start(request(id, flow, input, w.person.id), "maintainer")
+        try open.host.alarm(w.spend, w.model, mythical)
+        const rows = try Runs.read(open.sequencer)
+        return { started, steps: passed(rows, id), run: rows.find((run) => run.id === id)! }
+      }
+      const plan = try ran("plan", "vibelang/history/Plan", { how: "append", epic: "", newEpic: "Caller", target: "", title: "Caller", task: "t" })
+      const answer = try Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ id: Schema.String })))(plan.run.result)
+      const commit = answer.id
+      const start = try ran("start", "vibelang/history/Start", { id: commit, lane: "lane" })
+      const note = try ran("note", "vibelang/history/Note", { id: commit, section: "tried", text: "x" })
+      const show = try ran("show", "vibelang/history/show", { what: "commit", id: commit })
+      try Effect.try(() => {
+        expect([plan.started, start.started, note.started, show.started]).toEqual([null, null, null, null])
+        expect([plan.run.state, start.run.state, note.run.state, show.run.state]).toEqual(["passed", "passed", "passed", "passed"])
+        // The mock history runs the same flow in memory inside the record step, so its own two steps follow the host's.
+        expect(plan.steps).toEqual(["vibelang/history/append/authorize", "vibelang/history/append/record", "vibelang/history/append/authorize", "vibelang/history/append/record"])
+        expect(start.steps).toEqual(["vibelang/history/start/authorize", "vibelang/history/start/record", "vibelang/history/start/authorize", "vibelang/history/start/record"])
+        expect(note.steps).toEqual(["vibelang/history/note/authorize", "vibelang/history/note/record", "vibelang/history/note/authorize", "vibelang/history/note/record"])
+        expect(show.steps).toEqual(["vibelang/history/show/authorize", "vibelang/history/show/read"])
+      })
+    }
+  }), 60_000)
+
+  it.live("refuses a contributor's insert at its authorize step, whatever the payload claims, and writes nothing", () => scoped(effect {
+    const w = try world()
+    const contributor = try w.accounts.choose("contributor")
+    provide history {
+      const mythical = try Mythical
+      const before = try mythical.outline()
+      const open = try w.object("insert")
+      const claim = { how: "insert", epic: "", newEpic: "", target: "m1", title: "Claimed", task: "t", principal: { role: "maintainer", name: "Ada", agent: false } }
+      const started = try open.host.start(request("insert", "vibelang/history/Plan", claim, contributor.id), "maintainer")
+      try open.host.alarm(w.spend, w.model, mythical)
+      const rows = try Runs.read(open.sequencer)
+      const result = try Effect.try(() => JSON.parse(rows[0]!.result))
+      const after = try mythical.outline()
+      try Effect.try(() => {
+        expect(started).toBeNull()
+        expect(rows).toMatchObject([{ id: "insert", state: "failed" }])
+        expect(result).toEqual({ id: "", refusal: "forbidden" })
+        expect(passed(rows, "insert")).toEqual(["vibelang/history/retell/authorize"])
+        expect(after).toEqual(before)
+      })
+    }
+  }), 60_000)
+})

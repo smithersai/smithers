@@ -19,7 +19,7 @@ type Token =
   | { type: "punc"; value: string }
   | { type: "result"; value: undefined };
 
-const MULTI_OPS = ["<==>", "==>", "===", "!==", "==", "!=", ">=", "<=", "&&", "||"];
+const MULTI_OPS = ["<==>", "==>", "===", "!==", "==", "!=", ">=", "<=", "&&", "||", "??"];
 
 /** Numeric literals accepted in specs. BigInts are recognized first so their
  *  exact value never passes through Number; ordinary numbers additionally
@@ -156,7 +156,7 @@ class Parser {
   }
 
   parseTernary(): Expr {
-    const cond = this.parseOr();
+    const cond = this.parseNullish();
     if (this.match("op", "?")) {
       const then_ = this.parseIff();
       this.expect("punc", ":");
@@ -164,6 +164,14 @@ class Parser {
       return { kind: "conditional", cond, then: then_, else: else_ };
     }
     return cond;
+  }
+
+  // `a ?? b`, as in the checked code: an optional's value, or `b` when it is absent. Looser than `||`, as
+  // TypeScript's grammar requires parentheses to mix them.
+  parseNullish(): Expr {
+    let left = this.parseOr();
+    while (this.match("op", "??")) left = { kind: "nullish", left, right: this.parseOr() };
+    return left;
   }
 
   parseOr(): Expr {

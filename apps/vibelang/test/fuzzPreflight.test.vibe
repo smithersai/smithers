@@ -1,0 +1,34 @@
+// @vitest-environment node
+// Each run compiles the script through vibelang/register (about 20 s on a loaded host), so the case is two runs.
+// `pnpm fuzz` checks the fuzz flow's install first: a repository without it gets the install command, not a module error.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import { run } from "./support/processes.vibe"
+
+const flowPackages = ["vibelang-runtime", "vibelang", "effect", "@effect/platform-node", "@smthrs/flow", "@smthrs/plan", "@smthrs/engine-store", "@smthrs/platform-node", "@smthrs/kernel", "@smthrs/run-store"]
+
+it.live("names each missing flow package and the install command, and passes once all are installed", () => scoped(effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const root = try fs.makeTempDirectoryScoped()
+    const script = try path.fromFileUrl(new URL("../scripts/fuzz-preflight.vibe", import.meta.url))
+    const check = () => run("node", ["--import=vibelang/register", script], { FUZZ_REPOSITORY_ROOT: root })
+    for (const name of flowPackages.slice(1)) {
+      const directory = path.join(root, ".smithers/flows/node_modules", name)
+      try fs.makeDirectory(directory, { recursive: true })
+      try fs.writeFileString(path.join(directory, "package.json"), "{}\n")
+    }
+    const one = try check()
+    try Effect.try(() => {
+      expect(one.status).toBe(1)
+      expect(one.stdout + one.stderr).toContain("(vibelang-runtime)")
+      expect(one.stdout + one.stderr).toContain(`--filter "@smithers/release-workflows..."`)
+    })
+    const runtime = path.join(root, ".smithers/flows/node_modules/vibelang-runtime")
+    try fs.makeDirectory(runtime, { recursive: true })
+    try fs.writeFileString(path.join(runtime, "package.json"), "{}\n")
+    const ready = try check()
+    try Effect.try(() => expect(ready.status, ready.stderr).toBe(0))
+  }
+}), 180_000)

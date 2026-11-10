@@ -135,6 +135,8 @@ describe("the history's routes", () => {
 
   it("name no page for an unknown path, a bad cursor or the wrong method", () => {
     const params = (query: string) => new URLSearchParams(query)
+    expect(historyRouteOf("GET", "/api/history/epics/m1")).toBeUndefined()
+    expect(historyRouteOf("GET", "/api/history/everything")).toBeUndefined()
     expect(pageRequestOf("/epics/e1", params("from=-1"))).toBeUndefined()
     expect(pageRequestOf("/epics/e1", params("from=1.5"))).toBeUndefined()
     expect(pageRequestOf("/epics/m1", params(""))).toBeUndefined()

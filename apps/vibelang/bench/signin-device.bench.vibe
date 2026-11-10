@@ -1,0 +1,75 @@
+// @vitest-environment node
+// `login` and `logout` through the live device flow: the real Accounts object over loopback beside the identity-provider
+// fixture (test/support/deviceSignIn.vibe). No GitHub credential, no interception; GitHub's answer is the fixture's.
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { readPending, readSession, removePending, writePending, writeSession, type PendingDevice } from "../src/surfaces/session.vibe"
+import { signIn, signOutSurface, SignInFailed } from "../src/surfaces/signin.vibe"
+import { configured, live, PERSON, world } from "../test/support/deviceSignIn.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const pendingFor = (origin: string): PendingDevice => ({ origin, clientId: "fixture-client-id", deviceCode: "private-device-code", userCode: "OLDC-ODE1", verificationUri: origin + "/device", intervalSeconds: 1, expiresAt: Date.now() + 600_000, nextPollAt: 0 })
+const refusal = <A, E, R>(program: A!E!R) => Effect.flip(program).pipe(Effect.map(error => (error as unknown as SignInFailed).message))
+
+it("a person signs in with a device code, is remembered, and signs out", async ({ bench }) => {
+  const result = await workload(bench, "signin-device", "async", () => runPromise(scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const { origin, grant, interval } = try world()
+      try Ref.set(interval, 0)
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+    const started = try signIn({ wait: false })
+    const pending = try signIn({ wait: false })
+    try Ref.set(grant, "authorized")
+    const signed = try signIn({ wait: false })
+    const remembered = try signIn({ wait: false })
+    const out = try signOutSurface()
+    const left = try readSession()
+    try Effect.try(() => {
+      expect(started).toEqual({ status: "started", login: "", userCode: "ABCD-EFGH", verificationUri: origin + "/device" })
+      expect(pending.status).toBe("pending")
+      expect([signed.status, signed.login, remembered.login]).toEqual(["signed-in", PERSON.login, PERSON.login])
+      expect([out, left]).toEqual([{ signedOut: true }, undefined])
+    })
+      }
+    }
+  }))).run(slow)
+  await runPromise(artifact("signin-device", "Vitest built-in bench; actual signIn/signOutSurface over real loopback HTTP to the Accounts object and the identity-provider device fixture, fresh world per sample. Start, pending poll, authorized poll, remembered session, revoking sign-out. Exact statuses and an empty settings directory checked.", ["The identity provider is a local fixture: GitHub's latency and rate limits are absent.", "The fixture interval is 0 s, so no poll waits."], result))
+})
+
+it("GitHub's refusals end or slow the device flow", async ({ bench }) => {
+  const result = await workload(bench, "signin-device-refusals", "async", () => runPromise(scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const { origin, grant, interval } = try world()
+      try Ref.set(interval, 0)
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+    const answers: Array<string> = []
+    for (const answer of ["access_denied", "expired_token"]) {
+      try writePending(pendingFor(origin))
+      try Ref.set(grant, answer)
+      answers.push(try refusal(signIn({ wait: false })))
+    }
+    try writePending(pendingFor(origin))
+    try Ref.set(grant, "slow_down")
+    const slowed = try signIn({ wait: false })
+    const backedOff = try readPending()
+    try writeSession({ origin, cookie: "vibelang-session=forged", login: "old" })
+    try Ref.set(grant, "authorization_pending")
+    const restarted = try signIn({ wait: false })
+    // A new flow: `login` announces the code and waits through waitForSignIn until the person answers.
+    try removePending()
+    try Ref.set(grant, "access_denied")
+    const declined = try refusal(signIn({ wait: true }))
+    try Effect.try(() => {
+      expect(answers).toEqual(["Sign-in declined.", "Sign-in expired."])
+      expect([slowed.status, backedOff?.intervalSeconds]).toEqual(["pending", 30])
+      expect(restarted).toMatchObject({ status: "pending" })
+      expect(declined).toBe("Sign-in declined.")
+    })
+      }
+    }
+  }))).run(slow)
+  await runPromise(artifact("signin-device-refusals", "Vitest built-in bench; actual signIn over real loopback HTTP to the Accounts object and the identity-provider device fixture. Declined, expired, slow-down back-off, a forged stored session, and a waited sign-in the person declines. Exact sentences and the 30 s back-off checked.", ["The identity provider is a local fixture.", "The slowed flow is not waited out."], result))
+})

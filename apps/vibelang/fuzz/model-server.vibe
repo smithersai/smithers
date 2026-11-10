@@ -4,9 +4,9 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { HostModel } from "@smthrs/model-host"
 
-/** One model call's answer: streamed text with its usage, or a provider failure. */
+/** One model call's answer: SSE fragments with usage, an optional bounded pause, or a provider failure. */
 export type Scripted =
-  | { readonly kind: "stream"; readonly pieces: ReadonlyArray<string>; readonly prompt: number; readonly completion: number }
+  | { readonly kind: "stream"; readonly pieces: ReadonlyArray<string>; readonly prompt: number; readonly completion: number; readonly pause?: { readonly after: number; readonly entered: Deferred.Deferred<void>; readonly release: Deferred.Deferred<void> } }
   | { readonly kind: "status"; readonly status: number; readonly code: string }
   | { readonly kind: "garbage" }
 
@@ -14,24 +14,45 @@ const chunk = (body: unknown) => `data: ${JSON.stringify(body)}\n\n`
 const delta = (content: string) => chunk({ id: "fuzz", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content }, finish_reason: null }] })
 const closing = (prompt: number, completion: number) => chunk({ id: "fuzz", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: prompt, completion_tokens: completion, total_tokens: prompt + completion } })
 
+/** Pause after an SSE fragment left the producer, before the answer and usage can finish. */
+effect function* pausedAnswer(script: Extract<Scripted, { kind: "stream" }>) {
+  const encoder = new TextEncoder()
+  for (let index = 0; index < script.pieces.length; index++) {
+    yield encoder.encode(delta(script.pieces[index]!))
+    if (script.pause?.after === index + 1) {
+      try Deferred.succeed(script.pause.entered, undefined)
+      try timeout(Deferred.await(script.pause.release), "15 seconds")
+    }
+  }
+  yield encoder.encode(closing(script.prompt, script.completion) + "data: [DONE]\n\n")
+}
+
 function responseOf(script: Scripted) {
   switch (script.kind) {
     case "status": return HttpServerResponse.jsonUnsafe({ error: { code: script.code, message: "scripted" } }, { status: script.status })
     case "garbage": return HttpServerResponse.text("data: {not json\n\n", { contentType: "text/event-stream" })
-    case "stream": return HttpServerResponse.text([...script.pieces.map(delta), closing(script.prompt, script.completion), "data: [DONE]\n\n"].join(""), { contentType: "text/event-stream" })
+    case "stream": return script.pause === undefined ? HttpServerResponse.text([...script.pieces.map(delta), closing(script.prompt, script.completion), "data: [DONE]\n\n"].join(""), { contentType: "text/event-stream" }) : HttpServerResponse.stream(pausedAnswer(script), { contentType: "text/event-stream" })
   }
 }
 
 /** A model cell that ends the run with `output`, passed as written. */
 export const cell = (output: string) => "```cell\nctx.done(" + output + ");\n```"
 
-/** Serves `scripts` in order, repeating the last, for this scope; `model` is bound to the server's own origin. */
-export effect function scriptedModel(scripts: ReadonlyArray<Scripted>) {
+/** A request whose body contains `when` gets `answer`, outside the ordered scripts: a second agent's own call. */
+export interface Routed { readonly when: string; readonly answer: Scripted }
+
+/**
+ * Serves `scripts` in order, repeating the last, for this scope; `model` is bound to the server's own origin. A request
+ * that a `routes` entry matches gets that entry's answer and does not advance the order.
+ */
+export effect function scriptedModel(scripts: ReadonlyArray<Scripted>, routes: ReadonlyArray<Routed> = []) {
   const calls = try Ref.make(0)
   const context = try Layer.build(NodeHttpServer.layerTest)
   const server = Context.get(context, HttpServer.HttpServer)
   try Effect.provideService(HttpServer.serveEffect(effect {
-    try (try HttpServerRequest.HttpServerRequest).text
+    const body = try (try HttpServerRequest.HttpServerRequest).text
+    const routed = routes.find((route) => body.includes(route.when))
+    if (routed !== undefined) return responseOf(routed.answer)
     const index = try Ref.getAndUpdate(calls, (count) => count + 1)
     return responseOf(scripts[Math.min(index, scripts.length - 1)]!)
   }), HttpServer.HttpServer, server)

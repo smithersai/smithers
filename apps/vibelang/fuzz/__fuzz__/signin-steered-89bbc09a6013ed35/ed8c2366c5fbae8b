@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 3
+bias 3
+null-prototype false
+key 2394790482
+tape vnNL9Eu6d8EMIubWI-daZ7jLR7PxbddF6sC2R-VQEfx6avmewPX1pSyMRnXYk1DZeL-rOaR83sDkh9WIdRjam7YHzes
+schedule-key 951120712
+schedule 
+signature "ReturnedFalse"
+path 0.0.0
+codec "json"
+value "{\"userCode\":\"-\",\"login\":\"-\",\"interval\":0,\"slowDown\":null}"
+# ReturnedFalse
+# {"userCode":"-","login":"-","interval":0,"slowDown":null}

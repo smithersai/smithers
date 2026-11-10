@@ -222,7 +222,7 @@ it.effect("fails closed on entropy collisions and changed deployment allowlists 
   options.sites.splice(0)
   const revoked = try exit(broker.callback(Broker.STATE_PREFIX + "x".repeat(43), "code", start.cookie))
   const codes = try Broker.memoryStore()
-  const faultyStore: Broker.Store = { take: codes.take, peek: codes.peek, insert: (key, binding, value, expires) => key.startsWith("code/")
+  const faultyStore: Broker.Store = { take: codes.take, peek: codes.peek, drain: codes.drain, insert: (key, binding, value, expires) => key.startsWith("code/")
     ? succeed(false) : codes.insert(key, binding, value, expires) }
   const failing = durable(try Broker.make({ ...options, sites, keys: f.keys, store: faultyStore }))
   const second = try f.client.begin()
@@ -282,6 +282,7 @@ it.effect("authenticates audience, nonce, PKCE and expiry inside the encrypted c
         return try actual.insert(key, binding, value, expires)
       },
       peek: actual.peek,
+      drain: actual.drain,
       take: effect (key, binding, now) => {
         const recorded = (try Ref.get(bindings)).get(key)
         return try actual.take(key, key.startsWith("code/") ? recorded ?? binding : binding, key.startsWith("code/") ? 0 : now)
@@ -397,5 +398,177 @@ it.live("releases the issued pair even when identity lookup fails", () => effect
   try Effect.try(() => {
     expect(Exit.isFailure(result)).toBe(true)
     expect(stats).toEqual({ live: 1, attempts: 1 })
+  })
+})
+
+/** One web request to the broker's host, as a browser or site would send it. */
+effect function webOf(path: string, options: { readonly body?: string; readonly cookie?: string; readonly method?: "GET" | "POST"; readonly headers?: Record<string, string>; readonly streamed?: boolean } = {}, home = "https://smithers.sh") {
+  const method = options.method ?? (options.body === undefined ? "GET" : "POST")
+  return HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(HttpClientRequest.make(method)(home + path).pipe(
+    HttpClientRequest.setHeaders({ cookie: options.cookie ?? "", ...options.headers }),
+    request => options.body === undefined ? request
+      // Streamed: no Content-Length, so only reading the body finds it too long.
+      : options.streamed === true ? HttpClientRequest.bodyStream(request, Stream.make(new TextEncoder().encode(options.body)), { contentType: "application/x-www-form-urlencoded" })
+      : HttpClientRequest.bodyText(request, options.body, "application/x-www-form-urlencoded"),
+  )))
+}
+/** What the host would journal, for one request. */
+effect function screened(broker: ReturnType<typeof durable>, path: string, options: Parameters<typeof webOf>[1] = {}, home = "https://smithers.sh") {
+  return try Broker.screen(broker, "https://smithers.sh").pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, try webOf(path, options, home)))
+}
+it.effect("screens out every request the broker refuses before it writes, and admits each step of a real sign-in and Connect", () => effect {
+  const f = try fixture()
+  const connections: Broker.Connections = { install: () => succeed({ delegation: "d".repeat(43), expires: 1 }) }
+  const keys = try Core.CookieKeys.make({ primary: secret }, "primary")
+  const broker = durable(try Broker.make({ origin: "https://smithers.sh", sites, keys, store: try Broker.memoryStore(), encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), github: f.github, connections }))
+  const next = try f.client.begin({ connect: { person: 7 } })
+  const startPath = Broker.START + "?" + new URLSearchParams({ origin, return_to: next.returnTo })
+  const startAdmitted = try screened(broker, startPath)
+  const started = try call(broker, startPath)
+  const browser = "__Host-smithers-broker=" + started.cookies.cookies["__Host-smithers-broker"]!.value
+  const state = new URL(started.headers.location!).searchParams.get("state")!
+  const callbackPath = Broker.CALLBACK + "?" + new URLSearchParams({ state, code: "github-code" })
+  const callbackAdmitted = try screened(broker, callbackPath, { cookie: browser })
+  const callback = try call(broker, callbackPath, undefined, browser)
+  const consent = new URL(callback.headers.location!).searchParams.get("consent")!
+  const consentCookie = "__Host-smithers-broker=" + callback.cookies.cookies["__Host-smithers-broker"]!.value
+  const consentPath = Broker.CONSENT + "?" + new URLSearchParams({ consent })
+  const form = new URLSearchParams({ consent, answer: "connect" }).toString()
+  const post = { method: "POST" as const, body: form, cookie: consentCookie, headers: { origin: "null", "sec-fetch-site": "same-origin" } }
+  const pageAdmitted = try screened(broker, consentPath, { cookie: consentCookie })
+  const answerAdmitted = try screened(broker, Broker.CONSENT, post)
+  const refusals = [
+    try screened(broker, Broker.START + "?origin=x&return_to=y"),
+    try screened(broker, Broker.START + "?" + new URLSearchParams({ origin: other, return_to: next.returnTo })),
+    try screened(broker, Broker.START + "?" + new URLSearchParams({ origin, return_to: next.returnTo + "0" })),
+    try screened(broker, Broker.START, { method: "POST", body: "{}" }),
+    try screened(broker, callbackPath),
+    try screened(broker, callbackPath, { cookie: browser + "0" }),
+    try screened(broker, Broker.CALLBACK + "?" + new URLSearchParams({ state, code: "" }), { cookie: browser }),
+    try screened(broker, Broker.CALLBACK + "?" + new URLSearchParams({ state, code: "x".repeat(4097) }), { cookie: browser }),
+    try screened(broker, Broker.CALLBACK + "?" + new URLSearchParams({ state: "broker_" + "x".repeat(43), code: "c" }), { cookie: browser }),
+    try screened(broker, consentPath),
+    try screened(broker, Broker.CONSENT + "?consent=short", { cookie: consentCookie }),
+    try screened(broker, Broker.CONSENT, { ...post, headers: { origin: "https://evil.test", "sec-fetch-site": "same-origin" } }),
+    try screened(broker, Broker.CONSENT, { ...post, headers: { origin: "null", "sec-fetch-site": "cross-site" } }),
+    try screened(broker, Broker.CONSENT, { ...post, body: new URLSearchParams({ consent, answer: "maybe" }).toString() }),
+    try screened(broker, Broker.CONSENT, { ...post, body: "x".repeat(2049) }),
+    try screened(broker, Broker.CONSENT, { ...post, cookie: browser }),
+    try screened(broker, Broker.EXCHANGE, { body: "not json" }),
+    try screened(broker, Broker.EXCHANGE, { body: JSON.stringify({ origin, request: "forged" }) }),
+    try screened(broker, Broker.EXCHANGE, { body: JSON.stringify({ origin: other, request: try f.client.redemption(next, "c".repeat(43)) }) }),
+    try screened(broker, Broker.EXCHANGE, { body: JSON.stringify({ origin, request: try f.client.redemption(next, "short") }) }),
+    try screened(broker, Broker.EXCHANGE, { body: JSON.stringify({ padding: "x".repeat(9000) }) }),
+    try screened(broker, Broker.EXCHANGE),
+    try screened(broker, "/no-route"),
+    try screened(broker, Broker.START),
+    try screened(broker, Broker.CONSENT, { ...post, body: "answer=connect" }),
+    try screened(broker, Broker.CONSENT, { ...post, body: form + "&pad=" + "x".repeat(3000), streamed: true }),
+  ]
+  const consentResponse = try Broker.serve(broker, "https://smithers.sh").pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, try webOf(Broker.CONSENT, post)))
+  const handoff = new URLSearchParams(new URL(consentResponse.headers.location!).hash.slice(1)).get("code")!
+  const exchangeBody = JSON.stringify({ origin, request: try f.client.redemption(next, handoff) })
+  const exchangeAdmitted = try screened(broker, Broker.EXCHANGE, { body: exchangeBody })
+  const crossHost = try screened(broker, startPath, {}, "https://foreign.test")
+  const refusal = Broker.refusal("https://smithers.sh")
+  try TestClock.adjust("11 minutes")
+  const staleStart = try screened(broker, startPath)
+  try Effect.try(() => {
+    expect([startAdmitted, callbackAdmitted, pageAdmitted, answerAdmitted, exchangeAdmitted]).toEqual([true, true, true, true, true])
+    expect([started.status, callback.status, consentResponse.status]).toEqual([303, 303, 303])
+    expect(refusals.map((admitted, index) => [index, admitted])).toEqual(refusals.map((_, index) => [index, false]))
+    expect([crossHost, staleStart]).toEqual([false, false])
+    expect(refusal.status).toBe(400)
+    expect(refusal.cookies.cookies["__Host-smithers-broker"]!.value).toBe("")
+  })
+})
+
+it.effect("both stores keep an expired consent until drained, then hand it over once, oldest first and bounded", () => effect {
+  const { openBrokerSqlite } = try promise(() => import("./Fixture.ts"))
+  const database = try promise(() => openBrokerSqlite())
+  const stores = [try Broker.sqliteStore(database.sql), try Broker.memoryStore()]
+  const answers: Array<unknown> = []
+  for (const store of stores) {
+    const now = try Clock.currentTimeMillis
+    try store.insert("consent/b", "b", "second", now + 2)
+    try store.insert("consent/a", "a", "first", now + 1)
+    try store.insert("consent/c", "c", "third", now + 3)
+    try store.insert("consent/live", "l", "live", now + 60_000)
+    try store.insert("attempt/x", "x", "attempt", now + 1)
+    try TestClock.adjust("1 second")
+    // An unrelated write prunes the expired attempt but leaves every consent for the broker to release.
+    try store.insert("request/y", "y", "", now + 60_000)
+    const later = now + 1000
+    answers.push([try store.drain("consent/", later, 1), try store.drain("consent/", later, 5), try store.drain("consent/", later, 5), try store.peek("consent/live", "l", later), try store.peek("attempt/x", "x", later)])
+  }
+  try Effect.try(() => database.close())
+  try Effect.try(() => {
+    const expected = [[{ key: "consent/a", value: "first" }], [{ key: "consent/b", value: "second" }, { key: "consent/c", value: "third" }], [], "live", undefined]
+    expect(answers).toEqual([expected, expected])
+  })
+})
+it.effect("records at each callback whether GitHub showed a page, after the broker revoked the person's token or not, and at GitHub's hourly limit", () => effect {
+  const counted = (page: string, after: string, hourly: string, path: string) => Metric.value(Metric.withAttributes(GitHub.Auth.Consent.counter, { page, after_revocation: after, hourly_tokens: hourly, path })).pipe(Effect.map((state) => Number(state.count)))
+  const tally = () => all({
+    first: counted("skipped", "no", "under_limit", "hosted_sign_in"),
+    shown: counted("shown", "yes", "under_limit", "hosted_sign_in"),
+    skipped: counted("skipped", "yes", "under_limit", "hosted_sign_in"),
+    busy: counted("shown", "yes", "at_limit", "hosted_sign_in"),
+    skippedBusy: counted("skipped", "yes", "at_limit", "hosted_sign_in"),
+  })
+  const before = try tally()
+  const store = try Broker.memoryStore()
+  // First sign-in: no Referer, nothing revoked before. Second: GitHub's page was the referrer, after the first's revocation.
+  const a = try fixture(undefined, store)
+  try a.broker.callback(a.state, "code", a.start.cookie)
+  const b = try fixture(undefined, store)
+  try b.broker.callback(b.state, "code", b.start.cookie, "https://github.test/")
+  // Another site's page as the referrer is not GitHub's page.
+  const c = try fixture(undefined, store)
+  try c.broker.callback(c.state, "code", c.start.cookie, origin + "/")
+  for (let i = 0; i < 8; i++) {
+    const f = try fixture(undefined, store)
+    try f.broker.callback(f.state, "code", f.start.cookie)
+  }
+  // The twelfth sign-in in the hour follows eleven tokens the broker issued.
+  const busy = try fixture(undefined, store)
+  try busy.broker.callback(busy.state, "code", busy.start.cookie, "https://github.test/login/oauth/authorize")
+  // An hour later the window is empty again.
+  try TestClock.adjust("61 minutes")
+  const later = try fixture(undefined, store)
+  try later.broker.callback(later.state, "code", later.start.cookie, "https://github.test/")
+  const after = try tally()
+  try Effect.try(() => {
+    expect(after.first - before.first).toBe(1)
+    expect(after.shown - before.shown).toBe(2)
+    // The third to the ninth follow two to eight tokens; the tenth and eleventh follow nine and ten: GitHub's limit.
+    expect(after.skipped - before.skipped).toBe(7)
+    expect(after.skippedBusy - before.skippedBusy).toBe(2)
+    expect(after.busy - before.busy).toBe(1)
+  })
+})
+it.effect("reads GitHub's page only from a Referer with GitHub's own origin", () => effect {
+  const { github } = try fixture()
+  const web = GitHub.Auth.Consent.githubOrigin(github)
+  const broken = GitHub.Auth.Consent.githubOrigin({ ...github, authorizeUrl: () => "not a url" })
+  try Effect.try(() => {
+    expect(web).toBe("https://github.test")
+    expect(broken).toBe("")
+    expect(GitHub.Auth.Consent.pageOf("https://github.test/login/oauth/authorize?x=1", web)).toBe("shown")
+    expect(["https://github.test.evil/", "https://smithers.sh/", "not a url", undefined].map((value) => GitHub.Auth.Consent.pageOf(value, web))).toEqual(["skipped", "skipped", "skipped", "skipped"])
+    expect(GitHub.Auth.Consent.pageOf("https://github.test/", broken)).toBe("skipped")
+    expect([0, 8, 9, 10].map(GitHub.Auth.Consent.hourlyBucket)).toEqual(["under_limit", "under_limit", "at_limit", "at_limit"])
+  })
+})
+it.effect("an unreadable person history counts as none and never fails the sign-in", () => effect {
+  const base = try Broker.memoryStore()
+  const store: Broker.Store = { ...base, take: (key, binding, now) => key.startsWith("person/") ? succeed("not sealed") : base.take(key, binding, now) }
+  const before = Number((try Metric.value(Metric.withAttributes(GitHub.Auth.Consent.counter, { page: "shown", after_revocation: "no", hourly_tokens: "under_limit", path: "hosted_sign_in" }))).count)
+  const f = try fixture(undefined, store)
+  const handoff = try f.broker.callback(f.state, "code", f.start.cookie, "https://github.test/")
+  const after = Number((try Metric.value(Metric.withAttributes(GitHub.Auth.Consent.counter, { page: "shown", after_revocation: "no", hourly_tokens: "under_limit", path: "hosted_sign_in" }))).count)
+  try Effect.try(() => {
+    expect(new URL(handoff).origin).toBe(origin)
+    expect(after - before).toBe(1)
   })
 })

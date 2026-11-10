@@ -17,7 +17,7 @@ export const test = base.extend<{ sourceCoverage: void }>({
       maps.set(url, response.text().then(async (code) => {
         const reference = /\/\/# sourceMappingURL=(\S+)/.exec(code)?.[1]
         // A generated re-export facade has no executable statements or application source of its own.
-        if (!reference && /^\s*export\{[^}]*\}from["'][^"']+["'];?\s*$/.test(code)) return { value: null }
+        if (!reference && /^\s*export\s*\{[^}]*\}\s*from\s*["'][^"']+["'];?\s*$/.test(code)) return { value: null }
         if (!reference) throw new Error(`Missing source map: ${url}`)
         const response = await page.request.get(new URL(reference, url).href)
         if (!response.ok()) throw new Error(`Source map answered ${response.status()}: ${url}`)

@@ -29,8 +29,8 @@ export class DraftsObject {
     const state = this.state
     const result = await runPromise(Effect.provide(scoped(effect {
       const model = try chatModel()
-      const budget = try DailyBudget.make(ledgerOver(state.storage), 1000)
-      const spend: Spend.Shape = { admit: () => budget.admit(), spend: (_day, key, tokens) => budget.spend(key, tokens) }
+      const budget = try DailyBudget.make(ledgerOver(state.storage), 10_000_000)
+      const spend: Spend.Shape = { admit: (_day, key, ceiling) => budget.admit(key, ceiling), spend: (_day, key, tokens, reported, ceiling) => budget.spend(key, tokens, reported, ceiling) }
       const services = Layer.mergeAll(writerLayer, wikiWriterLayer, liveSpecificationReviewers).pipe(Layer.provide(Layer.succeed(ChatModel, model)), Layer.provide(Layer.succeed(Spend, spend)))
       const registration = Layer.effectDiscard(effect {
         const engine = try FlowRuntime.FlowRuntime

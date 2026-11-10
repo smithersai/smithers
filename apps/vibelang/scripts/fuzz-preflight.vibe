@@ -1,0 +1,37 @@
+// `pnpm fuzz` runs this before the fuzz flow. The flow (.smithers/flows/vibelang-fuzz) imports its own package's
+// dependencies, which the app's filtered install leaves out; without them it fails on a module name. This names what is
+// missing and the one install command, or exits 0.
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+
+/** The install that gives both the app and the fuzz flow their dependencies (apps/vibelang/AGENTS.md). */
+export const install = `pnpm install --frozen-lockfile --filter "@smthrs/vibelang-site..." --filter "@smithers/release-workflows..."`
+
+// What .smithers/flows/vibelang-fuzz/{main.vibe,run.vibe,flow.ts} import.
+const needed = ["vibelang-runtime", "vibelang", "effect", "@effect/platform-node", "@smthrs/flow", "@smthrs/plan", "@smthrs/engine-store", "@smthrs/platform-node", "@smthrs/kernel", "@smthrs/run-store"]
+
+export error FlowNotInstalled {
+  missing: ReadonlyArray<string>
+  get message() { return `the fuzz flow's dependencies are not installed (${this.missing.join(", ")}); from the repository root run: ${install}` }
+}
+
+/** Fails with FlowNotInstalled when `.smithers/flows` under the repository `root` lacks a package the flow imports. */
+export effect function preflight(root: string) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const missing: Array<string> = []
+  for (const name of needed) {
+    if (!(try fs.exists(path.join(root, ".smithers/flows/node_modules", name, "package.json")))) missing.push(name)
+  }
+  try logInfo("vibelang.fuzz.preflight").pipe(Effect.annotateLogs({ missing: missing.length }))
+  if (missing.length > 0) throw new FlowNotInstalled({ missing })
+}
+
+effect function main() {
+  const path = try Path.Path
+  const fallback = try path.fromFileUrl(new URL("../../..", import.meta.url))
+  const root = try Config.withDefault(Config.String("FUZZ_REPOSITORY_ROOT"), fallback)
+  try preflight(root)
+}
+
+NodeRuntime.runMain(Effect.provide(main(), NodeServices.layer))

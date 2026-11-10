@@ -1,4 +1,4 @@
-import { acceptSnapshot } from "../core/conversation.vibe"
+import * as ModelDecision from "./modelDecision.vibe"
 import { Registered, Run } from "../actions/Actions.vibe"
 import { historyRefusal } from "../history/flowMachine.vibe"
 import { HistoryAnswer } from "../history/flows.vibe"
@@ -35,19 +35,15 @@ export function modeCommands(mode: string | undefined): ReadonlyArray<Registered
 
 export function completions(model: { readonly actions?: ActionView; readonly draft: string; readonly mode?: string }) {
   const actions = actionsOf(model)
-  const query = model.draft.trim().split(/\s+/)[0] ?? ""
-  return actions.slash && query.startsWith("/") ? [...actions.commands, ...modeCommands(model.mode)].filter((entry) => entry.command.startsWith(query)) : []
+  const query = model.draft.trim().replace(/\s.*$/s, "")
+  return ModelDecision.slashMatches(actions.slash, query, [...actions.commands, ...modeCommands(model.mode)])
 }
 
 /** A slower list/read response cannot roll back a live card or a terminal receipt. */
 export function mergeRuns(current: ReadonlyArray<Run>, incoming: ReadonlyArray<Run>): ReadonlyArray<Run> {
-  const result = [...current]
-  for (const next of incoming) {
-    const index = result.findIndex((old) => old.id === next.id)
-    if (index < 0) result.push(next)
-    else if (acceptSnapshot(result[index]!.state, result[index]!.at, next.at)) result[index] = next
-  }
-  return result.sort((a, b) => b.started - a.started)
+  let result = current
+  for (const next of incoming) result = ModelDecision.mergeRunAt(result, ModelDecision.runIndex(result, next.id), next)
+  return ModelDecision.newestFirst(result)
 }
 
 /** A failed step opens first; a running or parked step follows, then the last completed one. */

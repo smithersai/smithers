@@ -1,0 +1,80 @@
+# Later accepted API: shared payload identity (VIP-44)
+# Source: bcf8076a4ff4
+--- before/@smthrs/flow/Flow/PayloadIdentity.d.ts
++++ after/@smthrs/flow/Flow/PayloadIdentity.d.ts
+@@ -0,0 +1,41 @@
++/**
++ * The one rule every durable site that hashes or compares a flow payload uses
++ * (VIP-44, durable values).
++ *
++ * `Schema.ReadonlySet` and `Schema.ReadonlyMap` encode in insertion order and
++ * RFC 8785 keeps array order, so a site that encodes or hashes a payload
++ * without sorting first gives equal sets two identities. Every such site calls
++ * this module instead of `Schema.toCodecJson` or `DerivedKey` directly, so none
++ * can skip the sort.
++ *
++ * @since 1.0.0
++ */
++import * as Effect from "effect/Effect";
++import * as Schema from "effect/Schema";
++/**
++ * The payload's identity snapshot: `sortCollections`, then the schema's JSON
++ * codec. Hashing it under RFC 8785 gives the payload's identity, and decoding
++ * it gives the value a durable body must see, so the hash covers exactly what
++ * the body runs on.
++ *
++ * A payload that holds no `Set` or `Map` encodes to the bytes
++ * `Schema.toCodecJson` alone gives, so stored payloads and the ids derived
++ * from them are unchanged.
++ *
++ * @category identity
++ * @since 1.0.0
++ */
++export declare const payloadSnapshot: <S extends Schema.Top>(schema: S, value: unknown) => Effect.Effect<Schema.Json, Schema.SchemaError, S["EncodingServices"]>;
++/**
++ * The material a site that has always hashed a payload as written hashes now.
++ *
++ * Such sites, a child execution id and the recorded plan's root input, could
++ * never hash a `Set` or `Map`: RFC 8785 refuses both. So a payload that holds
++ * none keeps the exact preimage it always had, and one that holds any is
++ * hashed as its {@link payloadSnapshot}. Released ids are unchanged, and equal
++ * collections hash equally.
++ *
++ * @category identity
++ * @since 1.0.0
++ */
++export declare const payloadPreimage: <S extends Schema.Top>(schema: S, value: unknown) => Effect.Effect<unknown, Schema.SchemaError, S["EncodingServices"]>;
+
+--- before/@smthrs/flow/Flow/index.d.ts
++++ after/@smthrs/flow/Flow/index.d.ts
+@@ -13,5 +13,6 @@
+ export * from "./MaxRoundsExceeded.ts";
+ export * from "./OnCancel.ts";
+ export * from "./Outcome.ts";
++export * from "./PayloadIdentity.ts";
+ export * from "./Result.ts";
+ export * from "./Runtime.ts";
+
+--- before/@smthrs/platform-cloudflare/ExecutionObject.d.ts
++++ after/@smthrs/platform-cloudflare/ExecutionObject.d.ts
+@@ -21,7 +21,7 @@
+  * @since 1.0.0
+  */
+ import { type DurableEngineState, EngineStore } from "@smthrs/engine-store";
+-import { type Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow";
++import { Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow";
+ import { RunStore } from "@smthrs/run-store";
+ import * as Config from "effect/Config";
+ import * as Context from "effect/Context";
+@@ -272,7 +272,9 @@
+  */
+ export declare const wakes: Metric.Counter<number>;
+ /**
+- * Builds an intent, encoding the payload with the flow's own JSON codec.
++ * Builds an intent, encoding the payload as its identity snapshot
++ * (`Flow.payloadSnapshot`: sets and maps sorted, then the flow's own JSON
++ * codec), so equal payloads persist equal intents (VIP-44).
+  *
+  * @category constructors
+  * @since 1.0.0
+

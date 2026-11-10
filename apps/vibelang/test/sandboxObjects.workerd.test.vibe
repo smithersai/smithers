@@ -1,0 +1,54 @@
+// The production machine and account objects in real workerd SQLite, with a faulty Container Effect service.
+// Successful Container execution still requires the authorized Container binding (0016); this suite measures the
+// available read, refusal, failed-start and alarm paths without simulating a successful machine.
+import { describe, expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { afterAll, beforeAll } from "vitest"
+import { deadline, serveSandboxFaultObjects, type Served } from "./support/workerd.vibe"
+
+describe("sandbox objects refuse a faulty Container in workerd", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveSandboxFaultObjects()) }, deadline(120_000))
+  afterAll(async () => { await api?.dispose() })
+
+  effect function post(path: string, args: ReadonlyArray<unknown>) {
+    const client = try HttpClient.HttpClient
+    const response = try client.execute(HttpClientRequest.post(api!.origin + path).pipe(HttpClientRequest.bodyJsonUnsafe(args)))
+    try Effect.try(() => expect(response.status).toBe(200))
+    return (try response.json) as unknown
+  }
+
+  it.live("refuses invalid and stale machine generations and failed starts, while a stopped lease stays stopped", () => effect {
+    provide FetchHttpClient.layer {
+      const call = (kind: string, generation: number, command = "") => post("/machine/faults", [kind, generation, "op", command])
+      const answers = [try call("start", -1), try call("start", 0), try call("command", 1), try call("lease", 0), try call("stop", 0), try call("start", 1), try call("command", 1), try call("start", 2), try call("stop", 1), try call("start", 2)]
+      const refused = { ok: false, output: "" }
+      try Effect.try(() => expect(answers).toEqual([
+        refused, refused, refused, { ok: true, output: "stopped" }, { ok: true, output: "" },
+        refused, refused, refused, refused, refused,
+      ]))
+    }
+  })
+
+  it.live("keeps a failed start pending until cleanup is acknowledged and enforces the persisted owner's identity", () => effect {
+    provide FetchHttpClient.layer {
+      const call = (owner: string, kind: string) => post("/account/owner", [owner, kind, "home", `op-${kind}`, 0, ""])
+      const read = try call("person", "read")
+      const failed = try call("person", "start")
+      const after = try call("person", "read")
+      const persisted = try post("/account/owner/state", [])
+      const other = try call("other", "read")
+      const signedOut = try post("/account/empty", ["", "start", "home", "op", 0, ""])
+      const viewer = try post("/account/viewer", ["viewer", "start", "home", "op", 0, ""])
+      const alarm = try post("/account/owner/alarm", [])
+      try Effect.try(() => {
+        expect(read).toMatchObject({ ok: true, snapshot: { status: "stopped", generation: 0 } })
+        expect(failed).toMatchObject({ ok: false })
+        expect(after).toEqual({ ok: false, refusal: "unavailable" })
+        expect(persisted).toEqual({ pending: "cancel-start", running: false })
+        for (const refusal of [other, signedOut, viewer]) expect(refusal).toEqual({ ok: false, refusal: "forbidden" })
+        expect(alarm).toMatchObject({ alarm: expect.any(Number) })
+      })
+    }
+  })
+})

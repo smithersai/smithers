@@ -1,12 +1,7 @@
 // The wiki draft writer and the specification reviewers on the real durable engine. Faults replace the agent or the
 // budget; a model bound to a refused local port walks the live path as far as the provider call.
 import { it } from "@effect/vitest"
-import { Digest, SecureRandom } from "effect/crypto"
-import { WebCrypto } from "@smthrs/crypto"
-import { FlowEngine } from "@smthrs/engine"
-import { Flow, FlowRuntime } from "@smthrs/flow"
 import { HostModel } from "@smthrs/model-host"
-import { Node } from "@smthrs/plan"
 import { WikiWriter } from "../src/core/WikiWriter.vibe"
 import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { SpecificationReviewers } from "../src/core/specification.vibe"
@@ -15,10 +10,10 @@ import { agentOf, answer as answerPost, ChatModel, Replies, REASONS, Spend, tagO
 import { AgentAction, EventSink } from "@smthrs/agent"
 import { HistoryTools } from "../worker/HistoryTools.vibe"
 import { Tours } from "../src/core/flows.vibe"
-import { Unreachable } from "../worker/Unreachable.vibe"
 import { WikiDraftAgent, wikiAgentLayer, wikiWriter } from "../worker/WikiDraft.vibe"
 import { liveSpecificationReviewers } from "../worker/SpecificationReviewers.vibe"
 import { run, Text } from "./run.vibe"
+import { ledger, within } from "../test/support/durableWriters.vibe"
 import { cell, scriptedModel, type Scripted } from "./model-server.vibe"
 import { AgentActions } from "../src/actions/agent.vibe"
 import { Actions } from "../src/actions/Actions.vibe"
@@ -35,35 +30,6 @@ const FAILING: ReadonlyArray<Scripted> = [{ kind: "status", status: 400, code: "
 const Admission = Schema.Literals(["admit", "refuse", "fault"])
 const WikiInput = Schema.Struct({ agent: Schema.Literals(["absent", "fails", "drafts", "refused-model", "no-model"]), admission: Admission, ask: Text, page: Text })
 const ReviewerInput = Schema.Struct({ reviewer: Schema.Literals(["astra", "sol", "fable", "opus"]), admission: Admission, bound: Schema.Literals(["none", "refused", "broken"]), text: Text, revision: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 9 })) })
-
-function ledger(admission: typeof Admission.Type) {
-  const log = { admitted: 0, spent: 0 }
-  const spend: Spend.Shape = {
-    admit: () => effect {
-      log.admitted += 1
-      if (admission === "fault") throw new Unreachable({ what: "budget" })
-      return admission === "admit"
-    },
-    spend: () => sync(() => { log.spent += 1 }),
-  }
-  return { log, spend }
-}
-
-const Outcome = Flow.make("test/model-writers/outcome", { payload: {}, success: Schema.String, body: () => Node.succeed("") })
-
-/** One durable execution of `program`, whose string answer says how it ended. */
-effect function execution<S>(layer: Layer.Layer<S>, program: Effect<string, never, S | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom>) {
-  const registration = Layer.effectDiscard(effect {
-    const engine = try FlowRuntime.FlowRuntime
-    const services = try Effect.context<S | Digest.Digest | SecureRandom.SecureRandom>()
-    try engine.register(Outcome, () => Effect.provide(program, services) as never)
-  })
-  const context = try Layer.build(registration.pipe(Layer.provide(layer), Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer)))
-  return try Context.get(context, FlowRuntime.FlowRuntime).execute(Outcome, { executionId: "test/model-writers/fuzz", payload: {} })
-}
-
-// The engine's generic requirements stay unresolved over S; every service is provided above, and Scope remains.
-const within = <S>(layer: Layer.Layer<S>, program: Effect<string, never, S | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom>) => execution(layer, program) as unknown as Effect<string, unknown, Scope.Scope>
 
 /** No admission means no agent and no charge; a charge follows exactly one admitted attempt. */
 it.live("wiki/writer", () => run("wiki/writer", WikiInput, (input) => scoped(effect {

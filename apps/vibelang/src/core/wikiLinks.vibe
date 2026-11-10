@@ -2,9 +2,10 @@
 /** One Markdown link rule for the build and the pane's edited pages: relative links resolve against their page. */
 export function wikiLink(fromId: string, href: string, ids: ReadonlyArray<string>): string {
   if (/^(?:https?:|#|\/)/.test(href)) return href
-  const [relative, hash] = href.split("#")
+  const relative = href.replace(/#.*$/s, "")
+  const hash = href.split("#")[1]
   const base = fromId.includes("/") ? fromId.slice(0, fromId.lastIndexOf("/")) : ""
-  const parts = [...(base === "" ? [] : base.split("/")), ...(relative ?? "").split("/")]
+  const parts = [...(base === "" ? [] : base.split("/")), ...relative.split("/")]
   const out: Array<string> = []
   for (const part of parts) {
     if (part === "" || part === ".") continue

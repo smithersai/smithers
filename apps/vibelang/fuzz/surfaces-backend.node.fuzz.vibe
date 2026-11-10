@@ -1,0 +1,169 @@
+// src/surfaces/backend.vibe's live choice over a scripted Factory on a real socket: the health probe decides, and an
+// app session reaches only its own origin. The explicit VIBELANG_SESSION wins over the stored one.
+import { it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { HttpClient, HttpClientRequest, HttpClientResponse, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { Actions } from "../src/actions/Actions.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { backend, notDeployed, personClient, unreachable, withStoredSession } from "../src/surfaces/backend.vibe"
+import { writeSession } from "../src/surfaces/session.vibe"
+import { cliPath, serverPath } from "../test/surface-host.vibe"
+import { node, run as processRun } from "../test/support/processes.vibe"
+import { run, Text } from "./run.vibe"
+
+const COOKIE = "vibelang-session=fuzz.cookie-1"
+const OTHER = "vibelang-session=other.cookie-2"
+const Input = Schema.Struct({
+  health: Schema.Literals(["live", "mock", "garbage", "refused", "down"]),
+  session: Schema.Literals(["none", "empty", "valid", "wrong-origin", "bad-cookie", "not-json"]),
+  stored: Schema.Literals(["none", "same", "other-origin", "bad-cookie", "no-home"]),
+  probe: Schema.Boolean,
+  slash: Schema.Boolean,
+})
+
+it.live("surfaces/live-backend", () => run("surfaces/live-backend", Input, (input) => scoped(effect {
+  provide NodeServices.layer, NodeHttpServer.layerTest {
+    const address = (try HttpServer.HttpServer).address
+    const served = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+    // "down" names a port nothing listens on.
+    const origin = input.health === "down" ? "http://127.0.0.1:9" : served
+    const cookies: Array<string> = []
+    try HttpServer.serveEffect(effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      cookies.push(request.headers.cookie ?? "")
+      const path = new URL(request.url, served).pathname
+      if (path === "/api/health") {
+        return input.health === "live" ? HttpServerResponse.jsonUnsafe({ ok: true, agent: "live" })
+          : input.health === "mock" ? HttpServerResponse.jsonUnsafe({ ok: true, agent: "mock" })
+          : input.health === "garbage" ? HttpServerResponse.text("{", { status: 200 })
+          : HttpServerResponse.jsonUnsafe({}, { status: 503 })
+      }
+      return HttpServerResponse.jsonUnsafe({}, { status: 503 })
+    })
+    const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    const session = input.session === "none" ? undefined : input.session === "empty" ? ""
+      : input.session === "valid" ? JSON.stringify({ origin, cookie: COOKIE })
+      : input.session === "wrong-origin" ? JSON.stringify({ origin: "https://elsewhere.invalid", cookie: COOKIE })
+      : input.session === "bad-cookie" ? JSON.stringify({ origin, cookie: "session=<script>" })
+      : "{not json"
+    // "no-home": no settings place at all, so no stored session is read.
+    const settings: Record<string, string> = { VIBELANG_FACTORY_URL: origin + (input.slash ? "/" : ""), ...(input.stored === "no-home" ? { HOME: "" } : { XDG_CONFIG_HOME: directory }) }
+    if (session !== undefined) settings.VIBELANG_SESSION = session
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown(settings)) {
+      if (input.stored !== "none" && input.stored !== "no-home") try writeSession({
+        origin: input.stored === "other-origin" ? "https://elsewhere.invalid" : origin,
+        cookie: input.stored === "bad-cookie" ? "session=<script>" : OTHER, login: "ada",
+      })
+      const explicit = session !== undefined && session !== ""
+      const built = try Effect.result(Layer.build(backend(false, undefined, input.probe)))
+      if (built._tag === "Failure") {
+        const message = built.failure.message
+        if (explicit && input.session !== "valid") return message === "Invalid VIBELANG_SESSION."
+        if (!input.probe) return false
+        if (input.health === "mock") return message === notDeployed(origin)
+        return input.health !== "live" && message === unreachable(origin)
+      }
+      // Built: the session was acceptable and, when probed, the origin runs the live agent.
+      if (explicit && input.session !== "valid") return false
+      if (input.probe && input.health !== "live") return false
+      const context = built.success
+      try Effect.ignore(Context.get(context, Factory).read("home", 0))
+      try Effect.ignore(Context.get(context, Actions).list())
+      try Effect.ignore(Context.get(context, Mythical).outline())
+      if (input.health === "down") return true
+      const expected = explicit ? COOKIE : input.stored === "same" ? OTHER : ""
+      // Every request this origin received carries exactly the session that belongs to it, and no other.
+      return cookies.length >= 2 && cookies.every((cookie) => cookie === expected)
+    }
+  }
+})))
+
+const Edge = Schema.Struct({ topic: Schema.Literals(["install", "VIP", "hello"]), flag: Schema.Literals(["--fuzz-unknown", "--after", "--json"]) })
+
+/**
+ * The emitted CLI and MCP server at their edges, every execution: the agents' manifest, help, a refused argument, and a
+ * live Factory nothing answers, which each process reports on stderr as one sentence and exits 1.
+ */
+it.live("surfaces/process-edges", () => run("surfaces/process-edges", Edge, ({ topic, flag }) => effect {
+  provide NodeServices.layer, ExperimentalNodeServices.layer {
+    const origin = "http://127.0.0.1:9"
+    const env = { NO_COLOR: "1", VIBELANG_FACTORY_URL: origin }
+    const cli = try cliPath()
+    const llms = try processRun(cli, ["--llms"], env)
+    if (llms.status !== 0 || !llms.stdout.includes("ask")) return false
+    const help = try processRun(cli, ["--help"], env)
+    if (help.status !== 0 || !help.stdout.includes("vibelang-factory")) return false
+    const refused = try processRun(cli, ["--mock", "read", flag, "x"], env)
+    if (refused.status !== 1 || refused.stderr.trim() === "" || refused.stderr.includes("[object Object]")) return false
+    const live = try processRun(cli, ["ask", topic], env)
+    if (live.status !== 1 || !live.stderr.includes(unreachable(origin))) return false
+    const server = try processRun(try node(), [try serverPath()], env)
+    if (server.status === 0 || !server.stderr.includes(unreachable(origin)) || server.stdout !== "") return false
+    // No subcommand is a request for help.
+    const bare = try processRun(cli, [], env)
+    return bare.status === 0 && bare.stdout.includes("USAGE")
+  }
+}, undefined, { minimum: "60 seconds" }), 300000)
+
+/** An explicit session's cookie and origin go only to its own origin; any other request leaves as it came. */
+it.live("surfaces/person-client", () => run("surfaces/person-client", Schema.Struct({ path: Schema.Literals(["/x", "/api/health", ""]), other: Schema.Literals(["https://elsewhere.invalid", "http://127.0.0.1:1", "https://factory.invalid.evil"]) }), ({ path, other }) => effect {
+  const origin = "https://factory.invalid"
+  const seen: Array<{ readonly url: string; readonly cookie: string; readonly origin: string }> = []
+  const recording = HttpClient.make((request) => {
+    seen.push({ url: request.url, cookie: request.headers.cookie ?? "", origin: request.headers.origin ?? "" })
+    return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text("{}", { status: 200 }))))
+  })
+  const cookie = "__Host-vibelang-session=fuzz.cookie"
+  provide Layer.succeed(HttpClient.HttpClient, recording) {
+    const client = try personClient(origin, Redacted.make(JSON.stringify({ origin, cookie })))
+    try client.get(origin + (path === "" ? "/" : path))
+    try client.get(other + "/x")
+    const plain = try personClient(origin)
+    try plain.get(origin + "/y")
+  }
+  const [own, foreign, unsigned] = seen
+  return own?.cookie === cookie && own.origin === origin && foreign?.cookie === "" && foreign.origin === "" && unsigned?.cookie === ""
+}))
+
+const ORIGIN = "http://127.0.0.1:4000"
+const STORED = "vibelang-session=fuzz.stored-1"
+// Addresses that start with the origin's text but name another origin (a longer port, user info before another host),
+// another scheme or host, the bare origin, and the origin's own paths.
+const Target = Schema.Struct({
+  to: Schema.Literals(["own", "bare", "port", "userinfo", "scheme", "other"]),
+  path: Text,
+  stored: Schema.Literals(["none", "same", "other-origin", "bad-cookie", "no-home"]),
+})
+
+/**
+ * A stored session goes only to its own origin: a request whose parsed origin is another never carries a cookie or the
+ * origin header, and the origin's own paths carry the stored cookie when it was stored for that origin and is valid.
+ */
+it.live("surfaces/stored-session", () => run("surfaces/stored-session", Target, ({ to, path, stored }) => scoped(effect {
+  provide NodeServices.layer {
+    const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    // Every byte percent-encoded: any text is a path, a lone surrogate too (TextEncoder writes U+FFFD for it).
+    const tail = Array.from(new TextEncoder().encode(path), (byte) => `%${byte.toString(16).padStart(2, "0")}`).join("")
+    const url = to === "own" ? `${ORIGIN}/${tail}` : to === "bare" ? ORIGIN : to === "port" ? `${ORIGIN}1/${tail}`
+      : to === "userinfo" ? `${ORIGIN}@elsewhere.invalid/${tail}` : to === "scheme" ? `https://127.0.0.1:4000/${tail}`
+      : `https://elsewhere.invalid/${tail}`
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown(stored === "no-home" ? {} : { XDG_CONFIG_HOME: directory })) {
+      if (stored === "same" || stored === "other-origin" || stored === "bad-cookie") try writeSession({
+        origin: stored === "other-origin" ? "http://127.0.0.1:5000" : ORIGIN, cookie: stored === "bad-cookie" ? "session=<script>" : STORED, login: "ada",
+      })
+      const request = try withStoredSession(HttpClientRequest.get(url), ORIGIN)
+      const cookie = request.headers["cookie"]
+      const origin = request.headers["origin"]
+      const expected = stored === "same" ? STORED : ""
+      // Never a cookie to another parsed origin, whatever the address's text starts with.
+      if (cookie !== undefined && cookie !== "" && new URL(request.url).origin !== ORIGIN) return false
+      if (to === "own") return cookie === expected && origin === ORIGIN
+      // The bare origin is its own origin: carried or untouched, never another cookie.
+      if (to === "bare") return (cookie === undefined && origin === undefined) || (cookie === expected && origin === ORIGIN)
+      return cookie === undefined && origin === undefined
+    }
+  }
+})))

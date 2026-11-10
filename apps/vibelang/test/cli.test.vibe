@@ -86,19 +86,19 @@ layer(platform)("built CLI process", (it) => {
       expect(result.stderr).toContain(message)
     })
   }, LIMIT)
+  // A second sign-out's "Not signed in." is proven in process (commandsEdges.coverage.test.vibe); each process here
+  // loads the durable sign-in host, so the case starts only the two a built CLI must prove.
   it.effect("mock sign-in is the fixture person's agent until logout, with nothing written to a log", () => effect {
     const settings = try (try FileSystem.FileSystem).makeTempDirectory()
     const home: Readonly<Record<string, string>> = { XDG_CONFIG_HOME: settings }
     const login = try cli(["--mock", "login"], "", home)
     const out = try cli(["--mock", "logout"], "", home)
-    const again = try cli(["--mock", "logout"], "", home)
     const stored = try (try FileSystem.FileSystem).exists((try Path.Path).join(settings, "vibelang-factory", "mock-session.json"))
     try Effect.try(() => {
       expect(login.status).toBe(0)
       expect(login.stdout).toBe("Signed in as will.\n")
       expect(login.stderr).toBe("")
       expect(out.stdout).toBe("Signed out.\n")
-      expect(again.stdout).toBe("Not signed in.\n")
       expect(stored).toBe(false)
     })
   }, LIMIT)
@@ -117,6 +117,14 @@ layer(platform)("built CLI process", (it) => {
       expect(result.stderr).toContain("Sign-out couldn't reach")
       expect(result.stdout + result.stderr).not.toContain(cookie)
       expect(exists).toBe(false)
+    })
+  }, LIMIT)
+  it.effect("shows the help and succeeds when no subcommand is named", () => effect {
+    const result = try cli([])
+    try Effect.try(() => {
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain("vibelang-factory <subcommand>")
+      expect(result.stderr).toBe("")
     })
   }, LIMIT)
   it.effect.each([["--help"], ["ask", "--help"], ["--llms"]])("discovers %j without a backend", (args) => effect {

@@ -1,6 +1,7 @@
 import { SESSION as HOST_SESSION, sessionCookieName } from "../src/core/accountCookies.vibe"
 export { SESSION, sessionCookieName } from "../src/core/accountCookies.vibe"
 import { GitHubDelegate, type Connection, type Delegate } from "./GitHubDelegate.vibe"
+import { PublicReads, publicReads } from "./PublicReads.vibe"
 import type { Principal } from "./Issues.vibe"
 import { IssueAuthority, serveIssues, repository } from "./Issues.vibe"
 import { WikiAuthority, serveWiki, executeWiki, wikiFilePath } from "./Wiki.vibe"
@@ -15,7 +16,7 @@ import { Node } from "@smthrs/plan"
 import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { leastRole, roleOf, issuePolicyAction, wikiPolicyAction, type Action as PolicyAction } from "../src/core/conversation.vibe"
 import { Identity, viewer, Denied, type Policy } from "../src/core/roles.vibe"
-import { type Storage, postExecutionId } from "./Objects.vibe"
+import { type Storage, postExecutionId, EXECUTION_RETENTION } from "./Objects.vibe"
 import * as Sequencer from "./Sequencer.vibe"
 import { afterOf, eventStream } from "./Http.vibe"
 import { logOver } from "./ObjectStorage.vibe"
@@ -113,7 +114,12 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
   const broker = setup.broker?.secret === undefined ? undefined : (GitHub.Auth.Broker.site({ origin: setup.origin, brokerOrigin: setup.broker.origin, secret: setup.broker.secret, ...(setup.broker.localDevelopment === undefined ? {} : { localDevelopment: setup.broker.localDevelopment }) }) catch () => undefined)
   const cipher = try Effect.orDie(WebCryptoCipher.make({ key: setup.encryptionKey }))
   const delegate = setup.delegate ?? (setup.broker?.secret === undefined ? undefined : (GitHub.Delegation.site({ origin: setup.origin, brokerOrigin: setup.broker.origin, secret: setup.broker.secret }) catch () => undefined))
-  const delegated = <A, E, R>(program: A!E!R) => delegate === undefined ? program : Effect.provideService(program, GitHubDelegate, delegate)
+  // Signed-out reads go through smithers.sh's App with the same site key, cached in this object (0031).
+  const reads = { client: try publicReads(storage, setup.broker?.secret === undefined ? undefined : { origin: setup.origin, brokerOrigin: setup.broker.origin, secret: setup.broker.secret }) }
+  const delegated = <A, E, R>(program: A!E!R) => {
+    const read = Effect.provideService(program, PublicReads, reads)
+    return delegate === undefined ? read : Effect.provideService(read, GitHubDelegate, delegate)
+  }
   const sequencer = try Sequencer.make(logOver(storage))
   const lock = try Semaphore.make(1)
   const issueLock = try Semaphore.make(1)
@@ -177,7 +183,8 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
   }
 
   /** The journal stores only the step name and null; credentials stay in this host's encrypted records. */
-  effect function mutation<A>(step: typeof Mutation.payloadSchema.Type.step, body: A!!) {
+  /** `body` may run durable actions of its own, such as revoking a token nobody keeps. */
+  effect function mutation<A, R>(step: typeof Mutation.payloadSchema.Type.step, body: A!!R) {
     const executionId = try postExecutionId("account")
     let result: A | undefined
     const registration = Interpreter.layerWithImplementations(Mutation, ApplyMutation.toLayer(() => withSpan(effect {
@@ -188,11 +195,38 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       try Effect.logInfo("vibelang.account").pipe(Effect.annotateLogs({ step, outcome }))
       return null
     }, "vibelang.account." + step)))
-    const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Mutation._tag }, registration).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+    const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Mutation._tag, retention: EXECUTION_RETENTION }, registration).pipe(Layer.provide(ObjectDatabase.layer(storage)))
     provide runtime {
       try Effect.orDie((try FlowRuntime.FlowRuntime).execute(Mutation, { executionId, payload: { step } }))
     }
     return result as A
+  }
+
+  // The flow owns read/retry deadlines. This boundary also bounds time queued behind an unrelated write.
+  const readResponse = <E, R>(work: HttpServerResponse.HttpServerResponse!E!R, method: string, budget: Duration.Input = "6 seconds") => method !== "GET" ? work : work.pipe(
+    Effect.timeout(budget),
+    Effect.catchTag("TimeoutError", () => effect {
+      try Metric.update(Metric.counter("vibelang_read_queue_deadline", { incremental: true }), 1)
+      try Effect.logWarning("vibelang.read.queue.deadline")
+      return json({ reason: "unavailable" }, 503)
+    }),
+    Effect.withSpan("vibelang.account.read"),
+  )
+
+  /**
+   * A sign-in nobody finished leaves its row; the next start deletes every expired one, as the broker's own store
+   * does, so an unauthenticated caller can hold at most ten minutes of rows.
+   */
+  effect function pruneExpired() {
+    const now = try Clock.currentTimeMillis
+    let pruned = 0
+    for (const [prefix, expiresOf] of [["broker/", (value: unknown) => (value as { readonly claims?: { readonly expires?: unknown } } | undefined)?.claims?.expires], ["sign-in/", (value: unknown) => (value as { readonly expires?: unknown } | undefined)?.expires]] as const) {
+      for (const [key, value] of try promise(() => storage.list({ prefix }))) {
+        const expires = expiresOf(value)
+        if (typeof expires !== "number" || expires <= now) { try remove(key); pruned += 1 }
+      }
+    }
+    try Effect.logInfo("vibelang.account.prune").pipe(Effect.annotateLogs({ pruned }))
   }
 
   effect function handle(bodyText: string) {
@@ -209,8 +243,11 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
     if (path === "/api/auth/device" && request.method === "POST") return try mutation("device", effect {
       const body = decodeDeviceToken(bodyText) catch () => undefined
       if (body === undefined) return json({ error: "body" }, 400)
-      // Any GitHub failure closes the sign-in; the journal and logs carry only the outcome.
-      const person = setup.github.user(Redacted.make(body.token)) catch () => null
+      // Any GitHub failure closes the sign-in; the journal and logs carry only the outcome. The CLI keeps the session
+      // cookie, never the token, so the token is revoked once read: it must not evict the person's GitHub connection.
+      const token = Redacted.make(body.token)
+      const person = setup.github.user(token) catch () => null
+      try GitHub.Auth.Broker.discard(setup.github, token)
       try Effect.logInfo("vibelang.account.device").pipe(Effect.annotateLogs({ outcome: person === null ? "refused" : "issued" }))
       if (person === null || !Number.isSafeInteger(person.id) || person.id <= 0) return json({ error: "sign-in" }, 401)
       const id = String(person.id)
@@ -251,6 +288,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       return HttpServerResponse.empty({ status: 303, headers: { ...noStore, location: "/?issues=1" } })
     })
     if (path === "/api/auth/sign-in" && request.method === "GET") return try mutation("start", effect {
+      try pruneExpired()
       if (setup.broker !== undefined && broker === undefined) return json({ error: "sign-in unavailable" }, 503)
       if (broker !== undefined) {
         const pending = try Effect.orDie(broker.begin())
@@ -387,7 +425,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
           },
         }
         const agent = try Config.option(Config.String("VIBELANG_AGENT_ASSIGNEE"))
-        return try Semaphore.withPermits(issueLock, 1)(serveIssues(hostId, storage, { ...repository, agent: Option.getOrElse(agent, () => "") }, (person) => Effect.orDie(Semaphore.withPermits(lock, 1)(mutation("participation", effect { try sequencer.grant(person.id, person.id, "community", "participation") })))).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, http), delegated))
+        return try readResponse(Semaphore.withPermits(issueLock, 1)(serveIssues(hostId, storage, { ...repository, agent: Option.getOrElse(agent, () => "") }, (person) => Effect.orDie(Semaphore.withPermits(lock, 1)(mutation("participation", effect { try sequencer.grant(person.id, person.id, "community", "participation") })))).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, http), delegated)), request.method, "13 seconds")
       }
       if (url.pathname === "/api/wiki") {
         if (url.origin !== setup.origin || (request.method !== "GET" && request.headers.origin !== setup.origin)) return json({ error: "origin" }, 403)
@@ -404,7 +442,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
             try policy.authorize(actor.id, wikiPolicyAction(op)).pipe(Effect.mapError(() => new WikiFailure({ reason: "forbidden" })))
           },
         }
-        return try Semaphore.withPermits(issueLock, 1)(serveWiki(hostId, storage).pipe(Effect.provideService(WikiAuthority, wikiAuthority), Effect.provideService(HttpClient.HttpClient, http), delegated))
+        return try readResponse(Semaphore.withPermits(issueLock, 1)(serveWiki(hostId, storage).pipe(Effect.provideService(WikiAuthority, wikiAuthority), Effect.provideService(HttpClient.HttpClient, http), delegated)), request.method)
       }
       if ((url.pathname === "/api/auth/device" || url.pathname === CALLBACK) && request.method === "POST") {
         if (url.origin !== setup.origin || !(request.headers.origin === setup.origin || (url.pathname === CALLBACK && request.headers.origin === "null" && request.headers["sec-fetch-site"] === "same-origin"))) return json({ error: "origin" }, 403)

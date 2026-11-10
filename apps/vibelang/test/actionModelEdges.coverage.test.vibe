@@ -1,0 +1,66 @@
+// The actions pane's model (src/web/actionModel.vibe): the composer's slash menu offers the other agent mode and
+// matches the first word; the runs list merges snapshots by id, newest start first, and never rolls a run back.
+import { describe, expect, it } from "@effect/vitest"
+import type { Run } from "../src/actions/Actions.vibe"
+import { completions, initial, mergeRuns } from "../src/web/actionModel.vibe"
+
+const open = { ...initial, slash: true }
+const names = (draft: string, mode?: string) => completions({ actions: open, draft, ...(mode === undefined ? {} : { mode }) }).map((entry) => entry.command)
+
+describe("the slash menu's agent modes", () => {
+  it.each([
+    ["live", ["/mock"]],
+    ["mock", ["/live"]],
+    ["pending", []],
+  ] as const)("in %s mode it offers %j", (mode, offered) => {
+    expect(names("/", mode)).toEqual(offered)
+  })
+
+  it("offers no mode before the page knows its mode", () => {
+    expect(names("/")).toEqual([])
+  })
+
+  it("matches the first word only, after leading space", () => {
+    expect(names("  /mo", "live")).toEqual(["/mock"])
+    expect(names("/mock please", "live")).toEqual(["/mock"])
+    expect(names("/li", "live")).toEqual([])
+  })
+
+  it("an empty or plain draft opens nothing", () => {
+    expect(names("", "live")).toEqual([])
+    expect(names("   ", "live")).toEqual([])
+    expect(names("mock", "live")).toEqual([])
+  })
+
+  it("a closed menu offers nothing even for a slash", () => {
+    expect(completions({ actions: initial, draft: "/", mode: "live" })).toEqual([])
+  })
+})
+
+describe("the runs list", () => {
+  const run = (id: string, started: number, state: Run["state"], at: number): Run =>
+    ({ id, flow: "vibelang/Tour", door: "button", actor: "person", state, started, at, result: "", steps: [] })
+
+  it("lists new runs newest start first, whatever order they arrive in", () => {
+    const merged = mergeRuns([], [run("a", 10, "passed", 10), run("c", 30, "running", 30), run("b", 20, "queued", 20)])
+    expect(merged.map((each) => each.id)).toEqual(["c", "b", "a"])
+  })
+
+  it("replaces a live run found anywhere in the list with a snapshot that is not older", () => {
+    const current = [run("c", 30, "running", 30), run("b", 20, "running", 21), run("a", 10, "queued", 10)]
+    const merged = mergeRuns(current, [run("a", 10, "passed", 40), run("b", 20, "passed", 21)])
+    expect(merged.map((each) => [each.id, each.state])).toEqual([["c", "running"], ["b", "passed"], ["a", "passed"]])
+  })
+
+  it("keeps a live run when an older snapshot arrives late", () => {
+    const current = [run("b", 20, "running", 50), run("a", 10, "running", 40)]
+    const merged = mergeRuns(current, [run("a", 10, "queued", 39)])
+    expect(merged[1]).toBe(current[1])
+  })
+
+  it("keeps a finished run's receipt against any later snapshot", () => {
+    const current = [run("b", 20, "running", 20), run("a", 10, "failed", 40)]
+    const merged = mergeRuns(current, [run("a", 10, "running", 99)])
+    expect(merged.find((each) => each.id === "a")!.state).toBe("failed")
+  })
+})

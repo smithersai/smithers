@@ -1,11 +1,12 @@
 import { expect, type Page } from "@playwright/test"
-import { run, Int, Text } from "./run.vibe"
+import { run, Int, Text, REPLAY_FLOOR } from "./run.vibe"
 
 const Step = Schema.Struct({ op: Int, text: Text })
 const Input = Schema.Struct({ steps: Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(10)), phone: Schema.Boolean, reducedMotion: Schema.Boolean })
 
 const RETURNING = "localStorage.setItem('vibelang:toured', 'yes')"
-const AUTO_TOUR_HOLD_MS = 2_000
+/** Page-clock time run past the first visit's 1200 ms tour timer, whatever the host load. */
+const AUTO_TOUR_HOLD_MS = 5_000
 
 /**
  * A first visit to `/` starts the tour 1200 ms after boot, and the running tour consumes Ctrl+K (decision 0014).
@@ -18,9 +19,10 @@ effect function returningVisitor(page: Page) {
 /** The palette opens for a returning visitor whenever the key arrives, including after the first-visit tour's timer. */
 export effect function heldStartupTarget(page: Page) {
   try returningVisitor(page)
+  try tryPromise(() => page.clock.install())
   try tryPromise(() => page.goto("/?agent=mock"))
   try tryPromise(() => expect(page.getByRole("heading", { name: "VibeLang", exact: true })).toBeVisible())
-  try tryPromise(() => page.waitForTimeout(AUTO_TOUR_HOLD_MS))
+  try tryPromise(() => page.clock.runFor(AUTO_TOUR_HOLD_MS))
   try tryPromise(() => page.keyboard.press("ControlOrMeta+k"))
   try tryPromise(() => expect(page.getByRole("dialog", { name: "Ask the agent" })).toBeVisible())
 }
@@ -47,7 +49,7 @@ export effect function firstVisitTarget(page: Page) {
     try tryPromise(() => page.keyboard.press("Escape"))
     try tryPromise(() => expect(bar).toBeHidden())
     return true
-  })
+  }, undefined, { minimum: REPLAY_FLOOR })
 }
 
 /** The actual built app, its real mock Factory, and native browser input. No request or DOM interception. */
@@ -119,7 +121,7 @@ export effect function browserTarget(page: Page) {
     }
     try Effect.try(() => page.off("pageerror", failed))
     return errors.length === 0
-  })
+  }, undefined, { minimum: REPLAY_FLOOR })
 }
 
 const HistoryInput = Schema.Struct({ text: Text, role: Schema.Literals(["viewer", "contributor", "maintainer"]), more: Schema.Boolean, cancel: Schema.Boolean })
@@ -181,7 +183,7 @@ export effect function historyBrowserTarget(page: Page) {
     const controls = try Effect.try(() => page.locator("button:visible, input:visible, textarea:visible, select:visible, a[href]:visible, iframe:visible"))
     for (let at = 0, size = try tryPromise(() => controls.count()); at < size; at++) try tryPromise(() => expect(controls.nth(at)).toHaveAccessibleName(/\S/))
     return true
-  })
+  }, undefined, { minimum: REPLAY_FLOOR })
 }
 
 const RoleInput = Schema.Struct({ role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]), grant: Schema.Literals(["community", "contributor", "maintainer"]), cancel: Schema.Boolean, maximize: Schema.Boolean })
@@ -230,5 +232,5 @@ export effect function roleBrowserTarget(page: Page) {
     const controls = try Effect.try(() => page.locator("button:visible, input:visible, textarea:visible, select:visible, a[href]:visible, iframe:visible"))
     for (let at = 0, count = try tryPromise(() => controls.count()); at < count; at++) try tryPromise(() => expect(controls.nth(at)).toHaveAccessibleName(/\S/))
     return true
-  })
+  }, undefined, { minimum: REPLAY_FLOOR })
 }

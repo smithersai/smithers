@@ -3,6 +3,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Telemetry } from "alchemy"
 import { GitHub } from "@smthrs/integrations"
 import * as Accounts from "./Accounts.vibe"
+import { readSetup } from "./PublicReads.vibe"
 import { workerBuild } from "../infra/WorkerBuild.vibe"
 import { chatModel, dailyTokens } from "./AgentModel.vibe"
 import { FetchHttpClient, HttpClient } from "effect/http"
@@ -31,7 +32,7 @@ const AccountsLive = ProjectAccounts.make(effect {
   const model = try Effect.orDie(chatModel())
   try Effect.orDie(specificationModels())
   const setup = try Effect.orDie(Accounts.configured().pipe(Effect.provide(FetchHttpClient.layer)))
-  return accountsObject(state, budgets, model, setup)
+  return accountsObject(state, budgets, model, setup, try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
 })
 
 const BudgetLive = Budget.make(effect {
@@ -42,9 +43,10 @@ const BudgetLive = Budget.make(effect {
 
 const HistoryLive = History.make(effect {
   const state = try Cloudflare.DurableObjectState
-  // Read when the Worker deploys and when an object starts: GitHub's rate limit is higher with a token.
-  const token = Option.getOrUndefined(try Effect.orDie(Config.option(Config.String("GITHUB_TOKEN"))))
-  return historyObject(state, token, try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
+  // Read when the Worker deploys and when an object starts. The site holds no GitHub token: main is read through
+  // smithers.sh's App with the site's broker key (0031).
+  const reads = try Effect.orDie(readSetup())
+  return historyObject(state, reads, try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
 })
 
 const ConversationLive = Conversation.make(effect {
@@ -94,7 +96,7 @@ const program = effect {
   try Effect.orDie(chatModel())
   try Effect.orDie(dailyTokens)
   try Effect.orDie(specificationModels())
-  return { fetch: apiFetch({ conversations, accounts, actions, histories }, gateway, commit, executionProps) }
+  return { fetch: apiFetch({ conversations, accounts, actions, histories, budgets: (try Budget) as Namespace<BudgetShape> }, gateway, commit, executionProps) }
 }
 
 export default class Api extends Cloudflare.Worker<Api>()(

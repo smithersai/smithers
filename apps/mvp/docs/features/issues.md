@@ -304,14 +304,15 @@ Every route, step and token logs, traces and counts itself; no record carries a 
 | `github.write`, `github.write.give_up` | log, span | `writeId`, `op`, `via`, `tokenKind` (`user`, `app`; never `token`, whose value the flow host's redaction hides), `outcome`, `settled`, `number` or `failure`, `errorCode` |
 | `github.apply` | log, span | `deliveryId`, `repoId`, `number`, `event`, `outcome`, `changed`, `lagMs` |
 | `github.reconcile` | log, span | `repoId`, `outcome`, `pages`, `issues`, `comments`, `skipped`, `failure`, `errorCode` |
-| `github.reconcile.start` | log, span | a stale read's admission: `repoId`, `outcome` (`started`, `timed_out` after 2 seconds, `not_started`), `durationMs` on completion or timeout, `errorCode` on timeout or failure |
+| `github.reconcile.start` | log, span | existing span around the stale check; a stale admission logs: `repoId`, `outcome` (`started`, `timed_out` after 2 seconds, `not_started`), `durationMs` on completion or timeout, `errorCode` on timeout or failure |
+| `github.reconcile.admission` | log, span | begins with every admitted items, summaries or paginated issues read, fresh or stale, with an App or without; fixed name, no payload or span attributes |
 | `github.token.mint` | log, span | `kind`, `outcome`, `access`, `status`, `reason` |
 | `github.read_token` | log, span | the deployment's read token for visibility checks (worker/github/ReadToken.ts), once per mint: `outcome` (`minted`, `anonymous`), `durationMs` or `errorCode` |
 | `github.config` | log | `errorCode` (a private key that doesn't import) |
 | `github.shape.<table>` | log, span | Electric's request records; a refused read: `status` |
 | `github_webhooks{event,outcome}`, `github_delivery_lag_ms` | counter, histogram | |
 | `github_write_requests{op,outcome,repository}`, `github_writes{op,outcome,token}`, `github_write_ms{op}`, `github_write_unknown{op}` | counters, histogram | |
-| `github_applies{outcome}`, `github_reconciles{outcome}`, `github_reconcile_starts{outcome}`, `github_reconcile_changed{kind}`, `github_sync_age_seconds` | counters, gauge | |
+| `github_applies{outcome}`, `github_reconciles{outcome}`, `github_reconcile_starts{outcome}`, `github_reconcile_admissions`, `github_reconcile_changed{kind}`, `github_sync_age_seconds` | counters, gauge | `github_reconcile_admissions` counts each admission at its first instruction: compare with reads that reached admission; refusals before admission do not count |
 | `github_token_mints{kind,outcome}`, `github_shape_requests{table,status,live}` | counters | `kind`: `user`, `app`, or `read` (the read token) |
 | `issues.write.queue`, `issues.write.send`, `issues.pending`, `issues.access.refused`, `issues.access.evict`; `smithers_issue_writes`, `smithers_issue_write_sends`, `smithers_issue_pending_actions`, `smithers_issue_access_evictions` | browser logs, spans, counters | `op`, `door`, `outcome`, `status`, `writeId`, `reason`, `action` |
 | `issues.shape.sync`, `smithers_issue_shape_transitions` | browser log, span, counter at first send, changed result or changed failure status | finite `phase` (`sent`, `ready`, `failed`, `stopped`), `status` when supplied, `durationMs` since observation began; no repository, issue, payload or error text |

@@ -99,7 +99,15 @@ consumption, so corrupt database metadata cannot retarget or extend a grant. Bro
 base64 key and context bound to each digest. `memoryStore()` is ephemeral, for in-memory hosts and protocol tests.
 
 `serve()` supplies `/api/auth/broker/start`, `/api/auth/broker/exchange` and the existing `/api/auth/callback`.
-`handles()` admits only callback state with exactly `broker_` plus a 43-character nonce. The ordinary host sign-in remains separate. The registry
+`handles()` admits only callback state with exactly `broker_` plus a 43-character nonce. The ordinary host sign-in remains separate.
+`screen()` answers whether `serve()` would act on a request: a site's signature on start and exchange, the broker's
+browser cookie on callback and consent. A host journals only screened requests and answers the rest `refusal(origin)`,
+the same `400`, so an unauthenticated caller writes nothing. The store's conditional writes are the single-use points,
+so a host needs no lock across requests. A Connect whose consent page nobody answers holds a live token pair, which
+counts toward GitHub's ten tokens per person and App: `insert` never prunes `consent/` records, and each callback
+drains up to `CONSENT_RELEASE` expired ones through `Store.drain` and revokes their access tokens. A host that reads
+an identity from a token it then discards, such as a device-flow sign-in, revokes it with `discard(github, token)`
+inside its durable step. The registry
 must list only origins the deployment serves: subdomains and custom domains, never wildcard suffix matching.
 All origins must be canonical HTTPS origins; `localDevelopment` explicitly permits loopback HTTP for local hosts.
 No path, userinfo, query or fragment is accepted as an origin. Use a distinct secret per origin.
@@ -130,3 +138,14 @@ refresh-token invalidation for [authorization revocation](https://docs.github.co
 and for [refresh-token rotation](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens#about-user-access-tokens-that-expire);
 these are different operations. The injected ten-token service models pair deletion; it is not live evidence of
 GitHub's unspecified single-token refresh cascade.
+
+`Auth.Consent` records, at each callback, whether GitHub showed the person one of its own pages first. `pageOf`
+reads the callback's `Referer`: GitHub's pages send their origin to another origin, while a redirect GitHub answers
+without a page keeps the referrer of the page that started sign-in. GitHub's own sign-in page reads `shown` too.
+`observe` adds one to `smithers_auth_github_consent` and writes the span and log `auth.github.consent`, all with
+fixed attributes: `page` (`shown`, `skipped`), `after_revocation` (`yes` when this app revoked one of the person's
+tokens since their previous sign-in), `hourly_tokens` (`under_limit`, `at_limit`: nine or more tokens issued in the
+hour before; GitHub's [limit of ten new tokens an hour](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#creating-multiple-tokens-for-oauth-apps)
+showed its authorization page at the tenth on production) and `path` (`sign_in`, `hosted_sign_in`, `connect`). The broker
+calls it from `callback`, keeping a sealed per-person history (`person/` records, 30 days) of its own issues and
+revocations; it passes the request's `Referer` as `callback`'s fourth argument.

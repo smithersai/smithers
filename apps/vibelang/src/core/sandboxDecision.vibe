@@ -96,6 +96,27 @@ export function elapsedMilliseconds(earlier: number, later: number): number {
   return earlier < later ? later - earlier : 0
 }
 
+/** One interval of a meter: what `month`'s bucket holds after it, and the month and usage the next interval starts from. */
+export interface MeterStep { readonly charged: number; readonly month: number; readonly used: number }
+
+/**
+ * One interval [cursor, end) of a meter, inside `month`: `count` running sandboxes accrue `count × (end − cursor)`
+ * milliseconds onto that month's `used`. Reaching `boundary`, the next UTC month's first millisecond, opens that month
+ * with its own `prior` usage; any other end stays in `month`. sandboxMeter.vibe computes the UTC boundaries.
+ */
+//@ verify
+//@ requires 0 <= used && used <= 9007199254740991 && 0 <= count && 0 <= prior
+//@ requires 0 <= cursor && cursor <= end && end <= 9007199254740991
+//@ requires count * (end - cursor) <= 9007199254740991 - used
+//@ ensures \result.charged == used + count * (end - cursor)
+//@ ensures end == boundary ==> \result.month == boundary && \result.used == prior
+//@ ensures end != boundary ==> \result.month == month && \result.used == \result.charged
+export function meterStep(used: number, count: number, cursor: number, end: number, month: number, boundary: number, prior: number): MeterStep {
+  const charged = accumulateUsageMilliseconds(used, intervalUsageMilliseconds(count, elapsedMilliseconds(cursor, end)))
+  if (end === boundary) return { charged, month: boundary, used: prior }
+  return { charged, month, used: charged }
+}
+
 /** Exact pairwise identity/conversation fence, including the empty-string identity. */
 //@ verify
 //@ requires 0 <= end && end <= entries.length
@@ -320,4 +341,21 @@ export function applySandbox(ledger: SandboxLedger, event: SandboxEvent): Sandbo
 export function leaseMilliseconds(milliseconds: number): number {
   if (milliseconds <= 1000) return 1000
   return milliseconds < 21600000 ? milliseconds : 21600000
+}
+
+/**
+ * When the next meter of `running` sandboxes is due, in whole milliseconds: one `interval` on, or sooner at the first
+ * whole millisecond at which `running` × elapsed reaches the `remaining` allowance; never sooner than 1. No running
+ * sandbox counts as one.
+ */
+//@ verify
+//@ requires 0 <= remaining && 1 <= interval
+//@ ensures 1 <= \result && \result <= interval
+//@ ensures \result < interval ==> \result >= remaining / (running > 1 ? running : 1)
+//@ ensures \result > 1 ==> \result - 1 < remaining / (running > 1 ? running : 1)
+export function meterDelay(remaining: number, running: number, interval: number): number {
+  const share = running > 1 ? running : 1
+  const ceiling = Math.ceil(remaining / share)
+  const due = ceiling < 1 ? 1 : ceiling
+  return due > interval ? interval : due
 }

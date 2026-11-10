@@ -1,0 +1,99 @@
+// @vitest-environment node
+// The four specification reviewers (worker/SpecificationReviewers.vibe) as the issues host runs them: inside one durable
+// execution on the memory engine, against a scripted model on a local socket, with a budget that admits, refuses or is
+// unreachable (test/support/durableWriters.vibe).
+import { describe, expect, it } from "@effect/vitest"
+import { SpecificationReviewers } from "../src/core/specification.vibe"
+import { unansweredSpecificationReview, type SpecificationReviewer } from "../src/core/conversation.vibe"
+import { Spend } from "../worker/Reply.vibe"
+import { liveSpecificationReviewers } from "../worker/SpecificationReviewers.vibe"
+import { cell, scriptedModel, type Scripted } from "../fuzz/model-server.vibe"
+import { ledger, within, type Admission } from "./support/durableWriters.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+
+const REVIEWERS: ReadonlyArray<SpecificationReviewer> = ["astra", "sol", "fable", "opus"]
+const spec = (revision: number) => ({ revision, text: "# VIP\n\nA spec.", astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() })
+const verdict = (fields: Record<string, unknown>): Scripted => ({ kind: "stream", pieces: [cell(JSON.stringify(fields))], prompt: 2, completion: 3 })
+
+/** `reviewer`'s answer to revision 3 under deployment `config`, and the budget's log. */
+effect function review(reviewer: SpecificationReviewer, config: Record<string, string>, admission: Admission = "admit") {
+  const { log, spend } = ledger(admission)
+  const layer = liveSpecificationReviewers.pipe(Layer.provide(Layer.succeed(Spend, spend)), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))))
+  const answer = try within(layer, effect {
+    const result = try Effect.result((try SpecificationReviewers).review(reviewer, spec(3)))
+    return JSON.stringify(result._tag === "Success" ? result.success : { reason: result.failure.reason, unwritten: result.failure.unwritten ?? false })
+  })
+  return { answer: (try Effect.orDie(Effect.try(() => JSON.parse(answer)))) as Record<string, unknown>, log }
+}
+
+/** Deployment config binding `reviewer` to a scripted model answering `scripts`. */
+effect function bound(reviewer: SpecificationReviewer, scripts: ReadonlyArray<Scripted>) {
+  const scripted = try scriptedModel(scripts)
+  return { ...scripted.values, [`SPEC_REVIEW_${reviewer.toUpperCase()}`]: JSON.stringify(scripted.record) }
+}
+
+describe("a reviewer without a model", () => {
+  it.live("answers no-model, unwritten, and never asks the budget", () => scoped(effect {
+    for (const reviewer of REVIEWERS) {
+      const { answer, log } = try review(reviewer, {})
+      expect(answer).toEqual({ reason: "no-model", unwritten: true })
+      expect(log).toEqual({ admitted: 0, spent: 0 })
+    }
+  }))
+
+  it.live("treats a record whose credential the deployment lacks as no model", () => scoped(effect {
+    const record = { protocol: "openai-chat", baseUrl: "http://127.0.0.1:9", modelId: "m", credential: "ABSENT" }
+    const { answer } = try review("sol", { SPEC_REVIEW_SOL: JSON.stringify(record) })
+    expect(answer).toEqual({ reason: "no-model", unwritten: true })
+  }))
+
+  it.live("stops the reviewers at startup when a record is not JSON: a deployment error", () => scoped(effect {
+    const exit = try Effect.exit(review("opus", { SPEC_REVIEW_OPUS: "{not json" }))
+    expect(Exit.isFailure(exit)).toBe(true)
+  }))
+})
+
+describe("a reviewer with a model", () => {
+  it.live("answers an accepted verdict at the asked revision, charged once", () => scoped(effect {
+    for (const reviewer of REVIEWERS) {
+      const { answer, log } = try review(reviewer, try bound(reviewer, [verdict({ verdict: "LGTM", grade: "A", review: "Consistent." })]))
+      expect(answer).toEqual({ verdict: "LGTM", grade: "A", review: "Consistent.", revision: 3, link: "#review" })
+      expect(log).toEqual({ admitted: 1, spent: 1 })
+    }
+  }))
+
+  it.live("refuses a verdict outside the schema, or a failed model, as review, still charged", () => scoped(effect {
+    for (const scripts of [[verdict({ verdict: "Maybe", grade: "A", review: "?" })], [verdict({ verdict: "LGTM", grade: "Z", review: "?" })], [{ kind: "status", status: 400, code: "invalid" } as const]]) {
+      const { answer, log } = try review("fable", try bound("fable", scripts))
+      expect(answer).toEqual({ reason: "review", unwritten: false })
+      expect(log).toEqual({ admitted: 1, spent: 1 })
+    }
+  }))
+
+  it.live("retries a charge the ledger refuses once, and still answers the review", () => scoped(effect {
+    let charges = 0
+    const flaky: Spend.Shape = {
+      admit: () => succeed(true),
+      spend: () => effect {
+        charges += 1
+        if (charges === 1) throw new Unreachable({ what: "budget" })
+      },
+    }
+    const layer = liveSpecificationReviewers.pipe(Layer.provide(Layer.succeed(Spend, flaky)), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(try bound("sol", [verdict({ verdict: "Changes requested", grade: "B", review: "Name the error." })])))))
+    const answer = try within(layer, effect {
+      const result = try Effect.result((try SpecificationReviewers).review("sol", spec(2)))
+      return result._tag === "Success" ? `${result.success.verdict}:${result.success.revision}` : result.failure.reason
+    })
+    expect(answer).toBe("Changes requested:2")
+    expect(charges).toBe(2)
+  }))
+
+  it.live("asks no model when the day's budget refuses or cannot be reached", () => scoped(effect {
+    const refused = try review("astra", try bound("astra", [verdict({ verdict: "LGTM", grade: "A", review: "" })]), "refuse")
+    expect(refused.answer).toEqual({ reason: "budget", unwritten: true })
+    expect(refused.log).toEqual({ admitted: 1, spent: 0 })
+    const unreachable = try review("astra", try bound("astra", [verdict({ verdict: "LGTM", grade: "A", review: "" })]), "fault")
+    expect(unreachable.answer).toEqual({ reason: "budget", unwritten: false })
+    expect(unreachable.log.spent).toBe(0)
+  }))
+})

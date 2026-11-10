@@ -28,7 +28,7 @@ it("dispatch scans stop at the first unmarked post and attempt once", async ({ b
 
 it("model progress preserves projected output and accounts exact safe usage", async ({ bench }) => {
   const result = await workload(bench, "reply-progress-decisions", "sync", () => {
-    const event: ProgressEvent = { kind: "model-delta", textDelta: true, piece: "cell", projected: "answer", input: 2, output: 3, code: "offline", safeTotal: true, safeInput: true, safeOutput: true }
+    const event: ProgressEvent = { kind: "model-delta", textDelta: true, piece: "cell", projected: "answer", input: 2, output: 3, code: "offline", present: true, safeTotal: true, safeInput: true, safeOutput: true }
     const initial = initialProgress()
     const projected = advanceProgress(initial, event)
     expect(projected).toEqual({ reply: "cell", text: "answer", tokens: 0, failed: undefined, usageValid: true })
@@ -40,7 +40,7 @@ it("model progress preserves projected output and accounts exact safe usage", as
     expect(paid).toEqual({ ...partial, tokens: 5 })
     for (const kind of ["model-requested", "model-retried"]) expect(advanceProgress(paid, { ...event, kind })).toEqual({ ...paid, reply: "" })
     for (const change of [
-      { safeTotal: false }, { safeInput: false }, { safeOutput: false }, { input: -1 }, { output: -1 },
+      { present: false }, { safeTotal: false }, { safeInput: false }, { safeOutput: false }, { input: -1 }, { output: -1 },
       { input: Number.MAX_SAFE_INTEGER, output: 1 },
     ]) {
       const invalid = advanceProgress(paid, { ...event, ...change, kind: "model-settled" })

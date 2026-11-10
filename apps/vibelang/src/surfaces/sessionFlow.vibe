@@ -1,7 +1,6 @@
 // Native sign-in actions use the SDK's durable SQLite host. Only bounded statuses reach its journal;
 // credentials remain in the private settings files or inside an action's transport, never in flow payloads/results.
 import { Action, Flow, FlowRuntime, Interpreter, Poll, Sleep } from "@smthrs/flow"
-import { NodeRuntime } from "@smthrs/platform-node"
 import { Node } from "@smthrs/plan"
 import { SecureRandom } from "effect/crypto"
 import { privateSettings } from "./session.vibe"
@@ -41,8 +40,13 @@ effect function observe(step: string, program: Status!SignInFailed) {
   }), "vibelang.session." + step)
 }
 
+/**
+ * The durable SQLite host. Imported on first use: it loads about 600 modules, which every other CLI and MCP command
+ * would otherwise pay for at startup (bench/cli-startup.bench.vibe).
+ */
 effect function runtime<R>(registration: Layer.Layer<never, never, R>) {
   const root = try privateSettings()
+  const { NodeRuntime } = try promise(() => import("@smthrs/platform-node"))
   return NodeRuntime.layerHost({ filename: (try Path.Path).join(root, "flows.db"), workspaceRoot: root, owner: { hostId: "vibelang-session" }, signals: [] }, registration)
 }
 
@@ -69,6 +73,7 @@ export effect function waitForSignIn<R>(check: Status!SignInFailed!R) {
   const registration = Interpreter.layer(Wait).pipe(Layer.provideMerge(implementations), Layer.provideMerge(Poll.layer), Layer.provideMerge(Sleep.layer), Layer.provideMerge(Action.layerImplementations))
   const root = try privateSettings()
   const id = try Effect.provide(effect { return try (try SecureRandom.SecureRandom).uuidV4() }, SecureRandom.layerWebCrypto)
+  const { NodeRuntime } = try promise(() => import("@smthrs/platform-node"))
   const host = NodeRuntime.layerHost({ filename: (try Path.Path).join(root, "flows.db"), workspaceRoot: root, owner: { hostId: "vibelang-session" }, signals: [] }, registration)
   return try scoped(Effect.provide(Wait.execute({}, { executionId: "session-wait/" + id }), host))
 }

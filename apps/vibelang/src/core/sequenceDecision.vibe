@@ -86,3 +86,22 @@ export function selectModelTurns(entries: ReadonlyArray<TurnInput>, post: string
 export function promptWindow(turns: ReadonlyArray<PromptTurn>, max: number): ReadonlyArray<PromptTurn> {
   return turns.slice(windowStart(turns.length, max))
 }
+
+/** Who a turn of the prompt is from, as the agent reads it. */
+//@ verify
+//@ ensures author == "person" ==> \result == "Person"
+//@ ensures author != "person" ==> \result == "VibeLang agent"
+export function speaker(author: string): string {
+  return author === "person" ? "Person" : "VibeLang agent"
+}
+
+/** How a prompt of `count` turns reads: nothing, the question alone, or the conversation so far and the question. */
+//@ verify
+//@ requires count >= 0
+//@ ensures count == 0 ==> \result == "none"
+//@ ensures count == 1 ==> \result == "asked"
+//@ ensures count > 1 ==> \result == "conversation"
+export function promptForm(count: number): "none" | "asked" | "conversation" {
+  if (count === 0) return "none"
+  return count === 1 ? "asked" : "conversation"
+}

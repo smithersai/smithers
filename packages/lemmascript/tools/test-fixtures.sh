@@ -77,7 +77,7 @@ fi
 npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/optional-binder-collisions.ts"
 
 # Object spreads of conditionals and field subsets, and exhaustive tagged-message tables.
-for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread empty-string-union; do
+for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread empty-string-union safe-slice-suffix map-index real-field generic-record; do
   cp "tools/fixtures/$name.ts" "$fixture_dir/$name.ts"
   npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name.ts"
 done
@@ -95,7 +95,8 @@ expect_failure \
   npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/empty-string-union-wrong.ts"
 
 # A string-literal union widens to `string` and to a superset union; a constant
-# imported from another module keeps its declared value. Each wrong twin must
+# imported from another module keeps its declared value; a Foldkit `defineMessageUnion` is read as a `_tag`
+# union and its `match` table proved. Each wrong twin must
 # fail on a proof obligation, not on a resolution error.
 expect_proof_failure() {
   local message="$1"
@@ -111,14 +112,30 @@ expect_proof_failure() {
     exit 1
   fi
 }
-for name in union-to-string string-union-subset; do
+for name in union-to-string string-union-subset generic-bound-array message-union sort-membership filter-index; do
   cp "tools/fixtures/$name.ts" "tools/fixtures/$name-wrong.ts" "$fixture_dir/"
   npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name.ts"
   expect_proof_failure \
-    "a widened string-union member verified as another member ($name)" \
+    "a wrong twin verified ($name)" \
     npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name-wrong.ts"
 done
-cp -R tools/fixtures/imported-const tools/fixtures/imported-const-wrong tools/fixtures/imported-const-collision "$fixture_dir/"
+# A tagged union declared in a project's own `.d.ts` (a module's emitted declaration) and imported with `import type`.
+cp -R tools/fixtures/declared-union "$fixture_dir/"
+npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/declared-union/use.ts"
+expect_proof_failure \
+  "a wrong twin verified (declared-union)" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/declared-union/use-wrong.ts"
+cp -R tools/fixtures/imported-const tools/fixtures/imported-const-wrong tools/fixtures/imported-const-collision tools/fixtures/imported-nullish tools/fixtures/imported-nullish-wrong "$fixture_dir/"
+# A contract may read an optional with ??, locally and through an import; a wrong default is a proof failure.
+cp tools/fixtures/spec-nullish.ts tools/fixtures/spec-nullish-wrong.ts "$fixture_dir/"
+npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spec-nullish.ts"
+expect_proof_failure \
+  "Dafny accepted a contract whose ?? names the wrong default" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spec-nullish-wrong.ts"
+npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/imported-nullish/use.ts"
+expect_proof_failure \
+  "Dafny accepted more than an imported ?? contract says" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/imported-nullish-wrong/use.ts"
 npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/imported-const/use.ts"
 expect_proof_failure \
   "an imported constant verified against a value it does not have" \
@@ -127,6 +144,51 @@ expect_failure \
   "an imported constant was merged with a local constant of the same name" \
   npx tsx tools/src/lsc.ts gen --backend=dafny "$fixture_dir/imported-const-collision/use.ts"
 
+# `//@ opaque` hides a measure's body from every proof but its contract lemma and `//@ reveal`.
+cp tools/fixtures/opaque-measure.ts tools/fixtures/opaque-measure-wrong.ts tools/fixtures/opaque-reveal-unknown.ts "$fixture_dir/"
+npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/opaque-measure.ts"
+if ! grep -Fq 'opaque function sumTo' "$fixture_dir/opaque-measure.dfy.gen" || [ "$(grep -c 'reveal sumTo();' "$fixture_dir/opaque-measure.dfy.gen")" != 2 ]; then
+  echo "ERROR: //@ opaque did not emit an opaque function revealed in its lemma and the revealing method"
+  exit 1
+fi
+expect_proof_failure \
+  "a loop followed an opaque measure it never revealed" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/opaque-measure-wrong.ts"
+expect_failure \
+  "//@ reveal accepted a function that is not opaque" \
+  npx tsx tools/src/lsc.ts gen --backend=dafny "$fixture_dir/opaque-reveal-unknown.ts"
+
+# A contract copied from another module keeps each constant it names there; a same-named local one is refused.
+cp -R tools/fixtures/imported-contract-const tools/fixtures/imported-contract-const-wrong tools/fixtures/imported-contract-const-collision "$fixture_dir/"
+npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/imported-contract-const/use.ts"
+expect_proof_failure \
+  "a copied contract's constant verified against a value it does not have" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/imported-contract-const-wrong/use.ts"
+expect_failure \
+  "a copied contract's constant was merged with a local constant of the same name" \
+  npx tsx tools/src/lsc.ts gen --backend=dafny "$fixture_dir/imported-contract-const-collision/use.ts"
+
+cp -R tools/fixtures/imported-contract-const-cross-collision "$fixture_dir/"
+expect_failure \
+  "two copied contracts conflated constants that have different values" \
+  npx tsx tools/src/lsc.ts gen --backend=dafny "$fixture_dir/imported-contract-const-cross-collision/use.ts"
+
+cp tools/fixtures/safe-slice-suffix-wrong.ts "$fixture_dir/safe-slice-suffix-wrong.ts"
+expect_failure \
+  "a clamped suffix past the end verified as nonempty" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/safe-slice-suffix-wrong.ts"
+cp tools/fixtures/map-index-wrong.ts "$fixture_dir/map-index-wrong.ts"
+expect_failure \
+  "a map callback's index verified as the element" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/map-index-wrong.ts"
+cp tools/fixtures/real-field-wrong.ts "$fixture_dir/real-field-wrong.ts"
+expect_failure \
+  "a real record field verified an integer-only claim" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/real-field-wrong.ts"
+cp tools/fixtures/generic-record-wrong.ts "$fixture_dir/generic-record-wrong.ts"
+expect_failure \
+  "a generic record verified a replaced element as kept" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/generic-record-wrong.ts"
 cp tools/fixtures/tagged-match-missing-arm.ts "$fixture_dir/tagged-match-missing-arm.ts"
 expect_failure \
   "a non-exhaustive handler table was read as a tagged match" \
@@ -397,6 +459,17 @@ const caught = report.catches.map(c => `${c.function} ${c.kind} ${c.evidence?.hi
 if (caught !== "arraySum proof -, arraySum source-fix code") fail("catches were " + caught);
 if (report.open.length + report.dropped.length !== 0) fail("expected no open or dropped failures");
 '
+
+# A contract copied from another file names a helper of that file the importer never calls;
+# the helper must be declared too, or Dafny cannot resolve the copied contract.
+cp -R tools/fixtures/contract-helper-project "$fixture_dir/contract-helper-project"
+npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/contract-helper-project/importer.ts"
+if ! grep -Fq 'function {:axiom} positive' "$fixture_dir/contract-helper-project/importer.dfy.gen"; then
+  echo "ERROR: a helper named by an imported contract was not declared"
+  exit 1
+fi
+# An import named only by a contract, never called in a body, is declared too.
+npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/contract-helper-project/contract-only.ts"
 
 # "run-log": false in lemmascript.json keeps logging off; LSC_RUN_LOG=true leaves
 # the decision to the config rather than overriding it.

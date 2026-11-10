@@ -2491,6 +2491,8 @@ export function transformModule(mod: TModule, specImport?: string, moduleBaseOve
         ensures,
         decreases: fn.decreases ? transformExpr(fn.decreases) : null,
         body,
+        opaque: fn.opaque,
+        reveals: fn.reveals,
       });
     } else if (fn.forcePure) {
       // //@ pure but body can't be auto-converted — emit function by method
@@ -2506,6 +2508,7 @@ export function transformModule(mod: TModule, specImport?: string, moduleBaseOve
         ensures: fn.ensures.map(transformExpr),
         decreases: fn.decreases ? transformExpr(fn.decreases) : null,
         methodBody,
+        reveals: fn.reveals,
       });
     }
   }
@@ -2587,6 +2590,7 @@ export function transformModule(mod: TModule, specImport?: string, moduleBaseOve
       ensures,
       decreases: fn.decreases ? transformExpr(fn.decreases) : null,
       body,
+      reveals: fn.reveals,
     };
   });
 

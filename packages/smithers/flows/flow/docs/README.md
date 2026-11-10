@@ -152,3 +152,10 @@ program.
   [export reference](./reference/flow.md).
 - [Troubleshooting](./troubleshooting.md): every refusal this package raises,
   sorted by the symptom you see.
+
+Persisted step decoding fails with `JournalDecode.JournalDecodeError` when the recorded
+outcome no longer matches the declaration. `JournalDecode.Identity` supplies the host's
+`objectId` and `codeVersion`; defaults are `unknown`. The engine logs and counts the fixed
+`stepTag` and boundary, with host identity in logs/spans only. Stored values and schema
+messages never enter this diagnostic. A stored flow payload rejected by a rollback's schema
+settles as the existing `InterpreterError` with `payload_changed`, with the same diagnostic.

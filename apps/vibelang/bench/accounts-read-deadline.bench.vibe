@@ -1,0 +1,65 @@
+// @vitest-environment node
+// A signed-in person's issue list waits behind their own issue write that GitHub has not answered: after six seconds the
+// read answers "unavailable" instead of hanging, and the write still lands. The Accounts object's real HTTP boundary
+// (worker/Accounts.vibe) with the product's injectable IssueHost, held on a latch for the write.
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { IssueHost } from "../src/core/issueFlows.vibe"
+import { get, github, offline, post, serve, setupWith, signIn } from "../test/support/accountsWorld.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const manual = FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })))
+const issue = { op: "new", number: 0, parent: 0, title: "Held task", text: "Waits on GitHub", assignee: "", example: "", prior: "", key: "held-1" }
+
+effect function timed(http: HttpClient.HttpClient, request: Parameters<HttpClient.HttpClient["execute"]>[0]) {
+  const start = try Clock.currentTimeMillis
+  const response = try http.execute(request)
+  const body = try response.json
+  return { status: response.status, body: body as Record<string, unknown>, ms: (try Clock.currentTimeMillis) - start }
+}
+
+effect function journey() {
+  const entered = try Deferred.make<void>()
+  const release = try Deferred.make<void>()
+  // Reads answer at once; a write waits until released, as one GitHub has not answered does.
+  const issues: IssueHost.Shape = {
+    perform: (request) => effect {
+      if (request.op !== "read") {
+        try Deferred.succeed(entered, undefined)
+        try Deferred.await(release)
+      }
+      return {
+        seq: request.op === "read" ? 0 : 1, selected: request.op === "read" ? 0 : 7,
+        items: request.op === "read" ? [] : [{ number: 7, githubId: 7001, title: request.title, body: request.text, author: "ada", age: "now", state: "open", labels: [], parent: 0, task: "", assignee: "", vip: "", review: "", path: "", comments: 0, notes: [] }],
+      }
+    },
+  }
+  provide Layer.succeed(IssueHost, issues) {
+    const { origin } = try serve(setupWith(github([{ id: 7, login: "ada" }]), "7")).pipe(Effect.provideService(HttpClient.HttpClient, offline))
+    provide manual {
+      const http = try HttpClient.HttpClient
+      const { cookie } = try signIn(http, origin, "7")
+      const writing = try Effect.forkScoped(timed(http, post(origin, "/api/issues", issue, cookie)))
+      try Deferred.await(entered)
+      const queued = try timed(http, get(origin, "/api/issues", cookie))
+      try Deferred.succeed(release, undefined)
+      const written = try Fiber.join(writing)
+      const after = try timed(http, get(origin, "/api/issues", cookie))
+      try Effect.try(() => {
+        expect([queued.status, written.status, after.status]).toEqual([503, 200, 200])
+        expect(queued.body).toEqual({ reason: "unavailable" })
+        expect(queued.ms).toBeGreaterThanOrEqual(5_900)
+        expect(written.body).toMatchObject({ selected: 7, items: [{ number: 7, title: "Held task" }] })
+        expect(after.body).toMatchObject({ role: "maintainer", items: [] })
+      })
+      return { queuedReadMs: queued.ms, writeMs: written.ms, readAfterMs: after.ms }
+    }
+  }
+}
+
+it("a read queued behind an unanswered write answers unavailable at its deadline", async ({ bench }) => {
+  const samples: Array<unknown> = []
+  const result = await workload(bench, "accounts-read-deadline", "async", async () => { samples.push(await runPromise(scoped(effect { provide NodeHttpServer.layerTest { return try journey() } }))) }).run(slow)
+  await runPromise(artifact("accounts-read-deadline", "Vitest built-in bench; the Accounts object on a real loopback server over in-memory object storage, a fresh object per sample. Web sign-in, then a new issue whose IssueHost write waits on a latch, as one GitHub has not answered does; while it holds the issue lock, the issue list is read. Checks the read answers 503 unavailable after at least 5.9 s (the 6 s queue deadline), the write then lands with its issue, and a later read answers 200. Per-request milliseconds per sample.", ["IssueHost is the product's injectable service; the held write is a latch, not GitHub.", "In-memory storage, not Durable Object SQLite.", "The deadline dominates the time: this measures that the bound holds, not throughput."], { result, samples }))
+}, 120_000)

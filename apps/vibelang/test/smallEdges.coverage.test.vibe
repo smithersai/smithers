@@ -1,0 +1,109 @@
+// Small decisions across the app on the arms their callers had not reached: the tour's skip, the issues pane's words
+// for a GitHub connection failure, wiki links that leave the wiki, the history tool's missing fields and unknown
+// pages, the transcript's position in a document with no window, and the mock agent's open history work.
+import { describe, expect, it } from "@effect/vitest"
+import { historyReply } from "../src/core/mockReplies.vibe"
+import { wikiLink } from "../src/core/wikiLinks.vibe"
+import { decide, empty, type History } from "../src/history/mythical.vibe"
+import { requestOf } from "../src/history/tools.vibe"
+import { historyRouteOf } from "../src/history/wire.vibe"
+import { issuesUpdate, initialIssues } from "../src/web/issues.vibe"
+import { init, Message, update } from "../src/web/main.vibe"
+import { skipTour } from "../src/web/tourDecision.vibe"
+import { nearBottom } from "../src/web/screenDecision.vibe"
+import { atBottom } from "../src/web/viewport.vibe"
+import { detachedDocument } from "./support/browser.ts"
+
+describe("skipping a tour stop", () => {
+  it("seeks the next stop during a tour, and does nothing outside one", () => {
+    expect(skipTour(true, 3)).toEqual({ action: "seek", step: 4 })
+    expect(skipTour(true, 0)).toEqual({ action: "seek", step: 1 })
+    expect(skipTour(false, 3)).toEqual({ action: "none", step: 0 })
+  })
+})
+
+describe("a failed issue write that needs GitHub", () => {
+  const form = { ...initialIssues, keyPrefix: "gh", role: "maintainer" as const, screen: "new" as const, title: "Tuple patterns", summary: "One feature." }
+  const first = issuesUpdate(form, "new", "")
+  const model = { ...init({ session: "gh", mode: "live", name: "Will" }).model, issues: first.ui }
+  it.each([
+    ["connect", "Connect GitHub."],
+    ["fork", "Fork on GitHub."],
+    ["install", "Install Smithers on your fork."],
+    ["tree", "Choose another parent."],
+  ] as const)("%s says %j", (reason, words) => {
+    const failed = update(model, Message.IssuesFailed({ reason, op: "new", key: "gh-1" })).model
+    expect(failed.issues!.error).toBe(words)
+  })
+})
+
+describe("wiki links", () => {
+  const ids = ["index", "rulings", "decisions/0016-coverage", "designs/index"]
+  it("a link to a file outside the wiki opens it on GitHub, with or without its anchor", () => {
+    // The link keeps `wiki/../`; a browser resolves it to the file beside the wiki.
+    expect(new URL(wikiLink("decisions/0016-coverage", "../../AGENTS.md", ids)).href).toBe("https://github.com/smithersai/smithers/blob/main/apps/vibelang/AGENTS.md")
+    expect(wikiLink("index", "notes/plan.md#next", ids)).toBe("https://github.com/smithersai/smithers/blob/main/apps/vibelang/wiki/notes/plan.md#next")
+  })
+
+  it("a page link resolves against its page, keeping its anchor", () => {
+    expect(wikiLink("decisions/0016-coverage", "../rulings.md#vl-29", ids)).toBe("/wiki/rulings#vl-29")
+    expect(wikiLink("index", "designs/", ids)).toBe("/wiki/designs/index")
+    expect(wikiLink("index", "#top", ids)).toBe("#top")
+  })
+})
+
+describe("the history tool's input", () => {
+  it.each([
+    [{ what: "epic" }, { what: "epic", id: "", from: 0 }],
+    [{ what: "commit" }, { what: "commit", id: "" }],
+    [{ what: "search" }, { what: "search", query: "" }],
+    [{ what: "epic", id: "e2", from: 4 }, { what: "epic", id: "e2", from: 4 }],
+  ] as const)("%j asks for %j", (input, request) => {
+    expect(requestOf(input)).toEqual(request)
+  })
+})
+
+describe("history routes", () => {
+  it.each([
+    ["/api/history/epics/e1", "from=-1"],
+    ["/api/history/commits/x1", ""],
+    ["/api/history/unknown", ""],
+  ])("GET %s?%s names no page", (path, query) => {
+    expect(historyRouteOf("GET", path, new URLSearchParams(query))).toBeUndefined()
+  })
+
+  it("a known page is routed by its kind", () => {
+    expect(historyRouteOf("GET", "/api/history/epics/e1", new URLSearchParams("from=3"))).toEqual({ kind: "history-epic", page: { what: "epic", id: "e1", from: 3 } })
+  })
+})
+
+describe("the transcript's position", () => {
+  it("a document with no window is read as scrolled to the top", () => {
+    const detached = detachedDocument()
+    expect(detached.defaultView).toBeNull()
+    const viewport = detached.documentElement
+    expect(atBottom(detached)).toBe(nearBottom(viewport.scrollHeight, viewport.clientHeight, 0))
+  })
+})
+
+describe("the mock agent's history answer", () => {
+  const head = (n: number) => ({ id: `m${n}`, epic: "e1", rank: n, title: `Task ${n}`, state: "planned" as const, task: "", lane: "", notes: 0, folds: 0 })
+  it("names at most five pieces of open work, and says when there is none", () => {
+    const outline = { seq: 9, main: "abc", epics: [{ id: "e1", title: "The compiler", commits: 7, folds: 0 }], open: [1, 2, 3, 4, 5, 6].map(head) }
+    expect(historyReply(outline)).toBe([
+      "VibeLang's mythical history, folded through `abc`.",
+      "The compiler 7",
+      "Open work: `m1` Task 1 (planned) · `m2` Task 2 (planned) · `m3` Task 3 (planned) · `m4` Task 4 (planned) · `m5` Task 5 (planned)",
+    ].join("\n\n"))
+    expect(historyReply({ ...outline, open: [] })).toContain("No open work.")
+  })
+})
+
+describe("planning before a commit", () => {
+  // The wire schemas refuse a negative rank, so only a history built in memory carries one; decide's contract (proved)
+  // still refuses to insert before it rather than rank the new commit below zero.
+  const history: History = { ...empty, seq: 2, epics: [{ id: "e1", title: "Compiler" }], commits: [{ id: "m1", epic: "e1", rank: -1, title: "One", state: "planned", task: "", lane: "", notes: [] }] }
+  it("a commit with no rank in its epic cannot be planned before", () => {
+    expect(decide(history, { type: "Plan", id: "m2", epic: "e1", before: "m1", title: "Two", task: "" })).toEqual({ ok: false, refusal: "unknown" })
+  })
+})

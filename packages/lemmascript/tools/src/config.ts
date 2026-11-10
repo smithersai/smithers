@@ -23,7 +23,7 @@ export const OPTION_SPECS = {
     default: false,
     fileOverride: true,
     directiveAliases: ["safe-slice"],
-    description: "Use JavaScript-clamping semantics for two-argument array slice.",
+    description: "Use JavaScript-clamping semantics for array and string slice.",
   },
   "proof-dir": {
     type: "path",

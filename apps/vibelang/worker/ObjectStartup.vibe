@@ -1,0 +1,120 @@
+// Startup remains inspectable while the object's durable initialization is unfinished.
+import { JournalDecode } from "@smthrs/flow"
+import { HttpServerResponse } from "effect/http"
+import type { ObjectState } from "./apiObjects.vibe"
+
+/** A start-up step's fixed name: `initialize` and `begin` are the host's, the rest the bodies' (worker/apiObjects.vibe). */
+export type Step = "initialize" | "begin" | "storage" | "sequencer" | "bootstrap" | "accounts"
+type Outcome = "started" | "done" | "ready" | "failed" | "interrupted"
+export interface Status {
+  readonly objectClass: string
+  readonly objectId: string
+  readonly codeVersion: string
+  readonly startup: "starting" | "ready" | "failed"
+  /** The step startup is in, or the last it reached: a stuck or failed object names where. */
+  readonly step: Step
+}
+/**
+ * The object's start-up as it stands. With `patience`, it first waits that long for the current start-up to settle: a
+ * health read is often what wakes an evicted object, and its initializer has not run a step yet when the read arrives.
+ */
+export interface Health { readonly health: (patience?: Duration.Input) => Status!! }
+export error ObjectStartupFailed { objectClass: string; objectId: string; codeVersion: string }
+const starts = Metric.counter("vibelang_object_startup_steps", { incremental: true })
+/** The starting object's step recorder; it exists only while an initializer runs. */
+export service Steps {
+  record(step: Step, outcome: "started" | "done" | "failed"): void!!
+}
+
+/** Runs `program` as start-up step `name`: logged, counted and shown by health. Outside start-up it only runs `program`. */
+export function step<A, E, R>(name: Step, program: A!E!R): A!E!R {
+  return effect {
+    const steps = try Effect.serviceOption(Steps)
+    if (steps._tag === "None") return try program
+    const recorder = steps.value
+    try recorder.record(name, "started")
+    return try onExit(program, (result) => recorder.record(name, result._tag === "Success" ? "done" : "failed"))
+  }
+}
+
+/** The host keeps this scope for the object's lifetime; ordinary calls join its bounded startup. */
+export effect function make<A extends object, E, R>(objectClass: string, state: ObjectState, program: A!E!R, members: Readonly<Record<keyof NoInfer<A> & string, true>>) {
+  const objectId = try Effect.orDie(Effect.try(() => state.id.toString()))
+  const codeVersion = try Effect.orDie(Config.withDefault(Config.String("VIBELANG_COMMIT"), "unknown"))
+  let status: Status = { objectClass, objectId, codeVersion, startup: "starting", step: "initialize" }
+  const scope = try Scope.Scope
+  const context = try Effect.context<R>()
+  const lock = try Semaphore.make(1)
+  let ready = try Deferred.make<A, ObjectStartupFailed>()
+  // One log name for every step; `step` and `outcome` are fixed names, so a stuck object's last line says where it is.
+  const note = effect (step: Step, outcome: Outcome) => {
+    const fields = { objectClass, objectId, codeVersion, step, outcome }
+    try Metric.update(Metric.withAttributes(starts, { objectClass, step, outcome }), 1)
+    try Effect.logInfo("vibelang.object.startup").pipe(Effect.annotateLogs(fields))
+    try Effect.annotateCurrentSpan(fields)
+  }
+  const steps: Steps.Shape = {
+    record: effect (step, outcome) => {
+      status = { ...status, step }
+      try note(step, outcome)
+    },
+  }
+  const start = effect {
+    status = { ...status, startup: "starting", step: "initialize" }
+    ready = try Deferred.make<A, ObjectStartupFailed>()
+    const pending = ready
+    try note("initialize", "started")
+    const initializer = try Effect.forkIn(withSpan(effect {
+      try steps.record("begin", "started")
+      const result = try exit(program.pipe(Effect.timeout("5 seconds"), Effect.provideService(JournalDecode.Identity, { objectId, codeVersion }), Effect.provideService(Steps, steps)))
+      const startup = result._tag === "Success" ? "ready" : "failed"
+      status = { ...status, startup }
+      try note("initialize", startup)
+      if (result._tag === "Failure") try Effect.logError("vibelang.object.startup.failed").pipe(Effect.annotateLogs({ objectClass, objectId, codeVersion, step: status.step, errorType: Cause.hasDies(result.cause) ? "defect" : "failure" }))
+      if (result._tag === "Success") try Deferred.succeed(pending, result.value)
+      else try Deferred.fail(pending, new ObjectStartupFailed({ objectClass, objectId, codeVersion }))
+    }, "vibelang.object.startup").pipe(Effect.provideContext(context)), scope)
+    // An initializer interrupted from outside, such as by a closed host scope, never reaches its own outcome: settle
+    // it here so health says failed, waiting calls are refused at once and the next call retries.
+    initializer.addObserver((result) => {
+      if (result._tag === "Success" || !Deferred.doneUnsafe(pending, fail(new ObjectStartupFailed({ objectClass, objectId, codeVersion })))) return
+      status = { ...status, startup: "failed" }
+      runFork(note(status.step, "interrupted").pipe(Effect.provideContext(context)))
+    })
+  }
+  try start
+  // A new call after failure is the person's explicit retry, never a timer or background retry loop.
+  const joined = effect {
+    try Semaphore.withPermits(lock, 1)(effect { if (status.startup === "failed") try start })
+    return try Deferred.await(ready).pipe(
+      Effect.timeout("5 seconds"),
+      Effect.catchTag("TimeoutError", () => effect {
+        try Metric.update(Metric.withAttributes(Metric.counter("vibelang_object_startup_wait_deadlines", { incremental: true }), { objectClass }), 1)
+        try Effect.logWarning("vibelang.object.startup.wait.deadline").pipe(Effect.annotateLogs({ objectClass, objectId, codeVersion }))
+        throw new ObjectStartupFailed({ objectClass, objectId, codeVersion })
+      }),
+      Effect.orDie,
+      Effect.withSpan("vibelang.object.startup.wait"),
+    )
+  }
+  // Waiting never starts or retries a start-up: a failed or still-running one is reported as it stands.
+  const health = (patience?: Duration.Input) => effect {
+    if (patience !== undefined) Deferred.await(ready).pipe(Effect.timeout(patience)) catch () => undefined
+    return status
+  }
+  const known = new Set<string>(["health", ...Object.keys(members)])
+  const api = new Proxy({ health, ...Object.fromEntries(Object.keys(members).map(name => [name, undefined])) }, {
+    get: (_target, property: string | symbol) => {
+      if (typeof property !== "string" || property === "then" || !known.has(property)) return undefined
+      if (property === "health") return health
+      if (property === "fetch") return joined.pipe(
+        Effect.flatMap((service) => (service as { readonly fetch: HttpServerResponse.HttpServerResponse!! }).fetch),
+        Effect.provideService(JournalDecode.Identity, { objectId, codeVersion }),
+        Effect.catchCause(() => succeed(HttpServerResponse.jsonUnsafe({ reason: "unavailable" }, { status: 503, headers: { "cache-control": "no-store" } }))),
+      )
+      return (...args: Array<unknown>) => joined.pipe(Effect.flatMap((service) =>
+        (service as Record<string, (...input: Array<unknown>) => unknown!!>)[property]!(...args)), Effect.provideService(JournalDecode.Identity, { objectId, codeVersion }))
+    },
+  })
+  return api as unknown as A & Health
+}

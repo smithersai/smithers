@@ -34,10 +34,17 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0014 production fixes](decisions/0014-agent-tour.md#other-choices) | Tour docs and current narration stay in view; durable reading holds, paragraphs, keyboard control, inert background and control announcements |
 | [0015](decisions/0015-fuzzing.md) | Effect fork as `@smthrs/fuzz`, corpus, budgets, whole-app fuzz targets and independent coverage |
 | [0015 worker and view branches](decisions/0015-fuzzing.md#lane-vl-fuzz2-worker-and-view-branches-2026-11-09) | Lane vl-fuzz2: steered targets for the view, viewport, sequencer, action runs, conversation object, issues and wiki hosts |
-| [0016](decisions/0016-coverage.md) | Boundary tests, prepared source coverage gates and recorded measurement limitations |
+| [0015 surfaces, history and actions](decisions/0015-fuzzing.md#lane-vl-fuzz3-surfaces-history-and-actions-2026-11-10) | Lane vl-fuzz3: steered targets for the CLI, MCP and sign-in, the mythical history's sequencer and machines, and registered actions |
+| [0016](decisions/0016-coverage.md) | Boundary tests, strict opt-in source gates and independent suite measurements |
+| [0015 test-quality fixes](decisions/0015-fuzzing.md#test-quality-review-fixes-lane-vl-test-quality-2026-11-10) | Zero-execution gate, named oracles, clocks instead of sleeps, GitHub doubles that refuse (lane vl-test-quality) |
 | [0016 vl-coverage2](decisions/0016-coverage.md#lane-vl-coverage2-2026-11-09) | HTTP, browser factory, mock actions, mock factory, state machine and live wiki at their boundaries; the reload-mid-reply fix (lane vl-coverage2) |
+| [0016 vl-coverage3](decisions/0016-coverage.md#lane-vl-coverage3-surfaces-history-and-actions-2026-11-10) | Surfaces, history and actions at their unit edges; the session guard as a seam; the inventory skips generated output (lane vl-coverage3) |
+| [0016 inside workerd](decisions/0016-coverage.md#coverage-inside-workerd-lane-vl-coverage-workerd-2026-11-10) | Istanbul counters inside workerd joined with Node's V8 report by source position; the workerd suite's true numbers (lane vl-coverage-workerd) |
+| [0016 measuring every gate](decisions/0016-coverage.md#measuring-every-gate-lane-vl-gatefix-2026-11-10) | One `run-heavy` command per VL-29 gate on a host or a 4-vCPU box; fuzz install check, relative `lsc`, `BENCH_REVISION`, web-server limit, proof inventory from the source marks (lane vl-gatefix) |
+| [0016 unit and fuzz gates inside workerd](decisions/0016-coverage.md#unit-and-fuzz-gates-inside-workerd-lane-vl-coverage-workerd-2026-11-10) | The unit and fuzz gates count workerd execution; `worker/Api.vibe` runs as Alchemy builds and bridges it (lane vl-coverage-workerd) |
 | [0017](decisions/0017-benchmarks.md) | Local/live methods, current-main measurements, content/session recovery benchmarks and unfinished strict source coverage |
 | [0018](decisions/0018-proofs.md) | Inventory and Dafny proofs of production decisions, executable mutations and explicit tool boundaries; three proofs lanes, the third on sequencers, commands and the worker |
+| [0018 strengthening](decisions/0018-proofs.md#strengthening-lane-vl-proof-strengthen-2026-11-10) | Contracts that catch the reviewed bugs: `decide`'s authorization, the budget's reservation bound, unreported usage charged its ceiling, run and walkthrough frames, the meter step, harness honesty (lane vl-proof-strengthen) |
 | [0019](decisions/0019-sign-in-and-roles.md) | GitHub identity; five project roles, first participation, explicit grants and demotions |
 | [0020](decisions/0020-mythical-history.md) | The mythical history: one linear stack of epics and mythical commits in a History object, bootstrapped from VibeLang's real history; plan, start, note, approve and fold are flows people and the agent share (VL-22) |
 | [0021](decisions/0021-wiki.md) | The working-memory wiki: shared pane, role-gated Markdown editing and person-owned review changes; agent drafts through the same flows |
@@ -52,6 +59,12 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0028](decisions/0028-cli-and-mcp-sign-in.md) | CLI and MCP sign-in: GitHub device flow; the server names the agent's posts `<login> (agent)`, carries the person's role, and refuses it approve, fold and merge (VL-26) |
 
 | [0029](decisions/0029-hosted-sign-in-broker.md) | Hosted sign-in through smithers.sh's registered callback, exact-origin registry, single-use PKCE-bound codes and retried temporary-token revocation (VL-33) |
+
+| [0029 hardening](decisions/0029-hosted-sign-in-broker.md#hardening-after-review-2026-11-10-lane-vl-connect-hardening) | Security review fixes: pruned abandoned sign-ins, revoked device tokens, issue search from admission (lane vl-connect-hardening) |
+| [0030](decisions/0030-read-deadlines-and-object-health.md) | Bounded issue/wiki reads, inspectable object startup and safe journal-decode failures; amended 2026-11-10 (lane vl-startup-hang): objects start under Alchemy's bridge, health names the start-up step |
+| [0031](decisions/0031-public-reads.md) | Signed-out GitHub reads through smithers.sh's App; ETags, bounded cold reads and stale copies marked in the panes (lane vl-public-reads) |
+| smithers.sh `apps/mvp/docs/decisions/0165-hosted-site-github-delegation.md`, "Revocation and the authorization" | GitHub's page after sign-out cycles is its ten-new-tokens-an-hour prompt, not our revocations; sign-out keeps revoking, the connection survives (lane vl-github-authz) |
+| [smithers.sh closed-scope check](roadmap.md) | apps/mvp cold scope check: admission and real terminal pump run; `github.reconcile.admission` and `github_reconcile_admissions` observe entry (lane vl-mvp-closed-scope) |
 
 ## Layout
 
@@ -72,4 +85,3 @@ apps/vibelang/
 
 
 [Benchmark methods and measurements](benchmarks.md).
-

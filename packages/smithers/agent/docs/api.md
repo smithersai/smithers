@@ -1391,12 +1391,17 @@ interface Usage {
   readonly tokens: number
   readonly calls: number
   readonly largestCall: number
+  readonly unreported?: number
 }
 ```
 
 The answer to "may this call be made", and what one run has spent so far.
 `largestCall` is what the next call is projected to cost. `calls` counts
-distinct model steps, replays included exactly once.
+distinct model steps, replays included exactly once. `unreported` counts the
+calls whose provider reported no usable token count (`Budget.reportsTokens`), so
+`tokens` is then a lower bound on what the provider charged; it is absent when
+every call reported one, and it survives recovery from the journal and the
+spend ledger.
 
 Before a positive cost is known, a reservation holds the full token allowance.
 `BudgetExceeded.used` remains actual spend; its optional `reserved` field is
@@ -1537,6 +1542,18 @@ they cannot cancel each other or be concealed by total precedence. `record`
 refuses that value, leaves the tally unchanged, and blocks fresh admission until
 the same step supplies a valid record. This validates reported usage; it does
 not reconcile an invoice or recover usage a provider never reported.
+
+### Budget.reportsTokens
+
+```ts
+const reportsTokens: (usage: ModelEvent.Usage) => boolean
+```
+
+Whether a call's usage carries a token count: a total, or both input and
+output. `tokensOf` reads a missing counter as zero, so a call with no count
+would look free; `record` marks it `unreported`, and `Usage.unreported` counts
+such calls so a caller can charge them something else, such as a reserved
+ceiling.
 
 ### Budget errors
 

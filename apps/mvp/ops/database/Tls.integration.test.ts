@@ -79,7 +79,7 @@ const query = (options: { pin?: "ca" | "other"; trust?: "ca" | "other"; host?: s
       console.log(JSON.stringify(rows));
     } catch (error) {
       const code = error?.reason?.cause?.code ?? error?.cause?.reason?.cause?.code ?? "unknown";
-      console.error(code);
+      console.error(error?.message === "TLS checks are turned off in this environment: refusing to run" ? error.message : code);
       process.exitCode = 1;
     }
   `
@@ -107,11 +107,18 @@ test.skipIf(!available)("Neon's require + channel_binding API URL connects with 
   expect(JSON.parse(result.out)).toEqual([{ ssl: true, version: expect.stringMatching(/^TLSv1\.[23]$/) }])
 })
 
-test.skipIf(!available)("the Neon-derived path rejects an untrusted issuer, even with the global TLS opt-out", async () => {
-  const result = await query({ neon: true, optout: true })
+test.skipIf(!available)("the Neon-derived path rejects an untrusted issuer using the process root store", async () => {
+  const result = await query({ neon: true })
   expect(result.code).toBe(1)
   expect(result.out).toBe("")
   expect(result.err).toMatch(/UNABLE_TO_VERIFY_LEAF_SIGNATURE|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_GET_ISSUER_CERT_LOCALLY/)
+})
+
+test.skipIf(!available)("the verified connection boundary refuses the global TLS opt-out even with a trusted issuer", async () => {
+  const result = await query({ neon: true, trust: "ca", optout: true })
+  expect(result.code).toBe(1)
+  expect(result.out).toBe("")
+  expect(result.err.trim()).toBe("TLS checks are turned off in this environment: refusing to run")
 })
 
 test.skipIf(!available)("the Neon-derived path rejects the wrong hostname despite a trusted issuer", async () => {

@@ -57,12 +57,26 @@ export const make = (faults: Faults = {}) => {
           ),
           (child) => Effect.sync(() => child.exitCode === null && child.kill("SIGKILL"))
         )
+        // A write callback reports the typed failure; Node also emits it on the writable. Own that event for
+        // the child's lifetime, including errors queued after the writing Effect was interrupted.
+        let stdinError: ProcessFailure | undefined
+        child.stdin?.on("error", (cause) => {
+          stdinError = new ProcessFailure({ message: String(cause) })
+        })
         const exited = new Promise<number>((resolve) => child.once("close", (code) => resolve(code ?? 137)))
         return {
           stdin: child.stdin === null || faults.noStdin === true
             ? undefined
             : Sink.forEach((chunk: Uint8Array) =>
-              Effect.promise(() => new Promise<void>((resolve) => child.stdin!.write(chunk, () => resolve())))
+              Effect.suspend(() =>
+                stdinError !== undefined ? Effect.fail(stdinError) : Effect.tryPromise({
+                  try: () =>
+                    new Promise<void>((resolve, reject) =>
+                      child.stdin!.write(chunk, (error) => error ? reject(error) : resolve())
+                    ),
+                  catch: (cause) => new ProcessFailure({ message: String(cause) })
+                })
+              )
             ).pipe(Sink.mapEffect(() => Effect.sync(() => void child.stdin!.end()))),
           stdout: faults.noStdout === true
             ? undefined

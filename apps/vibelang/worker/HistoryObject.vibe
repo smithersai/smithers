@@ -71,14 +71,10 @@ export function storeOver(storage: KeyValue): Store {
   }
 }
 
-/** Who asks, from the request: a viewer until sign-in (decision 0019) lands; its policy replaces this one function. */
-export function principalOf(_request: unknown): Principal {
-  return VIEWER
-}
 
 /**
  * Who the agent in the chat acts for: the person who posted, a viewer until sign-in (decision 0019) lands, so its
- * writes are refused `forbidden` as that person's would be. Like `principalOf`, the one place 0019's policy replaces.
+ * writes are refused `forbidden` as that person's would be. 0019's policy replaces it.
  */
 export const CHAT_AGENT: Principal = { ...VIEWER, agent: true }
 

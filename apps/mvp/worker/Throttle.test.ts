@@ -54,6 +54,18 @@ const run = (check: ReturnType<typeof Throttle.make>, path: string, headers: Rec
 }
 
 describe("routeOf", () => {
+  test("the hosted-site broker's four routes are throttled before its one object; smithers.sh's own callback isn't", () => {
+    const brokerState = "broker_" + "a".repeat(43)
+    expect([
+      "/api/auth/broker/start?origin=x&return_to=y",
+      "/api/auth/broker/exchange",
+      "/api/auth/broker/consent?consent=c",
+      `/api/auth/callback?state=${brokerState}&code=c`,
+      `/api/auth/callback?state=${"a".repeat(43)}&code=c`,
+      "/api/auth/broker/delegation?person=7",
+    ].map(Throttle.routeOf)).toEqual(["broker", "broker", "broker", "broker", undefined, undefined])
+  })
+
   test("every shape and the telemetry relay are throttled; the other routes aren't", () => {
     expect([
       "/api/shapes/messages",
@@ -111,10 +123,27 @@ describe("networkOf", () => {
 })
 
 describe("make", () => {
+  test("the broker's routes count on their own limiter, so a flood of sign-in requests answers 429 before the object", () => {
+    const shapes = counting(5)
+    const broker = counting(1)
+    const check = Throttle.make({ shape: shapes.limiter, telemetry: shapes.limiter, broker: broker.limiter })
+    const from = { "cf-connecting-ip": "203.0.113.5" }
+
+    const first = run(check, "/api/auth/broker/start?origin=x&return_to=y", from)
+    const second = run(check, "/api/auth/broker/exchange", from)
+    const shape = run(check, "/api/shapes/messages", from)
+
+    expect(Option.isNone(first.result)).toBe(true)
+    expect(Option.getOrThrow(second.result).status).toBe(429)
+    expect(Option.isNone(shape.result)).toBe(true)
+    expect(broker.seen).toEqual(["203.0.113.0/24", "203.0.113.0/24"])
+    expect(second.count({ route: "broker", outcome: "limited" })).toBe(1)
+  })
+
   test("lets a route through until its limiter refuses the network, then answers 429 rate_limited", async () => {
     const shapes = counting(2)
     const telemetry = counting(1)
-    const check = Throttle.make({ shape: shapes.limiter, telemetry: telemetry.limiter })
+    const check = Throttle.make({ shape: shapes.limiter, telemetry: telemetry.limiter, broker: counting(0).limiter })
     const from = { "cf-connecting-ip": "203.0.113.5" }
 
     const first = run(check, "/api/shapes/messages", from)
@@ -142,14 +171,14 @@ describe("make", () => {
 
   test("a route it doesn't cover never reaches a limiter", () => {
     const shapes = counting(0)
-    const check = Throttle.make({ shape: shapes.limiter, telemetry: shapes.limiter })
+    const check = Throttle.make({ shape: shapes.limiter, telemetry: shapes.limiter, broker: shapes.limiter })
 
     expect(Option.isNone(run(check, "/api/questions").result)).toBe(true)
     expect(shapes.seen).toEqual([])
   })
 
   test("a limiter that fails lets the request through, logged by its route and counted, never by its address", () => {
-    const check = Throttle.make({ shape: broken, telemetry: broken })
+    const check = Throttle.make({ shape: broken, telemetry: broken, broker: broken })
 
     const ran = run(check, "/api/shapes/messages", { "cf-connecting-ip": "203.0.113.5" })
 

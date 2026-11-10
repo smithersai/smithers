@@ -1,0 +1,14 @@
+// The workerd suite's coverage gate (0016), run by `pnpm test:workerd:coverage` after Vitest: Vitest's Node report of
+// the suite (its clients and the emitted CLI and MCP processes) credited by each local workerd isolate's counters
+// (test/support/coverageGate.vibe).
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { gate } from "./support/coverageGate.vibe"
+
+export effect function main() {
+  const path = try Path.Path
+  const app = path.dirname(try path.fromFileUrl(new URL("../package.json", import.meta.url)))
+  try gate(app, { suite: "workerd suite", node: ["coverage/workerd/coverage-final.json"], workerd: ["coverage/workerd/workerd-raw"], merged: "coverage/workerd/merged" })
+}
+
+NodeRuntime.runMain(Effect.provide(main(), NodeServices.layer))

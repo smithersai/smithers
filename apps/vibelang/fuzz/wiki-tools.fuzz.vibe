@@ -39,9 +39,11 @@ it.live("wiki/tools", () => run("wiki/tools", Input, (input) => scoped(effect {
   if (input.tool === "draft" && drafting === undefined) return true
   const binding = bindings[input.tool === "open" ? 0 : input.tool === "docs" ? 1 : 2]!
   const name = input.tool === "open" ? "vibelang/wiki/open" : input.tool === "docs" ? "vibelang/docs/open" : "vibelang/wiki/draft"
-  const value = input.tool === "open" ? { page } : input.tool === "docs" ? { path: page } : { page, ask: input.ask }
+  // A known docs path is the page id under the docs root; an unknown one has no leading slash.
+  const value = input.tool === "open" ? { page } : input.tool === "docs" ? { path: input.known ? `/${page}` : page } : { page, ask: input.ask }
   const result = try binding.run(call(name, value))
-  if (input.tool !== "draft") return result.outcome === "success" || result.outcome === "failure"
+  // The live reply opens a known page or docs path in its pane; an unknown one answers false, never a failure.
+  if (input.tool !== "draft") return result.outcome === "success" && result.value === input.known
   const refused = !input.known || page === "decisions"
   if (refused) return keys.length === 0 && result.outcome !== "success"
   if (keys.length !== 1) return false

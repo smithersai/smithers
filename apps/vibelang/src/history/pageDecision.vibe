@@ -1,0 +1,47 @@
+// How the mythical history is read by page (wiki/decisions/0020-mythical-history.md, 0018 third-lane batch 2): where a
+// page starts, how many commits it holds, and how a long search is clipped. `pages.vibe` answers with these, and the
+// history page compares a search's answer with the same clip.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript.
+
+import { pairCut } from "./stackDecision.vibe"
+
+/** Where a page starts: the requested commit, or the first when the request is before it. */
+//@ verify
+//@ ensures \result >= 0
+//@ ensures from > 0 ==> \result == from
+//@ ensures from <= 0 ==> \result == 0
+export function pageStart(from: number): number {
+  return from > 0 ? from : 0
+}
+
+/**
+ * How many of `total` commits a page from `start` holds: at most `size`, none past the end. Pages at 0, `size`,
+ * `2 * size` and on hold every commit once.
+ */
+//@ verify
+//@ requires 0 <= total && 0 <= start && 0 <= size
+//@ ensures 0 <= \result && \result <= size
+//@ ensures start >= total ==> \result == 0
+//@ ensures start < total ==> \result == (total - start < size ? total - start : size)
+//@ ensures start + \result <= total || \result == 0
+export function pageCount(total: number, start: number, size: number): number {
+  if (start >= total) return 0
+  return total - start < size ? total - start : size
+}
+
+/**
+ * A search as the history reads it: unchanged within `max` units, else its first `max` cut between characters. The
+ * answer echoes this, and the page compares its own filter clipped the same way.
+ */
+//@ verify
+//@ requires 1 <= max
+//@ ensures query.length <= max ==> \result == query
+//@ ensures query.length > max ==> \result == query.slice(0, pairCut(query, max))
+//@ ensures \result.length <= max
+//@ ensures query.startsWith(\result)
+export function clipQuery(query: string, max: number): string {
+  if (query.length <= max) return query
+  return query.slice(0, pairCut(query, max))
+}

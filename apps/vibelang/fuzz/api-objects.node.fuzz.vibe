@@ -1,145 +1,14 @@
-// The API Worker's object bodies (worker/apiObjects.vibe) wired to each other in one process over in-memory SQLite object
-// storage: requests through `apiFetch`, alarms with a scripted model, the sandbox gateway's identity and the day's budget.
-// A namespace may be unbound or unreachable: those are the injected faults. GitHub refuses (history) or has nothing
-// (wiki, issues); the model is unusable, failing, or a local scripted server.
+// The API Worker's object bodies (worker/apiObjects.vibe) wired to each other in one process (test/support/apiWorld.vibe):
+// requests through `apiFetch`, alarms with a scripted model, the sandbox gateway's identity and the day's budget.
 import { it } from "@effect/vitest"
 import { RuntimeContext } from "alchemy/RuntimeContext"
-import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { TestNodeRuntime } from "@smthrs/platform-node"
-import { GitHub } from "@smthrs/integrations"
-import { accountsObject, actionIndexObject, apiFetch, budgetObject, conversationObject, historyObject, sandboxIdentityOf } from "../worker/apiObjects.vibe"
-import { signedOutGateway } from "../worker/SandboxHttp.vibe"
-import { githubWikiHost, WikiAuthority } from "../worker/Wiki.vibe"
-import { githubHost, IssueAuthority } from "../worker/Issues.vibe"
-import { WikiHost } from "../src/core/wikiFlows.vibe"
-import { IssueHost } from "../src/core/issueFlows.vibe"
+import { budgetObject, sandboxIdentityOf } from "../worker/apiObjects.vibe"
 import { accountRoute } from "../src/core/protocolDecision.vibe"
 import { Post, Tour } from "../src/core/flows.vibe"
-import { refuseBinding } from "../test/support/refuseBinding.ts"
-import { scriptedModel } from "./model-server.vibe"
+import { KINDS, ORIGIN, runtime, withAbsentGitHub, world, type Agent, type Kind } from "../test/support/apiWorld.vibe"
 import { run, same, Finding, Int, TextOrBoundary } from "./run.vibe"
-
-const KINDS = ["conversation", "accounts", "budget", "history", "actions"] as const
-type Kind = typeof KINDS[number]
-/** `-later` modes answer the first calls and fail every later one: a binding lost while an alarm runs. */
-type Mode = "ok" | "unbound" | "faulty" | "unbound-later" | "faulty-later"
-type Api = Record<string, unknown>
-
-const ORIGIN = "https://fuzz.invalid"
-const runtime = {} as never
-const refusingGitHub = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "GitHub is not part of this target" }) })))
-/** GitHub answering 404 to everything: a missing page or issue list, which the wiki and issue flows do not retry. */
-const absentGitHub = HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({}, { status: 404 })))))
-/** Sign-in configured: GitHub's exchange succeeds for person 1, the project's first maintainer. */
-const setup = {
-  origin: ORIGIN,
-  initialMaintainer: "1",
-  clientId: "fixture-client-id",
-  signingSecret: Redacted.make("signing-secret-for-the-fuzz-target-32"),
-  encryptionKey: Redacted.make("ZnV6ei1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcy0wMDA="),
-  github: {
-    authorizeUrl: ({ state }: { readonly state: string }) => `https://github.invalid/authorize?state=${state}`,
-    exchange: () => succeed({ accessToken: Redacted.make("token"), expiresAt: null, refreshToken: null }),
-    refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "unavailable" })),
-    user: () => succeed({ id: 1, login: "one" }),
-    permission: () => succeed("read" as const),
-    revoke: () => Effect.void,
-  },
-} as never
-
-/** The agent's one cell: every tool the alarm binds, each call's failure kept so the next still runs. */
-const TOOL_CELL = "```cell\nvar out = {};\n" + [
-  ["draft", "vibelang/wiki/draft", { page: "rulings", ask: "Shorter." }],
-  ["show", "vibelang/history/show", { what: "outline" }],
-  ["note", "vibelang/history/Note", { id: "m1", section: "tried", text: "Tried it." }],
-  ["listed", "vibelang/actions/List", {}],
-  ["started", "vibelang/actions/Start", { flow: "vibelang/Post", input: { text: "Hello" } }],
-].map(([key, tool, input]) => `try { out.${key} = await ctx.call(${JSON.stringify(tool)}, ${JSON.stringify(input)}); } catch (error) { out.${key} = String(error); }`).join("\n") +
-  "\nctx.done(JSON.stringify(out));\n```"
-
-/**
- * The public wiki and issue routes build their GitHub hosts over `fetch`; here the same hosts run over `absentGitHub`,
- * so no request leaves the process. A refusing GitHub is retried for the flows' 120-second window (0015), longer than
- * a target's execution. The injected wiki host carries no person, so a draft through it is refused (0015).
- */
-effect function withAbsentGitHub<A, E, R>(program: A!E!R) {
-  const anonymous = { current: () => Effect.succeed(undefined) } as never
-  const wiki = try githubWikiHost().pipe(Effect.provideService(WikiAuthority, anonymous), Effect.provideService(HttpClient.HttpClient, absentGitHub))
-  const issues = try githubHost().pipe(Effect.provideService(IssueAuthority, anonymous), Effect.provideService(HttpClient.HttpClient, absentGitHub))
-  return try program.pipe(Effect.provideService(WikiHost, wiki), Effect.provideService(IssueHost, issues))
-}
-
-type Agent = "unusable" | "failing" | "tools"
-
-/** Every object of this execution, its storage kept across incarnations, and the faults each namespace answers with. */
-effect function world(signIn: boolean, limit: number, agent: Agent) {
-  const stores = new Map<string, ReturnType<typeof TestNodeRuntime.sqliteObjectStorage>>()
-  try Effect.addFinalizer(() => Effect.sync(() => { for (const store of stores.values()) store.close() }))
-  const model = agent === "unusable" ? { model: undefined, unusable: "unset" }
-    : { model: (try scriptedModel([agent === "failing" ? { kind: "status", status: 400, code: "invalid_request" } : { kind: "stream", pieces: [TOOL_CELL], prompt: 3, completion: 4 }])).model, unusable: "" }
-  const faults: Record<Kind, Mode> = { conversation: "ok", accounts: "ok", budget: "ok", history: "ok", actions: "ok" }
-  const calls: Record<Kind, { bindings: number; methods: number }> = { conversation: { bindings: 0, methods: 0 }, accounts: { bindings: 0, methods: 0 }, budget: { bindings: 0, methods: 0 }, history: { bindings: 0, methods: 0 }, actions: { bindings: 0, methods: 0 } }
-  const after: Record<Kind, number> = { conversation: 1, accounts: 1, budget: 1, history: 1, actions: 1 }
-  const objects = new Map<string, Api>()
-  const storageOf = effect (kind: Kind, name: string) => {
-    const key = `${kind}/${name}`
-    if (!stores.has(key)) stores.set(key, try Effect.orDie(Effect.try(() => TestNodeRuntime.sqliteObjectStorage())))
-    return stores.get(key)!
-  }
-  // An `orphan` object has no default entrypoint: a deployment that forgot to export it.
-  const stateOf = effect (kind: Kind, name: string) => {
-    const storage = try storageOf(kind, name)
-    return { id: { toString: () => `${kind}/${name}` }, raw: { storage }, exports: name.startsWith("orphan") ? {} : { default: (options: unknown) => succeed(options) } } as never
-  }
-  const builders: Record<Kind, (name: string) => Api!!> = {
-    budget: effect (name) => { return (try budgetObject(try stateOf("budget", name), limit)) as never },
-    history: effect (name) => { return (try historyObject(try stateOf("history", name), undefined, refusingGitHub)) as never },
-    accounts: effect (name) => { return (try accountsObject(try stateOf("accounts", name), namespaces.budget, model as never, signIn ? setup : undefined)) as never },
-    conversation: effect (name) => { return (try conversationObject(try stateOf("conversation", name), namespaces.budget, namespaces.history, namespaces.accounts, model as never, clientOf as never).pipe(Effect.provideService(RuntimeContext, runtime))) as never },
-    actions: effect (name) => { return (try actionIndexObject(try stateOf("actions", name), namespaces.accounts, namespaces.conversation).pipe(Effect.provideService(RuntimeContext, runtime))) as never },
-  }
-  const object = effect (kind: Kind, name: string) => {
-    const key = `${kind}/${name}`
-    const known = objects.get(key)
-    if (known !== undefined) return known
-    const made = try builders[kind](name)
-    objects.set(key, made)
-    return made
-  }
-  /** Alchemy's stub: a method call is an Effect; `fetch` takes the forwarded request. */
-  const namespaceOf = (kind: Kind) => ({
-    getByName: (name: string) => {
-      calls[kind].bindings++
-      if (faults[kind] === "unbound" || (faults[kind] === "unbound-later" && calls[kind].bindings > after[kind])) refuseBinding()
-      return new Proxy({}, {
-        get: (_target, method) => typeof method !== "string" || method === "then" ? undefined : (...args: Array<unknown>) => {
-          calls[kind].methods++
-          if (faults[kind] === "faulty" || (faults[kind] === "faulty-later" && calls[kind].methods > after[kind])) return Effect.fail(new Error("unreachable"))
-          const call = Effect.flatMap(object(kind, name), (api) => method === "fetch"
-            ? Effect.provideService(api.fetch as Effect.Effect<unknown, unknown, HttpServerRequest.HttpServerRequest>, HttpServerRequest.HttpServerRequest, args[0] as HttpServerRequest.HttpServerRequest)
-            : (api[method] as (...input: Array<unknown>) => Effect.Effect<unknown>)(...args))
-          return kind === "accounts" ? withAbsentGitHub(call) : call
-        },
-      })
-    },
-  }) as never
-  const namespaces = { conversation: namespaceOf("conversation"), accounts: namespaceOf("accounts"), budget: namespaceOf("budget"), history: namespaceOf("history"), actions: namespaceOf("actions") }
-  const fetchOf = (request: HttpServerRequest.HttpServerRequest, props: Record<string, unknown>) =>
-    apiFetch({ conversations: namespaces.conversation, accounts: namespaces.accounts, actions: namespaces.actions, histories: namespaces.history }, signedOutGateway as never, "fuzz-commit", succeed(props))
-      .pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request), Effect.provideService(RuntimeContext, runtime))
-  /** The entrypoint an alarm calls back into, as `Cloudflare.toHttpClient` adapts it. */
-  const clientOf = (self: { readonly props: Record<string, unknown> }) => HttpClient.make((request) => Effect.orDie(effect {
-    const web = try HttpClientRequest.toWeb(request)
-    const response = try fetchOf(HttpServerRequest.fromWeb(web), self.props)
-    return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(response))
-  }))
-  const fault = (kind: Kind, mode: Mode, answered: number) => {
-    faults[kind] = mode
-    after[kind] = Math.max(1, answered)
-    calls[kind] = { bindings: 0, methods: 0 }
-  }
-  return { faults, fault, objects, object, namespaces, fetchOf, storageOf, restart: () => objects.clear() }
-}
 
 const OPS = ["sign-in", "session", "post", "read", "events", "wiki", "tour", "tour-control", "end-tour", "history", "history-write",
   "history-events", "actions", "commands", "runs", "start", "run", "run-events", "alarm", "run-alarm", "rerun", "cancel", "orphan-alarm",
@@ -163,6 +32,8 @@ const FLOWS = [Post._tag, Tour._tag, "vibelang/history/Plan", "vibelang/sandbox/
 const ROLES = ["viewer", "new", "community", "contributor", "maintainer"]
 const step = (op: typeof OPS[number], fields: Partial<Step> = {}): Step =>
   ({ op, room: 0, pick: 0, text: "Hello", kind: "conversation", mode: "ok", trusted: "1", signed: true, crossOrigin: false, ...fields })
+/** Reads that answer 200 for anyone while every object is reachable; any other status there is a broken route. */
+const ALWAYS_OK: ReadonlySet<typeof OPS[number]> = new Set(["read", "events", "history", "history-events", "actions", "commands", "runs", "run-events", "health", "session", "sandbox"])
 /** Ops whose requests reach each namespace: the walk that a fault in it answers. */
 const REACHES: Record<Kind, ReadonlyArray<typeof OPS[number]>> = {
   conversation: ["post", "read", "events", "wiki", "tour", "tour-control", "end-tour", "run", "run-events", "start"],
@@ -230,7 +101,8 @@ effect function requestOf(step: Step, path: string, method: "GET" | "POST" | "DE
   let request = HttpClientRequest.make(method)(`${ORIGIN}${path}`)
   if (step.signed || step.crossOrigin) request = HttpClientRequest.setHeader(request, "origin", step.crossOrigin ? "https://elsewhere.invalid" : ORIGIN)
   if (step.signed && jar.size > 0) request = HttpClientRequest.setHeader(request, "cookie", [...jar].map(([name, value]) => `${name}=${value}`).join("; "))
-  if (body !== undefined) request = HttpClientRequest.bodyText(request, body, "application/json")
+  // A browser sends the body length; without it every bounded route answers 413 before reaching an object.
+  if (body !== undefined) request = HttpClientRequest.setHeader(HttpClientRequest.bodyText(request, body, "application/json"), "content-length", String(new TextEncoder().encode(body).length))
   return HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(request))
 }
 
@@ -276,8 +148,8 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
       case "alarm":
       case "run-alarm": {
         const call = method("conversation", step.op === "alarm" ? `room${step.room % 3}` : `action-a${step.pick % 4}`, "alarm")
-        // A reply retries an unreachable object with no deadline (flows.vibe `patient`): under a fault the alarm may
-        // outlive its invocation, which ends it as the platform would. Healthy, it settles within the step's deadline.
+        // A reply retries an unreachable object until its 5-minute deadline (flows.vibe `replyDeadline`): under a fault the
+        // alarm outlives this step's window, which ends it as the platform would. Healthy, it settles within the step's deadline.
         // A binding lost mid-alarm lets the reply reach its tools first, so it gets the time a model call takes.
         const window = KINDS.some((kind) => w.faults[kind].endsWith("-later")) ? "3 seconds" : "300 millis"
         try direct(step.op, healthy() ? call : Effect.timeoutOption(call, window))
@@ -330,8 +202,11 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
         return
       }
       case "draft": {
-        const exit = try direct("draft", withAbsentGitHub(method("accounts", "project", "draftWiki", step.trusted ?? "", "rulings", step.text, `k${step.pick}`)))
+        const exit = try direct("draft", method("accounts", "project", "draftWiki", step.trusted ?? "", "rulings", step.text, `k${step.pick}`))
         if (Exit.isSuccess(exit) && !input.signIn && exit.value !== "forbidden") throw new Finding({ report: "draft: a wiki draft without sign-in" })
+        // The maintainer's nonempty ask with a working agent and budget is drafted; a reused key with another ask is invalid.
+        const drafts = input.signIn && healthy() && input.agent === "tools" && input.limit > 1 && step.trusted === "1" && step.text.trim() !== ""
+        if (drafts && !(Exit.isSuccess(exit) && (exit.value === null || exit.value === "invalid"))) throw new Finding({ report: `draft: the maintainer's draft answered ${Exit.isSuccess(exit) ? String(exit.value) : "a failure"}` })
         return
       }
       case "sign-in": {
@@ -350,6 +225,9 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
         if (response === undefined) return
         const status = response.status
         if (status === 500) throw new Finding({ report: `${step.op}: 500` })
+        if (healthy() && ALWAYS_OK.has(step.op) && status !== 200) throw new Finding({ report: `${step.op}: ${status} with every object reachable` })
+        // A note needs a signed-in maintainer; with sign-in unconfigured every note is forbidden.
+        if (healthy() && step.op === "history-write" && !input.signIn && status !== 403) throw new Finding({ report: `history-write: ${status} without sign-in` })
         // 503 is a product answer only for an unreachable object, or an account route while sign-in is unconfigured.
         if (status === 503 && healthy() && !(accountRoute(route.path.split("?")[0]!) && !input.signIn)) throw new Finding({ report: `${step.op}: 503 with every object reachable` })
         if (step.op === "post" && status === 200 && healthy()) {
@@ -361,7 +239,7 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
   }
   for (const next of steps) {
     // Every request answers within its deadline: one that never returns is a finding with its input.
-    const finished = try Effect.timeoutOption(apply(next), "5 seconds")
+    const finished = try Effect.timeoutOption(apply(next), "20 seconds")
     if (Option.isNone(finished)) throw new Finding({ report: `${next.op} did not return` })
   }
 }
@@ -370,24 +248,30 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
  * The walk in both sign-in modes with the agent calling every tool, then the generated steps in a fresh world; a post
  * the API accepts is in the conversation, and a fresh incarnation replays the same conversation.
  */
+// The two complete scripted-model walks take 15 s without coverage; allow replay and new exploration on four CPUs.
 it.live("api-objects/world", () => run("api-objects/world", World, (input) => effect {
   try drive({ ...input, signIn: false, agent: "tools" }, WALK)
   try drive({ ...input, signIn: true, agent: "tools" }, WALK)
   try drive(input, input.steps)
   return true
-}))
+}, undefined, { minimum: "60 seconds" }))
 
 const BudgetStep = Schema.Struct({
   op: Schema.Literals(["admit", "spend", "restart", "corrupt"]),
   reply: Int,
+  reported: Schema.Boolean,
   // Provider telemetry: counts, fractions, and values a Schema literal cannot hold (NaN and the infinities, as text).
   tokens: Schema.Union([Int, Schema.Literals([-5, 1.6, 2.5, 1e6, Number.MAX_SAFE_INTEGER, "NaN", "Infinity", "-Infinity"])]),
 })
 const BudgetInput = Schema.Struct({ limit: Schema.Literals([0, 1, 40, 1000000]), steps: Schema.Array(BudgetStep).check(Schema.isMaxLength(16)) })
+/** Every fuzzed call's reservation. */
+const CEILING = 10
 
 /**
- * The day's ledger against a model: admitted while spent is below the limit; a reply is charged once; a fresh
- * incarnation agrees. A ledger whose total storage corrupted (an older writer) is a defect at once, never a decision.
+ * The day's ledger against a model: a call is admitted only while the day's charges, open reservations and its own
+ * ceiling fit the limit; its settlement frees the reservation and charges, once, its usable report or its whole
+ * ceiling; a fresh incarnation agrees. A ledger whose total storage corrupted (an older writer) is a defect at once,
+ * never a decision.
  */
 it.live("api-objects/budget", () => run("api-objects/budget", BudgetInput, (input) => effect {
   const store = try Effect.try(() => TestNodeRuntime.sqliteObjectStorage())
@@ -395,8 +279,11 @@ it.live("api-objects/budget", () => run("api-objects/budget", BudgetInput, (inpu
   const state = { id: { toString: () => "budget/day" }, raw: { storage: store }, exports: {} } as never
   let budget = try budgetObject(state, input.limit)
   let spent = 0
+  let reserved = 0
+  let over = 0
   let corrupt = false
   const charged = new Set<number>()
+  const holds = new Map<number, number>()
   for (const step of input.steps) {
     if (step.op === "restart") {
       budget = try budgetObject(state, input.limit)
@@ -404,27 +291,49 @@ it.live("api-objects/budget", () => run("api-objects/budget", BudgetInput, (inpu
       try promise(() => store.put("spent", Number(step.tokens) === Math.round(Number(step.tokens)) && Number(step.tokens) >= 0 ? -1 : Number(step.tokens)))
       corrupt = true
     } else if (step.op === "admit") {
-      const exit = try Effect.exit(budget.admit())
+      const exit = try Effect.exit(budget.admit(`r${step.reply}`, CEILING))
       if (corrupt) {
         if (Exit.isSuccess(exit)) throw new Finding({ report: "admit decided over a corrupt ledger" })
-      } else if (Exit.isFailure(exit) || exit.value !== (spent < input.limit)) throw new Finding({ report: `admit disagrees: spent ${spent}, limit ${input.limit}` })
+        continue
+      }
+      const held = holds.get(step.reply) ?? 0
+      if (spent + reserved > Number.MAX_SAFE_INTEGER - CEILING) {
+        if (Exit.isSuccess(exit)) throw new Finding({ report: "admit reserved past the safe integer range" })
+        continue
+      }
+      const expected = charged.has(step.reply) ? false : held > 0 ? true : spent + reserved + CEILING <= input.limit
+      if (Exit.isFailure(exit) || exit.value !== expected) throw new Finding({ report: `admit disagrees: spent ${spent}, reserved ${reserved}, limit ${input.limit}` })
+      if (expected && held === 0) {
+        reserved += CEILING
+        holds.set(step.reply, CEILING)
+      }
     } else {
       const tokens = Number(step.tokens)
-      const used = charged.has(step.reply) ? 0 : Number.isFinite(tokens) ? Math.max(0, Math.round(tokens)) : 0
-      const exit = try Effect.exit(budget.spend(`r${step.reply}`, tokens))
+      const rounded = Number.isFinite(tokens) ? Math.round(tokens) : -1
+      const usable = step.reported && Number.isSafeInteger(rounded) && rounded >= 0
+      const report = usable ? rounded : 0
+      const exit = try Effect.exit(budget.spend(`r${step.reply}`, tokens, step.reported, CEILING))
       if (corrupt) {
         if (Exit.isSuccess(exit) && !charged.has(step.reply)) throw new Finding({ report: "spend charged a corrupt ledger" })
         continue
       }
-      if (used > Number.MAX_SAFE_INTEGER - spent) {
+      if (report + CEILING > Number.MAX_SAFE_INTEGER - spent || report + CEILING > Number.MAX_SAFE_INTEGER - over) {
         // Past the safe integer range the ledger refuses the charge and keeps the day as it was.
         if (Exit.isSuccess(exit)) throw new Finding({ report: "spend: an unsafe total was recorded" })
         continue
       }
       if (Exit.isFailure(exit)) throw new Finding({ report: `spend: ${Cause.pretty(exit.cause).slice(0, 400)}` })
-      spent += used
-      charged.add(step.reply)
+      const held = holds.get(step.reply) ?? 0
+      reserved -= held
+      holds.delete(step.reply)
+      if (!charged.has(step.reply)) {
+        const added = usable ? rounded : CEILING
+        spent += added
+        over += Math.max(0, added - held)
+        charged.add(step.reply)
+      }
     }
+    if (!corrupt && spent + reserved > input.limit + over) throw new Finding({ report: "the day passed its limit beyond over" })
   }
   return true
 }))

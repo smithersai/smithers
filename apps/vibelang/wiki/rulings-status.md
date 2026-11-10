@@ -10,7 +10,7 @@ States: **done** (evidence on main or production), **lane** (a running lane owns
 | --- | --- | --- | --- |
 | VL-1 factory app, final version | done | `apps/vibelang`; production `/` serves it (200) | — |
 | VL-2 built on Effect in VibeLang | done | every source file is `.vibe`; `.ts` files name the tool that needs them (0001) | — |
-| VL-3 deploy fast | done, deploy behind main | production `/api/health` says `live`; `/history` (brick 5) is 404 there, so main is ahead | lead deploys |
+| VL-3 deploy fast | done, deploy behind main | production `/api/health` says `live` and `/history` answers 200 (2026-11-10, vl-audit-vl29); production runs `28ea402ae6`, older than main | lead deploys |
 | VL-4 Effect, Cloudflare, Alchemy, Foldkit, Smithers, VibeLang | done | `infra/Stack.vibe`; `foldkit` 0.170.0; `@smthrs/*` workspace packages in `package.json` | — |
 | VL-5 no other dependencies | done, approvals pending | runtime deps are `effect`, `foldkit`, `vibelang-runtime` and `@smthrs/*`; test tools awaiting approval are listed in 0008 and 0016 | Will |
 | VL-6 Electrobun native app | lane | design `~/vl/designs/desktop/` on nyc-01; no code on main | vl-desktop (0025) |
@@ -21,7 +21,7 @@ States: **done** (evidence on main or production), **lane** (a running lane owns
 | VL-11 everything is a flow | done | `vibelang/Post` and `vibelang/Reply` flows (0011, 0012); `test/live.workerd.test.vibe` reads the runs from the engine | — |
 | VL-12 multiplayer, simplest robust | done | sequencer event stream (0007); two followers in `test/MockFactory.test.vibe` and `test/live.workerd.test.vibe`; the page joins its conversation at start, `test/dogfood.runtime.test.vibe` | — |
 | VL-13 UI always works in mock mode | done | every browser suite except the opt-in `e2e/live.spec.ts` runs the mock (0004) | — |
-| VL-14 every suite covers the whole codebase on its own | lane | unit: 0016; fuzz: 0015; benchmarks: 0017. Browser and workerd coverage are diagnostic only (0016) | vl-coverage, vl-fuzzpkg, vl-bench |
+| VL-14 every suite covers the whole codebase on its own | lane | unit: 0016; fuzz: 0015; benchmarks: 0017; each counts every file under `src/`, `worker/`, `scripts/` and `infra/` (the fuzz gate since 2026-11-10). Browser and workerd coverage are diagnostic only (0016). One command per gate: 0016 "Measuring every gate" | vl-coverage, vl-fuzzpkg, vl-bench |
 | VL-15 `Arbitrary` for properties and fuzzing | done | `test/conversation`, `mythical`, `pages`, `flowMachine` tests use `Arbitrary`; fuzzing 0015 | vl-fuzzpkg |
 | VL-16 splash, ⌘K, chat in smithers.sh's style | done | `e2e/chat.spec.ts`; `sui-*` classes from `@smthrs/ui-css` | — |
 | VL-17 everything is a chat, maximizable panes, view transitions | done | splash and docs panes maximize (`e2e/tour.spec.ts`); typed transitions `to-chat`/`to-splash`, none for ⌘K: `e2e/transitions.spec.ts` | — |
@@ -36,7 +36,7 @@ States: **done** (evidence on main or production), **lane** (a running lane owns
 | VL-26 dogfood in parallel: agent by MCP/skill/CLI, Will by UI | done | the page follows the shared conversation from the start; `test/dogfood.runtime.test.vibe` (real app plus the commands); `e2e/live.spec.ts` "the CLI's post reaches an open page" (emitted CLI plus browser on `alchemy dev`) | — |
 | VL-27 dark only | done | `e2e/chat.spec.ts` checks dark in the light project (0013) | — |
 | VL-28 Learn more tour | done | 0014; `e2e/tour.spec.ts`, `e2e/tourfix.spec.ts` | vl-tourfix |
-| VL-29 finish everything: 100% by each suite, fuzzing package, proofs, history, designs | lane | designs exist for all seven features without UI (`~/vl/designs/{actions,desktop,issues,mythical,roles,sandboxes,wiki}`); the rest is the rows above | per row |
+| VL-29 finish everything: 100% by each suite, fuzzing package, proofs, history, designs | lane | designs for every feature without UI are in the repository, listed in [designs](designs/index.md) (actions, desktop, issues, media, mythical, onboarding, roles, sandboxes, wiki); every gate has one command (0016 "Measuring every gate"); the rest is the rows above | per row |
 
 ## Fixed by this audit
 

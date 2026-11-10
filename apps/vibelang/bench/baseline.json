@@ -13,6 +13,13 @@
     "apply-100000": 300000,
     "receive-100000": 300000
   },
+  "startupModules": {
+    "help": 864,
+    "read": 865,
+    "actions": 865,
+    "login": 1463
+  },
+  "startupMethod": "Modules Node resolves in one emitted CLI process per command with --mock, counted by a preload (bench/cli-startup.bench.vibe), measured on revision 446a6daf after the sign-in imports became lazy; before, help loaded 1,462.",
   "timestamp": "2026-11-08T05:54:13.741Z",
   "machine": "Linux msb-lat-nyc-01 7.0.0-38-generic x86_64",
   "versions": {

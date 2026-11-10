@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 19
+bias 6
+null-prototype false
+key 3214275480
+tape pjGzXuJyUFkcRhQZ_6cIo68D-lGjQQSHx8XnfSOPDgb46A19wdNidRIqhopj3mnyQWvqDhKpXYi7C5IYmddhxpjaDSlbuBEyx9J13nVtVzuDLSQNVzp5cPSPYcPzLBq8UleCsg
+schedule-key 3409699258
+schedule 
+signature "Died:@smthrs/engine/ExecutionIdentityConflict"
+path 1.1.4.1
+codec "json"
+value "[{\"op\":\"start\",\"id\":7,\"flow\":0,\"well\":false,\"role\":\"contributor\"}]"
+# Died:@smthrs/engine/ExecutionIdentityConflict
+# [{"op":"start","id":7,"flow":0,"well":false,"role":"contributor"}]

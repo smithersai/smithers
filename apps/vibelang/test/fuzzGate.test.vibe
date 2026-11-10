@@ -1,0 +1,44 @@
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import { gate, run } from "../fuzz/run.vibe"
+
+const config = (values: Record<string, string>) => Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values)))
+
+// The fuzzer finishes any execution it starts, so a starved run is the report it leaves: zero executions.
+it.effect("a fuzz target that ran no execution fails and names its budget and the host load", () => effect {
+  const outcome = try Effect.result(gate("gate/starved", Duration.millis(250), Option.none(), { executions: 0 }).pipe(Effect.provide(NodeServices.layer)))
+  expect(outcome._tag).toBe("Failure")
+  if (outcome._tag === "Failure") {
+    expect(outcome.failure._tag).toBe("NoExecution")
+    expect(outcome.failure.message).toMatch(/^gate\/starved ran no execution in 250 ms \(host load (\d+\.\d+|unknown)\)$/)
+  }
+})
+
+it.effect("the gate passes a target that ran its property, and an explicit replay-only run", () => effect {
+  try gate("gate/fed", Duration.millis(250), Option.none(), { executions: 1 }).pipe(Effect.provide(NodeServices.layer))
+  try gate("gate/replay", Duration.millis(250), Option.some(0), { executions: 0 }).pipe(Effect.provide(NodeServices.layer))
+})
+
+it.live("run passes a target that executed, and FUZZ_EXECUTIONS=0 replays without executing", () => effect {
+  try run("gate/fed", Schema.Int, (n) => Number.isInteger(n)).pipe(config({ FUZZ_BUDGET: "200 millis", FUZZ_SEED: "1" }))
+  try run("gate/replay", Schema.Int, () => false).pipe(config({ FUZZ_BUDGET: "200 millis", FUZZ_SEED: "1", FUZZ_EXECUTIONS: "0" }))
+}, 30_000)
+
+/** The receipt a run leaves for `name`, as `run` writes it. */
+effect function receipt(name: string) {
+  provide NodeServices.layer {
+    const text = try (try FileSystem.FileSystem).readFileString(`fuzz-results/${name}.json`)
+    return try Effect.try(() => JSON.parse(text) as { readonly budget: number; readonly elapsedMs: number; readonly stats: { readonly executions: number } })
+  }
+}
+
+// A target whose saved failures take longer to replay than a short budget declares a floor, so it still searches.
+it.live("a target's minimum budget outlasts a shorter FUZZ_BUDGET, and a longer FUZZ_BUDGET still wins", () => effect {
+  try run("gate/floor", Schema.Int, (n) => Number.isInteger(n), undefined, { minimum: "400 millis" }).pipe(config({ FUZZ_BUDGET: "1 millis", FUZZ_SEED: "1" }))
+  const floored = try receipt("gate--floor")
+  expect(floored.budget).toBe(400)
+  expect(floored.elapsedMs).toBeGreaterThanOrEqual(400)
+  expect(floored.stats.executions).toBeGreaterThan(0)
+  try run("gate/floor", Schema.Int, (n) => Number.isInteger(n), undefined, { minimum: "400 millis" }).pipe(config({ FUZZ_BUDGET: "600 millis", FUZZ_SEED: "1" }))
+  expect((try receipt("gate--floor")).budget).toBe(600)
+}, 30_000)

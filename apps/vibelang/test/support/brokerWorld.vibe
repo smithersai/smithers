@@ -1,0 +1,56 @@
+// The browser's side of a sign-in and a Connect GitHub press through the real smithers.sh broker and the site's
+// Accounts object, both served by test/workerd/authbroker.vibe. GitHub is that host's injected token service.
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { GitHub } from "@smthrs/integrations"
+
+/** The broker answers on localhost, the site on 127.0.0.1, so each keeps its own cookies. */
+export function brokerOf(hostOrigin: string): string {
+  return hostOrigin.replace("127.0.0.1", "localhost")
+}
+
+/** Sign in at the site, approve at the broker's GitHub stand-in, and hand the code back to the site. */
+export effect function brokerSignIn(hostOrigin: string) {
+  const http = try HttpClient.HttpClient
+  const start = try http.get(hostOrigin + "/api/auth/sign-in")
+  const pending = start.cookies.cookies["vibelang-sign-in"]!.value
+  const atBroker = try http.get(start.headers.location!)
+  const browser = atBroker.cookies.cookies["smithers-broker"]!.value
+  const form = try (try http.get(atBroker.headers.location!)).text
+  const approved = try http.get(form.match(/href="([^"]+)"/)![1]!.replaceAll("&amp;", "&"))
+  const callback = try http.execute(HttpClientRequest.get(approved.headers.location!).pipe(HttpClientRequest.setHeader("cookie", "smithers-broker=" + browser)))
+  const fragment = new URLSearchParams(new URL(callback.headers.location!).hash.slice(1))
+  const accepted = try http.execute(HttpClientRequest.post(hostOrigin + GitHub.Auth.Broker.CALLBACK).pipe(
+    HttpClientRequest.setHeader("origin", hostOrigin), HttpClientRequest.setHeader("cookie", "vibelang-sign-in=" + pending),
+    HttpClientRequest.bodyJsonUnsafe({ code: fragment.get("code"), state: fragment.get("state") }),
+  ))
+  const session = accepted.cookies.cookies["vibelang-session"]?.value ?? ""
+  // The page GitHub's stand-in showed, by its title.
+  const github = form.match(/<title>([^<]*)<\/title>/)?.[1] ?? ""
+  return { start, accepted, session, github }
+}
+
+/** Press Connect GitHub (with the query the page would add), consent at the broker, and finish at the site. */
+export effect function brokerConnect(hostOrigin: string, session: string, query = "") {
+  const http = try HttpClient.HttpClient
+  const brokerOrigin = brokerOf(hostOrigin)
+  const press = try http.execute(HttpClientRequest.post(hostOrigin + "/api/auth/connect" + query).pipe(HttpClientRequest.setHeader("origin", hostOrigin), HttpClientRequest.setHeader("cookie", "vibelang-session=" + session)))
+  const pending = press.cookies.cookies["vibelang-sign-in"]!.value
+  const atBroker = try http.get(press.headers.location!)
+  const browser = atBroker.cookies.cookies["smithers-broker"]!.value
+  const form = try (try http.get(atBroker.headers.location!)).text
+  const approved = try http.get(form.match(/href="([^"]+)"/)![1]!.replaceAll("&amp;", "&"))
+  const callback = try http.execute(HttpClientRequest.get(approved.headers.location!).pipe(HttpClientRequest.setHeader("cookie", "smithers-broker=" + browser)))
+  const consentCookie = callback.cookies.cookies["smithers-broker"]!.value
+  const consent = new URL(callback.headers.location!).searchParams.get("consent")!
+  const page = try (try http.execute(HttpClientRequest.get(callback.headers.location!).pipe(HttpClientRequest.setHeader("cookie", "smithers-broker=" + consentCookie)))).text
+  const answered = try http.execute(HttpClientRequest.post(brokerOrigin + GitHub.Auth.Broker.CONSENT).pipe(
+    HttpClientRequest.setHeader("origin", brokerOrigin), HttpClientRequest.setHeader("sec-fetch-site", "same-origin"), HttpClientRequest.setHeader("cookie", "smithers-broker=" + consentCookie),
+    HttpClientRequest.bodyText(new URLSearchParams({ consent, answer: "connect" }).toString(), "application/x-www-form-urlencoded"),
+  ))
+  const fragment = new URLSearchParams(new URL(answered.headers.location!).hash.slice(1))
+  const accepted = try http.execute(HttpClientRequest.post(hostOrigin + GitHub.Auth.Broker.CALLBACK).pipe(
+    HttpClientRequest.setHeader("origin", hostOrigin), HttpClientRequest.setHeader("cookie", "vibelang-sign-in=" + pending + "; vibelang-session=" + session),
+    HttpClientRequest.bodyJsonUnsafe({ code: fragment.get("code"), state: fragment.get("state") }),
+  ))
+  return { press, page, answered, accepted, location: (try accepted.json) as { readonly location?: string } }
+}

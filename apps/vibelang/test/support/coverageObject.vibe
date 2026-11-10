@@ -1,0 +1,34 @@
+// The Durable Object test/workerdCoverage.workerd.test.vibe measures inside workerd. An even and an odd number take
+// separate lines, so the lines workerd's counters credit must follow the numbers the test sends.
+import { HttpServerResponse } from "effect/http"
+
+interface Storage {
+  readonly sql: { exec(query: string): { toArray(): ReadonlyArray<Record<string, unknown>> } }
+}
+
+interface Namespace {
+  idFromName(name: string): unknown
+  get(id: unknown): { fetch(request: Request): Promise<Response> }
+}
+
+/** Records each number's parity in its SQLite and answers with it. */
+export class Tally {
+  constructor(readonly state: { readonly storage: Storage }) {}
+  async fetch(request: Request): Promise<Response> {
+    const sql = this.state.storage.sql
+    sql.exec("CREATE TABLE IF NOT EXISTS seen (parity TEXT NOT NULL)")
+    const value = Number(new URL(request.url).pathname.slice(1))
+    if (value % 2 === 0) {
+      sql.exec("INSERT INTO seen VALUES ('even')")
+      return HttpServerResponse.toWeb(HttpServerResponse.text("even"))
+    }
+    sql.exec("INSERT INTO seen VALUES ('odd')")
+    return HttpServerResponse.toWeb(HttpServerResponse.text("odd"))
+  }
+}
+
+export default {
+  async fetch(request: Request, env: { readonly TALLY: Namespace }): Promise<Response> {
+    return env.TALLY.get(env.TALLY.idFromName("tally")).fetch(request)
+  },
+}

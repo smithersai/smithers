@@ -1,0 +1,51 @@
+// @vitest-environment node
+// Chromium evidence keeps each script once per run: a test's file holds only ranges and a reference, and reading the
+// files gives back every entry whole, so measure() sees what it saw when each file held the bundle and map.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { readEntries, storeScript } from "../e2e/coverageStore.ts"
+
+const map = { version: 3, sources: ["a.vibe"], names: [], mappings: "AAAA" }
+const script = (scriptId: string, source: string) => ({ scriptId, url: "http://127.0.0.1/assets/index.js", functions: [{ functionName: "", isBlockCoverage: true, ranges: [{ startOffset: 0, endOffset: source.length, count: 1 }] }], source })
+
+describe("e2e coverage store", () => {
+  it.live("two tests that ran the same bundle store it once and read back whole", () => effect {
+    provide NodeServices.layer {
+      try scoped(effect {
+        const fs = try FileSystem.FileSystem
+        const directory = try fs.makeTempDirectoryScoped()
+        const scripts = `${directory}/chromium-scripts`
+        const bundle = "export const answer = 42\n".repeat(200)
+        const files: Array<string> = []
+        for (const [index, executed] of [script("1", bundle), script("2", bundle), script("3", "other()\n")].entries()) {
+          const { source, ...ranges } = executed
+          const stored = try promise(() => storeScript(scripts, source, map))
+          const file = `${directory}/test-${index}.json`
+          try fs.writeFileString(file, JSON.stringify([{ ...ranges, script: stored }]))
+          files.push(file)
+        }
+        const kept = try fs.readDirectory(scripts)
+        try Effect.try(() => expect(kept.filter((name) => name.endsWith(".json")).length).toBe(2))
+        for (const file of files) {
+          const text = try fs.readFileString(file)
+          try Effect.try(() => expect(text.includes("answer")).toBe(false))
+        }
+        const read = try promise(async () => { const all = []; for await (const entry of readEntries(files)) all.push(entry); return all })
+        try Effect.try(() => expect(read).toEqual([{ ...script("1", bundle), sourceMap: map }, { ...script("2", bundle), sourceMap: map }, { ...script("3", "other()\n"), sourceMap: map }]))
+      })
+    }
+  })
+
+  it.live("a file written whole, before the store, still reads as it was", () => effect {
+    provide NodeServices.layer {
+      try scoped(effect {
+        const fs = try FileSystem.FileSystem
+        const directory = try fs.makeTempDirectoryScoped()
+        const whole = { ...script("9", "legacy()\n"), sourceMap: map }
+        try fs.writeFileString(`${directory}/whole.json`, JSON.stringify([whole]))
+        const read = try promise(async () => { const all = []; for await (const entry of readEntries([`${directory}/whole.json`])) all.push(entry); return all })
+        try Effect.try(() => expect(read).toEqual([whole]))
+      })
+    }
+  })
+})

@@ -12,7 +12,7 @@ import { wikiPane } from "./wikiView.vibe"
 import { actionsPane, actionCards, slashMenu } from "./actionView.vibe"
 import { actionsOf, completions } from "./actionModel.vibe"
 import { render } from "./markdown.vibe"
-import { WALKTHROUGH } from "../core/walkthroughSteps.vibe"
+import { WALKTHROUGH, walkthroughStop } from "../core/walkthroughSteps.vibe"
 /** A video is an asset with a poster; every video loops. */
 interface StopMedia { readonly src: string; readonly alt: string; readonly poster?: string }
 import { sandboxPane } from "./sandboxView.vibe"
@@ -43,7 +43,7 @@ export function view(model: Model, h: H): Document {
           h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Answer"), h.AriaLive("polite"), h.AriaAtomic(true)], [
             h.span([h.Key(String(model.announced))], model.answer === "" ? [] : [`Answer ${model.announced}: ${model.answer}`]),
           ]),
-          h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Tour"), h.AriaLive("polite"), h.AriaAtomic(true)], [model.tour ? `Agent controlling. Escape to stop. Step ${model.theatre.step} of 10: ${WALKTHROUGH[(model.theatre.step) - 1]?.subtitle.split(/\s+/).slice(0, 6).join(" ") ?? ""}` : model.toured ? "Tour ended. You have control." : ""]),
+          h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Tour"), h.AriaLive("polite"), h.AriaAtomic(true)], [model.tour ? `Agent controlling. Escape to stop. Step ${model.theatre.step} of 10: ${walkthroughStop(model.theatre.step).subtitle.split(/\s+/).slice(0, 6).join(" ")}` : model.toured ? "Tour ended. You have control." : ""]),
           h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Connection"), h.AriaLive("polite"), h.AriaAtomic(true)], [model.connection]),
         ]),
       ],
@@ -144,7 +144,7 @@ function control(model: Model, h: H): ReadonlyArray<Html> {
     h.div([h.Class("vl-theatre-progress"), h.AriaLabel("Tour progress")], WALKTHROUGH.map((_, index) => h.span([h.Class(index + 1 < step ? "done" : index + 1 === step ? "current" : ""), h.Style({ animationPlayState: model.theatre.paused ? "paused" : "running" })], []))),
     h.section([h.Class("vl-theatre-bar"), h.AriaLabel("Walkthrough"), h.DataAttribute("step", String(step)), h.DataAttribute("paused", String(model.theatre.paused))], [
       h.div([h.Class("vl-theatre-meta")], [`${step} of 10`]),
-      h.p([h.Class("vl-theatre-subtitle"), h.AriaLive("polite"), h.AriaAtomic(true)], [WALKTHROUGH[step - 1]?.subtitle ?? ""]),
+      h.p([h.Class("vl-theatre-subtitle"), h.AriaLive("polite"), h.AriaAtomic(true)], [walkthroughStop(step).subtitle]),
       h.div([h.Class("vl-theatre-controls")], [
         button("Back", "⏮", Message.ClickedBackStop(), step === 1),
         button(model.theatre.paused ? "Play" : "Pause", model.theatre.paused ? "▶" : "Ⅱ", Message.ClickedPauseTour()),

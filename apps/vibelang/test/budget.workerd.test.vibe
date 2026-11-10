@@ -1,0 +1,48 @@
+// The day's budget Durable Object in local workerd (wiki/decisions/0010-live-agent.md, 0018-proofs.md): admissions that
+// arrive together reserve their whole ceilings under the object's lock, so their sum never passes the day's limit.
+// Run with `pnpm test:workerd`.
+import { describe, expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
+import { afterAll, beforeAll } from "vitest"
+import { serveApi, type Served } from "./support/workerd.vibe"
+
+const CEILING = 1000
+
+/** `operation` on the budget object of `day`, through the test host's window into it. */
+effect function budget(origin: string, day: string, operation: "admit" | "spend", body: unknown) {
+  provide FetchHttpClient.layer {
+    const request = try HttpClientRequest.bodyJson(HttpClientRequest.post(`${origin}/budget/${encodeURIComponent(day)}/${operation}`), body)
+    const response = try HttpClient.execute(request)
+    return try HttpClientResponse.schemaBodyJson(Schema.Unknown)(response)
+  }
+}
+
+describe("the day's budget object in local workerd", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveApi({ CHAT_DAILY_TOKENS: String(3 * CEILING + 10) })) }, 600_000)
+  afterAll(async () => { await api?.dispose() })
+
+  it.live("admits only as many concurrent calls as the limit holds whole ceilings, and a settlement frees room", () => effect {
+    const origin = api!.origin
+    const day = "2026-11-10"
+    const answers = try Effect.all(Array.from({ length: 20 }, (_, i) => budget(origin, day, "admit", { reply: `r${i}`, ceiling: CEILING })), { concurrency: "unbounded" })
+    const winners = answers.flatMap((admitted, i) => admitted === true ? [`r${i}`] : [])
+    const full = try budget(origin, day, "admit", { reply: "late", ceiling: CEILING })
+    try budget(origin, day, "spend", { reply: winners[0], tokens: 10, reported: true, ceiling: CEILING })
+    const freed = try budget(origin, day, "admit", { reply: "later", ceiling: CEILING })
+    try Effect.try(() => {
+      expect(winners).toHaveLength(3)
+      expect(full).toBe(false)
+      expect(freed).toBe(true)
+    })
+  }, 120_000)
+
+  it.live("charges a call whose provider reported no usage its whole ceiling", () => effect {
+    const origin = api!.origin
+    const day = "2026-11-11"
+    try budget(origin, day, "admit", { reply: "silent", ceiling: CEILING })
+    try budget(origin, day, "spend", { reply: "silent", tokens: 0, reported: false, ceiling: CEILING })
+    const answers = try Effect.all(Array.from({ length: 3 }, (_, i) => budget(origin, day, "admit", { reply: `n${i}`, ceiling: CEILING })), { concurrency: "unbounded" })
+    try Effect.try(() => expect(answers.filter((admitted) => admitted === true)).toHaveLength(2))
+  }, 120_000)
+})

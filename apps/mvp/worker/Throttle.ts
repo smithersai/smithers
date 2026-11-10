@@ -1,5 +1,6 @@
 import { Effect, Metric, Option } from "effect"
 import { type HttpServerRequest, HttpServerResponse } from "effect/http"
+import { GitHub } from "@smthrs/integrations"
 import { TELEMETRY_ROUTE } from "../src/features/chat/contract.ts"
 
 // The edge throttle on ChatApi's open routes (docs/features/chat.md#throttling, decision 0008 §7.3): every Electric
@@ -8,8 +9,11 @@ import { TELEMETRY_ROUTE } from "../src/features/chat/contract.ts"
 // binding (worker/ChatApi.ts), which is approximate and counts per location by design: it bounds bursts and does no
 // accounting. Binding a request to a session or a visitor cookie, and limiting by it, is decision 0008's phase P1.
 
-/** The routes the throttle covers: every Electric shape, and the telemetry relay. */
-export type Route = "shape" | "telemetry"
+/**
+ * The routes the throttle covers: every Electric shape, the telemetry relay, and the hosted-site sign-in broker, whose
+ * four routes answer anyone and share one Durable Object (decision 0165).
+ */
+export type Route = "shape" | "telemetry" | "broker"
 
 /** Throttle decisions, by `route` and `outcome` (`admitted`, `limited`, or `error` when the limiter failed). */
 export const decisions = Metric.counter("smithers_throttle_decisions", {
@@ -27,13 +31,19 @@ export interface Limiter {
 
 const SHAPES = "/api/shapes/"
 
-/** The throttled route a path belongs to, or `undefined` for a route the throttle doesn't cover. */
-export const routeOf = (path: string): Route | undefined =>
-  path.startsWith(SHAPES) && path.length > SHAPES.length
+/**
+ * The throttled route a request URL belongs to, or `undefined` for a route the throttle doesn't cover. The broker's
+ * callback shares smithers.sh's own `/api/auth/callback`, told apart by its `state`, so the query counts.
+ */
+export const routeOf = (url: string): Route | undefined => {
+  if (GitHub.Auth.Broker.handles(url)) return "broker"
+  const path = url.split("?")[0]!
+  return path.startsWith(SHAPES) && path.length > SHAPES.length
     ? "shape"
     : path.startsWith(`${TELEMETRY_ROUTE}/`)
     ? "telemetry"
     : undefined
+}
 
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
 
@@ -91,7 +101,7 @@ export const networkOf = (headers: Readonly<Record<string, string | undefined>>)
 export const make = (limiters: Readonly<Record<Route, Limiter>>) =>
 (request: HttpServerRequest.HttpServerRequest): Effect.Effect<Option.Option<HttpServerResponse.HttpServerResponse>> =>
   Effect.gen(function* () {
-    const route = routeOf(request.url.split("?")[0]!)
+    const route = routeOf(request.url)
     if (route === undefined) return Option.none()
     const decided = yield* limiters[route].limit({ key: networkOf(request.headers) }).pipe(Effect.result)
     const outcome = decided._tag === "Failure" ? "error" : decided.success.success ? "admitted" : "limited"

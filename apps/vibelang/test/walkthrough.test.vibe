@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { apply, empty } from "../src/core/conversation.vibe"
 import { decide } from "../src/core/decide.vibe"
-import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
+import { WALKTHROUGH, walkthroughStop } from "../src/core/walkthroughSteps.vibe"
 
 describe("walkthrough state", () => {
   it("numbers the drive, freezes remaining reading time, resumes and seeks without touching entries", () => {
@@ -39,9 +39,10 @@ import { mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { MockJournal } from "../src/core/MockJournal.vibe"
 import { TestClock } from "effect/testing"
 import type { Event } from "../src/core/conversation.vibe"
-import { Narration } from "../worker/Tour.vibe"
+/** Every subtitle stays within the live agent's word bound: at most 65 words and 560 characters. */
+const Narration = Schema.Struct({ stops: Schema.Array(Schema.String.check(Schema.isPattern(/^(?:\S+\s+){0,64}\S+\s*$/), Schema.isMaxLength(560))).check(Schema.isMinLength(WALKTHROUGH.length), Schema.isMaxLength(WALKTHROUGH.length)) })
 
-it("checks the shared live subtitle schema's word bound", () => {
+it("keeps every subtitle within the live agent's word bound", () => {
   expect(Schema.decodeUnknownOption(Narration)({ stops: WALKTHROUGH.map(step => step.subtitle) })._tag).toBe("Some")
   expect(Schema.decodeUnknownOption(Narration)({ stops: WALKTHROUGH.map(() => Array.from({ length: 66 }, () => "word").join(" ")) })._tag).toBe("None")
 })
@@ -93,4 +94,19 @@ it("rejects fractional destinations and malformed drives before they can break t
   for (const payload of [{ step: 1.5 }, { duration: -1 }, { target: "" }]) {
     expect(apply(started, { ...driven, ...payload }).walkthrough).toBeUndefined()
   }
+})
+
+describe("the stop at a step", () => {
+  it("steps 1 and 10 are the first and last stops; a step outside them shows the nearest stop", () => {
+    expect(walkthroughStop(1)).toBe(WALKTHROUGH[0])
+    expect(walkthroughStop(4).target).toBe("issue:48")
+    expect(walkthroughStop(10)).toBe(WALKTHROUGH[9])
+    expect(walkthroughStop(0)).toBe(WALKTHROUGH[0])
+    expect(walkthroughStop(11)).toBe(WALKTHROUGH[9])
+    expect(walkthroughStop(2.49)).toBe(WALKTHROUGH[1])
+    expect(walkthroughStop(2.5)).toBe(WALKTHROUGH[2])
+    expect(walkthroughStop(Number.NaN)).toBe(WALKTHROUGH[0])
+    expect(walkthroughStop(Number.NEGATIVE_INFINITY)).toBe(WALKTHROUGH[0])
+    expect(walkthroughStop(Number.POSITIVE_INFINITY)).toBe(WALKTHROUGH[9])
+  })
 })

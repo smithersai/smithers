@@ -728,8 +728,16 @@ function narrowFunction(fn: TFunction, ctx: CondCtx): TFunction {
 
 export function narrowModule(mod: TModule): TModule {
   const ctx: CondCtx = { decls: mod.typeDecls, oc: { n: 0 } };
+  // An imported function's contracts are emitted too (as an axiom), so they need the same rewrites as local ones:
+  // a `??` in one would otherwise reach transform unnarrowed.
+  const specCtx: CondCtx = { decls: ctx.decls, oc: ctx.oc };
   return {
     ...mod,
+    externs: mod.externs.map(ext => ({
+      ...ext,
+      requires: ext.requires.map(e => walkExpr(e, specCtx)),
+      ensures: ext.ensures.map(e => walkExpr(e, specCtx)),
+    })),
     constants: mod.constants.map(c => ({ ...c, value: walkExpr(c.value, ctx) })),
     functions: mod.functions.map(fn => narrowFunction(fn, ctx)),
     classes: mod.classes.map(cls => ({

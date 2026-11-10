@@ -5,7 +5,7 @@ import { Digest } from "effect/crypto"
 import { Base64 } from "effect/encoding"
 // GitHub is authoritative (GH-1). The host supplies a freshly authenticated person for every durable operation.
 import { GitHub } from "@smthrs/integrations"
-import { Action, FlowRuntime } from "@smthrs/flow"
+import { Action, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { CloudflareRuntime, ObjectDatabase, RunInspection } from "@smthrs/platform-cloudflare"
 import { HttpClient, FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { applyIssues, approveVip, canLinkIssues, emptyIssues, issuePermission, setCommitment, reviewActions, vipDocumentMatches, type IssueRecord, type Role } from "../src/core/conversation.vibe"
@@ -13,6 +13,7 @@ import { IssueHost, issueFlows, issueRegistration, authorizeIssue, issueExecutio
 import { IssueFailure, IssueRequest, vipDocument, vipIssueBody } from "../src/core/issueSchemas.vibe"
 import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
+import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
 
 /** `kind: "agent"` marks a device sign-in (decision 0028); agents never approve, accept, decline or merge. */
 export interface Principal { readonly id: string; readonly login: string; readonly role: Role; readonly connection?: Connection; readonly kind?: "person" | "agent" }
@@ -29,6 +30,12 @@ export effect function issueWriteKey(repo: Repository, actor: string, request: I
   const logical = JSON.stringify(["vibelang/issues/v1", repo.owner, repo.name, actor, request.op, request.key, name])
   return try (try Digest.Digest).digestHex(Digest.sha256, new TextEncoder().encode(logical))
 }
+/**
+ * A new issue's search for its own marker starts when its request was admitted (`Once.issue`), less five minutes for
+ * clock skew, never at 1970: 1,000 older issues would truncate it and refuse every create. The time is part of the
+ * signed operation, so every attempt of one request must name the same one (`executeIssues` stores it by request).
+ */
+export const admittedNow = Effect.map(DateTime.now, (now) => DateTime.formatIso(DateTime.subtract(now, { minutes: 5 })))
 export const TASK_LABEL = "vibelang:task"
 const ACCEPTED = "vibelang:accepted"
 const DECLINED = "vibelang:declined"
@@ -47,7 +54,7 @@ export effect function verifiedVip(repo: Repository, body: string, author: numbe
   if (!/^[1-9][0-9]*$/.test(tail) || !Number.isSafeInteger(number)) return undefined
   const observed = try GitHub.Proposals.documentReview(repo.owner, repo.name, number)
   if (Option.isNone(observed) || !Number.isSafeInteger(observed.value.author) || !vipDocumentMatches(author, observed.value.author, match[1]!, observed.value.files)) return undefined
-  return { raw: match[0], at: match.index ?? 0, path: match[1]!, review, number }
+  return { raw: match[0], at: match.index, path: match[1]!, review, number }
 }
 
 /** No raw provider error, request content or credential crosses this boundary. */
@@ -60,11 +67,12 @@ export function issueFailureOf(error: unknown): IssueFailure {
   return new IssueFailure({ reason, ...(["unknown", "rate-limited", "unavailable"].includes(reason) ? { code: reason } : {}), ...(typeof details?.retryAfterMillis === "number" ? { retryAfterMillis: details.retryAfterMillis } : {}) })
 }
 
-export effect function githubHost(repo: Repository = repository, observe?: (items: ReadonlyArray<IssueRecord>) => import("../src/core/conversation.vibe").IssuesState!IssueFailure, fresh: () => boolean = () => false): IssueHost.Shape!never!(IssueAuthority | HttpClient.HttpClient) {
+export effect function githubHost(repo: Repository = repository, observe?: (items: ReadonlyArray<IssueRecord>) => import("../src/core/conversation.vibe").IssuesState!IssueFailure, fresh: () => boolean = () => false, admitted: () => string!IssueFailure = () => admittedNow): IssueHost.Shape!never!(IssueAuthority | HttpClient.HttpClient) {
   const authority = try IssueAuthority
   const http = try HttpClient.HttpClient
   const writer = try Effect.serviceOption(VipWriter)
   const delegate = try Effect.serviceOption(GitHubDelegate)
+  const reads = try Effect.serviceOption(PublicReads)
   let revision = 0
   let touched = false
   effect function read(number = 0) {
@@ -90,14 +98,11 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
       const parent = parentUrl.startsWith(prefix) ? Number(parentUrl.slice(prefix.length)) : 0
       const body = try Effect.try(() => GitHub.Issues.withoutWriteMarker(i.body ?? ""))
       const vip = try verifiedVip(repo, body, i.user?.id ?? 0)
-      const reviewPrefix = `https://github.com/${repo.owner}/${repo.name}/pull/`
-      if (number === i.number && vip !== undefined && vip.review.startsWith(reviewPrefix)) {
-        const reviewNumber = vip.number
-        if (Number.isSafeInteger(reviewNumber) && reviewNumber > 0) {
-          const reviews = try GitHub.Pulls.listReviews(repo.owner, repo.name, reviewNumber)
-          if (reviews.truncated) throw new IssueFailure({ reason: "partial" })
-          for (const review of reviews.items) if (review.user !== null && !reviewers.includes(review.user.login)) reviewers.push(review.user.login)
-        }
+      // verifiedVip admits only this repository's pull URL with a positive safe-integer number.
+      if (number === i.number && vip !== undefined) {
+        const reviews = try GitHub.Pulls.listReviews(repo.owner, repo.name, vip.number)
+        if (reviews.truncated) throw new IssueFailure({ reason: "partial" })
+        for (const review of reviews.items) if (review.user !== null && !reviewers.includes(review.user.login)) reviewers.push(review.user.login)
       }
       const notes: Array<{ age: string; author: string; text: string; event: boolean }> = []
       if (number === i.number) {
@@ -127,10 +132,13 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
       if (!issuePermission(actor?.role ?? "viewer", request.op)) throw new IssueFailure({ reason: "forbidden" })
       if ((request.op === "accept" || request.op === "decline") && actor?.kind === "agent") throw new IssueFailure({ reason: "forbidden" })
       const work = effect {
-        if (request.op === "read") return try read(request.number)
+        if (request.op === "read") {
+          // A signed-out read GitHub refused answers the last good copy, marked with when GitHub last confirmed it (0031).
+          const observed = try GitHub.ReadCache.observeStale(read(request.number), { patience: READ_PATIENCE })
+          return observed.stale === undefined ? observed.value : { ...observed.value, stale: observed.stale }
+        }
         if (actor === undefined || request.key === "") throw new IssueFailure({ reason: "sign-in" })
         if (request.op !== "draft" && actor.connection === undefined) throw new IssueFailure({ reason: "connect" })
-        const since = "1970-01-01T00:00:00.000Z"
         // A logical write keeps its marker when SDK retryFrom creates a new execution.
         const key = (name: string) => issueWriteKey(repo, actor.id, request, name)
         const repository = `${repo.owner}/${repo.name}`
@@ -167,7 +175,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
         if (["new", "split", "propose"].includes(request.op) && request.title.trim() === "") throw new IssueFailure({ reason: "title" })
         if (request.op === "new" || request.op === "split") {
           if (request.op === "split" && issue === undefined) throw new IssueFailure({ reason: "missing" })
-          const made = try Action.once("issue", permitted({ kind: "issue.create", repository, title: request.title.trim(), body: request.text, since }), { key: try key("issue") })
+          const made = try Action.once("issue", permitted({ kind: "issue.create", repository, title: request.title.trim(), body: request.text, since: try admitted() }), { key: try key("issue") })
           if (request.op === "split") {
             const current = try GitHub.IssueChanges.get(repo.owner, repo.name, made.number!)
             if (current.parent_issue_url !== `${repo.api}/repos/${repo.owner}/${repo.name}/issues/${request.number}`) try written("link", { kind: "issue.link", repository, parent: request.number, child: made.id! })
@@ -184,11 +192,13 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           const path = `docs/design/vips/proposal-${try key("document")}.md`
           const document = vipDocument(request)
           const contents = try Effect.try(() => Base64.encode(document))
-          try Action.once("commit", permitted({ kind: "commit.create", repository, branch: branch.name!, expectedHeadOid: branch.sha!, headline: `VIP: ${request.title.trim()}`, additions: [{ path, contents }], deletions: [] }), { key: try key("commit") })
+          // The commit the branch was cut from, never the branch's current head: a retry adopts a branch its own commit
+          // advanced, and smithers.sh refuses a key whose operation changed (key_conflict).
+          try Action.once("commit", permitted({ kind: "commit.create", repository, branch: branch.name!, expectedHeadOid: head.value.sha, headline: `VIP: ${request.title.trim()}`, additions: [{ path, contents }], deletions: [] }), { key: try key("commit") })
           const pull = try Action.once("review", permitted({ kind: "pull.create", repository, head: `${actor.login}:${branch.name!}`, base: upstream.default_branch, title: `VIP: ${request.title.trim()}`, body: document }), { key: try key("review") })
           const review = `https://github.com/${repo.owner}/${repo.name}/pull/${pull.number!}`
           const body = `${vipIssueBody(request)}\n<!-- vibelang:vip path=${path} review=${review} -->`
-          const made = try Action.once("vip-issue", permitted({ kind: "issue.create", repository, title: request.title.trim(), body, since }), { key: try key("vip-issue") })
+          const made = try Action.once("vip-issue", permitted({ kind: "issue.create", repository, title: request.title.trim(), body, since: try admitted() }), { key: try key("vip-issue") })
           const observed = try read(made.number!)
           if (!observed.items.some(issue => issue.number === made.number && issue.vip !== "")) throw new IssueFailure({ reason: "unavailable", code: "unavailable" })
           return { ...observed, selected: made.number! }
@@ -231,7 +241,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
         } else throw new IssueFailure({ reason: "unsupported" })
         return try read(issue.number)
       }
-      const run = (connection: Connection | undefined) => work.pipe(asPerson(connection, repo.api, http, delegate), Effect.mapError((error) => {
+      const run = (connection: Connection | undefined) => work.pipe(asPerson(connection, repo.api, http, delegate, reads), Effect.mapError((error) => {
         const failure = error._tag === "IssueFailure" ? error : issueFailureOf(error)
         return fresh() && !touched && ["title", "incomplete", "empty", "tree", "assignee", "closed", "review"].includes(failure.reason) ? new IssueFailure({ ...failure, unwritten: true }) : failure
       }), Effect.tapError((failure) => failure.reason === "connect" && authority.lost !== undefined ? authority.lost() : Effect.void))
@@ -281,6 +291,16 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
   if ((payload.op === "accept" || payload.op === "decline") && actor?.kind === "agent") throw new IssueFailure({ reason: "forbidden" })
   try authorizeIssue(actor?.role ?? "viewer", payload.op)
   const flow = issueFlows.find((f) => f._tag === `vibelang/issues/${payload.op}`)!
+  const executionId = try issueExecutionId(actor?.id ?? "public", payload.op, payload.key)
+  /** One admission time per request, whichever execution or retry asks. */
+  const admitted = effect () => {
+    const name = "issues/admitted/" + executionId
+    const known = try promise(() => storage.get(name))
+    if (typeof known === "string") return known
+    const since = try admittedNow
+    try promise(() => storage.put(name, since))
+    return since
+  }
   let fresh = false
   const injected = try Effect.serviceOption(IssueHost)
   const issueHost = Option.isSome(injected) ? injected.value : try githubHost(repo, effect (items) => {
@@ -289,7 +309,7 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
     const next = applyIssues({ seq, items: [] }, { type: "IssuesObserved", seq: seq + 1, items })
     try promise(() => storage.put("issues/revision", next.seq))
     return next
-  }, () => fresh)
+  }, () => fresh, admitted)
   // The project object owns gate receipts; public GitHub labels cannot invent a person's approval.
   const host: IssueHost.Shape = { perform: effect (request) => {
     const current = try authority.current()
@@ -307,8 +327,10 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
       // Approval fields from an external projection are not receipts. Do not persist them even while downgrading
       // an accepted label: otherwise the next read would trust those same fields as a local approval.
       const { approvedBy: _approvedBy, approvedAt: _approvedAt, ...projection } = item
-      const receipt = saved.items.find(old => old.number === item.number && old.approvedBy !== undefined)
-      return item.vip !== "Accepted" ? projection : receipt === undefined ? { ...projection, vip: "In review" as const } : { ...projection, approvedBy: receipt.approvedBy ?? "", approvedAt: receipt.approvedAt ?? "" }
+      // approveVip writes approvedBy and approvedAt together, but a stored item may hold approvedBy alone (another
+      // writer, or a hand edit): keep the time only when it was stored, so the state still decodes on the next read.
+      const receipt = saved.items.find((old): old is typeof old & { approvedBy: string } => old.number === item.number && old.approvedBy !== undefined)
+      return item.vip !== "Accepted" ? projection : receipt === undefined ? { ...projection, vip: "In review" as const } : { ...projection, approvedBy: receipt.approvedBy, ...(receipt.approvedAt === undefined ? {} : { approvedAt: receipt.approvedAt }) }
     })
     if (request.op === "accept" && current !== undefined) {
       const at = new Date(try Clock.currentTimeMillis).toISOString()
@@ -318,7 +340,6 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
     try promise(() => storage.put("gates/state", result))
     return result
   } }
-  const executionId = try issueExecutionId(actor?.id ?? "public", payload.op, payload.key)
   if (payload.recovery !== undefined && !/^[A-Za-z0-9-]{1,100}$/.test(payload.recovery)) throw new IssueFailure({ reason: "invalid" })
   const { recovery, ...original } = payload
   const runtime = (id: string) => Layer.merge(CloudflareRuntime.layer({ hostId, executionId: id, flow: flow._tag }, issueRegistration), RunInspection.layerWith({ flows: issueFlows })).pipe(Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(IssueHost, host)))
@@ -335,22 +356,23 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
     if (!observed.fresh && !failed) {
       // A reused key joins only the exact request it first named; a changed payload is a typed refusal, never an engine conflict.
       const inspection = try RunInspection.RunInspection
-      const recorded = try inspection.payload(executionId).pipe(Effect.mapError(() => new IssueFailure({ reason: "unavailable" })))
+      const recorded = try inspection.payload(executionId)
       const decoded = Schema.decodeUnknownOption(IssueRequest)(recorded.payload)
       if (Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)) throw new IssueFailure({ reason: "invalid" })
     }
     if (failed) {
       const known = engine.poll(flow, target).pipe(Effect.as(true)) catch () => false
       if (!known) {
-        if (engine.retryFrom === undefined) throw new IssueFailure({ reason: "unavailable" })
+        // CloudflareRuntime's engine store always retries from a step (EngineStore's `retryFrom`).
+        const retryFrom = engine.retryFrom!
         const inspection = try RunInspection.RunInspection
-        const recorded = try inspection.payload(executionId).pipe(Effect.mapError(() => new IssueFailure({ reason: "unavailable" })))
+        const recorded = try inspection.payload(executionId)
         const decoded = Schema.decodeUnknownOption(IssueRequest)(recorded.payload)
         if (Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)) throw new IssueFailure({ reason: "invalid" })
-        const source = try inspection.inspect(executionId).pipe(Effect.mapError(() => new IssueFailure({ reason: "unavailable" })))
+        const source = try inspection.inspect(executionId)
         const step = source.steps.find((item) => item.action === `${flow._tag}/perform`)
         if (step === undefined) throw new IssueFailure({ reason: "unavailable" })
-        try engine.retryFrom(flow, { source: executionId, step: step.nodeId, executionId: target }).pipe(Effect.mapError(() => new IssueFailure({ reason: "unavailable" })))
+        try retryFrom(flow, { source: executionId, step: step.nodeId, executionId: target })
       }
     }
     const result = try engine.execute(flow, { executionId: target, payload: original })
@@ -365,19 +387,26 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
       const found = try Effect.result(inspection.payload(sourceId))
       const usedId = found._tag === "Failure" && found.failure._tag === "@smthrs/engine-store/RunNotFound" ? rootId : sourceId
       const recorded = found._tag === "Success" ? found.success : try inspection.payload(usedId).pipe(Effect.mapError(() => new IssueFailure({ reason: "missing" })))
-      const request = try Schema.decodeUnknownEffect(IssueRequest)(recorded.payload).pipe(Effect.mapError(() => new IssueFailure({ reason: "protocol" })))
-      if (recorded.flowName !== sourceFlow._tag || request.op !== original.resumeOp || request.key !== original.resumeKey) throw new IssueFailure({ reason: "protocol" })
-      const receipt = try engine.poll(sourceFlow, usedId).pipe(Effect.mapError(() => new IssueFailure({ reason: "missing" })))
+      // The run id names its op and key's digest, and only this function starts a run there: its payload is that request.
+      const request = try Effect.orDie(Schema.decodeUnknownEffect(IssueRequest)(recorded.payload))
+      // poll answers None for an unknown run; a store failure is unavailable, as everywhere in this execution.
+      const receipt = try engine.poll(sourceFlow, usedId)
       const completed = Option.isSome(receipt) && receipt.value._tag === "Complete" ? receipt.value.exit : undefined
       const failure = completed?._tag === "Failure" ? Cause.findErrorOption(completed.cause) : Option.none<IssueFailure>()
       return { ...result, saved: { request, status: completed?._tag === "Success" ? "completed" as const : completed?._tag === "Failure" ? "failed" as const : "running" as const, unwritten: Option.isSome(failure) && failure.value.unwritten === true, selected: completed?._tag === "Success" ? completed.value.selected ?? request.number : request.number } }
     }
     return result
-  }, runtime(target))).pipe(Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: "unavailable" })))
+  }, runtime(target))).pipe(
+    Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: "unavailable" })),
+    Effect.catchDefect((defect) => RetryPolicy.errorTag(defect) === "@smthrs/flow/DeadlineExceeded"
+      ? Effect.logWarning("vibelang.issues.deadline").pipe(Effect.annotateLogs({ op: payload.op }), Effect.andThen(Metric.update(Metric.withAttributes(Metric.counter("vibelang_issue_deadline", { incremental: true }), { op: payload.op }), 1)), Effect.andThen(Effect.fail(new IssueFailure({ reason: "unavailable", code: "unavailable" }))))
+      : Effect.die(defect)),
+  )
   return { ...result, role: actor?.role ?? "viewer", connected: actor?.connection !== undefined }
 }
 
 /** Unconfigured sign-in still leaves GitHub's public issues readable. */
-export function publicIssues(hostId: string, storage: Storage) {
-  return serveIssues(hostId, storage).pipe(Effect.provideService(IssueAuthority, { current: () => Effect.succeed(undefined) }), Effect.provide(FetchHttpClient.layer))
+export function publicIssues(hostId: string, storage: Storage, reads?: HttpClient.HttpClient) {
+  const served = serveIssues(hostId, storage).pipe(Effect.provideService(IssueAuthority, { current: () => Effect.succeed(undefined) }))
+  return (reads === undefined ? served : Effect.provideService(served, PublicReads, { client: reads })).pipe(Effect.provide(FetchHttpClient.layer))
 }

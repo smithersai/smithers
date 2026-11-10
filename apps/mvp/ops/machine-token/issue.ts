@@ -19,6 +19,7 @@ import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Database from "../../db/Database.ts"
 import { neonUri, scrub } from "../feed-barrier/confirm.ts"
+import { refuseUncheckedTls } from "../tls.mjs"
 
 const PREFIX = "smm_"
 const SCOPES = ["issue/create", "issue/update", "issue/comment", "issue/relate", "work/link"]
@@ -84,6 +85,7 @@ export const writeToken = (path: string, token: string) => {
 }
 
 const main = async () => {
+  refuseUncheckedTls(process.env)
   const { values } = parseArgs({
     options: {
       project: { type: "string" }, by: { type: "string" }, repo: { type: "string" }, agent: { type: "string" }, lane: { type: "string" },

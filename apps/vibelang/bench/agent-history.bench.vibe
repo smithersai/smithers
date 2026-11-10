@@ -1,0 +1,39 @@
+// @vitest-environment node
+// The agent's history tools in a reply: it pages an epic, a commit and a search over the seeded history, and its Plan
+// and Note are refused for a signed-out guest. The API Worker's production objects in workerd with the deterministic
+// model service (bench/fixtures.vibe), whose cell makes these calls.
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { serveApiObjects } from "../test/support/workerd.vibe"
+import { modelService } from "./fixtures.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("a reply pages the history through its tools; a guest's Plan and Note are refused", { timeout: 600_000 }, async ({ bench }) => {
+  await runPromise(scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const model = try modelService()
+      const api = try acquireRelease(serveApiObjects({
+        CHAT_MODEL: JSON.stringify({ protocol: "openai-chat", baseUrl: model, modelId: "deterministic", credential: "BENCH" }),
+        SMITHERS_MODEL_KEY_BENCH: "benchmark-only", SMITHERS_MODEL_KEY_BENCH_ORIGIN: model,
+      }), (served) => promise(served.dispose))
+      provide LiveFactory(api.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+        const factory = try Factory
+        let run = 0
+        const tools = workload(bench, "agent-history-tools", "async", async () => {
+          const room = `bench-history-${++run}`
+          await runPromise(factory.post(room, "a", "Bench", "Bench history."))
+          const events = Array.from(await runPromise(Stream.runCollect(factory.events(room, 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished" || event.type === "ReplyFailed"), Stream.timeout("60 seconds")))))
+          expect(events.at(-1)).toMatchObject({ type: "ReplyFinished" })
+          const reply = (await runPromise(factory.read(room, 0))).entries.at(-1)!
+          expect(reply.author).toBe("agent")
+          expect(JSON.parse(reply.text)).toEqual({ epic: true, commit: true, found: true, planned: { id: "", refusal: "forbidden" }, noted: { id: "", refusal: "forbidden" } })
+        })
+        const result = try tryPromise(() => tools.run(slow))
+        try artifact("agent-history-tools", "Vitest built-in bench; the API Worker's production object bodies in local workerd SQLite through LiveFactory HTTP and alarms, with the deterministic HTTP model service. Each sample posts in a fresh room; the model's cell reads the outline, the first epic's page, that page's first commit, a search for its title, then calls Plan and Note. Checks the reply finished, each page matches the one before it, and both writes are refused forbidden for a signed-out guest.", ["Deterministic model; no inference latency.", "Signed-out guest: Plan and Note measure their refusal, not a history write.", "Objects reach each other by fetch, not Alchemy RPC."], result)
+      }
+    }
+  }))
+})

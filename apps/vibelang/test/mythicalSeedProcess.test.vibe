@@ -4,6 +4,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
 import { expect, it } from "@effect/vitest"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import { main as seedMain } from "../scripts/mythical-seed-program.vibe"
 import type { History } from "../src/history/mythical.vibe"
 import { node, run } from "./support/processes.vibe"
 
@@ -61,7 +63,28 @@ it.live("bootstraps real commits and queue attempts deterministically, and prese
     const afterRepository = try fs.readFileString(target)
     const badQueue = try run(executable, [script], { ...env, VIBELANG_QUEUE: path.join(directory, "missing.jsonl") })
     const afterQueue = try fs.readFileString(target)
+    // A faulty repository host reports two distinct full hashes with the same display prefix. The real jj process
+    // still runs; only its reported identities change, with the parent links kept consistent.
+    const spawner = try ChildProcessSpawner
+    const colliding = makeSpawner(effect (command) => {
+      const child = try spawner.spawn(command)
+      return { ...child, stdout: Stream.fromEffect(effect {
+        const output = try Stream.mkString(Stream.decodeText(child.stdout))
+        return new TextEncoder().encode(output.replaceAll(first.slice(0, 12), "0123456789ab").replaceAll(second.slice(0, 12), "0123456789ab"))
+      }) }
+    })
+    const destination = try path.toFileUrl(target)
+    const configured = ConfigProvider.layer(ConfigProvider.fromUnknown(env))
+    const collision = try Effect.provide(seedMain(destination), configured).pipe(Effect.provideService(ChildProcessSpawner, colliding), Effect.result)
+    const afterCollision = try fs.readFileString(target)
+    // Removing the faulty service recovers the command and produces exactly the prior seed.
+    try Effect.provide(seedMain(destination), configured)
+    const afterRecovery = try fs.readFileString(target)
     try Effect.try(() => {
+      expect(collision).toMatchObject({ _tag: "Failure", failure: { _tag: "Refused", count: 1 } })
+      if (collision._tag === "Failure") expect(collision.failure).not.toHaveProperty("first")
+      expect(afterCollision).toBe(source)
+      expect(afterRecovery).toBe(source)
       expect(written.status, written.stderr).toBe(0)
       expect(again.status, again.stderr).toBe(0)
       expect(written.stdout).toContain("2 real commits, 1 mythical commits, 1 epics")

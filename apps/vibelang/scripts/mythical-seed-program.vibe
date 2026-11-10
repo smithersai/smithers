@@ -1,0 +1,111 @@
+// Writes src/history/seed/vibelang.vibe: VibeLang's mythical history bootstrapped from its real history
+// (wiki/decisions/0020-mythical-history.md). It reads every commit reachable from main with jj and the merge queue's
+// entries, groups them with `seedOf` (src/history/seed.vibe), records every resulting intent through the history's
+// own `decide` and `apply`, and writes the history they built as JSON text the Bootstrap flow loads. It fails, writing
+// nothing, if the sequencer refuses any intent. Deterministic: the same main and queue give the same file. Runs where
+// VibeLang's repository and queue are.
+// The queue lands copies under new change ids, so its entries' commits are read from the lanes' repository by commit
+// id, and a commit on main finds its entries by title.
+//   pnpm mythical-seed           ~/vibe/effectscript, ~/vibe/mq/queue.jsonl and ~/vibe/fix/alpha/base
+//   VIBELANG_REPO=<dir> VIBELANG_QUEUE=<file> VIBELANG_LANES=<dir> pnpm mythical-seed
+import { ChildProcess } from "effect/process"
+import { intentsOf, type QueueEntry, type RawCommit, replay, SHA_LENGTH, seedOf, titleOf } from "../src/history/seed.vibe"
+
+/** jj failed to read the repository; its message is on stderr. */
+error JjFailed { status: number }
+
+/** The history's sequencer refused intents of the seed: the grouping is wrong. */
+error Refused { count: number }
+
+const Line = Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String, Schema.String, Schema.Array(Schema.String)]))
+
+const Entry = Schema.fromJsonString(Schema.Struct({
+  id: Schema.String,
+  lane: Schema.String,
+  state: Schema.String,
+  reason: Schema.optionalKey(Schema.String),
+  gate: Schema.optionalKey(Schema.String),
+  rev: Schema.String,
+  stack_receipt: Schema.optionalKey(Schema.Struct({ commits: Schema.Array(Schema.Struct({ commit: Schema.String })) })),
+}))
+
+const TEMPLATE = '"[" ++ stringify(commit_id).escape_json() ++ "," ++ stringify(change_id).escape_json() ++ "," ++ description.escape_json() ++ ",[" ++ parents.map(|p| stringify(p.commit_id()).escape_json()).join(",") ++ "]]\\n"'
+
+/** `jj log` of `revset` in `repository`, oldest first: one JSON line per commit. */
+effect function log(repository: string, revset: string) {
+  return try scoped(effect {
+    const process = try ChildProcess.make("jj", [
+      "-R", repository, "log", "--no-graph", "--reversed", "--ignore-working-copy", "-r", revset, "-T", TEMPLATE,
+    ], { extendEnv: true })
+    const [stdout, stderr, status] = try.all [
+      Stream.mkString(Stream.decodeText(process.stdout)),
+      Stream.mkString(Stream.decodeText(process.stderr)),
+      process.exitCode,
+    ]
+    if (Number(status) !== 0) {
+      try Console.error(stderr)
+      throw new JjFailed({ status: Number(status) })
+    }
+    const commits: Array<RawCommit> = []
+    for (const line of stdout.split("\n")) {
+      if (line === "") continue
+      const [sha, change, description, parents] = try Schema.decodeUnknownEffect(Line)(line)
+      commits.push({ sha, change, description, parents })
+    }
+    return commits
+  })
+}
+
+/** The titles of the commits with these ids in `repository`, by shortened id; ids it lacks are left out. */
+effect function titlesOf(repository: string, ids: ReadonlyArray<string>) {
+  const titles = new Map<string, string>()
+  // One revset per batch: an argument is limited to 128 KiB.
+  for (let start = 0; start < ids.length; start += 1500) {
+    const revset = ids.slice(start, start + 1500).map((id) => `present(${id})`).join("|")
+    for (const commit of try log(repository, revset)) titles.set(commit.sha.slice(0, SHA_LENGTH), titleOf(commit.description))
+  }
+  return titles
+}
+
+/** The queue's entries, with their commits' titles read from the lanes' repository; a line that isn't an entry is skipped. */
+effect function entriesOf(file: string, lanes: string) {
+  const text = try (try FileSystem.FileSystem).readFileString(file)
+  const decoded: Array<typeof Entry.Type> = []
+  for (const line of text.split("\n")) {
+    if (line.trim() === "") continue
+    const value = Schema.decodeUnknownEffect(Entry)(line) catch () => undefined
+    if (value !== undefined) decoded.push(value)
+  }
+  const commitsOf = (value: typeof Entry.Type) =>
+    (value.stack_receipt?.commits.map((commit) => commit.commit) ?? [value.rev]).map((id) => id.slice(0, SHA_LENGTH))
+  const titles = try titlesOf(lanes, [...new Set(decoded.flatMap(commitsOf))])
+  return decoded.map((value): QueueEntry => ({
+    id: value.id,
+    lane: value.lane,
+    state: value.state,
+    reason: value.reason ?? "",
+    gate: value.gate ?? "",
+    titles: commitsOf(value).flatMap((id) => titles.has(id) ? [titles.get(id)!] : []),
+  }))
+}
+
+export effect function main(destination: URL) {
+  const path = try Path.Path
+  const home = try Config.withDefault(Config.String("HOME"), "")
+  const repository = try Config.withDefault(Config.String("VIBELANG_REPO"), path.join(home, "vibe/effectscript"))
+  const queue = try Config.withDefault(Config.String("VIBELANG_QUEUE"), path.join(home, "vibe/mq/queue.jsonl"))
+  const lanes = try Config.withDefault(Config.String("VIBELANG_LANES"), path.join(home, "vibe/fix/alpha/base"))
+  const commits = try log(repository, "::main@github ~ root()")
+  const seed = seedOf("smithersai/vibelang", commits, try entriesOf(queue, lanes))
+  const { history, refused } = replay(intentsOf(seed))
+  if (refused.length > 0) throw new Refused({ count: refused.length })
+  const json = try Effect.try(() => JSON.stringify(history))
+  const target = try path.fromFileUrl(destination)
+  const source = `// Generated by scripts/mythical-seed.vibe from VibeLang's main (${seed.main}) and merge queue. Do not edit.\n` +
+    `export const REPOSITORY = ${try Effect.try(() => JSON.stringify(seed.repository))}\n` +
+    `export const HISTORY_JSON = ${try Effect.try(() => JSON.stringify(json))}\n`
+  try (try FileSystem.FileSystem).writeFileString(target, source)
+  const mythical = seed.epics.reduce((total, epic) => total + epic.commits.length, 0)
+  try Console.log(`${seed.real.length} real commits, ${mythical} mythical commits, ${seed.epics.length} epics, ${history.seq} events, ${source.length} bytes`)
+}
+

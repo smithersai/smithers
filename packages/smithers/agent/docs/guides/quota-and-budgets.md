@@ -318,8 +318,9 @@ usage pending and refuses new calls until it commits.
 
 ## Inspect the spend
 
-`Budget.usageOf(runId)` reads one run's `{ tokens, calls, largestCall }`,
-whether or not this process is driving it: a supervisor reads the spend of a
+`Budget.usageOf(runId)` reads one run's `{ tokens, calls, largestCall }`, plus
+`unreported`, the number of calls whose provider reported no usable token count, when
+there were any, whether or not this process is driving it: a supervisor reads the spend of a
 run that is parked, finished, or owned by another host. `Budget.usage` reads
 the current run's. Calls recorded outside any run tally under
 `Budget.looseRunId`.

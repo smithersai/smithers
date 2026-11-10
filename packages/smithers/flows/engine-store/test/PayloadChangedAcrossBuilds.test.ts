@@ -16,11 +16,11 @@
  * once on PostgreSQL.
  */
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, JournalDecode } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { RunStore } from "@smthrs/run-store"
-import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Cause, Effect, Exit, Layer, Logger, Option, References, Schema } from "effect"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -61,6 +61,12 @@ const Required = Flow.make(tag, {
 })
 
 /** A later build that changed the topic's type: the recorded string is no longer a number. */
+const RemovedLiteral = Flow.make(tag, {
+  payload: { topic: Schema.Literal("old-step") },
+  success: Schema.Number,
+  body: () => Ask.call({})
+})
+
 const Retyped = Flow.make(tag, { payload: { topic: Schema.Number }, success: Schema.Number, body: () => Ask.call({}) })
 
 const jj = Layer.succeed(
@@ -98,6 +104,7 @@ interface Scenario {
 const scenarios: Record<string, Scenario> = {
   "optional-field": { resumed: Optional as unknown as typeof First, refusal: "plan_changed" },
   "required-field": { resumed: Required as unknown as typeof First, refusal: "payload_changed" },
+  "rollback-removed-step": { resumed: RemovedLiteral as unknown as typeof First, refusal: "payload_changed" },
   retyped: { resumed: Retyped as unknown as typeof First, refusal: "payload_changed" }
 }
 
@@ -108,6 +115,11 @@ it.each(Object.keys(scenarios))(
     const root = await mkdtemp(join(tmpdir(), "smithers-payload-changed-"))
     const filename = PersistentDatabase.filename(join(root, "state.sqlite"))
     let asked = 0
+    const diagnostics: Array<Readonly<Record<string, unknown>>> = []
+    const capture = Logger.make((options) => {
+      const annotations = options.fiber.getRef(References.CurrentLogAnnotations)
+      if (annotations["boundary"] === "payload") diagnostics.push(annotations)
+    })
 
     const drive = (first: boolean) =>
       Effect.scoped(Effect.gen(function*() {
@@ -152,6 +164,8 @@ it.each(Object.keys(scenarios))(
         }).pipe(Effect.provide(layer))
       })).pipe(
         Effect.provide(jj),
+        Effect.provide(Logger.layer([capture])),
+        Effect.provideService(JournalDecode.Identity, { objectId: "rollback-object", codeVersion: "rollback-build" }),
         Effect.provide(StepBoundary.layerTest()),
         Effect.provide(TestStores.layerAt(filename)),
         Effect.orDie
@@ -163,6 +177,12 @@ it.each(Object.keys(scenarios))(
 
       const resumed = await runPromise(drive(false))
       expect(resumed.status).toBe("failed")
+      if (scenario.refusal === "payload_changed") {
+        expect(diagnostics).toEqual([
+          expect.objectContaining({ stepTag: tag, objectId: "rollback-object", codeVersion: "rollback-build" })
+        ])
+        expect(JSON.stringify(diagnostics)).not.toContain("weather")
+      }
       // Refused before the body ran again: the parked step was not re-dispatched.
       expect(asked).toBe(1)
       // What a caller polling the run sees: a settled failure that says why,

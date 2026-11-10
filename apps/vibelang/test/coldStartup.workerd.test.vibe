@@ -1,0 +1,56 @@
+// Production's Durable Object start-up, cold, under Alchemy's own bundle and bridge: `alchemy dev` runs worker/Api.vibe
+// with its bindings in local workerd, and the first requests reach every class at once, as after a deploy. The suite's
+// own host (test/support/workerd.vibe) builds plain objects and never ran the bridge, which handed every constructor
+// the Worker init's closed Scope (production, 2026-11-10; patches/README.md).
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ChildProcess } from "effect/process"
+import { FetchHttpClient, HttpClient } from "effect/http"
+
+interface Health {
+  readonly objects: Readonly<Record<string, { readonly startup: string; readonly step?: string }>>
+}
+const CLASSES = ["Budget", "ProjectAccounts", "History", "ActionIndex", "Conversation"]
+
+/** Starts `alchemy dev` on its own stage; the API Worker's origin once it answers. The scope stops its process group. */
+effect function alchemyDev(stage: string) {
+  const process = try ChildProcess.make("pnpm", ["exec", "alchemy", "dev", "--stage", stage], {
+    env: { NODE_OPTIONS: "--import=vibelang/register", VIBELANG_COMMIT: "cold-start" },
+    extendEnv: true,
+  })
+  const origin = try Deferred.make<string>()
+  let seen = ""
+  // One reader drains the output for the process's whole life, so a full pipe never stalls it.
+  try Effect.forkScoped(process.all.pipe(Stream.decodeText(), Stream.runForEach((chunk) => effect {
+    seen = (seen + chunk).slice(-4000)
+    const port = /VibelangApi\] ready at http:\/\/localhost:(\d+)/.exec(seen)?.[1]
+    if (port !== undefined) try Deferred.succeed(origin, `http://localhost:${port}`)
+  })))
+  return try Deferred.await(origin).pipe(Effect.timeout("300 seconds"))
+}
+
+describe("cold Durable Object start-up under Alchemy's bridge", () => {
+  it.live("every class finishes starting when all start at once", () => scoped(effect {
+    provide NodeServices.layer, FetchHttpClient.layer {
+      const origin = try alchemyDev(`cold-${try Clock.currentTimeMillis}`)
+      const health = effect {
+        const response = try HttpClient.get(`${origin}/api/health/objects`)
+        return (try response.json) as unknown as Health
+      }
+      // The first requests after a deploy, each reaching a different cold class.
+      const first = try.allSettled [HttpClient.get(`${origin}/api/auth/session`), HttpClient.get(`${origin}/api/history`), HttpClient.get(`${origin}/api/actions`), health]
+      let latest = try health
+      for (let attempt = 0; attempt < 40 && CLASSES.some((name) => latest.objects[name]?.startup === "starting"); attempt += 1) {
+        try sleep("500 millis")
+        latest = try health
+      }
+      const session = try HttpClient.get(`${origin}/api/auth/session`)
+      try Effect.try(() => {
+        expect(first.every((result) => result._tag === "Success")).toBe(true)
+        for (const name of CLASSES) expect(latest.objects[name]?.startup, name).not.toBe("starting")
+        for (const name of ["Budget", "ProjectAccounts", "ActionIndex", "Conversation"]) expect(latest.objects[name]?.startup, name).toBe("ready")
+        expect(session.status).toBe(200)
+      })
+    }
+  }), 420_000)
+})

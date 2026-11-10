@@ -120,6 +120,11 @@ An action's results are stored in the representation Effect's `RpcSerialization`
 | `FlowEngine.layerMemory` | any `RpcSerialization` in context when the layer is built                                                                                                                                                                                                                            |
 | `EngineStore.layer`      | those whose `codecFor` is the JSON codec: `json`, `ndjson`, `jsonRpc`, `ndJsonRpc`. Any other is refused when the store is built with `UnstorableSerialization`. Accepting `jsonRpc` and `ndJsonRpc` is temporary: VIP-44's stored frames refuse them, so provide `json` or `ndjson` |
 
+`exitSchemasFor` retains the action's decoded success and error types and its schema services.
+Encoded values use `unknown`, because each serializer chooses their representation.
+A decoder requiring a service still requires that service after an exit schema is cached;
+it cannot be run without providing it.
+
 Identity never goes through the serializer: run ids and keys hash `Flow.payloadSnapshot`, so changing serializers never changes an id. A caller-owned `idempotencyKey` object is not a payload and is hashed as written, so RFC 8785 refuses a `Set` or `Map` in it; pass the payload's sorted form yourself.
 
 Omitting `capabilities` inherits the caller's authority. Declaring `capabilities: []`

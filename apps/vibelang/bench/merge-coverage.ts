@@ -14,14 +14,15 @@
 // - A file executed in both keeps its Vitest structure. Cross-runtime hits require identical complete source
 //   ranges (and ordered arm ranges for branches). An enclosing statement or another same-line function cannot
 //   establish execution. Different compiler shapes remain uncovered instead of being guessed (0017).
-// - Lines no benchmark should run are excluded only with their reason recorded here and in decision 0017.
+// - Nothing is excluded: production code the product never runs is deleted, and code only proof contracts call
+//   stays in the denominator, uncovered, until VibeLang has a specification-only function form (decision 0017).
 import { createRequire } from "node:module"
 import { existsSync, readdirSync, readFileSync, mkdirSync, writeFileSync } from "node:fs"
 import { dirname, isAbsolute, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parseAstAsync } from "vite"
 import astV8ToIstanbul from "ast-v8-to-istanbul"
-import { sourceCoverage } from "../test/support/workerdCoverage.ts"
+import { workerdEvidence } from "../test/support/workerdCoverage.ts"
 import { mergeByPosition, metrics, normalizeEndColumns, type FileCoverageJSON } from "../test/support/coverageUnion.ts"
 
 const require = createRequire(import.meta.url)
@@ -47,34 +48,7 @@ const sourceFile = (file: string) =>
   /\/(src|worker|infra|scripts|dist-factory|dist-scripts|dist-script-tests|dist\/assets)\//.test(file) &&
   !/\/dist\/assets\/rolldown-runtime-[^/]*\.js$/.test(file)
 
-// Exclusions: lines no benchmark should run, each with its reason, mirrored in decision 0017.
-const exclusions: ReadonlyArray<{ file: string; lines: ReadonlyArray<number>; reason: string }> = [
-  {
-    file: "scripts/mythical-seed.vibe",
-    lines: [103],
-    reason: "The Refused guard fires only if seedOf violates its contract: intentsOf guarantees decide accepts every seeded intent, and decideWithinCapacity refuses only at 2^53 events. Unreachable from real input.",
-  },
-]
-
 const workerdDir = "coverage/bench/workerd-raw"
-
-async function workerdEvidence(): Promise<CoverageMap> {
-  const merged = libCoverage.createCoverageMap()
-  if (!existsSync(workerdDir)) return merged
-  for (const name of readdirSync(workerdDir).filter((name) => name.endsWith(".json"))) {
-    // Each module's counters carry the VibeLang compiler's own map, the one Vitest's V8 remap uses (0017).
-    const dump = JSON.parse(readFileSync(`${workerdDir}/${name}`, "utf8")) as { coverage: Record<string, unknown> }
-    const sourceLevel = await sourceCoverage(dump.coverage)
-    const filtered = libCoverage.createCoverageMap()
-    for (const file of sourceLevel.files()) {
-      if (!file.endsWith(".vibe")) continue
-      if (!file.startsWith(`${appRoot}/src/`) && !file.startsWith(`${appRoot}/worker/`) && !file.startsWith(`${appRoot}/infra/`) && !file.startsWith(`${appRoot}/scripts/`)) continue
-      filtered.merge({ [file]: normalizeEndColumns(sourceLevel.fileCoverageFor(file).toJSON() as unknown as FileCoverageJSON, readFileSync(file, "utf8")) })
-    }
-    merged.merge(filtered)
-  }
-  return merged
-}
 
 interface ScriptCoverage {
   readonly url: string
@@ -121,26 +95,6 @@ async function chromiumEvidence(): Promise<CoverageMap> {
   return merged
 }
 
-function compact(json: FileCoverageJSON): FileCoverageJSON {
-  const statementIds = Object.keys(json.statementMap).sort((x, y) => Number(x) - Number(y))
-  const fnIds = Object.keys(json.fnMap).sort((x, y) => Number(x) - Number(y))
-  const branchIds = Object.keys(json.branchMap).sort((x, y) => Number(x) - Number(y))
-  const out: FileCoverageJSON = { ...json, statementMap: {}, fnMap: {}, branchMap: {}, s: {}, f: {}, b: {} }
-  statementIds.forEach((id, index) => { out.statementMap[index] = json.statementMap[id]!; out.s[index] = json.s[id] ?? 0 })
-  fnIds.forEach((id, index) => { out.fnMap[index] = json.fnMap[id]!; out.f[index] = json.f[id] ?? 0 })
-  branchIds.forEach((id, index) => { out.branchMap[index] = json.branchMap[id]!; out.b[index] = json.b[id] ?? [] })
-  return out
-}
-
-function excludeLines(json: FileCoverageJSON, lines: ReadonlyArray<number>): FileCoverageJSON {
-  const excluded = new Set(lines)
-  const kept: FileCoverageJSON = JSON.parse(JSON.stringify(json))
-  for (const id of Object.keys(kept.statementMap)) if (excluded.has(kept.statementMap[id]!.start.line)) { delete kept.statementMap[id]; delete kept.s[id] }
-  for (const id of Object.keys(kept.fnMap)) if (excluded.has(kept.fnMap[id]!.decl.start.line)) { delete kept.fnMap[id]; delete kept.f[id] }
-  for (const id of Object.keys(kept.branchMap)) if (excluded.has(kept.branchMap[id]!.loc.start.line)) { delete kept.branchMap[id]; delete kept.b[id] }
-  return compact(kept)
-}
-
 function uncoveredLines(json: FileCoverageJSON): Array<number> {
   const lines = new Map<number, number>()
   for (const [id, loc] of Object.entries(json.statementMap)) {
@@ -154,7 +108,7 @@ async function main() {
   const vitestFinal = "coverage/bench/coverage-final.json"
   if (!existsSync(vitestFinal)) throw new Error("coverage/bench/coverage-final.json missing: run vitest coverage first")
   const base = libCoverage.createCoverageMap(JSON.parse(readFileSync(vitestFinal, "utf8")))
-  const evidences: ReadonlyArray<CoverageMap> = [await workerdEvidence(), await chromiumEvidence()]
+  const evidences: ReadonlyArray<Pick<CoverageMap, "files" | "toJSON">> = [await workerdEvidence(workerdDir, appRoot), await chromiumEvidence()]
 
   const vitest: Record<string, FileCoverageJSON> = {}
   for (const file of base.files()) {
@@ -166,10 +120,8 @@ async function main() {
   const failures: Array<string> = []
   const rows: Array<{ file: string; lines: string; statements: string; functions: string; branches: string; uncovered: string }> = []
   const finalMap: Record<string, FileCoverageJSON> = {}
-  for (const [file, original] of Object.entries(combined).sort()) {
+  for (const [file, json] of Object.entries(combined).sort()) {
     const relative = file.slice(appRoot.length + 1)
-    const exclusion = exclusions.find((candidate) => candidate.file === relative)
-    const json = exclusion === undefined ? original : excludeLines(original, exclusion.lines)
     finalMap[file] = json
     const { total, covered } = metrics(json)
     const percent = (part: number, whole: number) => whole === 0 ? "100" : String(Math.round((part / whole) * 10000) / 100).replace(/\.0+$/, "")

@@ -1,7 +1,11 @@
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
 import { serveAuthBroker } from "../test/support/workerd.vibe"
 NodeRuntime.runMain(scoped(effect {
-  const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
-  try Console.log("AUTH_BROKER_READY " + host.origin)
+  const origins: Record<string, string> = {}
+  for (const project of ["dark", "light", "phone"]) {
+    const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
+    origins[project] = host.origin
+  }
+  try Console.log("AUTH_BROKER_READY " + JSON.stringify(origins))
   try Effect.never
 }))

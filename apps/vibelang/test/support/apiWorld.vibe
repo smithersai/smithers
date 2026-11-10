@@ -1,0 +1,162 @@
+// The API Worker's object bodies (worker/apiObjects.vibe) wired to each other in one process over in-memory SQLite object
+// storage, shared by the API objects fuzz target and its unit tests. A namespace may be unbound or unreachable: those are
+// the injected faults. GitHub refuses (history), has nothing (public wiki, issues) or serves the wiki's pages (the accounts
+// object's own client); the model is unusable, failing, or a local scripted server.
+import { RuntimeContext } from "alchemy/RuntimeContext"
+import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { GitHub } from "@smthrs/integrations"
+import { accountsObject, actionIndexObject, apiFetch, budgetObject, conversationObject, historyObject } from "../../worker/apiObjects.vibe"
+import { signedOutGateway } from "../../worker/SandboxHttp.vibe"
+import { githubWikiHost, WikiAuthority } from "../../worker/Wiki.vibe"
+import { githubHost, IssueAuthority } from "../../worker/Issues.vibe"
+import { WikiHost } from "../../src/core/wikiFlows.vibe"
+import { IssueHost } from "../../src/core/issueFlows.vibe"
+import { refuseBinding } from "./refuseBinding.ts"
+import { cell, scriptedModel } from "../../fuzz/model-server.vibe"
+
+export const KINDS = ["conversation", "accounts", "budget", "history", "actions"] as const
+export type Kind = typeof KINDS[number]
+/** `-later` modes answer the first calls and fail every later one: a binding lost while an alarm runs. */
+export type Mode = "ok" | "unbound" | "faulty" | "unbound-later" | "faulty-later"
+export type Api = Record<string, unknown>
+
+export const ORIGIN = "https://fuzz.invalid"
+export const runtime = {} as never
+const refusingGitHub = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "GitHub is not part of this target" }) })))
+/** GitHub answering 404 to everything: a missing page or issue list, which the wiki and issue flows do not retry. */
+const absentGitHub = HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({}, { status: 404 })))))
+/** GitHub serving every wiki page as a short file, and nothing else: the accounts object's client for agent drafts. */
+const WIKI_FILE = "/repos/smithersai/smithers/contents/apps/vibelang/wiki/"
+const wikiGitHub = HttpClient.make((request) => {
+  const url = new URL(request.url)
+  const found = url.pathname.startsWith(WIKI_FILE) && url.pathname.endsWith(".md")
+  const file = { type: "file", encoding: "base64", content: "IyBQYWdlCgpUZXh0Lgo=", sha: "fuzz-sha" }
+  return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(found ? file : {}, { status: found ? 200 : 404 }))))
+})
+/** The wiki draft agent's answer: the page it was asked about, edited. Its system prompt names it. */
+const DRAFT = { when: "Draft one edit to the given project wiki page", answer: { kind: "stream", pieces: [cell(JSON.stringify({ page: "rulings", text: "# Page\n\nShorter.\n" }))], prompt: 2, completion: 3 } } as const
+
+/** An ask the draft agent answers with a broken stream: the accounts object refuses that draft as `draft`. */
+export const UNDRAFTABLE = "Fuzz: no draft."
+const UNDRAFTED = { when: UNDRAFTABLE, answer: { kind: "garbage" } } as const
+
+/** Sign-in configured: GitHub's exchange succeeds for person 1, the project's first maintainer. */
+export const setup = {
+  origin: ORIGIN,
+  initialMaintainer: "1",
+  clientId: "fixture-client-id",
+  signingSecret: Redacted.make("signing-secret-for-the-fuzz-target-32"),
+  encryptionKey: Redacted.make("ZnV6ei1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcy0wMDA="),
+  github: {
+    authorizeUrl: ({ state }: { readonly state: string }) => `https://github.invalid/authorize?state=${state}`,
+    exchange: () => succeed({ accessToken: Redacted.make("token"), expiresAt: null, refreshToken: null }),
+    refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "unavailable" })),
+    user: () => succeed({ id: 1, login: "one" }),
+    permission: () => succeed("read" as const),
+    revoke: () => Effect.void,
+  },
+} as never
+
+/** The agent's one cell calling `calls`, each call's failure kept so the next still runs. */
+const cellOf = (calls: ReadonlyArray<readonly [string, string, unknown]>) => "```cell\nvar out = {};\n" + calls
+  .map(([key, tool, input]) => `try { out.${key} = await ctx.call(${JSON.stringify(tool)}, ${JSON.stringify(input)}); } catch (error) { out.${key} = String(error); }`).join("\n") +
+  "\nctx.done(JSON.stringify(out));\n```"
+const DRAFT_CALL = ["draft", "vibelang/wiki/draft", { page: "rulings", ask: "Shorter." }] as const
+/** Every tool the alarm binds. */
+const TOOL_CELL = cellOf([
+  DRAFT_CALL,
+  ["undrafted", "vibelang/wiki/draft", { page: "rulings", ask: UNDRAFTABLE }],
+  ["show", "vibelang/history/show", { what: "outline" }],
+  ["note", "vibelang/history/Note", { id: "m1", section: "tried", text: "Tried it." }],
+  ["listed", "vibelang/actions/List", {}],
+  ["started", "vibelang/actions/Start", { flow: "vibelang/Post", input: { text: "Hello" } }],
+])
+/** The wiki draft alone: its refusal is the reply. */
+const DRAFT_CELL = cellOf([DRAFT_CALL])
+
+/**
+ * The public wiki and issue routes build their GitHub hosts over `fetch`; here the same hosts run over `absentGitHub`,
+ * so no request leaves the process. A refusing GitHub is retried until the read's 5-second deadline, or for the writes'
+ * 120-second window (0015), longer than a target's step. An agent's draft is not wrapped: it runs over the accounts
+ * object's own client, `wikiGitHub`, with the person the alarm names.
+ */
+export effect function withAbsentGitHub<A, E, R>(program: A!E!R) {
+  const anonymous = { current: () => Effect.succeed(undefined) } as never
+  const wiki = try githubWikiHost().pipe(Effect.provideService(WikiAuthority, anonymous), Effect.provideService(HttpClient.HttpClient, absentGitHub))
+  const issues = try githubHost().pipe(Effect.provideService(IssueAuthority, anonymous), Effect.provideService(HttpClient.HttpClient, absentGitHub))
+  return try program.pipe(Effect.provideService(WikiHost, wiki), Effect.provideService(IssueHost, issues))
+}
+
+/** The model: unset, failing, calling every tool, or drafting the wiki only. */
+export type Agent = "unusable" | "failing" | "tools" | "draft"
+
+/** Every object of this execution, its storage kept across incarnations, and the faults each namespace answers with. */
+export effect function world(signIn: boolean, limit: number, agent: Agent) {
+  const stores = new Map<string, ReturnType<typeof TestNodeRuntime.sqliteObjectStorage>>()
+  try Effect.addFinalizer(() => Effect.sync(() => { for (const store of stores.values()) store.close() }))
+  const model = agent === "unusable" ? { model: undefined, unusable: "unset" }
+    : { model: (try scriptedModel([agent === "failing" ? { kind: "status", status: 400, code: "invalid_request" } : { kind: "stream", pieces: [agent === "draft" ? DRAFT_CELL : TOOL_CELL], prompt: 3, completion: 4 }], agent === "failing" ? [] : [UNDRAFTED, DRAFT])).model, unusable: "" }
+  const faults: Record<Kind, Mode> = { conversation: "ok", accounts: "ok", budget: "ok", history: "ok", actions: "ok" }
+  const calls: Record<Kind, { bindings: number; methods: number }> = { conversation: { bindings: 0, methods: 0 }, accounts: { bindings: 0, methods: 0 }, budget: { bindings: 0, methods: 0 }, history: { bindings: 0, methods: 0 }, actions: { bindings: 0, methods: 0 } }
+  const after: Record<Kind, number> = { conversation: 1, accounts: 1, budget: 1, history: 1, actions: 1 }
+  const objects = new Map<string, Api>()
+  const storageOf = effect (kind: Kind, name: string) => {
+    const key = `${kind}/${name}`
+    if (!stores.has(key)) stores.set(key, try Effect.orDie(Effect.try(() => TestNodeRuntime.sqliteObjectStorage())))
+    return stores.get(key)!
+  }
+  // An `orphan` object has no default entrypoint: a deployment that forgot to export it.
+  const stateOf = effect (kind: Kind, name: string) => {
+    const storage = try storageOf(kind, name)
+    return { id: { toString: () => `${kind}/${name}` }, raw: { storage }, exports: name.startsWith("orphan") ? {} : { default: (options: unknown) => succeed(options) } } as never
+  }
+  const builders: Record<Kind, (name: string) => Api!!Scope.Scope> = {
+    budget: effect (name) => { return (try budgetObject(try stateOf("budget", name), limit)) as never },
+    history: effect (name) => { return (try historyObject(try stateOf("history", name), undefined, refusingGitHub)) as never },
+    accounts: effect (name) => { return (try accountsObject(try stateOf("accounts", name), namespaces.budget, model as never, signIn ? setup : undefined, wikiGitHub)) as never },
+    conversation: effect (name) => { return (try conversationObject(try stateOf("conversation", name), namespaces.budget, namespaces.history, namespaces.accounts, model as never, clientOf as never).pipe(Effect.provideService(RuntimeContext, runtime))) as never },
+    actions: effect (name) => { return (try actionIndexObject(try stateOf("actions", name), namespaces.accounts, namespaces.conversation).pipe(Effect.provideService(RuntimeContext, runtime))) as never },
+  }
+  const object = effect (kind: Kind, name: string) => {
+    const key = `${kind}/${name}`
+    const known = objects.get(key)
+    if (known !== undefined) return known
+    const made = try builders[kind](name)
+    objects.set(key, made)
+    return made
+  }
+  /** Alchemy's stub: a method call is an Effect; `fetch` takes the forwarded request. */
+  const namespaceOf = (kind: Kind) => ({
+    getByName: (name: string) => {
+      calls[kind].bindings++
+      if (faults[kind] === "unbound" || (faults[kind] === "unbound-later" && calls[kind].bindings > after[kind])) refuseBinding()
+      return new Proxy({}, {
+        get: (_target, method) => typeof method !== "string" || method === "then" ? undefined : (...args: Array<unknown>) => {
+          calls[kind].methods++
+          if (faults[kind] === "faulty" || (faults[kind] === "faulty-later" && calls[kind].methods > after[kind])) return Effect.fail(new Error("unreachable"))
+          const call = Effect.flatMap(object(kind, name), (api) => method === "fetch"
+            ? Effect.provideService(api.fetch as Effect.Effect<unknown, unknown, HttpServerRequest.HttpServerRequest>, HttpServerRequest.HttpServerRequest, args[0] as HttpServerRequest.HttpServerRequest)
+            : (api[method] as (...input: Array<unknown>) => Effect.Effect<unknown>)(...args))
+          return kind === "accounts" && method !== "draftWiki" ? withAbsentGitHub(call) : call
+        },
+      })
+    },
+  }) as never
+  const namespaces = { conversation: namespaceOf("conversation"), accounts: namespaceOf("accounts"), budget: namespaceOf("budget"), history: namespaceOf("history"), actions: namespaceOf("actions") }
+  const fetchOf = (request: HttpServerRequest.HttpServerRequest, props: Record<string, unknown>) =>
+    apiFetch({ conversations: namespaces.conversation, accounts: namespaces.accounts, actions: namespaces.actions, histories: namespaces.history, budgets: namespaces.budget }, signedOutGateway as never, "fuzz-commit", succeed(props))
+      .pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request), Effect.provideService(RuntimeContext, runtime))
+  /** The entrypoint an alarm calls back into, as `Cloudflare.toHttpClient` adapts it. */
+  const clientOf = (self: { readonly props: Record<string, unknown> }) => HttpClient.make((request) => Effect.orDie(effect {
+    const web = try HttpClientRequest.toWeb(request)
+    const response = try fetchOf(HttpServerRequest.fromWeb(web), self.props)
+    return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(response))
+  }))
+  const fault = (kind: Kind, mode: Mode, answered: number) => {
+    faults[kind] = mode
+    after[kind] = Math.max(1, answered)
+    calls[kind] = { bindings: 0, methods: 0 }
+  }
+  return { faults, fault, objects, object, namespaces, fetchOf, storageOf, restart: () => objects.clear() }
+}

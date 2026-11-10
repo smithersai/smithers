@@ -105,10 +105,12 @@ export const openBrokerSqlite = async () => {
   const { DatabaseSync } = await import("node:sqlite")
   const database = new DatabaseSync(":memory:")
   return {
-    sql: { exec: (query: string, ...bindings: Array<string | number>) => {
-      const rows = database.prepare(query).all(...bindings)
-      return { toArray: () => rows }
-    } },
-    close: () => database.close(),
+    sql: {
+      exec: (query: string, ...bindings: Array<string | number>) => {
+        const rows = database.prepare(query).all(...bindings)
+        return { toArray: () => rows }
+      }
+    },
+    close: () => database.close()
   }
 }

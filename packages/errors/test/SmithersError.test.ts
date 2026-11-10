@@ -12,9 +12,25 @@ import {
   type SmithersErrorDefinition,
   smithersErrorDefinitions
 } from "../src/ErrorCode.ts"
-import { hasSmithersErrorShape, isSmithersError, SmithersError } from "../src/SmithersError.vibe"
+import {
+  hasSmithersErrorShape,
+  isSmithersError,
+  SmithersError,
+  type SmithersErrorOptions
+} from "../src/SmithersError.vibe"
 
 describe("SmithersError", () => {
+  it("keeps construction options readonly for consumers", () => {
+    const pin = (options: SmithersErrorOptions): void => {
+      // @ts-expect-error Construction options retain the readonly cause contract.
+      options.cause = undefined
+      // @ts-expect-error Construction options retain the readonly documentation switch.
+      options.includeDocsUrl = false
+    }
+
+    expect(typeof pin).toBe("function")
+  })
+
   it("keeps its public fields readonly", () => {
     const pin = (error: SmithersError): void => {
       // @ts-expect-error SmithersError.details must remain readonly.

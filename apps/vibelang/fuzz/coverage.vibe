@@ -1,4 +1,5 @@
-// The fuzz suite's own reports only: Vitest V8 and Chromium V8, with source maps checked against this checkout.
+// The fuzz suite's own reports only: Vitest V8, workerd's Istanbul counters and Chromium V8, with source maps checked
+// against this checkout.
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 // @ts-expect-error The pinned Istanbul tool ships no declarations; its used interface is defined below.
@@ -8,6 +9,7 @@ import reportApi from "istanbul-lib-report"
 // @ts-expect-error The pinned Istanbul tool ships no declarations.
 import untypedReports from "istanbul-reports"
 import { mergeByPosition, type FileCoverageJSON } from "../test/support/coverageUnion.ts"
+import { workerdEvidence } from "../test/support/workerdCoverage.ts"
 
 interface Count { readonly total: number; readonly covered: number; readonly pct: number | "Unknown" }
 interface CoverageMap {
@@ -31,9 +33,13 @@ export effect function main() {
     const source = try fs.readFileString(path.join(root, directory, "coverage-final.json"))
     inputs.push(try Effect.try(() => JSON.parse(source) as Record<string, FileCoverageJSON>))
   }
-  // Node's statement structure is the gate; Chromium credits it only at identical source ranges (0015).
+  // Each fuzz workerd isolate's Istanbul counters, remapped to the .vibe sources (test/support/workerd.vibe).
+  const workerd = try tryPromise(() => workerdEvidence(path.join(root, "coverage/fuzz-unit/workerd-raw"), root.replace(/\/$/, "")))
+  inputs.push(try Effect.try(() => workerd.toJSON() as unknown as Record<string, FileCoverageJSON>))
+  // Node's statement structure is the gate; workerd's counters and Chromium credit it only at identical source starts (0015).
   const coverage = try Effect.try(() => createCoverageMap(mergeByPosition(inputs[0]!, inputs.slice(1))))
-  try Effect.try(() => coverage.filter((file) => file.startsWith(root) && /\/(?:src|worker)\/.*\.vibe$/.test(file) && file !== path.join(root, "worker/Api.vibe")))
+  // The unit gate's denominator: every source under src/, worker/, scripts/ and infra/, none excluded (VL-14).
+  try Effect.try(() => coverage.filter((file) => file.startsWith(root) && /\/(?:src|worker|scripts|infra)\/.*\.vibe$/.test(file)))
   const directory = path.join(root, "coverage/fuzz")
   try fs.makeDirectory(directory, { recursive: true })
   try fs.writeFileString(path.join(directory, "coverage-final.json"), JSON.stringify(coverage))

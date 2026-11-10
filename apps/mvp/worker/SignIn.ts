@@ -1,4 +1,4 @@
-import { Core } from "@smthrs/integrations"
+import { Core, GitHub } from "@smthrs/integrations"
 import { Cause, Clock, Config, Context, Duration, Effect, Layer, Metric, Option, Redacted, Schema } from "effect"
 import { type HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
@@ -994,7 +994,7 @@ export const make = <E, R>(
             if (!renewed && Option.isSome(candidate)) yield* SessionStore.revoke({ id: candidate.value.id }, "sign_out")
             const live = yield* SessionStore.findLive(SessionKeys.digest(token))
             if (Option.isNone(live)) return yield* new CallbackFailed({ reason: "expired", returnTo })
-            return { personId, role: effectiveRole, deadline: live.value.deadline, cookieKey: live.value.cookieKey, token, pending, renewed }
+            return { personId, sessionId, role: effectiveRole, deadline: live.value.deadline, cookieKey: live.value.cookieKey, token, pending, renewed }
           })).pipe(
             Effect.provide(database),
             Effect.mapError((error) => new CallbackFailed({ reason: error instanceof SessionStore.IssuerUnconfigured ? "issuer_unconfigured" : "database", returnTo, errorCode: codeOf(error) })),
@@ -1003,6 +1003,16 @@ export const make = <E, R>(
           // Commit the cleanup request before admitting its flow. A refused start leaves it for the alarm's sweeper.
           yield* Effect.forEach(signedIn.pending, ReplacedTokens.start, { discard: true })
           yield* recordReauth(signedIn.renewed ? "renewed_in_place" : "new_row", signedIn.renewed ? "eligible" : "ineligible")
+          // Whether GitHub showed a page, after one of our revocations or not (decision 0165). It never fails sign-in.
+          yield* SessionStore.tokenHistory(signedIn.personId, signedIn.sessionId).pipe(
+            Effect.provide(database),
+            Effect.flatMap((history) => GitHub.Auth.Consent.observe({
+              page: GitHub.Auth.Consent.pageOf(request.headers.referer, GitHub.Auth.Consent.githubOrigin(github)),
+              ...history,
+              path: "sign_in",
+            })),
+            Effect.catch((error) => Effect.logWarning("auth.github.consent").pipe(Effect.annotateLogs({ outcome: "failed", errorCode: codeOf(error) }))),
+          )
           return { ...signedIn, returnTo, cookie: yield* keys.sign("session", signedIn.token, signedIn.cookieKey) }
         }).pipe(Effect.onError(() => Effect.gen(function* () {
           if (retained) return

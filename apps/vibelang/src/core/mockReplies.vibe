@@ -1,5 +1,5 @@
 import type { Outline } from "../history/pages.vibe"
-import { scriptIndex } from "./mockDecision.vibe"
+import { chunksOf, scriptIndex } from "./mockDecision.vibe"
 
 // The mock agent's answers (wiki/decisions/0004-mock-mode.md): a script chosen by the prompt's words, so the app runs
 // with no backend and no model. Every code sample is current VibeLang 0.0.12 syntax, from the language's skill and the
@@ -147,7 +147,5 @@ const CHUNK_SIZE = 24
 
 /** `text` in the pieces the mock agent streams, a few words at a time; joined, they are `text`. */
 export function chunks(text: string): ReadonlyArray<string> {
-  const pieces: Array<string> = []
-  for (let start = 0; start < text.length; start += CHUNK_SIZE) pieces.push(text.slice(start, start + CHUNK_SIZE))
-  return pieces
+  return chunksOf(text, CHUNK_SIZE)
 }

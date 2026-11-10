@@ -3,11 +3,19 @@
 **Status:** in progress, 2026-11-07. **Rulings:** VL-5, VL-7, VL-14, VL-29.
 
 The goal remains 100% lines, branches, functions and statements for each production file, independently per suite.
-That goal has **not been achieved**. No source file is excluded. This decision records landed behavioral tests and
+That goal has **not been achieved**. No source file is excluded, from this gate or, since 2026-11-10, the fuzz gate,
+whose roster had left out `scripts/`, `infra/` and `worker/Api.vibe` ("Measuring every gate" below). This decision records landed behavioral tests and
 the coverage commands. `pnpm e2e` measures and reports Chromium coverage without failing on it. The strict gates
 `pnpm test:coverage` and `pnpm e2e:coverage` are the exclusive PACKAGE targets `coverage` and `browserCoverage`: a
 person asks for them, no wildcard selects them, and they stay red until every file reaches 100%. Exclusive is the
 same pattern as `benchCoverage` and `fuzzCoverage`. Exclusive is not a threshold change: both gates hold 100%.
+
+## Known-red gates stay opt-in (the lead's call, 2026-11-10)
+
+`coverage`, `browserCoverage`, `benchCoverage` and `fuzzCoverage` stay `exclusive: true` while they are red: a
+person runs them by name and a wildcard `smthrs test` skips them. Each joins the default gate in the commit that makes
+it pass, by removing its `exclusive: true` in that commit. Every gate keeps its 100% per-file thresholds meanwhile.
+`workerdCoverage` follows the same rule. The lead decided this for the lane; it does not go to Will.
 
 ## Landed behavior
 
@@ -41,7 +49,8 @@ The compiler/Vite maps preserve `.vibe` names and lines in the unbundled Vitest 
 unvisited Effect return at its original fixture line 4 and a threshold-only child exit 1 despite a passing assertion.
 Emitted CLI/MCP processes retain maps and inline source text. The prototype browser suite uses Playwright's built-in
 `page.coverage` without a new browser dependency, retains raw Chromium evidence, and checks map source content
-against the checkout. Its full-source zero seed retains tree-shaken exports and entirely unvisited files. Vite's
+against the checkout. Its full-source zero seed retains tree-shaken exports and entirely unvisited files, and that
+seed is the denominator: Chromium's evidence credits it by source start (see "Chromium merge" below). Vite's
 generated module/preload helpers and pure re-export facades contain no app source; no production `.vibe` is excluded.
 
 ## Measurement blockers
@@ -51,15 +60,28 @@ generated module/preload helpers and pure re-export facades contain no app sourc
 one conditional return. The unused export stays uncovered. The unbundled compiler map and real V8 execution agree;
 the post-bundle statement granularity changes in `ast-v8-to-istanbul`. Branch arms retain `[1, 0]`.
 `~/vl/vibelang-bugs/coverage-source-ranges/` on nyc-01 contains the minimal fixture, reproduction, both real executions
-and ranges, maps and observed statement positions. The Chromium regression remains an expected failure in the
-prototype; an unexpected pass will require removing that marker after the upstream fix. No build/compiler behavior
+and ranges, maps and observed statement positions. The e2e build is now unminified, so the Chromium control
+observes line 4 uncovered and its expected-failure marker is gone; the minified case stays a regression in
+`test/browserCoverageMerge.test.vibe`, which still sees line 4 credited. No build/compiler behavior
 was changed as a workaround. Will's decision is required before the upstream change; a fix must have a regression
 and land through VibeLang's merge queue.
 
-Precise coverage could not be enabled on the installed workerd **1.20261019.1** inspector, directly or through Miniflare: Runtime enables and a real fetch answers 200, but
-Profiler.startPreciseCoverage reports `Profiler is not enabled`; takePreciseCoverage reports no started collection.
-`pnpm test:workerd --coverage` in the prototype measures Node clients and surface subprocesses only. Worker execution
-remains uncredited. Two real-model tests remain opt-in without an authorized configured model credential.
+V8 precise coverage cannot be enabled on the installed workerd **1.20261019.1** inspector, directly or through
+Miniflare: workerd's own CDP dispatch consumes `Profiler.enable` to create its CPU profiler and never forwards it to
+V8's Profiler agent (`src/workerd/io/worker.c++`, case `PROFILER_ENABLE`, tag `v1.20261019.1`), so
+`Profiler.startPreciseCoverage` reports `Profiler is not enabled`. That is workerd's design, not this app's defect,
+and it no longer blocks any gate: `pnpm test:coverage`, `pnpm test:workerd:coverage` and `pnpm fuzz:coverage` measure
+inside workerd with Istanbul counters ("Coverage inside workerd" and "Unit and fuzz gates inside workerd" below). No
+gate waits for workerd's precise coverage or for VibeLang 0.0.13. `pnpm test:workerd --coverage` enables the counters
+and merged gate automatically; `pnpm test:workerd:coverage` is its alias. A bare `vitest run --coverage` measures Node only. Two real-model tests remain opt-in without an authorized
+configured model credential.
+
+A separate Node subprocess measurement gap remains: `scripts/fuzz-preflight.vibe` executes in its regression test
+but gets zero hits when loaded with `vibelang/register`. The reduced Effect + FileSystem script at
+`~/vl/vibelang-bugs/coverage-register-subprocess/` prints its expected output and passes the real-child assertion;
+direct loading reports 0/5 statements and 0/1 functions, while emitted JavaScript reports 5/5 and 1/1. This is a
+register-loader/Vitest attribution boundary; its exact root cause is not assigned. No app workaround or compiler
+change was applied. It remains counted as uncovered and does not affect per-module workerd counters.
 
 VibeLang 0.0.12 also loses service-Shape methods on object spread (TS2741, compiler exit 2). Minimal reproduction and
 the blocked reply-recovery decorator test are under `~/vl/vibelang-bugs/service-shape-spread/`. No workaround or
@@ -598,10 +620,10 @@ The unit gate still fails below 100%. No file below is excluded and no threshold
 | Path | Needs | Test that covers it once available |
 | --- | --- | --- |
 | `worker/SandboxMachine.vibe`, Container paths of `worker/SandboxAccounts.vibe` | A real Container binding. Live sandboxes wait on Will's yes/no (Containers spend). No scripted Container namespace. | `test/sandbox.container.workerd.test.vibe`, opt-in on `VIBELANG_SANDBOX_TEST_URL` and `VIBELANG_SANDBOX_TEST_COOKIE`, skipped with that reason |
-| `worker/Api.vibe` | Workerd isolate coverage. Its Durable Object wiring runs only in workerd, and a Node run would need scripted namespaces. | `pnpm test:workerd`, once VibeLang 0.0.13 is on npm with the source-map fix (`f5d37aa764af`) and workerd reports precise coverage |
+| `worker/Api.vibe` | Closed 2026-11-10 (vl-coverage-workerd): its wiring runs only in workerd, and the suite now loads it there as Alchemy builds and bridges it (`test/workerd/api.vibe`), measured in the unit and fuzz gates. | `test/alchemyApi.workerd.test.vibe`; fuzz target `workerd/alchemy-api-requests` |
 | `worker/SpecificationReviewers.vibe` | Stays unbound by decision 0027. | None until it is bound |
 | `worker/VipDraft.vibe`, model paths of `worker/Reply.vibe` | A model credential reference in the environment. | `test/live.workerd.test.vibe` covers Reply, opt-in on `CEREBRAS_API_KEY`. `test/vipDraft.test.vibe` covers `VipDraft`, opt-in on the same key |
-| GitHub read, write, VIP proposal and label paths of `worker/Issues.vibe` (`githubHost`) | Needs the GitHub test token: a real GitHub token for the test repository. No fake GitHub (`test/issuesGithub.coverage.test.vibe` was one and is deleted). | `test/issues.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
+| GitHub read, write, VIP proposal and label paths of `worker/Issues.vibe` (`githubHost`) | Real GitHub needs the GitHub test token for the test repository. Since 2026-11-10 the delegated tests run these paths against the in-memory GitHub `fuzz/issues-node-fake.vibe` (see "`worker/Issues.vibe`, `worker/Wiki.vibe`" below); whether such a protocol fake may stand in on a happy path awaits Will's ruling (vl-review-tests finding 3). | `test/issues.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
 | GitHub write paths of `worker/Wiki.vibe` | A real GitHub token for the test repository. | `test/wikiEdit.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
 
 ## Lane vl-coverage2 (2026-11-09)
@@ -664,10 +686,130 @@ parked across the deploy) is untested.
 (`worker/ActionDirectory.vibe`) is `vibelang/actions/index` then `vibelang/actions/start`, and `vibelang/actions/Cancel`
 is `vibelang/actions/cancel`; the steps act on the request admitted at the door, so a replay's JSON conflict check
 compares identical bytes. `vibelang/Session` (`src/surfaces/sessionFlow.vibe`) branches on its payload to
-`vibelang/session/login`, `…/poll` or `…/logout`. The seven history flows (`src/history/flows.vibe`, `tools.vibe`) still
-have placeholder bodies: Plan, Start, Note and show also run on the action host (`src/actions/execution.vibe`,
-`worker/HistoryActions.vibe`), which calls the history through `HistoryReader` and has no `Caller` principal to journal
-the history's `authorize` step. Closing them needs that principal on the action host.
+`vibelang/session/login`, `…/poll` or `…/logout`. 
+
+**History flow bodies and the action host's caller (2026-11-10).** The seven history flows (`src/history/flows.vibe`,
+`tools.vibe`) are now their steps too. Every write is `vibelang/history/<action>/authorize`, then, through a
+`Node.branch` on the proved `canRecord`, `…/record`; a forbidden run answers `forbidden` with no other step. Plan
+branches on `how` first, so an append journals `append/…` and an insert or amend `retell/…`, the names it journaled
+before. Fold is `fold/authorize`, `fold/main`, `fold/read`, then `fold/commits`, which keeps one inline
+`fold/<sha>` step per commit. Bootstrap is `bootstrap/load`; show is `show/authorize` then `show/read`. The action host
+(`src/actions/execution.vibe`) implements the same steps: its authorize step reads `Caller`, as the History object's
+does, and its record step asks the history through `HistoryReader`, which checks again; the old `…/call` step is gone.
+The live host's `Caller` is `ActionRuns.callerOf`: the owner, name and actor the door stored from 0019's session, at
+the owner's current grant each time a step asks; the payload never names it. Mock actions use the world's current
+person. `test/historyCaller.coverage.test.vibe` runs Plan, Start, Note and show on the live host and pins their steps.
+Its second case failed on main before this change (`refusal: "unknown"`: a contributor's insert reached the history
+as its maintainer); it now stops at `retell/authorize` with `forbidden` and writes nothing. In the mock, the history
+runs the same flow in memory inside the record step, so a mock action's trace shows the history's own authorize and
+record after the host's. `Node.bindPlanned`'s callback needs `Node.capture`, or the engine refuses the graph as
+process-local. Resuming a history run journaled before this change is untested.
+
+**`worker/accountObject.vibe` (2026-11-10).** 10.41% of lines → 100% of lines, branches, functions and statements in
+Node, with no workerd: `test/accountObject.coverage.test.vibe` wires the account object and its gateway as live over
+SQLite storage and the machine object over local processes (`fuzz/machine-box.ts`), and injects a throwing namespace
+binding and a failing container. It covers the owner's start, command, read, alarm and stop; the first owner keeping
+the account; signed-out, policy-denied and viewer refusals at the gateway and at the object; unavailable bindings and
+containers; and an unused account's alarm. No bug found.
+
+**`worker/apiObjects.vibe` (2026-11-10).** 9/193 lines, 0/59 branches, 7/86 functions and 9/225 statements → 100%
+of all four in Node, with no workerd. `test/apiObjects.coverage.test.vibe` (17 cases) drives every API route through
+`apiFetch` signed in, signed out and from another origin; the conversation and action-run alarms with the scripted
+model running the agent's tools; the sandbox gateway's identity; and each namespace unbound or unreachable, including
+the accounts object lost mid-run. The in-process world moved out of `fuzz/api-objects.node.fuzz.vibe` into
+`test/support/apiWorld.vibe`, which both now import, and gained a draft-only agent.
+
+- **The unit suite could not run the agent's cells.** `vite.config.ts` did not resolve `#quickjs.wasm`, so every
+  agent cell in a unit test failed with `flows/harness/SandboxError` and the reply read "The agent failed". The fuzz
+  config's resolver moved to `quickjs.vite.ts`, which both configs use.
+- **Bug fixed: an agent-started run was listed twice.** A run the agent starts inside another run is announced in that
+  run's conversation, and `ActionDirectory.list` flattened every indexed run's conversation, so `/api/actions/runs`,
+  the CLI and the agent's `vibelang/actions/List` returned it twice (the web pane merges by id). Each indexed run is now
+  listed once, from its own conversation. Red first: the list held the agent's run id twice.
+- **Bug fixed: account routes answered 500 for an unreachable accounts object.** `apiFetch` died on `Unreachable` for
+  `/api/auth/*` and the other account routes; they now answer 503 `{ "error": "accounts" }`, as every other object's
+  routes do. Red first: the request failed with the `Unreachable` defect.
+- **Fuzz target fix.** Its requests carried no `content-length`, so every post and wiki open answered 413 and the walk
+  never accepted a post. The unit tests run in Node (`@vitest-environment node`), because happy-dom's `Headers` drops
+  `set-cookie` and no session could be signed in.
+- **Found, kept:** losing the accounts object while the agent runs fails its whole reply ("The agent failed. Try
+  again."), not just the tool: the history tools' role lookup (`identity.role`, line 239) dies. The person can retry.
+
+**`worker/SpecificationReviewers.vibe` (2026-11-10).** 33/51 statements → 50/51, all branches, 15/16 functions.
+`test/specificationReviewers.coverage.test.vibe` (7 cases) runs each of the four reviewers inside one durable
+execution on the memory engine against the scripted model: no record, a record whose credential is missing, a record
+that is not JSON (startup fails), an accepted verdict at the asked revision charged once, a rejected verdict or failed
+model answered `review` and still charged, a refused or unreachable budget asking no model, and a charge the ledger
+refuses once being retried. The execution helper and budget ledger moved from `fuzz/model-writers.node.fuzz.vibe` to
+`test/support/durableWriters.vibe`. Deleted, not covered: the `ConfigurationError` mapping of `Budget.make({})` (a
+constant valid policy) and the `review` mapping of the verdict decode (the agent already refused any output that is
+not a `Verdict`; the decode now only types it, with `orDie`). Left uncovered, not excluded: line 48, `usageOf` failing
+with `AccountingUnavailable`. That needs the journal unreadable while `review` reads its own run's usage, and no
+service a test can replace reaches that read without also replacing the agent's journal.
+
+**`worker/VipDraft.vibe`, `worker/WikiDraft.vibe` (2026-11-10).** `test/draftWriters.coverage.test.vibe` runs both
+writers with their real agents against the scripted model: a draft answered and charged once, a non-draft, another
+page, blank text or a failed model answered `draft`, a refused day answered `budget`, a charge refused once and
+retried, and each agent seam asked directly without a model answering `no-model`. Deleted, as in the reviewers: the
+`Budget.make({})` mapping and the decode's `draft` mapping (the agent already refused any output outside the schema).
+Left uncovered, not excluded, for the reviewers' reason: `usageOf` failing (`VipDraft.vibe:55`, `WikiDraft.vibe:57`).
+
+**`worker/Issues.vibe`, `worker/Wiki.vibe` (2026-11-10).** Measured over every unit test that imports either file:
+Issues 60% lines, 53.91% branches, 54.54% functions, 56.67% statements → 100% of all four; Wiki 69.94%, 75%, 60.37%,
+65.43% → 100% of all four. `test/issuesDelegated.coverage.test.vibe` (18 cases) and
+`test/wikiDelegated.coverage.test.vibe` (12 cases) run the GitHub hosts as the site runs them after decision 0165:
+every read and write goes through smithers.sh's real per-person connection host (`fuzz/delegated.vibe`) to the
+in-memory GitHub (`fuzz/issues-node-fake.vibe`), on the durable engine over SQLite. A misbehaving GitHub is a wrapped
+client service and a failing journal is `fuzz/faulty-store.ts`; nothing intercepts a request. The cases cover reads
+(tasks, VIP markers that fail each check, timelines, deleted accounts, short pages, undecodable issues), every write
+and its refusals, a role or credential lost between steps, an ended delegation falling back to public reads, kept wiki
+drafts, retries and resumes, and the HTTP routes' store failures.
+
+- **Bug fixed: a VIP proposal or wiki change could never be retried after its commit.** smithers.sh binds each write
+  key to its operation's digest. On a retry, `branch.create`'s lookup adopts the branch, whose head is now the change's
+  own commit, and the site built `commit.create` with `expectedHeadOid: branch.sha`, a different operation under the
+  same key. smithers.sh refused it (`key_conflict`) and the person saw `invalid`. A flow's own retry of an
+  `unavailable` answer (GitHub not yet showing the review) or an explicit Retry both hit it. The commit now names the
+  commit the branch was cut from (`head.value.sha`), the same on every run. Red first: the one-time-lag cases in both
+  tests answered `invalid`.
+- **Deleted, not covered.** `engine.retryFrom === undefined` (EngineStore always supplies it); the inner
+  `mapError(() => unavailable)` on journal inspection and `retryFrom`, which repeated the execution's outer mapping;
+  the resume's poll mapping a store failure to `missing` (poll answers None for an unknown run, so its failures are
+  the store's, now `unavailable` like every other store failure there); the resume's payload decode refusal and its
+  op, key and flow recheck (the run id names the op and the key's digest, and only `executeIssues` starts a run
+  there); and the receipt's `approvedAt ?? ""` (`approveVip` writes it with `approvedBy`). That deletion was wrong: a stored
+  item may hold `approvedBy` alone, and `approvedAt!` then stored `approvedAt: undefined`, which the next read refused
+  as `protocol`. The mapping now keeps `approvedAt` only when it was stored (vl-test-quality, 2026-11-10). `72225ac2` deleted the
+  `match.index` default, the review rechecks `verifiedVip` already made and Wiki's final `invalid` branch.
+- **Found, kept:** a journal that cannot record a step's attempt makes the engine interrupt the run
+  (`EngineStore.actionExecute`), so the request ends interrupted rather than answering `unavailable`. That is
+  engine-store's lease handling, outside this app; the wiki test pins it. `test/issues.github.test.vibe`, the opt-in
+  real-GitHub test, still authenticates with a token on the principal and cannot write since decision 0165; it is
+  skipped without `GITHUB_TEST_TOKEN`.
+
+**`worker/Reply.vibe`, `worker/ActionRuns.vibe` (2026-11-10).** Whole suite at `5540b9b2` → over every unit test that
+imports each file. Reply: statements 144/157 → 157/157, branches 63/81 → 80/81, functions 18/18, lines → 100%.
+ActionRuns: statements 154/164 → 161/164, branches 153/175 → 168/175, functions 34/36 → 36/36.
+`test/replyAgent.coverage.test.vibe` (6 cases) runs the Reply flow on the memory engine with smithers.sh's agent
+answering through the scripted model (`fuzz/model-server.vibe`): an answer that starts over is shown again from its new
+start once (`ReplyRestarted`), an empty answer, a provider out of credit, usage the meter cannot count, a start that
+waits behind another reply, an agent run interrupted inside a history tool (the reply's execution ends interrupted and
+the reply is neither finished nor failed, so the engine resumes it), and an action asking for a seat the agent doesn't
+declare. `test/actionRunsHeld.coverage.test.vibe` (7 cases) ports `fuzz/action-runs.node.fuzz.vibe`'s held replies:
+a conversation log that dies on the reply's first settle write (the engine fails the open reply; the run ends failed),
+a reply cancelled at a latch in its admission, a reply the agent answers (its agent-started run passes), an anonymous
+tour admitted at its alarm, `callerOf` with no owner or name, a history host that cannot start, and a nameless post.
+
+Left uncovered, not excluded:
+
+| Line | Why no unit test reaches it |
+| --- | --- |
+| `Reply.vibe:359`, `canSettleReply` false | After start, compose and finish in order the proved kernel always allows the settle (`flowDecision.vibe`); the guard keeps the shell on vl-proveall's state machine. |
+| `ActionRuns.vibe:77`, a post or tour operation that fails | Not reached here; the next seam to try is a faulty engine store under `Objects.post`. |
+| `ActionRuns.vibe:125`, a tour that settles failed | A tour stays parked until the person ends it, and ending it settles it passed. |
+| `ActionRuns.vibe:133`, an alarm whose reply host fails | Not reached here; the failing log and the latch both end in a successful alarm. |
+| `ActionRuns.vibe:168`, admission with no stored request | Every alarm that admits reads the request the start stored first. |
+| `ActionRuns.vibe:172-173`, a demotion while the reply is open | Admission runs before the reply's entry exists; it needs a second alarm racing the first. |
 
 **A reply-started tour stayed parked (fixed 2026-11-09).** A reply refused `busy` by a tour accepted after its
 dispatch ran that tour as its own child execution. Ending the tour woke only the tour the answer loop started, so the
@@ -720,3 +862,1035 @@ Left uncovered in these files, each still counted:
 | `src/surfaces/backend.vibe:61` | A request to another origin; no live client sends one. Kept: it keeps the cookie on its origin. |
 | `src/surfaces/backend.vibe:80`, `:83` | A mock session read that fails, and mock accounts missing; `mockFactoryFor` always has accounts (vl-coverage2's file). |
 | `src/web/startup.vibe:72` to `:75` | Reachable, not yet tested: the browser journal of tour and demo conversations, reached by running a tour on the started page. |
+
+## vl-coverage, tenth session (2026-11-10)
+
+Unit suite only, same provider and thresholds; nothing excluded, no threshold changed. Before is the run at `7cd40f0f`
+(1659 passed / 1 failed / 3 skipped; the failure was an MCP initialization deadline under load 102). That run overlapped
+this session's sign-in edit, so `signin.vibe`'s before column merges two versions of the file. After is the run on this
+session's last test commit (1783 passed / 3 skipped). All files, including other lanes' work landed between the runs:
+lines 91.46% → 97.08%, branches 89.46% → 93.23%, functions 90.05% → 96.79%, statements 89.8% → 95.75%; 68 of 156
+files remain below 100%. Counts are covered/total; lines count lines that start a statement.
+
+| File | Lines | Branches | Functions | Statements |
+| --- | --- | --- | --- | --- |
+| `src/surfaces/signin.vibe` | 108/108 → 111/111 | 120/126 → 105/106 | 33/36 → 27/28 | 197/207 → 145/146 |
+| `src/web/startup.vibe` | 48/50 → 50/50 | 18/22 → 22/22 | 11/13 → 13/13 | 56/64 → 64/64 |
+| `src/core/decide.vibe` | 55/55 → 55/55 | 102/107 → 107/107 | 6/6 → 6/6 | 84/87 → 87/87 |
+| `src/core/sandboxDecision.vibe` | 53/55 → 55/55 | 63/72 → 72/72 | 14/15 → 15/15 | 68/76 → 76/76 |
+| `src/core/sequencerDecision.vibe` | 14/16 → 16/16 | 22/28 → 28/28 | 7/8 → 8/8 | 20/23 → 23/23 |
+| `src/core/wiki.vibe` | 14/15 → 15/15 | 20/26 → 22/22 | 10/10 → 10/10 | 26/27 → 27/27 |
+| `src/surfaces/session.vibe` | 60/63 → 63/63 | 17/24 → 24/24 | 19/22 → 22/22 | 66/75 → 75/75 |
+| `src/web/roleView.vibe` | 20/24 → 24/24 | 55/66 → 66/66 | 10/14 → 14/14 | 23/27 → 27/27 |
+| `src/web/wikiView.vibe` | 26/28 → 28/28 | 81/95 → 91/95 | 15/19 → 19/19 | 35/39 → 39/39 |
+| `src/core/sandboxMock.vibe` | 47/47 → 47/47 | 32/45 → 35/45 | 22/23 → 22/23 | 69/72 → 71/72 |
+| `src/web/theatre.vibe` | 45/45 → 45/45 | 32/40 → 39/40 | 7/7 → 7/7 | 48/51 → 51/51 |
+| `src/web/entry.vibe` | 0/8 → 8/8 | 0/4 → 4/4 | 0/0 → 0/0 | 0/8 → 8/8 |
+| `src/core/LiveFactory.vibe` | 77/77 → 77/77 | 25/30 → 30/30 | 20/20 → 20/20 | 84/89 → 89/89 |
+| `src/web/historyView.vibe` | 72/73 → 73/73 | 133/145 → 145/145 | 42/43 → 43/43 | 81/82 → 82/82 |
+
+Dead code deleted: `requestedWiki`'s "rulings" and "roadmap" arms (`src/core/wiki.vibe`). A request naming either page
+matches its id first, so the fallback can only answer "index".
+
+`runningCountPrefix` and `restartsBefore` exist only for proof specifications. VibeLang has no specification-only
+function, so they compile as exported runtime code; reproduction in `~/vl/vibelang-bugs/spec-only-function/`. They are
+tested against the loops they specify, not removed.
+
+Left uncovered in these files, each still counted:
+
+| Where | Why no test reaches it |
+| --- | --- |
+| `src/surfaces/signin.vibe:99` | `stored?.login ?? ""` on a signed-in answer with no stored session; the session is written just before it is read. |
+| `src/surfaces/signin.vibe:127` | The durable wait's own host failing after the poll step's host succeeded (was `:116`); needs a FileSystem fault at one call. |
+| `src/web/wikiView.vibe:53`, three arms | "Connect GitHub." wording; decision 0165's lane owns connect. |
+| `src/web/wikiView.vibe:72` | The outlined status of a decision that isn't Accepted; every decision in the wiki is Accepted. |
+| `src/core/sandboxMock.vibe:41`, `:44` to `:46` | An engine failure other than Refused or Unavailable; each call's execution id is fresh, so none conflicts. |
+| `src/web/theatre.vibe:49` | `WALKTHROUGH[step - 1]?.voice ?? ""`; the step stays within 1 to 10. |
+
+`src/web/startup.vibe:72` to `:75`, listed as reachable last session, are now covered by running the first visit's tour on
+the started page.
+
+## Chromium merge (vl-fuzz2, 2026-11-10)
+
+`e2e/coverage-reporter.ts` merged the compiler's structure of each source (the zero seed) and the bundle's with
+Istanbul's `merge`, which keeps both shapes where it cannot match them. On the minified e2e bundle a file counted its
+`if`s and their folded ternaries: `fixture.vibe` read 4 branches for its 2, `startupDecision.vibe` 36 for 18. Now the
+seed is the structure and each bundle credits it through `test/support/coverageUnion.ts`, the fuzz and bench gates'
+merge. That module now matches by source start: a statement's, a function body's, and a branch's type with its
+ordered arm starts. Vite's composed maps keep starts and infer ends from the next mapped token (`answer`'s name ends
+at column 29 in the compiler's map and 30 in the bundle's).
+
+The e2e build (`--mode e2e`, also the fuzz suite's browser build) is unminified, as `bench-coverage` is: minification
+renames and folds code, so few minified ranges start where the compiler's do. The deployed build is unchanged. The
+coverage fixtures skip a re-export facade with or without whitespace.
+
+| One `pnpm e2e` run's evidence | Files | Metrics below 100% | Lines | Branches | Functions | Statements |
+| --- | ---: | ---: | --- | --- | --- | --- |
+| minified, Istanbul merge | 154 | 507 | 3341/7616 | 6353/12653 | 2123/3774 | 5680/11950 |
+| minified, merge by full range | 154 | 541 | 2549/7479 | 384/8096 | 63/2803 | 2850/9577 |
+| unminified, Istanbul merge | 154 | 499 | 3545/7644 | 6155/11922 | 2302/3991 | 5837/11867 |
+| unminified, merge by start (landed) | 154 | 508 | 3343/7479 | 3445/8096 | 1345/2803 | 3903/9577 |
+
+The landed denominators are the sources' own (7479 lines, 8096 branches). Tests: `test/browserCoverageMerge.test.vibe`
+(a real minified Vite build of the fixture under native V8, through `measure`; failed on the old reporter with 4
+branches for 2) and two cases in `test/fuzzCoverage.test.vibe` (same starts credit whatever the ends; other starts
+credit nothing; the first failed on the full-range rule).
+
+## Lane vl-coverage3: surfaces, history and actions (2026-11-10)
+
+Scope: every file under `src/surfaces/`, `src/history/` and `src/actions/` below 100% on any unit metric. At main
+`88991cf3`, 17 files missed 103 items in all; after this lane and `70fb3ce6` (another lane's overlapping seed,
+sequencer, flow machine and LiveMythical cases, kept; this lane's duplicates dropped), 7 files miss 15, every one
+listed below. Whole unit suite at that run (main `93fb9651` plus this lane): lines 99.24%, branches 97.31%, functions 98.62%, statements 98.62% (97.18%, 93.42%, 96.82%, 95.84% at `88991cf3`; other lanes landed between).
+
+Tests: `historyFlowEdges` (Fold with main unreadable through a faulty `MainLog`, a main listing a commit twice, a
+second Bootstrap, on the engine in memory over the real sequencer), `commandsEdges` (history text with no commit, an
+issue change's resume and recovery keys at the issues API, an issue draft, a wiki review, login's device code from a
+loopback GitHub, a settings home that is a file), `surfaceSession` (the stored session only to its own origin, not a
+look-alike port; none with no settings directory), cases in `actionClients.coverage` (follow skips other runs'
+events; a JSON error that isn't the protocol), `cli.test` (a bare invocation shows the help, exit 0), `historyTools`,
+`pages` and `seed`.
+
+`src/surfaces/backend.vibe`'s per-request session guard is now `withStoredSession`, so a test reaches the cross-origin
+arm no live client produces (every request URL is `origin + "/…"`). It is a trust boundary and stays.
+
+Dead code deleted: `factory.accounts !== undefined` in the mock surface (the mock factory always has accounts),
+`?? name` after `split("/").at(-1)` (catalog), the `mapError` on `MockMythical`'s page read (the sequencer's read
+cannot fail), and `?? 0` for a commit's epic order (pages: decide admits no commit without its epic; no event
+removes one).
+
+Tool fix: `verify/inventory.cjs` parsed the gitignored `src/assets/wiki.generated.vibe` that `pnpm wiki:build` writes
+(typecheck and test run it), overflowed the compiler pipe (ENOBUFS) and failed after any build. It now skips
+`*.generated.vibe`; regression in `verify/inventory_test.cjs`, red first.
+
+Second session (main `1e4176bc`): the cases that failed only under load are deterministic. The refused-wait case
+in `signinEdges` raced a real 1,000 ms due time; `b6e944bf` landed the same fix first (GitHub answers the first
+check "pending" and refuses every later poll; the case asserts two polls), and this lane kept it. `mcp.test` hosts the same server in process behind a
+`ChildProcessSpawner` (`test/support/mcpInProcess.vibe`), so only the discovery case starts the built server; at
+load 169 the spawned cases had missed the client's 10-second initialization deadline. Suites that sign in load
+`@smthrs/platform-node` (about 600 modules) at collection rather than inside a case. Login and logout render,
+including a refused mock sign-out and a refusal's own sentence, are covered in process (`commandsEdges`); the built
+CLI case starts two processes instead of three. `commands.vibe` and `sessionFlow.vibe` are at 100% in the full run.
+
+Third session (main `4513073e`): four of the six items are covered with faulty services, none by a code change.
+`signinEdges` adds a settings directory whose `chmod` is refused once the device code is shown (the durable wait
+fails as "Sign-in failed." after one poll, `signin.vibe:129`) and a mock session that can't be read back (signed in,
+no login, `:101`). `mcpFailures` starts the MCP server against an unreachable live Factory (its sentence on stderr),
+a settings store that dies (the defect on stderr) and one interrupted inside the server's own fiber (nothing
+written): Effect runs `tapCause` for an interrupt the fiber raises itself, so `mcp.vibe:36` and `:38` are reached.
+`mythicalEdges` plans before a commit whose rank is negative: no history `apply` builds holds one, but `decide` is
+total over `History` and its proved contract promises a rank >= 0, so the guard (`mythical.vibe:562`) stays and is
+tested at `decide`'s boundary rather than replaced by an unchecked `requires`. None of these files has a model path.
+
+| Left | Why |
+| --- | --- |
+| `src/history/tools.vibe:93` | The implicit no-match path after an exhaustive `match`; no type-correct value reaches it. VibeLang reproduction `coverage-exhaustive-match` (nyc-01 `~/vl/vibelang-bugs/`); an emitted-output change needs Will |
+| `src/history/flows.vibe:213` | V8, not the provider: line 211's conditional has a never-taken else arm that suspends (`try` compiles to `yield*`), and V8 14.6 (Node 26.5) reports that arm's 0 range through the end of the function, so lines 212-213 read 0 and the implicit else becomes 0 - 9. Plain JavaScript reproduces it (`await` too); then arms, call arms and if statements are right. Reproduction `coverage-v8-suspend-else-arm`; the source was not rewritten around it |
+
+## Coverage inside workerd (lane vl-coverage-workerd, 2026-11-10)
+
+`pnpm test:workerd:coverage` (PACKAGE target `workerdCoverage`, exclusive like the other coverage gates) measures the
+code that runs inside workerd. V8's precise coverage is unavailable there (see "Measurement blockers"), so the
+benchmark lane's Istanbul counters (0017) now serve this suite too:
+
+```
+.vibe ──vibelang esbuild plugin──▶ module JS + compiler map ──Istanbul instrumenter (input map = compiler map)──▶ bundle
+  workerd isolate runs the bundle; on dispose, Runtime.evaluate reads globalThis.__coverage__ ──▶ coverage/workerd/workerd-raw/
+  istanbul-lib-source-maps remaps each module's counters to .vibe through its own compiler map
+Vitest V8 (Node side) ──▶ coverage/workerd/coverage-final.json
+  test/workerdCoverageGate.vibe: Node's structure is the gate; workerd hits credit it by source start
+  (test/support/coverageUnion.ts, vl-fuzz2's merge); a file Node never ran is gated on workerd's structure
+  ──▶ coverage/workerd/merged/{coverage-final,per-file,summary}.json, 100% per file on all four metrics
+```
+
+`WORKERD_COVERAGE=1` selects measurement in `test/support/workerd.vibe` (`BENCH_COVERAGE` still selects the
+benchmark's directory); every host writes its counters when it stops, and before a `reload` replaces its isolate. Each
+dump's name is unique per process, so two suite workers stopping the same Worker in one millisecond keep both. A
+measured Worker builds about 30% slower (88 s against 68 s for the API Worker on the shared host) and its bundle grows
+from 18 MB to 30 MB, so a measured run scales every suite deadline by five (`deadline` in
+`test/support/workerd.vibe`). The collection stage no longer applies Vitest's thresholds in `workerd` mode; the gate
+applies them after the merge. VibeLang's maps needed no change: the compiler's per-module map locates statements at
+the same source starts in both runtimes (`test/workerdCoverageShape.test.ts`).
+
+Proof: `test/workerdCoverage.workerd.test.vibe` runs `test/support/coverageObject.vibe`'s Durable Object in local
+workerd with only that module measured. An even number credits the even answer's line and not the odd one's; an odd
+number moves the credit; both credit both; an even number, a reload and an odd number credit both across two dumps.
+
+Bug fixed: `instrumentModules` replaced a module's compiler diagnostics with "compiled without a source map", because
+the VibeLang plugin answers a failed compile with its errors and a stub module. It now passes the errors to esbuild.
+Regression: the second case in `test/workerdCoverageShape.test.ts` (red on the old wrapper, green now).
+
+Bug fixed: `Served.reload` replaces the isolate, so a measured Worker lost every count from before the reload. It
+now dumps first. Regression: the reload case in `test/workerdCoverage.workerd.test.vibe` (red without the dump: one
+dump, the even answer uncredited).
+
+Measured on `main` at `d28aa766` plus this change, in one `pnpm test:workerd:coverage` run: before is that run's
+Node-only report (what `pnpm test:workerd --coverage` reports), after is the merged gate. Same 160-file roster; all 15
+suite files pass. The merged denominators are Node's to within five functions and one statement, where a file Node
+never ran takes workerd's structure.
+
+| Workerd suite | Lines | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| Node only | 13.01% (998/7671) | 4.64% (378/8143) | 6.91% (201/2907) | 10.8% (1058/9794) |
+| Node and workerd | 44.88% (3443/7671) | 29.46% (2399/8143) | 33.51% (976/2912) | 40.29% (3947/9795) |
+
+98 files carry workerd execution; 137 of 160 stay below 100%, so the gate exits 1. Every `worker/` file, before →
+after (the lane report `~/vl/vl-coverage-workerd.REPORT.md` on nyc-01 holds all 160):
+
+| File | Lines | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| `worker/Accounts.vibe` | 0 → 83.71 | 0 → 71.86 | 0 → 71.23 | 0 → 76.05 |
+| `worker/ActionDirectory.vibe` | 0 → 100 | 0 → 76.92 | 0 → 100 | 0 → 96.15 |
+| `worker/ActionIdentity.vibe` | 0 → 71.42 | 0 → 55 | 0 → 42.85 | 0 → 61.11 |
+| `worker/ActionRuns.vibe` | 0 → 86.66 | 0 → 62.28 | 0 → 77.77 | 0 → 76.82 |
+| `worker/ActionsHttp.vibe` | 0 → 97.56 | 0 → 82.1 | 0 → 70 | 0 → 81.96 |
+| `worker/AgentModel.vibe` | 0 → 100 | 100 → 100 | 0 → 100 | 0 → 100 |
+| `worker/Api.vibe` | 0 → 0 | 100 → 100 | 0 → 0 | 0 → 0 |
+| `worker/Budget.vibe` | 0 → 90.9 | 0 → 73.68 | 0 → 100 | 0 → 87.5 |
+| `worker/GitHubDelegate.vibe` | 0 → 100 | 0 → 75 | 0 → 100 | 0 → 83.33 |
+| `worker/HistoryActions.vibe` | 0 → 54.54 | 0 → 21.05 | 0 → 81.81 | 0 → 54.05 |
+| `worker/HistoryObject.vibe` | 0 → 91.52 | 0 → 100 | 0 → 75 | 0 → 87.83 |
+| `worker/HistoryTools.vibe` | 25 → 62.5 | 100 → 100 | 0 → 50 | 25 → 62.5 |
+| `worker/Http.vibe` | 0 → 97.84 | 0 → 80 | 0 → 60.86 | 0 → 86.5 |
+| `worker/Issues.vibe` | 0 → 72.12 | 0 → 49.32 | 0 → 69.84 | 0 → 62.53 |
+| `worker/MainLog.vibe` | 0 → 11.62 | 0 → 0 | 0 → 8.33 | 0 → 8.33 |
+| `worker/ObjectStartup.vibe` | 0 → 82.6 | 0 → 63.15 | 0 → 66.66 | 0 → 81.03 |
+| `worker/ObjectStorage.vibe` | 0 → 100 | 0 → 100 | 0 → 100 | 0 → 100 |
+| `worker/Objects.vibe` | 0 → 88.39 | 0 → 71.42 | 0 → 86.88 | 0 → 85.81 |
+| `worker/Reply.vibe` | 10.86 → 81.15 | 0 → 56.79 | 5.26 → 78.94 | 9.43 → 78.61 |
+| `worker/SandboxAccounts.vibe` | 0 → 0 | 0 → 0 | 100 → 100 | 0 → 0 |
+| `worker/SandboxHttp.vibe` | 0 → 80 | 0 → 58.82 | 0 → 60 | 0 → 64.28 |
+| `worker/SandboxMachine.vibe` | 0 → 0 | 100 → 100 | 100 → 100 | 0 → 0 |
+| `worker/SandboxTools.vibe` | 18.18 → 45.45 | 0 → 50 | 0 → 40 | 16.66 → 50 |
+| `worker/Sandboxes.vibe` | 0 → 100 | 0 → 100 | 0 → 100 | 0 → 100 |
+| `worker/Sequencer.vibe` | 0.84 → 83.05 | 0 → 51.61 | 0 → 88.63 | 0.71 → 79.28 |
+| `worker/SpecificationReviewers.vibe` | 0 → 16.12 | 0 → 0 | 0 → 0 | 0 → 11.9 |
+| `worker/Tour.vibe` | 0 → 50 | 100 → 100 | 0 → 0 | 0 → 50 |
+| `worker/Unreachable.vibe` | 100 → 100 | 100 → 100 | 100 → 100 | 100 → 100 |
+| `worker/VipDraft.vibe` | 0 → 60 | 0 → 30 | 0 → 12.5 | 0 → 48.78 |
+| `worker/Wiki.vibe` | 0 → 29.65 | 0 → 20.43 | 0 → 14 | 0 → 24.05 |
+| `worker/WikiDraft.vibe` | 0 → 12.5 | 0 → 0 | 0 → 0 | 0 → 9.09 |
+| `worker/WikiTools.vibe` | 11.11 → 22.22 | 0 → 16.66 | 16.66 → 33.33 | 15.38 → 23.07 |
+| `worker/accountObject.vibe` | 0 → 0 | 0 → 0 | 0 → 0 | 0 → 0 |
+| `worker/agentContext.vibe` | 100 → 100 | 100 → 100 | 100 → 100 | 100 → 100 |
+| `worker/apiObjects.vibe` | 0 → 28.77 | 0 → 19.71 | 0 → 22.34 | 0 → 29.76 |
+| `worker/budgetDecision.vibe` | 0 → 100 | 0 → 80 | 0 → 100 | 0 → 83.33 |
+| `worker/index.vibe` | 0 → 92.3 | 0 → 78.94 | 0 → 100 | 0 → 82.35 |
+| `worker/liveDispatchDecision.vibe` | 0 → 100 | 0 → 50 | 0 → 100 | 0 → 63.63 |
+| `worker/machineObject.vibe` | 0 → 0 | 0 → 0 | 0 → 0 | 0 → 0 |
+| `worker/replyProgressDecision.vibe` | 5.88 → 52.94 | 0 → 31.25 | 10 → 50 | 4.54 → 54.54 |
+| `worker/replyReasons.vibe` | 0 → 85.71 | 0 → 58.33 | 0 → 100 | 0 → 58.33 |
+
+`worker/Api.vibe`, `worker/accountObject.vibe` and `worker/machineObject.vibe` stayed at 0% in that run: no suite host
+loaded them. The second session loads all three ("Unit and fuzz gates inside workerd"). `worker/SandboxMachine.vibe` and `worker/SandboxAccounts.vibe` need a Container binding; `worker/WikiDraft.vibe`
+and `worker/SpecificationReviewers.vibe` need a model. These are test gaps for the coverage lanes, not exclusions.
+
+## Measuring every gate (lane vl-gatefix, 2026-11-10)
+
+The audit could not complete the gates on the available hosts or 4-vCPU boxes. These commands include the app and
+fuzz-flow install and the matching Chromium download. They retain the 100% thresholds: a coverage exit of 1 still
+means the measured suite is below its gate, and a fuzz target with zero executions still fails.
+
+**Required box image:** Node **>= 26.4** (`engines.node`; nyc-01 uses 26.5.0), git **>= 2.41** for jj's real repository
+fixtures, Python 3, and the Playwright system libraries for browser gates. The current `node`/`playwright` boxes have
+Node **24.22.2** and git **2.39.5**. Request to the lead: upgrade both images; keep the repository's engine requirement.
+The old git fails `test/mythicalSeedProcess.test.vibe` and `bench/scripts.bench.vibe`. Receipts from that image are
+identified below; they do not establish support for Node 24. Install the proof tools once with `bash verify/install.sh`.
+
+From the lane workspace on nyc-01 (`ws` names that workspace), run one command per gate after these shell variables:
+
+```sh
+ws="$HOME/vl/ws-gatefix"
+I='cd ../.. && pnpm install --frozen-lockfile --filter "@smthrs/vibelang-site..." --filter "@smithers/release-workflows..." && cd apps/vibelang'
+B="$I && export PLAYWRIGHT_BROWSERS_PATH=\$PWD/node_modules/.cache/ms-playwright && pnpm exec playwright install chromium"
+```
+
+```sh
+~/lanes/bin/run-heavy --name vl-gatefix:unit --image node --cores 4 "$ws/apps/vibelang" -- "$I && pnpm test:coverage"
+~/lanes/bin/run-heavy --name vl-gatefix:fuzz --image playwright --cores 4 "$ws/apps/vibelang" -- "$I && E2E_PORT=4552 pnpm fuzz:coverage"
+~/lanes/bin/run-heavy --name vl-gatefix:bench --image playwright --cores 4 --env BENCH_REVISION="$(cd "$ws" && jj log --no-graph -r @ -T commit_id)" "$ws/apps/vibelang" -- "$B && E2E_PORT=4552 pnpm bench:coverage"
+~/lanes/bin/run-heavy --name vl-gatefix:e2e --image playwright --cores 4 "$ws/apps/vibelang" -- "$B && E2E_PORT=4552 pnpm e2e:coverage"
+~/lanes/bin/run-heavy --name vl-gatefix:proofs --image node --cores 2 --add apps/vibelang/verify/.tools "$ws/apps/vibelang" -- "$I && pnpm verify"
+~/lanes/bin/run-heavy --name vl-gatefix:mutations --image node --cores 2 --add apps/vibelang/verify/.tools "$ws/apps/vibelang" -- "$I && CHECK_JOBS=2 pnpm verify:broken"
+```
+
+`run-heavy` packs tracked sources, without node_modules or a jj checkout. Every command installs inside that tree;
+proof commands also carry the downloaded Dafny files and rebuild vendored LemmaScript there. The fuzz flow installs
+its matching Chromium itself. `BENCH_REVISION` is captured before packing; artifacts in a checkout prefer its own `@`.
+Use `pnpm bench` instead of `pnpm bench:coverage` for timing measurements with the same install/revision arguments.
+A box-image upgrade is a prerequisite for the supported configuration above, not a reason to lower `engines.node`.
+
+What changed so these run anywhere:
+
+- **Browser phases.** `playwright.config.ts`, `bench/playwright.config.ts`, `bench/playwright-faults.config.ts` and `fuzz/browser.config.ts` build the site
+  inside Playwright's `webServer`. Its limit was 120 s (fuzz 180 s); the build takes longer on a box or a loaded host,
+  so no browser phase ran there. The limit is now `E2E_SERVER_SECONDS`, default 600 s, and the fuzz flow passes it
+  through (`.smithers/flows/vibelang-fuzz`, v7). The benchmark's global deadline and its parent Vitest timeout grow with it; the wrapper accepts the executed workload count instead of a stale fixed count.
+- **Browser coverage on a small disk.** Each test's Chromium evidence repeated the whole bundle and its source map
+  (about 20 MB), so `pnpm e2e:coverage` filled a box's disk (`ENOSPC`, then crashed pages: 70 of 300 checks) before
+  the phone project ended. A test's file now keeps its ranges and names the script by content; `e2e/coverageStore.ts`
+  writes each source and map once per run under `test-results/chromium-scripts` (`test/e2eCoverageStore.test.vibe`).
+- **The fuzz flow's install.** `pnpm fuzz` runs `scripts/fuzz-preflight.vibe` first: when `.smithers/flows` lacks a
+  package the flow imports, it names them and the install above instead of failing on `Cannot find module`
+  (`test/fuzzPreflight.test.vibe`).
+- **`lsc` link.** `verify/.tools/bin/lsc` was an absolute link into `packages/lemmascript`; `run-heavy --add` delivers
+  it to a box as a copied file that cannot resolve `ts-morph`. `install-common.sh` makes it relative, and
+  `lsc_fresh.py` (run first by `verify` and `verify:broken`) restores the link over a copy (`harness_test.py`).
+- **Benchmark revision.** `bench/artifact.vibe` and `bench/browser.spec.ts` read the commit only from `jj`, so on a
+  box 68 of 69 benchmark files, and every browser workload, failed before their work. `revision` takes the checkout's `@`, or `BENCH_REVISION` where there is no checkout,
+  and still refuses anything but a 40-hex id (`test/benchArtifact.test.vibe`).
+- **Fuzz budget floor.** A target whose saved failures replay inside the deadline before its first new execution ran
+  none at the coverage budget of 5 s (`NoExecution`). `10b73c23` gave `run` a `minimum` (`REPLAY_FLOOR`, 15 s) for the
+  steered-host targets; `surfaces/cli-arguments` and `surfaces/mcp-arguments` (4.6 s per replay and execution on an
+  idle box) now declare it too. Instrumented cold replay also needs 60 s for `issues/steered-host`,
+  `actions/object-lifecycles` and `api-objects/world`, and 30 s for `objects/conversation-host` and
+  `storage/conversation-flows`. Workerd setup hooks get 600 s; each API-world operation remains bounded at 20 s,
+  matching the object-host target. A target that executes nothing still fails.
+- **Fuzz denominator.** `fuzz.config.ts` and `fuzz/coverage.vibe` counted `src/` and `worker/` without
+  `worker/Api.vibe`; they now count the unit gate's roster, `src/`, `worker/`, `scripts/` and `infra/`, none excluded.
+- **Proof inventory.** A function marked `//@ verify` read "Not yet proved" unless `verify/inventory.cjs` had a
+  hand-written note for its module; `decide` (`src/core/decide.vibe:90`) and six other modules had none. The inventory
+  now reads the mark (`inventory_test.cjs`): 79 rows read proved, and "Not yet proved" rows fall from 1017 to 958.
+
+<!-- gatefix-measured -->
+
+
+### Audit claim reconciliation
+
+The audit's fourteen claims are reconciled as follows. Historical receipts retain their original revision; none is
+presented as a current-main 100% result. Corrections from the proof, test-quality and workerd lanes are preserved.
+
+| Claim audited | Current statement and evidence |
+| --- | --- |
+| Workerd execution remains uncredited | `pnpm test:workerd:coverage` uses 0017's per-module Istanbul counters; precise V8 coverage is still unavailable. |
+| `worker/Api.vibe` must wait for a VibeLang release and precise workerd coverage | Closed by vl-coverage-workerd: the unit and fuzz gates load and instrument `worker/Api.vibe` through Alchemy's actual build and bridges ("Unit and fuzz gates inside workerd" below). |
+| Every suite already counts every production source | The fuzz roster now matches `src/`, `worker/`, `scripts/`, `infra/`, including `worker/Api.vibe`; previous totals used smaller rosters. |
+| Sandbox decision proves accrued minutes | 0018 distinguishes the decision's zero-elapsed call site from the actual meter; its separate meter contracts remain proof-lane work. |
+| Marked `decide` is “Not yet proved” | Inventory status reads each function's `//@ verify`; the proof gate checks the marked modules. Custom notes describe scope, not discovery. |
+| Every rejected mutation proves a postcondition in its function | 0018 explicitly includes a callee's failed precondition at a call in that function, and says generated-mutant rejection does not prove contract completeness. |
+| Roadmap 1d has 17 modules / 962 mutations | Updated to the audit's dated 33 / 1601 receipt; current-run counts are reported separately below. |
+| Production `/history` returns 404 | Rulings-status VL-3 records the audit's 200 response on 2026-11-10 and the deployed revision, which still predates main. |
+| Sign-in has not landed, so every live caller is a viewer | 0020 restricts that statement to the older deployment; main derives history's principal from the session role. |
+| No GitHub happy-path doubles exist | 0016 and 0017 name the existing protocol doubles and the unresolved ruling; this tooling change adds none and grants no exception. |
+| The stored approval time is always present | 0015 and 0016 now record the tested mapping: preserve `approvedAt` only when stored; the old `approvedAt!` wrote an invalid undefined field. |
+| Every benchmark passes on available machines | 0017 distinguishes the idle-host receipt, the audit's build-limit failure and these off-checkout measurements. |
+| Roadmap benchmark coverage remains 82.82% / 95 files below | Updated to the lane's last 90.52% / 100-file receipt and the audit's 109-of-159 result without Chromium; all are dated evidence. |
+| Designs only live in the host's handoff directory and the index lists two | `wiki/designs/index.md` lists all nine repository handoffs and their implementation decisions; VL-29 links there. |
+
+The instrumented single-execution profile on an idle 4-vCPU box passed 201 checks and retained 200 target receipts,
+all with at least one execution. The slowest fresh walks were `api-objects/world` (26.153 s) and
+`issues/steered-host` (24.834 s, including one replay). `actions/object-lifecycles` took 8.195 s including one replay;
+CLI and MCP argument targets took 5.521 s and 5.623 s. These support the explicit per-target floors above.
+This is timing evidence for setup budgets, not a replacement for the ordinary multi-execution coverage command.
+
+The proof harness also used `--cores 8` for assertion-isolated positive modules even when `run-heavy` requested two
+cores. It now passes at most two (`verify/harness_test.py` checks the actual invocation receipt and the configured
+command before starting a solver). Proof obligations, solver limits and the mutation rejection rules are unchanged.
+
+The benchmark lane added `bench/playwright-faults.config.ts` during the gatefix rebase. Its build and global deadlines
+also read `E2E_SERVER_SECONDS`. The moved artifact writer, `bench/browser-support.ts`, retains the same off-checkout
+revision fallback for both browser phases; the benchmark lane's helper extraction and navigation evidence are preserved.
+
+## vl-coverage, Codex continuation after session 13 (2026-11-10)
+
+The lead's known-red gate ruling above is settled. All four coverage gates retain their 100% per-file thresholds and
+stay exclusive until each passes and joins the default gate in that passing commit.
+
+The fixture factories' unreachable flow/default arms and injected-engine seams landed in `10ae763b`; their cycle,
+identity and multi-defect tests use faulty Effect runtimes over the real memory engine. The specification revision
+decision in `605333cd` takes a policy and tests both keep and reset. Production stays keep; conversation.vibe and
+its proved revision arms are unchanged.
+
+The sandbox fixture now accepts the same engine seam. Every operation preserves Refused and Unavailable reasons;
+a flow cycle becomes sandbox-flow unavailability. The signed-out policy determines the role. Wiki recovery scenes
+retain the edit and assert the actual Connect, Fork and Install destinations. The wiki pane accepts its document
+corpus (production: the built pages), so archived Replaced status is exercised through the real component.
+
+Tour view/theatre callers use a total stop lookup. A first-failing boundary regression caught undefined results for
+fractional/NaN inputs in the carried patch; the lookup rounds to the nearest stop, clamps the range and infinities,
+and selects the first stop for NaN. A heading's anchor, ended-tour status, restarted wiki key on another page and
+generator decisions without a Rulings line or with no named rulings are covered too.
+
+The seed program is separate from its CLI entry so its output URL and Effect host services can be supplied. A faulty
+ChildProcessSpawner still runs real jj but reports a shortened-hash collision while retaining distinct full hashes
+and consistent parent links. The command refuses that replay, keeps the previous output and recovers byte-identical
+output with the real host. Its Refused error now retains only a count: the previous serialized intent could expose
+commit text in CLI error logs. Both failure regressions fail before their fixes. The refusal guard remains.
+
+Three behavioral mutations are detected by five assertion failures; production files are restored and byte-checked.
+No dependency is added. The same Vitest/V8 5.0.0 and original .vibe maps are used. No production source is excluded.
+The remaining lane-owned unit gaps are the recorded V8 suspend/else range defect in history/flows and generated
+exhaustive-match fallthrough in history/tools; their reproductions remain in the denominator. Current measurements,
+including all worker/core gaps owned by the other coverage lane, follow below with exact snapshot provenance.
+
+
+### Measured continuation snapshot
+
+Runtime/test input: base main `f765f8ed` plus the three lane changes at `0852e764c332`; source archive and exact
+input id are retained in session14/input-source.tgz and final-input-tip.txt. Tables were added after measurement.
+The unit before-column is the retained 15:24 snapshot; the Chromium before-column is session 8's frozen report.
+Source rosters and counter structures change, so these are dated snapshots. A dash is an absent source, never an
+exclusion. Cells are covered/total, before → after; zero-runtime metrics retain their zero denominators.
+
+Unit: 2,078 passed, one expected failure, four skipped; 239 files passed / three skipped. All ordinary assertions
+pass. Coverage alone exits 1: lines 7,713/7,769 (99.27%), branches 8,096/8,221 (98.47%), functions 2,906/2,937
+(98.94%), statements 9,816/9,920 (98.95%); 27 of 164 files are below 100%. Fresh-main typecheck, inventory,
+target-index generation and target-index lint all exit 0.
+
+The new main file scripts/fuzz-preflight.vibe remains at zero despite its CLI test passing. A five-line native Vibe
+program and plain JavaScript control isolate the problem: two real subprocess assertions pass, JS gets 100%, and Vibe
+gets zero while the provider reports a parse error at raw effect syntax. Reproduction and controls:
+`~/vl/vibelang-bugs/coverage-native-loader/`. Exact-executable and source-map config probes do not fix it and were
+reverted. This is a collection gap; no compiler behavior or provider code was changed. The zero stays in the gate.
+
+| File | Lines | Branches | Functions | Statements |
+| --- | ---: | ---: | ---: | ---: |
+| `infra/SandboxImage.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 0/0 → 0/0 | 2/2 → 2/2 |
+| `infra/Stack.vibe` | 8/8 → 8/8 | 6/6 → 6/6 | 0/0 → 0/0 | 8/8 → 8/8 |
+| `infra/WorkerBuild.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `scripts/agent-context.vibe` | 22/22 → 22/22 | 4/4 → 4/4 | 5/5 → 5/5 | 23/23 → 23/23 |
+| `scripts/fuzz-preflight.vibe` | — → 0/16 | — → 0/4 | — → 0/3 | — → 0/18 |
+| `scripts/mythical-seed-program.vibe` | — → 50/50 | — → 18/18 | — → 15/15 | — → 63/63 |
+| `scripts/mythical-seed.vibe` | 51/51 → 1/1 | 17/18 → 0/0 | 15/16 → 0/0 | 63/65 → 1/1 |
+| `scripts/wiki.vibe` | 30/30 → 30/30 | 28/28 → 28/28 | 8/8 → 8/8 | 38/38 → 38/38 |
+| `src/actions/Actions.vibe` | 4/4 → 4/4 | 0/0 → 0/0 | 0/0 → 0/0 | 4/4 → 4/4 |
+| `src/actions/LiveActions.vibe` | 43/43 → 43/43 | 21/21 → 21/21 | 25/25 → 25/25 | 54/54 → 54/54 |
+| `src/actions/MockActions.vibe` | 114/114 → 114/114 | 85/85 → 85/85 | 40/40 → 40/40 | 153/153 → 153/153 |
+| `src/actions/agent.vibe` | 11/11 → 11/11 | 0/0 → 0/0 | 12/12 → 12/12 | 17/17 → 17/17 |
+| `src/actions/catalog.vibe` | 9/9 → 9/9 | 26/26 → 26/26 | 2/2 → 2/2 | 9/9 → 9/9 |
+| `src/actions/catalogDecision.vibe` | 3/3 → 3/3 | 12/12 → 12/12 | 2/2 → 2/2 | 4/4 → 4/4 |
+| `src/actions/execution.vibe` | 38/38 → 38/38 | 36/36 → 36/36 | 18/18 → 18/18 | 41/41 → 41/41 |
+| `src/actions/tools.vibe` | 13/13 → 13/13 | 1/1 → 1/1 | 7/7 → 7/7 | 14/14 → 14/14 |
+| `src/actions/wire.vibe` | 6/6 → 6/6 | 0/0 → 0/0 | 0/0 → 0/0 | 6/6 → 6/6 |
+| `src/assets/wiki.generated.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 0/0 → 0/0 | 2/2 → 2/2 |
+| `src/core/Factory.vibe` | 3/3 → 3/3 | 0/0 → 0/0 | 0/0 → 0/0 | 3/3 → 3/3 |
+| `src/core/IssuesFactory.vibe` | 74/74 → 74/74 | 118/118 → 118/118 | 15/15 → 15/15 | 96/96 → 96/96 |
+| `src/core/LiveAccounts.vibe` | 26/26 → 26/26 | 12/12 → 12/12 | 13/13 → 13/13 | 32/32 → 32/32 |
+| `src/core/LiveFactory.vibe` | 77/77 → 77/77 | 30/30 → 30/30 | 20/20 → 20/20 | 89/89 → 89/89 |
+| `src/core/LiveIssues.vibe` | 11/11 → 11/11 | 6/6 → 6/6 | 7/7 → 7/7 | 16/16 → 16/16 |
+| `src/core/LiveWiki.vibe` | 15/15 → 15/15 | 4/4 → 4/4 | 10/10 → 10/10 | 21/21 → 21/21 |
+| `src/core/MockAccounts.vibe` | 76/76 → 76/76 | 30/34 → 30/34 | 25/26 → 25/26 | 98/101 → 98/101 |
+| `src/core/MockFactory.vibe` | 266/266 → 266/266 | 138/139 → 138/139 | 79/79 → 79/79 | 319/320 → 319/320 |
+| `src/core/MockJournal.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 3/3 → 3/3 | 4/4 → 4/4 |
+| `src/core/VipWriter.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `src/core/WikiFactory.vibe` | 62/62 → 62/62 | 69/69 → 69/69 | 21/21 → 21/21 | 85/85 → 85/85 |
+| `src/core/WikiWriter.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `src/core/accountCookieDecision.vibe` | 5/5 → 5/5 | 15/15 → 15/15 | 3/3 → 3/3 | 7/7 → 7/7 |
+| `src/core/accountCookies.vibe` | 7/7 → 7/7 | 0/0 → 0/0 | 2/2 → 2/2 | 8/8 → 8/8 |
+| `src/core/conversation.vibe` | 246/246 → 246/246 | 410/410 → 410/410 | 80/80 → 80/80 | 339/339 → 339/339 |
+| `src/core/decide.vibe` | 55/55 → 55/55 | 107/107 → 107/107 | 6/6 → 6/6 | 87/87 → 87/87 |
+| `src/core/flowDecision.vibe` | 53/53 → 53/53 | 105/105 → 105/105 | 24/24 → 24/24 | 68/68 → 68/68 |
+| `src/core/flows.vibe` | 196/196 → 196/196 | 62/66 → 62/66 | 72/72 → 72/72 | 204/206 → 204/206 |
+| `src/core/followDecision.vibe` | 2/2 → 2/2 | 2/2 → 2/2 | 2/2 → 2/2 | 2/2 → 2/2 |
+| `src/core/identityDecision.vibe` | 2/2 → 2/2 | 4/4 → 4/4 | 1/1 → 1/1 | 3/3 → 3/3 |
+| `src/core/issueFlows.vibe` | 34/34 → 34/34 | 20/20 → 20/20 | 11/11 → 11/11 | 40/40 → 40/40 |
+| `src/core/issueSchemas.vibe` | 12/12 → 12/12 | 0/0 → 0/0 | 2/2 → 2/2 | 12/12 → 12/12 |
+| `src/core/mockDecision.vibe` | 17/17 → 17/17 | 6/6 → 6/6 | 4/4 → 4/4 | 19/19 → 19/19 |
+| `src/core/mockReplies.vibe` | 17/17 → 17/17 | 4/4 → 4/4 | 6/6 → 6/6 | 19/19 → 19/19 |
+| `src/core/protocolDecision.vibe` | 22/22 → 22/22 | 54/54 → 54/54 | 14/14 → 14/14 | 30/30 → 30/30 |
+| `src/core/roles.vibe` | 5/5 → 5/5 | 1/1 → 1/1 | 1/1 → 1/1 | 5/5 → 5/5 |
+| `src/core/sandboxDecision.vibe` | 59/59 → 59/59 | 78/78 → 78/78 | 16/16 → 16/16 | 80/80 → 80/80 |
+| `src/core/sandboxHost.vibe` | 175/175 → 175/175 | 137/137 → 137/137 | 27/27 → 27/27 | 209/209 → 209/209 |
+| `src/core/sandboxMeter.vibe` | 33/33 → 33/33 | 35/35 → 35/35 | 7/7 → 7/7 | 39/39 → 39/39 |
+| `src/core/sandboxMock.vibe` | 47/47 → 47/47 | 45/46 → 46/46 | 23/23 → 23/23 | 72/72 → 72/72 |
+| `src/core/sandboxPolicy.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 3/3 → 3/3 | 4/4 → 4/4 |
+| `src/core/schemas.vibe` | 30/30 → 30/30 | 0/0 → 0/0 | 0/0 → 0/0 | 30/30 → 30/30 |
+| `src/core/sequenceDecision.vibe` | 23/23 → 23/23 | 18/18 → 18/18 | 10/10 → 10/10 | 27/27 → 27/27 |
+| `src/core/sequencerDecision.vibe` | 16/16 → 16/16 | 28/28 → 28/28 | 8/8 → 8/8 | 23/23 → 23/23 |
+| `src/core/specification.vibe` | 34/34 → 34/34 | 59/59 → 59/59 | 6/6 → 6/6 | 46/46 → 46/46 |
+| `src/core/toolRefusal.vibe` | 5/5 → 5/5 | 18/18 → 18/18 | 1/1 → 1/1 | 6/6 → 6/6 |
+| `src/core/tourDecision.vibe` | 9/9 → 9/9 | 23/23 → 23/23 | 4/4 → 4/4 | 14/14 → 14/14 |
+| `src/core/walkthroughSteps.vibe` | 3/3 → 4/4 | 0/0 → 2/2 | 1/1 → 1/1 | 3/3 → 4/4 |
+| `src/core/wiki.vibe` | 15/15 → 15/15 | 22/22 → 22/22 | 10/10 → 10/10 | 27/27 → 27/27 |
+| `src/core/wikiDecision.vibe` | 1/1 → 1/1 | 3/3 → 3/3 | 1/1 → 1/1 | 1/1 → 1/1 |
+| `src/core/wikiFlows.vibe` | 34/34 → 34/34 | 23/23 → 23/23 | 11/11 → 11/11 | 40/40 → 40/40 |
+| `src/core/wikiLinks.vibe` | 15/15 → 15/15 | 29/29 → 29/29 | 1/1 → 1/1 | 18/18 → 18/18 |
+| `src/core/wikiSchemas.vibe` | 5/5 → 5/5 | 0/0 → 0/0 | 0/0 → 0/0 | 5/5 → 5/5 |
+| `src/core/wire.vibe` | 27/27 → 27/27 | 14/14 → 14/14 | 3/3 → 3/3 | 31/31 → 31/31 |
+| `src/history/LiveMythical.vibe` | 41/41 → 41/41 | 12/12 → 12/12 | 16/16 → 16/16 | 47/47 → 47/47 |
+| `src/history/MockMythical.vibe` | 35/35 → 35/35 | 5/5 → 5/5 | 27/27 → 27/27 | 42/42 → 42/42 |
+| `src/history/MythicalHistory.vibe` | 2/2 → 2/2 | 2/2 → 2/2 | 1/1 → 1/1 | 3/3 → 3/3 |
+| `src/history/Sequencer.vibe` | 94/94 → 94/94 | 36/36 → 36/36 | 35/35 → 35/35 | 110/110 → 110/110 |
+| `src/history/flowMachine.vibe` | 50/50 → 50/50 | 91/91 → 91/91 | 21/21 → 21/21 | 68/68 → 68/68 |
+| `src/history/flows.vibe` | 105/105 → 105/105 | 13/14 → 13/14 | 51/51 → 51/51 | 113/113 → 113/113 |
+| `src/history/mythical.vibe` | 141/141 → 141/141 | 191/191 → 191/191 | 29/29 → 29/29 | 195/195 → 195/195 |
+| `src/history/pageDecision.vibe` | 5/5 → 5/5 | 8/8 → 8/8 | 3/3 → 3/3 | 7/7 → 7/7 |
+| `src/history/pages.vibe` | 36/36 → 36/36 | 26/26 → 26/26 | 20/20 → 20/20 | 46/46 → 46/46 |
+| `src/history/roles.vibe` | 4/4 → 4/4 | 0/0 → 0/0 | 1/1 → 1/1 | 4/4 → 4/4 |
+| `src/history/schemas.vibe` | 31/31 → 31/31 | 0/0 → 0/0 | 3/3 → 3/3 | 33/33 → 33/33 |
+| `src/history/seed.vibe` | 161/161 → 161/161 | 87/87 → 87/87 | 25/25 → 25/25 | 185/185 → 185/185 |
+| `src/history/seed/vibelang.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 0/0 → 0/0 | 2/2 → 2/2 |
+| `src/history/seedDecision.vibe` | 25/25 → 25/25 | 40/40 → 40/40 | 7/7 → 7/7 | 38/38 → 38/38 |
+| `src/history/stackDecision.vibe` | 15/15 → 15/15 | 25/25 → 25/25 | 7/7 → 7/7 | 23/23 → 23/23 |
+| `src/history/tools.vibe` | 29/29 → 29/29 | 46/47 → 46/47 | 9/9 → 9/9 | 36/36 → 36/36 |
+| `src/history/wire.vibe` | 35/35 → 35/35 | 35/35 → 35/35 | 5/5 → 5/5 | 43/43 → 43/43 |
+| `src/surfaces/backend.vibe` | 45/45 → 45/45 | 31/31 → 31/31 | 15/15 → 15/15 | 58/58 → 58/58 |
+| `src/surfaces/cli-entry.vibe` | 8/8 → 8/8 | 2/2 → 2/2 | 2/2 → 2/2 | 9/9 → 9/9 |
+| `src/surfaces/cli.vibe` | 16/16 → 16/16 | 10/10 → 10/10 | 6/6 → 6/6 | 18/18 → 18/18 |
+| `src/surfaces/commandDecision.vibe` | 22/22 → 22/22 | 64/64 → 64/64 | 17/17 → 17/17 | 23/23 → 23/23 |
+| `src/surfaces/commands.vibe` | 171/171 → 171/171 | 112/112 → 112/112 | 73/73 → 73/73 | 207/207 → 207/207 |
+| `src/surfaces/manifest.vibe` | 4/4 → 4/4 | 0/0 → 0/0 | 2/2 → 2/2 | 5/5 → 5/5 |
+| `src/surfaces/mcp-entry.vibe` | 6/6 → 6/6 | 0/0 → 0/0 | 1/1 → 1/1 | 6/6 → 6/6 |
+| `src/surfaces/mcp.vibe` | 17/17 → 17/17 | 4/4 → 4/4 | 6/6 → 6/6 | 20/20 → 20/20 |
+| `src/surfaces/session.vibe` | 63/63 → 63/63 | 24/24 → 24/24 | 22/22 → 22/22 | 75/75 → 75/75 |
+| `src/surfaces/sessionFlow.vibe` | 40/40 → 40/40 | 2/2 → 2/2 | 20/20 → 20/20 | 50/50 → 50/50 |
+| `src/surfaces/signin.vibe` | 115/115 → 115/115 | 108/108 → 108/108 | 30/30 → 30/30 | 153/153 → 153/153 |
+| `src/web/actionModel.vibe` | 14/14 → 14/14 | 19/19 → 19/19 | 7/7 → 7/7 | 16/16 → 16/16 |
+| `src/web/actionView.vibe` | 30/30 → 30/30 | 123/123 → 123/123 | 27/27 → 27/27 | 41/41 → 41/41 |
+| `src/web/backend.vibe` | 64/64 → 64/64 | 15/15 → 15/15 | 38/38 → 38/38 | 72/72 → 72/72 |
+| `src/web/entry.vibe` | 8/8 → 8/8 | 4/4 → 4/4 | 0/0 → 0/0 | 8/8 → 8/8 |
+| `src/web/historyApp.vibe` | 152/152 → 152/152 | 54/54 → 54/54 | 97/97 → 97/97 | 192/192 → 192/192 |
+| `src/web/historyBackend.vibe` | 26/26 → 26/26 | 6/6 → 6/6 | 16/16 → 16/16 | 29/29 → 29/29 |
+| `src/web/historyDecision.vibe` | 42/42 → 42/42 | 31/31 → 31/31 | 29/29 → 29/29 | 48/48 → 48/48 |
+| `src/web/historyStartup.vibe` | 32/32 → 32/32 | 12/12 → 12/12 | 8/8 → 8/8 | 38/38 → 38/38 |
+| `src/web/historyView.vibe` | 73/73 → 73/73 | 145/145 → 145/145 | 43/43 → 43/43 | 82/82 → 82/82 |
+| `src/web/issueDecision.vibe` | 91/91 → 91/91 | 257/257 → 257/257 | 22/22 → 22/22 | 142/142 → 142/142 |
+| `src/web/issues.vibe` | 21/21 → 21/21 | 36/36 → 36/36 | 6/6 → 6/6 | 26/26 → 26/26 |
+| `src/web/issuesView.vibe` | 83/83 → 83/83 | 435/435 → 435/435 | 78/78 → 78/78 | 118/118 → 118/118 |
+| `src/web/main.vibe` | 666/666 → 667/667 | 815/815 → 819/819 | 369/369 → 369/369 | 883/883 → 884/884 |
+| `src/web/markdown.vibe` | 106/106 → 106/106 | 95/95 → 95/95 | 27/27 → 27/27 | 151/151 → 151/151 |
+| `src/web/media.vibe` | 6/6 → 6/6 | 0/0 → 0/0 | 2/2 → 2/2 | 7/7 → 7/7 |
+| `src/web/modeSwitch.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 1/1 → 1/1 | 2/2 → 2/2 |
+| `src/web/modelDecision.vibe` | 78/78 → 78/78 | 112/112 → 112/112 | 51/51 → 51/51 | 95/95 → 95/95 |
+| `src/web/paneDecision.vibe` | 18/18 → 20/20 | 42/42 → 48/48 | 15/15 → 17/17 | 20/20 → 22/22 |
+| `src/web/roleView.vibe` | 24/24 → 24/24 | 66/66 → 66/66 | 14/14 → 14/14 | 27/27 → 27/27 |
+| `src/web/sandboxView.vibe` | 19/19 → 19/19 | 88/88 → 88/88 | 6/6 → 6/6 | 21/21 → 21/21 |
+| `src/web/screenDecision.vibe` | 46/46 → 46/46 | 102/102 → 102/102 | 30/30 → 30/30 | 58/58 → 58/58 |
+| `src/web/startup.vibe` | 50/50 → 50/50 | 22/22 → 22/22 | 13/13 → 13/13 | 64/64 → 64/64 |
+| `src/web/startupDecision.vibe` | 11/11 → 11/11 | 22/22 → 22/22 | 8/8 → 8/8 | 14/14 → 14/14 |
+| `src/web/styles.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 2/2 → 2/2 | 2/2 → 2/2 |
+| `src/web/theatre.vibe` | 45/45 → 45/45 | 38/38 → 38/38 | 7/7 → 7/7 | 51/51 → 51/51 |
+| `src/web/theatreDecision.vibe` | 18/18 → 18/18 | 56/56 → 56/56 | 5/5 → 5/5 | 31/31 → 31/31 |
+| `src/web/tourDecision.vibe` | 27/27 → 27/27 | 54/54 → 54/54 | 19/19 → 19/19 | 33/33 → 33/33 |
+| `src/web/updateDecision.vibe` | 42/42 → 42/42 | 105/105 → 105/105 | 14/14 → 14/14 | 62/62 → 62/62 |
+| `src/web/view.vibe` | 53/53 → 53/53 | 159/159 → 159/159 | 33/33 → 33/33 | 58/58 → 58/58 |
+| `src/web/viewDecision.vibe` | 22/22 → 22/22 | 52/52 → 52/52 | 13/13 → 13/13 | 31/31 → 31/31 |
+| `src/web/viewport.vibe` | 37/37 → 37/37 | 41/41 → 41/41 | 14/14 → 14/14 | 45/45 → 45/45 |
+| `src/web/wikiView.vibe` | 28/28 → 27/27 | 91/95 → 96/96 | 19/19 → 19/19 | 39/39 → 38/38 |
+| `worker/Accounts.vibe` | 286/312 → 286/312 | 310/361 → 310/361 | 66/73 → 66/73 | 391/430 → 391/430 |
+| `worker/ActionDirectory.vibe` | 37/37 → 37/37 | 22/26 → 22/26 | 20/20 → 20/20 | 52/52 → 52/52 |
+| `worker/ActionIdentity.vibe` | 14/14 → 14/14 | 19/20 → 19/20 | 7/7 → 7/7 | 18/18 → 18/18 |
+| `worker/ActionRuns.vibe` | 120/120 → 120/120 | 173/178 → 173/178 | 36/36 → 36/36 | 161/163 → 161/163 |
+| `worker/ActionsHttp.vibe` | 41/41 → 41/41 | 91/95 → 91/95 | 9/10 → 9/10 | 60/61 → 60/61 |
+| `worker/AgentModel.vibe` | 9/9 → 9/9 | 0/0 → 0/0 | 3/3 → 3/3 | 9/9 → 9/9 |
+| `worker/Api.vibe` | 46/46 → 46/46 | 0/0 → 0/0 | 0/1 → 0/1 | 46/47 → 46/47 |
+| `worker/Budget.vibe` | 22/22 → 22/22 | 19/19 → 19/19 | 4/4 → 4/4 | 24/24 → 24/24 |
+| `worker/GitHubDelegate.vibe` | 4/4 → 4/4 | 11/11 → 11/11 | 3/3 → 3/3 | 6/6 → 6/6 |
+| `worker/HistoryActions.vibe` | 30/33 → 30/33 | 15/19 → 15/19 | 9/11 → 9/11 | 32/37 → 32/37 |
+| `worker/HistoryObject.vibe` | 57/59 → 57/59 | 15/15 → 15/15 | 29/32 → 29/32 | 71/74 → 71/74 |
+| `worker/HistoryTools.vibe` | 8/8 → 8/8 | 0/0 → 0/0 | 6/6 → 6/6 | 8/8 → 8/8 |
+| `worker/Http.vibe` | 93/93 → 93/93 | 100/100 → 100/100 | 23/23 → 23/23 | 126/126 → 126/126 |
+| `worker/Issues.vibe` | 297/298 → 297/298 | 450/453 → 450/453 | 64/66 → 64/66 | 399/401 → 399/401 |
+| `worker/MainLog.vibe` | 42/42 → 42/42 | 26/27 → 26/27 | 12/12 → 12/12 | 57/58 → 57/58 |
+| `worker/ObjectStartup.vibe` | 60/60 → 60/60 | 27/27 → 27/27 | 16/16 → 16/16 | 75/75 → 75/75 |
+| `worker/ObjectStorage.vibe` | 10/10 → 10/10 | 6/6 → 6/6 | 11/11 → 11/11 | 14/14 → 14/14 |
+| `worker/Objects.vibe` | 111/112 → 111/112 | 44/47 → 44/47 | 58/59 → 58/59 | 139/140 → 139/140 |
+| `worker/PublicReads.vibe` | 12/12 → 12/12 | 6/6 → 6/6 | 12/12 → 12/12 | 19/19 → 19/19 |
+| `worker/Reply.vibe` | 138/138 → 138/138 | 80/81 → 80/81 | 19/19 → 19/19 | 159/159 → 159/159 |
+| `worker/SandboxAccounts.vibe` | 11/11 → 11/11 | 2/2 → 2/2 | 0/0 → 0/0 | 12/12 → 12/12 |
+| `worker/SandboxHttp.vibe` | 28/30 → 28/30 | 33/34 → 33/34 | 7/10 → 7/10 | 39/42 → 39/42 |
+| `worker/SandboxMachine.vibe` | 4/4 → 4/4 | 0/0 → 0/0 | 0/0 → 0/0 | 4/4 → 4/4 |
+| `worker/SandboxTools.vibe` | 8/11 → 8/11 | 1/2 → 1/2 | 7/10 → 7/10 | 9/12 → 9/12 |
+| `worker/Sandboxes.vibe` | 22/22 → 22/22 | 21/21 → 21/21 | 17/17 → 17/17 | 37/37 → 37/37 |
+| `worker/Sequencer.vibe` | 118/118 → 118/118 | 60/62 → 60/62 | 44/44 → 44/44 | 140/140 → 140/140 |
+| `worker/SpecificationReviewers.vibe` | 31/31 → 31/31 | 8/8 → 8/8 | 8/9 → 8/9 | 41/42 → 41/42 |
+| `worker/Tour.vibe` | 1/2 → 1/2 | 0/0 → 0/0 | 0/1 → 0/1 | 1/2 → 1/2 |
+| `worker/Unreachable.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `worker/VipDraft.vibe` | 30/30 → 30/30 | 10/10 → 10/10 | 7/8 → 7/8 | 40/41 → 40/41 |
+| `worker/Wiki.vibe` | 175/175 → 175/175 | 234/234 → 234/234 | 49/49 → 49/49 | 240/240 → 240/240 |
+| `worker/WikiDraft.vibe` | 32/32 → 32/32 | 14/14 → 14/14 | 7/8 → 7/8 | 43/44 → 43/44 |
+| `worker/WikiTools.vibe` | 9/9 → 9/9 | 6/6 → 6/6 | 6/6 → 6/6 | 13/13 → 13/13 |
+| `worker/accountObject.vibe` | 48/48 → 48/48 | 35/35 → 35/35 | 39/39 → 39/39 | 79/79 → 79/79 |
+| `worker/agentContext.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `worker/apiObjects.vibe` | 214/214 → 214/214 | 70/73 → 70/73 | 94/94 → 94/94 | 254/254 → 254/254 |
+| `worker/budgetDecision.vibe` | 5/5 → 5/5 | 5/5 → 5/5 | 4/4 → 4/4 | 6/6 → 6/6 |
+| `worker/index.vibe` | 13/13 → 13/13 | 19/19 → 19/19 | 2/2 → 2/2 | 17/17 → 17/17 |
+| `worker/liveDispatchDecision.vibe` | 7/7 → 7/7 | 8/8 → 8/8 | 3/3 → 3/3 | 11/11 → 11/11 |
+| `worker/machineObject.vibe` | 62/63 → 62/63 | 57/83 → 57/83 | 17/17 → 17/17 | 77/92 → 77/92 |
+| `worker/replyProgressDecision.vibe` | 17/17 → 17/17 | 32/32 → 32/32 | 10/10 → 10/10 | 22/22 → 22/22 |
+| `worker/replyReasons.vibe` | 7/7 → 7/7 | 12/12 → 12/12 | 2/2 → 2/2 | 12/12 → 12/12 |
+
+
+Chromium: 288 passed, 12 opt-in skips, no expected or unexpected failures. Coverage alone exits 1: lines
+3,448/7,769 (44.38%), branches 3,466/8,203 (42.25%), functions 1,414/2,931 (48.24%), statements 4,001/9,897
+(40.42%); 151 of 164 files below 100% (542 metrics). This is Chromium execution alone, with unloaded modules seeded
+at zero. The unminified e2e build and original-map controls are retained. The run used gatefix's installed Chromium,
+configurable build budget and content-addressed capture store on a Playwright box. Its Node 24.22.2 is below the
+repository's >=26.4 engine requirement; this receipt records that limitation.
+
+| File | Lines | Branches | Functions | Statements |
+| --- | ---: | ---: | ---: | ---: |
+| `infra/SandboxImage.vibe` | 0/2 → 0/2 | 0/0 → 0/0 | 0/0 → 0/0 | 0/2 → 0/2 |
+| `infra/Stack.vibe` | 0/8 → 0/8 | 0/6 → 0/6 | 0/0 → 0/0 | 0/8 → 0/8 |
+| `infra/WorkerBuild.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 0/1 |
+| `scripts/agent-context.vibe` | 0/22 → 0/22 | 0/4 → 0/4 | 0/5 → 0/5 | 0/23 → 0/23 |
+| `scripts/fuzz-preflight.vibe` | — → 0/16 | — → 0/4 | — → 0/3 | — → 0/18 |
+| `scripts/mythical-seed-program.vibe` | — → 0/50 | — → 0/18 | — → 0/15 | — → 0/63 |
+| `scripts/mythical-seed.vibe` | 0/51 → 0/1 | 0/18 → 0/0 | 0/16 → 0/0 | 0/65 → 0/1 |
+| `scripts/wiki.vibe` | 0/30 → 0/30 | 0/28 → 0/28 | 0/8 → 0/8 | 0/38 → 0/38 |
+| `src/actions/Actions.vibe` | 5/5 → 4/4 | 0/0 → 0/0 | 0/0 → 0/0 | 6/6 → 4/4 |
+| `src/actions/LiveActions.vibe` | 2/45 → 1/43 | 0/39 → 0/21 | 0/34 → 0/25 | 4/86 → 1/54 |
+| `src/actions/MockActions.vibe` | 112/119 → 101/114 | 91/168 → 50/85 | 31/44 → 28/39 | 203/230 → 119/152 |
+| `src/actions/agent.vibe` | 7/12 → 6/11 | 0/0 → 0/0 | 6/14 → 5/12 | 15/31 → 7/17 |
+| `src/actions/catalog.vibe` | 5/8 → 6/9 | 78/80 → 26/26 | 4/4 → 2/2 | 8/11 → 6/9 |
+| `src/actions/catalogDecision.vibe` | — → 3/3 | — → 12/12 | — → 2/2 | — → 4/4 |
+| `src/actions/execution.vibe` | 17/40 → 7/38 | 6/53 → 6/36 | 4/30 → 3/18 | 24/79 → 7/41 |
+| `src/actions/tools.vibe` | 0/13 → 0/13 | 0/1 → 0/1 | 0/7 → 0/7 | 0/14 → 0/14 |
+| `src/actions/wire.vibe` | 6/6 → 6/6 | 0/0 → 0/0 | 0/0 → 0/0 | 8/8 → 6/6 |
+| `src/assets/wiki.generated.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 0/0 → 0/0 | 4/4 → 2/2 |
+| `src/core/Factory.vibe` | 4/4 → 3/3 | 0/0 → 0/0 | 0/0 → 0/0 | 6/6 → 3/3 |
+| `src/core/IssuesFactory.vibe` | 68/77 → 66/74 | 150/203 → 89/118 | 18/20 → 13/15 | 109/133 → 74/96 |
+| `src/core/LiveAccounts.vibe` | 0/26 → 0/26 | 0/20 → 0/12 | 0/22 → 0/13 | 0/51 → 0/32 |
+| `src/core/LiveFactory.vibe` | 11/87 → 11/77 | 1/52 → 1/30 | 5/24 → 3/20 | 21/141 → 12/89 |
+| `src/core/LiveIssues.vibe` | 0/11 → 0/11 | 0/12 → 0/6 | 0/9 → 0/7 | 0/26 → 0/16 |
+| `src/core/LiveWiki.vibe` | 1/17 → 1/15 | 0/8 → 0/4 | 0/11 → 0/10 | 2/33 → 1/21 |
+| `src/core/MockAccounts.vibe` | 82/84 → 66/76 | 35/63 → 21/34 | 26/31 → 23/26 | 142/150 → 78/100 |
+| `src/core/MockFactory.vibe` | 248/273 → 223/266 | 159/261 → 97/139 | 79/99 → 64/78 | 443/508 → 251/318 |
+| `src/core/MockJournal.vibe` | 2/2 → 1/1 | 0/0 → 0/0 | 5/5 → 3/3 | 8/8 → 3/4 |
+| `src/core/VipWriter.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 0/1 |
+| `src/core/WikiFactory.vibe` | 0/66 → 0/62 | 0/126 → 0/67 | 1/28 → 1/21 | 0/122 → 0/83 |
+| `src/core/WikiWriter.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 0/1 |
+| `src/core/accountCookieDecision.vibe` | 0/1 → 0/5 | 0/2 → 0/15 | 0/1 → 0/3 | 0/1 → 0/7 |
+| `src/core/accountCookies.vibe` | 0/9 → 0/7 | 0/11 → 0/0 | 0/2 → 0/2 | 0/12 → 0/8 |
+| `src/core/conversation.vibe` | 170/241 → 198/246 | 464/659 → 269/396 | 114/133 → 63/80 | 248/395 → 233/339 |
+| `src/core/decide.vibe` | 54/55 → 49/55 | 168/211 → 77/107 | 9/9 → 6/6 | 97/101 → 58/87 |
+| `src/core/flowDecision.vibe` | 24/65 → 21/53 | 54/168 → 22/105 | 36/48 → 13/24 | 29/93 → 22/68 |
+| `src/core/flows.vibe` | 130/168 → 186/196 | 93/152 → 41/66 | 35/66 → 69/72 | 232/293 → 192/204 |
+| `src/core/followDecision.vibe` | — → 2/2 | — → 1/2 | — → 2/2 | — → 2/2 |
+| `src/core/identityDecision.vibe` | 1/2 → 2/2 | 6/8 → 4/4 | 2/2 → 1/1 | 1/3 → 3/3 |
+| `src/core/issueFlows.vibe` | 31/34 → 29/34 | 27/36 → 16/20 | 11/12 → 10/11 | 53/57 → 32/40 |
+| `src/core/issueSchemas.vibe` | 11/12 → 11/12 | 0/0 → 0/0 | 2/3 → 1/2 | 21/22 → 11/12 |
+| `src/core/mockDecision.vibe` | 10/10 → 17/17 | 4/4 → 6/6 | 4/4 → 4/4 | 16/16 → 19/19 |
+| `src/core/mockReplies.vibe` | 16/19 → 14/17 | 4/8 → 2/4 | 5/9 → 3/6 | 29/37 → 15/19 |
+| `src/core/protocolDecision.vibe` | 2/17 → 2/22 | 0/50 → 0/54 | 4/12 → 2/14 | 2/25 → 2/30 |
+| `src/core/roles.vibe` | 7/7 → 5/5 | 1/1 → 1/1 | 2/2 → 1/1 | 10/10 → 5/5 |
+| `src/core/sandboxDecision.vibe` | 43/55 → 52/59 | 77/119 → 47/78 | 28/29 → 15/16 | 72/101 → 60/80 |
+| `src/core/sandboxHost.vibe` | 120/175 → 120/175 | 147/248 → 85/137 | 34/37 → 24/27 | 201/308 → 132/209 |
+| `src/core/sandboxMeter.vibe` | 31/33 → 31/33 | 48/62 → 27/35 | 11/11 → 7/7 | 48/56 → 32/39 |
+| `src/core/sandboxMock.vibe` | 48/50 → 40/47 | 25/84 → 18/46 | 27/30 → 20/23 | 99/106 → 56/72 |
+| `src/core/sandboxPolicy.vibe` | 2/3 → 1/2 | 0/0 → 0/0 | 0/4 → 0/3 | 3/6 → 1/4 |
+| `src/core/schemas.vibe` | 24/30 → 23/30 | 0/0 → 0/0 | 0/0 → 0/0 | 27/33 → 23/30 |
+| `src/core/sequenceDecision.vibe` | 0/20 → 0/23 | 0/12 → 0/18 | 0/8 → 0/10 | 0/23 → 0/27 |
+| `src/core/sequencerDecision.vibe` | — → 0/16 | — → 0/28 | — → 0/8 | — → 0/23 |
+| `src/core/specification.vibe` | 28/34 → 29/34 | 55/87 → 34/57 | 5/6 → 5/6 | 45/61 → 31/44 |
+| `src/core/toolRefusal.vibe` | — → 0/5 | — → 0/18 | — → 0/1 | — → 0/6 |
+| `src/core/tourDecision.vibe` | — → 3/9 | — → 5/23 | — → 2/4 | — → 3/14 |
+| `src/core/walkthroughSteps.vibe` | 2/2 → 3/4 | 0/0 → 1/2 | 0/0 → 1/1 | 3/3 → 3/4 |
+| `src/core/wiki.vibe` | 14/15 → 10/15 | 26/45 → 14/22 | 14/14 → 6/10 | 27/32 → 16/27 |
+| `src/core/wikiDecision.vibe` | 0/1 → 0/1 | 0/6 → 0/3 | 0/2 → 0/1 | 0/1 → 0/1 |
+| `src/core/wikiFlows.vibe` | 13/34 → 9/34 | 20/42 → 12/23 | 2/12 → 2/11 | 22/57 → 10/40 |
+| `src/core/wikiLinks.vibe` | 0/14 → 0/15 | 0/59 → 0/29 | 0/2 → 0/1 | 0/25 → 0/18 |
+| `src/core/wikiSchemas.vibe` | 5/5 → 5/5 | 0/0 → 0/0 | 0/0 → 0/0 | 10/10 → 5/5 |
+| `src/core/wire.vibe` | 9/27 → 8/27 | 0/18 → 0/14 | 0/4 → 0/3 | 14/38 → 8/31 |
+| `src/history/LiveMythical.vibe` | 3/44 → 3/41 | 0/16 → 0/12 | 0/24 → 0/16 | 6/76 → 3/47 |
+| `src/history/MockMythical.vibe` | 41/41 → 33/35 | 6/12 → 3/5 | 36/37 → 25/26 | 62/63 → 38/41 |
+| `src/history/MythicalHistory.vibe` | 2/3 → 2/2 | 1/4 → 1/2 | 1/1 → 1/1 | 2/5 → 2/3 |
+| `src/history/Sequencer.vibe` | 72/97 → 72/94 | 25/70 → 17/36 | 53/59 → 30/35 | 130/175 → 76/110 |
+| `src/history/flowMachine.vibe` | 27/51 → 25/50 | 59/157 → 30/91 | 34/41 → 14/21 | 30/73 → 25/68 |
+| `src/history/flows.vibe` | 64/78 → 100/105 | 17/36 → 7/14 | 24/38 → 50/51 | 114/142 → 106/113 |
+| `src/history/mythical.vibe` | 110/141 → 108/141 | 228/339 → 126/191 | 44/52 → 25/29 | 175/236 → 118/195 |
+| `src/history/pageDecision.vibe` | — → 4/5 | — → 6/8 | — → 3/3 | — → 5/7 |
+| `src/history/pages.vibe` | 28/36 → 28/36 | 39/54 → 18/26 | 28/29 → 19/20 | 52/62 → 37/46 |
+| `src/history/roles.vibe` | 5/7 → 3/4 | 0/0 → 0/0 | 2/2 → 1/1 | 8/10 → 3/4 |
+| `src/history/schemas.vibe` | 20/32 → 18/31 | 0/0 → 0/0 | 1/3 → 1/3 | 25/39 → 18/33 |
+| `src/history/seed.vibe` | 5/171 → 5/161 | 0/115 → 0/87 | 0/36 → 0/25 | 9/212 → 5/185 |
+| `src/history/seed/vibelang.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 0/0 → 0/0 | 4/4 → 2/2 |
+| `src/history/seedDecision.vibe` | — → 0/25 | — → 0/40 | — → 0/7 | — → 0/38 |
+| `src/history/stackDecision.vibe` | — → 6/15 | — → 7/25 | — → 2/7 | — → 8/23 |
+| `src/history/tools.vibe` | 3/27 → 5/29 | 0/82 → 0/47 | 1/17 → 0/9 | 7/47 → 5/35 |
+| `src/history/wire.vibe` | 8/35 → 8/35 | 0/35 → 0/35 | 0/6 → 0/5 | 10/47 → 8/43 |
+| `src/surfaces/backend.vibe` | 0/45 → 0/45 | 0/35 → 0/31 | 0/14 → 0/15 | 0/58 → 0/58 |
+| `src/surfaces/cli-entry.vibe` | 0/8 → 0/8 | 0/2 → 0/2 | 0/2 → 0/2 | 0/9 → 0/9 |
+| `src/surfaces/cli.vibe` | 0/16 → 0/16 | 0/10 → 0/10 | 0/6 → 0/6 | 0/18 → 0/18 |
+| `src/surfaces/commandDecision.vibe` | 0/9 → 0/22 | 0/33 → 0/64 | 0/5 → 0/17 | 0/10 → 0/23 |
+| `src/surfaces/commands.vibe` | 0/168 → 0/171 | 0/134 → 0/112 | 0/73 → 0/73 | 0/204 → 0/207 |
+| `src/surfaces/manifest.vibe` | 0/4 → 0/4 | 0/0 → 0/0 | 0/2 → 0/2 | 0/5 → 0/5 |
+| `src/surfaces/mcp-entry.vibe` | 0/6 → 0/6 | 0/0 → 0/0 | 0/1 → 0/1 | 0/6 → 0/6 |
+| `src/surfaces/mcp.vibe` | 0/17 → 0/17 | 0/4 → 0/4 | 0/6 → 0/6 | 0/20 → 0/20 |
+| `src/surfaces/session.vibe` | 0/63 → 0/63 | 0/24 → 0/24 | 0/22 → 0/22 | 0/75 → 0/75 |
+| `src/surfaces/sessionFlow.vibe` | 0/29 → 0/40 | 0/2 → 0/2 | 0/10 → 0/18 | 0/35 → 0/48 |
+| `src/surfaces/signin.vibe` | 0/108 → 0/115 | 0/94 → 0/108 | 0/26 → 0/29 | 0/141 → 0/151 |
+| `src/web/actionModel.vibe` | 17/17 → 14/14 | 39/57 → 16/19 | 17/17 → 7/7 | 32/33 → 15/16 |
+| `src/web/actionView.vibe` | 27/30 → 27/30 | 201/243 → 104/123 | 35/40 → 22/27 | 48/53 → 36/41 |
+| `src/web/backend.vibe` | 61/71 → 53/64 | 22/30 → 9/15 | 39/47 → 28/38 | 116/134 → 61/72 |
+| `src/web/entry.vibe` | 8/8 → 8/8 | 8/8 → 4/4 | 0/0 → 0/0 | 13/13 → 8/8 |
+| `src/web/historyApp.vibe` | 145/168 → 135/152 | 85/149 → 32/54 | 123/158 → 76/97 | 259/308 → 162/192 |
+| `src/web/historyBackend.vibe` | 26/27 → 23/26 | 8/12 → 3/6 | 20/22 → 14/16 | 56/57 → 25/29 |
+| `src/web/historyDecision.vibe` | — → 35/42 | — → 23/31 | — → 23/29 | — → 38/48 |
+| `src/web/historyStartup.vibe` | 30/32 → 30/32 | 15/22 → 11/12 | 11/11 → 8/8 | 51/55 → 34/38 |
+| `src/web/historyView.vibe` | 60/73 → 64/73 | 219/284 → 116/145 | 58/63 → 40/43 | 89/109 → 70/82 |
+| `src/web/issueDecision.vibe` | 48/89 → 79/91 | 305/441 → 173/257 | 28/39 → 16/22 | 73/152 → 99/142 |
+| `src/web/issues.vibe` | 21/21 → 21/21 | 63/74 → 31/36 | 12/12 → 6/6 | 33/34 → 25/26 |
+| `src/web/issuesView.vibe` | 74/78 → 78/83 | 686/853 → 348/435 | 96/102 → 72/78 | 129/137 → 105/118 |
+| `src/web/main.vibe` | 557/689 → 559/667 | 1151/1772 → 532/819 | 456/583 → 283/369 | 1054/1347 → 692/884 |
+| `src/web/markdown.vibe` | 61/106 → 65/106 | 77/178 → 44/95 | 22/43 → 13/27 | 109/206 → 78/145 |
+| `src/web/media.vibe` | 7/7 → 6/6 | 0/0 → 0/0 | 3/3 → 2/2 | 13/13 → 6/7 |
+| `src/web/modeSwitch.vibe` | 2/2 → 2/2 | 8/8 → 0/0 | 2/2 → 1/1 | 3/3 → 2/2 |
+| `src/web/modelDecision.vibe` | 26/54 → 53/78 | 56/120 → 74/112 | 52/80 → 37/51 | 26/67 → 60/95 |
+| `src/web/paneDecision.vibe` | 7/19 → 7/20 | 26/84 → 12/48 | 12/32 → 6/17 | 8/22 → 7/22 |
+| `src/web/roleView.vibe` | 23/24 → 21/24 | 123/132 → 62/66 | 21/21 → 12/14 | 37/39 → 24/27 |
+| `src/web/sandboxView.vibe` | 16/17 → 18/19 | 128/180 → 70/88 | 10/10 → 6/6 | 29/30 → 19/21 |
+| `src/web/screenDecision.vibe` | 28/41 → 45/46 | 128/164 → 87/102 | 52/55 → 30/30 | 30/53 → 54/58 |
+| `src/web/startup.vibe` | 47/50 → 46/50 | 25/40 → 16/22 | 15/19 → 12/13 | 91/100 → 56/64 |
+| `src/web/startupDecision.vibe` | 6/9 → 11/11 | 29/36 → 20/22 | 12/12 → 8/8 | 6/12 → 13/14 |
+| `src/web/styles.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 2/2 → 2/2 | 2/2 → 2/2 |
+| `src/web/theatre.vibe` | 46/46 → 42/45 | 74/79 → 35/38 | 10/10 → 7/7 | 85/85 → 48/51 |
+| `src/web/theatreDecision.vibe` | 5/18 → 16/18 | 98/112 → 51/56 | 10/10 → 5/5 | 5/31 → 29/31 |
+| `src/web/tourDecision.vibe` | 11/16 → 25/27 | 19/40 → 42/54 | 20/24 → 17/19 | 12/22 → 25/33 |
+| `src/web/updateDecision.vibe` | — → 39/42 | — → 88/105 | — → 13/14 | — → 56/62 |
+| `src/web/view.vibe` | 50/53 → 50/53 | 288/342 → 140/159 | 56/58 → 32/33 | 78/89 → 53/58 |
+| `src/web/viewDecision.vibe` | 12/22 → 21/22 | 75/104 → 40/52 | 24/26 → 12/13 | 12/32 → 25/31 |
+| `src/web/viewport.vibe` | 46/48 → 29/37 | 69/108 → 24/41 | 26/26 → 14/14 | 78/84 → 32/45 |
+| `src/web/wikiView.vibe` | 27/28 → 26/27 | 115/182 → 60/96 | 20/24 → 15/19 | 58/62 → 31/38 |
+| `worker/Accounts.vibe` | 0/267 → 0/312 | 0/342 → 0/361 | 0/62 → 0/73 | 0/369 → 0/430 |
+| `worker/ActionDirectory.vibe` | 0/36 → 0/37 | 0/24 → 0/26 | 0/17 → 0/20 | 0/50 → 0/52 |
+| `worker/ActionIdentity.vibe` | 0/14 → 0/14 | 0/20 → 0/20 | 0/7 → 0/7 | 0/18 → 0/18 |
+| `worker/ActionRuns.vibe` | 0/117 → 0/120 | 0/168 → 0/178 | 0/34 → 0/36 | 0/160 → 0/163 |
+| `worker/ActionsHttp.vibe` | 0/41 → 0/41 | 0/95 → 0/95 | 0/10 → 0/10 | 0/61 → 0/61 |
+| `worker/AgentModel.vibe` | 0/9 → 0/9 | 0/0 → 0/0 | 0/3 → 0/3 | 0/9 → 0/9 |
+| `worker/Api.vibe` | 0/231 → 0/46 | 0/59 → 0/0 | 0/79 → 0/1 | 0/263 → 0/47 |
+| `worker/Budget.vibe` | 0/22 → 0/22 | 0/19 → 0/19 | 0/4 → 0/4 | 0/24 → 0/24 |
+| `worker/GitHubDelegate.vibe` | — → 0/4 | — → 0/11 | — → 0/3 | — → 0/6 |
+| `worker/HistoryActions.vibe` | 0/33 → 0/33 | 0/19 → 0/19 | 0/11 → 0/11 | 0/37 → 0/37 |
+| `worker/HistoryObject.vibe` | 0/60 → 0/59 | 0/15 → 0/15 | 0/33 → 0/32 | 0/75 → 0/74 |
+| `worker/HistoryTools.vibe` | 0/8 → 0/8 | 0/0 → 0/0 | 0/6 → 0/6 | 0/8 → 0/8 |
+| `worker/Http.vibe` | 0/93 → 0/93 | 0/104 → 0/100 | 0/23 → 0/23 | 0/126 → 0/126 |
+| `worker/IssueCredentials.vibe` | 0/16 → — | 0/9 → — | 0/11 → — | 0/24 → — |
+| `worker/Issues.vibe` | 0/271 → 0/298 | 0/440 → 0/453 | 0/68 → 0/66 | 0/380 → 0/401 |
+| `worker/MainLog.vibe` | 0/43 → 0/42 | 0/29 → 0/27 | 0/12 → 0/12 | 0/60 → 0/58 |
+| `worker/ObjectStartup.vibe` | — → 0/60 | — → 0/27 | — → 0/16 | — → 0/75 |
+| `worker/ObjectStorage.vibe` | 0/10 → 0/10 | 0/6 → 0/6 | 0/11 → 0/11 | 0/14 → 0/14 |
+| `worker/Objects.vibe` | 0/108 → 0/112 | 0/46 → 0/47 | 0/60 → 0/59 | 0/136 → 0/140 |
+| `worker/PublicReads.vibe` | — → 0/12 | — → 0/6 | — → 0/12 | — → 0/19 |
+| `worker/Reply.vibe` | 0/136 → 0/138 | 0/81 → 0/81 | 0/17 → 0/19 | 0/155 → 0/158 |
+| `worker/SandboxAccounts.vibe` | 0/12 → 0/11 | 0/2 → 0/2 | 0/0 → 0/0 | 0/13 → 0/12 |
+| `worker/SandboxHttp.vibe` | 0/30 → 0/30 | 0/34 → 0/34 | 0/10 → 0/10 | 0/42 → 0/42 |
+| `worker/SandboxMachine.vibe` | 0/4 → 0/4 | 0/0 → 0/0 | 0/0 → 0/0 | 0/4 → 0/4 |
+| `worker/SandboxTools.vibe` | 0/11 → 0/11 | 0/2 → 0/2 | 0/10 → 0/10 | 0/12 → 0/12 |
+| `worker/Sandboxes.vibe` | 0/22 → 0/22 | 0/21 → 0/21 | 0/17 → 0/17 | 0/37 → 0/37 |
+| `worker/Sequencer.vibe` | 0/119 → 0/118 | 0/68 → 0/62 | 0/47 → 0/44 | 0/143 → 0/140 |
+| `worker/SpecificationReviewers.vibe` | 0/31 → 0/31 | 0/8 → 0/8 | 0/10 → 0/9 | 0/42 → 0/42 |
+| `worker/Tour.vibe` | 0/5 → 0/2 | 0/0 → 0/0 | 0/2 → 0/1 | 0/6 → 0/2 |
+| `worker/Unreachable.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 0/1 |
+| `worker/VipDraft.vibe` | 0/30 → 0/30 | 0/10 → 0/10 | 0/9 → 0/8 | 0/41 → 0/41 |
+| `worker/Wiki.vibe` | 0/152 → 0/175 | 0/213 → 0/234 | 0/51 → 0/49 | 0/221 → 0/240 |
+| `worker/WikiDraft.vibe` | 0/32 → 0/32 | 0/14 → 0/14 | 0/9 → 0/8 | 0/44 → 0/44 |
+| `worker/WikiTools.vibe` | 0/9 → 0/9 | 0/6 → 0/6 | 0/6 → 0/6 | 0/13 → 0/13 |
+| `worker/accountObject.vibe` | 0/48 → 0/48 | 0/35 → 0/35 | 0/39 → 0/39 | 0/79 → 0/79 |
+| `worker/agentContext.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 0/1 |
+| `worker/apiObjects.vibe` | — → 0/214 | — → 0/73 | — → 0/94 | — → 0/254 |
+| `worker/budgetDecision.vibe` | 0/5 → 0/5 | 0/5 → 0/5 | 0/4 → 0/4 | 0/6 → 0/6 |
+| `worker/index.vibe` | 0/13 → 0/13 | 0/19 → 0/19 | 0/2 → 0/2 | 0/17 → 0/17 |
+| `worker/liveDispatchDecision.vibe` | 0/7 → 0/7 | 0/8 → 0/8 | 0/3 → 0/3 | 0/11 → 0/11 |
+| `worker/machineObject.vibe` | 0/63 → 0/63 | 0/83 → 0/83 | 0/17 → 0/17 | 0/92 → 0/92 |
+| `worker/replyProgressDecision.vibe` | 0/17 → 0/17 | 0/32 → 0/32 | 0/10 → 0/10 | 0/22 → 0/22 |
+| `worker/replyReasons.vibe` | 0/7 → 0/7 | 0/12 → 0/12 | 0/2 → 0/2 | 0/12 → 0/12 |
+
+
+Workerd: 73 passed / three skipped, 16 passing files / one skipped, no test failures. Coverage alone exits 1:
+3,487/7,749 lines (~45.0%), 2,417/8,203 branches, 988/2,938 functions and 3,996/9,892 statements; 141 of 163
+files below 100%, with counters from 100 isolate files. This earlier snapshot predates the final main rebase and
+tour/error boundary refinements. Before below is this run's parent-Node coverage, after is parent plus isolate
+execution from these same tests; unit/Chromium hits are never borrowed. Native/Istanbul counter structures can
+differ, so both denominators are shown. The box also ran Node 24.22.2, below the repository engine requirement.
+
+| File | Lines | Branches | Functions | Statements |
+| --- | ---: | ---: | ---: | ---: |
+| `infra/SandboxImage.vibe` | 0/2 → 0/2 | 0/0 → 0/0 | 0/0 → 0/0 | 0/2 → 0/2 |
+| `infra/Stack.vibe` | 0/8 → 0/8 | 0/6 → 0/6 | 0/0 → 0/0 | 0/8 → 0/8 |
+| `infra/WorkerBuild.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 0/1 |
+| `scripts/agent-context.vibe` | 0/22 → 0/22 | 0/4 → 0/4 | 0/5 → 0/5 | 0/23 → 0/23 |
+| `scripts/mythical-seed-program.vibe` | 0/50 → 0/50 | 0/18 → 0/18 | 0/16 → 0/16 | 0/64 → 0/64 |
+| `scripts/mythical-seed.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 0/1 |
+| `scripts/wiki.vibe` | 0/30 → 0/30 | 0/28 → 0/28 | 0/8 → 0/8 | 0/38 → 0/38 |
+| `src/actions/Actions.vibe` | 4/4 → 4/4 | 0/0 → 0/0 | 0/0 → 0/0 | 4/4 → 4/4 |
+| `src/actions/LiveActions.vibe` | 40/43 → 40/43 | 15/21 → 15/21 | 20/25 → 20/25 | 45/54 → 45/54 |
+| `src/actions/MockActions.vibe` | 2/114 → 2/114 | 0/85 → 0/85 | 2/40 → 2/40 | 2/153 → 2/153 |
+| `src/actions/agent.vibe` | 4/11 → 5/11 | 0/0 → 0/0 | 2/12 → 3/12 | 5/17 → 7/17 |
+| `src/actions/catalog.vibe` | 4/9 → 9/9 | 0/26 → 26/26 | 0/2 → 2/2 | 4/9 → 9/9 |
+| `src/actions/catalogDecision.vibe` | 0/3 → 3/3 | 0/12 → 12/12 | 0/2 → 2/2 | 0/4 → 4/4 |
+| `src/actions/execution.vibe` | 1/38 → 11/38 | 0/36 → 10/36 | 0/18 → 5/18 | 1/41 → 12/41 |
+| `src/actions/tools.vibe` | 4/13 → 4/13 | 0/1 → 0/1 | 0/7 → 0/7 | 4/14 → 4/14 |
+| `src/actions/wire.vibe` | 6/6 → 6/6 | 0/0 → 0/0 | 0/0 → 0/0 | 6/6 → 6/6 |
+| `src/assets/wiki.generated.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 0/0 → 0/0 | 2/2 → 2/2 |
+| `src/core/Factory.vibe` | 3/3 → 3/3 | 0/0 → 0/0 | 0/0 → 0/0 | 3/3 → 3/3 |
+| `src/core/IssuesFactory.vibe` | 2/74 → 42/74 | 1/118 → 51/118 | 1/15 → 7/15 | 2/96 → 46/96 |
+| `src/core/LiveAccounts.vibe` | 7/26 → 7/26 | 0/12 → 0/12 | 1/13 → 1/13 | 7/32 → 7/32 |
+| `src/core/LiveFactory.vibe` | 51/77 → 51/77 | 7/30 → 7/30 | 13/20 → 13/20 | 51/89 → 51/89 |
+| `src/core/LiveIssues.vibe` | 3/11 → 3/11 | 0/6 → 0/6 | 1/7 → 1/7 | 3/16 → 3/16 |
+| `src/core/LiveWiki.vibe` | 4/15 → 4/15 | 0/4 → 0/4 | 1/10 → 1/10 | 4/21 → 4/21 |
+| `src/core/MockAccounts.vibe` | 4/76 → 4/76 | 0/34 → 0/34 | 0/26 → 0/26 | 4/101 → 4/101 |
+| `src/core/MockFactory.vibe` | 8/266 → 8/266 | 0/139 → 0/139 | 2/79 → 2/79 | 8/320 → 8/320 |
+| `src/core/MockJournal.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/3 → 0/3 | 0/4 → 0/4 |
+| `src/core/VipWriter.vibe` | 0/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 1/1 |
+| `src/core/WikiFactory.vibe` | 0/62 → 40/62 | 0/69 → 30/67 | 0/21 → 13/21 | 0/85 → 49/83 |
+| `src/core/WikiWriter.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `src/core/accountCookieDecision.vibe` | 4/5 → 5/5 | 10/15 → 12/15 | 2/3 → 3/3 | 4/7 → 5/7 |
+| `src/core/accountCookies.vibe` | 6/7 → 6/7 | 0/0 → 0/0 | 1/2 → 2/2 | 6/8 → 7/8 |
+| `src/core/conversation.vibe` | 96/246 → 186/246 | 137/410 → 274/410 | 31/80 → 57/80 | 103/339 → 223/339 |
+| `src/core/decide.vibe` | 1/55 → 53/55 | 0/107 → 81/107 | 0/6 → 6/6 | 1/87 → 64/87 |
+| `src/core/flowDecision.vibe` | 0/53 → 37/53 | 0/105 → 38/105 | 0/24 → 19/24 | 0/68 → 37/68 |
+| `src/core/flows.vibe` | 48/196 → 186/196 | 0/66 → 42/66 | 0/72 → 69/72 | 48/206 → 190/206 |
+| `src/core/followDecision.vibe` | 0/2 → 2/2 | 0/2 → 1/2 | 0/2 → 2/2 | 0/2 → 2/2 |
+| `src/core/identityDecision.vibe` | 0/2 → 2/2 | 0/4 → 4/4 | 0/1 → 1/1 | 0/3 → 3/3 |
+| `src/core/issueFlows.vibe` | 11/34 → 33/34 | 12/20 → 18/20 | 2/11 → 9/11 | 12/40 → 37/40 |
+| `src/core/issueSchemas.vibe` | 10/12 → 10/12 | 0/0 → 0/0 | 0/2 → 0/2 | 10/12 → 10/12 |
+| `src/core/mockDecision.vibe` | 0/17 → 0/17 | 0/6 → 0/6 | 0/4 → 0/4 | 0/19 → 0/19 |
+| `src/core/mockReplies.vibe` | 11/17 → 11/17 | 0/4 → 0/4 | 1/6 → 1/6 | 12/19 → 12/19 |
+| `src/core/protocolDecision.vibe` | 8/22 → 22/22 | 10/54 → 52/54 | 7/14 → 14/14 | 9/30 → 30/30 |
+| `src/core/roles.vibe` | 4/5 → 5/5 | 0/1 → 1/1 | 0/1 → 1/1 | 4/5 → 5/5 |
+| `src/core/sandboxDecision.vibe` | 1/59 → 57/59 | 0/78 → 57/78 | 0/16 → 15/16 | 1/80 → 65/80 |
+| `src/core/sandboxHost.vibe` | 1/175 → 126/175 | 0/137 → 93/137 | 0/27 → 23/27 | 1/209 → 137/209 |
+| `src/core/sandboxMeter.vibe` | 1/33 → 31/33 | 0/35 → 27/35 | 0/7 → 7/7 | 1/39 → 32/39 |
+| `src/core/sandboxMock.vibe` | 0/47 → 19/47 | 0/46 → 9/46 | 0/23 → 8/24 | 0/72 → 26/72 |
+| `src/core/sandboxPolicy.vibe` | 1/2 → 2/2 | 0/0 → 0/0 | 0/3 → 2/3 | 1/4 → 3/4 |
+| `src/core/schemas.vibe` | 30/30 → 30/30 | 0/0 → 0/0 | 0/0 → 0/0 | 30/30 → 30/30 |
+| `src/core/sequenceDecision.vibe` | 0/23 → 21/23 | 0/18 → 12/18 | 0/10 → 9/10 | 0/27 → 24/27 |
+| `src/core/sequencerDecision.vibe` | 0/16 → 5/16 | 0/28 → 8/28 | 0/8 → 4/8 | 0/23 → 8/23 |
+| `src/core/specification.vibe` | 6/34 → 27/34 | 0/59 → 27/59 | 1/6 → 4/6 | 6/46 → 30/46 |
+| `src/core/toolRefusal.vibe` | 1/5 → 1/5 | 0/18 → 0/18 | 0/1 → 0/1 | 1/6 → 1/6 |
+| `src/core/tourDecision.vibe` | 0/9 → 3/9 | 0/23 → 5/23 | 0/4 → 2/4 | 0/14 → 3/14 |
+| `src/core/walkthroughSteps.vibe` | 2/3 → 2/3 | 0/0 → 0/0 | 0/1 → 0/1 | 2/3 → 2/3 |
+| `src/core/wiki.vibe` | 0/15 → 6/15 | 0/22 → 7/22 | 0/10 → 2/10 | 0/27 → 8/27 |
+| `src/core/wikiDecision.vibe` | 0/1 → 1/1 | 0/3 → 3/3 | 0/1 → 1/1 | 0/1 → 1/1 |
+| `src/core/wikiFlows.vibe` | 11/34 → 30/34 | 12/23 → 22/23 | 2/11 → 8/11 | 12/40 → 35/40 |
+| `src/core/wikiLinks.vibe` | 0/15 → 0/15 | 0/29 → 0/29 | 0/1 → 0/1 | 0/18 → 0/18 |
+| `src/core/wikiSchemas.vibe` | 5/5 → 5/5 | 0/0 → 0/0 | 0/0 → 0/0 | 5/5 → 5/5 |
+| `src/core/wire.vibe` | 16/27 → 25/27 | 3/14 → 12/14 | 1/3 → 3/3 | 16/31 → 27/31 |
+| `src/history/LiveMythical.vibe` | 30/41 → 30/41 | 5/12 → 5/12 | 9/16 → 9/16 | 30/47 → 30/47 |
+| `src/history/MockMythical.vibe` | 0/35 → 0/35 | 0/5 → 0/5 | 0/27 → 0/27 | 0/42 → 0/42 |
+| `src/history/MythicalHistory.vibe` | 0/2 → 0/2 | 0/2 → 0/2 | 0/1 → 0/1 | 0/3 → 0/3 |
+| `src/history/Sequencer.vibe` | 2/94 → 47/94 | 0/36 → 17/36 | 0/35 → 17/35 | 2/110 → 53/110 |
+| `src/history/flowMachine.vibe` | 2/50 → 25/50 | 3/91 → 27/91 | 1/21 → 9/21 | 3/68 → 28/68 |
+| `src/history/flows.vibe` | 39/105 → 84/105 | 0/14 → 7/14 | 2/51 → 39/51 | 39/113 → 88/113 |
+| `src/history/mythical.vibe` | 4/141 → 60/141 | 0/191 → 48/191 | 0/29 → 13/29 | 4/195 → 64/195 |
+| `src/history/pageDecision.vibe` | 0/5 → 4/5 | 0/8 → 6/8 | 0/3 → 3/3 | 0/7 → 5/7 |
+| `src/history/pages.vibe` | 3/36 → 36/36 | 0/26 → 23/26 | 0/20 → 20/20 | 3/46 → 45/46 |
+| `src/history/roles.vibe` | 3/4 → 3/4 | 0/0 → 0/0 | 0/1 → 0/1 | 3/4 → 3/4 |
+| `src/history/schemas.vibe` | 30/31 → 31/31 | 0/0 → 0/0 | 0/3 → 1/3 | 30/33 → 31/33 |
+| `src/history/seed.vibe` | 16/161 → 16/161 | 0/87 → 0/87 | 0/25 → 0/25 | 16/185 → 16/185 |
+| `src/history/seed/vibelang.vibe` | 0/2 → 2/2 | 0/0 → 0/0 | 0/0 → 0/0 | 0/2 → 2/2 |
+| `src/history/seedDecision.vibe` | 0/25 → 0/25 | 0/40 → 0/40 | 0/7 → 0/7 | 0/38 → 0/38 |
+| `src/history/stackDecision.vibe` | 0/15 → 5/15 | 0/25 → 5/25 | 0/7 → 1/7 | 0/23 → 5/23 |
+| `src/history/tools.vibe` | 5/29 → 25/29 | 0/47 → 26/47 | 0/9 → 8/9 | 5/36 → 29/36 |
+| `src/history/wire.vibe` | 19/35 → 34/35 | 4/35 → 33/35 | 1/5 → 5/5 | 19/43 → 42/43 |
+| `src/surfaces/backend.vibe` | 29/45 → 29/45 | 14/31 → 14/31 | 6/15 → 6/15 | 31/58 → 31/58 |
+| `src/surfaces/cli-entry.vibe` | 8/8 → 8/8 | 2/2 → 2/2 | 2/2 → 2/2 | 9/9 → 9/9 |
+| `src/surfaces/cli.vibe` | 15/16 → 15/16 | 7/10 → 7/10 | 5/6 → 5/6 | 16/18 → 16/18 |
+| `src/surfaces/commandDecision.vibe` | 8/22 → 8/22 | 24/64 → 24/64 | 4/17 → 4/17 | 9/23 → 9/23 |
+| `src/surfaces/commands.vibe` | 93/171 → 93/171 | 16/112 → 16/112 | 14/73 → 14/73 | 97/207 → 97/207 |
+| `src/surfaces/manifest.vibe` | 4/4 → 4/4 | 0/0 → 0/0 | 2/2 → 2/2 | 5/5 → 5/5 |
+| `src/surfaces/mcp-entry.vibe` | 6/6 → 6/6 | 0/0 → 0/0 | 1/1 → 1/1 | 6/6 → 6/6 |
+| `src/surfaces/mcp.vibe` | 14/17 → 14/17 | 0/4 → 0/4 | 5/6 → 5/6 | 16/20 → 16/20 |
+| `src/surfaces/session.vibe` | 53/63 → 53/63 | 16/24 → 16/24 | 14/22 → 14/22 | 59/75 → 59/75 |
+| `src/surfaces/sessionFlow.vibe` | 40/40 → 40/40 | 1/2 → 1/2 | 19/20 → 19/20 | 49/50 → 49/50 |
+| `src/surfaces/signin.vibe` | 101/115 → 101/115 | 74/108 → 74/108 | 16/30 → 16/30 | 114/153 → 114/153 |
+| `src/web/actionModel.vibe` | 0/14 → 0/14 | 0/19 → 0/19 | 0/7 → 0/7 | 0/16 → 0/16 |
+| `src/web/actionView.vibe` | 0/30 → 0/30 | 0/123 → 0/123 | 0/27 → 0/27 | 0/41 → 0/41 |
+| `src/web/backend.vibe` | 29/64 → 29/64 | 6/15 → 6/15 | 6/38 → 6/38 | 30/72 → 30/72 |
+| `src/web/entry.vibe` | 0/8 → 0/8 | 0/4 → 0/4 | 0/0 → 0/0 | 0/8 → 0/8 |
+| `src/web/historyApp.vibe` | 0/152 → 0/152 | 0/54 → 0/54 | 0/97 → 0/97 | 0/192 → 0/192 |
+| `src/web/historyBackend.vibe` | 0/26 → 0/26 | 0/6 → 0/6 | 0/16 → 0/16 | 0/29 → 0/29 |
+| `src/web/historyDecision.vibe` | 0/42 → 0/42 | 0/31 → 0/31 | 0/29 → 0/29 | 0/48 → 0/48 |
+| `src/web/historyStartup.vibe` | 0/32 → 0/32 | 0/12 → 0/12 | 0/8 → 0/8 | 0/38 → 0/38 |
+| `src/web/historyView.vibe` | 0/73 → 0/73 | 0/145 → 0/145 | 0/43 → 0/43 | 0/82 → 0/82 |
+| `src/web/issueDecision.vibe` | 0/91 → 0/91 | 0/257 → 0/257 | 0/22 → 0/22 | 0/142 → 0/142 |
+| `src/web/issues.vibe` | 0/21 → 0/21 | 0/36 → 0/36 | 0/6 → 0/6 | 0/26 → 0/26 |
+| `src/web/issuesView.vibe` | 0/83 → 0/83 | 0/435 → 0/435 | 0/78 → 0/78 | 0/118 → 0/118 |
+| `src/web/main.vibe` | 0/666 → 0/666 | 0/815 → 0/815 | 0/369 → 0/369 | 0/883 → 0/883 |
+| `src/web/markdown.vibe` | 0/106 → 0/106 | 0/95 → 0/95 | 0/27 → 0/27 | 0/145 → 0/145 |
+| `src/web/media.vibe` | 0/6 → 0/6 | 0/0 → 0/0 | 0/2 → 0/2 | 0/7 → 0/7 |
+| `src/web/modeSwitch.vibe` | 0/2 → 0/2 | 0/0 → 0/0 | 0/1 → 0/1 | 0/2 → 0/2 |
+| `src/web/modelDecision.vibe` | 0/78 → 0/78 | 0/112 → 0/112 | 0/51 → 0/51 | 0/95 → 0/95 |
+| `src/web/paneDecision.vibe` | 0/18 → 0/18 | 0/42 → 0/42 | 0/15 → 0/15 | 0/20 → 0/20 |
+| `src/web/roleView.vibe` | 0/24 → 0/24 | 0/66 → 0/66 | 0/14 → 0/14 | 0/27 → 0/27 |
+| `src/web/sandboxView.vibe` | 0/19 → 0/19 | 0/88 → 0/88 | 0/6 → 0/6 | 0/21 → 0/21 |
+| `src/web/screenDecision.vibe` | 0/46 → 0/46 | 0/102 → 0/102 | 0/30 → 0/30 | 0/58 → 0/58 |
+| `src/web/startup.vibe` | 0/50 → 0/50 | 0/22 → 0/22 | 0/13 → 0/13 | 0/64 → 0/64 |
+| `src/web/startupDecision.vibe` | 0/11 → 0/11 | 0/22 → 0/22 | 0/8 → 0/8 | 0/14 → 0/14 |
+| `src/web/styles.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/2 → 0/2 | 0/2 → 0/2 |
+| `src/web/theatre.vibe` | 0/45 → 0/45 | 0/38 → 0/38 | 0/7 → 0/7 | 0/51 → 0/51 |
+| `src/web/theatreDecision.vibe` | 0/18 → 0/18 | 0/56 → 0/56 | 0/5 → 0/5 | 0/31 → 0/31 |
+| `src/web/tourDecision.vibe` | 0/27 → 0/27 | 0/54 → 0/54 | 0/19 → 0/19 | 0/33 → 0/33 |
+| `src/web/updateDecision.vibe` | 0/42 → 0/42 | 0/105 → 0/105 | 0/14 → 0/14 | 0/62 → 0/62 |
+| `src/web/view.vibe` | 0/53 → 0/53 | 0/159 → 0/159 | 0/33 → 0/33 | 0/58 → 0/58 |
+| `src/web/viewDecision.vibe` | 0/22 → 0/22 | 0/52 → 0/52 | 0/13 → 0/13 | 0/31 → 0/31 |
+| `src/web/viewport.vibe` | 0/37 → 0/37 | 0/41 → 0/41 | 0/14 → 0/14 | 0/45 → 0/45 |
+| `src/web/wikiView.vibe` | 0/27 → 0/27 | 0/96 → 0/96 | 0/19 → 0/19 | 0/38 → 0/38 |
+| `worker/Accounts.vibe` | 0/312 → 262/312 | 0/361 → 260/361 | 0/73 → 52/73 | 0/430 → 328/430 |
+| `worker/ActionDirectory.vibe` | 0/37 → 37/37 | 0/26 → 20/26 | 0/20 → 20/20 | 0/52 → 50/52 |
+| `worker/ActionIdentity.vibe` | 0/14 → 10/14 | 0/20 → 11/20 | 0/7 → 3/7 | 0/18 → 11/18 |
+| `worker/ActionRuns.vibe` | 0/120 → 104/120 | 0/178 → 110/178 | 0/36 → 28/36 | 0/163 → 126/163 |
+| `worker/ActionsHttp.vibe` | 0/41 → 40/41 | 0/95 → 78/95 | 0/10 → 7/10 | 0/61 → 50/61 |
+| `worker/AgentModel.vibe` | 0/9 → 9/9 | 0/0 → 0/0 | 0/3 → 3/3 | 0/9 → 9/9 |
+| `worker/Api.vibe` | 0/46 → 0/46 | 0/0 → 0/0 | 0/1 → 0/1 | 0/47 → 0/47 |
+| `worker/Budget.vibe` | 0/22 → 20/22 | 0/19 → 14/19 | 0/4 → 4/4 | 0/24 → 21/24 |
+| `worker/GitHubDelegate.vibe` | 0/4 → 4/4 | 0/11 → 7/11 | 0/3 → 3/3 | 0/6 → 5/6 |
+| `worker/HistoryActions.vibe` | 0/33 → 18/33 | 0/19 → 4/19 | 0/11 → 9/11 | 0/37 → 20/37 |
+| `worker/HistoryObject.vibe` | 0/59 → 54/59 | 0/15 → 15/15 | 0/32 → 24/32 | 0/74 → 65/74 |
+| `worker/HistoryTools.vibe` | 2/8 → 5/8 | 0/0 → 0/0 | 0/6 → 3/6 | 2/8 → 5/8 |
+| `worker/Http.vibe` | 0/93 → 91/93 | 0/100 → 80/100 | 0/23 → 14/23 | 0/126 → 109/126 |
+| `worker/Issues.vibe` | 0/298 → 215/298 | 0/453 → 220/453 | 0/66 → 48/68 | 0/401 → 253/402 |
+| `worker/MainLog.vibe` | 0/42 → 5/42 | 0/27 → 0/27 | 0/12 → 1/12 | 0/58 → 5/58 |
+| `worker/ObjectStartup.vibe` | 0/60 → 50/60 | 0/27 → 16/27 | 0/16 → 12/16 | 0/75 → 61/75 |
+| `worker/ObjectStorage.vibe` | 0/10 → 10/10 | 0/6 → 6/6 | 0/11 → 11/11 | 0/14 → 14/14 |
+| `worker/Objects.vibe` | 0/112 → 99/112 | 0/47 → 33/47 | 0/59 → 52/60 | 0/140 → 120/140 |
+| `worker/PublicReads.vibe` | 0/12 → 7/12 | 0/6 → 4/6 | 0/12 → 3/12 | 0/19 → 8/19 |
+| `worker/Reply.vibe` | 15/138 → 112/138 | 0/81 → 46/81 | 1/19 → 15/19 | 15/159 → 125/159 |
+| `worker/SandboxAccounts.vibe` | 0/11 → 0/11 | 0/2 → 0/2 | 0/0 → 0/0 | 0/12 → 0/12 |
+| `worker/SandboxHttp.vibe` | 0/30 → 24/30 | 0/34 → 20/34 | 0/10 → 6/10 | 0/42 → 27/42 |
+| `worker/SandboxMachine.vibe` | 0/4 → 0/4 | 0/0 → 0/0 | 0/0 → 0/0 | 0/4 → 0/4 |
+| `worker/SandboxTools.vibe` | 2/11 → 5/11 | 0/2 → 1/2 | 0/10 → 4/10 | 2/12 → 6/12 |
+| `worker/Sandboxes.vibe` | 0/22 → 22/22 | 0/21 → 21/21 | 0/17 → 17/17 | 0/37 → 37/37 |
+| `worker/Sequencer.vibe` | 1/118 → 98/118 | 0/62 → 32/62 | 0/44 → 39/44 | 1/140 → 111/140 |
+| `worker/SpecificationReviewers.vibe` | 0/31 → 5/31 | 0/8 → 0/8 | 0/9 → 0/9 | 0/42 → 5/42 |
+| `worker/Tour.vibe` | 0/2 → 1/2 | 0/0 → 0/0 | 0/1 → 0/1 | 0/2 → 1/2 |
+| `worker/Unreachable.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `worker/VipDraft.vibe` | 0/30 → 18/30 | 0/10 → 3/10 | 0/8 → 1/8 | 0/41 → 20/41 |
+| `worker/Wiki.vibe` | 0/175 → 51/175 | 0/234 → 47/234 | 0/49 → 7/50 | 0/240 → 57/240 |
+| `worker/WikiDraft.vibe` | 0/32 → 4/32 | 0/14 → 0/14 | 0/8 → 0/8 | 0/44 → 4/44 |
+| `worker/WikiTools.vibe` | 1/9 → 2/9 | 0/6 → 1/6 | 1/6 → 2/6 | 2/13 → 3/13 |
+| `worker/accountObject.vibe` | 0/48 → 0/48 | 0/35 → 0/35 | 0/39 → 0/39 | 0/79 → 0/79 |
+| `worker/agentContext.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `worker/apiObjects.vibe` | 0/214 → 63/214 | 0/73 → 15/73 | 0/94 → 21/94 | 0/254 → 77/254 |
+| `worker/budgetDecision.vibe` | 0/5 → 5/5 | 0/5 → 4/5 | 0/4 → 4/4 | 0/6 → 5/6 |
+| `worker/index.vibe` | 0/13 → 12/13 | 0/19 → 15/19 | 0/2 → 2/2 | 0/17 → 14/17 |
+| `worker/liveDispatchDecision.vibe` | 0/7 → 7/7 | 0/8 → 4/8 | 0/3 → 3/3 | 0/11 → 7/11 |
+| `worker/machineObject.vibe` | 0/63 → 0/63 | 0/83 → 0/83 | 0/17 → 0/17 | 0/92 → 0/92 |
+| `worker/replyProgressDecision.vibe` | 1/17 → 9/17 | 0/32 → 10/32 | 1/10 → 5/10 | 1/22 → 12/22 |
+| `worker/replyReasons.vibe` | 0/7 → 6/7 | 0/12 → 7/12 | 0/2 → 2/2 | 0/12 → 7/12 |
+
+
+Full raw reports, original-line counters, per-file CSV and experiment/check receipts remain in
+`~/vl/vl-coverage-evidence/session14/`. `workerd-raw.tgz` retains isolate counters. All strict per-file thresholds
+stay at 100%; all known-red targets remain exclusive under the lead's ruling. Whole-app 100% is still unachieved.
+
+## Unit and fuzz gates inside workerd (lane vl-coverage-workerd, 2026-11-10)
+
+The unit and fuzz gates now count execution inside workerd with the same per-module Istanbul counters as the workerd
+suite and the benchmark gate (0017). Nothing waits on workerd's precise coverage or on VibeLang 0.0.13.
+
+```
+pnpm test:coverage
+  vitest run --coverage                      Node suite ──▶ coverage/unit/coverage-final.json  (the structure)
+  vitest run --mode workerd --coverage       Node side  ──▶ coverage/unit/workerd-node/coverage-final.json
+    WORKERD_COVERAGE=1, WORKERD_COVERAGE_DIR  each workerd isolate's counters ──▶ coverage/unit/workerd-raw/
+  test/unitCoverageGate.vibe                 merge by source position (test/support/coverageGate.vibe)
+                                             ──▶ coverage/unit/merged/{coverage-final,per-file,summary}.json, 100% per file
+pnpm fuzz:coverage
+  targets stage: WORKERD_COVERAGE=1, counters ──▶ coverage/fuzz-unit/workerd-raw/   (flow vibelang-fuzz/v8)
+  report stage:  fuzz/coverage.vibe merges Vitest, workerd and Chromium by source position ──▶ coverage/fuzz
+```
+
+`test/support/coverageGate.vibe` is the one gate: the first Node report is the structure, later Node reports and the
+workerd counters credit it by source start (`test/support/coverageUnion.ts`). `test/workerdCoverageGate.vibe` and
+`test/unitCoverageGate.vibe` only name their inputs. `test/workerdSuite.vibe` enables measurement when
+`pnpm test:workerd` receives `--coverage`, then runs the gate even if Vitest fails. `pnpm test:coverage` sets `COVERAGE_MERGE=1`, which turns off
+Vitest's own thresholds; a bare `vitest run --coverage` keeps the Node-only thresholds. The gate runs even when a test
+fails, and the command fails if either Vitest run or the gate fails. PACKAGE target `coverage` now
+allows 60 minutes.
+
+**`worker/Api.vibe` in workerd.** `test/workerd/api.vibe` is the entry Alchemy generates for a Worker
+(`makeEffectVirtualEntry` in `@alchemy.run/cloudflare`): `makeWorkerBridge` and `makeDurableObjectBridge` around
+`worker/Api.vibe`'s default export, one bridge class per Durable Object. esbuild can't bundle it: Alchemy's provider
+graph reaches vite, esbuild, tsx and proxy agents, and only Alchemy's rolldown plugins (unenv) make that graph load in
+workerd. `test/support/alchemyBundle.vibe` therefore builds it with Alchemy's own `WorkerBundle` (the build
+`alchemy dev` and a deploy use), unminified, with VibeLang's rolldown plugin wrapped by `instrumentRolldown`
+(`test/support/workerdCoverage.ts`), the rolldown form of `instrumentModules`. `serveAlchemyApi`
+(`test/support/workerd.vibe`) runs the result in Miniflare with each class bound under its own name, as `alchemy dev`
+binds them. The suite's other hosts keep running the same bodies as plain objects.
+
+- `test/alchemyApi.workerd.test.vibe`: every class finishes starting when the first requests reach them at once, and
+  a post's reply is refused over Alchemy's RPC to the Budget object before any model call. 2 of 2 pass.
+- `test/sandboxObjects.workerd.test.vibe`: `worker/accountObject.vibe` and `worker/machineObject.vibe` in real workerd
+  SQLite through `test/workerd/sandbox-faults.vibe`, with a faulty Container Effect service. It covers generation
+  fences, failed starts, stopped reads, persisted owner checks, and the actual storage alarm. Successful Container
+  execution is not simulated; those paths still need the authorized Container binding.
+- Fuzz: `workerd/alchemy-api-requests` sends `workerd/api-requests`' generated requests to the Alchemy-built Worker,
+  so `worker/Api.vibe` is back in the fuzz denominator (`fuzz.config.ts` and `fuzz/coverage.vibe` no longer exclude it).
+- `test/workerdCoverageShape.test.ts` third case: Alchemy's rolldown build of a measured module puts a namespace call
+  at its source column. Red when `instrumentRolldown` drops the compiler map (`expected [] to include 41`), green with it.
+
+The inherited exploratory run on `4513073e` used the benchmark host's in-memory Container. Its sandbox numbers are
+not final no-mocks evidence. Final validation uses the faulty Container service described above; measurements and
+per-file comparisons are recorded below and in the lane report.
+
+### Public workerd command, measured without successful Container simulation
+
+`pnpm test:workerd --coverage`, on `0b937f1d` plus this lane's change, nyc-01 through `run-heavy`: 18 test files
+passed, 1 skipped; 77 tests passed, 3 skipped. Vitest passed; the merged per-file gate exited 1 with 137 of 162 files
+below 100%. The same run before and after adding its isolate counters:
+
+| Workerd suite | Lines | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| Node only | 12.95% (1004/7749) | 4.62% (380/8209) | 6.85% (201/2932) | 10.75% (1064/9893) |
+| Node and workerd | 47.20% (3658/7749) | 30.53% (2506/8207) | 35.39% (1040/2938) | 42.52% (4207/9892) |
+
+107 files have workerd evidence. Files with no Node execution use the first evidence's structure, which accounts for
+the small denominator differences; complementary shapes are not added together. The three requested modules now run:
+
+| Module | Lines after merge | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| `worker/Api.vibe` | 46/46 | 0/0 | 1/1 | 47/47 |
+| `worker/accountObject.vibe` | 25/48 | 19/35 | 16/39 | 40/79 |
+| `worker/machineObject.vibe` | 30/63 | 39/83 | 11/18 | 43/92 |
+
+The two sandbox modules' successful Container paths stay uncovered in this suite; their faulty service never
+simulates a successful start, command or checkpoint. Every per-file before/after comparison is retained in the lane
+report and `~/vl/cw-evidence/s4/workerd-comparison.md` on nyc-01.
+
+### Unit and fuzz results after the audit roster fixes
+
+Measured on `8c5d65ae` plus this lane. Unit: the fresh Node run passed 238 files / 2066 tests (1 expected failure,
+4 skips). Its own workerd stage, retained from the completed `pnpm test:coverage` run on `4d9ce9fc`, passed 18 files /
+77 tests (3 skips). Every retained module's SHA-256 matches the current source; 37 dumps of the changed generated
+wiki asset and its older Node entry were excluded. No hit or source position was edited. The fresh Node report
+covers the current wiki asset. This preserves 106 files of unchanged unit workerd evidence alongside the new Node
+report; it does not borrow fuzz or benchmark evidence. The merged gate exits 1 for 32 of 163 files.
+
+| Unit | Lines | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| Node only | 99.27% (7712/7768) | 98.20% (8075/8223) | 98.84% (2903/2937) | 98.90% (9811/9920) |
+| Node and retained workerd | 99.60% (7737/7768) | 98.75% (8121/8223) | 99.04% (2909/2937) | 99.28% (9849/9920) |
+
+Unit files whose measured percentages change (the full per-file table is in the lane report):
+
+| File | Lines | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| `src/history/flows.vibe` | 100 → 100 | 92.85 → 100 | 100 → 100 | 100 → 100 |
+| `worker/Accounts.vibe` | 91.66 → 99.03 | 85.87 → 93.07 | 90.41 → 94.52 | 90.93 → 97.44 |
+| `worker/ActionDirectory.vibe` | 100 → 100 | 84.61 → 96.15 | 100 → 100 | 100 → 100 |
+| `worker/ActionIdentity.vibe` | 100 → 100 | 95 → 100 | 100 → 100 | 100 → 100 |
+| `worker/ActionsHttp.vibe` | 100 → 100 | 95.78 → 96.84 | 90 → 90 | 98.36 → 98.36 |
+| `worker/Api.vibe` | 100 → 100 | 100 → 100 | 0 → 100 | 97.87 → 100 |
+| `worker/HistoryActions.vibe` | 90.9 → 90.9 | 78.94 → 84.21 | 81.81 → 81.81 | 86.48 → 86.48 |
+| `worker/Issues.vibe` | 99.66 → 100 | 99.33 → 99.55 | 96.96 → 98.48 | 99.5 → 99.75 |
+| `worker/Objects.vibe` | 99.1 → 100 | 93.61 → 100 | 98.3 → 100 | 99.28 → 100 |
+| `worker/Sequencer.vibe` | 100 → 100 | 96.77 → 98.38 | 100 → 100 | 100 → 100 |
+| `worker/machineObject.vibe` | 98.41 → 98.41 | 68.67 → 78.31 | 100 → 100 | 83.69 → 91.3 |
+
+Fuzz: `E2E_PORT=4542 E2E_SERVER_SECONDS=600 pnpm fuzz:coverage`, default 5-second coverage budget plus the audit's
+per-target floors, through durable flow v8. All 203 Vitest checks in 63 files and all five browser checks passed.
+206 target receipts passed with 4,631,614 recorded executions; `workerd/alchemy-api-requests` ran 182 executions.
+The final report stage exited 1 with 274 metric gates failing across 94 files. For the worker measurement's effect,
+this table compares the same Node report before and after adding only that fuzz run's isolate counters:
+
+| Fuzz, without Chromium | Lines | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| Node only | 90.29% (7014/7768) | 85.51% (7032/8223) | 88.15% (2589/2937) | 88.22% (8747/9914) |
+| Node and workerd | 90.97% (7067/7768) | 85.72% (7049/8223) | 88.25% (2592/2937) | 88.81% (8805/9914) |
+
+Below 100%: 97 → 96 of 163 files. Changed files:
+
+| File | Lines | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| `infra/WorkerBuild.vibe` | 0 → 100 | 100 → 100 | 100 → 100 | 0 → 100 |
+| `worker/Accounts.vibe` | 73.71 → 77.56 | 54.84 → 59.55 | 71.23 → 73.97 | 66.51 → 70.23 |
+| `worker/Api.vibe` | 0 → 84.78 | 100 → 100 | 0 → 100 | 0 → 85.1 |
+| `worker/PublicReads.vibe` | 50 → 58.33 | 50 → 50 | 25 → 25 | 36.84 → 42.1 |
+
+The full fuzz report also merges its Chromium evidence: 7247/7768 lines (93.29%), 7156/8223 branches (87.02%),
+2698/2942 functions (91.70%), 9037/9915 statements (91.14%). Browser line/statement attribution remains diagnostic
+under the retained `coverage-source-ranges` negative control. The Node + workerd comparison above isolates this
+lane's measurement change. Unit and fuzz gates both retain every source in the audit's roster and their 100%
+thresholds. No dependency was added; no upstream compiler or package change was required for workerd measurement.

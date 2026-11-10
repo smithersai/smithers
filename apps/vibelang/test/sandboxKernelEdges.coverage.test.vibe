@@ -1,0 +1,63 @@
+// The sandbox policy kernel's refusals, each with the ledger it leaves: an intent without a conversation, another
+// owner's intent, a role that may not start, an allowance that's used up, and a new sandbox without a usable id.
+// Then the mock machine's commands at their edges: a stale generation, a listing, and a blank command.
+import { describe, expect, it } from "@effect/vitest"
+import { decideSandbox, emptySandboxLedger, type SandboxIntent, type SandboxLedger } from "../src/core/sandboxDecision.vibe"
+import { memoryMachines } from "../src/core/sandboxMock.vibe"
+
+const HOUR = 3_600_000
+const ledger: SandboxLedger = { ...emptySandboxLedger("ada", "contributor", HOUR, 202611, 1000), sandboxes: [{ id: "s1", conversation: "c1", running: true }] }
+const intent = (over: Partial<SandboxIntent>): SandboxIntent => ({
+  type: "start", owner: "ada", role: "contributor", allowanceMilliseconds: HOUR, conversation: "c2", sandboxId: "s2", operationId: "op", now: 1000, month: 202611, ...over,
+})
+
+describe("refusals before metering leave the ledger as it was", () => {
+  it.each([
+    ["a start with no conversation", { conversation: "" }, "invalid"],
+    ["a stop with no conversation", { type: "stop" as const, conversation: "" }, "invalid"],
+    ["another owner's start", { owner: "bob" }, "forbidden"],
+    ["a start by a role that may not start one", { role: "community" as const }, "forbidden"],
+  ] as const)("%s is refused as %s", (_name, over, refusal) => {
+    expect(decideSandbox(ledger, intent(over))).toEqual({ ok: false, refusal, state: ledger })
+  })
+
+  it("a meter with no conversation is still metered", () => {
+    expect(decideSandbox(ledger, intent({ type: "meter", conversation: "", now: 1500 })).ok).toBe(true)
+  })
+})
+
+describe("refusals after metering keep the metered usage", () => {
+  it("a start once the allowance is used up is out of minutes, with the running sandbox's time counted", () => {
+    const decision = decideSandbox(ledger, intent({ now: 1000 + HOUR }))
+    expect(decision).toMatchObject({ ok: false, refusal: "out-of-minutes", state: { usedMilliseconds: HOUR, lastMeteredAt: 1000 + HOUR } })
+  })
+
+  it.each([
+    ["no id", ""],
+    ["the id of another conversation's sandbox", "s1"],
+  ])("a new sandbox with %s is refused as invalid", (_name, sandboxId) => {
+    const decision = decideSandbox(ledger, intent({ sandboxId, now: 1200 }))
+    expect(decision).toMatchObject({ ok: false, refusal: "invalid", state: { usedMilliseconds: 200, sandboxes: ledger.sandboxes } })
+  })
+})
+
+describe("the mock machine", () => {
+  it.effect("a command for a generation that was replaced is unavailable", () => effect {
+    const machines = memoryMachines()
+    try machines.start("m1", 1)
+    try machines.start("m1", 2)
+    const failure = try Effect.flip(machines.command("m1", 1, "op1", "pwd"))
+    try Effect.try(() => expect(failure).toMatchObject({ _tag: "Unavailable", reason: "stale-generation" }))
+  })
+
+  it.effect("ls lists the files written, and a blank command answers nothing", () => effect {
+    const machines = memoryMachines()
+    try machines.start("m1", 1)
+    const empty = try machines.command("m1", 1, "op1", "ls")
+    try machines.command("m1", 1, "op2", "echo a > a.txt")
+    try machines.command("m1", 1, "op3", "echo b > notes/b.txt")
+    const listed = try machines.command("m1", 1, "op4", "ls")
+    const blank = try machines.command("m1", 1, "op5", "   ")
+    try Effect.try(() => { expect(empty).toBe(""); expect(listed).toBe("a.txt  notes/b.txt"); expect(blank).toBe("") })
+  })
+})

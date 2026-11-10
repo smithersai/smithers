@@ -1,0 +1,122 @@
+// @vitest-environment node
+// Runs interrupted partway: the host stops right after the conversation accepts a post or a tour, then the person's
+// retry reaches a fresh host; the engine fails an open reply; a person cancels a reply the model is answering. The
+// production action hosts (worker/ActionRuns.vibe) over node:sqlite object storage, with the scripted model service.
+import { it, expect } from "@effect/vitest"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import * as Objects from "../worker/Objects.vibe"
+import { world, request, history, interrupted } from "../test/support/actionObjects.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { cell, scriptedModel } from "../fuzz/model-server.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+type Sequencer = Parameters<typeof Runs.read>[0]
+const replyOf = (id: string, sequencer: Sequencer) => effect {
+  const entry = (try sequencer.read(0)).entries.find((item) => item.author === "agent")
+  const row = (try Runs.read(sequencer)).find((item) => item.id === `${id}-reply`)
+  return { done: entry?.done, error: entry?.error, state: row?.state }
+}
+
+it("a post or tour accepted before its host stopped settles once on retry", async ({ bench }) => {
+  const result = await workload(bench, "action-crash-retry", "async", async () => {
+    await runPromise(scoped(effect {
+      const w = try world()
+      const post = request("crash-post", "vibelang/Post", { text: "Accepted once" }, w.person.id)
+      const posting = try interrupted(post.id, "post", w.authority)
+      const crashed = try exit(posting.first.start(post, "maintainer"))
+      const before = try Runs.read((try posting.restart()).sequencer)
+      const clock = posting.storage as unknown as { alarmAt: number | undefined }
+      clock.alarmAt = undefined
+      const again = try posting.restart()
+      const retried = try again.host.start(post, "maintainer")
+      const people = (try again.sequencer.read(0)).entries.filter((entry) => entry.author === "person")
+      const settled = try Runs.read(again.sequencer)
+
+      const tour = request("crash-tour", "vibelang/Tour", null, w.person.id)
+      const touring = try interrupted(tour.id, "startTour", w.authority)
+      const stopped = try exit(touring.first.start(tour, "maintainer"))
+      const tourClock = touring.storage as unknown as { alarmAt: number | undefined }
+      tourClock.alarmAt = undefined
+      const resumed = try touring.restart()
+      const joined = try resumed.host.start(tour, "maintainer")
+      const guides = (try resumed.sequencer.read(0)).entries.filter((entry) => entry.author === "agent")
+      const tourRuns = try Runs.read(resumed.sequencer)
+      try Effect.try(() => {
+        expect([crashed._tag, stopped._tag]).toEqual(["Failure", "Failure"])
+        expect(before.map((run) => [run.id, run.state])).toEqual([["crash-post", "running"]])
+        expect([retried, joined]).toEqual([null, null])
+        expect(people.map((entry) => entry.text)).toEqual(["Accepted once"])
+        expect(settled.map((run) => [run.id, run.state, run.result])).toEqual([["crash-post", "passed", "null"]])
+        expect(clock.alarmAt).toBeDefined()
+        expect(guides.map((entry) => entry.done)).toEqual([false])
+        expect(tourRuns.map((run) => [run.id, run.state])).toEqual([["crash-tour", "running"]])
+        expect(tourClock.alarmAt).toBeDefined()
+      })
+    }))
+  }).run(slow)
+  await runPromise(artifact("action-crash-retry", "Vitest built-in bench; the production per-run host over node:sqlite object storage with product MockAccounts, a fresh world per sample. The first host incarnation stops right after the conversation accepts the post (or starts the tour): that write commits and every later write dies. The person's retry reaches a fresh incarnation over the same storage. Checks the first start failed and left the post run running, the retry answers null without posting twice, settles the post passed and schedules the alarm; the tour retry joins its one open guide entry, stays running and schedules its alarm. Regression for the retry that answered null with no alarm and a run left running forever.", ["Node SQLite/KV/alarm adapter, not workerd scheduling.", "The stop is an injected sequencer that dies after one write, not a killed isolate."], result))
+})
+
+it("the engine fails an open reply and a person cancels a reply mid-answer", async ({ bench }) => {
+  const result = await workload(bench, "action-reply-interrupted", "async", async () => {
+    await runPromise(scoped(effect {
+      const w = try world()
+      provide MockFactory, history {
+        const device = try Factory
+        try device.accounts!.choose("maintainer")
+        const product = try Mythical
+        provide ActionDevice = device {
+          const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
+          const model = { model: scripted.model, unusable: "" }
+
+          // The conversation log dies on the reply's first settle write, as a reset store does; reads stay real.
+          const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+          const sequencer = try Objects.conversation(storage)
+          let faults = 1
+          const dies = <A, E>(write: A!E) => faults-- > 0 ? Effect.die(new Error("conversation log unavailable")) : write
+          const faulty: Sequencer = { ...sequencer, finish: (reply, text) => dies(sequencer.finish(reply, text)), fail: (reply, reason) => dies(sequencer.fail(reply, reason)) }
+          const failing = Runs.make("failing", storage, faulty, w.authority)
+          const started = try failing.start(request("failing", "vibelang/Post", { text: "Question?" }, w.person.id), "maintainer")
+          const turns: Array<string> = []
+          for (let turn = 0; turn < 2; turn++) turns.push((try exit(failing.alarm(w.spendFor("failing"), model, product)))._tag)
+          const failed = try replyOf("failing", sequencer)
+
+          // The loopback model pauses after its first SSE fragment while the person cancels.
+          const object = try w.object("held")
+          const admitted = try object.host.start(request("held", "vibelang/Post", { text: "Question?" }, w.person.id), "maintainer")
+          const entered = try Deferred.make<void>()
+          const release = try Deferred.make<void>()
+          const answering = try scriptedModel([{
+            kind: "stream", pieces: ["`".repeat(3) + "cell\nctx.done(\"", "Answer.\");\n" + "`".repeat(3)],
+            prompt: 3, completion: 4, pause: { after: 1, entered, release },
+          }])
+          const heldModel = { model: answering.model, unusable: "" }
+          const running = try Effect.forkScoped(Effect.exit(object.host.alarm(w.spendFor("held"), heldModel, product)))
+          try Effect.mapError(timeout(Deferred.await(entered), "15 seconds"), () => new Error("Model never reached the cancellation pause"))
+          const during = try replyOf("held", object.sequencer)
+          const cancelled = try object.host.cancel("held-reply", "maintainer", w.person.id)
+          try Deferred.succeed(release, undefined)
+          try Effect.mapError(timeout(Fiber.join(running), "15 seconds"), () => new Error("Cancelled model did not settle after release"))
+          const restarted = Runs.make("held", object.storage, try Objects.conversation(object.storage), w.authority)
+          for (let turn = 0; turn < 2; turn++) try restarted.alarm(w.spendFor("held"), heldModel, product)
+          const calls = try answering.calls
+          const text = (try object.sequencer.read(0)).entries.find((entry) => entry.author === "agent")?.text
+          const after = try replyOf("held", object.sequencer)
+          try Effect.try(() => {
+            expect([started, admitted, cancelled]).toEqual([null, null, null])
+            expect(turns).toEqual(["Success", "Success"])
+            expect(failed).toEqual({ done: true, error: "Action failed", state: "failed" })
+            expect(during).toEqual({ done: false, error: "", state: "running" })
+            expect([calls, text]).toEqual([1, ""])
+            expect(after).toEqual({ done: true, error: "Cancelled", state: "cancelled" })
+          })
+        }
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("action-reply-interrupted", "Vitest built-in bench; the production per-run host over node:sqlite object storage with product MockAccounts, MockFactory, Mythical history and the scripted model service (fuzz/model-server.vibe), a fresh world per sample. One post's reply meets a conversation log that dies on its first settle write: the engine fails the reply and the host fails its open entry. Another post's reply is held after the model's first SSE fragment while the person cancels it, then released and driven by a fresh host incarnation. Checks both starts, both alarm exits, the failed reply's entry and run, the held reply running then cancelled after a host restart, one model call and no completed answer.", ["Scripted model; no inference latency.", "Node SQLite/KV/alarm adapter, not workerd scheduling.", "The store fault is an injected sequencer that dies once."], result))
+})

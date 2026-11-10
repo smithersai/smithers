@@ -27,7 +27,16 @@ as its code (VL-23).
 
 ## Commands
 
-From this directory, after `pnpm install` at the repository root (the app is a workspace package):
+From this directory, after this install at the repository root (the app is a workspace package; the second filter
+is the fuzz flow in `.smithers/flows`, which `pnpm fuzz` checks for first):
+
+```sh
+pnpm install --frozen-lockfile --filter "@smthrs/vibelang-site..." --filter "@smithers/release-workflows..."
+bash verify/install.sh   # from this directory: Dafny and LemmaScript for pnpm verify
+```
+
+The VL-29 gates (unit, fuzz, benchmark and browser coverage, proofs, mutations) each have one command that runs on a
+host or a Cloudflare box through `run-heavy`: [0016, "Measuring every gate"](wiki/decisions/0016-coverage.md#measuring-every-gate-lane-vl-gatefix-2026-11-10).
 
 ```sh
 pnpm dev            # http://localhost:5178

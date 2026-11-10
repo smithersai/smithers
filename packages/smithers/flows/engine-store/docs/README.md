@@ -113,3 +113,9 @@ flows out of a project directory without writing a composition at all.
 - [API reference](./api.md): every public export, grouped by namespace.
 - [Troubleshooting](./troubleshooting.md): the typed failures this package
   reports, and what to change for each.
+
+Rollback recovery reports undecodable persisted flow payloads with the shared
+`JournalDecode` diagnostic before settling the run with `payload_changed`. Invalid
+run-state envelopes fail with `JournalDecodeError`. Diagnostics name only the fixed
+flow/step tag, boundary and injected host identity; schema messages and stored values
+are excluded. An unreadable payload never waits for retries or re-executes its action.

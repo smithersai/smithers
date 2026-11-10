@@ -7,7 +7,7 @@
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
 import { FlowEngine } from "@smthrs/engine"
-import { Flow, FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
+import { Flow, FlowRuntime, Interpreter, JournalDecode, RunMetrics } from "@smthrs/flow"
 import { Journal, Redaction } from "@smthrs/journal"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
@@ -764,7 +764,10 @@ const encodeState = (state: RunState): Effect.Effect<string> =>
   Schema.encodeEffect(RunStateJson)(state).pipe(Effect.orDie)
 
 const decodeState = (stateJson: string): Effect.Effect<RunState> =>
-  Schema.decodeUnknownEffect(RunStateJson)(stateJson).pipe(Effect.orDie)
+  Schema.decodeUnknownEffect(RunStateJson)(stateJson).pipe(
+    Effect.catch(() => Effect.flatMap(JournalDecode.report("@smthrs/engine-store/run-state", "state"), Effect.fail)),
+    Effect.orDie
+  )
 
 /** A run's row, or `undefined` when the store holds none; any other read failure is a defect. */
 const findRun = (driver: Driver, runId: string): Effect.Effect<RunStore.RunRow | undefined> =>
@@ -2564,6 +2567,7 @@ const refuseChangedPayload = (
     // A round of this run that parked in this process retained its scope;
     // no round replaces it now. `Exit.void`, as a supersede releases it.
     yield* releaseRetainedScope(driver, executionId, Exit.void)
+    yield* JournalDecode.report(flow._tag, "payload")
     const refusal = new Interpreter.InterpreterError({
       code: "payload_changed",
       flow: flow._tag,
@@ -4223,6 +4227,7 @@ const decodeSettlement = (
       error: resultFlow.errorSchema
     }))
   )(state.result).pipe(
+    Effect.catch(() => Effect.flatMap(JournalDecode.report(resultFlow._tag, "outcome"), Effect.fail)),
     Effect.orDie,
     Effect.map((result) => {
       if (result._tag !== "Complete" || Exit.isSuccess(result.exit)) return result

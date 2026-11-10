@@ -1,0 +1,116 @@
+// Third-lane batch 2 (0018): page, tour, prompt, protocol and session decisions, proved in pageDecision, tourDecision,
+// sequenceDecision and protocolDecision, as the history pages, flows, Reply, the HTTP API and the CLI's backend use them.
+import { describe, expect, it } from "@effect/vitest"
+import { newClient } from "../src/core/conversation.vibe"
+import { docsPage, replyIdOf, touring } from "../src/core/flows.vibe"
+import { sameOriginRequest, sessionCookie, validTourStep, validWriteLength, writeStatus } from "../src/core/protocolDecision.vibe"
+import { promptForm, speaker } from "../src/core/sequenceDecision.vibe"
+import { docsPath } from "../src/core/tourDecision.vibe"
+import { clipQuery, pageCount, pageStart } from "../src/history/pageDecision.vibe"
+import { epicPageOf, matchesOf, MAX_QUERY, PAGE } from "../src/history/pages.vibe"
+import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+import { HistoryMessage, init, update } from "../src/web/historyApp.vibe"
+import { promptOf } from "../worker/Reply.vibe"
+
+/** Whether `text` holds only whole UTF-16 characters: `encodeURIComponent` throws on half a surrogate pair. */
+const whole = (text: string) => {
+  try {
+    encodeURIComponent(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** A search of `MAX_QUERY + 2` units whose clip point falls inside an emoji's surrogate pair. */
+const straddling = "a".repeat(MAX_QUERY - 1) + "\u{1F600}b"
+
+const history = replay(intentsOf(seedOf("o/r", Array.from({ length: PAGE + 3 }, (_, index) => ({
+  sha: `${index + 1}`.padStart(12, "0"), change: "", description: `fix(compiler): c${index}`, parents: index === 0 ? [] : [`${index}`.padStart(12, "0")],
+})), []))).history
+
+describe("a long search", () => {
+  it("is clipped between characters, so its answer never holds half of one", () => {
+    const matches = matchesOf(history, straddling)
+    expect(whole(matches.query)).toBe(true)
+    expect(matches.query.length).toBeLessThanOrEqual(MAX_QUERY)
+    expect(straddling.startsWith(matches.query)).toBe(true)
+  })
+
+  it("shows its matches on the history page, though the history read only its first MAX_QUERY units", () => {
+    const query = "c1" + " ".repeat(MAX_QUERY)
+    const model = update(init({ mode: "mock", role: "viewer", hash: "" }).model, HistoryMessage.UpdatedFilter({ value: query })).model
+    const answered = update(model, HistoryMessage.GotMatches({ matches: matchesOf(history, query) })).model
+    expect(answered.matches.commits.length).toBeGreaterThan(0)
+  })
+
+  it("keeps a search that fits, and cuts one unit short of a straddled pair", () => {
+    expect(clipQuery("short", MAX_QUERY)).toBe("short")
+    expect(clipQuery(straddling, MAX_QUERY)).toBe("a".repeat(MAX_QUERY - 1))
+  })
+})
+
+describe("an epic's pages", () => {
+  it("start at the first commit for a request before it, hold at most a page, and none past the end", () => {
+    expect([pageStart(-3), pageStart(0), pageStart(7)]).toEqual([0, 0, 7])
+    expect([pageCount(53, 0, 50), pageCount(53, 50, 50), pageCount(53, 53, 50), pageCount(53, 99, 50)]).toEqual([50, 3, 0, 0])
+    const first = epicPageOf(history, "e1", -1)
+    const second = epicPageOf(history, "e1", PAGE)
+    expect(first.from).toBe(0)
+    const ids = [...first.commits, ...second.commits].map((commit) => commit.id)
+    expect([first.total, ids.length, new Set(ids).size]).toEqual([PAGE + 3, PAGE + 3, PAGE + 3])
+  })
+})
+
+/** The docs-pane guard before it was proved: a regexp and a substring test. */
+const regexpPath = (path: string) => /^\/[a-z0-9\-\/]*$/.test(path) && !path.includes("//")
+const ALPHABET = ["/", "a", "z", "0", "9", "-", "//", ".", "A", ":", "?", "#", "\n", " ", "é", "\u{1F600}", "%2f", "_"]
+
+describe("the docs pane's path", () => {
+  it("admits exactly what the earlier regexp admitted", () => {
+    let seed = 7
+    const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648)
+    const paths = ["", "/", "/setup", "//evil.com", "/a//b", "/a/../b", "/A", "/a?b", "/a\n", "a/"]
+    for (let n = 0; n < 4000; n++) paths.push(Array.from({ length: next() % 8 }, () => ALPHABET[next() % ALPHABET.length]).join(""))
+    for (const path of paths) expect([path, docsPath(path)]).toEqual([path, regexpPath(path)])
+    expect(docsPage("/setup")).toBe("https://vibelang.sh/setup")
+    expect(docsPage("//evil.com")).toBeUndefined()
+  })
+})
+
+describe("the tour and the reply id", () => {
+  it("names no tour while none runs, and one reply per post", () => {
+    expect(touring(newClient.conversation)).toBe("")
+    expect([replyIdOf("m7"), replyIdOf(""), replyIdOf("m")]).toEqual(["r7", "r", "r"])
+  })
+})
+
+describe("the agent's prompt", () => {
+  it("is nothing, the question alone, or the conversation so far and the question", () => {
+    expect([promptForm(0), promptForm(1), promptForm(4)]).toEqual(["none", "asked", "conversation"])
+    expect([speaker("person"), speaker("agent")]).toEqual(["Person", "VibeLang agent"])
+    expect(promptOf({ turns: [] })).toBe("")
+    expect(promptOf({ turns: [{ author: "person", text: "Hi" }] })).toBe("Hi")
+    expect(promptOf({ turns: [{ author: "person", text: "Hi" }, { author: "agent", text: "Hello" }, { author: "person", text: "Why?" }] }))
+      .toBe("The conversation so far:\nPerson: Hi\nVibeLang agent: Hello\n\nThe person now asks: Why?")
+  })
+})
+
+describe("the API's guards", () => {
+  it("admit an empty or bounded write, a tour step in range, and answer 409 only for a refusal", () => {
+    expect([validWriteLength(0, 10), validWriteLength(10, 10), validWriteLength(11, 10), validWriteLength(-1, 10)]).toEqual([true, true, false, false])
+    expect([validTourStep(0, 11), validTourStep(11, 11), validTourStep(12, 11), validTourStep(-1, 11)]).toEqual([true, true, false, false])
+    expect([writeStatus(true), writeStatus(false)]).toEqual([409, 200])
+  })
+})
+
+describe("the CLI's session", () => {
+  it("goes only to the Factory's own origin, and only when stored for it and valid", () => {
+    expect(sameOriginRequest("https://a.sh/api/x", "https://a.sh")).toBe(true)
+    expect(sameOriginRequest("https://a.sh.evil.com/api", "https://a.sh")).toBe(false)
+    expect(sameOriginRequest("https://a.sh", "https://a.sh")).toBe(false)
+    expect(sessionCookie("https://a.sh", "https://a.sh", true, "c=1")).toBe("c=1")
+    expect(sessionCookie("https://b.sh", "https://a.sh", true, "c=1")).toBe("")
+    expect(sessionCookie("https://a.sh", "https://a.sh", false, "c=1")).toBe("")
+  })
+})

@@ -16,7 +16,7 @@
 | Live Factory in local workerd: the API Worker's objects, LiveFactory, the protocol, the CLI | `test/*.workerd.test.*` | `pnpm test:workerd` (0010) |
 | The live agent in a browser, opt in | `e2e/live.spec.ts` | `E2E_LIVE_URL=<origin> pnpm exec playwright test e2e/live.spec.ts` |
 | Fuzzing and corpus regressions | `fuzz/*.fuzz.vibe`, native workerd and Chromium (0015); `@smthrs/fuzz`, `@smthrs/testing` | `pnpm fuzz`; independent strict gate `pnpm fuzz:coverage` |
-| Benchmarks | `bench/`: built-in Vitest, Chromium, native wiki/identity journeys, emitted CLI/MCP/scripts, SQLite recovery and real workerd (0017) | `pnpm bench`; opt-in `pnpm bench:live`; independent strict `pnpm bench:coverage` (unfinished) |
+| Benchmarks | `bench/`: built-in Vitest, Chromium, native wiki/identity journeys, streamed reply cancellation, agent draft replay, signed-in issue and wiki routes, emitted CLI/MCP/scripts, SQLite recovery and real workerd (0017); fault-path coverage set on the `e2e` build, counts only (`bench/browser-faults.spec.ts`) | `pnpm bench`; opt-in `pnpm bench:live`; independent strict `pnpm bench:coverage` (unfinished) |
 
 **Rules.** No mocks besides the mock backend itself, which is a product mode (0004). Every test that waits on the UI
 waits on what a person sees (a role, a text, `data-done`), never a timer. Screenshots wait for view transitions to end.
@@ -371,3 +371,28 @@ The resumed benchmark receipt passes 53 files / 127 tests (125 workload groups p
 Hosted-broker main is independently measured by 54 benchmark files / 128 tests; 5,816/7,035 src/worker lines (82.67%), with 95 files below unchanged strict thresholds. Cookie admission and the broker-unavailable/credential-Connect fault contract are benchmarked without real OAuth. No new app tool or dependency.
 
 Hosted-broker main is independently measured by 54 benchmark files / 128 tests; 5,827/7,036 src/worker lines (82.82%), with 95 files below unchanged strict thresholds. Cookie admission and the broker-unavailable/credential-Connect fault contract are benchmarked without real OAuth. No new app tool or dependency.
+
+**Proof harness, lane vl-proveall2 (0018).** `verify/harness_test.py` gains a regression that a marked generic function is
+found and proved; 75 executable mutations join `verify:broken` in `verify/web_mutations.py`. No new tool or dependency.
+
+**Coverage boundary continuation (0016, 2026-11-10).** The fixture factories and sandbox accept injected faulty
+Effect engines; real flows retain their typed errors, and defects keep their whole cause. Both specification
+revision policies are tested with keep fixed in production. Wiki recovery links and archived status, numeric tour
+stop boundaries, and real-jj seed refusal/preservation/recovery are covered. Seed refusal diagnostics keep a count
+without intent payloads. Behavioral mutation controls detect each changed failure behavior. Existing Vitest and V8
+5.0.0 are unchanged; this continuation adds no dependency. All strict coverage gates remain exclusive until each
+passes, under the lead's recorded ruling; current unit, Chromium and isolate measurements are in 0016.
+
+
+**Worker benchmark continuation (0017).** Ordinary public issue/wiki reads are now independently checked against
+real anonymous GitHub, opt-in with `BENCH_PUBLIC_GITHUB=1`; the production read probe is `BENCH_SITE_READS=1`.
+History/store and startup failures, chunked HTTP limits, participation/origin, streamed reply replacement, closed
+sandbox tools, native agent action cancellation, Budget expiry and refused-id replay have result-checked workloads.
+Intentional five-second, cache-TTL and two-minute waits are named in their methods. No tool or dependency added.
+The 100% gate stays unchanged; 0017 and the benchmark wiki distinguish the measured base, focused counter unions,
+deployed failures and remaining person/Container boundaries.
+
+
+Worker source receipt on c5bbf81b: 82 benchmark files passed / 174 cases, one opt-in skip and a cached old-RPC failure superseded by a passing corrected API-only collection. Exact-source merged worker lines are 2,201/2,374 (92.71%); src+worker 7,355/7,716 (95.32%). All four 100% thresholds remain red for 112 files. Later main changes need a fresh full receipt; no dependency or tool was added.
+
+Final compatibility on 479f05a3 passes typecheck, 242 unit files / 2,105 cases (one expected failure, four skips), and nine benchmark files / 22 cases (one opt-in skip). Expanded issue/wiki stale-copy checks pass separately timed and instrumented after the anonymous quota reset. No new dependency or tool. The overall strict coverage receipt remains explicitly based on c5bbf81b.

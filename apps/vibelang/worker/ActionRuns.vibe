@@ -5,11 +5,12 @@ import { ExecutionObject } from "@smthrs/platform-cloudflare"
 import { Flow, RunMetrics } from "@smthrs/flow"
 import { Run, type Role } from "../src/actions/Actions.vibe"
 import { allowed, registration } from "../src/actions/catalog.vibe"
-import { type RunRequest } from "../src/actions/wire.vibe"
+import { RunRequest } from "../src/actions/wire.vibe"
 import { prepare, refused } from "../src/actions/execution.vibe"
 import { signedOut, type ActionIdentity } from "./ActionIdentity.vibe"
 import * as HistoryActions from "./HistoryActions.vibe"
 import { Post, Tour, Reply } from "../src/core/flows.vibe"
+import type { Caller } from "../src/history/roles.vibe"
 import type { ChatModel, Spend } from "./Reply.vibe"
 import * as Objects from "./Objects.vibe"
 import type { Sequencer } from "./Sequencer.vibe"
@@ -49,8 +50,10 @@ export effect function start(hostId: string, storage: Objects.Storage, sequencer
   const previous = try promise(() => storage.get<RunRequest>("action/request"))
   if (previous !== undefined && JSON.stringify(previous) !== JSON.stringify(request)) return "conflict"
   const existing = before.find(run => run.id === request.id)
-  if (existing !== undefined && existing.state !== "queued") return null
-  if (existing !== undefined && (request.flow === Tour._tag || request.flow === Post._tag)) {
+  const conversational = request.flow === Tour._tag || request.flow === Post._tag
+  // A host that stopped mid-start leaves its post or tour running: its first step's trace precedes the accepted write.
+  if (existing !== undefined && existing.state !== "queued" && !(conversational && existing.state === "running")) return null
+  if (existing !== undefined && conversational) {
     const snapshot = try sequencer.read(0)
     const accepted = request.flow === Tour._tag ? snapshot.entries.some(entry => entry.author === "agent" && !entry.done && entry.inReplyTo === "") : snapshot.entries.some(entry => entry.clientId === request.id)
     if (accepted) {
@@ -80,11 +83,21 @@ export effect function start(hostId: string, storage: Objects.Storage, sequencer
   return refusal
 }
 
-export effect function alarm(hostId: string, storage: Objects.Storage, sequencer: Sequencer, spend: Spend.Shape, model: ChatModel.Shape, history: import("../src/history/tools.vibe").HistoryReader, historyHost = HistoryActions.make(hostId, storage), replyHost = Objects.executionHost(hostId, storage, sequencer)) {
+/**
+ * Who runs a history action: the person the door identified (`owner`, `name` and `actor` come from 0019's session, never
+ * the payload), at the role their current grant gives them each time a step asks.
+ */
+export function callerOf(request: RunRequest, authority: Pick<ActionIdentity.Shape, "role">): Caller.Shape {
+  const owner = request.owner ?? ""
+  const current = effect () => ({ role: try Effect.orDie(authority.role(owner)), name: request.name ?? "Guest", agent: request.actor === "agent" })
+  return { principal: { role: "viewer", name: request.name ?? "Guest", agent: request.actor === "agent" }, current }
+}
+
+export effect function alarm(hostId: string, storage: Objects.Storage, sequencer: Sequencer, spend: Spend.Shape, model: ChatModel.Shape, history: import("../src/history/tools.vibe").HistoryReader, historyHost = HistoryActions.make(hostId, storage), replyHost = Objects.executionHost(hostId, storage, sequencer), authority: Pick<ActionIdentity.Shape, "role"> = signedOut) {
   const request = (try promise(() => storage.get("action/request"))) as RunRequest | undefined
   if (request === undefined) return try Objects.alarm(hostId, storage, sequencer, spend, model, history)
   if (request.flow !== Tour._tag && request.flow !== Post._tag) {
-    const outcome = try traced(sequencer, request, historyHost.alarm(history))
+    const outcome = try traced(sequencer, request, historyHost.alarm(history, callerOf(request, authority)))
     if (outcome._tag === "Settled") {
       const receipt: Option.Option<Flow.Result<unknown, unknown>> = try Effect.orDie(historyHost.receipt(request))
       if (Option.isSome(receipt) && receipt.value._tag === "Complete") {
@@ -99,7 +112,10 @@ export effect function alarm(hostId: string, storage: Objects.Storage, sequencer
   const intent = rawIntent === undefined ? undefined : try Effect.orDie(Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionObject.Intent))(rawIntent))
   const origin = try Effect.orDie(Effect.try(() => RunMetrics.withOrigin({ door: request.door, actor: request.actor })))
   const result = try exit(traced(sequencer, request, origin(Effect.provideService(replyHost.alarm(), Objects.ActiveExecution, { services: { spend, model, history } }))))
-  const receipt = intent === undefined ? Option.none() : try Objects.executionResult(hostId, storage, intent)
+  // A failed drive is the platform's to retry: it settles nothing, and its cause is the drive's, not a receipt read's.
+  if (Exit.isFailure(result)) return try Effect.failCause(result.cause)
+  // A retrying drive may not have admitted its execution: it has no receipt yet, and the next alarm drives it again.
+  const receipt = intent === undefined || result.value._tag === "Retrying" ? Option.none() : try Objects.executionResult(hostId, storage, intent)
   const engineFailed = Option.isSome(receipt) && receipt.value._tag === "Complete" && Exit.isFailure(receipt.value.exit)
   if (engineFailed && intent !== undefined) {
     const current = try sequencer.read(0)
@@ -109,7 +125,7 @@ export effect function alarm(hostId: string, storage: Objects.Storage, sequencer
   const snapshot = try sequencer.read(0)
   const reply = snapshot.entries.find((entry) => entry.author === "agent")
   const done = reply !== undefined && reply.done
-  const failed = engineFailed || Exit.isFailure(result) || (reply !== undefined && reply.error !== "")
+  const failed = engineFailed || (reply !== undefined && reply.error !== "")
   if (request.flow === Tour._tag && (done || failed)) {
     try sequencer.action({ type: "SettleAction", id: request.id, state: failed ? "failed" : "passed", result: failed ? "Action failed" : "null", at: try Clock.currentTimeMillis })
   }
@@ -119,7 +135,6 @@ export effect function alarm(hostId: string, storage: Objects.Storage, sequencer
       if (run.actor === "agent") try sequencer.action({ type: "SettleAction", id: run.id, state: reply.error === "" ? "passed" : "failed", result: reply.error === "" ? "null" : "Action failed", at: try Clock.currentTimeMillis })
     }
   }
-  if (Exit.isFailure(result)) return try Effect.failCause(result.cause)
   return result.value
 }
 
@@ -153,8 +168,9 @@ export effect function cancel(hostId: string, storage: Objects.Storage, sequence
 /** The object keeps this host for its entire incarnation. */
 export function make(hostId: string, storage: Objects.Storage, sequencer: Sequencer, authority: Pick<ActionIdentity.Shape, "role"> = signedOut) {
   const admit = effect () => {
-    const request = try promise(() => storage.get<RunRequest>("action/request"))
-    if (request === undefined) return false
+    // Only alarm() drives these hosts, after it read the stored request, and nothing deletes it: a missing or
+    // malformed one is a broken object, a defect.
+    const request = try Effect.orDie(Schema.decodeUnknownEffect(RunRequest)(try promise(() => storage.get("action/request"))))
     const permitted = allowed(try Effect.orDie(authority.role(request.owner ?? "")), registration(request.flow))
     if (!permitted) {
       const snapshot = try sequencer.read(0)
@@ -169,6 +185,6 @@ export function make(hostId: string, storage: Objects.Storage, sequencer: Sequen
   return {
     start: (request: RunRequest, role: Role) => start(hostId, storage, sequencer, request, role, history, authority),
     cancel: (id: string, role: Role, owner = "") => cancel(hostId, storage, sequencer, id, role, history, authority, owner, reply),
-    alarm: (spend: Spend.Shape, model: ChatModel.Shape, reader: import("../src/history/tools.vibe").HistoryReader) => alarm(hostId, storage, sequencer, spend, model, reader, history, reply),
+    alarm: (spend: Spend.Shape, model: ChatModel.Shape, reader: import("../src/history/tools.vibe").HistoryReader) => alarm(hostId, storage, sequencer, spend, model, reader, history, reply, authority),
   }
 }

@@ -15,7 +15,8 @@ rm -rf "$TOOLS/dafny"
 unzip -q "$TOOLS/downloads/$ASSET" -d "$TOOLS"
 chmod +x "$TOOLS/dafny/dafny"
 ln -sfn ../dafny/dafny "$TOOLS/bin/dafny"
-ln -sfn "$LEMMASCRIPT/tools/dist/lsc.js" "$TOOLS/bin/lsc"
+# A relative link: a packed tree (run-heavy on a box) keeps it a link (lsc_fresh.py repairs a copied one).
+python3 "$ROOT/lsc_fresh.py"
 if [[ $(uname -s) == Darwin ]]; then xattr -dr com.apple.quarantine "$TOOLS/dafny" 2>/dev/null || true; fi
 node --version
 "$TOOLS/bin/lsc" version

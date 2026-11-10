@@ -7,13 +7,17 @@ import { run } from "./run.vibe"
 
 it.live("history/view-models", () => run("history/view-models", HistoryModel, (model) => {
   let named = true
+  let controls = 0
   scene({ update, view }, given(model), (simulation: SceneSimulation<HistoryModel, HistoryMessage>) => {
     for (const role of ["button", "link", "textbox", "combobox", "searchbox", "option", "tab", "menuitem", "treeitem"]) {
-      if (getAllByRole(role)(simulation.html).length !== getAllByRole(role, { name: /\S/ })(simulation.html).length) named = false
+      const all = getAllByRole(role)(simulation.html).length
+      controls += all
+      if (all !== getAllByRole(role, { name: /\S/ })(simulation.html).length) named = false
     }
     return simulation
   })
-  return named
+  // An empty page has no unnamed control either; every history view offers at least one way to act.
+  return named && controls > 0
 }, undefined, { revision: "2", codec: historyModelCodec }))
 
 it.live("history/update-sequences", () => run("history/update-sequences", Schema.Struct({ flags: HistoryFlags, messages: Schema.Array(HistoryMessage).check(Schema.isMaxLength(32)) }), ({ flags, messages }) => {
@@ -25,7 +29,11 @@ it.live("history/update-sequences", () => run("history/update-sequences", Schema
   return true
 }, undefined, { revision: "2" }))
 
+/** Any message leaves a valid model; a live origin resolves every role to viewer, and mock keeps the chosen one. */
 it.live("history/arbitrary-update", () => run("history/arbitrary-update", Schema.Struct({ model: HistoryModel, message: HistoryMessage }), ({ model, message }) => {
   const next = update(model, message).model
-  return Schema.is(HistoryModel)(next)
+  if (!Schema.is(HistoryModel)(next)) return false
+  const live = update(model, HistoryMessage.ResolvedMode({ mode: "live" })).model
+  const mock = update(model, HistoryMessage.ResolvedMode({ mode: "mock" })).model
+  return live.mode === "live" && live.role === "viewer" && mock.mode === "mock" && mock.role === model.role
 }, undefined, { revision: "2" }))

@@ -1,6 +1,7 @@
 // The site's only route to GitHub as a person (decision 0165): a per-person delegation, never a token.
 import { GitHub } from "@smthrs/integrations"
 import { HttpClient } from "effect/http"
+import { PublicReads } from "./PublicReads.vibe"
 
 export interface Connection { readonly person: number; readonly delegation: string }
 export type Delegate = Effect.Success<ReturnType<typeof GitHub.Delegation.site>>
@@ -13,9 +14,12 @@ export function refusalOf(error: unknown): GitHub.Delegation.Reason | undefined 
   return candidate?.details === undefined ? undefined : GitHub.Delegation.reasonOf(candidate)
 }
 
-/** GitHub as this person when they are connected, otherwise anonymously for public reads. */
-export function asPerson(connection: Connection | undefined, api: string, http: HttpClient.HttpClient, delegate: Option.Option<Delegate>) {
+/**
+ * GitHub as this person when they are connected; otherwise signed out, through `reads` (smithers.sh's App, cached) when
+ * the object provides it, else anonymously over `http`.
+ */
+export function asPerson(connection: Connection | undefined, api: string, http: HttpClient.HttpClient, delegate: Option.Option<Delegate>, reads: Option.Option<PublicReads["Service"]> = Option.none()) {
   return <A, E, R>(program: A!E!R) => connection !== undefined && Option.isSome(delegate)
     ? Effect.provideService(program, GitHub.GitHubClient.GitHubClient, delegate.value.client(connection.person, connection.delegation, http)) as Effect.Effect<A, E, Exclude<R, GitHub.GitHubClient.GitHubClient>>
-    : program.pipe(GitHub.Calls.withToken(Redacted.make(""), api), Effect.provideService(HttpClient.HttpClient, http)) as Effect.Effect<A, E, Exclude<Exclude<R, GitHub.GitHubClient.GitHubClient>, HttpClient.HttpClient>>
+    : program.pipe(GitHub.Calls.withToken(Redacted.make(""), api), Effect.provideService(HttpClient.HttpClient, Option.isSome(reads) ? reads.value.client : http)) as Effect.Effect<A, E, Exclude<Exclude<R, GitHub.GitHubClient.GitHubClient>, HttpClient.HttpClient>>
 }

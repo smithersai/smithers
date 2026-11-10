@@ -11,10 +11,17 @@ const setup = {
 }
 function request(client: HttpClient.HttpClient, origin: string, path: string, cookie = "", body?: unknown, source = configuredOrigin) {
   const req = body === undefined ? HttpClientRequest.get(origin + path) : HttpClientRequest.post(origin + path).pipe(HttpClientRequest.bodyJsonUnsafe(body))
-  return client.execute(req.pipe(HttpClientRequest.setHeader("cookie", cookie), HttpClientRequest.setHeader("origin", source)))
+  return effect {
+    const trace = try Config.withDefault(Config.Boolean("BENCH_TRACE_ACCOUNTS"), false)
+    const route = path.split("?")[0]
+    if (trace) try Console.error("vibelang.bench.accounts-request", { route, phase: "start" })
+    const response = try client.execute(req.pipe(HttpClientRequest.setHeader("cookie", cookie), HttpClientRequest.setHeader("origin", source))).pipe(Effect.timeout("15 seconds"))
+    if (trace) try Console.error("vibelang.bench.accounts-request", { route, phase: "end", status: response.status })
+    return response
+  }
 }
 
-it("workerd signed sessions and current project-role authorization", async ({ bench }) => {
+it("workerd signed sessions and current project-role authorization", { timeout: 240_000 }, async ({ bench }) => {
   await runPromise(scoped(effect {
     const api = try acquireRelease(serveApi(setup), (api) => promise(api.dispose))
     provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
@@ -32,6 +39,13 @@ it("workerd signed sessions and current project-role authorization", async ({ be
         expect(current.status).toBe(200)
         expect(await runPromise(current.json)).toMatchObject({ id, login: "benchmark", role: "new", available: false })
         for (const value of [cookie + "0", expired]) expect(await runPromise((await runPromise(request(client, api.origin, "/api/auth/session", value))).json)).toEqual({ id: "", login: "", role: "viewer", available: false })
+        // The first accepted participation promotes New once; repeating it must keep the same role/history.
+        expect((await runPromise(request(client, api.origin, "/__fixture/participation", cookie, {}))).status).toBe(204)
+        expect((await runPromise(request(client, api.origin, "/__fixture/participation", cookie, {}))).status).toBe(204)
+        expect(await runPromise((await runPromise(request(client, api.origin, "/api/auth/session", cookie))).json)).toMatchObject({ id, role: "community" })
+        expect((await runPromise(request(client, api.origin, "/__fixture/participation", "", {}))).status).toBe(204)
+        // A POST from another origin cannot borrow the same signed session's sandbox authority.
+        expect(await runPromise((await runPromise(request(client, api.origin, "/__fixture/sandbox-principal", cookie, {}, "https://other.example"))).json)).toEqual({ owner: "", role: "viewer" })
         expect((await runPromise(request(client, api.origin, "/api/roles", cookie, { id, role: "maintainer" }))).status).toBe(403)
         expect((await runPromise(request(client, api.origin, "/api/roles", admin, { id, role: "contributor" }))).status).toBe(200)
         const promoted = await runPromise((await runPromise(request(client, api.origin, "/api/auth/session", cookie))).json)
@@ -49,7 +63,7 @@ it("workerd signed sessions and current project-role authorization", async ({ be
         expect(flags.includes("samesite=lax")).toBe(true)
         expect(await runPromise((await runPromise(request(client, api.origin, "/api/auth/session", cookie))).json)).toEqual({ id: "", login: "", role: "viewer", available: false })
       }))
-      try artifact("accounts-workerd", "Vitest built-in bench; real production account service, cookie signatures, SQLite sessions, durable role grants and current sandbox authority in local workerd. Each of three samples uses fresh signed/expired fixture sessions and a unique person; check tamper/expiry, self-promotion refusal, maintainer grant, current role, cross-origin refusal/unchanged state, People and session revocation; browser sign-in remains unavailable without broker configuration. Host startup excluded; requests/assertions included.", ["Only the unshipped test host issues fixture sessions with real signatures. This does not benchmark successful GitHub OAuth/consent, provider latency or production credentials. No cookie/token values enter artifacts; all configuration is synthetic."], try tryPromise(() => result.run(slow)))
+      try artifact("accounts-workerd", "Vitest built-in bench; real production account service, cookie signatures, SQLite sessions, durable role grants and current sandbox authority in local workerd. Each of three samples uses fresh signed/expired fixture sessions and a unique person; check tamper/expiry, first/repeated/anonymous participation, cross-origin sandbox refusal, self-promotion refusal, maintainer grant, current role, cross-origin refusal/unchanged state, People and session revocation; browser sign-in remains unavailable without broker configuration. Host startup excluded; requests/assertions included.", ["Only the unshipped test host issues fixture sessions with real signatures. This does not benchmark successful GitHub OAuth/consent, provider latency or production credentials. No cookie/token values enter artifacts; all configuration is synthetic."], try tryPromise(() => result.run(slow)))
     }
   }))
 })

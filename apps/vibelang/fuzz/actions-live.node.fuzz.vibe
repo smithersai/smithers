@@ -1,0 +1,201 @@
+// src/actions/LiveActions.vibe: the live client over real HTTP against the real action handler and SQLite run hosts,
+// and over a faulty Effect transport. Every call answers a run or a typed ActionFailure; nothing dies.
+import { it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpClient, HttpClientError, HttpClientResponse, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
+import { LiveActions } from "../src/actions/LiveActions.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { handle, type ActionsApi } from "../worker/ActionsHttp.vibe"
+import { ActionIdentity } from "../worker/ActionIdentity.vibe"
+import { eventStream } from "../worker/Http.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import { world, history } from "../test/support/actionObjects.vibe"
+import { run, Int } from "./run.vibe"
+
+const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
+const Flow = Schema.Literals(["vibelang/history/show", "vibelang/history/Plan", "vibelang/Tour", "vibelang/Post", "unknown/flow", "\ud800"])
+const Command = Schema.Literals(["/plan", "/plan {oops", "/nope", "/show", "/tour", "", "   ", '/plan {"how":"append","epic":"","newEpic":"Fuzz","target":"","title":"Fuzz plan","task":"t"}'])
+const Op = Schema.Union([
+  Schema.Struct({ op: Schema.Literal("list") }),
+  Schema.Struct({ op: Schema.Literal("commands") }),
+  Schema.Struct({ op: Schema.Literal("start"), flow: Flow, json: Schema.Boolean }),
+  Schema.Struct({ op: Schema.Literal("command"), text: Command }),
+  Schema.Struct({ op: Schema.Literal("runs"), flow: Flow }),
+  Schema.Struct({ op: Schema.Literal("read"), pick: Int }),
+  Schema.Struct({ op: Schema.Literal("rerun"), pick: Int }),
+  Schema.Struct({ op: Schema.Literal("cancel"), pick: Int }),
+  Schema.Struct({ op: Schema.Literal("alarm"), pick: Int }),
+  Schema.Struct({ op: Schema.Literal("role"), role: Role }),
+])
+const Live = Schema.Struct({ role: Role, ops: Schema.Array(Op).check(Schema.isMaxLength(10)) })
+
+/** Codes the live protocol may answer; anything else is a client defect. */
+const CODES = new Set(["unavailable", "input", "not-found", "forbidden", "busy", "unknown-command", "closed", "invalid"])
+
+effect function serving(w: Effect.Success<ReturnType<typeof world>>) {
+  const api: ActionsApi = {
+    list: w.directory.list,
+    start: w.directory.start,
+    rerun: w.directory.rerun,
+    cancel: w.directory.cancel,
+    read: effect id => try Runs.read((try w.object(id)).sequencer),
+    events: effect id => eventStream((try w.object(id)).sequencer.follow(0)),
+  }
+  try HttpServer.serveEffect(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    return try Effect.provideService(handle(api, new URL(request.originalUrl, `http://${request.headers.host ?? "local"}`)), ActionIdentity, w.authority)
+  })
+}
+
+/** The failure code of `work`, or `ok`; a defect is not caught, so it fails the property. */
+effect function code(work: unknown!ActionFailure) {
+  return work.pipe(Effect.as("ok")) catch (error) => error.code
+}
+
+it.live("actions/live-client", () => run("actions/live-client", Live, (input) => scoped(effect {
+  const w = try world()
+  try Effect.orDie(w.accounts.choose(input.role))
+  provide NodeHttpServer.layerTest, history {
+    try serving(w)
+    const product = try Mythical
+    provide LiveActions("") {
+      const client = try Actions
+      const ids: Array<string> = []
+      // Every execution first runs slash commands as a maintainer: JSON input that decodes, input that doesn't, none.
+      try Effect.orDie(w.accounts.choose("maintainer"))
+      const planned = try client.command(Command.literals[7])
+      ids.push(planned)
+      if ((try code(client.command("/plan {oops"))) !== "input" || (try code(client.command("/plan"))) !== "input") return false
+      const posted = try client.command("/post hello")
+      ids.push(posted)
+      // The planned run, alarmed, is followed over the event stream until it passes.
+      try (try w.object(planned)).host.alarm(w.spend, w.model, product)
+      const states = Array.from(try timeout(Stream.runCollect(client.follow(planned).pipe(Stream.takeUntil((each) => each.state === "passed" || each.state === "failed"))), "20 seconds"))
+      if (states.at(-1)?.state !== "passed" || states.some((each) => each.id !== planned)) return false
+      try Effect.orDie(w.accounts.choose(input.role))
+      const pick = (n: number) => ids.length === 0 ? "a-missing" : ids[n % ids.length]!
+      for (const step of input.ops) {
+        switch (step.op) {
+          case "list": {
+            const listed = try client.list()
+            if (listed.length === 0) return false
+            break
+          }
+          case "commands": {
+            const commands = try client.commands()
+            if (commands.some((entry) => entry.command === "")) return false
+            break
+          }
+          case "start": {
+            const value = step.json ? { how: "append", epic: "", newEpic: "Fuzz", target: "", title: "Fuzz", task: "t" } : {}
+            const answer = try Effect.result(client.start(step.flow, value, "button"))
+            if (answer._tag === "Failure") {
+              if (!CODES.has(answer.failure.code)) return false
+              // The server checks the role before the catalog: an unknown flow is never runnable, so it is forbidden.
+              if (step.flow === "unknown/flow" && answer.failure.code !== "forbidden") return false
+            } else ids.push(answer.success)
+            break
+          }
+          case "command": {
+            const answer = try Effect.result(client.command(step.text))
+            if (answer._tag === "Failure") {
+              if (!CODES.has(answer.failure.code)) return false
+              if (step.text === "/nope" && answer.failure.code !== "unknown-command") return false
+              if (step.text === "/plan {oops" && !["input", "unknown-command"].includes(answer.failure.code)) return false
+            } else ids.push(answer.success)
+            break
+          }
+          case "runs": {
+            const answer = try Effect.result(client.runs(step.flow))
+            if (answer._tag === "Failure" ? !CODES.has(answer.failure.code) : answer.success.some((each) => each.flow !== step.flow)) return false
+            break
+          }
+          case "read": {
+            const id = pick(step.pick)
+            const answer = try Effect.result(client.read(id))
+            if (answer._tag === "Failure" ? !CODES.has(answer.failure.code) : answer.success.id !== id) return false
+            break
+          }
+          case "rerun": {
+            const answer = try Effect.result(client.rerun(pick(step.pick)))
+            if (answer._tag === "Failure") { if (!CODES.has(answer.failure.code)) return false }
+            else ids.push(answer.success)
+            break
+          }
+          case "cancel": {
+            const answer = try code(client.cancel(pick(step.pick)))
+            if (answer !== "ok" && !CODES.has(answer)) return false
+            break
+          }
+          case "alarm": {
+            if (ids.length === 0) break
+            const id = pick(step.pick)
+            const host = (try w.object(id)).host
+            timeout(host.alarm(w.spend, w.model, product), "10 seconds") catch () => undefined
+            // A followed run either settles or its stream ends; every element is this run.
+            const followed = Stream.runCollect(client.follow(id).pipe(Stream.takeUntil((each) => each.state !== "queued" && each.state !== "running"), Stream.take(64)))
+            const seen = timeout(followed, "10 seconds") catch () => []
+            if (Array.from(seen).some((each) => each.id !== id)) return false
+            break
+          }
+          case "role": {
+            try Effect.orDie(w.accounts.choose(step.role))
+            break
+          }
+        }
+      }
+      return true
+    }
+  }
+}), undefined, { minimum: "10 seconds" }))
+
+const Status = Schema.Literals([200, 202, 400, 403, 404, 409, 500])
+const Body = Schema.Literals(["failure", "garbage", "empty", "wrong-shape", "valid"])
+const Fault = Schema.Struct({
+  status: Status, body: Body, code: Schema.Literals(["busy", "forbidden", "not-found", "input"]),
+  transport: Schema.Boolean,
+  call: Schema.Literals(["list", "commands", "runs", "read", "start", "rerun", "command", "cancel", "follow"]),
+  id: Schema.Literals(["a-1", "\udfff", "a/b?c"]),
+})
+
+/** The transport fails or answers `status` with `body`; the call is named, and the surrogate id never reaches it. */
+it.live("actions/live-faults", () => run("actions/live-faults", Fault, (input) => effect {
+  let sent = 0
+  const client = HttpClient.make((request) => {
+    sent += 1
+    if (input.transport) return fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+    const url = new URL(request.url)
+    const valid = url.pathname.endsWith("/commands") || url.pathname === "/api/actions" ? "[]"
+      : url.pathname.endsWith("/runs") && request.method === "GET" ? "[]"
+      : request.method === "POST" ? JSON.stringify({ id: "a-2" })
+      : request.method === "DELETE" ? "{}"
+      : JSON.stringify({ id: "a-1", flow: "f", door: "button", actor: "person", state: "passed", started: 1, at: 1, result: "", steps: [] })
+    const text = input.body === "failure" ? JSON.stringify({ code: input.code }) : input.body === "garbage" ? "{" : input.body === "empty" ? "" : input.body === "wrong-shape" ? JSON.stringify({ id: 7 }) : valid
+    return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(text, { status: input.status }))))
+  })
+  provide Layer.succeed(HttpClient.HttpClient, client) {
+    provide LiveActions("https://a.test") {
+      const actions = try Actions
+      const work: unknown!ActionFailure = input.call === "list" ? actions.list()
+        : input.call === "commands" ? actions.commands()
+        : input.call === "runs" ? actions.runs(input.id)
+        : input.call === "read" ? actions.read(input.id)
+        : input.call === "start" ? actions.start("vibelang/Post", {}, "button")
+        : input.call === "rerun" ? actions.rerun(input.id)
+        : input.call === "command" ? actions.command("/show")
+        : input.call === "cancel" ? actions.cancel(input.id)
+        : Stream.runCollect(actions.follow(input.id).pipe(Stream.take(4)))
+      const answer = try code(work)
+      const usesId = ["runs", "read", "rerun", "cancel", "follow"].includes(input.call)
+      // A malformed id is refused as input before any transport.
+      if (usesId && input.id === "\udfff") return answer === "input" && sent === 0
+      if (input.transport) return answer === "unavailable"
+      const ok = input.status >= 200 && input.status <= 299
+      if (!ok && input.call !== "follow" && input.call !== "command") return answer === (input.body === "failure" ? input.code : "unavailable")
+      if (input.call === "follow" && input.status !== 200) return answer === "unavailable"
+      if (ok && input.body === "valid" && input.call !== "command" && input.call !== "follow") return answer === "ok"
+      return answer === "ok" || CODES.has(answer)
+    }
+  }
+}))

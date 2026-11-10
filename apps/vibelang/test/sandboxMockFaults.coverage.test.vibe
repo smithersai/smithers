@@ -1,0 +1,59 @@
+// The product mock's sandboxes (src/core/sandboxMock.vibe) at the edges a page reaches: an engine that fails every
+// flow with a cycle answers each operation as an unavailable sandbox, and the signed-out policy decides the role,
+// whatever role the page claims.
+import { describe, expect, it } from "@effect/vitest"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { makeMockSandboxes } from "../src/core/sandboxMock.vibe"
+import { Refused, Unavailable } from "../src/core/Factory.vibe"
+import { signedOut } from "../src/core/sandboxPolicy.vibe"
+
+/** The memory engine, except that every execution fails with a flow cycle. */
+const cyclingEngine = Layer.effect(FlowRuntime.FlowRuntime)(effect {
+  const real = try FlowRuntime.FlowRuntime
+  return { ...real, execute: () => Effect.fail(new FlowRuntime.FlowCycleDetected({ path: ["sandbox/a", "sandbox/a"] })) }
+}).pipe(Layer.provide(FlowEngine.layerMemory))
+
+describe("the mock sandboxes", () => {
+  it.effect("over an engine that fails with a flow cycle, every operation is an unavailable sandbox", () => scoped(effect {
+    const sandboxes = try makeMockSandboxes("contributor", undefined, cyclingEngine)
+    const read = try Effect.flip(sandboxes.sandbox("home"))
+    const start = try Effect.flip(sandboxes.startSandbox("home", "start-1"))
+    const stop = try Effect.flip(sandboxes.stopSandbox("home", "stop-1", 1))
+    const command = try Effect.flip(sandboxes.sandboxCommand("home", "command-1", "pwd", 1))
+    try Effect.try(() => {
+      for (const failure of [read, start, stop, command]) expect(failure).toMatchObject({ _tag: "Unavailable", reason: "sandbox-flow" })
+    })
+  }))
+
+  it.effect.each([
+    new Refused({ refusal: "quota" }),
+    new Unavailable({ reason: "journal-unavailable" }),
+  ])("an engine's typed %s reaches every sandbox operation with its original reason", (failure) => scoped(effect {
+    const failedEngine = Layer.effect(FlowRuntime.FlowRuntime)(effect {
+      const real = try FlowRuntime.FlowRuntime
+      return { ...real, execute: () => Effect.fail(failure) }
+    }).pipe(Layer.provide(FlowEngine.layerMemory))
+    const sandboxes = try makeMockSandboxes("contributor", undefined, failedEngine)
+    const results = [
+      try Effect.flip(sandboxes.sandbox("home")),
+      try Effect.flip(sandboxes.startSandbox("home", "start")),
+      try Effect.flip(sandboxes.stopSandbox("home", "stop", 1)),
+      try Effect.flip(sandboxes.sandboxCommand("home", "command", "pwd", 1)),
+    ]
+    try Effect.try(() => {
+      for (const result of results) expect(result).toBe(failure)
+    })
+  }))
+
+  it.effect("under the signed-out policy, a page that claims a contributor is a viewer and cannot start one", () => scoped(effect {
+    const sandboxes = try makeMockSandboxes("contributor", signedOut)
+    const start = try Effect.flip(sandboxes.startSandbox("home", "start-1"))
+    const snapshot = try sandboxes.sandbox("home")
+    try Effect.try(() => {
+      expect(start._tag).toBe("Refused")
+      expect(snapshot).toMatchObject({ role: "viewer" })
+      expect(snapshot.id).toBeFalsy()
+    })
+  }))
+})

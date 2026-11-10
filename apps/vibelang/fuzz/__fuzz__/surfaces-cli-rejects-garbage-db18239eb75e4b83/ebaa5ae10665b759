@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 3
+bias 3
+null-prototype false
+key 2488810144
+tape EyzXNMskOdWlsi0_Tu64B5KmSHg
+schedule-key 2907992859
+schedule 
+signature "PropertyError:PlatformError"
+path 0
+codec "json"
+value "[0,\"\\u0000\"]"
+# PropertyError:PlatformError
+# [0,"\u0000"]

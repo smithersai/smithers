@@ -10,6 +10,8 @@ import { Factory } from "../src/core/Factory.vibe"
 import { AccountUnavailable } from "../src/core/roles.vibe"
 import { readMockSession, readPending, readSession, settingsDir, writeMockSession, writePending, writeSession, type PendingDevice } from "../src/surfaces/session.vibe"
 import { signIn, signOutSurface, type LoginInput, SignInFailed } from "../src/surfaces/signin.vibe"
+// The durable sign-in host loads on first use (sessionFlow.vibe); load it with the suite, not inside a case's limit.
+import "@smthrs/platform-node"
 
 const NO_WAIT: LoginInput = { wait: false }
 const WAIT: LoginInput = { wait: true }
@@ -228,7 +230,7 @@ describe("settings and time", () => {
     }
   }), 60_000)
 
-  it.live("a grant that expires during the wait ends the wait and is removed", () => scoped(effect {
+  it.live("a grant that expires during the wait ends the wait as expired and is removed", () => scoped(effect {
     provide NodeServices.layer, NodeHttpServer.layerTest, live {
       const origin = try serve(factoryAndGitHub(json({ error: "authorization_pending" })))
       const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
@@ -239,9 +241,53 @@ describe("settings and time", () => {
         const left = try readPending()
         const after = try Clock.currentTimeMillis
         try Effect.try(() => {
-          expect(failure).toBe("Sign-in failed.")
+          expect(failure).toBe("Sign-in expired.")
           expect(left).toBeUndefined()
           expect(after).toBeGreaterThanOrEqual(now + 2500)
+        })
+      }
+    }
+  }), 60_000)
+
+  it.live("a waiting sign-in GitHub refuses is neither declined nor expired, and keeps the grant", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      // GitHub answers the first check's poll pending and refuses every later one, so its refusal reaches the wait
+      // however long the host takes between the two: an order, not a deadline.
+      let polls = 0
+      const origin = try serve((method, path) => path === "/login/oauth/access_token" && polls++ === 0 ? json({ error: "authorization_pending" }) : factoryAndGitHub(json({ error: "unavailable" }, 500))(method, path))
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        try writePending(try pendingFor(origin))
+        const failure = try message(signIn(WAIT))
+        const left = try readPending()
+        try Effect.try(() => { expect(failure).toBe("Sign-in failed."); expect(left?.userCode).toBe("OLDC-ODE1"); expect(polls).toBe(2) })
+      }
+    }
+  }), 60_000)
+  it.live("a settings directory that turns unwritable once the code is shown fails the wait before it polls", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      let polls = 0
+      const origin = try serve((method, path) => {
+        if (path === "/login/oauth/access_token") polls++
+        return factoryAndGitHub(json({ error: "authorization_pending" }))(method, path)
+      })
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      const files = try FileSystem.FileSystem
+      const console = try Console.Console
+      // The person reads the code; meanwhile the settings directory stops accepting its permissions.
+      const shown: Array<string> = []
+      const denied = PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: "chmod" })
+      const settings: FileSystem.FileSystem = { ...files, chmod: (path, mode) => shown.length > 0 ? fail(denied) : files.chmod(path, mode) }
+      const terminal = { ...console, error: (...args: ReadonlyArray<unknown>) => { shown.push(args.join(" ")) } }
+      provide configured(origin, directory) {
+        try writePending(try pendingFor(origin))
+        const failure = try (effect { provide FileSystem.FileSystem = settings, Console.Console = terminal { return try message(signIn(WAIT)) } })
+        const left = try readPending()
+        try Effect.try(() => {
+          expect(shown).toEqual([`Open ${origin}/device and enter OLDC-ODE1.`])
+          expect(failure).toBe("Sign-in failed.")
+          expect(polls).toBe(1)
+          expect(left?.userCode).toBe("OLDC-ODE1")
         })
       }
     }
@@ -259,6 +305,23 @@ describe("mock accounts that fail", () => {
         const failure = try message(signIn(NO_WAIT))
         const stored = try readMockSession()
         try Effect.try(() => { expect(failure).toBe("Sign-in isn't available."); expect(stored).toBeUndefined() })
+      }
+    }
+  }), 60_000)
+
+  it.live("a mock session that can't be read back still signs in, without a login", () => scoped(effect {
+    provide NodeServices.layer, mockWith({ signInAgent: () => succeed({ login: "ada" }) }) {
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      const files = try FileSystem.FileSystem
+      const missing = PlatformError.systemError({ _tag: "NotFound", module: "FileSystem", method: "readFileString" })
+      const settings: FileSystem.FileSystem = { ...files, readFileString: (path, encoding) => path.endsWith("mock-session.json") ? fail(missing) : files.readFileString(path, encoding) }
+      provide configured("https://never.invalid", directory) {
+        const answer = try (effect { provide FileSystem.FileSystem = settings { return try signIn(NO_WAIT) } })
+        const stored = try readMockSession()
+        try Effect.try(() => {
+          expect(answer).toMatchObject({ status: "signed-in", login: "" })
+          expect(stored?.login).toBe("ada")
+        })
       }
     }
   }), 60_000)

@@ -1,0 +1,26 @@
+// The in-memory GitHub answers what GitHub answers on the protocol edges the delegated tests rely on.
+import { expect, it } from "@effect/vitest"
+import { HttpClientRequest } from "effect/http"
+import { API, fakeClient, forked, seed } from "../fuzz/issues-node-fake.vibe"
+
+const openPull = (head: string) => HttpClientRequest.post(`${API}/repos/o/r/pulls`).pipe(HttpClientRequest.bodyText(JSON.stringify({ head, base: "main", title: "t", body: "b" }), "application/json"))
+
+it.effect("a pull request from a head branch that does not exist is refused with 422, and nothing is written", () => effect {
+  const fake = seed()
+  forked(fake)
+  const writes = fake.writes
+  const pulls = fake.pulls.length
+  const response = try fakeClient(fake).execute(openPull("fuzz:never-pushed"))
+  expect(response.status).toBe(422)
+  expect(fake.pulls).toHaveLength(pulls)
+  expect(fake.writes).toBe(writes)
+})
+
+it.effect("a pull request from a pushed branch opens on that branch's commit", () => effect {
+  const fake = seed()
+  forked(fake)
+  fake.branches["fuzz/r"] = { ...fake.branches["fuzz/r"], pushed: "c".repeat(40) }
+  const response = try fakeClient(fake).execute(openPull("fuzz:pushed"))
+  expect(response.status).toBe(201)
+  expect(fake.pulls.at(-1)?.head).toEqual({ ref: "pushed", sha: "c".repeat(40) })
+})

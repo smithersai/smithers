@@ -11,6 +11,8 @@ export service WikiHost {
 }
 const operations: ReadonlyArray<WikiOperation> = ["read", "save", "propose", "draft"]
 const retries = RetryPolicy.make({ initialMs: 1000, factor: 2, maxMs: 60_000, expirationMs: 120_000, retryable: [{ tag: "WikiFailure", code: "unavailable" }, { tag: "WikiFailure", code: "rate-limited" }, { tag: "WikiFailure", code: "unknown" }] })
+/** A read answers a waiting person: past this the engine settles it and the page shows Retry (0015). Writes keep the full retry window. */
+export const wikiReadDeadline = "5 seconds"
 const steps = Metric.counter("vibelang_wiki_edit_steps", { incremental: true })
 const definitions = operations.map((op) => {
   const action = Action.make(`vibelang/wiki/${op}/perform`, {
@@ -22,12 +24,15 @@ const definitions = operations.map((op) => {
   const flow = Flow.make(`vibelang/wiki/${op}`, {
     description: `VibeLang wiki: ${op}. Runs with the current person's policy and GitHub identity.`,
     modelInvocable: op === "read" || op === "draft",
+    ...(op === "read" ? { deadline: wikiReadDeadline } : {}),
     payload: WikiRequest.fields, success: WikiState, error: WikiFailure,
     body: Node.capture({}, (request) => action.call(request)),
   })
   return { action, flow, op }
 })
 export const wikiEditFlows = definitions.map(({ flow }) => flow)
+/** The flow that runs one operation. `definitions` maps every operation, so the lookup always finds one. */
+export function wikiEditFlow(op: WikiOperation) { return definitions.find((definition) => definition.op === op)!.flow }
 export const wikiEditRegistration = Layer.unwrap(effect {
   const host = try WikiHost
   return Layer.mergeAll(Layer.empty, ...definitions.map(({ action, flow, op }) => Interpreter.layerWithImplementations(flow,

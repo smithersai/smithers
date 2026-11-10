@@ -14,7 +14,7 @@ const shellBoundaries = {
   'src/surfaces/signin.vibe': 'GitHub device transport, interval persistence, session validation and logout run inside journaled native Actions. GitHub responses, clocks, HTTP, private settings and Effect execution remain tested host boundaries, not formal proofs.',
   'src/surfaces/sessionFlow.vibe': 'Delegates mutations and polling/waits to the existing native SQLite flow host, Action, Poll and Sleep; bounded outcome-only observations and SDK execution remain host/library boundaries.',
 
-  'src/web/historyApp.vibe': 'Calls proved role thresholds, live role reset, open-epic membership, plan initialization/validation/field selection. Remaining page merges, async response guards, complete model frames and command scheduling remain unproved.',
+  'src/web/historyApp.vibe': 'Calls proved role thresholds, live role reset, open-epic membership and plan fields (flowMachine), and historyDecision for response guards, one outline read at a time, the page merge, read offsets, hash reads and the exact scalar frame of every arm. Host boundaries: the Foldkit message match and the spread of each frame over the model, the hash regexps (regexp.ts), Schema decoding and command execution.',
   'src/history/LiveMythical.vibe': 'Calls proved accepted/refused/unavailable HTTP outcome mapping. Native HTTP/SSE and JSON/Schema codecs remain boundaries.',
 
   'worker/Reply.vibe': 'Threads the proved Reply start/compose/settle model through actual Actions and calls the proved complete event router/completion choices; invalid telemetry retains prior valid spend and cannot publish success. Native SDK payload projection and effect orchestration remain unproved; native safe-integer observations, AgentAction internal event replay, DoneText/provider decoding and date/prompt formatting remain host boundaries.',
@@ -24,7 +24,7 @@ const shellBoundaries = {
   'src/history/schemas.vibe': 'Rank bounds call proved validRank/validRanks; Schema safe-integer and JSON decoding remain runtime boundaries (unsafe-integer.ts, json-codec.ts).',
   'worker/HistoryObject.vibe': 'Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved.',
   'src/web/main.vibe': 'Calls proved six-field surface/tour projections, pane/media/response guards, scroll/focus policies and conversation transitions. Full Model composition, account/People transitions, numeric counter domains, retry selection and command execution remain unproved.',
-  'src/web/viewport.vibe': 'Follow revisions and finite-coordinate comparison decisions are proved in screenDecision; DOM observations/writes, native subtraction, nonfinite inputs, counter capacity and touch lookup remain runtime boundaries.',
+  'src/web/viewport.vibe': 'Calls the proved pause, scroll, follow and key steps in screenDecision. Host boundaries: DOM reads and writes, touch lookup and the PageUp distance (Math.floor).',
   'src/core/mockReplies.vibe': 'First matching script is proved in mockDecision; Unicode casing and slicing chunks remain unproved (unicode-case.ts, slice-clamp reproduction).',
   'src/core/wire.vibe': 'Length and method/subroute admission are proved in protocolDecision; URI codecs remain unproved (uri-codec.ts).',
   'src/core/LiveFactory.vibe': 'HTTP outcome choice is proved in protocolDecision; HTTP/SSE and Schema codecs remain runtime boundaries (json-codec.ts).',
@@ -32,16 +32,21 @@ const shellBoundaries = {
   'src/surfaces/backend.vibe': 'Host choice calls proved prefersMock/liveHealth policies; URL normalization and layer execution remain unproved.',
   'src/web/startup.vibe': 'Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries.',
   'src/web/historyStartup.vibe': 'Calls proved startupDecision preference and authoritative role-list/default choices. Storage, URL parsing, resource loading and Foldkit execution remain host boundaries.',
-  'src/web/modeSwitch.vibe': 'Calls the proved opposite-mode choice; HtmlBuilder rendering and native navigation remain host boundaries.',
+  'src/web/modeSwitch.vibe': 'Calls the proved opposite-mode, mode name and label choices; HtmlBuilder rendering and native navigation remain host boundaries.',
   'src/web/backend.vibe': 'Health choice calls proved liveHealth; deadlines, cancellation and layer loading remain runtime behavior.',
   'worker/Http.vibe': 'Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries.',
-  'worker/Budget.vibe': 'Calls proved admission/charge decisions; semaphore, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts).',
-  'src/core/flows.vibe': 'Post/StartTour/EndTour thread the proved record/follow-up model, and Tour threads active/ready/one-speaker/terminal state; terminal-event and reading-time policies call flowDecision; unanswered source order and conversation guards call conversation. Private visit/hold counters use proved exact BigInt increments; first-visit, paused-wait, requested seek and reading-clock step choices are proved. Full optional restored-cursor composition, Flow execution, word tokenization, docs regexp and reply-id slice remain unproved.',
+  'worker/Budget.vibe': 'Admission and settlement run the proved reserve/settle kernel inside the semaphore, so concurrent admissions cannot pass the limit. The semaphore itself, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts); the workerd suite exercises twenty concurrent admissions.',
+  'src/core/sandboxMeter.vibe': 'Each interval\'s accrual and month rollover is the proved meterStep (sandboxDecision.vibe). UTC month boundaries (Date.UTC), bucket storage and the interval loop\'s termination remain host boundaries.',
+  'src/core/flows.vibe': 'Tour threads active/ready/one-speaker/terminal state; terminal-event and reading-time policies call flowDecision; unanswered source order and conversation guards call conversation. Private visit/hold counters use proved exact BigInt increments; first-visit, paused-wait, requested seek and reading-clock step choices are proved. Full optional restored-cursor composition, Flow execution, word tokenization, docs regexp and reply-id slice remain unproved.',
   "worker/Sequencer.vibe": "Calls proved conversation/append/start decisions, retained-log replay, ordered model-context selection, the proved sequencerDecision attempt, restart count, finish plan (the reply ends as exactly the model text), settle step, tour speech and entry lookup, and the followDecision replay cut. Stored events are decoded before replay. Locking, log writes before publish, PubSub delivery, event ids from numbers and the read snapshot Set (readonly-set.ts) remain runtime boundaries.",
   'src/history/flows.vibe': 'Who may act and the order of authorize and record steps run the proved flowMachine.vibe (authorize, canRecord, record); the sequencer decides through mythical.vibe. Engine execution, journaling, metrics and logs remain runtime boundaries (0020).',
   'src/history/roles.vibe': 'may, leastRole, peopleOnly and standing are proved in flowMachine.vibe; this module re-exports them and builds the role tables from them (0020).',
 };
 const boundaries = {
+  "src/history/seedDecision.vibe": "Proved first area naming a scope, which queue entries count, exact join precedence (regenerated docs, revert, landed entry, new), the last sentence end that fits and the note cut (else a short first sentence, else dropped), the evidence paragraph step (a line wraps only onto an open paragraph) and how a fold reads back a stored title (0018 third-lane batch 4).",
+  "src/actions/catalogDecision.vibe": "Proved exact least role (tours public; approve and fold maintainer; else contributor) and input kind for each flow tag (0018 third-lane batch 3).",
+  "src/core/tourDecision.vibe": "Proved exact docs-path admission (no scheme, host, query, dot segment or //), running tour and reply id (0018 third-lane batch 2).",
+  "src/history/pageDecision.vibe": "Proved page start, exact page count (none past the end, at most a page) and the pair-safe search clip (0018 third-lane batch 2).",
   "src/core/sequencerDecision.vibe": "Proved exact restart count by recursive prefix measure, model attempt, restarts needed, first-match entry index, finish plan whose restart/append reproduces exactly the model text, idempotent settle step, tour speech separator and tour settlement (0018 third-lane batch 1).",
   "src/core/followDecision.vibe": "Proved replay cut (the later of cursor and last replayed number) and strict freshness, used by both sequencers so a live event at or below the replay is never sent twice (0018 third-lane batch 1).",
   "src/history/stackDecision.vibe": "Proved exact plan step precedence (amend, empty, too-long, insert, open-epic, append), UTF-16 surrogate predicates, the pair-safe cut, the fold title (unchanged when it fits, else cut between characters with \"\u2026\" within the limit) and the first epic by title (0018 third-lane batch 1).",
@@ -58,15 +63,42 @@ const boundaries = {
   "src/core/sandboxDecision.vibe": "Proved sandbox integer kernel, iterative runtime traversals and quantified source-position contracts: exact running counts, interval usage and accumulation, remaining allowance, monotone clocks, refusal precedence, first-match lookup, identity fences and transition frames (0024). Its inputs are whole safe integers: sandboxMeter.vibe normalizes Date and IEEE-754 values before calling it.",
   'src/core/mockDecision.vibe': 'Exact keyword membership, first-match priority and fallback; proved for normalized prompts.',
   'src/core/protocolDecision.vibe': 'Conversation/cursor/body validation, exact route and HTTP outcomes, explicit backend choice; proved.',
-  'src/web/screenDecision.vibe': 'Exact six-field surface/tour projections plus escape, palette, scroll, focus, stream and announcement decisions; finite coordinate comparisons use exact reals. Native subtraction, nonfinite inputs and counter-capacity applicability remain unproved.',
+  'src/web/historyDecision.vibe': 'Proved history-page decisions (0020): late-outline, commit and matches response guards, one outline read at a time, the page merge with exact splice and one page per epic, page read offsets, hash and epic reads, the search guard and the exact scalar frame of every update arm.',
+  'src/web/screenDecision.vibe': 'Exact six-field surface/tour projections, escape, palette, scroll, focus, stream and announcement decisions, and the viewport steps: a pause or a scroll off the bottom takes the next intent, every event raises it by at most one, only the newest intent on an active page scrolls. Finite coordinates are exact reals. Not proved: IEEE-754 subtraction (real-rounding.ts), nonfinite DOM coordinates, and an intent past 2^53-1 native events.',
   'src/history/mythical.vibe': 'Exact history transitions and unchanged fields, refusal precedence, first-match lookup, rank-bound induction and sequence capacity; notes are retained and trailers fold only into approved or landed commits; proved over validated safe integers (0020, unsafe-integer.ts).',
   "src/history/flowMachine.vibe": "Proved exact history authorization/run ordering, shared role thresholds, HTTP status/outcome mapping, plan validation/field initialization, open-epic membership and append prefix, signatures and labels, with executable mutations (0020). Removal order in toggleEpic is not stated (annotation-lambda.ts); membership is exact. Codecs live in LiveMythical.vibe, page/model transitions in historyApp.vibe and engine replay in flows.vibe, each noted there.",
-  'src/core/conversation.vibe': 'Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain.',
+  'src/web/issueDecision.vibe': 'Every decision the issues screen makes over plain values carries proved contracts: remembered operations, the role gate, step errors, actions, card and list loads, when a projection or data reply applies, the assignee after a change, recovery, failure and request text, and the parent; 107 executable mutations. `issues.vibe` and the `update` arms read data, build requests and run Commands, which remain host boundaries.',
+  'src/web/paneDecision.vibe': 'The sandbox and wiki-editor arms of `update` as proved functions over plain data: the start action, the loaded sandbox, its notice and month warning, the wiki edit types, submit plan, begin and failure steps and error text; 52 executable mutations. main.vibe interprets the commands; Foldkit dispatch remains a host boundary.',
+  'src/web/tourDecision.vibe': 'The tour controls and the event stream connection as proved functions over plain values: pause and resume, back, skip, sound, a late tour end, what a failed tour keeps, auto start and reconnection; 89 executable mutations. `update` reads the model and builds Commands, which remain host boundaries.',
+  'src/web/updateDecision.vibe': 'The web update\'s decisions as proved functions over plain values: Escape\'s ladder, the applied event and the step after every message; 83 executable mutations. `update` reads the model and builds Commands, which remain host boundaries.',
+  'src/core/decide.vibe': 'The sequencer: every accepted event is the next; a role grant is accepted exactly when canGrant admits it and an authorization exactly when the actor\'s role may take the action, every action, both refused forbidden; accepted action requests copy every field for a fresh id; steps and settlements are numbered exactly for an open run. Imported conversation.vibe contracts are axioms here and proved there.',
+  'src/core/conversation.vibe': 'Production state machine: exact entry/role frames, action-run frames and partial walkthrough frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain.',
   'worker/replyReasons.vibe': 'Failure precedence and model reason codes; proved.',
-  'worker/budgetDecision.vibe': 'Strict admission, nonnegative integer charge and exact total; proved under safe-sum precondition.',
-  'src/core/flowDecision.vibe': 'Post/StartTour/EndTour record-before-follow-up-once, Reply start/composition/settlement and Tour active/ready/one-speaker/terminal ordering models, exact closed invariants and at-most-one stage bounds; dispatch admission, append order, tour terminal events, reading time, first undispatched source index, exact private visit/hold identities and scalar walk control choices; proved.',
+  'worker/budgetDecision.vibe': 'Reservation admission: a call is admitted only when charges, open reservations and its own ceiling fit the limit, and holds that ceiling; settlement frees it and charges the usable report or the whole ceiling, once. Both preserve charges + reservations <= limit + over, where over counts only charges beyond their own reservation. Proved under the safe-sum precondition.',
+  'src/core/flowDecision.vibe': 'Reply start/composition/settlement and Tour active/ready/one-speaker/terminal ordering models, exact closed invariants and at-most-one stage bounds; append order, tour terminal events, reading time, first undispatched source index, exact private visit/hold identities and scalar walk control choices; proved.',
 };
 const functionBoundaries = {
+  "src/web/actionModel.vibe:completions": "Calls the proved slashMatches (modelDecision): exactly the commands whose text starts with the draft's first word while the menu is open and that word starts with /; none otherwise. Reading the draft's first word is a native regexp outside the proof.",
+  "src/core/sandboxMeter.vibe:meterDelayMilliseconds": "Calls the proved meter delay (sandboxDecision meterDelay): between 1 ms and one interval, and before the interval exactly the first whole millisecond at which running × elapsed reaches the remaining allowance.",
+  "src/history/seed.vibe:areaOf": "Calls the proved first area naming the scope (seedDecision areaIndex); the scope regexps stay boundaries (regexp.ts).",
+  "src/history/seed.vibe:wholeSentences": "Calls the proved note cut (seedDecision sentenceCut); the sentence-boundary regexps and trimming stay boundaries (regexp.ts).",
+  "src/history/seed.vibe:evidenceOf": "Calls the proved evidence paragraph step (seedDecision evidenceStep); the trailer and own-line regexps stay boundaries (regexp.ts).",
+  "src/history/seed.vibe:intentsOf": "Fold titles read back through the proved foldedTitle: an empty stored title is the mythical commit's own. Intent order is the loop order; that every intent is accepted is tested, not proved.",
+  "src/history/seed.vibe:seedOf": "Calls the proved entry use and join precedence (seedDecision entryUse, joins). Not proved: the commit graph walk, the claim of the oldest landed entry, epic order and id numbering (Maps, regexps).",
+  // Policy tables whose contract is the table (0018, "Specifications restated").
+  ...Object.fromEntries(['src/core/conversation.vibe:mayRun', 'src/core/conversation.vibe:runsOf', 'src/core/wikiDecision.vibe:wikiSubmissionAllowed', 'src/core/protocolDecision.vibe:accountRoute',
+    'worker/budgetDecision.vibe:canCharge', 'worker/budgetDecision.vibe:chargeKeyOf', 'src/core/accountCookieDecision.vibe:cookieName',
+    'src/core/accountCookieDecision.vibe:localOrigin', 'src/core/accountCookieDecision.vibe:cookieAccepted', 'src/actions/catalogDecision.vibe:leastRoleOf',
+    'src/actions/catalogDecision.vibe:inputOf', 'src/core/identityDecision.vibe:postLabel'].map((key) => [key, 'Specification restated: the contract is the table the body computes. It fixes the meaning other proofs rely on and rejects an edit to the table, but proves no further property, nor that callers pass the right argument.'])),
+  "src/history/seed.vibe:pushOnce": "Calls the proved note-line admission (stackDecision admitsLine).",
+  "src/actions/catalog.vibe:registration": "Calls the proved least role and input kind (catalogDecision); titles and command names are labels.",
+  "src/core/accountCookies.vibe:validSessionCookie": "Calls the proved local-origin and cookie acceptance rule; the URL parse and cookie regexps stay boundaries (uri-codec.ts, regexp.ts).",
+  "src/core/mockReplies.vibe:chunks": "Calls the proved exact chunk boundaries (mockDecision chunksOf): joined in order the chunks are the reply.",
+  "worker/Reply.vibe:promptOf": "Calls the proved prompt window, form and speaker label; string joining is formatting.",
+  "src/core/flows.vibe:touring": "Calls the proved runningTour.",
+  "src/core/flows.vibe:docsPage": "Calls the proved exact docs-path admission (tourDecision docsPath), equal to the earlier regexp on 4,010 compared paths.",
+  "src/history/pages.vibe:matchesOf": "Calls the proved pair-safe search clip and match count; case folding and the stack sort are native (unicode-case.ts, sort-membership.ts) and stay boundaries.",
+  "src/history/pages.vibe:epicPageOf": "Calls the proved page start and count; Math.floor and the rank sort are native (finite-round.ts, sort-membership.ts) and stay boundaries.",
   "src/history/seed.vibe:clip": "Calls the proved pair-safe cut (stackDecision pairCut), so a clipped title or note never ends in half a character; the native trimEnd is outside the proof.",
   "worker/Sequencer.vibe:entryOf": "Calls the proved first-match entryIndex; undefined exactly when no entry has the id.",
   "src/core/wikiDecision.vibe:wikiSubmissionAllowed": "Proved exact person-only submission guard; reads and drafts remain agent-invocable. Principal authentication and actual external writes are host boundaries.",
@@ -132,8 +164,17 @@ function inventorySource(file, source) {
   const result = JSON.parse(parsed.stdout);
   if (result.error || !result.ast) throw Error(`${rel}: compiler parse failed: ${result.error?.message ?? 'missing AST'}`);
   const rows = [];
-  function walk(node, parent, parents = []) {
+  // A function whose leading `//@` block holds LemmaScript's verify directive (the harness's own pattern, sources.py)
+  // is proved by `pnpm verify`, with the callbacks inside it.
+  const directive = /^[ \t]*\/\/@[ \t]+verify\b/;
+  function markedAt(start) {
+    const before = source.slice(0, start).split('\n');
+    for (let i = before.length - 2; i >= 0 && /^[ \t]*\/\/@/.test(before[i]); i--) if (directive.test(before[i])) return true;
+    return false;
+  }
+  function walk(node, parent, parents = [], provedBy = false) {
     let next = parents;
+    let proved = provedBy;
     if (functions.has(node.type) && node.body) {
       // ESTree ranges index the ORIGINAL JavaScript string (UTF-16). Projection
       // mappings instead use UTF-8 bytes and include generated $gen wrappers.
@@ -153,21 +194,29 @@ function inventorySource(file, source) {
       const header = source.slice(range[0], node.body.range[0]);
       const effectful = /^(?:(?:export|default|static|public|private|protected|override)\s+)*effect\b/.test(header.trim()) || node.async || containsEffects(node.body);
       const category = effectful ? 'effectful shell' : (containsLogic(node.body) || boundaries[rel] ? 'pure logic' : 'wiring');
-      const why = functionBoundaries[`${rel}:${parents[0] ?? name}`] || boundaries[rel] || shellBoundaries[rel] || (category === 'wiring'
+      proved = provedBy || (parents.length === 0 && markedAt(range[0]));
+      const boundary = boundaries[rel];
+      const provedBoundary = proved && boundary && !boundary.startsWith('Proved') ? 'Proved: ' + boundary : boundary;
+      const why = functionBoundaries[`${rel}:${parents[0] ?? name}`] || provedBoundary || shellBoundaries[rel]
+        || (proved ? 'Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`).' : undefined) || (category === 'wiring'
         ? 'Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision.'
         : 'Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof.');
       const label = [...parents, name].join('/');
       rows.push({ file: rel, line, label, category, why });
       next = [...parents, name];
     }
-    for (const child of children(node)) walk(child, node, next);
+    for (const child of children(node)) walk(child, node, next, proved);
   }
   walk(result.ast);
   return rows;
 }
+/** The production sources the inventory enumerates, never generated output. */
+function sourceFiles() {
+  // Build output is not source: `pnpm wiki:build` writes the gitignored src/assets/wiki.generated.vibe (data only).
+  return ['src', 'worker', 'scripts'].flatMap(d => scan(path.join(app, d))).filter(file => !file.endsWith('.generated.vibe'));
+}
 function main() {
-  const rows = ['src', 'worker', 'scripts'].flatMap(d => scan(path.join(app, d)))
-    .flatMap(file => inventorySource(file, fs.readFileSync(file, 'utf8')));
+  const rows = sourceFiles().flatMap(file => inventorySource(file, fs.readFileSync(file, 'utf8')));
   const table = `<!-- inventory:start -->\n${rows.length} executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.\n\n| File and line | Function | Class | Proof or reason |\n| --- | --- | --- | --- |\n${rows.map(row => `| \`${row.file}:${row.line}\` | \`${row.label}\` | ${row.category} | ${row.why} |`).join('\n')}\n<!-- inventory:end -->`;
   const before = fs.readFileSync(decision, 'utf8');
   if (!/<!-- inventory:start -->[\s\S]*?<!-- inventory:end -->/.test(before)) throw Error('Missing inventory markers');
@@ -176,5 +225,5 @@ function main() {
   else if (before !== after) { console.error('Function inventory is stale: node verify/inventory.cjs --write'); process.exitCode = 1; }
   console.log(`${rows.length} executable functions, callbacks and effect blocks inventoried`);
 }
-module.exports = { inventorySource };
+module.exports = { inventorySource, sourceFiles };
 if (require.main === module) main();

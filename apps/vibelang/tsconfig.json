@@ -6,6 +6,7 @@
     "customConditions": ["vibelang-source"],
     "lib": [
       "ES2022",
+      "ES2024.String",
       "DOM",
       "DOM.Iterable"
     ],
@@ -35,6 +36,6 @@
   ],
   // The site Worker's test needs Cloudflare's types, so the Worker project checks it (worker/tsconfig.json).
   "exclude": [
-    "test/worker.test.vibe", "bench/site.bench.vibe", "fuzz/site.node.fuzz.vibe"
+    "test/worker.test.vibe", "test/workerd/api.vibe", "bench/site.bench.vibe", "fuzz/site.node.fuzz.vibe"
   ]
 }

@@ -65,3 +65,16 @@ compatibility flags and the database.
 - [API reference](./api.md): every public export.
 
 Host failure diagnostics use `RetryPolicy.failureType` from `@smthrs/flow`: the squashed error’s tag or name, or `unknown`, without its message or stack.
+
+`CloudflareRuntime.layer` injects the Durable Object's `hostId` as journal-decode
+`objectId`. Set `codeVersion` to the deployed commit, or provide
+`JournalDecode.Identity` around the runtime to supply its code version. A decode
+refusal records the object, code and fixed step tag without the stored payload.
+
+The Postgres child-alarm regression allows 195 round trips: the earlier 193 plus
+the two required unknown-run guards introduced by 53466ad8. It checks those guards
+explicitly; this baseline adjustment changes no runtime behavior.
+
+The real-process container test fixture keeps native stdin errors in its Effect
+error channel, including when a command closes its pipe before accepting input.
+A closed-pipe regression uses a real child process; no request is intercepted.

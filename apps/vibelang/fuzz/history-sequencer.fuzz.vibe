@@ -1,0 +1,125 @@
+// src/history/Sequencer.vibe through its public operations: plans of every kind, approvals, and folds of main's
+// commits with a trailer, a stale trailer or none, under long and surrogate-pair titles; then a second sequencer over
+// the same store, which must read the same history. stackDecision.vibe and seed.vibe's areaOf are reached as the
+// sequencer calls them.
+import { it } from "@effect/vitest"
+import { empty, MAX_TITLE, type History } from "../src/history/mythical.vibe"
+import { areaOf } from "../src/history/seed.vibe"
+import { make, memoryStore, type How } from "../src/history/Sequencer.vibe"
+import { run, Int, Text, same } from "./run.vibe"
+
+const Title = Schema.Union([Text, Schema.Literals(["", "  ", "fix(compiler): a".repeat(14), "feat(wiki): " + "😀".repeat(120), "docs: " + "x".repeat(194) + "😀", "Mythical: m1"])])
+const Op = Schema.Union([
+  Schema.Struct({ op: Schema.Literal("plan"), how: Schema.Literals(["append", "insert", "amend"]), epic: Int, newEpic: Schema.Literals(["", "Fuzz", "long"]), target: Int, title: Title }),
+  Schema.Struct({ op: Schema.Literal("approve"), target: Int }),
+  Schema.Struct({ op: Schema.Literal("start"), target: Int }),
+  Schema.Struct({ op: Schema.Literal("fold"), sha: Int, title: Title, trailer: Schema.Literals(["none", "named", "unknown", "squash", "quoted", "continued"]), target: Int }),
+  Schema.Struct({ op: Schema.Literal("bootstrap"), seed: Schema.Literals(["empty", "epic", "full"]) }),
+])
+
+/** Every id, rank and sha is unique, every commit is in an epic, every real commit names one, main is the last. */
+function invariant(h: History): boolean {
+  return new Set(h.epics.map((e) => e.id)).size === h.epics.length && new Set(h.commits.map((c) => c.id)).size === h.commits.length
+    && new Set(h.real.map((r) => r.sha)).size === h.real.length && h.commits.every((c) => h.epics.some((e) => e.id === c.epic))
+    && h.real.every((r) => h.commits.some((c) => c.id === r.mythical)) && h.main === (h.real.at(-1)?.sha ?? "")
+    && h.commits.every((c) => c.title.length <= MAX_TITLE)
+}
+
+/** A cut title never ends in half a surrogate pair. */
+function whole(title: string): boolean {
+  const body = title.endsWith("…") ? title.slice(0, -1) : title
+  const last = body.charCodeAt(body.length - 1)
+  return !(0xD800 <= last && last <= 0xDBFF)
+}
+
+it.live("history/sequencer-operations", () => run("history/sequencer-operations", Schema.Array(Op).check(Schema.isMaxLength(24)), (ops) => effect {
+  const store = try memoryStore()
+  const sequencer = try make(store)
+  for (const step of ops) {
+    const before = try sequencer.read()
+    const pick = (n: number) => before.commits.length === 0 ? "m-missing" : before.commits[n % before.commits.length]!.id
+    switch (step.op) {
+      case "plan": {
+        const target = pick(step.target)
+        const epic = before.epics.length === 0 ? "e-missing" : before.epics[step.epic % before.epics.length]!.id
+        const answer = try sequencer.plan({ how: step.how as How, epic, newEpic: step.newEpic === "" ? "" : step.newEpic === "long" ? "E".repeat(MAX_TITLE + 1) : "Fuzz " + step.epic, target, title: step.title, task: "t" })
+        const after = try sequencer.read()
+        const title = step.title.trim()
+        if (step.how === "amend") { if (answer.refusal === null && answer.id !== target) return false; break }
+        if (title === "") { if (answer.refusal !== "empty") return false; break }
+        if (title.length > MAX_TITLE) { if (answer.refusal !== "too-long") return false; break }
+        if (answer.refusal !== null) { if (after.seq !== before.seq && !(step.newEpic === "Fuzz" && step.how === "append")) return false; break }
+        const planned = after.commits.find((c) => c.id === answer.id)
+        if (planned === undefined || planned.title !== title) return false
+        if (step.how === "insert") {
+          const anchor = after.commits.find((c) => c.id === target)!
+          if (planned.epic !== anchor.epic || planned.rank >= anchor.rank) return false
+        }
+        break
+      }
+      case "approve": {
+        try sequencer.record({ type: "Approve", id: pick(step.target), by: "Ada" })
+        break
+      }
+      case "start": {
+        try sequencer.record({ type: "Start", id: pick(step.target), lane: "lane" })
+        break
+      }
+      case "fold": {
+        const sha = `f${step.sha}`
+        const named = pick(step.target)
+        // A squash keeps a folded commit's trailer in its body; a quote names one in prose. Neither is the trailer
+        // paragraph, so neither names a commit.
+        const body = step.trailer === "squash" ? `\n\n* a\n\nMythical: ${named}\n\n* b\n\nCo-Authored-By: Ada <ada@example.com>\n`
+          : step.trailer === "quoted" ? `\n\nThe plan said\nMythical: ${named}\nof another change.\n`
+          : step.trailer === "continued" ? `\n\nBody.\n\nCo-Authored-By: Ada\n  <ada@example.com>\nMythical: ${named}\n`
+          : step.trailer === "none" ? "" : `\n\nMythical: ${step.trailer === "named" ? named : "m999"}\n`
+        const message = step.title + body
+        const answer = try sequencer.fold({ sha, change: "", title: step.title, message })
+        const after = try sequencer.read()
+        if (before.real.some((r) => r.sha === sha)) { if (answer.refusal !== "duplicate" || after.seq !== before.seq) return false; break }
+        if (answer.refusal !== null) break
+        const real = after.real.find((r) => r.sha === sha)
+        if (real === undefined || real.mythical !== answer.id || after.main !== sha) return false
+        const into = after.commits.find((c) => c.id === answer.id)!
+        // Folded into the commit its trailer names only when that commit was approved or landed; else a new commit
+        // appended to the epic of its scope's area.
+        // Only the trailer paragraph names a commit; a title alone (even `Mythical: m1`) never does.
+        const named_ = step.trailer === "named" || step.trailer === "continued" ? named : step.trailer === "unknown" ? "m999" : ""
+        const target = before.commits.find((c) => c.id === named_)
+        const intoNamed = target !== undefined && (target.state === "approved" || target.state === "landed")
+        if (intoNamed ? answer.id !== target.id : after.epics.find((e) => e.id === into.epic)?.title !== areaOf(into.title)) return false
+        if (!intoNamed && (into.title.length > MAX_TITLE || (step.title.length > MAX_TITLE && !whole(into.title)))) return false
+        break
+      }
+      case "bootstrap": {
+        // A full seed is at the last safe number: every later intent is refused `full`, a fold's new epic included.
+        const seed: History = step.seed === "epic" ? { ...empty, seq: 1, epics: [{ id: "e1", title: "Seed" }] } : step.seed === "full" ? { ...empty, seq: Number.MAX_SAFE_INTEGER } : empty
+        const loaded = try Effect.result(sequencer.bootstrap(seed))
+        if (loaded._tag === "Success" && loaded.success !== (before.seq === 0)) return false
+        break
+      }
+    }
+    if (!invariant(try sequencer.read())) return false
+  }
+  // The store holds everything: a second sequencer over it reads the same history, and a follower from the start
+  // is sent every stored event in order.
+  const again = try make(store)
+  const stored = try store.since(0)
+  const followed = try Stream.runCollect(sequencer.follow(0).pipe(Stream.take(stored.length)))
+  return same(try again.read(), try sequencer.read()) && same(Array.from(followed), stored)
+}))
+
+/** A store holding what isn't a history dies at the boundary, naming neither the stored titles nor the events. */
+it.live("history/sequencer-corrupt-store", () => run("history/sequencer-corrupt-store", Schema.Struct({ title: Text, part: Schema.Literals(["base", "events"]) }), ({ title, part }) => effect {
+  const secret = "secret-" + title
+  const store = {
+    load: () => succeed({ base: part === "base" ? ({ seq: "x", title: secret } as unknown as History) : undefined, events: part === "events" ? [{ type: "Planned", seq: -1, title: secret } as never] : [] }),
+    since: () => succeed([]), append: () => Effect.void, seed: () => Effect.void,
+  }
+  const sequencer = try make(store)
+  const read = try exit(sequencer.read())
+  if (read._tag !== "Failure" || !Cause.hasDies(read.cause)) return false
+  const printed = Cause.pretty(read.cause)
+  return printed.includes(part === "base" ? "Invalid history state" : "Invalid history events") && !printed.includes(secret)
+}))

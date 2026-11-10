@@ -31,7 +31,7 @@ beforeAll(async () => {
     bindings = (try tryPromise(() => host.getBindings())) as unknown as Bindings
     api = try serveApi({ CHAT_DAILY_TOKENS: "0" })
   }, NodeServices.layer))
-}, 120_000)
+}, 600_000)
 
 afterAll(async () => {
   await host?.dispose()

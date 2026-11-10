@@ -1,0 +1,34 @@
+// @vitest-environment node
+// The Accounts object's engine store forgets settled account steps a day after they finish, as every other object's
+// does (EXECUTION_RETENTION); its role ledger is not engine history and stays.
+import { expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { github, offline, post, serve, setupWith } from "./support/accountsWorld.vibe"
+
+it.effect("an Accounts object forgets account steps a day after they settle and keeps its roles", () => scoped(effect {
+  provide NodeHttpServer.layerTest {
+    const { accounts, origin, storage } = try serve(setupWith(github([{ id: 7, login: "ada" }]), "7")).pipe(Effect.provideService(HttpClient.HttpClient, offline))
+    const runs = () => storage.sql.exec("SELECT run_id FROM flows_runs").toArray().map((row) => String(row["run_id"]))
+    provide FetchHttpClient.layer {
+      const http = try HttpClient.HttpClient
+      const signOut = effect { return (try http.execute(post(origin, "/api/auth/sign-out", {}))).status }
+      const started = runs().length
+      const first = try signOut
+      try TestClock.adjust("1 hour")
+      const second = try signOut
+      const young = runs().length
+      try TestClock.adjust("25 hours")
+      const third = try signOut
+      const kept = runs()
+      const role = try accounts.role("7")
+      try Effect.try(() => {
+        expect([first, second, third]).toEqual([204, 204, 204])
+        expect(started).toBeGreaterThan(0)
+        expect(young).toBe(started + 2)
+        expect(kept).toHaveLength(1)
+        expect(role).toBe("maintainer")
+      })
+    }
+  }
+}))

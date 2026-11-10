@@ -1,0 +1,66 @@
+// @vitest-environment node
+// The MCP server's start-up failures: stdout carries the protocol, so each one is reported on stderr, once, as a
+// person reads it. Faults are a live origin nothing listens on and a settings store that dies or is interrupted.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { mcp } from "../src/surfaces/mcp.vibe"
+import { LiveBackendNotDeployed, unreachable } from "../src/surfaces/backend.vibe"
+
+/** Nothing listens on the discard port, so a request there is refused. */
+const CLOSED = "http://127.0.0.1:9"
+
+/** A server whose stdin never ends, so only its start-up can stop it. */
+const stdio = Layer.succeed(Stdio.Stdio, Stdio.make({
+  args: succeed([]),
+  stdin: Stream.never,
+  stdout: () => Sink.drain,
+  stderr: () => Sink.drain,
+}))
+
+/** Runs `mcp` with `settings` as its settings directory; answers its exit and every line it wrote to stderr. */
+effect function start(mock: boolean, settings: FileSystem.FileSystem, origin = CLOSED) {
+  const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+  const console = try Console.Console
+  const lines: Array<string> = []
+  const capture = { ...console, error: (...args: ReadonlyArray<unknown>) => { lines.push(args.join(" ")) } }
+  const config = ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_FACTORY_URL: origin, XDG_CONFIG_HOME: directory }))
+  provide stdio, config, FileSystem.FileSystem = settings, Console.Console = capture {
+    const exit = try Effect.exit(mcp(mock, undefined))
+    return { exit, lines }
+  }
+}
+
+describe("MCP server start-up failures", () => {
+  it.live("a live Factory that can't be reached ends the server with its sentence on stderr", () => scoped(effect {
+    provide NodeServices.layer {
+      const { exit, lines } = try start(false, try FileSystem.FileSystem)
+      try Effect.try(() => {
+        expect(Exit.isFailure(exit) && Cause.findErrorOption(exit.cause)).toMatchObject({ value: expect.any(LiveBackendNotDeployed) })
+        expect(lines).toEqual([unreachable(CLOSED)])
+      })
+    }
+  }), 30_000)
+
+  it.live("a settings store that dies ends the server with the defect on stderr", () => scoped(effect {
+    provide NodeServices.layer {
+      const files = try FileSystem.FileSystem
+      const { exit, lines } = try start(true, { ...files, readFileString: () => Effect.die(new Error("settings store died")) })
+      try Effect.try(() => {
+        expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
+        expect(lines).toHaveLength(1)
+        expect(lines[0]).toContain("settings store died")
+      })
+    }
+  }), 30_000)
+
+  it.live("a start-up interrupted inside the server ends it and writes nothing", () => scoped(effect {
+    provide NodeServices.layer {
+      const files = try FileSystem.FileSystem
+      const { exit, lines } = try start(true, { ...files, readFileString: () => Effect.interrupt })
+      try Effect.try(() => {
+        expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+        expect(lines).toEqual([])
+      })
+    }
+  }), 30_000)
+})

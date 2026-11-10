@@ -1,5 +1,5 @@
 import { sandboxRequest, signedOutGateway, type Gateway } from "./SandboxHttp.vibe"
-import { validBodyLength } from "../src/core/protocolDecision.vibe"
+import { validBodyLength, validTourStep, validWriteLength, writeStatus } from "../src/core/protocolDecision.vibe"
 
 import * as ActionsHttp from "./ActionsHttp.vibe"
 // The API Worker's HTTP surface (src/core/wire.vibe; wiki/decisions/0010-live-agent.md): health, posts, finite reads,
@@ -82,12 +82,12 @@ effect function answer(route: Route, url: URL, conversations: Conversations) {
   const request = try HttpServerRequest.HttpServerRequest
   if (route.kind === "wiki") {
     const length = Number(request.headers["content-length"] ?? "0")
-    if (!(length > 0 && length <= 1024)) return json({ error: "body size" }, 413)
+    if (!validBodyLength(length, 1024)) return json({ error: "body size" }, 413)
     const text = request.text catch () => ""
     const body = Schema.decodeUnknownEffect(Schema.fromJsonString(WikiBody))(text) catch () => undefined
     if (body === undefined) return json({ error: "body" }, 400)
     const refusal = try conversations.openWiki(route.conversation, body.page)
-    return refusal === null ? json({}) : json({ refusal }, 409)
+    return json(refusal === null ? {} : { refusal }, writeStatus(refusal !== null))
   }
   if (route.kind === "post") {
     const length = Number(request.headers["content-length"] ?? "0")
@@ -96,19 +96,19 @@ effect function answer(route: Route, url: URL, conversations: Conversations) {
     const body = decodePost(text) catch () => undefined
     if (body === undefined || body.name.length > MAX_NAME) return json({ error: "body" }, 400)
     const refusal = try conversations.post(route.conversation, body)
-    return refusal === null ? json({}) : json({ refusal }, 409)
+    return json(refusal === null ? {} : { refusal }, writeStatus(refusal !== null))
   }
   if (route.kind === "tour-control") {
     const text = request.text catch () => ""
     if (text.length > 1024) return json({ error: "body size" }, 413)
     const body = Schema.decodeUnknownEffect(Schema.fromJsonString(TourControlBody))(text) catch () => undefined
-    if (body === undefined || body.step > 11) return json({ error: "body" }, 400)
+    if (body === undefined || !validTourStep(body.step, 11)) return json({ error: "body" }, 400)
     const refusal = conversations.controlTour === undefined ? "not-replying" : try conversations.controlTour(route.conversation, body.action, body.step)
-    return refusal === null ? json({}) : json({ refusal }, 409)
+    return json(refusal === null ? {} : { refusal }, writeStatus(refusal !== null))
   }
   if (route.kind === "tour" || route.kind === "end-tour") {
     const refusal = try (route.kind === "tour" ? conversations.tour(route.conversation) : conversations.endTour(route.conversation))
-    return refusal === null ? json({}) : json({ refusal }, 409)
+    return json(refusal === null ? {} : { refusal }, writeStatus(refusal !== null))
   }
   const after = afterOf(url)
   if (after === undefined) return json({ error: "after" }, 400)
@@ -136,7 +136,7 @@ effect function answerHistory(route: HistoryRoute, url: URL, histories: Historie
   }
   if (route.kind !== "history-write") return json(try histories.page(route.page))
   const length = Number(request.headers["content-length"] ?? "0")
-  if (!(length >= 0 && length <= MAX_WRITE_BYTES)) return json({ error: "body size" }, 413)
+  if (!validWriteLength(length, MAX_WRITE_BYTES)) return json({ error: "body size" }, 413)
   // A chunked body has no Content-Length: Effect counts its bytes and stops reading at the limit.
   const text = Effect.provideService(request.text, HttpIncomingMessage.MaxBodySize, ByteSize.bytes(MAX_WRITE_BYTES)) catch (error) =>
     error.reason._tag === "RequestParseError" && error.reason.reason === "BodyTooLarge" ? undefined : ""

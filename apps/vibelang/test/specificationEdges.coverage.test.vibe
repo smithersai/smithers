@@ -1,0 +1,167 @@
+// The specification gate at the issues flow a person, the CLI and MCP all use: a store with no specification yet,
+// revisions that change nothing or cannot be numbered, reviews with no seat, and host reviewers answering incompletely.
+import { describe, expect, it } from "@effect/vitest"
+import { emptyIssues, specificationAcceptedUnder } from "../src/core/conversation.vibe"
+import { makeIssueFactory } from "../src/core/IssuesFactory.vibe"
+import { IssueFailure, type IssueRequest, type IssuesApi, type IssuesState } from "../src/core/issueSchemas.vibe"
+import { emptySpecification, fixtureSpecification, fixtureSpecificationHistory, requestedSpecificationReview, revisedSpecificationState, SpecificationReviewers } from "../src/core/specification.vibe"
+
+type State = typeof IssuesState.Type
+const request = (op: IssueRequest["op"], key: string, over: Partial<IssueRequest> = {}): IssueRequest =>
+  ({ op, key, number: 0, parent: 0, title: "", text: "", example: "", prior: "", assignee: "", ...over })
+/** A maintainer's issues flow over a store that starts at `state`. */
+const factoryOver = (state: State) => effect {
+  const store = { state: try Ref.make(state), lock: try Semaphore.make(1) }
+  const api = try makeIssueFactory("maintainer", undefined, store)
+  return { api, store }
+}
+const failureOf = <A, R>(program: A!IssueFailure!R) => Effect.flip(program).pipe(Effect.map((error) => error.reason))
+
+describe("a project with no specification yet", () => {
+  it.effect("the first revision starts it at revision 1 with one history entry", () => scoped(effect {
+    const { api } = try factoryOver(emptyIssues)
+    const first = try api.act(request("spec-revise", "first", { revision: 0, text: "# Spec" }))
+    try Effect.try(() => {
+      expect(first.specification).toMatchObject({ revision: 1, text: "# Spec", opus: { verdict: "" } })
+      expect(first.specificationHistory).toEqual([expect.objectContaining({ revision: 1, event: "revision", reviewer: "" })])
+      expect(first.seq).toBe(1)
+    })
+  }))
+
+  it.effect("a review of revision 0 is refused: there is nothing to review", () => scoped(effect {
+    const { api, store } = try factoryOver(emptyIssues)
+    const reason = try failureOf(api.act(request("spec-review", "nothing", { revision: 0, reviewer: "astra" })))
+    const after = try Ref.get(store.state)
+    try Effect.try(() => {
+      expect(reason).toBe("invalid")
+      expect(after).toEqual(emptyIssues)
+    })
+  }))
+
+  it.effect("Opus's first scripted review is B+, its next one and every other seat's use the accepted grades", () => scoped(effect {
+    const { api } = try factoryOver(emptyIssues)
+    try api.act(request("spec-revise", "first", { revision: 0, text: "# Spec" }))
+    const firstOpus = try api.act(request("spec-review", "opus-1", { revision: 1, reviewer: "opus" }))
+    const secondOpus = try api.act(request("spec-review", "opus-2", { revision: 1, reviewer: "opus" }))
+    const astra = try api.act(request("spec-review", "astra-1", { revision: 1, reviewer: "astra" }))
+    try Effect.try(() => {
+      expect(firstOpus.specification!.opus).toMatchObject({ verdict: "LGTM", grade: "B+", revision: 1, link: "#spec-review-2" })
+      expect(secondOpus.specification!.opus).toMatchObject({ grade: "A-", link: "#spec-review-3" })
+      expect(astra.specification!.astra).toMatchObject({ grade: "A", link: "#spec-review-4" })
+      expect(astra.specificationHistory!.map((entry) => entry.event)).toEqual(["revision", "review", "review", "review"])
+    })
+  }))
+})
+
+describe("revisions that cannot be written", () => {
+  const spec = (revision: number, text = "# Spec") => ({ ...emptyIssues, specification: { ...emptySpecification, revision, text } })
+
+  it.effect.each([["empty", ""], ["blank", " \n\t "]] as const)("%s text is refused and nothing is written", ([_name, text]) => scoped(effect {
+    const { api, store } = try factoryOver(spec(1))
+    const reason = try failureOf(api.act(request("spec-revise", "blank", { revision: 1, text })))
+    const after = try Ref.get(store.state)
+    try Effect.try(() => {
+      expect(reason).toBe("invalid")
+      expect(after).toEqual(spec(1))
+    })
+  }))
+
+  it.effect("a specification at the last safe revision number takes no further revision", () => scoped(effect {
+    const { api, store } = try factoryOver(spec(Number.MAX_SAFE_INTEGER))
+    const reason = try failureOf(api.act(request("spec-revise", "overflow", { revision: Number.MAX_SAFE_INTEGER, text: "# Next" })))
+    const after = try Ref.get(store.state)
+    try Effect.try(() => {
+      expect(reason).toBe("invalid")
+      expect(after.specification!.revision).toBe(Number.MAX_SAFE_INTEGER)
+    })
+  }))
+
+  it.effect("the same text again is no new revision and adds no history", () => scoped(effect {
+    const { api } = try factoryOver(spec(4, "# Same"))
+    const result = try api.act(request("spec-revise", "same", { revision: 4, text: "# Same" }))
+    try Effect.try(() => {
+      expect(result.specification).toMatchObject({ revision: 4, text: "# Same" })
+      expect(result.specificationHistory).toBeUndefined()
+      expect(result.seq).toBe(0)
+    })
+  }))
+
+  it.effect("a review naming no seat is refused", () => scoped(effect {
+    const { api } = try factoryOver(spec(1))
+    const reason = try failureOf(api.act(request("spec-review", "seatless", { revision: 1 })))
+    try Effect.try(() => expect(reason).toBe("invalid"))
+  }))
+})
+
+describe("a host reviewer that answers incompletely", () => {
+  it.effect.each([
+    ["no verdict", { verdict: "" as const, link: "#host" }],
+    ["no link", { verdict: "LGTM" as const, link: "" }],
+  ] as const)("an answer with %s is refused and the gate is unchanged", ([_name, answer]) => scoped(effect {
+    const { api } = try factoryOver({ ...emptyIssues, specification: { ...emptySpecification, revision: 1, text: "# Spec" } })
+    const before = try api.read()
+    const provider: SpecificationReviewers.Shape = { review: () => succeed({ revision: 1, grade: "A", ...answer }) }
+    const { reason } = try Effect.flip(api.act(request("spec-review", "partial", { revision: 1, reviewer: "sol" })).pipe(Effect.provideService(SpecificationReviewers, provider)))
+    const after = try api.read()
+    try Effect.try(() => {
+      expect(reason).toBe("review")
+      expect(after).toEqual(before)
+    })
+  }))
+})
+
+describe("the chat agent's review request", () => {
+  it.effect.each([
+    ["names no reviewer", "Please review the specification"],
+    ["is not about the specification", "Ask Codex Astra about tuples"],
+  ] as const)("a prompt that %s requests nothing", ([_name, prompt]) => scoped(effect {
+    const { api, store } = try factoryOver(emptyIssues)
+    const reply = try requestedSpecificationReview(api, prompt, "chat-1")
+    const after = try Ref.get(store.state)
+    try Effect.try(() => {
+      expect(reply).toBeUndefined()
+      expect(after).toEqual(emptyIssues)
+    })
+  }))
+
+  it.effect("names the seat with no verdict when an issues service answers without a specification", () => effect {
+    // A faulty issues service: it accepts the request but its state carries no specification at all.
+    const asked: Array<IssueRequest> = []
+    const api: IssuesApi = { read: () => succeed(emptyIssues), act: (request) => sync(() => { asked.push(request); return emptyIssues }) }
+    const reply = try requestedSpecificationReview(api, "Specification review by Claude Fable, please", "chat-2")
+    try Effect.try(() => {
+      expect(reply).toBe("Claude Fable ·  ·  · r0")
+      expect(asked).toEqual([expect.objectContaining({ op: "spec-review", reviewer: "fable", revision: 0, key: "chat-2" })])
+    })
+  })
+
+  it.effect("a refused review reaches the agent as the issues failure", () => scoped(effect {
+    const { api } = try factoryOver(emptyIssues)
+    const reason = try failureOf(requestedSpecificationReview(api, "Review the specification with Codex Sol", "chat-3"))
+    try Effect.try(() => expect(reason).toBe("invalid"))
+  }))
+})
+
+describe("revising an accepted specification under each revision policy", () => {
+  const accepted: State = { ...emptyIssues, specification: fixtureSpecification, specificationHistory: fixtureSpecificationHistory }
+  const at = "2026-11-10T00:00:00Z"
+
+  it.effect("the project's policy keeps the four answers and records a revision", () => effect {
+    const next = revisedSpecificationState(accepted, "# Spec, revised", at)
+    try Effect.try(() => {
+      expect(next.specification).toMatchObject({ revision: 3, text: "# Spec, revised", astra: fixtureSpecification.astra, opus: fixtureSpecification.opus })
+      expect(next.specificationHistory!.at(-1)).toEqual({ revision: 3, event: "revision", reviewer: "", verdict: "", grade: "", link: "", at })
+      expect(specificationAcceptedUnder(next.specification!, "keep")).toBe(true)
+    })
+  })
+
+  it.effect("the reset policy clears the four answers, records a reset and is no longer accepted", () => effect {
+    const next = revisedSpecificationState(accepted, "# Spec, revised", at, "reset")
+    try Effect.try(() => {
+      expect([next.specification!.astra, next.specification!.sol, next.specification!.fable, next.specification!.opus].map((answer) => answer.verdict)).toEqual(["", "", "", ""])
+      expect(next.specificationHistory!.at(-1)).toMatchObject({ revision: 3, event: "reset" })
+      expect(next.specificationHistory).toHaveLength(fixtureSpecificationHistory.length + 1)
+      expect(specificationAcceptedUnder(next.specification!, "reset")).toBe(false)
+    })
+  })
+})

@@ -51,6 +51,40 @@ describe("LiveActions faulty services", () => {
   })
 })
 
+describe("LiveActions follows one run", () => {
+  it.effect("yields only the followed run's states, past events about another run", () => effect {
+    const sse = (event: object) => `data: ${JSON.stringify(event)}\n\n`
+    const requested = (seq: number, id: string) => ({ type: "ActionRequested", seq, id, flow: "vibelang/Post", door: "button", actor: "person", at: seq })
+    const { client } = faulty({
+      "GET /api/actions/runs/a-1/events": { status: 200, body: [
+        sse(requested(1, "a-2")),
+        sse(requested(2, "a-1")),
+        sse({ type: "ActionSettled", seq: 3, id: "a-2", state: "failed", result: "other", at: 3 }),
+        sse({ type: "ActionSettled", seq: 4, id: "a-1", state: "passed", result: "done", at: 4 }),
+      ].join("") },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+    provide LiveActions("https://a.test") {
+      const runs = try Stream.runCollect((try Actions).follow("a-1"))
+      try Effect.try(() => {
+        expect(runs.map((run) => run.id)).toEqual(["a-1", "a-1", "a-1"])
+        expect(runs.map((run) => run.state)).toEqual(["queued", "queued", "passed"])
+      })
+    }
+    }
+  })
+
+  it.effect("names an error answer that is JSON but not the protocol unavailable", () => effect {
+    const { client } = faulty({ "DELETE /api/actions/runs/a-1": { status: 500, body: JSON.stringify({ error: "boom" }) } })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+    provide LiveActions("https://a.test") {
+      const cancelled = try codeOf((try Actions).cancel("a-1"))
+      try Effect.try(() => expect(cancelled).toBe("unavailable"))
+    }
+    }
+  })
+})
+
 describe("prepare", () => {
   it.effect("builds every invocation kind, with the request id as the operation", () => effect {
     const post = try prepare("vibelang/Post", { text: "hi" }, "a-1")

@@ -1,4 +1,12 @@
 """Production postconditions selected for expensive negative cases; positive proofs still check every obligation."""
+# Mutations whose claim is that a call stays inside its callee's domain. Only these may be rejected by a failed
+# precondition at that call (mutation_results.py); every other mutation must fail its own function's contract.
+# Dafny assumes a failed precondition afterwards, so such a mutant can fail nothing later: its fault is the call itself.
+CALLEE_PRECONDITIONS = {
+    'history-replay-capacity-gate': 'apply requires a history below capacity; replayEvent must not call it on a full one',
+    'history-capacity-low': 'decide requires a nonnegative sequence; the capacity guard must not call it with one below zero',
+    'history-capacity-high': 'decide requires a sequence below capacity; the capacity guard must not call it at capacity',
+}
 # Exact production clauses, not generated line numbers. Positive verification checks all clauses.
 # Prefix mutations keep whole-function checking because an earlier checked assertion is the earliest failure.
 # Exact production clauses, not generated line numbers. Positive verification checks all clauses.
@@ -324,10 +332,10 @@ def postcondition_line(generated, function, contains):
     import re
     lines=generated.splitlines()
     # A pure function carries its postconditions on the generated `_ensures` lemma, a method on its own header.
-    start=next((i for i,line in enumerate(lines) if re.match(r'lemma '+re.escape(function)+r'_ensures\(',line)),None)
+    start=next((i for i,line in enumerate(lines) if re.match(r'lemma '+re.escape(function)+r'_ensures(?:<[^>(]*>)?\(',line)),None)
     if start is None:
         from sources import dafny_name
-        start=next((i for i,line in enumerate(lines) if re.match(r'(?:ghost )?(?:method|function) '+re.escape(dafny_name(function))+r'\(',line)),None)
+        start=next((i for i,line in enumerate(lines) if re.match(r'(?:ghost )?(?:method|function) '+re.escape(dafny_name(function))+r'(?:<[^>(]*>)?\(',line)),None)
     if start is None: raise ValueError('Missing target function '+function)
     end=next((i for i in range(start+1,len(lines)) if lines[i]=='{'),len(lines))
     matches=[i+1 for i in range(start,end) if lines[i].lstrip().startswith('ensures ') and contains in lines[i]]
@@ -501,7 +509,7 @@ for _name in ASSERTIONS:
 def case_assertion_line(generated, function, case, clause):
     import re
     lines = generated.splitlines()
-    starts = [i for i, line in enumerate(lines) if re.match(r'(?:ghost )?(?:method|function) '+re.escape(function)+r'\(', line)]
+    starts = [i for i, line in enumerate(lines) if re.match(r'(?:ghost )?(?:method|function) '+re.escape(function)+r'(?:<[^>(]*>)?\(', line)]
     if len(starts) != 1: raise ValueError('Missing or ambiguous target function '+function)
     start = starts[0]
     end = next((i for i in range(start+1, len(lines)) if re.match(r'(?:ghost )?(?:method|function|lemma) ', lines[i])), len(lines))
@@ -606,4 +614,17 @@ POSTCONDITIONS.update({'receive-agent-frame': '(event.Posted? ==> client.convers
                            '(|client.conversation.roles| == 0) ==> (|client.conversation.entries| == 0) ==> '
                            '(|client.pending| == 0) ==> (res.conversation.replying == '
                            'client.conversation.replying))'})
+# The strengthening lane's run and walkthrough frames: `apply` and `receive` are too large for a whole-function check.
+POSTCONDITIONS.update({
+    # The short actor clause: the whole appended-run clause takes Dafny past the mutation wall limit to refute.
+    'apply-action-actor': '((|runsOf(res)| == (|runsOf(conversation)| + 1)) && (runsOf(res)[|runsOf(conversation)|].actor == event.actor)))',
+    'apply-tour-end-runs': '(!event.ActionSettled?) ==> (res.runs == conversation.runs)',
+    'apply-walkthrough-guard': '(event.WalkthroughDriven? ==> !((',
+})
 
+# These mutants already fail their gap contract, but unrelated receive obligations can time out first.
+# Select the exact existing production clause; positive verification still checks the entire relation.
+POSTCONDITIONS.update({
+    'receive-gap': '((event.seq_ > (client.conversation.seq_ + 1)) ==> res.gap)',
+    'receive-gap-frame': '((event.seq_ > (client.conversation.seq_ + 1)) ==> ((res.conversation == client.conversation) && (res.pending == client.pending)))',
+})

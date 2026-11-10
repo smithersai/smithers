@@ -1,7 +1,7 @@
 import { WikiDrafting } from "../src/core/WikiWriter.vibe"
 import { beginReply, recordReplyStart, canComposeReply, beginReplyComposition, finishReplyComposition, canSettleReply, recordReplySettlement } from "../src/core/flowDecision.vibe"
 import { initialProgress, advanceProgress, completion, type ProgressState } from "./replyProgressDecision.vibe"
-import { promptWindow } from "../src/core/sequenceDecision.vibe"
+import { promptForm, promptWindow, speaker } from "../src/core/sequenceDecision.vibe"
 // The agent's reply to one post, a durable `@smthrs/flow` flow (rulings VL-11; wiki/decisions/0010-live-agent.md,
 // 0012-smithers-agent.md). Every side effect is a journaled step, so a reset Durable Object resumes the reply where it
 // stopped. The answer is smithers.sh's agent: `@smthrs/agent`'s `AgentAction`, the codemode loop apps/mvp's chat runs
@@ -11,13 +11,13 @@ import { promptWindow } from "../src/core/sequenceDecision.vibe"
 // becomes `FailReply` with a reason the person reads.
 import { Agent, AgentAction, Budget, EventSink, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
 import { WebCrypto } from "@smthrs/crypto"
-import { Action, Interpreter } from "@smthrs/flow"
+import { Action, Deadline, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { type AgentEvent, DoneText, type FlowBinding } from "@smthrs/harness"
 import * as QuickJSWorkerd from "@smthrs/harness/QuickJSWorkerd"
 import { Evaluator, ModelRequest } from "@smthrs/model"
 import type { HostModel } from "@smthrs/model-host"
 import { Registry } from "@smthrs/registry"
-import { patient, Reply, ReplyStep, replyIdOf, Tours } from "../src/core/flows.vibe"
+import { patient, Reply, replyDeadline, ReplyStep, replyIdOf, Tours } from "../src/core/flows.vibe"
 import { wikiTools, WIKI_INSTRUCTION } from "./WikiTools.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
 import { AgentActions } from "../src/actions/agent.vibe"
@@ -43,10 +43,14 @@ export service Replies {
   fail(reply: string, reason: string): Answer!!
 }
 
-/** The day's token budget (Budget.vibe), in its own Durable Object: `admit` before a model call, `spend` after. */
+/**
+ * The day's token budget (Budget.vibe), in its own Durable Object: `admit` reserves a call's whole `ceiling` before its
+ * model calls, or refuses when the day has no room for it; `spend` settles the call after them, charging `tokens` when
+ * the provider `reported` them and the whole `ceiling` when it did not, and frees the reservation.
+ */
 export service Spend {
-  admit(day: string): boolean!Unreachable
-  spend(day: string, reply: string, tokens: number): void!Unreachable
+  admit(day: string, reply: string, ceiling: number): boolean!Unreachable
+  spend(day: string, reply: string, tokens: number, reported: boolean, ceiling: number): void!Unreachable
 }
 
 /** The agent's model, or why there is none: `CHAT_MODEL` and its key (AgentModel.vibe). */
@@ -86,6 +90,14 @@ export const MAX_FRAMES = 8
 /** The context window the agent compacts against, as smithers.sh's agents do. */
 export const CONTEXT_WINDOW_TOKENS = 32_768
 
+/** The most tokens an agent run of `frames` model turns, each writing at most `answer`, uses: what its admission reserves. */
+export function ceilingOf(frames: number, answer: number): number {
+  return frames * (CONTEXT_WINDOW_TOKENS + answer)
+}
+
+/** A reply's reservation in the day's budget. */
+export const REPLY_CEILING = ceilingOf(MAX_FRAMES, MAX_ANSWER_TOKENS)
+
 /** The seat the agent declares; the host answers it with the deployment's chat model. */
 export const AGENT_SEAT = "agent"
 
@@ -97,6 +109,20 @@ export const LIMITS = { calls: 0, memoryBytes: 32 * 1024 * 1024, timeMs: 5_000 }
 
 export { patient } from "../src/core/flows.vibe"
 
+/**
+ * A draft's token charge (wiki draft, VIP draft, specification review) retries an unreachable Budget object for about
+ * two minutes of engine time, apart from the model call's deadline (0015); then the draft fails visibly, with Retry.
+ */
+export const draftSpend = RetryPolicy.make({ initialMs: 500, factor: 2, maxMs: 30_000, jitterRatio: 0.2, expirationMs: 120_000 })
+
+/** Logs and counts a draft whose charge gave up, under fixed names and the draft's kind only. */
+export function draftSpendFailed(draft: "wiki" | "vip" | "specification") {
+  return Effect.logWarning("vibelang.draft.spend").pipe(
+    Effect.annotateLogs({ draft, outcome: "unreachable" }),
+    Effect.andThen(Metric.update(Metric.withAttributes(Metric.counter("vibelang_draft_spend_failures", { incremental: true }), { draft }), 1)),
+  )
+}
+
 /** The UTC day of `millis`, as the budget names it: `2026-11-07`. */
 export function dayOf(millis: number): string {
   return new Date(millis).toISOString().slice(0, 10)
@@ -105,13 +131,14 @@ export function dayOf(millis: number): string {
 /** The agent's task: the conversation so far, then the post it answers, as smithers.sh's chat asks it. */
 export function promptOf(payload: { readonly turns: ReadonlyArray<Turn> }): string {
   const turns = promptWindow(payload.turns, MAX_TURNS)
+  const form = promptForm(turns.length)
   const asked = turns.at(-1)
   const history = turns.slice(0, -1)
-  if (asked === undefined) return ""
-  if (history.length === 0) return asked.text
+  if (form === "none" || asked === undefined) return ""
+  if (form === "asked") return asked.text
   return [
     "The conversation so far:",
-    ...history.map((turn) => `${turn.author === "person" ? "Person" : "VibeLang agent"}: ${turn.text}`),
+    ...history.map((turn) => `${speaker(turn.author)}: ${turn.text}`),
     "",
     `The person now asks: ${asked.text}`,
   ].join("\n")
@@ -156,6 +183,7 @@ export function fold(progress: Progress, event: AgentEvent.AgentEvent): Progress
   let input = 0
   let output = 0
   let code = ""
+  let present = false
   let safeTotal = false
   let safeInput = false
   let safeOutput = false
@@ -169,8 +197,10 @@ export function fold(progress: Progress, event: AgentEvent.AgentEvent): Progress
       }
       break
     case "model-settled":
-      input = event.usage.inputTokens ?? 0
-      output = event.usage.outputTokens ?? 0
+      present = Budget.reportsTokens(event.usage)
+      // The provider's total is authoritative; without one, count both reported components.
+      input = event.usage.totalTokens ?? event.usage.inputTokens ?? 0
+      output = event.usage.totalTokens === undefined ? event.usage.outputTokens ?? 0 : 0
       safeTotal = Number.isSafeInteger(progress.tokens)
       safeInput = Number.isSafeInteger(input)
       safeOutput = Number.isSafeInteger(output)
@@ -179,7 +209,7 @@ export function fold(progress: Progress, event: AgentEvent.AgentEvent): Progress
       code = event.code
       break
   }
-  return advanceProgress(progress, { kind: event._tag, textDelta, piece, projected, input, output, code, safeTotal, safeInput, safeOutput })
+  return advanceProgress(progress, { kind: event._tag, textDelta, piece, projected, input, output, code, present, safeTotal, safeInput, safeOutput })
 }
 
 /**
@@ -279,6 +309,11 @@ effect function compose(post: string, reply: string) {
   const replies = try Replies
   const spend = try Spend
   const chat = try ChatModel
+  const model = chat.model
+  if (model === undefined) {
+    try Effect.logWarning("vibelang.reply.unconfigured").pipe(Effect.annotateLogs({ reason: chat.unusable }))
+    return Outcome.Failed({ reason: REASONS.unconfigured })
+  }
   const admission = try Action.make({
     name: "vibelang/reply/admit",
     success: Schema.Struct({ day: Schema.String, admitted: Schema.Boolean }),
@@ -286,28 +321,23 @@ effect function compose(post: string, reply: string) {
     retryPolicy: patient,
     execute: effect {
       const day = dayOf(try Clock.currentTimeMillis)
-      return { day, admitted: try spend.admit(day) }
+      return { day, admitted: try spend.admit(day, reply, REPLY_CEILING) }
     },
   })
   if (!admission.admitted) return Outcome.Failed({ reason: REASONS.budget })
-  const model = chat.model
-  if (model === undefined) {
-    try Effect.logWarning("vibelang.reply.unconfigured").pipe(Effect.annotateLogs({ reason: chat.unusable }))
-    return Outcome.Failed({ reason: REASONS.unconfigured })
-  }
   const turns = try Action.make({
     name: "vibelang/reply/history",
     success: Schema.Array(Turn),
     execute: replies.history(post),
   })
   const { answered, progress } = try respond(reply, model, turns)
+  if (Exit.isFailure(answered) && Cause.hasInterrupts(answered.cause)) return try Effect.failCause(answered.cause)
   try Action.make({
     name: "vibelang/reply/spend",
     error: Unreachable,
     retryPolicy: patient,
-    execute: spend.spend(admission.day, reply, progress.tokens),
+    execute: spend.spend(admission.day, reply, progress.tokens, progress.usageValid && progress.failed === undefined, REPLY_CEILING),
   })
-  if (Exit.isFailure(answered) && Cause.hasInterrupts(answered.cause)) return try Effect.failCause(answered.cause)
   const tag = Exit.isFailure(answered) ? tagOf(Cause.squash(answered.cause)) : "answered"
   try Effect.logInfo("vibelang.reply.agent").pipe(Effect.annotateLogs({ outcome: progress.usageValid ? progress.failed ?? tag : "invalid-usage", tokens: progress.tokens }))
   const rawText = Exit.isSuccess(answered) ? answered.value : undefined
@@ -341,7 +371,9 @@ export effect function answer(post: string) {
   }
   // Interruption is the engine's (a reset or a yielded drive): it resumes the flow, so it is never a failed reply.
   run = beginReplyComposition(run)
-  const outcome = try Effect.catchCause(compose(post, reply), (cause) => {
+  // The engine's deadline counts from the journaled start, so a restarted reply keeps it; expiry is a defect, a failed reply.
+  const bounded = try Effect.try(() => Deadline.bound({ flowName: Reply._tag, deadline: replyDeadline })).pipe(Effect.orDie)
+  const outcome = try Effect.catchCause(compose(post, reply).pipe(bounded), (cause) => {
     if (Cause.hasInterrupts(cause)) return Effect.failCause(cause)
     return Effect.as(
       Effect.logError("vibelang.reply").pipe(Effect.annotateLogs({ outcome: "failed", error: tagOf(Cause.squash(cause)) })),

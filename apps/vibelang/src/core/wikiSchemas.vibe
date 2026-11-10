@@ -17,6 +17,8 @@ export const WikiState = Schema.Struct({
   review: Schema.optionalKey(Schema.String),
   draft: Schema.optionalKey(Schema.Struct({ page: Schema.String, text: Schema.String })),
   role: Schema.optionalKey(Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])),
+  /** A signed-out read GitHub refused: the copy shown was last confirmed then, in milliseconds since the epoch (0031). */
+  stale: Schema.optionalKey(Schema.Number),
 })
 export schema error WikiFailure { reason: string; unwritten?: boolean; code?: string; retryAfterMillis?: number }
 export interface WikiApi {

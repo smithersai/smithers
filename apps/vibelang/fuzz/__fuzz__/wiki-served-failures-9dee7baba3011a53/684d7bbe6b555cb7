@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 52
+bias 5
+null-prototype false
+key 3446480701
+tape 46lRYPZKq_mUGXhfcaLudUdiMDol0tuN
+schedule-key 1639987928
+schedule 
+signature "PropertyError:Finding"
+path 0
+codec "json"
+value "{\"reason\":\"install\",\"unwritten\":false,\"untyped\":false,\"authorize\":false,\"recovery\":\"none\",\"op\":\"propose\"}"
+# PropertyError:Finding
+# {"reason":"install","unwritten":false,"untyped":false,"authorize":false,"recovery":"none","op":"propose"}

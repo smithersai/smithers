@@ -1,5 +1,5 @@
 // UTC/IEEE-754 boundary around the proved integer kernel. Whole milliseconds accrue exactly; display rounds the aggregate.
-import { accumulateUsageMilliseconds, elapsedMilliseconds, intervalUsageMilliseconds, remainingMilliseconds, type SandboxLedger, runningCount } from "./sandboxDecision.vibe"
+import { elapsedMilliseconds, meterDelay, meterStep, remainingMilliseconds, type SandboxLedger, runningCount } from "./sandboxDecision.vibe"
 import { Unavailable } from "./Factory.vibe"
 
 export interface Metered { readonly ledger: SandboxLedger; readonly months: Readonly<Record<string, number>> }
@@ -30,17 +30,19 @@ export effect function meter(ledger: SandboxLedger, months: Readonly<Record<stri
   let month = ledger.month
   let used = ledger.usedMilliseconds
   const buckets = { ...months }
+  // Each interval's accrual and month rollover is the proved meterStep; this loop supplies UTC boundaries and buckets.
   while (cursor < high) {
     const end = Math.min(high, nextMonth(cursor))
     const elapsed = elapsedMilliseconds(cursor, end)
     if (!Number.isSafeInteger(used) || used < 0 || !Number.isSafeInteger(count * elapsed) || count * elapsed > Number.MAX_SAFE_INTEGER - used) throw new Unavailable({ reason: "meter-overflow" })
-    used = accumulateUsageMilliseconds(used, intervalUsageMilliseconds(count, elapsed))
-    buckets[String(month)] = used
+    const boundary = nextMonth(month)
+    const prior = buckets[String(boundary)] ?? 0
+    if (!Number.isSafeInteger(prior) || prior < 0) throw new Unavailable({ reason: "meter-domain" })
+    const step = meterStep(used, count, cursor, end, month, boundary, prior)
+    buckets[String(month)] = step.charged
     cursor = end
-    if (cursor === nextMonth(month)) {
-      month = cursor
-      used = buckets[String(month)] ?? 0
-    }
+    month = step.month
+    used = step.used
   }
   // At the exact boundary there is a new month even if no compute ran.
   buckets[String(month)] = used
@@ -58,7 +60,7 @@ export const METER_INTERVAL_MILLISECONDS = 60000
  * `remaining` allowance milliseconds, the first whole millisecond at which running × elapsed reaches it.
  */
 export function meterDelayMilliseconds(remaining: number, running: number): number {
-  return Math.min(METER_INTERVAL_MILLISECONDS, Math.max(1, Math.ceil(remaining / Math.max(1, running))))
+  return meterDelay(remaining, running, METER_INTERVAL_MILLISECONDS)
 }
 
 export function snapshotOf(ledger: SandboxLedger, conversation: string, generation: number, output: string) {

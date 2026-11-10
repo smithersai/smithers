@@ -16,7 +16,7 @@ import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Digest, SecureRandom } from "effect/crypto"
 import { Action, FlowRuntime, Interpreter } from "@smthrs/flow"
-import { apply, empty, isTouring, type Conversation, type Event } from "./conversation.vibe"
+import { apply, empty, isTouring, tourWalkthrough, type Conversation, type Event } from "./conversation.vibe"
 import { decide, type Decision, type Intent } from "./decide.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
 import { TourControlBody } from "./wire.vibe"
@@ -329,7 +329,7 @@ return Layer.effect(Factory, effect {
           const tour = try Ref.get(activeTour)
           if (tour !== "") try engine.resume(Tour, `tour/${tour}`)
         },
-        current: () => Effect.map(Ref.get(state), state => state.conversation.walkthrough ?? null),
+        current: () => Effect.map(Ref.get(state), state => tourWalkthrough(state.conversation)),
         drive: effect (tour, step, target, duration) => {
           try accepted({ type: "DriveWalkthrough", id: tour, step, target, duration, at: try Clock.currentTimeMillis })
           return (try Ref.get(state)).conversation.walkthrough!

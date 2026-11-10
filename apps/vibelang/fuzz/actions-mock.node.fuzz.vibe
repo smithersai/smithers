@@ -1,0 +1,238 @@
+// src/actions/MockActions.vibe, steered: every execution runs every action scenario on the real in-memory engine over
+// the mock Factory, for the fuzzed role and texts. Each run is read back, followed to its end, and cancelled or
+// rerun as a person would; every refusal is one typed code.
+import { it } from "@effect/vitest"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { Actions, ActionFailure, type Run } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { deferredActions } from "../src/actions/agent.vibe"
+import { deviceRegistration, execute, prepare } from "../src/actions/execution.vibe"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { WebCrypto } from "@smthrs/crypto"
+import { actionTools } from "../src/actions/tools.vibe"
+import { Cell, FlowBinding } from "@smthrs/harness"
+import { allowed, registration } from "../src/actions/catalog.vibe"
+import { backend as webBackend } from "./web-backends.vibe"
+import { run, same, Text } from "./run.vibe"
+
+const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
+const Input = Schema.Struct({ role: Role, text: Text, title: Text, actor: Schema.Literals(["person", "agent"]), json: Schema.Boolean })
+const CODES = new Set(["input", "not-found", "forbidden", "unknown-command", "closed", "unavailable"])
+const settled = (run: Run) => run.state !== "queued" && run.state !== "running"
+
+/** The failure code of `work`, or `ok`. */
+effect function code(work: unknown!ActionFailure) {
+  return work.pipe(Effect.as("ok")) catch (error) => error.code
+}
+
+/** The run's states from now until it settles, bounded; every one is this run. */
+effect function followed(actions: Actions.Shape, id: string) {
+  const runs = try timeout(Stream.runCollect(actions.follow(id).pipe(Stream.takeUntil(settled))), "20 seconds")
+  return Array.from(runs)
+}
+
+it.live("actions/mock-steered", () => run("actions/mock-steered", Input, (fuzzed) => effect {
+  // Every execution covers the fuzzed role and a maintainer, who may run every flow.
+  for (const role of new Set([fuzzed.role, "maintainer" as const])) {
+    if (!(try steered({ ...fuzzed, role }))) return false
+  }
+  return true
+}, undefined, { minimum: "15 seconds" }))
+
+function steered(input: typeof Input.Type) {
+  return scoped(effect {
+  const failures: Array<string> = []
+  const check = (name: string, ok: boolean) => { if (!ok) failures.push(name) }
+  const world = Layer.provideMerge(MockActions({ role: input.role, actor: input.actor, conversation: "home" }), mockFactoryFor(input.role))
+  provide world {
+    const actions = try Actions
+    const factory = try Factory
+    const contributor = allowed(input.role, registration("vibelang/history/Plan"))
+
+    // The catalog, and the commands this role may run.
+    const listed = try actions.list()
+    const commands = try actions.commands()
+    check("commands are runnable and allowed", commands.every((entry) => entry.command !== "" && allowed(input.role, entry)))
+    check("list names every command", commands.every((entry) => listed.some((each) => each.name === entry.name)))
+
+    // Slash commands: JSON, text and none, and the refusals.
+    const plan = `/plan ${JSON.stringify({ how: "append", epic: "", newEpic: "Fuzz", target: "", title: input.title.trim() || "Fuzz", task: input.text })}`
+    const planned = try Effect.result(actions.command(plan))
+    if (planned._tag === "Success") {
+      const last = (try followed(actions, planned.success)).at(-1)
+      const answer = try Effect.result(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ id: Schema.String, refusal: Schema.NullOr(Schema.String) })))(last?.result ?? ""))
+      check("plan answers its commit", last?.state === "passed" && answer._tag === "Success" && answer.success.refusal === null)
+      if (answer._tag === "Success") {
+        for (const text of [`/start ${JSON.stringify({ id: answer.success.id, lane: "fuzz" })}`, `/note ${JSON.stringify({ id: answer.success.id, section: "tried", text: input.text.trim() || "tried" })}`]) {
+          const id = try actions.command(text)
+          check(`${text.slice(0, 6)} passes`, (try followed(actions, id)).at(-1)?.state === "passed")
+        }
+      }
+      const outline = try actions.start("vibelang/history/show", { what: "outline" }, "button")
+      check("show with input", (try followed(actions, outline)).at(-1)?.state === "passed")
+      const search = try actions.start("vibelang/history/show", { what: "search", query: input.title }, "button")
+      check("search passes", (try followed(actions, search)).at(-1)?.state === "passed")
+    }
+    for (const [text, expected] of [[plan, contributor ? "ok" : "unknown-command"], ["/plan {oops", contributor ? "input" : "unknown-command"], ["/nope", "unknown-command"], ["", "unknown-command"], ["/plan", contributor ? "input" : "unknown-command"]] as const) {
+      check(`command ${text.slice(0, 12)}`, (try code(actions.command(text, input.json ? "slash" : "agent"))) === expected)
+    }
+    const shown = try Effect.result(actions.command("/history"))
+    check("history command", contributor ? shown._tag === "Success" : shown._tag === "Failure" && shown.failure.code === "unknown-command")
+    if (shown._tag === "Success") {
+      const states = try followed(actions, shown.success)
+      check("history passes", states.at(-1)?.state === "passed" && states.every((each) => each.id === shown.success))
+      check("history run listed", (try actions.runs("vibelang/history/show")).some((each) => each.id === shown.success))
+      check("other flows filtered", (try actions.runs("vibelang/Post")).every((each) => each.flow === "vibelang/Post"))
+      // A settled run cancels to nothing; a rerun asks again with the same input.
+      try actions.cancel(shown.success)
+      check("settled stays settled", (try actions.read(shown.success)).state === "passed")
+      const again = try actions.rerun(shown.success)
+      check("rerun passes", (try followed(actions, again)).at(-1)?.state === "passed")
+    }
+
+    // A tour: the action begins it and guides it until it ends. Cancelling the guide cancels the run and ends the
+    // tour; a tour that ends in the conversation passes the run.
+    for (const ending of ["cancel", "end"] as const) {
+      const tour = try Effect.result(actions.command("/tour"))
+      check(`tour is anyone's (${ending})`, tour._tag === "Success")
+      if (tour._tag === "Failure") continue
+      const begun = (each: Run) => each.steps.some((step) => step.name === "vibelang/tour/start" && step.state === "passed")
+      try timeout(Stream.runDrain(actions.follow(tour.success).pipe(Stream.takeUntil((each) => begun(each) || settled(each)))), "20 seconds")
+      if (ending === "cancel") try actions.cancel(tour.success)
+      else try factory.endTour("home")
+      const states = try followed(actions, tour.success)
+      check(`tour ${ending}`, states.at(-1)?.state === (ending === "cancel" ? "cancelled" : "passed"))
+    }
+    // A post: recorded in the run's conversation, its reply dispatched.
+    const posted = try Effect.result(actions.command(`/post ${input.text || "install"}`))
+    if (posted._tag === "Success") {
+      const states = try followed(actions, posted.success)
+      check("post settles", states.at(-1) !== undefined && settled(states.at(-1)!))
+    } else check("post refused typed", CODES.has(posted.failure.code))
+
+    // A tour asked for while that reply runs is refused by the conversation; the run still settles.
+    // Whether that reply still runs when the tour arrives is timing: the tour is refused and its run settles, or it
+    // begins and is cancelled like any other.
+    const busy = try Effect.result(actions.command("/tour"))
+    if (busy._tag === "Success") {
+      const begun = (each: Run) => each.steps.some((step) => step.name === "vibelang/tour/start" && step.state === "passed")
+      const seen = Array.from(try timeout(Stream.runCollect(actions.follow(busy.success).pipe(Stream.takeUntil((each) => begun(each) || settled(each)))), "20 seconds"))
+      if (seen.at(-1) !== undefined && !settled(seen.at(-1)!)) try actions.cancel(busy.success)
+      check("busy tour settles or begins", seen.at(-1) !== undefined && settled(try actions.read(busy.success)))
+    }
+
+    // A refused history write: the flow answers its refusal, so the run failed and wrote nothing.
+    const refused = try Effect.result(actions.start("vibelang/history/Start", { id: "m-missing", lane: input.title || "lane" }, "button"))
+    if (refused._tag === "Success") check("refused write fails", (try followed(actions, refused.success)).at(-1)?.state === "failed")
+    else check("refused write is forbidden", refused.failure.code === "forbidden" && !contributor)
+    check("bad input", (try code(actions.start("vibelang/history/Plan", [1, 2], "button"))) === (contributor ? "input" : "forbidden"))
+    check("unknown flow", (try code(actions.start("unknown/flow", {}, "button"))) === "forbidden")
+    check("missing run", (try code(actions.read("a-missing"))) === "not-found" && (try code(actions.rerun("a-missing"))) === "not-found" && (try code(actions.cancel("a-missing"))) === "not-found")
+
+    // Sandbox actions run on this person's own factory: start, a command in that generation, stop.
+    const sandboxStart = try Effect.result(actions.command("/sandbox"))
+    if (sandboxStart._tag === "Success") {
+      const started = (try followed(actions, sandboxStart.success)).at(-1)
+      check("sandbox start settles", started !== undefined && settled(started))
+      const generation = (try factory.sandbox("home")).generation
+      for (const text of [`/sandbox-run ${JSON.stringify({ command: input.text || "ls", generation })}`, `/sandbox-stop ${JSON.stringify({ generation })}`, `/sandbox-run ${JSON.stringify({ command: "ls", generation })}`]) {
+        const id = try Effect.result(actions.command(text))
+        if (id._tag === "Success") check(`${text.slice(0, 12)} settles`, (try followed(actions, id.success)).at(-1) !== undefined)
+        else check(`${text.slice(0, 12)} refused typed`, CODES.has(id.failure.code))
+      }
+    } else check("sandbox refused typed", sandboxStart.failure.code === "unknown-command" && !contributor)
+
+    // The selection proxy answers what the service it selects answers.
+    const proxy = try deferredActions()
+    const pending = try Effect.forkChild(proxy.actions.list())
+    try proxy.resolve(actions)
+    check("proxy list waits for its service", same(try Fiber.join(pending), try actions.list()))
+    check("proxy commands", same(try proxy.actions.commands(), try actions.commands()))
+    check("proxy runs", same(try proxy.actions.runs(""), try actions.runs("")))
+    check("proxy missing", (try code(proxy.actions.read("a-missing"))) === "not-found" && (try code(proxy.actions.rerun("a-missing"))) === "not-found" && (try code(proxy.actions.cancel("a-missing"))) === "not-found")
+    check("proxy command", (try code(proxy.actions.command("/nope"))) === "unknown-command")
+    const viaProxy = try Effect.result(proxy.actions.start("vibelang/Tour", null, "agent"))
+    if (viaProxy._tag === "Success") {
+      check("proxy follow", (try timeout(Stream.runHead(proxy.actions.follow(viaProxy.success)), "20 seconds"))._tag === "Some")
+      try proxy.actions.cancel(viaProxy.success)
+    }
+
+    // The agent's tool bindings call the same service: a start is announced, a refusal tells its code.
+    const announced: Array<string> = []
+    const catalog = try FlowBinding.catalog([actionTools(actions, (each) => effect { announced.push(each.id) })])
+    let ordinal = 0
+    effect function call(name: string, value: Schema.Json) {
+      const binding = catalog.bindings.get(name)!
+      const request = try Effect.try(() => new Cell.Call({ flowName: name, input: value, capabilities: [],
+        effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" }, placement: Option.none(),
+        identity: new Cell.CallIdentity({ session: "fuzz-actions", frame: 0, cell: "action", ordinal: ordinal++, declaration: Cell.declarationDigest(binding.descriptor), layers: [] }),
+      }))
+      return try binding.run(request)
+    }
+    const toolList = try call("vibelang/actions/List", {})
+    check("tool list", toolList.outcome === "success")
+    const toolStart = try call("vibelang/actions/Start", { flow: "vibelang/Tour", input: {} })
+    if (toolStart.outcome === "success") {
+      const { id } = try Schema.decodeUnknownEffect(Schema.Struct({ id: Schema.String }))(toolStart.value)
+      check("tool start announced", announced.includes(id))
+      check("tool read", (try call("vibelang/actions/Read", { id })).outcome === "success")
+      check("tool cancel", (try call("vibelang/actions/Cancel", { id })).outcome === "success")
+    } else check("tool start refused", (toolStart.message ?? "").startsWith("Flow vibelang/actions/Start failed: "))
+    const toolMissing = try call("vibelang/actions/Read", { id: "a-missing" })
+    check("tool refusal names its code", toolMissing.message === "Flow vibelang/actions/Read failed: not-found")
+    // Without an announcer, a started run is simply started.
+    const plain = try FlowBinding.catalog([actionTools(actions)])
+    const plainStart = try plain.bindings.get("vibelang/actions/Start")!.run(try Effect.try(() => new Cell.Call({ flowName: "vibelang/actions/Start", input: { flow: "vibelang/Tour", input: {} }, capabilities: [],
+      effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" }, placement: Option.none(),
+      identity: new Cell.CallIdentity({ session: "fuzz-plain", frame: 0, cell: "action", ordinal: 0, declaration: Cell.declarationDigest(plain.bindings.get("vibelang/actions/Start")!.descriptor), layers: [] }),
+    })))
+    check("plain tool start", plainStart.outcome === "success")
+    const toolUnknown = try call("vibelang/actions/Start", { flow: "unknown/" + input.title, input: null })
+    check("tool unknown flow", toolUnknown.outcome !== "success")
+
+    // A run cancelled before its fiber starts settles cancelled and never runs.
+    const quick = try Effect.result(actions.start("vibelang/Tour", null, "button"))
+    if (quick._tag === "Success") {
+      try actions.cancel(quick.success)
+      check("cancel before start", (try actions.read(quick.success)).state === "cancelled")
+    }
+    if (failures.length > 0) try Console.error("actions/mock-steered failed: " + input.role + ": " + failures.join(", "))
+    return failures.length === 0
+  }
+  })
+}
+
+/** Over a factory whose accounts fail, every run is refused `unavailable`; without a policy, roles alone decide. */
+it.live("actions/mock-factories", () => run("actions/mock-factories", Role, (role) => scoped(effect {
+  provide MockActions({ actor: "person" }).pipe(Layer.provide(webBackend("faulty", role))) {
+    if ((try code((try Actions).start("vibelang/Tour", null, "button"))) !== "unavailable") return false
+  }
+  const unpoliced = Layer.effect(Factory, map(Factory, (factory) => Object.assign(Object.create(factory) as Factory.Shape, { policy: undefined }))).pipe(Layer.provide(mockFactoryFor(role)))
+  provide Layer.provideMerge(MockActions({ role, actor: "person" }), unpoliced) {
+    const actions = try Actions
+    const id = try actions.start("vibelang/Tour", null, "button")
+    try actions.cancel(id)
+    return (try actions.read(id)).state !== "queued"
+  }
+})))
+
+/** A world whose scope has closed refuses new runs as `closed`, and reads what it had. */
+it.live("actions/mock-closed", () => run("actions/mock-closed", Role, (role) => effect {
+  const scope = try Scope.make()
+  const context = try Layer.buildWithScope(Layer.provideMerge(MockActions({ actor: "person" }), mockFactoryFor(role)), scope)
+  const actions = Context.get(context, Actions)
+  const before = try Effect.result(actions.start("vibelang/Tour", null, "button"))
+  try Scope.close(scope, Exit.void)
+  const after = try code(actions.start("vibelang/Tour", null, "button"))
+  return after === "closed" && (before._tag === "Failure" || (try code(actions.read(before.success))) === "ok")
+}))
+
+/** A host that runs an action's sandbox steps without the person's device refuses each one as forbidden. */
+it.live("actions/device-default", () => run("actions/device-default", Schema.Literals(["vibelang/sandbox/start", "vibelang/sandbox/stop", "vibelang/sandbox/command"]), (flow) => scoped(effect {
+  const engine = Context.get(try Layer.build(deviceRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer))), FlowRuntime.FlowRuntime)
+  const invocation = try prepare(flow, { generation: 1, command: "ls" }, "a-device")
+  const result = try Effect.result(execute(engine, invocation, "a-device"))
+  return result._tag === "Failure" && JSON.stringify(result.failure).includes("forbidden")
+})))

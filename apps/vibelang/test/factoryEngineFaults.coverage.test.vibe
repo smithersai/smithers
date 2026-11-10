@@ -1,0 +1,76 @@
+// The fixture issue and wiki factories over a faulty flow engine: a flow cycle is a typed `failed` refusal that writes
+// nothing, and an engine defect (one, or a held identity with another) reaches the caller unchanged, not as a conflict.
+import { describe, expect, it } from "@effect/vitest"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { makeIssueFactory, makeIssueStore } from "../src/core/IssuesFactory.vibe"
+import { makeWikiFactory, makeWikiStore } from "../src/core/WikiFactory.vibe"
+import { pages } from "../src/core/wiki.vibe"
+
+/** The memory engine, except that every execution ends with `cause`. */
+const faultyEngine = (cause: Cause.Cause<FlowRuntime.FlowCycleDetected>) => Layer.effect(FlowRuntime.FlowRuntime)(effect {
+  const real = try FlowRuntime.FlowRuntime
+  return { ...real, execute: () => Effect.failCause(cause) }
+}).pipe(Layer.provide(FlowEngine.layerMemory))
+
+const cycle = Cause.fail(new FlowRuntime.FlowCycleDetected({ path: ["issues/a", "issues/a"] }))
+const conflict = new FlowRuntime.ExecutionIdentityConflict({ executionId: "issues/a", field: "payload", expected: "a", actual: "b", message: "held identity" })
+// A held identity together with another defect is not a plain reused key: the whole cause stays a defect.
+const defects = Cause.combine(Cause.die(conflict), Cause.die(new Error("engine lost its store")))
+const defect = Cause.die(new Error("engine lost the run"))
+const comment = { op: "comment", key: "k1", number: 46, parent: 0, title: "", text: "Hello.", example: "", prior: "", assignee: "" } as const
+const source = pages.find((page) => page.id === "index")!.source
+const save = { op: "save", key: "k1", page: "index", base: source, text: source + "\nMore.\n" } as const
+
+describe("the fixture factories over a faulty engine", () => {
+  it.effect("a flow cycle is a failed issue write, and the fixture repository keeps its issues", () => scoped(effect {
+    const store = try makeIssueStore()
+    const before = try Ref.get(store.state)
+    const api = try makeIssueFactory("maintainer", undefined, store, faultyEngine(cycle))
+    const result = try Effect.result(api.act(comment))
+    const after = try Ref.get(store.state)
+    try Effect.try(() => {
+      expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "IssueFailure", reason: "failed", unwritten: true } })
+      expect(after).toEqual(before)
+    })
+  }))
+
+  it.effect("a flow cycle is a failed wiki save, and the fixture repository opens no review", () => scoped(effect {
+    const store = try makeWikiStore()
+    const api = try makeWikiFactory("maintainer", store, faultyEngine(cycle))
+    const result = try Effect.result(api.act(save))
+    const proposals = try Ref.get(store.proposals)
+    try Effect.try(() => {
+      expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "WikiFailure", reason: "failed", unwritten: true } })
+      expect(proposals).toEqual([])
+    })
+  }))
+
+  it.effect.each([
+    ["one engine defect", defect, 1],
+    ["an identity conflict with a second defect", defects, 2],
+  ] as const)("%s reaches the issue caller unchanged, not as a conflict", ([_name, cause, count]) => scoped(effect {
+    const api = try makeIssueFactory("maintainer", undefined, undefined, faultyEngine(cause))
+    const exit = try Effect.exit(api.act(comment))
+    try Effect.try(() => {
+      expect(exit._tag).toBe("Failure")
+      if (exit._tag !== "Failure") return
+      expect(exit.cause.reasons.filter(Cause.isDieReason).map((reason) => (reason.defect as Error).message)).toEqual(cause.reasons.map((reason) => ((reason as Cause.Die).defect as Error).message))
+      expect(exit.cause.reasons).toHaveLength(count)
+    })
+  }))
+
+  it.effect.each([
+    ["one engine defect", defect, 1],
+    ["an identity conflict with a second defect", defects, 2],
+  ] as const)("%s reaches the wiki caller unchanged, not as a conflict", ([_name, cause, count]) => scoped(effect {
+    const api = try makeWikiFactory("maintainer", undefined, faultyEngine(cause))
+    const exit = try Effect.exit(api.act(save))
+    try Effect.try(() => {
+      expect(exit._tag).toBe("Failure")
+      if (exit._tag !== "Failure") return
+      expect(exit.cause.reasons.filter(Cause.isDieReason).map((reason) => (reason.defect as Error).message)).toEqual(cause.reasons.map((reason) => ((reason as Cause.Die).defect as Error).message))
+      expect(exit.cause.reasons).toHaveLength(count)
+    })
+  }))
+})

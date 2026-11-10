@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 29
+bias 5
+null-prototype false
+key 2883004307
+tape RXYUyH3usUZusAU7OdPQGe0R9PoQ9gfK
+schedule-key 1193462528
+schedule 
+signature "ReturnedFalse"
+path 0
+codec "json"
+value "{\"path\":\"sandbox\",\"actions\":false,\"fault\":false,\"commit\":\"\",\"bare\":false}"
+# ReturnedFalse
+# {"path":"sandbox","actions":false,"fault":false,"commit":"","bare":false}

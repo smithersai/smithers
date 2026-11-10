@@ -5,9 +5,10 @@ import { MAX_NOTE, MAX_TITLE } from "../src/history/mythical.vibe"
 import { History as HistorySchema } from "../src/history/schemas.vibe"
 import {
   areaOf, BOOTSTRAP, bucketsOf, endsSentence, evidenceOf, FOUNDATIONS, intentsOf, type QueueEntry, type RawCommit, replay,
-  sanitize, scopeOf, seedFrom, seedOf, titleOf, UNTITLED, wholeSentences,
+  sanitize, scopeOf, seedOf, titleOf, UNTITLED, wholeSentences,
 } from "../src/history/seed.vibe"
 import { HISTORY_JSON, REPOSITORY } from "../src/history/seed/vibelang.vibe"
+import { seedFrom } from "./support/seedFrom.vibe"
 
 /** A linear history of commits with these descriptions, oldest first. */
 function linear(descriptions: ReadonlyArray<string>): ReadonlyArray<RawCommit> {
@@ -29,6 +30,7 @@ describe("reading commit messages", () => {
     expect(scopeOf("fix(vite,unplugin): serve")).toBe("vite")
     expect(scopeOf("docs: describe")).toBe("docs")
     expect(scopeOf("mapper: read optional records")).toBe("mapper")
+    expect(scopeOf("Parser: read records")).toBe("parser")
     expect(scopeOf("Add repository README")).toBe("")
   })
 

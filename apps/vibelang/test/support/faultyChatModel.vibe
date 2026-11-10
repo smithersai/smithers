@@ -1,0 +1,12 @@
+// A configured model whose Effect stream fails if a refusal path accidentally reaches it. No provider request is sent.
+import { chatModel } from "../../worker/AgentModel.vibe"
+
+export effect function faultyChatModel() {
+  const selected = try Effect.provide(chatModel(), ConfigProvider.layer(ConfigProvider.fromUnknown({ CEREBRAS_API_KEY: "fixture-not-sent" })))
+  const available = selected.model
+  if (available === undefined) return try Effect.die("The fixture model must be configured")
+  return {
+    model: { modelId: available.modelId, route: available.route, model: { stream: () => Stream.die("A refused call reached the model") } },
+    unusable: "",
+  }
+}

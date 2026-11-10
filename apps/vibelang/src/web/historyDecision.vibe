@@ -1,0 +1,279 @@
+//@ safe-slice
+// The history page's decisions (historyApp.vibe, decision 0020). Foldkit runs the commands these choose; the URL hash
+// patterns, Schema decoding and the Mythical reads stay with the host. Sequence numbers are the schemas' safe,
+// nonnegative `Seq` integers.
+
+/** One epic's commits as read so far, over the host's commit type. */
+export interface PageOf<C> {
+  readonly seq: number
+  readonly epic: string
+  readonly from: number
+  readonly total: number
+  readonly commits: ReadonlyArray<C>
+}
+
+/** The first page read for `epic`, or -1. */
+//@ verify
+//@ ensures -1 <= \result && \result < pages.length
+//@ ensures \result >= 0 ==> pages[\result].epic == epic
+//@ ensures forall(i, 0 <= i && i < pages.length && (\result < 0 || i < \result) ==> pages[i].epic != epic)
+export function epicIndex<C>(pages: ReadonlyArray<PageOf<C>>, epic: string): number {
+  return pages.findIndex((page) => page.epic === epic)
+}
+
+/** `known` with `commits` read in at `from`, cut to the epic's `total`. */
+//@ verify
+//@ requires 0 <= from && from <= known.length && 0 <= total
+//@ ensures \result.length == Math.min(total, Math.max(from + commits.length, known.length))
+//@ ensures forall(i, 0 <= i && i < \result.length && i < from ==> \result[i] == known[i])
+//@ ensures forall(i, 0 <= i && i < \result.length && from <= i && i < from + commits.length ==> \result[i] == commits[i - from])
+//@ ensures forall(i, 0 <= i && i < \result.length && from + commits.length <= i ==> i < known.length && \result[i] == known[i])
+export function spliced<C>(known: ReadonlyArray<C>, from: number, commits: ReadonlyArray<C>, total: number): ReadonlyArray<C> {
+  const all: ReadonlyArray<C> = [...known.slice(0, from), ...commits, ...known.slice(from + commits.length)]
+  return all.slice(0, total)
+}
+
+/** A read page replaces its commits from its `from`; an older or detached page, or a first page not from 0, changes nothing. */
+//@ verify
+//@ requires page.from >= 0 && page.total >= 0
+//@ ensures epicIndex(pages, page.epic) < 0 && page.from == 0 ==> \result.length == pages.length + 1 && \result[pages.length] == page && forall(i, 0 <= i && i < pages.length ==> \result[i] == pages[i])
+//@ ensures epicIndex(pages, page.epic) < 0 && page.from != 0 ==> \result == pages
+//@ ensures epicIndex(pages, page.epic) >= 0 && (page.seq < pages[epicIndex(pages, page.epic)].seq || page.from > pages[epicIndex(pages, page.epic)].commits.length) ==> \result == pages
+//@ ensures epicIndex(pages, page.epic) >= 0 && page.seq >= pages[epicIndex(pages, page.epic)].seq && page.from <= pages[epicIndex(pages, page.epic)].commits.length ==> \result.length == pages.length && forall(i, 0 <= i && i < pages.length && i != epicIndex(pages, page.epic) ==> \result[i] == pages[i]) && \result[epicIndex(pages, page.epic)] == { seq: page.seq, epic: page.epic, from: 0, total: page.total, commits: spliced(pages[epicIndex(pages, page.epic)].commits, page.from, page.commits, page.total) }
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < pages.length ==> pages[i].epic != pages[j].epic))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.length ==> \result[i].epic != \result[j].epic)))
+export function mergedPages<C>(pages: ReadonlyArray<PageOf<C>>, page: PageOf<C>): ReadonlyArray<PageOf<C>> {
+  const at = epicIndex(pages, page.epic)
+  if (at < 0) return page.from === 0 ? [...pages, page] : pages
+  const known = pages[at]!
+  if (page.seq < known.seq || page.from > known.commits.length) return pages
+  const next: PageOf<C> = { seq: page.seq, epic: page.epic, from: 0, total: page.total, commits: spliced(known.commits, page.from, page.commits, page.total) }
+  return [...pages.slice(0, at), next, ...pages.slice(at + 1)]
+}
+
+/** Every page start up to an epic's read commits, one page at least: the reads that bring an epic up to date. */
+//@ verify
+//@ requires page > 0 && count >= 0
+//@ ensures \result.length > 0
+//@ ensures forall(i, 0 <= i && i < \result.length ==> \result[i] == i * page)
+//@ ensures (\result.length - 1) * page < Math.max(count, 1)
+//@ ensures \result.length * page >= Math.max(count, 1)
+export function readOffsets(count: number, page: number): ReadonlyArray<number> {
+  const offsets: number[] = []
+  let from = 0
+  while (from < Math.max(count, 1)) {
+    //@ invariant from == offsets.length * page
+    //@ invariant forall(i, 0 <= i && i < offsets.length ==> offsets[i] == i * page)
+    //@ invariant offsets.length == 0 || (offsets.length - 1) * page < Math.max(count, 1)
+    //@ decreases Math.max(count, 1) - from
+    offsets.push(from)
+    from += page
+  }
+  return offsets
+}
+
+/** A read outline: whether it applies, the newest event seen, and whether events arrived while it was read. */
+export interface OutlineArrival { readonly accept: boolean; readonly latest: number; readonly reread: boolean }
+
+/** An older outline arriving late changes nothing once the page is ready; a newer one is read again if events came meanwhile. */
+//@ verify
+//@ ensures \result.accept == !(ready && seq < current)
+//@ ensures \result.accept ==> \result.latest == (latest >= seq ? latest : seq) && \result.reread == (seq < latest)
+//@ ensures !\result.accept ==> \result.latest == latest && !\result.reread
+//@ ensures \result.latest >= latest
+export function outlineArrival(ready: boolean, current: number, seq: number, latest: number): OutlineArrival {
+  if (ready && seq < current) return { accept: false, latest, reread: false }
+  return { accept: true, latest: Math.max(latest, seq), reread: seq < latest }
+}
+
+/** A commit page applies only to the commit the hash names, and never replaces a newer read of it. */
+//@ verify
+//@ ensures \result == (id == hash && (id != commitId || seq >= shownSeq))
+export function commitApplies(id: string, hash: string, commitId: string, seq: number, shownSeq: number): boolean {
+  return !(id !== hash || (id === commitId && seq < shownSeq))
+}
+
+/** Matches apply only to the filter now typed. */
+//@ verify
+//@ ensures \result == (query == filter)
+export function matchesApply(query: string, filter: string): boolean {
+  return query === filter
+}
+
+export interface EventArrival { readonly accept: boolean; readonly read: boolean }
+
+/** A new event raises `latest`. One outline read runs at a time: while `latest` is above the outline, the next read
+ * already covers it. */
+//@ verify
+//@ ensures \result.accept == (seq > outline && seq > latest)
+//@ ensures \result.read == (\result.accept && latest <= outline)
+export function eventArrival(seq: number, outline: number, latest: number): EventArrival {
+  if (seq <= Math.max(outline, latest)) return { accept: false, read: false }
+  return { accept: true, read: !(latest > outline) }
+}
+
+export type HashRead = "commit" | "epic" | "nothing"
+
+/** The read a hash needs: a commit always reads again; an epic only before its first page. No hash is both. */
+//@ verify
+//@ ensures commitHash ==> \result == "commit"
+//@ ensures !commitHash && epicHash && !known ==> \result == "epic"
+//@ ensures !commitHash && (!epicHash || known) ==> \result == "nothing"
+export function hashRead(commitHash: boolean, epicHash: boolean, known: boolean): HashRead {
+  if (commitHash) return "commit"
+  return epicHash && !known ? "epic" : "nothing"
+}
+
+/** Opening an epic reads its first page unless one was read; closing reads nothing. */
+//@ verify
+//@ ensures \result == (!wasOpen && !known)
+export function epicOpenReads(wasOpen: boolean, known: boolean): boolean {
+  return !wasOpen && !known
+}
+
+/** Only a filter with text searches. */
+//@ verify
+//@ ensures \result == (value.trim() != "")
+export function filterSearches(value: string): boolean {
+  return value.trim() !== ""
+}
+
+/** The commit the hash names is shown once it was read for that hash. */
+//@ verify
+//@ ensures \result == (commitHash && commitId == hash)
+export function commitShown(commitHash: boolean, commitId: string, hash: string): boolean {
+  return commitHash && commitId === hash
+}
+
+/** A failed write in the page's words: the history's refusal, or that the history can't be reached. */
+//@ verify
+//@ ensures refused ==> \result == refusal
+//@ ensures !refused ==> \result == "unavailable"
+export function failureReason(refused: boolean, refusal: string): string {
+  return refused ? refusal : "unavailable"
+}
+
+/** A write succeeded exactly when it has no failure reason. */
+//@ verify
+//@ ensures \result == (reason == "")
+export function wroteCleanly(reason: string): boolean {
+  return reason === ""
+}
+
+/** Only Escape closes the plan dialog from the keyboard. */
+//@ verify
+//@ ensures \result == (key == "Escape")
+export function closesDialog(key: string): boolean {
+  return key === "Escape"
+}
+
+/** The page's scalar state; the host keeps its read pages, outline, commit, matches and form. */
+export interface HistoryFrame {
+  readonly status: "loading" | "ready" | "failed"
+  readonly hash: string
+  readonly error: string
+  readonly busy: boolean
+  readonly dialog: boolean
+  readonly lane: string
+  readonly noteText: string
+  readonly epoch: number
+  readonly latest: number
+}
+
+//@ verify
+//@ ensures \result.status == "ready" && \result.latest == latest
+//@ ensures \result.hash == frame.hash && \result.error == frame.error && \result.busy == frame.busy && \result.dialog == frame.dialog && \result.lane == frame.lane && \result.noteText == frame.noteText && \result.epoch == frame.epoch
+export function outlineFrame(frame: HistoryFrame, latest: number): HistoryFrame {
+  return { status: "ready", hash: frame.hash, error: frame.error, busy: frame.busy, dialog: frame.dialog, lane: frame.lane, noteText: frame.noteText, epoch: frame.epoch, latest }
+}
+
+//@ verify
+//@ ensures \result.status == "failed"
+//@ ensures \result.hash == frame.hash && \result.error == frame.error && \result.busy == frame.busy && \result.dialog == frame.dialog && \result.lane == frame.lane && \result.noteText == frame.noteText && \result.epoch == frame.epoch && \result.latest == frame.latest
+export function failedLoadFrame(frame: HistoryFrame): HistoryFrame {
+  return { status: "failed", hash: frame.hash, error: frame.error, busy: frame.busy, dialog: frame.dialog, lane: frame.lane, noteText: frame.noteText, epoch: frame.epoch, latest: frame.latest }
+}
+
+/** A failed read shows why, and lowers `latest` to the outline so the next event reads again. */
+//@ verify
+//@ ensures \result.error == reason && \result.latest == outline
+//@ ensures \result.status == frame.status && \result.hash == frame.hash && \result.busy == frame.busy && \result.dialog == frame.dialog && \result.lane == frame.lane && \result.noteText == frame.noteText && \result.epoch == frame.epoch
+export function failedReadFrame(frame: HistoryFrame, reason: string, outline: number): HistoryFrame {
+  return { status: frame.status, hash: frame.hash, error: reason, busy: frame.busy, dialog: frame.dialog, lane: frame.lane, noteText: frame.noteText, epoch: frame.epoch, latest: outline }
+}
+
+/** Retry loads again under a new epoch, which restarts the history subscription. */
+//@ verify
+//@ requires 0 <= frame.epoch && frame.epoch < 9007199254740991
+//@ ensures \result.status == "loading" && \result.error == "" && \result.epoch == frame.epoch + 1
+//@ ensures \result.hash == frame.hash && \result.busy == frame.busy && \result.dialog == frame.dialog && \result.lane == frame.lane && \result.noteText == frame.noteText && \result.latest == frame.latest
+export function retryFrame(frame: HistoryFrame): HistoryFrame {
+  return { status: "loading", hash: frame.hash, error: "", busy: frame.busy, dialog: frame.dialog, lane: frame.lane, noteText: frame.noteText, epoch: frame.epoch + 1, latest: frame.latest }
+}
+
+//@ verify
+//@ ensures \result.hash == hash && \result.error == ""
+//@ ensures \result.status == frame.status && \result.busy == frame.busy && \result.dialog == frame.dialog && \result.lane == frame.lane && \result.noteText == frame.noteText && \result.epoch == frame.epoch && \result.latest == frame.latest
+export function navigatedFrame(frame: HistoryFrame, hash: string): HistoryFrame {
+  return { status: frame.status, hash, error: "", busy: frame.busy, dialog: frame.dialog, lane: frame.lane, noteText: frame.noteText, epoch: frame.epoch, latest: frame.latest }
+}
+
+/** Opening or closing the plan dialog clears the last failure. */
+//@ verify
+//@ ensures \result.dialog == open && \result.error == ""
+//@ ensures \result.status == frame.status && \result.hash == frame.hash && \result.busy == frame.busy && \result.lane == frame.lane && \result.noteText == frame.noteText && \result.epoch == frame.epoch && \result.latest == frame.latest
+export function planFrame(frame: HistoryFrame, open: boolean): HistoryFrame {
+  return { status: frame.status, hash: frame.hash, error: "", busy: frame.busy, dialog: open, lane: frame.lane, noteText: frame.noteText, epoch: frame.epoch, latest: frame.latest }
+}
+
+//@ verify
+//@ ensures !\result.dialog
+//@ ensures \result.status == frame.status && \result.hash == frame.hash && \result.error == frame.error && \result.busy == frame.busy && \result.lane == frame.lane && \result.noteText == frame.noteText && \result.epoch == frame.epoch && \result.latest == frame.latest
+export function escapedFrame(frame: HistoryFrame): HistoryFrame {
+  return { status: frame.status, hash: frame.hash, error: frame.error, busy: frame.busy, dialog: false, lane: frame.lane, noteText: frame.noteText, epoch: frame.epoch, latest: frame.latest }
+}
+
+//@ verify
+//@ ensures \result.lane == lane
+//@ ensures \result.status == frame.status && \result.hash == frame.hash && \result.error == frame.error && \result.busy == frame.busy && \result.dialog == frame.dialog && \result.noteText == frame.noteText && \result.epoch == frame.epoch && \result.latest == frame.latest
+export function laneFrame(frame: HistoryFrame, lane: string): HistoryFrame {
+  return { status: frame.status, hash: frame.hash, error: frame.error, busy: frame.busy, dialog: frame.dialog, lane, noteText: frame.noteText, epoch: frame.epoch, latest: frame.latest }
+}
+
+//@ verify
+//@ ensures \result.noteText == text
+//@ ensures \result.status == frame.status && \result.hash == frame.hash && \result.error == frame.error && \result.busy == frame.busy && \result.dialog == frame.dialog && \result.lane == frame.lane && \result.epoch == frame.epoch && \result.latest == frame.latest
+export function noteFrame(frame: HistoryFrame, text: string): HistoryFrame {
+  return { status: frame.status, hash: frame.hash, error: frame.error, busy: frame.busy, dialog: frame.dialog, lane: frame.lane, noteText: text, epoch: frame.epoch, latest: frame.latest }
+}
+
+/** A write waits, and clears the last failure. */
+//@ verify
+//@ ensures \result.busy && \result.error == ""
+//@ ensures \result.status == frame.status && \result.hash == frame.hash && \result.dialog == frame.dialog && \result.lane == frame.lane && \result.noteText == frame.noteText && \result.epoch == frame.epoch && \result.latest == frame.latest
+export function writingFrame(frame: HistoryFrame): HistoryFrame {
+  return { status: frame.status, hash: frame.hash, error: "", busy: true, dialog: frame.dialog, lane: frame.lane, noteText: frame.noteText, epoch: frame.epoch, latest: frame.latest }
+}
+
+/** A finished write clears its inputs and closes the dialog; a plan's new commit becomes the hash. */
+//@ verify
+//@ ensures !\result.busy && !\result.dialog && \result.lane == "" && \result.noteText == ""
+//@ ensures \result.hash == (hash == "" ? frame.hash : hash)
+//@ ensures \result.status == frame.status && \result.error == frame.error && \result.epoch == frame.epoch && \result.latest == frame.latest
+export function wroteFrame(frame: HistoryFrame, hash: string): HistoryFrame {
+  return { status: frame.status, hash: hash === "" ? frame.hash : hash, error: frame.error, busy: false, dialog: false, lane: "", noteText: "", epoch: frame.epoch, latest: frame.latest }
+}
+
+/** A refused write keeps its inputs and says why. */
+//@ verify
+//@ ensures !\result.busy && \result.error == reason
+//@ ensures \result.status == frame.status && \result.hash == frame.hash && \result.dialog == frame.dialog && \result.lane == frame.lane && \result.noteText == frame.noteText && \result.epoch == frame.epoch && \result.latest == frame.latest
+export function failedWriteFrame(frame: HistoryFrame, reason: string): HistoryFrame {
+  return { status: frame.status, hash: frame.hash, error: reason, busy: false, dialog: frame.dialog, lane: frame.lane, noteText: frame.noteText, epoch: frame.epoch, latest: frame.latest }
+}
+
+//@ verify
+//@ ensures \result.latest == latest
+//@ ensures \result.status == frame.status && \result.hash == frame.hash && \result.error == frame.error && \result.busy == frame.busy && \result.dialog == frame.dialog && \result.lane == frame.lane && \result.noteText == frame.noteText && \result.epoch == frame.epoch
+export function latestFrame(frame: HistoryFrame, latest: number): HistoryFrame {
+  return { status: frame.status, hash: frame.hash, error: frame.error, busy: frame.busy, dialog: frame.dialog, lane: frame.lane, noteText: frame.noteText, epoch: frame.epoch, latest }
+}

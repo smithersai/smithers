@@ -8,6 +8,7 @@ import type { Identity } from "../core/roles.vibe"
 import { Factory } from "../core/Factory.vibe"
 import { BeginTour, DispatchPost, endsTour, GuideTour, Post, RecordPost, Tour } from "../core/flows.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
+import { Caller } from "../history/roles.vibe"
 import type { HistoryReader } from "../history/tools.vibe"
 import { ActionDevice, deviceRegistration, execute, historyRegistration, prepare, refused } from "./execution.vibe"
 import { Actions, ActionFailure, type Actor, type Door, Run, type Role } from "./Actions.vibe"
@@ -59,12 +60,17 @@ export function MockActions(principal: Principal) {
     const observer: StepTrace.Sink.Shape = {
       emit: (event) => record({ type: "TraceAction", id: event.run, key: event.key, name: event.name, attempt: event.attempt, state: event.state, at: event.at }),
     }
-    const history = try Effect.cached(effect {
-      const { MockMythical } = try promise(() => import("../history/MockMythical.vibe"))
-      const reader: HistoryReader = Context.get(try Layer.buildWithScope(MockMythical({ role: "viewer", name: "Guest", agent: principal.actor === "agent" }, undefined, effect () => {
+    // Who runs a history action: this world's person now, as the action host's authorize steps and the history ask.
+    const caller: Caller.Shape = {
+      principal: { role: "viewer", name: "Guest", agent: principal.actor === "agent" },
+      current: effect () => {
         const person = try Effect.orDie(current())
         return { role: person.role, name: person.login || "Guest", agent: principal.actor === "agent" }
-      }), scope), Mythical)
+      },
+    }
+    const history = try Effect.cached(effect {
+      const { MockMythical } = try promise(() => import("../history/MockMythical.vibe"))
+      const reader: HistoryReader = Context.get(try Layer.buildWithScope(MockMythical(caller.principal, undefined, caller.current), scope), Mythical)
       return reader
     })
     // An action's Post and Tour ask this world's factory; the conversation is the principal's or the run's own.
@@ -98,7 +104,7 @@ export function MockActions(principal: Principal) {
         }),
       )),
     )
-    const registrationLayer = Layer.mergeAll(baseRegistration, historyRegistration(history), deviceRegistration).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer))
+    const registrationLayer = Layer.mergeAll(baseRegistration, historyRegistration(history), deviceRegistration).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(Caller, caller)), Layer.provide(WebCrypto.layer))
     const engine = Context.get(try Layer.buildWithScope(registrationLayer, scope), FlowRuntime.FlowRuntime)
 
     effect function run(id: string, name: string, payload: object, door: Door) {
@@ -118,9 +124,10 @@ export function MockActions(principal: Principal) {
       try record({ type: "SettleAction", id, state: status, result: output, at: try Clock.currentTimeMillis })
     }
     effect function start(name: string, input: Schema.Json, door: Door) {
+      // The role first, as live checks it: an unknown flow is never runnable, so it is forbidden, not missing.
+      const person = try authorize(name)
       const found = catalog.get(name) catch () => undefined
       if (found === undefined) throw new ActionFailure({ code: "not-found" })
-      const person = try authorize(name)
       if (scope.state._tag === "Closed") throw new ActionFailure({ code: "closed" })
       const next = try Ref.updateAndGet(ids, (id) => id + 1)
       const id = `a${next}`

@@ -1,5 +1,5 @@
 // The wiki Edit/Propose screens (designs/wiki: edit-maintainer, propose-contributor), failing first.
-import { change, click, Command, expect, given, label, role, scene, Subscription, type } from "foldkit/scene"
+import { change, click, Command, expect, given, label, role, scene, selector, Subscription, type } from "foldkit/scene"
 import { describe, expect as assert, it } from "@effect/vitest"
 import { FocusWikiEditor, init, Message, OpenWikiCommand, OpenWikiEditor, SubmitWikiEdit, signedOut, update, WikiLocation } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
@@ -158,4 +158,16 @@ it("Escape and Cancel cannot abandon a submitted write or let navigation start a
   assert(update(submitted, Message.CanceledWikiEdit({})).model.wikiEdit).toEqual(submitted.wikiEdit)
   const navigated = update(submitted, Message.ClickedWiki({ page: "rulings" })).model
   assert(navigated.wikiEdit).toEqual(submitted.wikiEdit)
+})
+
+
+it("marks the source copy as stale only while that wiki editor is open", () => {
+  scene({ update, view }, given(openAt(signed("maintainer"))),
+    expect(selector(".vl-stale")).toBeAbsent(),
+    click(role("button", { name: "Edit" })),
+    Command.resolve(OpenWikiEditor, Message.BeganWikiEdit({ request: 1, page: "roadmap", source: roadmap.source, draft: "", stale: Date.UTC(2026, 10, 10, 13, 40) })),
+    Command.resolve(FocusWikiEditor, Message.FocusedPrompt()),
+    expect(selector('.vl-stale[title="As of 2026-11-10 13:40 UTC"]')).toContainText("Stale"),
+    click(role("button", { name: "Cancel" })),
+    expect(selector(".vl-stale")).toBeAbsent())
 })

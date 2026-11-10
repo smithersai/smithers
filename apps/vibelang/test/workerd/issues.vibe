@@ -68,14 +68,14 @@ export class IssuesObject {
       return { completedStatus: completed.saved?.status, savedKey: saved.saved?.request.key, savedStatus: saved.saved?.status, ownerBound: differentPerson._tag === "Failure", first: first._tag, failedReplay: failedReplay._tag, edited: edited._tag, recovered: recovered.seq, replay: replay.seq, writes: try Ref.get(writes), linked: (try Ref.get(child))?.linked }
     })))
     if (new URL(request.url).pathname === "/meter") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(await runPromise(effect {
-      const daily = try DailyBudget.make(ledgerOver(this.state.storage), 1000)
+      const daily = try DailyBudget.make(ledgerOver(this.state.storage), 10_000_000)
       const payload = { op: "draft" as const, key: "meter", number: 0, parent: 0, title: "One feature", text: "A summary", example: "const x = 1", prior: "ML", assignee: "" }
       // A faulty agent records paid usage then fails. The writer, ledger, SQLite and replay stay real.
       const faulty: DraftAgent.Shape = { available: true, run: effect (_request, meter) => {
         try meter.record("paid-before-failure", { inputTokens: 11, outputTokens: 7 }).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" })))
         throw new IssueFailure({ reason: "draft" })
       } }
-      const spending: Spend.Shape = { admit: () => daily.admit(), spend: (_day, reply, tokens) => daily.spend(reply, tokens) }
+      const spending: Spend.Shape = { admit: (_day, reply, ceiling) => daily.admit(reply, ceiling), spend: (_day, reply, tokens, reported, ceiling) => daily.spend(reply, tokens, reported, ceiling) }
       const writerLayer = writer.pipe(Layer.provide(Layer.succeed(DraftAgent, faulty)), Layer.provide(Layer.succeed(Spend, spending)))
       const registration = Layer.effectDiscard(effect {
         const engine = try FlowRuntime.FlowRuntime

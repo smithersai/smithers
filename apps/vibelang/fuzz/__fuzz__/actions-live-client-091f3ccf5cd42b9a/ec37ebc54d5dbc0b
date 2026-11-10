@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 26
+bias 3
+null-prototype false
+key 3174480417
+tape AQICZGCUL-JNDanxy2K7iAPVFmaGMES1Htaox0BoXRBNLfmkNJvxYSOWwEwJw0Pq_HrY8d761FgFuwGCzWfrf9vCj7sWA6ljLMBD-fOzxr2JYMnnxqPsigH6fQU_i74Me4oLrqa3JWJOvfFD
+schedule-key 3227539335
+schedule 
+signature "ReturnedFalse"
+path 2.4
+codec "json"
+value "{\"role\":\"new\",\"ops\":[{\"op\":\"start\",\"flow\":\"\\ud800\",\"json\":false}]}"
+# ReturnedFalse
+# {"role":"new","ops":[{"op":"start","flow":"\ud800","json":false}]}

@@ -3,6 +3,7 @@ import { test as base, expect } from "@playwright/test"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { storeScript } from "./coverageStore.ts"
 
 const root = fileURLToPath(new URL("../", import.meta.url))
 const buildFiles = new Map<string, Promise<string>>()
@@ -31,7 +32,7 @@ export const test = base.extend<{ sourceCoverage: void }>({
         const code = script.source
         if (code === undefined) throw new Error(`Missing executed source: ${script.url}`)
         const reference = /\/\/# sourceMappingURL=(\S+)/.exec(code)?.[1]
-        if (!reference && /^\s*export\{[^}]*\}from["'][^"']+["'];?\s*$/.test(code)) continue
+        if (!reference && /^\s*export\s*\{[^}]*\}\s*from\s*["'][^"']+["'];?\s*$/.test(code)) continue
         if (!reference) throw new Error(`Missing source map: ${script.url}`)
         const mapUrl = new URL(reference, script.url)
         if (process.env.E2E_BASE_URL === undefined) {
@@ -54,7 +55,9 @@ export const test = base.extend<{ sourceCoverage: void }>({
           })()
           maps.set(mapUrl.href, pending)
         }
-        entries.push({ ...script, sourceMap: await pending })
+        // The ranges stay with the test; the source and map are stored once per run (coverageStore.ts).
+        const { source, ...ranges } = script
+        entries.push({ ...ranges, script: await storeScript(resolve(info.project.outputDir, "chromium-scripts"), source!, await pending) })
       }
       const directory = info.outputPath("coverage")
       await mkdir(directory, { recursive: true })

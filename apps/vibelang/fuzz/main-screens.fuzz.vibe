@@ -1,13 +1,13 @@
 // Screens built the way a person reaches them, then the update branches and Commands that only those screens reach.
 import { it } from "@effect/vitest"
-import { Model, Message, accountOf, roleLabel, update, RunAction, ReadAction, CancelAction, LoadActions, SandboxAction, LoadPeople, GrantRole, LoadIssues, ActOnIssue, LoadIssueDetails, RefreshIssueProjection, OpenWikiEditor, SubmitWikiEdit } from "../src/web/main.vibe"
-import { Factory } from "../src/core/Factory.vibe"
+import { Model, Message, accountOf, roleLabel, update, viewTransition, RunAction, ReadAction, CancelAction, LoadActions, SandboxAction, LoadPeople, GrantRole, LoadIssues, ActOnIssue, LoadIssueDetails, RefreshIssueProjection, OpenWikiEditor, SubmitWikiEdit } from "../src/web/main.vibe"
+import { Factory, SandboxSnapshot } from "../src/core/Factory.vibe"
 import { Actions } from "../src/actions/Actions.vibe"
-import { IssueRequest } from "../src/core/issueSchemas.vibe"
+import { IssueOperation, IssueRequest } from "../src/core/issueSchemas.vibe"
 import { WikiRequest } from "../src/core/wikiSchemas.vibe"
 import { pages } from "../src/core/wiki.vibe"
 import { actionsOf } from "../src/web/actionModel.vibe"
-import { backend, backendWithWiki, Backend, Role, WikiFault } from "./web-backends.vibe"
+import { backend, backendWithFailingPosts, backendWithWiki, Backend, Role, WikiFault } from "./web-backends.vibe"
 import { run, Finding, Int, Text, TextOrBoundary } from "./run.vibe"
 import { gesture, GRANTS, pump, tab, tourEnded, tourStop } from "./web-tab.vibe"
 
@@ -310,6 +310,218 @@ it.live("web/conversation-events", () => run("web/conversation-events", Happenin
       if (happening.kind === "action" && !names.includes("ReadAction")) return false
       try session.send(try Effect.try(() => Message.ReceivedEvent({ event })))
     }
+  }
+  return true
+}, backend("mock", role))))
+
+const AT = ["current", "stale", "next"] as const
+const Answer = Schema.Union([
+  Schema.Struct({ kind: Schema.Literals(["wiki-began", "wiki-completed", "wiki-failed"]), at: Schema.Literals(AT), otherPage: Schema.Boolean, text: TextOrBoundary, reason: Schema.Literals(["unavailable", "conflict", "connect", "forbidden", "unknown", "nope"]), flag: Schema.Boolean }),
+  Schema.Struct({ kind: Schema.Literals(["submit-wiki", "edit-base", "clicked-issues", "escape", "retry-post", "edit-wiki", "wiki-opened", "post-failed"]) }),
+  Schema.Struct({ kind: Schema.Literal("open-wiki"), page: Schema.Literals(pages.map((page) => page.id)) }),
+  Schema.Struct({ kind: Schema.Literal("wiki-open-failed"), at: Schema.Literals(AT) }),
+  Schema.Struct({ kind: Schema.Literal("type-wiki"), text: TextOrBoundary }),
+  Schema.Struct({ kind: Schema.Literal("draft-editor"), page: Schema.Literals(pages.map((page) => page.id)) }),
+  Schema.Struct({ kind: Schema.Literal("post"), text: TextOrBoundary }),
+  Schema.Struct({ kind: Schema.Literal("forget") }),
+  Schema.Struct({ kind: Schema.Literal("issues-failed"), reason: Schema.Literals(["connect", "fork", "install", "unavailable", "forbidden", "nope"]), op: Schema.optionalKey(IssueOperation), retryKey: Schema.Boolean, flag: Schema.Boolean }),
+  Schema.Struct({ kind: Schema.Literals(["issue-details-failed", "issue-details-loaded"]), selected: Schema.Boolean, older: Schema.Boolean }),
+  Schema.Struct({ kind: Schema.Literal("failed-media"), src: TextOrBoundary, video: Schema.Boolean }),
+  Schema.Struct({ kind: Schema.Literal("wiki-location"), page: Schema.Union([Schema.Literals(["/", "/docs", "/wiki/nope"]), Schema.Literals(pages.map((page) => `/wiki/${page.id}`))]) }),
+  Schema.Struct({ kind: Schema.Literal("slash"), pick: Schema.Literals(["mode/live", "mode/mock", "mode/nope", "first", "vibelang/Tour", "submit"]), text: TextOrBoundary }),
+])
+type Answer = typeof Answer.Type
+/** Optional Model fields a saved or older Model may lack; update must read their absence as their initial value. */
+const OPTIONAL = ["failedMedia", "wikiPages", "wikiSerial", "wikiEditRequest", "wikiRequest", "sandboxRequest", "actions", "issues", "tourClient", "wikiStatus"] as const
+const Answers = Schema.Struct({ session: Int, role: Role, wiki: WikiFault, strip: Schema.Array(Schema.Literals(OPTIONAL)).check(Schema.isMaxLength(4)), steps: Schema.Array(Schema.Struct({ op: Opener, n: Int, text: TextOrBoundary })).check(Schema.isMaxLength(8)), answers: Schema.Array(Answer).check(Schema.isMinLength(1), Schema.isMaxLength(16)) })
+
+/** The answer a Command would send back to this screen: for the request it is waiting on, an older one, or a newer one. */
+function answerOf(model: Model, answer: Answer): ReadonlyArray<Message> {
+  const editing = model.wikiEdit
+  const current = model.wikiEditRequest ?? 0
+  switch (answer.kind) {
+    case "wiki-began": case "wiki-completed": case "wiki-failed": {
+      const request = answer.at === "current" ? current : answer.at === "stale" ? current - 1 : current + 1
+      const page = editing === undefined || answer.otherPage ? "fuzz-other" : editing.page
+      if (answer.kind === "wiki-began") return [Message.BeganWikiEdit({ request, page, source: answer.text, draft: answer.flag ? answer.text : "" })]
+      if (answer.kind === "wiki-completed") return [Message.CompletedWikiEdit({ request, page, source: answer.text, revision: "r", review: answer.flag ? "https://github.invalid/pull/1" : "" })]
+      return [Message.FailedWikiEdit({ request, reason: answer.reason, ...(answer.flag ? { unwritten: true } : {}) })]
+    }
+    case "submit-wiki": return [Message.SubmittedWikiEdit()]
+    case "edit-wiki": return [Message.ClickedEditWiki()]
+    case "wiki-opened": return [Message.SucceededWiki()]
+    case "open-wiki": return [Message.ClickedWiki({ page: answer.page })]
+    case "type-wiki": return [Message.UpdatedWikiEdit({ value: answer.text })]
+    case "draft-editor": return [Message.ClickedWikiDraft({ page: answer.page })]
+    case "post": return [Message.UpdatedDraft({ value: answer.text }), Message.SubmittedDraft()]
+    case "forget": return []
+    case "wiki-open-failed": {
+      const latest = model.wikiRequest ?? 0
+      return [Message.FailedWiki({ request: answer.at === "current" ? latest : answer.at === "stale" ? latest - 1 : latest + 1 })]
+    }
+    case "edit-base": return editing === undefined ? [] : [Message.UpdatedWikiEdit({ value: editing.base })]
+    case "clicked-issues": return [Message.ClickedIssues()]
+    case "escape": return [Message.PressedEscape()]
+    case "retry-post": return [Message.ClickedRetry({ clientId: model.client.pending[0]?.clientId ?? "fuzz-none" })]
+    case "post-failed": return [Message.FailedPost({ clientId: model.client.pending[0]?.clientId ?? "fuzz-none", reason: "unavailable" })]
+    case "issues-failed": {
+      const retry = model.issues?.retry
+      return [Message.IssuesFailed({ reason: answer.reason, ...(answer.op === undefined ? {} : { op: answer.retryKey && retry !== undefined ? retry.op : answer.op }), ...(answer.retryKey && retry !== undefined ? { key: retry.key } : {}), ...(answer.flag ? { unwritten: true } : {}) })]
+    }
+    case "issue-details-failed": case "issue-details-loaded": {
+      const issues = model.issues
+      const number = issues === undefined ? 1 : answer.selected ? issues.selected : issues.selected + 1
+      if (answer.kind === "issue-details-failed") return [Message.IssueDetailsFailed({ number })]
+      const data = issues?.data
+      return data === undefined ? [] : [Message.IssueDetailsLoaded({ number, data: { ...data, seq: answer.older ? data.seq - 1 : data.seq } })]
+    }
+    case "failed-media": return [Message.FailedMedia({ src: answer.src, kind: answer.video ? "video" : "image" })]
+    case "wiki-location": return [Message.WikiLocationChanged({ page: answer.page })]
+    case "slash": {
+      const first = actionsOf(model).commands[0]?.name ?? "vibelang/Post"
+      const typed = answer.pick === "first" ? `/${first} ${answer.text}` : answer.pick.startsWith("mode/") ? `/${answer.pick.slice(5)}` : `/${answer.text}`
+      return [Message.UpdatedDraft({ value: typed }), answer.pick === "submit" ? Message.SubmittedDraft() : Message.PickedSlash({ name: answer.pick === "first" ? first : answer.pick })]
+    }
+  }
+}
+
+/** A chat draft's review opens the editor, then its load answers: one gesture and the answer its Command sends. */
+function expanded(answer: Answer): ReadonlyArray<Answer> {
+  if (answer.kind !== "draft-editor") return [answer]
+  return [answer, { kind: "wiki-began", at: "current", otherPage: false, text: "Source.", reason: "nope", flag: true }]
+}
+
+/** `model` without the `strip` fields whose absence the Model schema allows. */
+function stripped(model: Model, strip: ReadonlyArray<typeof OPTIONAL[number]>): Model {
+  let result = model
+  for (const key of strip) {
+    const { [key]: _, ...rest } = result
+    if (Schema.is(Model)(rest)) result = rest as Model
+  }
+  return result
+}
+
+/** Answers that must leave the screen exactly as it was: a reply to a request the screen is no longer waiting on. */
+function stale(model: Model, answer: Answer): boolean {
+  switch (answer.kind) {
+    case "wiki-began": case "wiki-completed": case "wiki-failed": return model.wikiEdit === undefined || answer.at !== "current" || answer.kind !== "wiki-failed" && answer.otherPage
+    case "issue-details-failed": return model.issues === undefined || !answer.selected
+    case "issue-details-loaded": return model.issues === undefined || !answer.selected || answer.older
+    default: return false
+  }
+}
+
+/**
+ * Screens built the way a person reaches them, then the answers their Commands send back, in any order and while
+ * other Commands are still outstanding (update alone, nothing settles), from a Model that may lack its optional fields.
+ * An answer to a request the screen no longer waits on (an older or newer wiki request, another page, another issue,
+ * older details) changes nothing; every answer leaves a valid Model and a view transition the runtime can apply.
+ */
+it.live("web/screen-answers", () => run("web/screen-answers", Answers, ({ session: id, role, wiki, strip, steps, answers }) => Effect.provide(effect {
+  const session = try signedIn(`a${id}`, role)
+  for (const step of steps) {
+    if (step.op === "edit-wiki" || step.op === "wiki-save") {
+      try session.send((try Effect.try(() => opener(session.model(), step)))[0]!)
+      try pump(session)
+    }
+    for (const message of try Effect.try(() => opener(session.model(), step))) try session.send(message)
+    if (step.op === "wiki") try pump(session)
+  }
+  let model = stripped(session.model(), strip)
+  for (const answer of answers.flatMap(expanded)) {
+    if (answer.kind === "forget") model = stripped(model, OPTIONAL)
+    for (const message of try Effect.try(() => answerOf(model, answer))) {
+      const before = model
+      const next = try Effect.try(() => update(before, message))
+      if (stale(before, answer) && next.model !== before) throw new Finding({ report: `${message._tag}: an answer for another request changed the screen` })
+      if (!Schema.is(Model)(next.model)) throw new Finding({ report: `${message._tag}: left an invalid Model` })
+      try Effect.try(() => viewTransition({ previousModel: before, model: next.model, message }))
+      model = next.model
+    }
+  }
+  return true
+}, backendWithWiki(role, wiki))))
+
+const Count = (maximum: number) => Schema.Int.check(Schema.isBetween({ minimum: 0, maximum }))
+const PostRetries = Schema.Struct({ session: Int, role: Role, texts: Schema.Array(Text).check(Schema.isMinLength(1), Schema.isMaxLength(3)), failures: Count(4), lost: Schema.Boolean, rounds: Count(4), stray: Schema.Boolean })
+
+/**
+ * Posts whose first answers fail, some after the server stored them, then retried by the person. Retry clears the
+ * post's error at once and resends the same text; a Retry for no failed post changes nothing; no post is lost; and no
+ * post is received twice.
+ */
+it.live("web/post-retry", () => run("web/post-retry", PostRetries, ({ session: id, role, texts, failures, lost, rounds, stray }) => Effect.provide(effect {
+  const session = try signedIn(`p${id}`, role)
+  const sent: Array<string> = []
+  for (const text of texts) {
+    try session.send(try Effect.try(() => Message.UpdatedDraft({ value: text })))
+    const known = new Set(session.model().client.pending.map((waiting) => waiting.clientId))
+    try session.send(try Effect.try(() => Message.SubmittedDraft()))
+    for (const waiting of session.model().client.pending) if (!known.has(waiting.clientId)) sent.push(waiting.clientId)
+  }
+  for (let round = 0; round <= rounds; round++) {
+    if (stray) {
+      const before = session.model()
+      try session.send(try Effect.try(() => Message.ClickedRetry({ clientId: "fuzz-no-post" })))
+      if (session.model() !== before) throw new Finding({ report: "a Retry for no failed post changed the screen" })
+    }
+    for (const waiting of session.model().client.pending.filter((post) => post.error !== "")) {
+      try session.hold(try Effect.try(() => Message.ClickedRetry({ clientId: waiting.clientId })))
+      const retried = session.model().client.pending.find((post) => post.clientId === waiting.clientId)
+      if (retried === undefined || retried.error !== "" || retried.text !== waiting.text) throw new Finding({ report: "Retry did not resend the failed post as it was" })
+      try session.settle
+    }
+    try pump(session)
+  }
+  const model = session.model()
+  const received = model.client.conversation.entries.map((entry) => entry.clientId).filter((clientId) => sent.includes(clientId))
+  if (new Set(received).size !== received.length) throw new Finding({ report: "a retried post was received twice" })
+  for (const clientId of sent) {
+    if (!received.includes(clientId) && !model.client.pending.some((post) => post.clientId === clientId)) throw new Finding({ report: "a post was lost" })
+  }
+  return true
+}, backendWithFailingPosts(role, failures, lost))))
+
+/** Reset months move forward: an answer keeps the month or starts the next one. */
+const MONTHS = [Date.UTC(2026, 10, 1), Date.UTC(2026, 11, 1), Date.UTC(2027, 0, 1), Date.UTC(2027, 1, 1)]
+const MinuteAnswer = Schema.Struct({
+  snapshot: Schema.Struct({ ...SandboxSnapshot.fields, id: Schema.Literals(["", "fuzz-sandbox"]), remaining: Count(12) }),
+  nextMonth: Schema.Boolean, stale: Schema.Boolean,
+})
+const MinuteAnswers = Schema.Struct({ session: Int, role: Role, answers: Schema.Array(MinuteAnswer).check(Schema.isMinLength(1), Schema.isMaxLength(10)) })
+
+/**
+ * Sandbox answers near the end of the month's minutes, while a sandbox request is out. A sandbox stopped with no minutes
+ * says so and names itself; minutes first running low in a month show how many are left, once; a new month with
+ * minutes to spare clears the notice; an answer for another request changes nothing.
+ */
+it.live("web/sandbox-minutes", () => run("web/sandbox-minutes", MinuteAnswers, ({ session: id, role, answers }) => Effect.provide(effect {
+  const session = try signedIn(`m${id}`, role)
+  try session.hold(try Effect.try(() => Message.StartedSandbox()))
+  let model = session.model()
+  let month = 0
+  const lows = new Set<number>()
+  for (const answer of answers) {
+    if (answer.nextMonth) month = Math.min(month + 1, MONTHS.length - 1)
+    const snapshot = { ...answer.snapshot, resetAt: MONTHS[month]! }
+    const before = model
+    const request = (before.sandboxRequest ?? 0) + (answer.stale ? 1 : 0)
+    const next = try Effect.try(() => update(before, Message.LoadedSandbox({ conversation: before.conversation, request, snapshot })))
+    if (answer.stale) {
+      if (next.model !== before) throw new Finding({ report: "a sandbox answer for another request changed the screen" })
+      continue
+    }
+    model = next.model
+    if (!Schema.is(Model)(model)) throw new Finding({ report: "LoadedSandbox left an invalid Model" })
+    const notice = model.minuteNotice ?? ""
+    const out = snapshot.remaining === 0 && snapshot.id !== "" && snapshot.status === "stopped"
+    if (out && !(notice.startsWith("Out of minutes") && notice.includes(snapshot.id))) throw new Finding({ report: "a sandbox stopped out of minutes did not say so" })
+    const low = !out && snapshot.remaining > 0 && snapshot.remaining <= 10
+    if (low && !lows.has(snapshot.resetAt)) {
+      if (notice !== `${snapshot.remaining} minutes left`) throw new Finding({ report: "minutes ran low and no notice said how many were left" })
+      lows.add(snapshot.resetAt)
+    } else if (!out && notice !== "" && notice !== (before.minuteNotice ?? "")) throw new Finding({ report: "a minutes notice appeared without minutes newly running low" })
+    if (!out && snapshot.remaining > 10 && before.sandbox !== undefined && before.sandbox.resetAt !== snapshot.resetAt && notice !== "") throw new Finding({ report: "a new month with minutes to spare kept the notice" })
   }
   return true
 }, backend("mock", role))))

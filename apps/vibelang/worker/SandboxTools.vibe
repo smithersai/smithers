@@ -1,6 +1,7 @@
 // The chat agent's tools bind a server-owned conversation and use Factory's durable flows, never a guest credential.
 import { digestSync } from "@smthrs/crypto"
 import { type Cell, FlowBinding } from "@smthrs/harness"
+import { toolRefusal } from "../src/core/toolRefusal.vibe"
 import { Factory, Refused } from "../src/core/Factory.vibe"
 import { SandboxCommand, SandboxStart, SandboxStop } from "../src/core/flows.vibe"
 import { Seq } from "../src/core/schemas.vibe"
@@ -30,8 +31,8 @@ function declared<I extends Schema.Top, O extends Schema.Top>(flow: { readonly _
 }
 export function sandboxTools(factory: Tools, conversation: string): FlowBinding.Source {
   return FlowBinding.source("vibelang-sandbox", [
-    FlowBinding.make({ flow: declared(SandboxStart, Schema.Struct({})), handler: effect (_input, call) => { return try factory.startSandbox(conversation, try operation(call)) } }),
-    FlowBinding.make({ flow: declared(SandboxStop, Schema.Struct({ generation: Seq })), handler: effect (input, call) => { return try factory.stopSandbox(conversation, try operation(call), input.generation) } }),
-    FlowBinding.make({ flow: declared(SandboxCommand, Schema.Struct({ generation: Seq, command: Schema.String })), handler: effect (input, call) => { return try factory.sandboxCommand(conversation, try operation(call), input.command, input.generation) } }),
+    FlowBinding.make({ publicError: toolRefusal, flow: declared(SandboxStart, Schema.Struct({})), handler: effect (_input, call) => { return try factory.startSandbox(conversation, try operation(call)) } }),
+    FlowBinding.make({ publicError: toolRefusal, flow: declared(SandboxStop, Schema.Struct({ generation: Seq })), handler: effect (input, call) => { return try factory.stopSandbox(conversation, try operation(call), input.generation) } }),
+    FlowBinding.make({ publicError: toolRefusal, flow: declared(SandboxCommand, Schema.Struct({ generation: Seq, command: Schema.String })), handler: effect (input, call) => { return try factory.sandboxCommand(conversation, try operation(call), input.command, input.generation) } }),
   ])
 }

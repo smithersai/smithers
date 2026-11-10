@@ -8,7 +8,7 @@ import { jsdocConvention } from "../../../../eslint.jsdoc.js"
 export default tseslint.config(
   { ignores: ["**/*.d.vibe.ts"] },
   {
-    ignores: ["**/dist", "**/build", "**/coverage"]
+    ignores: ["**/dist", "**/build", "**/coverage", "**/*.d.vibe.ts"]
   },
   js.configs.recommended,
   importPlugin.flatConfigs.recommended,

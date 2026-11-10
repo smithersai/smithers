@@ -1,7 +1,8 @@
 // Stays .ts: Playwright collects browser tests by JS/TS extension only.
 import { expect, test } from "@playwright/test"
-const origin = process.env.AUTH_BROKER_TEST_ORIGIN!
-test("signs in through smithers' callback and returns a local session with no token in any URL", async ({ page, context }) => {
+const origins: Record<string, string> = JSON.parse(process.env.AUTH_BROKER_TEST_ORIGINS!)
+test("signs in through smithers' callback and returns a local session with no token in any URL", async ({ page, context }, testInfo) => {
+  const origin = origins[testInfo.project.name]!
   const requests: string[] = []
   const errors: string[] = []
   page.on("request", request => requests.push(request.url()))
@@ -23,7 +24,8 @@ test("signs in through smithers' callback and returns a local session with no to
   expect(errors).toEqual([])
 })
 
-test("Connect GitHub round trip: consent on smithers, a write as the person, and no token in any URL", async ({ page }) => {
+test("Connect GitHub round trip: consent on smithers, a write as the person, and no token in any URL", async ({ page }, testInfo) => {
+  const origin = origins[testInfo.project.name]!
   const requests: string[] = []
   page.on("request", request => requests.push(request.url()))
   await page.goto(origin)

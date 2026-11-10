@@ -40,14 +40,14 @@ test.each(["sslmode=verify-full&sslmode=disable", "sslmode=disable&sslmode=verif
 
 test("verify-full uses the process root store and explicit verification", () => {
   const options = ssl(`${uri}?sslmode=verify-full`)!
-  expect(options.rejectUnauthorized).toBe(true)
+  expect(options).toMatchObject({ rejectUnauthorized: true })
   expect(options.ca).toEqual(getCACertificates("default"))
   expect(options.servername).toBe("database.invalid")
 })
 
 test.each(["require", "verify-full"])("%s loads the pinned CA instead of public roots", (mode) => {
   const options = ssl(`${uri}?sslmode=${mode}&sslrootcert=${encodeURIComponent(pin)}`)!
-  expect(options.rejectUnauthorized).toBe(true)
+  expect(options).toMatchObject({ rejectUnauthorized: true })
   expect(options.ca).toEqual([getCACertificates("default")[0]])
 })
 
@@ -59,7 +59,7 @@ test("Neon's API URL becomes verify-full without mutating unrelated connection s
   const normalized = neonConnectionUri(`${uri}?sslmode=require&channel_binding=require&connect_timeout=3`)
   expect(Redacted.value(normalized)).toBe(`${uri}?sslmode=verify-full&connect_timeout=3`)
   expect(String(normalized)).not.toContain("private-pass")
-  expect(sslFor(normalized)?.rejectUnauthorized).toBe(true)
+  expect(sslFor(normalized)).toMatchObject({ rejectUnauthorized: true })
 })
 
 test.each(["require", "verify-full"])("empty pin preserves the %s policy", (mode) => {

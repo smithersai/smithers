@@ -65,7 +65,7 @@ export const webPages = () => ({ allows, refuses, tab, local })
 
 /** Register inside the describe that needs real external pages; URL/CSP refusals need no fixture. */
 export const installWebPages = () => {
-  test.beforeAll(async () => {
+  test.beforeAll(async ({}, testInfo) => {
     if (target === "local") {
       const { cert, key } = await certificate(DEV_CERTIFICATE)
       framed = createHttpsServer({ cert, key }, (request, response) => {
@@ -97,8 +97,8 @@ export const installWebPages = () => {
     }
 
     // A fresh API context carries no app session or credentials to an outside site. Never disable TLS verification
-    // for public fixtures: only the local servers use a self-signed development certificate.
-    const client = await requests.newContext({ ignoreHTTPSErrors: target === "local" })
+    // for public fixtures. The project owns the development-certificate decision.
+    const client = await requests.newContext({ ignoreHTTPSErrors: testInfo.project.use.ignoreHTTPSErrors })
     const service = target === "deployment"
       ? await requests.newContext({ baseURL, storageState: sessionFiles(baseURL).session })
       : undefined
