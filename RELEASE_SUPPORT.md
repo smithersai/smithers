@@ -114,6 +114,8 @@ at persistence boundaries, while caller-supplied timestamps remain validated.
 
 ## Alpha candidate contract changes
 
+Stored action dispatch could lose its declared result and required decoder-service types; serializer-aware exit schemas now preserve them.
+
 Error construction options could become writable in TypeScript declarations after a compiler update; they now retain their readonly contract.
 
 The declaration review compares actual emitted declarations from the previous
