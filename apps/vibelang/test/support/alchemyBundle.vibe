@@ -1,0 +1,31 @@
+// Alchemy's own rolldown Worker build, with the VibeLang compiler plugin ahead of its Cloudflare plugins.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import vibelang from "vibelang-unplugin/rolldown"
+import { instrumentRolldown } from "./workerdCoverage.ts"
+import { WorkerBundle } from "@alchemy.run/cloudflare/Workers/Sources/Rolldown"
+
+/** One Miniflare module of the built Worker. */
+export interface WorkerModule { readonly name: string; readonly type: "esm" | "wasm"; readonly contents: string | Uint8Array }
+
+/**
+ * `main` built the way `alchemy dev` and a deploy build a Worker: Alchemy's rolldown options and its Cloudflare plugin
+ * set (nodejs_compat through unenv, `.wasm` as modules), with VibeLang's compiler ahead of them, as the Worker's own
+ * `build` (infra/WorkerBuild.vibe) adds it. Each `.vibe` module `instrumented` selects carries Istanbul counters.
+ * Unminified, so a measured module keeps its counters' shape. The modules in upload order, entry first.
+ */
+export async function alchemyWorker(main: string, instrumented: ((path: string) => boolean) | undefined, compatibility: { readonly date: string; readonly flags: ReadonlyArray<string> }): Promise<ReadonlyArray<WorkerModule>> {
+  const program = Effect.flatMap(WorkerBundle, (bundler) => bundler.build({
+    id: "workerd-test", main, compatibility: { date: compatibility.date, flags: [...compatibility.flags] }, entry: { kind: "external" },
+    stack: { name: "vibelang", stage: "workerd-test" },
+    extraOptions: { input: { plugins: [instrumented === undefined ? vibelang() : instrumentRolldown(vibelang() as never, instrumented)] }, output: { minify: false } },
+  }))
+  const output = await Effect.runPromise(Effect.provide(program, NodeServices.layer))
+  const modules: Array<WorkerModule> = []
+  for (const file of output.files) {
+    if (file.path.endsWith(".map")) continue
+    if (file.path.endsWith(".wasm")) modules.push({ name: file.path, type: "wasm", contents: file.content })
+    else if (/\.m?js$/.test(file.path)) modules.push({ name: file.path, type: "esm", contents: file.content })
+    else throw new Error(`alchemy bundle: unexpected module ${file.path}`)
+  }
+  return modules
+}

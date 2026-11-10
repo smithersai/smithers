@@ -62,6 +62,31 @@ export function instrumentModules<P extends EsbuildPlugin>(plugin: P, instrument
   }
 }
 
+interface RolldownLoad { readonly code: string; readonly map?: Record<string, unknown> | string | null; readonly moduleType?: string }
+type LoadHook = (this: unknown, id: string) => unknown
+interface RolldownPlugin { readonly name: string; readonly load?: LoadHook | { readonly handler: LoadHook } }
+
+/**
+ * The rolldown form of `instrumentModules`: VibeLang's rolldown plugin answers each `.vibe` module's `load` with its
+ * compiled code and compiler map, and a module `instrumented` selects carries counters whose input map is that map.
+ * Alchemy builds the API Worker with rolldown (test/workerd/api.vibe).
+ */
+export function instrumentRolldown<P extends RolldownPlugin>(plugin: P, instrumented: (path: string) => boolean): P {
+  const instrumenter = createInstrumenter({ esModules: true, coverageGlobalScope: "globalThis", coverageGlobalScopeFunc: false })
+  const original = plugin.load
+  if (original === undefined) throw new Error("workerd coverage: the plugin has no load hook")
+  const handler = typeof original === "function" ? original : original.handler
+  const load: LoadHook = async function (this: unknown, id: string) {
+    const result = await handler.call(this, id) as RolldownLoad | null | undefined
+    if (result === null || result === undefined || typeof result.code !== "string" || !instrumented(id)) return result
+    // Without the compiler's map the counters would sit at output lines and credit the wrong source.
+    if (result.map === undefined || result.map === null) throw new Error(`workerd coverage: ${id} compiled without a source map`)
+    const sourceMap = typeof result.map === "string" ? JSON.parse(result.map) as Record<string, unknown> : result.map
+    return { code: instrumenter.instrumentSync(result.code, id, sourceMap), moduleType: result.moduleType ?? "js" }
+  }
+  return { ...plugin, load: typeof original === "function" ? load : { ...original, handler: load } }
+}
+
 /** A dump's counters remapped to source through each module's own compiler map. */
 export async function sourceCoverage(coverage: Record<string, unknown>): Promise<CoverageMap> {
   return libSourceMaps.createSourceMapStore().transformCoverage(libCoverage.createCoverageMap(coverage))

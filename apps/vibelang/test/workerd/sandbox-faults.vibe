@@ -1,0 +1,70 @@
+// Real workerd Durable Objects and SQLite, with a faulty Container Effect service. No successful Container operation
+// is simulated: starts fail, and the production machine/account objects must refuse them without losing their ledger.
+import { HttpServerResponse } from "effect/http"
+import { RuntimeContext } from "alchemy/RuntimeContext"
+import { machineObject } from "../../worker/machineObject.vibe"
+import { accountObject, type SandboxIdentity } from "../../worker/accountObject.vibe"
+
+interface State { readonly id: { toString(): string }; readonly storage: unknown }
+interface Namespace { idFromName(name: string): unknown; get(id: unknown): { fetch(url: string, init: RequestInit): Promise<Response> } }
+interface Env { readonly MACHINE: Namespace; readonly ACCOUNT: Namespace }
+const runtime = Layer.succeed(RuntimeContext, {} as never)
+const json = (value: unknown) => HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(value))
+
+error ContainerUnavailable
+const unavailable = () => Effect.fail(new ContainerUnavailable())
+const container = {
+  running: succeed(false), start: unavailable, destroy: unavailable, snapshotContainer: unavailable,
+  exec: unavailable, setInactivityTimeout: unavailable,
+  interceptOutboundHttp: unavailable, interceptAllOutboundHttp: unavailable, interceptOutboundHttps: unavailable,
+}
+const identity: SandboxIdentity.Shape = {
+  request: () => succeed({ owner: "", role: "viewer" }),
+  role: (owner) => succeed(owner.startsWith("viewer") ? "viewer" : "contributor"),
+}
+
+export class MachineHost {
+  readonly api: ReturnType<typeof this.build>
+  constructor(readonly state: State) { this.api = this.build() }
+  build() { return runPromise(Effect.provide(machineObject(container as never, { raw: this.state } as never), runtime)) }
+  async fetch(request: Request) {
+    const args = await request.json() as ["start" | "stop" | "command" | "lease", number, string, string]
+    return json(await runPromise(Effect.provide((await this.api).apply(...args), runtime)))
+  }
+}
+
+export class AccountHost {
+  async alarm(): Promise<void> { await runPromise(Effect.provide((await this.api).alarm(), runtime)) }
+  readonly api: ReturnType<typeof this.build>
+  constructor(readonly state: State, readonly env: Env) { this.api = this.build() }
+  build() {
+    const namespace = { getByName: (name: string) => ({
+      apply: (...args: [string, number, string, string]) => promise(() => this.env.MACHINE.get(this.env.MACHINE.idFromName(name)).fetch("https://object/", { method: "POST", body: JSON.stringify(args) }).then((response) => response.json())),
+    }) }
+    return runPromise(Effect.provide(accountObject({ id: this.state.id, raw: this.state } as never, namespace as never, identity), runtime))
+  }
+  async fetch(request: Request) {
+    const api = await this.api
+    if (new URL(request.url).pathname === "/state") {
+      const storage = this.state.storage as { sql: { exec(query: string): { toArray(): Array<{ body: string }> } } }
+      const state = JSON.parse(storage.sql.exec("SELECT body FROM vibelang_sandbox_state WHERE id = 1").toArray()[0]!.body) as { pending: { kind: string } | null; ledger: { sandboxes: Array<{ running: boolean }> } }
+      return json({ pending: state.pending?.kind, running: state.ledger.sandboxes.some((sandbox) => sandbox.running) })
+    }
+    if (new URL(request.url).pathname === "/alarm") {
+      await runPromise(Effect.provide(api.alarm(), runtime))
+      // Read the actual workerd alarm, not a count maintained by the host.
+      const storage = (this.state as { storage: { getAlarm(): Promise<number | null> } }).storage
+      return json({ alarm: await storage.getAlarm() })
+    }
+    const args = await request.json() as [string, "read" | "start" | "stop" | "command", string, string, number, string]
+    return json(await runPromise(Effect.provide(api.run(...args), runtime)))
+  }
+}
+
+export default {
+  async fetch(request: Request, env: Env) {
+    const [, area, name, operation] = new URL(request.url).pathname.split("/")
+    const namespace = area === "machine" ? env.MACHINE : env.ACCOUNT
+    return namespace.get(namespace.idFromName(name!)).fetch(`https://object/${operation ?? ""}`, { method: "POST", body: await request.text() })
+  },
+}

@@ -1,0 +1,65 @@
+// worker/Api.vibe itself in local workerd, as Alchemy builds and bridges it (test/workerd/api.vibe): Alchemy's rolldown
+// Worker build, its Worker and Durable Object bridges, and objects that reach each other over Alchemy's RPC. The suite's
+// other hosts run the same bodies as plain objects (test/workerd/worker.vibe); this one runs the deployed wiring, so a
+// measured run credits worker/Api.vibe (0016). No model is scripted: the day's budget is spent, so a reply is refused
+// before any model call.
+import { describe, expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { afterAll, beforeAll } from "vitest"
+import { type Event } from "../src/core/conversation.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
+import { REASONS } from "../worker/Reply.vibe"
+import { deadline, room, serveAlchemyApi, type Served } from "./support/workerd.vibe"
+
+interface Objects {
+  readonly commit: string
+  readonly objects: Readonly<Record<string, { readonly startup: string }>>
+}
+const CLASSES = ["Budget", "ProjectAccounts", "History", "ActionIndex", "Conversation"]
+
+describe("the API Worker under Alchemy's build and bridges, with the day's budget spent", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveAlchemyApi({ VIBELANG_COMMIT: "alchemy-host", CHAT_DAILY_TOKENS: "0", CEREBRAS_API_KEY: "unused-key" })) }, deadline(300_000))
+  afterAll(async () => { await api?.dispose() })
+
+  it.live("every class finishes starting when the first requests reach them at once", () => effect {
+    provide FetchHttpClient.layer {
+      const origin = api!.origin
+      const objects = effect {
+        const response = try HttpClient.get(`${origin}/api/health/objects`)
+        return (try response.json) as unknown as Objects
+      }
+      const first = try.allSettled [HttpClient.get(`${origin}/api/auth/session`), HttpClient.get(`${origin}/api/history`), HttpClient.get(`${origin}/api/actions`), objects]
+      let latest = try objects
+      for (let attempt = 0; attempt < 40 && CLASSES.some((name) => latest.objects[name]?.startup !== "ready"); attempt += 1) {
+        try sleep("500 millis")
+        latest = try objects
+      }
+      const session = try HttpClient.get(`${origin}/api/auth/session`)
+      const visitor = (try session.json) as unknown as { readonly role: string }
+      try Effect.try(() => {
+        expect(first.every((result) => result._tag === "Success")).toBe(true)
+        expect(latest.commit).toBe("alchemy-host")
+        for (const name of CLASSES) expect(latest.objects[name]?.startup, name).toBe("ready")
+        expect(session.status).toBe(200)
+        expect(visitor.role).toBe("viewer")
+      })
+    }
+  })
+
+  it.live("says it is live, and refuses a post's reply over Alchemy's RPC to the budget, before any model call", () => effect {
+    const origin = api!.origin
+    const answer = try health(origin).pipe(Effect.provide(FetchHttpClient.layer))
+    provide LiveFactory(origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+      const factory = try Factory
+      const conversation = try room("alchemy")
+      try factory.post(conversation, "a", "Ada", "hi")
+      const events = try Stream.runCollect(factory.events(conversation, 0) |> Stream.takeUntil(%, (event: Event) => event.type === "ReplyFinished" || event.type === "ReplyFailed"))
+      try Effect.try(() => {
+        expect(answer.agent).toBe("live")
+        expect(Array.from(events).at(-1)).toEqual({ type: "ReplyFailed", seq: 3, id: "r1", reason: REASONS.budget })
+      })
+    }
+  })
+})

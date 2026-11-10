@@ -13,5 +13,5 @@
     "allowImportingTsExtensions": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": [".", "../test/worker.test.vibe", "../bench/site.bench.vibe", "../fuzz/site.node.fuzz.vibe"]
+  "include": [".", "../test/worker.test.vibe", "../test/workerd/api.vibe", "../bench/site.bench.vibe", "../fuzz/site.node.fuzz.vibe"]
 }

@@ -6,6 +6,7 @@ import { SecureRandom } from "effect/crypto"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
 import vibelang from "vibelang-unplugin/esbuild"
+import { alchemyWorker } from "./alchemyBundle.vibe"
 import { dumpWorkerdCoverage, instrumentModules } from "./workerdCoverage.ts"
 
 /** esbuild or Miniflare failed to bundle or start a Worker. */
@@ -40,15 +41,17 @@ interface Bundle {
 
 /**
  * The command's measurement of the app's own modules: `BENCH_COVERAGE` for the benchmark gate (0017),
- * `WORKERD_COVERAGE` for the workerd suite's gate (`pnpm test:workerd:coverage`, 0016), otherwise none.
+ * `WORKERD_COVERAGE` for the workerd suite's, the unit and the fuzz gates (0016, 0015), otherwise none.
  */
 effect function configuredMeasure() {
   const bench = try Config.withDefault(Config.Boolean("BENCH_COVERAGE"), false)
   const suite = try Config.withDefault(Config.Boolean("WORKERD_COVERAGE"), false)
   const app = try (try Path.Path).fromFileUrl(new URL("../../", import.meta.url))
   const instrumented = (file: string) => file.startsWith(app) && /^(src|worker|infra|scripts)\/.*\.vibe$/.test(file.slice(app.length))
+  // The unit and fuzz gates name their own dump directory (`WORKERD_COVERAGE_DIR`), beside their Vitest report.
+  const directory = try Config.withDefault(Config.String("WORKERD_COVERAGE_DIR"), "coverage/workerd/workerd-raw")
   const measure: Measure | undefined = bench ? { directory: "coverage/bench/workerd-raw", instrumented }
-    : suite ? { directory: "coverage/workerd/workerd-raw", instrumented }
+    : suite ? { directory, instrumented }
     : undefined
   return measure
 }
@@ -168,6 +171,36 @@ export effect function serveApi(env: Readonly<Record<string, string>> = {}, port
   }
 }
 
+/** The Alchemy-built API Worker's modules and measurement, built once per suite file. */
+let alchemyApi: { readonly modules: Record<string, { readonly type: string; readonly contents: string | Uint8Array }>; readonly measure: Measure | undefined } | undefined
+
+/**
+ * worker/Api.vibe itself behind Alchemy's Worker and Durable Object bridges (test/workerd/api.vibe), built by Alchemy's
+ * own rolldown Worker build as `alchemy dev` builds it, with `env` as its text configuration and each class bound under
+ * its own name, as `alchemy dev` binds them. Its Node tooling graph needs Alchemy's Cloudflare plugins (unenv); the
+ * suite's esbuild host can't bundle it.
+ */
+export effect function serveAlchemyApi(env: Readonly<Record<string, string>> = {}) {
+  provide NodeServices.layer {
+    if (alchemyApi === undefined) {
+      const measure = try configuredMeasure()
+      const main = try (try Path.Path).fromFileUrl(new URL("../workerd/api.vibe", import.meta.url))
+      const built = try tryPromise({ try: () => alchemyWorker(main, measure?.instrumented, { date: "2026-10-01", flags: ["nodejs_compat"] }), catch: (cause) => new WorkerdFailed({ cause }) })
+      alchemyApi = { modules: Object.fromEntries(built.map((module) => [module.name, { type: module.type, contents: module.contents }])), measure }
+    }
+    const classes = ["Conversation", "Budget", "ProjectAccounts", "History", "ActionIndex"]
+    return try listen({
+      name: "alchemy-api", compatibilityDate: "2026-10-01", compatibilityFlags: ["nodejs_compat"],
+      manifest: { mainModule: Object.keys(alchemyApi.modules)[0]!, modules: alchemyApi.modules },
+      env: {
+        ...Object.fromEntries(Object.entries(env).map(([name, value]) => [name, { type: "text", value }])),
+        ...Object.fromEntries(classes.map((name) => [name, { type: "durable-object", worker: "alchemy-api", exportName: name }])),
+      },
+      exports: Object.fromEntries(classes.map((name) => [name, { type: "durable-object", storage: "sqlite" }])),
+    }, 0, alchemyApi.measure)
+  }
+}
+
 /** The site Worker with no API Worker bound: the mock deployment. */
 export effect function serveSite(withAssets = false) {
   provide NodeServices.layer {
@@ -250,6 +283,22 @@ export effect function serveSandboxObjects() {
       env: {
         MACHINE: { type: "durable-object", worker: "bench-sandbox", exportName: "MachineHost" },
         ACCOUNT: { type: "durable-object", worker: "bench-sandbox", exportName: "AccountHost" },
+      },
+      exports: { MachineHost: { type: "durable-object", storage: "sqlite" }, AccountHost: { type: "durable-object", storage: "sqlite" } },
+    }, 0, bundled.measure)
+  }
+}
+
+/** Sandbox objects on real SQLite, with a Container service that fails every operation (0016). */
+export effect function serveSandboxFaultObjects() {
+  provide NodeServices.layer {
+    const bundled = try bundle("../workerd/sandbox-faults.vibe", try configuredMeasure())
+    return try listen({
+      name: "sandbox-faults", compatibilityDate: "2026-10-01", compatibilityFlags: ["nodejs_compat"],
+      manifest: { mainModule: "worker.js", modules: try modulesOf(bundled) },
+      env: {
+        MACHINE: { type: "durable-object", worker: "sandbox-faults", exportName: "MachineHost" },
+        ACCOUNT: { type: "durable-object", worker: "sandbox-faults", exportName: "AccountHost" },
       },
       exports: { MachineHost: { type: "durable-object", storage: "sqlite" }, AccountHost: { type: "durable-object", storage: "sqlite" } },
     }, 0, bundled.measure)
