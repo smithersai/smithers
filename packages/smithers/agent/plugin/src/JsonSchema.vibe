@@ -404,6 +404,8 @@ export const at = (resolved: Resolved, path: ReadonlyArray<string | number>): Re
 }
 
 module $throw$ts {
-export function raise(value: unknown): never { throw value }
+  export function raise(value: unknown): never {
+    throw value
+  }
 }
 import { raise as $raise } from $throw$ts

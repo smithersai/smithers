@@ -39,10 +39,11 @@ const search = make<HostHooks>({
 export const hostAHook = () =>
   Effect.runPromise(
     effect {
-      const kernel = try Kernel.make<HostHooks>([editor, search], { host: { name: "example" } }, {
-        target: "harness",
-        hooks
-      })
+      const kernel = try Kernel.make<HostHooks>(
+        [editor, search],
+        { host: { name: "example" } },
+        { target: "harness", hooks }
+      )
       const tools = try kernel.plugins.waterfall("tools", [], (_previous, next) => next)
       return { config: kernel.config, tools, observerErrors: kernel.observerErrors }
     }

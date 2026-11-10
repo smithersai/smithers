@@ -205,6 +205,8 @@ export const snapshot = (config: unknown): FlowsConfig!PluginError =>
 export const resolve = (config: unknown): ResolvedConfig!PluginError => snapshot(config)
 
 module $throw$ts {
-export function raise(value: unknown): never { throw value }
+  export function raise(value: unknown): never {
+    throw value
+  }
 }
 import { raise as $raise } from $throw$ts

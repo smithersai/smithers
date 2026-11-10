@@ -339,7 +339,9 @@ const flatten = <H>(input: unknown): ReadonlyArray<AdmittedPlugin<H>> => {
       // Every queued frame and array element costs a node, including omitted
       // entries. Refuse before enumerating keys, descriptors, or child frames.
       if (length > maximumPluginInputNodes - nodes - stack.length) {
-        $raise(failure("resource_limit", `plugin input exceeds the ${maximumPluginInputNodes}-node limit`, current.path))
+        $raise(
+          failure("resource_limit", `plugin input exceeds the ${maximumPluginInputNodes}-node limit`, current.path)
+        )
       }
       const keys = Reflect.ownKeys(current.value)
       if (keys.length !== length + 1 || !keys.includes("length")) {
@@ -537,6 +539,8 @@ export const layer = <H>(resolved: Resolved<H>): Layer.Layer<any, PluginError, a
   mergePluginLayers(resolved.plugins, resolved.cacheEnvironment)
 
 module $throw$ts {
-export function raise(value: unknown): never { throw value }
+  export function raise(value: unknown): never {
+    throw value
+  }
 }
 import { raise as $raise } from $throw$ts

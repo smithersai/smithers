@@ -318,8 +318,8 @@
     }
   },
   "scripts": {
-    "lint": "eslint src examples --max-warnings=0 && dprint check",
-    "format": "dprint fmt",
+    "lint": "(eslint src examples --max-warnings=0 && dprint check) && vibelang-format --check",
+    "format": "(dprint fmt) && vibelang-format --write",
     "build": "node scripts/build.mjs",
     "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
     "circular": "node ../../../repo-targets/scripts/circular.mjs",
