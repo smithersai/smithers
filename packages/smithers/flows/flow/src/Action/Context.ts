@@ -10,7 +10,23 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as RpcSerialization from "effect/rpc/RpcSerialization"
+import type * as Schema from "effect/Schema"
 import type { CacheEnvironment } from "./CacheEnvironment.ts"
+
+/**
+ * The prior declaration retained by an explicitly backward-compatible schema
+ * extension. Set this on an action's annotations only when its new decoder
+ * accepts every old result with the same meaning. Cached values still pass
+ * through the current decoder; this changes identity, never validation.
+ * Without it, changing a schema keeps the normal cache-miss behavior.
+ *
+ * @category idempotency
+ * @since 1.0.0
+ */
+export const CacheDeclaration = Context.Reference<{
+  readonly success: Schema.Top
+  readonly error: Schema.Top
+} | undefined>("@smthrs/flow/Action/CacheDeclaration", { defaultValue: () => undefined })
 
 /**
  * Context reference carrying the complete environment folded into reusable

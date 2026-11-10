@@ -18,6 +18,15 @@ environment its results depend on. The program below does all three, and
 
 ## Prerequisites
 
+An additive result-schema migration can explicitly retain an existing action's
+cache identity with `Context.make(Action.CacheDeclaration, { success: priorSuccess,
+error: priorError })` in its `annotations`. Use this only when the current
+decoders accept every prior result with the same meaning, such as adding an
+optional receipt field. The current schemas still encode and decode results;
+the annotation retains only the declaration's contribution to the key. Without
+the annotation, changing either schema remains a cache miss. Keep the original
+declaration in the annotation across later compatible extensions.
+
 Node.js 22.19.0 or later; [Installation](../installation.md) has the details.
 Create a project:
 

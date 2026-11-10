@@ -183,16 +183,19 @@ const declarations: Record<Node.RepresentationIdentityVersion, WeakMap<object, W
  * encoding picks the identity version, so a key written before an `effect`
  * upgrade stays derivable.
  */
-const declarationDigest = Effect.fnUntraced(function*(action: Action.AnyWithProps, encoding: KeyEncoding) {
+const declarationDigest = Effect.fnUntraced(function*(action: Action.AnyWithProps & Pick<Action.Any, "annotations">, encoding: KeyEncoding) {
   const version = identityVersion(encoding)
-  const success = version === 1 ? action.successSchema : action.successSchema.ast
-  const error = version === 1 ? action.errorSchema : action.errorSchema.ast
+  const retained = Context.get(action.annotations, Action.CacheDeclaration)
+  const successSchema = retained?.success ?? action.successSchema
+  const errorSchema = retained?.error ?? action.errorSchema
+  const success = version === 1 ? successSchema : successSchema.ast
+  const error = version === 1 ? errorSchema : errorSchema.ast
   let errors = declarations[version].get(success)
   const cached = errors?.get(error)
   if (cached !== undefined) return cached
   const digest = yield* Schema.decodeUnknownEffect(DerivedKey)({
-    success: Node.representationIdentity(action.successSchema, version),
-    error: Node.representationIdentity(action.errorSchema, version)
+    success: Node.representationIdentity(successSchema, version),
+    error: Node.representationIdentity(errorSchema, version)
   })
   if (errors === undefined) {
     errors = new WeakMap()
