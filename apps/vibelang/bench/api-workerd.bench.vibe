@@ -106,10 +106,10 @@ it("the API Worker's production object bodies answer through workerd", { timeout
           const reply = (await runPromise(factory.read(room, 0))).entries.at(-1)!
           expect(reply.author).toBe("agent")
           // A signed-out guest is a viewer: the history machine refuses its Start, and a draft needs a signed-in owner.
-          const answered = JSON.parse(reply.text) as { readonly outline: boolean; readonly started: unknown; readonly drafted: { readonly ok: boolean; readonly error: { readonly code: string } } }
+          const answered = JSON.parse(reply.text) as { readonly outline: boolean; readonly started: unknown; readonly drafted: { readonly ok: boolean; readonly error: { readonly code: string; readonly message: string } } }
           expect(answered.outline).toBe(true)
           expect(answered.started).toEqual({ id: "", refusal: "forbidden" })
-          expect(answered.drafted).toMatchObject({ ok: false, error: { code: "flow_failed" } })
+          expect(answered.drafted).toMatchObject({ ok: false, error: { code: "flow_failed", message: "Flow vibelang/wiki/draft failed: forbidden" } })
         })
         const historyWrite = workload(bench, "api-objects-history-write", "async", async () => {
           // A signed-out guest is a viewer; the history machine refuses its fold before reaching GitHub.

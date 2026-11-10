@@ -1,0 +1,71 @@
+// A refused tool call tells the agent why (FLOW-5: the agent acts on the reason). Each case runs the actual binding;
+// the unhappy path is a faulty service, never an intercepted request.
+import { expect, it } from "@effect/vitest"
+import { Cell, FlowBinding } from "@smthrs/harness"
+import { Actions } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { actionTools } from "../src/actions/tools.vibe"
+import { Factory, Unavailable } from "../src/core/Factory.vibe"
+import { MockFactory, mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { SandboxStart } from "../src/core/flows.vibe"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
+import { toolRefusal } from "../src/core/toolRefusal.vibe"
+import type { HistoryReader } from "../src/history/tools.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+import { historyTools } from "../worker/HistoryTools.vibe"
+import { toursOf } from "../worker/Objects.vibe"
+import { sandboxTools } from "../worker/SandboxTools.vibe"
+import { wikiTools } from "../worker/WikiTools.vibe"
+import type { Event } from "../src/core/conversation.vibe"
+
+function call(name: string, input: Schema.Json, ordinal = 0): Cell.Call {
+  return new Cell.Call({ flowName: name, input, capabilities: [], effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" }, placement: Option.none(),
+    identity: new Cell.CallIdentity({ session: "refusal", frame: 0, cell: "refusal", ordinal, declaration: name, layers: [] }) })
+}
+effect function bound(source: FlowBinding.Source, name: string) {
+  const bindings = try source.bindings()
+  return bindings.find(binding => binding.descriptor.name === name)!
+}
+effect function tours() {
+  const events = try Ref.make<ReadonlyArray<Event>>([])
+  const sequencer = try Sequencer.make({ read: () => Ref.get(events), write: event => Ref.update(events, log => [...log, event]) }, { start: () => Effect.void, tour: () => Effect.void })
+  try sequencer.post("person", "Guest", "Draft an edit")
+  try sequencer.start("m1")
+  return toursOf(sequencer)
+}
+
+it.live("a refused wiki draft tells the agent its reason", () => scoped(effect {
+  const refused = try bound(wikiTools("r1", try tours(), { draft: () => Effect.fail(new WikiFailure({ reason: "forbidden" })) }), "vibelang/wiki/draft")
+  const result = try refused.run(call("vibelang/wiki/draft", { page: "roadmap", ask: "Add a brick." }))
+  const missing = try refused.run(call("vibelang/wiki/draft", { page: "decisions", ask: "Add a brick." }, 1))
+  try Effect.try(() => {
+    expect([result.outcome, result.code, result.message]).toEqual(["failure", "flow_failed", "Flow vibelang/wiki/draft failed: forbidden"])
+    expect(missing.message).toBe("Flow vibelang/wiki/draft failed: missing")
+  })
+}))
+
+it.live("a refused action, sandbox or history call tells the agent its reason", () => scoped(effect {
+  provide MockActions({ role: "contributor", actor: "agent" }).pipe(Layer.provide(MockFactory)) {
+    const read = try bound(actionTools(try Actions), "vibelang/actions/Read")
+    const action = try read.run(call("vibelang/actions/Read", { id: "a-none" }))
+    try Effect.try(() => expect(action.message).toBe("Flow vibelang/actions/Read failed: not-found"))
+  }
+  provide mockFactoryFor("viewer") {
+    const start = try bound(sandboxTools(try Factory, "chat"), SandboxStart._tag)
+    const sandbox = try start.run(call(SandboxStart._tag, {}))
+    try Effect.try(() => expect(sandbox.message).toBe(`Flow ${SandboxStart._tag} failed: forbidden`))
+  }
+  const down = () => Effect.fail(new Unavailable({ reason: "history answered 503" }))
+  const history = { outline: down, epic: down, commit: down, search: down, plan: down, start: down, note: down } as unknown as HistoryReader
+  const show = try bound(historyTools(history), "vibelang/history/show")
+  const page = try show.run(call("vibelang/history/show", { what: "outline" }))
+  try Effect.try(() => expect(page.message).toBe("Flow vibelang/history/show failed: unavailable"))
+}))
+
+it("only a product refusal code crosses to the agent", () => {
+  expect(toolRefusal(new WikiFailure({ reason: "forbidden" }))).toBe("forbidden")
+  expect(toolRefusal(new Unavailable({ reason: "sandbox answered 500" }))).toBe("unavailable")
+  expect(toolRefusal(new WikiFailure({ reason: "Bearer secret-token" }))).toBeUndefined()
+  expect(toolRefusal(new Error("connect ECONNREFUSED 10.0.0.1"))).toBeUndefined()
+  expect(toolRefusal("forbidden")).toBeUndefined()
+})
