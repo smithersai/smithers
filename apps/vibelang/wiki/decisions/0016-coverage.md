@@ -1145,3 +1145,36 @@ What changed so these run anywhere:
   now reads the mark (`inventory_test.cjs`): 79 rows read proved, and "Not yet proved" rows fall from 1017 to 958.
 
 <!-- gatefix-measured -->
+
+
+### Audit claim reconciliation
+
+The audit's fourteen claims are reconciled as follows. Historical receipts retain their original revision; none is
+presented as a current-main 100% result. Corrections from the proof, test-quality and workerd lanes are preserved.
+
+| Claim audited | Current statement and evidence |
+| --- | --- |
+| Workerd execution remains uncredited | `pnpm test:workerd:coverage` uses 0017's per-module Istanbul counters; precise V8 coverage is still unavailable. |
+| `worker/Api.vibe` must wait for a VibeLang release and precise workerd coverage | The table above now identifies the Alchemy entry/fixture boundary. Instrumentation exists; loading the appropriate production class bodies is suite work. |
+| Every suite already counts every production source | The fuzz roster now matches `src/`, `worker/`, `scripts/`, `infra/`, including `worker/Api.vibe`; previous totals used smaller rosters. |
+| Sandbox decision proves accrued minutes | 0018 distinguishes the decision's zero-elapsed call site from the actual meter; its separate meter contracts remain proof-lane work. |
+| Marked `decide` is “Not yet proved” | Inventory status reads each function's `//@ verify`; the proof gate checks the marked modules. Custom notes describe scope, not discovery. |
+| Every rejected mutation proves a postcondition in its function | 0018 explicitly includes a callee's failed precondition at a call in that function, and says generated-mutant rejection does not prove contract completeness. |
+| Roadmap 1d has 17 modules / 962 mutations | Updated to the audit's dated 33 / 1601 receipt; current-run counts are reported separately below. |
+| Production `/history` returns 404 | Rulings-status VL-3 records the audit's 200 response on 2026-11-10 and the deployed revision, which still predates main. |
+| Sign-in has not landed, so every live caller is a viewer | 0020 restricts that statement to the older deployment; main derives history's principal from the session role. |
+| No GitHub happy-path doubles exist | 0016 and 0017 name the existing protocol doubles and the unresolved ruling; this tooling change adds none and grants no exception. |
+| The stored approval time is always present | 0015 and 0016 now record the tested mapping: preserve `approvedAt` only when stored; the old `approvedAt!` wrote an invalid undefined field. |
+| Every benchmark passes on available machines | 0017 distinguishes the idle-host receipt, the audit's build-limit failure and these off-checkout measurements. |
+| Roadmap benchmark coverage remains 82.82% / 95 files below | Updated to the lane's last 90.52% / 100-file receipt and the audit's 109-of-159 result without Chromium; all are dated evidence. |
+| Designs only live in the host's handoff directory and the index lists two | `wiki/designs/index.md` lists all nine repository handoffs and their implementation decisions; VL-29 links there. |
+
+The instrumented single-execution profile on an idle 4-vCPU box passed 201 checks and retained 200 target receipts,
+all with at least one execution. The slowest fresh walks were `api-objects/world` (26.153 s) and
+`issues/steered-host` (24.834 s, including one replay). `actions/object-lifecycles` took 8.195 s including one replay;
+CLI and MCP argument targets took 5.521 s and 5.623 s. These support the explicit per-target floors above.
+This is timing evidence for setup budgets, not a replacement for the ordinary multi-execution coverage command.
+
+The proof harness also used `--cores 8` for assertion-isolated positive modules even when `run-heavy` requested two
+cores. It now passes at most two (`verify/harness_test.py` checks the actual invocation receipt and the configured
+command before starting a solver). Proof obligations, solver limits and the mutation rejection rules are unchanged.

@@ -4168,3 +4168,15 @@ Mutations: 19 in `seedDecision.vibe`.
 `sandboxDecision.vibe` proves `meterDelay`, which `meterDelayMilliseconds` in `sandboxMeter.vibe` now calls with the one-minute interval. Its contract: the delay is at least 1 ms and at most the interval; below the interval it is at least `remaining / share` and one less is below it, where `share` is the running count or 1 when none runs. So the next meter falls on the first whole millisecond at which running × elapsed reaches the remaining allowance, and a running sandbox never goes a whole interval unmetered.
 
 The contract states the bound as a quotient, not as `\result * share >= remaining`. The two are equivalent for `share >= 1`, but Dafny's default solver settings leave nonlinear arithmetic off, and the gate keeps one setting for every module. Mutations: 4.
+
+
+## Portable gate tooling (vl-gatefix, 2026-11-10)
+
+The inventory now discovers `//@ verify` per function rather than requiring a manually maintained module note.
+This fixes the stale “Not yet proved” rows for `decide` and other already marked functions; custom notes still state
+the scope of their contracts. `verify/lsc_fresh.py` repairs copied or absolute lsc links to a relative workspace link
+before compilation, so a packed tree uses the vendored LemmaScript and resolves its own dependencies.
+Assertion-isolated positive proofs now use at most two Dafny cores, matching the lane rule and 4-vCPU box budget.
+One-command proof and mutation invocations, the required Node version and the audit claim corrections are in
+[0016, Measuring every gate](0016-coverage.md#measuring-every-gate-lane-vl-gatefix-2026-11-10).
+A green marked-module gate remains distinct from proving all functionality.

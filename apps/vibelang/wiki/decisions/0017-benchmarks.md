@@ -333,3 +333,10 @@ Chromium evidence; on a box, `bench/artifact.vibe` also refused every artifact b
 checkout. The web-server limit is now `E2E_SERVER_SECONDS` (default 600 s, and the local global deadline grows with
 it), and the artifact takes `BENCH_REVISION` where there is no checkout. The command for a box is in 0016,
 "Measuring every gate".
+
+
+The parent benchmark's timeout now includes `E2E_SERVER_SECONDS` too. The browser suite gained a ninth workload;
+its parent checks for executed passing workloads instead of requiring the stale text “8 passed”. A separate fixture
+bug made the first-visit tour workload fail: the shared init script marked every navigation as returning, overriding
+the workload's `bench:first-visit` session flag. The shared script now honors that flag, so the existing automatic-tour
+assertion exercises an actual first visit. No application tour behavior changed.

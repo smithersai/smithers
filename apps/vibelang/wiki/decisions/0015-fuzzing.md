@@ -616,3 +616,11 @@ query read from the wrong parameter (`history/wire-paths`), and GitHub's slow-do
 - `pnpm fuzz` checks the flow's dependencies first (`scripts/fuzz-preflight.vibe`); install them with
   `--filter "@smithers/release-workflows..."` beside the app's filter. The browser stage's web-server limit is
   `E2E_SERVER_SECONDS` (default 600 s). Commands per gate: 0016, "Measuring every gate".
+
+
+The coverage profile retained 200 target receipts for 201 passing checks on an idle 4-vCPU box; none recorded zero
+executions. `issues/steered-host` took 24.834 s including replay and `api-objects/world` 26.153 s, so their 60 s floors
+cover setup and exploration. Action lifecycle replay takes a 60 s floor; conversation-host and conversation-storage
+targets take 30 s. Workerd setup hooks allow 600 s, and API-world operations stay bounded at 20 s. These are tooling
+budgets, not coverage thresholds: zero executions and every below-100% file still fail. Full commands and the required
+Node >= 26.4 box image are in [0016](0016-coverage.md#measuring-every-gate-lane-vl-gatefix-2026-11-10).
