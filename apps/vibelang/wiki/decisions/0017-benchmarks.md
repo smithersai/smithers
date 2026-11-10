@@ -286,3 +286,13 @@ loads (`bench/baseline.json` `startupModules`, the same 5% tolerance), because w
 with load. It also requires that only sign-in loads the durable Node host. Lazy sign-in imports cut `--help` from 1,462
 to 864 modules and its median from 3,082 to 1,810 ms (interleaved, same load). Method and limitations are in the
 benchmark wiki.
+
+**Broker sign-in and account history (2026-11-10, lane vl-bench2).** `bench/accounts-broker.bench.vibe` runs
+smithers.sh's broker and the site's Accounts object in workerd (`test/workerd/authbroker.vibe`), so the broker
+sign-in, Connect GitHub with its return parameters, Disconnect and their refusals no longer wait for a GitHub
+credential: GitHub is the host's injected token service, the same seam as web sign-in. `serveAuthBroker` now passes
+the bundle's coverage flag, as the other workerd hosts do. `bench/accounts-history.bench.vibe` measures one account
+step after 10 and 150 earlier ones (226 against 429 ms): every step opens a journal that decodes up to 4,096 recent
+events. `462049cc` gave Accounts' steps `EXECUTION_RETENTION`, the one-day retention every other object already used,
+which bounds that history to a day's steps; `test/accountsRetention.test.vibe` pins it.
+

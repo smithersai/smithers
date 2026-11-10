@@ -1,0 +1,35 @@
+// @vitest-environment node
+// One journaled account step (sign-out without a session) after 10 and after 150 earlier steps on the same Accounts
+// object. Each step builds its own engine runtime, whose journal decodes up to 4,096 recent events as it opens, so
+// a step costs more as the day's history grows; retention forgets steps a day after they settle (EXECUTION_RETENTION).
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { github, offline, post, serve, setupWith } from "../test/support/accountsWorld.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const lengths = [10, 150]
+
+it("one account step after 10 and 150 earlier steps", async ({ bench }) => {
+  const results: Array<unknown> = []
+  for (const length of lengths) {
+    await runPromise(scoped(effect {
+      provide NodeHttpServer.layerTest {
+        const { origin, storage } = try serve(setupWith(github([{ id: 7, login: "ada" }]), "7")).pipe(Effect.provideService(HttpClient.HttpClient, offline))
+        const runs = () => storage.sql.exec("SELECT run_id FROM flows_runs").toArray().length
+        provide FetchHttpClient.layer {
+          const http = try HttpClient.HttpClient
+          const step = effect { return (try http.execute(post(origin, "/api/auth/sign-out", {}))).status }
+          for (let n = 0; n < length; n++) try step
+          const result = try Effect.try(() => workload(bench, `accounts-step-after-${length}`, "async", async () => {
+            const before = runs()
+            expect(await runPromise(step)).toBe(204)
+            expect(runs()).toBe(before + 1)
+          }))
+          results.push({ length, result: try tryPromise(() => result.run(slow)) })
+        }
+      }
+    }))
+  }
+  await runPromise(artifact("accounts-step-history", "Vitest built-in bench; the Accounts object on a real loopback server over in-memory object storage (node:sqlite). A fresh object per history length; 10 or 150 untimed sign-out steps first, then three timed sign-out steps without a session, each a journaled vibelang/Account execution with its own engine runtime. Checks status 204 and exactly one new engine run per step.", ["node:sqlite in memory, not Durable Object SQLite; the fixture prepares each statement on every call.", "All steps fall within one day, so retention deletes nothing here; test/accountsRetention.test.vibe covers retention.", "Wall time on shared nyc-01 is observational, not gated."], results))
+})

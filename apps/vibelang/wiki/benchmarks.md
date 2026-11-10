@@ -3309,6 +3309,47 @@ Vitest built-in bench, local. The Accounts object on a real loopback server over
 
 Limitations: GitHub is an injected service, so there is no network or GitHub latency; storage is in memory, not Durable Object SQLite. Issue and wiki routes are excluded because their GitHub steps retry an unreachable GitHub (0017).
 
+## Broker sign-in and Connect GitHub (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/accounts-broker.bench.vibe`. Load average about 110 on 32 cores during the run.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| accounts-broker-connect | 7,580.2 | 3 | `2026-11-10T09-55-12.100Z-accounts-broker-connect.json` |
+| accounts-connect-refused | 1,341.1 | 5 | `2026-11-10T09-55-23.659Z-accounts-connect-refused.json` |
+
+**accounts-broker-connect.** smithers.sh's broker, the site's Accounts object and the person's connection object in
+local workerd on durable SQLite (`test/workerd/authbroker.vibe`), one host for all samples. Each sample signs in
+through the broker, reads the session, the handoff page, an unknown route and a malformed callback, checks five
+Connect and Disconnect refusals, connects GitHub with a wiki page to return to, disconnects, connects with an issue to
+resume, and disconnects. Statuses, return locations, the person's identity and the connection object's revocations
+are checked.
+
+**accounts-connect-refused.** The Accounts object on a loopback server over in-memory storage: an agent's device
+session presses Connect (403), a person on a site with no broker presses Connect (503), then disconnects (303).
+
+Limitations: GitHub is the host's injected token service, so there is no GitHub request or latency. No issue or wiki
+request is made. Broker and site share one workerd process over loopback.
+
+## Account step cost by history (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/accounts-history.bench.vibe`. Load average about 116.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| accounts-step-after-10 | 226.2 | 3 | `2026-11-10T09-42-10.744Z-accounts-step-history.json` |
+| accounts-step-after-150 | 429.1 | 3 | same |
+
+One journaled account step (sign-out without a session) after 10 or 150 earlier steps on a fresh Accounts object.
+Each step builds its own engine runtime, and the journal decodes up to 4,096 recent events, with two canonical
+fingerprints each, as it opens (`SqlJournal`, `sourceEventCache`). A CPU profile of 30 steps after 270 earlier ones
+put 5.3 s in `encodeFingerprint`, against 0.5 s for the first 30. Since `462049cc` Accounts forgets settled steps a
+day after they finish (`EXECUTION_RETENTION`; regression test `test/accountsRetention.test.vibe`), which bounds the
+history to one day's steps; the per-open decode itself is a `@smthrs/journal` cost and is not changed here.
+
+Limitations: node:sqlite in memory, and the fixture prepares every statement on each call; all steps fall within one
+day, so retention deletes nothing in this benchmark; wall time is observational.
+
 ## CLI startup (2026-11-10, nyc-01)
 
 Vitest built-in bench, local, `bench/cli-startup.bench.vibe`. Five emitted CLI processes per command, no warmup, each
