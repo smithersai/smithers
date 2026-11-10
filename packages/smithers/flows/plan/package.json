@@ -86,8 +86,8 @@
     },
     "./Migrations": null,
     "./Plan": {
-      "types": "./src/Plan.ts",
-      "vibelang-source": "./src/Plan.ts",
+      "types": "./.vibe/declarations/src/Plan.d.vibe.ts",
+      "vibelang-source": "./src/Plan.vibe",
       "default": "./.vibelang/js/src/Plan.js"
     },
     "./Placement": {

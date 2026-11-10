@@ -18,7 +18,7 @@
  */
 
 import * as KeyMaterial from "../KeyMaterial.vibe"
-import * as Plan from "../Plan.ts"
+import * as Plan from "../Plan.vibe"
 
 /**
  * A hard-boundary effect declaration over plain path lists.

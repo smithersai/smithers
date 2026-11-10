@@ -67,7 +67,7 @@ export * as Node from "./Node.ts"
  * @category models
  * @slop
  */
-export * as Plan from "./Plan.ts"
+export * as Plan from "./Plan.vibe"
 
 /**
  * @since 0.1.0

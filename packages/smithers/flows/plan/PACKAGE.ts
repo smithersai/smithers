@@ -78,7 +78,7 @@ const securityReview = Smithers.SecurityReview({
         "isVerified or the frozenPlans fast path accepting an object not produced by the compiler.",
         "prefixDigest or generation checks that let an append rewrite an earlier generation's nodes."
       ],
-      paths: ["src/Plan.ts", "src/PlanDiff.ts"]
+      paths: ["src/Plan.vibe", "src/PlanDiff.ts"]
     },
     {
       id: "declared-path-confinement",
@@ -106,7 +106,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/FileSet.vibe",
-        "src/internal/EffectCandidates.ts",
+        "src/internal/EffectCandidates.vibe",
         "src/internal/ConflictAnnotation.ts",
         "src/Effects.vibe",
         "src/internal/effects.ts"

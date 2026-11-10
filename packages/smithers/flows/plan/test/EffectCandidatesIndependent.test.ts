@@ -2,8 +2,8 @@
 import { Effect } from "effect"
 import { expect, it, vi } from "vitest"
 import * as FileSet from "../src/FileSet.vibe"
-import * as Candidates from "../src/internal/EffectCandidates.ts"
-import * as Plan from "../src/Plan.ts"
+import * as Candidates from "../src/internal/EffectCandidates.vibe"
+import * as Plan from "../src/Plan.vibe"
 import { compile, draft } from "../src/test/PlanFixtures.ts"
 import { withCrypto } from "./Crypto.ts"
 

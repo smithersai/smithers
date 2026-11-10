@@ -25,7 +25,7 @@ import * as Schema from "effect/Schema"
 import * as Effects from "./Effects.vibe"
 import * as FileSet from "./FileSet.vibe"
 import { GraphBuildError } from "./GraphBuildError.vibe"
-import * as Conflicts from "./internal/ConflictAnnotation.ts"
+import * as Conflicts from "./internal/ConflictAnnotation.vibe"
 import { jsonMirror } from "./internal/JsonMirror.ts"
 import * as KeyMaterial from "./KeyMaterial.vibe"
 import * as StepKey from "./StepKey.vibe"
@@ -349,7 +349,7 @@ const annotate = (
   nodes: ReadonlyArray<PlanNode>,
   frozen: ReadonlySet<string>,
   replayGenerations = false
-): Effect.Effect<ReadonlyArray<PlanNode>, PlanError> =>
+): ReadonlyArray<PlanNode>!PlanError =>
   Conflicts.annotate(nodes, frozen.size, replayGenerations).pipe(
     Effect.mapError((refusal) => new PlanError(refusal)),
     Effect.map(({ conflicts, ordering }) =>
@@ -405,7 +405,7 @@ const digestOf = (
   planId: string,
   flow: string,
   nodes: ReadonlyArray<PlanNode>
-): Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest> =>
+): StepKey.StepKey!(StepKey.KeyMaterialError | Schema.SchemaError)!EffectDigest.Digest =>
   StepKey.content(approvalPayload(planId, flow, nodes))
 
 /** @private */
@@ -518,55 +518,45 @@ const freezePlan = (plan: Plan): Plan => {
  */
 const validateDrafts = (
   drafts: ReadonlyArray<NodeDraft>
-): Effect.Effect<ReadonlyArray<NodeDraft>, PlanError> =>
+): ReadonlyArray<NodeDraft>!PlanError =>
   Effect.forEach(drafts, (draft) =>
-    Effect.gen(function*() {
+    effect {
       if (typeof draft.id !== "string" || draft.id.length === 0) {
-        return yield* Effect.fail(
-          new PlanError({
-            code: "invalid_node",
-            message: `Node id must be a non-empty string, received ${describeValue(draft.id)}`
-          })
-        )
+        throw new PlanError({
+          code: "invalid_node",
+          message: `Node id must be a non-empty string, received ${describeValue(draft.id)}`
+        })
       }
       const nodeId = describeNodeId(draft.id)
       if (draft.priority !== undefined && !Number.isSafeInteger(draft.priority)) {
-        return yield* Effect.fail(
-          new PlanError({
-            code: "invalid_node",
-            message: `Node ${nodeId} priority must be a safe integer, received ${describeValue(draft.priority)}`
-          })
-        )
+        throw new PlanError({
+          code: "invalid_node",
+          message: `Node ${nodeId} priority must be a safe integer, received ${describeValue(draft.priority)}`
+        })
       }
       if (draft.kind !== undefined && !Schema.is(NodeKind)(draft.kind)) {
-        return yield* Effect.fail(
-          new PlanError({
-            code: "invalid_node",
-            message: `Node ${nodeId} kind must be step, agent, or merge, received ${describeValue(draft.kind)}`
-          })
-        )
+        throw new PlanError({
+          code: "invalid_node",
+          message: `Node ${nodeId} kind must be step, agent, or merge, received ${describeValue(draft.kind)}`
+        })
       }
       if (draft.conflictStrategy !== undefined && !Schema.is(PairStrategy)(draft.conflictStrategy)) {
-        return yield* Effect.fail(
-          new PlanError({
-            code: "invalid_node",
-            message: `Node ${nodeId} conflictStrategy must be serialize, lane, or fail, received ${
-              describeValue(draft.conflictStrategy)
-            }`
-          })
-        )
+        throw new PlanError({
+          code: "invalid_node",
+          message: `Node ${nodeId} conflictStrategy must be serialize, lane, or fail, received ${
+            describeValue(draft.conflictStrategy)
+          }`
+        })
       }
       if (draft.runtimeStrategy !== undefined && !Schema.is(RuntimeStrategy)(draft.runtimeStrategy)) {
-        return yield* Effect.fail(
-          new PlanError({
-            code: "invalid_node",
-            message: `Node ${nodeId} runtimeStrategy must be delay-rebase or stop-merge, received ${
-              describeValue(draft.runtimeStrategy)
-            }`
-          })
-        )
+        throw new PlanError({
+          code: "invalid_node",
+          message: `Node ${nodeId} runtimeStrategy must be delay-rebase or stop-merge, received ${
+            describeValue(draft.runtimeStrategy)
+          }`
+        })
       }
-      const decodedMaterial = yield* Schema.decodeUnknownEffect(KeyMaterial.KeyMaterial)(draft.material).pipe(
+      const decodedMaterial = try Schema.decodeUnknownEffect(KeyMaterial.KeyMaterial)(draft.material).pipe(
         Effect.mapError((cause) =>
           new PlanError({
             code: "invalid_node",
@@ -574,7 +564,7 @@ const validateDrafts = (
           })
         )
       )
-      const decodedEffects = yield* Schema.decodeUnknownEffect(NodeEffects)(draft.effects).pipe(
+      const decodedEffects = try Schema.decodeUnknownEffect(NodeEffects)(draft.effects).pipe(
         Effect.mapError((cause) =>
           new PlanError({
             code: "invalid_node",
@@ -582,26 +572,25 @@ const validateDrafts = (
           })
         )
       )
-      let material: KeyMaterial.KeyMaterial
-      try {
-        material = snapshot(
-          jsonMirror({ ...decodedMaterial, effects: decodedEffects }, (planned) => planned) as KeyMaterial.KeyMaterial
-        )
-      } catch (cause) {
-        const path = cause instanceof GraphBuildError ? cause.path : []
-        return yield* Effect.fail(
-          new PlanError({
+      const material = try Effect.try({
+        try: () =>
+          snapshot(
+            jsonMirror({ ...decodedMaterial, effects: decodedEffects }, (planned) => planned) as KeyMaterial.KeyMaterial
+          ),
+        catch: (cause) => {
+          const path = cause instanceof GraphBuildError ? cause.path : []
+          return new PlanError({
             code: "invalid_node",
             message: `Node ${nodeId} has invalid material payload at ${["$", ...path].join(".")}`
           })
-        )
-      }
+        }
+      })
       return Object.freeze({
         ...draft,
         material,
         effects: material.effects as NodeEffects
       })
-    }))
+    })
 
 /**
  * The effects schema admits each individual declaration in `validateDrafts`.
@@ -629,12 +618,8 @@ const keyNodes = (
   drafts: ReadonlyArray<NodeDraft>,
   existing: ReadonlyArray<PlanNode>,
   generation: number
-): Effect.Effect<
-  ReadonlyArray<PlanNode>,
-  PlanError | StepKey.KeyMaterialError | Schema.SchemaError,
-  EffectDigest.Digest
-> =>
-  Effect.gen(function*() {
+): ReadonlyArray<PlanNode>!(PlanError | StepKey.KeyMaterialError | Schema.SchemaError)!EffectDigest.Digest =>
+  effect {
     const digests: Record<string, string> = Object.create(null) as Record<string, string>
     const known = new Set<string>()
     for (const node of existing) {
@@ -648,19 +633,20 @@ const keyNodes = (
     }
     for (const draft of drafts) {
       if (known.has(draft.id)) {
-        return yield* Effect.fail(
-          new PlanError({ code: "duplicate_node", message: `Node ${describeNodeId(draft.id)} is already in the plan` })
-        )
+        throw new PlanError({
+          code: "duplicate_node",
+          message: `Node ${describeNodeId(draft.id)} is already in the plan`
+        })
       }
       known.add(draft.id)
     }
     const sorted = topological(drafts, new Set(existing.map((node) => node.id)))
-    if (!sorted.ok) return yield* Effect.fail(sorted.error)
+    if (!sorted.ok) throw sorted.error
     const keyed: Array<PlanNode> = []
     for (const draft of sorted.drafts) {
       const invalid = validateEffects(draft.id, draft.effects)
-      if (invalid !== undefined) return yield* Effect.fail(invalid)
-      const key = yield* StepKey.planIdentity(draft.material, digests)
+      if (invalid !== undefined) throw invalid
+      const key = try StepKey.planIdentity(draft.material, digests)
       Object.defineProperty(digests, draft.id, {
         configurable: true,
         enumerable: true,
@@ -682,7 +668,7 @@ const keyNodes = (
       }))
     }
     return keyed
-  })
+  }
 
 /**
  * Compiles drafts into a plan: material-dependency order, dependency-digest
@@ -708,16 +694,16 @@ export const compile = (options: {
   readonly planId: string
   readonly flow: string
   readonly nodes: ReadonlyArray<NodeDraft>
-}): Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest> => {
+}): Plan!(PlanError | StepKey.KeyMaterialError | Schema.SchemaError)!EffectDigest.Digest => {
   const captured = snapshot(options)
-  return Effect.gen(function*() {
+  return effect {
     const invalidIdentity = validateIdentity(captured.planId, captured.flow)
-    if (invalidIdentity !== undefined) return yield* Effect.fail(invalidIdentity)
-    if (captured.nodes.length > maximumPlanNodes) return yield* Effect.fail(graphSizeError(captured.nodes.length))
-    const drafts = yield* validateDrafts(captured.nodes)
-    const keyed = yield* keyNodes(drafts, [], 0)
-    const nodes = yield* annotate(keyed, new Set())
-    const digest = yield* digestOf(captured.planId, captured.flow, nodes)
+    if (invalidIdentity !== undefined) throw invalidIdentity
+    if (captured.nodes.length > maximumPlanNodes) throw graphSizeError(captured.nodes.length)
+    const drafts = try validateDrafts(captured.nodes)
+    const keyed = try keyNodes(drafts, [], 0)
+    const nodes = try annotate(keyed, new Set())
+    const digest = try digestOf(captured.planId, captured.flow, nodes)
     return freezePlan({
       planId: captured.planId,
       flow: captured.flow,
@@ -726,7 +712,7 @@ export const compile = (options: {
       digest,
       nodes
     })
-  })
+  }
 }
 
 /**
@@ -753,33 +739,31 @@ export const compile = (options: {
 export const append = (
   plan: Plan,
   drafts: ReadonlyArray<NodeDraft>
-): Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest> => {
+): Plan!(PlanError | StepKey.KeyMaterialError | Schema.SchemaError)!EffectDigest.Digest => {
   const candidate = frozenPlans.has(plan) ? plan : snapshot(plan)
   const capturedDrafts = snapshot(drafts)
-  return Effect.gen(function*() {
+  return effect {
     const invalidIdentity = validateIdentity(candidate.planId, candidate.flow)
-    if (invalidIdentity !== undefined) return yield* Effect.fail(invalidIdentity)
-    const capturedPlan = yield* verify(candidate)
+    if (invalidIdentity !== undefined) throw invalidIdentity
+    const capturedPlan = try verify(candidate)
     const nextSize = capturedPlan.nodes.length + capturedDrafts.length
-    if (nextSize > maximumPlanNodes) return yield* Effect.fail(graphSizeError(nextSize))
-    const validated = yield* validateDrafts(capturedDrafts)
+    if (nextSize > maximumPlanNodes) throw graphSizeError(nextSize)
+    const validated = try validateDrafts(capturedDrafts)
     if (validated.length === 0) {
-      return yield* Effect.fail(
-        new PlanError({
-          code: "invalid_node",
-          message: `Plan ${capturedPlan.planId} append requires at least one draft`
-        })
-      )
+      throw new PlanError({
+        code: "invalid_node",
+        message: `Plan ${capturedPlan.planId} append requires at least one draft`
+      })
     }
     const generation = capturedPlan.generation + 1
-    const keyed = yield* keyNodes(validated, capturedPlan.nodes, generation)
-    const nodes = yield* annotate(
+    const keyed = try keyNodes(validated, capturedPlan.nodes, generation)
+    const nodes = try annotate(
       [...capturedPlan.nodes, ...keyed],
       new Set(capturedPlan.nodes.map((node) => node.id))
     )
-    const digest = yield* digestOf(capturedPlan.planId, capturedPlan.flow, nodes)
+    const digest = try digestOf(capturedPlan.planId, capturedPlan.flow, nodes)
     return freezePlan({ ...capturedPlan, generation, digest, nodes })
-  })
+  }
 }
 
 /**
@@ -797,43 +781,41 @@ export const append = (
  */
 export const verify = (
   input: unknown
-): Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest> =>
-  Effect.gen(function*() {
+): Plan!(PlanError | StepKey.KeyMaterialError | Schema.SchemaError)!EffectDigest.Digest =>
+  effect {
     if (typeof input === "object" && input !== null && frozenPlans.has(input as Plan)) return input as Plan
     // Check the array ceiling before schema decoding copies its members.
     if (typeof input === "object" && input !== null && "nodes" in input && Array.isArray(input.nodes)) {
-      if (input.nodes.length > maximumPlanNodes) return yield* Effect.fail(graphSizeError(input.nodes.length))
+      if (input.nodes.length > maximumPlanNodes) throw graphSizeError(input.nodes.length)
     }
-    const decoded = yield* Schema.decodeUnknownEffect(Plan)(input)
+    const decoded = try Schema.decodeUnknownEffect(Plan)(input)
     const invalid = (message: string) => new PlanError({ code: "invalid_plan", message })
     if (
       !Number.isSafeInteger(decoded.generation) || decoded.generation < 0 || decoded.generation > decoded.nodes.length
     ) {
-      return yield* Effect.fail(
-        invalid("Plan generation must be a non-negative safe integer with a nonempty appended generation")
-      )
+      throw invalid("Plan generation must be a non-negative safe integer with a nonempty appended generation")
     }
     const generations = new Map<string, number>()
     let previous = 0
     for (const node of decoded.nodes) {
       if (!Number.isSafeInteger(node.generation) || node.generation < previous || node.generation > previous + 1) {
-        return yield* Effect.fail(invalid(`Node ${describeNodeId(node.id)} has an invalid or out-of-order generation`))
+        throw invalid(`Node ${describeNodeId(node.id)} has an invalid or out-of-order generation`)
       }
       generations.set(node.id, node.generation)
       previous = node.generation
     }
     if (previous !== decoded.generation) {
-      return yield* Effect.fail(invalid("Plan generation does not match its newest nodes"))
+      throw invalid("Plan generation does not match its newest nodes")
     }
     for (const node of decoded.nodes) {
       for (const dependency of KeyMaterial.dependencies(node.material)) {
         const generation = generations.get(dependency)
         if (generation !== undefined && generation > node.generation) {
-          return yield* Effect.fail(invalid(`Node ${describeNodeId(node.id)} refers to a future generation`))
+          throw invalid(`Node ${describeNodeId(node.id)} refers to a future generation`)
         }
       }
     }
-    const drafts = yield* validateDrafts(decoded.nodes.map((node) => ({
+    const drafts = try validateDrafts(decoded.nodes.map((node) => ({
       id: node.id,
       kind: node.kind,
       material: node.material,
@@ -842,27 +824,25 @@ export const verify = (
       runtimeStrategy: node.runtime,
       priority: node.priority
     })))
-    const keyed = (yield* keyNodes(drafts, [], 0)).map((node) =>
+    const keyed = (try keyNodes(drafts, [], 0)).map((node) =>
       freezeNode({ ...node, generation: generations.get(node.id)! })
     )
     // Replay boundaries within one annotation pass, retaining its expansion
     // map, candidate trie, inferred graph and reachability cache throughout.
-    const nodes = yield* annotate(keyed, new Set(), true)
-    const baseDigest = yield* digestOf(decoded.planId, decoded.flow, nodes.filter((node) => node.generation === 0))
-    const digest = decoded.generation === 0 ? baseDigest : yield* digestOf(decoded.planId, decoded.flow, nodes)
+    const nodes = try annotate(keyed, new Set(), true)
+    const baseDigest = try digestOf(decoded.planId, decoded.flow, nodes.filter((node) => node.generation === 0))
+    const digest = decoded.generation === 0 ? baseDigest : try digestOf(decoded.planId, decoded.flow, nodes)
     if (decoded.baseDigest !== baseDigest || decoded.digest !== digest) {
-      return yield* Effect.fail(invalid("Plan approval digest does not match its compiled content"))
+      throw invalid("Plan approval digest does not match its compiled content")
     }
     // Compare the complete node contract, including material and generation,
     // rather than trusting the claimed keys or the approval projection alone.
     const hash = Schema.decodeUnknownEffect(DerivedKey)
-    if ((yield* hash(decoded.nodes)) !== (yield* hash(nodes))) {
-      return yield* Effect.fail(
-        invalid("Plan nodes do not match their compiled keys, effects, ordering, or generations")
-      )
+    if ((try hash(decoded.nodes)) !== (try hash(nodes))) {
+      throw invalid("Plan nodes do not match their compiled keys, effects, ordering, or generations")
     }
     return freezePlan({ ...decoded, nodes })
-  })
+  }
 
 /**
  * The nodes added by the newest generation: what {@link module:PlanStore}
@@ -872,7 +852,6 @@ export const verify = (
  * @returns The nodes whose generation equals `plan.generation`, in order.
  * @since 0.1.0
  * @category accessors
- * @throws {never}
  */
 export const generationNodes = (plan: Plan): ReadonlyArray<PlanNode> =>
   plan.nodes.filter((node) => node.generation === plan.generation)
@@ -910,7 +889,6 @@ export const writerFences = (nodes: ReadonlyArray<PlanNode>): ReadonlyMap<string
  * {@link append}, or {@link verify}; a structurally equal copy returns `false`.
  * @since 1.0.0
  * @category guards
- * @throws {never}
  */
 export const isVerified = (input: unknown): input is Plan =>
   typeof input === "object" && input !== null && frozenPlans.has(input as Plan)
@@ -932,5 +910,5 @@ export const isVerified = (input: unknown): input is Plan =>
  */
 export const prefixDigest = (
   plan: Plan
-): Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest> =>
+): StepKey.StepKey!(StepKey.KeyMaterialError | Schema.SchemaError)!EffectDigest.Digest =>
   digestOf(plan.planId, plan.flow, plan.nodes.filter((node) => node.generation < plan.generation))

@@ -1,7 +1,7 @@
 import { expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Node from "../src/Node.ts"
-import * as Plan from "../src/Plan.ts"
+import * as Plan from "../src/Plan.vibe"
 import * as PlanDiff from "../src/PlanDiff.ts"
 import { compile, draft } from "../src/test/PlanFixtures.ts"
 import { withCrypto, withCryptoFailure } from "./Crypto.ts"

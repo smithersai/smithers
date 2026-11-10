@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import * as KeyMaterial from "../src/KeyMaterial.vibe"
-import * as Plan from "../src/Plan.ts"
+import * as Plan from "../src/Plan.vibe"
 import * as StepKey from "../src/StepKey.vibe"
 import { withCrypto } from "./Crypto.ts"
 

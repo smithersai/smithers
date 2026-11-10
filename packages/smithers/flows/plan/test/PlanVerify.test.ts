@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import * as Plan from "../src/Plan.ts"
+import * as Plan from "../src/Plan.vibe"
 import { compile, draft } from "../src/test/PlanFixtures.ts"
 import { withCrypto } from "./Crypto.ts"
 

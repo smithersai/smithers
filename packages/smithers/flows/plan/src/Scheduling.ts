@@ -8,7 +8,7 @@
  * @since 1.0.0
  */
 
-import type * as Plan from "./Plan.ts"
+import type * as Plan from "./Plan.vibe"
 
 /**
  * Admission limits, independent of graph width and provider capacity.

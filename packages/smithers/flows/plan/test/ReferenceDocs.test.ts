@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as GraphBuildError from "../src/GraphBuildError.vibe"
-import * as Plan from "../src/Plan.ts"
+import * as Plan from "../src/Plan.vibe"
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8")
 const api = read("../docs/api.md")

@@ -15,7 +15,7 @@
  */
 
 import { jsonMirror } from "./internal/JsonMirror.ts"
-import type * as Plan from "./Plan.ts"
+import type * as Plan from "./Plan.vibe"
 import type * as Planned from "./Planned.vibe"
 
 /**

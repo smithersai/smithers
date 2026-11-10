@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect"
 import { readFileSync } from "node:fs"
 import { runInNewContext } from "node:vm"
 import * as ts from "typescript"
-import * as Plan from "../src/Plan.ts"
+import * as Plan from "../src/Plan.vibe"
 import { compile, draft } from "../src/test/PlanFixtures.ts"
 import { withCrypto } from "./Crypto.ts"
 
