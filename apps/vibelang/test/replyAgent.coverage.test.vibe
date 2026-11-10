@@ -1,0 +1,124 @@
+// @vitest-environment node
+// The reply flow (worker/Reply.vibe) with smithers.sh's real agent answering through a scripted model on a local socket
+// (fuzz/model-server.vibe): an answer that starts over, an empty answer, a provider failure, usage the meter cannot
+// count, a start that waits for another reply, and an action asking for a seat the agent doesn't declare.
+import { describe, expect, it } from "@effect/vitest"
+import { AgentAction, EventSink } from "@smthrs/agent"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import type { Event } from "../src/core/conversation.vibe"
+import { Reply, Tours } from "../src/core/flows.vibe"
+import * as Budget from "../worker/Budget.vibe"
+import { repliesOf, toursOf } from "../worker/Objects.vibe"
+import { readerOver } from "../worker/HistoryObject.vibe"
+import { HistoryTools } from "../worker/HistoryTools.vibe"
+import { agentOf, ChatModel, registration, Replies, REASONS, Spend, tagOf } from "../worker/Reply.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+import { cell, scriptedModel, type Scripted } from "../fuzz/model-server.vibe"
+import { within } from "./support/durableWriters.vibe"
+
+/**
+ * The reply flow over an in-memory conversation, answered by `scripts`; `busy` start answers come first, and an
+ * `interrupting` history interrupts whatever reads it, as an engine reset does.
+ */
+effect function world(scripts: ReadonlyArray<Scripted>, busy = 0, interrupting = false) {
+  const scripted = try scriptedModel(scripts)
+  const events = try Ref.make<ReadonlyArray<Event>>([])
+  const ledger = try Ref.make<Readonly<Record<string, number>>>({})
+  const sequencer = try Sequencer.make(
+    { read: () => Ref.get(events), write: (event) => Ref.update(events, (events) => [...events, event]) },
+    { start: () => Effect.void, tour: () => Effect.void },
+  )
+  const budget = try Budget.make({ read: (key) => Ref.get(ledger).pipe(Effect.map((entries) => entries[key])), write: (entries) => Ref.update(ledger, (data) => ({ ...data, ...entries })) }, 1_000_000)
+  const real = repliesOf(sequencer)
+  let refusals = busy
+  // Listed member by member: spreading a service Shape drops its methods in VibeLang 0.0.12 (0016, "Service Shape spread").
+  const replies: Replies.Shape = {
+    start: (post) => refusals-- > 0 ? Effect.succeed("busy" as const) : real.start(post),
+    history: real.history, append: real.append, restart: real.restart, finish: real.finish, fail: real.fail,
+  }
+  const spend: Spend.Shape = { admit: () => budget.admit(), spend: (_day, reply, tokens) => budget.spend(reply, tokens) }
+  const flows = registration.pipe(
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provide(Layer.mergeAll(
+      Layer.succeed(Replies, replies), Layer.succeed(Tours, toursOf(sequencer)), Layer.succeed(Spend, spend),
+      Layer.succeed(ChatModel, { model: scripted.model, unusable: "" }),
+      Layer.succeed(HistoryTools, { history: readerOver(() => interrupting ? Effect.interrupt : Effect.fail(new Unreachable({ what: "history" })), () => Effect.fail(new Unreachable({ what: "history" }))) }),
+    )),
+  )
+  const engine = Context.get(try Layer.build(flows), FlowRuntime.FlowRuntime)
+  /** Posts `text` and runs its reply to the end; the agent's entry and the event types. */
+  const answer = effect (text: string) => {
+    try sequencer.post("a", "Ada", text)
+    const ended = try Effect.exit(engine.execute(Reply, { executionId: "reply/m1", payload: { post: "m1" } }))
+    const snapshot = try sequencer.read(0)
+    return { ended, entry: snapshot.entries.find((entry) => entry.author === "agent")!, types: (try Ref.get(events)).map((event) => event.type), calls: try scripted.calls }
+  }
+  return { answer }
+}
+
+/** An agent action declaring a seat the reply's agent host doesn't resolve. */
+const Elsewhere = AgentAction.make("test/reply/elsewhere", { payload: {}, output: Schema.String, seat: "other", system: [], profile: "conversation", prompt: () => "Hi", maxFrames: 1 })
+
+const stream = (text: string, prompt = 10, completion = 5): Scripted => ({ kind: "stream", pieces: [text], prompt, completion })
+
+describe("a reply the agent answers", () => {
+  it.live("shows an answer that starts over from its new start, once", () => scoped(effect {
+    // The first cell's ctx.done shows "First" while it streams, then fails; the next model call answers "Second".
+    const w = try world([stream("```cell\nctx.done(\"First\" + missing);\n```"), stream(cell("\"Second\""))])
+    const { entry, types, calls } = try w.answer("Hello?")
+    expect(entry).toMatchObject({ text: "Second", done: true, error: "" })
+    expect(types.filter((type) => type === "ReplyRestarted")).toHaveLength(1)
+    expect(calls).toBe(2)
+  }))
+
+  it.live("fails an empty answer, a provider that is out of credit, and usage the meter cannot count", () => scoped(effect {
+    const empty = try world([stream(cell("\"\""))])
+    expect((try empty.answer("Hello?")).entry).toMatchObject({ done: true, error: REASONS.empty })
+    const broke = try world([{ kind: "status", status: 402, code: "insufficient_quota" }])
+    expect((try broke.answer("Hello?")).entry).toMatchObject({ done: true, error: REASONS.credit })
+    const uncounted = try world([stream(cell("\"Hi\""), Number.MAX_SAFE_INTEGER * 4)])
+    expect((try uncounted.answer("Hello?")).entry).toMatchObject({ done: true, error: REASONS.failed })
+  }))
+
+  it.live("an agent run that is interrupted leaves the reply unsettled for the engine to resume", () => scoped(effect {
+    const reads = "```cell\nawait ctx.call(\"vibelang/history/show\", { what: \"outline\" });\nctx.done(\"Read.\");\n```"
+    const w = try world([stream(reads)], 0, true)
+    const { ended, entry, types } = try w.answer("What is in the history?")
+    expect(Exit.isFailure(ended) && Cause.hasInterrupts(ended.cause)).toBe(true)
+    expect(entry.done).toBe(false)
+    expect(types).not.toContain("ReplyFailed")
+    expect(types).not.toContain("ReplyFinished")
+  }))
+
+  it.live("waits while another reply streams, then answers", () => scoped(effect {
+    const w = try world([stream(cell("\"Hi\""))], 1)
+    expect((try w.answer("Hello?")).entry).toMatchObject({ text: "Hi", done: true, error: "" })
+  }))
+
+  it.live("refuses an action that asks for a seat the agent doesn't declare", () => scoped(effect {
+    const scripted = try scriptedModel([stream(cell("\"Hi\""))])
+    const sink: EventSink.Service = { emit: () => Effect.void }
+    const asked = effect {
+      provide agentOf(Elsewhere.layer, scripted.model, sink), EventSink.EventSink = sink {
+        const implementation = try Elsewhere.requirement
+        try implementation.action({})
+        return "answered"
+      }
+    }
+    const outcome = try within(Layer.empty, asked.pipe(Effect.catchCause((cause) => succeed(tagOf(Cause.squash(cause))))))
+    expect(outcome).toBe("@smthrs/agent/Seat/SeatUnresolved")
+    expect(try scripted.calls).toBe(0)
+  }))
+})
+
+describe("a failure's tag", () => {
+  it.effect("is a defect when the tag is not a string or cannot be read", () => effect {
+    expect(tagOf({ _tag: 7 })).toBe("defect")
+    // A revoked proxy throws on any look at it.
+    const unreadable = try Effect.try(() => Proxy.revocable({}, {}))
+    try Effect.try(() => unreadable.revoke())
+    expect(tagOf(unreadable.proxy)).toBe("defect")
+  })
+})

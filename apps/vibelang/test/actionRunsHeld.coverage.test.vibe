@@ -1,0 +1,142 @@
+// @vitest-environment node
+// One run's host (worker/ActionRuns.vibe) with a reply in flight: the scripted model answers it, a conversation log that
+// dies on the reply's first settle write makes the engine fail it, and a latch holds it at admission while a person
+// cancels it. Also the caller a run without an owner or a name acts as, a history host that cannot start, and a post
+// without a name. The world and faults follow fuzz/action-runs.node.fuzz.vibe.
+import { describe, expect, it } from "@effect/vitest"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import * as HistoryActions from "../worker/HistoryActions.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import * as Objects from "../worker/Objects.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { world, request, history } from "./support/actionObjects.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+import { cell, scriptedModel } from "../fuzz/model-server.vibe"
+
+const POST = "vibelang/Post"
+const PLAN = "vibelang/history/Plan"
+const planInput = { how: "append", epic: "", newEpic: "Coverage", target: "", title: "Runs", task: "t" }
+
+/** A run object whose conversation log dies on the reply's first settle write, as a reset store does; reads stay real. */
+const faultyObject = (id: string, authority: Parameters<typeof Runs.make>[3]) => effect {
+  const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+  const sequencer = try Objects.conversation(storage)
+  let faults = 1
+  const dies = <A, E>(write: A!E) => faults-- > 0 ? Effect.die(new Error("conversation log unavailable")) : write
+  const faulty: typeof sequencer = { ...sequencer, finish: (reply, text) => dies(sequencer.finish(reply, text)), fail: (reply, reason) => dies(sequencer.fail(reply, reason)) }
+  return { storage, sequencer, host: Runs.make(id, storage, faulty, authority) }
+}
+
+type Sequencer = Parameters<typeof Runs.read>[0]
+/** The reply's entry and the reply's own run row. */
+const replyOf = (id: string, sequencer: Sequencer) => effect {
+  const entry = (try sequencer.read(0)).entries.find((item) => item.author === "agent")
+  const row = (try Runs.read(sequencer)).find((item) => item.id === `${id}-reply`)
+  return { done: entry?.done, error: entry?.error, state: row?.state }
+}
+
+describe("a run's reply in flight", () => {
+  it.live("a reply the engine fails while it is open ends failed, and its run with it", () => scoped(effect {
+    const w = try world()
+    provide MockFactory, history {
+      const device = try Factory
+      try device.accounts!.choose("maintainer")
+      const product = try Mythical
+      provide ActionDevice = device {
+        const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
+        const object = try faultyObject("failing", w.authority)
+        expect(try object.host.start(request("failing", POST, { text: "Question?" }, w.person.id), "maintainer")).toBeNull()
+        for (let turn = 0; turn < 2; turn++) expect((try exit(object.host.alarm(w.spend, { model: scripted.model, unusable: "" }, product)))._tag).toBe("Success")
+        expect(try replyOf("failing", object.sequencer)).toEqual({ done: true, error: "Action failed", state: "failed" })
+      }
+    }
+  }), 60_000)
+
+  it.live("a person cancels a reply held at its admission; it ends cancelled, not answered", () => scoped(effect {
+    const w = try world()
+    provide MockFactory, history {
+      const device = try Factory
+      try device.accounts!.choose("maintainer")
+      const product = try Mythical
+      provide ActionDevice = device {
+        const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
+        const object = try w.object("held")
+        expect(try object.host.start(request("held", POST, { text: "Question?" }, w.person.id), "maintainer")).toBeNull()
+        const entered = try Deferred.make<void>()
+        const release = try Deferred.make<void>()
+        const held = { admit: (day: string) => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.andThen(w.spend.admit(day))), spend: w.spend.spend }
+        const running = try Effect.forkScoped(Effect.exit(object.host.alarm(held, { model: scripted.model, unusable: "" }, product)))
+        try Deferred.await(entered)
+        expect((try replyOf("held", object.sequencer)).state).toBe("running")
+        expect(try object.host.cancel("held-reply", "maintainer", w.person.id)).toBeNull()
+        try Deferred.succeed(release, undefined)
+        try Fiber.join(running)
+        for (let turn = 0; turn < 2; turn++) try exit(object.host.alarm(w.spend, { model: scripted.model, unusable: "" }, product))
+        expect(try replyOf("held", object.sequencer)).toEqual({ done: true, error: "Cancelled", state: "cancelled" })
+      }
+    }
+  }), 60_000)
+})
+
+describe("a run's alarm settles it", () => {
+  it.live("a post the agent answers settles its reply's run passed", () => scoped(effect {
+    const w = try world()
+    provide MockFactory, history {
+      const device = try Factory
+      try device.accounts!.choose("maintainer")
+      const product = try Mythical
+      provide ActionDevice = device {
+        const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
+        const object = try w.object("answered")
+        expect(try object.host.start(request("answered", POST, { text: "Question?" }, w.person.id), "maintainer")).toBeNull()
+        for (let turn = 0; turn < 2; turn++) try object.host.alarm(w.spend, { model: scripted.model, unusable: "" }, product)
+        expect(try replyOf("answered", object.sequencer)).toEqual({ done: true, error: "", state: "passed" })
+      }
+    }
+  }), 60_000)
+
+  it.live("a tour with no owner is admitted at its alarm as a visitor's and runs", () => scoped(effect {
+    const w = try world()
+    provide MockFactory, history {
+      const device = try Factory
+      try device.accounts!.choose("maintainer")
+      const product = try Mythical
+      provide ActionDevice = device {
+        const anonymous = try w.object("tour-anon")
+        expect(try anonymous.host.start({ id: "tour-anon", flow: "vibelang/Tour", input: {}, door: "button", actor: "person" }, "viewer")).toBeNull()
+        expect((try exit(anonymous.host.alarm(w.spend, w.model, product)))._tag).toBe("Success")
+        expect((try Runs.read(anonymous.sequencer)).find((row) => row.id === "tour-anon")?.state).toBe("running")
+      }
+    }
+  }), 60_000)
+})
+
+describe("a run's request", () => {
+  it.live("a run with no owner or name acts as a viewer named Guest, asked again at each step", () => scoped(effect {
+    const asked: Array<string> = []
+    const caller = Runs.callerOf({ id: "a1", flow: PLAN, input: planInput, door: "agent", actor: "agent" }, { role: (owner) => sync(() => { asked.push(owner); return "contributor" as const }) })
+    expect(caller.principal).toEqual({ role: "viewer", name: "Guest", agent: true })
+    expect(try caller.current!()).toEqual({ role: "contributor", name: "Guest", agent: true })
+    expect(asked).toEqual([""])
+  }))
+
+  it.live("a history host that cannot start answers input and fails the run", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("broken")
+    const broken = { ...HistoryActions.make("broken", open.storage), start: () => Effect.fail(new Unreachable({ what: "history" })) }
+    const answer = try Runs.start("broken", open.storage, open.sequencer, request("broken", PLAN, planInput, w.person.id), "maintainer", broken as never, w.authority)
+    expect(answer).toBe("input")
+    expect(try Runs.read(open.sequencer)).toMatchObject([{ id: "broken", state: "failed", result: "Action failed" }])
+  }), 60_000)
+
+  it.live("a post without a name is posted as Guest", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("guest")
+    const { name: _name, ...nameless } = request("guest", POST, { text: "Hello" }, w.person.id)
+    expect(try open.host.start(nameless, "maintainer")).toBeNull()
+    expect((try open.sequencer.read(0)).entries.find((entry) => entry.author === "person")?.name).toBe("Guest")
+  }), 60_000)
+})

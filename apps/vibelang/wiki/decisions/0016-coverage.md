@@ -765,6 +765,30 @@ drafts, retries and resumes, and the HTTP routes' store failures.
   real-GitHub test, still authenticates with a token on the principal and cannot write since decision 0165; it is
   skipped without `GITHUB_TEST_TOKEN`.
 
+**`worker/Reply.vibe`, `worker/ActionRuns.vibe` (2026-11-10).** Whole suite at `5540b9b2` → over every unit test that
+imports each file. Reply: statements 144/157 → 157/157, branches 63/81 → 80/81, functions 18/18, lines → 100%.
+ActionRuns: statements 154/164 → 161/164, branches 153/175 → 168/175, functions 34/36 → 36/36.
+`test/replyAgent.coverage.test.vibe` (6 cases) runs the Reply flow on the memory engine with smithers.sh's agent
+answering through the scripted model (`fuzz/model-server.vibe`): an answer that starts over is shown again from its new
+start once (`ReplyRestarted`), an empty answer, a provider out of credit, usage the meter cannot count, a start that
+waits behind another reply, an agent run interrupted inside a history tool (the reply's execution ends interrupted and
+the reply is neither finished nor failed, so the engine resumes it), and an action asking for a seat the agent doesn't
+declare. `test/actionRunsHeld.coverage.test.vibe` (7 cases) ports `fuzz/action-runs.node.fuzz.vibe`'s held replies:
+a conversation log that dies on the reply's first settle write (the engine fails the open reply; the run ends failed),
+a reply cancelled at a latch in its admission, a reply the agent answers (its agent-started run passes), an anonymous
+tour admitted at its alarm, `callerOf` with no owner or name, a history host that cannot start, and a nameless post.
+
+Left uncovered, not excluded:
+
+| Line | Why no unit test reaches it |
+| --- | --- |
+| `Reply.vibe:359`, `canSettleReply` false | After start, compose and finish in order the proved kernel always allows the settle (`flowDecision.vibe`); the guard keeps the shell on vl-proveall's state machine. |
+| `ActionRuns.vibe:77`, a post or tour operation that fails | Not reached here; the next seam to try is a faulty engine store under `Objects.post`. |
+| `ActionRuns.vibe:125`, a tour that settles failed | A tour stays parked until the person ends it, and ending it settles it passed. |
+| `ActionRuns.vibe:133`, an alarm whose reply host fails | Not reached here; the failing log and the latch both end in a successful alarm. |
+| `ActionRuns.vibe:168`, admission with no stored request | Every alarm that admits reads the request the start stored first. |
+| `ActionRuns.vibe:172-173`, a demotion while the reply is open | Admission runs before the reply's entry exists; it needs a second alarm racing the first. |
+
 **A reply-started tour stayed parked (fixed 2026-11-09).** A reply refused `busy` by a tour accepted after its
 dispatch ran that tour as its own child execution. Ending the tour woke only the tour the answer loop started, so the
 child stayed parked forever with no `vibelang.tour.run` outcome, though the reply still answered. Now each room has one
