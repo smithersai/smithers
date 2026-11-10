@@ -1114,7 +1114,7 @@ A box-image upgrade is a prerequisite for the supported configuration above, not
 
 What changed so these run anywhere:
 
-- **Browser phases.** `playwright.config.ts`, `bench/playwright.config.ts` and `fuzz/browser.config.ts` build the site
+- **Browser phases.** `playwright.config.ts`, `bench/playwright.config.ts`, `bench/playwright-faults.config.ts` and `fuzz/browser.config.ts` build the site
   inside Playwright's `webServer`. Its limit was 120 s (fuzz 180 s); the build takes longer on a box or a loaded host,
   so no browser phase ran there. The limit is now `E2E_SERVER_SECONDS`, default 600 s, and the fuzz flow passes it
   through (`.smithers/flows/vibelang-fuzz`, v7). The benchmark's global deadline and its parent Vitest timeout grow with it; the wrapper accepts the executed workload count instead of a stale fixed count.
@@ -1178,3 +1178,7 @@ This is timing evidence for setup budgets, not a replacement for the ordinary mu
 The proof harness also used `--cores 8` for assertion-isolated positive modules even when `run-heavy` requested two
 cores. It now passes at most two (`verify/harness_test.py` checks the actual invocation receipt and the configured
 command before starting a solver). Proof obligations, solver limits and the mutation rejection rules are unchanged.
+
+The benchmark lane added `bench/playwright-faults.config.ts` during the gatefix rebase. Its build and global deadlines
+also read `E2E_SERVER_SECONDS`. The moved artifact writer, `bench/browser-support.ts`, retains the same off-checkout
+revision fallback for both browser phases; the benchmark lane's helper extraction and navigation evidence are preserved.
