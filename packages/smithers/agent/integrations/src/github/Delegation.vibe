@@ -270,6 +270,8 @@ export effect function make(options: {
   readonly origin: string; readonly person: number; readonly sites: ReadonlyArray<Site>; readonly keyring: Keyring; readonly store: Store
   readonly journal: Journal; readonly github: Auth.GitHubAuth["Service"]; readonly act: Act
 }) {
+  // A grant that fails validation could open every path, branch or label: serve nothing rather than guess.
+  if (!options.sites.every((site) => site.grants.every(Policy.validGrant))) throw refused("unavailable")
   const ciphers = new Map<string, Effect.Success<ReturnType<typeof WebCryptoCipher.make>>>()
   for (const [id, key] of Object.entries(options.keyring.keys)) ciphers.set(id, try Effect.mapError(WebCryptoCipher.make({ key }), () => refused("unavailable")))
   if (!ciphers.has(options.keyring.active)) throw refused("unavailable")

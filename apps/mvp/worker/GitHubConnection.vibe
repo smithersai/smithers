@@ -36,7 +36,10 @@ export effect function configured() {
   const home = Option.getOrElse(origin, () => Option.isSome(domain) ? "https://" + domain.value : "")
   const decodedSites = decodeSites(Redacted.value(sites.value)) catch () => undefined
   const decodedKeys = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)))(Redacted.value(keys.value)) catch () => undefined
-  if (decodedSites === undefined || decodedKeys === undefined || decodedKeys[active.value] === undefined || !GitHub.Auth.Broker.canonicalOrigin(home)) return undefined
+  // A grant one keystroke from opening every branch, path or label disables connections (DelegationPolicy.validGrant).
+  const validGrants = decodedSites !== undefined && decodedSites.every((site) => (site.grants ?? []).every(GitHub.DelegationPolicy.validGrant))
+  if (decodedSites !== undefined && !validGrants) try Effect.logWarning("github.connection.config").pipe(Effect.annotateLogs({ outcome: "invalid_grant" }))
+  if (decodedSites === undefined || !validGrants || decodedKeys === undefined || decodedKeys[active.value] === undefined || !GitHub.Auth.Broker.canonicalOrigin(home)) return undefined
   const setup: Setup = {
     origin: home,
     sites: decodedSites.map((site) => ({ origin: site.origin, secret: Redacted.make(site.secret), grants: site.grants ?? [] })),

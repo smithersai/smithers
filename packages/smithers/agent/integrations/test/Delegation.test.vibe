@@ -651,3 +651,8 @@ it.effect("an unreadable delegation row does not keep the token after the last D
   try f.server.revoke(origin)
   try Effect.try(() => expect(f.world.revoked).toEqual(["stored-token"]))
 })
+it.effect("refuses to serve a registry holding a grant that fails validation", () => effect {
+  const f = try fixture()
+  const made = try Effect.result(Delegation.make({ origin: brokerOrigin, person: 7, sites: [{ origin, secret, grants: [{ ...grants[0]!, branchPrefix: "" }] }], keyring, store: f.store, journal: f.journal, github: f.github, act: () => (program) => program as never }))
+  try Effect.try(() => expect(made._tag === "Failure" ? made.failure.reason : "made").toBe("unavailable"))
+})

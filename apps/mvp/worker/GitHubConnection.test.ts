@@ -1,4 +1,4 @@
-import { Effect, Redacted } from "effect"
+import { ConfigProvider, Effect, Redacted } from "effect"
 import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { expect, test } from "vitest"
 import { GitHub } from "@smthrs/integrations"
@@ -56,3 +56,20 @@ run("with connections unconfigured, or the object down, the call is unavailable"
   expect([off.status, off.addressed]).toEqual([503, []])
   expect([down.status, down.text]).toEqual([503, JSON.stringify({ reason: "unavailable" })])
 }))
+
+// The registry loads only when every grant passes `DelegationPolicy.validGrant`: a prefix one keystroke from opening
+// every branch, path or label disables connections instead.
+const configuredWith = (grants: unknown) =>
+  Effect.runPromise(Connection.configured().pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({
+    HOSTED_AUTH_SITES: JSON.stringify([{ origin: site, secret: "s".repeat(32), grants }]),
+    AUTH_BROKER_ORIGIN: origin,
+    GITHUB_CONNECTION_KEYS: JSON.stringify({ k1: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" }),
+    GITHUB_CONNECTION_KEY_ACTIVE: "k1"
+  })))))
+const grant = { repository: "smithersai/vibelang", repositoryId: 11, scopes: ["issues"], paths: ["docs/design/vips/"], branchPrefix: "vibelang/", labelPrefix: "vibelang:" }
+test("a registry with a valid grant loads; an empty or slash-less prefix disables connections", async () => {
+  expect((await configuredWith([grant]))?.sites[0]?.grants).toEqual([grant])
+  for (const change of [{ branchPrefix: "" }, { paths: ["docs"] }, { labelPrefix: "" }, { paths: [] }]) {
+    expect(await configuredWith([{ ...grant, ...change }]), JSON.stringify(change)).toBeUndefined()
+  }
+})

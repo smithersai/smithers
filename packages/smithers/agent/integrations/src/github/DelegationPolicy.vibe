@@ -31,8 +31,22 @@ function safePath(path: string): boolean {
   if (path.includes("\\") || path.includes("%")) return false
   return path.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".." && segment.toLowerCase() !== ".github")
 }
-const underGrant = (grant: Grant, path: string) => safePath(path) && grant.paths.some((prefix) => path.startsWith(prefix))
-const labelled = (grant: Grant, label: string) => label.startsWith(grant.labelPrefix)
+/** A folder prefix: relative, safe segments, ending in `/`. Anything else matches nothing, so a typo grants nothing. */
+const folder = (prefix: string) => prefix.length > 1 && prefix.endsWith("/") && safePath(prefix.slice(0, -1))
+/** `value` lies strictly inside the folder `prefix`, compared by whole segments. */
+const inside = (prefix: string, value: string) => folder(prefix) && value.length > prefix.length && value.startsWith(prefix)
+const underGrant = (grant: Grant, path: string) => safePath(path) && grant.paths.some((prefix) => inside(prefix, path))
+const labelled = (grant: Grant, label: string) => grant.labelPrefix.length > 0 && label.length > grant.labelPrefix.length && label.startsWith(grant.labelPrefix)
+
+/**
+ * A registry entry smithers.sh may load: an `owner/name` repository with a positive id, at least one folder path, a
+ * folder branch prefix and a non-empty label prefix. Hosts refuse a registry holding any other entry.
+ */
+export function validGrant(grant: Grant): boolean {
+  const named = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(grant.repository)
+  return named && Number.isSafeInteger(grant.repositoryId) && grant.repositoryId > 0 &&
+    grant.paths.length > 0 && grant.paths.every(folder) && folder(grant.branchPrefix) && grant.labelPrefix.length > 0
+}
 
 /** The site names only the upstream repository; smithers.sh derives the fork from the credential's own login. */
 export function permits(grants: ReadonlyArray<Grant>, login: string, operation: Operation): boolean {
@@ -40,12 +54,12 @@ export function permits(grants: ReadonlyArray<Grant>, login: string, operation: 
   if (grant === undefined) return false
   switch (operation.kind) {
     case "branch.create":
-      return grant.scopes.includes("proposals") && operation.prefix.startsWith(grant.branchPrefix)
+      return grant.scopes.includes("proposals") && inside(grant.branchPrefix, operation.prefix)
     case "commit.create":
-      return grant.scopes.includes("proposals") && operation.branch.startsWith(grant.branchPrefix) && operation.deletions.length === 0 && operation.additions.length > 0 && operation.additions.every((file) => underGrant(grant, file.path))
+      return grant.scopes.includes("proposals") && inside(grant.branchPrefix, operation.branch) && operation.deletions.length === 0 && operation.additions.length > 0 && operation.additions.every((file) => underGrant(grant, file.path))
     case "pull.create": {
       const separator = operation.head.indexOf(":")
-      return grant.scopes.includes("proposals") && separator > 0 && same(operation.head.slice(0, separator), login) && operation.head.slice(separator + 1).startsWith(grant.branchPrefix)
+      return grant.scopes.includes("proposals") && separator > 0 && same(operation.head.slice(0, separator), login) && inside(grant.branchPrefix, operation.head.slice(separator + 1))
     }
     case "label.create":
       return grant.scopes.includes("issues") && labelled(grant, operation.name)

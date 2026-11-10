@@ -46,7 +46,7 @@ A hosted site never holds a GitHub token. `GitHub.Delegation` keeps one sealed u
 | Read as the person | `delegate.client(person, delegation, http)`, GET only. A request's `query` travels in the read's path, so `Contents.getText(..., { ref })` reads that commit. |
 | Disconnect         | `delegate.revoke(person, delegation)`                                                                                                                         |
 
-`GitHub.DelegationPolicy.permits` decides whether an operation falls inside the site's grants. A refused call fails with one reason:
+`GitHub.DelegationPolicy.permits` decides whether an operation falls inside the site's grants. `validGrant` decides whether a registry entry may load: an `owner/name` repository with a positive id, at least one path, `paths` and `branchPrefix` as relative folders ending in `/`, and a non-empty `labelPrefix`. `Delegation.make` refuses a registry with any other entry, and `permits` compares prefixes by whole segments, so an empty or slash-less prefix grants nothing. A refused call fails with one reason:
 
 | Reason         | Meaning                                                                                                                                      |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |

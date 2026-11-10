@@ -89,3 +89,39 @@ describe("DelegationPolicy.liveDelegation", () => {
     expect(Policy.liveDelegation("revoked", 10, 9)).toBe(false)
   })
 })
+
+describe("DelegationPolicy: a registry prefix fails closed", () => {
+  const open = (change: Partial<Policy.Grant>) => [{ ...grants[0]!, scopes: ["issues", "proposals"] as const, ...change }]
+  check("an empty branch, path or label prefix grants nothing", () => {
+    expect(Policy.permits(open({ branchPrefix: "" }), "ada", { kind: "branch.create", repository: issues, prefix: "main", label: "p", at: "a" })).toBe(false)
+    expect(Policy.permits(open({ branchPrefix: "" }), "ada", { ...commit("docs/design/vips/x.md"), repository: issues, branch: "main" } as Policy.Operation)).toBe(false)
+    expect(Policy.permits(open({ branchPrefix: "" }), "ada", { kind: "pull.create", repository: issues, head: "ada:main", base: "main", title: "t", body: "b" })).toBe(false)
+    expect(Policy.permits(open({ paths: [""] }), "ada", { ...commit("README.md"), repository: issues } as Policy.Operation)).toBe(false)
+    expect(Policy.permits(open({ labelPrefix: "" }), "ada", { kind: "label.add", repository: issues, number: 1, labels: ["release"] })).toBe(false)
+    expect(Policy.permits(open({ labelPrefix: "" }), "ada", { kind: "label.remove", repository: issues, number: 1, label: "triage" })).toBe(false)
+    expect(Policy.permits(open({ labelPrefix: "" }), "ada", { kind: "label.create", repository: issues, name: "x", color: "000000" })).toBe(false)
+  })
+  check("a prefix without its slash never reaches a sibling segment", () => {
+    expect(Policy.permits(open({ paths: ["docs"] }), "ada", { ...commit("docs-internal/x.md"), repository: issues, branch: "vibelang/x" } as Policy.Operation)).toBe(false)
+    expect(Policy.permits(open({ paths: ["docs"] }), "ada", { ...commit("docs/x.md"), repository: issues, branch: "vibelang/x" } as Policy.Operation)).toBe(false)
+    expect(Policy.permits(open({ branchPrefix: "vibelang" }), "ada", { kind: "branch.create", repository: issues, prefix: "vibelang-release", label: "p", at: "a" })).toBe(false)
+  })
+  check("a label must extend its prefix", () => {
+    expect(Policy.permits(open({}), "ada", { kind: "label.add", repository: issues, number: 1, labels: ["vibelang:"] })).toBe(false)
+  })
+})
+
+describe("DelegationPolicy.validGrant", () => {
+  check("accepts today's registry", () => {
+    expect(grants.map(Policy.validGrant)).toEqual([true, true])
+  })
+  check("refuses empty, slash-less, unsafe or absolute prefixes and malformed repositories", () => {
+    const bad: ReadonlyArray<Partial<Policy.Grant>> = [
+      { paths: [] }, { paths: [""] }, { paths: ["docs"] }, { paths: ["/docs/"] }, { paths: ["docs/../x/"] }, { paths: [".github/"] }, { paths: ["docs\\x/"] }, { paths: ["docs/%2e/"] }, { paths: ["docs//"] },
+      { branchPrefix: "" }, { branchPrefix: "vibelang" }, { branchPrefix: "/" }, { branchPrefix: "a/../" },
+      { labelPrefix: "" },
+      { repository: "vibelang" }, { repository: "a/b/c" }, { repository: "/b" }, { repositoryId: 0 }, { repositoryId: 1.5 },
+    ]
+    expect(bad.map((change) => Policy.validGrant({ ...grants[0]!, ...change }))).toEqual(bad.map(() => false))
+  })
+})
