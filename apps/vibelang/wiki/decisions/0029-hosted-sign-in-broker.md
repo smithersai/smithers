@@ -114,3 +114,17 @@ explicitly documented refresh-rotation/authorization-revocation behavior from th
 single-token deletion. Tests inject an Effect token service enforcing ten live pairs, exercise twelve sign-ins,
 and cover exhausted/transient revokes in a real engine and local workerd. The provider's pair-cascade behavior is a
 fixture assumption, not a claim of live GitHub validation.
+
+## Hardening after review (2026-11-10, lane vl-connect-hardening)
+
+A security review of `main` `5540b9b2` (smithers.sh decision 0165, "Security review") changed this site in three
+places. Each fix has a test that failed on the old code.
+
+| Finding | Site change | Test |
+| --- | --- | --- |
+| 2b | `GET /api/auth/sign-in` deletes every expired `broker/` and `sign-in/` row before it writes its own; account executions are forgotten a day after they settle (`EXECUTION_RETENTION`) | `accountsBroker.coverage.test.vibe` |
+| 3 | `POST /api/auth/device` revokes the device token once it has read the identity (`GitHub.Auth.Broker.discard`, a retried durable action). The CLI keeps only the session cookie, so the token never counts toward GitHub's ten per person and App | `signin.coverage.test.vibe` |
+| 8 | A new issue or VIP issue signs `since` as its request's admission time less five minutes, stored once per request (`issues/admitted/<execution>`), so every retry signs the same operation and the marker search never walks the whole repository | `issuesDelegated.coverage.test.vibe` |
+
+smithers.sh's broker now refuses an unsigned request before any execution, holds no lock across sign-ins and
+throttles its routes per network; the site's sign-in needs no change for it.

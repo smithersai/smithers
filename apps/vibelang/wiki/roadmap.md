@@ -116,3 +116,7 @@ brick                                   state         proof
 
 - Hosted sign-in cleanup (0029): revoke temporary GitHub tokens in a retried flow action; count exhausted revokes
   without failing sign-in. Failed MVP callbacks hand unkept pairs to its existing sealed cleanup flow.
+
+- **Connect hardening (0029, smithers.sh 0165, lane vl-connect-hardening): implemented and landed.** All nine
+  findings of the 2026-11-10 security review fixed with failing-first tests; deployment adds `BROKER_LIMIT`. Lead
+  deploys.

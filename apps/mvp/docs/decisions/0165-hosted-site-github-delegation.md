@@ -47,7 +47,7 @@ browser        site worker         smithers.sh                 GitHub
 
 A claim without `connect` is a sign-in, and the broker revokes its token at once. A mismatched person, or Cancel, revokes the token and stores nothing. Lost redemption restarts Connect.
 
-**One token survives.** GitHub keeps ten tokens per person, App and scope, and evicts past that. The broker keeps exactly the connection's token and revokes every other token it receives, so later sign-ins cannot evict it. Connecting again replaces the pair and revokes the old one.
+**One token survives.** GitHub keeps ten tokens per person, App and scope, and evicts past that. Every token a sign-in path does not keep is revoked: the broker's sign-in tokens at the callback, a cancelled or refused consent's at once, an unanswered consent's when the next callback drains it, and a vibelang device sign-in's once its identity is read. Connecting again replaces the pair and revokes the old one. smithers.sh's own sign-in keeps one pair per live session, by design, so ten live smithers.sh sessions opened after a Connect still evict it; the connection then answers `connect`.
 
 **Refresh** runs within 5 minutes of expiry, inside the person's object, and stages the sealed result before use. A refused refresh sets the connection revoked and answers `connect`.
 
@@ -92,11 +92,32 @@ Proposals cannot avoid forks: a branch on the upstream repository needs write ac
 
 ## As built
 
-Reads are one GET-only path allowlist (`DelegationPolicy.readable`), not typed reads: the rejected proxy's arguments concern writes. A read GitHub answers with 404 refuses as `missing`, which the site sees as GitHub's own 404, so "no such page" or "no such branch" stays an answer. Before this, it was `unavailable`, and the wiki flow retried a connected read of a missing page for two minutes. `DelegationPolicy` has unit coverage, no Dafny proofs.
+Reads are one GET-only path allowlist (`DelegationPolicy.readTarget`), not typed reads: the rejected proxy's arguments concern writes. A read GitHub answers with 404 refuses as `missing`, which the site sees as GitHub's own 404, so "no such page" or "no such branch" stays an answer. Before this, it was `unavailable`, and the wiki flow retried a connected read of a missing page for two minutes. A read's repository is proven once per object before GitHub answers it: the grant's repository by its immutable id, the person's same-named repository as a fork whose parent is that id. `DelegationPolicy` has unit coverage, no Dafny proofs.
+
+A registry entry loads only when `DelegationPolicy.validGrant` holds: `owner/name` with a positive id, at least one path, `paths` and `branchPrefix` as relative folders ending in `/`, and a non-empty `labelPrefix`. `Delegation.make` refuses any other registry, smithers.sh disables connections for one, and `permits` compares prefixes by whole segments. A write GitHub refuses with 404 or 422 answers `forbidden`, and a write spends the hour's budget only once GitHub accepts it. A revoke or a Disconnect page counts only live delegations and deletes expired ones, so a lapsed delegation never keeps the token. Each person's object binds to the first person who reaches it and refuses any other.
 
 smithers.sh's route (`GitHub.Delegation.route`) verifies the site's origin, signature, audience and expiry, and that the envelope names the URL's `?person=`, before it addresses a `GitHubConnection`. Addressing a Durable Object creates it, so an unsigned or wrongly signed call creates nothing. The person's object then claims the nonce and checks the delegation. A site with no `grants` in `HOSTED_AUTH_SITES` signs in and holds no scope. A person disconnects a site at `/api/auth/connections`. The site's Install action redirects through `GITHUB_APP_SLUG`.
 
 Vibelang's direct sign-in (the GitHub redirect from `/api/auth/sign-in` and the GET callback) remains, and production never reaches it: `readSetup` always sets `broker`, defaulting to `https://smithers.sh`. Only unit tests that build `Setup` without `broker` use it. The code exchange is its only use of `GITHUB_CLIENT_SECRET`; the device flow needs the client id alone. So the site keeps `GITHUB_CLIENT_SECRET` while that path exists. Removing it, and moving those tests to the broker path the workerd round trip already proves, lets production run with no secret.
+
+## Security review, 2026-11-10
+
+A Fable review of `main` `5540b9b2` found nine defects; lane vl-connect-hardening fixed each with a test that failed first.
+
+| # | Finding | Fix |
+| --- | --- | --- |
+| 1 | An expired delegation kept the token after the last Disconnect | Count live rows; delete expired ones |
+| 2 | Unauthenticated broker requests grew the one `HostedAuthBroker` object and queued every sign-in behind one lock | `Broker.screen` refuses before any execution; executions kept a day; no lock; `BROKER_LIMIT` per network before the object |
+| 2b | The site kept abandoned `broker/` and `sign-in/` rows and every account execution | Pruned at the next start; executions kept a day |
+| 3 | Other tokens evicted the connection | Revoke what no one keeps (above); smithers.sh sessions remain a source |
+| 4 | An empty or slash-less prefix opened every branch, path or label | `validGrant` at load; segment comparison |
+| 5 | Reads reached any same-named repository of the person, and the grant's by name | Proven by id and fork parent |
+| 6 | An unanswered consent's token stayed live | Drained and revoked by the next callback |
+| 7 | 404 and 422 on a write retried forever and spent the budget | `forbidden`; budget spent on success |
+| 8 | Issue creation searched from 1970 and failed past 1,000 issues | `since` is the request's stored admission time |
+| 9 | The connection object chose its person from the URL | Bound to its first person |
+
+**Deployment contract.** ChatApi gains the Rate Limiting binding `BROKER_LIMIT` (namespace 71003, 300 requests a minute per network) on the broker's four routes; Alchemy creates it. No secret, variable or GitHub App setting changes. Existing `HostedAuthBroker` executions are forgotten a day after they settle, starting with the first request after deploy. An existing connection object binds to its person on its next request. A registry entry that fails `validGrant` now disables connections (`github.connection.config`, `invalid_grant`); today's entries pass.
 
 ## Trust limit
 
@@ -112,4 +133,4 @@ Open, for the production smoke test:
 
 1. GitHub documents no event-specific field naming who revoked. The handler reads `sender.id`, ignores the `ghost` placeholder, and relies on a 401 otherwise. Confirm a real delivery.
 2. That a person's fork with a selected-repository install accepts `createCommitOnBranch` and the upstream pull.
-3. That ten further sign-ins leave the stored token usable.
+3. That ten further sign-ins leave the stored token usable, and whether a refresh counts as a new token toward the ten.

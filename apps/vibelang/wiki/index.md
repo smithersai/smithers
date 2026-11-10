@@ -54,6 +54,7 @@ next. Every decision lands here in the same change as the code it shapes.
 
 | [0029](decisions/0029-hosted-sign-in-broker.md) | Hosted sign-in through smithers.sh's registered callback, exact-origin registry, single-use PKCE-bound codes and retried temporary-token revocation (VL-33) |
 
+| [0029 hardening](decisions/0029-hosted-sign-in-broker.md#hardening-after-review-2026-11-10-lane-vl-connect-hardening) | Security review fixes: pruned abandoned sign-ins, revoked device tokens, issue search from admission (lane vl-connect-hardening) |
 | [0030](decisions/0030-read-deadlines-and-object-health.md) | Bounded issue/wiki reads, inspectable object startup and safe journal-decode failures; amended 2026-11-10 (lane vl-startup-hang): objects start under Alchemy's bridge, health names the start-up step |
 
 ## Layout
