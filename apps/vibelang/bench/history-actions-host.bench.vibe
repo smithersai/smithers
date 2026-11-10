@@ -1,0 +1,87 @@
+// @vitest-environment node
+// A maintainer's history and sandbox actions through the production action index and per-run hosts
+// (worker/ActionDirectory.vibe, worker/ActionRuns.vibe, worker/HistoryActions.vibe) over node:sqlite object storage.
+import { it, expect } from "@effect/vitest"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import { world, request, history } from "../test/support/actionObjects.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("a maintainer plans, starts, notes and reads a commit as actions", async ({ bench }) => {
+  const result = await workload(bench, "history-actions-host", "async", async () => {
+    await runPromise(scoped(effect {
+      const w = try world()
+      provide history {
+        const product = try Mythical
+        const cases = [
+          request("hplan", "vibelang/history/Plan", { how: "append", epic: "", newEpic: "Bench", target: "", title: "Measured", task: "Run as an action" }, w.person.id),
+          request("hstart", "vibelang/history/Start", { id: "m1", lane: "bench" }, w.person.id),
+          request("hnote", "vibelang/history/Note", { id: "m1", section: "tried", text: "Recorded once" }, w.person.id),
+          request("hshow", "vibelang/history/show", { what: "commit", id: "m1" }, w.person.id),
+        ]
+        const answers: Array<unknown> = []
+        const rows: Array<readonly [string, string]> = []
+        for (const body of cases) {
+          answers.push(try w.directory.start(body, "maintainer"))
+          const obj = try w.object(body.id)
+          try obj.host.alarm(w.spend, w.model, product)
+          answers.push(try w.directory.start(body, "maintainer"))
+          const run = (try Runs.read(obj.sequencer)).find((item) => item.id === body.id)
+          rows.push([body.id, run?.state ?? "missing"])
+        }
+        const shownText = (try Runs.read((try w.object("hshow")).sequencer))[0]?.result ?? ""
+        const page = try product.commit("m1")
+        try Effect.try(() => {
+          expect(answers).toEqual(Array(8).fill(null))
+          expect(rows).toEqual([["hplan", "passed"], ["hstart", "passed"], ["hnote", "passed"], ["hshow", "passed"]])
+          expect(page.commit).toMatchObject({ title: "Measured", lane: "bench" })
+          expect(page.commit?.notes.map((note) => note.text)).toEqual(["Recorded once"])
+          const shown = JSON.parse(shownText) as { commit?: { title: string; notes: ReadonlyArray<{ text: string }> } }
+          expect(shown.commit?.title).toBe("Measured")
+          expect(shown.commit?.notes.map((note) => note.text)).toEqual(["Recorded once"])
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("history-actions-host", "Vitest built-in bench; the production action index and per-run hosts over node:sqlite object storage with product MockAccounts and Mythical history, a fresh world per sample. A maintainer runs Plan, Start, Note and Show (the new commit) as actions: each is admitted, driven by one alarm and started again as a replay. Checks every answer is null, every run passed, the commit's title, lane and one note, and that Show's result is that commit.", ["Node SQLite/KV/alarm adapter, not workerd scheduling.", "Product mock history, not GitHub."], result))
+})
+
+it("a maintainer starts a sandbox, writes a file, stops, restarts and reads it as actions", async ({ bench }) => {
+  const result = await workload(bench, "sandbox-actions-host", "async", async () => {
+    await runPromise(scoped(effect {
+      const w = try world()
+      provide MockFactory, history {
+        const device = try Factory
+        try device.accounts!.choose("maintainer")
+        const product = try Mythical
+        provide ActionDevice = device {
+          const cases = [
+            request("sstart", "vibelang/sandbox/start", { conversation: "bench-sandbox" }, w.person.id),
+            request("swrite", "vibelang/sandbox/command", { conversation: "bench-sandbox", generation: 1, command: "echo measured > result.txt" }, w.person.id),
+            request("sstop", "vibelang/sandbox/stop", { conversation: "bench-sandbox", generation: 1 }, w.person.id),
+            request("srestart", "vibelang/sandbox/start", { conversation: "bench-sandbox" }, w.person.id),
+            request("sread", "vibelang/sandbox/command", { conversation: "bench-sandbox", generation: 2, command: "cat result.txt" }, w.person.id),
+          ]
+          const runs: Array<readonly [string, string, string]> = []
+          for (const body of cases) {
+            const admitted = try w.directory.start(body, "maintainer")
+            const obj = try w.object(body.id)
+            try obj.host.alarm(w.spend, w.model, product)
+            const run = (try Runs.read(obj.sequencer)).find((item) => item.id === body.id)
+            runs.push([String(admitted), run?.state ?? "missing", body.id === "sread" ? run?.result ?? "" : ""])
+          }
+          const snapshot = try device.sandbox("bench-sandbox")
+          try device.stopSandbox("bench-sandbox", "bench-final-stop", 2)
+          try Effect.try(() => {
+            expect(runs).toEqual([["null", "passed", ""], ["null", "passed", ""], ["null", "passed", ""], ["null", "passed", ""], ["null", "passed", JSON.stringify("measured\n")]])
+            expect(snapshot).toMatchObject({ status: "running", generation: 2 })
+          })
+        }
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("sandbox-actions-host", "Vitest built-in bench; the production action index and per-run hosts over node:sqlite object storage with MockFactory as the action device, a fresh world per sample. A maintainer starts a sandbox, writes a file, stops it, starts it again and reads the file, each as an action driven by one alarm. Checks every answer is null, every run passed, the read returns the written text after the restart, and the sandbox is running at generation 2.", ["MockFactory's in-memory sandbox, not a Container.", "Node SQLite/KV/alarm adapter, not workerd scheduling."], result))
+})

@@ -3417,6 +3417,44 @@ while the person cancels it, then released: it ends cancelled, not answered.
 Limitations: node:sqlite and an alarm field, not workerd scheduling; the stop is an injected sequencer, not an evicted
 isolate; scripted model, so no inference latency.
 
+## Held reads, host actions and a second tour (2026-11-10, nyc-01)
+
+Vitest built-in bench, local. Load average about 30.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| tour-again | 1,239.4 | 3 | `2026-11-10T14-44-07.367Z-tour-again.json` |
+| budget-corrupt-ledger | 194.7 | 3 | `2026-11-10T14-44-08.378Z-budget-corrupt-ledger.json` |
+| history-actions-host | 708.9 | 3 | `2026-11-10T14-44-12.362Z-history-actions-host.json` |
+| sandbox-actions-host | 840.8 | 3 | `2026-11-10T14-44-15.023Z-sandbox-actions-host.json` |
+| accounts-read-deadline | 6,605.2 | 3 | `2026-11-10T14-44-37.114Z-accounts-read-deadline.json` |
+
+**tour-again** (`bench/tour-again.bench.vibe`). The conversation object's production post, tour, end and alarm over
+node:sqlite object storage with the scripted model service. A person asks a question and presses Learn more before the
+reply starts (busy), presses it again after the reply (the tour greets them), presses Escape, then Learn more again.
+Checked: every answer, the reply's text, and that the second tour greets with the first tour's line.
+
+This workload found a bug, fixed with it: the conversation keeps an ended tour's walkthrough, and a new tour restored
+it as its own, so the second tour resumed the old stop and never greeted. `tourWalkthrough`
+(`src/core/conversation.vibe`, proved) returns a walkthrough only when the running tour drove it; both hosts read it.
+Regression tests: `test/tourAgain.test.vibe` (conversation object and mock mode), both failing without the fix.
+
+**budget-corrupt-ledger** (same file). A day ledger whose spent total no charge could write: admission and a charge both
+stop with Invalid budget accounting, the question's reply ends failed with no text, and the ledger is unchanged.
+
+**history-actions-host** and **sandbox-actions-host** (`bench/history-actions-host.bench.vibe`). The production action
+index and per-run hosts. A maintainer runs Plan, Start, Note and Show as actions, each admitted, driven by one alarm and
+started again as a replay; Show returns the new commit with its note. Then sandbox start, a command that writes a file,
+stop, start again and a command that reads it back at generation 2.
+
+**accounts-read-deadline** (`bench/accounts-read-deadline.bench.vibe`). The Accounts object on a loopback server. A
+signed-in person's new issue waits in the injected `IssueHost` on a latch, as a write GitHub has not answered does;
+the issue list read queued behind it answers 503 `unavailable` after at least 5.9 s, the write then lands, and a later
+read answers 200. The time is the deadline: this checks the bound holds, not throughput.
+
+Limitations: node:sqlite and an alarm field, not workerd scheduling; scripted model, so no inference latency; the held
+write is a latch, not GitHub; MockFactory's in-memory sandbox, not a Container.
+
 ## Issues and wiki with GitHub unreachable (2026-11-10, nyc-01)
 
 Vitest built-in bench, local, `bench/accounts-offline.bench.vibe`. Load average about 120.

@@ -119,10 +119,13 @@ it("the API Worker's production object bodies answer through workerd", { timeout
           const reply = (await runPromise(factory.read(room, 0))).entries.at(-1)!
           expect(reply.author).toBe("agent")
           // A signed-out guest is a viewer: the history machine refuses its Start, and a draft needs a signed-in owner.
-          const answered = JSON.parse(reply.text) as { readonly outline: boolean; readonly started: unknown; readonly drafted: { readonly ok: boolean; readonly error: { readonly code: string; readonly message: string } } }
+          const answered = JSON.parse(reply.text) as { readonly outline: boolean; readonly started: unknown; readonly drafted: { readonly ok: boolean; readonly error: { readonly code: string; readonly message: string } }; readonly wiki: boolean; readonly docs: boolean }
           expect(answered.outline).toBe(true)
           expect(answered.started).toEqual({ id: "", refusal: "forbidden" })
           expect(answered.drafted).toMatchObject({ ok: false, error: { code: "flow_failed", message: "Flow vibelang/wiki/draft failed: forbidden" } })
+          // The reply opens the roadmap, then the setup docs page, in the conversation's pane.
+          expect([answered.wiki, answered.docs]).toEqual([true, true])
+          expect(events.filter((event) => event.type === "PaneOpened").map((event) => (event as { readonly url: string }).url)).toEqual([expect.stringContaining("roadmap"), expect.stringMatching(/\/setup$/)])
         })
         const historyWrite = workload(bench, "api-objects-history-write", "async", async () => {
           // A signed-out guest is a viewer; the history machine refuses its fold before reaching GitHub.
@@ -163,7 +166,7 @@ it("the API Worker's production object bodies answer through workerd", { timeout
         })
         const results = []
         for (const each of [conversation, unbound, unconfigured, identity, budget, runs, history, tour, agentTools, historyWrite, actionRuns, signedInAccounts, ownedRun]) results.push(try tryPromise(() => each.run(slow)))
-        try artifact("api-objects", "Vitest built-in bench; the production bodies of worker/Api.vibe in real workerd SQLite through apiFetch, LiveFactory HTTP and alarms: posts, tour start/pause/resume/end, wiki open, an agent reply calling the history and wiki tools, a guest history write, and an action run started, read, followed, cancelled and rerun, one started with an agent's trusted props, and ProjectAccounts with sign-in configured; deterministic HTTP model service.", ["No GitHub: History reads through an injected faulty client.", "Every caller is signed out (a viewer): signing in needs GitHub (0165), so tool, history and draft writes measure their refusal path, also on the instance with sign-in configured.", "Objects reach each other by fetch, not Alchemy RPC.", "Deterministic model; no inference latency."], results)
+        try artifact("api-objects", "Vitest built-in bench; the production bodies of worker/Api.vibe in real workerd SQLite through apiFetch, LiveFactory HTTP and alarms: posts, tour start/pause/resume/end, wiki open, an agent reply calling the history, wiki and docs tools (it opens the roadmap and a docs page in the pane), a guest history write, and an action run started, read, followed, cancelled and rerun, one started with an agent's trusted props, and ProjectAccounts with sign-in configured; deterministic HTTP model service.", ["No GitHub: History reads through an injected faulty client.", "Every caller is signed out (a viewer): signing in needs GitHub (0165), so tool, history and draft writes measure their refusal path, also on the instance with sign-in configured.", "Objects reach each other by fetch, not Alchemy RPC.", "Deterministic model; no inference latency."], results)
       }
     }
   }))

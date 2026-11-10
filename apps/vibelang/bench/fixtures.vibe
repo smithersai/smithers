@@ -36,12 +36,14 @@ export effect function modelService() {
     const body = try request.text
     const tour = body.includes("Give the tour now.")
     const fence = "`".repeat(3)
-    // "Bench tools." asks for a reply that calls the history and wiki tools and answers with what each returned.
+    // "Bench tools." asks for a reply that calls the history, wiki and docs tools and answers with what each returned.
     const tools = [
       `const outline = await ctx.call("vibelang/history/show", { what: "outline" });`,
       `const started = await ctx.call("vibelang/history/Start", { id: "bench", lane: "bench" });`,
       `let drafted; try { drafted = await ctx.call("vibelang/wiki/draft", { page: "roadmap", ask: "Bench" }); } catch (error) { drafted = String(error && error.message || error); }`,
-      `ctx.done(JSON.stringify({ outline: outline.seq > 0, started, drafted }));`,
+      `const wiki = await ctx.call("vibelang/wiki/open", { page: "roadmap" });`,
+      `const docs = await ctx.call("vibelang/docs/open", { path: "/setup" });`,
+      `ctx.done(JSON.stringify({ outline: outline.seq > 0, started, drafted, wiki, docs }));`,
     ].join("\n")
     // "Bench history." asks for a reply that pages the history (an epic, a commit, a search) and tries Plan and Note.
     const history = [
