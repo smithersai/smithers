@@ -6,7 +6,7 @@ import { Factory } from "../src/core/Factory.vibe"
 import { Post, Tour } from "../src/core/flows.vibe"
 import * as Runs from "../worker/ActionRuns.vibe"
 import { world, request, history } from "../test/support/actionObjects.vibe"
-import { run, Int, REPLAY_FLOOR } from "./run.vibe"
+import { run, Int } from "./run.vibe"
 
 const FLOWS = [Post._tag, Tour._tag, "vibelang/history/Plan", "vibelang/sandbox/start", "vibelang/no-such-flow"] as const
 const states = ["queued", "running", "passed", "failed", "cancelled"]
@@ -27,6 +27,7 @@ const inputOf = (flow: string, id: string, well: boolean): Schema.Json => !well 
   : {}
 
 /** Random run lifecycles on the real durable objects: only typed refusals, known states, no duplicated run. */
+// Replaying the saved lifecycle plus cold durable-flow setup exceeds 15 s with coverage on an idle 4-vCPU box.
 it.live("actions/object-lifecycles", () => run("actions/object-lifecycles", Input, (ops) => effect {
   const w = try world()
   provide MockFactory, history {
@@ -82,4 +83,4 @@ it.live("actions/object-lifecycles", () => run("actions/object-lifecycles", Inpu
       return true
     }
   }
-}, undefined, { minimum: REPLAY_FLOOR }))
+}, undefined, { minimum: "60 seconds" }))

@@ -12,7 +12,7 @@ beforeAll(async () => {
     const client = try HttpClient.HttpClient
     try client.execute(HttpClientRequest.post(api!.origin + "/api/conversations/fuzz-stream/posts").pipe(HttpClientRequest.bodyText(JSON.stringify({ clientId: "seed", name: "Guest", text: "hello" }))))
   }, FetchHttpClient.layer))
-}, 120_000)
+}, 600_000)
 afterAll(async () => { await api?.dispose() })
 
 it.live("workerd/api-requests", () => run("workerd/api-requests", Schema.Struct({ kind: Int, text: TextOrBoundary, id: Int }), ({ kind, text, id }) => effect {

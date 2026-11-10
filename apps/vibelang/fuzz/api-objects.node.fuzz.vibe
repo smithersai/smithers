@@ -239,7 +239,7 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
   }
   for (const next of steps) {
     // Every request answers within its deadline: one that never returns is a finding with its input.
-    const finished = try Effect.timeoutOption(apply(next), "5 seconds")
+    const finished = try Effect.timeoutOption(apply(next), "20 seconds")
     if (Option.isNone(finished)) throw new Finding({ report: `${next.op} did not return` })
   }
 }
@@ -248,12 +248,13 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
  * The walk in both sign-in modes with the agent calling every tool, then the generated steps in a fresh world; a post
  * the API accepts is in the conversation, and a fresh incarnation replays the same conversation.
  */
+// The two complete scripted-model walks take 15 s without coverage; allow replay and new exploration on four CPUs.
 it.live("api-objects/world", () => run("api-objects/world", World, (input) => effect {
   try drive({ ...input, signIn: false, agent: "tools" }, WALK)
   try drive({ ...input, signIn: true, agent: "tools" }, WALK)
   try drive(input, input.steps)
   return true
-}))
+}, undefined, { minimum: "60 seconds" }))
 
 const BudgetStep = Schema.Struct({
   op: Schema.Literals(["admit", "spend", "restart", "corrupt"]),

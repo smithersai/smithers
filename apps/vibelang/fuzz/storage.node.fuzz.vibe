@@ -41,6 +41,7 @@ it.live("storage/log-ledger-and-execution", () => run("storage/log-ledger-and-ex
   return (try promise(() => raw.alarm())) === undefined && (try executions.get("execution")) === undefined && Objects.executionIdOf(`m${id}`) === `reply/m${id}` && Objects.tourExecutionIdOf(`t${id}`) === `tour/t${id}`
 }))
 
+// SQLite and durable-flow replay need more than the 5 s coverage budget on an idle 4-vCPU box.
 it.live("storage/conversation-flows", () => run("storage/conversation-flows", Schema.Struct({ id: Int, text: Text }), ({ id, text }) => effect {
   const { object } = try storage()
   const sequencer = try Objects.conversation(object)
@@ -65,7 +66,7 @@ it.live("storage/conversation-flows", () => run("storage/conversation-flows", Sc
   const ended = try Objects.endTour("fuzz", object, sequencer)
   if (ended !== null && ended !== "not-replying") return false
   return (try Objects.endTour("fuzz", object, sequencer)) === "not-replying"
-}))
+}, undefined, { minimum: "30 seconds" }))
 
 it.live("storage/history-snapshot", () => run("storage/history-snapshot", Schema.Struct({ id: Int, text: Text }), ({ id, text }) => effect {
   const { object } = try storage()

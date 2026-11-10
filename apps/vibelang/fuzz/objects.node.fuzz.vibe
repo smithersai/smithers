@@ -42,6 +42,7 @@ const Step = Schema.Struct({
   page: Schema.Literals(["index", "rulings", "roadmap", "decisions/0015-fuzzing", "nope", ""]),
 })
 
+// The saved conversation replay can spend the 5 s coverage budget before any new execution on a 4-vCPU box.
 it.live("objects/conversation-host", () => run("objects/conversation-host", Schema.Array(Step).check(Schema.isMaxLength(14)), (steps) => effect {
   const object = try storage()
   const sequencer = try Objects.conversation(object)
@@ -103,7 +104,7 @@ it.live("objects/conversation-host", () => run("objects/conversation-host", Sche
     if (!same(try reloaded.snapshot(), try sequencer.snapshot())) throw new Finding({ report: "a fresh incarnation replayed another conversation" })
   }
   return true
-}))
+}, undefined, { minimum: "30 seconds" }))
 
 const OBJECT_SCENARIOS = ["post-behind-tour", "seek-behind-reply", "tour-behind-reply", "wiki-pages", "routing", "unadmitted-receipt", "tour-seek-end", "tour-during-reply", "tour-dispatch-fault"] as const
 const Scenario = Schema.Struct({ pick: Int, text: TextOrBoundary, admit: Schema.Boolean })
