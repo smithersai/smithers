@@ -75,4 +75,5 @@ it.live("the browser gate counts a bundled source once, on its compiler structur
       expect(hitsAt(file.s, file.statementMap, 4)).toEqual([1])
     })
   }
-}), 120_000)
+  // A real Vite build that bundles effect: 49 s alone at load 57, past 120 s inside the full suite (2026-11-10).
+}), 300_000)
