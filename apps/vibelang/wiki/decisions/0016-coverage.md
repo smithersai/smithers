@@ -2024,7 +2024,7 @@ No dependency, coverage threshold change, source coverage exclusion or VibeLang 
 The flow and engine strict gates retain 100% on lines, branches, functions and
 statements. The durable store's SQLite/PostgreSQL matrix also passes at 100%
 (7277 lines, 4565 branches, 2275 functions, 8127 statements). Its individual
-backend runs pass 2399 and 2411 tests; the seven recording/cancellation cases also pass in a focused
+backend runs pass 2400 and 2412 tests; the seven recording/cancellation cases also pass in a focused
 SQLite run. An obsolete codec assertion was removed after the existing linter
 refused it; the compiler accepts the same declared return type without it.
 The engine's linter now ignores emitted `*.d.vibe.ts` declarations, as its
@@ -2134,3 +2134,36 @@ methods in a service Shape spread (service-method-spread reproduction).
 Upstream baf0d9a0f54c9335d1e6061be7f4947b507d8da1 already fixes that
 rejection on vibe, with positive and negative controls; it was not on green
 main at this check. No compiler replacement or app workaround was added.
+
+## Fixture recovery (lane vl-coverage2, 2026-11-10)
+
+MockAccounts now covers a refused final-maintainer demotion, an idempotent
+grant, a follower at the current event cut, and participation without an
+explicit person id. A pregrant for a future person allows both fixture
+maintainers to step down, so agent sign-in's no-fixture path is reachable:
+it answers AccountUnavailable and preserves the selected person. That
+guard was retained.
+
+Wiki's missing-page read recovers to a known page; a second draft replaces
+the first. Its proposal key also survives a fresh memory engine over the
+same fixture repository: the same edit returns the same review, and a changed
+edit is refused conflict without creating another proposal. The existing
+proposal guard is necessary after an engine restart and was retained.
+
+All four deliberately incorrect refusal/replay/filter mutations fail the
+new cases. Restored sources pass 65 tests across eight files. Scoped
+coverage is 100% on lines, functions, statements and branches for both
+src/core/MockAccounts.vibe and src/core/WikiFactory.vibe: 138/138 lines,
+47/47 functions, 183/183 statements and 103/103 branches.
+Before this extension, the whole-suite report had MockAccounts at 88.23%
+branches / 96.15% functions / 97.02% statements and WikiFactory at 98.59%
+branches / 98.82% statements; both already had 100% lines.
+
+The preceding whole unit run passed 2083 tests / one expected failure /
+four skipped, with 241 files passing / three skipped. Its strict coverage
+gate remains red: 99.42% lines, 98.29% branches, 99.38% functions and 99.11%
+statements, 26 files below 100%. This predates the fixture extension above.
+The newly measured fuzz-preflight script has zero native-loader coverage
+despite its two passing process-boundary runs. The existing
+coverage-native-loader reproduction records the provider's PARSE_ERROR on
+raw effect syntax; no exclusion or emitted-JavaScript substitution was added.
