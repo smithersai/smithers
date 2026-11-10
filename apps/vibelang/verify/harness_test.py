@@ -31,6 +31,25 @@ class StrictSourceChecks(unittest.TestCase):
             os.utime(source, None)
             self.assertTrue(stale(package))
 
+    def test_lsc_is_a_relative_link_that_survives_a_packed_tree(self):
+        # A packed tree (run-heavy on a box) copies an absolute link's target as a file, and ts-morph then can't resolve.
+        from lsc_fresh import link
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            root = pathlib.Path(folder)
+            package, tools = root / 'packages/lemmascript', root / 'apps/vibelang/verify/.tools'
+            (package / 'tools/dist').mkdir(parents=True)
+            (package / 'tools/dist/lsc.js').write_text('built\n')
+            (tools / 'bin').mkdir(parents=True)
+            for stale in ['copy', 'absolute']:
+                lsc = tools / 'bin/lsc'
+                if lsc.is_symlink() or lsc.exists(): lsc.unlink()
+                if stale == 'copy': lsc.write_text('built\n')
+                else: lsc.symlink_to(package / 'tools/dist/lsc.js')
+                link(tools, package)
+                self.assertTrue(lsc.is_symlink(), stale)
+                self.assertEqual(os.readlink(lsc), '../../../../../packages/lemmascript/tools/dist/lsc.js', stale)
+                self.assertEqual(lsc.resolve(), (package / 'tools/dist/lsc.js').resolve(), stale)
+
     def test_a_function_named_by_a_dafny_keyword_is_verified_under_its_escaped_name(self):
         from sources import dafny_keywords, dafny_name
         keywords = dafny_keywords()
