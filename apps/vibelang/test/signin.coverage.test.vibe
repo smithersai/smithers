@@ -124,7 +124,7 @@ describe("device sign-in", () => {
     }
   }), 60_000)
 
-  it.live("a wait the person declines fails with one safe sentence and leaves no grant", () => scoped(effect {
+  it.live("a wait the person declines says it was declined and leaves no grant", () => scoped(effect {
     provide NodeServices.layer, NodeHttpServer.layerTest, live {
       const { origin, grant } = try world()
       const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
@@ -133,7 +133,7 @@ describe("device sign-in", () => {
         const failure = try message(signIn(WAIT))
         const left = try readPending()
         try Effect.try(() => {
-          expect(failure).toBe("Sign-in failed.")
+          expect(failure).toBe("Sign-in declined.")
           expect(left).toBeUndefined()
         })
       }

@@ -1,11 +1,13 @@
 // Browser startup's reading of the page: the address's flags, the saved mock or live choice, a finished tour, and
-// storage the browser refuses. The page's window is the real one; the refusing one is an injected faulty Window.
+// storage the browser refuses, and the tour journal the page keeps in its own storage. The page's window is the real one; the refusing one is an injected faulty Window.
 import { expect, it } from "@effect/vitest"
+import { vi } from "vitest"
+import { Runtime } from "foldkit"
 import { ExperimentalBrowserDocument, ExperimentalBrowserMediaQuery } from "vibelang-runtime/experimental/platform-browser"
 import { SecureRandom } from "effect/crypto"
 import { main, page } from "../src/web/startup.vibe"
 import { heldHealth } from "./support/heldHealth.vibe"
-import { container, fullLocation, refusingStorage, remove, setLocation } from "./support/browser.ts"
+import { container, forgetTours, fullLocation, journalKeys, refusingJournal, refusingStorage, remove, setLocation, storedJournal } from "./support/browser.ts"
 
 const KEYS = ["vibelang.agent", "vibelang:toured", "vibelang:tour-sound"]
 
@@ -47,7 +49,7 @@ it.live("?agent=mock saves the choice, a later plain load keeps it, and ?agent=l
 }))
 
 it.live("a person who finished the tour once is not toured again on load", () => scoped(effect {
-  try sync(() => window.localStorage.setItem("vibelang:toured", "1"))
+  try acquireRelease(sync(() => window.localStorage.setItem("vibelang:toured", "1")), () => sync(() => window.localStorage.removeItem("vibelang:toured")))
   const { flags } = try startedAt("/")
   try Effect.try(() => expect(flags.autoTour).toBe(false))
 }))
@@ -64,4 +66,54 @@ it.live("storage the browser refuses starts a fresh tour session and the page st
   try Effect.try(() => {
     for (const { flags } of [chosen, plain]) expect(flags).toMatchObject({ tutorialSession: flags.session, tourSound: false, resumeTour: false, autoTour: true })
   })
+}))
+
+/** A first visit in a fresh tab: no journals or tour keys before the test, none left after. */
+const cleaned = acquireRelease(sync(forgetTours), () => sync(forgetTours))
+/** Runs the started page's application until `done` holds. */
+effect function running(address: string, done: () => void, host: typeof page = page) {
+  const { application, flags } = try startedAt(address, host)
+  try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+  try promise(() => vi.waitFor(done, { timeout: 15_000, interval: 50 }))
+  return flags
+}
+const length = (key: string) => storedJournal(key)?.length ?? 0
+
+it.live("the first visit's tour keeps its journal in the page's storage, and the next load continues it", () => scoped(effect {
+  try cleaned
+  const first = try scoped(running("/?agent=mock", () => expect(journalKeys()).toHaveLength(1)))
+  const key = try sync(() => journalKeys()[0]!)
+  const kept = try sync(() => storedJournal(key) ?? [])
+  // The next load in this tab joins the same tour conversation and appends to what it read back.
+  try running("/?agent=mock", () => expect(length(key)).toBeGreaterThan(kept.length))
+  const continued = try sync(() => storedJournal(key) ?? [])
+  try Effect.try(() => {
+    expect(key).toBe(`vibelang:walkthrough:tour-${first.tutorialSession}`)
+    expect(kept.length).toBeGreaterThan(0)
+    expect(continued.slice(0, kept.length)).toEqual(kept)
+  })
+}))
+
+it.live("a stored journal that isn't a journal starts the tour afresh", () => scoped(effect {
+  try cleaned
+  try scoped(running("/?agent=mock", () => expect(journalKeys()).toHaveLength(1)))
+  const key = try sync(() => journalKeys()[0]!)
+  try sync(() => window.localStorage.setItem(key, "{not json"))
+  try running("/?agent=mock", () => expect(length(key)).toBeGreaterThan(0))
+  const fresh = try sync(() => storedJournal(key) ?? [])
+  try Effect.try(() => expect(fresh[0]?.seq).toBe(1))
+}))
+
+it.live("a tour whose journal the browser refuses keeps going and stores nothing", () => scoped(effect {
+  try cleaned
+  const { window: refusing, refused } = try Effect.try(refusingJournal)
+  const style = try Effect.try(() => window.getComputedStyle.bind(window))
+  const host = Layer.mergeAll(
+    Layer.succeed(Experimental.Window.Window, Experimental.Window.make({ window: () => refusing, computedStyle: style })),
+    ExperimentalBrowserDocument.layer, ExperimentalBrowserMediaQuery.layer, SecureRandom.layerWebCrypto,
+  )
+  // Each recorded event is one refused write, so several writes mean the tour went on after the first refusal.
+  try running("/?agent=mock", () => expect(refused.filter((call) => call === "write").length).toBeGreaterThan(2), host)
+  const keys = try Effect.try(() => journalKeys())
+  try Effect.try(() => { expect(refused[0]).toBe("read"); expect(keys).toEqual([]) })
 }))

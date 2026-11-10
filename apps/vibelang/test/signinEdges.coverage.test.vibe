@@ -228,7 +228,7 @@ describe("settings and time", () => {
     }
   }), 60_000)
 
-  it.live("a grant that expires during the wait ends the wait and is removed", () => scoped(effect {
+  it.live("a grant that expires during the wait ends the wait as expired and is removed", () => scoped(effect {
     provide NodeServices.layer, NodeHttpServer.layerTest, live {
       const origin = try serve(factoryAndGitHub(json({ error: "authorization_pending" })))
       const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
@@ -239,10 +239,24 @@ describe("settings and time", () => {
         const left = try readPending()
         const after = try Clock.currentTimeMillis
         try Effect.try(() => {
-          expect(failure).toBe("Sign-in failed.")
+          expect(failure).toBe("Sign-in expired.")
           expect(left).toBeUndefined()
           expect(after).toBeGreaterThanOrEqual(now + 2500)
         })
+      }
+    }
+  }), 60_000)
+
+  it.live("a waiting sign-in GitHub refuses is neither declined nor expired, and keeps the grant", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const origin = try serve(factoryAndGitHub(json({ error: "unavailable" }, 500)))
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        // The first poll is not due yet, so GitHub's refusal reaches the wait, not the first check.
+        try writePending(try pendingFor(origin, { nextPollAt: (try Clock.currentTimeMillis) + 1000 }))
+        const failure = try message(signIn(WAIT))
+        const left = try readPending()
+        try Effect.try(() => { expect(failure).toBe("Sign-in failed."); expect(left?.userCode).toBe("OLDC-ODE1") })
       }
     }
   }), 60_000)

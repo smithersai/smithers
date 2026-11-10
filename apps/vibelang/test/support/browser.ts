@@ -106,3 +106,49 @@ export function refusingStorage(): Window {
     },
   })
 }
+
+/** The tour journals the page keeps in its local storage (`vibelang:walkthrough:<conversation>`). */
+export function journalKeys(): ReadonlyArray<string> {
+  return Object.keys(window.localStorage).filter((key) => key.startsWith("vibelang:walkthrough:"))
+}
+
+/** A stored journal's events, or undefined when the key holds nothing or text that isn't a JSON array. */
+export function storedJournal(key: string): ReadonlyArray<{ readonly seq: number }> | undefined {
+  const text = window.localStorage.getItem(key)
+  if (text === null) return undefined
+  try {
+    const value: unknown = JSON.parse(text)
+    return Array.isArray(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Removes the stored journals, the finished-tour mark and this tab's tour keys. */
+export function forgetTours(): void {
+  journalKeys().forEach((key) => window.localStorage.removeItem(key))
+  window.localStorage.removeItem("vibelang:toured")
+  for (const key of ["vibelang:tour-session", "vibelang:tour-active"]) window.sessionStorage.removeItem(key)
+}
+
+/** The real window whose local storage refuses only the tour journal's keys; `refused` lists each refused call. */
+export function refusingJournal(): { readonly window: Window; readonly refused: Array<"read" | "write"> } {
+  const refused: Array<"read" | "write"> = []
+  const journal = (key: string) => key.startsWith("vibelang:walkthrough:")
+  const storage = new Proxy(window.localStorage, {
+    get(target, property) {
+      if (property === "getItem") return (key: string) => { if (journal(key)) { refused.push("read"); throw new DOMException("denied", "SecurityError") } return target.getItem(key) }
+      if (property === "setItem") return (key: string, value: string) => { if (journal(key)) { refused.push("write"); throw new DOMException("denied", "SecurityError") } target.setItem(key, value) }
+      const value = Reflect.get(target, property)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+  const page = new Proxy(window, {
+    get(target, property) {
+      if (property === "localStorage") return storage
+      const value = Reflect.get(target, property)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+  return { window: page, refused }
+}

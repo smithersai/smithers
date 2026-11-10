@@ -2,7 +2,7 @@
 // @smthrs/integrations GitHub auth, then the server's `/api/auth/device` turns the grant into the person's agent
 // session, stored where the CLI keeps its settings (session.vibe). Mock mode signs in as the fixture person with
 // no network (VL-13). A cookie, device code or token is never logged.
-import { sessionOperation, waitForSignIn, SignInFailed } from "./sessionFlow.vibe"
+import { sessionOperation, waitForSignIn, SignInFailed, type Status } from "./sessionFlow.vibe"
 export { SignInFailed } from "./sessionFlow.vibe"
 import { GitHub } from "@smthrs/integrations"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
@@ -51,15 +51,26 @@ effect function poll(auth: GitHub.Auth.GitHubAuth["Service"], flow: PendingDevic
   return try Effect.mapError(auth.deviceToken(Redacted.make(flow.deviceCode)), () => new SignInFailed({ message: "GitHub refused the device sign-in." }))
 }
 
-/** A settled poll: finish the sign-in with the server, or fail with the person's answer. */
+/** The person's answer as one sentence; "Sign-in failed." only for a failure that is neither. */
+function refusal(status: "declined" | "expired" | "failed") {
+  return new SignInFailed({ message: status === "declined" ? "Sign-in declined." : status === "expired" ? "Sign-in expired." : "Sign-in failed." })
+}
+
+/** A poll's status, failing with the person's answer when they declined or the grant expired. */
+effect function answered(status: Status) {
+  if (status === "declined" || status === "expired") throw refusal(status)
+  return status
+}
+
+/** A settled poll: finish the sign-in with the server, or the person's answer (`declined`, `expired`). */
 effect function settle(flow: PendingDevice, origin: string, answer: GitHub.Auth.DevicePoll) {
   if (answer.status === "denied") {
     try removePending()
-    throw new SignInFailed({ message: "Sign-in declined." })
+    return "declined" as const
   }
   if (answer.status === "expired") {
     try removePending()
-    throw new SignInFailed({ message: "Sign-in expired." })
+    return "expired" as const
   }
   if (answer.status !== "authorized") {
     const interval = answer.status === "slowDown" ? Math.max(flow.intervalSeconds + 5, answer.intervalSeconds ?? 0) : flow.intervalSeconds
@@ -106,15 +117,15 @@ export effect function signIn(input: LoginInput) {
     if (result === "signed-in" || result === "started") {
       if (!input.wait || result === "signed-in") return try output(result)
     } else {
-      const status = try sessionOperation("poll", safeSettings(scoped(pollPending())))
+      const status = try answered(try sessionOperation("poll", safeSettings(scoped(pollPending()))))
       if (status === "signed-in") return try output(status)
       if (!input.wait) return try output("pending")
     }
     const pending = try readPending()
     if (pending === undefined) throw new SignInFailed({ message: "Sign-in expired." })
     try Console.error(`Open ${pending.verificationUri} and enter ${pending.userCode}.`)
-    const status = try Effect.mapError(waitForSignIn(safeSettings(scoped(pollPending()))), () => new SignInFailed({ message: "Sign-in failed." }))
-    if (status !== "signed-in") throw new SignInFailed({ message: "Sign-in failed." })
+    const status = try Effect.mapError(waitForSignIn(safeSettings(scoped(pollPending()))), () => refusal("failed"))
+    if (status !== "signed-in") throw refusal(status === "declined" || status === "expired" ? status : "failed")
     return try output("signed-in")
   }
 }
@@ -157,7 +168,7 @@ effect function startLogin() {
 /** One check, respecting GitHub's interval even across independent CLI processes and MCP calls. */
 effect function pollPending() {
   const flow = try readPending()
-  if (flow === undefined) throw new SignInFailed({ message: "Sign-in expired." })
+  if (flow === undefined) return "expired" as const
   if ((try Clock.currentTimeMillis) < flow.nextPollAt) return "pending" as const
   const auth = try githubAuth(flow.clientId)
   return try settle(flow, flow.origin, try poll(auth, flow))
