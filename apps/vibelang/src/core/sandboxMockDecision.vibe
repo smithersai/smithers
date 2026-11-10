@@ -1,0 +1,37 @@
+// The mock sandbox's own decisions (wiki/decisions/0024-sandboxes.md, 0018 third-lane batch 12): which command a line
+// is on the mock device and whether a machine's lease is the current one.
+// `src/core/sandboxMock.vibe` calls these; the command regexps, the device's maps and the meter's alarm stay outside.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
+
+/** What the mock device does with a command line. */
+export type MockCommand = "write" | "read" | "pwd" | "ls" | "echo" | "blank" | "other"
+
+/**
+ * A redirected echo writes a file, then `cat` reads one, then `pwd`, `ls` and a plain `echo`; a blank line does
+ * nothing; anything else is unavailable in mock mode.
+ */
+//@ verify
+//@ ensures writes ==> \result == "write"
+//@ ensures !writes && reads ==> \result == "read"
+//@ ensures !writes && !reads && command == "pwd" ==> \result == "pwd"
+//@ ensures !writes && !reads && command == "ls" ==> \result == "ls"
+//@ ensures !writes && !reads && command != "pwd" && command != "ls" && command.startsWith("echo ") ==> \result == "echo"
+//@ ensures !writes && !reads && command != "pwd" && command != "ls" && !command.startsWith("echo ") && command.trim() == "" ==> \result == "blank"
+//@ ensures !writes && !reads && command != "pwd" && command != "ls" && !command.startsWith("echo ") && command.trim() != "" ==> \result == "other"
+export function mockCommand(writes: boolean, reads: boolean, command: string): MockCommand {
+  if (writes) return "write"
+  if (reads) return "read"
+  if (command === "pwd") return "pwd"
+  if (command === "ls") return "ls"
+  if (command.startsWith("echo ")) return "echo"
+  return command.trim() === "" ? "blank" : "other"
+}
+
+/** Whether a machine holds the lease `generation` names: it runs, at exactly that generation. */
+//@ verify
+//@ ensures \result == (running && current == generation)
+export function currentLease(running: boolean, current: number, generation: number): boolean {
+  return running && current === generation
+}
