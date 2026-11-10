@@ -5,7 +5,7 @@ import { Factory, Refused, Unavailable } from "../../src/core/Factory.vibe"
 import { AccountUnavailable, Accounts } from "../../src/core/roles.vibe"
 import { MockFactory } from "../../src/core/MockFactory.vibe"
 
-export type Fault = "wiki" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "roles" | "tour-events" | "stale"
+export type Fault = "accounts" | "live-details" | "wiki" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "roles" | "tour-events" | "stale"
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -34,10 +34,26 @@ function rolesFault(accounts: Accounts.Shape, fails: () => boolean): Accounts.Sh
   }
 }
 
+/** The real accounts, except that the first `choose` (sign-in, Visit as), `members`, `grant` and `signOut` each fail once. */
+function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolean): Accounts.Shape {
+  return {
+    current: () => accounts.current(),
+    members: () => first("accounts:members") ? Effect.fail(new AccountUnavailable({ reason: "accounts unavailable" })) : accounts.members(),
+    grant: (id, role) => first("accounts:grant") ? Effect.fail(new AccountUnavailable({ reason: "accounts unavailable" })) : accounts.grant(id, role),
+    signOut: () => first("accounts:signOut") ? Effect.fail(new AccountUnavailable({ reason: "accounts unavailable" })) : accounts.signOut(),
+    choose: (role) => first("accounts:choose") ? Effect.fail(new AccountUnavailable({ reason: "accounts unavailable" })) : accounts.choose(role),
+    signInAgent: () => accounts.signInAgent(),
+    participated: (personId) => accounts.participated(personId),
+    events: (after) => accounts.events(after),
+  }
+}
+
 /**
  * Lose #3 once, or break before #4 mid-reply. Subsequent subscriptions use the unmodified real stream. `sandbox-read`
  * fails every sandbox read; `sandbox-start` fails the first start; `roles` ends the first role subscription with AccountUnavailable;
- * `tour-events` ends the first tour conversation subscription with Unavailable. Each fault happens once.
+ * `tour-events` ends the first tour conversation subscription with Unavailable; `accounts` fails the first sign-in or role
+ * choice, member list, grant and sign-out; `live-details` runs live mode and fails the first issue's details read.
+ * Each fault happens once.
  */
 export function faultyFactory(fault: Fault, observation: Trace) {
   return Layer.effect(Factory, effect {
@@ -56,8 +72,8 @@ export function faultyFactory(fault: Fault, observation: Trace) {
       return true
     }
     return {
-      mode: fault === "live-header" ? "live" : base.mode,
-      ...(base.accounts === undefined ? {} : { accounts: fault !== "roles" ? base.accounts : rolesFault(base.accounts, () => first("roles")) }),
+      mode: fault === "live-header" || fault === "live-details" ? "live" : base.mode,
+      ...(base.accounts === undefined ? {} : { accounts: fault === "roles" ? rolesFault(base.accounts, () => first("roles")) : fault === "accounts" ? accountsFault(base.accounts, first) : base.accounts }),
       ...(base.policy === undefined ? {} : { policy: base.policy }),
       ...(base.wiki === undefined ? {} : { wiki: {
         read: effect (page) => {
@@ -74,6 +90,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
           return fault === "stale" ? { ...read, stale: STALE_AT } : read
         },
         act: effect (request) => {
+          if (request.op === "read" && request.number > 0 && first("live-details:read")) throw new IssueFailure({ reason: "unavailable" })
           const result = try base.issues!.act(request)
           if (fault === "issue-write" && request.op !== "read" && !observation.faulted) { observation.faulted = true; throw new IssueFailure({ reason: "unavailable" }) }
           return result
