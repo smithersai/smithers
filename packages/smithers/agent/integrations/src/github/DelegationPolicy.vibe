@@ -96,3 +96,28 @@ export function readTarget(grants: ReadonlyArray<Grant>, login: string, path: st
 export function liveDelegation(state: string, expires: number, now: number): boolean {
   return state === "active" && expires > now
 }
+
+/** A repository a hosted site may read for signed-out visitors through smithers.sh's App (0165, public reads). */
+export interface Read { readonly repository: string; readonly repositoryId: number }
+const NAMED = /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/
+/** A registry `reads` entry smithers.sh may load: an `owner/name` repository with a positive id. */
+export function validRead(read: Read): boolean {
+  return NAMED.test(read.repository) && Number.isSafeInteger(read.repositoryId) && read.repositoryId > 0
+}
+const QUERY = /^[A-Za-z0-9._~%=&:+,-]*$/
+export const MAX_READ_PATH = 2048
+/**
+ * The listed repository a public GET reads, or undefined: `/repos/<owner>/<name>` or one of its read collections, safe
+ * segments and a plain query. No person takes part, so no fork is admitted.
+ */
+export function publicRead(reads: ReadonlyArray<Read>, path: string): Read | undefined {
+  if (path.length > MAX_READ_PATH) return undefined
+  const mark = path.indexOf("?")
+  const pathname = mark < 0 ? path : path.slice(0, mark)
+  if (!QUERY.test(mark < 0 ? "" : path.slice(mark + 1)) || !pathname.startsWith("/repos/") || !safePath(pathname.slice(1))) return undefined
+  const [owner, name, ...rest] = pathname.slice("/repos/".length).split("/")
+  if (owner === undefined || name === undefined) return undefined
+  const read = reads.find((entry) => validRead(entry) && same(entry.repository, `${owner}/${name}`))
+  const tail = rest.join("/")
+  return read !== undefined && (tail === "" || READS.some((collection) => tail === collection || tail.startsWith(collection + "/"))) ? read : undefined
+}

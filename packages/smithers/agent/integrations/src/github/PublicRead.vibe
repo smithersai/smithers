@@ -1,0 +1,174 @@
+// Public reads for hosted sites (decision 0165, addendum "public reads"). A site signs a GET of a repository its
+// registry entry lists; smithers.sh answers it with its App's installation token. No person, delegation, Durable Object
+// or write takes part, and the site never holds a token.
+import * as Policy from "./DelegationPolicy.vibe"
+import type * as AppAuth from "./AppAuth.ts"
+import * as GitHubClient from "./GitHubClient.ts"
+import { rateLimited } from "./ReadCache.vibe"
+import * as CookieKeys from "../core/CookieKeys.vibe"
+import * as Signature from "../core/Signature.ts"
+import { forCredentials } from "../core/CredentialHttp.ts"
+import { HttpClient, HttpClientError, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+
+export const ROUTE = "/api/auth/broker/public-read"
+/** The signature's purpose: a delegation signature (`broker_delegation`) never verifies here, nor this one there. */
+export const PURPOSE = "broker_public_read"
+export const CALL_TTL = 60_000
+/** A read's whole envelope: an unauthenticated request costs at most this much reading and one HMAC. */
+export const MAX_BODY = 8_192
+/** On smithers.sh's own refusal, never on GitHub's answer. */
+export const REFUSAL = "x-smithers-refusal"
+/**
+ * On every answer smithers.sh passes through from GitHub. The site trusts a status only with it: a smithers.sh that does
+ * not serve the route yet answers its own 404, which must not read as GitHub's and drop the site's copy.
+ */
+export const ANSWERED = "x-smithers-public-read"
+export const GITHUB_API = "https://api.github.com"
+/** How long before its expiry a held installation token is replaced. */
+export const REFRESH_BEFORE = 300_000
+const READ_PERMISSIONS = { contents: "read", issues: "read", pull_requests: "read", metadata: "read" } as const
+const PASSED = ["etag", "link", "content-type", "retry-after", "x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset", "x-ratelimit-used", "x-ratelimit-resource"]
+const NO_STORE = { "cache-control": "no-store", "referrer-policy": "no-referrer" }
+const ETAG = /^(W\/)?"[\x21\x23-\x7e]{0,200}"$/
+
+export type Reason = "forbidden" | "unavailable"
+export type Outcome = "ok" | "not_modified" | "missing" | "rate_limited" | "refused" | Reason
+export class PublicReadRefused extends Schema.TaggedError<PublicReadRefused>()("@smthrs/integrations/PublicReadRefused", {
+  reason: Schema.Literals(["forbidden", "unavailable"]),
+}) {}
+const refused = (reason: Reason) => new PublicReadRefused({ reason })
+/** A registry entry: the site's key and the repositories it may read. */
+export interface Site { readonly origin: string; readonly secret: Redacted.Redacted<string>; readonly reads: ReadonlyArray<Policy.Read> }
+/** The installation token that reads one listed repository. */
+export type Token = (read: Policy.Read) => Redacted.Redacted<string>!PublicReadRefused
+
+const Claim = Schema.Struct({ audience: Schema.String, route: Schema.String, origin: Schema.String, digest: Schema.String, expires: Schema.Number })
+const Envelope = Schema.Struct({ origin: Schema.String, request: Schema.String, payload: Schema.String })
+const Payload = Schema.Struct({ path: Schema.String, etag: Schema.optional(Schema.String) })
+
+export const digestOf = (value: string) => Signature.computeHmacSha256Hex(value, "smithers-github-public-read-digest-v1")
+export const handles = (url: string) => new URL(url, "https://broker.invalid").pathname === ROUTE
+
+/** Fixed vocabulary only: never a path, repository, body or token. */
+effect function record(outcome: Outcome) {
+  try Metric.update(Metric.withAttributes(Metric.counter("smithers_github_public_reads", { incremental: true }), { outcome }), 1)
+  try Effect.logInfo("github.public_read").pipe(Effect.annotateLogs({ outcome }))
+}
+
+/** The site's GitHub transport for signed-out reads: each GitHub GET goes to smithers.sh, signed; nothing else goes. */
+export effect function site(options: { readonly origin: string; readonly brokerOrigin: string; readonly secret: Redacted.Redacted<string>; readonly api?: string }): HttpClient.HttpClient!never!HttpClient.HttpClient {
+  const keys = try CookieKeys.make({ primary: options.secret }, "primary")
+  const api = new URL(options.api ?? GITHUB_API).origin
+  const ambient = try HttpClient.HttpClient
+  const broker = try Effect.orDie(Effect.try(() => forCredentials(ambient)))
+  return HttpClient.make((request, url) => effect {
+    const refuse = (description: string) => new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, description }) })
+    if (request.method !== "GET" || url.origin !== api) throw refuse("only GitHub GETs are public reads")
+    const etag = request.headers["if-none-match"]
+    // Only the path and the ETag cross: the caller's own headers, a token among them, stay here.
+    const payload = JSON.stringify({ path: url.pathname + url.search, ...(etag === undefined ? {} : { etag }) })
+    const claim = { audience: options.brokerOrigin, route: ROUTE, origin: options.origin, digest: try Effect.orDie(digestOf(payload)), expires: (try Clock.currentTimeMillis) + CALL_TTL }
+    const body = { origin: options.origin, request: try keys.sign(PURPOSE, JSON.stringify(claim)), payload }
+    const response = try broker.execute(HttpClientRequest.post(options.brokerOrigin + ROUTE).pipe(HttpClientRequest.bodyJsonUnsafe(body))).pipe(
+      Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
+      Effect.timeoutOrElse({ duration: "10 seconds", orElse: () => Effect.fail(refuse("smithers.sh did not answer in time")) }),
+    )
+    const refusal = response.headers[REFUSAL]
+    if (refusal !== undefined) throw refuse("smithers.sh refused the read")
+    if (response.headers[ANSWERED] !== "github") throw refuse("smithers.sh did not answer as the public-read route")
+    return response
+  })
+}
+
+/** Everything a request must prove before smithers.sh spends a token on it. */
+const admit = effect (options: { readonly origin: string; readonly sites: ReadonlyArray<Site> }, text: string) => {
+  const envelope = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Envelope))(text), () => refused("forbidden"))
+  const site = options.sites.find((entry) => entry.origin === envelope.origin)
+  if (site === undefined) throw refused("forbidden")
+  const keys = try CookieKeys.make({ primary: site.secret }, "primary")
+  const verified = try keys.verify(PURPOSE, envelope.request)
+  if (Option.isNone(verified)) throw refused("forbidden")
+  const claim = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Claim))(verified.value.value), () => refused("forbidden"))
+  const now = try Clock.currentTimeMillis
+  if (claim.audience !== options.origin || claim.route !== ROUTE || claim.origin !== envelope.origin || claim.expires <= now || claim.expires > now + CALL_TTL) throw refused("forbidden")
+  if (claim.digest !== (try Effect.orDie(digestOf(envelope.payload)))) throw refused("forbidden")
+  const payload = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Payload))(envelope.payload), () => refused("forbidden"))
+  if (payload.etag !== undefined && !ETAG.test(payload.etag)) throw refused("forbidden")
+  const read = Policy.publicRead(site.reads, payload.path)
+  if (read === undefined) throw refused("forbidden")
+  return { read, payload }
+}
+
+const refusal = (reason: Reason, status = reason === "forbidden" ? 403 : 503) =>
+  HttpServerResponse.jsonUnsafe({ reason }, { status, headers: { ...NO_STORE, [REFUSAL]: reason } })
+
+/**
+ * smithers.sh's route. Stateless: an unsigned or unlisted read is refused before any token or GitHub call, and touches
+ * no storage. A replay within the claim's 60 seconds repeats a public GET, so no nonce is kept.
+ */
+export effect function route(options: { readonly origin: string; readonly sites: ReadonlyArray<Site>; readonly token: Token; readonly github: HttpClient.HttpClient; readonly api?: string }) {
+  const request = try HttpServerRequest.HttpServerRequest
+  if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: NO_STORE })
+  const text = request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(MAX_BODY)), Effect.timeout("3 seconds")) catch () => undefined
+  if (text === undefined) return refusal("forbidden", 413)
+  return try withSpan(effect {
+    const admitted = try Effect.result(admit(options, text))
+    if (admitted._tag === "Failure") {
+      try record(admitted.failure.reason)
+      return refusal(admitted.failure.reason)
+    }
+    const { read, payload } = admitted.success
+    const token = try Effect.result(options.token(read))
+    if (token._tag === "Failure") {
+      try record(token.failure.reason)
+      return refusal(token.failure.reason)
+    }
+    const github = try Effect.orDie(Effect.try(() => forCredentials(options.github)))
+    const sent = HttpClientRequest.get((options.api ?? GITHUB_API) + payload.path).pipe(HttpClientRequest.setHeaders({
+      accept: "application/vnd.github+json", "user-agent": "smithers-public-read", "x-github-api-version": "2022-11-28",
+      authorization: `Bearer ${Redacted.value(token.success)}`, ...(payload.etag === undefined ? {} : { "if-none-match": payload.etag }),
+    }))
+    const answered = try Effect.result(Effect.flatMap(github.execute(sent), (response) => Effect.map(response.text, (body) => ({ response, body }))).pipe(
+      Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
+      Effect.timeout("10 seconds"),
+    ))
+    if (answered._tag === "Failure") {
+      try record("unavailable")
+      return refusal("unavailable")
+    }
+    const { response, body } = answered.success
+    const received = response.headers as Readonly<Record<string, string>>
+    try record(response.status === 304 ? "not_modified" : response.status === 404 ? "missing" : rateLimited(response.status, received) ? "rate_limited" : response.status < 300 ? "ok" : "refused")
+    const headers: Record<string, string> = { ...NO_STORE, [ANSWERED]: "github" }
+    for (const name of PASSED) if (received[name] !== undefined) headers[name] = received[name]!
+    if (response.status === 304) return HttpServerResponse.empty({ status: 304, headers })
+    return HttpServerResponse.text(body, { status: response.status, headers, contentType: received["content-type"] ?? "application/json" })
+  }, "github.public_read")
+}
+
+const statusOf = (error: { readonly details?: Readonly<Record<string, unknown>> }) => error.details?.["status"]
+
+/**
+ * smithers.sh's installation tokens for public reads, one per listed repository, held in this isolate until
+ * `REFRESH_BEFORE` its expiry. Each is minted for the repository's id alone, read-only, and used only after GitHub
+ * confirms with it that the name still names that id and the repository is public.
+ */
+export function installations(app: AppAuth.AppAuth, github: HttpClient.HttpClient, api = GITHUB_API): Token {
+  const held = new Map<number, AppAuth.InstallationToken>()
+  const Repository = Schema.Struct({ id: Schema.Number, private: Schema.Boolean })
+  return (read) => effect {
+    const now = try Clock.currentTimeMillis
+    const known = held.get(read.repositoryId)
+    if (known !== undefined && known.expiresAt - REFRESH_BEFORE > now) return known.token
+    const [owner, name] = read.repository.split("/") as [string, string]
+    const installation = try Effect.mapError(app.installation(owner, name), (error) => refused(statusOf(error) === 404 ? "forbidden" : "unavailable"))
+    const minted = try Effect.mapError(app.installationToken({ installationId: installation.id, repositoryIds: [read.repositoryId], permissions: READ_PERMISSIONS }), (error) => refused(statusOf(error) === 404 || statusOf(error) === 422 ? "forbidden" : "unavailable"))
+    const repository = try Effect.flatMap(GitHubClient.make({ token: Redacted.value(minted.token), apiBaseUrl: api }, {}), (client) => client.request("GET", `/repos/${read.repository}`, undefined, { schema: Repository })).pipe(
+      Effect.provideService(HttpClient.HttpClient, github),
+      Effect.mapError(() => refused("unavailable")),
+    )
+    if (repository.id !== read.repositoryId || repository.private) throw refused("forbidden")
+    held.set(read.repositoryId, minted)
+    return minted.token
+  }
+}
