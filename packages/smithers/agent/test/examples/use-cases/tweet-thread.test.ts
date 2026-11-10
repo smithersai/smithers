@@ -21,7 +21,7 @@ import {
   tweets,
   TweetThread,
   xLayer
-} from "../../../examples/use-cases/tweet-thread.ts"
+} from "../../../examples/use-cases/tweet-thread.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "tweet-thread-"))
 

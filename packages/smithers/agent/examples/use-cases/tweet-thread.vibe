@@ -16,7 +16,7 @@ import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { createHmac, randomBytes } from "node:crypto"
+import { postSigned, xEnvironment } from "./tweet-thread.platform.ts"
 
 /** The thread, in posting order: 0.x's pre-generated countdown, verbatim. */
 export const tweets: ReadonlyArray<string> = [
@@ -77,44 +77,13 @@ export const PostTweet = Action.make("examples/TweetThread/Post", {
 type TweetPost = typeof TweetPost.Type
 
 /** RFC 3986 percent-encoding, which OAuth 1.0a signs over. */
-const percent = (value: string) =>
-  encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
-
-interface Credentials {
-  readonly apiKey: string
-  readonly apiSecret: string
-  readonly accessToken: string
-  readonly accessSecret: string
-}
-
-/** The OAuth 1.0a `Authorization` header for a POST to `endpoint` with a JSON body. */
-const authorization = (credentials: Credentials): string => {
-  const oauth: Record<string, string> = {
-    oauth_consumer_key: credentials.apiKey,
-    oauth_nonce: randomBytes(16).toString("hex"),
-    oauth_signature_method: "HMAC-SHA1",
-    oauth_timestamp: String(Math.floor(Date.now() / 1000)),
-    oauth_token: credentials.accessToken,
-    oauth_version: "1.0"
-  }
-  // A JSON body is not part of the signature base string; only the OAuth parameters are.
-  const parameters = Object.entries(oauth).map(([k, v]) => `${percent(k)}=${percent(v)}`).sort().join("&")
-  const base = ["POST", percent(endpoint), percent(parameters)].join("&")
-  const key = `${percent(credentials.apiSecret)}&${percent(credentials.accessSecret)}`
-  oauth.oauth_signature = createHmac("sha1", key).update(base).digest("base64")
-  return `OAuth ${Object.entries(oauth).map(([k, v]) => `${percent(k)}="${percent(v)}"`).join(", ")}`
-}
-
 /**
  * The live X implementation. It reads the four `X_*` variables on every post,
  * as 0.x did, and records a post it has no credentials for as not posted.
  */
 export const xLayer = PostTweet.toLayer(({ replyToId, text }) =>
-  Effect.gen(function*() {
-    const apiKey = process.env.X_API_KEY
-    const apiSecret = process.env.X_API_SECRET
-    const accessToken = process.env.X_ACCESS_TOKEN
-    const accessSecret = process.env.X_ACCESS_SECRET
+  effect {
+    const { accessSecret, accessToken, apiKey, apiSecret } = xEnvironment()
     if (!apiKey || !apiSecret || !accessToken || !accessSecret) {
       return {
         tweetId: "",
@@ -123,22 +92,19 @@ export const xLayer = PostTweet.toLayer(({ replyToId, text }) =>
       }
     }
     const body = replyToId ? { text, reply: { in_reply_to_tweet_id: replyToId } } : { text }
-    const response = yield* Effect.tryPromise({
-      try: () =>
-        fetch(endpoint, {
-          method: "POST",
-          headers: {
-            authorization: authorization({ apiKey, apiSecret, accessToken, accessSecret }),
-            "content-type": "application/json"
-          },
-          body: JSON.stringify(body)
-        }).then(async (r) => ({ status: r.status, ok: r.ok, text: await r.text() })),
+    const response = try Effect.tryPromise({
+      try: () => postSigned(endpoint, { apiKey, apiSecret, accessToken, accessSecret }, body),
       catch: (cause) => new PostRefused({ status: 0, body: String(cause) })
     })
-    if (!response.ok) return yield* Effect.fail(new PostRefused({ status: response.status, body: response.text }))
-    const { data } = JSON.parse(response.text) as { readonly data: { readonly id: string } }
+    if (!response.ok) throw new PostRefused({ status: response.status, body: response.text })
+    const { data } = try Effect.orDie(
+      Effect.try({
+        try: () => JSON.parse(response.text) as { readonly data: { readonly id: string } },
+        catch: (error) => error
+      })
+    )
     return { tweetId: data.id, posted: true }
-  })
+  }
 )
 
 // `Sleep.action` is a system action that declares no requirement, so only the post appears here.
