@@ -22,6 +22,11 @@ The explicit contribution copy retains upstream JSDoc and formatting, checked se
 
 All-Schema targets save confirmed, shrunk values when their JSON codec encodes them; otherwise they save a revision-bound tape. Failures live beside each test in `__fuzz__`, committed as regressions. Search inputs live in the ignored `node_modules/.cache/effect-fuzz` cache. Failed confirmation is reported as flaky and is not committed as a regression. Distinct fixed counterexamples of the same signature are retained.
 
+A saved JSON value must still decode under its target's schema, or the target fails before it runs. A new input field
+is optional; a field a schema makes required is added to every saved value with the default `init` gives it
+(`Model.theatre`, 2026-11-10: five `web/*` values had broken `web/view-branches`, `web/view-models` and
+`web/subscriptions`).
+
 A plain Vitest run replays saved failures and executes 100 fresh inputs. `EFFECT_FUZZ=1` searches all registered tests; `EFFECT_FUZZ_DURATION`, `EFFECT_FUZZ_EXECUTIONS`, and `EFFECT_FUZZ_SEED` set a session's budgets and seed. A duration also raises the runner timeout by 30 seconds for shrinking and cleanup. App targets will use short per-run defaults and `FUZZ_BUDGET` for campaigns.
 
 ## Executed package coverage
@@ -233,8 +238,7 @@ Not reached, with the reason; none is excluded:
 - A store fault reaches every typed engine failure (below). A store *write* that fails is a defect by engine-store's
   contract (`RunDriver.ensureCreatedRun` dies on `persistence_failed`; a journal read in `retryFrom` dies on
   `JournalError`), as `Objects.post` already states for its own store. So `retryFrom`'s typed refusal (`Issues`
-  353, `Wiki` 245) and an action whose reply execution completes as a failure (`ActionRuns` 104-107 and 122, which
-  needs a defect inside a reply step, for example a history tool the scripted model calls) stay unreached.
+  353, `Wiki` 245) stays unreached.
   `engine.retryFrom === undefined` (`Issues` 345, `Wiki` 237) and a source run without a perform step (`Issues`
   352, `Wiki` 244): the Cloudflare runtime always supplies both.
 - Invariant guards no input reaches: `Issues` 50 (`matchAll` always sets `index`), 96 (`verifiedVip` already proved
@@ -242,9 +246,10 @@ Not reached, with the reason; none is excluded:
   flow, operation and key).
 - `ActionRuns` 157: `admit` with no stored request. Admission runs from alarms that `ActionRuns.alarm` reaches only
   with a stored request, and nothing deletes it.
-- `Objects` 148 and 150: a tour control needs a walkthrough while the object holds no intent, or a reply's; 155: the
-  tour's poll failing during a control's wake. A control is accepted only while the tour's own execution holds the
-  object.
+- `Objects` 148: a tour's wake while the object holds no intent. A tour's record and dispatch run in one execution,
+  and the alarm that finishes a reply admits the tour queued behind it in the same step, so a recorded tour always
+  has an intent; only a dispatch write that fails after the record leaves none. 155: the tour's poll failing during
+  a control's wake.
 
 Reached this session (vl-fuzz2, 2026-11-10), each by a steered scenario that runs every execution:
 
@@ -255,6 +260,14 @@ Reached this session (vl-fuzz2, 2026-11-10), each by a steered scenario that run
 | `wiki/steered-host` `store` | the same store; a served read; an unknown operation and a malformed key | `Wiki` 194, 199, 204, 205, 230, 239, 242, 249, 250 |
 | `wiki/steered-host` `connected` | a connected read with no delegate | `Wiki` 169 (public page) |
 | `objects/steered-host` `tour-seek-end` | a seek to step 11 | `Objects` 125 (`finish`) with no reading-hold wait |
+| `actions/held-replies` | a conversation log whose `finish` and `fail` die once | `ActionRuns` 116-118: the reply execution completes as a failure, the reply and its run end failed |
+| `actions/held-replies` | a ledger whose `admit` waits on a `Deferred` latch | `ActionRuns` 145-148: a person cancels the running reply; it ends cancelled |
+| `objects/steered-host` `tour-during-reply` | the same latch | a tour while the reply runs is `busy`; after it, a tour is accepted behind the reply and ending it reaches `Objects` 150 (the wake finds the reply's intent); the alarms then end the tour and the reply |
+
+A defect in a history tool or in the ledger's `spend` does not fail the reply execution: the agent sandbox and the
+reply's composition catch both, and the reply ends "The agent failed. Try again." Only the reply's own sequencer
+writes (`start`, `finish`, `fail`) fail it. A reply's run row exists only once an alarm starts the reply, so a cancel
+before that answers `not-found`. `actions/run-answers` also takes an optional `settle: "dies-once"` per run.
 
 The fuzz gate's Chromium merge now credits by source start, and the browser build is unminified (decision 0016,
 "Chromium merge").

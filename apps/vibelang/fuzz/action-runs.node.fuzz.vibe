@@ -6,7 +6,9 @@ import { ActionDevice } from "../src/actions/execution.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import * as Runs from "../worker/ActionRuns.vibe"
+import * as Objects from "../worker/Objects.vibe"
 import { world, request, history } from "../test/support/actionObjects.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
 import { cell, scriptedModel, type Scripted } from "./model-server.vibe"
 import { run, Finding, Text } from "./run.vibe"
 
@@ -18,6 +20,8 @@ const Config = Schema.Struct({
   demote: Schema.Literals(["none", "new", "community", "contributor"]),
   alarms: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 4 })),
   cancel: Schema.Literals(["none", "run", "child"]),
+  // The conversation log refuses the reply's first settle write: the reply execution completes as a failure.
+  settle: Schema.optionalKey(Schema.Literal("dies-once")),
 })
 /** Several independent runs per execution, each in its own object, so one execution meets many combinations. */
 const Input = Schema.Array(Config).check(Schema.isMinLength(1), Schema.isMaxLength(6))
@@ -32,6 +36,19 @@ const scriptOf = (input: typeof Config.Type): Scripted => {
   }
 }
 
+/**
+ * A run object whose conversation log dies on the reply's first settle write (`finish` or `fail`), as a reset store
+ * does: a faulty service, the real sequencer behind it. Reads go to the real sequencer.
+ */
+const faultyObject = (id: string, authority: Parameters<typeof Runs.make>[3]) => effect {
+  const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+  const sequencer = try Objects.conversation(storage)
+  let faults = 1
+  const dies = <A, E>(write: A!E) => faults-- > 0 ? Effect.die(new Error("conversation log unavailable")) : write
+  const faulty: typeof sequencer = { ...sequencer, finish: (reply, text) => dies(sequencer.finish(reply, text)), fail: (reply, reason) => dies(sequencer.fail(reply, reason)) }
+  return { storage, sequencer, host: Runs.make(id, storage, faulty, authority) }
+}
+
 /** A run's rows always agree with the conversation they describe, and a settled row never changes. */
 it.live("actions/run-answers", () => run("actions/run-answers", Input, (configs) => scoped(effect {
   const w = try world()
@@ -43,7 +60,7 @@ it.live("actions/run-answers", () => run("actions/run-answers", Input, (configs)
       for (const [index, input] of configs.entries()) {
         const scripted = try scriptedModel([scriptOf(input)])
         const id = `answered${index}`
-        const object = try w.object(id)
+        const object = input.settle === undefined ? try w.object(id) : try faultyObject(id, w.authority)
         const model = { model: scripted.model, unusable: "" }
         const spend = input.ledger === "admit" ? w.spend
           : input.ledger === "refuse" ? { admit: () => succeed(false), spend: () => Effect.void }
@@ -87,9 +104,72 @@ it.live("actions/run-answers", () => run("actions/run-answers", Input, (configs)
             if (reply.error !== "" && child.state === "passed") throw new Finding({ report: "a failed reply's run passed" })
           }
         }
+        // A reply whose execution failed is failed in the conversation and in its run, never left running.
+        if (input.settle !== undefined && input.flow === "vibelang/Post" && input.ledger === "admit" && input.cancel === "none" && input.demote === "none") {
+          const reply = (try object.sequencer.read(0)).entries.find((entry) => entry.author === "agent")
+          const child = (try Runs.read(object.sequencer)).find((row) => row.id === `${id}-reply`)
+          if (reply?.done !== true || reply.error !== "Action failed" || child?.state !== "failed") throw new Finding({ report: `a reply whose execution failed reads ${reply?.error === undefined ? "absent" : reply.done ? "done" : "running"}, its run ${child?.state}` })
+        }
       }
     }
   }
   return true
 })))
 
+/**
+ * Every execution runs both held states: the conversation log dies on the reply's first settle write, and the reply
+ * still ends failed; a latch holds the reply at its admission while a person cancels it, and it ends cancelled.
+ */
+it.live("actions/held-replies", () => run("actions/held-replies", Text, (text) => scoped(effect {
+  const w = try world()
+  provide MockFactory, history {
+    const device = try Factory
+    try device.accounts!.choose("maintainer")
+    const product = try Mythical
+    provide ActionDevice = device {
+      const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify(`Answer: ${text}`))], prompt: 3, completion: 4 }])
+      const question = `Question ${text}`
+      const settle = effect (id: string, object: { readonly host: ReturnType<typeof Runs.make>; readonly sequencer: Parameters<typeof Runs.read>[0] }) => {
+        const started = try object.host.start(request(id, "vibelang/Post", { text: question }, w.person.id), "maintainer")
+        if (!question.isWellFormed()) {
+          if (started !== "invalid") throw new Finding({ report: `a malformed post answered ${started}` })
+          return false
+        }
+        if (started !== null) throw new Finding({ report: `a permitted post answered ${started}` })
+        return true
+      }
+      const alarms = effect (object: { readonly host: ReturnType<typeof Runs.make> }) => {
+        for (let turn = 0; turn < 2; turn++) {
+          const outcome = try exit(object.host.alarm(w.spend, { model: scripted.model, unusable: "" }, product))
+          if (outcome._tag === "Failure") throw new Finding({ report: "an alarm failed with a working ledger" })
+        }
+      }
+      const ended = effect (id: string, sequencer: Parameters<typeof Runs.read>[0], error: string, state: string) => {
+        const reply = (try sequencer.read(0)).entries.find((entry) => entry.author === "agent")
+        const child = (try Runs.read(sequencer)).find((row) => row.id === `${id}-reply`)
+        if (reply?.done !== true || reply.error !== error || child?.state !== state) throw new Finding({ report: `a ${state} reply reads ${reply === undefined ? "absent" : reply.done ? "done" : "running"}, its run ${child?.state}` })
+      }
+      const failing = try faultyObject("failing", w.authority)
+      if (!(try settle("failing", failing))) return true
+      try alarms(failing)
+      try ended("failing", failing.sequencer, "Action failed", "failed")
+      // The reply's run exists once an alarm starts it; its admission waits on the latch, so the run is running.
+      const cancelled = try w.object("cancelled")
+      try settle("cancelled", cancelled)
+      const entered = try Deferred.make<void>()
+      const release = try Deferred.make<void>()
+      const held = { admit: (day: string) => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.andThen(w.spend.admit(day))), spend: w.spend.spend }
+      const running = try Effect.forkScoped(Effect.exit(cancelled.host.alarm(held, { model: scripted.model, unusable: "" }, product)))
+      try Deferred.await(entered)
+      const row = (try Runs.read(cancelled.sequencer)).find((item) => item.id === "cancelled-reply")
+      if (row?.state !== "running") throw new Finding({ report: `a held reply's run is ${row?.state}` })
+      const answer = try cancelled.host.cancel("cancelled-reply", "maintainer", w.person.id)
+      if (answer !== null) throw new Finding({ report: `cancelling a running reply answered ${answer}` })
+      try Deferred.succeed(release, undefined)
+      try Fiber.join(running)
+      try alarms(cancelled)
+      try ended("cancelled", cancelled.sequencer, "Cancelled", "cancelled")
+    }
+  }
+  return true
+})))

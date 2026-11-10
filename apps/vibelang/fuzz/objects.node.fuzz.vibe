@@ -90,7 +90,7 @@ it.live("objects/conversation-host", () => run("objects/conversation-host", Sche
   return true
 }))
 
-const OBJECT_SCENARIOS = ["post-behind-tour", "seek-behind-reply", "tour-behind-reply", "wiki-pages", "routing", "unadmitted-receipt", "tour-seek-end"] as const
+const OBJECT_SCENARIOS = ["post-behind-tour", "seek-behind-reply", "tour-behind-reply", "wiki-pages", "routing", "unadmitted-receipt", "tour-seek-end", "tour-during-reply"] as const
 const Scenario = Schema.Struct({ pick: Int, text: TextOrBoundary, admit: Schema.Boolean })
 const PAGES = ["index", "rulings", "nope", "", "decisions/0015-fuzzing"]
 
@@ -173,6 +173,28 @@ const objectScenario = (scenario: typeof OBJECT_SCENARIOS[number], pick: number,
       const after = try sequencer.snapshot()
       const entry = after.entries.find((item) => item.author === "agent")
       if (touring(after) !== "" || after.agent !== "idle" || entry?.done !== true || entry.error !== "" || after.walkthrough?.step !== 11) throw new Finding({ report: `the tour did not finish after its last stop (agent ${after.agent})` })
+      break
+    }
+    case "tour-during-reply": {
+      // A latch holds the reply at its admission: the reply's execution holds the object while a tour arrives.
+      if ((try bounded("post", Objects.post("conv", object, sequencer, `c${pick}`, "Guest", "Question"))) !== null) throw new Finding({ report: "a first post was refused" })
+      const entered = try Deferred.make<void>()
+      const release = try Deferred.make<void>()
+      const held = { admit: (_day: string) => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.andThen(spend.admit())), spend: spend.spend }
+      const replying = try Effect.forkScoped(Effect.exit(Objects.alarm("conv", object, sequencer, held, model, history)))
+      try Deferred.await(entered)
+      const during = try bounded("tour", Objects.tour("conv", object, sequencer))
+      if (during !== "busy" || touring(try sequencer.snapshot()) !== "") throw new Finding({ report: `a tour while a reply runs answered ${during}` })
+      try Deferred.succeed(release, undefined)
+      try Fiber.join(replying)
+      // The reply still holds the object's execution; a tour is accepted behind it, and ending it wakes nothing.
+      const intent = try promise(() => object.get<string>(ExecutionObject.intentKey))
+      if (intent === undefined || !intent.includes(Reply._tag)) throw new Finding({ report: "the reply let go of the object before its next alarm" })
+      if ((try bounded("tour", Objects.tour("conv", object, sequencer))) !== null) throw new Finding({ report: "a tour behind a started reply was refused" })
+      if ((try bounded("end tour", Objects.endTour("conv", object, sequencer))) !== null) throw new Finding({ report: "ending a tour behind a reply was refused" })
+      for (let turn = 0; turn < 3; turn++) try bounded("alarm", Objects.alarm("conv", object, sequencer, spend, model, history))
+      const after = try sequencer.snapshot()
+      if (touring(after) !== "" || after.agent !== "idle") throw new Finding({ report: `an ended tour behind a reply left the agent ${after.agent}` })
       break
     }
     case "unadmitted-receipt": {
