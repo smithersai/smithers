@@ -197,6 +197,7 @@ export const prepareSidecars = (root = repository, { stdio = "inherit" } = {}) =
   root = resolve(root)
   const projects = sidecarProjects(root)
   const failed = []
+  const generated = []
   for (const project of projects) {
     const directory = dirname(project.config)
     const localRequire = createRequire(project.config)
@@ -213,7 +214,10 @@ compilerOptions: { noEmit: true, customConditions: project.conditions, ...(proje
       if (stdio === "inherit") console.log("Generating declarations: " + slash(relative(root, project.config)))
       if (project.sidecarDir !== undefined) rmSync(project.sidecarDir, { recursive: true, force: true })
       const result = spawnSync(process.execPath, [compiler, "-p", temporary], { cwd: directory, stdio, encoding: "utf8" })
-      if (!result.error && result.status === 0 && project.sidecarDir !== undefined) relocate(project)
+      if (!result.error && result.status === 0) {
+        if (project.sidecarDir !== undefined) relocate(project)
+        generated.push(project)
+      }
       if (result.error || result.status !== 0) failed.push(
         slash(relative(root, project.config)) + ": declaration generation failed (" + (result.status ?? result.error?.message ?? result.signal) + ")" +
         (stdio === "pipe" ? "\n" + (result.stdout ?? "") + (result.stderr ?? "") : "")
@@ -222,8 +226,10 @@ compilerOptions: { noEmit: true, customConditions: project.conditions, ...(proje
       rmSync(temporary, { force: true })
     }
   }
+  // One project's failure must not cost every other project its record: without
+  // records, each cold start of any project compiles the whole workspace again.
+  writeLoaderRecords(root, generated, stdio)
   if (failed.length) throw new Error(failed.join("\n"))
-  writeLoaderRecords(root, projects, stdio)
   return projects.length
 }
 

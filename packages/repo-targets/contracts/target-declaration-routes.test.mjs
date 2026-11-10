@@ -228,3 +228,24 @@ test("a package's published src/test helpers get sidecars; its own test director
   const [project] = sidecarProjects(dir)
   assert.deepEqual(project.native.map(file => relative(dir, file)), ["src/test/helper.vibe", "src/value.vibe"])
 }))
+
+test("a project that fails generation does not cost the others their loader records", () => fixture(dir => {
+  symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "dir")
+  for (const name of ["good", "bad"]) {
+    mkdirSync(join(dir, name, "src"), { recursive: true })
+    writeFileSync(join(dir, name, "package.json"), JSON.stringify({ name: "records-" + name, type: "module" }))
+    writeFileSync(join(dir, name, "tsconfig.json"), JSON.stringify({
+      vibe: { sidecarDir: ".vibe/declarations" },
+      compilerOptions: {
+        target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true,
+        skipLibCheck: true, noEmit: true, rootDir: "src", rootDirs: [".", ".vibe/declarations"], allowArbitraryExtensions: true
+      },
+      include: ["src/**/*"]
+    }))
+  }
+  writeFileSync(join(dir, "good/src/value.vibe"), "export const value = 1\n")
+  writeFileSync(join(dir, "bad/src/value.vibe"), 'export const value: number = "wrong"\n')
+  assert.throws(() => prepareSidecars(dir, { stdio: "pipe" }), /bad\/tsconfig\.json: declaration generation failed/)
+  assert.equal(checkLoaderRecord({ project: join(dir, "good/tsconfig.json") }).miss, undefined, "the generated project keeps its record")
+  assert.notEqual(checkLoaderRecord({ project: join(dir, "bad/tsconfig.json") }).miss, undefined)
+}))
