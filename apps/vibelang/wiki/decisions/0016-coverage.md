@@ -727,6 +727,13 @@ not a `Verdict`; the decode now only types it, with `orDie`). Left uncovered, no
 with `AccountingUnavailable`. That needs the journal unreadable while `review` reads its own run's usage, and no
 service a test can replace reaches that read without also replacing the agent's journal.
 
+**`worker/VipDraft.vibe`, `worker/WikiDraft.vibe` (2026-11-10).** `test/draftWriters.coverage.test.vibe` runs both
+writers with their real agents against the scripted model: a draft answered and charged once, a non-draft, another
+page, blank text or a failed model answered `draft`, a refused day answered `budget`, a charge refused once and
+retried, and each agent seam asked directly without a model answering `no-model`. Deleted, as in the reviewers: the
+`Budget.make({})` mapping and the decode's `draft` mapping (the agent already refused any output outside the schema).
+Left uncovered, not excluded, for the reviewers' reason: `usageOf` failing (`VipDraft.vibe:55`, `WikiDraft.vibe:57`).
+
 **A reply-started tour stayed parked (fixed 2026-11-09).** A reply refused `busy` by a tour accepted after its
 dispatch ran that tour as its own child execution. Ending the tour woke only the tour the answer loop started, so the
 child stayed parked forever with no `vibelang.tour.run` outcome, though the reply still answered. Now each room has one

@@ -31,7 +31,8 @@ export const wikiAgentLayer = Layer.effect(WikiDraftAgent, effect {
         }
       })
       if (result._tag === "Failure") throw new WikiFailure({ reason: "draft" })
-      const decoded = try Schema.decodeUnknownEffect(WikiDraft)(result.success).pipe(Effect.mapError(() => new WikiFailure({ reason: "draft" })))
+      // The agent already refused an output that is not a WikiDraft; this decode only types it.
+      const decoded = try Effect.orDie(Schema.decodeUnknownEffect(WikiDraft)(result.success))
       if (decoded.page !== request.page || decoded.text.trim() === "") throw new WikiFailure({ reason: "draft" })
       return decoded
     },
@@ -50,7 +51,8 @@ export const wikiWriter = Layer.effect(WikiWriter, effect {
         return { day, admitted: try spend.admit(day).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" }))) }
       } })
       if (!admission.admitted) throw new WikiFailure({ reason: "budget" })
-      const meter = try Budget.make({}).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" })))
+      // An empty policy is valid, so making the meter cannot fail.
+      const meter = try Effect.orDie(Budget.make({}))
       const result = try Effect.result(agent.run(request, meter))
       const usage = try meter.usageOf(instance.executionId).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" })))
       try Action.make({ name: "vibelang/wiki/draft-spend", error: WikiFailure, retryPolicy: patient, execute: spend.spend(admission.day, `wiki-draft/${instance.executionId}`, usage.tokens).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" }))) })

@@ -31,7 +31,8 @@ export const agentLayer = Layer.effect(DraftAgent, effect {
         }
       })
       if (result._tag === "Failure") throw new IssueFailure({ reason: "draft" })
-      return try Schema.decodeUnknownEffect(VipDraft)(result.success).pipe(Effect.mapError(() => new IssueFailure({ reason: "draft" })))
+      // The agent already refused an output that is not a VipDraft; this decode only types it.
+      return try Effect.orDie(Schema.decodeUnknownEffect(VipDraft)(result.success))
     },
   }
 })
@@ -48,7 +49,8 @@ export const writer = Layer.effect(VipWriter, effect {
         return { day, admitted: try spend.admit(day).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" }))) }
       } })
       if (!admission.admitted) throw new IssueFailure({ reason: "budget" })
-      const meter = try Budget.make({}).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" })))
+      // An empty policy is valid, so making the meter cannot fail.
+      const meter = try Effect.orDie(Budget.make({}))
       const result = try Effect.result(agent.run(request, meter))
       const usage = try meter.usageOf(instance.executionId).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" })))
       try Action.make({ name: "vibelang/vip/spend", error: IssueFailure, retryPolicy: patient, execute: spend.spend(admission.day, `vip-draft/${instance.executionId}`, usage.tokens).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" }))) })
