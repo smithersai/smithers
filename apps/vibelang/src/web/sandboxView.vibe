@@ -18,6 +18,8 @@ export function sandboxPane(model: Model, h: H): Html {
   const running = snapshot?.status === "running"
   const starting = model.sandboxBusy && !running
   const permitted = mayStart(snapshot?.role ?? "viewer")
+  const remaining = snapshot?.remaining ?? 0
+  const allowance = snapshot?.allowance ?? 0
   const failed = model.sandboxOperation
   const errorText = failed === "stop" ? "Couldn't stop the sandbox" : failed === "command" ? "Command failed" : failed === "start" ? "Couldn't start a sandbox" : "Couldn't load the sandbox"
   const max = model.sandboxPane === "max"
@@ -35,8 +37,8 @@ export function sandboxPane(model: Model, h: H): Html {
     ...(!permitted ? [h.div([h.Class("sui-empty")], [h.div([h.Class("sui-empty-title")], [snapshot?.role === "viewer" ? "Sign in to start a sandbox" : "Contributor required"]), ...(snapshot?.role === "viewer" ? [h.a([h.Class("sui-button sui-empty-action"), h.Href("/api/auth/sign-in")], ["Sign in"])] : [])])] : [
       ...(!running ? [h.div([h.Class("vl-sb-body")], [
         h.div([h.Class("vl-sb-head")], [
-          h.div([h.Class("sui-kpi vl-sb-kpi")], [h.span([h.Class("sui-kpi-value")], [String(snapshot?.remaining ?? 0)]), h.span([h.Class("sui-kpi-label")], [`min left of ${snapshot?.allowance ?? 0}`]),
-            h.div([h.Class("sui-progress"), h.Role("progressbar"), h.AriaLabel("Minutes left"), h.AriaValuemin(0), h.AriaValuemax(snapshot?.allowance ?? 0), h.AriaValuenow(snapshot?.remaining ?? 0)], [h.div([h.Class("sui-progress-indicator"), h.Style({ width: `${snapshot?.allowance ? (snapshot.remaining / snapshot.allowance) * 100 : 0}%` })], [])]),
+          h.div([h.Class("sui-kpi vl-sb-kpi")], [h.span([h.Class("sui-kpi-value")], [String(remaining)]), h.span([h.Class("sui-kpi-label")], [`min left of ${allowance}`]),
+            h.div([h.Class("sui-progress"), h.Role("progressbar"), h.AriaLabel("Minutes left"), h.AriaValuemin(0), h.AriaValuemax(allowance), h.AriaValuenow(remaining)], [h.div([h.Class("sui-progress-indicator"), h.Style({ width: `${allowance === 0 ? 0 : (remaining / allowance) * 100}%` })], [])]),
             h.span([h.Class("sui-kpi-hint")], ["Resets monthly"])]),
           ...(snapshot?.id ? [] : [button("New sandbox", Message.StartedSandbox(), "sui-button-default vl-sb-new", !!model.sandboxBusy || snapshot?.remaining === 0)]),
         ]),

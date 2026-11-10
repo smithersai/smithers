@@ -198,3 +198,8 @@ export function framed(tag: string, className: string, box: { readonly top: numb
 export function hrefOf(css: string): string | undefined {
   return document.querySelector(css)?.getAttribute("href") ?? undefined
 }
+
+/** A document with no window, as one built off-page has (`defaultView` is null). */
+export function detachedDocument(): Document {
+  return document.implementation.createHTMLDocument("detached")
+}

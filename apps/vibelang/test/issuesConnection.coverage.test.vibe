@@ -1,0 +1,53 @@
+// The issues pane's GitHub connection (src/web/issuesView.vibe): a connected person can disconnect, and a write that
+// failed for want of a fork or the App offers the one step that fixes it.
+import { expect, given, role, scene } from "foldkit/scene"
+import { describe, it } from "@effect/vitest"
+import { init, signedOut, update } from "../src/web/main.vibe"
+import { initialIssues } from "../src/web/issues.vibe"
+import { view } from "../src/web/view.vibe"
+
+type Ui = NonNullable<ReturnType<typeof init>["model"]["issues"]>
+const home = init({ session: "gh", mode: "live", name: "Will" }).model
+const ui = (over: Partial<Ui> = {}): Ui => ({ ...initialIssues, status: "ready", role: "maintainer", data: { seq: 1, items: [] }, ...over })
+const model = (issues: Ui) => ({ ...home, account: { ...signedOut, identity: { id: "1", login: "will", role: issues.role } }, issues })
+const app = { update, view }
+
+describe("the connection control on the list", () => {
+  it("a connected person sees Disconnect, which posts to the disconnect route", () => {
+    scene(app, given(model(ui({ data: { seq: 1, items: [], connected: true } }))),
+      expect(role("button", { name: "Disconnect" })).toExist(),
+      expect(role("button", { name: "Connect GitHub" })).toBeAbsent(),
+    )
+  })
+
+  it("before GitHub answers whether they are connected, neither control shows", () => {
+    scene(app, given(model(ui())),
+      expect(role("button", { name: "Disconnect" })).toBeAbsent(),
+      expect(role("button", { name: "Connect GitHub" })).toBeAbsent(),
+    )
+  })
+})
+
+describe("a new issue that GitHub refused", () => {
+  it("for want of a fork offers to fork the repository", () => {
+    scene(app, given(model(ui({ screen: "new", title: "Tuple patterns", error: "Fork on GitHub." }))),
+      expect(role("link", { name: "Fork" })).toHaveAttr("href", "https://github.com/smithersai/vibelang/fork"),
+      expect(role("link", { name: "Install" })).toBeAbsent(),
+    )
+  })
+
+  it("for want of the App on the fork offers to install it", () => {
+    scene(app, given(model(ui({ screen: "new", title: "Tuple patterns", error: "Install Smithers on your fork." }))),
+      expect(role("link", { name: "Install" })).toHaveAttr("href", "/api/auth/install"),
+      expect(role("link", { name: "Fork" })).toBeAbsent(),
+    )
+  })
+
+  it("for any other reason offers no GitHub step", () => {
+    scene(app, given(model(ui({ screen: "new", title: "Tuple patterns", error: "Couldn't save. Retry." }))),
+      expect(role("alert")).toHaveText("Couldn't save. Retry."),
+      expect(role("link", { name: "Fork" })).toBeAbsent(),
+      expect(role("link", { name: "Install" })).toBeAbsent(),
+    )
+  })
+})

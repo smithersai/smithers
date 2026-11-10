@@ -1,0 +1,87 @@
+// @vitest-environment node
+// The live clients (LiveAccounts, LiveIssues, LiveActions) against faulty Effect transports, on the replies the
+// boundary suites leave out: a member list the server cannot give, a success body that is not JSON, a refusal body
+// that is not the protocol, the agent sign-in a live page never offers, and a run's events among another run's.
+import { describe, expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientError, HttpClientResponse, HttpServerResponse } from "effect/http"
+import { Actions } from "../src/actions/Actions.vibe"
+import { LiveActions } from "../src/actions/LiveActions.vibe"
+import * as LiveAccounts from "../src/core/LiveAccounts.vibe"
+import { liveIssues } from "../src/core/LiveIssues.vibe"
+
+interface Reply { readonly status: number; readonly body: string; readonly type?: string }
+/** A transport answering only the given routes, and offline for every other request; counts what it saw. */
+function faulty(routes: Record<string, Reply>) {
+  const seen: Array<string> = []
+  const client = HttpClient.make((request) => {
+    const url = new URL(request.url)
+    const key = `${request.method} ${url.pathname}${url.search}`
+    seen.push(key)
+    const reply = routes[key]
+    return reply === undefined
+      ? fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+      : succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(reply.body, { status: reply.status, ...(reply.type === undefined ? {} : { contentType: reply.type }) }))))
+  })
+  return { client, seen }
+}
+
+describe("LiveAccounts", () => {
+  it.effect("a member list the server fails to give is unavailable, not a denial", () => effect {
+    const { client } = faulty({ "GET /api/roles": { status: 500, body: "" } })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      const accounts = try LiveAccounts.make("https://a.test")
+      const failure = try Effect.flip(accounts.members())
+      try Effect.try(() => expect(failure._tag).toBe("AccountUnavailable"))
+    }
+  })
+
+  it.effect("a live page never signs in as the agent, and asks nothing to refuse it", () => effect {
+    const { client, seen } = faulty({})
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      const accounts = try LiveAccounts.make("https://a.test")
+      const failure = try Effect.flip(accounts.signInAgent())
+      try Effect.try(() => {
+        expect(failure._tag).toBe("AccountUnavailable")
+        expect(seen).toEqual([])
+      })
+    }
+  })
+})
+
+describe("liveIssues", () => {
+  it.effect("a success whose body is not JSON is a protocol failure", () => effect {
+    const { client } = faulty({ "GET /api/issues": { status: 200, body: "<html>" } })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      const failure = try Effect.flip((try liveIssues("https://a.test")).read())
+      try Effect.try(() => expect(failure.reason).toBe("protocol"))
+    }
+  })
+})
+
+describe("LiveActions", () => {
+  const live = (client: HttpClient.HttpClient) => LiveActions("https://a.test").pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client)))
+
+  it.effect("a refusal whose body is JSON but not the protocol is unavailable", () => effect {
+    const { client } = faulty({ "GET /api/actions": { status: 409, body: JSON.stringify({ error: "nope" }) } })
+    provide live(client) {
+      const failure = try Effect.flip((try Actions).list())
+      try Effect.try(() => expect(failure.code).toBe("unavailable"))
+    }
+  })
+
+  it.effect("following a run shows only that run, skipping another run's events", () => effect {
+    const events = [
+      { type: "ActionRequested", seq: 1, id: "a2", flow: "vibelang/Post", door: "button", actor: "person", at: 5 },
+      { type: "ActionRequested", seq: 2, id: "a1", flow: "vibelang/Tour", door: "slash", actor: "person", at: 6 },
+    ]
+    const body = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("")
+    const { client } = faulty({ "GET /api/actions/runs/a1/events": { status: 200, body, type: "text/event-stream" } })
+    provide live(client) {
+      const runs = try Stream.runCollect((try Actions).follow("a1"))
+      try Effect.try(() => {
+        expect(runs.map((run) => run.id)).toEqual(["a1"])
+        expect(runs[0]).toMatchObject({ flow: "vibelang/Tour", door: "slash" })
+      })
+    }
+  })
+})

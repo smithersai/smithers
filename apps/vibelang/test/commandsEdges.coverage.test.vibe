@@ -150,3 +150,27 @@ describe("login", () => {
     }
   }), 60_000)
 })
+
+describe("wiki changes with a draft", () => {
+  it.effect("print the page the draft is for", () => effect {
+    const state = { seq: 2, pages: [{ id: "index", source: "# Home", revision: "r1" }], draft: { page: "index", text: "# Home\n\nMore" } }
+    const factory = only({ wiki: { read: () => Effect.die("read"), act: () => Effect.succeed(state) } })
+    const text = try Effect.provideService(Wiki.render({ op: "draft", page: "index", base: "# Home", text: "# Home\n\nMore", key: "w1" }, false), Factory, factory)
+    try Effect.try(() => expect(JSON.parse(text)).toEqual({ seq: 2, pages: ["index"], draft: "index" }))
+  })
+})
+
+describe("history text for an epic", () => {
+  it.effect("prints the outline and that epic's commits only", () => effect {
+    const commits = ["fix(compiler): one", "docs: two"].map((description, index) => ({
+      sha: `${index + 1}`.padStart(12, "0"), change: "", description, parents: index === 0 ? [] : [`${index}`.padStart(12, "0")],
+    }))
+    provide MockMythical(SURFACE_PRINCIPAL, () => Effect.succeed(replay(intentsOf(seedOf("o/r", commits, []))).history)) {
+      const page = try ShowHistory.render({ epic: "e1" }, false)
+      try Effect.try(() => {
+        expect(page).toMatch(/^Folded through /)
+        expect(page).toMatch(/\n1 of 1$/)
+      })
+    }
+  })
+})

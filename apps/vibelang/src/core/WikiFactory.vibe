@@ -56,20 +56,18 @@ export effect function fixtureWikiHost(identity: FixtureIdentity, store: WikiFix
       }
       if (request.base !== current) throw new WikiFailure({ reason: "conflict", unwritten: true })
       if (request.text === current) throw new WikiFailure({ reason: "empty", unwritten: true })
-      if (request.op === "propose" || request.op === "save") {
-        const proposals = try Ref.get(store.proposals)
-        const existing = proposals.find(proposal => proposal.person === person.id && proposal.op === request.op && proposal.key === request.key)
-        if (existing !== undefined) {
-          if (existing.page !== request.page || existing.base !== request.base || existing.text !== request.text) throw new WikiFailure({ reason: "conflict", unwritten: true })
-          return { ...before, review: existing.review }
-        }
-        const number = 1000 + proposals.length + 1
-        const review = `https://github.com/smithersai/vibelang/pull/${number}`
-        try Ref.set(store.proposals, [...proposals, { person: person.id, op: request.op, key: request.key, base: request.base, text: request.text, page: request.page, review }])
-        try Ref.update(store.drafts, drafts => drafts.filter(entry => !(entry.person === person.id && entry.page === request.page && entry.text === request.text)))
-        return { ...before, review }
+      // Read and draft returned above: a propose or a save.
+      const proposals = try Ref.get(store.proposals)
+      const existing = proposals.find(proposal => proposal.person === person.id && proposal.op === request.op && proposal.key === request.key)
+      if (existing !== undefined) {
+        if (existing.page !== request.page || existing.base !== request.base || existing.text !== request.text) throw new WikiFailure({ reason: "conflict", unwritten: true })
+        return { ...before, review: existing.review }
       }
-      throw new WikiFailure({ reason: "invalid", unwritten: true })
+      const number = 1000 + proposals.length + 1
+      const review = `https://github.com/smithersai/vibelang/pull/${number}`
+      try Ref.set(store.proposals, [...proposals, { person: person.id, op: request.op, key: request.key, base: request.base, text: request.text, page: request.page, review }])
+      try Ref.update(store.drafts, drafts => drafts.filter(entry => !(entry.person === person.id && entry.page === request.page && entry.text === request.text)))
+      return { ...before, review }
     }),
   }
   return host

@@ -203,3 +203,27 @@ for (const [role, force, initialHash] of [["viewer", "query", ""], ["new", "quer
     }
   }), 30_000)
 }
+
+it.live("?agent=mock starts the mock history even when storage refuses to remember the choice", () => scoped(effect {
+  const { node, window } = try host()
+  try sync(() => window.history.replaceState(null, "", "/history?agent=mock"))
+  const faulty = try withoutStorage(window)
+  let probes = 0
+  const client = HttpClient.make((request) => {
+    probes++
+    return fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+  })
+  provide Layer.mergeAll(page, Layer.succeed(HttpClient.HttpClient, client), faulty.layer) {
+    const { application, flags } = try historyMain()
+    try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+    try promise(() => vi.waitFor(() => {
+      const frame = node.querySelector("[data-surface='history']")
+      expect(frame?.getAttribute("data-mode")).toBe("mock")
+      expect(node.querySelector(".mh-epics [role='button']")).not.toBeNull()
+    }, { timeout: 5000 }))
+    try Effect.try(() => {
+      expect(faulty.reads()).toBeGreaterThan(0)
+      expect(probes).toBe(0)
+    })
+  }
+}), 30_000)
