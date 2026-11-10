@@ -66,7 +66,7 @@ it("GitHub's refusals end or slow the device flow", async ({ bench }) => {
       expect(answers).toEqual(["Sign-in declined.", "Sign-in expired."])
       expect([slowed.status, backedOff?.intervalSeconds]).toEqual(["pending", 30])
       expect(restarted).toMatchObject({ status: "pending" })
-      expect(declined).toBe("Sign-in failed.")
+      expect(declined).toBe("Sign-in declined.")
     })
       }
     }
