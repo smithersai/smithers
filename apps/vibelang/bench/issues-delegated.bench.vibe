@@ -1,0 +1,87 @@
+// @vitest-environment node
+// Every issue write as the site runs it after decision 0165: worker/Issues.vibe's durable flows over SQLite, each write
+// through smithers.sh's real per-person connection host (fuzz/delegated.vibe) to the in-memory GitHub that speaks the
+// real client protocol (fuzz/issues-node-fake.vibe). Nothing intercepts a request.
+import { it, expect } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import type { IssueRequest, IssuesState } from "../src/core/issueSchemas.vibe"
+import { executeIssues, IssueAuthority } from "../worker/Issues.vibe"
+import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { fakeClient, forked, repo, seed } from "../fuzz/issues-node-fake.vibe"
+import { delegated, reach } from "../fuzz/delegated.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+type State = typeof IssuesState.Type
+const blank: IssueRequest = { op: "read", number: 0, parent: 0, title: "", text: "", example: "", prior: "", assignee: "", key: "k" }
+const VIP = "Proposal\n<!-- vibelang:vip path=docs/design/vips/proposal-seed.md review=https://github.com/o/r/pull/500 -->"
+
+/** One maintainer's whole journey on a fresh store and GitHub; returns what each write left on GitHub. */
+effect function journey() {
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  const fake = seed()
+  forked(fake)
+  fake.issues.push({
+    id: 70, node_id: "node-7", number: 7, title: "Issue 7", body: VIP, state: "open", state_reason: null,
+    user: { id: 7, login: "fuzz" }, labels: [], comments: 0, created_at: "2026-02-01T00:00:00Z", updated_at: "2026-02-01T00:00:00Z",
+    closed_at: null, assignees: [],
+  })
+  fake.comments[7] = []
+  const site = try delegated(fakeClient(fake), reach())
+  const authority: IssueAuthority.Shape = {
+    current: () => succeed({ id: "7", login: "fuzz", role: "maintainer", connection: site.connection }),
+    authorize: () => Effect.void,
+  }
+  let keys = 0
+  const act = (op: IssueRequest["op"], extra: Partial<IssueRequest> = {}): State!unknown => {
+    keys += 1
+    return executeIssues("issues-bench", raw as unknown as Storage, { ...blank, op, key: `k${keys}`, ...extra }, repo).pipe(
+      Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, site.http),
+      Effect.provideService(GitHubDelegate, site.delegate), Effect.provide(WebCrypto.layer),
+    )
+  }
+  const item = (state: State, number: number) => state.items.find((entry) => entry.number === number)!
+  const made = try act("new", { title: "  A new issue  ", text: "Body" })
+  const split = try act("split", { number: 1, title: "A child" })
+  const commented = try act("comment", { number: 1, text: " Thanks " })
+  const linked = try act("link", { number: 2, parent: 1 })
+  const committed = try act("commit", { number: 1, assignee: "VibeLang agent" })
+  const uncommitted = try act("uncommit", { number: 1 })
+  const proposed = try act("propose", { title: "Tuples", text: "Add tuples.", example: "const t = [1, 2]", prior: "Rust" })
+  const accepted = try act("accept", { number: 4 })
+  const declined = try act("decline", { number: 7 })
+  return {
+    made: [made.selected, item(made, made.selected!).title],
+    split: [split.selected, item(split, split.selected!).parent],
+    comment: item(commented, 1).notes.filter((note) => !note.event).map((note) => note.text).at(-1),
+    link: item(linked, 2).parent,
+    commit: [item(committed, 1).task, item(committed, 1).assignee, item(committed, 1).labels],
+    uncommit: [item(uncommitted, 1).task, item(uncommitted, 1).assignee, item(uncommitted, 1).labels],
+    propose: [item(proposed, proposed.selected!).vip, item(proposed, proposed.selected!).review, fake.pulls.at(-1)?.title],
+    accept: [item(accepted, 4).vip, item(accepted, 4).approvedBy],
+    decline: [item(declined, 7).vip, item(declined, 7).state],
+    writes: fake.writes,
+  }
+}
+
+it("issues: every maintainer write through smithers.sh's delegation", async ({ bench }) => {
+  const seen: Array<unknown> = []
+  const result = await workload(bench, "issues-delegated-writes", "async", async () => {
+    seen.push(await runPromise(scoped(journey())))
+  }).run(slow)
+  expect(seen.length).toBeGreaterThan(0)
+  for (const each of seen) expect(each).toEqual({
+    made: [100, "A new issue"],
+    split: [101, 1],
+    comment: "Thanks",
+    link: 1,
+    commit: ["Queued", "vibe-agent", ["vibelang:task"]],
+    uncommit: ["", "", []],
+    propose: ["In review", "https://github.com/o/r/pull/600", "VIP: Tuples"],
+    accept: ["Accepted", "fuzz"],
+    decline: ["Declined", "closed"],
+    writes: expect.any(Number),
+  })
+  await runPromise(artifact("issues-delegated-writes", "Vitest built-in bench; worker/Issues.vibe's durable flows over Node SQLite object storage, a fresh store and GitHub each callback. One maintainer journey: new issue, split, comment, link, commit to the agent, uncommit, VIP proposal (branch, commit, review, issue), accept a VIP in review, decline another. Every write goes through smithers.sh's real per-person connection host to an in-memory GitHub over the real client protocol. Checked every callback: each write's visible result (selected number, parent, note, task, assignee, labels, VIP state and review URL, approver, closed state). Store setup, nine flows and their re-reads included.", ["In-memory GitHub over the client protocol, not api.github.com: no network, rate limit or GitHub latency. Node SQLite storage, not a Durable Object. The live journeys are the opt-in GITHUB_TEST_TOKEN tests."], { seen, result }))
+}, 120_000)
