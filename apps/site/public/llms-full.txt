@@ -44333,6 +44333,7 @@ interface Exchange {
   }
 }
 interface Recording {
+  readonly label?: string | undefined
   readonly exchanges: ReadonlyArray<Exchange>
 }
 
@@ -44342,13 +44343,15 @@ interface Options {
   readonly live?: HttpClient.HttpClient | undefined
   readonly secrets?: ReadonlyArray<string | Redacted.Redacted<string>> | undefined
   readonly normalize?: ((request: RecordedRequest) => RecordedRequest) | undefined
+  readonly label?: string | undefined
+  readonly prune?: ((body: unknown, request: RecordedRequest) => unknown) | undefined
 }
 
 const make: (options: Options) => Effect.Effect<HttpClient.HttpClient, never, Scope.Scope>
 const layer: (options: Options) => Layer.Layer<HttpClient.HttpClient>
 const record: (
   path: string,
-  options: Pick<Options, "live" | "secrets" | "normalize">
+  options: Pick<Options, "live" | "secrets" | "normalize" | "label" | "prune">
 ) => Effect.Effect<HttpClient.HttpClient, never, Scope.Scope>
 const replay: (
   recording: Recording,
@@ -44357,7 +44360,7 @@ const replay: (
 const load: (path: string) => Effect.Effect<Recording>
 const encode: (
   path: string,
-  exchanges: ReadonlyArray<Exchange>,
+  recording: Recording,
   secrets: Options["secrets"]
 ) => Effect.Effect<string, CredentialInRecordingError>
 const scrubRequest: (request: RecordedRequest, options?: Pick<Options, "secrets" | "normalize">) => RecordedRequest
@@ -44383,6 +44386,15 @@ claimed once, in recorded order per method, URL and body, and a request with no
 answer left dies with `UnrecordedRequestError`. A missing or malformed
 recording file, a missing `live` client, and a streamed or binary request body
 are defects.
+
+`label` is the run's identity, fixed at record time and written into the
+recording: a test puts it in the names it creates on the service, so a real run
+never meets an earlier run's data and a replay asks for exactly what was
+recorded. Read it back with `load` before a replay.
+
+`prune` removes what the code never reads from a response body before it is
+recorded. While recording, the code under test receives the pruned body too, so
+a field it needs fails the recording run rather than a later replay.
 
 `scan` returns the ids of the journal's token-shaped rules that match `text`
 (private key blocks, Smithers tokens, URL credentials, bearer tokens, JWTs and

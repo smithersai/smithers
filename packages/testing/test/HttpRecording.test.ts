@@ -88,11 +88,11 @@ const session = (client: HttpClient.HttpClient, base: string) =>
       client.get(`${base}${path}`).pipe(Effect.flatMap((response) =>
         Effect.map(response.text, (text) => ({ status: response.status, body: text === "" ? null : JSON.parse(text) }))
       ))
-    const before = yield* read("/counter?access_token=" + LIVE_TOKEN)
+    const before = yield* read("/counter?state=open&access_token=" + LIVE_TOKEN)
     const written = yield* client.execute(
       HttpClientRequest.post(`${base}/counter`).pipe(HttpClientRequest.bodyJsonUnsafe({ by: 2 }))
     )
-    const after = yield* read("/counter?access_token=" + LIVE_TOKEN)
+    const after = yield* read("/counter?state=open&access_token=" + LIVE_TOKEN)
     const missing = yield* read("/missing")
     const empty = yield* read("/empty")
     return { before, written: written.status, after, missing, empty }
@@ -107,7 +107,8 @@ describe("HttpRecording", () => {
         const recorded = yield* Effect.scoped(Effect.gen(function*() {
           const recorder = yield* HttpRecording.record(path, {
             live: authorized(client),
-            secrets: [Redacted.make(LIVE_TOKEN)]
+            secrets: [Redacted.make(LIVE_TOKEN)],
+            label: "run-1789"
           })
           return yield* session(recorder, service.url)
         }))
@@ -126,6 +127,11 @@ describe("HttpRecording", () => {
         expect(HttpRecording.scan(text)).toEqual([])
         expect(text).toContain("\"link\"")
         expect(text).toContain("callback?page=1&code=%5BREDACTED%5D")
+        // A query parameter that names no credential, such as GitHub's issue `state`, is kept.
+        expect(text).toContain("/counter?state=open&access_token=%5BREDACTED%5D")
+        // One exchange per line, between the opening and closing lines.
+        expect(text.split("\n")).toHaveLength(5 + 3)
+        expect((yield* HttpRecording.load(path)).label).toBe("run-1789")
 
         const replayed = yield* Effect.scoped(Effect.gen(function*() {
           const replayer = yield* HttpRecording.make({ mode: "replay", path })
@@ -211,6 +217,32 @@ describe("HttpRecording", () => {
       expect(yield* response.text).toBe("ok")
     }))
 
+  it.live("prune shapes what the code sees while recording and what the recording holds", () =>
+    withService((service) =>
+      Effect.gen(function*() {
+        const path = join(directory(), "pruned.json")
+        const client = yield* live
+        const seen = yield* Effect.scoped(Effect.gen(function*() {
+          const recorder = yield* HttpRecording.record(path, {
+            live: client,
+            prune: (body, request) =>
+              typeof body === "object" && body !== null && request.method === "GET"
+                ? { path: (body as { path: unknown }).path }
+                : body
+          })
+          const pruned = yield* recorder.get(`${service.url}/counter`).pipe(Effect.flatMap((response) => response.json))
+          const empty = yield* recorder.get(`${service.url}/empty`).pipe(Effect.flatMap((response) => response.text))
+          return { pruned, empty }
+        }))
+        expect(seen).toEqual({ pruned: { path: "/counter" }, empty: "" })
+        const replayed = yield* Effect.scoped(Effect.gen(function*() {
+          const replayer = yield* HttpRecording.make({ mode: "replay", path })
+          return yield* replayer.get(`${service.url}/counter`).pipe(Effect.flatMap((response) => response.json))
+        }))
+        expect(replayed).toEqual({ path: "/counter" })
+      })
+    ))
+
   it.live("a failed run writes nothing and keeps the previous recording", () =>
     withService((service) =>
       Effect.gen(function*() {
@@ -257,10 +289,10 @@ describe("HttpRecording", () => {
         request: { method: "GET", url: "https://api.example.test/" },
         response: { status: 200, headers: {}, body: `value ${secret}` }
       }
-      const refused = yield* Effect.flip(HttpRecording.encode("x.json", [exchange], [secret]))
+      const refused = yield* Effect.flip(HttpRecording.encode("x.json", { exchanges: [exchange] }, [secret]))
       expect(refused.rules).toEqual(["live-secret"])
       const scrubbed = HttpRecording.scrubExchange(exchange, { secrets: [secret] })
-      expect(yield* HttpRecording.encode("x.json", [scrubbed], [secret])).not.toContain(secret)
+      expect(yield* HttpRecording.encode("x.json", { exchanges: [scrubbed] }, [secret])).not.toContain(secret)
     }))
 
   it.effect("scan names each credential shape and passes placeholders", () =>
