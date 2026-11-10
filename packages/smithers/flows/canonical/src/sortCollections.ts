@@ -120,7 +120,11 @@ const rank = (value: unknown, path: Array<object> = []): string => {
     case "symbol":
       return `y${JSON.stringify(value.description ?? "")}`
     case "function":
-      return `F${JSON.stringify(value.name)}`
+      try {
+        return `F${JSON.stringify(value.name)}`
+      } catch {
+        return "x"
+      }
   }
   if (value === null) return "z"
   try {

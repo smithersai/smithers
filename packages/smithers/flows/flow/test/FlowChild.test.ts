@@ -369,7 +369,7 @@ describe("the interpreter drives a child boundary as a real execution", () => {
       )
 
       expect(settled.value).toBe(3)
-      expect(settled.sorted).toEqual({ tags: ["a", "b"] })
+      expect(settled.sorted).toEqual(["snapshot", { tags: ["a", "b"] }])
       expect(settled.reversed).toEqual(settled.sorted)
       // The child ran under the id its sorted payload derives, though its parent built ["b", "a"].
       expect(Option.isSome(settled.childResult)).toBe(true)

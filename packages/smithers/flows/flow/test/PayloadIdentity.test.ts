@@ -3,10 +3,10 @@
  * payload goes through `Flow.payloadSnapshot` or `Flow.payloadPreimage`.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Context, Effect, Exit, Layer, Schema, SchemaIssue, SchemaTransformation } from "effect"
 import { withCrypto } from "./Crypto.ts"
-import { layerWired } from "./MemoryFlowRuntime.ts"
+import { layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 
 const Release = Schema.Struct({
   tags: Schema.ReadonlySet(Schema.String),
@@ -90,10 +90,40 @@ describe("Flow.payloadPreimage", () => {
 
   it.effect("hashes a payload that holds a collection as its sorted snapshot", () =>
     Effect.gen(function*() {
-      expect(yield* Flow.payloadPreimage(Release, { tags: new Set(["b", "a"]), owners: new Map() })).toEqual({
-        tags: ["a", "b"],
-        owners: []
+      expect(yield* Flow.payloadPreimage(Release, { tags: new Set(["b", "a"]), owners: new Map() })).toEqual([
+        "snapshot",
+        { tags: ["a", "b"], owners: [] }
+      ])
+    }))
+
+  it.effect("never shares a preimage between a set and an array written as the set's snapshot", () =>
+    Effect.gen(function*() {
+      const Either = Schema.Struct({
+        value: Schema.Union([Schema.ReadonlySet(Schema.Number), Schema.Array(Schema.NumberFromString)])
       })
+      const fromSet = yield* Flow.payloadPreimage(Either, { value: new Set([1]) })
+      const fromArray = yield* Flow.payloadPreimage(Either, { value: [1] })
+      expect(fromArray).toEqual({ value: [1] })
+      expect(fromSet).not.toEqual(fromArray)
+    }))
+
+  it.effect("runs no schema transformation until the preimage is run", () =>
+    Effect.gen(function*() {
+      let encoded = 0
+      const Counted = Schema.Struct({
+        tags: Schema.ReadonlySet(
+          Schema.String.pipe(Schema.decodeTo(
+            Schema.String,
+            SchemaTransformation.transform({ decode: (value) => value, encode: (value) => (encoded++, value) })
+          ))
+        )
+      })
+      const preimage = Flow.payloadPreimage(Counted, { tags: new Set(["a"]) })
+      const snapshot = Flow.payloadSnapshot(Counted, { tags: new Set(["a"]) })
+      expect(encoded).toBe(0)
+      yield* preimage
+      yield* snapshot
+      expect(encoded).toBe(2)
     }))
 })
 
@@ -129,5 +159,18 @@ describe("the recorded plan's root input", () => {
       )
       expect(Exit.isFailure(exit) && String(exit.cause)).toContain("Cannot encode payload")
       expect(Exit.isFailure(exit) && String(exit.cause)).toContain("encoder unavailable")
+    }).pipe(Effect.provide(faulty)))
+
+  it.effect("never encodes the root payload for a runtime that records no plan", () =>
+    Effect.gen(function*() {
+      const value = yield* withCrypto(
+        Interpreter.interpret(Tagged, { tags: new Set(["b", "a"]) }).pipe(
+          Effect.map((interpretation) => interpretation.value),
+          Effect.provideService(FlowRuntime.FlowInstance, makeInstance(Tagged as unknown as Flow.Any, "root-silent")),
+          Effect.updateService(FlowRuntime.FlowRuntime, (runtime) => ({ ...runtime, recordNode: undefined })),
+          Effect.provide(layer(faulty))
+        )
+      )
+      expect(value).toBe("b,a")
     }).pipe(Effect.provide(faulty)))
 })

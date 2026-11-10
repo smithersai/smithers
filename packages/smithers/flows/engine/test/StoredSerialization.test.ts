@@ -101,3 +101,28 @@ describe("a faulty injected serializer", () => {
       expect(Exit.isFailure(exit) && String(exit.cause)).toContain("codec unavailable")
     }).pipe(Effect.provide(program(faulty))))
 })
+
+describe("a serializer whose values are not JSON", () => {
+  // Keeps every value as its Type, as an in-process frame serializer may.
+  const identity = Layer.succeed(RpcSerialization.RpcSerialization)({
+    ...RpcSerialization.json,
+    contentType: "application/x-identity",
+    codecFor: Schema.toType as RpcSerialization.CodecFor
+  })
+  const Nothing = Action.make("StoredSerialization/nothing", { payload: {}, success: Schema.Undefined })
+  const Empty = Flow.make("StoredSerialization/empty", {
+    payload: {},
+    success: Schema.Undefined,
+    body: () => Nothing.call({})
+  })
+
+  effect("keeps an undefined result undefined instead of rewriting it as JSON null", () =>
+    Effect.gen(function*() {
+      expect(yield* Empty.execute({}, { executionId: "undefined-result" })).toBeUndefined()
+    }).pipe(Effect.provide(
+      Layer.mergeAll(Nothing.toLayer(() => Effect.succeed(undefined)), Interpreter.layer(Empty)).pipe(
+        Layer.provideMerge(Action.layerImplementations),
+        Layer.provideMerge(FlowEngine.layerMemory.pipe(Layer.provide(identity)))
+      )
+    )))
+})

@@ -10505,6 +10505,11 @@ payload codec: sort, `Schema.toCodecJson`, `Canonical`, SHA-256.
   invoked. The input is never mutated.
 - It never throws. An object it cannot inspect, such as a revoked proxy, is a
   leaf and ranks after every value it can inspect.
+- Ranks read own data properties only. Elements that differ only behind
+  accessors or private fields rank equal and keep their insertion order, and
+  a copied class instance has its prototype and own properties but not its
+  private fields. Keep the data a payload is identified by in own data
+  properties.
 
 ```ts
 import { sortCollections } from "@smthrs/canonical"

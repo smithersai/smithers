@@ -3983,12 +3983,17 @@ const carriedChild = (driver: Driver, flow: Flow.Any, options: Admission) =>
     if (options.parent === undefined || driver.engineState.copyAttempts === undefined) return undefined
     const retry = yield* retryOf(driver, options.parent)
     if (retry === undefined || (yield* findRun(driver, options.executionId)) !== undefined) return undefined
+    // The preimage `runChild` derived the id from (VIP-44), so a set payload matches.
+    const preimage =
+      yield* (Flow.payloadPreimage(flow.payloadSchema, options.payload).pipe(Effect.orDie) as Effect.Effect<
+        unknown
+      >)
     for (const node of retry.boundaries) {
-      const opened = yield* Interpreter.childExecutionId(options.parent.executionId, node, flow._tag, options.payload)
+      const opened = yield* Interpreter.childExecutionId(options.parent.executionId, node, flow._tag, preimage)
       if (opened !== options.executionId) continue
       // Derived from the source's id, the node and the callee, the id names the
       // source's own child of this flow, or nothing when retention removed it.
-      const source = yield* Interpreter.childExecutionId(retry.source, node, flow._tag, options.payload)
+      const source = yield* Interpreter.childExecutionId(retry.source, node, flow._tag, preimage)
       const row = yield* findRun(driver, source)
       if (row === undefined) return undefined
       const state = yield* decodeState(row.stateJson)

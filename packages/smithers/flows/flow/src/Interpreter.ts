@@ -702,7 +702,12 @@ const interpretWithPolicy = (
     const fatal = fatalRefusal(name, graph)
     if (fatal !== undefined) return yield* fatal
     const runtime = yield* FlowRuntime
-    yield* recordPlan(runtime, name, graph, yield* rootInput(flowOrNode, payload, options.root ?? "root"))
+    yield* recordPlan(
+      runtime,
+      name,
+      graph,
+      Effect.suspend(() => rootInput(flowOrNode, payload, options.root ?? "root"))
+    )
     // Everything the walk needs that the built graph can be asked for before it
     // runs, is asked for here — so no such refusal can surface halfway through
     // a body with the actions ahead of it already committed.
@@ -801,14 +806,16 @@ const recordPlan = (
   runtime: FlowRuntime["Service"],
   name: string,
   graph: Graph.Graph,
-  root: RootInput | undefined
+  // Encoded only when a plan is recorded: a runtime that records none never
+  // hashes the payload, so it never refuses one it cannot encode.
+  root: Effect.Effect<RootInput | undefined, InterpreterError>
 ) => {
   const recordNode = runtime.recordNode
   if (recordNode === undefined) return Effect.void
   const measure = runtime.nodeRecordBytes ??
     ((record: NodeRecord.NodeRecord) => Effect.succeed(new TextEncoder().encode(JSON.stringify(record)).byteLength))
   return Effect.flatMap(
-    planPages(name, graph, measure, root),
+    Effect.flatMap(root, (input) => planPages(name, graph, measure, input)),
     (pages) => Effect.forEach(pages, (page) => recordNode(page), { discard: true })
   )
 }

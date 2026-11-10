@@ -149,6 +149,9 @@ describe("sortCollections", () => {
     const out = [...sorted]
     expect(out.slice(0, 2)).toEqual(["a", "b"])
     expect(out[2] === revoked.proxy).toBe(true)
+    const callable = Proxy.revocable(() => 1, {})
+    callable.revoke()
+    expect(() => sortCollections(new Set<unknown>([callable.proxy, "a"]))).not.toThrow()
   })
 
   it("returns the value itself when it reaches no collection", () => {
@@ -327,6 +330,22 @@ describe("open question 1: a class with fields outside its enumerable properties
     expect(sortCollections(ba)).toBe(ba)
     expect(sortCollections(ba).tags()).toBe(ba.tags())
     expect(identity(PrivateSchema, ba)).toBe(identity(PrivateSchema, new Private(new Set(["a", "b"]))))
+  })
+})
+
+describe("known limits (TEST-5)", () => {
+  // Ranks read own data properties only. Elements that differ only behind
+  // accessors or private fields rank equal and keep their insertion order,
+  // so a codec that reads those fields sees two orders. Expected to fail
+  // until ranking can consult the element's schema encoding.
+  it.fails("orders elements whose data lives only behind accessors", () => {
+    const at = (n: number) =>
+      Object.defineProperty({} as { readonly n: number }, "n", { get: () => n, enumerable: true })
+    const one = at(1)
+    const two = at(2)
+    const forward = [...sortCollections(new Set([one, two]))].map((value) => value.n)
+    const backward = [...sortCollections(new Set([two, one]))].map((value) => value.n)
+    expect(backward).toEqual(forward)
   })
 })
 

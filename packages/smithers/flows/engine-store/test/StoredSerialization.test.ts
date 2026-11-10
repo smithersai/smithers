@@ -7,7 +7,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
-import { Cause, Effect, Exit, Layer, Schema } from "effect"
+import { Cause, Effect, Exit, Layer, Schema, SchemaTransformation } from "effect"
 import * as RpcSerialization from "effect/rpc/RpcSerialization"
 import * as EngineStore from "../src/EngineStore.ts"
 import { UnstorableSerialization } from "../src/Errors.ts"
@@ -88,4 +88,36 @@ describe("engine-store serializers", () => {
         }).pipe(Effect.scoped)
       ))
   }
+
+  it.effect("runs every action under the serializer it accepted, not one a caller scoped around execute", () => {
+    // A caller-scoped codec that would store "ok" as "enc:ok".
+    const prefixed = {
+      ...RpcSerialization.json,
+      contentType: "application/x-prefixed",
+      codecFor: (() =>
+        Schema.String.pipe(Schema.decodeTo(
+          Schema.String,
+          SchemaTransformation.transform({ decode: (value) => value.slice(4), encode: (value) => `enc:${value}` })
+        ))) as unknown as RpcSerialization.CodecFor
+    }
+    const Word = Action.make("StoredSerialization/word", { payload: {}, success: Schema.String })
+    const Say = Flow.make("StoredSerialization/say", {
+      payload: {},
+      success: Schema.String,
+      body: Node.capture({ action: Word.name }, () => Word.call({}))
+    })
+    return withCrypto(
+      Say.execute({}, { executionId: "scoped-serializer" }).pipe(
+        Effect.provide(
+          Interpreter.layerWithImplementations(Say, Word.toLayer(() => Effect.succeed("ok"))).pipe(
+            Layer.provide(Layer.succeed(RpcSerialization.RpcSerialization)(prefixed))
+          )
+        ),
+        Effect.provideService(RpcSerialization.RpcSerialization, prefixed),
+        Effect.map((value) => expect(value).toBe("ok")),
+        Effect.provide(store(RpcSerialization.layerJson)),
+        Effect.scoped
+      )
+    )
+  })
 })

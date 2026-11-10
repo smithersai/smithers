@@ -32,7 +32,7 @@ export const payloadSnapshot = <S extends Schema.Top>(
   schema: S,
   value: unknown
 ): Effect.Effect<Schema.Json, Schema.SchemaError, S["EncodingServices"]> =>
-  Schema.encodeUnknownEffect(Schema.toCodecJson(schema))(sortCollections(value))
+  Effect.suspend(() => Schema.encodeUnknownEffect(Schema.toCodecJson(schema))(sortCollections(value)))
 
 /**
  * The material a site that has always hashed a payload as written hashes now.
@@ -40,8 +40,12 @@ export const payloadSnapshot = <S extends Schema.Top>(
  * Such sites, a child execution id and the recorded plan's root input, could
  * never hash a `Set` or `Map`: RFC 8785 refuses both. So a payload that holds
  * none keeps the exact preimage it always had, and one that holds any is
- * hashed as its {@link payloadSnapshot}. Released ids are unchanged, and equal
- * collections hash equally.
+ * hashed as `["snapshot", payloadSnapshot]`. Released ids are unchanged, and
+ * equal collections hash equally.
+ *
+ * The tag keeps the two forms apart: a flow payload is a struct, so a payload
+ * as written is always an object and never this array. Without it a set and
+ * an array whose written form equals the set's snapshot would share an id.
  *
  * @category identity
  * @since 1.0.0
@@ -50,4 +54,8 @@ export const payloadPreimage = <S extends Schema.Top>(
   schema: S,
   value: unknown
 ): Effect.Effect<unknown, Schema.SchemaError, S["EncodingServices"]> =>
-  sortCollections(value) === value ? Effect.succeed(value) : payloadSnapshot(schema, value)
+  Effect.suspend(() =>
+    sortCollections(value) === value
+      ? Effect.succeed(value)
+      : Effect.map(payloadSnapshot(schema, value), (snapshot) => ["snapshot", snapshot])
+  )

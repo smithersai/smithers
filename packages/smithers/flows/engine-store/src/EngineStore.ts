@@ -632,6 +632,8 @@ const openStore = Effect.fnUntraced(function*(options: Options) {
     options,
     host,
     owner,
+    // The serializer action results are stored and decoded with (VIP-44).
+    serialization: Option.getOrElse(serialization, () => RpcSerialization.json),
     // One admission mutex per incarnation, shared by every dispatch this
     // store drives: `ActionPersistence.make` runs per dispatch below, so a
     // per-make default would never contend and the same-key exclusion the
@@ -1013,7 +1015,12 @@ const persistAction = (
     sourceId: store.options.journalSource,
     isAlive: store.options.isAlive,
     engineJj: store.engineJj,
-    execute: (actionInput) => (actionInput.action as Action.Any).executeEncoded as Effect.Effect<unknown, unknown>,
+    // The serializer the store accepted, never one a caller scoped around the
+    // dispatch: dispatch decodes with the adapter's, so both must be the same.
+    execute: (actionInput) =>
+      (actionInput.action as Action.Any).executeEncoded.pipe(
+        Effect.provideService(RpcSerialization.RpcSerialization, store.serialization)
+      ) as Effect.Effect<unknown, unknown>,
     idempotencyKey: input.action.idempotencyKey === undefined
       ? undefined
       : input.key,
@@ -1347,6 +1354,7 @@ const adapter = (store: Store): FlowEngine.Encoded => ({
   // with `unsafe_interrupt_unsupported` here too (the release policy).
   interruptUnsafe: store.driver.interruptUnsafe,
   resume: store.driver.resume,
+  serialization: store.serialization,
   actionExecute: (input) => actionExecute(store, input),
   nodeRecordBytes: (input) => {
     const record = observation(store, input)

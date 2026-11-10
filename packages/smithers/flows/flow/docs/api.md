@@ -78,10 +78,10 @@ Identity has three sources, consulted in this order:
 
 Every durable site that hashes or compares a flow payload goes through one of two functions, so none can skip the collection sort (VIP-44, durable values):
 
-| Function                         | Returns                                                                              | Used by                                                                                                 |
-| -------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `payloadSnapshot(schema, value)` | `sortCollections(value)` encoded with `Schema.toCodecJson(schema)`, as `Schema.Json` | `derived` execution ids, a handoff's next-round payload, engine-store run admission, Cloudflare intents |
-| `payloadPreimage(schema, value)` | `value` itself when it holds no `Set` or `Map`, else its `payloadSnapshot`           | child execution ids, the recorded plan's root input                                                     |
+| Function                         | Returns                                                                                                                                               | Used by                                                                                                 |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `payloadSnapshot(schema, value)` | `sortCollections(value)` encoded with `Schema.toCodecJson(schema)`, as `Schema.Json`                                                                  | `derived` execution ids, a handoff's next-round payload, engine-store run admission, Cloudflare intents |
+| `payloadPreimage(schema, value)` | `value` itself when it holds no `Set` or `Map`, else `["snapshot", payloadSnapshot]`; flow payloads are structs, so the tag keeps the two forms apart | child execution ids, the recorded plan's root input                                                     |
 
 Both fail with the schema's `SchemaError`, including one an injected encoding service raises. A payload that holds no set or map hashes and stores exactly as before, so released ids and rows are unchanged. Decoding a snapshot gives the value a body sees, so the hash covers what the body runs on.
 
