@@ -203,7 +203,10 @@ describe("mock-mode actions", () => {
       const actions = try Actions
       const id = try actions.start("vibelang/Post", { text: "never" }, "button")
       try actions.cancel(id)
-      try sleep("50 millis")
+      // A control run started after it is followed to its end: a run the cancel failed to stop would have run by then.
+      const control = try actions.start("vibelang/Post", { text: "control" }, "button")
+      const settled = try Stream.runLast(actions.follow(control).pipe(Stream.takeUntil((run) => run.state === "passed" || run.state === "failed")))
+      try Effect.try(() => expect(Option.map(settled, (run) => run.state)).toEqual(Option.some("passed")))
       const run = try actions.read(id)
       const snapshot = try (try Factory).read(`action-${id}`, 0)
       try Effect.try(() => {

@@ -3,7 +3,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { vi } from "vitest"
 import { Runtime } from "foldkit"
-import type { Actions } from "../src/actions/Actions.vibe"
+import { Actions } from "../src/actions/Actions.vibe"
 import { MockActions } from "../src/actions/MockActions.vibe"
 import type { Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
@@ -22,15 +22,24 @@ const quiet = (over: Partial<Model> = {}, commands: () => NonNullable<Started["c
 /** The app starting from `first`; `seen.model` is the latest model it rendered. */
 effect function started(make: () => Started, actions: Layer.Layer<Actions, never, Factory> = MockActions({ actor: "person" }), resources: Layer.Layer<Factory> = MockFactory) {
   const first = try Effect.try(make)
-  const seen: { model: Model } = { model: first.model }
+  const seen: { model: Model; messages: Array<string> } = { model: first.model, messages: [] }
   const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
-  const program = try Effect.try(() => application(node, resources, (model) => { seen.model = model }, () => first, actions))
+  const program = try Effect.try(() => application(node, resources, (model) => { seen.model = model }, () => first, actions, (message) => { seen.messages.push(message._tag) }))
   try acquireRelease(sync(() => Runtime.embed(program, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
   return seen
 }
 
 const owned = <E extends HTMLElement>(tag: string, id: string, parent?: HTMLElement) => acquireRelease(sync(() => addElement<E>(tag, id, parent)), (node) => sync(() => node.remove()))
 const settled = (check: () => void, timeout = 4000) => promise(() => vi.waitFor(check, { timeout }))
+/**
+ * An ordering witness: a window resize always answers RemeasureTheatre, after the messages of every event dispatched
+ * before it. Returns the messages that arrived before the witness.
+ */
+const witnessed = (seen: { readonly messages: ReadonlyArray<string> }, act: () => void = () => {}) => effect {
+  const from = seen.messages.length
+  try settled(() => { act(); dispatchWindow("resize"); expect(seen.messages.slice(from)).toContain("RemeasureTheatre") })
+  return seen.messages.slice(from, seen.messages.indexOf("RemeasureTheatre", from))
+}
 describe("page commands", () => {
   it.live("show both dialogs once the view has committed", () => scoped(effect {
     const role = try owned<HTMLDialogElement>("dialog", "vl-role-dialog")
@@ -109,10 +118,11 @@ describe("page listeners", () => {
     try settled(() => { popTo("/"); expect(seen.model.surface).toBe("splash") })
     // The wiki read the first address started still settles; compare after it does.
     try settled(() => expect(seen.model.wikiStatus).not.toBe("loading"))
+    // The retried pops above may still have answers queued; a first witness drains them.
+    try witnessed(seen)
     const before = seen.model
-    try sync(() => popTo("/elsewhere"))
-    try sleep("50 millis")
-    try Effect.try(() => expect(seen.model).toEqual(before))
+    const answered = try witnessed(seen, () => popTo("/elsewhere"))
+    try Effect.try(() => { expect(answered).toEqual([]); expect(seen.model).toEqual(before) })
   }))
   it.live("while touring, tour keys are claimed; other keys are left alone, and resizing re-measures", () => scoped(effect {
     const seen = try started(quiet({ tour: true }))
@@ -146,9 +156,16 @@ describe("page listeners", () => {
   }))
   it.live("a run the service no longer knows ends its follow quietly", () => scoped(effect {
     const run = { id: "gone", flow: "vibelang/Tour", door: "button" as const, actor: "person" as const, state: "running" as const, started: 0, at: 1, result: "", steps: [] }
-    const seen = try started(quiet({ actions: { ...initialActions, runs: [run] } }))
-    try sleep("50 millis")
-    try Effect.try(() => expect(seen.model.actions?.runs[0]?.state).toBe("running"))
+    // The follow's end is the latch; the witness then proves no message it sent is still queued.
+    const ended: Array<string> = []
+    const watched = Layer.effect(Actions, map(Actions, (base) => ({
+      list: base.list, commands: base.commands, runs: base.runs, read: base.read, start: base.start, command: base.command, rerun: base.rerun, cancel: base.cancel,
+      follow: (id: string) => base.follow(id).pipe(Stream.ensuring(sync(() => { ended.push(id) }))),
+    }))).pipe(Layer.provide(MockActions({ actor: "person" })))
+    const seen = try started(quiet({ actions: { ...initialActions, runs: [run] } }), watched)
+    try settled(() => expect(ended).toContain("gone"))
+    const answered = try witnessed(seen)
+    try Effect.try(() => { expect(answered).not.toContain("ChangedAction"); expect(seen.model.actions?.runs[0]?.state).toBe("running") })
   }))
 })
 
@@ -178,7 +195,7 @@ describe("a backend that fails", () => {
   it.live("a backend without accounts leaves a signed-in person undisturbed", () => scoped(effect {
     const identity = { id: "1", login: "ada", role: "new" as const }
     const seen = try started(quiet({ account: { ...accountOf(init(flags).model), identity } }), actions, faulty({ accounts: undefined }))
-    try sleep("50 millis")
+    try witnessed(seen)
     try Effect.try(() => expect(accountOf(seen.model).identity).toEqual(identity))
   }))
 })
