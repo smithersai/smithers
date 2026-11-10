@@ -1253,7 +1253,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
           return factory.accounts.events(from).pipe(
             Stream.map(event => Message.ReceivedRole({ event })),
             Stream.concat(Stream.fromEffect(message(() => Message.FailedRoles()))),
-            Stream.catch(() => Stream.succeed(Message.FailedRoles())),
+            Stream.catch(() => Stream.fromEffect(message(() => Message.FailedRoles()))),
           )
         }),
       },
@@ -1266,7 +1266,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
       modelToDependencies: (model: Model) => ({ active: model.tourClient !== undefined, session: walkthroughSession(model), epoch: model.epoch }),
       dependenciesToStream: ({ active, session }) => !active ? Stream.empty : Stream.unwrap(effect {
         const factory = try Factory
-        return factory.events(tourConversation(session), 0).pipe(Stream.map(event => Message.ReceivedTourEvent({ event })), Stream.catch(() => Stream.succeed(Message.FailedTourEvents())))
+        return factory.events(tourConversation(session), 0).pipe(Stream.map(event => Message.ReceivedTourEvent({ event })), Stream.catch(() => Stream.fromEffect(message(() => Message.FailedTourEvents()))))
       }),
     }),
     theatreKeys: entry({ active: Schema.Boolean }, {
@@ -1299,7 +1299,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
               return factory.events(conversation, from).pipe(
                 Stream.map((event) => Message.ReceivedEvent({ event })),
                 Stream.concat(Stream.make(ended)),
-                Stream.catchTag("Unavailable", (error) => Stream.make(Message.FailedEvents({ reason: error.reason }))),
+                Stream.catchTag("Unavailable", (error) => Stream.fromEffect(message(() => Message.FailedEvents({ reason: error.reason })))),
               )
             }),
             sync(() => open),

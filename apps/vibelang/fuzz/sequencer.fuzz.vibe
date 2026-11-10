@@ -102,7 +102,7 @@ it.live("sequencer/commands", () => run("sequencer/commands", Steps, (steps) => 
   return true
 }))
 
-it.live("sequencer/two-clients-converge", () => run("sequencer/two-clients-converge", Schema.Tuple([Int, Int]), ([a, b]) => effect {
+it.live("sequencer/two-clients-converge", () => effect { return try run("sequencer/two-clients-converge", Schema.Tuple([Int, Int]), ([a, b]) => effect {
   const { service, events } = try sequencer()
   const follower = fork Stream.runCollect(service.follow(0).pipe(Stream.take(2)))
   const results = try.all [service.post(`left-${a}`, "Left", `left ${a}`), service.post(`right-${b}`, "Right", `right ${b}`)]
@@ -115,10 +115,10 @@ it.live("sequencer/two-clients-converge", () => run("sequencer/two-clients-conve
   const receivedLeft = log.reduce(M.receive, left)
   const receivedRight = log.reduce(M.receive, right)
   return same(receivedLeft, receivedRight) && receivedLeft.pending.length === 0 && (try service.read(0)).entries.length === 2
-}, FuzzSimulation.execution()))
+}, (try Effect.try(() => FuzzSimulation.execution()))) })
 
 const Spend = Schema.Struct({ id: Int, tokens: Schema.Union([Schema.Int.check(Schema.isBetween({ minimum: -10, maximum: 100 })), Schema.Literals([-0.5, 0.5, "NaN", "Infinity", "-Infinity"])]) })
-it.live("budget/spend-once", () => run("budget/spend-once", Schema.Struct({ limit: Int, spend: Schema.Array(Spend).check(Schema.isMaxLength(30)) }), ({ limit, spend }) => effect {
+it.live("budget/spend-once", () => effect { return try run("budget/spend-once", Schema.Struct({ limit: Int, spend: Schema.Array(Spend).check(Schema.isMaxLength(30)) }), ({ limit, spend }) => effect {
   const stored = try Ref.make<Readonly<Record<string, number>>>({})
   const ledger = try Budget.make({ read: (key) => Effect.map(Ref.get(stored), (state) => state[key]), write: (entries) => Ref.update(stored, (state) => ({ ...state, ...entries })) }, limit)
   const candidates = new Map<number, number[]>()
@@ -135,4 +135,4 @@ it.live("budget/spend-once", () => run("budget/spend-once", Schema.Struct({ limi
   for (const item of spend) try ledger.spend(`r${item.id}`, Number(item.tokens))
   if (!same(values, try Ref.get(stored))) return false
   return true
-}, FuzzSimulation.execution()))
+}, (try Effect.try(() => FuzzSimulation.execution()))) })
