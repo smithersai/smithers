@@ -222,7 +222,7 @@ it.effect("fails closed on entropy collisions and changed deployment allowlists 
   options.sites.splice(0)
   const revoked = try exit(broker.callback(Broker.STATE_PREFIX + "x".repeat(43), "code", start.cookie))
   const codes = try Broker.memoryStore()
-  const faultyStore: Broker.Store = { take: codes.take, peek: codes.peek, insert: (key, binding, value, expires) => key.startsWith("code/")
+  const faultyStore: Broker.Store = { take: codes.take, peek: codes.peek, drain: codes.drain, insert: (key, binding, value, expires) => key.startsWith("code/")
     ? succeed(false) : codes.insert(key, binding, value, expires) }
   const failing = durable(try Broker.make({ ...options, sites, keys: f.keys, store: faultyStore }))
   const second = try f.client.begin()
@@ -282,6 +282,7 @@ it.effect("authenticates audience, nonce, PKCE and expiry inside the encrypted c
         return try actual.insert(key, binding, value, expires)
       },
       peek: actual.peek,
+      drain: actual.drain,
       take: effect (key, binding, now) => {
         const recorded = (try Ref.get(bindings)).get(key)
         return try actual.take(key, key.startsWith("code/") ? recorded ?? binding : binding, key.startsWith("code/") ? 0 : now)
@@ -479,5 +480,30 @@ it.effect("screens out every request the broker refuses before it writes, and ad
     expect([crossHost, staleStart]).toEqual([false, false])
     expect(refusal.status).toBe(400)
     expect(refusal.cookies.cookies["__Host-smithers-broker"]!.value).toBe("")
+  })
+})
+
+it.effect("both stores keep an expired consent until drained, then hand it over once, oldest first and bounded", () => effect {
+  const { openBrokerSqlite } = try promise(() => import("./Fixture.ts"))
+  const database = try promise(() => openBrokerSqlite())
+  const stores = [try Broker.sqliteStore(database.sql), try Broker.memoryStore()]
+  const answers: Array<unknown> = []
+  for (const store of stores) {
+    const now = try Clock.currentTimeMillis
+    try store.insert("consent/b", "b", "second", now + 2)
+    try store.insert("consent/a", "a", "first", now + 1)
+    try store.insert("consent/c", "c", "third", now + 3)
+    try store.insert("consent/live", "l", "live", now + 60_000)
+    try store.insert("attempt/x", "x", "attempt", now + 1)
+    try TestClock.adjust("1 second")
+    // An unrelated write prunes the expired attempt but leaves every consent for the broker to release.
+    try store.insert("request/y", "y", "", now + 60_000)
+    const later = now + 1000
+    answers.push([try store.drain("consent/", later, 1), try store.drain("consent/", later, 5), try store.drain("consent/", later, 5), try store.peek("consent/live", "l", later), try store.peek("attempt/x", "x", later)])
+  }
+  try Effect.try(() => database.close())
+  try Effect.try(() => {
+    const expected = [[{ key: "consent/a", value: "first" }], [{ key: "consent/b", value: "second" }, { key: "consent/c", value: "third" }], [], "live", undefined]
+    expect(answers).toEqual([expected, expected])
   })
 })

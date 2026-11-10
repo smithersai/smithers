@@ -18,6 +18,8 @@ export const STATE_PREFIX = "broker_"
 export const HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer" }
 export const REQUEST_TTL = 600_000
 export const CODE_TTL = 60_000
+/** How many abandoned consents one callback releases. */
+export const CONSENT_RELEASE = 10
 export error BrokerRefused {}
 export interface HostedSite { readonly origin: string; readonly secret: Redacted.Redacted<string> }
 export type Keys = Effect.Success<ReturnType<typeof CookieKeys.make>>
@@ -27,6 +29,11 @@ export interface Store {
   readonly take: (key: string, binding: string, now: number) => (string | undefined)!BrokerRefused
   /** Reads a live record and leaves it in place. */
   readonly peek: (key: string, binding: string, now: number) => (string | undefined)!BrokerRefused
+  /**
+   * Removes and answers at most `limit` records under `prefix` that expired by `now`, oldest first. `insert` never
+   * prunes `consent/` records: each holds a live GitHub token the broker must revoke when it drains them.
+   */
+  readonly drain: (prefix: string, now: number, limit: number) => ReadonlyArray<{ readonly key: string; readonly value: string }>!BrokerRefused
 }
 
 /** Exact origins only. Even a real smithers.sh subdomain must appear in the deployment's hosted-site registry. */
@@ -128,6 +135,12 @@ export effect function memoryStore(): Store!! {
       next.delete(key)
       return [row.value, next]
     }),
+    drain: (prefix, now, limit) => Ref.modify(rows, rows => {
+      const due = Array.from(rows.entries()).filter(([key, row]) => key.startsWith(prefix) && row.expires <= now).sort(([, a], [, b]) => a.expires - b.expires).slice(0, limit)
+      const next = new Map(rows)
+      for (const [key] of due) next.delete(key)
+      return [due.map(([key, row]) => ({ key, value: row.value })), next]
+    }),
   }
 }
 
@@ -224,6 +237,18 @@ export effect function make(options: {
     try fresh(parsed.expires, REQUEST_TTL)
     return parsed
   }
+  /**
+   * A consent nobody answered still holds a live token pair that counts toward GitHub's ten tokens per person. Each
+   * callback, inside its durable step, revokes the access token of up to `CONSENT_RELEASE` consents that expired.
+   */
+  const releaseAbandoned = effect () => {
+    const expired = try options.store.drain("consent/", try Clock.currentTimeMillis, CONSENT_RELEASE)
+    for (const row of expired) {
+      const consent = Effect.flatMap(open(row.key, row.value), (text) => checked(decodeConsent(text))) catch () => undefined
+      try record("release", consent === undefined ? "unreadable" : "revoked")
+      if (consent !== undefined) try discard(options.github, Redacted.make(consent.access))
+    }
+  }
   const writeHandoff = effect (claims: Claims, person: Identity) => {
     const handoff = try options.keys.token
     const codeKey = "code/" + (try hash(handoff))
@@ -269,6 +294,7 @@ export effect function make(options: {
     }),
     callback: (state: string, code: string, cookie: string | undefined) => observed("callback", effect {
       try callbackBrowser(state, code, cookie)
+      try releaseAbandoned()
       const key = "attempt/" + (try hash(state))
       const stored = try options.store.take(key, try hash(state), try Clock.currentTimeMillis)
       if (stored === undefined) throw refused()
@@ -419,13 +445,17 @@ export effect function sqliteStore(sql: Sql): Store!BrokerRefused {
     insert: (key, binding, value, expires) => checked(effect {
       // Prune expired receipts inside the journaled write, never with a background timer or retry loop.
       const now = try Clock.currentTimeMillis
-      try Effect.try(() => sql.exec("DELETE FROM auth_broker_records WHERE expires <= ?", now))
+      try Effect.try(() => sql.exec("DELETE FROM auth_broker_records WHERE expires <= ? AND substr(key, 1, 8) <> 'consent/'", now))
       const rows = try Effect.try(() => sql.exec("INSERT INTO auth_broker_records (key,binding,value,expires) VALUES (?,?,?,?) ON CONFLICT(key) DO NOTHING RETURNING key", key, binding, value, expires).toArray())
       return rows.length === 1
     }),
     take: (key, binding, now) => checked(effect {
       const rows = try Effect.try(() => sql.exec("DELETE FROM auth_broker_records WHERE key = ? AND binding = ? AND expires > ? RETURNING value", key, binding, now).toArray())
       return rows.length === 1 ? String(rows[0]!.value) : undefined
+    }),
+    drain: (prefix, now, limit) => checked(effect {
+      const rows = try Effect.try(() => sql.exec("DELETE FROM auth_broker_records WHERE key IN (SELECT key FROM auth_broker_records WHERE substr(key, 1, ?) = ? AND expires <= ? ORDER BY expires LIMIT ?) RETURNING key, value, expires", prefix.length, prefix, now, limit).toArray())
+      return rows.sort((a, b) => Number(a.expires) - Number(b.expires)).map(row => ({ key: String(row.key), value: String(row.value) }))
     }),
   }
 }
