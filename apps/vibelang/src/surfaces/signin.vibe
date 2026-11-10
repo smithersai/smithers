@@ -180,8 +180,14 @@ effect function pollPending() {
 export effect function signOutSurface() {
   const factory = try Factory
   const stored = factory.mode === "mock" ? try readMockSession() : try activeSession()
+  // Local state goes whatever the Factory answers: the finalizer tries even when interrupted, then the removal runs
+  // again so a settings file that can't be removed is reported, typed, like any other settings failure.
+  const forget = effect {
+    if (factory.mode === "mock") try removeMockSession()
+    else { try removeSession(); try removePending() }
+  }
   try sessionOperation("logout", safeSettings(effect {
-    try ensuring(effect {
+    const revoked = try exit(ensuring(effect {
       if (factory.mode === "live" && stored !== undefined && stored.cookie !== "") {
         provide FetchLive {
           const client = try HttpClient.HttpClient
@@ -192,10 +198,9 @@ export effect function signOutSurface() {
         }
       }
       if (factory.mode === "mock" && factory.accounts !== undefined) try Effect.mapError(factory.accounts.signOut(), () => new SignInFailed({ message: "Sign-out failed." }))
-    }, Effect.orDie(effect {
-      if (factory.mode === "mock") try removeMockSession()
-      else { try removeSession(); try removePending() }
-    }))
+    }, Effect.ignore(forget)))
+    try forget
+    if (Exit.isFailure(revoked)) try Effect.failCause(revoked.cause)
     return "signed-out" as const
   }))
   return { signedOut: stored !== undefined } satisfies LogoutOutput
