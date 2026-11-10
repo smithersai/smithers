@@ -813,3 +813,8 @@ older answer; 248 executions pass at that seed.
 `actions/steered-runs` (5 s budget) for 0 executions, after 1 each in the run before: replaying the saved value and
 one execution took 21.7 s and 8.5 s with coverage counters. Both declare `STEERED_FLOOR` (30 s) in `fuzz/run.vibe`.
 With it, under coverage: `wiki/steered-host` 1 execution in 31.8 s, `actions/steered-runs` 7 in 31.7 s.
+
+`web/terminal` also starts its sandbox by submitting `/sandbox` in the composer (`slash`), which reaches
+`src/web/main.vibe` 795 and 796 (31 hits at seed 20261124). The web targets now leave 3 of 667 lines of `main.vibe`
+unreached at seed 20261122 (795, 796 and the roles stream's end, 1258, which the `closing` backend reaches at other
+seeds) and 70 of 823 branch arms.
