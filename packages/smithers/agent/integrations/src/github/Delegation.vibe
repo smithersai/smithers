@@ -128,6 +128,14 @@ export effect function sqliteStore(sql: Sql): Store!DelegationRefused {
 }
 
 /** The call's target person, read from its URL. `route` admits it only when the signed envelope names the same person. */
+/** `path` with `query`'s defined entries appended, after any query `path` already has. */
+function withQuery(path: string, query: RequestOptions["query"]): string {
+  const search = new URLSearchParams()
+  for (const [name, value] of Object.entries(query ?? {})) if (value !== undefined) search.append(name, String(value))
+  const text = search.toString()
+  return text === "" ? path : `${path}${path.includes("?") ? "&" : "?"}${text}`
+}
+
 export function personOf(url: string): number | undefined {
   const value = new URL(url, "https://broker.invalid").searchParams.get("person") ?? ""
   if (!/^[1-9][0-9]{0,15}$/.test(value)) return undefined
@@ -191,8 +199,10 @@ export effect function site(options: { readonly origin: string; readonly brokerO
     /** GET-only: the person's reads run against their own rate limit. Every write goes through `keyed` or `write`. */
     client: (person: number, delegation: string, http: HttpClient.HttpClient): GitHubClient => {
       const read = (path: string, paginate?: unknown) => Effect.mapError(call("read", person, delegation, "", { path, ...(paginate === undefined ? {} : { paginate }) }).pipe(Effect.provideService(HttpClient.HttpClient, http)), asIntegration)
-      const request = (method: string, path: string, _body?: unknown, requestOptions?: RequestOptions & { readonly schema?: Schema.Top }) => {
+      const request = (method: string, unqueried: string, _body?: unknown, requestOptions?: RequestOptions & { readonly schema?: Schema.Top }) => {
         if (method !== "GET") return Effect.die("delegated writes use typed operations")
+        // The query travels in the read's path, as a paginated read's does: a read at `ref` reads that commit.
+        const path = withQuery(unqueried, requestOptions?.query)
         if (requestOptions?.schema === undefined) return read(path)
         return Effect.flatMap(read(path), (value) => Effect.mapError(Schema.decodeUnknownEffect(requestOptions.schema as never)(value as never), () => new IntegrationError("decode-failed", `GitHub response for GET ${path} failed schema validation.`, { method: "GET", path, retryable: false })))
       }

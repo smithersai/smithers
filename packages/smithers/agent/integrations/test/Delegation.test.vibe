@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest"
-import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { Core, GitHub } from "../src/index.ts"
 import * as Delegation from "../src/github/Delegation.vibe"
@@ -496,6 +496,24 @@ it.live("the site client signs, calls the one route, and maps every answer", () 
     expect(missingRead._tag === "Failure" && [missingRead.failure.details?.["status"], Delegation.reasonOf(missingRead.failure)]).toEqual([404, "missing"])
     expect(noBranch).toEqual(Option.none())
     expect(unreachable._tag === "Failure" && unreachable.failure.reason).toBe("unavailable")
+  })
+})
+
+it.effect("a delegated read keeps its query: a read at a commit reads that commit", () => effect {
+  const f = try fixture()
+  // The site's network reaches the broker's own route; the broker's GitHub records each path it is asked for.
+  const http = HttpClient.make((request) => effect {
+    const web = try Effect.orDie(HttpClientRequest.toWeb(request))
+    const answer = try Delegation.serve(f.server).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web)))
+    return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(answer))
+  })
+  const reader = (try Delegation.site({ origin, brokerOrigin, secret })).client(7, f.installed.delegation, http)
+  const path = "/repos/smithersai/vibelang/contents/docs/design/vips/a.md"
+  try reader.request("GET", path, undefined, { query: { ref: "a".repeat(40), skipped: undefined } })
+  try reader.request("GET", `${path}?ref=main`, undefined, { query: { per_page: 1 } })
+  try reader.request("GET", path, undefined, { query: {} })
+  try Effect.try(() => {
+    expect(f.world.calls).toEqual([`GET ${path}?ref=${"a".repeat(40)}`, `GET ${path}?ref=main&per_page=1`, `GET ${path}`])
   })
 })
 
