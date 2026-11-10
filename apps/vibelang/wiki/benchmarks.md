@@ -3508,6 +3508,26 @@ location without loading a document.
 itself. In coverage mode each document now pauses in its own `beforeunload` while the collector dumps, then resumes;
 the request is untouched. Lines that run after `beforeunload` in the navigating command need Node evidence (0017).
 
+## Live issue and wiki clients (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/live-clients.bench.vibe`, 15:08 UTC, load 30-36. The product's `liveIssues` and
+`liveWiki` clients against the Accounts object on a real loopback server, a fresh object per sample, with injected
+sign-in, `IssueHost` and `WikiHost`. Each result is decoded and checked. 7 samples, ms, min / median / max.
+
+| Step | ms |
+| --- | --- |
+| issue list | 76 / 121 / 192 |
+| new issue | 125 / 161 / 268 |
+| wiki page read | 78 / 91 / 170 |
+| wiki Save | 79 / 97 / 191 |
+| the same Save again (idempotent, same review link) | 32 / 41 / 84 |
+| invalid page name, refused before any request | 0 / 0 / 1 |
+| signed-out wiki Save, decoded `sign-in` | 3 / 4 / 5 |
+| signed-out new issue, decoded `sign-in` | 2 / 3 / 5 |
+
+Limitations: loopback HTTP in one Node process, no browser, TLS, edge or GitHub latency; injected product fixtures for
+GitHub; shared host. Raw HTTP on the same routes: `issues-wiki-web` above.
+
 ## Fault-path coverage set (2026-11-10, nyc-01)
 
 Not a timing benchmark. `bench/browser-faults.spec.ts` runs seven Chromium workloads on the `e2e` build, each over one
