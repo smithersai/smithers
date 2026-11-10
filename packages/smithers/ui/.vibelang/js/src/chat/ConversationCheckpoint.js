@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { dateFromMs } from "../time/dateFromMs";
+import { dateFromMs } from "../time/dateFromMs.js";
 /** Labeled durable-checkpoint separator row inside a transcript. */
 export function ConversationCheckpoint({ label, timestampMs, actions, className, ...props }) {
     useInjectUiCss();

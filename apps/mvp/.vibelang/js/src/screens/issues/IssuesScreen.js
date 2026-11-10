@@ -2,8 +2,8 @@
 import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { IssueSearchBox } from "../../features/issues/components/IssueSearchBox";
 import { IssueSort } from "../../features/issues/components/IssueSort";
-import { awaitingListRows, visibleRows, withSearched } from "../../features/issues/list";
-import { githubList } from "../../features/repo/scope";
+import { awaitingListRows, visibleRows, withSearched } from "../../features/issues/list.js";
+import { githubList } from "../../features/repo/scope.js";
 import { RepoHeader } from "../../features/repo/components/RepoHeader";
 import { Badge, Button, Card, CardContent, EmptyState, IssuesView, LinkTabs, PageBody } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
@@ -12,17 +12,17 @@ import { useAuth } from "../../features/auth/components/AuthContext";
 import { SignInButton } from "../../features/auth/components/SignInButton";
 import { useIssues } from "../../features/issues/components/IssuesContext";
 import { useTodos } from "../../features/todos/components/TodosContext";
-import { mayChange, todosByIssue, withTodos } from "../../features/todos/view";
-import { DISCARD, EDIT, ENABLE_TRIAGE, issuePath, NEW_ISSUE, NOT_FOUND, PAUSE_TRIAGE, TRIAGE_OFF, } from "../../features/issues/contract";
-import { COMMITMENTS, COMMITMENT_COPY, filterCommitment } from "../../features/issues/lifecycle";
-import { filterWork, withWork, workByIssue } from "../../features/issues/workView";
-import { WORK_FILTER_LABEL } from "../../features/issues/work";
-import { listFailureOf, listProps, listSyncOf, mayManageTriageOnList, mayWrite, syncsHere, triageSwitchOf } from "../../features/issues/view";
+import { mayChange, todosByIssue, withTodos } from "../../features/todos/view.js";
+import { DISCARD, EDIT, ENABLE_TRIAGE, issuePath, NEW_ISSUE, NOT_FOUND, PAUSE_TRIAGE, TRIAGE_OFF, } from "../../features/issues/contract.js";
+import { COMMITMENTS, COMMITMENT_COPY, filterCommitment } from "../../features/issues/lifecycle.js";
+import { filterWork, withWork, workByIssue } from "../../features/issues/workView.js";
+import { WORK_FILTER_LABEL } from "../../features/issues/work.js";
+import { listFailureOf, listProps, listSyncOf, mayManageTriageOnList, mayWrite, syncsHere, triageSwitchOf } from "../../features/issues/view.js";
 import "../../../../../src/screens/issues/issues-screen.css";
 import { useRepo, useRepoAnswer } from "../../features/repo/components/RepoContext";
 import { usePersonalModel } from "../../features/personal-model/components/PersonalModelContext";
-import { repoId } from "../../features/repo/contract";
-import { SETTLED, SLOT } from "../../firstPaint/settled";
+import { repoId } from "../../features/repo/contract.js";
+import { SETTLED, SLOT } from "../../firstPaint/settled.js";
 // /$owner/$repo/issues: the repository's issues, this device's own new ones first with their chip, each with its triage
 // chip and the TODOs made from it, Make TODO in its menu for a Member (docs/features/todos.md#from-an-issue), New issue
 // for a person who may open one, and Enable triage or Pause triage for a Maintainer once this repository's issue sync is complete. A repository whose issues this person may not read shows sign-in, or Not found. A new issue that wasn't sent gets Edit, back to the form, and Discard. The route's loader

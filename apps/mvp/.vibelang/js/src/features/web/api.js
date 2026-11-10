@@ -2,7 +2,7 @@
 import { WebPage } from "@smthrs/views";
 import { Context, Data, Effect, Layer, Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
-import { WEB_PREVIEW_ROUTE } from "./contract";
+import { WEB_PREVIEW_ROUTE } from "./contract.js";
 // ChatApi's `POST /api/web/preview` as `app/web/preview` calls it (docs/features/web-pages.md#before-a-page-is-framed),
 // through Effect's HttpClient, with one deadline covering the whole exchange. ChatApi requests the page, never the
 // device: a browser can't read another site's headers, nor why a frame of it stays blank.

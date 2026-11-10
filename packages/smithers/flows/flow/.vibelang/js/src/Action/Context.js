@@ -9,6 +9,7 @@ import * as Effect_1 from "effect/Effect";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as RpcSerialization from "effect/rpc/RpcSerialization";
 /**
  * Context reference carrying the complete environment folded into reusable
  * action keys.
@@ -75,6 +76,22 @@ export const CurrentAttempt = Context.Reference("@smthrs/flow/Action/CurrentAtte
  * @since 0.1.0
  */
 export const CurrentInvocationKey = Context.Reference("@smthrs/flow/Action/CurrentInvocationKey", { defaultValue: () => undefined });
+/**
+ * Context reference carrying the serializer an action's results are stored
+ * with (VIP-44): `executeEncoded` encodes with its `codecFor`, and the engine
+ * that provides it decodes with `exitSchemasFor` of the same one. Defaults to
+ * `RpcSerialization.json`.
+ *
+ * **When to use**
+ *
+ * An engine provides it around every dispatch. It is a reference of its own,
+ * not the `RpcSerialization` service, so pinning the stored representation
+ * never changes the `RpcSerialization` an action body sees.
+ *
+ * @category serialization
+ * @since 1.0.0
+ */
+export const StoredSerialization = Context.Reference("@smthrs/flow/Action/StoredSerialization", { defaultValue: () => RpcSerialization.json });
 /**
  * Context reference carrying the ownership fence of the attempt currently
  * running, when the runtime supplies one.

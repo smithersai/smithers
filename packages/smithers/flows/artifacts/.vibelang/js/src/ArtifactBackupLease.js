@@ -106,14 +106,17 @@ export const withLease = (fs, directory, effect, failure) => {
             const heartbeat = Effect_1.gen(function* heartbeat() {
                 while (true) {
                     yield* Effect.sleep(heartbeatEvery);
-                    yield* (Effect.tapError(gate(fs, directory, Effect.tapError(Effect.mapError(Effect.flatMap((yield* (function* () {
-                        let $do1;
+                    const $do_t1 = gate;
+                    const $do_t2 = fs;
+                    const $do_t3 = directory;
+                    let $do1;
+                    {
                         const catchProgram = (Effect.map(fs.readFileString(marker), Option.some));
                         $do1 = Effect_1.gen(function* () { return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), (cause) => {
                             return Effect_1.gen(function* () { return yield* (isReason(cause, "NotFound") ? Effect.succeed(Option.none()) : Effect.fail(cause)); });
                         }); });
-                        return $do1;
-                    })()), (found) => {
+                    }
+                    yield* (Effect.tapError($do_t1($do_t2, $do_t3, Effect.tapError(Effect.mapError(Effect.flatMap(($do1), (found) => {
                         if (Option.getOrUndefined(found) !== owner) {
                             return Effect.andThen(Effect.logWarning("Artifact backup lease was reclaimed while its backup was still running"), Effect.fail(new ArtifactStoreError({
                                 code: "unavailable",
@@ -135,8 +138,8 @@ export const withLease = (fs, directory, effect, failure) => {
                     , () => Effect.logWarning("Artifact backup lease heartbeat failed")));
                 }
             });
-            const $do_t1 = Effect;
-            const $do_t2 = runtime.$bindMethod($do_t1.forkScoped, $do_t1);
+            const $do_t4 = Effect;
+            const $do_t5 = runtime.$bindMethod($do_t4.forkScoped, $do_t4);
             let $do2;
             {
                 const catchProgram = heartbeat;
@@ -144,10 +147,10 @@ export const withLease = (fs, directory, effect, failure) => {
                     return Effect_1.gen(function* () { return yield* Deferred.fail(lost, cause); });
                 }); });
             }
-            yield* $do_t2($do2);
+            yield* $do_t5($do2);
             return yield* (Effect.raceFirst(Effect.raceFirst(effect, Deferred.await(lost)), deadline));
         }))), () => {
-            let $do_v3;
+            let $do_v6;
             if (ownsMarker) {
                 let $do3;
                 {
@@ -162,14 +165,14 @@ export const withLease = (fs, directory, effect, failure) => {
                         return Effect_1.gen(function* () { return yield* Effect.logWarning("Artifact backup lease release failed", cause); });
                     }); });
                 }
-                $do_v3
+                $do_v6
                     =
                         ($do3);
             }
             else {
-                $do_v3 = Effect.void;
+                $do_v6 = Effect.void;
             }
-            return $do_v3;
+            return $do_v6;
         });
     });
 };

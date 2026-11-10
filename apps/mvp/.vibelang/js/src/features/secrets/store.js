@@ -2,14 +2,14 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric";
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db";
 import { Cache, Context, Effect, Layer, Option, Scope, Stream } from "effect";
-import { AuthStore } from "../auth/store";
-import { evictOnRefusal, refused, repositoryAccessChanges, revokingSource, wipeAuthority } from "../issues/source";
-import { RepoStore } from "../repo/store";
-import { SECRETS_SHAPE_ROUTE } from "./contract";
+import { AuthStore } from "../auth/store.js";
+import { evictOnRefusal, refused, repositoryAccessChanges, revokingSource, wipeAuthority } from "../issues/source.js";
+import { RepoStore } from "../repo/store.js";
+import { SECRETS_SHAPE_ROUTE } from "./contract.js";
 import { record } from "./metrics.js";
-import { formsQuery, listQuery, viewQuery } from "./queries";
-import { SecretForm, SecretRow, SecretsView, VIEW } from "./schema";
-import { awaiting, landed } from "./view";
+import { formsQuery, listQuery, viewQuery } from "./queries.js";
+import { SecretForm, SecretRow, SecretsView, VIEW } from "./schema.js";
+import { awaiting, landed } from "./view.js";
 /** A secret's key in its repository's collection: its name. */
 const byName = (row) => row.name;
 /**

@@ -2,13 +2,13 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric";
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db";
 import { Cache, Context, Effect, Exit, Layer, Option, Ref, Scope, Stream } from "effect";
-import { AuthStore } from "../auth/store";
-import { evictOnRefusal, repositoryAccessChanges, repositoryShapeSource, revokingSource, syncStatusAfter, wipeAuthority } from "../issues/source";
-import { IssuesStore, syncStatusOf } from "../issues/store";
-import { RepoStore } from "../repo/store";
-import { CHECKS_SHAPE_ROUTE, PULL_COMMITS_SHAPE_ROUTE, PULLS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE } from "./contract";
-import { checksQuery, commentsQuery, commitsQuery, filesQuery, listQuery, pullQuery, reviewsQuery, viewQuery, } from "./queries";
-import { CheckRow, commitKey, FilesRow, PullCommitRow, PullRow, PullsView, ReviewRow, VIEW } from "./schema";
+import { AuthStore } from "../auth/store.js";
+import { evictOnRefusal, repositoryAccessChanges, repositoryShapeSource, revokingSource, syncStatusAfter, wipeAuthority } from "../issues/source.js";
+import { IssuesStore, syncStatusOf } from "../issues/store.js";
+import { RepoStore } from "../repo/store.js";
+import { CHECKS_SHAPE_ROUTE, PULL_COMMITS_SHAPE_ROUTE, PULLS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE } from "./contract.js";
+import { checksQuery, commentsQuery, commitsQuery, filesQuery, listQuery, pullQuery, reviewsQuery, viewQuery, } from "./queries.js";
+import { CheckRow, commitKey, FilesRow, PullCommitRow, PullRow, PullsView, ReviewRow, VIEW } from "./schema.js";
 import { observePullShape } from "./shapeSync.js";
 import { refreshingSource } from "./refresh.js";
 /**

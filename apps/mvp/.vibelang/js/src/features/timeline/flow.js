@@ -2,7 +2,7 @@
 import { Action, Flow } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { MARK_LENGTH, PHASES_FLOW, SEGMENT_SPANS, SEGMENT_WINDOW, SUMMARIZE_FLOW, SUMMARY_REASONS } from "./contract";
+import { MARK_LENGTH, PHASES_FLOW, SEGMENT_SPANS, SEGMENT_WINDOW, SUMMARIZE_FLOW, SUMMARY_REASONS } from "./contract.js";
 export const SummaryPayload = {
     /** The message summarized: the claim and the recorded summary are its. */
     id: Schema.String,

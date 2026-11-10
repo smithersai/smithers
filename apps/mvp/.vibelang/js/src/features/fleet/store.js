@@ -2,12 +2,12 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric";
 import { LiveQuery } from "@smthrs/effect-tanstack-db";
 import { Cache, Context, Effect, Latch, Layer, Option, Scope, Stream } from "effect";
-import { AuthStore, SESSION } from "../auth/store";
-import { repoId } from "../repo/contract";
-import { RepoStore } from "../repo/store";
-import { repoVisibility } from "../repo/visibility";
-import { AGENT_RUNS_SHAPE_ROUTE, MACHINES_SHAPE_ROUTE } from "./contract";
-import { AgentRun, Machine } from "./schema";
+import { AuthStore, SESSION } from "../auth/store.js";
+import { repoId } from "../repo/contract.js";
+import { RepoStore } from "../repo/store.js";
+import { repoVisibility } from "../repo/visibility.js";
+import { AGENT_RUNS_SHAPE_ROUTE, MACHINES_SHAPE_ROUTE } from "./contract.js";
+import { AgentRun, Machine } from "./schema.js";
 /** A repository's runs, newest first, read through the data gate (repo/gate.ts). */
 const runsQuery = (collection) => LiveQuery.make((q) => q.from({ run: collection.tanstack }).orderBy(({ run }) => run.queuedAt, "desc"));
 /** A repository's machines, by name, read through the data gate (repo/gate.ts). */

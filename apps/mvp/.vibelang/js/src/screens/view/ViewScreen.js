@@ -5,8 +5,8 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { Link, useSearch } from "@tanstack/react-router";
 import { AgentView, previewOf } from "../../features/views/components/ConversationView";
 import { useViews } from "../../features/views/components/ViewsContext";
-import { BACK_TO_CHAT } from "../../features/views/contract";
-import { pageOf } from "../../features/views/rows";
+import { BACK_TO_CHAT } from "../../features/views/contract.js";
+import { pageOf } from "../../features/views/rows.js";
 import "../../../../../src/screens/view/view-screen.css";
 // /app/views/$viewId: one view at its full size (decision 0004 §6), from the same synced row the conversation shows
 // inline: a framed page, the agent's form, or a generated view, which a person plays here as in the chat. The route's

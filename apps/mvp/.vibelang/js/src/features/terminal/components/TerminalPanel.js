@@ -5,7 +5,7 @@ import { TerminalFrame } from "@smthrs/terminal-frame";
 import { useLiveQuery } from "@tanstack/react-db";
 import { Link, useParams } from "@tanstack/react-router";
 import { useShownMode } from "../../theme/components/ThemeButton";
-import { OPEN_TERMINAL, panelViewOf, WAITING_FOR_SANDBOX } from "../view";
+import { OPEN_TERMINAL, panelViewOf, WAITING_FOR_SANDBOX } from "../view.js";
 import { useTerminal } from "./TerminalContext";
 // The branch's terminal (decision 0013 §3, §5): our xterm in an opaque-origin frame, attached to a shell on the
 // branch's machine, typing for anyone who may edit the branch and read-only for anyone who may only view it. Its tabs

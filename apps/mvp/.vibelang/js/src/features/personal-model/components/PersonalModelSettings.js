@@ -2,10 +2,10 @@
 import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Field, Input, Label, Popover, PopoverContent, PopoverTrigger, RelativeTime, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Snippet, } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { MODEL_TIERS } from "../../model/contract";
-import { CONNECTION_KINDS, PROTOCOLS } from "../contract";
-import { ACTIVE, ADD, BASE_URL, BASE_URL_PLACEHOLDER, CLAUDE_COMMAND, CLAUDE_PASTE, CLAUDE_RUN, COPY_CODE, COPY_COMMAND, KEY, KIND_LABEL, LINK, MOVE_DOWN, MOVE_UP, OPEN_OPENAI, PROTOCOL, PROTOCOL_LABEL, REMOVE, SAVE, TEST, TIER_LABEL, TIER_PURPOSE, TOKEN, YOUR_MODEL, } from "../copy";
-import { addKind, busy, FIELDS, linkView, listOf, readAdd, rowDetail, rowStatusOf, statusOf, testable } from "../view";
+import { MODEL_TIERS } from "../../model/contract.js";
+import { CONNECTION_KINDS, PROTOCOLS } from "../contract.js";
+import { ACTIVE, ADD, BASE_URL, BASE_URL_PLACEHOLDER, CLAUDE_COMMAND, CLAUDE_PASTE, CLAUDE_RUN, COPY_CODE, COPY_COMMAND, KEY, KIND_LABEL, LINK, MOVE_DOWN, MOVE_UP, OPEN_OPENAI, PROTOCOL, PROTOCOL_LABEL, REMOVE, SAVE, TEST, TIER_LABEL, TIER_PURPOSE, TOKEN, YOUR_MODEL, } from "../copy.js";
+import { addKind, busy, FIELDS, linkView, listOf, readAdd, rowDetail, rowStatusOf, statusOf, testable } from "../view.js";
 import { usePersonalModel } from "./PersonalModelContext";
 import "../../../../../../src/features/personal-model/components/personal-model-settings.css";
 // Your model on /app/settings (decision 0132, docs/features/personal-model.md#the-settings-section): the person's ordered

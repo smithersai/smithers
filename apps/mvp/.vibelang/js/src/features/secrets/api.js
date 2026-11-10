@@ -9,7 +9,7 @@ import * as runtime from "vibelang-runtime/internal";
 import * as Option_1 from "effect/Option";
 import { Context, Effect, Layer, Redacted } from "effect";
 import { HttpClient } from "effect/http";
-import { REFUSALS, secretRoute } from "./contract";
+import { REFUSALS, secretRoute } from "./contract.js";
 // ChatApi's secrets routes as the browser calls them (docs/features/secrets.md#writing), through Effect's HttpClient,
 // with one deadline covering each whole exchange. A write is sent at once in the person's own session and never queued:
 // the durable outbox and a browser flow would keep the value on the device (IndexedDB, the engine's store). The value

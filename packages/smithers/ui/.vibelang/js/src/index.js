@@ -36,12 +36,12 @@
  */
 export { cn } from "@smthrs/ui-css";
 export { tokens } from "@smthrs/ui-css";
-export { resolveTheme, subscribeTheme } from "./internal/resolveTheme";
-export { resolvePalette, subscribePalette } from "./internal/resolvePalette";
-export { useResolvedPalette } from "./internal/useResolvedPalette";
-export { useResolvedTheme } from "./internal/useResolvedTheme";
-export { isPlainNavigationClick } from "./internal/navigationClick";
-export { newNonce, useNearScreen } from "./internal/frameMount";
+export { resolveTheme, subscribeTheme } from "./internal/resolveTheme.js";
+export { resolvePalette, subscribePalette } from "./internal/resolvePalette.js";
+export { useResolvedPalette } from "./internal/useResolvedPalette.js";
+export { useResolvedTheme } from "./internal/useResolvedTheme.js";
+export { isPlainNavigationClick } from "./internal/navigationClick.js";
+export { newNonce, useNearScreen } from "./internal/frameMount.js";
 export { xtermBaseCss } from "@smthrs/ui-css";
 export { normalizeStatus, statusClass, statusColor, statusColors, hasStatusTone, formatStatus, isTerminalRunStatus } from "@smthrs/ui-css";
 export { SmithersUiStyles, composeSmithersUiStyles, smithersUiCss, standaloneThemeCss, DEFAULT_THEME_KEY, themeRegistry, SMITHERS_UI_STYLE_ATTR, REDUCED_MOTION_MEDIA_QUERY, prefersReducedMotion, observeReducedMotion, } from "./styles";
@@ -52,7 +52,7 @@ export { StatusPill } from "./status-pill";
 export { Reasoning, ReasoningTrigger, ReasoningContent, ReasoningSummary, } from "./agentic/Reasoning";
 export { ChainOfThought, ChainOfThoughtStep, chainOfThoughtStepStatus, } from "./agentic/ChainOfThought";
 export { ToolCall, ToolCallHeader, ToolCallContent, ToolCallInput, ToolCallOutput, ToolCallError, ToolCallApproval, toolCallStatus, TOOL_CALL_STATE_LABELS, } from "./agentic/ToolCall";
-export { formatJsonSafe } from "./agentic/formatJsonSafe";
+export { formatJsonSafe } from "./agentic/formatJsonSafe.js";
 export { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent, CardFooter } from "./card";
 export { Input, Textarea } from "./input";
 export { Label, Field } from "./label";
@@ -60,7 +60,7 @@ export { ChatMessage } from "./chat/ChatMessage";
 export { ChatTranscript } from "./chat/ChatTranscript";
 export { ChatComposer } from "./chat/ChatComposer";
 export { CompletionList, } from "./chat/CompletionList";
-export { slashMenu, slashSubmit, } from "./slash-commands";
+export { slashMenu, slashSubmit, } from "./slash-commands.js";
 export { MessageScrollerProvider, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerButton, useMessageScroller, useMessageVisibility, useMessageBand, useMessageScrollerState, } from "./chat/MessageScroller";
 export { Bubble, BubbleContent, BubbleActions, BubbleReactions, bubbleVariants, } from "./chat/Bubble";
 export { Attachment, AttachmentMedia, AttachmentContent, AttachmentTitle, AttachmentDescription, AttachmentActions, AttachmentAction, AttachmentTrigger, AttachmentGroup, AttachmentPreview, AttachmentRemove, } from "./chat/Attachment";
@@ -81,10 +81,10 @@ export { Separator } from "./separator";
 export { Skeleton } from "./skeleton";
 export { LOADING_DELAY_MS, LoadingBar } from "./loading";
 export { intentPath, LinkIntent } from "./link-intent";
-export { formatRelativeTime } from "./time/formatRelativeTime";
-export { useClock } from "./clock";
+export { formatRelativeTime } from "./time/formatRelativeTime.js";
+export { useClock } from "./clock.js";
 export { RelativeTime, useRelativeTime } from "./time/RelativeTime";
-export { useDialogFocusTrap } from "./internal/useDialogFocusTrap";
+export { useDialogFocusTrap } from "./internal/useDialogFocusTrap.js";
 export { EmptyState } from "./empty-state";
 export { Breadcrumbs } from "./breadcrumbs";
 export { Popover, PopoverTrigger, PopoverContent } from "./popover";
@@ -100,7 +100,7 @@ export { commandPaletteCss, kbdCss, segmentedControlCss } from "@smthrs/ui-css";
 export { AvatarStack } from "./avatar-stack";
 export { CollaboratorCarets, selectionOf, useSharedSelection, } from "./collaborators";
 export { collaboratorsCss } from "@smthrs/ui-css";
-export { PERSON_LANES, personLane } from "./internal/person";
+export { PERSON_LANES, personLane } from "./internal/person.js";
 export { ShareDialog, } from "./share-dialog";
 export { avatarStackCss, shareDialogCss } from "@smthrs/ui-css";
 export { DirectoryListing, } from "./directory-listing";
@@ -111,13 +111,13 @@ export { KpiStat } from "./kpi-stat";
 export { StageStrip, stageTone } from "./stage-strip";
 export { CollapsiblePanel } from "./collapsible-panel";
 export { DiffHunks } from "./diff-hunks";
-export { binaryBodyLabel, byteCountString, decodeGitPath, detectBinary, diffTotals, fileLineCount, fileStatus, groupHunks, initialExpanded, isLargeDiff, paginateHunks, parseHunks, parseUnifiedFile, statusLetter, totalBytes, LARGE_BYTE_LIMIT, LARGE_FILE_COUNT, PAGINATE_THRESHOLD, PAGINATE_VISIBLE, } from "./diff-paginate";
+export { binaryBodyLabel, byteCountString, decodeGitPath, detectBinary, diffTotals, fileLineCount, fileStatus, groupHunks, initialExpanded, isLargeDiff, paginateHunks, parseHunks, parseUnifiedFile, statusLetter, totalBytes, LARGE_BYTE_LIMIT, LARGE_FILE_COUNT, PAGINATE_THRESHOLD, PAGINATE_VISIBLE, } from "./diff-paginate.js";
 export { FileTree, } from "./file-tree";
 export { Markdown } from "./primitives/markdown";
 export { MessageResponse } from "./agentic/MessageResponse";
 export { AgentOutput, } from "./agentic/AgentOutput";
-export { parseAgentOutput } from "./agentic/parseAgentOutput";
-export { CodeBlock, CodeBlockHeader, CodeBlockFilename, CodeBlockGroup, CodeBlockTabs, } from "./agentic/CodeBlock";
+export { parseAgentOutput } from "./agentic/parseAgentOutput.js";
+export { CodeBlock, CodeBlockHeader, CodeBlockFilename, CodeBlockGroup, CodeBlockTabs, } from "./agentic/CodeBlock.js";
 // lane:conversation-foundation
 export { Message, MessageAvatar, MessageHeader, MessageContent, MessageFooter, MessageActions, MessageGroup, } from "./chat/Message";
 export { MessageBranch, MessageBranchContent, MessageBranchSelector, MessageBranchPrevious, MessageBranchNext, MessageBranchPage, } from "./chat/MessageBranch";
@@ -126,7 +126,7 @@ export { ConversationCheckpoint } from "./chat/ConversationCheckpoint";
 // lane:prompt-attachments
 export { PromptInput, PromptInputHeader, PromptInputBody, PromptInputTextarea, PromptInputFooter, PromptInputTools, PromptInputButton, PromptInputSubmit, PromptInputStop, PromptInputActionMenu, PromptInputActionMenuTrigger, PromptInputActionMenuContent, PromptInputActionAddAttachments, usePromptInputAttachments, } from "./prompt/PromptInput";
 // lane:reasoning-tools
-export { formatPartialJson } from "./agentic/formatPartialJson";
+export { formatPartialJson } from "./agentic/formatPartialJson.js";
 // lane:plans-tasks-queues
 export { AgentTask, AgentTaskTrigger, AgentTaskContent, AgentTaskGroup, } from "./agentic/AgentTask";
 export { Queue, QueueSection, QueueSectionTrigger, QueueSectionLabel, QueueSectionContent, QueueList, QueueItem, QueueItemIndicator, QueueItemContent, QueueItemDescription, } from "./agentic/Queue";
@@ -169,53 +169,53 @@ export { WorkflowCanvas, WorkflowNode, WorkflowNodeHeader, WorkflowNodeContent, 
 // lane. `tests/barrel-weight.test.ts` measures the result.
 export { Calendar } from "./calendar/Calendar";
 export { CALENDAR_CSS_ID, calendarCss } from "@smthrs/ui-css";
-export { DAY_MS, HOUR_MS, MINUTE_MS, addDays, addMonths, agendaGroups, atMinutesIntoDay, dayKey, daysInMonth, eventsOnDay, fullDayLabel, hashSource, hourLabel, isSameDay, minutesIntoDay, monthGridDays, monthLabel, snapDown30, snapUp30, startOfDay, timeLabel, weekDays, weekLabel, weekdayLabel, } from "./calendar/dateUtils";
+export { DAY_MS, HOUR_MS, MINUTE_MS, addDays, addMonths, agendaGroups, atMinutesIntoDay, dayKey, daysInMonth, eventsOnDay, fullDayLabel, hashSource, hourLabel, isSameDay, minutesIntoDay, monthGridDays, monthLabel, snapDown30, snapUp30, startOfDay, timeLabel, weekDays, weekLabel, weekdayLabel, } from "./calendar/dateUtils.js";
 // lane:vault exports (integration: keep)
 //
 // `KnowledgeGraph` is not here and must not be added: it renders over d3-force
 // and ships from `@smthrs/ui/adapters/knowledge-graph`.
-export { NOTE_HREF, joinFrontmatter, noteHref, noteLabel, parseWikilinks, pathFromHref, restoreWikilinks, splitFrontmatter, wikilinksToMarkdown, } from "./vault/wikilinks";
-export { GRAPH_FOLDER_TINTS, HUB_LABEL_MIN_DEGREE, computeGraphModel, folderHue, folderTint, folderTintIndex, neighbourSet, nodeRadius, noteFolder, shouldShowLabel, } from "./vault/graphModel";
+export { NOTE_HREF, joinFrontmatter, noteHref, noteLabel, parseWikilinks, pathFromHref, restoreWikilinks, splitFrontmatter, wikilinksToMarkdown, } from "./vault/wikilinks.js";
+export { GRAPH_FOLDER_TINTS, HUB_LABEL_MIN_DEGREE, computeGraphModel, folderHue, folderTint, folderTintIndex, neighbourSet, nodeRadius, noteFolder, shouldShowLabel, } from "./vault/graphModel.js";
 export { VAULT_CSS_ID, vaultCss } from "@smthrs/ui-css";
-export { useVaultCss } from "./vault/useVaultCss";
+export { useVaultCss } from "./vault/useVaultCss.js";
 export { BacklinksPanel } from "./vault/BacklinksPanel";
 export { OutlineView, parseOutline } from "./vault/OutlineView";
-export { AUTOSAVE_STATUS_TEXT, autosaveStatusText, createAutosaveDoc, } from "./vault/autosaveMachine";
-export { useAutosaveDoc } from "./vault/useAutosaveDoc";
-export { copyText, canCopyText, reserveCopyText } from "./internal/copyToClipboard";
+export { AUTOSAVE_STATUS_TEXT, autosaveStatusText, createAutosaveDoc, } from "./vault/autosaveMachine.js";
+export { useAutosaveDoc } from "./vault/useAutosaveDoc.js";
+export { copyText, canCopyText, reserveCopyText } from "./internal/copyToClipboard.js";
 // Agent UI (decision 0004): generated views in a sandboxed frame, the
 // presentation subset a view may import, and the form and issues templates.
-export { GeneratedView, generatedViewCss, sanitizeViewHtml, } from "./generated-view";
-export { frameRuntime } from "./generated-view/runtime.generated";
-export { loadPresentationBundle, presentationComponentNames, presentationComponents } from "./presentation";
-export { FlowFormView, flowFormViewCss } from "./flow-form-view";
-export { ITEM_STATE_VARIANTS, ItemStateIcon, IssuesView, issuesViewCss, TRIAGE_WORDS, } from "./issues-view";
+export { GeneratedView, generatedViewCss, sanitizeViewHtml, } from "./generated-view/index.js";
+export { frameRuntime } from "./generated-view/runtime.generated.js";
+export { loadPresentationBundle, presentationComponentNames, presentationComponents } from "./presentation/index.js";
+export { FlowFormView, flowFormViewCss } from "./flow-form-view/index.js";
+export { ITEM_STATE_VARIANTS, ItemStateIcon, IssuesView, issuesViewCss, TRIAGE_WORDS, } from "./issues-view/index.js";
 // A quiet `⋯` menu of actions, and a button that confirms before it acts.
-export { ActionMenu, actionMenuCss, ConfirmButton, } from "./action-menu";
-export { IssueForm, ItemAsideSection, ItemConversation, itemConversationCss, } from "./item-conversation";
-export { TriageControl, triageControlCss } from "./triage-control";
+export { ActionMenu, actionMenuCss, ConfirmButton, } from "./action-menu/index.js";
+export { IssueForm, ItemAsideSection, ItemConversation, itemConversationCss, } from "./item-conversation/index.js";
+export { TriageControl, triageControlCss } from "./triage-control/index.js";
 // The agent's status (apps/mvp decision 0015): the pill, the needs-you card, the toast stack and the tab title; and
 // notices (decision 0009 §4): their words, glyphs and keys, when a notice's toast shows, and the notifications panel.
-export { AGENT_STATES, AGENT_STATUS_GLYPHS, AGENT_STATUS_WORDS, agentStatusCss, AgentStatusPill, agentStatusTitle, answerText, isAgentState, isNoticeHotkey, isTypingTarget, NeedsYouCard, NOTICE_GLYPHS, NOTICE_KEYS, NOTICE_WORDS, noticeDismissDelay, noticeKeyAction, NotificationBell, NotificationEntry, NotificationPanel, Toast, ToastStack, workNoticeVisible, } from "./agent-status";
+export { AGENT_STATES, AGENT_STATUS_GLYPHS, AGENT_STATUS_WORDS, agentStatusCss, AgentStatusPill, agentStatusTitle, answerText, isAgentState, isNoticeHotkey, isTypingTarget, NeedsYouCard, NOTICE_GLYPHS, NOTICE_KEYS, NOTICE_WORDS, noticeDismissDelay, noticeKeyAction, NotificationBell, NotificationEntry, NotificationPanel, Toast, ToastStack, workNoticeVisible, } from "./agent-status/index.js";
 // Runs and flows (apps/mvp decision 0014): a redacted, clipped value as text; the run page's list, header, steps,
 // timeline and journal; and the card a flow is drafted in.
-export { formatBytes, JsonValue, jsonValueCss, jsonValueText } from "./json-value";
-export { attemptWords, clockDuration, isSettled, offsetWords, RUN_WORD_GLYPHS, RUN_WORD_TONES, RUN_WORDS, RunDetails, RunHeader, RunJournal, RunList, runPageCss, RunStatusPill, RunWaterfall, runWord, SpanDetail, SpanTree, STEP_GLYPHS, STEP_WORDS, stepDuration, stepElapsed, untilWords, waitWords, waterfallAxis, waterfallBars, } from "./run-page";
-export { answersToSend, changedAnswers, draftStatusLine, FlowDraftView, flowDraftViewCss, isAssumed, questionValue, } from "./flow-draft-view";
+export { formatBytes, JsonValue, jsonValueCss, jsonValueText } from "./json-value/index.js";
+export { attemptWords, clockDuration, isSettled, offsetWords, RUN_WORD_GLYPHS, RUN_WORD_TONES, RUN_WORDS, RunDetails, RunHeader, RunJournal, RunList, runPageCss, RunStatusPill, RunWaterfall, runWord, SpanDetail, SpanTree, STEP_GLYPHS, STEP_WORDS, stepDuration, stepElapsed, untilWords, waitWords, waterfallAxis, waterfallBars, } from "./run-page/index.js";
+export { answersToSend, changedAnswers, draftStatusLine, FlowDraftView, flowDraftViewCss, isAssumed, questionValue, } from "./flow-draft-view/index.js";
 // An editor's strip of open files.
 export { FileTabs } from "./file-tabs";
 // A repository's home: the blocks its `.smithers/home.json` declares (`Home` in `@smthrs/views`).
 export { LinkTabs } from "./link-tabs";
-export { RepositoryHome, repositoryHomeCss, } from "./repository-home";
+export { RepositoryHome, repositoryHomeCss, } from "./repository-home/index.js";
 // A TODO's private draft (apps/mvp decision 0016 §3); the stack itself is an `IssuesView`, and one TODO an `ItemConversation`.
-export { TodoDraftCard, todoDraftCardCss } from "./stack";
+export { TodoDraftCard, todoDraftCardCss } from "./stack/index.js";
 // An outside web page: in a sandboxed frame, or as a card that opens a tab.
-export { framedPageTarget, WEB_PAGE_SANDBOX, WebLinkCard, WebPageView, webPageCss, webPageTarget, } from "./web-page";
-export { DocsPageView, docsPageCss, docsPageTarget } from "./docs-page";
+export { framedPageTarget, WEB_PAGE_SANDBOX, WebLinkCard, WebPageView, webPageCss, webPageTarget, } from "./web-page/index.js";
+export { DocsPageView, docsPageCss, docsPageTarget } from "./docs-page/index.js";
 export { declaredInput, formFieldsFor, } from "./flow-form.js";
-export * from "./flow-graph";
+export * from "./flow-graph/index.js";
 export { ChatTimeline, timelineKey, timelineLabel, timelineBlocks, timelineCapacity, timelineExchanges, timelineLevelCount, timelineWidths, TIMELINE_ROOM } from "./chat/ChatTimeline";
 export { NotFound } from "./not-found";
 export { PageFocus } from "./page-focus";
-export { markdownDocumentBody } from "./primitives/markdownDocumentBody";
-export { highlight as highlightCode } from "./repository-home/highlight";
+export { markdownDocumentBody } from "./primitives/markdownDocumentBody.js";
+export { highlight as highlightCode } from "./repository-home/highlight.js";

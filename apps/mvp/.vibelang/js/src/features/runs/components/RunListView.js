@@ -2,9 +2,9 @@
 import { jsx as _jsx } from "react/jsx-runtime";
 import { EmptyState, RunList } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { flowWords } from "../words";
-import { NO_RUNS } from "../contract";
-import { listLoaded, listRows } from "../page";
+import { flowWords } from "../words.js";
+import { NO_RUNS } from "../contract.js";
+import { listLoaded, listRows } from "../page.js";
 import { RunDetailsView } from "./RunDetailsView";
 import { useRuns } from "./RunsContext";
 import { routerLink } from "./routerLink";

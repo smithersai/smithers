@@ -4,7 +4,7 @@ import { EmptyState } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { ChangedFiles } from "../../pulls/components/ChangedFiles";
 import { CommitList } from "../../pulls/components/CommitList";
-import { COMPARE, compareOf } from "../publishView";
+import { COMPARE, compareOf } from "../publishView.js";
 import { useBranch } from "./BranchContext";
 import "../../../../../../src/features/branch/components/publish.css";
 // Compare (`?compare`, docs/features/branch-publish.md#the-branch-page): what the published branch's head adds to the

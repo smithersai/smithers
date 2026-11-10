@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { formatBytes, jsonValueText } from "./jsonValueText";
+import { formatBytes, jsonValueText } from "./jsonValueText.js";
 /**
  * A redacted, clipped value as text in a disclosure: its label and size, a
  * `Clipped` marker when the host cut it, and the text in a `<pre>`,

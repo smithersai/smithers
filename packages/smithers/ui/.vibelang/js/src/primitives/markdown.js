@@ -2,11 +2,11 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { createContext, Fragment, memo, useContext, useMemo } from "react";
-import { markdownDocumentBody } from "./markdownDocumentBody";
+import { markdownDocumentBody } from "./markdownDocumentBody.js";
 import { CodeBlock } from "./CodeBlock";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../table";
 import { cn } from "@smthrs/ui-css";
-import { safeHref } from "../internal/safeHref";
+import { safeHref } from "../internal/safeHref.js";
 import { useInjectUiCss } from "../styles";
 /**
  * Inline tokens, in match priority order: `code`, **bold**, *italic*, and

@@ -2,7 +2,7 @@
 import { Host } from "@smthrs/plugin";
 import { Effect, Exit, Scope } from "effect";
 import { feedsOf, repoOf } from "./feeds.js";
-import { decisionsOf, statusOf, VIEWS } from "./model";
+import { decisionsOf, statusOf, VIEWS } from "./model.js";
 /** A value that changes, and tells its listeners. */
 const cell = (initial) => {
     let value = initial;

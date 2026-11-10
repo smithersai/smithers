@@ -5,7 +5,7 @@ import { cn } from "@smthrs/ui-css";
 import { EmptyState } from "../empty-state";
 import { Markdown } from "../primitives/markdown";
 import { useInjectUiCss } from "../styles";
-import { webPageTarget } from "../web-page/webPageUrl";
+import { webPageTarget } from "../web-page/webPageUrl.js";
 /**
  * The docs page a view may show and link to, or `null` to refuse: an absolute
  * `https:` or `http:` URL with no username or password, parsed, never the raw

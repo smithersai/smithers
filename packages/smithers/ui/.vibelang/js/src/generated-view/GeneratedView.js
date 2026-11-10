@@ -4,10 +4,10 @@ import { jsx as _jsx } from "react/jsx-runtime";
 import { Bridge, ViewCsp } from "@smthrs/views";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@smthrs/ui-css";
-import { newNonce, useNearScreen } from "../internal/frameMount";
+import { newNonce, useNearScreen } from "../internal/frameMount.js";
 import { composeSmithersUiStyles, useInjectUiCss } from "../styles";
 import { frameBaseCss } from "@smthrs/ui-css";
-import { frameRuntime } from "./runtime.generated";
+import { frameRuntime } from "./runtime.generated.js";
 // Other mounted views receive the same window broadcasts; they are not this view.
 const mountedFrames = new WeakSet();
 const defaultStyles = () => `${frameBaseCss}${composeSmithersUiStyles({ withTheme: true })}`;

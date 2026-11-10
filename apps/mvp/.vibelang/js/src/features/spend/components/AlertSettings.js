@@ -2,8 +2,8 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Button, Field, Input, Label, RelativeTime } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { splitDestinations, TELEGRAM_CHAT_PATTERN } from "../contract";
-import { ALERTS_HEADING, CHANNEL_LABEL, NOT_SAVED, receiptText, SAVE, SAVING } from "../copy";
+import { splitDestinations, TELEGRAM_CHAT_PATTERN } from "../contract.js";
+import { ALERTS_HEADING, CHANNEL_LABEL, NOT_SAVED, receiptText, SAVE, SAVING } from "../copy.js";
 import { useSpend } from "./SpendContext";
 // Where spend alerts go outside the app (docs/features/spend-alerts.md#channels): an Admin's email addresses and
 // Telegram chat, each saved on its own, and the latest receipts. A field left empty turns its channel off. The fields

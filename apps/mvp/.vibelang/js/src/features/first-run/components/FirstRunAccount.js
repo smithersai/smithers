@@ -2,7 +2,7 @@
 import { jsx as _jsx } from "react/jsx-runtime";
 import { useLiveQuery } from "@tanstack/react-db";
 import { Account } from "../../auth/components/Account";
-import { offersSignIn } from "../view";
+import { offersSignIn } from "../view.js";
 import { useFirstRun } from "./FirstRunContext";
 // The header's account on `/app` (decision 0121): while the first run's Sign in step offers sign-in, the header
 // doesn't, so the page has one sign-in action.

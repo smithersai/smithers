@@ -3,7 +3,7 @@
 // in it. Who works on it, their lane or agent session, the merge-queue entry, the pull request, the merge and the
 // review each post a link; the issue's work status follows them, so no person edits it. Nothing here imports a
 // library, so the worker, the browser and the client script read the same rules.
-import { REPOS_ROUTE } from "../repo/contract";
+import { REPOS_ROUTE } from "../repo/contract.js";
 /** What a link names. */
 export const WORK_LINK_KINDS = ["assignee", "session", "queue", "pr", "merge", "review"];
 /** What the linked thing says of the work now. A link with no state (an assignee, a review) says nothing of it. */

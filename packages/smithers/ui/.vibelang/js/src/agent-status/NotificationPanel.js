@@ -5,8 +5,8 @@ import { Children, useEffect, useId, useLayoutEffect, useRef, } from "react";
 import { Button } from "../button";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { isNoticeHotkey, isTypingTarget, NOTICE_GLYPHS, NOTICE_KEYS, NOTICE_WORDS, noticeKeyAction } from "./notices";
-import { moveFocus } from "./roving";
+import { isNoticeHotkey, isTypingTarget, NOTICE_GLYPHS, NOTICE_KEYS, NOTICE_WORDS, noticeKeyAction } from "./notices.js";
+import { moveFocus } from "./roving.js";
 /** What takes focus in each entry: its row. */
 const ENTRY_FOCUS = '[data-slot="notification-row"]';
 /** What may open the panel: clicking one never counts as clicking outside it. */

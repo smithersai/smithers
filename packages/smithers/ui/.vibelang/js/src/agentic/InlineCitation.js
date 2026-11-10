@@ -5,8 +5,8 @@ import { useEffect, useId, useRef, useState, } from "react";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../tooltip";
-import { safeHref } from "../internal/safeHref";
-import { safeImageSrc } from "../internal/safeImageSrc";
+import { safeHref } from "../internal/safeHref.js";
+import { safeImageSrc } from "../internal/safeImageSrc.js";
 const HOVER_OPEN_DELAY_MS = 300;
 /** Focusable superscript citation with a source-label tooltip or a rich source preview. */
 export function InlineCitation({ index, label, href: rawHref, onNavigate, sources, open: controlledOpen, defaultOpen = false, onOpenChange, openOnHover = true, className, ...props }) {

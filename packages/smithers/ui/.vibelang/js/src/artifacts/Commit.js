@@ -4,7 +4,7 @@ import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-run
 import { createContext, useContext } from "react";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { dateFromMs } from "../time/dateFromMs";
+import { dateFromMs } from "../time/dateFromMs.js";
 const CommitContext = createContext(null);
 /**
  * Commit / working-copy change card. Model-driven via `commit` or compound

@@ -2,8 +2,8 @@
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Duration, Effect, Schema } from "effect";
-import { AnswerApi, AnswersUnavailable } from "./answers";
-import { ANSWER_SETTLE_WITHIN } from "./contract";
+import { AnswerApi, AnswersUnavailable } from "./answers.js";
+import { ANSWER_SETTLE_WITHIN } from "./contract.js";
 // `chat/Close` (docs/features/agent.md#settling): settles an answer whose run can no longer finish, as failed,
 // `unfinished`. The asking tab starts it, under its own execution id (`<answerId>/close`), when `chat/Answer` ended
 // refused because the app changed under it (the run was parked under one build and resumed under the next:

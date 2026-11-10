@@ -2,11 +2,11 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric";
 import { LiveQuery } from "@smthrs/effect-tanstack-db";
 import { Cache, Context, Effect, Fiber, Layer, Metric, Option, Scope, Stream } from "effect";
-import { RepoStore } from "../repo/store";
-import { shapeRefusals } from "../issues/source";
-import { runners } from "../../boundary";
-import { feedDocumentId, FEEDS_SHAPE_ROUTE } from "./contract";
-import { FeedDocument } from "./schema";
+import { RepoStore } from "../repo/store.js";
+import { shapeRefusals } from "../issues/source.js";
+import { runners } from "../../boundary.js";
+import { feedDocumentId, FEEDS_SHAPE_ROUTE } from "./contract.js";
+import { FeedDocument } from "./schema.js";
 /** On-demand documents opened, by `outcome`: `opened` on a first listener, `closed` after the last. */
 export const documents = Metric.counter("smithers_web_feed_documents", {
     description: "On-demand feed documents a tab opened and closed, by outcome",

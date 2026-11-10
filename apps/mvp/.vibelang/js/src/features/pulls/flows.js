@@ -2,9 +2,9 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { IssueNumber } from "../issues/flows";
-import { RepoName } from "../repo/flows";
-import { REVIEW_REFUSALS, SHA } from "./contract";
+import { IssueNumber } from "../issues/flows.js";
+import { RepoName } from "../repo/flows.js";
+import { REVIEW_REFUSALS, SHA } from "./contract.js";
 // Review on request (decision 0129, docs/features/pulls.md#review-on-request):
 //
 //   pull/review { repo, number, headSha? }    a Maintainer asks Smithers to review a pull request's head

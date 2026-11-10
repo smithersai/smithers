@@ -24,9 +24,16 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { ExecutionIdRequired } from "./ExecutionIdRequired.js";
+import { payloadSnapshot } from "./PayloadIdentity.js";
 /**
- * The canonical key of an invocation: the flow's own payload codec, then RFC
- * 8785, then SHA-256.
+ * The canonical key of an invocation: the payload's identity snapshot
+ * ({@link payloadSnapshot}: `sortCollections`, then the flow's own payload
+ * codec), then RFC 8785, then SHA-256.
+ *
+ * The sort comes first because `Schema.ReadonlySet` and `Schema.ReadonlyMap`
+ * encode in insertion order and RFC 8785 keeps array order, so equal sets
+ * would otherwise derive different ids (VIP-44). A payload that holds no set or
+ * map is not copied, so its key is unchanged.
  *
  * Encoding first is what makes the key agree with the durable driver, which
  * compares the ENCODED payload when it decides whether an existing run row is
@@ -36,7 +43,7 @@ import { ExecutionIdRequired } from "./ExecutionIdRequired.js";
  *
  * @private
  */
-const canonicalKey = (flow, payload) => Effect.mapError(Effect.flatMap(Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))(payload), (encoded) => Schema.decodeUnknownEffect(DerivedKey)(encoded)), () => new ExecutionIdRequired({ flowName: flow._tag }));
+const canonicalKey = (flow, payload) => Effect.mapError(Effect.flatMap(payloadSnapshot(flow.payloadSchema, payload), (encoded) => Schema.decodeUnknownEffect(DerivedKey)(encoded)), () => new ExecutionIdRequired({ flowName: flow._tag }));
 /**
  * An opt-in deterministic source over the flow tag and the payload's
  * canonical form.

@@ -95,3 +95,30 @@ export * as Statuses from "./github/Statuses.js";
  * @since 1.0.0
  */
 export * as Sync from "./github/Sync.js";
+/** GitHub user sign-in, PKCE, refresh and revocation. @since 1.0.0 @category services */
+export * as Auth from "./github/Auth.js";
+/**
+ * @category delegation
+ * @since 1.0.0
+ */
+export * as Delegation from "./github/Delegation.js";
+/**
+ * Signed-out GitHub reads for hosted sites, answered by smithers.sh with its App (decision 0165, public reads).
+ * @category delegation
+ * @since 1.0.0
+ */
+export * as PublicRead from "./github/PublicRead.js";
+/**
+ * A site cache of public GitHub reads: ETag revalidation and stale answers when GitHub refuses.
+ * @category delegation
+ * @since 1.0.0
+ */
+export * as ReadCache from "./github/ReadCache.js";
+/**
+ * @category delegation
+ * @since 1.0.0
+ */
+export * as Calls from "./github/Calls.js";
+export * as DelegationPolicy from "./github/DelegationPolicy.js";
+export * as IssueChanges from "./github/IssueChanges.js";
+export * as Proposals from "./github/Proposals.js";

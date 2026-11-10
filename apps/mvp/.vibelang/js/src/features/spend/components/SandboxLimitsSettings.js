@@ -2,8 +2,8 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Button, Field, Input, Label } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { DEFAULT_SANDBOX_LIMITS, SANDBOX_LIMIT_BOUNDS } from "../contract";
-import { LIMIT_LABEL, LIMITS_HEADING, NOT_SAVED, SAVE, SAVING } from "../copy";
+import { DEFAULT_SANDBOX_LIMITS, SANDBOX_LIMIT_BOUNDS } from "../contract.js";
+import { LIMIT_LABEL, LIMITS_HEADING, NOT_SAVED, SAVE, SAVING } from "../copy.js";
 import { useSpend } from "./SpendContext";
 // The sandbox limits (docs/features/sandbox-budgets.md#the-limits): an Admin's three numbers, saved together. The fields
 // show the synced limits, or the defaults while none are set, until edited; a save that hasn't landed says so beside

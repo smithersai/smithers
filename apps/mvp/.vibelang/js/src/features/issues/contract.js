@@ -2,7 +2,7 @@
 // The issues feature's contract between the browser, ChatApi's GitHub routes, the remote GitHub flows and the tests
 // (docs/features/issues.md, decision 0012 slice G0): the one home of every value they share. Nothing here imports a
 // library, so every side can.
-import { REPOS_ROUTE } from "../repo/contract";
+import { REPOS_ROUTE } from "../repo/contract.js";
 /** GitHub's webhook: `POST`, signed with `X-Hub-Signature-256` (decision 0012 §2). */
 export const GITHUB_WEBHOOK_ROUTE = "/api/github/webhook";
 /** The last segment of `POST /api/repos/<owner>/<name>/writes`, the one route every git write goes through (§4). */

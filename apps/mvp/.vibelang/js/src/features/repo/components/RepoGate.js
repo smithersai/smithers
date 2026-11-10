@@ -6,9 +6,9 @@ import { Button, Card, CardContent, EmptyState, PageBody, PageHeader } from "@sm
 import { useAuth } from "../../auth/components/AuthContext";
 import { SignInButton } from "../../auth/components/SignInButton";
 import { Notices } from "../../attention/components/Notices";
-import { repoVisibility } from "../visibility";
+import { repoVisibility } from "../visibility.js";
 import { useRepo } from "./RepoContext";
-import { repoId } from "../contract";
+import { repoId } from "../contract.js";
 import { RepoHeaderControls } from "./RepoHeaderControls";
 /** `owner/name`'s visibility now, read at render from the session and the role row (`repoVisibility`). */
 export const useRepoVisibility = (owner, name) => {

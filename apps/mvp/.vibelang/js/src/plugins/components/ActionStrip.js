@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Button, Kbd, Textarea } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { draftKey, fresh } from "../schema";
+import { draftKey, fresh } from "../schema.js";
 import { usePlugins } from "./PluginsContext";
 // The host's action strip (decision 0017, "The host owns person-only actions"): under a plugin's view, in host UI, the
 // buttons for the item the view selected, each with its key, and one text box that fills every note. A press is the

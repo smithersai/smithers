@@ -94,3 +94,5 @@ export * as SourceStore from "./core/SourceStore.js";
  * @since 1.0.0
  */
 export * as Sync from "./core/Sync.js";
+/** Purpose-bound rotating session signatures. @since 1.0.0 @category services */
+export * as CookieKeys from "./core/CookieKeys.js";

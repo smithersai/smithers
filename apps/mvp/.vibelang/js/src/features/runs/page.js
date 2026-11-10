@@ -2,13 +2,13 @@
 import { Journal } from "@smthrs/flows";
 import { NotificationEvent, SteerPayload } from "@smthrs/notifications";
 import { Option, Schema } from "effect";
-import { CLOUD, COULDNT_READ, isRemoteRun, listed, NOT_FOUND, NOT_STARTED, ON_ANOTHER_DEVICE, runPath, settled, EXTERNAL_AGENT_ACTION, RUNNER_STEER_BOUNDARY, steerable, STEERED_ACTION, stoppable, THIS_DEVICE, } from "./contract";
-import { branchWords } from "./words";
-import { retryable } from "./retry";
-import { failedTodoRun, hasDomainOutcome, headerStatusOf, todoRetryPayload } from "./todoRun";
-import { ACTIONS_LIMIT, actionRunPath } from "../actions/contract";
-import { isoOf } from "../pulls/view";
-import { repoId } from "../repo/contract";
+import { CLOUD, COULDNT_READ, isRemoteRun, listed, NOT_FOUND, NOT_STARTED, ON_ANOTHER_DEVICE, runPath, settled, EXTERNAL_AGENT_ACTION, RUNNER_STEER_BOUNDARY, steerable, STEERED_ACTION, stoppable, THIS_DEVICE, } from "./contract.js";
+import { branchWords } from "./words.js";
+import { retryable } from "./retry.js";
+import { failedTodoRun, hasDomainOutcome, headerStatusOf, todoRetryPayload } from "./todoRun.js";
+import { ACTIONS_LIMIT, actionRunPath } from "../actions/contract.js";
+import { isoOf } from "../pulls/view.js";
+import { repoId } from "../repo/contract.js";
 /** The step a page shows the detail of: the selected one, else the first failure, live work, then the latest. */
 export const selectedStep = (steps, selected) => steps.find((step) => step.row.id === selected) ?? steps.find((step) => step.row.state === "failed") ?? steps.find((step) => step.row.state === "running" || step.row.state === "waiting") ?? [...steps].reverse().find((step) => step.row.state !== "pending") ?? steps[0];
 /** The journal's rows: the first page and every page More read after it. */

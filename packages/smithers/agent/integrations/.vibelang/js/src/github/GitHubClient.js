@@ -49,6 +49,7 @@ import * as Effect_1 from "effect/Effect";
 import { Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import { basicCredentials } from "../core/BasicCredentials.js";
 import { forCredentials, MAX_RETRY_AFTER_MS, retryAfterHeader, transportCause, webHeaders } from "../core/CredentialHttp.js";
 import { IntegrationError } from "../core/IntegrationError.js";
 import { redactedError } from "../core/RedactedError.js";
@@ -245,13 +246,12 @@ const build = (config, env, http) => {
     return Effect_1.gen(function* build() {
         const resolved = resolve(config, env);
         // An App's client credentials replace any token: GitHub authenticates its
-        // `/applications/{client_id}/...` endpoints with HTTP Basic. Percent-encoding
-        // leaves only ASCII, which `btoa` encodes byte for byte.
+        // `/applications/{client_id}/...` endpoints with HTTP Basic.
         const credentials = config.clientCredentials;
         const secret = credentials === undefined ? undefined : Redacted.value(credentials.clientSecret);
         const basic = credentials === undefined
             ? undefined
-            : btoa([credentials.clientId, Redacted.value(credentials.clientSecret)].map(encodeURIComponent).join(":"));
+            : basicCredentials(credentials.clientId, Redacted.value(credentials.clientSecret));
         const token = basic === undefined ? resolved.token : undefined;
         const integrationError = redactedError([
             token,

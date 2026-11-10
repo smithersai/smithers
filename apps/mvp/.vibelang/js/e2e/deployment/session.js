@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { ROLES } from "../../src/features/auth/contract";
+import { ROLES } from "../../src/features/auth/contract.js";
 /** The app's session cookie for `origin`: `__Host-` over https (worker/SignIn.ts `cookieNames`). */
 export const sessionCookieName = (origin) => (new URL(origin).protocol === "https:" ? "__Host-smithers_session" : "smithers_session");
 /**

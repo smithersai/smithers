@@ -2,10 +2,10 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { MAX_ISSUE_NUMBER } from "../issues/contract";
-import { RepoName } from "../repo/flows";
-import { isAcceptance, isPrompt, isTitle, MAX_TODO_NUMBER } from "./contract";
-import { TodoStatusRead } from "./schema";
+import { MAX_ISSUE_NUMBER } from "../issues/contract.js";
+import { RepoName } from "../repo/flows.js";
+import { isAcceptance, isPrompt, isTitle, MAX_TODO_NUMBER } from "./contract.js";
+import { TodoStatusRead } from "./schema.js";
 // The TODO flows of slice 1 (decision 0016 §2, docs/features/todos.md#flows). The agent drafts and a person commits:
 // `todo/draft` keeps a private draft on the person's device and shows its card, whose Commit runs `todo/commit`; Drop
 // runs `todo/drop`. Each is one step that asks the tab that started the request (src/features/todos/steps.ts) to keep

@@ -4,7 +4,7 @@ import { GeneratedChip } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useNavigate } from "@tanstack/react-router";
 import { GeneratedWarning } from "../../generated/components/GeneratedWarning";
-import { generatedLinksFor, shownOf } from "../view";
+import { generatedLinksFor, shownOf } from "../view.js";
 import { useRepo } from "./RepoContext";
 // The Generated mark (src/features/generated) for a file of the repository the view shows, from its manifest and file
 // list at the view's commit: the chip on the file's toolbar, and the warning over the branch's editor of the file.

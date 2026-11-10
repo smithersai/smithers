@@ -5,10 +5,10 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { SignInButton } from "../../auth/components/SignInButton";
 import { useAuth } from "../../auth/components/AuthContext";
 import { useRepoAnswer } from "../../repo/components/RepoContext";
-import { repoId } from "../../repo/contract";
-import { ADD_SECRET, CANCEL, CANT_SEE, DELETE, DELETE_SECRET, failureText, HOSTS, LATE, NAME, ROTATE, rotateLabel, SAVE, SAVING, SECRETS, unknownText, VALUE, } from "../copy";
-import { formKey } from "../schema";
-import { accessOf, formOf, hostsText, onItsWay } from "../view";
+import { repoId } from "../../repo/contract.js";
+import { ADD_SECRET, CANCEL, CANT_SEE, DELETE, DELETE_SECRET, failureText, HOSTS, LATE, NAME, ROTATE, rotateLabel, SAVE, SAVING, SECRETS, unknownText, VALUE, } from "../copy.js";
+import { formKey } from "../schema.js";
+import { accessOf, formOf, hostsText, onItsWay } from "../view.js";
 import { useSecrets } from "./SecretsContext";
 // A repository's secrets by name (docs/features/secrets.md#the-secrets-page): each one's hosts, methods and when it
 // last changed, and for an Admin, Add, Rotate and Delete. A value is never shown: it is typed into a password field,

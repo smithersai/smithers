@@ -2,10 +2,10 @@
 import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { timelineDriver } from "./timelineDriver";
+import { timelineDriver } from "./timelineDriver.js";
 import { useOptionalMessageScroller } from "./MessageScroller";
-import { timelineBlocks, timelineExchanges, timelineLevelCount, timelineIntersections, timelineWidths, } from "./timelineZoom";
-export { timelineBlocks, timelineCapacity, timelineExchanges, timelineLevelCount, timelineWidths, TIMELINE_ROOM, } from "./timelineZoom";
+import { timelineBlocks, timelineExchanges, timelineLevelCount, timelineIntersections, timelineWidths, } from "./timelineZoom.js";
+export { timelineBlocks, timelineCapacity, timelineExchanges, timelineLevelCount, timelineWidths, TIMELINE_ROOM, } from "./timelineZoom.js";
 import { useInjectUiCss } from "../styles";
 /** Default state words when a message has neither a summary nor a host label. */
 const stateWords = (entry) => {

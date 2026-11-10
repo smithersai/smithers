@@ -2,11 +2,11 @@
 import { PresenceSocket } from "@smthrs/sync";
 import { Effect, FiberHandle, Metric, Option, Ref, Stream } from "effect";
 import * as Socket from "effect/socket/Socket";
-import { roomRoute } from "../branch/contract";
-import { closes, joins } from "./metrics";
-import { ROOM } from "./schema";
-import { PresenceStore } from "./store";
-import { decodeWhere, encodeWhere } from "./where";
+import { roomRoute } from "../branch/contract.js";
+import { closes, joins } from "./metrics.js";
+import { ROOM } from "./schema.js";
+import { PresenceStore } from "./store.js";
+import { decodeWhere, encodeWhere } from "./where.js";
 // What a branch's page does in its room (decision 0013 §4, docs/features/branch-workspace.md#presence): it joins the
 // room when the branch opens, says where the person is as the route moves, and leaves with the page. The socket is
 // `@smthrs/sync`'s `PresenceSocket`, which reconnects by itself; the room's roster goes into the participants

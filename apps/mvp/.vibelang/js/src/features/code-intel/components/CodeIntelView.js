@@ -3,8 +3,8 @@ import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-run
 import { SymbolsPane } from "@smthrs/repo-view";
 import { Button, Markdown } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { problemsLabel, SYMBOLS } from "../contract";
-import { hoverCardOf, marksOf, paneOf } from "../view";
+import { problemsLabel, SYMBOLS } from "../contract.js";
+import { hoverCardOf, marksOf, paneOf } from "../view.js";
 import { useCodeIntel } from "./CodeIntelContext";
 /** Code intelligence's row, live, and its actions: read once at the top of a page, before it returns early. */
 export function useCodeIntelRow() {

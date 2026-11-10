@@ -3,7 +3,7 @@ import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Inbox } from "@smthrs/notifications";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { MAX_SUBJECT_LENGTH } from "./contract";
+import { MAX_SUBJECT_LENGTH } from "./contract.js";
 // The feed's acts, as flows (decision 0009 decision 10, docs/features/notifications.md#flows):
 //
 //   watch/set { conversationId }            a tab shows a conversation: follow its branch and repository

@@ -2,8 +2,8 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { REFUSALS } from "./contract";
-import { DomainRequest } from "./schema";
+import { REFUSALS } from "./contract.js";
+import { DomainRequest } from "./schema.js";
 // A repository's custom domains, as flows (decision 0039, docs/features/domains.md):
 //
 //   domain/add { owner, name, hostname }      a Maintainer adds a domain, or checks one again

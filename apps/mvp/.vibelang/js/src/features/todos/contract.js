@@ -2,7 +2,7 @@
 // The TODOs feature's contract between the browser, ChatApi's stack routes, the stack's writer and the tests (decision
 // 0016, docs/features/todos.md): the one home of every value they share. Nothing here imports a library, so every side
 // can.
-import { REPOS_ROUTE } from "../repo/contract";
+import { REPOS_ROUTE } from "../repo/contract.js";
 /** The last segment of `POST /api/repos/<owner>/<name>/stack`, the one route every change to a stack goes through. */
 export const STACK_SEGMENT = "stack";
 /** `POST /api/repos/<owner>/<name>/stack`. */

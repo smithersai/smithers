@@ -33,19 +33,19 @@ const discoveryFailure = (cause) => (() => {
     try {
         const $match1 = cause;
         {
-            if (runtime.$is(DiscoveryError, $match1, null, true) && (typeof $match1 === "function" || typeof $match1 === "object") && $match1
+            if (runtime.$is(DiscoveryError, $match1, null, true, "construct") && (typeof $match1 === "function" || typeof $match1 === "object") && $match1
                 !== null && $matchCache2.propertyHas($match1, "code") && $matchCache2.get($match1, "code") === "root_missing") {
                 return failure("root_missing", "The flow root does not exist");
             }
         }
         {
-            if (runtime.$is(DiscoveryError, $match1, null, true) && (typeof $match1 === "function" || typeof $match1 === "object") && $match1
+            if (runtime.$is(DiscoveryError, $match1, null, true, "construct") && (typeof $match1 === "function" || typeof $match1 === "object") && $match1
                 !== null && $matchCache2.propertyHas($match1, "code") && $matchCache2.get($match1, "code") === "invalid_root") {
                 return failure("invalid_root", "The flow root is not a readable directory");
             }
         }
         {
-            if (runtime.$is(DiscoveryError, $match1, null, true) && (typeof $match1 === "function" || typeof $match1 === "object") && $match1
+            if (runtime.$is(DiscoveryError, $match1, null, true, "construct") && (typeof $match1 === "function" || typeof $match1 === "object") && $match1
                 !== null && $matchCache2.propertyHas($match1, "code") && $matchCache2.get($match1, "code") === "read_failed") {
                 return failure("read_failed", "The flow root could not be read");
             }

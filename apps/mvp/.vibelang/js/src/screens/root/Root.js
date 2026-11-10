@@ -5,7 +5,7 @@ import { Outlet, useRouterState } from "@tanstack/react-router";
 import { NotificationsBell } from "../../features/attention/components/NotificationsBell";
 import { NotificationsPanel } from "../../features/attention/components/NotificationsPanel";
 import { PageNotices } from "../../features/attention/components/PageNotices";
-import { floatsBell } from "../../features/attention/contract";
+import { floatsBell } from "../../features/attention/contract.js";
 import { IntentPreload } from "../../features/navigation/components/IntentPreload";
 import "../../../../../src/screens/root/root.css";
 // Every route's frame: the page's LoadingBar, the route's screen, the top bar's bell where the screen's header doesn't hold

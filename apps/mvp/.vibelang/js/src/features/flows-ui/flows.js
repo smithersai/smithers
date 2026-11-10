@@ -3,11 +3,11 @@ import { AgentAction } from "@smthrs/agent";
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { DRAFT_MODEL_ROLE, FLOW_MODEL_ROLE, MAX_CALLS, MAX_FLOW_FRAMES, MAX_QUESTIONS } from "./contract";
-import { PROMPT_CATALOG } from "./callable";
-import { AUTHOR_SYSTEM, authorPrompt, FLOW_SYSTEM } from "./instructions";
-import { CodeFailure, DraftNotReady, FLOW_CODE, FlowAgentFailed, FlowAnswerReference, FlowDeleteReference, FlowDraftDeleteReference, FlowInvalid, FlowDraftsReference, FlowListReference, FlowNeedsSandbox, FlowNewReference, FlowNotFound, FlowPromptReference, FlowReadReference, FlowRunReference, FlowSaveReference, FlowsRefused, FlowsUnavailable, FlowWriteReference, NameTaken, Pinned, RouteFailure, RoundEnded, SavedFlow, } from "./reference";
-import { Description } from "./schema";
+import { DRAFT_MODEL_ROLE, FLOW_MODEL_ROLE, MAX_CALLS, MAX_FLOW_FRAMES, MAX_QUESTIONS } from "./contract.js";
+import { PROMPT_CATALOG } from "./callable.js";
+import { AUTHOR_SYSTEM, authorPrompt, FLOW_SYSTEM } from "./instructions.js";
+import { CodeFailure, DraftNotReady, FLOW_CODE, FlowAgentFailed, FlowAnswerReference, FlowDeleteReference, FlowDraftDeleteReference, FlowInvalid, FlowDraftsReference, FlowListReference, FlowNeedsSandbox, FlowNewReference, FlowNotFound, FlowPromptReference, FlowReadReference, FlowRunReference, FlowSaveReference, FlowsRefused, FlowsUnavailable, FlowWriteReference, NameTaken, Pinned, RouteFailure, RoundEnded, SavedFlow, } from "./reference.js";
+import { Description } from "./schema.js";
 // Your own flows, as an engine runs them (decision 0014 §2, docs/features/flows.md#your-own-flows). A person's flow is
 // flow source, a `Flow.make` module (./source.ts), whether drafted from a prompt or written by hand:
 //

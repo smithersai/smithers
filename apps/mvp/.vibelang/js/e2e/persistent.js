@@ -2,7 +2,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { browserProfile } from "./browserProfile";
+import { browserProfile } from "./browserProfile.js";
 // Playwright's WebKit newContext is private browsing: OPFS is unavailable.
 // Local-first tests need a normal device profile. Private browsing is tested
 // separately in flow-editor-storage.spec.ts.

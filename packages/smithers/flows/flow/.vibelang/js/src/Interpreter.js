@@ -65,6 +65,7 @@ import { DispatchReport, DispatchSite } from "./Action/StepIdentity.js";
 import * as DurableDeferred from "./DurableDeferred.js";
 import { attenuateCapabilities } from "./Flow/CapabilityCeiling.js";
 import * as Outcome from "./Flow/Outcome.js";
+import { payloadPreimage, payloadSnapshot } from "./Flow/PayloadIdentity.js";
 import { Handoff } from "./Flow/Result.js";
 import { suspend } from "./Flow/Runtime.js";
 import { TypeId as FlowTypeId } from "./Flow/TypeId.js";
@@ -318,13 +319,13 @@ const summarize = (node) => {
  *
  * @private
  */
-const planPages = Effect.fnUntraced(function* (flow, graph, measure) {
+const planPages = Effect.fnUntraced(function* (flow, graph, measure, root) {
     const graphNodes = Graph.nodes(graph);
     const incoming = incomingEdges(graph);
     const pager = {
         flow,
         measure,
-        identity: yield* planIdentity(flow, graph),
+        identity: yield* planIdentity(flow, graph, root),
         nodeCount: graphNodes.length,
         reserved: graphNodes.reduce((total, node) => total + KeyMaterial.dependencies(node.draft.material).length, graphNodes.length + Graph.edges(graph).length),
         pages: [],
@@ -337,9 +338,21 @@ const planPages = Effect.fnUntraced(function* (flow, graph, measure) {
 });
 /** A page with nothing on it yet. @private */
 const emptyPage = () => ({ nodes: [], edges: [] });
+/** The root input to hash in place of the written payload, if any. @private */
+const rootInput = (flowOrNode, payload, node) => !Predicate.hasProperty(flowOrNode, FlowTypeId) ?
+    Effect.succeed(undefined) :
+    payloadPreimage(flowOrNode.payloadSchema, payload).pipe(Effect.map((value) => value === payload ? undefined : { node, value }), Effect.mapError((cause) => refusal(flowOrNode._tag, "incomplete_graph", node, `Cannot encode payload: ${cause}`)));
+/** The recorded drafts, with the root's payload literal replaced by its identity preimage. @private */
+const identityDrafts = (graph, root) => recordedPlanDrafts(graph).map((draft) => root === undefined || draft.id !== root.node ? draft : {
+    ...draft,
+    material: {
+        ...draft.material,
+        inputs: draft.material.inputs.map((input, index) => index === 0 && input._tag === "Literal" ? { ...input, value: root.value } : input)
+    }
+});
 /** The content identity of the plan a graph records. @private */
-const planIdentity = (flow, graph) => StepKey.content({
-    body: { flow, nodes: recordedPlanDrafts(graph), edges: Graph.edges(graph) },
+const planIdentity = (flow, graph, root) => StepKey.content({
+    body: { flow, nodes: identityDrafts(graph, root), edges: Graph.edges(graph) },
     inputs: {},
     layers: [],
     capabilities: {}
@@ -508,7 +521,7 @@ const interpretWithPolicy = (flowOrNode, payload, options, registerReachable) =>
     if (fatal !== undefined)
         return yield* fatal;
     const runtime = yield* FlowRuntime;
-    yield* recordPlan(runtime, name, graph);
+    yield* recordPlan(runtime, name, graph, Effect.suspend(() => rootInput(flowOrNode, payload, options.root ?? "root")));
     // Everything the walk needs that the built graph can be asked for before it
     // runs, is asked for here — so no such refusal can surface halfway through
     // a body with the actions ahead of it already committed.
@@ -588,13 +601,16 @@ const fatalRefusal = (name, graph) => {
  *
  * @private
  */
-const recordPlan = (runtime, name, graph) => {
+const recordPlan = (runtime, name, graph, 
+// Encoded only when a plan is recorded: a runtime that records none never
+// hashes the payload, so it never refuses one it cannot encode.
+root) => {
     const recordNode = runtime.recordNode;
     if (recordNode === undefined)
         return Effect.void;
     const measure = runtime.nodeRecordBytes ??
         ((record) => Effect.succeed(new TextEncoder().encode(JSON.stringify(record)).byteLength));
-    return Effect.flatMap(planPages(name, graph, measure), (pages) => Effect.forEach(pages, (page) => recordNode(page), { discard: true }));
+    return Effect.flatMap(Effect.flatMap(root, (input) => planPages(name, graph, measure, input)), (pages) => Effect.forEach(pages, (page) => recordNode(page), { discard: true }));
 };
 /** What a deferred node lost beside its AST, if it lost anything. @private */
 const lostOperation = (node) => {
@@ -1139,7 +1155,7 @@ const settleCall = (walk, node, ast, children) => {
  */
 const handOff = Effect.fnUntraced(function* (walk, node, ast) {
     const declaration = walk.declarations.handoffs.get(node.id);
-    const payload = yield* Effect.flatMap(Effect.orDie(declaration.payloadSchema.makeEffect(resolve(walk, node.payload))), (decoded) => Effect.orDie(Schema.encodeEffect(Schema.toCodecJson(declaration.payloadSchema))(decoded)));
+    const payload = yield* Effect.flatMap(Effect.orDie(declaration.payloadSchema.makeEffect(resolve(walk, node.payload))), (decoded) => Effect.orDie(payloadSnapshot(declaration.payloadSchema, decoded)));
     const ceiling = (yield* attenuateCapabilities(node.capabilityCeilings)(CapabilitySet.current)).groups;
     const outcome = {
         _tag: "To",
@@ -1168,7 +1184,7 @@ const runChild = Effect.fnUntraced(function* (walk, node) {
     const declaration = walk.declarations.children.get(node.id);
     const instance = yield* FlowInstance;
     const childPayload = resolve(walk, node.payload);
-    const executionId = yield* childExecutionId(instance.executionId, node.id, declaration._tag, childPayload);
+    const executionId = yield* Effect.flatMap(Effect.orDie(payloadPreimage(declaration.payloadSchema, childPayload)), (preimage) => childExecutionId(instance.executionId, node.id, declaration._tag, preimage));
     walk.childExecutions.set(node.id, executionId);
     return yield* declaration.execute(childPayload, { executionId }).pipe(attenuateCapabilities(node.capabilityCeilings));
 });

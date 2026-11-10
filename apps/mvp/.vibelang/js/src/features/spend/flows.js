@@ -2,8 +2,8 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { MAX_DESTINATIONS } from "./contract";
-import { AlertChannelName, SandboxLimitsRequest } from "./schema";
+import { MAX_DESTINATIONS } from "./contract.js";
+import { AlertChannelName, SandboxLimitsRequest } from "./schema.js";
 // Where spend alerts go outside the app, and the sandbox limits, as flows (docs/features/spend-alerts.md#channels,
 // docs/features/sandbox-budgets.md#the-limits):
 //

@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { Badge } from "./badge";
-import { isPlainNavigationClick } from "./internal/navigationClick";
+import { isPlainNavigationClick } from "./internal/navigationClick.js";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { useInjectUiCss } from "./styles";
 function Row({ label, link, onNavigate }) {

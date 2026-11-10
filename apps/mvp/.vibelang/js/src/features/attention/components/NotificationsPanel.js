@@ -6,9 +6,9 @@ import { Button, NeedsYouCard, NotificationEntry, NotificationPanel, RelativeTim
 import { useLiveQuery } from "@tanstack/react-db";
 import { useRouterState } from "@tanstack/react-router";
 import { useBranch } from "../../branch/components/BranchContext";
-import { openAnswerOf } from "../../coedit/view";
+import { openAnswerOf } from "../../coedit/view.js";
 import { useStatus } from "../../status/components/StatusContext";
-import { surfaceOf } from "../contract";
+import { surfaceOf } from "../contract.js";
 import { useAttention } from "./AttentionContext";
 // The notifications panel (decision 0009, docs/features/notifications.md#the-panel), on every page: the person's
 // entries newest first, unread ones dotted. A row opens its subject; Details expands the run's last steps, its question

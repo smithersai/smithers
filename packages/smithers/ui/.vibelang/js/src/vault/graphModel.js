@@ -4,7 +4,7 @@
  * (degree tallying, radius scaling, folder tint assignment, hub-label
  * threshold, hover neighbourhood) is testable without d3-force or a DOM.
  */
-import { noteLabel } from "./wikilinks";
+import { noteLabel } from "./wikilinks.js";
 /** Stable folder → hue, so the same area keeps its colour between sessions. */
 export function folderHue(folder) {
     let hash = 0;

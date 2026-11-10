@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Badge, Button, Card, CardAction, CardContent, CardHeader, CardTitle, CopyButton, Field, Input, Label, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { ADD, CERTIFICATE, CERTIFICATE_TEXT, COPY, DOMAIN_LABEL, DOMAIN_PLACEHOLDER, DOMAINS_HEADING, NAME, problemText, RECORDS_LABEL, REFRESH, refusalText, REMOVE, SAVING_TEXT, STATE_TEXT, STATE_TONE, TYPE, VALUE, } from "../copy";
+import { ADD, CERTIFICATE, CERTIFICATE_TEXT, COPY, DOMAIN_LABEL, DOMAIN_PLACEHOLDER, DOMAINS_HEADING, NAME, problemText, RECORDS_LABEL, REFRESH, refusalText, REMOVE, SAVING_TEXT, STATE_TEXT, STATE_TONE, TYPE, VALUE, } from "../copy.js";
 import { useDomains } from "./DomainsContext";
 import "../../../../../../src/features/domains/components/domain-settings.css";
 // A repository's custom domains (decision 0039, docs/features/domains.md#the-settings-section), as Vercel shows them:

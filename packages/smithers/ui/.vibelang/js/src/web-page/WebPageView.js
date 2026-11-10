@@ -6,9 +6,9 @@ import { Button } from "../button";
 import { cn } from "@smthrs/ui-css";
 import { EmptyState } from "../empty-state";
 import { useInjectUiCss } from "../styles";
-import { hostOrigin } from "./hostOrigin";
+import { hostOrigin } from "./hostOrigin.js";
 import { PagePreview } from "./PagePreview";
-import { framedPageTarget } from "./webPageUrl";
+import { framedPageTarget } from "./webPageUrl.js";
 /**
  * The frame's sandbox. `allow-same-origin` keeps the page's own cookies and
  * storage so ordinary sites work. It is safe only because `framedPageTarget`

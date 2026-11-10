@@ -5,7 +5,7 @@ import * as Metric from "effect/Metric";
 import * as Effect_1 from "effect/Effect";
 import { Interpreter } from "@smthrs/flow";
 import { PullsClient } from "./api.js";
-import { REVIEW_REFUSALS } from "./contract";
+import { REVIEW_REFUSALS } from "./contract.js";
 import { PullReview, ReviewRefused, ReviewRequestStep, ReviewUnsent, } from "./flows.js";
 // Review on request (docs/features/pulls.md#review-on-request): one ChatApi request through `PullsClient`. A
 // Maintainer's press, or `/review`, runs this step on this device's engine.

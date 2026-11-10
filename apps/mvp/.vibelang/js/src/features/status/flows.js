@@ -2,10 +2,10 @@
 import { Action, DurableDeferred, Flow, FlowRuntime, HumanTask, Interpreter, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Effect, Layer, Metric, Option, Schema } from "effect";
-import { RunsClient } from "./api";
-import { ASK_TASK, ASK_WITHIN_MS, MAX_OPTION_LENGTH, MAX_OPTIONS, MAX_PROMPT_LENGTH } from "./contract";
-import { RunReporter } from "./reporter";
-import { AnswerValue, Decision, NeedKind } from "./schema";
+import { RunsClient } from "./api.js";
+import { ASK_TASK, ASK_WITHIN_MS, MAX_OPTION_LENGTH, MAX_OPTIONS, MAX_PROMPT_LENGTH } from "./contract.js";
+import { RunReporter } from "./reporter.js";
+import { AnswerValue, Decision, NeedKind } from "./schema.js";
 // Needs you, as flows (decision 0015 §3 and §4, docs/features/agent-status.md#flows):
 //
 //   app/agent/ask { kind, prompt, options? }       the agent's call, a child of its answer's run

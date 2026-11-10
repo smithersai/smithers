@@ -4,8 +4,8 @@ import { Button, EmptyState, Table, TableBody, TableCell, TableHead, TableHeader
 import { draftStatusLine } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { Link } from "@tanstack/react-router";
-import { CODE, codePath, DELETE, draftPath, EDIT, NEEDS_SANDBOX, NO_FLOWS, RUN, } from "../contract";
-import { draftLabel } from "../draftLabels";
+import { CODE, codePath, DELETE, draftPath, EDIT, NEEDS_SANDBOX, NO_FLOWS, RUN, } from "../contract.js";
+import { draftLabel } from "../draftLabels.js";
 import { useFlowsUi } from "./FlowsUiContext";
 // Your own flows (decision 0014 §5, `/app/flows`): each one's name and description with Run, Edit, Code and Delete,
 // then the drafts not saved yet, each with Delete. A flow whose code needs a machine can't run yet: Run is

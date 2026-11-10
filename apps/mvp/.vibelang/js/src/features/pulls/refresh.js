@@ -2,7 +2,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Effect_1 from "effect/Effect";
-import { PULL_RECEIPT_HEADER } from "./contract";
+import { PULL_RECEIPT_HEADER } from "./contract.js";
 import { VIEW } from "./schema.js";
 const Receipt = Schema.fromJsonString(Schema.Struct({ number: Schema.Number, checkedAt: Schema.Number, missing: Schema.Boolean }));
 const decode = Schema.decodeUnknownOption(Receipt);

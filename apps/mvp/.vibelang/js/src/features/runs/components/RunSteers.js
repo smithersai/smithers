@@ -2,8 +2,8 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Button, Textarea } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { NEXT_STEP, STEER, STEER_DELIVERED, STEER_LABEL, STEER_NOT_DELIVERED, STEER_NOT_SENT, STEER_REFUSAL_WORDS, STEER_SENDING, STEER_SENT, } from "../contract";
-import { responseStep, steerOpen, steersOf } from "../page";
+import { NEXT_STEP, STEER, STEER_DELIVERED, STEER_LABEL, STEER_NOT_DELIVERED, STEER_NOT_SENT, STEER_REFUSAL_WORDS, STEER_SENDING, STEER_SENT, } from "../contract.js";
+import { responseStep, steerOpen, steersOf } from "../page.js";
 import { useRuns } from "./RunsContext";
 // A TODO's run's messages to its agent, and the composer that sends one (ruling TODO-3, docs/features/runs.md#steering).
 // Each message reads where it is: Sending (in the outbox), Sent (taken), Delivered (the agent read it at a turn boundary;

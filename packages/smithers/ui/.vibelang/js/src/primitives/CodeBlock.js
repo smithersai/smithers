@@ -2,10 +2,10 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { createContext, useContext, useId, useRef, useState, } from "react";
-import { highlight as highlightCode } from "../repository-home/highlight";
+import { highlight as highlightCode } from "../repository-home/highlight.js";
 import { cn } from "@smthrs/ui-css";
-import { canCopyText } from "../internal/copyToClipboard";
-import { useCopyFeedback } from "../internal/useCopyFeedback";
+import { canCopyText } from "../internal/copyToClipboard.js";
+import { useCopyFeedback } from "../internal/useCopyFeedback.js";
 import { useInjectUiCss } from "../styles";
 /** Dependency-free fenced code with copy, wrapping, line numbers, and a highlighter seam. */
 export function CodeBlock({ code, language, showLineNumbers = false, wrap: controlledWrap, defaultWrap = false, onWrapChange, showCopy = true, onCopyCode, onCopyError, copiedDurationMs = 2_000, highlight, className, ...props }) {

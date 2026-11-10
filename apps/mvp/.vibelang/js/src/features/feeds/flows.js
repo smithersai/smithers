@@ -2,8 +2,8 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { REFUSALS } from "./contract";
-import { Answered, FeedAnswerPayload } from "./schema";
+import { REFUSALS } from "./contract.js";
+import { Answered, FeedAnswerPayload } from "./schema.js";
 // A person's answer to an item a repository's feed shows, as a flow (decision 0128 §6, docs/features/feeds.md):
 //
 //   feed/answer { owner, name, id, item, choice?, text? }   a Maintainer answers, in person

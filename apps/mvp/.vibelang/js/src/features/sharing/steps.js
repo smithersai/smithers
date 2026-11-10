@@ -7,7 +7,7 @@ import { withSpan } from "effect/Effect";
 import * as Effect_1 from "effect/Effect";
 import { Interpreter } from "@smthrs/flow";
 import { ShareClient } from "./api.js";
-import { BranchShare, BranchShareRefused, BranchShareUnavailable, RequestShare } from "./flows";
+import { BranchShare, BranchShareRefused, BranchShareUnavailable, RequestShare } from "./flows.js";
 import { shares } from "./metrics.js";
 // `branch/share`'s step (docs/features/branch-workspace.md#sharing): one `POST /api/branches/<id>/shares` through
 // `ShareClient`, on this device's engine.

@@ -2,12 +2,12 @@
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Clock, Context, Effect, Layer, Metric, Option, Schema } from "effect";
-import { asker } from "../../flows/askingTab";
-import { requesterOf } from "../../flows/requests";
-import { NAVIGATE_WITHIN, navigationChannel } from "./contract";
-import { navigations } from "./metrics";
-import { appPath } from "./paths";
-import { Moved, Navigated, Reason, To } from "./schema";
+import { asker } from "../../flows/askingTab.js";
+import { requesterOf } from "../../flows/requests.js";
+import { NAVIGATE_WITHIN, navigationChannel } from "./contract.js";
+import { navigations } from "./metrics.js";
+import { appPath } from "./paths.js";
+import { Moved, Navigated, Reason, To } from "./schema.js";
 // `app/navigate { to }` (docs/features/flows.md#navigation): takes the tab that asked to a page of the app. A person's
 // door and the agent's cell run this one declaration. Its one step runs in the leader tab's engine worker, so it asks
 // over the engine's navigation channel for the tab that started the request (`Tabs`, src/flows/askingTab.ts): the tab

@@ -58,11 +58,10 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { withSpan } from "effect/Effect";
-import { $catchExpression, $matchCache } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime/internal";
 import { Duration, Effect, Redacted } from "effect";
 import * as HttpClient from "effect/http/HttpClient";
+import { basicCredentials } from "./BasicCredentials.js";
 import { forCredentials, retryAfterHeader, transportCause, webHeaders } from "./CredentialHttp.js";
 import { IntegrationError, isIntegrationError } from "./IntegrationError.js";
 import { redactedError } from "./RedactedError.js";
@@ -136,43 +135,7 @@ export const credentialStore = (credential, reference) => {
     const load = Effect.mapError(credential.resolve(reference), credentialFailure(reference));
     return {
         load,
-        replace: (previous, next) => {
-            let $do1;
-            {
-                const catchProgram = (Effect.as(credential.rotate(reference, next, { expected: previous }), true));
-                $do1
-                    =
-                        Effect_1.gen(function* () {
-                            return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), (e) => (_tail_1 => { return Effect_1.gen(function* () {
-                                const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
-                                return _completion_1[0] ? yield* _value_1 : _value_1;
-                            }); })(() => { return [true, (Effect_1.fnUntraced(function* () {
-                                    const $matchCache2 = $matchCache();
-                                    try {
-                                        const $match1 = e;
-                                        {
-                                            if ((typeof $match1 === "function" || typeof $match1 === "object") && $match1
-                                                !== null && $matchCache2.propertyHas($match1, "_tag") && $matchCache2.get($match1, "_tag") === "/control/CredentialConflict") {
-                                                return false;
-                                            }
-                                        }
-                                        return yield* (() => { return (_tail_2 => { return Effect_1.gen(function* () {
-                                            const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
-                                            return _completion_2[0] ? yield* _value_2 : _value_2;
-                                        }); })(() => { return [true, Effect_1.fail(e)]; }); })();
-                                    }
-                                    catch (matchError_1) {
-                                        $matchCache2.threw(matchError_1);
-                                        throw matchError_1;
-                                    }
-                                    finally {
-                                        $matchCache2.finish();
-                                    }
-                                }))()]; }));
-                        });
-            }
-            return Effect.mapError(($do1), credentialFailure(reference));
-        }
+        replace: (previous, next) => Effect.mapError(Effect.catchTag(Effect.as(credential.rotate(reference, next, { expected: previous }), true), "/control/CredentialConflict", () => Effect.succeed(false)), credentialFailure(reference))
     };
 };
 const TokenResponse = Schema.Struct({
@@ -264,10 +227,9 @@ const resolveEndpoint = (endpoint) => {
 const requestGrant = (http, endpoint, form, secrets, repeatable) => {
     const plain = secrets.map(Redacted.value);
     const secret = endpoint.clientSecret === undefined ? undefined : Redacted.value(endpoint.clientSecret);
-    // Percent-encoding leaves only ASCII, which `btoa` encodes byte for byte.
     const basic = secret === undefined || endpoint.authentication !== "basic"
         ? undefined
-        : btoa(`${encodeURIComponent(endpoint.clientId)}:${encodeURIComponent(secret)}`);
+        : basicCredentials(endpoint.clientId, secret);
     const failure = redactedError([...plain, secret, basic]);
     const provider = endpoint.provider;
     const path = endpoint.url.pathname;

@@ -15,5 +15,6 @@ export * from "./make.js";
 export * from "./MaxRoundsExceeded.js";
 export * from "./OnCancel.js";
 export * from "./Outcome.js";
+export * from "./PayloadIdentity.js";
 export * from "./Result.js";
 export * from "./Runtime.js";

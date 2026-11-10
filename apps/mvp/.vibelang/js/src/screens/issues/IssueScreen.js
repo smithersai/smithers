@@ -10,16 +10,16 @@ import { SignInButton } from "../../features/auth/components/SignInButton";
 import { CommitmentControl } from "../../features/issues/components/CommitmentControl";
 import { useIssues } from "../../features/issues/components/IssuesContext";
 import { useTodos } from "../../features/todos/components/TodosContext";
-import { MAKE_TODO, MAKE_TODO_KEY, TODO } from "../../features/todos/contract";
-import { mayChange, mayMakeTodo, todosByIssue } from "../../features/todos/view";
-import { DISCARD, EDIT } from "../../features/issues/contract";
-import { conversationProps, earlySummaryOf, draftOf, mayManageTriage, mayStartTriage, mayTriage, mayWrite, pageOf, triageControlOf, } from "../../features/issues/view";
-import { workByIssue, workSections } from "../../features/issues/workView";
-import { WORK_STATUS_LABELS } from "../../features/issues/work";
+import { MAKE_TODO, MAKE_TODO_KEY, TODO } from "../../features/todos/contract.js";
+import { mayChange, mayMakeTodo, todosByIssue } from "../../features/todos/view.js";
+import { DISCARD, EDIT } from "../../features/issues/contract.js";
+import { conversationProps, earlySummaryOf, draftOf, mayManageTriage, mayStartTriage, mayTriage, mayWrite, pageOf, triageControlOf, } from "../../features/issues/view.js";
+import { workByIssue, workSections } from "../../features/issues/workView.js";
+import { WORK_STATUS_LABELS } from "../../features/issues/work.js";
 import "../../../../../src/screens/issues/issues-screen.css";
 import { useRepoAnswer } from "../../features/repo/components/RepoContext";
-import { SETTLED } from "../../firstPaint/settled";
-import { repoId } from "../../features/repo/contract";
+import { SETTLED } from "../../firstPaint/settled.js";
+import { repoId } from "../../features/repo/contract.js";
 import { usePersonalModel } from "../../features/personal-model/components/PersonalModelContext";
 // /$owner/$repo/issues/$number: one issue and its comments, this device's own last with their chip, "Open on GitHub ↗",
 // its triage state with Accept, Not accepted and Run triage again for a Member and above, and the comment composer for a

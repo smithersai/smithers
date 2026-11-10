@@ -8,7 +8,7 @@
  * positional read: `/theme dark` fills the first field with `dark`.
  * @since 1.0.0
  */
-import { parseSubmit } from "./command-line";
+import { parseSubmit } from "./command-line.js";
 import { positionalRead } from "./flow-form.js";
 const NONE = { kind: "none", items: [] };
 /** The fields a line fills by position: every field but a boolean, which only a `--flag` sets. */

@@ -4,7 +4,7 @@ import { FileTabs } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useRouterState } from "@tanstack/react-router";
 import { useRepo } from "../../repo/components/RepoContext";
-import { hereOf, stripOf } from "../view";
+import { hereOf, stripOf } from "../view.js";
 import { useFiles } from "./FilesContext";
 // The open files of the repository and revision the page shows, above its code (docs/features/files.md). A tab's
 // click, Enter or Space runs `file/open`; its × or Delete runs `file/close`: the flows the agent calls too. Nothing

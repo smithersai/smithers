@@ -69,3 +69,5 @@ export * as Pack from "./Pack.js";
 export * as Registry from "./Registry.js";
 /** @category services @since 1.0.0-rc.1 */
 export * as ExecutionSnapshot from "./ExecutionSnapshot.js";
+/** Bundled host declarations without filesystem discovery. @since 1.0.0 */
+export * as Bundled from "./Bundled.js";

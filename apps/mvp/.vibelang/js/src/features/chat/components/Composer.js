@@ -4,9 +4,9 @@ import { Button, ChatComposer } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useChat } from "../../../AppContext";
 import { useBranch } from "../../branch/components/BranchContext";
-import { promptOf } from "../../coedit/view";
+import { promptOf } from "../../coedit/view.js";
 import { useCommands } from "../../commands/components/CommandsContext";
-import { MAX_QUESTION_LENGTH } from "../contract";
+import { MAX_QUESTION_LENGTH } from "../contract.js";
 const SHORTCUT = "Meta+K Control+K";
 // The composer when open, docked at the foot of the window unless its page gives it a place (`docked={false}`, a
 // branch's conversation column); the Chat ⌘K button when hidden. It always sends: a question asked while an answer

@@ -4,13 +4,13 @@ import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-run
 /** @jsxImportSource react */
 import { useEffect, useMemo, useRef, useState, } from "react";
 import { cn } from "@smthrs/ui-css";
-import { safeHref } from "../internal/safeHref";
+import { safeHref } from "../internal/safeHref.js";
 import { Button } from "../button";
 import { EmptyState } from "../empty-state";
 import { statusColor } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { RelativeTime } from "../time/RelativeTime";
-import { addDays, addMonths, agendaGroups, atMinutesIntoDay, dayKey, daySegment, eventsOnDay, fullDayLabel, hashSource, hourLabel, isSameDay, minutesIntoDay, monthGridDays, monthLabel, snapDown30, snapUp30, startOfDay, timeLabel, weekDays, weekLabel, weekdayLabel, } from "./dateUtils";
+import { addDays, addMonths, agendaGroups, atMinutesIntoDay, dayKey, daySegment, eventsOnDay, fullDayLabel, hashSource, hourLabel, isSameDay, minutesIntoDay, monthGridDays, monthLabel, snapDown30, snapUp30, startOfDay, timeLabel, weekDays, weekLabel, weekdayLabel, } from "./dateUtils.js";
 /** Pixels per hour in the week time grid; mirrors the 44px row period in calendarCss. */
 const HOUR_PX = 44;
 const WEEK_BODY_HEIGHT = 24 * HOUR_PX;

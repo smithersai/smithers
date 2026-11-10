@@ -4,8 +4,8 @@ import { defineConfig } from "@playwright/test";
 // @smthrs/integrations reaches @smthrs/errors'). Playwright's own transform leaves them to VibeLang's loader (`build`
 // below): this process registers it here, and every worker inherits it through NODE_OPTIONS.
 import "vibelang/register";
-import { baseURL, onThisMachine, sessionFiles, target } from "./e2e/target";
-import { assertShipPrerequisites, shipAcceptance } from "./e2e/ship";
+import { baseURL, onThisMachine, sessionFiles, target } from "./e2e/target.js";
+import { assertShipPrerequisites, shipAcceptance } from "./e2e/ship.js";
 // Also protect direct Playwright invocations; prod.mjs checks earlier, before taking the test-account lock.
 assertShipPrerequisites(process.env, process.argv.slice(3));
 const VIBELANG_LOADER = "--import=vibelang/register";

@@ -2,12 +2,12 @@
 import { ElectricCollection } from "@smthrs/effect-electric";
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db";
 import { Context, Effect, FiberHandle, Layer, Scope, Semaphore } from "effect";
-import { IssuesStore } from "../issues/store";
-import { FilesRow } from "../pulls/schema";
-import { RepoStore } from "../repo/store";
-import { PUBLICATIONS_SHAPE_ROUTE } from "./contract";
-import { PublicationRow, PublishPress, PullTitle } from "./publishSchema";
-import { BranchStore } from "./store";
+import { IssuesStore } from "../issues/store.js";
+import { FilesRow } from "../pulls/schema.js";
+import { RepoStore } from "../repo/store.js";
+import { PUBLICATIONS_SHAPE_ROUTE } from "./contract.js";
+import { PublicationRow, PublishPress, PullTitle } from "./publishSchema.js";
+import { BranchStore } from "./store.js";
 /** The shown branch's publication, once it has one. */
 export const publicationQuery = (current, shown) => LiveQuery.make((q) => q
     .from({ current: current.tanstack })

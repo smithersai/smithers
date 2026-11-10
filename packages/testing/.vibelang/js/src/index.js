@@ -63,3 +63,5 @@ export * as ScoreGate from "./ScoreGate.js";
 export * as RealCliDriver from "./RealCliDriver.js";
 /** @since 1.0.0 @category testing */
 export * as TerminalRecording from "./TerminalRecording.js";
+/** Filesystem corpus tooling for feedback-guided fuzz suites. */
+export * as FuzzCorpus from "./internal/fuzz.js";

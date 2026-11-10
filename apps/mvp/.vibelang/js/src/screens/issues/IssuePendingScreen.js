@@ -5,8 +5,8 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { Link, useParams } from "@tanstack/react-router";
 import { useIssues } from "../../features/issues/components/IssuesContext";
 import { IssueHeading } from "../../features/issues/components/IssueHeading";
-import { earlySummaryOf } from "../../features/issues/view";
-import { repoId } from "../../features/repo/contract";
+import { earlySummaryOf } from "../../features/issues/view.js";
+import { repoId } from "../../features/repo/contract.js";
 import "../../../../../src/screens/issues/issues-screen.css";
 /** The direct page reads its heading before the route finishes opening Electric collections. */
 export function IssuePendingScreen() {

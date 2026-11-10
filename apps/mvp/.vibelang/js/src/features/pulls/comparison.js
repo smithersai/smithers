@@ -3,10 +3,10 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect_1 from "effect/Effect";
-import { codeOf } from "../../errorCode";
+import { codeOf } from "../../errorCode.js";
 import { PullsClient } from "./api.js";
-import { RepoStore } from "../repo/store";
-import { comparisonKey, SHA } from "./contract";
+import { RepoStore } from "../repo/store.js";
+import { comparisonKey, SHA } from "./contract.js";
 // Reading two commits' comparison into a tab (docs/features/pulls.md#the-browser): a pull request's Files tab and a
 // branch's Compare (docs/features/branch-publish.md#the-branch-page) each keep their own rows, read the same way.
 /**

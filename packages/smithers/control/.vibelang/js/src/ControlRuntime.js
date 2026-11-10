@@ -25,6 +25,7 @@ import { GrantScope as GrantScopeSchema, Principal as PrincipalSchema } from "./
 import { canonicalIssue } from "./internal/issues.js";
 import { accepted, adoptedCode, alreadyApplied as replayReceipt, budgeted, canonical, codeDriftOf, emptyEnvelope, mutationKey, planCard, planFingerprint, sameEnvelope, signalCommandFingerprint } from "./internal/planning.js";
 import { plannable } from "./SystemFlows.js";
+import { snapshot } from "./ControlRuntime.platform.js";
 /**
  * Whether `run` was launched by the principal `launcher` names: the same `id`,
  * and the same `kind` when `launcher` gives one. A run with no recorded
@@ -160,7 +161,6 @@ const pageByPosition = (request, newest, idAt) => {
 // SQL persistence breaks caller reference identity through serialization. The
 // memory adapter must copy at the same boundaries or its test results diverge
 // from the durable implementation when a caller mutates an input or result.
-const snapshot = (value) => structuredClone(value);
 const asStored = (plan) => ({
     card: snapshot(plan.card),
     decodedInput: snapshot(plan.decodedInput),

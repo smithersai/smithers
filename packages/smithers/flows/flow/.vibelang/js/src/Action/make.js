@@ -11,6 +11,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
+import * as RpcSerialization from "effect/rpc/RpcSerialization";
 import * as Schema from "effect/Schema";
 import { makeProto } from "../Flow/internal.js";
 import * as FlowHelpers from "../Flow/Runtime.js";
@@ -20,30 +21,56 @@ import { lowerDeclarations } from "../internal/Declarations.js";
 import * as DeclarationSite from "../internal/DeclarationSite.js";
 import * as SpanFailure from "../internal/SpanFailure.js";
 import { AttemptTimedOut } from "./AttemptTimedOut.js";
-import { CurrentAttempt, CurrentHeartbeat } from "./Context.js";
+import { CurrentAttempt, CurrentHeartbeat, StoredSerialization } from "./Context.js";
 import { FileBoundary } from "./FileBoundary.js";
 import { Implementations } from "./Implementations.js";
 import { ImplementationVersionMismatch } from "./ImplementationVersionMismatch.js";
 import { InfraInterruptRetriesExhausted } from "./InfraInterruptRetriesExhausted.js";
 import { TypeId } from "./TypeId.js";
 // A declared action mints a fresh inline action per dispatch. Effect caches
-// compiled parsers by AST identity, so the exit schemas are shared per
-// (success, error) pair rather than rebuilt on every dispatch.
+// compiled parsers by AST identity, so codecs and exit schemas are shared per
+// (serializer codec, schema) rather than rebuilt on every dispatch.
+const codecCache = new WeakMap();
 const exitSchemaCache = new WeakMap();
-const exitSchemasFor = (success, error, successJson, errorJson) => {
-    let byError = exitSchemaCache.get(success);
-    if (byError === undefined) {
-        byError = new WeakMap();
-        exitSchemaCache.set(success, byError);
-    }
-    let cached = byError.get(error);
+/** One schema's stored-value codec under one serializer. @private */
+const codecOf = (codecFor, schema) => {
+    let bySchema = codecCache.get(codecFor);
+    if (bySchema === undefined)
+        codecCache.set(codecFor, bySchema = new WeakMap());
+    let codec = bySchema.get(schema);
+    if (codec === undefined)
+        bySchema.set(schema, codec = codecFor(schema));
+    // The codec cache is keyed by this exact schema and codec function.
+    return codec;
+};
+/**
+ * The exit schemas of an action's stored results under `serialization`
+ * (VIP-44): its success and error schemas through `serialization.codecFor`,
+ * the representation Effect's `RpcSerialization` injects. Under
+ * `RpcSerialization.json`, the default, they are the action's own
+ * `exitSchema` and `exitSchemaPartial`.
+ *
+ * @category codecs
+ * @since 1.0.0
+ */
+export const exitSchemasFor = (serialization, action) => {
+    let bySuccess = exitSchemaCache.get(serialization.codecFor);
+    if (bySuccess === undefined)
+        exitSchemaCache.set(serialization.codecFor, bySuccess = new WeakMap());
+    let byError = bySuccess.get(action.successSchema);
+    if (byError === undefined)
+        bySuccess.set(action.successSchema, byError = new WeakMap());
+    let cached = byError.get(action.errorSchema);
     if (cached === undefined) {
+        const success = codecOf(serialization.codecFor, action.successSchema);
+        const error = codecOf(serialization.codecFor, action.errorSchema);
         cached = {
-            exitSchema: Schema.Exit(successJson, errorJson, Schema.Defect()),
-            exitSchemaPartial: Schema.Exit(successJson, errorJson, Schema.Unknown)
+            exitSchema: Schema.Exit(success, error, Schema.Defect()),
+            exitSchemaPartial: Schema.Exit(success, error, Schema.Unknown)
         };
-        byError.set(error, cached);
+        byError.set(action.errorSchema, cached);
     }
+    // Both schema identities and the serializer codec are part of the cache key.
     return cached;
 };
 /**
@@ -59,9 +86,9 @@ const makeInline = (options) => {
         : Schema.decodeUnknownSync(Schema.NonEmptyString)(options.implementationVersion);
     const successSchema = options.success ?? Schema.Void;
     const errorSchema = options.error ?? Schema.Never;
-    const successSchemaJson = Schema.toCodecJson(successSchema);
-    const errorSchemaJson = Schema.toCodecJson(errorSchema);
-    const exitSchemas = exitSchemasFor(successSchema, errorSchema, successSchemaJson, errorSchemaJson);
+    // Keep the action's existing declared-schema fields; the stored codec only
+    // changes their encoded representation, not their decoded types or services.
+    const exitSchemas = exitSchemasFor(RpcSerialization.json, { successSchema, errorSchema });
     let execute;
     const attemptTimeoutMs = timeoutMs(options.name, "attemptTimeoutMs", options.attemptTimeoutMs);
     const heartbeatTimeoutMs = timeoutMs(options.name, "heartbeatTimeoutMs", options.heartbeatTimeoutMs);
@@ -109,9 +136,9 @@ const makeInline = (options) => {
             return failures.length === 0 ? Effect.void : Effect.failCause(Cause.fromReasons(failures.map((reason) => Cause.makeDieReason(reason.error).annotate(Cause.reasonAnnotations(reason)))));
         }).pipe(
         // Encoding changes the error value, not its originating action or other cause annotations.
-        Effect.catchCause((cause) => Effect.forEach(cause.reasons, (reason) => Cause.isFailReason(reason)
-            ? Effect.orDie(Schema.encodeEffect(errorSchemaJson)(reason.error)).pipe(Effect.map((encoded) => Cause.makeFailReason(encoded).annotate(Cause.reasonAnnotations(reason))))
-            : Effect.succeed(reason)).pipe(Effect.flatMap((reasons) => Effect.failCause(Cause.fromReasons(reasons))))), Effect.flatMap((value) => Effect.orDie(Schema.encodeEffect(successSchemaJson)(value))))
+        Effect.catchCause((cause) => Effect.flatMap(StoredSerialization, (serialization) => Effect.forEach(cause.reasons, (reason) => Cause.isFailReason(reason)
+            ? Effect.orDie(Effect.suspend(() => Schema.encodeUnknownEffect(codecOf(serialization.codecFor, errorSchema))(reason.error))).pipe(Effect.map((encoded) => Cause.makeFailReason(encoded).annotate(Cause.reasonAnnotations(reason))))
+            : Effect.succeed(reason)).pipe(Effect.flatMap((reasons) => Effect.failCause(Cause.fromReasons(reasons)))))), Effect.flatMap((value) => Effect.flatMap(StoredSerialization, (serialization) => Effect.orDie(Effect.suspend(() => Schema.encodeUnknownEffect(codecOf(serialization.codecFor, successSchema))(value))))))
     };
     execute = makeExecute(self);
     return self;

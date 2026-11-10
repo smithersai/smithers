@@ -2,11 +2,11 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from "../issues/contract";
-import { RepoName } from "../repo/flows";
-import { CreationSelection } from "./creation";
-import { Receipt, RealmRequest } from "./creationFlows";
-import { BranchName, TrackFailure } from "./flows";
+import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from "../issues/contract.js";
+import { RepoName } from "../repo/flows.js";
+import { CreationSelection } from "./creation.js";
+import { Receipt, RealmRequest } from "./creationFlows.js";
+import { BranchName, TrackFailure } from "./flows.js";
 // Publish, Update branch and Resync on this device's engine (docs/features/branch-publish.md): the registry's
 // `branch/publish`, `branch/update` and `branch/resync`, which a person's press on the branch page, a slash command and
 // the agent run alike (ruling FLOW-3). Publish and Update branch select the repository's flow for the operation (the

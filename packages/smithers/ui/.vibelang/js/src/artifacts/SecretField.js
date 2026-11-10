@@ -3,8 +3,8 @@ import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-run
 /** @jsxImportSource react */
 import { useState } from "react";
 import { cn } from "@smthrs/ui-css";
-import { canCopyText } from "../internal/copyToClipboard";
-import { useCopyFeedback } from "../internal/useCopyFeedback";
+import { canCopyText } from "../internal/copyToClipboard.js";
+import { useCopyFeedback } from "../internal/useCopyFeedback.js";
 import { useInjectUiCss } from "../styles";
 /**
  * Redacted secret display. While masked the secret string is NOT present

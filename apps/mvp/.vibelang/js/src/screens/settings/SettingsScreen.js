@@ -6,7 +6,7 @@ import { Link } from "@tanstack/react-router";
 import { SignInButton } from "../../features/auth/components/SignInButton";
 import { useAuth } from "../../features/auth/components/AuthContext";
 import { PersonalModelSettings } from "../../features/personal-model/components/PersonalModelSettings";
-import { canSave } from "../../features/personal-model/view";
+import { canSave } from "../../features/personal-model/view.js";
 import { AlertSettings } from "../../features/spend/components/AlertSettings";
 import { SandboxLimitsSettings } from "../../features/spend/components/SandboxLimitsSettings";
 import "../../../../../src/screens/settings/settings-screen.css";
@@ -21,7 +21,7 @@ export function SettingsScreen() {
     return (_jsxs("main", { className: "settings-screen", "aria-label": "Settings", children: [_jsx(PageHeader, { width: "narrow", back: _jsx(Link, { to: "/app", children: "Back to chat" }), title: "Settings" }), _jsxs(PageBody, { width: "narrow", children: [session?.status === "signed_out"
                         ? (_jsx(Card, { children: _jsx(CardContent, { children: _jsx(EmptyState, { action: _jsx(SignInButton, {}) }) }) }))
                         : null, session?.status === "signed_in"
-                        ? (_jsx(Card, { children: _jsx(CardContent, { className: "settings-screen-section", children: _jsx(PersonalModelSettings, { canSave: canSave(session) }) }) }))
+                        ? (_jsx(Card, { children: _jsxs(CardContent, { className: "settings-screen-section", children: [_jsx(PersonalModelSettings, { canSave: canSave(session) }), _jsx("a", { href: "/api/auth/connections", children: "GitHub connections" })] }) }))
                         : null, admin
                         ? (_jsx(Card, { children: _jsx(CardContent, { className: "settings-screen-section", children: _jsx(AlertSettings, {}) }) }))
                         : null, admin

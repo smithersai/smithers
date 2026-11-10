@@ -2,8 +2,8 @@
 import { Action, Flow, Interpreter } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Context, Effect, Layer, Schema } from "effect";
-import { TabCallFailed, TabPort } from "../../flows/tabPort";
-import { Mode } from "./schema";
+import { TabCallFailed, TabPort } from "../../flows/tabPort.js";
+import { Mode } from "./schema.js";
 // `app/theme/set { mode }` (docs/features/flows.md#the-theme): the first client flow. A setter, not a toggle, so a
 // repeated delivery can't flip the theme twice. Its one step writes this device's `preferences` collection through
 // `Preferences`, which the host provides: the tab's store in a tab, a call to its own tab in the engine worker

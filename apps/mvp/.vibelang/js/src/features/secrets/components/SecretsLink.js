@@ -4,8 +4,8 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { Link } from "@tanstack/react-router";
 import { useAuth } from "../../auth/components/AuthContext";
 import { useRepoAnswer } from "../../repo/components/RepoContext";
-import { SECRETS } from "../copy";
-import { accessOf, showsLink } from "../view";
+import { SECRETS } from "../copy.js";
+import { accessOf, showsLink } from "../view.js";
 // The repository header's Secrets link, shown to a Member or above of the repository, where secrets serve
 // (docs/features/secrets.md#the-secrets-page, decision 0079).
 export function SecretsLink({ owner, repo }) {

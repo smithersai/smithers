@@ -3,8 +3,8 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useEffect, useInsertionEffect, useRef, useState } from "react";
 import { cn } from "@smthrs/ui-css";
-import { useResolvedTheme } from "../internal/useResolvedTheme";
-import { useResolvedPalette } from "../internal/useResolvedPalette";
+import { useResolvedTheme } from "../internal/useResolvedTheme.js";
+import { useResolvedPalette } from "../internal/useResolvedPalette.js";
 import { observeReducedMotion, prefersReducedMotion, themeRegistry } from "../styles";
 import { tokens as t } from "@smthrs/ui-css";
 import { xtermBaseCss } from "@smthrs/ui-css";

@@ -2,8 +2,8 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { REFUSALS } from "./contract";
-import { Removed, TestResult } from "./schema";
+import { REFUSALS } from "./contract.js";
+import { Removed, TestResult } from "./schema.js";
 // A person's own model, as flows (decision 0096, docs/features/personal-model.md#the-flows):
 //
 //   model/test { connection? }   one tiny call with that connection, else each active one: OK, or how it failed

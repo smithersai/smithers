@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { PageBody, PageHeader } from "@smthrs/ui";
 import { Link, useParams, useSearch } from "@tanstack/react-router";
 import { IssueSearchBox } from "../../features/issues/components/IssueSearchBox";
-import { SLOT } from "../../firstPaint/settled";
+import { SLOT } from "../../firstPaint/settled.js";
 import "../../../../../src/screens/issues/issues-screen.css";
 /**
  * `/$owner/$repo/issues` while its route still loads: the repository's name, the search box and the slot the first

@@ -98,6 +98,14 @@ export const reconcileStarts = Metric.counter("github_reconcile_starts", {
     description: "github/Reconcile starts a stale issues read awaited, by outcome",
     incremental: true,
 });
+/**
+ * Reconcile admissions that began: one per issues read, counted at the admission's first instruction, before it asks
+ * whether the issues are stale. A read without one is an admission that never ran.
+ */
+export const reconcileAdmissions = Metric.counter("github_reconcile_admissions", {
+    description: "Reconcile admissions an issues read ran, counted as each begins",
+    incremental: true,
+});
 /** Live anonymous visibility checks, by a bounded outcome. */
 export const visibilityReads = Metric.counter("github_visibility_reads", {
     description: "Current anonymous repository visibility checks, by outcome",

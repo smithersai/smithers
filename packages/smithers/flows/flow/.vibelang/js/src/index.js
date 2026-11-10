@@ -120,3 +120,7 @@ export * as StepIdentity from "./Action/StepIdentity.js";
  * @since 0.1.0
  */
 export * as WaitFor from "./WaitFor.js";
+/** Persisted-step decode failures and safe host identity.
+ * @since 1.0.0
+ */
+export * as JournalDecode from "./JournalDecode.js";

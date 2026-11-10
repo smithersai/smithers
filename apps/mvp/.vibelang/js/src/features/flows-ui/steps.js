@@ -6,22 +6,22 @@ import { EngineStore } from "@smthrs/flows";
 import { RealmFlow } from "@smthrs/harness";
 import { Evaluator } from "@smthrs/model";
 import { Clock, Effect, Layer, Option, Schema } from "effect";
-import { codeOf } from "../../errorCode";
-import { callFlow, publicError } from "../../flows/catalog";
-import { declarationOf } from "../../flows/declarations";
-import { entryOf } from "../../flows/registry";
-import * as AgentHost from "../agent/host";
-import { startRoot } from "../runs/start";
-import { FlowsClient } from "./api";
-import { DRAFT_ID_NAMESPACE, FLOW_MODEL_ROLE, MAX_REALM_CALLS } from "./contract";
-import { PROMPT_CALLABLE } from "./callable";
-import { checkSource, passes, readSource } from "./checks";
-import { AdmitSave, AdmitWrite, CallHost, DraftFlow, EvaluateCode, FlowAnswer, FlowCode, FlowDelete, FlowDraftDelete, FlowDrafts, FlowList, FlowNew, FlowPrompt, FlowRead, FlowRun, FlowSave, FlowWrite, LoadFlow, NextRound, OpenRound, PromptAgent, ReadCode, ReadDrafts, ReadFlows, RecordAnswers, RemoveDraft, RemoveFlow, WriteRound, } from "./flows";
-import { draftFailure } from "./failure";
-import { recordCall, recordEvaluate, recordLoad, recordRound, recordSave, recordWrite } from "./metrics";
-import { roundExecutionId, roundOf } from "./round";
-import { DraftNotReady, FlowCallRefused, FlowCodeFailed, FlowImportRefused, FlowInvalid, FlowLimitExceeded, FlowNeedsSandbox, NameTaken, } from "./reference";
-import { placementOf, renderSource, SOURCE_PATH } from "./source";
+import { codeOf } from "../../errorCode.js";
+import { callFlow, publicError } from "../../flows/catalog.js";
+import { declarationOf } from "../../flows/declarations.js";
+import { entryOf } from "../../flows/registry.js";
+import * as AgentHost from "../agent/host.js";
+import { startRoot } from "../runs/start.js";
+import { FlowsClient } from "./api.js";
+import { DRAFT_ID_NAMESPACE, FLOW_MODEL_ROLE, MAX_REALM_CALLS } from "./contract.js";
+import { PROMPT_CALLABLE } from "./callable.js";
+import { checkSource, passes, readSource } from "./checks.js";
+import { AdmitSave, AdmitWrite, CallHost, DraftFlow, EvaluateCode, FlowAnswer, FlowCode, FlowDelete, FlowDraftDelete, FlowDrafts, FlowList, FlowNew, FlowPrompt, FlowRead, FlowRun, FlowSave, FlowWrite, LoadFlow, NextRound, OpenRound, PromptAgent, ReadCode, ReadDrafts, ReadFlows, RecordAnswers, RemoveDraft, RemoveFlow, WriteRound, } from "./flows.js";
+import { draftFailure } from "./failure.js";
+import { recordCall, recordEvaluate, recordLoad, recordRound, recordSave, recordWrite } from "./metrics.js";
+import { roundExecutionId, roundOf } from "./round.js";
+import { DraftNotReady, FlowCallRefused, FlowCodeFailed, FlowImportRefused, FlowInvalid, FlowLimitExceeded, FlowNeedsSandbox, NameTaken, } from "./reference.js";
+import { placementOf, renderSource, SOURCE_PATH } from "./source.js";
 // What your own flows' steps do (decision 0014 §2, docs/features/flows.md#your-own-flows): ChatApi's flows and drafts
 // routes through `FlowsClient`, the static checks over the registry's `ModuleFlow` (./checks.ts), a person's code in the
 // QuickJS realm through `RealmFlow` (@smthrs/harness), and the agent through the same seat, catalog and policies

@@ -3,16 +3,16 @@ import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-run
 import { useEffect, useRef } from "react";
 import { Button } from "../button";
 import { cn } from "@smthrs/ui-css";
-import { isPlainNavigationClick } from "../internal/navigationClick";
-import { safeHref } from "../internal/safeHref";
-import { useCopyFeedback } from "../internal/useCopyFeedback";
+import { isPlainNavigationClick } from "../internal/navigationClick.js";
+import { safeHref } from "../internal/safeHref.js";
+import { useCopyFeedback } from "../internal/useCopyFeedback.js";
 import { Markdown } from "../primitives/markdown";
 import { Skeleton } from "../skeleton";
 import { StatusPill } from "../status-pill";
 import { useInjectUiCss } from "../styles";
-import { RelativeTime } from "../time";
-import { highlight } from "./highlight";
-import { isNotice, } from "./live";
+import { RelativeTime } from "../time/index.js";
+import { highlight } from "./highlight.js";
+import { isNotice, } from "./live.js";
 /** How an audience's section is labelled for the people who may see it; everyone's isn't. */
 const AUDIENCE_LABEL = {
     everyone: undefined,

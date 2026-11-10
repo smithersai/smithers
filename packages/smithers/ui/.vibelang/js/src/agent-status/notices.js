@@ -5,7 +5,7 @@
  * visibility, so a component keeps no timers and a reload draws the same
  * stack. Framework-free.
  */
-import { AGENT_STATUS_GLYPHS, AGENT_STATUS_WORDS } from "./agentStatus";
+import { AGENT_STATUS_GLYPHS, AGENT_STATUS_WORDS } from "./agentStatus.js";
 /** The glyph each notice state shows: the agent's glyphs plus `●` for an update. */
 export const NOTICE_GLYPHS = Object.freeze({
     ...AGENT_STATUS_GLYPHS,

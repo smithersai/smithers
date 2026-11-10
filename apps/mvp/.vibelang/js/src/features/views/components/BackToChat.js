@@ -2,7 +2,7 @@
 import { jsx as _jsx } from "react/jsx-runtime";
 import "../../../../../../src/features/views/components/back-to-chat.css";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { BACK_TO_CHAT } from "../contract";
+import { BACK_TO_CHAT } from "../contract.js";
 import { plainClick } from "./ConversationView";
 import { useViews } from "./ViewsContext";
 // A repository's page and its issues page are the full-screen size of a view in the chat (ruling FE-9): their Back to

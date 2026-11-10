@@ -18,27 +18,24 @@ import * as EffectVitest from "@effect/vitest";
 import * as Layer from "effect/Layer";
 import { assert, describe, expect, it as vitestIt } from "vitest";
 import { runEffectTest } from "./internal/TestEffectRunner.js";
+import { makeMethods } from "./internal/FuzzRegistration.js";
 /** @since 0.0.0 @category testing */
 export { assert, describe, expect };
+const fuzzMethods = makeMethods();
+const effectIt = new Proxy(EffectVitest.it.effect, {
+    get: (target, property) => property === "fuzz" ? fuzzMethods.effect.fuzz : Reflect.get(target, property)
+});
 /**
- * The Effect-aware `it`, with `scoped` aliased onto `it.effect`.
- *
- * Built as a fresh callable rather than by writing into `@effect/vitest`'s own
- * export. `Object.assign(EffectVitest.it, ...)` mutated the peer dependency's
- * live module object, and because that module is externalized and shared
- * across every test file in a worker process, importing this module replaced
- * `it.scoped` for every other file in that worker with a registrar that has
- * different semantics. It also made `sideEffects: []` false for this package.
- *
+ * The peer runner with scoped tests and corpus-backed fuzz registration.
+ * @since 0.1.0
  * @category testing
- * @since 0.0.0
  */
 export const it = new Proxy(EffectVitest.it, {
-    // A proxy rather than a copy: vitest defines the chainable members of `it`
-    // as accessors, so `Object.assign` would silently drop `effect`, `live`,
-    // `each`, and the rest. Reads are forwarded with the original as the
-    // receiver, so those accessors still see the `this` they expect.
-    get: (target, property) => property === "scoped" ? target.effect : Reflect.get(target, property)
+    get: (target, property) => property === "scoped" ? target.effect : property === "effect"
+        ? effectIt :
+        property === "fuzz"
+            ? fuzzMethods.fuzz
+            : Reflect.get(target, property)
 });
 const vitestByMode = {
     run: vitestIt,

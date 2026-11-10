@@ -4,10 +4,10 @@ import { Card, EmptyState, IssuesView } from "@smthrs/ui";
 import { RepoGate } from "../../repo/components/RepoGate";
 import { useLiveQuery } from "@tanstack/react-db";
 import { SignInButton } from "../../auth/components/SignInButton";
-import { repoId } from "../../repo/contract";
-import { githubList } from "../../repo/scope";
-import { issuePath, NOT_FOUND } from "../contract";
-import { embeddedIssues, listProps, syncsHere } from "../view";
+import { repoId } from "../../repo/contract.js";
+import { githubList } from "../../repo/scope.js";
+import { issuePath, NOT_FOUND } from "../contract.js";
+import { embeddedIssues, listProps, syncsHere } from "../view.js";
 import { useIssues } from "./IssuesContext";
 // A repository's issues view in a conversation (docs/features/views.md#a-repository-and-its-issues): `IssuesView`,
 // small, over the issues this device synced of `repo`, newest first. A row opens its issue full screen (`onOpen`);

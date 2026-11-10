@@ -58,8 +58,16 @@
       "vibelang-source": "./src/Checks.ts",
       "default": "./.vibelang/js/src/Checks.js"
     },
-    "./Constructs": "./src/Constructs.ts",
-    "./Detect": "./src/Detect.ts",
+    "./Constructs": {
+      "types": "./src/Constructs.ts",
+      "vibelang-source": "./src/Constructs.ts",
+      "default": "./.vibelang/js/src/Constructs.js"
+    },
+    "./Detect": {
+      "types": "./src/Detect.ts",
+      "vibelang-source": "./src/Detect.ts",
+      "default": "./.vibelang/js/src/Detect.js"
+    },
     "./Inventory": {
       "types": "./.vibe/declarations/src/Inventory.d.vibe.ts",
       "vibelang-source": "./src/Inventory.vibe",
@@ -70,10 +78,26 @@
       "vibelang-source": "./src/Mapping.ts",
       "default": "./.vibelang/js/src/Mapping.js"
     },
-    "./MigrateError": "./src/MigrateError.ts",
-    "./PromptHints": "./src/PromptHints.ts",
-    "./Report": "./src/Report.ts",
-    "./RunState": "./src/RunState.ts",
+    "./MigrateError": {
+      "types": "./src/MigrateError.ts",
+      "vibelang-source": "./src/MigrateError.ts",
+      "default": "./.vibelang/js/src/MigrateError.js"
+    },
+    "./PromptHints": {
+      "types": "./src/PromptHints.ts",
+      "vibelang-source": "./src/PromptHints.ts",
+      "default": "./.vibelang/js/src/PromptHints.js"
+    },
+    "./Report": {
+      "types": "./src/Report.ts",
+      "vibelang-source": "./src/Report.ts",
+      "default": "./.vibelang/js/src/Report.js"
+    },
+    "./RunState": {
+      "types": "./src/RunState.ts",
+      "vibelang-source": "./src/RunState.ts",
+      "default": "./.vibelang/js/src/RunState.js"
+    },
     "./Scan": {
       "types": "./src/Scan.ts",
       "vibelang-source": "./src/Scan.ts",
@@ -117,7 +141,11 @@
       "vibelang-source": "./src/flow/Contract.ts",
       "default": "./.vibelang/js/src/flow/Contract.js"
     },
-    "./flow/Gate": "./src/flow/Gate.ts",
+    "./flow/Gate": {
+      "types": "./src/flow/Gate.ts",
+      "vibelang-source": "./src/flow/Gate.ts",
+      "default": "./.vibelang/js/src/flow/Gate.js"
+    },
     "./flow/Layers": {
       "types": "./src/flow/Layers.ts",
       "vibelang-source": "./src/flow/Layers.ts",

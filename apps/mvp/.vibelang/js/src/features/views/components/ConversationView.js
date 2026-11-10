@@ -5,12 +5,12 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useChat } from "../../../AppContext";
 import { IssuesEmbed } from "../../issues/components/IssuesEmbed";
-import { issuesPath } from "../../issues/contract";
+import { issuesPath } from "../../issues/contract.js";
 import { RepoEmbed } from "../../repo/components/RepoEmbed";
 import { useShownMode } from "../../theme/components/ThemeButton";
 import { useWeb } from "../../web/components/WebContext";
-import { FULL_SCREEN, SUBMIT_EVENT } from "../contract";
-import { formOf, generatedOf, issuesOf, pageOf, repoOf } from "../rows";
+import { FULL_SCREEN, SUBMIT_EVENT } from "../contract.js";
+import { formOf, generatedOf, issuesOf, pageOf, repoOf } from "../rows.js";
 import { useViews } from "./ViewsContext";
 /** A click the app handles itself: the main button, no modifier, so a new tab or window keeps the browser's own. */
 export const plainClick = (event) => event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;

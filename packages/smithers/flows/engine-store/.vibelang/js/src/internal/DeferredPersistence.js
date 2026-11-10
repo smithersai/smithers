@@ -91,6 +91,8 @@ export const make = (dependencies) => Effect.gen(function* () {
                 ...(options.metadata === undefined ? {} : { metadata: options.metadata }),
                 completedAtMs
             });
+            if (completion._tag === "NotFound")
+                return { _tag: "NotFound" };
             const row = completion.row;
             // Durable channel: a deferred completion is a lifecycle record and
             // must never take the droppable lossy queue. It is unfenced by
@@ -117,6 +119,12 @@ export const make = (dependencies) => Effect.gen(function* () {
         }), { partition: options.executionId }).pipe(Effect.orDie);
         if (admission._tag === "NotWaiting")
             return "NotWaiting";
+        if (admission._tag === "NotFound") {
+            // A token can name an execution that was never started; no run can
+            // be waiting on it, so nothing is journaled or resumed.
+            yield* Effect.logWarning("engine-store.deferred.unknown-run").pipe(Effect.annotateLogs({ flow: options.flowName, executionId: options.executionId }));
+            return "NotWaiting";
+        }
         const row = admission.completion.row;
         yield* flushLossy;
         yield* dependencies.scheduleResume(row.flowName, row.executionId, reason);

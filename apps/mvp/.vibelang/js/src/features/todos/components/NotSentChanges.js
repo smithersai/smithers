@@ -3,8 +3,8 @@ import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-run
 import { Badge, Button } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useTodos } from "./TodosContext";
-import { DISCARD, EDIT } from "../contract";
-import { notSentRows } from "../view";
+import { DISCARD, EDIT } from "../contract.js";
+import { notSentRows } from "../view.js";
 /** One recovery surface on both the list and detail, including refused input storage. */
 export function NotSentChanges({ repoId, number }) {
     const { queries, actions } = useTodos();

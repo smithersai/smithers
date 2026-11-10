@@ -2,12 +2,12 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Skeleton, Textarea } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { codeSaveable } from "../actions";
-import { COULDNT_READ_FLOW, DEVICE_STORAGE_UNAVAILABLE, SESSION_STORAGE, NEEDS_SANDBOX, NO_SUCH_FLOW, SAVE, writeRefusalWords } from "../contract";
-import { placementOf, SOURCE_PATH } from "../source";
+import { codeSaveable } from "../actions.js";
+import { COULDNT_READ_FLOW, DEVICE_STORAGE_UNAVAILABLE, SESSION_STORAGE, NEEDS_SANDBOX, NO_SUCH_FLOW, SAVE, writeRefusalWords } from "../contract.js";
+import { placementOf, SOURCE_PATH } from "../source.js";
 import { useFlowsUi } from "./FlowsUiContext";
 import { useEngineStopped } from "../../chat/components/useEngineStopped";
-import { COPY_DRAFT, FLOW_UNAVAILABLE } from "../../chat/engineAvailability";
+import { COPY_DRAFT, FLOW_UNAVAILABLE } from "../../chat/engineAvailability.js";
 // A flow's code (decision 0014 §1, `/app/flows/code/$name`): its flow.ts to read and edit, and Save, which makes the
 // edit the flow's next revision. Code that needs a machine says it needs a sandbox, before and after Save; any other
 // code runs in the QuickJS realm. A refused Save says why. Save sits in the card's header, by the file's name, so the toasts that stack at the

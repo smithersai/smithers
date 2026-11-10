@@ -3,8 +3,8 @@ import { jsx as _jsx } from "react/jsx-runtime";
 import { Button, EmptyState } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { usePersonalModel } from "../../personal-model/components/PersonalModelContext";
-import { answers } from "../../personal-model/view";
-import { ADD_YOUR_MODEL, composerAccess, MEMBERS_ASK, SIGN_IN_TO_ASK } from "../contract";
+import { answers } from "../../personal-model/view.js";
+import { ADD_YOUR_MODEL, composerAccess, MEMBERS_ASK, SIGN_IN_TO_ASK } from "../contract.js";
 import { useAuth } from "./AuthContext";
 // Asking Smithers is for Members and above on the conversation's repository (decision 0007 §2, `repo:ask`; decision 0008
 // §11; ruling AUTH-8): the composer for them, even offline after a reload; a short line for a signed-in Guest or a

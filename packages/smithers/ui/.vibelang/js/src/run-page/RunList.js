@@ -5,11 +5,11 @@ import { Fragment } from "react";
 import { Badge } from "../badge";
 import { cn } from "@smthrs/ui-css";
 import { EmptyState } from "../empty-state";
-import { safeHref } from "../internal/safeHref";
+import { safeHref } from "../internal/safeHref.js";
 import { useInjectUiCss } from "../styles";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../table";
-import { formatRelativeTime } from "../time/formatRelativeTime";
-import { stepDuration } from "./runPage";
+import { formatRelativeTime } from "../time/formatRelativeTime.js";
+import { stepDuration } from "./runPage.js";
 import { RunStatusPill } from "./RunStatusPill";
 /** None, as a cell reads it. */
 const NONE = "–";

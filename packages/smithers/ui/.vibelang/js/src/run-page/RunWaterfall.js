@@ -2,7 +2,7 @@
 import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { STEP_WORDS, stepDuration, stepElapsed, waterfallAxis, waterfallBars } from "./runPage";
+import { STEP_WORDS, stepDuration, stepElapsed, waterfallAxis, waterfallBars } from "./runPage.js";
 /**
  * The run's timeline: one bar per step on a shared axis from the earliest
  * start to the latest end. An open step runs to `now`; a step that ended where

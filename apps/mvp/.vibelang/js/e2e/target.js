@@ -4,11 +4,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEV_URL } from "../dev/https";
-import { DEVICE_PERSON_HEADER, ROLES } from "../src/features/auth/contract";
-import { sessionDirOf } from "./settings";
-import { personSettings } from "./people";
-import { shipAcceptance, shipFeaturesOf } from "./ship";
+import { DEV_URL } from "../dev/https.js";
+import { DEVICE_PERSON_HEADER, ROLES } from "../src/features/auth/contract.js";
+import { sessionDirOf } from "./settings.js";
+import { personSettings } from "./people.js";
+import { shipAcceptance, shipFeaturesOf } from "./ship.js";
 /** Whether `url` is a dev server on this machine, whose certificate may be self-signed (dev/https.ts). */
 export const onThisMachine = (url) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(url);
 /** `BASE_URL` when it is an http(s) URL; anything else, such as the "/" Vite gives vitest, names no app. */

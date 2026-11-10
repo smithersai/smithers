@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { stepDuration } from "./runPage";
+import { stepDuration } from "./runPage.js";
 import { RunStatusPill } from "./RunStatusPill";
 /**
  * One line naming a run: `release-notes · ✓ Done · 0:42 · This device`, then

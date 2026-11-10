@@ -2,9 +2,9 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { COMMITMENTS } from "./lifecycle";
-import { RepoName } from "../repo/flows";
-import { MAX_BODY_LENGTH, MAX_ISSUE_NUMBER, MAX_REASON_LENGTH, MAX_TITLE_LENGTH, MAX_TRIAGE_DAILY_TOKENS, TRIAGE_DECISIONS, } from "./contract";
+import { COMMITMENTS } from "./lifecycle.js";
+import { RepoName } from "../repo/flows.js";
+import { MAX_BODY_LENGTH, MAX_ISSUE_NUMBER, MAX_REASON_LENGTH, MAX_TITLE_LENGTH, MAX_TRIAGE_DAILY_TOKENS, TRIAGE_DECISIONS, } from "./contract.js";
 // The issue writes (decision 0012 §3, docs/features/issues.md#flows): `issue/create` opens an issue and `issue/comment`
 // comments on one. A person's button or slash command and the agent run the same declaration. Each is one step that
 // asks the tab that started the request to put the write in its outbox (src/features/issues/steps.ts), which sends it

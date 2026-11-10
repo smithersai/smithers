@@ -3,9 +3,9 @@ import * as Metric from "effect/Metric";
 import { withSpan } from "effect/Effect";
 import * as Effect_1 from "effect/Effect";
 import { Effect } from "effect";
-import { codeOf } from "../../errorCode";
+import { codeOf } from "../../errorCode.js";
 import { draftWrites } from "./metrics.js";
-import { HOME_DRAFT } from "./schema";
+import { HOME_DRAFT } from "./schema.js";
 // A draft whose save is still pending must be distinguishable from a failed device write. The transaction id joins
 // its stages; records contain neither draft text nor a storage error's message.
 export const persistDraft = (write, key) => {

@@ -2,7 +2,7 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { REFRESH_OUTCOMES } from "./contract";
+import { REFRESH_OUTCOMES } from "./contract.js";
 // `auth/refresh` (docs/features/sign-in.md#when-chatapi-cant-say): a tab whose session check failed asks again, as a
 // durable flow, until ChatApi says who is signed in. Its one step runs in the leader tab's engine worker and asks the
 // tab that started it to check its session (src/features/auth/steps.ts); while ChatApi can't say, the step fails

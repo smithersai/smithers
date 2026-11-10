@@ -2,7 +2,7 @@
 // The pull requests feature's contract between ChatApi's GitHub routes, the remote flows (the `todo` run, `pr/Merge`,
 // `checks/Run`), the browser and the tests (decision 0012 §4 and §6, decision 0016's factory simplified,
 // docs/features/pulls.md): the one home of every value they share. Nothing here imports a library, so every side can.
-import { REPOS_ROUTE } from "../repo/contract";
+import { REPOS_ROUTE } from "../repo/contract.js";
 /** Electric shape proxies: one repository's rows, `GET ...?repo=<owner>/<name>` or the synced repository's. */
 export const PULLS_SHAPE_ROUTE = "/api/shapes/pulls";
 /** A per-PR GitHub absence receipt carried by its detail shapes. */

@@ -7,7 +7,7 @@
  *
  * @since 0.1.0
  */
-import { Action, Fault, Flow, FlowRuntime, RetryPolicy, StepIdentity } from "@smthrs/flow";
+import { Action, Fault, Flow, FlowRuntime, JournalDecode, RetryPolicy, StepIdentity } from "@smthrs/flow";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -16,11 +16,12 @@ import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Result from "effect/Result";
+import * as RpcSerialization from "effect/rpc/RpcSerialization";
 import * as Schema from "effect/Schema";
-import { renderDiagnostic } from "../internal/Diagnostic.js";
 import { toJsonExit } from "../internal/JsonExit.js";
 import { actionKey, ActionKeyEncoding, keyEncodings, ordinalScope, uncanonicalKey } from "./ActionKey.js";
 import { SnapshotBoundary, SnapshotBoundaryRequired } from "./SnapshotBoundary.js";
+import * as StepTrace from "../StepTrace.js";
 import { FailureSite } from "./FailureSite.js";
 // An action can open an independent child flow. Only invocations in this same
 // execution inherit its allocation scope; a child must replay the same keys
@@ -258,7 +259,13 @@ const runAttempt = (options, instance, action, key, attempt) => {
     const execute = action.tier === "compensable"
         ? executeCompensable(options, instance, input)
         : settleTimedOut(driverExecute(options, input));
-    return execute.pipe(Effect.provideService(Action.CurrentAttempt, attempt), Effect.provideService(CurrentActionParent, { executionId: instance.executionId, key }), 
+    return StepTrace.observed(execute, {
+        run: instance.executionId,
+        flow: instance.flow._tag,
+        name: action.name,
+        key,
+        attempt
+    }).pipe(Effect.provideService(Action.CurrentAttempt, attempt), Effect.provideService(CurrentActionParent, { executionId: instance.executionId, key }), 
     // DECIDED: the implementation gets the dispatch's own key. Durable state
     // it names, such as `Sleep`'s `DurableClock`, needs an identity stable
     // across replays of one node and distinct between two identical calls,
@@ -284,15 +291,21 @@ const encodeEngineFailures = (options, exit) => {
     })));
 };
 /** Decodes a recorded outcome through the action's declared schemas. */
-const decodeOutcome = (options, action, recorded) => Effect.orDie(Schema.decodeEffect(action.exitSchemaPartial)(toJsonExit(encodeEngineFailures(options, recorded))).pipe(Effect.map((decoded) => Exit.isFailure(recorded) && Exit.isFailure(decoded)
-    ? Exit.failCause(Cause.fromReasons(decoded.cause.reasons.map((reason, index) => {
-        // Exit encoding preserves one reason for each original reason.
-        return reason.annotate(Cause.reasonAnnotations(recorded.cause.reasons[index]));
-    })))
-    : decoded), 
-// `orDie` alone reports only the schema mismatch, never the failure that
-// actually occurred. Name the action and its recorded exit.
-Effect.tapError(() => Effect.annotateLogs(Effect.logError("A recorded action outcome does not match the action's declared schemas"), { action: action.name, exit: renderDiagnostic(toJsonExit(recorded)) }))));
+const decodeOutcome = (options, action, recorded) => {
+    const serialization = options.serialization ?? RpcSerialization.json;
+    return Effect.orDie(Schema.decodeEffect(Action.exitSchemasFor(serialization, action).exitSchemaPartial)(
+    // A JSON store reads `undefined` back as `null`; another codec's values never were JSON.
+    serialization.codecFor === RpcSerialization.json.codecFor
+        ? toJsonExit(encodeEngineFailures(options, recorded))
+        : encodeEngineFailures(options, recorded)).pipe(Effect.map((decoded) => Exit.isFailure(recorded) && Exit.isFailure(decoded)
+        ? Exit.failCause(Cause.fromReasons(decoded.cause.reasons.map((reason, index) => {
+            // Exit encoding preserves one reason for each original reason.
+            return reason.annotate(Cause.reasonAnnotations(recorded.cause.reasons[index]));
+        })))
+        : decoded), 
+    // Decode errors can quote private journal data. Emit only the declaration's tag and injected host identity.
+    Effect.catch(() => Effect.flatMap(JournalDecode.report(action.name), Effect.fail))));
+};
 /** Whether every reason in a failure is a Fail, or a Die carrying an encoded engine failure. */
 const onlyEngineFailures = (options, recorded, decoded) => {
     const encode = options.encodeEngineError;

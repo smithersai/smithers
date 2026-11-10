@@ -4,10 +4,10 @@ import { Interpreter } from "@smthrs/flow";
 import { ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model";
 import { Context, Effect, Layer, Metric, Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
-import { TIMELINE_SUMMARIES_ROUTE } from "./contract";
-import { cleanSpans, readOf } from "./marks";
-import { ANSWER_EXCERPT, isGenericSummary, QUESTION_EXCERPT, safeTimelineText } from "./identity";
-import { ClaimOwner, Phases, SegmentSpans, Summarize, SummarizeEntry, SummaryFailed } from "./flow";
+import { TIMELINE_SUMMARIES_ROUTE } from "./contract.js";
+import { cleanSpans, readOf } from "./marks.js";
+import { ANSWER_EXCERPT, isGenericSummary, QUESTION_EXCERPT, safeTimelineText } from "./identity.js";
+import { ClaimOwner, Phases, SegmentSpans, Summarize, SummarizeEntry, SummaryFailed } from "./flow.js";
 export class SummarySeat extends Context.Service()("timeline/SummarySeat") {
     static layer = (origin, model) => Layer.effect(SummarySeat, Effect.gen(function* () {
         const url = `${origin}/api/model/summary`;

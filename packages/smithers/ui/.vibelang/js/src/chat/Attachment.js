@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { createContext, useContext } from "react";
 import { cn } from "@smthrs/ui-css";
-import { byteCountString } from "../diff-paginate";
+import { byteCountString } from "../diff-paginate.js";
 import { useInjectUiCss } from "../styles";
 const AttachmentContext = createContext(null);
 const AttachmentGroupContext = createContext(false);

@@ -4,7 +4,7 @@ import { open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { refuseUncheckedTls } from "../ops/tls.mjs";
-import { baseURL, guard, target } from "./target";
+import { baseURL, guard, target } from "./target.js";
 // ChatApi's records, for the e2e tests that read what it recorded (docs/observability.md): its own, the remote flows'
 // its `FlowExecution` objects ran, and the browser's and the engine worker's OTLP records it relayed (`otlp.signal`).
 // Locally `alchemy dev` writes each Worker's log under `.alchemy/log/dev_<user>/<Worker>/`. A deployment's come from a

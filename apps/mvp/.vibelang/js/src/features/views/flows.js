@@ -3,9 +3,9 @@ import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Interactions } from "@smthrs/views";
 import { Schema } from "effect";
-import { MAX_SUBMIT_LABEL, VIEW_SIZES } from "./contract";
-import { FORM_REFUSALS } from "./form";
-import { BoundedObject, IssuesProps, RepoProps, ViewTitle } from "./schema";
+import { MAX_SUBMIT_LABEL, VIEW_SIZES } from "./contract.js";
+import { FORM_REFUSALS } from "./form.js";
+import { BoundedObject, IssuesProps, RepoProps, ViewTitle } from "./schema.js";
 // The agent talks through UI (decision 0004, docs/features/views.md): three flows over the conversation's views.
 //
 //   ui/form { title, schema, submitLabel? }: the agent asks with a form

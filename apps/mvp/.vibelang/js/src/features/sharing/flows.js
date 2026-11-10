@@ -2,7 +2,7 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { Change, Shared } from "./schema";
+import { Change, Shared } from "./schema.js";
 // `branch/share { branchId, change }` (decision 0013 §2, docs/features/branch-workspace.md#sharing): changes who a branch
 // is shared with, as its owner. Its one step asks ChatApi (`POST /api/branches/<id>/shares`), which changes the
 // permission list and holds every session already open on the branch to it before it answers. Granting is the

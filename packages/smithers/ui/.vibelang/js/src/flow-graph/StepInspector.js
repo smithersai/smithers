@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { cn } from "@smthrs/ui-css";
 import { JsonValue } from "../json-value/JsonValue";
-import { attemptWords, stepDuration, stepElapsed } from "../run-page/runPage";
+import { attemptWords, stepDuration, stepElapsed } from "../run-page/runPage.js";
 import { SpanDetail } from "../run-page/SpanDetail";
 import { useInjectUiCss } from "../styles";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../tabs";

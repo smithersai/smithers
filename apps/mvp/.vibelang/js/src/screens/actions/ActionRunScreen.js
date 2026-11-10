@@ -4,7 +4,7 @@ import { PageBody, PageHeader } from "@smthrs/ui";
 import { useCallback } from "react";
 import { useRuns } from "../../features/runs/components/RunsContext";
 import { Link, useParams, useSearch } from "@tanstack/react-router";
-import { actionsPath } from "../../features/actions/contract";
+import { actionsPath } from "../../features/actions/contract.js";
 import { RunPageView } from "../../features/runs/components/RunPageView";
 import "../../../../../src/screens/runs/runs-screen.css";
 // /$owner/$repo/actions/runs/$runId: one of the repository's runs, read and followed on Cloudflare

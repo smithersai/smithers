@@ -110,8 +110,8 @@ export const acquire = (fileSystem, paths, creationPaths) => {
         }
         const locks = new Map();
         for (const path of paths) {
-            const destination = yield* (Effect.mapError((yield* (function* () {
-                let $do1;
+            let $do1;
+            {
                 const catchProgram = fileSystem.realPath(path);
                 $do1
                     =
@@ -122,8 +122,8 @@ export const acquire = (fileSystem, paths, creationPaths) => {
                                     : Effect.fail(error)); });
                             });
                         });
-                return $do1;
-            })()), FsFailure.reading(path, `File not found: ${path}`)));
+            }
+            const destination = yield* (Effect.mapError(($do1), FsFailure.reading(path, `File not found: ${path}`)));
             const lock = `${parent(destination)}.smithers-${lockHash(destination)}.lock`;
             locks.set(lock, path);
         }

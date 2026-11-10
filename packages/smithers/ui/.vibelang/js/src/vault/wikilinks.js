@@ -6,7 +6,7 @@
  * Deliberately free of React so tests (and any other consumer) can import the
  * link logic without pulling a browser-shaped dependency tree.
  */
-import { stepFence } from "./fence";
+import { stepFence } from "./fence.js";
 /** Href prefix for a wikilink rendered into markdown. Scheme-less on purpose:
  *  href sanitizers drop unknown schemes, which would swallow the click. */
 export const NOTE_HREF = "#note/";

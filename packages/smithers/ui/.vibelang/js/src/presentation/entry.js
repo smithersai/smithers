@@ -13,5 +13,5 @@ import * as React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Presentation } from "@smthrs/views";
-import { presentationComponents } from "./components";
+import { presentationComponents } from "./components.js";
 Presentation.install({ react: React, jsxRuntime, renderToStaticMarkup, components: presentationComponents });

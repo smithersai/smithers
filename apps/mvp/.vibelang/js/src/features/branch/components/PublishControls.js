@@ -3,9 +3,9 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Button, Field, Input, Label, Textarea } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { Link } from "@tanstack/react-router";
-import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from "../../issues/contract";
-import { pullPath } from "../../pulls/contract";
-import { DESCRIPTION, PUBLISH, publishBarOf, RESYNC, TITLE, UPDATE_BRANCH } from "../publishView";
+import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from "../../issues/contract.js";
+import { pullPath } from "../../pulls/contract.js";
+import { DESCRIPTION, PUBLISH, publishBarOf, RESYNC, TITLE, UPDATE_BRANCH } from "../publishView.js";
 import { useBranch } from "./BranchContext";
 import "../../../../../../src/features/branch/components/publish.css";
 // Publish, Update branch and Resync in the branch's chrome (rulings GH-6 and GH-11,

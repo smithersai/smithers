@@ -5,8 +5,8 @@ import { Link, useParams, useRouterState, useSearch } from "@tanstack/react-rout
 import { useLiveQuery } from "@tanstack/react-db";
 import { PresenceAvatars } from "../../presence/components/PresenceAvatars";
 import { ShareButton } from "../../sharing/components/ShareButton";
-import { COMPARE, comparesOf } from "../publishView";
-import { statusOf } from "../view";
+import { COMPARE, comparesOf } from "../publishView.js";
+import { statusOf } from "../view.js";
 import { useBranch } from "./BranchContext";
 import { PublishControls } from "./PublishControls";
 // The branch's chrome (decision 0013 §5): the branch's name and what this person may do on it (`Owner`, `Can edit`,

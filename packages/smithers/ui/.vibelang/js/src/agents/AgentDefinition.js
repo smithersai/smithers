@@ -5,7 +5,7 @@ import { useId, useState } from "react";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { Markdown } from "../primitives/markdown";
-import { formatJsonSafe } from "../agentic/formatJsonSafe";
+import { formatJsonSafe } from "../agentic/formatJsonSafe.js";
 const AVAILABILITY_LABEL = {
     available: "Available",
     unauthenticated: "Unauthenticated",

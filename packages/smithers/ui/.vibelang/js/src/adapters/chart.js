@@ -4,7 +4,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { createContext, useContext, useId, useMemo, } from "react";
 import * as RechartsPrimitive from "recharts";
 import { cn } from "@smthrs/ui-css";
-import { useResolvedTheme } from "../internal/useResolvedTheme";
+import { useResolvedTheme } from "../internal/useResolvedTheme.js";
 import { tokens as t } from "@smthrs/ui-css";
 /**
  * Chart primitives for Smithers workflow UIs — the shadcn/ui chart contract

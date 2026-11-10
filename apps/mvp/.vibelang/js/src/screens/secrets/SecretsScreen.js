@@ -4,7 +4,7 @@ import { PageBody } from "@smthrs/ui";
 import { RepoHeader } from "../../features/repo/components/RepoHeader";
 import { useParams } from "@tanstack/react-router";
 import { SecretsPage } from "../../features/secrets/components/SecretsPage";
-import { SECRETS } from "../../features/secrets/copy";
+import { SECRETS } from "../../features/secrets/copy.js";
 import "../../../../../src/screens/secrets/secrets-screen.css";
 // /$owner/$repo/settings/secrets: the repository's secrets by name, which an Admin adds, rotates and deletes
 // (docs/features/secrets.md#the-secrets-page). The route's `beforeLoad` opens the repository's list; this screen only

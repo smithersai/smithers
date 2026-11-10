@@ -4,7 +4,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as Layer from "effect/Layer";
 import * as Effect_1 from "effect/Effect";
-import { PIN_ROUTE } from "./contract";
+import { PIN_ROUTE } from "./contract.js";
 /** Captures the host's authenticated client before a run adds its own services. */
 export class PinClient extends Context.Service()("@smthrs/mvp/pins/PinClient") {
     static layer = (origin) => Layer.effect(PinClient, Effect_1.gen(function* () {

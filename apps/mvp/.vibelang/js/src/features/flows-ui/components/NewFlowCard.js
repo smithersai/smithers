@@ -2,9 +2,9 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { EmptyState, FlowDraftView, Skeleton } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { formReady } from "../actions";
-import { DEVICE_STORAGE_UNAVAILABLE, SESSION_STORAGE, MINE } from "../contract";
-import { nameHint, requestHint } from "../hints";
+import { formReady } from "../actions.js";
+import { DEVICE_STORAGE_UNAVAILABLE, SESSION_STORAGE, MINE } from "../contract.js";
+import { nameHint, requestHint } from "../hints.js";
 import { useFlowsUi } from "./FlowsUiContext";
 // The new-flow form (decision 0014 §5, the draft card before its first round): the flow's name and what it should do,
 // then Draft. A name you already have drafts its next revision.

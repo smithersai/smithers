@@ -3,8 +3,8 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { cn } from "@smthrs/ui-css";
 import { JsonValue } from "../json-value/JsonValue";
 import { useInjectUiCss } from "../styles";
-import { formatRelativeTime } from "../time/formatRelativeTime";
-import { attemptWords, STEP_GLYPHS, STEP_WORDS, untilWords } from "./runPage";
+import { formatRelativeTime } from "../time/formatRelativeTime.js";
+import { attemptWords, STEP_GLYPHS, STEP_WORDS, untilWords } from "./runPage.js";
 /** The wait line: `human · since 3m ago · wakes in 2 m`. */
 export const waitWords = (wait, now) => [
     wait.kind,

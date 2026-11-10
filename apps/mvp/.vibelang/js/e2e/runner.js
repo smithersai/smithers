@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { baseURL, writeHeaders } from "./target";
+import { baseURL, writeHeaders } from "./target.js";
 // An external agent on a runner this machine runs (decision 0136, docs/features/agent-runners.md), as a repository's
 // Admin sets one up: the spec registers a runner and names the repository's coding agent, then starts the runner
 // itself (`smthrs runner serve`) with the deterministic ACP test agent as the profile's command, so a TODO's prompt

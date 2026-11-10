@@ -2,10 +2,10 @@
 import { Action, Flow } from "@smthrs/flow";
 import { Node } from "@smthrs/plan";
 import { Schema } from "effect";
-import { CreationSelection } from "./creation";
-import { TrackFailure } from "./flows";
-import { NEW_RETRY } from "../conversations/flows";
-import { Tracked } from "./schema";
+import { CreationSelection } from "./creation.js";
+import { TrackFailure } from "./flows.js";
+import { NEW_RETRY } from "../conversations/flows.js";
+import { Tracked } from "./schema.js";
 export const CreationRequest = Schema.Struct({
     owner: Schema.optional(Schema.String), name: Schema.optional(Schema.String),
     ref: Schema.String, request: Schema.String, openedAt: Schema.optional(Schema.Number),

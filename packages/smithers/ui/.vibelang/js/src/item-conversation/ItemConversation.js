@@ -9,7 +9,7 @@ import { Textarea } from "../input";
 import { ITEM_STATE_VARIANTS, ItemStateIcon } from "../issues-view/ItemStateIcon";
 import { issueNumberText, PENDING_WORDS, STATE_STATUS } from "../issues-view/IssuesView";
 import { ItemLink } from "../issues-view/ItemLink";
-import { safeHref } from "../internal/safeHref";
+import { safeHref } from "../internal/safeHref.js";
 import { Markdown } from "../primitives/markdown";
 import { Skeleton } from "../skeleton";
 import { useInjectUiCss } from "../styles";

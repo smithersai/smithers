@@ -3,12 +3,12 @@ import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-run
 /** @jsxImportSource react */
 import { createContext, useContext, useEffect, useId, useRef, useState, } from "react";
 import { cn } from "@smthrs/ui-css";
-import { safeImageSrc } from "../internal/safeImageSrc";
+import { safeImageSrc } from "../internal/safeImageSrc.js";
 import { CodeBlock } from "../primitives/CodeBlock";
 import { StatusPill } from "../status-pill";
 import { useInjectUiCss } from "../styles";
-import { formatJsonSafe } from "./formatJsonSafe";
-import { formatPartialJson } from "./formatPartialJson";
+import { formatJsonSafe } from "./formatJsonSafe.js";
+import { formatPartialJson } from "./formatPartialJson.js";
 export const TOOL_CALL_STATE_LABELS = {
     "input-streaming": "Streaming input",
     "input-available": "Ready",

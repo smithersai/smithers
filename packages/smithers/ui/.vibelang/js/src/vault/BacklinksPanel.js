@@ -4,8 +4,8 @@ import { cn } from "@smthrs/ui-css";
 import { Badge } from "../badge";
 import { Eyebrow } from "../section-header";
 import { RowButton } from "../row-button";
-import { useVaultCss } from "./useVaultCss";
-import { noteLabel } from "./wikilinks";
+import { useVaultCss } from "./useVaultCss.js";
+import { noteLabel } from "./wikilinks.js";
 function LinkSection({ title, paths, empty, onOpenNote, linkProps, }) {
     return (_jsxs("section", { className: "sui-vault-links-section", children: [_jsxs("div", { className: "sui-vault-links-head", children: [_jsx(Eyebrow, { children: title }), _jsx(Badge, { variant: "secondary", children: paths.length })] }), paths.length === 0 ? (_jsx("p", { className: "sui-vault-links-empty", children: empty })) : (paths.map((path) => (_jsxs(RowButton, { onClick: () => onOpenNote?.(path), ...linkProps?.(path), children: [_jsx("span", { className: "sui-vault-link-label", children: noteLabel(path) }), _jsx("span", { className: "sui-vault-link-path", children: path })] }, path))))] }));
 }

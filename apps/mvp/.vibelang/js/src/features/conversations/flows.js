@@ -2,10 +2,10 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { BranchName, BranchTrackRefused, BranchTrackUnavailable } from "../branch/flows";
-import { GoTo, NavigationRefused } from "../navigation/flows";
-import { RepoName } from "../repo/flows";
-import { Archived, Made } from "./schema";
+import { BranchName, BranchTrackRefused, BranchTrackUnavailable } from "../branch/flows.js";
+import { GoTo, NavigationRefused } from "../navigation/flows.js";
+import { RepoName } from "../repo/flows.js";
+import { Archived, Made } from "./schema.js";
 // Your conversations' acts, as flows (decision 0013 decision 2, docs/features/conversations.md#flows):
 //
 //   conversation/archive { conversationId?, archived, at? }  the list's Archive and Restore, and the agent

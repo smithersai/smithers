@@ -6,7 +6,7 @@ import { COMMITMENTS } from "../../src/features/issues/lifecycle.js";
 import { digestSync } from "@smthrs/crypto";
 import { ShapeProxy } from "@smthrs/effect-electric";
 import { Core } from "@smthrs/integrations";
-import { Cause, Clock, Duration, Effect, Metric, Option, Redacted, Ref, Result, Schema } from "effect";
+import { Context, Cause, Clock, Duration, Effect, Metric, Option, Redacted, Ref, Result, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { applyExecutionId, issueNumberOf, itemId, COMMENT_COLUMNS, COMMENTS_SHAPE_ROUTE, COMMENTS_TABLE, GITHUB_WEBHOOK_ROUTE, ISSUES_STREAM, ITEM_COLUMNS, ITEMS_SHAPE_ROUTE, ITEM_SUMMARIES_SHAPE_ROUTE, ITEM_SUMMARY_COLUMNS, ITEMS_TABLE, ISSUE_EDGE_COLUMNS, ISSUE_EDGES_SHAPE_ROUTE, ISSUE_RELATIONS_TABLE, relationsExecutionId, MAX_BODY_LENGTH, MAX_REASON_LENGTH, MAX_TITLE_LENGTH, MAX_TRIAGE_DAILY_TOKENS, MAX_WEBHOOK_BYTES, MAX_WRITE_BYTES, DEFAULT_TRIAGE_DAILY_TOKENS, reconcileBucketStart, reconcileExecutionId, SYNC_COLUMNS, SYNC_SHAPE_ROUTE, SYNC_STALE_MS, SYNC_TABLE, TRIAGE_DECISIONS, TRIAGE_SETTINGS_COLUMNS, TRIAGE_SETTINGS_SHAPE_ROUTE, TRIAGE_SETTINGS_TABLE, triageRunExecutionId, WRITE_COLUMNS, writeExecutionId, WRITES_SEGMENT, WRITES_SHAPE_ROUTE, WRITES_TABLE, } from "../../src/features/issues/contract.js";
@@ -328,6 +328,16 @@ const subjectsOf = (event, payload) => {
             : [{ repository: farRepository, issue: { number: far.number } }]),
     ];
 };
+/** Ends a person's GitHub connection on smithers.sh when they revoke the App at GitHub (decision 0165). ChatApi supplies it. */
+export const EndGitHubConnection = Context.Reference("@smthrs/mvp/EndGitHubConnection", {
+    defaultValue: () => () => Effect.void,
+});
+/** The numeric id of who revoked the App. `ghost` is GitHub's placeholder; decision 0165 relies on a later 401 then. */
+export const revokingPerson = (payload) => {
+    const sender = payload.sender;
+    const id = sender?.id;
+    return typeof id === "number" && Number.isSafeInteger(id) && id > 0 && sender?.login !== "ghost" ? id : undefined;
+};
 /**
  * Reads Electric's connection and returns the GitHub routes' `fetch`. `database` opens a Postgres client for the scope
  * of each request; `Sessions` (who is asking) and `FlowStarter` (where a remote flow starts) come from the request's
@@ -387,7 +397,7 @@ export const make = (database, options) => Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
         const event = request.headers["x-github-event"] ?? "unknown";
         const metricEvent = new Set(["issues", "issue_comment", "pull_request", "pull_request_review", "pull_request_review_comment",
-            "sub_issues", "push", "release", "ping", "installation", "installation_repositories", "repository"]).has(event) ? event : "unknown";
+            "sub_issues", "push", "release", "ping", "installation", "installation_repositories", "repository", "github_app_authorization"]).has(event) ? event : "unknown";
         const fields = { event: metricEvent };
         const answer = (status, outcome, code) => Effect.gen(function* () {
             fields.outcome = outcome;
@@ -425,6 +435,13 @@ export const make = (database, options) => Effect.gen(function* () {
             // `Core.Channel` checked the decoder's output as an `ExternalEvent`.
             const delivered = decoded.success;
             const action = delivered.payload.action;
+            // This event names no repository, so it runs before repository resolution. Redelivery is safe: it ends nothing twice.
+            if (event === "github_app_authorization" && action === "revoked") {
+                const person = revokingPerson(delivered.payload);
+                if (person !== undefined)
+                    yield* (yield* EndGitHubConnection)(person);
+                fields.connection = person === undefined ? "unknown_sender" : "ended";
+            }
             // Every issue the delivery names in a repository the deployment acts on (decision 0079, slice 1b).
             let named = subjectsOf(event, delivered.payload).flatMap((found) => {
                 const [owner = "", name = ""] = found.repository.full_name.split("/");
@@ -820,9 +837,12 @@ export const make = (database, options) => Effect.gen(function* () {
      * Starts `github/Reconcile` when `target`'s issues are older than `SYNC_STALE_MS`, one execution per repository and
      * 5-minute bucket, and waits at most `RECONCILE_START_TIMEOUT` for admission. A bucket admitted for that repository
      * isn't asked again. It never fails the read: each start logs `github.reconcile.start` and counts
-     * `github_reconcile_starts` by outcome (`started`, `timed_out`, `not_started` with its error code).
+     * `github_reconcile_starts` by outcome (`started`, `timed_out`, `not_started` with its error code). Every admission,
+     * stale or not, counts `github_reconcile_admissions` and records `github.reconcile.admission` as it begins.
      */
     const reconcileIfStale = (target) => Effect.gen(function* () {
+        yield* Metric.update(Metrics.reconcileAdmissions, 1);
+        yield* Effect.logInfo("github.reconcile.admission");
         if (Option.isNone(options.app)) {
             // Local development's synced repository keeps its one issue, read as of its own `updated_at`: an upsert that
             // changes nothing once the row is there, and puts it back if the dev database was reset.
@@ -861,7 +881,7 @@ export const make = (database, options) => Effect.gen(function* () {
             outcome: "not_started",
             errorCode: error instanceof StartUnavailable ? error.errorCode : codeOf(error),
         })));
-    }), Effect.withSpan("github.reconcile.start"));
+    }), Effect.withSpan("github.reconcile.start"), Effect.withSpan("github.reconcile.admission"));
     /**
      * The repository a shape names, `?repo=<owner>/<name>`, the deployment's own unless it names one; `400 invalid` for
      * a name GitHub couldn't have. Whether the deployment acts on it is `repositoryReadable`'s to say.

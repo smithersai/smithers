@@ -2,9 +2,9 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { RepoName } from "../repo/flows";
-import { isBranchName } from "./contract";
-import { Tracked } from "./schema";
+import { RepoName } from "../repo/flows.js";
+import { isBranchName } from "./contract.js";
+import { Tracked } from "./schema.js";
 // `branch/track { repo, branch }` (decision 0013 §2, docs/features/branch-workspace.md#tracking-a-branch): records a
 // branch GitHub already has, with its conversation, and answers both ids. Opening a branch's page runs it, and the agent
 // can too. Its one step asks ChatApi (`POST /api/branches`), which reads the branch from its forge with the credential

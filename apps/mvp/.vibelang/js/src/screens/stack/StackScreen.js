@@ -10,8 +10,8 @@ import { SignInButton } from "../../features/auth/components/SignInButton";
 import { DraftCard } from "../../features/todos/components/DraftCard";
 import { NeedsAnIssue } from "../../features/todos/components/NeedsAnIssue";
 import { useTodos } from "../../features/todos/components/TodosContext";
-import { NEW_TODO, NO_TODOS, stackFilterOf, stackPath, todoPath, } from "../../features/todos/contract";
-import { accessFor, draftsOfRepo, mayChange, stackItemsOf, stackRows, withDrop, } from "../../features/todos/view";
+import { NEW_TODO, NO_TODOS, stackFilterOf, stackPath, todoPath, } from "../../features/todos/contract.js";
+import { accessFor, draftsOfRepo, mayChange, stackItemsOf, stackRows, withDrop, } from "../../features/todos/view.js";
 import "../../../../../src/screens/stack/stack-screen.css";
 import { useRepo, useRepoAnswer } from "../../features/repo/components/RepoContext";
 // /$owner/$repo/stack (decision 0016 §4), drawn as GitHub's issue list: Open (the stack in merge order, then this

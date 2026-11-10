@@ -5,7 +5,7 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { useEffect, useState } from "react";
 import { useIssues } from "../../issues/components/IssuesContext";
 import { useTodos } from "./TodosContext";
-import { issueChoices, needsAnIssue } from "../view";
+import { issueChoices, needsAnIssue } from "../view.js";
 // Needs an issue (decision 0153): a TODO is a leaf under exactly one issue, so the stack lists, for Members, its open
 // TODOs with no issue or a deleted one, each with Attach to issue. Attaching is a person's press (`todo/attach`).
 export function NeedsAnIssue({ owner, name, repoId, todos }) {

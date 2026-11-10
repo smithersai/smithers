@@ -3,8 +3,8 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useRef, useState } from "react";
 import { cn } from "@smthrs/ui-css";
-import { stepFence } from "./fence";
-import { useVaultCss } from "./useVaultCss";
+import { stepFence } from "./fence.js";
+import { useVaultCss } from "./useVaultCss.js";
 /**
  * Parse markdown ATX headings into an outline. Fence-safe: `#` lines inside
  * fenced code blocks are not headings. Fence state comes from the shared

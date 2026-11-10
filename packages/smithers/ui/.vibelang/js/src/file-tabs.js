@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useLayoutEffect, useRef } from "react";
 import { cn } from "@smthrs/ui-css";
-import { isPlainNavigationClick } from "./internal/navigationClick";
+import { isPlainNavigationClick } from "./internal/navigationClick.js";
 import { useInjectUiCss } from "./styles";
 const NEXT = {
     ArrowRight: (index, count) => (index + 1) % count,

@@ -10,7 +10,7 @@ import { createContext, useContext } from "react";
 import { Button } from "../button";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { dateFromMs } from "../time/dateFromMs";
+import { dateFromMs } from "../time/dateFromMs.js";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../tooltip";
 const CHECKPOINT_ACTION_LABELS = {
     fork: "Fork",

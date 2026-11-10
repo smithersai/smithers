@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Badge } from "../badge";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { RUN_WORD_GLYPHS, RUN_WORD_TONES, runWord } from "./runPage";
+import { RUN_WORD_GLYPHS, RUN_WORD_TONES, runWord } from "./runPage.js";
 /** A run's state as glyph, tone and one word (`✓ Done`, `◌ Stopping`). `data-word` carries the word. */
 export function RunStatusPill({ state, cancelRequested = false, word, className, ...props }) {
     useInjectUiCss();

@@ -4,7 +4,7 @@ import { AvatarStack } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useBranch } from "../../branch/components/BranchContext";
-import { avatarsOf, followOf } from "../view";
+import { avatarsOf, followOf } from "../view.js";
 // Who else is on the branch (decision 0013 §5): one avatar each, titled with where they are. Choosing one follows them
 // to their place on the page, as Google Docs and Figma do.
 export function PresenceAvatars() {

@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useId, useState } from "react";
-import { formatJsonSafe } from "../agentic/formatJsonSafe";
+import { formatJsonSafe } from "../agentic/formatJsonSafe.js";
 import { cn } from "@smthrs/ui-css";
 import { CodeBlock } from "../primitives/CodeBlock";
 import { useInjectUiCss } from "../styles";

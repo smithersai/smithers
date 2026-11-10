@@ -2,7 +2,7 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { Opened } from "./schema";
+import { Opened } from "./schema.js";
 // `terminal/open { branchId, terminalId, cols, rows }` (decision 0013 §2, docs/features/branch-workspace.md#the-terminal):
 // asks ChatApi to open the person's terminal on a branch's machine. ChatApi admits it and starts the remote
 // `terminal/Open`, which wakes the machine and starts the shell; the terminal's row says when it is open. A terminal is

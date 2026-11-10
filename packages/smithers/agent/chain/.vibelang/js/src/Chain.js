@@ -486,8 +486,8 @@ export const run = (options) => {
                     });
                 };
                 if (script !== undefined) {
-                    const ran = yield* (Effect.catchTag((yield* (function* () {
-                        let $do1;
+                    let $do1;
+                    {
                         const catchProgram = runner
                             .run(script, (request) => executeCall("script", request.name, request.payload));
                         $do1
@@ -520,8 +520,8 @@ export const run = (options) => {
                                             }
                                         }))()]; }));
                                 });
-                        return $do1;
-                    })()), "/chain/ScriptFailure", (failure) => {
+                    }
+                    const ran = yield* (Effect.catchTag(($do1), "/chain/ScriptFailure", (failure) => {
                         return Effect_1.gen(function* () {
                             // A failing script — compile, throw, or bad outcome — is an
                             // observation like any gate, not a harness crash. An

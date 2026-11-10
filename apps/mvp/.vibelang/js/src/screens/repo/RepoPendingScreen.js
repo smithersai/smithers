@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Button, PageHeader } from "@smthrs/ui";
 import { Link, useParams } from "@tanstack/react-router";
 import { OfflineFallback } from "../../features/navigation/components/OfflineFallback";
-import { SLOT } from "../../firstPaint/settled";
+import { SLOT } from "../../firstPaint/settled.js";
 import "../../../../../src/screens/repo/repo-screen.css";
 /** Pending routes use the URL, never a previous repository's rows. */
 export function RepoPendingScreen() {

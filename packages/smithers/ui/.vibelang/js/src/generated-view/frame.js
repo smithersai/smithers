@@ -18,7 +18,7 @@
  * so an element named or identified like a document property cannot shadow
  * one.
  */
-import { sanitize } from "./sanitize";
+import { sanitize } from "./sanitize.js";
 /** The attribute on the frame's `<html>` that carries the nonce; `ViewCsp.nonceAttribute`. */
 export const nonceAttribute = "data-smithers-nonce";
 /** The id of the frame's one `ui/initialize` request. */

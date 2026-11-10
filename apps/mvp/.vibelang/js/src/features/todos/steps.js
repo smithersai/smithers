@@ -3,14 +3,14 @@ import { Uuid } from "@smthrs/crypto";
 import { FlowRuntime, Interpreter } from "@smthrs/flow";
 import { Clock, Context, Effect, Layer, Metric, Option } from "effect";
 import { HttpClient } from "effect/http";
-import { asker } from "../../flows/askingTab";
-import { requesterOf } from "../../flows/requests";
-import { repoId } from "../repo/contract";
-import { readTodoStatus } from "./api";
-import { DRAFT_ID_NAMESPACE, OP_ID_NAMESPACE, QUEUE_WITHIN, stackPath, titleOf, todosChannel, } from "./contract";
-import { KeepDraft, KeepIssueDraft, QueueCommit, QueueDrop, QueueAttach, TodoAttach, QueueRetry, ReadTodoStatus, TodoRetry, TodoCommit, TodoDraft, TodoDrop, TodoIssue, TodoInspect, TodoStepRefused, } from "./flows";
-import { drafts, queued, statusReads } from "#vibelang/emitted/src/features/todos/metrics";
-import { Kept } from "./schema";
+import { asker } from "../../flows/askingTab.js";
+import { requesterOf } from "../../flows/requests.js";
+import { repoId } from "../repo/contract.js";
+import { readTodoStatus } from "./api.js";
+import { DRAFT_ID_NAMESPACE, OP_ID_NAMESPACE, QUEUE_WITHIN, stackPath, titleOf, todosChannel, } from "./contract.js";
+import { KeepDraft, KeepIssueDraft, QueueCommit, QueueDrop, QueueAttach, TodoAttach, QueueRetry, ReadTodoStatus, TodoRetry, TodoCommit, TodoDraft, TodoDrop, TodoIssue, TodoInspect, TodoStepRefused, } from "./flows.js";
+import { drafts, queued, statusReads } from "./metrics.js";
+import { Kept } from "./schema.js";
 /** The tabs of this browser, as a step reaches them: only the tab that started a request answers. */
 export class TabTodos extends Context.Service()("@smthrs/mvp/todos/TabTodos") {
     /** Over the todos channel of engine `name` (`TabChannel`), waiting `within` (`QUEUE_WITHIN` unless set). */

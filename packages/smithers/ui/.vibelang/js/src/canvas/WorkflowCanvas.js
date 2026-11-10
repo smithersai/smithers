@@ -4,7 +4,7 @@ import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-run
 import { useEffect, useRef, } from "react";
 import { Badge } from "../badge";
 import { cn } from "@smthrs/ui-css";
-import { composeRefs } from "../internal/composeRefs";
+import { composeRefs } from "../internal/composeRefs.js";
 import { formatStatus, statusClass } from "@smthrs/ui-css";
 import { StatusPill } from "../status-pill";
 import { useInjectUiCss } from "../styles";

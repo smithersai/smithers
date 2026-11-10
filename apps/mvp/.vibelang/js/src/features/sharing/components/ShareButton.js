@@ -4,9 +4,9 @@ import { Button, ShareDialog } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useAuth } from "../../auth/components/AuthContext";
 import { useBranch } from "../../branch/components/BranchContext";
-import { REPOSITORY_GRANTEE } from "../../branch/contract";
-import { GROUP_LABEL } from "../contract";
-import { errorOf, generalOf, linkOf, OWNER, peopleOf } from "../view";
+import { REPOSITORY_GRANTEE } from "../../branch/contract.js";
+import { GROUP_LABEL } from "../contract.js";
+import { errorOf, generalOf, linkOf, OWNER, peopleOf } from "../view.js";
 // Share, for the branch's owner (decision 0013 §5): Google Docs' dialog over the branch's permission list. People by
 // GitHub login, to view or edit; anyone in the repository with the link; Copy link.
 export function ShareButton() {

@@ -2,11 +2,11 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric";
 import { Collection } from "@smthrs/effect-tanstack-db";
 import { Context, Effect, FiberHandle, Layer, Scope, Semaphore, Stream } from "effect";
-import { RepoStore } from "../repo/store";
-import { shapeRefusals } from "../issues/source";
-import { DOMAINS_SHAPE_ROUTE } from "./contract";
-import { listQuery, pageQuery, savesQuery } from "./queries";
-import { Domain, DomainSave, DomainsPage } from "./schema";
+import { RepoStore } from "../repo/store.js";
+import { shapeRefusals } from "../issues/source.js";
+import { DOMAINS_SHAPE_ROUTE } from "./contract.js";
+import { listQuery, pageQuery, savesQuery } from "./queries.js";
+import { Domain, DomainSave, DomainsPage } from "./schema.js";
 /** The one `page` row's key. */
 export const PAGE = "page";
 export class DomainsStore extends Context.Service()("@smthrs/mvp/domains/DomainsStore") {

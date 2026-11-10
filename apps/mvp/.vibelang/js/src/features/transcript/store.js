@@ -2,9 +2,9 @@
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db";
 import { RetryPolicy } from "@smthrs/flow";
 import { Context, Effect, FiberHandle, Layer, Option, Ref } from "effect";
-import { RunsStore } from "../runs/store";
-import { EMPTY } from "./fold";
-import { Item, PANEL, Panel } from "./schema";
+import { RunsStore } from "../runs/store.js";
+import { EMPTY } from "./fold.js";
+import { Item, PANEL, Panel } from "./schema.js";
 /** How the panel dials again after a drop: 1 s doubling to 30 s, giving up after 30 minutes offline. */
 export const REDIAL = RetryPolicy.make({ initialMs: 1000, factor: 2, maxMs: 30_000, expirationMs: 30 * 60_000 });
 /** The panel's one row. */

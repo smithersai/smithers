@@ -3,13 +3,13 @@ import { AgentAction } from "@smthrs/agent";
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { AnswerSettled, AnswersUnavailable, NotYourTurn, TurnOutOfTime } from "./answers";
-import { SETTLE_RETRY } from "./close";
-import { MAX_FRAMES } from "./contract";
-import { CHAT_SYSTEM } from "./instructions";
-import { ProductWords } from "./words";
-import { AnswerReference } from "./reference";
-import { Exchange, Turn } from "./schema";
+import { AnswerSettled, AnswersUnavailable, NotYourTurn, TurnOutOfTime } from "./answers.js";
+import { SETTLE_RETRY } from "./close.js";
+import { MAX_FRAMES } from "./contract.js";
+import { CHAT_SYSTEM } from "./instructions.js";
+import { ProductWords } from "./words.js";
+import { AnswerReference } from "./reference.js";
+import { Exchange, Turn } from "./schema.js";
 // The agent (docs/features/agent.md): `chat/Answer`, the flow that answers one question on this device's durable
 // engine (decision 0011), started with the answer's id as its execution id:
 //

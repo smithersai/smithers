@@ -2,11 +2,11 @@
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Clock, Context, Effect, Layer, Metric, Option, Schema } from "effect";
-import { asker } from "../../flows/askingTab";
-import { requesterOf } from "../../flows/requests";
-import { FILES_WITHIN, filesChannel } from "./contract";
-import { fileTabs } from "./metrics";
-import { Closed, FilePath, FilesReply, Lines, Opened } from "./schema";
+import { asker } from "../../flows/askingTab.js";
+import { requesterOf } from "../../flows/requests.js";
+import { FILES_WITHIN, filesChannel } from "./contract.js";
+import { fileTabs } from "./metrics.js";
+import { Closed, FilePath, FilesReply, Lines, Opened } from "./schema.js";
 // `file/open { path, lines? }` and `file/close { path }` (docs/features/files.md): a file of the repository the person
 // is viewing, opened as a tab with its lines highlighted, and its tab closed. The person's tab strip and the agent's
 // cell run these two declarations. Each one step runs in the leader tab's engine worker, so it asks over the engine's

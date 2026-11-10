@@ -4,11 +4,11 @@ import { Interpreter, RetryPolicy } from "@smthrs/flow";
 import { Classifier, Evaluator, ModelError, ModelProxy } from "@smthrs/model";
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
-import { MODEL_ROUTE, quotaRefused } from "../model/contract";
-import { JEV_ROUTE } from "../personal-model/contract";
-import { JUDGE_ROLE, SURE_LABEL, SURE_YES_NO, UNSURE } from "./contract";
-import { Classify, ClassifyItems, Evaluate, EvaluateText, JudgeFailed, } from "./flows";
-import { recordJudgment, withJudgeSpan } from "./metrics";
+import { MODEL_ROUTE, quotaRefused } from "../model/contract.js";
+import { JEV_ROUTE } from "../personal-model/contract.js";
+import { JUDGE_ROLE, SURE_LABEL, SURE_YES_NO, UNSURE } from "./contract.js";
+import { Classify, ClassifyItems, Evaluate, EvaluateText, JudgeFailed, } from "./flows.js";
+import { recordJudgment, withJudgeSpan } from "./metrics.js";
 // What Jev's steps run on (docs/features/jev.md#how-a-judgment-runs): the server's model endpoint, role `judge`, as a
 // seat. Each step declares one classifier over its items (`Classifier.make` from `@smthrs/model`), one question per
 // item, and asks it through `Evaluator.layerFromSeat`, whose model is `ModelStep.model` from `@smthrs/agent`: so the

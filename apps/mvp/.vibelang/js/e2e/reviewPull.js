@@ -2,10 +2,10 @@
 import { chromium, expect } from "@playwright/test";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { leaseProfile } from "./deployment/lease";
-import { github, pollGitHub } from "./github";
-import { redactRequestErrors } from "./redact";
-import { me } from "./target";
+import { leaseProfile } from "./deployment/lease.js";
+import { github, pollGitHub } from "./github.js";
+import { redactRequestErrors } from "./redact.js";
+import { me } from "./target.js";
 /** Fixture setup only: the test account's GitHub profile, leased and never recorded, as in deployment sign-in. */
 const onGitHub = async (repository, use) => {
     const stage = (value) => console.info("pull-review.fixture", { repository, stage: value });

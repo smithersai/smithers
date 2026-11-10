@@ -10,8 +10,9 @@
  * and nothing decodes them on the way out.
  *
  * - `actionExecute` and `deferredResult` return ENCODED values, which
- *   `makeUnsafe` decodes through the action's `exitSchemaPartial` and the
- *   deferred's `exitSchema`.
+ *   `makeUnsafe` decodes through the action's exit schemas under the
+ *   driver's `serialization` (`Action.exitSchemasFor`) and the deferred's
+ *   `exitSchema`.
  * - `deferredDone` and `deferredDoneIfWaiting` receive ENCODED exits, which
  *   `makeUnsafe` encodes before the call.
  * - `execute` and `poll` return DECODED results. The implementation decodes

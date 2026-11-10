@@ -2,14 +2,14 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric";
 import { Collection } from "@smthrs/effect-tanstack-db";
 import { Context, Effect, Layer, Stream } from "effect";
-import { recordUnhandled } from "../../boundary";
-import { AuthStore } from "../auth/store";
-import { PERSONAL_MODEL_SHAPE_ROUTE } from "./contract";
-import { record } from "./metrics";
-import { addQuery, formQuery, linkQuery, rowsQuery, testQuery } from "./queries";
-import { ADD, AddRow, FORM, Form, LINK, LinkRow, PersonalModelRow, TestRow } from "./schema";
-import { signedInShapeSource } from "../auth/source";
-import { awaiting, landed, linked } from "./view";
+import { recordUnhandled } from "../../boundary.js";
+import { AuthStore } from "../auth/store.js";
+import { PERSONAL_MODEL_SHAPE_ROUTE } from "./contract.js";
+import { record } from "./metrics.js";
+import { addQuery, formQuery, linkQuery, rowsQuery, testQuery } from "./queries.js";
+import { ADD, AddRow, FORM, Form, LINK, LinkRow, PersonalModelRow, TestRow } from "./schema.js";
+import { signedInShapeSource } from "../auth/source.js";
+import { awaiting, landed, linked } from "./view.js";
 /**
  * The state of a person's own model on one tab:
  * - `rows`: their connections' rows, synced while they are signed in, kept on the device; `saved`, their live query;

@@ -8,10 +8,10 @@ import { useAuth } from "../../features/auth/components/AuthContext";
 import { SignInButton } from "../../features/auth/components/SignInButton";
 import { useIssues } from "../../features/issues/components/IssuesContext";
 import { usePulls } from "../../features/pulls/components/PullsContext";
-import { comparisonKey, githubPullUrl, pullTabPath } from "../../features/pulls/contract";
+import { comparisonKey, githubPullUrl, pullTabPath } from "../../features/pulls/contract.js";
 import { ChangedFiles } from "../../features/pulls/components/ChangedFiles";
 import { CommitList } from "../../features/pulls/components/CommitList";
-import { checkRows, checksSummaryOf, conversationProps, mergeBoxOf, pullAccessOf, pullPageOf, reviewBoxOf } from "../../features/pulls/view";
+import { checkRows, checksSummaryOf, conversationProps, mergeBoxOf, pullAccessOf, pullPageOf, reviewBoxOf } from "../../features/pulls/view.js";
 import "../../../../../src/screens/pulls/pulls-screen.css";
 import { useRepoAnswer } from "../../features/repo/components/RepoContext";
 // /$owner/$repo/pull/$number and its tabs: one pull request. Conversation shows its body, comments and reviews (the

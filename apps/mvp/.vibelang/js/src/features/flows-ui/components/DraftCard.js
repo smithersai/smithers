@@ -2,8 +2,8 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { EmptyState, FlowDraftView, Skeleton } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { DEVICE_STORAGE_UNAVAILABLE, SESSION_STORAGE, draftFailureWords, MINE, NO_SUCH_DRAFT, SAVE_REFUSALS } from "../contract";
-import { shownRound } from "../round";
+import { DEVICE_STORAGE_UNAVAILABLE, SESSION_STORAGE, draftFailureWords, MINE, NO_SUCH_DRAFT, SAVE_REFUSALS } from "../contract.js";
+import { shownRound } from "../round.js";
 import { useFlowsUi } from "./FlowsUiContext";
 /** A draft this device doesn't have: the id names none of the person's drafts. */
 // One draft at full size (decision 0014 §5): its round's status, as its row says or, when the round's run on this

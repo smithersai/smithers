@@ -80,3 +80,5 @@ export * as ContainerSession from "./ContainerSession.js";
  * @since 1.0.0-rc.17
  */
 export * as SandboxObject from "./SandboxObject.js";
+/** Read the durable engine this host already provides. @since 1.0.0 */
+export { RunInspection } from "@smthrs/engine-store";

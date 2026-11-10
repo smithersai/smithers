@@ -5,8 +5,8 @@ import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { withSpan } from "effect/Effect";
 import * as Effect_1 from "effect/Effect";
-import { FlowDispatch } from "../../flows/dispatch";
-import { DIALOG } from "./schema";
+import { FlowDispatch } from "../../flows/dispatch.js";
+import { DIALOG } from "./schema.js";
 import { SharingStore } from "./store.js";
 // What the owner does in a branch's share dialog (decision 0013 §5, docs/features/branch-workspace.md#sharing): open
 // it, add people by login, change or remove what each may do, and set what anyone in the repository with the link may

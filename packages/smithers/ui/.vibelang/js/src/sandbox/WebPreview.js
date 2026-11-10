@@ -5,7 +5,7 @@ import { createContext, useContext, useEffect, useId, useRef, useState, } from "
 import { cn } from "@smthrs/ui-css";
 import { EmptyState } from "../empty-state";
 import { Input } from "../input";
-import { composeRefs } from "../internal/composeRefs";
+import { composeRefs } from "../internal/composeRefs.js";
 import { Skeleton } from "../skeleton";
 import { useInjectUiCss } from "../styles";
 function isHttpUrl(text) {

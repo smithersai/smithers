@@ -4,9 +4,9 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useCallback, useId, useRef, useState } from "react";
 import { Button } from "../button";
 import { cn } from "@smthrs/ui-css";
-import { STEP_WORDS, STEP_GLYPHS } from "../run-page/runPage";
+import { STEP_WORDS, STEP_GLYPHS } from "../run-page/runPage.js";
 import { useInjectUiCss } from "../styles";
-import { fitGraph, graphNeighbour } from "./graphLayout";
+import { fitGraph, graphNeighbour } from "./graphLayout.js";
 const words = { next: STEP_WORDS.pending, current: STEP_WORDS.running, done: STEP_WORDS.completed, failed: STEP_WORDS.failed, waiting: STEP_WORDS.waiting, cancelled: STEP_WORDS.cancelled, skipped: STEP_WORDS.skipped };
 const glyphs = { next: "○", current: "◌", done: "✓", failed: "✕", waiting: "◷", cancelled: "■", skipped: STEP_GLYPHS.skipped };
 /** A read-only view of recorded graph data. All selection belongs to the host. */

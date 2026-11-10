@@ -2,9 +2,9 @@
 import { jsx as _jsx } from "react/jsx-runtime";
 import { Toast, ToastStack } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { MODEL_NOTICE } from "../contract";
-import { OPEN_SETTINGS } from "../../auth/contract";
-import { TRY_AGAIN } from "../../repo/contract";
+import { MODEL_NOTICE } from "../contract.js";
+import { OPEN_SETTINGS } from "../../auth/contract.js";
+import { TRY_AGAIN } from "../../repo/contract.js";
 import { useAttention } from "./AttentionContext";
 // Core overlay layout: shared headers/toolbars and primary buttons, including plugin controls.
 // A custom primary action can opt in with data-primary-action (decision 0137).

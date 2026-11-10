@@ -4,7 +4,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useId, useRef, useState } from "react";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { safeHref } from "../internal/safeHref";
+import { safeHref } from "../internal/safeHref.js";
 import { Confirmation, ConfirmationActions, ConfirmationAction, ConfirmationRequest, ConfirmationAccepted, ConfirmationRejected, } from "./Confirmation";
 /**
  * Rich approval request card: title + risk badge + summary, the proposed

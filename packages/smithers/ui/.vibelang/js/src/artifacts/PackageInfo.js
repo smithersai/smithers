@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { safeHref } from "../internal/safeHref";
+import { safeHref } from "../internal/safeHref.js";
 import { Snippet } from "./Snippet";
 /** Package identity card: name (optionally registry-linked), version, install snippet. */
 export function PackageInfo({ name, version, description, registryUrl, installCommand, onCopyCode, className, ...props }) {

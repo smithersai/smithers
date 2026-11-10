@@ -4,7 +4,7 @@ import { Card, CardContent, EmptyState } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { SignInButton } from "../../features/auth/components/SignInButton";
 import { useAuth } from "../../features/auth/components/AuthContext";
-import { contributionViewer } from "../../features/auth/viewer";
+import { contributionViewer } from "../../features/auth/viewer.js";
 import { useRepoAnswer } from "../../features/repo/components/RepoContext";
 import { ActionStrip } from "../../plugins/components/ActionStrip";
 import { Contributed } from "../../plugins/components/Contributed";

@@ -3,7 +3,7 @@ import { jsx as _jsx } from "react/jsx-runtime";
 import { AgentStatusPill, NeedsYouCard } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useBranch } from "../../branch/components/BranchContext";
-import { answerOf } from "../../coedit/view";
+import { answerOf } from "../../coedit/view.js";
 import { useStatus } from "./StatusContext";
 // An answer's agent status in the conversation (decision 0015): its question card while it needs the person, the
 // answer once given, and a Waiting pill while its turn waits. Working, done and failed show as the answer itself. The

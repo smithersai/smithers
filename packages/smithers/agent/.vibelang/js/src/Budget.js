@@ -132,7 +132,11 @@ export const memoryLedger = () => {
         }),
         run: (runId) => Effect.sync(() => new Map([...entries.values()].filter((entry) => entry.runId === runId).map((entry) => [
             entry.stepKey,
-            { spent: entry.spent, ...(entry.costUsd === undefined ? {} : { costUsd: entry.costUsd }) }
+            {
+                spent: entry.spent,
+                ...(entry.costUsd === undefined ? {} : { costUsd: entry.costUsd }),
+                ...(entry.unreported === true ? { unreported: true } : {})
+            }
         ])))
     };
 };
@@ -385,7 +389,9 @@ export const UsageRecord = Schema.Struct({
         purpose: Schema.String,
         spent: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
         costUsd: Schema.optional(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)))
-    })))
+    }))),
+    /** Present when the provider reported no usable token count for the step; absent in older records. */
+    unreported: Schema.optional(Schema.Literal(true))
 });
 /**
  * What a usage record says its spend was for: the purpose and frame the
@@ -495,6 +501,30 @@ export const BudgetClockRecord = Schema.Struct({
 export const budgetLatchedEvent = "flows.agent.budget-latched.v1";
 /** The journal source every record this module writes is attributed to. */
 const recordSource = JournalEvent.SourceId.make("/agent/budget");
+/**
+ * Whether a call's usage carries a usable token count: a total, or both input
+ * and output. Every supplied counter must be a safe nonnegative integer. {@link tokensOf} reads a missing counter as zero, so a provider that
+ * reports nothing would otherwise look like a free call; the budget records
+ * such a call as `unreported` and {@link Usage} counts them.
+ *
+ * @category accounting
+ * @since 1.0.0-rc.2
+ */
+export const reportsTokens = (usage) => {
+    const counters = [
+        usage.totalTokens,
+        usage.inputTokens,
+        usage.outputTokens,
+        usage.reasoningTokens,
+        usage.cachedInputTokens,
+        usage.cacheWriteTokens
+    ];
+    if (counters.some((value) => value !== undefined && (!Number.isSafeInteger(value) || value < 0)))
+        return false;
+    return usage.totalTokens !== undefined ||
+        (usage.inputTokens !== undefined && usage.outputTokens !== undefined &&
+            Number.isSafeInteger(usage.inputTokens + usage.outputTokens));
+};
 /**
  * The tokens one model call cost.
  *
@@ -710,7 +740,8 @@ const recoverUsage = (runId, entryLimit) => Effect_1.gen(function* () {
                 if (previous === undefined) {
                     recovered.set(payload.stepKey, {
                         spent: payload.spent,
-                        ...(payload.costUsd === undefined ? {} : { costUsd: payload.costUsd })
+                        ...(payload.costUsd === undefined ? {} : { costUsd: payload.costUsd }),
+                        ...(payload.unreported === true ? { unreported: true } : {})
                     });
                 }
             }
@@ -1197,11 +1228,18 @@ export const make = (declaredPolicy, declaredOptions = {}) => Effect_1.gen(funct
         }));
         return verdict;
     }))));
-    const summarize = (current) => ({
-        tokens: current.tokens,
-        calls: current.counted.size,
-        largestCall: current.largestCall
-    });
+    const summarize = (current) => {
+        let unreported = 0;
+        for (const charge of current.counted.values())
+            if (charge.unreported === true)
+                unreported++;
+        return {
+            tokens: current.tokens,
+            calls: current.counted.size,
+            largestCall: current.largestCall,
+            ...(unreported === 0 ? {} : { unreported })
+        };
+    };
     return Budget.of({
         check,
         reserve,
@@ -1215,13 +1253,24 @@ export const make = (declaredPolicy, declaredOptions = {}) => Effect_1.gen(funct
             };
             const spent = tokensOf(usage, weights);
             const priced = Pricing.cost(usage, modelId, { table: prices, at });
-            const charge = { spent, ...(priced === undefined ? {} : { costUsd: priced.costUsd }) };
+            const unreported = reportsTokens(usage) ? {} : { unreported: true };
+            const charge = {
+                spent,
+                ...(priced === undefined ? {} : { costUsd: priced.costUsd }),
+                ...unreported
+            };
             // What the controller said this call was for, read where the call
             // is made. It labels the record and decides nothing.
             const labelled = attributed(yield* EngineLike.Spend, usage, modelId, charged, charge);
             // A malformed cost must not poison the numeric accumulator. Keep the
             // ledger unavailable until that step supplies a valid record.
-            const payload = yield* Schema.encodeEffect(UsageRecord)({ stepKey, spent, ...priced, ...labelled }).pipe(Effect.mapError((cause) => unavailable("record", runId, "its usage record does not encode", cause)), Effect.tapError((failure) => Effect.sync(() => {
+            const payload = yield* Schema.encodeEffect(UsageRecord)({
+                stepKey,
+                spent,
+                ...priced,
+                ...labelled,
+                ...unreported
+            }).pipe(Effect.mapError((cause) => unavailable("record", runId, "its usage record does not encode", cause)), Effect.tapError((failure) => Effect.sync(() => {
                 run.pending.set(stepKey, failure);
             })));
             let entered = false;
@@ -1234,7 +1283,7 @@ export const make = (declaredPolicy, declaredOptions = {}) => Effect_1.gen(funct
                     return;
                 if (spendLedger !== undefined) {
                     const now = yield* Clock.currentTimeMillis;
-                    yield* restore(spendLedger.record({ day: utcDay(now), runId, stepKey, spent, ...priced })).pipe(Effect.mapError((cause) => unavailable("record", runId, String(cause), cause)));
+                    yield* restore(spendLedger.record({ day: utcDay(now), runId, stepKey, spent, ...priced, ...unreported })).pipe(Effect.mapError((cause) => unavailable("record", runId, String(cause), cause)));
                 }
                 yield* restore(journalUsage(runId, payload, Effect.sync(() => {
                     if (run.pending.get(stepKey) === pending)

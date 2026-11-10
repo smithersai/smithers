@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "./styles";
-import { binaryBodyLabel, detectBinary, fileLineCount, paginateHunks, PAGINATE_THRESHOLD, PAGINATE_VISIBLE, } from "./diff-paginate";
+import { binaryBodyLabel, detectBinary, fileLineCount, paginateHunks, PAGINATE_THRESHOLD, PAGINATE_VISIBLE, } from "./diff-paginate.js";
 const SIGN = { context: " ", add: "+", del: "−" };
 /**
  * Render a file's unified diff grouped into hunks. Each hunk is a `@@ … @@`

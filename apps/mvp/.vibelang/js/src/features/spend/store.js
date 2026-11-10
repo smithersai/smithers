@@ -2,11 +2,11 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric";
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db";
 import { Context, Effect, Layer, Metric, Option, Stream } from "effect";
-import { AuthStore, SESSION } from "../auth/store";
-import { ALERT_CHANNELS_SHAPE_ROUTE, ALERT_DELIVERIES_SHAPE_ROUTE, SANDBOX_LIMITS_SHAPE_ROUTE, SPEND_ALERTS_SHAPE_ROUTE, } from "./contract";
-import { adminQuery, channelsQuery, deliveriesQuery, limitSavesQuery, limitsQuery, openQuery, savesQuery, } from "./queries";
-import { AlertChannel, AlertDelivery, ChannelSave, LimitsSave, SandboxLimitsRow, Seen, SpendAlert } from "./schema";
-import { adminShapeSource } from "./source";
+import { AuthStore, SESSION } from "../auth/store.js";
+import { ALERT_CHANNELS_SHAPE_ROUTE, ALERT_DELIVERIES_SHAPE_ROUTE, SANDBOX_LIMITS_SHAPE_ROUTE, SPEND_ALERTS_SHAPE_ROUTE, } from "./contract.js";
+import { adminQuery, channelsQuery, deliveriesQuery, limitSavesQuery, limitsQuery, openQuery, savesQuery, } from "./queries.js";
+import { AlertChannel, AlertDelivery, ChannelSave, LimitsSave, SandboxLimitsRow, Seen, SpendAlert } from "./schema.js";
+import { adminShapeSource } from "./source.js";
 // Spend alerts on this tab (docs/features/spend-alerts.md): the deployment's model spend alerts, which only an Admin's
 // devices sync, kept on the device; this device's mark of what it has seen; and the live query the bell and panel read. While
 // the store lives, each alert the tab shows is a log line and a count, once.

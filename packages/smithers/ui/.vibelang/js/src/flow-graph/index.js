@@ -2,6 +2,6 @@
 export { FlowGraph } from "./FlowGraph";
 export { StepInspector } from "./StepInspector";
 export { StepLogs } from "./StepLogs";
-export { stepLogLines, stepLogTime } from "./stepLogLines";
+export { stepLogLines, stepLogTime } from "./stepLogLines.js";
 export { JournalScrubber, journalPosition } from "./JournalScrubber";
-export { graphLayout, fitGraph, graphNeighbour } from "./graphLayout";
+export { graphLayout, fitGraph, graphNeighbour } from "./graphLayout.js";

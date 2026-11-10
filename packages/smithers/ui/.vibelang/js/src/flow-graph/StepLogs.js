@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { stepLogLines, stepLogTime } from "./stepLogLines";
+import { stepLogLines, stepLogTime } from "./stepLogLines.js";
 /** A step's log read like a CI log: time, level, message, then `key=value` fields. Renders nothing when empty. */
 export function StepLogs({ lines, now, className, ...props }) {
     useInjectUiCss();

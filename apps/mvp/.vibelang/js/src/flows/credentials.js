@@ -3,14 +3,14 @@ import { Flow, FlowRuntime } from "@smthrs/flow";
 import { EngineStore } from "@smthrs/flows";
 import { Cache, Context, Data, Duration, Effect, Exit, Layer, Metric, Option, Schema } from "effect";
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http";
-import { codeOf } from "../errorCode";
-import { asker } from "./askingTab";
-import { withBearer, withoutCookie } from "./bearer";
-import { CREDENTIAL_TTL_MS, credentialRoute, doorChannel, PERSON_DOORS } from "./contract";
-import { DoorAnswer } from "./doors";
-import { refusesCredential } from "./personOnly";
-import { FlowRegistry } from "./registry";
-import { requesterOf } from "./requests";
+import { codeOf } from "../errorCode.js";
+import { asker } from "./askingTab.js";
+import { withBearer, withoutCookie } from "./bearer.js";
+import { CREDENTIAL_TTL_MS, credentialRoute, doorChannel, PERSON_DOORS } from "./contract.js";
+import { DoorAnswer } from "./doors.js";
+import { refusesCredential } from "./personOnly.js";
+import { FlowRegistry } from "./registry.js";
+import { requesterOf } from "./requests.js";
 // Run credentials on the device (decision 0017 slice 0, docs/features/sign-in.md#run-credentials). The engine, which is
 // compiled-in application code, decides who each request acts as; the model, realm code and frames never choose. A
 // request a run makes to ChatApi goes with the person's session only when the run is the person's own press: a root

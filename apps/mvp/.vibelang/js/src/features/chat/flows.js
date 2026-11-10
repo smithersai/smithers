@@ -2,7 +2,7 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { EDIT_REFUSALS } from "./contract";
+import { EDIT_REFUSALS } from "./contract.js";
 // Chat's message controls as flows (docs/features/chat.md#message-controls): `chat/copy` puts a message on the clipboard
 // of the tab that asked, and `chat/edit` takes a question that Smithers doesn't have yet back into that tab's composer.
 // A person's button, a slash command and, for Copy, the agent run the same declaration. Each is one step in the leader

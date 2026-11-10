@@ -2,8 +2,8 @@
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Context, Layer, Schema } from "effect";
-import { COPY_KINDS, isFilePath, isRepository, MAX_BLOB_BYTES, SHA_PATTERN } from "./contract";
-import { About, CloneAccepted, CloneLaunched, Refs, TreeListing } from "./schema";
+import { COPY_KINDS, isFilePath, isRepository, MAX_BLOB_BYTES, SHA_PATTERN } from "./contract.js";
+import { About, CloneAccepted, CloneLaunched, Refs, TreeListing } from "./schema.js";
 // The repository flows (decision 0006 §1, docs/features/repo.md#flows): `repo/tree` lists a cloned repository's files
 // at a commit, `repo/read` reads one file there, and `repo/refs` lists its branches and tags. `repo/clone` asks RepoApi
 // to clone a repository, which admits it and starts the remote `repo/Clone` (src/features/repo/clone.ts). `repo/copy`

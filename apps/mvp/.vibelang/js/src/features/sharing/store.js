@@ -2,8 +2,8 @@
 import { ElectricCollection } from "@smthrs/effect-electric";
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db";
 import { Context, Effect, FiberHandle, Layer, Scope, Semaphore } from "effect";
-import { SHARES_SHAPE_ROUTE } from "../branch/contract";
-import { DIALOG, Dialog, ShareRow } from "./schema";
+import { SHARES_SHAPE_ROUTE } from "../branch/contract.js";
+import { DIALOG, Dialog, ShareRow } from "./schema.js";
 /** The dialog this tab shows. */
 export const dialogQuery = (dialog) => LiveQuery.make((q) => q.from({ dialog: dialog.tanstack }).findOne());
 /** The open branch's permission list, oldest grant first. */

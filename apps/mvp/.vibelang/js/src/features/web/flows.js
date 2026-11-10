@@ -3,8 +3,8 @@ import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { WebPage } from "@smthrs/views";
 import { Schema } from "effect";
-import { KNOWN_DOCS, MAX_URL_LENGTH, SHOWN, WEB_MODES } from "./contract";
-import { REFUSALS } from "./url";
+import { KNOWN_DOCS, MAX_URL_LENGTH, SHOWN, WEB_MODES } from "./contract.js";
+import { REFUSALS } from "./url.js";
 // `app/web/open { url, mode? }` (docs/features/web-pages.md): opens an outside web page for the person, from a person's
 // `/web` or the agent's `ctx.call`. It never navigates the app and never opens a tab by itself: it adds a view to the
 // conversation, which every device in it shows with the page's origin above it.

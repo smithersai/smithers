@@ -4,8 +4,8 @@ import { jsx as _jsx } from "react/jsx-runtime";
 import { useMemo, useSyncExternalStore } from "react";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { dateFromMs } from "./dateFromMs";
-import { formatRelativeTime } from "./formatRelativeTime";
+import { dateFromMs } from "./dateFromMs.js";
+import { formatRelativeTime } from "./formatRelativeTime.js";
 /**
  * Shared interval store: every mounted RelativeTime/useRelativeTime follows
  * ONE interval (ref-counted; cleared when the last subscriber unmounts)

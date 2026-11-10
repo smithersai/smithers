@@ -3,15 +3,15 @@ import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric";
 import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db";
 import { BrowserEngine } from "@smthrs/platform-browser";
 import { Context, Deferred, Duration, Effect, Layer, Option, Schema, Stream } from "effect";
-import { codeOf } from "../../errorCode";
-import { signedInShapeSource } from "../auth/source";
-import { AuthStore } from "../auth/store";
-import { FLOW_DRAFTS_SHAPE_ROUTE, FLOWS_SHAPE_ROUTE } from "./contract";
-import * as Following from "./following";
-import { restoreEditorCollection } from "./editorStorage";
-import { roundExecutionId } from "./round";
-import { AnswerRow, Code, CODE, Draft, FlowRow, Form, FORM } from "./schema";
-export { AnswerRow, Code, CODE, Form, FORM } from "./schema";
+import { codeOf } from "../../errorCode.js";
+import { signedInShapeSource } from "../auth/source.js";
+import { AuthStore } from "../auth/store.js";
+import { FLOW_DRAFTS_SHAPE_ROUTE, FLOWS_SHAPE_ROUTE } from "./contract.js";
+import * as Following from "./following.js";
+import { restoreEditorCollection } from "./editorStorage.js";
+import { roundExecutionId } from "./round.js";
+import { AnswerRow, Code, CODE, Draft, FlowRow, Form, FORM } from "./schema.js";
+export { AnswerRow, Code, CODE, Form, FORM } from "./schema.js";
 /** How often the shown draft's round is read again while the engine works or the drafts change. */
 export const FOLLOW_EVERY = Duration.millis(200);
 /** How long the editors wait for the device to restore their rows before they say storage is unavailable. Its rows stay untouched for a later reload. */

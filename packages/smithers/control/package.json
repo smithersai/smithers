@@ -47,7 +47,11 @@
       "vibelang-source": "./src/ApprovalAuthority.vibe",
       "default": "./.vibelang/js/src/ApprovalAuthority.js"
     },
-    "./Cancellation": "./src/Cancellation.ts",
+    "./Cancellation": {
+      "types": "./src/Cancellation.ts",
+      "vibelang-source": "./src/Cancellation.ts",
+      "default": "./.vibelang/js/src/Cancellation.js"
+    },
     "./Channels": {
       "types": "./.vibe/declarations/src/Channels.d.vibe.ts",
       "vibelang-source": "./src/Channels.vibe",
@@ -108,7 +112,11 @@
       "vibelang-source": "./src/CredentialCipher.vibe",
       "default": "./.vibelang/js/src/CredentialCipher.js"
     },
-    "./CredentialStore": "./src/CredentialStore.ts",
+    "./CredentialStore": {
+      "types": "./src/CredentialStore.ts",
+      "vibelang-source": "./src/CredentialStore.ts",
+      "default": "./.vibelang/js/src/CredentialStore.js"
+    },
     "./DispatchReader": {
       "types": "./.vibe/declarations/src/DispatchReader.d.vibe.ts",
       "vibelang-source": "./src/DispatchReader.vibe",
@@ -144,8 +152,16 @@
       "vibelang-source": "./src/SqlCredentialStore.vibe",
       "default": "./.vibelang/js/src/SqlCredentialStore.js"
     },
-    "./Steering": "./src/Steering.ts",
-    "./SystemFlows": "./src/SystemFlows.ts",
+    "./Steering": {
+      "types": "./src/Steering.ts",
+      "vibelang-source": "./src/Steering.ts",
+      "default": "./.vibelang/js/src/Steering.js"
+    },
+    "./SystemFlows": {
+      "types": "./src/SystemFlows.ts",
+      "vibelang-source": "./src/SystemFlows.ts",
+      "default": "./.vibelang/js/src/SystemFlows.js"
+    },
     "./WebCryptoCipher": {
       "types": "./src/WebCryptoCipher.ts",
       "vibelang-source": "./src/WebCryptoCipher.ts",

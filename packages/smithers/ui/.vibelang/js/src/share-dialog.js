@@ -6,8 +6,8 @@ import { Button } from "./button";
 import { CopyButton } from "./copy-button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./dialog";
 import { Input } from "./input";
-import { copyToClipboard } from "./internal/copyToClipboard";
-import { personInitial, personLane } from "./internal/person";
+import { copyToClipboard } from "./internal/copyToClipboard.js";
+import { personInitial, personLane } from "./internal/person.js";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./select";
 import { useInjectUiCss } from "./styles";
 function AccessItems() {

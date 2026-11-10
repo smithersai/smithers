@@ -55,7 +55,21 @@ const sqlErrorOf = (value) => {
         return undefined;
     }
 };
-const causeCode = (cause) => ((code) => code === Uninspectable || typeof code === "string" ? code : undefined)(readProperty(cause, "code"));
+const causeCode = (cause) => {
+    const code = readProperty(cause, "code");
+    if (code === Uninspectable)
+        return Uninspectable;
+    if (code !== "ERR_SQLITE_ERROR")
+        return typeof code === "string" ? code : undefined;
+    // node:sqlite carries the primary SQLite result in the low byte of its numeric extended errcode.
+    const sqliteCode = readProperty(cause, "errcode");
+    if (sqliteCode === Uninspectable)
+        return Uninspectable;
+    return typeof sqliteCode === "number" && Number.isInteger(sqliteCode) && sqliteCode >= 0 && sqliteCode <= 0xffff &&
+        (sqliteCode & 0xff) === 19
+        ? "SQLITE_CONSTRAINT"
+        : code;
+};
 /**
  * Postgres SQLSTATEs a write may legitimately be replayed on:
  * `40001` serialization_failure, `40P01` deadlock_detected, `55P03`
@@ -129,6 +143,10 @@ export const isIoCause = (cause) => hasCause(cause, (code, message) => code?.sta
  */
 export const isSchemaCause = (cause) => hasCause(cause, (code, message) => (code !== undefined && missingSchemaPostgresStates.has(code)) ||
     message.includes("no such table") || message.includes("no such column"));
+// Cloudflare's SQLite storage supplies canonical diagnostics without an extended code.
+// Match the diagnostic prefix, never an arbitrary mention of a constraint in user/driver text.
+const isConstraintCause = (cause) => hasCause(cause, (code, message) => code?.startsWith("SQLITE_CONSTRAINT") === true ||
+    (code === undefined && /^(?:unique|not null|check|foreign key) constraint failed(?::|$)/.test(message)));
 /**
  * Classifies a structured SQL error once, for both the retry decision and the
  * code `DurableWriter.DatabaseError` reports.
@@ -146,7 +164,8 @@ export const isSchemaCause = (cause) => hasCause(cause, (code, message) => (code
  */
 export const classifySqlError = (error) => error.reason._tag === "LockTimeoutError"
     ? "busy"
-    : error.reason._tag === "ConstraintError" || error.reason._tag === "UniqueViolation"
+    : error.reason._tag === "ConstraintError" || error.reason._tag === "UniqueViolation" ||
+        isConstraintCause(error.reason.cause)
         ? "constraint"
         : isIoCause(error.reason.cause)
             ? "io"

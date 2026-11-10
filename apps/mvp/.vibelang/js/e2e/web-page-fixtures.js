@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { request as requests } from "@playwright/test";
 import { WebPage } from "@smthrs/views";
 import { certificate } from "../dev/https.js";
-import { VIEWS_ROUTE } from "../src/features/views/contract";
-import { WEB_PREVIEW_ROUTE } from "../src/features/web/contract";
-import { expect, test } from "./devices";
-import { redactRequestErrors } from "./redact";
-import { baseURL, requires, target, writeHeaders, sessionFiles } from "./target";
+import { VIEWS_ROUTE } from "../src/features/views/contract.js";
+import { WEB_PREVIEW_ROUTE } from "../src/features/web/contract.js";
+import { expect, test } from "./devices.js";
+import { redactRequestErrors } from "./redact.js";
+import { baseURL, requires, target, writeHeaders, sessionFiles } from "./target.js";
 // Web pages, end to end (docs/features/web-pages.md): the real app, its engine worker, ChatApi, Electric and, for the
 // agent's cases, the real model. Before a page is framed, ChatApi requests it from the server and reads its framing
 // headers: a page that allows it shows in the chat, one that refuses shows as a card with its title, description,
@@ -55,7 +55,7 @@ export const typing = { delay: 30 };
 export const webPages = () => ({ allows, refuses, tab, local });
 /** Register inside the describe that needs real external pages; URL/CSP refusals need no fixture. */
 export const installWebPages = () => {
-    test.beforeAll(async () => {
+    test.beforeAll(async ({}, testInfo) => {
         if (target === "local") {
             const { cert, key } = await certificate(DEV_CERTIFICATE);
             framed = createHttpsServer({ cert, key }, (request, response) => {
@@ -83,8 +83,8 @@ export const installWebPages = () => {
             local = `http://localhost:${tabs.address().port}`;
         }
         // A fresh API context carries no app session or credentials to an outside site. Never disable TLS verification
-        // for public fixtures: only the local servers use a self-signed development certificate.
-        const client = await requests.newContext({ ignoreHTTPSErrors: target === "local" });
+        // for public fixtures. The project owns the development-certificate decision.
+        const client = await requests.newContext({ ignoreHTTPSErrors: testInfo.project.use.ignoreHTTPSErrors });
         const service = target === "deployment"
             ? await requests.newContext({ baseURL, storageState: sessionFiles(baseURL).session })
             : undefined;

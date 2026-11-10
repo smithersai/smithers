@@ -3,14 +3,14 @@ import { FlowRuntime } from "@smthrs/flow";
 import { EngineStore } from "@smthrs/flows";
 import { FlowBinding } from "@smthrs/harness";
 import { Effect, Option, Schema } from "effect";
-import { codeOf } from "../errorCode";
-import { PROMPT_CALLABLE } from "../features/flows-ui/callable";
-import { AUTHOR_TOOLS } from "../features/flows-ui/contract";
-import { FlowPromptReference, FlowNewReference } from "../features/flows-ui/reference";
-import { Ask } from "../features/status/flows";
-import { declarationOf, modelInvocable } from "./declarations";
-import { asksApproval, deniedHere } from "./approvals";
-import { entryOf, FlowRegistry, names } from "./registry";
+import { codeOf } from "../errorCode.js";
+import { PROMPT_CALLABLE } from "../features/flows-ui/callable.js";
+import { AUTHOR_TOOLS } from "../features/flows-ui/contract.js";
+import { FlowPromptReference, FlowNewReference } from "../features/flows-ui/reference.js";
+import { Ask } from "../features/status/flows.js";
+import { declarationOf, modelInvocable } from "./declarations.js";
+import { asksApproval, deniedHere } from "./approvals.js";
+import { entryOf, FlowRegistry, names } from "./registry.js";
 // The agent's catalog (decision 0003 §1, docs/features/flows.md#the-agents-catalog): the registry's model-invocable
 // flows, which all run on this device, bound so a cell's `ctx.call("app/theme/set", { mode })` runs the very declaration a
 // person's button dispatches, as a child execution on the same engine. The cell call is a journaled step of the

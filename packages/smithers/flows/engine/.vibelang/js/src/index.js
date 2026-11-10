@@ -41,3 +41,5 @@ export * as FlowProxy from "./FlowProxy.js";
  * @since 0.1.0
  */
 export * as FlowProxyServer from "./FlowProxyServer.js";
+/** Portable step observations for live run views. @since 1.0.0 */
+export * as StepTrace from "./StepTrace.js";

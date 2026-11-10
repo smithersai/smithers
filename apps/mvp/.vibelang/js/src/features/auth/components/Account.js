@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Button } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useSearch } from "@tanstack/react-router";
-import { SIGN_IN_FAILED, SIGN_IN_FAILED_PARAM, SIGN_OUT } from "../contract";
+import { SIGN_IN_FAILED, SIGN_IN_FAILED_PARAM, SIGN_OUT } from "../contract.js";
 import { useAuth } from "./AuthContext";
 import { SignInButton } from "./SignInButton";
 // Who is signed in, for the header: their GitHub login and Sign out; or, signed out, the sign-in button, with

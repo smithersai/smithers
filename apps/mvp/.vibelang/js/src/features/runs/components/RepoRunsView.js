@@ -3,8 +3,8 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { EmptyState, RunList, Skeleton } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { Link } from "@tanstack/react-router";
-import { NO_RUNS } from "../contract";
-import { repoRunRows, repoRunsLoaded } from "../page";
+import { NO_RUNS } from "../contract.js";
+import { repoRunRows, repoRunsLoaded } from "../page.js";
 import { useRuns } from "./RunsContext";
 // A repository's runs on Cloudflare, newest first (docs/features/actions.md, `/$owner/$repo/actions`): each its flow
 // and ref, its state, when it started and how long it ran, opening its run page. Electric keeps the rows live. Until

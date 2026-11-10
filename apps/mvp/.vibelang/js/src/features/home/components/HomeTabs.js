@@ -3,9 +3,9 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { LinkTabs } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { Link } from "@tanstack/react-router";
-import { DOCS_TAB } from "../../docs/contract";
-import { CODE_TAB, HOME_TAB } from "../contract";
-import { homePageOf, tabsOf } from "../view";
+import { DOCS_TAB } from "../../docs/contract.js";
+import { CODE_TAB, HOME_TAB } from "../contract.js";
+import { homePageOf, tabsOf } from "../view.js";
 import { useHome } from "./HomeContext";
 /** The router marks a tab current only at its own URL. */
 const EXACT = { exact: true };

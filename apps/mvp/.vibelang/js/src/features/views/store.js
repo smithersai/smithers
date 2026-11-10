@@ -2,10 +2,10 @@
 import { ElectricCollection } from "@smthrs/effect-electric";
 import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db";
 import { Context, Effect, Layer, Option, Schema, Scope, Semaphore } from "effect";
-import { AuthStore } from "../auth/store";
-import { VIEWS_SHAPE_ROUTE } from "./contract";
-import { ConversationOwners, homeNamed } from "../conversations/owners";
-import { OPENED, Opened, SHOWING, Showing, View } from "./schema";
+import { AuthStore } from "../auth/store.js";
+import { VIEWS_SHAPE_ROUTE } from "./contract.js";
+import { ConversationOwners, homeNamed } from "../conversations/owners.js";
+import { OPENED, Opened, SHOWING, Showing, View } from "./schema.js";
 /**
  * The view this tab shows full screen, once the device has it: a `webpage`, a form or a generated view. A `link` card
  * has no full size.

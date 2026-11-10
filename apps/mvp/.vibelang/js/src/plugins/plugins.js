@@ -2,25 +2,25 @@
 import { Bind, Host, JsonSchema, Load } from "@smthrs/plugin";
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db";
 import { Cause, Context, Deferred, Effect, Exit, Layer, Metric, Option, PubSub, Result, Scope, Stream } from "effect";
-import { codeOf } from "../errorCode";
-import { issueUrl } from "../features/bugs/github";
-import { BugsStore } from "../features/bugs/store";
-import { isFeedName, isIndexName, parseFeedRepo } from "../features/feeds/contract";
-import { itemsOf } from "../features/feeds/items";
-import { FeedItem } from "../features/feeds/schema";
-import { FeedsStore } from "../features/feeds/store";
-import { FleetStore } from "../features/fleet/store";
-import { AuthStore } from "../features/auth/store";
-import { repoId } from "../features/repo/contract";
-import { RepoStore } from "../features/repo/store";
-import { repoVisibility } from "../features/repo/visibility";
-import { StatusStore } from "../features/status/store";
-import { FlowDispatch } from "../flows/dispatch";
-import { codeOfFailure } from "../flows/history";
-import { BUILTIN } from "./builtin";
-import { hostFacts } from "./facts";
-import { Draft, draftKey, fresh, SHOWN, Shown, ViewState } from "./schema";
-import { personOnly, textFields } from "./strip";
+import { codeOf } from "../errorCode.js";
+import { issueUrl } from "../features/bugs/github.js";
+import { BugsStore } from "../features/bugs/store.js";
+import { isFeedName, isIndexName, parseFeedRepo } from "../features/feeds/contract.js";
+import { itemsOf } from "../features/feeds/items.js";
+import { FeedItem } from "../features/feeds/schema.js";
+import { FeedsStore } from "../features/feeds/store.js";
+import { FleetStore } from "../features/fleet/store.js";
+import { AuthStore } from "../features/auth/store.js";
+import { repoId } from "../features/repo/contract.js";
+import { RepoStore } from "../features/repo/store.js";
+import { repoVisibility } from "../features/repo/visibility.js";
+import { StatusStore } from "../features/status/store.js";
+import { FlowDispatch } from "../flows/dispatch.js";
+import { codeOfFailure } from "../flows/history.js";
+import { BUILTIN } from "./builtin.js";
+import { hostFacts } from "./facts.js";
+import { Draft, draftKey, fresh, SHOWN, Shown, ViewState } from "./schema.js";
+import { personOnly, textFields } from "./strip.js";
 /** Plugins loaded at boot, by `outcome` (`active`, `refused`), `tier` and refusal `reason`. */
 export const loads = Metric.counter("smithers_plugin_loads", {
     description: "Plugins the host loaded at boot, by outcome, tier and refusal reason",

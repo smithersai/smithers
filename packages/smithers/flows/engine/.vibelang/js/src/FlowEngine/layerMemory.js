@@ -4,8 +4,9 @@
  *
  * @since 0.1.0
  */
+import { sortCollections } from "@smthrs/canonical";
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet";
-import { Flow, FlowRuntime } from "@smthrs/flow";
+import { Action, Flow, FlowRuntime } from "@smthrs/flow";
 import { ExecutionIdentityConflict } from "@smthrs/flow/FlowRuntime";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
@@ -15,6 +16,7 @@ import * as Fiber from "effect/Fiber";
 import * as FiberMap from "effect/FiberMap";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as RpcSerialization from "effect/rpc/RpcSerialization";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { bindHostCeiling, joinable, requestedAuthority } from "./Authority.js";
@@ -38,9 +40,10 @@ export const capabilityConflict = (executionId, status = "unknown") => new Execu
     message: `execution ${executionId} was admitted under authority this caller's capability ceiling ` +
         "does not cover; it cannot be joined under this one"
 });
-const makeMemory = (scope, clocks, engine) => ({
+const makeMemory = (scope, clocks, engine, serialization) => ({
     scope,
     engine,
+    serialization,
     flows: new Map(),
     executions: new Map(),
     executionLocks: new Map(),
@@ -210,12 +213,17 @@ const requestCancellation = (memory, executionId) => {
  * opaque, such as a `Schema.declare` reference to a live object. Copying
  * through `Schema.toCodecJson` instead, as this did until 2026-09-01,
  * demanded a JSON representation of every member and so refused any
- * payload holding a declared reference, including every `smithers-build`
- * target that names a dependency. The constructor also belongs to the
- * schema object itself, so a flow authored against a second `effect`
- * instance is rebuilt by the instance that owns it.
+ * payload holding a declared reference. No `smithers-build` payload holds one
+ * since VIP-44 (its skills installation passes data, not target references),
+ * but a memory engine still runs payloads that do. The constructor also
+ * belongs to the schema object itself, so a flow authored against a second
+ * `effect` instance is rebuilt by the instance that owns it.
+ *
+ * The copy is made from the value with every `Set` and `Map` sorted
+ * (`sortCollections`), the order `Flow.payloadSnapshot` hashes and stores, so
+ * a body sees exactly what its identity covers (VIP-44).
  */
-const snapshot = (flow, value) => Effect.orDie(flow.payloadSchema.makeEffect(value));
+const snapshot = (flow, value) => Effect.orDie(flow.payloadSchema.makeEffect(sortCollections(value)));
 const isPlainObject = (value) => {
     const prototype = Object.getPrototypeOf(value);
     return prototype === Object.prototype || prototype === null;
@@ -260,10 +268,7 @@ const sameShape = (left, right, depth) => {
 const samePayload = (flow, left, right) => Effect.gen(function* () {
     // A declared live reference need not have a JSON codec. Codec
     // construction itself can throw, so include it in the fallback.
-    const encoded = yield* Effect.exit(Effect.suspend(() => {
-        const encode = Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema));
-        return Effect.zip(encode(left), encode(right));
-    }));
+    const encoded = yield* Effect.exit(Effect.suspend(() => Effect.zip(Flow.payloadSnapshot(flow.payloadSchema, left), Flow.payloadSnapshot(flow.payloadSchema, right))));
     return Exit.isSuccess(encoded)
         ? sameShape(encoded.value[0], encoded.value[1], 64)
         : sameShape(left, right, 64);
@@ -630,7 +635,7 @@ const runAction = (memory, instance, action, actionId, restore) => {
     // same way (issue #42).
     const waitingBefore = instance.waiting;
     actionInstance.waiting = waitingBefore;
-    return restore(action.executeEncoded.pipe(Flow.intoResult, Effect.provideService(FlowRuntime.FlowInstance, actionInstance))).pipe(Effect.onExit((exit) => recordSettlement(memory, owner, actionId, exit)), Effect.ensuring(Effect.sync(() => {
+    return restore(action.executeEncoded.pipe(Flow.intoResult, Effect.provideService(FlowRuntime.FlowInstance, actionInstance), Effect.provideService(Action.StoredSerialization, memory.serialization))).pipe(Effect.onExit((exit) => recordSettlement(memory, owner, actionId, exit)), Effect.ensuring(Effect.sync(() => {
         if (instance.waiting === waitingBefore)
             instance.waiting = actionInstance.waiting;
     })));
@@ -739,6 +744,7 @@ const scheduleClock = (memory, flow, options) => memory.engine().deferredDone(op
 }), Effect.asVoid);
 /** The driver `makeUnsafe` adapts: every member answers from `memory`. */
 const adapter = (memory) => ({
+    serialization: memory.serialization,
     register: (flow, execute) => register(memory, flow, execute),
     execute: (flow, options) => execute(memory, flow, options),
     interrupt: (flow, executionId) => interrupt(memory, flow, executionId),
@@ -777,7 +783,9 @@ export const layerMemory = Layer.effect(FlowRuntime.FlowRuntime)(Effect.gen(func
     // The ceiling this engine is built under bounds every admission, join,
     // poll, and resume it answers, whatever context later calls it.
     const host = yield* CapabilitySet.current;
-    const memory = makeMemory(scope, yield* FiberMap.make(), () => engine);
+    // Results never leave memory, so any serializer can store them (VIP-44).
+    const serialization = Option.getOrElse(yield* Effect.serviceOption(RpcSerialization.RpcSerialization), () => RpcSerialization.json);
+    const memory = makeMemory(scope, yield* FiberMap.make(), () => engine, serialization);
     const engine = bindHostCeiling(host, makeUnsafe(adapter(memory)));
     return engine;
 }));

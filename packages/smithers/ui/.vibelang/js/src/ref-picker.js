@@ -6,7 +6,7 @@ import { Badge } from "./badge";
 import { Button } from "./button";
 import { cn } from "@smthrs/ui-css";
 import { Input } from "./input";
-import { isPlainNavigationClick } from "./internal/navigationClick";
+import { isPlainNavigationClick } from "./internal/navigationClick.js";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { Skeleton } from "./skeleton";
 import { useInjectUiCss } from "./styles";

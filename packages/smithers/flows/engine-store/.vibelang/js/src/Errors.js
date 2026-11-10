@@ -17,6 +17,7 @@
  */
 export { IrreversibleRetryRequiresIdempotencyKey } from "@smthrs/flow/Action";
 export { FlowCycleDetected } from "@smthrs/flow/FlowRuntime";
+export { UnstorableSerialization } from "./EngineStore.js";
 export { AttemptAdmissionRejected, AttemptEvidenceQuarantined, AttemptSuspended, CacheConflictDetected, CacheCorruptionDetected } from "./internal/ActionPersistence.js";
 export { RetentionError, RetentionErrorCode } from "./internal/RetentionOps.js";
 export { RunCatalogError, RunCatalogErrorCode } from "./internal/RunCatalogOps.js";

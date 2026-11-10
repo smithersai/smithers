@@ -69,7 +69,11 @@
       "vibelang-source": "./src/EngineSubject.vibe",
       "default": "./.vibelang/js/src/EngineSubject.js"
     },
-    "./Faults": "./src/Faults.ts",
+    "./Faults": {
+      "types": "./src/Faults.ts",
+      "vibelang-source": "./src/Faults.ts",
+      "default": "./.vibelang/js/src/Faults.js"
+    },
     "./Fixture": {
       "types": "./.vibe/declarations/src/Fixture.d.vibe.ts",
       "vibelang-source": "./src/Fixture.vibe",
@@ -105,7 +109,11 @@
       "vibelang-source": "./src/ModelLike.vibe",
       "default": "./.vibelang/js/src/ModelLike.js"
     },
-    "./ModelServer": "./src/ModelServer.ts",
+    "./ModelServer": {
+      "types": "./src/ModelServer.ts",
+      "vibelang-source": "./src/ModelServer.ts",
+      "default": "./.vibelang/js/src/ModelServer.js"
+    },
     "./ModelServerCli": {
       "types": "./src/ModelServerCli.ts",
       "vibelang-source": "./src/ModelServerCli.ts",
@@ -121,7 +129,11 @@
       "vibelang-source": "./src/PlanAssertions.vibe",
       "default": "./.vibelang/js/src/PlanAssertions.js"
     },
-    "./PlanLike": "./src/PlanLike.ts",
+    "./PlanLike": {
+      "types": "./src/PlanLike.ts",
+      "vibelang-source": "./src/PlanLike.ts",
+      "default": "./.vibelang/js/src/PlanLike.js"
+    },
     "./RecordedModel": {
       "types": "./.vibe/declarations/src/RecordedModel.d.vibe.ts",
       "vibelang-source": "./src/RecordedModel.vibe",
@@ -137,7 +149,11 @@
       "vibelang-source": "./src/RestartableEngine.vibe",
       "default": "./.vibelang/js/src/RestartableEngine.js"
     },
-    "./ScoreGate": "./src/ScoreGate.ts",
+    "./ScoreGate": {
+      "types": "./src/ScoreGate.ts",
+      "vibelang-source": "./src/ScoreGate.ts",
+      "default": "./.vibelang/js/src/ScoreGate.js"
+    },
     "./TestHost": {
       "types": "./.vibe/declarations/src/TestHost.d.vibe.ts",
       "vibelang-source": "./src/TestHost.vibe",
@@ -178,7 +194,11 @@
       "vibelang-source": "./src/pins/Replay.vibe",
       "default": "./.vibelang/js/src/pins/Replay.js"
     },
-    "./ProcessTable": "./src/ProcessTable.ts",
+    "./ProcessTable": {
+      "types": "./src/ProcessTable.ts",
+      "vibelang-source": "./src/ProcessTable.ts",
+      "default": "./.vibelang/js/src/ProcessTable.js"
+    },
     "./TurnLog": {
       "types": "./.vibe/declarations/src/TurnLog.d.vibe.ts",
       "vibelang-source": "./src/TurnLog.vibe",

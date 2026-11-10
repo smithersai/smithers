@@ -3,14 +3,14 @@ import { agentStatusTitle } from "@smthrs/ui";
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric";
 import { Collection } from "@smthrs/effect-tanstack-db";
 import { Context, Effect, Layer, Metric, Scope, Stream } from "effect";
-import { FlowDispatch } from "../../flows/dispatch";
-import { signedInShapeSource } from "../auth/source";
-import { AuthStore } from "../auth/store";
-import { ChatStore } from "../chat/store";
-import { ConversationOwners } from "../conversations/owners";
-import { RUNS_SHAPE_ROUTE } from "./contract";
-import { deliveriesQuery, latestQuery, shownRunsQuery, statusesQuery, waitsQuery } from "./queries";
-import { Local, Run } from "./schema";
+import { FlowDispatch } from "../../flows/dispatch.js";
+import { signedInShapeSource } from "../auth/source.js";
+import { AuthStore } from "../auth/store.js";
+import { ChatStore } from "../chat/store.js";
+import { ConversationOwners } from "../conversations/owners.js";
+import { RUNS_SHAPE_ROUTE } from "./contract.js";
+import { deliveriesQuery, latestQuery, shownRunsQuery, statusesQuery, waitsQuery } from "./queries.js";
+import { Local, Run } from "./schema.js";
 // Agent status on this tab (decision 0015, docs/features/agent-status.md#the-browser): the person's `runs`, synced by
 // Electric and kept on the device; this tab's own rows about each question; the live queries the views read, each
 // conversation's own (the home one's, and each branch's once chat opened it); and three followers that run while the

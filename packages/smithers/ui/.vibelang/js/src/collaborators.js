@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { personLane } from "./internal/person";
+import { personLane } from "./internal/person.js";
 import { useInjectUiCss } from "./styles";
 /** A field's selection now, its direction kept: a selection made backwards has its caret at the start. */
 export function selectionOf(field) {

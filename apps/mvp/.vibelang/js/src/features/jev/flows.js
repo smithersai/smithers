@@ -2,7 +2,7 @@
 import { Action, Flow } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { JUDGMENT_OUTCOMES, MAX_CRITERIA, MAX_ITEM_CHARS, MAX_ITEMS, MAX_LABEL_CHARS, MAX_LABELS, MAX_TEXT_CHARS, MIN_LABELS, UNSURE, } from "./contract";
+import { JUDGMENT_OUTCOMES, MAX_CRITERIA, MAX_ITEM_CHARS, MAX_ITEMS, MAX_LABEL_CHARS, MAX_LABELS, MAX_TEXT_CHARS, MIN_LABELS, UNSURE, } from "./contract.js";
 // Jev, Smithers' judge, in the agent's hands (docs/features/jev.md): two model-invocable flows of one step each.
 //
 //   app/jev/classify { question, items, labels? } ─ app/jev/classify/judge ─▶ { verdicts }, one per item

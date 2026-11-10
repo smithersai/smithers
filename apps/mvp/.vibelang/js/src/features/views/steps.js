@@ -3,14 +3,14 @@ import { ModelStep } from "@smthrs/agent";
 import { FlowRuntime, Interpreter } from "@smthrs/flow";
 import { ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model";
 import { Context, Effect, Layer, Metric } from "effect";
-import { codeOf } from "../../errorCode";
-import { requesterOf } from "../../flows/requests";
-import { MODEL_ROUTE } from "../model/contract";
-import { ViewsClient } from "./api";
-import { viewConversation } from "./conversation";
-import { formRefusal } from "./form";
-import { AskWithForm, CheckForm, FormRefused, MoveRefused, PlanIssues, PlanRepo, PlanView, RenderView, SendState, SetViewState, ShowForm, ShowIssues, ShowIssuesView, ShowRepo, ShowRepoView, TemplateRefused, ViewForbidden, ViewNotRendered, ViewStale, ViewUnavailable, WriteView, } from "./flows";
-import { readWritten, RENDERER_SYSTEM, rendererCorrection, rendererTask } from "./renderer";
+import { codeOf } from "../../errorCode.js";
+import { requesterOf } from "../../flows/requests.js";
+import { MODEL_ROUTE } from "../model/contract.js";
+import { ViewsClient } from "./api.js";
+import { viewConversation } from "./conversation.js";
+import { formRefusal } from "./form.js";
+import { AskWithForm, CheckForm, FormRefused, MoveRefused, PlanIssues, PlanRepo, PlanView, RenderView, SendState, SetViewState, ShowForm, ShowIssues, ShowIssuesView, ShowRepo, ShowRepoView, TemplateRefused, ViewForbidden, ViewNotRendered, ViewStale, ViewUnavailable, WriteView, } from "./flows.js";
+import { readWritten, RENDERER_SYSTEM, rendererCorrection, rendererTask } from "./renderer.js";
 // What the views flows' steps run on (docs/features/views.md#the-flows): ChatApi's views routes (`ViewsClient`) and the
 // renderer's seat (`RendererSeat`, the model endpoint's `renderer` role). An agent's call is a child execution of its
 // answer's run, so its view goes to that answer's conversation (decision 0013 §1). Each step logs one line and counts

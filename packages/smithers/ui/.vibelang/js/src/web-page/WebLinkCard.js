@@ -6,9 +6,9 @@ import { cn } from "@smthrs/ui-css";
 import { EmptyState } from "../empty-state";
 import { Kbd } from "../kbd";
 import { useInjectUiCss } from "../styles";
-import { hostOrigin } from "./hostOrigin";
+import { hostOrigin } from "./hostOrigin.js";
 import { PagePreview } from "./PagePreview";
-import { webPageTarget } from "./webPageUrl";
+import { webPageTarget } from "./webPageUrl.js";
 /**
  * An outside web page as a card: its icon, title, description and domain,
  * and an `Open in new tab` link. The link is a real anchor, so the person's

@@ -2,8 +2,8 @@
 import { Effect, Option, Result, Schema } from "effect";
 import { Base64Url } from "effect/encoding";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
-import { signedOut } from "../features/auth/store";
-import { credentialRoute } from "./contract";
+import { signedOut } from "../features/auth/store.js";
+import { credentialRoute } from "./contract.js";
 // How a request goes as a run rather than as the person (decision 0017 slice 0, docs/features/sign-in.md#run-credentials):
 // with the run's credential as a bearer token, and without the session cookie, so the server never mistakes it for the
 // person's own press. The engine sends its runs' requests this way (src/flows/credentials.ts), and so does the tab for a

@@ -2,9 +2,9 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Context, Effect, Layer, Option, Schema } from "effect";
-import { asker } from "../../flows/askingTab";
-import { bugContextChannel, CONTEXT_WITHIN } from "./contract";
-import { Listed, ListPayload, ReportContext, ReportPayload, ReportRequest, Reported } from "./schema";
+import { asker } from "../../flows/askingTab.js";
+import { bugContextChannel, CONTEXT_WITHIN } from "./contract.js";
+import { Listed, ListPayload, ReportContext, ReportPayload, ReportRequest, Reported } from "./schema.js";
 // Bug reports as flows (docs/features/bugs.md#the-flows). A person's `/bug`, the header's button and the agent
 // run the same `app/bug/report`; an Admin and the agent read with `app/bug/list`.
 //

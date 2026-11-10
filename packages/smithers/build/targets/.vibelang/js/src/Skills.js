@@ -67,13 +67,28 @@ export const InstallResult = Schema.Struct({ installed: Schema.Array(Schema.Stri
  * @since 1.0.0
  */
 export const InstallError = Schema.TaggedStruct("SkillsInstallError", { message: Schema.String });
+/**
+ * What the installation action receives: the library, the agents and the
+ * selection. Every member is data with a JSON codec, as a durable payload
+ * needs (VIP-44). A target's `deps` order its graph and never cross the
+ * durable boundary; they are `Target.Target` references, which have no JSON
+ * form.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const InstallPayload = Schema.Struct({
+    library: LibraryDeclaration,
+    agents: Attrs.fields.agents,
+    select: Attrs.fields.select
+});
 /** Agent-directory mutation runs only as an explicit durable action.
  *
  * @category actions
  * @since 1.0.0
  */
 export const InstallAction = Action.make("smithers-build/skills-install", {
-    payload: Attrs,
+    payload: InstallPayload,
     success: InstallResult,
     error: InstallError,
     tier: "irreversible"
@@ -93,5 +108,5 @@ export const Install = Target.make("Skills.Install", {
     success: InstallResult,
     error: InstallError,
     inputs: (attrs) => [Input.glob(`//${normalizeRoot(attrs.library.root)}/**/*`)],
-    implementation: (attrs) => InstallAction.call(attrs)
+    implementation: ({ agents, library, select }) => InstallAction.call({ library, agents, ...(select === undefined ? {} : { select }) })
 });

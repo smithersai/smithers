@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Button, Card, CardContent, CardHeader, CardTitle, FlowFormView, Input, Label } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { BRANCH, REFUSAL_WORDS, RUN } from "../contract";
+import { BRANCH, REFUSAL_WORDS, RUN } from "../contract.js";
 import { useRuns } from "./RunsContext";
 // The runs page's Run card (docs/features/actions.md#running-a-flow-by-hand): a button per flow the repository lets a
 // person run by hand; the branch it starts at, which reads the chosen flow's form again once left; and that form,

@@ -5,7 +5,7 @@ import { PinnedMessage } from "../../pins/PinnedMessage";
 import { TimelineContribution } from "../../timeline/TimelineContribution";
 import { Badge, Button, ChatMessage, ChatTranscript, CopyButton, MessageResponse, RelativeTime, Wordmark } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { todoPath } from "../../todos/contract";
+import { todoPath } from "../../todos/contract.js";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Fragment } from "react";
 import { useChat } from "../../../AppContext";
@@ -14,8 +14,8 @@ import { useTodos } from "../../todos/components/TodosContext";
 import { AnswerDrafts } from "../../todos/components/AnswerDrafts";
 import { useStatus } from "../../status/components/StatusContext";
 import { ConversationView } from "../../views/components/ConversationView";
-import { COPY, DEBUG_INFO, EDIT, NOT_SENT, QUEUED } from "../contract";
-import { debugRunOf, timeOf } from "../view";
+import { COPY, DEBUG_INFO, EDIT, NOT_SENT, QUEUED } from "../contract.js";
+import { debugRunOf, timeOf } from "../view.js";
 // The conversation on this device: never a loading state. Until it is restored or synced it is blank, never the empty
 // state. "Load earlier" heads it while the device has messages before the window. A queued question is badged only
 // while the connection pill shows, with Edit; an unsent one offers Edit or Retry, and Discard; a failed answer offers

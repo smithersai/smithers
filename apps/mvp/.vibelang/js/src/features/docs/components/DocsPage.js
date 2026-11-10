@@ -3,8 +3,8 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { DocsPageView, EmptyState, Input, Skeleton } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { DOCS_REGION, DOCS_TAB, SEARCH_DOCS } from "../contract";
-import { docsPageOf, inAppHref } from "../view";
+import { DOCS_REGION, DOCS_TAB, SEARCH_DOCS } from "../contract.js";
+import { docsPageOf, inAppHref } from "../view.js";
 import { useDocs } from "./DocsContext";
 // `/$owner/$repo/docs[/<page>]`: a repository's docs. Beside the page, the searchbox and the index's pages by section,
 // or the search's matches while the box holds words; the chosen page in the Docs region, rendered from its Markdown

@@ -33,3 +33,5 @@ export const layer = AtomicFileSystem.layer;
  * @since 1.0.0-rc.0
  */
 export const layerWith = AtomicFileSystem.layerWith;
+/** Crash-safe same-directory file replacement with optimistic conflict detection. @since 1.0.0-rc.16 */
+export { FileChanged, replaceFileString } from "./BunFileReplacement.js";

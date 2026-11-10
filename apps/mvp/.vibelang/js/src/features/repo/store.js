@@ -2,15 +2,15 @@
 import { ElectricCollection } from "@smthrs/effect-electric";
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db";
 import { Clock, Context, Deferred, Duration, Effect, Fiber, FiberHandle, Layer, Option, Ref, Stream, SubscriptionRef } from "effect";
-import { codeOf } from "../../errorCode";
-import { RepoRole, Session } from "../auth/schema";
-import { makeVisibility } from "./gate";
-import { AuthStore } from "../auth/store";
-import { REPOSITORIES_SHAPE_ROUTE } from "./contract";
-import { aboutQuery, embedsQuery, fileQuery, manifestQuery, readmeQuery, refsQuery, treeQuery, viewQuery } from "./queries";
-import { AboutRow, BlobRow, CloneRow, EmbedRow, emptyView, HeadRow, RefsRow, TreeRow, VIEW, ViewRow } from "./rows";
-import { RepoRefusalsStore } from "../../device/registry";
-import { Repository } from "./schema";
+import { codeOf } from "../../errorCode.js";
+import { RepoRole, Session } from "../auth/schema.js";
+import { makeVisibility } from "./gate.js";
+import { AuthStore } from "../auth/store.js";
+import { REPOSITORIES_SHAPE_ROUTE } from "./contract.js";
+import { aboutQuery, embedsQuery, fileQuery, manifestQuery, readmeQuery, refsQuery, treeQuery, viewQuery } from "./queries.js";
+import { AboutRow, BlobRow, CloneRow, EmbedRow, emptyView, HeadRow, RefsRow, TreeRow, VIEW, ViewRow } from "./rows.js";
+import { RepoRefusalsStore } from "../../device/registry.js";
+import { Repository } from "./schema.js";
 /** Whether sign-in's row says someone is signed in; `null` while it doesn't know. */
 const signedInOf = (session) => session.status === "signed_in" ? true : session.status === "signed_out" ? false : null;
 /**

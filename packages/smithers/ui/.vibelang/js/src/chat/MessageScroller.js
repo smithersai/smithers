@@ -3,9 +3,9 @@ import { jsx as _jsx } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { createContext, forwardRef, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, } from "react";
 import { cn } from "@smthrs/ui-css";
-import { decideTranscriptScroll, transcriptFollowInterrupted } from "./transcriptScroll";
+import { decideTranscriptScroll, transcriptFollowInterrupted } from "./transcriptScroll.js";
 import { prefersReducedMotion, useInjectUiCss } from "../styles";
-import { subscribeVisibility } from "./visibilitySubscriptionRegistry";
+import { subscribeVisibility } from "./visibilitySubscriptionRegistry.js";
 const ScrollerContext = createContext(null);
 function useScrollerContext(part) {
     const ctx = useContext(ScrollerContext);

@@ -126,6 +126,13 @@ export const takeAttempt = (stateDigest) => Effect.gen(function* () {
     return Option.map(Option.fromNullishOr(row), (found) => ({ ...found, verifier: decodeSealed(found.verifier) }));
 });
 /** The person with GitHub's numeric id `githubId`, created or with their login brought up to date; returns their id. */
+/** The person's numeric GitHub id, when they have a row. */
+export const githubIdOf = (personId) => Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const rows = yield* sql `SELECT github_id FROM people WHERE id = ${personId}`;
+    const value = Number(rows[0]?.github_id ?? Number.NaN);
+    return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+});
 export const upsertPerson = (person) => Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const [row] = yield* sql `
@@ -246,6 +253,23 @@ export const ownerOf = (tokenDigest) => Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const [row] = yield* sql `SELECT person_id::text AS "personId" FROM sessions WHERE token_digest = ${tokenDigest}`;
     return Option.map(Option.fromNullishOr(row), (found) => found.personId);
+});
+/**
+ * What smithers.sh did to person `personId`'s GitHub tokens before session `sessionId` signed in: whether it revoked one
+ * since the person's previous sign-in started (`afterRevocation`), and how many other sign-ins, each a new token, it
+ * issued them in the hour before (`hourlyTokens`). Feeds only `GitHub.Auth.Consent.observe` (decision 0165).
+ */
+export const tokenHistory = (personId, sessionId) => Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const [row] = yield* sql `
+    SELECT EXISTS (
+      SELECT 1 FROM github_token_cleanups c JOIN sessions s ON s.id = c.session_id
+      WHERE s.person_id = ${personId} AND c.finished_at IS NOT NULL AND c.finished_at >= coalesce(
+        (SELECT max(started_at) FROM sessions WHERE person_id = ${personId} AND id <> ${sessionId}), '-infinity'::timestamptz)
+    ) AS "afterRevocation",
+    (SELECT count(*)::int FROM sessions WHERE person_id = ${personId} AND id <> ${sessionId}
+      AND started_at > clock_timestamp() - interval '1 hour') AS "hourlyTokens"`;
+    return { afterRevocation: row?.afterRevocation === true, hourlyTokens: row?.hourlyTokens ?? 0 };
 });
 /** The live session `id`, as a run credential minted under it names it: none once it ended. */
 export const findLiveById = (id, verifiedKey) => findLiveBy((sql) => sql `s.id = ${id}`, verifiedKey);

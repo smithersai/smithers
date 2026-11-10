@@ -2,11 +2,11 @@
 import { jsx as _jsx } from "react/jsx-runtime";
 import { LoadingBar, RunDetails, StepLogs } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { detailsOf } from "../details";
-import { missingOf } from "../page";
+import { detailsOf } from "../details.js";
+import { missingOf } from "../page.js";
 import { useRuns } from "./RunsContext";
 import { useRepoVisible } from "../../repo/components/RepoGate";
-import { runRepository } from "../repository";
+import { runRepository } from "../repository.js";
 import { routerLink } from "./routerLink";
 // The run the Runs page shows opened in place: its jobs and steps, each step opening to its log lines, a failed one
 // open with its error (ruling FLOW-13). Read and followed live like its page; every line is text the engine redacted.

@@ -52,7 +52,7 @@ function execute(selected, context) {
             let $match5;
             let $match6;
             let error = $tdz ??= runtime.$uninitializedBinding();
-            if ((((($matchCache4.start() && ((($is3 = cause.reasons), true) && $matchCache4.iterable($is3) && $matchCache4.has($is3, 0) && (($match5 = $matchCache4.at($is3, 0)), true) && (typeof $match5 === "function" || typeof $match5 === "object") && $match5 !== null && $matchCache4.propertyHas($match5, "_tag") && $matchCache4.get($match5, "_tag") === "Fail" && $matchCache4.propertyHas($match5, "error") && (($match6 = $matchCache4.get($match5, "error")), true) && runtime.$is(FsError, $match6, null, true) && ((error = $match6), true) && $matchCache4.end($is3, 1))) && ($matchCache4.finish(), true)) || ($matchCache4.finish(), false))))
+            if ((((($matchCache4.start() && ((($is3 = cause.reasons), true) && $matchCache4.iterable($is3) && $matchCache4.has($is3, 0) && (($match5 = $matchCache4.at($is3, 0)), true) && (typeof $match5 === "function" || typeof $match5 === "object") && $match5 !== null && $matchCache4.propertyHas($match5, "_tag") && $matchCache4.get($match5, "_tag") === "Fail" && $matchCache4.propertyHas($match5, "error") && (($match6 = $matchCache4.get($match5, "error")), true) && runtime.$is(FsError, $match6, null, true, "construct") && ((error = $match6), true) && $matchCache4.end($is3, 1))) && ($matchCache4.finish(), true)) || ($matchCache4.finish(), false))))
                 return yield* refuse(context, runtime.$readBinding(error, $tdz));
             yield* runtime.$provideEntries(Effect_1.fnUntraced(function* execute$provide() {
                 yield* logDebug("Incur invocation failed", cause);

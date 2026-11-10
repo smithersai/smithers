@@ -2,10 +2,10 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric";
 import { LiveQuery } from "@smthrs/effect-tanstack-db";
 import { Context, Effect, Layer } from "effect";
-import { AuthStore } from "../auth/store";
-import { signedInShapeSource } from "../auth/source";
-import { BUG_REPORTS_SHAPE_ROUTE } from "./contract";
-import { BugReport } from "./schema";
+import { AuthStore } from "../auth/store.js";
+import { signedInShapeSource } from "../auth/source.js";
+import { BUG_REPORTS_SHAPE_ROUTE } from "./contract.js";
+import { BugReport } from "./schema.js";
 /** The reports the viewer may see, newest first. */
 const newestQuery = (reports) => LiveQuery.make((q) => q
     .from({ report: reports.tanstack })

@@ -2,9 +2,9 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { stepDuration, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { cloudRowOf, listHref } from "../page";
-import { flowWords } from "../words";
-import { flowSummary } from "../summary";
+import { cloudRowOf, listHref } from "../page.js";
+import { flowWords } from "../words.js";
+import { flowSummary } from "../summary.js";
 import { useRuns } from "./RunsContext";
 import { routerLink } from "./routerLink";
 import { useRepoVisible } from "../../repo/components/RepoGate";

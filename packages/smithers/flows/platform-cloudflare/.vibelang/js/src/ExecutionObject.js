@@ -24,7 +24,7 @@
 import { canonicalize } from "@smthrs/canonical";
 import { DatabaseMetrics } from "@smthrs/database";
 import { EngineStore, WakeBus } from "@smthrs/engine-store";
-import { FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow";
+import { Flow, FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow";
 import { JournalMetrics } from "@smthrs/journal";
 import { RunStore } from "@smthrs/run-store";
 import * as Clock from "effect/Clock";
@@ -243,12 +243,14 @@ const storedIdentity = (raw) => {
  */
 const idsOf = (raw) => raw === undefined ? Effect.succeed({}) : decodeIntent(raw).pipe(Effect.map((value) => ({ "smithers.execution.id": value.executionId, "smithers.flow": value.flow })), Effect.orElseSucceed(() => ({})));
 /**
- * Builds an intent, encoding the payload with the flow's own JSON codec.
+ * Builds an intent, encoding the payload as its identity snapshot
+ * (`Flow.payloadSnapshot`: sets and maps sorted, then the flow's own JSON
+ * codec), so equal payloads persist equal intents (VIP-44).
  *
  * @category constructors
  * @since 1.0.0
  */
-export const intent = (flow, options) => Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))(options.payload).pipe(Effect.flatMap((payload) => Effect.gen(function* () {
+export const intent = (flow, options) => Flow.payloadSnapshot(flow.payloadSchema, options.payload).pipe(Effect.flatMap((payload) => Effect.gen(function* () {
     // The caller's door and actor kind, kept for the run's usage metrics.
     const origin = yield* RunMetrics.CurrentOrigin;
     return yield* Schema.decodeUnknownEffect(Intent)({

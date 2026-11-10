@@ -5,7 +5,7 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { useAuth } from "../../features/auth/components/AuthContext";
 import { SignInButton } from "../../features/auth/components/SignInButton";
 import { Link } from "@tanstack/react-router";
-import { NEW_FLOW, NEW_FLOW_PATH } from "../../features/flows-ui/contract";
+import { NEW_FLOW, NEW_FLOW_PATH } from "../../features/flows-ui/contract.js";
 import { Notices } from "../../features/attention/components/Notices";
 import { NotificationsBell } from "../../features/attention/components/NotificationsBell";
 import { FlowsPage } from "../../features/flows-ui/components/FlowsPage";

@@ -4,15 +4,15 @@ import { FlowRuntime, Interpreter } from "@smthrs/flow";
 import { RealmFlow } from "@smthrs/harness";
 import { Effect, Layer, Metric, Schema } from "effect";
 import { HttpClient } from "effect/http";
-import { parts } from "../repo/flows";
-import { BranchClient, BranchWrites } from "./api";
-import { CONVERSATION_NAMESPACE } from "./contract";
-import { operationWriteId } from "./writeIdentity";
-import { OPERATION_ACTIONS } from "./creation";
-import { selection } from "./creationSteps";
-import { BranchTrackRefused, BranchTrackUnavailable } from "./flows";
-import { BranchPublish, BranchResync, BranchUpdate, CallOperation, EvaluateOperation, OperationProgram, OperationStart, PublishRequest, ResyncRequest, SelectOperation, Submitted, Title, Body, UpdateRequest, } from "./publishFlows";
-import { requestTrack } from "./steps";
+import { parts } from "../repo/flows.js";
+import { BranchClient, BranchWrites } from "./api.js";
+import { CONVERSATION_NAMESPACE } from "./contract.js";
+import { operationWriteId } from "./writeIdentity.js";
+import { OPERATION_ACTIONS } from "./creation.js";
+import { selection } from "./creationSteps.js";
+import { BranchTrackRefused, BranchTrackUnavailable } from "./flows.js";
+import { BranchPublish, BranchResync, BranchUpdate, CallOperation, EvaluateOperation, OperationProgram, OperationStart, PublishRequest, ResyncRequest, SelectOperation, Submitted, Title, Body, UpdateRequest, } from "./publishFlows.js";
+import { requestTrack } from "./steps.js";
 // Publish's and Update branch's steps on this device's engine (docs/features/branch-publish.md): the branch found as
 // `branch/track` finds it, the repository's flow for the operation selected and run in the realm (branch creation's
 // recipe, src/features/branch/creationSteps.ts), and its one host action sent as a write to ChatApi's writes route under

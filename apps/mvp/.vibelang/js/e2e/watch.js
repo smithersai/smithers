@@ -2,11 +2,11 @@
 import { expect, test as base } from "@playwright/test";
 import { appendFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { recordConsole } from "./console";
-import { DocumentRequests, nativeAccessControlURL } from "./cancellations";
+import { recordConsole } from "./console.js";
+import { DocumentRequests, nativeAccessControlURL } from "./cancellations.js";
 import { RAY_HEADER, rayOf } from "../src/requestRay.js";
-import { bodyCodeOf, consoleErrorAnnotation, environmentAnnotations, pathOf, Problems, serverErrorAnnotation, UNDECLARED } from "./problems";
-import { baseURL, DOT_ENV, dotEnvSets, meets, onThisMachine, target } from "./target";
+import { bodyCodeOf, consoleErrorAnnotation, environmentAnnotations, pathOf, Problems, serverErrorAnnotation, UNDECLARED } from "./problems.js";
+import { baseURL, DOT_ENV, dotEnvSets, meets, onThisMachine, target } from "./target.js";
 // Every browser context a test opens is watched from its first request (docs/infrastructure.md#server-and-console-errors):
 // its pages' responses and failed requests, and their console and page errors, go to the test's Problems
 // (e2e/problems.ts). The default page's context, each device's (e2e/devices.ts) and any a test opens itself

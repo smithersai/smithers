@@ -2,8 +2,8 @@
 import { ElectricCollection } from "@smthrs/effect-electric";
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db";
 import { Context, Effect, FiberHandle, Layer, Ref, Scope, Semaphore } from "effect";
-import { TERMINALS_SHAPE_ROUTE } from "./contract";
-import { PANEL, Panel, Tab, TerminalRow } from "./schema";
+import { TERMINALS_SHAPE_ROUTE } from "./contract.js";
+import { PANEL, Panel, Tab, TerminalRow } from "./schema.js";
 /** The panel this tab shows. */
 export const panelQuery = (panel) => LiveQuery.make((q) => q.from({ panel: panel.tanstack }).findOne());
 /** The live terminals on the panel's branch, oldest first: its tabs. */

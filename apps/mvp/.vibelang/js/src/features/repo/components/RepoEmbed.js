@@ -4,7 +4,7 @@ import { RepoView } from "@smthrs/repo-view";
 import { Card, EmptyState } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { RepoGate } from "./RepoGate";
-import { embedHref, embedShown, fullScreenHref } from "../embedView";
+import { embedHref, embedShown, fullScreenHref } from "../embedView.js";
 import { useRepo } from "./RepoContext";
 // A repository's view in a conversation (docs/features/views.md#a-repository-and-its-issues): the repository's own
 // RepoView, small, at the location its row names: a directory with its README, or a file. Before anyone cloned it, its

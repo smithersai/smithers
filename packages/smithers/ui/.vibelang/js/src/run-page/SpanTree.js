@@ -4,7 +4,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useRef } from "react";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { STEP_GLYPHS, STEP_WORDS, stepDuration, stepElapsed } from "./runPage";
+import { STEP_GLYPHS, STEP_WORDS, stepDuration, stepElapsed } from "./runPage.js";
 /**
  * A run's steps, one row each, indented by depth: glyph, label, attempts when
  * more than one, and duration. A listbox: one row takes Tab, the arrow keys

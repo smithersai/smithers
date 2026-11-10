@@ -5,8 +5,8 @@ import { cn } from "@smthrs/ui-css";
 import { JsonValue } from "../json-value/JsonValue";
 import { useInjectUiCss } from "../styles";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../table";
-import { dateFromMs } from "../time/dateFromMs";
-import { offsetWords } from "./runPage";
+import { dateFromMs } from "../time/dateFromMs.js";
+import { offsetWords } from "./runPage.js";
 const eventWords = {
     "flows.engine.run-decision": "Run updated",
     "flows.engine.plan-recorded": "Steps planned",

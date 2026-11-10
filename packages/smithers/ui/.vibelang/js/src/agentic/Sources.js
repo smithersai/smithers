@@ -4,8 +4,8 @@ import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-run
 import { createContext, useContext, useId, useState, } from "react";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { safeHref } from "../internal/safeHref";
-import { safeImageSrc } from "../internal/safeImageSrc";
+import { safeHref } from "../internal/safeHref.js";
+import { safeImageSrc } from "../internal/safeImageSrc.js";
 const SourcesContext = createContext(null);
 /** Text-only, collapsible attribution list for response sources. */
 export function Sources(props) {

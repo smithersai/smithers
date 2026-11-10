@@ -2,11 +2,11 @@
 import { BrowserEngine } from "@smthrs/platform-browser";
 import { Context, Data, Effect, Layer, Option, Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
-import { renewed, withBearer, withoutCookie } from "../../flows/bearer";
-import { CONFIRM_401_HEADER, sessionCheckOf } from "../auth/contract";
-import { CLOUD_RUNS_LIMIT, CLOUD_RUNS_ROUTE, remoteRunRoute, steersRoute, stopRoute } from "./contract";
-import { flowInputsRoute, repoFlowsRoute, repoRunsRoute } from "../actions/contract";
-import { CloudRunList } from "./schema";
+import { renewed, withBearer, withoutCookie } from "../../flows/bearer.js";
+import { CONFIRM_401_HEADER, sessionCheckOf } from "../auth/contract.js";
+import { CLOUD_RUNS_LIMIT, CLOUD_RUNS_ROUTE, remoteRunRoute, steersRoute, stopRoute } from "./contract.js";
+import { flowInputsRoute, repoFlowsRoute, repoRunsRoute } from "../actions/contract.js";
+import { CloudRunList } from "./schema.js";
 // ChatApi's remote runs route as the browser calls it (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare): a run
 // Smithers runs on Cloudflare, as the engine's `RunInspection` reads it there, through Effect's HttpClient with one
 // deadline over the whole exchange, decoded with the engine's own wire shape (`BrowserEngine.Inspection`). A

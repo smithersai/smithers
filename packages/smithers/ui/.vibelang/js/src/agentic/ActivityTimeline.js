@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { cn } from "@smthrs/ui-css";
 import { formatStatus, normalizeStatus, statusClass } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { dateFromMs } from "../time/dateFromMs";
+import { dateFromMs } from "../time/dateFromMs.js";
 const ACTIVITY_GLYPHS = {
     message: "✉",
     reasoning: "◌",

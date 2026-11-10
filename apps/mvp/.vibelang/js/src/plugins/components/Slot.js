@@ -2,7 +2,7 @@
 import { jsx as _jsx } from "react/jsx-runtime";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useAuth } from "../../features/auth/components/AuthContext";
-import { contributionViewer } from "../../features/auth/viewer";
+import { contributionViewer } from "../../features/auth/viewer.js";
 import { useRepoAnswer } from "../../features/repo/components/RepoContext";
 import { Contributed } from "./Contributed";
 import { usePlugins } from "./PluginsContext";

@@ -2,7 +2,7 @@
 import { Fragment as _Fragment, jsx as _jsx } from "react/jsx-runtime";
 import { NotificationEntry } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
-import { ALERT_WORD, alertDetail } from "../copy";
+import { ALERT_WORD, alertDetail } from "../copy.js";
 import { useSpend } from "./SpendContext";
 // Unseen spend alerts live only in the bell's panel. Hide marks this and earlier alerts seen.
 export function SpendAlertEntries({ expanded, onExpand }) {

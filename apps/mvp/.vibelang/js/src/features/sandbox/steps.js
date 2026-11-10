@@ -2,11 +2,11 @@
 import { Uuid } from "@smthrs/crypto";
 import { FlowRuntime, Interpreter } from "@smthrs/flow";
 import { Effect, Layer, Metric } from "effect";
-import { requesterOf } from "../../flows/requests";
-import { SandboxClient } from "./api";
-import { CALL_ID_NAMESPACE } from "./contract";
-import { Diff, List, Read, Run, SandboxCallFailed, SandboxCallRefused, SandboxCallRunning, SandboxCallUnavailable, SandboxCommandTooLong, Status, Write } from "./flows";
-import { calls } from "./metrics";
+import { requesterOf } from "../../flows/requests.js";
+import { SandboxClient } from "./api.js";
+import { CALL_ID_NAMESPACE } from "./contract.js";
+import { Diff, List, Read, Run, SandboxCallFailed, SandboxCallRefused, SandboxCallRunning, SandboxCallUnavailable, SandboxCommandTooLong, Status, Write } from "./flows.js";
+import { calls } from "./metrics.js";
 // The sandbox tools' steps (docs/features/sandbox-tools.md#the-flows): `start` asks ChatApi to run the call, `result`
 // reads how it stands until the machine settles it, both through `SandboxClient`, on this device's engine. The call's
 // id is the version 5 UUID of the run's execution id, so a step run again, after a crash or with the tab closed and

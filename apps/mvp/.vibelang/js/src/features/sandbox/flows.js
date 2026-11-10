@@ -3,7 +3,7 @@ import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { SandboxCommand, SandboxTools } from "@smthrs/sandbox";
 import { Schema } from "effect";
-import { CALL_FAILURES, COMMAND_LIMIT_SECONDS } from "./contract";
+import { CALL_FAILURES, COMMAND_LIMIT_SECONDS } from "./contract.js";
 /**
  * The longest command this deployment runs, in seconds: its `SANDBOX_COMMAND_MAX_SECONDS`, which the build captured
  * from the environment the Worker deploys from and wrote in for `globalThis.__SANDBOX_COMMAND_MAX_SECONDS__`

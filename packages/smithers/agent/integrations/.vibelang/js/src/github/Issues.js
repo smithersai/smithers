@@ -272,7 +272,8 @@ const markedWith = (item, writeId) => {
 const byAuthor = (item, author) => {
     if (author === undefined)
         return true;
-    const user = typeof item === "object" && item !== null ? item.user : undefined;
+    // Only called behind markedWith, which established an object with a body.
+    const user = item.user;
     return typeof user === "object" && user !== null && user.login === author;
 };
 const isPullRequest = (item) => item.pull_request !== undefined;

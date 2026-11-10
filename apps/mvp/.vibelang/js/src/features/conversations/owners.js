@@ -2,13 +2,13 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric";
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db";
 import { Context, Effect, Layer, Schema } from "effect";
-import { signedInShapeSource } from "../auth/source";
-import { AuthStore } from "../auth/store";
-import { BranchStore } from "../branch/store";
-import { repoId } from "../repo/contract";
-import { RepoStore } from "../repo/store";
-import { MY_CONVERSATIONS_SHAPE_ROUTE } from "./contract";
-import { Mine } from "./schema";
+import { signedInShapeSource } from "../auth/source.js";
+import { AuthStore } from "../auth/store.js";
+import { BranchStore } from "../branch/store.js";
+import { repoId } from "../repo/contract.js";
+import { RepoStore } from "../repo/store.js";
+import { MY_CONVERSATIONS_SHAPE_ROUTE } from "./contract.js";
+import { Mine } from "./schema.js";
 // Which repository each of the person's conversations is of (decision 0110, 2026-11-03, the data gate): the person's
 // `conversation_people` rows, synced by Electric and kept on the device. A conversation's rows (its messages, its views,
 // its runs' waits) name no repository of their own; they show only while the conversation's repository may, through

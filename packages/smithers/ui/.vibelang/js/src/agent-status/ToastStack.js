@@ -5,8 +5,8 @@ import { Children, useEffect, useRef, useState } from "react";
 import { Button } from "../button";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { isNoticeHotkey, isTypingTarget, NOTICE_GLYPHS, NOTICE_KEYS, NOTICE_WORDS, noticeKeyAction } from "./notices";
-import { moveFocus } from "./roving";
+import { isNoticeHotkey, isTypingTarget, NOTICE_GLYPHS, NOTICE_KEYS, NOTICE_WORDS, noticeKeyAction } from "./notices.js";
+import { moveFocus } from "./roving.js";
 import { useToastClearance } from "./useToastClearance";
 /** What takes focus in each toast: its open button, else its action, else Hide. */
 const TOAST_FOCUS = '[data-slot="toast"] [data-toast-focus]';

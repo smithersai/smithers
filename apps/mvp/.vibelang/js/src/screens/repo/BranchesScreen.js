@@ -6,7 +6,7 @@ import { Link } from "@tanstack/react-router";
 import { RepoHeader } from "../../features/repo/components/RepoHeader";
 import { useRepo } from "../../features/repo/components/RepoContext";
 import { RepoPage } from "../../features/repo/components/RepoPage";
-import { pageOf, refsProps } from "../../features/repo/view";
+import { pageOf, refsProps } from "../../features/repo/view.js";
 import "../../../../../src/screens/repo/repo-screen.css";
 /** The repository browser's branch list, using the same visible refs as its picker. */
 export function BranchesScreen() {

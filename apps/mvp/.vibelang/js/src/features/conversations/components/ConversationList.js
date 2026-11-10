@@ -6,7 +6,7 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { useAuth } from "../../auth/components/AuthContext";
 import { SignInButton } from "../../auth/components/SignInButton";
 import { useBranch } from "../../branch/components/BranchContext";
-import { archiveLabel, emptyTitle, paramsOf } from "../view";
+import { archiveLabel, emptyTitle, paramsOf } from "../view.js";
 // Your conversations (docs/features/conversations.md#the-list): one per branch you opened, the latest first, searched
 // by repository and branch, with the archived ones one switch away. A row opens its branch, which brings an archived
 // one back; Archive and Restore change only your own list, on all your devices. Signed out, the way in instead.

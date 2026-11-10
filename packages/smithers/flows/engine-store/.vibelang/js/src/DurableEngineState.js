@@ -548,6 +548,11 @@ const completeDeferred = (db) => Effect.fn("DurableEngineState.completeDeferred"
         ? null
         : yield* encodeJson(row.metadata, "metadata");
     return yield* writeRun(db, row.executionId, Effect.gen(function* () {
+        // The row's foreign key names the run; refuse before the insert so
+        // an unknown execution is an outcome, not a constraint defect.
+        const run = yield* db.sql `SELECT 1 FROM flows_runs WHERE run_id = ${row.executionId}`;
+        if (run.length === 0)
+            return { _tag: "NotFound" };
         const inserted = yield* db.sql `
             INSERT INTO flows_deferred_completions (
               flow_name,
@@ -1376,6 +1381,9 @@ const memoryConsumeDeferred = (memory) => Effect.fn("DurableEngineState.consumeD
     return true;
 }));
 const memoryCompleteDeferred = (memory) => Effect.fn("DurableEngineState.completeDeferred")((row) => Effect.gen(function* () {
+    // Mirrors SQL: an unknown run takes no completion.
+    if (!runView(memory, row.executionId, undefined).exists)
+        return { _tag: "NotFound" };
     const stored = yield* snapshotDeferred(row);
     const key = deferredKey(stored);
     const existing = memory.deferreds.get(key);

@@ -8,7 +8,7 @@ import { cn } from "@smthrs/ui-css";
 import { Input, Textarea } from "../input";
 import { Field, Label } from "../label";
 import { useInjectUiCss } from "../styles";
-import { answersToSend, draftStatusLine, isAssumed, questionValue, } from "./flowDraft";
+import { answersToSend, draftStatusLine, isAssumed, questionValue, } from "./flowDraft.js";
 /**
  * A flow being written: where it goes, its name and what it should do (inputs
  * until the first round starts), the round's status, its questions with the

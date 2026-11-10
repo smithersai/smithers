@@ -6,18 +6,18 @@ import { PresenceSocket, SharedText } from "@smthrs/sync";
 import { Context, Effect, Exit, Layer, Metric, Option, Ref, Scope, Semaphore, Stream } from "effect";
 import { Base64 } from "effect/encoding";
 import * as Socket from "effect/socket/Socket";
-import { scopeOf, scopeParams, TEXT_NAMESPACE, textName, textRoomRoute, TEXTS_SHAPE_ROUTE } from "./contract";
-import { opens } from "./metrics";
-import { SAVED_MARK, savedMarkOf } from "./saved";
-import { Shared, TextUpdate } from "./schema";
-import { TextWrites } from "./writes";
+import { scopeOf, scopeParams, TEXT_NAMESPACE, textName, textRoomRoute, TEXTS_SHAPE_ROUTE } from "./contract.js";
+import { opens } from "./metrics.js";
+import { SAVED_MARK, savedMarkOf } from "./saved.js";
+import { Shared, TextUpdate } from "./schema.js";
+import { TextWrites } from "./writes.js";
 /** Every open text, as frontends read it. */
 export const textsQuery = (texts) => LiveQuery.make((q) => q.from({ text: texts.tanstack }));
 /** A text's id: the version 5 UUID of what it is, the same on every device. */
 export const textIdOf = (of) => Uuid.v5(TEXT_NAMESPACE, textName(of)).pipe(Effect.provide(WebCrypto.layer), Effect.orDie);
 /** The key a text's row carries: the conversation, `<conversation>/<path>` for a file, or `<run>/<version>`. */
 export const keyOf = (of) => of.kind === "prompt" ? of.conversation : of.kind === "file" ? `${of.conversation}/${of.path}` : `${of.run}/${of.version}`;
-export { SAVED_MARK, savedMarkOf } from "./saved";
+export { SAVED_MARK, savedMarkOf } from "./saved.js";
 /** Whether `text` is what the `saved` mark `mark` says a Save wrote. */
 const isSaved = (mark, text) => mark !== undefined && mark.startsWith(`${text.length}:`) && mark === savedMarkOf(text);
 /** A cursor as a room state: the anchors, as base64. */

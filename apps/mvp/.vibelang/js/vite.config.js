@@ -134,7 +134,7 @@ export default defineConfig(({ command }) => ({
         },
     ],
     define: { "globalThis.__SANDBOX_COMMAND_MAX_SECONDS__": JSON.stringify(COMMAND_MAX_SECONDS) },
-    // A worker bundle takes only these plugins, not the app's: the engine and language workers import `.vibe` modules too.
+    // A build gives web workers only these plugins, not the app's: the engine worker imports `.vibe` modules too.
     worker: { format: "es", plugins: () => [vibelang()] },
     // TypeScript is the language server worker's one CommonJS import: bundled up front, so the first TypeScript file the
     // dev server shows doesn't reload every page to optimize it.

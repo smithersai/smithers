@@ -3,12 +3,12 @@ import { RetryPolicy } from "@smthrs/flow";
 import { Clock, Effect, FiberHandle, Metric, Option, Queue, Ref, Stream } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import * as Socket from "effect/socket/Socket";
-import { GENESIS, transcriptRoute } from "./contract";
-import { chain } from "./digest";
-import { EMPTY, foldAll } from "./fold";
-import { dials, lagMs, replays } from "./metrics";
-import { decodeFrame, PANEL } from "./schema";
-import { IDLE, TranscriptStore } from "./store";
+import { GENESIS, transcriptRoute } from "./contract.js";
+import { chain } from "./digest.js";
+import { EMPTY, foldAll } from "./fold.js";
+import { dials, lagMs, replays } from "./metrics.js";
+import { decodeFrame, PANEL } from "./schema.js";
+import { IDLE, TranscriptStore } from "./store.js";
 // What the Transcript panel does (decision 0141, docs/features/agent-transcripts.md#the-panel): it holds one socket to
 // the run it shows, replays the run's events from the start, then follows them live. A socket that drops dials again
 // from the last event it holds, so the panel never holds an event twice or misses one; before dialing again it asks

@@ -3,7 +3,7 @@ import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-run
 import { Badge } from "../badge";
 import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
-import { AGENT_STATUS_GLYPHS, AGENT_STATUS_WORDS } from "./agentStatus";
+import { AGENT_STATUS_GLYPHS, AGENT_STATUS_WORDS } from "./agentStatus.js";
 const VARIANT = {
     working: "default",
     waiting: "muted",

@@ -7,8 +7,8 @@ import { useEffect } from "react";
 import { useTodos } from "./TodosContext";
 import { useIssues } from "../../issues/components/IssuesContext";
 import { useEngineStopped } from "../../chat/components/useEngineStopped";
-import { COMMIT_UNAVAILABLE, COPY_DRAFT } from "../../chat/engineAvailability";
-import { issueChoices } from "../view";
+import { COMMIT_UNAVAILABLE, COPY_DRAFT } from "../../chat/engineAvailability.js";
+import { issueChoices } from "../view.js";
 // One private draft (decision 0016 §3): its title, the issue it hangs under and its prompt as the person edits them,
 // Commit and Discard. A TODO hangs under exactly one issue (decision 0153), so Commit waits until one is chosen from
 // the repository's open issues, which the card starts syncing. Commit opens the stack it goes to, where it shows `T–`

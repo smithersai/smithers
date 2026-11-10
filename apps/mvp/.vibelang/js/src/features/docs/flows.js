@@ -2,8 +2,8 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node, Placement } from "@smthrs/plan";
 import { Schema } from "effect";
-import { DEFAULT_SHOWN, MAX_QUERY, MAX_SHOWN } from "./contract";
-import { ListedPage } from "./schema";
+import { DEFAULT_SHOWN, MAX_QUERY, MAX_SHOWN } from "./contract.js";
+import { ListedPage } from "./schema.js";
 // `app/docs/search { repository, query, pages?, conversationId? }` (ruling AGENT-6, docs/features/docs.md#the-flow):
 // finds pages of a repository's docs and shows the best of them in the conversation, from a person's `/docs` or the
 // agent's `ctx.call`. Any repository whose home names an `llms.txt` index has docs; nothing here knows one.
