@@ -155,7 +155,8 @@ brick                                   state         proof
 - **vl-coverage, current continuation (0016): in progress.** The factories' engine seams, both specification revision
   policies, sandbox error preservation, wiki recovery/archive rendering, total tour lookup and real-jj seed
   refusal/recovery are tested. The measured unit gaps in this lane are closed apart from the recorded V8 and
-  exhaustive-match branch gaps. Fresh main also exposes the native-loader collection gap for fuzz-preflight.
+  exhaustive-match branch gaps. fuzz-preflight runs as emitted JavaScript and is at 100% (Vitest cannot read
+  `vibelang/register` subprocess output).
   Whole-app coverage remains below 100%; independent unit, Chromium and workerd receipts are in 0016.
   The lead keeps each strict gate opt-in until its passing commit.
 

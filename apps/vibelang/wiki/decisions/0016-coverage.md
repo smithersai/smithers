@@ -76,12 +76,17 @@ gate waits for workerd's precise coverage or for VibeLang 0.0.13. `pnpm test:wor
 and merged gate automatically; `pnpm test:workerd:coverage` is its alias. A bare `vitest run --coverage` measures Node only. Two real-model tests remain opt-in without an authorized
 configured model credential.
 
-A separate Node subprocess measurement gap remains: `scripts/fuzz-preflight.vibe` executes in its regression test
-but gets zero hits when loaded with `vibelang/register`. The reduced Effect + FileSystem script at
-`~/vl/vibelang-bugs/coverage-register-subprocess/` prints its expected output and passes the real-child assertion;
-direct loading reports 0/5 statements and 0/1 functions, while emitted JavaScript reports 5/5 and 1/1. This is a
-register-loader/Vitest attribution boundary; its exact root cause is not assigned. No app workaround or compiler
-change was applied. It remains counted as uncovered and does not affect per-module workerd counters.
+A script run in a child process is credited only when the child runs compiler-emitted JavaScript. Vitest 5.0.0
+cannot read what a custom loader such as `vibelang/register` executed: `transformFile` (vitest
+`dist/chunks/index.B89dZ0-N.js`, its own `TODO` says "custom --import=module.registerHooks need to be transformed as
+well somehow") strips types from `.ts` and reads every other extension raw, so a subprocess `.vibe` reaches the
+provider as VibeLang source and is dropped on a parse error. That is Vitest's limit, not VibeLang's: the loader runs
+the program correctly. `scripts/fuzz-preflight.vibe` therefore builds into `dist-scripts/` like
+`scripts/agent-context.vibe` (`tsconfig.scripts.json`), `pnpm fuzz` runs `dist-scripts/fuzz-preflight.js`, and
+`test/fuzzPreflight.test.vibe` runs that same file: 0/16 lines before, 16/16 lines, 4/4 branches, 3/3 functions and
+18/18 statements after (2026-11-10, focused run). New process-boundary tests run the emitted script, never
+`node --import=vibelang/register` on a measured source. Reproductions: `~/vl/vibelang-bugs/coverage-native-loader/`
+and `coverage-register-subprocess/`.
 
 VibeLang 0.0.12 also loses service-Shape methods on object spread (TS2741, compiler exit 2). Minimal reproduction and
 the blocked reply-recovery decorator test are under `~/vl/vibelang-bugs/service-shape-spread/`. No workaround or
@@ -1242,6 +1247,8 @@ program and plain JavaScript control isolate the problem: two real subprocess as
 gets zero while the provider reports a parse error at raw effect syntax. Reproduction and controls:
 `~/vl/vibelang-bugs/coverage-native-loader/`. Exact-executable and source-map config probes do not fix it and were
 reverted. This is a collection gap; no compiler behavior or provider code was changed. The zero stays in the gate.
+Resolved later the same day: the cause is Vitest's subprocess transform, and the script now runs as emitted JavaScript
+(the subprocess paragraph above).
 
 | File | Lines | Branches | Functions | Statements |
 | --- | ---: | ---: | ---: | ---: |

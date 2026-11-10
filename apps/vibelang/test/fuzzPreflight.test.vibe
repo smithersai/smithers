@@ -1,19 +1,22 @@
 // @vitest-environment node
-// Each run compiles the script through vibelang/register (about 20 s on a loaded host), so the case is two runs.
+// The case runs the compiler-emitted script, as `pnpm fuzz` does. Vitest's coverage cannot read a subprocess's
+// vibelang/register output (decision 0016), so a native run would execute here and count as uncovered.
 // `pnpm fuzz` checks the fuzz flow's install first: a repository without it gets the install command, not a module error.
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { expect, it } from "@effect/vitest"
-import { run } from "./support/processes.vibe"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { node, run } from "./support/processes.vibe"
 
 const flowPackages = ["vibelang-runtime", "vibelang", "effect", "@effect/platform-node", "@smthrs/flow", "@smthrs/plan", "@smthrs/engine-store", "@smthrs/platform-node", "@smthrs/kernel", "@smthrs/run-store"]
 
 it.live("names each missing flow package and the install command, and passes once all are installed", () => scoped(effect {
-  provide NodeServices.layer {
+  provide NodeServices.layer, ExperimentalNodeServices.layer {
     const fs = try FileSystem.FileSystem
     const path = try Path.Path
     const root = try fs.makeTempDirectoryScoped()
-    const script = try path.fromFileUrl(new URL("../scripts/fuzz-preflight.vibe", import.meta.url))
-    const check = () => run("node", ["--import=vibelang/register", script], { FUZZ_REPOSITORY_ROOT: root })
+    const script = try path.fromFileUrl(new URL("../dist-scripts/fuzz-preflight.js", import.meta.url))
+    const executable = try node()
+    const check = () => run(executable, [script], { FUZZ_REPOSITORY_ROOT: root })
     for (const name of flowPackages.slice(1)) {
       const directory = path.join(root, ".smithers/flows/node_modules", name)
       try fs.makeDirectory(directory, { recursive: true })
