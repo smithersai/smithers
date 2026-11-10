@@ -8,7 +8,7 @@
 import * as NodePath from "node:path"
 import { describe, expect, it } from "vitest"
 import { DepsLint } from "../src/DepsLint.ts"
-import { Dev } from "../src/Dev.ts"
+import { Dev } from "../src/Dev.vibe"
 import * as Input from "../src/Input.ts"
 import { inputsFor, Install } from "../src/Install.ts"
 import { JsrPublish } from "../src/JsrPublish.ts"

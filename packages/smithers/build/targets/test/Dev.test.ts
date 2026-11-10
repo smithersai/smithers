@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Dev } from "../src/Dev.ts"
+import { Dev } from "../src/Dev.vibe"
 import * as Exec from "../src/Exec.ts"
 import { ToolRun } from "../src/ToolRun.ts"
 import { plannedCalls } from "./plan.ts"

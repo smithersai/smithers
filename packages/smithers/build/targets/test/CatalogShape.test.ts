@@ -51,7 +51,7 @@ const ruleId = (text: string, head: string): string | undefined => {
 const declaredRuleIds = (): ReadonlyArray<string> => {
   const ids: Array<string> = []
   for (const entry of readdirSync(sourceDirectory).sort()) {
-    if (!entry.endsWith(".ts")) continue
+    if (!/\.(?:ts|vibe)$/.test(entry)) continue
     const text = readFileSync(join(sourceDirectory, entry), "utf8")
     for (const match of text.matchAll(/Target\.make\(\s*("[^"]+"|[A-Za-z_$][\w$]*)\s*,/g)) {
       const id = ruleId(text, match[1]!)

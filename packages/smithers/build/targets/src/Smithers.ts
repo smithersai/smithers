@@ -167,7 +167,7 @@ export { TsBuild } from "./TsBuild.ts"
 /** @category targets @since 0.1.0 */
 export { DtsBuild } from "./DtsBuild.ts"
 /** @category targets @since 0.1.0 */
-export { Typecheck } from "./Typecheck.ts"
+export { Typecheck } from "./Typecheck.vibe"
 /** @category targets @since 0.1.0 */
 export { Vitest } from "./Vitest.ts"
 /** @category targets @since 0.1.0 */
@@ -177,9 +177,9 @@ export { VitestWatch } from "./VitestWatch.ts"
 /** @category targets @since 0.1.0 */
 export { BiomeCheck } from "./BiomeCheck.ts"
 /** @category targets @since 0.1.0 */
-export { Dprint } from "./Dprint.ts"
+export { Dprint } from "./Dprint.vibe"
 /** @category targets @since 0.1.0 */
-export { EsLint } from "./EsLint.ts"
+export { EsLint } from "./EsLint.vibe"
 /** @category targets @since 0.1.0 */
 export { DepsLint } from "./DepsLint.ts"
 /** @category targets @since 0.1.0 */
@@ -252,7 +252,7 @@ export { SecurityReview } from "./SecurityReview.ts"
 /** @category targets @since 0.1.0 */
 export { Clean } from "./Compose.ts"
 /** @category targets @since 0.1.0 */
-export { Dev } from "./Dev.ts"
+export { Dev } from "./Dev.vibe"
 /** @category targets @since 0.1.0 */
 export { ToolBuild } from "./ToolBuild.ts"
 /** @category targets @since 0.1.0 */
@@ -434,7 +434,7 @@ export * as Foundry from "./Foundry.ts"
  * @category namespace exports
  * @since 0.1.0
  */
-export * as Anvil from "./Anvil.ts"
+export * as Anvil from "./Anvil.vibe"
 
 /**
  * Docker services, OCI builds, bake targets, and pushes.

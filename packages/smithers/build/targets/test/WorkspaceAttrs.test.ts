@@ -9,15 +9,15 @@
  * declaration that overrides the interpreter still overrides the tool argv.
  */
 import { describe, expect, it } from "vitest"
-import { Dprint } from "../src/Dprint.ts"
-import { EsLint } from "../src/EsLint.ts"
+import { Dprint } from "../src/Dprint.vibe"
+import { EsLint } from "../src/EsLint.vibe"
 import * as Input from "../src/Input.ts"
 import { entrypoint, NodeTest } from "../src/NodeTest.ts"
 import * as PackageManager from "../src/PackageManager.ts"
 import * as Runtime from "../src/Runtime.ts"
 import * as Target from "../src/Target.ts"
 import { TsBuild } from "../src/TsBuild.ts"
-import { Typecheck } from "../src/Typecheck.ts"
+import { Typecheck } from "../src/Typecheck.vibe"
 import { Vitest } from "../src/Vitest.ts"
 import { VitestCoverage } from "../src/VitestCoverage.ts"
 import { VitestWatch } from "../src/VitestWatch.ts"

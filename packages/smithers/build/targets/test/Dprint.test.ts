@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Dprint } from "../src/Dprint.ts"
+import { Dprint } from "../src/Dprint.vibe"
 import * as Input from "../src/Input.ts"
 import * as Target from "../src/Target.ts"
 import { plannedArgv } from "./plan.ts"

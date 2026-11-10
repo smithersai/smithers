@@ -49,8 +49,8 @@
       "default": "./.vibelang/js/src/AgentTarget.js"
     },
     "./Anvil": {
-      "types": "./src/Anvil.ts",
-      "vibelang-source": "./src/Anvil.ts",
+      "types": "./.vibe/declarations/src/Anvil.d.vibe.ts",
+      "vibelang-source": "./src/Anvil.vibe",
       "default": "./.vibelang/js/src/Anvil.js"
     },
     "./Attr": {
@@ -119,8 +119,8 @@
       "default": "./.vibelang/js/src/DepsLint.js"
     },
     "./Dev": {
-      "types": "./src/Dev.ts",
-      "vibelang-source": "./src/Dev.ts",
+      "types": "./.vibe/declarations/src/Dev.d.vibe.ts",
+      "vibelang-source": "./src/Dev.vibe",
       "default": "./.vibelang/js/src/Dev.js"
     },
     "./Docker": {
@@ -144,8 +144,8 @@
       "default": "./.vibelang/js/src/DocsParity.js"
     },
     "./Dprint": {
-      "types": "./src/Dprint.ts",
-      "vibelang-source": "./src/Dprint.ts",
+      "types": "./.vibe/declarations/src/Dprint.d.vibe.ts",
+      "vibelang-source": "./src/Dprint.vibe",
       "default": "./.vibelang/js/src/Dprint.js"
     },
     "./DtsBuild": {
@@ -159,8 +159,8 @@
       "default": "./.vibelang/js/src/Environment.js"
     },
     "./EsLint": {
-      "types": "./src/EsLint.ts",
-      "vibelang-source": "./src/EsLint.ts",
+      "types": "./.vibe/declarations/src/EsLint.d.vibe.ts",
+      "vibelang-source": "./src/EsLint.vibe",
       "default": "./.vibelang/js/src/EsLint.js"
     },
     "./Exec": {
@@ -479,8 +479,8 @@
       "default": "./.vibelang/js/src/Tsconfig.js"
     },
     "./Typecheck": {
-      "types": "./src/Typecheck.ts",
-      "vibelang-source": "./src/Typecheck.ts",
+      "types": "./.vibe/declarations/src/Typecheck.d.vibe.ts",
+      "vibelang-source": "./src/Typecheck.vibe",
       "default": "./.vibelang/js/src/Typecheck.js"
     },
     "./TypedocDocumentation": {
@@ -1512,7 +1512,7 @@
     "ignore": "7.0.8",
     "minimatch": "10.2.6",
     "yaml": "2.9.0",
-    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
+    "vibelang-runtime": "0.0.14-pre.b9285da0f2be"
   },
   "peerDependencies": {
     "effect": "4.1.1"
@@ -1533,8 +1533,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.14-pre.6279f9f9fbfc",
-    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang": "0.0.14-pre.b9285da0f2be",
+    "vibelang-vite": "0.0.14-pre.b9285da0f2be",
     "vitest": "5.0.0"
   }
 }
