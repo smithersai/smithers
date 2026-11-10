@@ -1,0 +1,80 @@
+/**
+ * Recover process cleanup after a host is killed with SIGKILL.
+ *
+ * The host records each spawned process group in the durable `ProcessLedger`. A
+ * later incarnation of the same host ID inspects those records, reaps groups
+ * whose owner is gone, and journals the result.
+ *
+ * The companion host program runs in a separate process so the example can kill
+ * it without running its finalizers. This exercises recovery that a graceful
+ * shutdown would not test.
+ */
+import { Journal, Kernel } from "@smthrs/flows"
+import * as Effect from "effect/Effect"
+import { groupIsAlive, hostLayer, killHost, waitForGroupExit } from "./37-host-containment.platform.ts"
+
+/**
+ * The host id both incarnations share. It is what makes the records theirs.
+ * @since 1.0.0-rc.0
+ * @category constants
+ */
+export const hostId = "examples/host-containment"
+
+/**
+ * Observations from the killed host and its replacement.
+ * @since 1.0.0-rc.0
+ * @category models
+ */
+export interface Summary {
+  /** Diagnostics from the host before it was killed, including Node runtime warnings. */
+  readonly hostStderr: string
+  /** The process group the killed host started. */
+  readonly pgid: number
+  /** Whether that group survived the host, which is the problem to solve. */
+  readonly orphaned: boolean
+  /** Whether it survived the next incarnation, which is the answer. */
+  readonly survivedTheReaper: boolean
+  /** What the host's own journal run records, in order. */
+  readonly hostEvents: ReadonlyArray<string>
+}
+
+/**
+ * Starts, kills, and replaces a host over the same durable journal.
+ * @since 1.0.0-rc.0
+ * @category examples
+ */
+export const main = (filename: string): Summary!! =>
+  effect {
+    // --------------------------------------------------------------- restart
+    // A new host, given nothing about the dead one but its id. Building the
+    // layer IS the sweep: the reaper runs while the host stands up, so by the
+    // time this body runs the decision has already been made and journaled.
+    let hostEvents: ReadonlyArray<string> = []
+    const reap = effect {
+      const journal = try Journal.Journal.Journal
+      const page = try journal.entries({
+        runId: Kernel.ProcessLedger.hostRunId(hostId),
+        limit: 16
+      })
+      return page.entries.map((entry) => entry.eventType)
+    }.pipe(
+      Effect.provide(hostLayer(filename, hostId)),
+      Effect.orDie,
+      Effect.scoped,
+      Effect.tap((events) =>
+        Effect.sync(() => {
+          hostEvents = events
+        })
+      )
+    )
+
+    // Scope release is uninterruptible and runs on success, failure, and
+    // interruption, including startup before any PID has been announced.
+    const { pgid, hostStderr, orphaned } = try effect {
+      const host = try killHost(filename, hostId, reap)
+      return { ...host, orphaned: groupIsAlive(host.pgid) }
+    }.pipe(Effect.scoped)
+
+    const survivedTheReaper = !(try Effect.promise(() => waitForGroupExit(pgid, 10_000)))
+    return { pgid, hostStderr, orphaned, survivedTheReaper, hostEvents }
+  }

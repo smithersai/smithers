@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { request as httpRequest } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { discoveredFlow, main, serve, startLaunch } from "../../examples/24-control-plane-and-gateway.ts"
+import { discoveredFlow, main, serve, startLaunch } from "../../examples/24-control-plane-and-gateway.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 

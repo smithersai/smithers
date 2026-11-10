@@ -47,8 +47,8 @@
       "default": "./.vibelang/js/src/index.js"
     },
     "./Runtime": {
-      "types": "./src/Runtime.ts",
-      "vibelang-source": "./src/Runtime.ts",
+      "types": "./.vibe/declarations/src/Runtime.d.vibe.ts",
+      "vibelang-source": "./src/Runtime.vibe",
       "default": "./.vibelang/js/src/Runtime.js"
     },
     "./NodeRuntime": null,

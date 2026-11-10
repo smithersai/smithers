@@ -15,7 +15,7 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { vi } from "vitest"
-import { cached, compensated, directoryJj } from "../../examples/21-cache-and-compensation.ts"
+import { cached, compensated, directoryJj } from "../../examples/21-cache-and-compensation.vibe"
 
 vi.mock("node:fs", async (importOriginal) => {
   const fs = await importOriginal<typeof import("node:fs")>()

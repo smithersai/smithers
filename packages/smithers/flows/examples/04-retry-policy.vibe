@@ -59,8 +59,8 @@ export interface Summary {
   readonly attempts: ReadonlyArray<number>
 }
 
-export const main = (filename: string): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
+export const main = (filename: string): Summary!! =>
+  effect {
     let dispatches = 0
     const attempts: Array<number> = []
 
@@ -69,14 +69,13 @@ export const main = (filename: string): Effect.Effect<Summary> =>
       success: Schema.String,
       error: Flaky,
       tier: "sealed",
-      execute: Effect.gen(function*() {
-        const attempt = yield* Action.CurrentAttempt
+      execute: effect {
+        const attempt = try Action.CurrentAttempt
         attempts.push(attempt)
         dispatches += 1
-        return attempt < 3
-          ? yield* Effect.fail(new Flaky({ message: `attempt ${attempt} lost the connection` }))
-          : "uploaded"
-      })
+        if (attempt < 3) throw new Flaky({ message: `attempt ${attempt} lost the connection` })
+        return "uploaded"
+      }
     })
 
     const publish = ({ release }: { readonly release: string }) =>
@@ -85,7 +84,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
         Effect.catchTag("examples/Flaky", (error) => Effect.succeed(`${release}:failed:${error.message}`))
       )
 
-    const result = yield* Effect.scoped(
+    const result = try Effect.scoped(
       Publish.execute({ release: "v1" }, { executionId: "publish-1" }).pipe(
         Effect.provide(
           Layer.mergeAll(Release.toLayer(publish), Interpreter.layer(Publish)).pipe(
@@ -97,4 +96,4 @@ export const main = (filename: string): Effect.Effect<Summary> =>
     )
 
     return { result, dispatches, attempts }
-  }).pipe(Effect.orDie)
+  }.pipe(Effect.orDie)

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll } from "vitest"
-import { main } from "../../examples/38-monitor-and-alert.ts"
+import { main } from "../../examples/38-monitor-and-alert.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 

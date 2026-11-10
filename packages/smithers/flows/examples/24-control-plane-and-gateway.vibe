@@ -10,21 +10,17 @@
  * bearer credential. Exact Host and Origin checks protect the loopback listener;
  * binding to loopback alone does not authenticate callers.
  */
-import { NodeHttpServer, NodeWS } from "@effect/platform-node"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { Control, ControlClient, ControlLive, ControlRuntime, SqlControlRuntime } from "@smthrs/control"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
-import * as ControlRpcs from "@smthrs/control/ControlRpcs"
 import type * as ControlSchema from "@smthrs/control/ControlSchema"
-import * as ControlServer from "@smthrs/control/ControlServer"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Action, Flow, FlowRuntime, Interpreter, WaitFor } from "@smthrs/flow"
 import { NotificationQueue } from "@smthrs/notifications"
 import { TestNodeRuntime } from "@smthrs/platform-node"
-import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import { Executable, Registry } from "@smthrs/registry"
 import { Migrations as RunStoreMigrations, RunStore } from "@smthrs/run-store"
 import type * as EffectDigest from "effect/crypto/Digest"
@@ -32,19 +28,22 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import type * as FileSystem from "effect/FileSystem"
-import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as Layer from "effect/Layer"
 import type * as Path from "effect/Path"
-import { RpcSerialization } from "effect/rpc"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
-import { Socket } from "effect/socket"
 import * as Stream from "effect/Stream"
-import { randomBytes } from "node:crypto"
-import { mkdirSync } from "node:fs"
-import { createServer } from "node:http"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import {
+  clientTransports,
+  ensureDirectory,
+  inRoot,
+  listeningUrl,
+  newCredential,
+  projectRoot,
+  serve
+} from "./24-control-plane-and-gateway.platform.ts"
+
+export { projectRoot, serve } from "./24-control-plane-and-gateway.platform.ts"
 
 /**
  * The flow every descriptor in this project delegates to.
@@ -61,9 +60,6 @@ export const Ship = Flow.make("examples/RemoteShip", {
   error: WaitFor.WaitForRequestInvalid,
   body: () => WaitFor.action.call({ name: "clearance" })
 })
-
-/** The project whose `.smithers/flows/` directory the control plane serves. */
-export const projectRoot: string = join(dirname(fileURLToPath(import.meta.url)), "24-project")
 
 /** The name discovery derives for `flows/ship/flow.mdx` from its directory. */
 export const discoveredFlow = "ship"
@@ -98,7 +94,7 @@ const launch = (
   executable: Executable.Executable,
   input: Schema.Json,
   executionId: string
-): Effect.Effect<string, never, FlowRuntime.FlowRuntime | EffectDigest.Digest> =>
+): string!never!(FlowRuntime.FlowRuntime | EffectDigest.Digest) =>
   (executable.flow.execute({ input }, { executionId, discard: true }) as Effect.Effect<
     string,
     unknown,
@@ -106,19 +102,12 @@ const launch = (
   >).pipe(
     Effect.orDie,
     Effect.tap(() =>
-      Effect.gen(function*() {
-        const runtime = yield* FlowRuntime.FlowRuntime
-        yield* runtime.resume(executable.flow, executionId, { poll: true })
-      })
+      effect {
+        const runtime = try FlowRuntime.FlowRuntime
+        try runtime.resume(executable.flow, executionId, { poll: true })
+      }
     )
   )
-
-/** The base URL of a listening TCP server. */
-const addressOf = (server: HttpServer.HttpServer["Service"]): string => {
-  const address = server.address
-  if (address._tag !== "InetAddressV4") throw new Error("expected a TCP control server")
-  return `http://127.0.0.1:${address.port}`
-}
 
 /** Starts a launch behind the receipt latch and mirrors its status on every exit. */
 export const startLaunch = <A, E, R>(
@@ -126,50 +115,15 @@ export const startLaunch = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   updateStatus: Effect.Effect<unknown, never, R> = Effect.void
 ) =>
-  Effect.gen(function*() {
-    const start = yield* Deferred.make<void>()
+  effect {
+    const start = try Deferred.make<void>()
     // forkIn registers interrupt-and-await cleanup before returning the fiber.
-    const fiber = yield* Effect.forkIn(
+    const fiber = try Effect.forkIn(
       Deferred.await(start).pipe(Effect.andThen(effect.pipe(Effect.ensuring(updateStatus)))),
       scope
     )
     return { start, fiber }
-  })
-
-/** Mounts both control RPC transports on an ephemeral loopback server. */
-export const serve = (credential: string) =>
-  HttpRouter.serve(
-    ControlServer.layerHttp.pipe(
-      Layer.provide(Layer.succeed(ControlServer.RequestScheme, "http:")),
-      Layer.provide(ControlRpcs.layerBearerAuth({ token: credential, principal: { id: "local", kind: "operator" } })),
-      Layer.provide(
-        HttpRouter.middleware(Effect.gen(function*() {
-          const server = yield* HttpServer.HttpServer
-          const origin = addressOf(server)
-          const host = new URL(origin).host
-          return (handler) =>
-            Effect.gen(function*() {
-              const request = yield* HttpServerRequest.HttpServerRequest
-              // Check before routing, including before the WebSocket upgrade. Native
-              // clients may omit Origin; browser origins must match this exact server.
-              if (
-                request.headers.host !== host ||
-                (request.headers.origin !== undefined && request.headers.origin !== origin)
-              ) {
-                return HttpServerResponse.empty({ status: 403 })
-              }
-              return yield* handler
-            })
-        })).layer
-      ),
-      Layer.provide(RpcSerialization.layerNdjson)
-    ),
-    { disableListenLog: true, disableLogger: true }
-  ).pipe(
-    Layer.provideMerge(
-      NodeHttpServer.layer(createServer, { host: "127.0.0.1", port: 0 })
-    )
-  )
+  }
 
 /** What one remote session observed. */
 export interface Summary {
@@ -211,8 +165,8 @@ const planeStatus = (status: RunStore.RunStatus): ControlSchema.RunStatus =>
  *
  * @param root a directory the two SQLite files are created in
  */
-export const main = (root: string): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
+export const main = (root: string): Summary!! =>
+  effect {
     const launched: Array<string> = []
     const driving: Array<{
       readonly runId: string
@@ -220,15 +174,15 @@ export const main = (root: string): Effect.Effect<Summary> =>
       readonly fiber: Fiber.Fiber<unknown, unknown>
     }> = []
 
-    yield* Effect.sync(() => mkdirSync(root, { recursive: true }))
+    try ensureDirectory(root)
 
     // What the plane may be asked to plan is what discovery found. The scan
     // happens once, here, so the runtime is configured with the descriptors on
     // disk rather than a list this file keeps in step with them by hand.
-    const discovered = yield* Effect.gen(function*() {
-      const found = yield* Registry.Registry
-      return yield* found.list()
-    }).pipe(Effect.provide(registry), Effect.orDie)
+    const discovered = try effect {
+      const found = try Registry.Registry
+      return try found.list()
+    }.pipe(Effect.provide(registry), Effect.orDie)
 
     const flows = discovered.map((descriptor): ControlRuntime.MemoryFlow => ({
       flowId: descriptor.name as ControlSchema.FlowId,
@@ -247,7 +201,7 @@ export const main = (root: string): Effect.Effect<Summary> =>
     const planeStores = RunStore.layer.pipe(
       Layer.provideMerge(RunStoreMigrations.layer),
       Layer.provideMerge(DurableWriter.layer()),
-      Layer.provideMerge(NodeDatabase.layer({ filename: join(root, "control.sqlite") }))
+      Layer.provideMerge(NodeDatabase.layer({ filename: inRoot(root, "control.sqlite") }))
     )
 
     // `Layer.provide`, not `provideMerge`: the plane's run store stays inside
@@ -272,10 +226,10 @@ export const main = (root: string): Effect.Effect<Summary> =>
      * the engine calls a parked run `suspended`, an operator calls it `parked`.
      */
     const executorLayer = Layer.effect(ControlExecutor.ControlExecutor)(
-      Effect.gen(function*() {
-        const scope = yield* Effect.scope
-        const plane = yield* ControlRuntime.ControlRuntime
-        const services = yield* Effect.context<
+      effect {
+        const scope = try Effect.scope
+        const plane = try ControlRuntime.ControlRuntime
+        const services = try Effect.context<
           | FlowRuntime.FlowRuntime
           | EffectDigest.Digest
           | Registry.Registry
@@ -285,19 +239,19 @@ export const main = (root: string): Effect.Effect<Summary> =>
         >()
 
         const mirror = (runId: string) =>
-          Effect.gen(function*() {
-            const runs = yield* RunStore.RunStore
-            const row = yield* runs.get(runId)
-            const fence = yield* plane.claimFence(runId as ControlSchema.RunId)
-            yield* plane.writeStatus(runId as ControlSchema.RunId, fence, planeStatus(row.status))
-          }).pipe(Effect.orDie)
+          effect {
+            const runs = try RunStore.RunStore
+            const row = try runs.get(runId)
+            const fence = try plane.claimFence(runId as ControlSchema.RunId)
+            try plane.writeStatus(runId as ControlSchema.RunId, fence, planeStatus(row.status))
+          }.pipe(Effect.orDie)
 
         return ControlExecutor.makeNoop({
           launch: ({ plan, run }) =>
-            Effect.gen(function*() {
+            effect {
               launched.push(plan.card.flowId)
-              const executable = yield* Executable.fromRegistry(plan.card.flowId, bridge)
-              const { start, fiber } = yield* startLaunch(
+              const executable = try Executable.fromRegistry(plan.card.flowId, bridge)
+              const { start, fiber } = try startLaunch(
                 scope,
                 launch(executable, plan.decodedInput as Schema.Json, run.runId).pipe(
                   // Do not inherit the RPC's transaction or request scope.
@@ -307,9 +261,9 @@ export const main = (root: string): Effect.Effect<Summary> =>
               )
               driving.push({ runId: run.runId, start, fiber })
               return "accepted" as const
-            }).pipe(Effect.provide(services), Effect.orDie)
+            }.pipe(Effect.provide(services), Effect.orDie)
         })
-      })
+      }
     ).pipe(Layer.provideMerge(controlRuntime))
 
     const controlPlane = ControlLive.layer.pipe(
@@ -329,57 +283,32 @@ export const main = (root: string): Effect.Effect<Summary> =>
     // run table above; it shares this journal, so one `watch` stream carries the
     // plane's decisions and the engine's execution in the order they happened.
     const stack = Layer.merge(controlPlane, registrations).pipe(
-      Layer.provideMerge(TestNodeRuntime.durableEngine(join(root, "engine.sqlite"), "examples-gateway")),
+      Layer.provideMerge(TestNodeRuntime.durableEngine(inRoot(root, "engine.sqlite"), "examples-gateway")),
       Layer.provideMerge(Layer.merge(registry, platform))
     )
 
-    return yield* Effect.scoped(
-      Effect.gen(function*() {
+    return try Effect.scoped(
+      effect {
         // The server: the same `Control` service, mounted as RPC.
-        const credential = yield* Effect.sync(() => randomBytes(32).toString("hex"))
+        const credential = try newCredential
         const served = serve(credential)
 
-        return yield* Effect.gen(function*() {
-          const server = yield* HttpServer.HttpServer
-          const url = addressOf(server)
+        return try effect {
+          const url = try listeningUrl
 
           // The client: the same `Control` interface, over two transports.
           const client = ControlClient.layer({ url: `${url}/rpc`, credential }).pipe(
-            Layer.provide([
-              EgressHttpClient.layer(process.env),
-              // This Node client can put the credential on the upgrade request.
-              // Browser WebSocket constructors cannot set Authorization headers.
-              Socket.layerWebSocket(`ws://127.0.0.1:${new URL(url).port}/rpc/ws`).pipe(
-                Layer.provide(
-                  Layer.succeed(Socket.WebSocketConstructor)(
-                    (url, options) => {
-                      // A constructor receives either a protocol list or Node client options.
-                      const configured = options !== undefined && typeof options !== "string" && !Array.isArray(options)
-                        ? options
-                        : undefined
-                      const protocols = configured === undefined
-                        ? options as string | Array<string> | undefined
-                        : undefined
-                      return new NodeWS.WebSocket(url, protocols, {
-                        ...configured,
-                        headers: { ...configured?.headers, authorization: `Bearer ${credential}` }
-                      }) as unknown as globalThis.WebSocket
-                    }
-                  )
-                )
-              ),
-              RpcSerialization.layerNdjson
-            ])
+            Layer.provide(clientTransports(url, credential))
           )
 
-          return yield* Effect.gen(function*() {
-            const control = yield* Control.Control
+          return try effect {
+            const control = try Control.Control
 
             // What this host can run, asked for from the other end of the wire.
-            const catalogued = yield* control.list({ _tag: "flows" })
+            const catalogued = try control.list({ _tag: "flows" })
             const catalog = catalogued._tag === "flows" ? catalogued.items.map((flow) => flow.flowId) : []
 
-            const card = yield* control.plan({
+            const card = try control.plan({
               flowId: discoveredFlow as ControlSchema.FlowId,
               input: { build: "v2.0.0" }
             })
@@ -389,16 +318,16 @@ export const main = (root: string): Effect.Effect<Summary> =>
               digest: card.digest,
               envelope: card.envelope
             }
-            const beforeApproval = yield* control.run({
+            const beforeApproval = try control.run({
               ...launch,
               idempotencyKey: "remote:before" as ControlSchema.IdempotencyKey
             })
-            yield* control.approve({
+            try control.approve({
               target: { _tag: "Plan", planId: card.planId, digest: card.digest, envelope: card.envelope },
               scope: card.approval.scope,
               idempotencyKey: "remote:approve" as ControlSchema.IdempotencyKey
             })
-            const afterApproval = yield* control.run({
+            const afterApproval = try control.run({
               ...launch,
               idempotencyKey: "remote:after" as ControlSchema.IdempotencyKey
             })
@@ -407,18 +336,18 @@ export const main = (root: string): Effect.Effect<Summary> =>
             // The receipt is in hand, so the plane has finished writing
             // `running`. Releasing the latch now lets the run reach its durable
             // wait, and joining it makes the park observable rather than racy.
-            yield* Effect.forEach(driving, (started) =>
+            try Effect.forEach(driving, (started) =>
               Deferred.succeed(started.start, void 0).pipe(
                 Effect.andThen(Fiber.join(started.fiber))
               ))
 
-            const listed = yield* control.list({ _tag: "runs", filters: {} })
+            const listed = try control.list({ _tag: "runs", filters: {} })
             const runs = listed._tag === "runs" ? listed.items : []
 
             // `follow: false` asks for a finite snapshot of what is already
             // durable, which is what makes this assertable. Omitting it opens
             // the live stream a UI subscribes to and never ends.
-            const watched = watchedRunId === undefined ? [] : yield* control.watch({
+            const watched = watchedRunId === undefined ? [] : try control.watch({
               runId: watchedRunId,
               follow: false
             }).pipe(
@@ -439,8 +368,8 @@ export const main = (root: string): Effect.Effect<Summary> =>
               parked: runs.find((run) => run.runId === watchedRunId)?.status,
               watched: [...watched]
             } satisfies Summary
-          }).pipe(Effect.provide(client))
-        }).pipe(Effect.provide(served))
-      }).pipe(Effect.provide(Layer.merge(stack, NodeCrypto.layer)))
+          }.pipe(Effect.provide(client))
+        }.pipe(Effect.provide(served))
+      }.pipe(Effect.provide(Layer.merge(stack, NodeCrypto.layer)))
     )
-  }).pipe(Effect.orDie)
+  }.pipe(Effect.orDie)

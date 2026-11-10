@@ -133,27 +133,27 @@ export const main = (
   filename: string,
   productionDelayMs = 900_000
 ): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
-    const control = yield* Control.Control
+  effect {
+    const control = try Control.Control
 
     // Observe the durable park before answering. The next execute rebuilds the
     // awaiting frame from the journal and reads the completed deferred.
-    yield* parkRun(answeredRunId, Supervised.execute({}, { executionId: answeredRunId }), stack(filename))
-    const answered = yield* Effect.gen(function*() {
-      yield* DurableDeferred.succeed(approval, { token: tokenFor(answeredRunId), value: { approved: true } })
-      return yield* Supervised.execute({}, { executionId: answeredRunId })
-    }).pipe(Effect.provide(stack(filename)))
+    try parkRun(answeredRunId, Supervised.execute({}, { executionId: answeredRunId }), stack(filename))
+    const answered = try effect {
+      try DurableDeferred.succeed(approval, { token: tokenFor(answeredRunId), value: { approved: true } })
+      return try Supervised.execute({}, { executionId: answeredRunId })
+    }.pipe(Effect.provide(stack(filename)))
 
     // A run that parks and is not answered. Nothing is driving it now, which
     // is the situation a monitor exists for.
-    yield* parkRun(supervisedRunId, Supervised.execute({}, { executionId: supervisedRunId }), stack(filename))
-    const listed = yield* control.list({ _tag: "runs", filters: { runId: supervisedRunId } })
+    try parkRun(supervisedRunId, Supervised.execute({}, { executionId: supervisedRunId }), stack(filename))
+    const listed = try control.list({ _tag: "runs", filters: { runId: supervisedRunId } })
     const parked = listed._tag === "runs" ? listed.items[0] : undefined
 
     // Observe beyond the stall threshold with recovery explicitly enabled.
     // Monitor recognizes the durable event wait and leaves it healthy; an
     // unanswered deferred does not authorize a resume or constitute a wedge.
-    const report = yield* Monitor.run({
+    const report = try Monitor.run({
       runId: supervisedRunId,
       monitorId: "examples-oncall",
       intervalMs: 0,
@@ -163,21 +163,21 @@ export const main = (
     })
 
     // The alert policy reads the beats the monitor just wrote.
-    const patient = yield* Effect.provide(
+    const patient = try Effect.provide(
       Effect.flatMap(Alerts.AlertRuntime, (alerts) => alerts.tick(supervisedRunId)),
       Alerts.layer(rules(productionDelayMs)).pipe(Layer.provideMerge(Alerts.layerNoop))
     )
     const impatient = Alerts.layer(rules(0)).pipe(Layer.provideMerge(Alerts.layerNoop))
-    const paged = yield* Effect.provide(
+    const paged = try Effect.provide(
       Effect.flatMap(Alerts.AlertRuntime, (alerts) => alerts.tick(supervisedRunId)),
       impatient
     )
-    const again = yield* Effect.provide(
+    const again = try Effect.provide(
       Effect.flatMap(Alerts.AlertRuntime, (alerts) => alerts.tick(supervisedRunId)),
       impatient
     )
-    const queue = yield* NotificationQueue.NotificationQueue
-    const pending = yield* queue.pending(supervisedRunId)
+    const queue = try NotificationQueue.NotificationQueue
+    const pending = try queue.pending(supervisedRunId)
 
     return {
       answered,
@@ -194,7 +194,7 @@ export const main = (
           : []
       )
     }
-  }).pipe(
+  }.pipe(
     Effect.provide(controlPlane.pipe(Layer.provideMerge(TestNodeRuntime.requirements(filename)))),
     Effect.scoped,
     Effect.orDie

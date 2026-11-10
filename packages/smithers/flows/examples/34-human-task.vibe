@@ -57,17 +57,17 @@ const parkedAttempt = (
   attempts: number,
   after: number
 ): Effect.Effect<number, never, DurableEngineState.DurableEngineState> =>
-  Effect.gen(function*() {
-    const state = yield* DurableEngineState.DurableEngineState
-    const row = yield* state.waiting(executionId)
+  effect {
+    const state = try DurableEngineState.DurableEngineState
+    const row = try state.waiting(executionId)
     if (Option.isNone(row)) return 0
     const { reason, token } = row.value
     if (reason !== "approval" || token === null) return 0
     for (let attempt = 1; attempt <= attempts; attempt++) {
       if (tokenFor(executionId, attempt) === token) return attempt
     }
-    return yield* Effect.die(`the run "${executionId}" parked on a token no attempt of its question owns`)
-  }).pipe(
+    return try Effect.die(`the run "${executionId}" parked on a token no attempt of its question owns`)
+  }.pipe(
     Effect.repeat({ until: (attempt) => attempt > after, schedule: Schedule.spaced(10) }),
     Effect.timeout(30_000),
     Effect.orDie
@@ -95,11 +95,11 @@ const refusalsRecorded = (
   Journal.JournalError | AttemptStore.AttemptStoreError,
   Journal.Journal | AttemptStore.AttemptStore
 > =>
-  Effect.gen(function*() {
-    const journal = yield* Journal.Journal
-    yield* journal.flush
-    const page = yield* journal.entries({ runId: executionId as JournalEvent.RunId, limit: 500 })
-    const attempts = yield* AttemptStore.AttemptStore
+  effect {
+    const journal = try Journal.Journal
+    try journal.flush
+    const page = try journal.entries({ runId: executionId as JournalEvent.RunId, limit: 500 })
+    const attempts = try AttemptStore.AttemptStore
     const steps = new Set<string>()
     for (const entry of page.entries) {
       if (entry.eventType !== "flows.engine.attempt-started") continue
@@ -108,13 +108,13 @@ const refusalsRecorded = (
     }
     const refusals: Array<typeof Refusal.Type> = []
     for (const stepKeyDigest of steps) {
-      const row = yield* attempts.get({ runId: executionId, stepKeyDigest, attempt: 1 })
+      const row = try attempts.get({ runId: executionId, stepKeyDigest, attempt: 1 })
       if (Option.isNone(row) || row.value.outcome === undefined) continue
       const refusal = Schema.decodeUnknownExit(Refusal)(row.value.outcome)
       if (Exit.isSuccess(refusal)) refusals.push(refusal.value)
     }
     return refusals.sort((left, right) => left.attempt - right.attempt)
-  })
+  }
 
 export interface Summary {
   /** The value the run completed with. */
@@ -126,7 +126,7 @@ export interface Summary {
 }
 
 export const main = (filename: string): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
+  effect {
     const executionId = "release-1"
     const engine = (hostId: string) =>
       Interpreter.layer(Release).pipe(
@@ -136,31 +136,31 @@ export const main = (filename: string): Effect.Effect<Summary> =>
     const parkedOn: Array<number> = []
 
     // Phase one: the question is asked and the run parks, unanswered.
-    yield* Effect.scoped(
-      Effect.gen(function*() {
-        yield* Release.execute({ build: "v1.4.0" }, { executionId, discard: true })
-        parkedOn.push(yield* parkedAttempt(executionId, 3, 0))
-      }).pipe(Effect.provide(engine("worker-a")))
+    try Effect.scoped(
+      effect {
+        try Release.execute({ build: "v1.4.0" }, { executionId, discard: true })
+        parkedOn.push(try parkedAttempt(executionId, 3, 0))
+      }.pipe(Effect.provide(engine("worker-a")))
     )
 
     // Phase two: a fresh process answers attempt one with prose. A confirm
     // cannot accept it, so the run refuses it and parks on attempt two.
-    const refusals = yield* Effect.scoped(
-      Effect.gen(function*() {
-        yield* HumanTask.answer({ token: tokenFor(executionId, 1), value: "yes, ship it" })
-        yield* Release.resume(executionId)
-        parkedOn.push(yield* parkedAttempt(executionId, 3, 1))
-        return yield* refusalsRecorded(executionId)
-      }).pipe(Effect.provide(engine("worker-b")))
+    const refusals = try Effect.scoped(
+      effect {
+        try HumanTask.answer({ token: tokenFor(executionId, 1), value: "yes, ship it" })
+        try Release.resume(executionId)
+        parkedOn.push(try parkedAttempt(executionId, 3, 1))
+        return try refusalsRecorded(executionId)
+      }.pipe(Effect.provide(engine("worker-b")))
     )
 
     // Phase three: a third process answers the attempt the engine parked on.
-    const result = yield* Effect.scoped(
-      Effect.gen(function*() {
-        yield* HumanTask.answer({ token: tokenFor(executionId, parkedOn[1]!), value: true })
-        return yield* Release.execute({ build: "v1.4.0" }, { executionId })
-      }).pipe(Effect.provide(engine("worker-c")))
+    const result = try Effect.scoped(
+      effect {
+        try HumanTask.answer({ token: tokenFor(executionId, parkedOn[1]!), value: true })
+        return try Release.execute({ build: "v1.4.0" }, { executionId })
+      }.pipe(Effect.provide(engine("worker-c")))
     )
 
     return { result, parkedOn, refusals }
-  }).pipe(Effect.orDie)
+  }.pipe(Effect.orDie)

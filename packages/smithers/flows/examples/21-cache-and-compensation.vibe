@@ -1,0 +1,235 @@
+/**
+ * Apply a cache lifetime and restore workspace state before retrying a
+ * compensable action.
+ *
+ * `CacheEnvironment.withCache` declares the result's scope and age bound. The
+ * engine records its cache-age decision so a resumed execution can reuse that
+ * decision.
+ *
+ * The compensable action captures a workspace pre-image and restores it before
+ * another attempt. The example uses a directory-copying `Jj` implementation to
+ * check the file state. Cross-run sealed reuse also needs an idempotency key, a
+ * hard file boundary, and a complete cache environment.
+ */
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
+import { Journal, type JournalEvent } from "@smthrs/journal"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Schema from "effect/Schema"
+import {
+  appendMigration,
+  directoryJj,
+  engine,
+  ledgerIn,
+  prepareDirectories,
+  readLedger
+} from "./21-cache-and-compensation.platform.ts"
+
+export { directoryJj } from "./21-cache-and-compensation.platform.ts"
+
+/** The failure the first attempt of the compensable step raises. */
+export class Interrupted extends Schema.TaggedError<Interrupted>()("examples/Interrupted", {
+  attempt: Schema.Number
+}) {}
+
+/** The declared atom the caching flow's body names. */
+export const Build = Action.make("examples/CachedBuild", {
+  payload: { target: Schema.String },
+  success: Schema.String
+})
+
+/** The flow that runs one cached build step. */
+export const Package = Flow.make("examples/Package", {
+  payload: { target: Schema.String },
+  success: Schema.String,
+  body: (payload: { readonly target: string }) => Build.call(payload)
+})
+
+/** The declared atom the compensating flow's body names. */
+export const Apply = Action.make("examples/ApplyMigration", {
+  payload: { migration: Schema.String },
+  success: Schema.String,
+  // The retry ladder can still run out, so the failure stays declared rather
+  // than swallowed. It does not happen here, because attempt two succeeds, and
+  // a caller that hid it would turn an exhausted migration into a silent one.
+  error: Interrupted
+})
+
+/** The flow that runs one compensable migration step. */
+export const Migrate = Flow.make("examples/Migrate", {
+  payload: { migration: Schema.String },
+  success: Schema.String,
+  error: Interrupted,
+  body: (payload: { readonly migration: string }) => Apply.call(payload)
+})
+
+/** What one cache scenario observed. */
+export interface CacheSummary {
+  /** What each of the two runs answered. */
+  readonly results: readonly [string, string]
+  /** How many times the sealed body executed across both runs. */
+  readonly executions: number
+  /** Every time-to-live verdict the runs journalled, in order. */
+  readonly verdicts: ReadonlyArray<string>
+}
+
+/** What the compensation scenario observed. */
+export interface CompensationSummary {
+  /** The value the run settled with. */
+  readonly result: string
+  /** The attempt numbers the body saw. */
+  readonly attempts: ReadonlyArray<number>
+  /** The workspace file after the run, which is the evidence. */
+  readonly workspace: string
+  /**
+   * The snapshots the engine took, in order.
+   *
+   * Two pre-images per attempt and one post-image after it. The pair is not a
+   * duplicate: one is the rollback boundary around the whole compensable
+   * dispatch, the other is the attempt row's own pre-image, which is what an
+   * adopted attempt restores after a crash. The post-image is what the boundary
+   * diffs the pre-image against.
+   */
+  readonly snapshots: ReadonlyArray<string>
+  /** The pre-images the engine put back before the retry. */
+  readonly restores: ReadonlyArray<string>
+}
+
+const ttlVerdicts = (
+  runId: string
+): ReadonlyArray<string>!never!Journal.Journal =>
+  effect {
+    const journal = try Journal.Journal
+    try journal.flush
+    const page = try journal.entries({ runId: runId as JournalEvent.RunId, limit: 500 })
+    return page.entries
+      .filter((entry) => entry.eventType === "flows.engine.cache-provenance")
+      .map((entry) => entry.payload as { readonly action?: string; readonly verdict?: string })
+      .filter((payload) => payload.action === "ttl" && typeof payload.verdict === "string")
+      .map((payload) => payload.verdict!)
+  }.pipe(Effect.orDie)
+
+/**
+ * Runs the same sealed step in two separate runs under one cache policy.
+ *
+ * With a generous `ttlMs` the second run reads the recorded row and journals
+ * `admitted`. With `ttlMs: 1` and a pause between the runs the row has aged
+ * out, so the second run journals `expired` and executes the body again.
+ */
+export const cached = (
+  filename: string,
+  options: { readonly ttlMs: number; readonly pauseMs: number; readonly prefix: string }
+): CacheSummary!! =>
+  effect {
+    let executions = 0
+
+    /**
+     * The sealed step whose result is addressable across runs. `idempotencyKey`
+     * gives it an identity a second run can derive, the hard boundary declares
+     * it hermetic, and the policy states how long the row stays good.
+     */
+    const compile = CacheEnvironment.withCache(
+      Action.make({
+        name: "examples/CachedCompile",
+        success: Schema.String,
+        tier: "sealed",
+        idempotencyKey: "examples/cached-compile/v1",
+        metadata: { readSet: [], writeSet: [], boundaryMode: "hard" },
+        execute: Effect.sync(() => {
+          executions += 1
+          return "dist/server.js"
+        })
+      }),
+      { ttlMs: options.ttlMs, scope: "shared" }
+    )
+
+    const stack = Layer.mergeAll(
+      Build.toLayer(({ target }) => Effect.map(compile, (artifact) => `${artifact}?target=${target}`)),
+      Interpreter.layer(Package)
+    ).pipe(
+      Layer.provideMerge(Action.layerImplementations),
+      // A sealed step never asks for a pre-image, so the cache half runs on
+      // `TestNodeRuntime`'s recording-nothing stub. Only the compensable half
+      // below needs a version-control service that really moves files.
+      Layer.provideMerge(engine(filename, "examples-cache", TestNodeRuntime.stubJj))
+    )
+
+    return try Effect.scoped(
+      effect {
+        const first = try Package.execute({ target: "server" }, { executionId: `${options.prefix}-1` })
+        if (options.pauseMs > 0) try Effect.sleep(`${options.pauseMs} millis`)
+        const second = try Package.execute({ target: "server" }, { executionId: `${options.prefix}-2` })
+        const verdicts = [
+          ...try ttlVerdicts(`${options.prefix}-1`),
+          ...try ttlVerdicts(`${options.prefix}-2`)
+        ]
+        return { results: [first, second] as const, executions, verdicts } satisfies CacheSummary
+      }.pipe(Effect.provide(stack))
+    )
+  }.pipe(Effect.orDie)
+
+/**
+ * Runs a compensable step that fails halfway through its first attempt.
+ *
+ * The body appends to a real file before it fails, so the pre-image is the only
+ * thing standing between attempt two and a doubled migration.
+ */
+export const compensated = (
+  filename: string,
+  directories: { readonly workspace: string; readonly snapshots: string }
+): CompensationSummary!! =>
+  effect {
+    const log = { snapshots: [] as Array<string>, restores: [] as Array<string> }
+    const attempts: Array<number> = []
+    const ledger = ledgerIn(directories.workspace)
+
+    try prepareDirectories(directories, ledger)
+
+    /**
+     * A compensable step: it writes before it can fail, so the engine takes a
+     * pre-image first and restores it before the retry.
+     */
+    const applyMigration = Action.make({
+      name: "examples/ApplyMigrationStep",
+      success: Schema.String,
+      error: Interrupted,
+      tier: "compensable",
+      execute: effect {
+        const attempt = try Action.CurrentAttempt
+        attempts.push(attempt)
+        try appendMigration(ledger)
+        // The write is already on disk. Failing here is what a half-applied
+        // migration looks like, and it is what the pre-image undoes.
+        if (attempt === 1) throw new Interrupted({ attempt })
+        return "applied"
+      }
+    })
+
+    const stack = Layer.mergeAll(
+      Apply.toLayer(({ migration }) =>
+        Action.retry(applyMigration, { times: 1 }).pipe(
+          Effect.map((outcome) => `${migration}:${outcome}`)
+        )
+      ),
+      Interpreter.layer(Migrate)
+    ).pipe(
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(engine(filename, "examples-compensate", directoryJj({ ...directories, log })))
+    )
+
+    const result = try Effect.scoped(
+      Migrate.execute({ migration: "0007-lane" }, { executionId: "migrate-1" }).pipe(
+        Effect.provide(stack)
+      )
+    )
+
+    return {
+      result,
+      attempts,
+      workspace: try readLedger(ledger),
+      snapshots: log.snapshots,
+      restores: log.restores
+    } satisfies CompensationSummary
+  }.pipe(Effect.orDie)

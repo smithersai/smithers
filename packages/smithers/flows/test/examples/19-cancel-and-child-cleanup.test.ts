@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { cascade, contained, deployRunId } from "../../examples/19-cancel-and-child-cleanup.ts"
+import { cascade, contained, deployRunId } from "../../examples/19-cancel-and-child-cleanup.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 

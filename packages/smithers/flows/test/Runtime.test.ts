@@ -16,7 +16,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Runtime from "../src/Runtime.ts"
+import * as Runtime from "../src/Runtime.vibe"
 
 const options: Runtime.Options = {
   owner: { hostId: "injected-runtime" },

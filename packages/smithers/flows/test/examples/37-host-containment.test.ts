@@ -13,7 +13,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { PassThrough } from "node:stream"
 import { vi } from "vitest"
-import { main } from "../../examples/37-host-containment.ts"
+import { main } from "../../examples/37-host-containment.vibe"
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof ChildProcess>()

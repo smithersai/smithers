@@ -11,9 +11,7 @@
  */
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, Flow, Interpreter, WaitFor } from "@smthrs/flow"
-import { Capability } from "@smthrs/flows"
 import { Journal, type JournalEvent } from "@smthrs/journal"
-import { NodeRuntime } from "@smthrs/platform-node"
 import { RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -21,7 +19,7 @@ import * as Layer from "effect/Layer"
 import { ChildProcess } from "effect/process"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
-import { dirname } from "node:path"
+import { groupIsAlive, host } from "./19-cancel-and-child-cleanup.platform.ts"
 
 /** The child's one step: park until somebody answers. */
 export const Watch = Flow.make("examples/Watch", {
@@ -85,91 +83,68 @@ const stateOf = (row: {
   cancelRequested: row.cancelRequestedAtMs !== null
 })
 
-/** The engine, on the real Node host, with permission to spawn. */
-const host = <Registered, RegistrationRequirements>(
-  filename: string,
-  hostId: string,
-  registrations: Layer.Layer<Registered, never, RegistrationRequirements>
-) =>
-  NodeRuntime.layerHost(
-    {
-      filename,
-      workspaceRoot: dirname(filename),
-      owner: { hostId },
-      // No signal handlers: the example is the one deciding when things stop.
-      signals: [],
-      rules: [
-        new Capability.Permission.Rule({
-          effect: "allow",
-          pattern: new Capability.Capability.CapabilityPattern({ action: "proc:spawn", resource: "*" })
-        })
-      ]
-    },
-    registrations
-  )
-
 /** Waits until `read` answers `true`, or gives up after `budgetMs`. */
 const until = (
-  read: Effect.Effect<boolean>,
+  read: boolean!!,
   budgetMs: number
-): Effect.Effect<boolean> =>
-  Effect.gen(function*() {
+): boolean!! =>
+  effect {
     const deadline = Date.now() + budgetMs
     while (Date.now() < deadline) {
-      if (yield* read) return true
-      yield* Effect.sleep("20 millis")
+      if (try read) return true
+      try Effect.sleep("20 millis")
     }
-    return yield* read
-  })
+    return try read
+  }
 
 /**
  * Starts a parent whose child is parked, cancels the parent, and reads both run
  * rows back out of durable state.
  */
-export const cascade = (filename: string): Effect.Effect<CascadeSummary> =>
-  Effect.gen(function*() {
+export const cascade = (filename: string): CascadeSummary!! =>
+  effect {
     const registrations = Layer.mergeAll(
       WaitFor.layer,
       Interpreter.layer(Deploy),
       Interpreter.layer(Watch)
     ).pipe(Layer.provideMerge(Action.layerImplementations))
 
-    return yield* Effect.scoped(
-      Effect.gen(function*() {
-        const runs = yield* RunStore.RunStore
-        const state = yield* DurableEngineState.DurableEngineState
+    return try Effect.scoped(
+      effect {
+        const runs = try RunStore.RunStore
+        const state = try DurableEngineState.DurableEngineState
 
         // The parent starts, the child starts, and the child parks. `execute`
         // returns while both are still open, which is the state a cancellation
         // has to be able to reach.
-        yield* Deploy.execute({ target: "server" }, { executionId: deployRunId, discard: true })
-        const edges = yield* until(
+        try Deploy.execute({ target: "server" }, { executionId: deployRunId, discard: true })
+        const edges = try until(
           Effect.map(state.runChildren(deployRunId), (found) => found.length > 0),
           5_000
         ).pipe(Effect.andThen(state.runChildren(deployRunId)))
         const childId = edges[0]?.childId ?? "no-child"
-        const before = yield* Effect.forEach([deployRunId, childId], (runId) => Effect.map(runs.get(runId), stateOf))
+        const before = try Effect.forEach([deployRunId, childId], (runId) => Effect.map(runs.get(runId), stateOf))
 
         // The cancellation. `interrupt` is the durable path: the terminal
         // transition and the descendants' cancel requests commit together.
-        yield* Deploy.interrupt(deployRunId)
-        yield* until(
+        try Deploy.interrupt(deployRunId)
+        try until(
           Effect.map(runs.get(deployRunId), (row) => row.status === "cancelled").pipe(Effect.orDie),
           5_000
         )
-        yield* until(
+        try until(
           Effect.map(
             runs.get(childId),
             (row) => row.cancelRequestedAtMs !== null || row.status === "cancelled"
           ).pipe(Effect.orDie),
           5_000
         )
-        const after = yield* Effect.forEach([deployRunId, childId], (runId) => Effect.map(runs.get(runId), stateOf))
+        const after = try Effect.forEach([deployRunId, childId], (runId) => Effect.map(runs.get(runId), stateOf))
 
         // The parent journalled what it decided about each linked child.
-        const journal = yield* Journal.Journal
-        yield* journal.flush
-        const page = yield* journal.entries({ runId: deployRunId as JournalEvent.RunId, limit: 500 })
+        const journal = try Journal.Journal
+        try journal.flush
+        const page = try journal.entries({ runId: deployRunId as JournalEvent.RunId, limit: 500 })
         // The interruption record names every run the cascade reached. It is
         // written in the same transaction as the parent's terminal row, so a
         // cancelled parent with an attached child that has no recorded
@@ -189,19 +164,9 @@ export const cascade = (filename: string): Effect.Effect<CascadeSummary> =>
           .filter((kind): kind is string => kind !== undefined)
 
         return { before, after, cascadedTo, spawned } satisfies CascadeSummary
-      }).pipe(Effect.provide(host(filename, "examples-cancel", registrations)))
+      }.pipe(Effect.provide(host(filename, "examples-cancel", registrations)))
     )
-  }).pipe(Effect.orDie)
-
-/** Whether a process group still exists. */
-const groupIsAlive = (pgid: number): boolean => {
-  try {
-    process.kill(-pgid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
+  }.pipe(Effect.orDie)
 
 /** The step that opens a process group and then waits for it. */
 export const Hold = Action.make("examples/HoldProcess", {
@@ -223,50 +188,50 @@ export const occupyRunId = "occupy-1"
  * Starts a run whose step holds a real process group, cancels it, and checks
  * that the group is gone.
  */
-export const contained = (filename: string): Effect.Effect<ContainmentSummary> =>
-  Effect.gen(function*() {
+export const contained = (filename: string): ContainmentSummary!! =>
+  effect {
     let pgid = 0
     let started = false
 
     const hold = Hold.toLayer(({ seconds }) =>
-      Effect.gen(function*() {
-        const spawner = yield* ChildProcessSpawner
+      effect {
+        const spawner = try ChildProcessSpawner
         // Two processes so the group outlives anything short of a group signal,
         // which is exactly what an unconstrained kill would miss.
-        const handle = yield* Effect.orDie(
+        const handle = try Effect.orDie(
           spawner.spawn(ChildProcess.make("sh", ["-c", `sleep ${seconds} & sleep ${seconds}`]))
         )
         pgid = handle.pid as number
         started = true
-        yield* Effect.orDie(handle.exitCode)
+        try Effect.orDie(handle.exitCode)
         return "finished"
-      })
+      }
     )
 
     const registrations = Layer.mergeAll(hold, Interpreter.layer(Occupy)).pipe(
       Layer.provideMerge(Action.layerImplementations)
     )
 
-    const aliveDuringRun = yield* Effect.scoped(
-      Effect.gen(function*() {
+    const aliveDuringRun = try Effect.scoped(
+      effect {
         // The run holds the group open, so it is started in the background and
         // cancelled while its step is still running.
-        const running = yield* Effect.forkChild(
+        const running = try Effect.forkChild(
           Occupy.execute({ seconds: 300 }, { executionId: occupyRunId })
         )
-        yield* until(Effect.sync(() => started && groupIsAlive(pgid)), 10_000)
+        try until(Effect.sync(() => started && groupIsAlive(pgid)), 10_000)
         const alive = groupIsAlive(pgid)
-        yield* Occupy.interrupt(occupyRunId)
-        yield* Fiber.await(running)
+        try Occupy.interrupt(occupyRunId)
+        try Fiber.await(running)
         return alive
-      }).pipe(Effect.provide(host(filename, "examples-contained", registrations)))
+      }.pipe(Effect.provide(host(filename, "examples-contained", registrations)))
     )
 
     // The scope is closed: the spawner's finalizer has signalled and killed the
     // group, and the reaper had nothing left to do.
-    const survivedCancel = yield* until(Effect.sync(() => !groupIsAlive(pgid)), 10_000).pipe(
+    const survivedCancel = try until(Effect.sync(() => !groupIsAlive(pgid)), 10_000).pipe(
       Effect.map((gone) => !gone)
     )
 
     return { pgid, aliveDuringRun, survivedCancel } satisfies ContainmentSummary
-  }).pipe(Effect.orDie)
+  }.pipe(Effect.orDie)

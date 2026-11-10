@@ -73,7 +73,12 @@ const securityReview = Smithers.SecurityReview({
         "The Host/Origin middleware running after routing or the WebSocket upgrade, or accepting a mismatched Origin.",
         "NodeHttpServer.layer bound to anything other than 127.0.0.1, or a route mounted outside ControlRpcs.layerBearerAuth."
       ],
-      paths: ["examples/24-control-plane-and-gateway.ts", "examples/24-project/**", "test/examples/24-*.test.ts"]
+      paths: [
+        "examples/24-control-plane-and-gateway.vibe",
+        "examples/24-control-plane-and-gateway.platform.ts",
+        "examples/24-project/**",
+        "test/examples/24-*.test.ts"
+      ]
     },
     {
       id: "example-process-containment-scope",
@@ -87,8 +92,10 @@ const securityReview = Smithers.SecurityReview({
         "A spawned child with no acquireRelease finalizer or ProcessLedger record."
       ],
       paths: [
-        "examples/19-cancel-and-child-cleanup.ts",
-        "examples/37-host-containment.ts",
+        "examples/19-cancel-and-child-cleanup.vibe",
+        "examples/19-cancel-and-child-cleanup.platform.ts",
+        "examples/37-host-containment.vibe",
+        "examples/37-host-containment.platform.ts",
         "examples/37-host-containment-host.ts",
         "examples/40-sandbox-placement.vibe",
         "examples/41-sandboxed-flow.ts",
@@ -105,7 +112,11 @@ const securityReview = Smithers.SecurityReview({
         "decodeURIComponent or JSON.parse on request input with no try/catch in a request or line handler.",
         "A PUT /ac/{key} accepted without a body size limit."
       ],
-      paths: ["examples/35-remote-cache.vibe", "examples/35-remote-cache.platform.ts", "examples/10-telemetry-export.vibe"]
+      paths: [
+        "examples/35-remote-cache.vibe",
+        "examples/35-remote-cache.platform.ts",
+        "examples/10-telemetry-export.vibe"
+      ]
     },
     {
       id: "example-agent-prompt-payload",
@@ -127,7 +138,7 @@ const securityReview = Smithers.SecurityReview({
         "privilegedJj provided beside the engine instead of only to EngineStore.layerWithPrivilegedJj.",
         "Caller-supplied options read after validate returns, so a caller can change them after construction."
       ],
-      paths: ["src/Runtime.ts", "src/internal/RuntimeOptions.vibe"]
+      paths: ["src/Runtime.vibe", "src/internal/RuntimeOptions.vibe"]
     },
     {
       id: "docs-copyable-snippets",
