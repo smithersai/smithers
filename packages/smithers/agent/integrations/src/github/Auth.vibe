@@ -20,7 +20,7 @@ export const appSlug = Config.schema(Schema.String.check(Schema.isPattern(/^[a-z
 /**
  * GitHub didn't do what sign-in asked:
  * - `rejected`: a definite no, such as a used or expired code or refresh token, or a token GitHub no longer accepts;
- * - `misconfigured`: GitHub refused the App's client id, secret or callback URL;
+ * - `misconfigured`: GitHub refused the App's client id, secret or callback URL, or device flow is disabled;
  * - `unavailable`: no answer, a rate limit, a server error, or an answer outside its contract.
  */
 export class GitHubRefused extends Schema.TaggedError<GitHubRefused>()("@smthrs/mvp/auth/GitHubRefused", {
@@ -94,7 +94,7 @@ export service GitHubAuth {
     readonly revoke: (accessToken: Redacted.Redacted<string>) => void!GitHubRefused
     /**
      * Starts GitHub's device flow: the code the person enters at `verificationUri`. Needs only the App's client
-     * id; the client secret is never sent. Failures: `misconfigured` when GitHub refuses the client id.
+     * id; the client secret is never sent. Fails `misconfigured` when device flow is disabled or GitHub refuses the client.
      */
     readonly deviceCode: () => DeviceSignIn!GitHubRefused
     /**
@@ -136,6 +136,10 @@ const DeviceErrorAnswer = Schema.Struct({
   error: Schema.String,
   interval: Schema.optional(Schema.Number),
 })
+
+const isDeviceMisconfigured = Schema.is(Schema.Struct({
+  error: Schema.Literals(["device_flow_disabled", "incorrect_client_credentials", "unauthorized_client", "invalid_client"]),
+}))
 
 const Repository = Schema.Struct({
   permissions: Schema.optional(
@@ -205,7 +209,8 @@ const make = effect (options: {
 
   /**
    * One form POST to a GitHub device-flow endpoint with the client id and never the secret, decoded as JSON.
-   * GitHub answers a refused client id with 401 or 404; anything else that isn't a 2xx is `unavailable`.
+   * A JSON `device_flow_disabled`, `incorrect_client_credentials`, `unauthorized_client` or `invalid_client`
+   * error is `misconfigured` at any status, as are 401/404. Other non-2xx or malformed answers are `unavailable`.
    */
   const deviceJson = effect (path: string, form: Record<string, string>) => {
     const http = try Client.HttpClient
@@ -218,8 +223,10 @@ const make = effect (options: {
     const response = try Effect.mapError(http.execute(request), unavailable)
     const text = try Effect.mapError(response.text, unavailable)
     if (response.status === 401 || response.status === 404) throw new GitHubRefused({ step: "device", reason: "misconfigured" })
+    const answer = try Effect.mapError(Effect.try(() => JSON.parse(text) as unknown), unavailable)
+    if (isDeviceMisconfigured(answer)) throw new GitHubRefused({ step: "device", reason: "misconfigured" })
     if (response.status < 200 || response.status >= 300) throw unavailable()
-    return try Effect.mapError(Effect.try(() => JSON.parse(text) as unknown), unavailable)
+    return answer
   }
 
   return GitHubAuth.of({
@@ -323,7 +330,7 @@ const make = effect (options: {
           if (code === "expired_token") return { status: "expired" } as DevicePoll
           throw new GitHubRefused({
             step: "device",
-            reason: code === "incorrect_client_credentials" || code === "invalid_client" ? "misconfigured" : "unavailable",
+            reason: "unavailable",
           })
         }
         const decoded = try Effect.mapError(decodeDeviceGrant(answer), () => new GitHubRefused({ step: "device", reason: "unavailable" }))

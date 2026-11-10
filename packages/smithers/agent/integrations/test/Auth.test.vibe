@@ -339,6 +339,35 @@ describe("GitHub device sign-in, for a CLI or MCP server acting as a person's ag
     try promise(() => fixture.close())
   })
 
+  it.effect.each(["device_flow_disabled", "incorrect_client_credentials", "unauthorized_client", "invalid_client"])(
+    "classifies GitHub's %s as misconfigured at every status, on start and poll",
+    (error) => scoped(effect {
+      let status = 400
+      const fixture = try acquireRelease(
+        promise(() => startFixture((_request, response) => json(response, status, { error, error_description: "provider-private-text", interval: "ignored" }))),
+        fixture => promise(() => fixture.close()),
+      )
+      provide GitHub.Auth.layer({ clientId: "Iv1.example", clientSecret: Redacted.make("secret-never-in-output"), webBaseUrl: fixture.origin }).pipe(
+        Layer.provide(FetchHttpClient.layer),
+      ) {
+        const auth = try GitHub.Auth.GitHubAuth
+        for (const code of [200, 201, 302, 400, 401, 403, 404, 429, 500]) {
+          status = code
+          const start = try Effect.flip(auth.deviceCode())
+          const poll = try Effect.flip(auth.deviceToken(Redacted.make("device-private")))
+          try Effect.try(() => {
+            expect([start, poll]).toEqual([
+              new GitHub.Auth.GitHubRefused({ step: "device", reason: "misconfigured" }),
+              new GitHub.Auth.GitHubRefused({ step: "device", reason: "misconfigured" }),
+            ])
+            expect(JSON.stringify([start, poll])).not.toMatch(/provider-private-text|device-private|secret-never-in-output/)
+          })
+        }
+        try Effect.try(() => expect(fixture.requests).toHaveLength(18))
+      }
+    }),
+  )
+
   it.effect("fails safe: a refused client is misconfigured, faults carry no code or token", () => effect {
     let status = 401
     const refused = try promise(() => startFixture((_request, response) => json(response, status, { message: "bad client" })))

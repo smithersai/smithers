@@ -14,8 +14,10 @@ Device flow signs a person in from a host without a browser: a CLI or an MCP ser
 deviceCode starts one with the client id alone (the secret is never sent) and answers the userCode and
 verificationUri the person visits; deviceToken polls once per call and reports pending, slowDown, denied, expired
 or authorized with the person's tokens. The application owns the poll schedule, the expiry, and what the grant
-becomes. The App must have device flow enabled in its GitHub settings; a client id GitHub refuses fails
-misconfigured. No device code or token appears in a refusal.
+becomes. The App must have device flow enabled in its GitHub settings. On either device endpoint, a JSON error of
+`device_flow_disabled`, `incorrect_client_credentials`, `unauthorized_client` or `invalid_client` fails
+`GitHubRefused { step: "device", reason: "misconfigured" }` at any HTTP status. HTTP 401/404 keep that same reason;
+other non-2xx, malformed answers and transport failures are `unavailable`. No device code or token appears in a refusal.
 
 webBaseUrl and apiBaseUrl are injected for enterprise hosts and integration fixtures. Defaults are github.com.
 The adapter uses @smthrs/integrations' OAuth, PKCE and GitHubClient contracts and sets GitHubClient.USER_AGENT even
