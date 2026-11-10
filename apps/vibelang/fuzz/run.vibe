@@ -9,6 +9,11 @@ export error Finding {
   get message() { return this.report }
 }
 export error BudgetInvalid { message: string }
+/** The budget ran out before the property ran once (corpus loading and arbitrary construction share the deadline). */
+export error NoExecution {
+  report: string
+  get message() { return this.report }
+}
 
 const executions = Metric.counter("vibelang_fuzz_executions", { incremental: true })
 
@@ -48,8 +53,21 @@ export effect function run<S extends Schema.Constraint>(
       try fs.writeFileString(path.join(receipts, name.replaceAll("/", "--") + ".json"), JSON.stringify({ target: name, seed, budget: Duration.toMillis(budget), outcome: report._tag, began, ended, elapsedMs: ended - began, stats: report.stats }))
       const finding = try Effect.try(() => Fuzz.formatReport(report))
       if (finding !== undefined) throw new Finding({ report: finding })
+      try gate(name, budget, limit, report.stats)
     }, `vibelang.fuzz.${name}`)
   }
+}
+
+/**
+ * A target that never ran its property proves nothing, so it fails and names the load that starved it.
+ * The deadline starts before corpus loading and arbitrary construction; on a loaded host they can spend it all.
+ * `FUZZ_EXECUTIONS=0` is the explicit replay-only mode and passes with zero executions.
+ */
+export effect function gate(name: string, budget: Duration.Duration, limit: Option.Option<number>, stats: { readonly executions: number }) {
+  if (stats.executions > 0 || (Option.isSome(limit) && limit.value === 0)) return
+  const fs = try FileSystem.FileSystem
+  const load = try fs.readFileString("/proc/loadavg").pipe(Effect.map((text) => text.split(" ")[0] ?? "unknown"), Effect.orElseSucceed(() => "unknown"))
+  throw new NoExecution({ report: `${name} ran no execution in ${Duration.toMillis(budget)} ms (host load ${load})` })
 }
 
 export const Int = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 31 }))

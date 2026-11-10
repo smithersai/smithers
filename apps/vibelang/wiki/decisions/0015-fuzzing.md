@@ -128,7 +128,7 @@ Third campaign: seed 20261110, 32 seconds per target, 35.2 minutes across 122 ta
 
 Seeding returning visitors removed the tour coverage that the race had supplied by accident, so `browser/first-visit-tour` now asserts it: the tour starts itself, Ctrl+K opens no palette, and Escape ends it.
 
-Coverage budget: `pnpm fuzz:coverage` now defaults to 5 seconds per target, because the deadline starts before corpus loading and arbitrary construction. At 250 ms, 12 of 128 targets ran no fresh execution and passed anyway. At 5 seconds none did: 5412/6936 lines (78.02%), 7555/11895 branches (63.51%), load 16. `pnpm fuzz` keeps 250 ms and can still run a target zero times. Saved values from before `IssuesUi.connection` replay through `fuzz/issues-corpus.vibe`, which leaves their files unchanged.
+Coverage budget: `pnpm fuzz:coverage` now defaults to 5 seconds per target, because the deadline starts before corpus loading and arbitrary construction. At 250 ms, 12 of 128 targets ran no fresh execution and passed anyway. At 5 seconds none did: 5412/6936 lines (78.02%), 7555/11895 branches (63.51%), load 16. `pnpm fuzz` keeps 250 ms. A target that runs its property zero times now fails with `NoExecution`, naming the budget and the host load (`gate` in `fuzz/run.vibe`, `test/fuzzGate.test.vibe`); `FUZZ_EXECUTIONS=0`, the replay-only mode, still passes. Saved values from before `IssuesUi.connection` replay through `fuzz/issues-corpus.vibe`, which leaves their files unchanged.
 
 Coverage is still bounded by decision 0016's bundled source-range defect and by workerd's refusal of precise V8 profiling. `worker/Api.vibe` remains the only exclusion: Alchemy evaluates it to build the Worker, and request code runs in `Http` and `Objects`.
 
