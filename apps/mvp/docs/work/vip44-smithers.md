@@ -18,8 +18,8 @@ attempt (392b6cd8262d), which was never landed.
 | 1 | `@smthrs/canonical` `sortCollections` | f4b973ab2789 |
 | 2 | `ExecutionIds` sorts before encoding | e119afb8dd32 |
 | 3 | One shared payload identity for every hashing site | bcf8076a4ff4 |
-| 4 | Action results through `RpcSerialization.codecFor` | pending |
-| 5 | `layerMemory` snapshot sorts | pending |
+| 4 | Action results through `RpcSerialization.codecFor` | 151fbdf1d3ab |
+| 5 | `layerMemory` snapshot sorts | 8d09aa7fc683 |
 | 6 | `smithers-build` payloads have a JSON codec | pending |
 
 Open question 1 (walk the Schema or the value): the value. A value walk that
@@ -83,3 +83,19 @@ cache entry's meta can carry it with no migration) and read back before decode,
 including `CallFacts` and `StepFacts`. Until then the store refuses those
 serializers loudly; nothing is stored under a codec it cannot read back.
 `DurableDeferred` results still use the fixed JSON codec.
+
+## Row 6: `smithers-build` payloads
+
+Inventory of every `Schema.declare` in `packages/smithers/build` (`Target.Target`,
+`Reference.TargetTool`, `WorkspaceDeclaration` remote cache, `RustToolchain`
+versions) against every durable payload (2 `Flow.make`, 22 `Action.make`, all
+`.call/.child/.to`): one site held a declared reference,
+`Skills.InstallAction` (payload `Skills.Attrs`, `deps: Array(Target.Target)`).
+Its host rule never reads `deps`. It now takes `Skills.InstallPayload`
+(library, agents, select). A target reference "encodes" through
+`Schema.toCodecJson` only by passing the live object through; as bytes it is
+`{"_tag": ...}` and never decodes (test in `build/targets/test/ProjectSkills.test.ts`).
+The stale comments in `layerMemory.ts` and `FlowEngineMemoryDurable.test.ts`
+that blamed `smithers-build` targets are corrected. `layerMemory` keeps the
+`makeEffect` copy (row 5 sorts it) because memory payloads outside
+smithers-build may still hold opaque references.

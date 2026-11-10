@@ -346,10 +346,11 @@ const requestCancellation = (memory: Memory, executionId: string): ReadonlyArray
  * opaque, such as a `Schema.declare` reference to a live object. Copying
  * through `Schema.toCodecJson` instead, as this did until 2026-09-01,
  * demanded a JSON representation of every member and so refused any
- * payload holding a declared reference, including every `smithers-build`
- * target that names a dependency. The constructor also belongs to the
- * schema object itself, so a flow authored against a second `effect`
- * instance is rebuilt by the instance that owns it.
+ * payload holding a declared reference. No `smithers-build` payload holds one
+ * since VIP-44 (its skills installation passes data, not target references),
+ * but a memory engine still runs payloads that do. The constructor also
+ * belongs to the schema object itself, so a flow authored against a second
+ * `effect` instance is rebuilt by the instance that owns it.
  *
  * The copy is made from the value with every `Set` and `Map` sorted
  * (`sortCollections`), the order `Flow.payloadSnapshot` hashes and stores, so
