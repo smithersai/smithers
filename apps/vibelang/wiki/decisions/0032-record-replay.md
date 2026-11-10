@@ -78,8 +78,9 @@ so `issues/steered-host`'s "GitHub never showed the VIP" case still means what i
   cases on the in-memory GitHub; their fault cases (wrapped client services) stay as they are. Each happy case moves
   to a recording when its state can be built on the test repository. `bench/issues-delegated.bench.vibe` and
   `bench/wiki-delegated.bench.vibe` (another lane, 2026-11-10) also run on the in-memory GitHub.
-- Fuzz targets generate requests a recording cannot hold. They keep the in-memory GitHub; whether a protocol fake may
-  serve a generated happy path is Will's to rule.
+- Fuzz targets generate requests a recording cannot hold. They keep the in-memory GitHub for generated happy paths
+  (VL-38). Not built yet: the test that replays every committed recording through the in-memory GitHub and fails when
+  it answers differently, so the fake can't drift from GitHub.
 - The doubles `~/vl/review-tests.REPORT.md` finding 3 lists for device sign-in, accounts, the model provider and
   sandbox machines.
 - The test repository grows by three closed issues and one closed pull request per recording run (the App cannot
