@@ -3996,3 +3996,13 @@ Raw maps, generated source bytes, hashes and per-file metrics are retained in th
 GitHub write success, real Container costs, specification-only functions, source-map shape blockers and remaining
 error/invariant paths stay counted and open. Documentation is generated again for publication; coverage receipts
 refer to their recorded snapshots, not to the later generated wiki text.
+
+
+The explicit-session corpus checks malformed/wrong-origin/non-session configuration, live-layer selection against
+the real local Worker and a refused local connection. It uses fixture cookie syntax, not an authenticated provider
+session. Worker/directory startup is excluded; layer construction, real health/failed connection and assertions are
+included. The plain-command corpus runs a fresh product mock backend through reply/read, history Plan/Start/Note,
+and sandbox start/replay/stop, checking literal output, exact identity/generation and whole-minute display with fractional usage. Its
+settings IO, durable flows and scripted reply delays are included; CLI process/IPC startup, provider writes and
+Containers are measured elsewhere or remain unmeasured. Both use three unwarmed callbacks, with no tail-percentile
+claim. The issue DOM corpus includes the generic failure alert with no unrelated GitHub action.

@@ -561,3 +561,19 @@ spend authorization, the five specification-only functions, the 11 already named
 Will, and the retained error/invariant paths listed per file in the report. Public reads need no write token and
 have now run; mutation success remains unmeasured. Defensive history-only Post/Tour and impossible child-flow guards
 remain counted rather than being called solely to satisfy a counter. The 100% requirement remains open.
+
+
+**Explicit surface sessions and plain output (2026-11-10, Codex).** A further backend corpus rejects malformed JSON,
+invalid shape, wrong-origin and non-session explicit credentials with the exact typed error, then builds the real
+live layers after a real local workerd health request using a valid-shaped fixture session. A closed loopback port
+must yield the exact unreachable failure. Workerd startup and temporary-directory creation occur outside timing;
+layer construction, validation, real loopback and failed connection are included. Health does not authenticate the
+fixture cookie, so this is not sign-in authority evidence. No provider write or successful HTTP double is used.
+
+A plain command corpus executes the actual product mock backend: ask and settled nonempty read, Plan/Start/Note and
+full history output, sandbox start/replay/stop with exact identity/generation and whole-minute display with fractional usage. It checks
+literal plain text through public command render handlers. Fresh settings, layers, durable flows and scripted reply
+delays are included; process/IPC startup and actual Containers are outside this timing. Three unwarmed journeys;
+these are command execution/formatting costs, not formatting CPU cost. The issue DOM corpus additionally checks a
+generic failure exposes its alert and no unrelated Fork or Install action. New observations and coverage receipts
+are recorded separately from the earlier frozen maps.

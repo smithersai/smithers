@@ -1,0 +1,51 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { Factory } from "../src/core/Factory.vibe"
+import { backend } from "../src/surfaces/backend.vibe"
+import { Ask, Read, PlanWork, StartWork, AddNote, ShowHistory, StartSandbox, StopSandbox } from "../src/surfaces/commands.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("plain command output preserves settled replies, history details and sandbox generations", async ({ bench }) => {
+  const result = await workload(bench, "surface-plain-commands", "async", async () => {
+    await runPromise(scoped(effect {
+      provide NodeServices.layer {
+        const settings = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+        provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: settings })) {
+          provide backend(true, undefined) {
+            const factory = try Factory
+            const answer = try Ask.run({ text: "install" })
+            const read = try Read.render({}, false)
+            const planned = try PlanWork.run({ title: "Plain benchmark", newEpic: "Bench", task: "Measure rendering" })
+            const started = try StartWork.render({ id: planned.id, lane: "bench" }, false)
+            try AddNote.run({ id: planned.id, section: "evidence", text: "Measured." })
+            const detail = try ShowHistory.render({ commit: planned.id }, false)
+            const snapshot = try StartSandbox.run({ operationId: "plain-start" })
+            const running = try StartSandbox.render({ operationId: "plain-start" }, false)
+            const stopped = try StopSandbox.render({ operationId: "plain-stop", generation: snapshot.generation }, false)
+            const final = try factory.sandbox("home")
+            try Effect.try(() => {
+              expect(answer.text).toContain("npm create vibelang@latest my-app")
+              expect(answer.text).toContain("VibeLang pins Effect to exactly 4.1.1.")
+              expect(read).toContain("will: install")
+              expect(read).toContain(`VibeLang agent: ${answer.text}`)
+              expect(answer.events.at(-1)).toBeGreaterThan(0)
+              expect(read.endsWith(`Event: ${answer.events.at(-1)}`)).toBe(true)
+              expect(started).toBe(`Started ${planned.id}.`)
+              expect(detail).toContain(`${planned.id}  working  Plain benchmark`)
+              expect(detail).toContain("evidence: Measured. (Factory CLI (agent))")
+              expect(running).toBe(`${snapshot.id}  running  2000 min`)
+              expect(stopped).toBe(`${snapshot.id}  stopped`)
+              expect(final).toMatchObject({ id: snapshot.id, generation: snapshot.generation, status: "stopped", role: "maintainer", allowance: 2000 })
+              expect(final.used).toBeGreaterThanOrEqual(0)
+              expect(Number.isInteger(final.remaining)).toBe(true)
+              expect(final.remaining + final.used).toBeGreaterThanOrEqual(2000)
+              expect(final.remaining + final.used).toBeLessThan(2001)
+            })
+          }
+        }
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("surface-plain-commands", "Vitest built-in bench; three fresh product mock CLI/MCP command journeys through public render handlers: ask and settled nonempty read, plan/start/note and full mythical detail, sandbox start/replay/stop and final snapshot. Check literal plain output, settled answer, author label, history note, exact sandbox identity/generation and allowance. Real input/output validation, registered flows, mock replies and settings IO included.", ["In-process command execution and formatting; excludes CLI process/IPC startup measured by separate workloads. Product mock storage/machines and scripted reply delays, no real Container/provider/model. Temporary directory initialization is included."], result))
+})

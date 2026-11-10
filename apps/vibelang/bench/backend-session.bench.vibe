@@ -1,0 +1,47 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { Factory } from "../src/core/Factory.vibe"
+import { backend, unreachable } from "../src/surfaces/backend.vibe"
+import { serveApiObjects } from "../test/support/workerd.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("surface backend validates explicit sessions before reaching the real Worker", { timeout: 240_000 }, async ({ bench }) => {
+  const result = await runPromise(scoped(effect {
+    provide NodeServices.layer {
+      const api = try acquireRelease(serveApiObjects({}), served => promise(served.dispose))
+      const settings = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      const measured = workload(bench, "surface-backend-session", "async", async () => {
+        await runPromise(scoped(effect {
+          provide NodeServices.layer {
+            const valid = JSON.stringify({ origin: api.origin, cookie: "vibelang-session=benchmark" })
+            for (const value of ["{", "{}", JSON.stringify({ origin: "https://elsewhere.invalid", cookie: "__Host-vibelang-session=benchmark" }), JSON.stringify({ origin: api.origin, cookie: "tracker=benchmark" })]) {
+              provide ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_FACTORY_URL: api.origin, VIBELANG_SESSION: value, XDG_CONFIG_HOME: settings })) {
+                const failed = try Effect.result(Layer.build(backend(false, undefined)))
+                try Effect.try(() => {
+                  expect(failed._tag).toBe("Failure")
+                  if (failed._tag === "Failure") expect(failed.failure).toMatchObject({ _tag: "LiveBackendNotDeployed", message: "Invalid VIBELANG_SESSION." })
+                })
+              }
+            }
+            provide ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_FACTORY_URL: api.origin, VIBELANG_SESSION: valid, XDG_CONFIG_HOME: settings })) {
+              const selected = try Layer.build(backend(false, undefined))
+              const factory = Context.get(selected, Factory)
+              try Effect.try(() => expect(factory.mode).toBe("live"))
+            }
+            const absent = "http://127.0.0.1:9"
+            provide ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_FACTORY_URL: absent, XDG_CONFIG_HOME: settings })) {
+              const failed = try Effect.result(Layer.build(backend(false, undefined)))
+              try Effect.try(() => {
+                expect(failed._tag).toBe("Failure")
+                if (failed._tag === "Failure") expect(failed.failure).toMatchObject({ _tag: "LiveBackendNotDeployed", message: unreachable(absent) })
+              })
+            }
+          }
+        }))
+      })
+      return try tryPromise(() => measured.run(slow))
+    }
+  }))
+  await runPromise(artifact("surface-backend-session", "Vitest built-in bench; three full CLI/MCP backend-selection corpora. Four malformed/wrong-origin/non-session explicit credentials are refused with the exact typed message; a valid synthetic local session constructs the production live layers after a real workerd health request; a closed local port produces the exact unreachable failure. Workerd startup and temporary directory creation excluded, layer construction and assertions included.", ["Fixture session values only, no OAuth, provider calls, authenticated write or model. Health does not validate the fixture session's authority, so this checks local credential shape/origin and backend selection, not successful sign-in. Includes actual loopback/failed connection cost, not pure validation CPU cost."], result))
+})
