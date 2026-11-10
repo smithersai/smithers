@@ -1019,7 +1019,7 @@ const persistAction = (
     // dispatch: dispatch decodes with the adapter's, so both must be the same.
     execute: (actionInput) =>
       (actionInput.action as Action.Any).executeEncoded.pipe(
-        Effect.provideService(RpcSerialization.RpcSerialization, store.serialization)
+        Effect.provideService(Action.StoredSerialization, store.serialization)
       ) as Effect.Effect<unknown, unknown>,
     idempotencyKey: input.action.idempotencyKey === undefined
       ? undefined

@@ -217,6 +217,10 @@ payload codec: sort, `Schema.toCodecJson`, `Canonical`, SHA-256.
   a copied class instance has its prototype and own properties but not its
   private fields. Keep the data a payload is identified by in own data
   properties.
+- Ranks read every own data property, including ones a codec drops, such as
+  a struct's excess properties. Two sets whose elements encode equal but carry
+  different dropped properties can order differently; strip excess
+  properties before hashing.
 
 ```ts
 import { sortCollections } from "@smthrs/canonical"

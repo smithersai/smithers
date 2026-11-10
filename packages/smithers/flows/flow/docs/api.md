@@ -113,14 +113,14 @@ The declared form takes the same two literals `Flow.make` does, lowered into the
 
 ### Stored results
 
-An action's results are stored in the representation Effect's `RpcSerialization` injects (VIP-44). `executeEncoded` encodes a success and each typed failure with `codecFor` of the `RpcSerialization` in context, else `RpcSerialization.json`, whose `codecFor` is `Schema.toCodecJson`. `exitSchemasFor(serialization, action)` returns the `{ exitSchema, exitSchemaPartial }` that decode them; under `RpcSerialization.json` they are the action's own `exitSchema` and `exitSchemaPartial`, so the default stores exactly what it always has.
+An action's results are stored in the representation Effect's `RpcSerialization` injects (VIP-44). `executeEncoded` encodes a success and each typed failure with `codecFor` of `StoredSerialization`, a context reference whose default is `RpcSerialization.json` (`codecFor` is `Schema.toCodecJson`). An engine provides `StoredSerialization` around every dispatch; it is separate from the `RpcSerialization` service, so an action body that builds an Rpc client sees the caller's serializer, never the store's. `exitSchemasFor(serialization, action)` returns the `{ exitSchema, exitSchemaPartial }` that decode them; under `RpcSerialization.json` they are the action's own `exitSchema` and `exitSchemaPartial`, so the default stores exactly what it always has.
 
-| Host                     | Serializers it stores with                                                                                                                                      |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FlowEngine.layerMemory` | any; read once when the layer is built                                                                                                                          |
-| `EngineStore.layer`      | those whose `codecFor` is the JSON codec: `json`, `ndjson`, `jsonRpc`, `ndJsonRpc`. Any other is refused when the store is built with `UnstorableSerialization` |
+| Host                     | Serializers it stores with                                                                                                                                                                                                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `FlowEngine.layerMemory` | any `RpcSerialization` in context when the layer is built                                                                                                                                                                                                                            |
+| `EngineStore.layer`      | those whose `codecFor` is the JSON codec: `json`, `ndjson`, `jsonRpc`, `ndJsonRpc`. Any other is refused when the store is built with `UnstorableSerialization`. Accepting `jsonRpc` and `ndJsonRpc` is temporary: VIP-44's stored frames refuse them, so provide `json` or `ndjson` |
 
-Identity never goes through the serializer: run ids and keys hash `Flow.payloadSnapshot`, so changing serializers never changes an id.
+Identity never goes through the serializer: run ids and keys hash `Flow.payloadSnapshot`, so changing serializers never changes an id. A caller-owned `idempotencyKey` object is not a payload and is hashed as written, so RFC 8785 refuses a `Set` or `Map` in it; pass the payload's sorted form yourself.
 
 Omitting `capabilities` inherits the caller's authority. Declaring `capabilities: []`
 denies every guarded host operation. Each declaration intersects with every

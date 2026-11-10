@@ -6,7 +6,7 @@
 
 import { sortCollections } from "@smthrs/canonical"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
-import { type DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, type DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import { ExecutionIdentityConflict } from "@smthrs/flow/FlowRuntime"
 import * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
@@ -851,7 +851,7 @@ const runAction = (
   return restore(action.executeEncoded.pipe(
     Flow.intoResult,
     Effect.provideService(FlowRuntime.FlowInstance, actionInstance),
-    Effect.provideService(RpcSerialization.RpcSerialization, memory.serialization)
+    Effect.provideService(Action.StoredSerialization, memory.serialization)
   )).pipe(
     Effect.onExit((exit) => recordSettlement(memory, owner, actionId, exit)),
     Effect.ensuring(Effect.sync(() => {

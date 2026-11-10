@@ -1,6 +1,6 @@
 ---
 title: VIP-44 durable values, Smithers side
-status: in-progress
+status: done
 area: SDK values
 owner: Claude vip44-smithers
 updated: 2026-11-09
@@ -20,7 +20,7 @@ attempt (392b6cd8262d), which was never landed.
 | 3 | One shared payload identity for every hashing site | bcf8076a4ff4 |
 | 4 | Action results through `RpcSerialization.codecFor` | 151fbdf1d3ab |
 | 5 | `layerMemory` snapshot sorts | 8d09aa7fc683 |
-| 6 | `smithers-build` payloads have a JSON codec | pending |
+| 6 | `smithers-build` payloads have a JSON codec | 6e6148b53f36 |
 
 Open question 1 (walk the Schema or the value): the value. A value walk that
 visits every own data property, enumerable or not, and keeps prototypes gives
@@ -99,3 +99,19 @@ The stale comments in `layerMemory.ts` and `FlowEngineMemoryDurable.test.ts`
 that blamed `smithers-build` targets are corrected. `layerMemory` keeps the
 `makeEffect` copy (row 5 sorts it) because memory payloads outside
 smithers-build may still hold opaque references.
+
+## Reviews
+
+Codex Astra (VERDICT FAIL, 9 findings): 6 fixed in 72bc14c0e851. Fable: the
+stored serializer leaked into action bodies (fixed with
+`Action.StoredSerialization`), `-0` ranked apart from its encoding (fixed);
+row 4's codec-output storage judged an acceptable first cut.
+
+Known limits, each documented and the first under a committed expected-fail
+test: set elements that differ only behind accessors or private fields rank
+equal; a copied class instance lacks private fields; ranks read struct excess
+properties a codec drops; authored plan literals refuse sets; a caller-owned
+`idempotencyKey` object refuses sets; engine-store accepts `jsonRpc` and
+`ndJsonRpc` until frame storage lands. Remaining Stores work: Rpc frames with a
+per-entry `contentType` (schema-binary and custom serializers in engine-store),
+and `DurableDeferred` results through the stored serializer.

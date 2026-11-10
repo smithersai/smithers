@@ -126,3 +126,30 @@ describe("a serializer whose values are not JSON", () => {
       )
     )))
 })
+
+describe("the stored serializer and an action body", () => {
+  const Probe = Action.make("StoredSerialization/probe", { payload: {}, success: Schema.String })
+  const Look = Flow.make("StoredSerialization/look", {
+    payload: {},
+    success: Schema.String,
+    body: () => Probe.call({})
+  })
+
+  effect("pins only the stored representation, never the RpcSerialization the body sees", () =>
+    Effect.gen(function*() {
+      expect(yield* Look.execute({}, { executionId: "body-serialization" })).toBe("none")
+    }).pipe(Effect.provide(
+      Layer.mergeAll(
+        Probe.toLayer(() =>
+          Effect.map(
+            Effect.serviceOption(RpcSerialization.RpcSerialization),
+            (found) => found._tag === "Some" ? found.value.contentType : "none"
+          )
+        ),
+        Interpreter.layer(Look)
+      ).pipe(
+        Layer.provideMerge(Action.layerImplementations),
+        Layer.provideMerge(FlowEngine.layerMemory.pipe(Layer.provide(RpcSerialization.layerSchemaBinary())))
+      )
+    )))
+})

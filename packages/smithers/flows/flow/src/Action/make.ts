@@ -33,7 +33,7 @@ import * as SpanFailure from "../internal/SpanFailure.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
 import type { Action, Declared, IdempotencyKey, Requirement, Tier } from "./Action.ts"
 import { AttemptTimedOut } from "./AttemptTimedOut.ts"
-import { CurrentAttempt, CurrentHeartbeat } from "./Context.ts"
+import { CurrentAttempt, CurrentHeartbeat, StoredSerialization } from "./Context.ts"
 import { FileBoundary } from "./FileBoundary.ts"
 import { type Implementation, Implementations } from "./Implementations.ts"
 import { ImplementationVersionMismatch } from "./ImplementationVersionMismatch.ts"
@@ -99,17 +99,6 @@ export const exitSchemasFor = (
   }
   return cached
 }
-
-/**
- * The serializer an action's results are stored with: the `RpcSerialization`
- * in context, else `RpcSerialization.json`.
- *
- * @private
- */
-const storedSerialization = Effect.map(
-  Effect.serviceOption(RpcSerialization.RpcSerialization),
-  Option.getOrElse(() => RpcSerialization.json)
-)
 
 /**
  * The options of a declared action, shared by {@link make}'s declared form and
@@ -278,7 +267,7 @@ const makeInline = <
     ).pipe(
       // Encoding changes the error value, not its originating action or other cause annotations.
       Effect.catchCause((cause) =>
-        Effect.flatMap(storedSerialization, (serialization) =>
+        Effect.flatMap(StoredSerialization, (serialization) =>
           Effect.forEach(
             cause.reasons,
             (reason): Effect.Effect<Cause.Reason<unknown>, never, Error["EncodingServices"]> =>
@@ -294,7 +283,7 @@ const makeInline = <
           ).pipe(Effect.flatMap((reasons) => Effect.failCause(Cause.fromReasons(reasons)))))
       ),
       Effect.flatMap((value) =>
-        Effect.flatMap(storedSerialization, (serialization) =>
+        Effect.flatMap(StoredSerialization, (serialization) =>
           Effect.orDie(
             Effect.suspend(() => Schema.encodeUnknownEffect(codecOf(serialization.codecFor, successSchema))(value))
           ))

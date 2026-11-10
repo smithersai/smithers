@@ -391,13 +391,12 @@ const decodeOutcome = <Success extends Schema.Constraint, Error extends Schema.C
   options: Encoded,
   action: Action.Action<Success, Error, R>,
   recorded: Exit.Exit<unknown, unknown>
-) =>
-  Effect.orDie(
-    Schema.decodeEffect(
-      Action.exitSchemasFor(options.serialization ?? RpcSerialization.json, action).exitSchemaPartial
-    )(
+) => {
+  const serialization = options.serialization ?? RpcSerialization.json
+  return Effect.orDie(
+    Schema.decodeEffect(Action.exitSchemasFor(serialization, action).exitSchemaPartial)(
       // A JSON store reads `undefined` back as `null`; another codec's values never were JSON.
-      (options.serialization ?? RpcSerialization.json).codecFor === RpcSerialization.json.codecFor
+      serialization.codecFor === RpcSerialization.json.codecFor
         ? toJsonExit(encodeEngineFailures(options, recorded))
         : encodeEngineFailures(options, recorded)
     ).pipe(
@@ -419,6 +418,7 @@ const decodeOutcome = <Success extends Schema.Constraint, Error extends Schema.C
       )
     )
   )
+}
 
 /** Whether every reason in a failure is a Fail, or a Die carrying an encoded engine failure. */
 const onlyEngineFailures = (

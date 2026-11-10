@@ -132,9 +132,11 @@ describe("sortCollections", () => {
     const shuffled = [...values].reverse()
     expect([...sortCollections(new Set(values))]).toEqual([...sortCollections(new Set(shuffled))])
     const sorted = [...sortCollections(new Set(values))]
-    const zeros = [{ n: 0 }, { n: -0 }]
-    expect([...sortCollections(new Set(zeros))]).toEqual([...sortCollections(new Set([...zeros].reverse()))])
-    expect(Object.is([...sortCollections(new Set(zeros))][0]!.n, -0)).toBe(true)
+    // -0 encodes as 0, so it must rank as 0: otherwise these equal encodings order apart.
+    const Points = Schema.ReadonlySet(Schema.Struct({ x: Schema.Number, y: Schema.Number }))
+    expect(identity(Points, new Set([{ x: -0, y: 2 }, { x: 0, y: 1 }]))).toBe(
+      identity(Points, new Set([{ x: 0, y: 2 }, { x: 0, y: 1 }]))
+    )
     // A subarray ranks by the bytes it views, not by its whole buffer.
     expect(sorted).toContain(values[16])
   })

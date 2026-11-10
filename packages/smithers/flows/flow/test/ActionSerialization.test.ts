@@ -39,7 +39,7 @@ describe("Action.executeEncoded", () => {
   it.effect("encodes with the codecFor of the RpcSerialization in context", () =>
     Effect.gen(function*() {
       const encoded = yield* runEncoded(Bytes).pipe(
-        Effect.provideService(RpcSerialization.RpcSerialization, schemaBinary)
+        Effect.provideService(Action.StoredSerialization, schemaBinary)
       )
       expect(encoded).not.toBe("AQI=")
       const decoded = yield* Schema.decodeUnknownEffect(
@@ -55,7 +55,7 @@ describe("Action.executeEncoded", () => {
         at: "1970-01-01T00:00:00.000Z"
       })
       const binary = yield* Effect.exit(
-        runEncoded(Refusing).pipe(Effect.provideService(RpcSerialization.RpcSerialization, schemaBinary))
+        runEncoded(Refusing).pipe(Effect.provideService(Action.StoredSerialization, schemaBinary))
       )
       expect(Exit.isFailure(binary) && binary.cause.reasons.find(Cause.isFailReason)?.error).not.toEqual({
         at: "1970-01-01T00:00:00.000Z"

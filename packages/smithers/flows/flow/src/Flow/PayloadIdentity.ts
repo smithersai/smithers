@@ -32,7 +32,13 @@ export const payloadSnapshot = <S extends Schema.Top>(
   schema: S,
   value: unknown
 ): Effect.Effect<Schema.Json, Schema.SchemaError, S["EncodingServices"]> =>
-  Effect.suspend(() => Schema.encodeUnknownEffect(Schema.toCodecJson(schema))(sortCollections(value)))
+  Effect.suspend(() => encodeSorted(schema, sortCollections(value)))
+
+const encodeSorted = <S extends Schema.Top>(
+  schema: S,
+  sorted: unknown
+): Effect.Effect<Schema.Json, Schema.SchemaError, S["EncodingServices"]> =>
+  Schema.encodeUnknownEffect(Schema.toCodecJson(schema))(sorted)
 
 /**
  * The material a site that has always hashed a payload as written hashes now.
@@ -54,8 +60,9 @@ export const payloadPreimage = <S extends Schema.Top>(
   schema: S,
   value: unknown
 ): Effect.Effect<unknown, Schema.SchemaError, S["EncodingServices"]> =>
-  Effect.suspend(() =>
-    sortCollections(value) === value
+  Effect.suspend(() => {
+    const sorted = sortCollections(value)
+    return sorted === value
       ? Effect.succeed(value)
-      : Effect.map(payloadSnapshot(schema, value), (snapshot) => ["snapshot", snapshot])
-  )
+      : Effect.map(encodeSorted(schema, sorted), (snapshot) => ["snapshot", snapshot])
+  })

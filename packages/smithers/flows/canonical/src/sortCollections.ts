@@ -110,7 +110,8 @@ const rank = (value: unknown, path: Array<object> = []): string => {
     case "string":
       return `s${JSON.stringify(value)}`
     case "number":
-      return Object.is(value, -0) ? "n-0" : `n${value}`
+      // `String(-0)` is "0": codecs encode -0 as 0, so it must not order apart.
+      return `n${value}`
     case "bigint":
       return `b${value}`
     case "boolean":
