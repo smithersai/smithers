@@ -5,6 +5,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
 import { FlowRuntime } from "@smthrs/flow"
 import { makeMockSandboxes } from "../src/core/sandboxMock.vibe"
+import { Refused, Unavailable } from "../src/core/Factory.vibe"
 import { signedOut } from "../src/core/sandboxPolicy.vibe"
 
 /** The memory engine, except that every execution fails with a flow cycle. */
@@ -22,6 +23,26 @@ describe("the mock sandboxes", () => {
     const command = try Effect.flip(sandboxes.sandboxCommand("home", "command-1", "pwd", 1))
     try Effect.try(() => {
       for (const failure of [read, start, stop, command]) expect(failure).toMatchObject({ _tag: "Unavailable", reason: "sandbox-flow" })
+    })
+  }))
+
+  it.effect.each([
+    new Refused({ refusal: "quota" }),
+    new Unavailable({ reason: "journal-unavailable" }),
+  ])("an engine's typed %s reaches every sandbox operation with its original reason", (failure) => scoped(effect {
+    const failedEngine = Layer.effect(FlowRuntime.FlowRuntime)(effect {
+      const real = try FlowRuntime.FlowRuntime
+      return { ...real, execute: () => Effect.fail(failure) }
+    }).pipe(Layer.provide(FlowEngine.layerMemory))
+    const sandboxes = try makeMockSandboxes("contributor", undefined, failedEngine)
+    const results = [
+      try Effect.flip(sandboxes.sandbox("home")),
+      try Effect.flip(sandboxes.startSandbox("home", "start")),
+      try Effect.flip(sandboxes.stopSandbox("home", "stop", 1)),
+      try Effect.flip(sandboxes.sandboxCommand("home", "command", "pwd", 1)),
+    ]
+    try Effect.try(() => {
+      for (const result of results) expect(result).toBe(failure)
     })
   }))
 

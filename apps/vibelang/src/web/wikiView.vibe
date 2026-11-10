@@ -1,23 +1,25 @@
 // The designer's wiki pane (wiki/designs/wiki), including its edit-maintainer and propose-contributor screens:
 // chrome and navigation stay in Foldkit; Markdown is compiled at build time, edits render through the same renderer.
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { pages, wikiEditable, wikiLink, wikiPage } from "../core/wiki.vibe"
+import { pages, wikiLink } from "../core/wiki.vibe"
 import { wikiPermission } from "../core/conversation.vibe"
 import { toHtml } from "./markdown.vibe"
 import { accountOf, Message, type Model } from "./main.vibe"
 type H = HtmlBuilder<Message>
 const max = "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"
 const min = "M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"
-export function wikiPane(model: Model, h: H): Html {
-  const page = wikiPage(model.client.conversation.pane)
+type WikiPage = (typeof pages)[number]
+/** Render the built wiki corpus; callers can supply a corpus containing archived decisions too. */
+export function wikiPane(model: Model, h: H, documents: ReadonlyArray<WikiPage> = pages): Html {
+  const page = documents.find(page => `/wiki/${page.id}` === model.client.conversation.pane.split("#")[0])
   const loading = model.wikiStatus === "loading"
   const error = model.wikiStatus === "error"
   const editing = model.wikiEdit !== undefined && page !== undefined && model.wikiEdit.page === page.id ? model.wikiEdit : undefined
   const role = accountOf(model).identity.role
-  const canEdit = page !== undefined && wikiEditable(page.id) && (wikiPermission(role, "save") || wikiPermission(role, "propose"))
+  const canEdit = page !== undefined && page.id !== "decisions" && (wikiPermission(role, "save") || wikiPermission(role, "propose"))
   const review = model.wikiReview !== undefined && page !== undefined && model.wikiReview.page === page.id ? model.wikiReview : undefined
   const query = model.wikiQuery ?? ""
-  const filtered = pages.filter(page => `${page.label} ${page.title}`.toLowerCase().includes(query.toLowerCase()))
+  const filtered = documents.filter(page => `${page.label} ${page.title}`.toLowerCase().includes(query.toLowerCase()))
   const order = ["index", "rulings", "roadmap", "decisions", "designs/index"]
   const regular = filtered.filter(page => !page.decision && (order.includes(page.id) || query.trim() !== "")).sort((a, b) => {
     const rank = (id: string) => order.includes(id) ? order.indexOf(id) : order.length
@@ -73,15 +75,14 @@ export function wikiPane(model: Model, h: H): Html {
           h.time([], [page.date]),
           ...page.rulings.map(ruling => h.button([h.Class("sui-badge sui-badge-outline"), h.Type("button"), h.OnClick(Message.ClickedWiki({ page: `rulings#${ruling.toLowerCase()}` }))], [ruling])),
         ])] : []),
-        h.div([h.Class("sui-md"), h.InnerHTML(observedHtml(model, page.id))], []),
+        h.div([h.Class("sui-md"), h.InnerHTML(observedHtml(model, page, documents))], []),
       ] : []),
     ])]),
   ])
 }
 
 /** The page as observed in the repository, else the build's embedded rendering. */
-function observedHtml(model: Model, id: string): string {
-  const observed = model.wikiPages?.find(entry => entry.id === id)
-  const page = pages.find(entry => entry.id === id)!
-  return observed === undefined || observed.source === page.source ? page.html : toHtml(observed.source, href => wikiLink(id, href, pages.map(entry => entry.id)))
+function observedHtml(model: Model, page: WikiPage, documents: ReadonlyArray<WikiPage>): string {
+  const observed = model.wikiPages?.find(entry => entry.id === page.id)
+  return observed === undefined || observed.source === page.source ? page.html : toHtml(observed.source, href => wikiLink(page.id, href, documents.map(entry => entry.id)))
 }

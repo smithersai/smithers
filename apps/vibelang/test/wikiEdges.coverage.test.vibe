@@ -1,10 +1,12 @@
 // The wiki pane at its remaining edges, through the real view and update: a decision page's trail, status and
 // rulings, finding pages by typing, a search that matches nothing, and a failed load's Retry.
-import { Command, click, expect, given, role, scene, text, type } from "foldkit/scene"
+import { Command, click, expect, given, role, scene, selector, text, type } from "foldkit/scene"
+import type { HtmlBuilder } from "foldkit/html"
 import { describe, it } from "@effect/vitest"
 import { pages } from "../src/core/wiki.vibe"
 import { init, Message, OpenWikiCommand, signedOut, update } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
+import { wikiPane } from "../src/web/wikiView.vibe"
 
 const home = init({ session: "wiki-edges", mode: "mock", name: "Guest" }).model
 const app = { update, view }
@@ -83,3 +85,39 @@ it("a wiki address that names no page lists the pages and shows no page", () => 
     expect(text("The wiki didn't load")).toBeAbsent(),
   )
 })
+
+
+it("an archived decision shows Replaced as an outline badge", () => {
+  const archived = { ...accepted, status: "Replaced" }
+  const corpus = pages.map(page => page.id === archived.id ? archived : page)
+  scene({ update, view: (model: Model, h: HtmlBuilder<Message>) => ({ title: "Wiki", body: wikiPane(model, h, corpus) }) }, given(at(`/wiki/${archived.id}`)),
+    expect(selector(".vl-wiki-meta span.sui-badge-outline")).toHaveText("Replaced"),
+  )
+})
+
+it("an editor disconnected from GitHub offers a connection and keeps the person's text", () => {
+  const roadmap = pages.find(page => page.id === "roadmap")!
+  const account = { ...signedOut, identity: { id: "1", login: "will", role: "maintainer" as const } }
+  const edited = roadmap.source + "\nRetain my change.\n"
+  scene(app, given(at("/wiki/roadmap", { account, wikiEdit: { page: "roadmap", base: roadmap.source, text: edited, busy: false, error: "Connect GitHub." } })),
+    expect(role("alert")).toContainText("Connect GitHub."),
+    expect(role("button", { name: "Connect GitHub" })).toHaveAttr("type", "submit"),
+    expect(selector('form[action="/api/auth/connect?wiki-page=roadmap"]')).toHaveAttr("method", "post"),
+    expect(role("textbox", { name: "Edit Roadmap" })).toHaveValue(edited),
+  )
+})
+
+for (const [reason, label, destination] of [
+  ["Fork on GitHub.", "Fork", "https://github.com/smithersai/smithers/fork"],
+  ["Install Smithers on your fork.", "Install", "/api/auth/install"],
+] as const) {
+  it(`an editor told "${reason}" links the person to ${label} and keeps the change`, () => {
+    const roadmap = pages.find(page => page.id === "roadmap")!
+    const account = { ...signedOut, identity: { id: "1", login: "will", role: "maintainer" as const } }
+    const edited = roadmap.source + "\nRetain my change.\n"
+    scene(app, given(at("/wiki/roadmap", { account, wikiEdit: { page: "roadmap", base: roadmap.source, text: edited, busy: false, error: reason } })),
+      expect(role("link", { name: label })).toHaveAttr("href", destination),
+      expect(role("textbox", { name: "Edit Roadmap" })).toHaveValue(edited),
+    )
+  })
+}
