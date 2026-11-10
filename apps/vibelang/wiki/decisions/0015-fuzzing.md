@@ -242,23 +242,29 @@ first step. Against the same 5 s budget before them: Wiki 137/172 and 181/234, I
 Not reached, with the reason; none is excluded:
 
 - The person's own GitHub writes run through smithers.sh's real delegation (`fuzz/delegated.vibe`, vl-connect) since
-  2026-11-10. Left: `Issues` 231 and `Wiki` 160 (an operation no branch handles; the request schema admits none),
-  and `Issues` 382 (`publicIssues` provides `FetchHttpClient`, the real network).
+  2026-11-10. Left: `Issues` 382 (`publicIssues` provides `FetchHttpClient`, the real network).
 - A store fault reaches every typed engine failure (below). A store *write* that fails is a defect by engine-store's
   contract (`RunDriver.ensureCreatedRun` dies on `persistence_failed`; a journal read in `retryFrom` dies on
   `JournalError`), as `Objects.post` already states for its own store. So `retryFrom`'s typed refusal (`Issues`
   353, `Wiki` 245) stays unreached.
   `engine.retryFrom === undefined` (`Issues` 345, `Wiki` 237) and a source run without a perform step (`Issues`
   352, `Wiki` 244): the Cloudflare runtime always supplies both.
-- Invariant guards no input reaches: `Issues` 50 (`matchAll` always sets `index`), 96 (`verifiedVip` already proved
-  the review number), 311 (`?? ""` after a receipt is found by `approvedBy`), 369 (a run's own payload names its
-  flow, operation and key).
+- Invariant guards no input reaches: `Issues` 369 (a run's own payload names its flow, operation and key). It reads
+  stored data, so it stays; only a store that rewrites a recorded payload reaches it.
 - `ActionRuns` 157: `admit` with no stored request. Admission runs from alarms that `ActionRuns.alarm` reaches only
   with a stored request, and nothing deletes it.
-- `Objects` 148: a tour's wake while the object holds no intent. A tour's record and dispatch run in one execution,
-  and the alarm that finishes a reply admits the tour queued behind it in the same step, so a recorded tour always
-  has an intent; only a dispatch write that fails after the record leaves none. 155: the tour's poll failing during
-  a control's wake.
+- `Objects` 155: the tour's poll failing during a control's wake.
+
+Guards removed or targeted (vl-fuzz2, 2026-11-10). A guard the request schema provably excludes is deleted; one a
+caller outside the schema reaches stays, and a target drives that caller:
+
+| Guard | Outcome | Why |
+| --- | --- | --- |
+| `Wiki.githubWikiHost`: a write operation that is neither `propose` nor `save` answered `invalid` | deleted | `WikiOperation` is `read`, `save`, `propose`, `draft`; `read` and `draft` return first, and every caller passes a decoded `WikiRequest`. `request.op satisfies "propose" \| "save"` makes a fifth operation a compile error there (checked: narrowing it to `"propose"` fails with TS1360) |
+| `Issues.githubHost`: an operation no branch handles answers `unsupported` | kept, targeted | `IssueOperation` admits `spec-revise` and `spec-review`; `executeIssues` answers them before `githubHost`, but `githubHost` is exported and called directly. `issues/host-perform-boundary` draws both and runs a permitted witness of each every execution: the host refuses after its read with no write. Mutating the refusal to `missing` fails it |
+| `Issues` read: `vip.review` starts with the pull prefix; `vip.number` is a positive safe integer | deleted | `verifiedVip` returns a VIP only after both checks |
+| `Issues.verifiedVip`: `match.index ?? 0` | deleted | `matchAll` yields `RegExpExecArray`, whose `index` is a number |
+| `Issues` receipt: `approvedBy ?? ""` | deleted | the `find` that selects the receipt requires `approvedBy`; a type predicate now carries it. `approvedAt ?? ""` stays: a stored item may hold `approvedBy` without it |
 
 Reached this session (vl-fuzz2, 2026-11-10), each by a steered scenario that runs every execution:
 
@@ -274,6 +280,7 @@ Reached this session (vl-fuzz2, 2026-11-10), each by a steered scenario that run
 | `issues/steered-host` `delegated` | smithers.sh's delegation over the in-memory GitHub; `end` revokes it | `Issues` 162, 171-175 (a new issue and a split, linked), 184-194 (a whole VIP proposal), 243 (a read after the delegation ended falls back to public issues and reports the loss) |
 | `wiki/steered-host` `delegated` | the same, with an `authorize` and a kept draft | `Wiki` 103, 135, 137, 147 (main advanced past the base), 157 (the review replaces the kept text), 171 (the fallback read) |
 | `objects/steered-host` `tour-during-reply` | the same latch | a tour while the reply runs is `busy`; after it, a tour is accepted behind the reply and ending it reaches `Objects` 150 (the wake finds the reply's intent); the alarms then end the tour and the reply |
+| `objects/steered-host` `tour-dispatch-fault` | the object's storage rejects the held execution's intent write once | `Objects` 148: the tour is recorded and its dispatch dies, so no execution holds the object; Escape wakes nothing, ends the tour, and the alarms leave the agent idle with its entry done. Mutating the missing-intent return to a defect fails it |
 
 A defect in a history tool or in the ledger's `spend` does not fail the reply execution: the agent sandbox and the
 reply's composition catch both, and the reply ends "The agent failed. Try again." Only the reply's own sequencer

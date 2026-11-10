@@ -21,6 +21,21 @@ effect function storage() {
   return raw as unknown as Objects.Storage
 }
 
+/** The object's storage, except that its next `faults` writes of the held execution's intent reject. */
+function intentWriteFails(object: Objects.Storage, faults: { left: number }): Objects.Storage {
+  return new Proxy(object, {
+    get: (target, name) => {
+      if (name === "put") return (key: string, value: unknown) => {
+        if (key !== ExecutionObject.intentKey || faults.left === 0) return target.put(key, value)
+        faults.left -= 1
+        return Promise.reject(new Error("injected intent write failure"))
+      }
+      const member = Reflect.get(target, name) as unknown
+      return typeof member === "function" ? (member as (...args: ReadonlyArray<unknown>) => unknown).bind(target) : member
+    },
+  })
+}
+
 const Step = Schema.Struct({
   op: Schema.Literals(["post", "repost", "tour", "endTour", "pause", "resume", "seek", "wiki", "alarm", "dispatch"]),
   pick: Int, text: TextOrBoundary, admit: Schema.Boolean,
@@ -90,7 +105,7 @@ it.live("objects/conversation-host", () => run("objects/conversation-host", Sche
   return true
 }))
 
-const OBJECT_SCENARIOS = ["post-behind-tour", "seek-behind-reply", "tour-behind-reply", "wiki-pages", "routing", "unadmitted-receipt", "tour-seek-end", "tour-during-reply"] as const
+const OBJECT_SCENARIOS = ["post-behind-tour", "seek-behind-reply", "tour-behind-reply", "wiki-pages", "routing", "unadmitted-receipt", "tour-seek-end", "tour-during-reply", "tour-dispatch-fault"] as const
 const Scenario = Schema.Struct({ pick: Int, text: TextOrBoundary, admit: Schema.Boolean })
 const PAGES = ["index", "rulings", "nope", "", "decisions/0015-fuzzing"]
 
@@ -195,6 +210,23 @@ const objectScenario = (scenario: typeof OBJECT_SCENARIOS[number], pick: number,
       for (let turn = 0; turn < 3; turn++) try bounded("alarm", Objects.alarm("conv", object, sequencer, spend, model, history))
       const after = try sequencer.snapshot()
       if (touring(after) !== "" || after.agent !== "idle") throw new Finding({ report: `an ended tour behind a reply left the agent ${after.agent}` })
+      break
+    }
+    case "tour-dispatch-fault": {
+      // The tour is recorded, then its dispatch's intent write fails: a store write failure is a defect (0015), and the
+      // object holds no execution when Escape wakes it (`wakeTour`'s missing intent). Escape still ends the tour.
+      const faults = { left: 1 }
+      const faulty = intentWriteFails(object, faults)
+      const dispatching = try Objects.conversation(faulty)
+      const recorded = try Effect.exit(bounded("tour", Objects.tour("conv", faulty, dispatching)))
+      if (recorded._tag !== "Failure" || faults.left !== 0) throw new Finding({ report: "a tour whose dispatch write failed answered" })
+      if ((try promise(() => object.get<string>(ExecutionObject.intentKey))) !== undefined || touring(try dispatching.snapshot()) === "") throw new Finding({ report: "a failed dispatch left an execution, or no recorded tour" })
+      if ((try bounded("end tour", Objects.endTour("conv", faulty, dispatching))) !== null) throw new Finding({ report: "ending a tour with no execution was refused" })
+      if (touring(try dispatching.snapshot()) !== "" || (try promise(() => object.get<string>(ExecutionObject.intentKey))) !== undefined) throw new Finding({ report: "Escape left a tour with no execution running" })
+      for (let turn = 0; turn < 3; turn++) try bounded("alarm", Objects.alarm("conv", faulty, dispatching, spend, model, history))
+      const after = try dispatching.snapshot()
+      const entry = after.entries.find((item) => item.author === "agent")
+      if (after.agent !== "idle" || entry?.done !== true || entry.error !== "") throw new Finding({ report: `a tour ended with no execution left the agent ${after.agent}` })
       break
     }
     case "unadmitted-receipt": {
