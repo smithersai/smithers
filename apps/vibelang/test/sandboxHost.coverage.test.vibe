@@ -2,42 +2,10 @@
 // and crash states from what the store holds after a process dies.
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "@effect/vitest"
-import { makeSandboxHost, type Machines, type Pending, type Receipt, type SandboxState, type Store } from "../src/core/sandboxHost.vibe"
-import { ALLOWANCES } from "../src/core/sandboxDecision.vibe"
-import { memoryMachines } from "../src/core/sandboxMock.vibe"
+import { makeSandboxHost, type Machines } from "../src/core/sandboxHost.vibe"
 import { mockPolicy, SandboxPolicy } from "../src/core/sandboxPolicy.vibe"
 import { Unavailable } from "../src/core/Factory.vibe"
-
-const ALLOWANCE = ALLOWANCES.contributor * 60000
-const BEYOND_CALENDAR = 8640000000000001
-
-effect function world() {
-  try TestClock.setTime(Date.UTC(2026, 10, 30))
-  const state = try Ref.make<SandboxState | undefined>(undefined)
-  const receipts = new Map<string, Receipt>()
-  const store: Store = {
-    read: () => Ref.get(state),
-    receipt: (id) => succeed(receipts.get(id)),
-    write: (next, receipt) => effect { if (receipt) receipts.set(receipt.request.operationId, receipt); try Ref.set(state, next) },
-    alarm: () => Effect.void,
-  }
-  return { state, receipts, store, machines: memoryMachines() }
-}
-const change = (w: { readonly state: Ref.Ref<SandboxState | undefined> }, edit: (state: SandboxState) => SandboxState) => Ref.update(w.state, (state) => edit(state!))
-const pendingOf = (kind: Pending["kind"], operationId: string, conversation = "home", generation = 1, command = ""): Pending => ({ kind, conversation, operationId, generation, command })
-const failureOf = <A, E>(result: { readonly _tag: "Success"; readonly success: A } | { readonly _tag: "Failure"; readonly failure: E }) => result._tag === "Failure" ? result.failure : undefined
-/** A machine whose command waits at `release` while `held` says so. */
-effect function holding(machines: Machines) {
-  const entered = try Deferred.make<void>()
-  const release = try Deferred.make<void>()
-  const control = { held: true }
-  const held: Machines = { ...machines, command: (id, generation, operationId, command) => effect {
-    const output = try machines.command(id, generation, operationId, command)
-    if (control.held) { try Deferred.succeed(entered, undefined); try Deferred.await(release) }
-    return output
-  } }
-  return { held, entered, release, control }
-}
+import { ALLOWANCE, BEYOND_CALENDAR, change, failureOf, holding, pendingOf, world } from "./support/sandboxWorld.vibe"
 
 describe("sandbox writer boundaries", () => {
   it.effect("refuses a clock outside the calendar and stops only what is running", () => effect {

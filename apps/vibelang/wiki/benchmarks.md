@@ -3277,3 +3277,19 @@ Vitest built-in bench, three fresh scoped samples each, local. `login` and `logo
 **signin-device-refusals.** Declined, expired, slow-down back-off to 30 s, a forged stored session, and a waited sign-in the person declines. Exact sentences and the back-off are checked.
 
 Limitations: the identity provider is a local fixture, so GitHub's latency and rate limits are absent; the fixture's poll interval is 0 s, so no poll waits; the slowed flow is not waited out.
+
+## CLI text mode and sandbox faults (2026-11-10, nyc-01)
+
+Vitest built-in bench, local.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| cli-text | 83387.4 | 3 | `2026-11-10T03-55-52.351Z-cli-text.json` |
+| sandbox-faults | 3.7 | 28 | `2026-11-10T03-59-01.249Z-sandbox-faults.json` |
+| sandbox-held-command | 3.7 | 27 | `2026-11-10T03-59-01.594Z-sandbox-held-command.json` |
+
+**cli-text.** 24 emitted CLI processes per sample in text mode with `--mock` and fresh private settings: read, ask, history (epic, commit, unknown epic and commit), plan, start, note, the four sandbox commands, actions, run (waited and invalid input), trace, cancel, rerun, issues, issue, wiki, login and logout. Exit status and the exact first output line are checked. Limitations: mock factory, no network or model; the mock's state lives for one process, so trace, cancel and rerun of a real run, and a command on a live sandbox generation, are measured as refusals; process startup dominates (about 3.5 s per command on a loaded machine), so this is whole-journey cost, not one-command latency.
+
+**sandbox-faults.** `makeSandboxHost` over an in-memory store with the product in-memory machines and a faulty machine service, TestClock time: a start, a repeated start answered by receipt, a start whose provisioning fails, a start that outlasts the allowance while it provisions, and a clock outside the calendar that stops what runs. Exact refusals, the stops issued and the fail-closed ledger are checked. Limitations: no Durable Object storage or container latency; the 2 s provisioning delay is simulated.
+
+**sandbox-held-command.** Two hosts over one store: the first host's command is held inside the machine, the second runs the same operation and records its answer, and the released first host returns that answer. Limitation: one process stands in for two hosts.

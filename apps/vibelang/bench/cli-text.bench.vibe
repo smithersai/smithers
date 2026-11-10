@@ -1,0 +1,58 @@
+// @vitest-environment node
+// Every CLI command a person types, in text mode against the product mock: the renderers MCP and --json never reach.
+// One emitted CLI process per command with fresh private settings; the mock's state lives for one process.
+import { it, expect } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { node, run } from "../test/support/processes.vibe"
+import { cliPath } from "../test/surface-host.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+/** A command, its exit status, and the line its text output must start with. */
+const COMMANDS: ReadonlyArray<readonly [ReadonlyArray<string>, number, string]> = [
+  [["read"], 0, "No entries. Event: 0"],
+  [["ask", "install"], 0, "Start a project with the starter:"],
+  [["history", "--epic", "e1"], 0, "Folded through "],
+  [["history", "--commit", "m1"], 0, "Folded through "],
+  [["history", "--epic", "nope"], 1, "No epic nope."],
+  [["history", "--commit", "m999999"], 1, "No mythical commit m999999."],
+  [["plan", "Measure text", "--epic", "e1"], 0, "Planned m"],
+  [["start", "m1", "--lane", "bench"], 1, "The history refused it: state"],
+  [["note", "m1", "--section", "evidence", "Measured."], 0, "Noted m1."],
+  [["sandboxes"], 0, "Sandboxes  stopped  2000 min"],
+  [["sandbox-start", "--operation-id", "bench-start"], 0, ""],
+  [["sandbox-run", "--generation", "0", "echo hi"], 1, "The message was refused: stopped"],
+  [["sandbox-stop", "--generation", "1", "--operation-id", "bench-stop"], 1, "The message was refused: stale-generation"],
+  [["actions"], 0, "vibelang/EndTour"],
+  [["run", "vibelang/Post", "--input", "{\"text\":\"install\"}", "--wait"], 0, "Requested a1."],
+  [["run", "vibelang/Post", "--input", "nope"], 1, "Invalid action input."],
+  [["trace", "r-none"], 1, "Action: not-found"],
+  [["cancel", "r-none"], 1, "Action: not-found"],
+  [["rerun", "r-none"], 1, "Action: not-found"],
+  [["issues"], 0, "#48 "],
+  [["issue", "new", "--title", "Bench", "--text", "x"], 0, "{\"seq\":1,"],
+  [["wiki", "read", "--page", "roadmap"], 0, "{\"seq\":1,"],
+  [["login"], 0, "Signed in as will."],
+  [["logout"], 0, "Signed out."],
+]
+
+it("every CLI command answers in text with its exact first line", async ({ bench }) => {
+  const result = await workload(bench, "cli-text", "async", () => runPromise(scoped(effect {
+    provide NodeServices.layer, ExperimentalNodeServices.layer {
+      const settings = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      const cli = try cliPath()
+      const binary = try node()
+      for (const [args, status, first] of COMMANDS) {
+        const answer = try run(binary, [cli, "--mock", ...args], { XDG_CONFIG_HOME: settings })
+        // A refusal is printed to stderr; the mock's own warn logs come first there.
+        const text = (status === 0 ? answer.stdout : answer.stderr.split("\n").filter(line => !line.startsWith("timestamp=")).join("\n")).trimStart()
+        try Effect.try(() => {
+          expect(answer.status, `${args.join(" ")}: ${answer.stderr}`).toBe(status)
+          expect(text.startsWith(first), `${args.join(" ")}: ${text.slice(0, 120)}`).toBe(true)
+        })
+        if (args[0] === "sandbox-start") try Effect.try(() => expect(answer.stdout).toMatch(/^\S+  running  2000 min/))
+      }
+    }
+  }))).run(slow)
+  await runPromise(artifact("cli-text", `Vitest built-in bench; ${COMMANDS.length} emitted CLI processes per sample in text mode with --mock and fresh private settings: read, ask, history (epic, commit, unknown epic and commit), plan, start, note, the four sandbox commands, actions, run (waited and invalid input), trace, cancel, rerun, issues, issue, wiki, login and logout. Exit status and the exact first output line are checked for each.`, ["Mock factory, no network or model.", "The mock's state lives for one process, so trace, cancel and rerun of a real run, and a sandbox command on a live generation, are measured as refusals.", "Process startup dominates; this is whole-journey cost, not one-command latency."], result))
+}, 600_000)

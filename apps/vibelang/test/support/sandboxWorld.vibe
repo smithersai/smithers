@@ -1,0 +1,39 @@
+// The sandbox writer's world for its boundary test and fault benchmark: an in-memory store whose receipts and state
+// survive a "crash" (a second host over the same store), the product's in-memory machines, and a machine whose command
+// is held until released. Faults come from a faulty machine service; the clock is the caller's TestClock.
+import { TestClock } from "effect/testing"
+import type { Machines, Pending, Receipt, SandboxState, Store } from "../../src/core/sandboxHost.vibe"
+import { ALLOWANCES } from "../../src/core/sandboxDecision.vibe"
+import { memoryMachines } from "../../src/core/sandboxMock.vibe"
+
+export const ALLOWANCE = ALLOWANCES.contributor * 60000
+export const BEYOND_CALENDAR = 8640000000000001
+
+export effect function world() {
+  try TestClock.setTime(Date.UTC(2026, 10, 30))
+  const state = try Ref.make<SandboxState | undefined>(undefined)
+  const receipts = new Map<string, Receipt>()
+  const store: Store = {
+    read: () => Ref.get(state),
+    receipt: (id) => succeed(receipts.get(id)),
+    write: (next, receipt) => effect { if (receipt) receipts.set(receipt.request.operationId, receipt); try Ref.set(state, next) },
+    alarm: () => Effect.void,
+  }
+  return { state, receipts, store, machines: memoryMachines() }
+}
+export const change = (w: { readonly state: Ref.Ref<SandboxState | undefined> }, edit: (state: SandboxState) => SandboxState) => Ref.update(w.state, (state) => edit(state!))
+export const pendingOf = (kind: Pending["kind"], operationId: string, conversation = "home", generation = 1, command = ""): Pending => ({ kind, conversation, operationId, generation, command })
+export const failureOf = <A, E>(result: { readonly _tag: "Success"; readonly success: A } | { readonly _tag: "Failure"; readonly failure: E }) => result._tag === "Failure" ? result.failure : undefined
+/** A machine whose command waits at `release` while `held` says so. */
+export effect function holding(machines: Machines) {
+  const entered = try Deferred.make<void>()
+  const release = try Deferred.make<void>()
+  const control = { held: true }
+  const held: Machines = { ...machines, command: (id, generation, operationId, command) => effect {
+    const output = try machines.command(id, generation, operationId, command)
+    if (control.held) { try Deferred.succeed(entered, undefined); try Deferred.await(release) }
+    return output
+  } }
+  return { held, entered, release, control }
+}
+

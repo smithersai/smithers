@@ -1,0 +1,72 @@
+// The sandbox writer's fault paths, timed: provisioning that fails, minutes that run out while a start provisions, a
+// clock outside the calendar that stops what is running, a repeated start, and a held command another host answered.
+// Faults come from a faulty machine service (test/support/sandboxWorld.vibe); the clock is a TestClock.
+import { TestClock } from "effect/testing"
+import { it, expect } from "@effect/vitest"
+import { makeSandboxHost, type Machines } from "../src/core/sandboxHost.vibe"
+import { mockPolicy } from "../src/core/sandboxPolicy.vibe"
+import { Unavailable } from "../src/core/Factory.vibe"
+import { ALLOWANCE, BEYOND_CALENDAR, change, failureOf, holding, world } from "../test/support/sandboxWorld.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+effect function faults() {
+  const w = try world()
+  const stopped: Array<string> = []
+  const faulty: Machines = {
+    ...w.machines,
+    start: (id, generation) => effect {
+      if (id.endsWith("/broken")) throw new Unavailable({ reason: "provision-failed" })
+      if (id.endsWith("/slow")) try TestClock.adjust("2 seconds")
+      try w.machines.start(id, generation)
+    },
+    stop: (id, generation) => { stopped.push(id); return w.machines.stop(id, generation) },
+  }
+  const host = try makeSandboxHost(w.store, faulty)
+  const home = try host.start("home", "start-home")
+  const again = try host.start("home", "start-home-again")
+  const broken = try Effect.result(host.start("broken", "start-broken"))
+  try change(w, state => ({ ...state, ledger: { ...state.ledger, usedMilliseconds: ALLOWANCE - 1000 } }))
+  const slow = try Effect.result(host.start("slow", "start-slow"))
+  try TestClock.setTime(BEYOND_CALENDAR)
+  const clock = try Effect.result(host.snapshot("home"))
+  const saved = (try Ref.get(w.state))!
+  try Effect.try(() => {
+    expect([home.status, again.status, again.generation]).toEqual(["running", "running", home.generation])
+    expect(failureOf(broken)).toMatchObject({ reason: "start-failed" })
+    expect(failureOf(slow)).toMatchObject({ reason: "start-failed" })
+    expect(failureOf(clock)).toMatchObject({ reason: "invalid-clock" })
+    expect(stopped).toEqual(["mock-person/broken", "mock-person/slow", "mock-person/home"])
+    expect(saved.ledger.sandboxes.every(box => !box.running)).toBe(true)
+    expect([saved.meterFailure?.count, saved.pending]).toEqual([1, null])
+  })
+}
+
+effect function heldCommand() {
+  const w = try world()
+  const { held, entered, release, control } = try holding(w.machines)
+  const host = try makeSandboxHost(w.store, held)
+  const started = try host.start("home", "start-home")
+  const running = try Effect.forkChild(host.command("home", "slow", "echo late", started.generation))
+  try Deferred.await(entered)
+  // Another operation commits while the command is held, so the second host finds the command's own record.
+  try host.start("away", "start-away")
+  control.held = false
+  const other = try makeSandboxHost(w.store, held)
+  const answer = try other.command("home", "slow", "echo late", started.generation)
+  try Deferred.succeed(release, undefined)
+  const output = try Fiber.join(running)
+  try Effect.try(() => expect([output, answer]).toEqual(["late", "late"]))
+}
+
+const run = <A, E>(program: A!E!(TestClock.TestClock | import("../src/core/sandboxPolicy.vibe").SandboxPolicy)) =>
+  runPromise(program.pipe(Effect.provide(mockPolicy("contributor")), Effect.provide(TestClock.layer())))
+
+it("the sandbox writer fails closed on each machine and clock fault", async ({ bench }) => {
+  const result = await workload(bench, "sandbox-faults", "async", () => run(faults())).run(quick)
+  await runPromise(artifact("sandbox-faults", "Vitest built-in bench; makeSandboxHost over an in-memory store with the product in-memory machines and a faulty machine service, TestClock time. One sample: a start, a repeated start answered by receipt, a start whose provisioning fails, a start that outlasts the allowance while it provisions, and a clock outside the calendar that stops what runs. Exact refusals, the stops issued and the fail-closed ledger are checked.", ["In-memory store and machines: no Durable Object storage or container latency.", "TestClock time; the 2 s provisioning delay is simulated, not waited."], result))
+})
+
+it("a held command returns the answer another host recorded", async ({ bench }) => {
+  const result = await workload(bench, "sandbox-held-command", "async", () => run(scoped(heldCommand()))).run(quick)
+  await runPromise(artifact("sandbox-held-command", "Vitest built-in bench; two sandbox hosts over one in-memory store. The first host's command is held inside the machine; the second host runs the same operation and records its answer; the released first host returns the recorded answer. Both outputs are checked.", ["In-memory store and machines; one process stands in for two hosts."], result))
+})
