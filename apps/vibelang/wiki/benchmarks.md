@@ -3508,6 +3508,27 @@ location without loading a document.
 itself. In coverage mode each document now pauses in its own `beforeunload` while the collector dumps, then resumes;
 the request is untouched. Lines that run after `beforeunload` in the navigating command need Node evidence (0017).
 
+## Fault-path coverage set (2026-11-10, nyc-01)
+
+Not a timing benchmark. `bench/browser-faults.spec.ts` runs seven Chromium workloads on the `e2e` build, each over one
+faulty Effect service, and records which steps passed; its artifacts (`fault-coverage-<name>`, build
+`e2e-fault-coverage`) hold no duration, and none is quoted here (0017). Its Chromium counts join the benchmark coverage
+gate.
+
+| Workload | Fault | Checked result |
+| --- | --- | --- |
+| refusals | post `Unavailable`; tour `Refused` busy | "Send failed" then Retry answers; "Agent busy" then Learn more starts the tour |
+| disconnect | event stream `Unavailable` before #4 | Disconnected, Reconnect, Connected, answer done |
+| tour | tour stream `Unavailable`; tour end `Unavailable` at step 2 | after Exit the composer reads "Send failed"; a second Exit ends the tour |
+| media | empty-state image fails to load | composer still answers |
+| sandbox | every read fails; first start fails | "Couldn't load the sandbox"; "Couldn't start a sandbox", Retry, Running |
+| roles | first role subscription `AccountUnavailable` | "Connection lost." toast, Retry clears it |
+| actions | first Actions `list()` fails | "Couldn't load runs", Retry loads the Tour action |
+
+**Defect found and fixed.** A failed sandbox start, stop or command lost its alert and Retry within a second: the open
+pane's one-second read ended the operation and cleared its failure. Fixed in `src/web/paneDecision.vibe`
+(`polledSandbox`, `polledFailure`); regression `test/sandboxFailure.runtime.test.vibe`.
+
 ## CLI startup (2026-11-10, nyc-01)
 
 Vitest built-in bench, local, `bench/cli-startup.bench.vibe`. Five emitted CLI processes per command, no warmup, each

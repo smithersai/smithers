@@ -16,3 +16,13 @@ it("real Chromium browser workloads, first render to issues and panel arms", asy
     expect(result.stdout).toContain("8 passed")
   }).run({ iterations: 1, time: 0, warmup: false })
 }, PLAYWRIGHT_BOUND_MS)
+
+// Fault-path coverage on the `e2e` build (bench/playwright-faults.config.ts): counts merge into the gate; the e2e build
+// is not what people run, so its workloads record no duration (decision 0017).
+it("fault-path coverage workloads on the e2e build, faulty services for posts, tours, events, media, sandbox, roles and actions", async ({ bench }) => {
+  await workload(bench, "chromium-faults", "async", async () => {
+    const result = await runPromise(Effect.provide(run("pnpm", ["exec", "playwright", "test", "--config", "bench/playwright-faults.config.ts"], { BENCH_LIVE: "0" }), NodeServices.layer))
+    expect(result.status, result.stdout + result.stderr).toBe(0)
+    expect(result.stdout).toContain("7 passed")
+  }).run({ iterations: 1, time: 0, warmup: false })
+}, PLAYWRIGHT_BOUND_MS)

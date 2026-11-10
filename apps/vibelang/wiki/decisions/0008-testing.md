@@ -16,7 +16,7 @@
 | Live Factory in local workerd: the API Worker's objects, LiveFactory, the protocol, the CLI | `test/*.workerd.test.*` | `pnpm test:workerd` (0010) |
 | The live agent in a browser, opt in | `e2e/live.spec.ts` | `E2E_LIVE_URL=<origin> pnpm exec playwright test e2e/live.spec.ts` |
 | Fuzzing and corpus regressions | `fuzz/*.fuzz.vibe`, native workerd and Chromium (0015); `@smthrs/fuzz`, `@smthrs/testing` | `pnpm fuzz`; independent strict gate `pnpm fuzz:coverage` |
-| Benchmarks | `bench/`: built-in Vitest, Chromium, native wiki/identity journeys, signed-in issue and wiki routes, emitted CLI/MCP/scripts, SQLite recovery and real workerd (0017) | `pnpm bench`; opt-in `pnpm bench:live`; independent strict `pnpm bench:coverage` (unfinished) |
+| Benchmarks | `bench/`: built-in Vitest, Chromium, native wiki/identity journeys, signed-in issue and wiki routes, emitted CLI/MCP/scripts, SQLite recovery and real workerd (0017); fault-path coverage set on the `e2e` build, counts only (`bench/browser-faults.spec.ts`) | `pnpm bench`; opt-in `pnpm bench:live`; independent strict `pnpm bench:coverage` (unfinished) |
 
 **Rules.** No mocks besides the mock backend itself, which is a product mode (0004). Every test that waits on the UI
 waits on what a person sees (a role, a text, `data-done`), never a timer. Screenshots wait for view transitions to end.

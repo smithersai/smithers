@@ -1,0 +1,25 @@
+// An Actions fault over the product's real MockActions: the first list() fails with ActionFailure, later calls are real.
+import { ActionFailure, Actions } from "../../src/actions/Actions.vibe"
+
+export function faultyActions<E, R>(base: Layer.Layer<Actions, E, R>) {
+  return Layer.effect(Actions, effect {
+    const actions = try Actions
+    let failed = false
+    const shape: Actions.Shape = {
+      list: () => {
+        if (failed) return actions.list()
+        failed = true
+        return Effect.fail(new ActionFailure({ code: "unavailable" }))
+      },
+      commands: () => actions.commands(),
+      runs: (flow) => actions.runs(flow),
+      read: (id) => actions.read(id),
+      follow: (id) => actions.follow(id),
+      start: (flow, input, door) => actions.start(flow, input, door),
+      command: (text, door) => actions.command(text, door),
+      rerun: (id) => actions.rerun(id),
+      cancel: (id) => actions.cancel(id),
+    }
+    return shape
+  }).pipe(Layer.provide(base))
+}
