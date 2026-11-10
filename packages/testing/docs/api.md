@@ -1250,6 +1250,84 @@ complete JSON and releases the writer lock; `layerFile` flushes on scope close.
 The store recovers completed journal lines when reopened. Competing writers
 fail with a path-naming defect. See [file persistence and recovery](concepts/fixtures.md#file-persistence-and-recovery).
 
+## HttpRecording
+
+Records, replays or passes through every request an `HttpClient` makes. See
+[Record, replay or pass through an HTTP service](./guides/record-http.md).
+
+```ts
+const Mode: Schema.Literals<["passthrough", "record", "replay"]>
+
+interface RecordedRequest {
+  readonly method: string
+  readonly url: string
+  readonly body?: unknown
+}
+interface Exchange {
+  readonly request: RecordedRequest
+  readonly response: {
+    readonly status: number
+    readonly headers: Readonly<Record<string, string>>
+    readonly body: unknown
+  }
+}
+interface Recording {
+  readonly exchanges: ReadonlyArray<Exchange>
+}
+
+interface Options {
+  readonly mode: Mode
+  readonly path: string
+  readonly live?: HttpClient.HttpClient | undefined
+  readonly secrets?: ReadonlyArray<string | Redacted.Redacted<string>> | undefined
+  readonly normalize?: ((request: RecordedRequest) => RecordedRequest) | undefined
+}
+
+const make: (options: Options) => Effect.Effect<HttpClient.HttpClient, never, Scope.Scope>
+const layer: (options: Options) => Layer.Layer<HttpClient.HttpClient>
+const record: (
+  path: string,
+  options: Pick<Options, "live" | "secrets" | "normalize">
+) => Effect.Effect<HttpClient.HttpClient, never, Scope.Scope>
+const replay: (
+  recording: Recording,
+  options?: Pick<Options, "normalize">
+) => HttpClient.HttpClient & { readonly remaining: () => number }
+const load: (path: string) => Effect.Effect<Recording>
+const encode: (
+  path: string,
+  exchanges: ReadonlyArray<Exchange>,
+  secrets: Options["secrets"]
+) => Effect.Effect<string, CredentialInRecordingError>
+const scrubRequest: (request: RecordedRequest, options?: Pick<Options, "secrets" | "normalize">) => RecordedRequest
+const scrubExchange: (exchange: Exchange, options?: Pick<Options, "secrets" | "normalize">) => Exchange
+const scan: (text: string) => ReadonlyArray<string>
+
+class UnrecordedRequestError {
+  readonly method: string
+  readonly url: string
+  readonly recorded: number
+}
+class CredentialInRecordingError {
+  readonly path: string
+  readonly rules: ReadonlyArray<string>
+}
+```
+
+`passthrough` returns `live` unchanged. `record` calls `live`, hands the code
+under test the live answer, and writes the scrubbed recording when the scope
+closes successfully; a failed or interrupted scope writes nothing. `replay`
+answers from the recording and never reaches a network: each exchange is
+claimed once, in recorded order per method, URL and body, and a request with no
+answer left dies with `UnrecordedRequestError`. A missing or malformed
+recording file, a missing `live` client, and a streamed or binary request body
+are defects.
+
+`scan` returns the ids of the journal's token-shaped rules that match `text`
+(private key blocks, Smithers tokens, URL credentials, bearer tokens, JWTs and
+`sk-`, GitHub, AWS, Slack, Google, GitLab and npm keys). `encode` also refuses a
+named secret that survived, as rule `live-secret`.
+
 ## RecordingModel
 
 Wraps a live model so each call is written to a sink when its stream ends.

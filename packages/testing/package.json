@@ -48,6 +48,7 @@
     "./Faults": "./src/Faults.ts",
     "./Fixture": "./src/Fixture.ts",
     "./FixtureStore": "./src/FixtureStore.ts",
+    "./HttpRecording": "./src/HttpRecording.ts",
     "./FlowEngineLike": "./src/FlowEngineLike.ts",
     "./HostSuite": "./src/HostSuite.ts",
     "./JournalAssertions": "./src/JournalAssertions.ts",
@@ -179,6 +180,16 @@
         "require": {
           "types": "./dist/cjs/FixtureStore.d.ts",
           "default": "./dist/cjs/FixtureStore.js"
+        }
+      },
+      "./HttpRecording": {
+        "import": {
+          "types": "./dist/esm/HttpRecording.d.ts",
+          "default": "./dist/esm/HttpRecording.js"
+        },
+        "require": {
+          "types": "./dist/cjs/HttpRecording.d.ts",
+          "default": "./dist/cjs/HttpRecording.js"
         }
       },
       "./FlowEngineLike": {

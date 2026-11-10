@@ -68,6 +68,13 @@ export * as Fixture from "./Fixture.ts"
 /** @since 0.0.0 @category services */
 export * as FixtureStore from "./FixtureStore.ts"
 
+/**
+ * Record, replay or pass through every request an `HttpClient` makes.
+ *
+ * @since 1.0.0
+ */
+export * as HttpRecording from "./HttpRecording.ts"
+
 /** @since 0.0.0 @category layers */
 export * as MemoryEngine from "./MemoryEngine.ts"
 

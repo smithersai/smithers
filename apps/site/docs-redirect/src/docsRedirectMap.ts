@@ -1256,6 +1256,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
     ["/guides/fuzzing/", "https://github.com/smithersai/smithers/blob/main/packages/testing/docs/guides/fuzzing.md"],
     ["/guides/gate-a-scored-suite/", "https://github.com/smithersai/smithers/blob/main/packages/testing/docs/guides/gate-a-scored-suite.md"],
     ["/guides/inject-a-process-fault/", "https://github.com/smithersai/smithers/blob/main/packages/testing/docs/guides/inject-a-process-fault.md"],
+    ["/guides/record-http/", "https://github.com/smithersai/smithers/blob/main/packages/testing/docs/guides/record-http.md"],
     ["/guides/register-effect-tests/", "https://github.com/smithersai/smithers/blob/main/packages/testing/docs/guides/register-effect-tests.md"],
     ["/guides/replay-a-model/", "https://github.com/smithersai/smithers/blob/main/packages/testing/docs/guides/replay-a-model.md"],
     ["/guides/script-a-model/", "https://github.com/smithersai/smithers/blob/main/packages/testing/docs/guides/script-a-model.md"],
