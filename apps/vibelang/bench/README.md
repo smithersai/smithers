@@ -24,3 +24,16 @@ once before measurement, and a Promise-returning probe can overlap the first mea
 that detection through Vitest's supported `async` option. Real-runner controls require exactly three callbacks
 and maximum concurrency one with warmup disabled; coverage requires one callback. Earlier timing receipts without
 explicit registration are historical observations and cannot establish isolated, unwarmed execution.
+
+
+Worker public reads are opt-in, and always anonymous:
+```sh
+BENCH_PUBLIC_GITHUB=1 pnpm exec vitest bench --run --config bench/config.ts bench/public-github.bench.vibe
+BENCH_SITE_READS=1 pnpm exec vitest bench --run --config bench/config.ts bench/public-github.bench.vibe
+E2E_PORT=4536 BENCH_PUBLIC_GITHUB=1 pnpm bench:coverage
+```
+The first command checks real GitHub issue/wiki projection and a cache-eviction fault after the real cache TTL;
+it makes no GitHub mutation. The second checks deployed read responses and retains a failure artifact when
+content is unavailable. It is currently red for the deployed issues endpoint. Neither requests a model.
+The draft Budget failure benchmark intentionally waits through the production two-minute retry policy; its
+single observation measures whole failure latency, including that wait. See 0017 and the benchmark wiki.

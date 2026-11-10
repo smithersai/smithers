@@ -1,0 +1,207 @@
+// @vitest-environment node
+// Opt in: real anonymous GETs to the product's public repositories. Never sends an OAuth or installation token.
+import { it, expect } from "@effect/vitest"
+import { GitHub } from "@smthrs/integrations"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse, HttpServerResponse } from "effect/http"
+import * as Issues from "../worker/Issues.vibe"
+import * as Wiki from "../worker/Wiki.vibe"
+import { PublicReads, publicReads } from "../worker/PublicReads.vibe"
+import type { IssueRequest } from "../src/core/issueSchemas.vibe"
+import type { WikiRequest } from "../src/core/wikiSchemas.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const enabled = runSync(Config.withDefault(Config.Boolean("BENCH_PUBLIC_GITHUB"), false))
+const issue: IssueRequest = { op: "read", number: 1, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "public" }
+const wiki: WikiRequest = { op: "read", page: "roadmap", base: "", text: "", key: "public" }
+const anonymous = <A, E, R>(program: A!E!R) => program.pipe(GitHub.Calls.withToken(Redacted.make(""), "https://api.github.com"), Effect.provide(FetchHttpClient.layer))
+
+it.skipIf(!enabled)("public issues retain native identity, comments and ordered unique rows", { timeout: 240_000 }, async ({ bench }) => {
+  await runPromise(scoped(effect {
+    // Native oracle is outside timing. No synthetic GitHub response is installed.
+    const native = try anonymous(GitHub.IssueChanges.get("smithersai", "vibelang", 1))
+    const comments = try anonymous(GitHub.Issues.listComments("smithersai", "vibelang", 1))
+    try Effect.try(() => expect(comments.truncated).toBe(false))
+    const kv = try Effect.try(() => objectStorage())
+    const reads = try publicReads(kv, undefined).pipe(Effect.provide(FetchHttpClient.layer))
+    let seq = 0
+    const sample = async () => {
+      const answer = await runPromise(Issues.executeIssues("bench-public-issues", kv as unknown as Storage, { ...issue, key: "read-" + ++seq }).pipe(
+        Effect.provideService(Issues.IssueAuthority, { current: () => succeed(undefined) }),
+        Effect.provideService(PublicReads, { client: reads }), Effect.provide(FetchHttpClient.layer), Effect.timeout("90 seconds"),
+      ))
+      expect(answer.seq).toBe(seq)
+      expect(await kv.get("issues/revision")).toBe(seq)
+      const selected = answer.items.find(row => row.number === 1)
+      expect(selected).toMatchObject({ number: native.number, githubId: native.id, title: native.title, body: native.body ?? "", author: native.user?.login ?? "deleted", state: native.state, comments: native.comments })
+      expect(selected?.labels).toEqual(native.labels.map(label => label.name))
+      expect(selected?.notes.filter(note => !note.event)).toEqual(comments.items.map(comment => ({ age: comment.created_at.slice(0, 10), author: comment.user?.login ?? "deleted", text: comment.body ?? "", event: false })))
+      expect(selected?.notes.some(note => note.event && note.text === "closed this issue")).toBe(true)
+      expect(answer.items.length).toBeGreaterThan(100)
+      expect(new Set(answer.items.map(row => row.number)).size).toBe(answer.items.length)
+      expect(answer.items.every((row, index) => index === 0 || answer.items[index - 1]!.number > row.number)).toBe(true)
+      expect(answer.assignees).toEqual([...answer.assignees!].sort((a, b) => a.login.localeCompare(b.login)))
+      expect(answer.absoluteDates).toBe(true)
+      expect(answer.stale).toBeUndefined()
+      return answer
+    }
+    const cold = try tryPromise(() => workload(bench, "public-issues-cold", "async", sample).run({ ...slow, iterations: 1 }))
+    const warm = try tryPromise(() => workload(bench, "public-issues-warm", "async", sample).run(slow))
+    try artifact("public-github-issues", "Real anonymous GitHub REST GETs through worker/Issues.executeIssues and githubHost, SQLite, the production PublicReads cache and real FetchHttpClient. Native issue 1 and comments are independent untimed oracles. One empty-cache observation, then three warm-cache samples on the same cache with a new durable read key each time. Each checks selected native fields and every comment, closed timeline entry, unique descending issue numbers, complete assignee ordering and no stale result. Cache initialization/oracle are excluded; pagination, projection and assertions included.", ["Opt-in BENCH_PUBLIC_GITHUB=1; public repository can change between oracle and sample. No GitHub writes, sign-in, token, model, HTTP interception or synthetic response. One cold observation establishes no distribution; warm cache uses the production 30-second TTL and may revalidate if the host stalls. Not workerd or person-owned mutation latency."], [cold, warm])
+  }))
+})
+
+it.skipIf(!enabled)("public wiki pins native source and retains the exact page across warm reads", { timeout: 240_000 }, async ({ bench }) => {
+  await runPromise(scoped(effect {
+    const head = try anonymous(GitHub.Refs.getBranch("smithersai", "smithers", "main"))
+    const ref = Option.getOrThrow(head).sha
+    const native = Option.getOrThrow(try anonymous(GitHub.Contents.getText("smithersai", "smithers", "apps/vibelang/wiki/roadmap.md", { ref })))
+    const kv = try Effect.try(() => objectStorage())
+    const reads = try publicReads(kv, undefined).pipe(Effect.provide(FetchHttpClient.layer))
+    let sampleId = 0
+    const sample = async () => {
+      const answer = await runPromise(Wiki.executeWiki("bench-public-wiki", kv as unknown as Storage, { ...wiki, key: "read-" + ++sampleId }, { ...Wiki.wikiRepository, branch: ref }).pipe(
+        Effect.provideService(Wiki.WikiAuthority, { current: () => succeed(undefined) }),
+        Effect.provideService(PublicReads, { client: reads }), Effect.provide(FetchHttpClient.layer), Effect.timeout("30 seconds"),
+      ))
+      expect(answer).toEqual({ seq: 1, role: "viewer", pages: [{ id: "roadmap", source: native.text, revision: native.sha }] })
+      expect(await kv.get("wiki/revision")).toBe(1)
+      expect(await kv.get("wiki/page/roadmap")).toEqual({ id: "roadmap", source: native.text, revision: native.sha })
+      return answer
+    }
+    const cold = try tryPromise(() => workload(bench, "public-wiki-cold", "async", sample).run({ ...slow, iterations: 1 }))
+    const warm = try tryPromise(() => workload(bench, "public-wiki-warm", "async", sample).run(slow))
+    try artifact("public-github-wiki", "Real anonymous GitHub REST GETs through worker/Wiki.executeWiki and githubWikiHost, SQLite, production PublicReads and FetchHttpClient. An untimed native branch read pins the immutable source commit; an independent native contents read is the text/blob oracle. One empty-cache observation then three warm reads. Every callback checks exact page, exact revision and both retained storage records; assertions and KV writes included. Pin: " + ref, ["Opt-in BENCH_PUBLIC_GITHUB=1. Public GETs only, no sign-in, token, GitHub write, draft model or synthetic response. One cold observation establishes no distribution; warm samples share the default 30-second cache. Node SQLite/KV adapter, not workerd scheduling."], [cold, warm])
+  }))
+})
+
+const siteEnabled = runSync(Config.withDefault(Config.Boolean("BENCH_SITE_READS"), false))
+it.skipIf(!siteEnabled)("the deployed public issue and wiki reads preserve native GitHub source", { timeout: 240_000 }, async ({ bench }) => {
+  await runPromise(scoped(effect {
+    const nativeIssue = try anonymous(GitHub.IssueChanges.get("smithersai", "vibelang", 1))
+    const nativeWiki = Option.getOrThrow(try anonymous(GitHub.Contents.getText("smithersai", "smithers", "apps/vibelang/wiki/roadmap.md")))
+    provide FetchHttpClient.layer {
+      const http = try HttpClient.HttpClient
+      const observations: Array<{ path: string; status: number; ms: number }> = []
+      const get = async (path: string) => {
+        const start = Date.now()
+        const response = await runPromise(http.execute(HttpClientRequest.get("https://vibelang.smithers.sh" + path)).pipe(Effect.timeout("15 seconds")))
+        const body = await runPromise(response.json)
+        observations.push({ path, status: response.status, ms: Date.now() - start })
+        return body as any
+      }
+      const health = try tryPromise(() => get("/api/health"))
+      try Effect.try(() => expect(observations.at(-1)?.status).toBe(200))
+      const result = try tryPromise(() => workload(bench, "site-public-content-reads", "async", async () => {
+        const issues = await get("/api/issues")
+        const wiki = await get("/api/wiki?page=roadmap")
+        expect(observations.slice(-2).map(value => value.status)).toEqual([200, 200])
+        expect(issues.role).toBe("viewer")
+        expect(issues.items.find((row: any) => row.number === 1)).toMatchObject({ number: nativeIssue.number, githubId: nativeIssue.id, title: nativeIssue.title, body: nativeIssue.body ?? "", state: nativeIssue.state })
+        expect(wiki.role).toBe("viewer")
+        expect(wiki.pages).toEqual([{ id: "roadmap", source: nativeWiki.text, revision: nativeWiki.sha }])
+        expect(issues.stale).toBeUndefined()
+        expect(wiki.stale).toBeUndefined()
+      }).run(slow)).pipe(Effect.tapError(() => artifact("site-public-content-failure", "Anonymous deployed issue/wiki reads, native untimed GitHub oracles; the same correctness checks as site-public-content-reads. Response observations include body read; health is outside timing.", ["Failed workload, no success or latency distribution claimed. No credentials, writes or model request."], { health, observations })))
+      try artifact("site-public-content-reads", "Three anonymous sequential GET issue/wiki pairs against https://vibelang.smithers.sh, with 15-second deadlines per response. Untimed independent native GitHub issue/contents oracles; each sample checks viewer authority, exact native issue identity/title/body/state and wiki text/blob, and no stale result. Health before timing: " + JSON.stringify(health), ["Opt-in BENCH_SITE_READS=1, actual deployed service and WAN/cache state. GitHub main may change between oracle and sample. No credentials, mutation, model request or inference tokens. Whole read pair latency; three samples establish no tail percentile."], { result, observations })
+    }
+  }))
+})
+
+it.skipIf(!enabled)("an expired public cache cannot turn a missing upstream page into content when eviction fails", { timeout: 240_000 }, async ({ bench }) => {
+  await runPromise(scoped(effect {
+    const ref = Option.getOrThrow(try anonymous(GitHub.Refs.getBranch("smithersai", "smithers", "main"))).sha
+    const native = Option.getOrThrow(try anonymous(GitHub.Contents.getText("smithersai", "smithers", "apps/vibelang/wiki/roadmap.md", { ref })))
+    const result = try tryPromise(() => workload(bench, "public-cache-eviction-failure", "async", () => runPromise(scoped(effect {
+      const kv = try Effect.try(() => objectStorage())
+      let deletes = 0
+      const cache = { ...kv, delete: async (_key: string): Promise<boolean> => { deletes += 1; throw new Error("cache storage unavailable") } }
+      const missing = try Ref.make(false)
+      const real = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
+      const upstream = HttpClient.make(request => effect {
+        if (try Ref.get(missing)) return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 404 })))
+        return try real.execute(request)
+      })
+      const reads = try publicReads(cache, undefined).pipe(Effect.provideService(HttpClient.HttpClient, upstream))
+      const read = (key: string) => Wiki.executeWiki("cache-eviction", kv as unknown as Storage, { ...wiki, key }, { ...Wiki.wikiRepository, branch: ref }).pipe(
+        Effect.provideService(Wiki.WikiAuthority, { current: () => succeed(undefined) }),
+        Effect.provideService(PublicReads, { client: reads }), Effect.provideService(HttpClient.HttpClient, upstream),
+      )
+      const first = try read("before")
+      try Effect.try(() => expect(first.pages).toEqual([{ id: "roadmap", source: native.text, revision: native.sha }]))
+      // Use the actual production TTL and wall clock, then inject only unsuccessful upstream/storage services.
+      try sleep("31 seconds")
+      try Ref.set(missing, true)
+      const absent = try Effect.result(read("after")).pipe(Effect.timeout("15 seconds"))
+      const retained = try promise(() => kv.get("wiki/page/roadmap"))
+      try Effect.try(() => {
+        expect(absent._tag).toBe("Failure")
+        if (absent._tag === "Failure") expect(absent.failure).toMatchObject({ _tag: "WikiFailure", reason: "missing" })
+        expect(deletes).toBe(1)
+        expect(retained).toEqual({ id: "roadmap", source: native.text, revision: native.sha })
+      })
+    }))).run({ ...slow, iterations: 1 }))
+    try artifact("public-cache-eviction-failure", "A real anonymous GitHub source read primes the production PublicReads cache and retained wiki page; exact native pinned text/blob is checked against an untimed oracle. After the actual 30-second TTL expires (31-second real sleep), inject a faulty upstream 404 and failing cache deletion service. Require a missing result, exactly one failed eviction and unchanged retained last-good page. One fresh SQLite/KV world, setup/wait/assertions included.", ["Opt-in BENCH_PUBLIC_GITHUB=1. One observation dominated by the intentional TTL wait, no percentile or throughput claim. The happy response is real GitHub; only subsequent failure services are injected. No provider response interception, OAuth, GitHub mutation or model. Node host, not workerd."], result)
+  }))
+})
+
+it.skipIf(!enabled)("a transient upstream failure serves exact retained public content with its confirmation time", { timeout: 240_000 }, async ({ bench }) => {
+  await runPromise(scoped(effect {
+    const ref = Option.getOrThrow(try anonymous(GitHub.Refs.getBranch("smithersai", "smithers", "main"))).sha
+    const native = Option.getOrThrow(try anonymous(GitHub.Contents.getText("smithersai", "smithers", "apps/vibelang/wiki/roadmap.md", { ref })))
+    const nativeIssue = try anonymous(GitHub.IssueChanges.get("smithersai", "vibelang", 1))
+    const result = try tryPromise(() => workload(bench, "public-content-stale-copy", "async", () => runPromise(scoped(effect {
+      const kv = try Effect.try(() => objectStorage())
+      const real = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
+      let failing = false
+      let refused = 0
+      const upstream = HttpClient.make(request => effect {
+        if (failing) {
+          refused += 1
+          return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 503 })))
+        }
+        return try real.execute(request)
+      })
+      const reads = try publicReads(kv, undefined).pipe(Effect.provideService(HttpClient.HttpClient, upstream))
+      const issueKv = try Effect.try(() => objectStorage())
+      const issueReads = try publicReads(issueKv, undefined).pipe(Effect.provideService(HttpClient.HttpClient, upstream))
+      const readIssues = (key: string) => Issues.executeIssues("stale-issues", issueKv as unknown as Storage, { ...issue, key }).pipe(
+        Effect.provideService(Issues.IssueAuthority, { current: () => succeed(undefined) }),
+        Effect.provideService(PublicReads, { client: issueReads }), Effect.provideService(HttpClient.HttpClient, upstream), Effect.timeout("30 seconds"),
+      )
+      const read = (key: string) => Wiki.executeWiki("stale-copy", kv as unknown as Storage, { ...wiki, key }, { ...Wiki.wikiRepository, branch: ref }).pipe(
+        Effect.provideService(Wiki.WikiAuthority, { current: () => succeed(undefined) }),
+        Effect.provideService(PublicReads, { client: reads }), Effect.provideService(HttpClient.HttpClient, upstream), Effect.timeout("15 seconds"),
+      )
+      const began = Date.now()
+      const fresh = try read("fresh")
+      const freshIssues = try readIssues("fresh")
+      const loaded = Date.now()
+      try Effect.try(() => expect(fresh).toEqual({ seq: 1, role: "viewer", pages: [{ id: "roadmap", source: native.text, revision: native.sha }] }))
+      try sleep("31 seconds")
+      failing = true
+      const stale = try read("stale")
+      const staleIssues = try readIssues("stale")
+      const retained = try promise(() => kv.get("wiki/page/roadmap"))
+      try Effect.try(() => {
+        const { stale: confirmed, ...body } = stale
+        expect(body).toEqual(fresh)
+        expect(confirmed).toBeGreaterThanOrEqual(began)
+        expect(confirmed).toBeLessThanOrEqual(loaded)
+        expect(refused).toBeGreaterThan(0)
+        expect(retained).toEqual({ id: "roadmap", source: native.text, revision: native.sha })
+        const { seq: freshSeq, stale: freshConfirmed, ...freshBody } = freshIssues
+        const { seq: staleSeq, stale: issueConfirmed, ...staleBody } = staleIssues
+        expect(freshConfirmed).toBeUndefined()
+        expect(freshIssues.items.find(row => row.number === 1)).toMatchObject({ number: nativeIssue.number, githubId: nativeIssue.id, title: nativeIssue.title, body: nativeIssue.body ?? "", state: nativeIssue.state })
+        expect(freshIssues.items.length).toBeGreaterThan(100)
+        expect(staleBody).toEqual(freshBody)
+        expect(staleSeq).toBe(freshSeq + 1)
+        expect(issueConfirmed).toBeGreaterThanOrEqual(began)
+        expect(issueConfirmed).toBeLessThanOrEqual(loaded)
+      })
+    }))).run({ ...slow, iterations: 1 }))
+    try artifact("public-content-stale-copy", "Real anonymous GitHub contents and issue reads prime independent production PublicReads caches and durable hosts; untimed native text/blob and issue 1 are independent oracles. After the real 30-second TTL (31-second wait), inject only upstream 503 responses. Require exact retained wiki source/revision/cursor and the same complete issue snapshot apart from its next read cursor, both marked stale within the initial confirmation interval. One complete journey includes initialization, wait, failed revalidation and assertions.", ["One observation dominated by the intentional TTL wait; no percentile, throughput or isolated cache-speedup claim. Node KV/SQLite host, not deployed workerd. Happy contents are real GitHub; only the unsuccessful upstream is injected. No token, sign-in, GitHub mutation or model."], result)
+  }))
+})
