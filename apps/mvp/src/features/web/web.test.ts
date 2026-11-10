@@ -5,7 +5,7 @@
 // is src/features/views/views.test.ts. Faults are injected as test implementations of Effect services: a client that
 // fails once, and a fetch that fails.
 import { Action, FlowRuntime } from "@smthrs/flow"
-import { Context, Effect, Exit, Layer, Logger, Metric, Option, Scope, Stream, Tracer } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Option, Scope, Stream, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test } from "vitest"
@@ -32,6 +32,13 @@ const runtime = testFile("web")
 const APP = "http://localhost:1337"
 
 /** An agent's call of the flow, as the catalog names it: a child of the answer's run. */
+/**
+ * A call's failures as the agent is answered: each reason's error. The engine annotates a failed action's cause with
+ * its FailureSite (where and after how many attempts it failed), a diagnostic the outcome doesn't depend on.
+ */
+const reasonsOf = (exit: Exit.Exit<unknown, unknown>) =>
+  Exit.isFailure(exit) ? exit.cause.reasons.map((reason) => Cause.isFailReason(reason) ? reason.error : reason) : exit
+
 const agentCall = (n: number) => `answer-${n}/chat/Respond@abc:1/call/1.0`
 
 const member: Actor = { subject: { kind: "person", id: "person-member" }, role: "member" }
@@ -264,10 +271,10 @@ describe("the flow", () => {
       ["http://localhost:4000/", "embed", "insecure"],
     ] as const
     for (const [index, [url, mode, reason]] of refused.entries()) {
-      expect([url, mode, await engine.open(agentCall(index), { url, mode })]).toEqual([
+      expect([url, mode, reasonsOf(await engine.open(agentCall(index), { url, mode }))]).toEqual([
         url,
         mode,
-        Exit.fail(new WebPageRefused({ reason })),
+        [new WebPageRefused({ reason })],
       ])
     }
     expect(await rows()).toEqual([])
@@ -279,11 +286,11 @@ describe("the flow", () => {
   test("a page ChatApi won't keep is refused; a person who may not add views is forbidden", async () => {
     // The device's policy allows its own http://localhost; this ChatApi, configured as a deployment, does not.
     const engine = await openEngine({ localHttp: true })
-    expect(await engine.open(agentCall(1), { url: "http://localhost:4000/", mode: "tab" })).toEqual(
-      Exit.fail(new WebPageRefused({ reason: "invalid" })),
-    )
+    expect(reasonsOf(await engine.open(agentCall(1), { url: "http://localhost:4000/", mode: "tab" }))).toEqual([
+      new WebPageRefused({ reason: "invalid" }),
+    ])
     const signedOut = await openEngine({ actor: null })
-    expect(await signedOut.open(agentCall(2), { url: "https://example.com/" })).toEqual(Exit.fail(new WebPageForbidden()))
+    expect(reasonsOf(await signedOut.open(agentCall(2), { url: "https://example.com/" }))).toEqual([new WebPageForbidden()])
     expect(signedOut.count({ web_mode: "embed", door: "agent", outcome: "forbidden" })).toBe(1)
     expect(await rows()).toEqual([])
   }, WITHIN)
@@ -331,10 +338,10 @@ describe("the flow", () => {
     })
 
     expect(Exit.isSuccess(await engine.open(agentCall(1), { url: "https://example.com/" }))).toBe(true)
-    expect(await engine.open(agentCall(2), { url: "https://refuses.example/" })).toEqual(
-      Exit.fail(new WebPageRefused({ reason: "invalid" })),
-    )
-    expect(await engine.open(agentCall(3), { url: "https://example.com/docs" })).toEqual(Exit.fail(new WebPageForbidden()))
+    expect(reasonsOf(await engine.open(agentCall(2), { url: "https://refuses.example/" }))).toEqual([
+      new WebPageRefused({ reason: "invalid" }),
+    ])
+    expect(reasonsOf(await engine.open(agentCall(3), { url: "https://example.com/docs" }))).toEqual([new WebPageForbidden()])
     expect((await rows()).map((row) => row.template)).toEqual(["webpage"])
     expect(engine.count({ web_mode: "embed", door: "agent", outcome: "unavailable" })).toBe(1)
     expect(engine.count({ web_mode: "embed", door: "agent", outcome: "refused" })).toBe(1)
