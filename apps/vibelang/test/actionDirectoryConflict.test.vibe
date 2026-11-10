@@ -1,0 +1,44 @@
+// @vitest-environment node
+// A run id reused after its first start was refused: the directory's journal still holds the first request.
+import { describe, expect, it } from "@effect/vitest"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { Post } from "../src/core/flows.vibe"
+import { world, request, history } from "./support/actionObjects.vibe"
+
+/** Starts `arun7` as a refused Plan twice, then as a Post. */
+effect function starts(w: Effect.Success<ReturnType<typeof world>>) {
+  provide MockFactory, history {
+    const device = try Factory
+    try device.accounts!.choose("maintainer")
+    provide ActionDevice = device {
+      const refused = try w.directory.start(request("arun7", "vibelang/history/Plan", { nonsense: 1 }, w.person.id), "maintainer")
+      const again = try w.directory.start(request("arun7", "vibelang/history/Plan", { nonsense: 1 }, w.person.id), "maintainer")
+      const other = try w.directory.start(request("arun7", Post._tag, { nonsense: 1 }, w.person.id), "maintainer")
+      return [refused, again, other]
+    }
+  }
+}
+
+describe("action directory", () => {
+  // Found by actions/object-lifecycles (campaign 9, seed 20261118): the second start died with ExecutionIdentityConflict.
+  it.live("refuses a different request under a refused run's id with conflict, logged and counted", () => effect {
+    const { References } = try promise(() => import("effect"))
+    const lines = try Ref.make<ReadonlyArray<string>>([])
+    const capture = Logger.layer([Logger.make(options => {
+      runSync(Ref.update(lines, all => [...all, JSON.stringify({ message: options.message, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })]))
+    })])
+    const counter = Metric.counter("vibelang_action_start_conflicts", { incremental: true })
+    const before = try Metric.value(counter)
+    const w = try world()
+    const answers = try starts(w).pipe(Effect.provide(capture))
+    const after = try Metric.value(counter)
+    const records = (try Ref.get(lines)).filter(line => line.includes("vibelang.actions.start"))
+    try Effect.try(() => {
+      expect(answers).toEqual(["input", "input", "conflict"])
+      expect(Number(after.count) - Number(before.count)).toBe(1)
+      expect(records).toEqual([JSON.stringify({ message: ["vibelang.actions.start"], annotations: { outcome: "conflict" } })])
+    })
+  })
+})

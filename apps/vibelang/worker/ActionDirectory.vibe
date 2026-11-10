@@ -35,6 +35,14 @@ export const CancelAction = Flow.make("vibelang/actions/Cancel", {
   body: Node.capture({}, (payload) => CancelRun.call(payload)),
 })
 
+/** Logs and counts a start refused because its id's journal holds a different request; fixed names only. */
+function identityConflict() {
+  return Effect.logWarning("vibelang.actions.start").pipe(
+    Effect.annotateLogs({ outcome: "conflict" }),
+    Effect.andThen(Metric.update(Metric.counter("vibelang_action_start_conflicts", { incremental: true }), 1)),
+  )
+}
+
 export function directory(hostId: string, storage: Storage, runs: Runs, authority: Pick<ActionIdentity.Shape, "role"> = signedOut) {
   effect function list(flow: string) {
     const stored = try promise(() => storage.list({ prefix: "action-index/" }))
@@ -58,7 +66,14 @@ export function directory(hostId: string, storage: Storage, runs: Runs, authorit
       StartRequest.toLayer(() => runs.start(request, currentRole)),
     ))).pipe(Layer.provide(ObjectDatabase.layer(storage)))
     return try Effect.orDie(Effect.provide(effect {
-      return try (try FlowRuntime.FlowRuntime).execute(RequestAction, { executionId: `request/${request.id}`, payload: { request } })
+      return try (try FlowRuntime.FlowRuntime).execute(RequestAction, { executionId: `request/${request.id}`, payload: { request } }).pipe(
+        // A start refused before its run object stored the request (`input`, `forbidden`) leaves only this journal's
+        // record of it, so a different request under that id is refused here, as the check above refuses a stored one.
+        Effect.catchCause((cause) => {
+          const reason = cause.reasons.length === 1 ? cause.reasons.find(Cause.isDieReason) : undefined
+          return reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict ? Effect.as(identityConflict(), "conflict") : Effect.failCause(cause)
+        }),
+      )
     }, runtime))
   }
   effect function cancel(id: string, role: Role, owner = "") {
