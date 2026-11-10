@@ -1,6 +1,6 @@
 import { Deferred, Effect, Fiber } from "effect"
 import { describe, expect, it } from "vitest"
-import * as TreeGate from "../src/internal/TreeGate.ts"
+import * as TreeGate from "../src/internal/TreeGate.vibe"
 import { takesExclusiveTreePermit } from "../src/PackageExec.ts"
 
 describe("whole-tree admission", () => {

@@ -12,10 +12,10 @@ import * as Semaphore from "effect/Semaphore"
  * @since 1.0.0-rc.0
  */
 export const make = (jobs: number) =>
-  Effect.gen(function*() {
-    const admission = yield* Semaphore.make(1)
-    const work = yield* Semaphore.make(jobs)
-    return <A, E, R>(exclusive: boolean, body: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => {
+  effect {
+    const admission = try Semaphore.make(1)
+    const work = try Semaphore.make(jobs)
+    return <A, E, R>(exclusive: boolean, body: A!E!R): A!E!R => {
       const permits = exclusive ? jobs : 1
       return Effect.uninterruptibleMask((restore) =>
         Effect.acquireUseRelease(
@@ -25,4 +25,4 @@ export const make = (jobs: number) =>
         )
       )
     }
-  })
+  }

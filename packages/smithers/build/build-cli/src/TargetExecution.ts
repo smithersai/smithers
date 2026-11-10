@@ -36,7 +36,7 @@ import {
   targetToolchain,
   verifyTargetToolchain
 } from "./engine.ts"
-import { FactoryProjectionLive } from "./FactoryProjectionExec.ts"
+import { FactoryProjectionLive } from "./FactoryProjectionExec.vibe"
 import type * as OutputStream from "./OutputStream.ts"
 import type * as Planner from "./Planner.ts"
 

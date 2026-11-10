@@ -77,7 +77,7 @@ import {
 import * as RulePolicy from "./RulePolicy.ts"
 import * as NativeRules from "./rules/NativeRules.ts"
 import { posix, sha256Hex } from "./Text.ts"
-import * as TreeGate from "./TreeGate.ts"
+import * as TreeGate from "./TreeGate.vibe"
 
 /** Promise-only I/O must settle its cleanup before its Effect releases ownership. */
 const joined = <A>(run: (signal: AbortSignal) => Promise<A>): Effect.Effect<A, unknown> =>
