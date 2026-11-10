@@ -111,13 +111,17 @@ function list(model: HistoryModel, h: H): ReadonlyArray<Html> {
       ...(outline.main.trim() === "" ? [] : [h.span([h.Class("sui-badge sui-badge-secondary mh-mono"), h.Title("Folded through")], [
         h.a([h.Href(`${REPOSITORY_URL}/commit/${outline.main}`)], [outline.main]),
       ])]),
+      ...(model.exported === "" ? [] : [h.span([h.Class("sui-badge sui-badge-success mh-mono"), h.Title("Exported")], [`mythical ${model.exported.slice(0, 7)}`])]),
       h.span([h.Class("mh-toolbar-end")], [
         h.input([
           h.Class("sui-input"), h.Type("search"), h.Placeholder("Filter commits"), h.AriaLabel("Filter commits"), h.Value(model.filter),
           h.OnInput((value) => HistoryMessage.UpdatedFilter({ value })),
         ]),
         ...(allowed(model.role, "maintainer")
-          ? [h.button([h.Class("sui-button"), h.Type("button"), h.Disabled(model.busy), h.OnClick(HistoryMessage.ClickedFold())], ["Fold"])]
+          ? [
+            h.button([h.Class("sui-button"), h.Type("button"), h.Disabled(model.busy), h.OnClick(HistoryMessage.ClickedFold())], ["Fold"]),
+            h.button([h.Class("sui-button"), h.Type("button"), h.Disabled(model.busy), h.OnClick(HistoryMessage.ClickedExport())], ["Export"]),
+          ]
           : []),
         ...(allowed(model.role, "contributor")
           ? [h.button([h.Class("sui-button sui-button-default"), h.Type("button"), h.OnClick(HistoryMessage.OpenedPlan({ how: "append", target: "" }))], ["Plan work"])]

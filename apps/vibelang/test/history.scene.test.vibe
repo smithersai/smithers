@@ -6,7 +6,7 @@ import { apply, decide, type History, type Intent } from "../src/history/mythica
 import { commitPageOf, epicPageOf, matchesOf, outlineOf, PAGE } from "../src/history/pages.vibe"
 import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
 import {
-  ApproveCommand, ClosePlan, FoldCommand, HistoryMessage, HistoryModel, init, merged, NEW_EPIC, NoteCommand, PlanCommand,
+  ApproveCommand, ClosePlan, ExportCommand, FoldCommand, HistoryMessage, HistoryModel, init, merged, NEW_EPIC, NoteCommand, PlanCommand,
   ReadCommit, ReadEpic, ReadMatches, ReadOutline, SetHash, ShowPlan, StartCommand, update,
 } from "../src/web/historyApp.vibe"
 import { refusalText, view } from "../src/web/historyView.vibe"
@@ -72,6 +72,28 @@ describe("the list", () => {
       expect(role("button", { name: "Plan work" })).toExist(),
       expect(role("button", { name: "Fold" })).toBeAbsent(),
     )
+  })
+
+  it("gives a maintainer Export, shows the tip it published, and says why a refused export was refused", () => {
+    scene(
+      { update, view },
+      given(loaded("maintainer")),
+      expect(text(/^mythical /)).toBeAbsent(),
+      click(role("button", { name: "Export" })),
+      Command.expectExact(ExportCommand({})),
+      Command.resolve(ExportCommand, HistoryMessage.Exported({ mythical: "4e1f0a2b".padEnd(40, "0") })),
+      expect(text("mythical 4e1f0a2")).toHaveAttr("title", "Exported"),
+      click(role("button", { name: "Export" })),
+      Command.resolve(ExportCommand, HistoryMessage.FailedWrite({ reason: "unsupported" })),
+      expect(text(refusalText("unsupported"))).toExist(),
+    )
+    for (const who of ["viewer", "contributor"] as const) {
+      scene({ update, view }, given(loaded(who)), expect(role("button", { name: "Export" })).toBeAbsent())
+    }
+    assert(["unsupported", "conflict", "tree", "linear", "notes", "nothing"].map(refusalText)).toEqual([
+      "Export is off.", "The refs moved. Export again.", "The export failed its check.", "The export failed its check.",
+      "The export failed its check.", "Nothing to export.",
+    ])
   })
 
   it("is a viewer's once live, whatever mock role the page had", () => {

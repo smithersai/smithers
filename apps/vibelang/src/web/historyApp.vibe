@@ -67,6 +67,8 @@ export schema HistoryModel {
   readonly epoch: number
   /** The last event seen; above the outline's `seq` while a read of it is under way. */
   readonly latest: number
+  /** The `mythical` bookmark's tip the last export from this page published, or `""`. */
+  readonly exported: string
 }
 
 /** The Epic choice that opens a new epic. */
@@ -100,6 +102,8 @@ export const HistoryMessage = defineMessageUnion({
   ClickedStart: { id: Schema.String },
   ClickedApprove: { id: Schema.String },
   ClickedFold: {},
+  ClickedExport: {},
+  Exported: { mythical: Schema.String },
   UpdatedNoteSection: { value: Schema.Literals(["tried", "evidence", "superseded"]) },
   UpdatedNote: { value: Schema.String },
   SubmittedNote: { id: Schema.String },
@@ -147,6 +151,7 @@ export function init(flags: HistoryFlags): Return {
       busy: false,
       epoch: 1,
       latest: 0,
+      exported: "",
     },
   }
 }
@@ -264,6 +269,8 @@ export function update(model: HistoryModel, message: HistoryMessage): Return {
     ClickedStart: ({ id }) => write(model, StartCommand({ id, lane: model.lane })),
     ClickedApprove: ({ id }) => write(model, ApproveCommand({ id })),
     ClickedFold: () => write(model, FoldCommand({})),
+    ClickedExport: () => write(model, ExportCommand({})),
+    Exported: ({ mythical }) => ({ model: { ...model, ...wroteFrame(frameOf(model), ""), exported: mythical } }),
     UpdatedNoteSection: ({ value }) => ({ model: { ...model, noteSection: value } }),
     UpdatedNote: ({ value }) => ({ model: { ...model, ...noteFrame(frameOf(model), value) } }),
     SubmittedNote: ({ id }) => write(model, NoteCommand({ id, section: model.noteSection, text: model.noteText })),
@@ -435,6 +442,18 @@ export const FoldCommand = Command.define("Fold", {
       return ""
     } catch (error) => reasonOf(error)
     return try message(() => settledMessage(reason))
+  },
+})
+
+export const ExportCommand = Command.define("Export", {
+  args: {},
+  messages: [HistoryMessage.Exported, HistoryMessage.FailedWrite],
+  execute: effect () => {
+    const mythical = try Mythical
+    const published = effect {
+      return { mythical: (try mythical.publish()).mythical, reason: "" }
+    } catch (error) => ({ mythical: "", reason: reasonOf(error) })
+    return try message(() => published.reason === "" ? HistoryMessage.Exported({ mythical: published.mythical }) : HistoryMessage.FailedWrite({ reason: published.reason }))
   },
 })
 

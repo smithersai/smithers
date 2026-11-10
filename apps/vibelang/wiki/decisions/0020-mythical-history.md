@@ -4,7 +4,7 @@
 Smithers D-09a, D-20; repository rules FLOW-3, "people merge; agents never approve or merge". **Brings back** what
 `apps/mvp/docs/rulings.md` TODO-2 deferred, for this app only. **Designed twice:** Claude Opus
 (`~/vl/mythical/design-opus.md`) and Codex Sol (`~/vl/mythical/design-sol.md`), independently; Opus merged them. **Built:** the machine and its proofs, the bootstrap, the flows, the mock, the live History object
-and its routes, the agent's commands and the view.
+and its routes, the agent's commands, the view, and the git export (switched off for VibeLang's own repository).
 
 **Decision.** VibeLang's mythical history is a second state machine beside the conversation's (0003): one linear stack
 of mythical commits grouped into epics, written only by its sequencer in one Durable Object, `History`, bootstrapped
@@ -32,10 +32,71 @@ issue ─▶ task ─▶ Plan (append | insert | amend) ─▶ Start (lane) ─�
   their reasons; reverts), `evidence` (how it landed; the message's `Validation`, `Tests`, `Regression`, `Before`,
   `After` lines; a person's approval), `superseded`. The view shows a fourth section, `Folded`, derived from `real`,
   so it can't drift.
-- **The git export is not built.** A `mythical` bookmark plus `refs/notes/mythical` in VibeLang's repository is
-  derivable from this state at any time, because every mythical commit lists the real commits it folds. Sol's
-  conditions for building it stand: an atomic multi-ref compare-and-swap through a jj-backed SDK service (no git CLI),
-  planned commits as empty reservations, and tree equality checked by a repository action, never asserted by a payload.
+- **The git export** (below) publishes this state as a strictly linear `mythical` bookmark, `refs/notes/mythical`
+  and a manifest bookmark, `smithers/history`, to Sol's conditions. Publishing to `smithersai/vibelang` is off until
+  Will grants the site that write.
+
+## The git export
+
+`vibelang/history/Export` (`src/history/export.vibe`, decisions in `src/history/exportDecision.vibe`, proved) writes
+through `@smthrs/jj`'s `Repository` service (`@smthrs/jj/Repository`), the SDK seam this lane added: git object I/O
+under ids hashed exactly as git hashes them, and one fenced compare-and-swap over several refs that checks every old
+value (`updateRefs`). It runs no git command, notes included. An adapter that cannot apply the transaction atomically
+fails `unsupported`; nothing pushes refs one at a time. Adapters: memory (`Repository.makeMemory`, the mock's) and
+GitHub (`@smthrs/integrations`' `GitHub.GitDatabase`: the Git database REST API for objects, GraphQL `updateRefs` for
+refs, every answered id checked against the local hash, a refused or lost update read back to tell `conflict` from a
+no-op).
+
+```
+authorize ─▶ prepare ──────────────────▶ check ──────────────────▶ publish ─────────────▶ confirm
+(maintainer, read the three refs and the    read back each new commit:   one compare-and-swap of   read the refs: the
+ people only) last manifest; plan every     one parent, the one before;  all three refs, each      candidate (published),
+             commit; write what is new:     its tree its last fold's     from the value prepare    the old tuple (nothing
+             commits, notes, manifest       real commit's, or its        read                      moved) or another
+                                            parent's; a note for each                              writer's (conflict)
+```
+
+- **Strictly linear, in stack order.** Each mythical commit is one git commit whose only parent is the one before it,
+  its message the title with `Mythical:` and `Epic:` trailers, its author and committer fixed (2026-11-07, UTC), so the
+  same history is the same commits and preparing again writes nothing.
+- **Reservations are empty.** A commit no real commit folds into (planned, working, approved) takes its parent's tree
+  (git's empty tree first); a commit that folds real commits takes the tree of its last fold (`treeSource`, proved).
+  The tree comes from the repository, and the check step reads both trees back from it: the payload asserts nothing.
+- **Notes** (`refs/notes/mythical`) map each mythical commit's full id to its note: its state, then Tried, Evidence,
+  Folded (the real commits it folds) and Superseded, `(none)` when empty, as the view shows them. A notes commit is
+  written only when the notes tree changed, its parent the last notes commit.
+- **The manifest** (`refs/heads/smithers/history`, `manifest.json`) names main, both tips, and each commit as
+  `[id, commit, real commit whose tree it takes, tree]`. Its parents are the last manifest and, when the bookmark was
+  rewritten rather than extended, the replaced tip: no published commit becomes unreachable.
+- **Incremental.** A new export keeps the leading commits the last manifest already names (`kept`, proved) and writes
+  the rest; an insert or a fold rewrites from that commit on. Real commits' trees are read once and kept in the manifest.
+- **Atomic and idempotent.** Publish moves all three refs in one compare-and-swap, each from the value prepare read; an
+  unchanged ref is checked, not skipped (`moves`, proved). Confirm decides from the refs read afterwards, whatever
+  publish answered (`confirmed`, proved), so a lost answer that landed is a publication and a retried execution
+  answers its journal. Every step is journaled (`vibelang/history/export/<step>`), counted
+  (`vibelang_history_steps{step="export.<step>"}`), logged and spanned with no title, note or name.
+- **Who.** A maintainer, people only: `export` is in the proved `leastRole` (maintainer) and `peopleOnly`, read
+  through `roles.vibe`. The agent has no export tool or command, and a maintainer's agent is refused `forbidden`.
+- **Mock** (VL-13): the mock's repository is the memory repository, where each commit of the mock's main resolves to a
+  commit with a tree of its own. A maintainer exports VibeLang's whole bootstrapped history (5,703 commits) in 2.9 to
+  4.4 s, bootstrap included (`bench/history-export.bench.vibe`).
+- **Live:** `POST /api/history/export` runs the flow in the History object. `HISTORY_EXPORT` (`off`, the default, or
+  `github:<owner>/<repo>`) and `HISTORY_EXPORT_TOKEN` choose the repository (`worker/HistoryExport.vibe`); off, every
+  repository call answers `unsupported` and the export is refused before it reads anything. **Publishing to
+  `smithersai/vibelang` stays off until Will grants the site that write.**
+- **Refusals:** `forbidden`, `nothing` (no commits), `unsupported`, `conflict`, `unavailable`, and the check's
+  `linear`, `tree` and `notes`; a refused export moves no ref.
+
+**Evidence (nyc-01, 2026-11-10/11).** Probed on `codeplanesmithers/smithers-vibelang-e2e` before building: GitHub's
+blob, tree and commit ids equal local hashing byte for byte; a stale `beforeOid` refuses the whole `updateRefs` with
+a generic error; `force: true` still checks `beforeOid`. `test/export.github.test.vibe` runs the flow through the
+Worker's own exporter on that repository (recorded once as the smithers.sh App's installation, replayed on every
+`pnpm test`; `test/recordings/history-export.json`, 78 exchanges, 120 KB): it publishes three commits, republishes
+nothing, extends the bookmark by one, and deletes its refs. `test/export.test.vibe` covers each refusal with a faulty
+`Repository`: another writer racing the publication, a lost answer, a refused update, unreadable refs, a real commit
+answering another tree to the check, a broken parent, a missing note, a short manifest. Running it found and fixed a
+manifest that kept an extended bookmark's old tip as a second parent, and a memory repository that refused git's
+empty tree.
 
 ## Bootstrap
 
@@ -70,7 +131,7 @@ GET  /api/history/epics/<e>?from=<n>               50 of an epic's commits in st
 GET  /api/history/commits/<m>                      one commit in full: its notes and the real commits it folds
 GET  /api/history/search?q=<text>                  at most 100 commits whose title has the text, or whose id it is
 GET  /api/history/events?after=<seq>               Server-Sent Events, as a conversation's (0010)
-POST /api/history/<plan|start|note|approve|fold>   200 {id, folded} | 409 {refusal} | 403 forbidden | 503 unavailable
+POST /api/history/<plan|start|note|approve|fold|export>   200 {id, folded} | 409 {refusal} | 403 forbidden | 503 unavailable
 ```
 
 **Read by page.** A reader asks only for what it shows (`src/history/pages.vibe`): each page is a pure function of the
@@ -104,6 +165,7 @@ Roles come from `src/history/roles.vibe`: each flow reads its least role from th
 | `vibelang/history/Note` | `note/record` | contributor | yes |
 | `vibelang/history/Approve` | `approve/record` | maintainer | **never** |
 | `vibelang/history/Fold` | `fold/main`, `fold/read`, `fold/<sha>` per commit | maintainer | **never** |
+| `vibelang/history/Export` | `export/run`: `export/prepare`, `check`, `publish`, `confirm` | maintainer | **never** |
 | `vibelang/history/Bootstrap` | `bootstrap/load` | its host, on first start; no route | no |
 | read: `history` | `GET /api/history`, `GET /api/history/events` | viewer | `vibelang/history/show` |
 
@@ -130,6 +192,8 @@ work.
 - **Commit:** title, state, id, task and lane; its progress (planned, working, approved, landed on main) with Start
   and Approve where the role allows; the note's four sections with `(none)` when empty; its real commits on GitHub.
 - **Plan work:** Commit, Epic (or New epic…), Task; Insert before… and Amend… open it from a commit, for a maintainer.
+- **Export:** a maintainer's button beside Fold; a publication shows `mythical <sha>` (title `Exported`), a refusal its
+  line in the alert (the design's smallest addition, `wiki/designs/mythical/NOTES.md`).
 - **Roles:** an action renders only for a role that may take it; a viewer gets no dialog at all. In mock mode the page
   plays `?role=` or the `vibelang.role` key (maintainer when neither says); live, it is a viewer until 0019 lands.
 
@@ -190,6 +254,11 @@ vibelang-factory note m5704 --section tried "A cache; it went stale."
    `flows.vibe` runs this machine: the authorize step journals `authorize(begin(action, principal))`, and every record
    step, including each `fold/<sha>`, runs only when `canRecord` holds.
 9. **A fold never runs before its approval** (`foldTarget`, which `Sequencer.fold` calls): defined below.
+10. **The export's decisions** (`exportDecision.vibe`): `lastFold` is the last real commit folded into a commit, -1
+    exactly when none is; `treeSource` is that commit's sha or `""` for an empty reservation; `kept` is the longest
+    common prefix of the last and planned chains; `moves` is all three refs, each from its published value to its
+    candidate value; `confirmed` is `published` exactly when the refs read are the candidate, `unchanged` exactly when
+    they are still the published tuple, else `conflict`. Item 7's `may` now names `export` beside approve and fold.
 
 **"A fold never runs before its approval", precisely.** The property is about the Fold flow, which maps a commit of
 `main` onto the stack. A real commit whose message carries `Mythical: m<n>` folds into `m<n>` only if `m<n>` exists
@@ -202,6 +271,22 @@ through `decide` and folds into commits it planned the step before (that past pr
 **untrailered** real commit's own new commit, which is planned and folded at once. Before this rule, a trailer naming
 a `working` commit landed it (`test/flowMachine.test.vibe`, "folds into the commit a trailer names only after its
 approval", failed first).
+
+**Receipts for the export (nyc-01, 2026-11-10).** `pnpm verify src/history/exportDecision.vibe`: **10 verified, 0
+errors**; `src/history/flowMachine.vibe` with `export`: **22 verified, 0 errors**. `pnpm verify:broken` over the export's 16 new mutations and the 15
+existing ones on the touched modules: **31/31** rejected by Dafny (38.9 s). The new ones: a fold found outside the commit
+(`export-last-fold-match`), a fold skipped (`export-last-fold-first`), a landed commit taking the first fold's tree
+or a once-folded commit read as a reservation (`export-tree-source`, `export-reservation`), a changed commit kept
+(`export-kept-overrun`), a moved notes ref read as unchanged (`export-same-notes`), the bookmark moved from the
+candidate value, the notes ref not moved, the manifest moved under the bookmark's name (`export-moves-*`), the old
+tuple read as published, a third tuple read as unchanged (`export-confirm-*`), the agent allowed to export, a
+contributor exporting (`flow-export-agent`, `flow-least-export`), the export path named as the fold
+(`wire-write-export`), an off export or one check refusal shown as a raw code (`flow-refusal-export-off`,
+`flow-refusal-export-check`). `fuzz/history-export.fuzz.vibe` runs the decisions
+against independent oracles, the whole flow over random stories with ten injected repository faults (each answers
+its refusal and moves no ref; otherwise linear, trees read back, again writes nothing, an insert rewrites) and the
+setting. Unit, fuzz and benchmark coverage of `export.vibe`, `exportDecision.vibe` and `HistoryExport.vibe` are each
+100% on all four measures; `Repository.ts` and `GitDatabase.ts` are 100% in their packages.
 
 **Receipts (nyc-01, 2026-11-07).** `pnpm verify`: `src/history/mythical.vibe` **28 verified, 0 errors**,
 `src/history/flowMachine.vibe` **9 verified, 0 errors**; the whole app **9/9 files, 119 verified, 0 errors** (228 s). `pnpm verify:broken myth-… flow-…`:
@@ -250,7 +335,9 @@ The proof found two bugs before any test did: `apply` accepted a plan into the e
 - **The read pages** (`src/history/pages.vibe`: `outline`, `epic`, `commit`, `search`): Map, sort and slice
   projections outside LemmaScript's subset; `test/pages.test.vibe`'s properties check that the pages put back
   together equal the stack and that the outline's counts equal the history's.
-- **The git export**: not built.
+- **The git export's Effect shell** (`export.vibe`): git object hashing and I/O, the compare-and-swap and tree
+  equality are the `Repository` service's (SDK-tested, and replayed against real GitHub); the stack order sort, note
+  and manifest text, and manifest JSON are tested. `exportDecision.vibe` is proved.
 - **The roles' source** (`Caller`, decision 0019): who the caller is comes from sign-in; the proof covers what each
   role may do, not who has it.
 
@@ -258,7 +345,7 @@ The proof found two bugs before any test did: `apply` accepted a plan into the e
 
 | Alternative | Why not |
 | --- | --- |
-| Sol: a real `mythical` bookmark and notes ref as the published authority now, with publication generations | Needs jj on a host (brick 6), an atomic ref seam the SDK lacks, and a GitHub write this app has never been granted. Kept as the export's conditions. |
+| Sol: a real `mythical` bookmark and notes ref as the published authority now, with publication generations | The History object stays the store of record; the bookmark is an export of it. The atomic ref seam now exists (`@smthrs/jj/Repository`); the GitHub write is still not granted. |
 | Sol: the full task lifecycle (proposed, accepted, checking, queued, integrated, on main, folded) with operation receipts and HumanTask merges | Needs issues (brick 3), sandboxes (brick 6) and a queue adapter that pins candidates; none exists. The four states here map onto a subset. |
 | Opus first draft: first-parent commits only | 248 side commits of green-cut merges would map to nothing. Sol's buckets fix it. |
 | Grouping by jj change id | The queue lands copies under new change ids: 0 of 6,490 matched. Titles matched 3,954. |
@@ -277,7 +364,11 @@ The proof found two bugs before any test did: `apply` accepted a plan into the e
 
 ## Not yet, and why
 
-- The git export (above).
+- Publishing the export to `smithersai/vibelang`: off behind `HISTORY_EXPORT` until Will grants the site a write to
+  VibeLang's repository; then set `HISTORY_EXPORT=github:smithersai/vibelang` and `HISTORY_EXPORT_TOKEN`. A first
+  export of 5,703 commits is about 11,400 content-creating GitHub requests (a commit and a note blob each); GitHub's
+  documented secondary limit is 500 such requests an hour, so it needs pacing across about a day before it is
+  switched on. Later exports write only what changed.
 - Live writes on production: 0019's sign-in is on `main` (`worker/apiObjects.vibe` builds the history principal from
   the session's role), but production predates it, so there every HTTP caller is a viewer and Plan, Start, Note,
   Approve and Fold answer `forbidden` until the lead deploys; reads and the mock work.

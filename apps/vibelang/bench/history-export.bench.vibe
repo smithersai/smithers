@@ -57,6 +57,7 @@ it("exports VibeLang's whole history in mock mode, then nothing, then one commit
     ["notes", (repository) => ({ ...repository, readTree: (oid) => Effect.map(repository.readTree(oid), (entries) => entries.length === 2 && entries.every((entry) => entry.name.length === 40) ? entries.slice(1) : entries) })],
     ["linear", (repository) => ({ ...repository, readBlob: (oid) => Effect.map(repository.readBlob(oid), (text) => text.startsWith("{\"schema\":1") ? text.replace(/,\["m2"[^\]]*\]/, "") : text) })],
     ["unavailable", (repository) => ({ ...repository, readBlob: () => fail(Repository.repositoryError("unavailable", "readBlob", "down")) })],
+    ["linear", (repository) => ({ ...repository, readBlob: (oid) => Effect.map(repository.readBlob(oid), (text) => text.startsWith("{\"schema\":1") ? text.replace(/"mythical":"[0-9a-f]+"/, `"mythical":"${"0".repeat(40)}"`) : text) })],
   ]
   const refusals = await workload(bench, "history-export-refusals", "async", () => runPromise(scoped(effect {
     const answers: Array<string | null> = []
@@ -94,6 +95,7 @@ it("exports VibeLang's whole history in mock mode, then nothing, then one commit
     expect(moves(REF_NAMES, published, candidate).map((move) => move.before)).toEqual(["a", "b", "c"])
     expect(confirmed(candidate, published, candidate)).toBe("published")
     expect(confirmed(published, published, candidate)).toBe("unchanged")
+    expect(confirmed({ ...candidate, notes: "z" }, published, candidate)).toBe("conflict")
   }).run(quick)
   const setting = await workload(bench, "history-export-setting", "async", () => runPromise(effect {
     const unreachable = HttpClient.make(() => Effect.die("no request"))

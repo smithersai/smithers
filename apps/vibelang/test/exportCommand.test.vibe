@@ -1,0 +1,28 @@
+// The /history page's Export command (src/web/historyApp.vibe `ExportCommand`; decision 0020, "The view") executed for
+// real: over the mock history it answers the tip it published, and over a refusing history the refusal.
+import { expect, it } from "@effect/vitest"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { Mythical, Refused } from "../src/history/MythicalHistory.vibe"
+import { empty } from "../src/history/mythical.vibe"
+import { ExportCommand, HistoryMessage, PlanCommand } from "../src/web/historyApp.vibe"
+
+effect function execute<A, E, R>(make: () => { readonly effect: A!E!R }) { return try (try Effect.try(make)).effect }
+
+it.effect("answers Exported with the bookmark's tip, and FailedWrite with a refusal", () => scoped(effect {
+  provide MockMythical({ role: "maintainer", name: "Ada", agent: false }, () => succeed(empty)) {
+    try execute(() => PlanCommand({ how: "append", epic: "", newEpic: "Docs", target: "", title: "docs: one", task: "" }))
+    const exported = try execute(() => ExportCommand({}))
+    const tip = (try (try Mythical).publish()).mythical
+    try Effect.try(() => expect(exported).toEqual(HistoryMessage.Exported({ mythical: tip })))
+  }
+  const unused = () => Effect.die("unused")
+  const refusing: Mythical.Shape = {
+    mode: "mock", outline: unused, epic: unused, commit: unused, search: unused, events: () => Stream.die("unused"),
+    plan: unused, start: unused, note: unused, approve: unused, fold: unused,
+    publish: () => fail(new Refused({ refusal: "unsupported" })),
+  }
+  provide Mythical = refusing {
+    const refused = try execute(() => ExportCommand({}))
+    try Effect.try(() => expect(refused).toEqual(HistoryMessage.FailedWrite({ reason: "unsupported" })))
+  }
+}))

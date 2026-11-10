@@ -61,7 +61,8 @@ note dot, fold count, change id, age), `mh-plane`, `mh-note-sections` (the note'
 
 - Pane bar: `History · mythical`; minimize `−`, maximize `⤢`.
 - Toolbar: `vibelang / History`, ref `mythical`, badge `tree = main`, placeholder `Filter commits`,
-  button `Plan work`; viewer's nav adds `Sign in`.
+  button `Plan work`; viewer's nav adds `Sign in`. Maintainer adds button `Export`; after an export, badge
+  `mythical <sha>` (title `Exported`, the bookmark's new tip).
 - Planned group: `Planned · 1`; row badge `planned`; row tail `onto The Jj service learns to rebase`.
 - Epic header: title, `7 commits · folds 9 · #46`; story is one sentence.
 - Commit rows: `docs` / `code` / `test` badges, message, `folds 3`, change id, age (`3d`).
@@ -94,6 +95,8 @@ note dot, fold count, change id, age), `mh-plane`, `mh-note-sections` (the note'
 - **Folded-from links go to GitHub** — plue no longer exists; `main` is mirrored there, so the real
   commits resolve.
 - **Planned work is a dashed group on top of the list** — it is not history yet; dashed says proposed.
+- **Export is a maintainer's button, its result a badge** — publishing rewrites refs others read, so it sits
+  beside Fold, and the only feedback is the tip it published; a refusal shows in the usual alert.
 - **Amend is maintainer-only, plan is contributor+** — amend rewrites published history; planning only
   proposes (granular permissions; unauthorized actions never render).
 - **Bootstrap gated to maintainers and a budget field is required** — it costs real money (~$400–600 in
