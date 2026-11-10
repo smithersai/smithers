@@ -37,10 +37,14 @@ export effect function world() {
   try HttpServer.serveEffect(effect {
     const request = try HttpServerRequest.HttpServerRequest
     const path = new URL(request.url, origin).pathname
-    if (path === "/login/device/code") return HttpServerResponse.jsonUnsafe({ device_code: "private-device-code", user_code: "ABCD-EFGH", verification_uri: origin + "/device", expires_in: 600, interval: try Ref.get(interval) })
+    // GitHub's device endpoints answer JSON only to `Accept: application/json`; otherwise the same fields form-encoded.
+    const answer = (fields: Record<string, string | number>) => (request.headers.accept ?? "").includes("application/json")
+      ? HttpServerResponse.jsonUnsafe(fields)
+      : HttpServerResponse.text(new URLSearchParams(Object.entries(fields).map(([key, value]) => [key, String(value)])).toString(), { contentType: "application/x-www-form-urlencoded" })
+    if (path === "/login/device/code") return answer({ device_code: "private-device-code", user_code: "ABCD-EFGH", verification_uri: origin + "/device", expires_in: 600, interval: try Ref.get(interval) })
     if (path === "/login/oauth/access_token") {
-      const answer = try Ref.get(grant)
-      return HttpServerResponse.jsonUnsafe(answer === "authorized" ? { access_token: "device-token-9", token_type: "bearer", scope: "read:user" } : answer === "unknown-person" ? { access_token: "stranger", token_type: "bearer", scope: "read:user" } : answer === "slow_down" ? { error: answer, interval: 30 } : { error: answer })
+      const state = try Ref.get(grant)
+      return answer(state === "authorized" ? { access_token: "device-token-9", token_type: "bearer", scope: "read:user" } : state === "unknown-person" ? { access_token: "stranger", token_type: "bearer", scope: "read:user" } : state === "slow_down" ? { error: state, interval: 30 } : { error: state })
     }
     return try accounts.fetch
   })

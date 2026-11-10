@@ -250,7 +250,9 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       const number = fake.nextPull
       const headName = String(body?.head ?? "")
       const branch = headName.includes(":") ? headName.split(":")[1]! : headName
-      const sha = fake.branches[`${headName.split(":")[0]}/r`]?.[branch] ?? "b".repeat(40)
+      const sha = fake.branches[`${headName.split(":")[0]}/r`]?.[branch]
+      // GitHub refuses a pull request whose head branch does not exist.
+      if (sha === undefined) return try jsonResponse(request, 422, { message: "Validation Failed", errors: [{ resource: "PullRequest", field: "head", code: "invalid" }] })
       return try write(201, () => fake.pulls.find((pull) => pull.number === number), () => {
         fake.nextPull += 1
         const additions = fake.pullAdditions[sha] ?? []
