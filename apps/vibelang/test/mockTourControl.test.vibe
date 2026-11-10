@@ -1,0 +1,20 @@
+// The mock answers a tour-control step the protocol refuses as the live Worker does (400, so Unavailable), never a defect.
+import { expect, it } from "@effect/vitest"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+
+it.live("refuses a seek to a step no stop has, as the live Worker answers it", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    for (const step of [1.5, -3, 12, Number.NaN]) {
+      const exit = try Effect.exit(factory.controlTour!("tour-control-steps", "seek", step))
+      try Effect.try(() => {
+        expect(exit._tag).toBe("Failure")
+        if (exit._tag === "Failure") {
+          expect(Cause.hasDies(exit.cause)).toBe(false)
+          expect(Cause.squash(exit.cause)).toMatchObject({ _tag: "Unavailable" })
+        }
+      })
+    }
+  }
+})

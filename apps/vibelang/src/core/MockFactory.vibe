@@ -19,6 +19,7 @@ import { Action, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { apply, empty, isTouring, type Conversation, type Event } from "./conversation.vibe"
 import { decide, type Decision, type Intent } from "./decide.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
+import { TourControlBody } from "./wire.vibe"
 import {
   PauseTour, ResumeTour, SeekTour, OpenWiki, openWiki, wikiRegistration, EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, ReplyStep, replyIdOf, StartTour, Tour, touring, tourRegistration,
   Tours, unanswered, walkRegistration,
@@ -433,6 +434,8 @@ return Layer.effect(Factory, effect {
       if (refusal !== null) throw new Refused({ refusal })
     },
     controlTour: effect (conversation, action, step) => {
+      // The Worker answers a body outside the protocol with 400, which the live Factory reads as Unavailable.
+      if (!Schema.is(TourControlBody)({ action, step }) || step > 11) throw new Unavailable({ reason: "tour control answered 400" })
       const room = try openRoom(conversation)
       const executionId = `control-tour/${try Ref.updateAndGet(executions, value => value + 1)}`
       const refusal = try Effect.orDie(action === "pause" ? room.engine.execute(PauseTour, { executionId, payload: {} }) : action === "resume" ? room.engine.execute(ResumeTour, { executionId, payload: {} }) : room.engine.execute(SeekTour, { executionId, payload: { step } }))

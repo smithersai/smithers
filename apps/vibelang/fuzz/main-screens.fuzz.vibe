@@ -225,8 +225,9 @@ function commandOf(body: typeof Body.Type, { run, member }: { readonly run: stri
 
 /** What a backend without the service, or with every service failing, must answer. */
 function mustFail(kind: typeof Backend.Type, wiki: typeof WikiFault.Type, command: typeof Body.Type["command"]): boolean {
-  if (command === "OpenWikiEditor" && (wiki === "read-fails" || wiki === "missing")) return true
-  if (command === "SubmitWikiEdit" && (wiki === "unwritten" || wiki === "kept")) return true
+  // Wiki faults are injected only into the mock backend.
+  if (kind === "mock" && command === "OpenWikiEditor" && (wiki === "read-fails" || wiki === "missing")) return true
+  if (kind === "mock" && command === "SubmitWikiEdit" && (wiki === "unwritten" || wiki === "kept")) return true
   if (kind === "faulty") return true
   if (kind !== "bare") return false
   return command === "GrantRole" || command === "LoadIssues" || command === "ActOnIssue" || command === "LoadIssueDetails" || command === "RefreshIssueProjection" || command === "OpenWikiEditor" || command === "SubmitWikiEdit"
