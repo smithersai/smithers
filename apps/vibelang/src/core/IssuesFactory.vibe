@@ -4,7 +4,7 @@ import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { FlowRuntime } from "@smthrs/flow"
 import { applyIssues, canLinkIssues, emptyIssues, issuePermission, setCommitment, approveVip, declineVip, type IssueRecord, type Role } from "./conversation.vibe"
-import { IssueHost, issueFlows, issueRegistration, authorizeIssue, issueExecutionId } from "./issueFlows.vibe"
+import { IssueHost, issueFlow, issueRegistration, authorizeIssue, issueExecutionId } from "./issueFlows.vibe"
 import { IssueFailure, IssueRequest, type IssuesApi, vipIssueBody } from "./issueSchemas.vibe"
 
 function item(number: number, title: string, extra: Partial<IssueRecord> = {}): IssueRecord {
@@ -80,17 +80,18 @@ export effect function fixtureHost(identity: FixtureIdentity, state: Ref.Ref<typ
         const vip = request.op === "propose"
         items = [item(number, request.title.trim(), { body: vip ? vipIssueBody(request) : request.text, author: actor, age: "just now", parent: request.op === "split" ? request.number : 0, vip: vip ? "In review" : "", path: vip ? `docs/design/vips/${number}.md` : "", review: vip ? `https://github.com/smithersai/vibelang/pull/${number}` : "" }), ...items]
       } else {
+        // Every other operation returned or was created above: what is left is one of the six updates below.
+        const op = request.op
         items = items.map((i) => {
           if (i.number !== request.number) return i
           const event = (text: string, change: Partial<IssueRecord>): IssueRecord => ({ ...i, ...change, notes: [...i.notes, { age: "just now", author: actor, text, event: true }] })
-          switch (request.op) {
+          switch (op) {
             case "comment": return { ...i, comments: i.comments + 1, notes: [...i.notes, { age: "just now", author: actor, text: request.text.trim(), event: false }] }
             case "commit": return event(`committed this as a task and assigned ${request.assignee}`, setCommitment(i, request.assignee, true))
             case "uncommit": return event("uncommitted this task", setCommitment(i, "", false))
             case "link": return event(`linked this under #${request.parent}`, { parent: request.parent })
             case "accept": return event("accepted this VIP", approveVip(i, person.role, person.kind ?? "person", actor, new Date(now).toISOString()))
             case "decline": return event("declined this VIP", declineVip(i))
-            default: return i
           }
         })
       }
@@ -102,23 +103,23 @@ export effect function fixtureHost(identity: FixtureIdentity, state: Ref.Ref<typ
   return host
 }
 
-export effect function makeIssueFactory(identity: FixtureIdentity = "maintainer", participated?: (id: string) => void!!, shared?: FixtureStore): IssuesApi!!Scope.Scope {
+/** `engine` is the flow engine the issue flows run on; tests pass a faulty one to drive engine failures. */
+export effect function makeIssueFactory(identity: FixtureIdentity = "maintainer", participated?: (id: string) => void!!, shared?: FixtureStore, engine: Layer.Layer<FlowRuntime.FlowRuntime> = FlowEngine.layerMemory): IssuesApi!!Scope.Scope {
   const store = shared ?? (try makeIssueStore())
   const host = try fixtureHost(identity, store.state, store.lock)
-  const context = try Layer.build(issueRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(IssueHost, host)), Layer.provide(WebCrypto.layer)))
-  const engine = Context.get(context, FlowRuntime.FlowRuntime)
+  const context = try Layer.build(issueRegistration.pipe(Layer.provideMerge(engine), Layer.provide(Layer.succeed(IssueHost, host)), Layer.provide(WebCrypto.layer)))
+  const runtime = Context.get(context, FlowRuntime.FlowRuntime)
   const act = effect (request: IssueRequest) => {
     // The live Worker refuses this text at its wire schema; the mock answers with the same typed reason, never a defect.
     if (!Schema.is(IssueRequest)(request)) throw new IssueFailure({ reason: "invalid", unwritten: true })
     const person = try personOf(identity)
-    const flow = issueFlows.find((f) => f._tag === `vibelang/issues/${request.op}`)
-    if (flow === undefined) throw new IssueFailure({ reason: "invalid", unwritten: true })
+    const flow = issueFlow(request.op)
     try authorizeIssue(person.role, request.op)
     const { recovery: _recovery, ...payload } = request
     const executionId = try issueExecutionId(person.id || "public", request.op, request.key)
     // A reused key with a changed request is a typed conflict, never an engine defect: the engine refuses a held
     // identity with an ExecutionIdentityConflict defect, and the caller that chose the id receives it as a failure.
-    const result = try engine.execute(flow, { executionId, payload }).pipe(
+    const result = try runtime.execute(flow, { executionId, payload }).pipe(
       Effect.catchCause((cause): Effect.Effect<never, IssueFailure | FlowRuntime.ExecutionIdentityConflict | FlowRuntime.FlowCycleDetected> => {
         const reason = cause.reasons.length === 1 ? cause.reasons.find(Cause.isDieReason) : undefined
         return reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict ? Effect.fail(reason.defect) : Effect.failCause(cause)

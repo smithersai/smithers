@@ -3,7 +3,7 @@ import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { FlowRuntime } from "@smthrs/flow"
 import { applyWikiEdits, emptyWikiEdits, type Role, type WikiEdits, type WikiPageState } from "./conversation.vibe"
-import { WikiHost, wikiEditFlows, wikiEditRegistration, authorizeWiki, wikiExecutionId } from "./wikiFlows.vibe"
+import { WikiHost, wikiEditFlow, wikiEditRegistration, authorizeWiki, wikiExecutionId } from "./wikiFlows.vibe"
 import { WikiFailure, WikiRequest, type WikiApi } from "./wikiSchemas.vibe"
 import { pages } from "./wiki.vibe"
 import type { FixtureIdentity, FixturePerson } from "./IssuesFactory.vibe"
@@ -74,20 +74,20 @@ export effect function fixtureWikiHost(identity: FixtureIdentity, store: WikiFix
 }
 
 /** The fixture WikiApi: the real flows on the memory engine, per-person identity over one shared fixture repository. */
-export effect function makeWikiFactory(identity: FixtureIdentity = "maintainer", shared?: WikiFixtureStore): WikiApi!!Scope.Scope {
+/** `engine` is the flow engine the wiki flows run on; tests pass a faulty one to drive engine failures. */
+export effect function makeWikiFactory(identity: FixtureIdentity = "maintainer", shared?: WikiFixtureStore, engine: Layer.Layer<FlowRuntime.FlowRuntime> = FlowEngine.layerMemory): WikiApi!!Scope.Scope {
   const store = shared ?? (try makeWikiStore())
   const host = try fixtureWikiHost(identity, store)
-  const context = try Layer.build(wikiEditRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(WikiHost, host)), Layer.provide(WebCrypto.layer)))
-  const engine = Context.get(context, FlowRuntime.FlowRuntime)
+  const context = try Layer.build(wikiEditRegistration.pipe(Layer.provideMerge(engine), Layer.provide(Layer.succeed(WikiHost, host)), Layer.provide(WebCrypto.layer)))
+  const runtime = Context.get(context, FlowRuntime.FlowRuntime)
   const act = effect (input: WikiRequest) => {
     const request = try Schema.decodeUnknownEffect(WikiRequest)(input).pipe(Effect.mapError(() => new WikiFailure({ reason: "invalid", unwritten: true })))
     const person = try personOf(identity)
-    const flow = wikiEditFlows.find((f) => f._tag === `vibelang/wiki/${request.op}`)
-    if (flow === undefined) throw new WikiFailure({ reason: "invalid", unwritten: true })
+    const flow = wikiEditFlow(request.op)
     try authorizeWiki(person.role, request.op, person.kind ?? "person")
     const { recovery: _recovery, ...payload } = request
     const executionId = try wikiExecutionId(person.id || "public", request.op, request.key)
-    const result = try engine.execute(flow, { executionId, payload }).pipe(
+    const result = try runtime.execute(flow, { executionId, payload }).pipe(
       Effect.catchCause((cause): Effect.Effect<never, WikiFailure | FlowRuntime.ExecutionIdentityConflict | FlowRuntime.FlowCycleDetected> => {
         const reason = cause.reasons.length === 1 ? cause.reasons.find(Cause.isDieReason) : undefined
         return reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict ? Effect.fail(reason.defect) : Effect.failCause(cause)

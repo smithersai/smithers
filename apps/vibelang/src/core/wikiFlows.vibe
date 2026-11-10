@@ -31,6 +31,8 @@ const definitions = operations.map((op) => {
   return { action, flow, op }
 })
 export const wikiEditFlows = definitions.map(({ flow }) => flow)
+/** The flow that runs one operation. `definitions` maps every operation, so the lookup always finds one. */
+export function wikiEditFlow(op: WikiOperation) { return definitions.find((definition) => definition.op === op)!.flow }
 export const wikiEditRegistration = Layer.unwrap(effect {
   const host = try WikiHost
   return Layer.mergeAll(Layer.empty, ...definitions.map(({ action, flow, op }) => Interpreter.layerWithImplementations(flow,
