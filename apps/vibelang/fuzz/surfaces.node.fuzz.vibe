@@ -11,7 +11,7 @@ import { mockReply } from "../src/core/mockReplies.vibe"
 import { AddNote, PlanWork, ShowHistory, StartWork, HistoryOutput, WrittenOutput, Ask, AskInput, AskOutput, Read, ReadInput, ReadOutput } from "../src/surfaces/commands.vibe"
 import { cliPath, serverPath } from "../test/surface-host.vibe"
 import { node, run as processRun } from "../test/support/processes.vibe"
-import { run, Int, Text, TextOrBoundary } from "./run.vibe"
+import { run, Int, Text, TextOrBoundary, REPLAY_FLOOR } from "./run.vibe"
 
 const platform = Layer.mergeAll(NodeServices.layer, ExperimentalNodeServices.layer)
 const Topic = Schema.Literals(["install", "VIP", "error", "service", "function", "hello"])
@@ -36,6 +36,8 @@ it.live("surfaces/command-registry", () => run("surfaces/command-registry", Sche
   }
 }))
 
+// Saved failures and the first execution take 4.6 s on an idle 4-vCPU box (2026-11-10, vl-gatefix): at the 5 s
+// coverage budget it ran none (NoExecution).
 it.live("surfaces/cli-arguments", () => run("surfaces/cli-arguments", Arguments, ({ topic, id, json, flagFirst }) => effect {
   provide platform {
     const flags = ["--mock", ...(json ? ["--json"] : [])]
@@ -46,7 +48,7 @@ it.live("surfaces/cli-arguments", () => run("surfaces/cli-arguments", Arguments,
     const output = try Schema.decodeUnknownEffect(Schema.fromJsonString(AskOutput))(result.stdout)
     return output.text === mockReply(topic) && output.conversation === `fuzz-${id}` && output.events[0] === 1
   }
-}))
+}, undefined, { minimum: REPLAY_FLOOR }))
 
 /** An argument as a shell passes it: argv holds C strings, so no process receives NUL (the saved `"\u0000"` value). */
 function argument(text: string): string {
@@ -61,6 +63,8 @@ it.live("surfaces/cli-rejects-garbage", () => run("surfaces/cli-rejects-garbage"
   }
 }))
 
+// Saved failures and the first execution take 4.6 s on an idle 4-vCPU box (2026-11-10, vl-gatefix): at the 5 s
+// coverage budget it ran none (NoExecution).
 it.live("surfaces/mcp-arguments", () => run("surfaces/mcp-arguments", Arguments, ({ topic, id }) => effect {
   const clients = Layer.unwrap(effect {
     provide platform {
@@ -80,7 +84,7 @@ it.live("surfaces/mcp-arguments", () => run("surfaces/mcp-arguments", Arguments,
     const missing = try client.callTool({ tool: ask, arguments: { text: " ", conversation } })
     return answer.text === mockReply(topic) && snapshot.entries.at(-1)?.text === answer.text && invalid._tag === "Failure" && !Cause.hasDies(invalid.cause) && missing.isError === true
   }
-}))
+}, undefined, { minimum: REPLAY_FLOOR }))
 
 it.live("surfaces/schema-decode", () => run("surfaces/schema-decode", Schema.Struct({ text: TextOrBoundary, id: Int }), ({ text, id }) => effect {
   const ask = try exit(Schema.decodeUnknownEffect(AskInput)({ text, conversation: `fuzz-${id}` }))
