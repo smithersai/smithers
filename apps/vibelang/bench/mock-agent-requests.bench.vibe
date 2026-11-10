@@ -139,3 +139,25 @@ it("retained mock replies fail visibly and retained tours resume without losing 
   }).run(slow)
   await runPromise(artifact("mock-agent-retained-journal", "Vitest built-in bench; real MockFactory over a healthy memory journal adapter seeded with a half-finished reply, an active tour and an unanswered ownerless sandbox request. The half-answer becomes a visible failure and the next post answers once; the active tour resumes one run and ends without failure; the ownerless request cannot start a sandbox. Exact ordered/persisted event log, retained half text, four entries, terminal states, tour counts and owner refusal checked. Three new scoped engines and stores, initialization and assertions included.", ["Seeded retained records over an in-memory journal adapter, not an actual process kill, browser reload or localStorage durability. Shipped scripted agent, no model, backend or real Container."], result))
 }, 120_000)
+
+it("the mock agent starts its signed-in owner's sandbox", async ({ bench }) => {
+  const seen: Array<{ text: string; id: string; status: string; unknown: string; stopped: string }> = []
+  const result = await workload(bench, "mock-agent-sandbox-start", "async", async () => {
+    await runPromise(scoped(effect {
+      provide BrowserFactory("http://benchmark.invalid", true, "maintainer").pipe(Layer.provide(FetchHttpClient.layer)) {
+        const factory = try Factory
+        const asked = try ask(factory, "sandbox", "start a sandbox")
+        const running = try factory.sandbox("sandbox")
+        const unknown = try factory.sandboxCommand("sandbox", "bench-uname", "uname -a", running.generation)
+        const stopped = try factory.stopSandbox("sandbox", "bench-stop", running.generation)
+        seen.push({ text: asked.text, id: running.id, status: running.status, unknown, stopped: stopped.status })
+      }
+    }))
+  }).run(slow)
+  expect(seen.length).toBeGreaterThan(0)
+  for (const each of seen) {
+    expect(each.id).not.toBe("")
+    expect(each).toEqual({ text: `Started ${each.id}.`, id: each.id, status: "running", unknown: "Command unavailable in mock mode", stopped: "stopped" })
+  }
+  await runPromise(artifact("mock-agent-sandbox-start", "Vitest built-in bench; real BrowserFactory forced to product mock mode as a maintainer, with the shipped scripted agent and mock sandbox host. Each fresh backend posts 'start a sandbox', waits for the settled reply, reads the conversation's sandbox, runs a command the mock does not know and stops it. Checked: the reply names the sandbox it started, which is running, the command answers that it is unavailable in mock mode, and Stop leaves it stopped. Three whole journeys; initialization and assertions included.", ["Mock sandbox host: no Container, network or model. The ownerless refusal is the separate mock-agent-retained-journal workload.", "The first callback also loads the backend's lazily imported modules, so its sample is not comparable to the others."], { seen, result }))
+})
