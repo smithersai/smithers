@@ -75,7 +75,7 @@ Compiling a plan without persisting one needs none of those services.
 
 ## PlanStore
 
-[src/PlanStore.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/src/PlanStore.ts)
+[src/PlanStore.vibe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/src/PlanStore.vibe)
 
 `record` is first-writer-wins: an identical re-record is not an error, and a different plan under the same id is a `Conflict` carrying the stored digest rather than a silent overwrite. It accepts generation 0 only, whose `baseDigest` equals its `digest` and every one of whose nodes is at generation 0. `get` returns the verified immutable plan with nodes in recorded order. Admission and reads recompute keys, approval digests, topology, effect ordering and generation relationships. A forged incoming plan fails with `invalid_plan` before writes; corrupt stored content fails with `decode_failed`, including on duplicate admission. Envelope and nodes are read in one SQL statement to avoid mixed generations during concurrent appends. Dependencies come from each verified node's `dependsOn`; `flows_plan_edges` is a derived, unverified index that `get` never reads, so a forged edge row cannot change the returned graph.
 
@@ -154,7 +154,7 @@ class PlanStoreError extends Schema.TaggedError<PlanStoreError>()("@smthrs/plan-
 
 ## Migrations
 
-[src/Migrations.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/src/Migrations.ts)
+[src/Migrations.vibe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/src/Migrations.vibe)
 
 The namespaced set owns `flows_plans`, `flows_plan_nodes`, and `flows_plan_edges`
 in id block `4000`, after journal (`0`), run store (`1000`), step cache (`2000`),

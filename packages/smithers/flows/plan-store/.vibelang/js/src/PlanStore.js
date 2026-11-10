@@ -14,11 +14,7 @@
  *
  * @since 0.1.0
  */
-import * as SqlError from "effect/sql/SqlError";
-import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime/internal";
-import * as Schema_1 from "effect/Schema";
 import { affectedRows, DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter";
 import { StoredKey } from "@smthrs/keys";
 import * as Plan from "@smthrs/plan/Plan";
@@ -29,6 +25,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as SqlError from "effect/sql/SqlError";
 /**
  * Stable error codes returned by plan persistence operations.
  *
@@ -62,7 +59,7 @@ export class PlanStoreError extends Schema.TaggedError()("@smthrs/plan-store/Pla
  * @category services
  * @slop
  */
-export class PlanStore extends runtime.$service("@smthrs/plan-store/PlanStore") {
+export class PlanStore extends Context.Service()("@smthrs/plan-store/PlanStore") {
 }
 const error = (code, message, cause) => new PlanStoreError({ code, message, cause });
 const mapPersistenceError = (cause) => {
@@ -76,17 +73,17 @@ const mapPersistenceError = (cause) => {
 };
 const encodeNode = Schema.encodeEffect(Schema.fromJsonString(Plan.PlanNode));
 const decodeNode = Schema.decodeUnknownEffect(Schema.fromJsonString(Plan.PlanNode));
-const PlanRow = Schema_1.Struct({
+const PlanRow = Schema.Struct({
     plan_id: Schema.NonEmptyString,
     flow: Schema.NonEmptyString,
     base_digest: StoredKey,
     digest: StoredKey,
-    generation: Schema.Int,
+    generation: Schema.Int
 });
 const decodePlanRow = Schema.decodeUnknownEffect(PlanRow);
-const validate = (plan) => Effect.mapError(Effect.asVoid(Schema.decodeUnknownEffect(Plan.Plan)(plan)), (cause) => error("invalid_plan", "plan violates the persistence contract", cause));
+const validate = (plan) => Schema.decodeUnknownEffect(Plan.Plan)(plan).pipe(Effect.asVoid, Effect.mapError((cause) => error("invalid_plan", "plan violates the persistence contract", cause)));
 // Only rebuilt, frozen, JSON-compatible nodes from Plan.verify reach storage.
-const nodeJson = (node) => Effect.orDie(encodeNode(node));
+const nodeJson = (node) => encodeNode(node).pipe(Effect.orDie);
 /**
  * Builds the SQL-backed plan store.
  *
@@ -98,98 +95,90 @@ export const make = Effect_1.gen(function* make() {
     const sql = yield* Effect.service(SqlClient.SqlClient);
     const writer = yield* DurableWriter;
     const crypto = yield* EffectDigest.Digest;
-    const verified = (plan) => Effect.mapError(Effect.provideService(Plan.verify(plan), EffectDigest.Digest, crypto), (cause) => error("invalid_plan", "plan does not match its compiled integrity contract", cause));
-    const insertNodes = (planId, nodes, firstOrdinal) => {
-        return Effect_1.gen(function* insertNodes() {
-            for (let index = 0; index < nodes.length; index++) {
-                const node = nodes[index];
-                const json = yield* nodeJson(node);
-                yield* sql `
+    const verified = (plan) => Plan.verify(plan).pipe(Effect.provideService(EffectDigest.Digest, crypto), Effect.mapError((cause) => error("invalid_plan", "plan does not match its compiled integrity contract", cause)));
+    const insertNodes = (planId, nodes, firstOrdinal) => Effect_1.gen(function* () {
+        for (let index = 0; index < nodes.length; index++) {
+            const node = nodes[index];
+            const json = yield* nodeJson(node);
+            yield* sql `
           INSERT INTO flows_plan_nodes (plan_id, node_id, generation, ordinal, kind, key_digest, node_json)
           VALUES (${planId}, ${node.id}, ${node.generation}, ${firstOrdinal + index}, ${node.kind}, ${node.key}, ${json})
         `;
-                // Edge rows are a derived, unverified index of `node.dependsOn` for
-                // SQL inspection. Nothing reads them back: `get` rebuilds the graph
-                // from the verified `node_json`, so a forged edge row cannot add or
-                // remove a dependency. A future reader must do the same.
-                for (const dependency of node.dependsOn) {
-                    yield* sql `
+            // Edge rows are a derived, unverified index of `node.dependsOn` for
+            // SQL inspection. Nothing reads them back: `get` rebuilds the graph
+            // from the verified `node_json`, so a forged edge row cannot add or
+            // remove a dependency. A future reader must do the same.
+            for (const dependency of node.dependsOn) {
+                yield* sql `
             INSERT INTO flows_plan_edges (plan_id, from_node, to_node) VALUES (${planId}, ${dependency}, ${node.id})
           `;
-                }
             }
-        });
-    };
-    const record = Effect.fn("PlanStore.record")((plan, createdAtMs) => {
-        return Effect_1.gen(function* () {
-            yield* validate(plan);
-            if (plan.generation !== 0) {
-                return yield* Effect_1.fail(error("invalid_plan", `plan ${plan.planId} has generation ${plan.generation}; record requires generation 0`, undefined));
-            }
-            if (plan.baseDigest !== plan.digest) {
-                return yield* Effect_1.fail(error("invalid_plan", `plan ${plan.planId} has base digest ${plan.baseDigest}, but generation 0 digest is ${plan.digest}`, undefined));
-            }
-            const wrongGeneration = plan.nodes.find((node) => node.generation !== 0);
-            if (wrongGeneration !== undefined) {
-                return yield* Effect_1.fail(error("invalid_plan", `plan ${plan.planId} node ${wrongGeneration.id} has generation ${wrongGeneration.generation}; record requires node generation 0`, undefined));
-            }
-            plan = yield* verified(plan);
-            return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return writer.write(Effect_1.gen(function* () {
-                const inserted = yield* sql `
+        }
+    });
+    const record = Effect.fn("PlanStore.record")((plan, createdAtMs) => Effect_1.gen(function* () {
+        yield* validate(plan);
+        if (plan.generation !== 0) {
+            return yield* Effect_1.fail(error("invalid_plan", `plan ${plan.planId} has generation ${plan.generation}; record requires generation 0`, undefined));
+        }
+        if (plan.baseDigest !== plan.digest) {
+            return yield* Effect_1.fail(error("invalid_plan", `plan ${plan.planId} has base digest ${plan.baseDigest}, but generation 0 digest is ${plan.digest}`, undefined));
+        }
+        const wrongGeneration = plan.nodes.find((node) => node.generation !== 0);
+        if (wrongGeneration !== undefined) {
+            return yield* Effect_1.fail(error("invalid_plan", `plan ${plan.planId} node ${wrongGeneration.id} has generation ${wrongGeneration.generation}; record requires node generation 0`, undefined));
+        }
+        plan = yield* verified(plan);
+        return yield* writer.write(Effect_1.gen(function* () {
+            const inserted = yield* sql `
             INSERT INTO flows_plans (plan_id, flow, base_digest, digest, generation, created_at_ms)
             VALUES (${plan.planId}, ${plan.flow}, ${plan.baseDigest}, ${plan.digest}, ${plan.generation}, ${createdAtMs})
             ON CONFLICT (plan_id) DO NOTHING
           `.raw;
-                if ((yield* affectedRows(inserted)) === 0) {
-                    // Equality with an unverified stored digest is not an integrity
-                    // proof. A corrupt existing row must not answer ExistingSame.
-                    yield* get(plan.planId);
-                    const rows = yield* sql `
+            if ((yield* affectedRows(inserted)) === 0) {
+                // Equality with an unverified stored digest is not an integrity
+                // proof. A corrupt existing row must not answer ExistingSame.
+                yield* get(plan.planId);
+                const rows = yield* sql `
               SELECT digest FROM flows_plans WHERE plan_id = ${plan.planId}
             `;
-                    const existing = rows[0].digest;
-                    return existing === plan.digest
-                        ? { _tag: "ExistingSame" }
-                        : { _tag: "Conflict", digest: existing };
-                }
-                yield* insertNodes(plan.planId, plan.nodes, 0);
-                return { _tag: "Recorded" };
-            })); }); })(), (e) => (_tail_1 => { return Effect_1.gen(function* () {
-                const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
-                return _completion_1[0] ? yield* _value_1 : _value_1;
-            }); })(() => { return [true, Effect_1.fail(mapPersistenceError(e))]; }));
-        });
-    });
-    const append = Effect.fn("PlanStore.append")((plan) => {
-        return Effect_1.gen(function* () {
-            // A verified snapshot passed the persistence contract's schema when
-            // it was frozen; only an imported value needs the guard before its
-            // nodes are read.
-            if (!Plan.isVerified(plan))
-                yield* validate(plan);
-            let appended = Plan.generationNodes(plan);
-            if (appended.length === 0) {
-                return yield* Effect_1.fail(error("invalid_plan", `plan ${plan.planId} generation ${plan.generation} has no nodes to append`, undefined));
+                const existing = rows[0].digest;
+                return existing === plan.digest
+                    ? { _tag: "ExistingSame" }
+                    : { _tag: "Conflict", digest: existing };
             }
-            plan = yield* verified(plan);
-            appended = Plan.generationNodes(plan);
-            const prefix = plan.nodes.filter((node) => node.generation < plan.generation);
-            // The digest the stored envelope must carry before this append lands:
-            // the approval digest of this append's already-verified prefix.
-            // Matching it in the compare-and-swap proves the recorded prefix is
-            // the caller's — the envelope-integrity guarantee `get` gave the
-            // append — without decoding and re-verifying every stored row.
-            // Verification rebuilt and froze the prefix, so the derivation
-            // cannot fail.
-            const prefixDigest = yield* (Effect.orDie(Effect.provideService(Plan.prefixDigest(plan), EffectDigest.Digest, crypto)));
-            yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return writer.write(Effect_1.gen(function* () {
-                // The compare-and-swap matches the whole envelope this append
-                // grew from: the previous generation, the flow, the approved
-                // base digest, and the running prefix digest. A stored plan
-                // whose rows diverge from this append's verified prefix carries
-                // a different digest, so the match also proves the recorded
-                // prefix is the caller's, without reading a single node row.
-                const advanced = yield* sql `
+            yield* insertNodes(plan.planId, plan.nodes, 0);
+            return { _tag: "Recorded" };
+        })).pipe(Effect.mapError(mapPersistenceError));
+    }));
+    const append = Effect.fn("PlanStore.append")((plan) => Effect_1.gen(function* () {
+        // A verified snapshot passed the persistence contract's schema when
+        // it was frozen; only an imported value needs the guard before its
+        // nodes are read.
+        if (!Plan.isVerified(plan))
+            yield* validate(plan);
+        let appended = Plan.generationNodes(plan);
+        if (appended.length === 0) {
+            return yield* Effect_1.fail(error("invalid_plan", `plan ${plan.planId} generation ${plan.generation} has no nodes to append`, undefined));
+        }
+        plan = yield* verified(plan);
+        appended = Plan.generationNodes(plan);
+        const prefix = plan.nodes.filter((node) => node.generation < plan.generation);
+        // The digest the stored envelope must carry before this append lands:
+        // the approval digest of this append's already-verified prefix.
+        // Matching it in the compare-and-swap proves the recorded prefix is
+        // the caller's — the envelope-integrity guarantee `get` gave the
+        // append — without decoding and re-verifying every stored row.
+        // Verification rebuilt and froze the prefix, so the derivation
+        // cannot fail.
+        const prefixDigest = yield* Plan.prefixDigest(plan).pipe(Effect.provideService(EffectDigest.Digest, crypto), Effect.orDie);
+        yield* writer.write(Effect_1.gen(function* () {
+            // The compare-and-swap matches the whole envelope this append
+            // grew from: the previous generation, the flow, the approved
+            // base digest, and the running prefix digest. A stored plan
+            // whose rows diverge from this append's verified prefix carries
+            // a different digest, so the match also proves the recorded
+            // prefix is the caller's, without reading a single node row.
+            const advanced = yield* sql `
             UPDATE flows_plans SET digest = ${plan.digest}, generation = ${plan.generation}
             WHERE plan_id = ${plan.planId}
               AND generation = ${plan.generation - 1}
@@ -197,77 +186,59 @@ export const make = Effect_1.gen(function* make() {
               AND base_digest = ${plan.baseDigest}
               AND digest = ${prefixDigest}
           `.raw;
-                // An elaboration grows a plan that was recorded. Without this the
-                // UPDATE matching nothing is silently fine while the node rows land
-                // anyway, leaving a generation of a plan that does not exist — and
-                // the append-only triggers guarantee those rows can never be
-                // removed. The whole write is one transaction, so refusing here
-                // takes them back with it.
-                if ((yield* affectedRows(advanced)) === 0) {
-                    const envelopes = yield* sql `
+            // An elaboration grows a plan that was recorded. Without this the
+            // UPDATE matching nothing is silently fine while the node rows land
+            // anyway, leaving a generation of a plan that does not exist — and
+            // the append-only triggers guarantee those rows can never be
+            // removed. The whole write is one transaction, so refusing here
+            // takes them back with it.
+            if ((yield* affectedRows(advanced)) === 0) {
+                const envelopes = yield* sql `
               SELECT generation, flow, base_digest FROM flows_plans WHERE plan_id = ${plan.planId}
             `;
-                    const envelope = envelopes[0];
-                    if (envelope !== undefined) {
-                        // The swap matched nothing although the plan exists. Stored
-                        // corruption must report decode_failed rather than read as a
-                        // moved or divergent plan, and only the verifying read tells
-                        // it apart from a plan that merely grew past this append.
-                        yield* get(plan.planId);
-                    }
-                    const moved = envelope !== undefined &&
-                        (envelope.generation !== plan.generation - 1 || envelope.flow !== plan.flow ||
-                            envelope.base_digest !== plan.baseDigest);
-                    return yield* Effect_1.fail(moved || envelope === undefined
-                        ? error("constraint", `plan ${plan.planId} was never recorded, or generation ${plan.generation} was skipped or moved under the append`, undefined)
-                        : error("constraint", `plan ${plan.planId} recorded plan's nodes diverge from the plan this append was grown from`, undefined));
+                const envelope = envelopes[0];
+                if (envelope !== undefined) {
+                    // The swap matched nothing although the plan exists. Stored
+                    // corruption must report decode_failed rather than read as a
+                    // moved or divergent plan, and only the verifying read tells
+                    // it apart from a plan that merely grew past this append.
+                    yield* get(plan.planId);
                 }
-                yield* insertNodes(plan.planId, appended, prefix.length);
-            })); }); })(), (e) => (_tail_2 => { return Effect_1.gen(function* () {
-                const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
-                return _completion_2[0] ? yield* _value_2 : _value_2;
-            }); })(() => { return [true, Effect_1.fail(mapPersistenceError(e))]; }));
-        });
-    });
-    const get = Effect.fn("PlanStore.get")((planId) => {
-        return Effect_1.gen(function* () {
-            const rows = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return sql `
+                const moved = envelope !== undefined &&
+                    (envelope.generation !== plan.generation - 1 || envelope.flow !== plan.flow ||
+                        envelope.base_digest !== plan.baseDigest);
+                return yield* Effect_1.fail(moved || envelope === undefined
+                    ? error("constraint", `plan ${plan.planId} was never recorded, or generation ${plan.generation} was skipped or moved under the append`, undefined)
+                    : error("constraint", `plan ${plan.planId} recorded plan's nodes diverge from the plan this append was grown from`, undefined));
+            }
+            yield* insertNodes(plan.planId, appended, prefix.length);
+        })).pipe(Effect.mapError(mapPersistenceError));
+    }));
+    const get = Effect.fn("PlanStore.get")((planId) => Effect_1.gen(function* () {
+        const rows = yield* sql `
         SELECT p.plan_id, p.flow, p.base_digest, p.digest, p.generation, n.node_json
         FROM flows_plans p LEFT JOIN flows_plan_nodes n ON n.plan_id = p.plan_id
         WHERE p.plan_id = ${planId} ORDER BY n.ordinal
-      `; }); })(), (e) => (_tail_3 => { return Effect_1.gen(function* () {
-                const _completion_3 = _tail_3(), _value_3 = _completion_3[1];
-                return _completion_3[0] ? yield* _value_3 : _value_3;
-            }); })(() => { return [true, Effect_1.fail(mapPersistenceError(e))]; }));
-            if (rows.length === 0)
-                return Option.none();
-            // The `flows_plans` CHECK constraints only require nonempty digest
-            // strings, while this row requires `StoredKey` syntax, so a legal
-            // INSERT from outside this module reaches here.
-            const row = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return decodePlanRow(rows[0]); }); })(), (cause) => (_tail_4 => { return Effect_1.gen(function* () {
-                const _completion_4 = _tail_4(), _value_4 = _completion_4[1];
-                return _completion_4[0] ? yield* _value_4 : _value_4;
-            }); })(() => { return [true, Effect_1.fail(error("decode_failed", "could not decode flows_plans row", cause))]; })
-            // One statement observes the envelope and nodes at the same generation,
-            // even when another connection appends between reads.
-            );
-            // One statement observes the envelope and nodes at the same generation,
-            // even when another connection appends between reads.
-            const nodes = yield* Effect.forEach(rows.filter((nodeRow) => nodeRow.node_json !== null), (nodeRow) => Effect.mapError(decodeNode(nodeRow.node_json), (cause) => error("decode_failed", "could not decode flows_plan_nodes row", cause)));
-            const plan = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return verified({
-                planId: row.plan_id,
-                flow: row.flow,
-                generation: row.generation,
-                baseDigest: row.base_digest,
-                digest: row.digest,
-                nodes
-            }); }); })(), (cause) => (_tail_5 => { return Effect_1.gen(function* () {
-                const _completion_5 = _tail_5(), _value_5 = _completion_5[1];
-                return _completion_5[0] ? yield* _value_5 : _value_5;
-            }); })(() => { return [true, Effect_1.fail(error("decode_failed", "stored plan failed integrity verification", cause))]; }));
-            return Option.some(plan);
-        });
-    });
+      `.pipe(Effect.mapError(mapPersistenceError));
+        if (rows.length === 0)
+            return Option.none();
+        // The `flows_plans` CHECK constraints only require nonempty digest
+        // strings, while this row requires `StoredKey` syntax, so a legal
+        // INSERT from outside this module reaches here.
+        const row = yield* decodePlanRow(rows[0]).pipe(Effect.mapError((cause) => error("decode_failed", "could not decode flows_plans row", cause)));
+        // One statement observes the envelope and nodes at the same generation,
+        // even when another connection appends between reads.
+        const nodes = yield* Effect.forEach(rows.filter((nodeRow) => nodeRow.node_json !== null), (nodeRow) => decodeNode(nodeRow.node_json).pipe(Effect.mapError((cause) => error("decode_failed", "could not decode flows_plan_nodes row", cause))));
+        const plan = yield* verified({
+            planId: row.plan_id,
+            flow: row.flow,
+            generation: row.generation,
+            baseDigest: row.base_digest,
+            digest: row.digest,
+            nodes
+        }).pipe(Effect.mapError((cause) => error("decode_failed", "stored plan failed integrity verification", cause)));
+        return Option.some(plan);
+    }));
     return { record, append, get };
 });
 /**

@@ -33,8 +33,8 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Migrations from "../src/Migrations.ts"
-import * as PlanStore from "../src/PlanStore.ts"
+import * as Migrations from "../src/Migrations.vibe"
+import * as PlanStore from "../src/PlanStore.vibe"
 import { withCrypto } from "./Crypto.ts"
 
 const withTempFile = <A, E>(body: (filename: string) => Effect.Effect<A, E>): Effect.Effect<A, E> =>

@@ -25,7 +25,7 @@ const securityReview = Smithers.SecurityReview({
         "A record path that answers ExistingSame by comparing digests without first running the verifying get on the stored row.",
         "An append whose compare-and-swap UPDATE omits flow, base_digest, generation - 1, or the verified prefix digest."
       ],
-      paths: ["src/PlanStore.ts"]
+      paths: ["src/PlanStore.vibe"]
     },
     {
       id: "plan-read-verification",
@@ -38,7 +38,7 @@ const securityReview = Smithers.SecurityReview({
         "A decode or integrity failure mapped to Option.none instead of a decode_failed error.",
         "A reader that builds dependencies from flows_plan_edges rows, which nothing verifies, instead of the verified node dependsOn."
       ],
-      paths: ["src/PlanStore.ts"]
+      paths: ["src/PlanStore.vibe"]
     },
     {
       id: "append-only-triggers",
@@ -51,7 +51,7 @@ const securityReview = Smithers.SecurityReview({
         "A table among flows_plans, flows_plan_nodes, flows_plan_edges lacking a BEFORE UPDATE or BEFORE DELETE rejection.",
         "A migration that drops the flows_plan_nodes_ordinal unique index, letting an inserted row share an ordinal and reorder the plan get returns."
       ],
-      paths: ["src/internal/migrations/**", "src/Migrations.ts"]
+      paths: ["src/internal/migrations/**", "src/Migrations.vibe"]
     },
     {
       id: "sql-parameterization",
@@ -72,7 +72,7 @@ const securityReview = Smithers.SecurityReview({
         "An error message that interpolates node_json, node inputs, or a SQL connection string.",
         "A cause attached from a raw driver error that embeds the database path or credentials."
       ],
-      paths: ["src/PlanStore.ts"]
+      paths: ["src/PlanStore.vibe"]
     }
   ]
 })

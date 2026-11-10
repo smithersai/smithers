@@ -29,7 +29,7 @@ describe("package exports", () => {
   it("ships the migration steps beneath internal, where the export map blocks them", () => {
     expect(existsSync(join(packageRoot, "src", "migrations"))).toBe(false)
     for (const step of steps) {
-      expect(existsSync(join(packageRoot, "src", "internal", "migrations", `${step}.ts`)), step).toBe(true)
+      expect(existsSync(join(packageRoot, "src", "internal", "migrations", `${step}.vibe`)), step).toBe(true)
     }
     const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
       readonly exports: Readonly<Record<string, unknown>>
@@ -76,7 +76,7 @@ describe("package exports", () => {
         "@smthrs/plan-store/Migrations": migrations
       })
       expect(esm).toEqual(expected(steps.join(",")))
-      expect(cjs).toEqual(expected(join(packageRoot, "src", "Migrations.ts")))
+      expect(cjs).toEqual(expected(join(packageRoot, "src", "Migrations.vibe")))
     },
     // Two cold Node processes, one of which loads Effect. A few seconds on an
     // idle machine and far more under the parallel-workspace load the package

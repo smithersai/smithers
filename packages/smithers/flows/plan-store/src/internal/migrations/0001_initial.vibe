@@ -27,10 +27,10 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @since 0.1.0
  * @slop
  */
-export const initial: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
+export const initial: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
 
-  yield* sql`CREATE TABLE flows_plans (
+  try sql`CREATE TABLE flows_plans (
     plan_id TEXT PRIMARY KEY CHECK (length(plan_id) > 0),
     flow TEXT NOT NULL CHECK (length(flow) > 0),
     base_digest TEXT NOT NULL CHECK (length(base_digest) > 0),
@@ -43,7 +43,7 @@ export const initial: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect
     )
   )`
 
-  yield* sql`CREATE TABLE flows_plan_nodes (
+  try sql`CREATE TABLE flows_plan_nodes (
     plan_id TEXT NOT NULL CHECK (length(plan_id) > 0),
     node_id TEXT NOT NULL CHECK (length(node_id) > 0),
     generation ${Dialect.integer(sql)} NOT NULL CHECK (${Dialect.isInteger(sql, sql`generation`)} AND generation >= 0),
@@ -54,48 +54,48 @@ export const initial: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect
     PRIMARY KEY (plan_id, node_id)
   )`
 
-  yield* sql`CREATE TABLE flows_plan_edges (
+  try sql`CREATE TABLE flows_plan_edges (
     plan_id TEXT NOT NULL CHECK (length(plan_id) > 0),
     from_node TEXT NOT NULL CHECK (length(from_node) > 0),
     to_node TEXT NOT NULL CHECK (length(to_node) > 0),
     PRIMARY KEY (plan_id, from_node, to_node)
   )`
 
-  yield* sql`CREATE INDEX flows_plan_nodes_order ON flows_plan_nodes (plan_id, ordinal)`
+  try sql`CREATE INDEX flows_plan_nodes_order ON flows_plan_nodes (plan_id, ordinal)`
 
-  yield* Dialect.trigger(sql, {
+  try Dialect.trigger(sql, {
     name: `flows_plan_nodes_append_only`,
     table: `flows_plan_nodes`,
     event: "BEFORE UPDATE",
     reject: "flows_plan_nodes is append-only"
   })
 
-  yield* Dialect.trigger(sql, {
+  try Dialect.trigger(sql, {
     name: `flows_plan_nodes_no_delete`,
     table: `flows_plan_nodes`,
     event: "BEFORE DELETE",
     reject: "flows_plan_nodes is append-only"
   })
 
-  yield* Dialect.trigger(sql, {
+  try Dialect.trigger(sql, {
     name: `flows_plan_edges_append_only`,
     table: `flows_plan_edges`,
     event: "BEFORE UPDATE",
     reject: "flows_plan_edges is append-only"
   })
 
-  yield* Dialect.trigger(sql, {
+  try Dialect.trigger(sql, {
     name: `flows_plan_edges_no_delete`,
     table: `flows_plan_edges`,
     event: "BEFORE DELETE",
     reject: "flows_plan_edges is append-only"
   })
 
-  yield* Dialect.trigger(sql, {
+  try Dialect.trigger(sql, {
     name: `flows_plans_forward_only`,
     table: `flows_plans`,
     event: "BEFORE UPDATE",
     when: `NEW.generation <= OLD.generation OR NEW.base_digest <> OLD.base_digest`,
     reject: "a plan only grows"
   })
-})
+}

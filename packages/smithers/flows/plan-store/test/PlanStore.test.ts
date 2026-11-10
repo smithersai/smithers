@@ -8,8 +8,8 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Tracer from "effect/Tracer"
-import * as Migrations from "../src/Migrations.ts"
-import * as PlanStore from "../src/PlanStore.ts"
+import * as Migrations from "../src/Migrations.vibe"
+import * as PlanStore from "../src/PlanStore.vibe"
 import { withCrypto } from "./Crypto.ts"
 
 const stores = Layer.provideMerge(PlanStore.layer, Layer.provideMerge(Migrations.layer, TestDatabase.layer))

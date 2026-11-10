@@ -5,8 +5,8 @@ import * as Plan from "@smthrs/plan/Plan"
 import { compile, draft } from "@smthrs/plan/test/PlanFixtures"
 import { Effect, Layer, Option, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as Migrations from "../src/Migrations.ts"
-import * as PlanStore from "../src/PlanStore.ts"
+import * as Migrations from "../src/Migrations.vibe"
+import * as PlanStore from "../src/PlanStore.vibe"
 import { withCrypto } from "./Crypto.ts"
 
 const stores = PlanStore.layer.pipe(Layer.provideMerge(Migrations.layer.pipe(Layer.provideMerge(TestDatabase.layer))))

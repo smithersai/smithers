@@ -32,19 +32,19 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @since 0.1.0
  * @slop
  */
-export const appendOnlyHardening: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
+export const appendOnlyHardening: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
 
-  yield* Dialect.trigger(sql, {
+  try Dialect.trigger(sql, {
     name: `flows_plans_no_delete`,
     table: `flows_plans`,
     event: "BEFORE DELETE",
     reject: "flows_plans is append-only"
   })
 
-  yield* Dialect.dropTrigger(sql, "flows_plans_forward_only", "flows_plans")
+  try Dialect.dropTrigger(sql, "flows_plans_forward_only", "flows_plans")
 
-  yield* Dialect.trigger(sql, {
+  try Dialect.trigger(sql, {
     name: `flows_plans_forward_only`,
     table: `flows_plans`,
     event: "BEFORE UPDATE",
@@ -55,5 +55,5 @@ export const appendOnlyHardening: Effect.Effect<void, unknown, SqlClient.SqlClie
     reject: "a plan only grows"
   })
 
-  yield* sql`CREATE UNIQUE INDEX flows_plan_nodes_ordinal ON flows_plan_nodes (plan_id, ordinal)`
-})
+  try sql`CREATE UNIQUE INDEX flows_plan_nodes_ordinal ON flows_plan_nodes (plan_id, ordinal)`
+}

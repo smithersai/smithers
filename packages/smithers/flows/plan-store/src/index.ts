@@ -16,10 +16,10 @@
  * @since 0.1.0
  * @category migrations
  */
-export * as Migrations from "./Migrations.ts"
+export * as Migrations from "./Migrations.vibe"
 
 /**
  * @since 0.1.0
  * @category services
  */
-export * as PlanStore from "./PlanStore.ts"
+export * as PlanStore from "./PlanStore.vibe"

@@ -1,9 +1,9 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import * as initialModule from "../src/internal/migrations/0001_initial.ts"
-import * as appendOnlyHardeningModule from "../src/internal/migrations/0002_append_only_hardening.ts"
-import * as forwardOnlyIdentityModule from "../src/internal/migrations/0003_forward_only_identity.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as initialModule from "../src/internal/migrations/0001_initial.vibe"
+import * as appendOnlyHardeningModule from "../src/internal/migrations/0002_append_only_hardening.vibe"
+import * as forwardOnlyIdentityModule from "../src/internal/migrations/0003_forward_only_identity.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 
 /**
  * Every step module beside the binding it exports. A default export would

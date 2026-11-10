@@ -872,6 +872,7 @@ export const verify = (
  * @returns The nodes whose generation equals `plan.generation`, in order.
  * @since 0.1.0
  * @category accessors
+ * @throws {never}
  */
 export const generationNodes = (plan: Plan): ReadonlyArray<PlanNode> =>
   plan.nodes.filter((node) => node.generation === plan.generation)
@@ -909,6 +910,7 @@ export const writerFences = (nodes: ReadonlyArray<PlanNode>): ReadonlyMap<string
  * {@link append}, or {@link verify}; a structurally equal copy returns `false`.
  * @since 1.0.0
  * @category guards
+ * @throws {never}
  */
 export const isVerified = (input: unknown): input is Plan =>
   typeof input === "object" && input !== null && frozenPlans.has(input as Plan)
