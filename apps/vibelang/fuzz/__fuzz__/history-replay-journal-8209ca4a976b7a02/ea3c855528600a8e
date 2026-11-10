@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 13
+bias 5
+null-prototype false
+key 3148088909
+tape 6xEis9SvrfmTZZqJClGaDALWeDFV0nugqiIBAkNZdKIO0nTdfuWEle9MQnT7MFWM37qOTnsy-hLe0WaZXNOBXiFF6zJkxT9YVoIjaKnipb4LCfsg9XMT1Q_PxsB-g90JGhgO261HaK6PZn0Lyh6W1jURWpvOLxmKQW8AiYFYNVinbQNgfBifrB2_i5rLk_dFzYVg9n9sbGXbhFxUv5zvloS4s1m554TjP41bkFehKg0vHZcSaLQMvwCd0lIlnCkPygQQ1gSCLFUsJezmD6MavIlOd9D_feUyHsLVWMvhsZJKa0N_eWa1gd27kjck3Km6Ib24dAaXp0_ztnfb8IYG8RngqDUVjNPxY0EdnOebDsTuJMoPBhG1uP04mcvlP-eoTCi6lCOYRscol6QShrkupbQigqs0583GB4eVvzpze4A
+schedule-key 3985817621
+schedule 
+signature "ReturnedFalse"
+path 1.1.1
+codec "json"
+value "[{\"type\":\"OpenEpic\",\"id\":\"m2\",\"epic\":\"m2\",\"before\":\"m1\",\"text\":\"x\",\"sha\":\"s2\"},{\"type\":\"OpenEpic\",\"id\":\"m1\",\"epic\":\"m2\",\"before\":\"m2\",\"text\":\"Fuzz\",\"sha\":\"s1\"}]"
+# ReturnedFalse
+# [{"type":"OpenEpic","id":"m2","epic":"m2","before":"m1","text":"x","sha":"s2"},{"type":"OpenEpic","id":"m1","epic":"m2","before":"m2","text":"Fuzz","sha":"s1"}]

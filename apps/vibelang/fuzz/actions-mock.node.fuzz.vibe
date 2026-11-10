@@ -253,7 +253,7 @@ it.live("actions/mock-before-run", () => run("actions/mock-before-run", Schema.S
     const other = (try accounts.current()).id !== owner
     return other ? last?.state === "failed" && last.steps.length === 0 : last?.state === "passed"
   }
-})))
+}), undefined, { minimum: "10 seconds" }), 120000)
 
 /** A world whose scope has closed refuses new runs as `closed`, and reads what it had. */
 it.live("actions/mock-closed", () => run("actions/mock-closed", Role, (role) => effect {
@@ -273,3 +273,41 @@ it.live("actions/device-default", () => run("actions/device-default", Schema.Lit
   const result = try Effect.result(execute(engine, invocation, "a-device"))
   return result._tag === "Failure" && JSON.stringify(result.failure).includes("forbidden")
 })))
+
+/**
+ * The person signs out partway through a history write (the accounts answer a contributor for the first `checks`
+ * checks, then the signed-out viewer, who has no login). The write passes only when every check it makes saw the
+ * contributor; signed out before the last of them (the history's own check included), the run fails.
+ */
+it.live("actions/mock-sign-out-mid-run", () => run("actions/mock-sign-out-mid-run", Schema.Struct({ title: Text, actor: Schema.Literals(["person", "agent"]) }), (input) => effect {
+  const outcomes: Array<string> = []
+  let needed = -1
+  // checks = 99 never signs out: it counts the checks a passing write makes, `needed`.
+  for (const checks of [99, 0, 1, 2, 3, 4, 5, 6]) {
+    outcomes.push(try scoped(effect {
+      let answered = 0
+      const signingOut = Layer.effect(Factory, map(Factory, (factory) => {
+        const accounts = factory.accounts!
+        const current = effect () => (answered++ < checks ? try accounts.current() : try accounts.choose("viewer"))
+        return Object.assign(Object.create(factory) as Factory.Shape, { accounts: Object.assign(Object.create(accounts) as typeof accounts, { current }) })
+      })).pipe(Layer.provide(mockFactoryFor("contributor")))
+      provide Layer.provideMerge(MockActions({ role: "contributor", actor: input.actor, conversation: "home" }), signingOut) {
+        const actions = try Actions
+        const started = try Effect.result(actions.start("vibelang/history/Plan", { how: "append", epic: "", newEpic: "Fuzz", target: "", title: input.title.trim() || "Fuzz", task: "" }, "button"))
+        if (started._tag === "Failure") return started.failure.code === "forbidden" ? "forbidden" : "other"
+        const last = (try followed(actions, started.success)).at(-1)
+        if (checks === 99) needed = answered
+        return last?.state ?? "none"
+      }
+    }))
+  }
+  // Never signed out, the write passes; signed out before any of the checks it needs, it does not: refused at the
+  // first, failed at any later one (the actions world's check or the history's own).
+  const [never, ...signedOut] = outcomes
+  const expected = signedOut.map((_, checks) => checks === 0 ? "forbidden" : checks < needed ? "failed" : "passed")
+  if (never !== "passed" || needed < 2 || !same(signedOut, expected)) {
+    try Console.error(`actions/mock-sign-out-mid-run: needed ${needed}: ${outcomes.join(" ")}`)
+    return false
+  }
+  return true
+}, undefined, { minimum: "10 seconds" }), 120000)

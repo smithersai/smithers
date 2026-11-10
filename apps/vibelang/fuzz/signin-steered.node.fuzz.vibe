@@ -119,6 +119,19 @@ function steered(input: typeof Input.Type, part: "answers" | "waits" | "refusals
         const out = try answer(signIn({ wait: true }))
         return !out.ok && out.message === "Sign-in expired."
       })
+      // A device code that expires while GitHub still says pending: the next check finds no flow to poll.
+      try scenario("wait-code-expires-pending", { grant: "authorization_pending", expires: 1 }, effect () => {
+        const out = try answer(signIn({ wait: true }))
+        return !out.ok && out.message === "Sign-in expired."
+      })
+      // A stored session that can't be read back (permissions changed under it) still signs in, without a login.
+      try scenario("wait-session-unreadable", {}, effect () => {
+        const denied = PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: "readFileString" })
+        const unreadable: FileSystem.FileSystem = { ...fs, readFileString: (file, encoding) => file.endsWith("/session.json") ? fail(denied) : fs.readFileString(file, encoding) }
+        const out = try (effect { provide FileSystem.FileSystem = unreadable { return try signIn({ wait: true }) } })
+        const stored = try readSession()
+        return out.status === "signed-in" && out.login === "" && stored?.login === input.login
+      })
       if (failures.length > 0) try Console.error("signin/steered-waits failed: " + failures.join(", "))
       return failures.length === 0
     }

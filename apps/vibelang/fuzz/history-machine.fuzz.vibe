@@ -148,3 +148,24 @@ it.live("history/decide-refusals", () => run("history/decide-refusals", Schema.S
   const fold = H.decide(state, { type: "Fold", sha: "", change: "", title, into: "m1" })
   return !fold.ok && fold.refusal === "empty"
 }))
+
+const Rank = Schema.Literals([-2, -1, 0, 1, 5])
+const AnyCommit = Schema.Struct({ id: Id, epic: Id, rank: Rank, task: Field, state: Schema.Literals(["planned", "working", "approved", "landed"]) })
+
+/**
+ * The lookups (`taskOf`, `epicOf`, `rankOf`) answer the first commit with the id, or their empty answer; and `decide`
+ * plans before a commit only when that first commit is in the epic at a rank of zero or more (its contract holds for
+ * every typed history, including one with a negative rank that `apply` never builds).
+ */
+it.live("history/lookups", () => run("history/lookups", Schema.Struct({ commits: Schema.Array(AnyCommit).check(Schema.isMaxLength(6)), id: Id, epic: Id }), ({ commits: drawn, id, epic }) => {
+  const commits: ReadonlyArray<H.Commit> = drawn.map((c) => ({ id: c.id, epic: c.epic, rank: c.rank, title: "T", state: c.state, task: c.task, lane: "", notes: [] }))
+  const first = commits.find((c) => c.id === id)
+  if (H.taskOf(commits, id) !== (first?.task ?? "") || H.epicOf(commits, id) !== (first?.epic ?? "") || H.rankOf(commits, id) !== (first?.rank ?? -1)) return false
+  const history: H.History = { seq: 3, epics: [{ id: "e1", title: "One" }, { id: "e2", title: "Two" }], commits, real: [], main: "" }
+  const decision = H.decide(history, { type: "Plan", id: "planned-9", epic, before: id, title: "T", task: "" })
+  const known = epic === "e1" || epic === "e2"
+  const ok = known && (id === "" || (first !== undefined && first.epic === epic && first.rank >= 0))
+  if (decision.ok !== ok) return false
+  if (!decision.ok) return decision.refusal === "unknown"
+  return decision.event.type === "Planned" && decision.event.seq === 4 && (id === "" || decision.event.rank === first!.rank)
+}))

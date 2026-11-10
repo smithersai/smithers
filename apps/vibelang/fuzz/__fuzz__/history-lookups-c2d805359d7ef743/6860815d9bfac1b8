@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 32
+bias 2
+null-prototype false
+key 2812108484
+tape ghsn1hqhbNyTvwqyYUZSJngi621zm38jUCer70xwRlFBNwuPMb41xCNgnOyfMhJweQ3mYm_AlHmKORRCo1c0AFmkCo-tgGtje0WiXQzKMJ4RVIGCu7uaTytquJHnCXJoE1PbVFPTl41ZpAqPrYBrY3tFol0MyjCeEVSBgru7mk8rariR5wlyaA
+schedule-key 873230142
+schedule 
+signature "ReturnedFalse"
+path 1.1.2
+codec "json"
+value "{\"commits\":[{\"id\":\"m1\",\"epic\":\"e2\",\"rank\":-1,\"task\":\"Fuzz\",\"state\":\"approved\"}],\"id\":\"m1\",\"epic\":\"e2\"}"
+# ReturnedFalse
+# {"commits":[{"id":"m1","epic":"e2","rank":-1,"task":"Fuzz","state":"approved"}],"id":"m1","epic":"e2"}

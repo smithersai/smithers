@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 13
+bias 5
+null-prototype false
+key 3148088909
+tape 6xEis9SvrfmTZZqJClGaDALWeDFV0nugqiIBAkNZdKIO0nTdfuWEle9MQnT7MFWM37qOTnsy-hLe0WaZXNOBXiFF6zJkxT9YVoIjaKnipb4LCfsg9XMT1Q_PxsB-g90JGhgO261HaK6PZn0Lyh6W1jURWpvOLxmKQW8AiYFYNVinbQNgfBifrB2_i5rLk_dFzYVg9n9sbGXbhFxUv5zvloS4s1m554TjP41bkFehKg0vHZcSaLQMvwCd0lIlnCkPygQQ1gSCLFUsJezmD6MavIlOd9D_feUyHsLVWMvhsZJKa0N_eWa1gd27kjck3Km6Ib24dAaXp08
+schedule-key 3985817621
+schedule 
+signature "ReturnedFalse"
+path 1.8.0.1.1.0
+codec "json"
+value "{\"receipt\":null,\"revision\":\"ffffffffffffffffffff\",\"text\":null,\"ids\":[\"\",\"\",\"\",\"abc\"],\"length\":0,\"start\":0,\"end\":2,\"size\":0,\"known\":[]}"
+# ReturnedFalse
+# {"receipt":null,"revision":"ffffffffffffffffffff","text":null,"ids":["","","","abc"],"length":0,"start":0,"end":2,"size":0,"known":[]}

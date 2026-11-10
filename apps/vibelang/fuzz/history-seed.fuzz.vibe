@@ -80,3 +80,17 @@ it.live("history/seed-entries", () => run("history/seed-entries", Entries, ({ co
   if (seed.real.length !== raw.length || into.size !== raw.length || replay(intentsOf(seed)).refused.length > 0) return false
   return raw.every((a, i) => raw.every((b, j) => i === j || (into.get(a.sha) === into.get(b.sha)) === (claimed[i] !== undefined && claimed[i] === claimed[j])))
 }))
+
+/** A real commit folding into a commit the seed lacks: its Fold carries its own title (or none) and is refused `unknown`. */
+it.live("history/seed-orphan", () => run("history/seed-orphan", Schema.Struct({ titled: Schema.Boolean, into: Schema.Literals(["m1", "m2", ""]) }), ({ titled, into }) => {
+  const seed = {
+    repository: "r", main: "abc",
+    epics: [{ id: "e1", title: "One", commits: [{ id: "m1", title: "First", notes: [] }] }],
+    real: [{ sha: "abc", change: "", title: titled ? "Real" : "", into }],
+  }
+  const intents = intentsOf(seed)
+  const fold = intents.find((intent) => intent.type === "Fold")
+  if (fold?.type !== "Fold" || fold.title !== (titled ? "Real" : into === "m1" ? "First" : "")) return false
+  const replayed = replay(intents)
+  return into === "m1" ? replayed.refused.length === 0 && replayed.history.real.length === 1 : replayed.refused.length === 1 && replayed.refused[0] === fold && replayed.history.real.length === 0
+}))

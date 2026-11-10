@@ -1,0 +1,86 @@
+// The history's specification-only decisions against the running code they specify. Each spec function is checked
+// on what it claims: src/history/replayDecision.vibe (the live history is the replay of its journal),
+// src/history/seedInputDecision.vibe (the revset and title selections equal their specifications) and
+// src/history/pageDecision.vibe (`totals` sums as `sumOf` says).
+import { it } from "@effect/vitest"
+import * as H from "../src/history/mythical.vibe"
+import { sumOf, totalOf, totals } from "../src/history/pageDecision.vibe"
+import { liveHistoryReplays, recordedHistory, replayedHistory, replayedHistoryPrefix, replayHistory, replayStep } from "../src/history/replayDecision.vibe"
+import { batchEnd, batchRevset, knownTitles, queueText, receiptCommits, referenceList, selectedTitles, shortCommit, shortCommits } from "../src/history/seedInputDecision.vibe"
+import { run, Int, Text, same } from "./run.vibe"
+
+const Id = Schema.Literals(["", "e1", "e2", "m1", "m2", "m3"])
+const Step = Schema.Struct({
+  type: Schema.Literals(["OpenEpic", "Plan", "Amend", "Start", "Approve", "Fold", "AddNote"]),
+  id: Id, epic: Id, before: Id, text: Schema.Literals(["", "x", "Fuzz"]), sha: Schema.Literals(["", "s1", "s2"]),
+})
+
+function intentOf(step: typeof Step.Type): H.Intent {
+  switch (step.type) {
+    case "OpenEpic": return { type: "OpenEpic", id: step.epic, title: step.text }
+    case "Plan": return { type: "Plan", id: step.id, epic: step.epic, before: step.before, title: step.text, task: "" }
+    case "Amend": return { type: "Amend", id: step.id, task: step.text }
+    case "Start": return { type: "Start", id: step.id, lane: step.text }
+    case "Approve": return { type: "Approve", id: step.id, by: step.text }
+    case "Fold": return { type: "Fold", sha: step.sha, change: "", title: step.text, into: step.id }
+    case "AddNote": return { type: "AddNote", id: step.id, section: "tried", text: step.text, by: step.text }
+  }
+}
+
+/** Recording intents one at a time keeps the live history the replay of the journal written so far. */
+it.live("history/replay-journal", () => run("history/replay-journal", Schema.Array(Step).check(Schema.isMaxLength(16)), (steps) => {
+  let history = H.empty
+  let journal: ReadonlyArray<H.Event> = []
+  if (replayedHistory(H.empty, journal, 0) !== H.empty) return false
+  for (const step of steps) {
+    const intent = intentOf(step)
+    const recorded = recordedHistory(history, intent)
+    const next = recorded.decision.ok ? [...journal, recorded.decision.event] : journal
+    if (!liveHistoryReplays(H.empty, journal, history, intent, next)) return false
+    if (!same(recorded.history, replayedHistory(H.empty, next, next.length)) || !same(replayHistory(H.empty, next), recorded.history)) return false
+    if (!replayedHistoryPrefix(H.empty, journal, next, journal.length) || !same(replayedHistory(H.empty, next, journal.length), history)) return false
+    if (!recorded.decision.ok && recorded.history !== history) return false
+    history = recorded.history
+    journal = next
+  }
+  // Outside replay's domain the step changes nothing.
+  const event = journal[0] ?? { type: "EpicOpened" as const, seq: 1, id: "e1", title: "x" }
+  return replayStep({ ...history, seq: -1 }, event).seq === -1 && same(replayStep(history, { ...event, seq: -1 }), history)
+}))
+
+const Commit = Schema.Literals(["0123456789abcdef", "abc", "", "0123456789ab", "ffffffffffffffffffff"])
+const SeedInput = Schema.Struct({
+  receipt: Schema.NullOr(Schema.Array(Commit).check(Schema.isMaxLength(4))), revision: Commit, text: Schema.NullOr(Text),
+  ids: Schema.Array(Commit).check(Schema.isMaxLength(8)), length: Int, start: Int, end: Int, size: Int,
+  known: Schema.Array(Schema.Struct({ id: Commit, title: Text })).check(Schema.isMaxLength(4)),
+})
+
+/** The seed generator's input decisions, and the revset and title selections against their specifications. */
+it.live("history/seed-inputs", () => run("history/seed-inputs", SeedInput, (input) => {
+  const owned = receiptCommits(input.receipt ?? undefined, input.revision)
+  if (input.receipt === null ? !same(owned, [input.revision]) : owned !== input.receipt) return false
+  if (queueText(input.text ?? undefined) !== (input.text ?? "")) return false
+  const short = shortCommits(input.ids, input.length)
+  if (short.length !== input.ids.length || short.some((id, i) => id !== input.ids[i]!.slice(0, input.length) || id !== shortCommit(input.ids[i]!, input.length))) return false
+  const total = input.ids.length
+  const start = Math.min(input.start, total)
+  const end = start + Math.min(input.end, total - start)
+  const size = input.size + 1
+  if (batchEnd(start, total, size) !== Math.min(start + size, total)) return false
+  const revset = batchRevset(input.ids, start, end)
+  if (referenceList(input.ids, start, end) !== revset || revset !== input.ids.slice(start, end).map((id) => `present(${id})`).join("|")) return false
+  const titles = new Map(input.known.map((each) => [each.id, each.title] as const))
+  const selected = knownTitles(input.ids, titles)
+  return same(selectedTitles(input.ids, titles), selected) && same(selected, input.ids.filter((id) => titles.has(id)).map((id) => titles.get(id)!))
+}))
+
+/** Each key's total is the sum of its amounts (`sumOf`'s specification), and a key never seen totals 0. */
+it.live("history/page-totals", () => run("history/page-totals", Schema.Array(Schema.Struct({ key: Schema.Literals(["a", "b", "c"]), amount: Int })).check(Schema.isMaxLength(10)), (rows) => {
+  const keys = rows.map((row) => row.key)
+  const amounts = rows.map((row) => row.amount)
+  const sums = totals(keys, amounts)
+  return ["a", "b", "c", "d"].every((key: string) => {
+    const expected = rows.filter((row) => row.key === key).reduce((sum, row) => sum + row.amount, 0)
+    return sumOf(keys, amounts, key, keys.length) === expected && totalOf(sums, key) === expected && sums.has(key) === rows.some((row) => row.key === key)
+  })
+}))

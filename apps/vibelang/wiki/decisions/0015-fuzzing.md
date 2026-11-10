@@ -691,6 +691,50 @@ of run states: `run --wait` answers the id only when the first settled state is 
 when the stream ends empty or unsettled or settles otherwise. It reaches `commands` 351 (no run seen). Mutant caught and
 restored: waiting without `takeUntil`, which reads the stream's last run instead of its first settled one.
 
+### Fourth session
+
+Re-measured with the whole suite (`pnpm fuzz:coverage` on a box at `90f526f0`, 5 s per target; its targets phase
+failed on three other lanes' targets, so the figures are the Node map `coverage/fuzz-unit`). Files under
+`src/surfaces`, `src/history` and `src/actions` stood at 1583/1604 lines and 1154/1197 branches. Four files are new
+since the third session (`actionHostDecision`, `replayDecision`, `seedInputDecision`, `pageDecision`'s `sumOf`).
+
+Finding, fixed: a fold over a commit of main whose own Fold the history refuses (no sha, or a sha or change id longer
+than `MAX_ID`) first planned a new mythical commit for it, opening its epic if needed, then had the Fold refused.
+That commit stayed `planned` for ever, and every retry planned another. `Sequencer.fold` now answers the Fold's own
+refusals (`empty`, `too-long`, `duplicate`, in `decide`'s order) before it plans anything. `test/sequencerFold.test.vibe`
+failed before the fix (3 failed) and passes after; `history/fold-flows` fails on the old `Sequencer.vibe`.
+
+Removed, unreachable since the third session's cancel fix (`ec6a03a9`): `mockState`'s interrupted arm and
+`mockFailureText` (`actionHostDecision.vibe`). `cancel` interrupts the run's own fiber before the engine's execution,
+so `run` never resumes after an interrupt-only exit; `cancel` records `cancelled` and "Cancelled" itself. `mockState`
+takes two arguments; its contract, unit test, proof mutations and 0018 rows changed with it (`pnpm verify` on the
+file: 0; `verify:broken --module`: 12/12 rejected).
+
+| Target | File | Exercises | Arm reached |
+| --- | --- | --- | --- |
+| `history/lookups` | `fuzz/history-machine.fuzz.vibe` | `taskOf`, `epicOf`, `rankOf` against a first-match model; `decide`'s plan-before over any typed history, including negative ranks | `mythical` 377, 411, 562 |
+| `history/seed-orphan` | `fuzz/history-seed.fuzz.vibe` | a real commit folding into a commit the seed lacks: its own title, refused `unknown` | `seed` 437 |
+| `history/fold-flows` | `fuzz/history-flows.fuzz.vibe` | the Fold and Bootstrap flows over a `MainLog` service answering fuzzed commits; a second fold changes nothing; a second bootstrap loads nothing | `flows` 248, 257 |
+| `history/replay-journal`, `history/seed-inputs`, `history/page-totals` | `fuzz/history-decisions.fuzz.vibe` | the specification-only functions against the code they specify: record equals replay, `referenceList` = `batchRevset`, `selectedTitles` = `knownTitles`, `totals` = `sumOf` | `replayDecision`, `seedInputDecision`, `pageDecision` 56-57 |
+| `actions/mock-sign-out-mid-run` | `fuzz/actions-mock.node.fuzz.vibe` | accounts that answer the contributor for the first N checks, then the signed-out viewer (no login): the write passes exactly when every check it makes saw the contributor | `MockActions` 73 |
+| `signin/steered-waits` (2 scenarios) | `fuzz/signin-steered.node.fuzz.vibe` | a device code that expires while GitHub says pending ("Sign-in expired."); a stored session that can't be read back (signed in, no login) | `signin` 173, 101 |
+| `surfaces/mcp-stdio` | `fuzz/surfaces-backend.node.fuzz.vibe` | the stdio server in process with an injected `Stdio`: a signal and stdin's end print nothing; a settings read that dies prints the defect on stderr; one that is interrupted prints nothing | `mcp` 36, 38 |
+
+Mutants, each caught and restored: no negative-rank refusal (`history/lookups`), an unknown fold target titled by its
+id (`history/seed-orphan`), the history's caller keeping the world's role after a sign-out
+(`actions/mock-sign-out-mid-run`; it survived the first oracle, which accepted any pass/fail split, now pinned to the
+measured number of checks), the interrupt guard removed (`surfaces/mcp-stdio`), a refused record advancing the
+history (`history/replay-journal`), a revset joined with `,` (`history/seed-inputs`).
+
+Not fixed here, recorded: one malformed line on stdin leaves the stdio MCP server deaf (Effect's ndjson decoder:
+`~/vl/vibelang-bugs/effect-mcp-ndjson-malformed-line`), so `surfaces/mcp-stdio` sends well-formed lines only. In the
+same protocol a stdin read error is retried every 500 ms for ever and a stdout write that dies ends the server as an
+interruption, so no defect reaches `mcp.vibe`.
+
+What is left: 2 arms, neither the app's to change. `flows` 213: V8 credits a suspending conditional's untaken else
+arm's zero to the code after it (`~/vl/vibelang-bugs/coverage-v8-suspend-else-arm`). `history/tools` 93: the no-match
+fallthrough after an exhaustive `match` (`~/vl/vibelang-bugs/coverage-exhaustive-match`, VL-37).
+
 ## Measurable on any machine (lane vl-gatefix, 2026-11-10)
 
 - `surfaces/cli-arguments` and `surfaces/mcp-arguments` spawn a process per execution: replay and the first execution

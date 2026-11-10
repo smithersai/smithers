@@ -12,6 +12,7 @@ import { backend, notDeployed, personClient, unreachable, withStoredSession } fr
 import { writeSession } from "../src/surfaces/session.vibe"
 import { cliPath, serverPath } from "../test/surface-host.vibe"
 import { node, run as processRun } from "../test/support/processes.vibe"
+import { mcp } from "../src/surfaces/mcp.vibe"
 import { run, Text } from "./run.vibe"
 
 const COOKIE = "vibelang-session=fuzz.cookie-1"
@@ -167,3 +168,55 @@ it.live("surfaces/stored-session", () => run("surfaces/stored-session", Target, 
     }
   }
 })))
+
+const INITIALIZE = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "fuzz", version: "0" } } }) + "\n"
+const McpInput = Schema.Struct({
+  // Well-formed lines only: one malformed line leaves Effect's ndjson protocol deaf (~/vl/vibelang-bugs/effect-mcp-ndjson-malformed-line).
+  lines: Schema.Array(Schema.Literals(["\n", "{\"jsonrpc\":\"2.0\",\"method\":\"nope\"}\n", "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n"])).check(Schema.isMaxLength(4)),
+  fault: Schema.Literals(["signal", "stdin-ends", "settings-defect", "settings-interrupted"]),
+})
+
+/**
+ * src/surfaces/mcp.vibe's stdio server in this process, over a fuzzed stdin. A host signal (interruption) or the
+ * client closing stdin ends it with no failure on stderr, after it answered `initialize` on stdout. A settings read
+ * that dies while the backend starts (an injected faulty FileSystem) ends it with the defect on stderr and nothing on
+ * stdout; one that is interrupted ends it with nothing on either. stderr also carries the server's log lines; stdout carries only the protocol.
+ */
+it.live("surfaces/mcp-stdio", () => run("surfaces/mcp-stdio", McpInput, (input) => scoped(effect {
+  provide NodeServices.layer {
+    const files = try FileSystem.FileSystem
+    const directory = try files.makeTempDirectoryScoped()
+    const errors: Array<string> = []
+    const written: Array<string> = []
+    const console = try Console.Console
+    const terminal = { ...console, error: (...args: ReadonlyArray<unknown>) => { errors.push(args.join(" ")) } }
+    const encoder = new TextEncoder()
+    const stdin = Stream.concat(Stream.fromIterable([...input.lines, INITIALIZE].map((line) => encoder.encode(line))), input.fault === "stdin-ends" ? Stream.empty : Stream.never)
+    const stdout = Sink.forEach((chunk: string | Uint8Array) => Effect.map(Effect.orDie(Effect.try(() => typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk))), (text) => { written.push(text) }))
+    const settings: FileSystem.FileSystem = input.fault !== "settings-defect" && input.fault !== "settings-interrupted" ? files
+      : { ...files, readFileString: (path, encoding) => !path.endsWith("mock-session.json") ? files.readFileString(path, encoding) : input.fault === "settings-defect" ? Effect.die(new Error("settings EIO")) : Effect.interrupt }
+    const failed = () => errors.some((line) => /Error|Interrupt|EIO/.test(line))
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory })), Stdio.layerTest({ args: Effect.succeed([]), stdin, stdout: () => stdout, stderr: () => Sink.drain }), FileSystem.FileSystem = settings, Console.Console = terminal {
+      const server = try Effect.forkScoped(mcp(true, undefined))
+      if (input.fault === "settings-interrupted") {
+        // An interrupted read is no failure to report: the server ends, printing nothing.
+        const exit = try Effect.timeoutOption(Fiber.await(server), "60 seconds")
+        if (Option.isSome(exit) && Exit.isFailure(exit.value) && Cause.hasInterruptsOnly(exit.value.cause) && !failed() && written.length === 0) return true
+        console.error(`surfaces/mcp-stdio settings-interrupted: ended ${Option.isSome(exit)}, stderr: ${errors.join(" | ").slice(0, 800)}`)
+        return false
+      }
+      if (input.fault === "settings-defect") {
+        const exit = try Effect.timeoutOption(Fiber.await(server), "60 seconds")
+        if (Option.isSome(exit) && Exit.isFailure(exit.value) && Cause.hasDies(exit.value.cause) && errors.some((line) => line.includes("settings EIO")) && written.length === 0) return true
+        console.error(`surfaces/mcp-stdio settings-defect: ended ${Option.isSome(exit)}, ${written.length} written, ${errors.length} on stderr: ${errors.join(" | ").slice(0, 800)}`)
+        return false
+      }
+      const answered = try Effect.timeoutOption(Effect.repeat(Effect.sync(() => written.join("").includes("vibelang-factory")), { until: (done) => done, schedule: Schedule.spaced("20 millis") }), "60 seconds")
+      if (input.fault === "signal") try Fiber.interrupt(server)
+      const exit = try Effect.timeoutOption(Fiber.await(server), "60 seconds")
+      if (Option.isSome(answered) && Option.isSome(exit) && Exit.isFailure(exit.value) && Cause.hasInterruptsOnly(exit.value.cause) && !failed()) return true
+      console.error(`surfaces/mcp-stdio ${input.fault}: answered ${Option.isSome(answered)}, ended ${Option.isSome(exit)}, stderr: ${errors.join(" | ").slice(0, 800)}`)
+      return false
+    }
+  }
+}), undefined, { minimum: "10 seconds" }), 300000)
