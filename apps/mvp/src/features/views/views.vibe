@@ -1,5 +1,4 @@
 import type { Interactions } from "@smthrs/views"
-import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary"
 import { FlowDispatch } from "../../flows/dispatch"
 import type { AppTemplate } from "./contract"
@@ -49,26 +48,26 @@ export interface ViewsActions {
 
 /** Shows the view with `viewId` full screen in this tab: the one row of `showing`. */
 export const show = (viewId: string, conversationId?: string) =>
-  Effect.gen(function* () {
-    const { showing, forConversation } = yield* ViewsStore
+  effect {
+    const { showing, forConversation } = try ViewsStore
     // Select in navigation order; opening the conversation may yield to a later navigation.
-    yield* showing.update(SHOWING, (draft) => {
+    try showing.update(SHOWING, (draft) => {
       draft.viewId = viewId
       draft.conversationId = conversationId ?? null
     })
-    if (conversationId !== undefined) yield* forConversation(conversationId)
-  }).pipe(
+    if (conversationId !== undefined) try forConversation(conversationId)
+  }.pipe(
     // A local collection refuses only a row its own schema rejects, which an id never is: a bug, not a state.
     Effect.orDie,
   )
 
 /** Dispatches the move: `view/set-state`, door `view`. Its outcome is the flow's to record (src/features/views/steps.ts). */
 export const move = (viewId: string, revision: number, event: Interactions.Event) =>
-  Effect.gen(function* () {
-    yield* (yield* FlowDispatch).dispatch("view/set-state", { viewId, revision, event }, { door: "view" }).pipe(
+  effect {
+    try (try FlowDispatch).dispatch("view/set-state", { viewId, revision, event }, { door: "view" }).pipe(
       Effect.ignore,
     )
-  }).pipe(Effect.withSpan("views.move.dispatch"))
+  }.pipe(Effect.withSpan("views.move.dispatch"))
 
 export class Views extends Context.Service<Views, { readonly queries: ViewsQueries; readonly actions: ViewsActions }>()(
   "@smthrs/mvp/views/Views",
@@ -76,15 +75,16 @@ export class Views extends Context.Service<Views, { readonly queries: ViewsQueri
   /** Binds the store's query and the actions for frontends, run with the services this layer was built with. */
   static readonly layer = Layer.effect(
     Views,
-    Effect.gen(function* () {
-      const store = yield* ViewsStore
-      const context = yield* Effect.context<ViewsStore | FlowDispatch>()
+    effect {
+      const store = try ViewsStore
+      const context = try Effect.context<ViewsStore | FlowDispatch>()
       const { runPromise: run, runSync: sync } = runners(context, "views")
       return Views.of({
         queries: {
           shown: store.shown.tanstack,
           shownIn: (conversationId) =>
-            (conversationId === undefined ? undefined : store.shownIn(conversationId))?.tanstack ?? store.shown.tanstack,
+            (conversationId === undefined ? undefined : store.shownIn(conversationId))?.tanstack
+              ?? store.shown.tanstack,
           rowsIn: (conversationId) => store.rowsIn(conversationId).tanstack,
         },
         actions: {
@@ -94,7 +94,7 @@ export class Views extends Context.Service<Views, { readonly queries: ViewsQueri
           opened: (viewId, template, repo, returnTo) => sync(opened(viewId, template, repo, returnTo)),
         },
       })
-    }),
+    },
   )
 }
 

@@ -1,4 +1,3 @@
-import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { VIEWS_ROUTE, viewStateRoute } from "./contract"
 import { NotRenderedBody, StateChanged, type StateWrite, ViewAdded, ViewRefusal, type ViewWrite } from "./schema"
@@ -10,14 +9,14 @@ import { NotRenderedBody, StateChanged, type StateWrite, ViewAdded, ViewRefusal,
  * ChatApi didn't add the view: no whole answer within the deadline, or no network (`status` absent), or a refusal
  * (`status`, with ChatApi's `code` when its body had one).
  */
-export class ViewRefused extends Data.TaggedError("ViewRefused")<{
-  readonly status?: number
-  readonly code?: string
+export error ViewRefused {
+  status?: number
+  code?: string
   /** What went wrong with a generated view's module (`422`), for its renderer to correct; never logged. */
-  readonly detail?: string
+  detail?: string
   /** The view's revision, when a move was against an older one (`409 stale`). */
-  readonly revision?: number
-}> {}
+  revision?: number
+}
 
 /** How long a step gives ChatApi to add a view. */
 export const ADD_WITHIN = "15 seconds"
@@ -43,57 +42,61 @@ const refusedBy = (status: number, text: string) =>
 export class ViewsClient extends Context.Service<
   ViewsClient,
   {
-    readonly add: (write: ViewWrite) => Effect.Effect<ViewAdded, ViewRefused>
+    readonly add: (write: ViewWrite) => ViewAdded!ViewRefused
     /** One move in a generated view: its new revision. */
-    readonly setState: (viewId: string, write: StateWrite) => Effect.Effect<number, ViewRefused>
+    readonly setState: (viewId: string, write: StateWrite) => number!ViewRefused
   }
 >()("@smthrs/mvp/views/ViewsClient") {
   /** The client over the host's `HttpClient`: `202` added the view, `200` had it already; anything else is refused. */
   static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
     Layer.effect(
       ViewsClient,
-      Effect.gen(function* () {
-        const client = yield* HttpClient.HttpClient
+      effect {
+        const client = try HttpClient.HttpClient
         return ViewsClient.of({
-          add: Effect.fn("chat.view.post")(function* (write) {
-            const response = yield* client.execute(
-              HttpClientRequest.post(`${options.origin}${VIEWS_ROUTE}`).pipe(HttpClientRequest.bodyJsonUnsafe(write)),
-            ).pipe(Effect.mapError(() => new ViewRefused({})))
-            yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-            if (response.status !== 200 && response.status !== 202) {
-              return yield* refusedBy(response.status, yield* Effect.orElseSucceed(response.text, () => ""))
+          add: (write) =>
+            effect {
+              const response = try client.execute(
+                HttpClientRequest.post(`${options.origin}${VIEWS_ROUTE}`).pipe(HttpClientRequest.bodyJsonUnsafe(write)),
+              ).pipe(Effect.mapError(() => new ViewRefused({})))
+              try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+              if (response.status !== 200 && response.status !== 202) {
+                throw refusedBy(response.status, try Effect.orElseSucceed(response.text, () => ""))
+              }
+              return try response.json.pipe(
+                Effect.flatMap(decodeAdded),
+                Effect.mapError(() => new ViewRefused({ status: response.status })),
+              )
             }
-            return yield* response.json.pipe(
-              Effect.flatMap(decodeAdded),
-              Effect.mapError(() => new ViewRefused({ status: response.status })),
-            )
-          }, (effect) =>
             // Interrupting the request aborts its fetch, so a stalled body stops too.
-            Effect.timeoutOrElse(effect, {
+            |> Effect.timeoutOrElse(%, {
               duration: options.within ?? ADD_WITHIN,
               orElse: () => Effect.fail(new ViewRefused({})),
-            })),
-          setState: Effect.fn("chat.view.state.post")(function* (viewId, write) {
-            const response = yield* client.execute(
-              HttpClientRequest.post(`${options.origin}${viewStateRoute(viewId)}`).pipe(
-                HttpClientRequest.bodyJsonUnsafe(write),
-              ),
-            ).pipe(Effect.mapError(() => new ViewRefused({})))
-            yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-            if (response.status !== 200) {
-              return yield* refusedBy(response.status, yield* Effect.orElseSucceed(response.text, () => ""))
+            })
+            |> withSpan(%, "chat.view.post"),
+          setState: (viewId, write) =>
+            effect {
+              const response = try client.execute(
+                HttpClientRequest.post(`${options.origin}${viewStateRoute(viewId)}`).pipe(
+                  HttpClientRequest.bodyJsonUnsafe(write),
+                ),
+              ).pipe(Effect.mapError(() => new ViewRefused({})))
+              try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+              if (response.status !== 200) {
+                throw refusedBy(response.status, try Effect.orElseSucceed(response.text, () => ""))
+              }
+              const changed = try response.json.pipe(
+                Effect.flatMap(decodeChanged),
+                Effect.mapError(() => new ViewRefused({ status: response.status })),
+              )
+              return changed.revision
             }
-            const changed = yield* response.json.pipe(
-              Effect.flatMap(decodeChanged),
-              Effect.mapError(() => new ViewRefused({ status: response.status })),
-            )
-            return changed.revision
-          }, (effect) =>
-            Effect.timeoutOrElse(effect, {
+            |> Effect.timeoutOrElse(%, {
               duration: options.within ?? ADD_WITHIN,
               orElse: () => Effect.fail(new ViewRefused({})),
-            })),
+            })
+            |> withSpan(%, "chat.view.state.post"),
         })
-      }),
+      },
     )
 }

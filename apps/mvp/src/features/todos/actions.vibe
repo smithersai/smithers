@@ -1,0 +1,353 @@
+import { clearWriteComposer } from "../../admissionSource"
+import { keep } from "./writes"
+import {
+  admissionReceipt,
+  beginAdmission,
+  executionOf,
+  finishAdmission,
+  finishRetainedAdmission,
+  whileAdmitting,
+  forgetAdmission,
+  forgetDraftAdmissions,
+  identifyAdmission,
+} from "../../writeAdmission"
+import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { FlowDispatch } from "../../flows/dispatch"
+import { startOperation } from "../commands/admission"
+import { followRun } from "../../resumeAdmissions"
+import { repoId } from "../repo/contract"
+import { isPrompt, isTitle, OP_ID_NAMESPACE, stackPath } from "./contract"
+import { pendingActions } from "#vibelang/emitted/src/features/todos/metrics"
+import { type Draft, type QueuedOp, type Requested, VIEW } from "./schema"
+import { TodosStore } from "./store"
+import { randomUUID } from "./actions.platform"
+
+// TODO writes await local durable admission (decision 0016 §3, docs/features/todos.md). Commit
+// and Drop are the flows `todo/commit` and `todo/drop`, dispatched with door `button` in the store's scope: the press
+// returns at once, and a committed draft goes once its change is queued. Sending runs in the outbox, never in an action.
+
+/**
+ * What a stack route calls on a link's hover or focus (the router's intent preload): starts syncing `owner/name`'s
+ * stack without showing it, so the page the click opens has its rows.
+ */
+export const warm = (owner: string, name: string) =>
+  Effect.flatMap(TodosStore, (store) => Effect.asVoid(store.stackOf(repoId(owner, name))))
+
+/** What a stack route calls on a navigation: shows `owner/name`'s stack, and, with `number`, that TODO; and syncs the stack. */
+export const open = (owner: string, name: string, number?: number) =>
+  effect {
+    const store = try TodosStore
+    const id = repoId(owner, name)
+    try store.view.update(VIEW, (row) => {
+      row.owner = owner
+      row.name = name
+      row.repoId = id
+      row.number = number ?? null
+    })
+    try store.stackOf(id)
+  }.pipe(Effect.orDie)
+
+/** New TODO on `owner/name`'s stack: an empty private draft. Answers its id. */
+export const newDraft = (owner: string, name: string) =>
+  effect {
+    const { drafts } = try TodosStore
+    const id = randomUUID()
+    try drafts.insert({
+      id,
+      repo: `${owner}/${name}`,
+      repoId: repoId(owner, name),
+      title: "",
+      prompt: "",
+      acceptance: [],
+      answerId: null,
+      createdAt: try Clock.currentTimeMillis,
+    })
+    return id
+  }.pipe(Effect.orDie)
+
+/** Changes draft `id`'s text; a draft the device no longer has stays gone. */
+const changeDraft = (id: string, change: Partial<Pick<Draft, "title" | "prompt" | "issue">>) =>
+  effect {
+    const { drafts } = try TodosStore
+    if (Option.isNone(try drafts.get(id))) return
+    try drafts.update(id, (draft) => void Object.assign(draft, change))
+  }.pipe(Effect.orDie)
+
+export const setTitle = (id: string, title: string) => changeDraft(id, { title })
+/** The issue draft `id` hangs under (decision 0153): Commit waits until one is chosen. */
+export const setIssue = (id: string, issue: number) => changeDraft(id, { issue })
+export const setPrompt = (id: string, prompt: string) => changeDraft(id, { prompt })
+
+/** Marks draft `id`'s Commit on its way from this tab, or no longer. */
+const setCommitting = (id: string, committing: boolean) =>
+  Effect.flatMap(TodosStore, ({ view }) =>
+    Effect.orDie(view.update(VIEW, (row) => {
+      row.committing = committing ? [...row.committing, id] : row.committing.filter((other) => other !== id)
+    })))
+
+/** Stable for an unchanged draft snapshot; its content never enters the flow's recorded identity. */
+const commitIdentity = (draft: Draft) => ({
+  namespace: OP_ID_NAMESPACE,
+  value: JSON.stringify([
+    draft.id,
+    draft.repo,
+    draft.title.trim(),
+    draft.prompt,
+    draft.acceptance,
+    draft.issue ?? null,
+  ]),
+})
+const commitExecutionId = (draft: Draft) =>
+  Uuid.v5(OP_ID_NAMESPACE, commitIdentity(draft).value).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+
+/** Commit retains its draft until the device durably admits its snapshot. */
+export const commit = (id: string) =>
+  effect {
+    const store = try TodosStore
+    const found = try store.drafts.get(id)
+    const view = Option.getOrThrow(try store.view.get(VIEW))
+    if (Option.isNone(found) || view.committing.includes(id)) return undefined
+    const draft = found.value
+    if (!isTitle(draft.title) || !isPrompt(draft.prompt)) return undefined
+    const flows = try FlowDispatch
+    try setCommitting(id, true)
+    const payload = {
+      repo: draft.repo,
+      title: draft.title.trim(),
+      prompt: draft.prompt,
+      ...(draft.acceptance.length === 0 ? {} : { acceptance: draft.acceptance }),
+      ...(draft.issue === undefined ? {} : { issue: draft.issue }),
+    }
+    // Input retention must precede any asynchronous progress/toast persistence as well as outbox admission.
+    const admission = try beginAdmission("todo/commit", payload, commitIdentity(draft), id)
+    if (Option.isNone(admission)) {
+      try setCommitting(id, false)
+      return undefined
+    }
+    const executionId = try executionOf(admission.value)
+    const opId = try Uuid.v5(OP_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+    try identifyAdmission(admission.value, executionId, opId)
+    const { kept } = try store.queue({ ...payload, id: opId, op: "commit", number: 0, acceptance: draft.acceptance })
+    let cleaned = true
+    if (kept) {
+      const source = try store.drafts.get(id)
+      if (Option.isSome(source) && commitIdentity(source.value).value === commitIdentity(draft).value) {
+        cleaned = try admissionReceipt(
+          store.drafts.delete(id).pipe(Effect.flatMap((removed) => removed.persisted)),
+          admission.value.commandId,
+          "todo/commit",
+          "source",
+        ).pipe(Effect.as(true), Effect.orElseSucceed(() => false))
+      }
+      try flows.dispatch("todo/commit", payload, { door: "button", executionId }).pipe(
+        Effect.ignore,
+        Effect.forkIn(store.scope, { startImmediately: true }),
+      )
+    }
+    try finishAdmission(admission.value, kept, cleaned)
+    try setCommitting(id, false)
+    const [owner, name] = draft.repo.split("/") as [string, string]
+    return stackPath(owner, name)
+  }
+
+/** Records Edit or Discard on a change, or Discard on a draft. */
+const record = (action: "edit" | "discard" | "discard_draft", fields: Record<string, string>) =>
+  Effect.andThen(
+    Metric.update(Metric.withAttributes(pendingActions, { action }), 1),
+    Effect.logInfo("todos.pending").pipe(Effect.annotateLogs({ ...fields, action, feature: "todos" })),
+  )
+
+/** Discard on draft `id`: it goes. */
+export const discardDraft = (id: string) =>
+  effect {
+    const { drafts } = try TodosStore
+    if (Option.isNone(try drafts.get(id)) || !(try forgetDraftAdmissions(id))) return
+    try Effect.ignore(drafts.delete(id))
+    try record("discard_draft", { draftId: id })
+  }
+
+/**
+ * Make TODO on issue `number` of `owner/name` (`todo/issue`), from its row, its page or its key: the press returns the
+ * stack's page at once, where the draft shows once the step kept it, its title and prompt the issue's.
+ */
+export const fromIssue = (owner: string, name: string, number: number) =>
+  effect {
+    const store = try TodosStore
+    const payload = { repo: `${owner}/${name}`, issue: number }
+    // Staged first, so a reload starts the same run again; a second press before the run settled joins it (decision
+    // 0124). The engine recording the run admits it. A tab that can't stage it keeps it in memory: it is always kept.
+    const intent = Option.getOrThrow(
+      try beginAdmission(
+        "todo/issue",
+        payload,
+        undefined,
+        `todo/issue:${payload.repo}#${number}`,
+        undefined,
+        "button",
+      ),
+    )
+    const executionId = try executionOf(intent)
+    try identifyAdmission(intent, executionId)
+    try effect {
+      const { started, run } = try startOperation("todo/issue", payload, {
+        executionId,
+        door: "button",
+        scope: store.scope,
+      })
+      try finishAdmission(intent, started === "admitted", true, started === "unconfirmed")
+      if (started === "admitted") try followRun({ ...intent, executionId }, run, store.scope)
+    }.pipe(Effect.forkIn(store.scope, { startImmediately: true }))
+    return stackPath(owner, name)
+  }
+
+/** The flow each change to a numbered TODO runs. */
+const flowOfChange = { drop: "todo/drop", retry: "todo/Retry", attach: "todo/attach" } as const
+
+/**
+ * Drop, Retry or Attach on TODO `number` of `owner/name` (`todo/drop`, `todo/Retry`, `todo/attach` with its `issue`):
+ * the press returns at once, and the TODO shows Requested.
+ */
+const admitChange = (op: "drop" | "retry" | "attach", owner: string, name: string, number: number, issue?: number) =>
+  effect {
+    const store = try TodosStore
+    const flows = try FlowDispatch
+    const payload = { repo: `${owner}/${name}`, number, ...(issue === undefined ? {} : { issue }) }
+    const refused = Option.getOrThrow(try store.view.get(VIEW)).admissionFailures?.find(row =>
+      row.repo === payload.repo && row.op === op && row.number === number && row.issue === issue
+    )
+    if (refused !== undefined) return try retryChange(refused.id)
+    const admission = try beginAdmission(flowOfChange[op], payload)
+    if (Option.isNone(admission)) {
+      const row: Requested = {
+        ...payload,
+        id: randomUUID(),
+        repoId: repoId(owner, name),
+        op,
+        title: "",
+        prompt: "",
+        acceptance: [],
+        queuedAt: try Clock.currentTimeMillis,
+        status: "not_sent",
+        reason: null,
+        taken: null,
+      }
+      try store.view.update(VIEW, view => {
+        view.admissionFailures = [...view.admissionFailures ?? [], { ...row, acceptance: [...row.acceptance] }]
+      }).pipe(Effect.orDie)
+      // Refusal is visible synchronously. Persist its same-identity recovery row once when that store is usable.
+      try whileAdmitting(
+        row.id,
+        admissionReceipt(
+          keep(store.requested, { ...row, v: 3 }, "not_sent", null, null),
+          row.id,
+          flowOfChange[op],
+          "refusal",
+        ).pipe(
+          Effect.andThen(clearFailure(row.id)),
+          Effect.ignore,
+        ),
+      ).pipe(Effect.forkIn(store.scope, { startImmediately: true }))
+      return
+    }
+    const executionId = try executionOf(admission.value)
+    const id = try Uuid.v5(OP_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+    try identifyAdmission(admission.value, executionId, id)
+    const row: QueuedOp = { ...payload, id, op, title: "", prompt: "", acceptance: [] }
+    const { kept } = try store.queue(row)
+    try finishAdmission(admission.value, kept)
+    if (kept) {
+      try flows.dispatch(flowOfChange[op], payload, { door: "button", executionId }).pipe(
+        Effect.ignore,
+        Effect.forkIn(store.scope, { startImmediately: true }),
+      )
+    }
+  }
+
+export const drop = (owner: string, name: string, number: number) => admitChange("drop", owner, name, number)
+
+/** Attach to issue on TODO `number`, whose issue is none or deleted (decision 0153): a person's press. */
+export const attach = (owner: string, name: string, number: number, issue: number) =>
+  admitChange("attach", owner, name, number, issue)
+
+const recoveryRow = (id: string) => effect {
+  const store = try TodosStore
+  const held = try store.requested.get(id)
+  return Option.isSome(held)
+    ? held
+    : Option.fromUndefinedOr(Option.getOrThrow(try store.view.get(VIEW)).admissionFailures?.find(row => row.id === id))
+}
+const clearFailure = (id: string) =>
+  Effect.flatMap(TodosStore, store => store.view.update(VIEW, view => {
+    view.admissionFailures = (view.admissionFailures ?? []).filter(row => row.id !== id)
+  })).pipe(Effect.orDie)
+
+/**
+ * Edit or Discard on a change that wasn't sent: Edit puts a commit's text back in a new draft first. The change goes
+ * from the device. Answers the stack's page, or nothing for a change the device doesn't have.
+ */
+const handle = (opId: string, action: "edit" | "discard") =>
+  effect {
+    const { requested, drafts } = try TodosStore
+    const found = try recoveryRow(opId)
+    if (Option.isNone(found)) return undefined
+    const change = found.value
+    if (!(try forgetAdmission(OP_ID_NAMESPACE, change.id))) return undefined
+    if (action === "edit" && change.op === "commit") {
+      try Effect.orDie(drafts.insert({
+        id: randomUUID(),
+        repo: change.repo,
+        repoId: change.repoId,
+        title: change.title,
+        prompt: change.prompt,
+        acceptance: change.acceptance,
+        answerId: null,
+        createdAt: try Clock.currentTimeMillis,
+        ...(change.issue === undefined ? {} : { issue: change.issue }),
+      }))
+    }
+    if (Option.isSome(try requested.get(opId))) try Effect.ignore(requested.delete(opId))
+    try clearFailure(opId)
+    try record(action, { opId, op: change.op })
+    const [owner, name] = change.repo.split("/") as [string, string]
+    return stackPath(owner, name)
+  }
+
+/** Edit on a commit that wasn't sent: its text goes back to a draft. Answers the stack's page. */
+export const edit = (opId: string) => handle(opId, "edit")
+
+/** Discard on a change that wasn't sent: it goes. */
+export const discard = (opId: string) => Effect.asVoid(handle(opId, "discard"))
+
+/** Retries local admission using the retained identity, without inventing another TODO. */
+export const retryChange = (id: string) =>
+  whileAdmitting(
+    id,
+    effect {
+      const store = try TodosStore
+      const row = try recoveryRow(id)
+      if (Option.isNone(row) || row.value.status !== "not_sent" || row.value.reason !== null) return
+      const { kept } = try store.queue(row.value)
+      let cleaned = true
+      if (kept && row.value.op === "commit") {
+        for (const draft of try store.drafts.toArray) {
+          const opId = try Uuid.v5(OP_ID_NAMESPACE, try commitExecutionId(draft)).pipe(
+            Effect.provide(WebCrypto.layer),
+            Effect.orDie,
+          )
+          if (opId === id) {
+            cleaned = (try store.drafts.delete(draft.id).pipe(
+              Effect.flatMap((removed) => removed.persisted),
+              Effect.as(true),
+              Effect.orElseSucceed(() => false),
+            )) && cleaned
+          }
+        }
+      }
+      if (kept) try clearFailure(id)
+      if (kept) cleaned = (try clearWriteComposer(id)) && cleaned
+      try finishRetainedAdmission(id, kept, cleaned)
+    },
+  )
+
+/** Retry returns once the durable launch is requested; the outbox sends in the background. */
+export const retry = (owner: string, name: string, number: number) => admitChange("retry", owner, name, number)

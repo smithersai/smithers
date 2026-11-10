@@ -1,7 +1,22 @@
-import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { attach, retryChange, retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setIssue, setPrompt, setTitle, warm } from "./actions"
+import {
+  attach,
+  retryChange,
+  retry,
+  commit,
+  discard,
+  discardDraft,
+  drop,
+  edit,
+  fromIssue,
+  newDraft,
+  open,
+  setIssue,
+  setPrompt,
+  setTitle,
+  warm,
+} from "./actions"
 import { type RepoStack, TodosStore } from "./store"
 
 // TODOs as a frontend sees it: live queries to read and plain functions to act, with no Effect in sight. React renders
@@ -64,9 +79,9 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
   /** Binds the store's queries and the actions for frontends, run with the services this layer was built with. */
   static readonly layer = Layer.effect(
     Todos,
-    Effect.gen(function* () {
-      const store = yield* TodosStore
-      const context = yield* Effect.context<TodosStore | FlowDispatch>()
+    effect {
+      const store = try TodosStore
+      const context = try Effect.context<TodosStore | FlowDispatch>()
       const { runSync: run, runPromise: runAsync } = runners(context, "todos")
       const stackQueries = (stack: RepoStack): StackQueries => ({
         todos: stack.todos.tanstack,
@@ -99,7 +114,7 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
           discard: (opId) => run(discard(opId)),
         },
       })
-    }),
+    },
   )
 }
 

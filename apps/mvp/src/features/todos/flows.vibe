@@ -1,6 +1,5 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
-import { Schema } from "effect"
 import { MAX_ISSUE_NUMBER } from "../issues/contract"
 import { RepoName } from "../repo/flows"
 import { isAcceptance, isPrompt, isTitle, MAX_TODO_NUMBER } from "./contract"
@@ -120,11 +119,11 @@ export const QueueDrop = Action.make("todo/drop/queue", {
 
 /** `todo/draft { repo, prompt, title?, acceptance? }`: drafts a TODO for the person to commit. */
 export const TodoDraft = Flow.make("todo/draft", {
-  description: "Draft a TODO for the person to commit to a repository's stack. In repo (owner/name), with a Markdown " +
-    "prompt saying what to change, an optional short title (the prompt's first line otherwise) and optional " +
-    "acceptance criteria. The draft is private to the person: its card shows under your answer, where they edit it " +
-    "and press Commit. You never commit it. Answers { draftId, status: \"drafted\", path }, path being the stack's " +
-    "page. TodoStepRefused when the person's tab is gone (tab_gone) or couldn't keep the draft (not_kept).",
+  description: "Draft a TODO for the person to commit to a repository's stack. In repo (owner/name), with a Markdown "
+    + "prompt saying what to change, an optional short title (the prompt's first line otherwise) and optional "
+    + "acceptance criteria. The draft is private to the person: its card shows under your answer, where they edit it "
+    + "and press Commit. You never commit it. Answers { draftId, status: \"drafted\", path }, path being the stack's "
+    + "page. TodoStepRefused when the person's tab is gone (tab_gone) or couldn't keep the draft (not_kept).",
   modelInvocable: true,
   payload: draftPayload,
   success: Drafted,
@@ -134,12 +133,12 @@ export const TodoDraft = Flow.make("todo/draft", {
 
 /** `todo/issue { repo, issue, title?, prompt?, acceptance? }`: drafts a TODO from an issue, linked to it. */
 export const TodoIssue = Flow.make("todo/issue", {
-  description: "Draft a TODO from a GitHub issue, linked to it, for the person to commit to the repository's stack. In " +
-    "repo (owner/name), for issue number issue. The title and Markdown prompt are the issue's title and body unless " +
-    "you pass better ones; acceptance criteria are optional. The draft is private to the person: its card shows on " +
-    "the stack's page, where they edit it and press Commit. You never commit it. Answers { draftId, status: " +
-    "\"drafted\", path }, path being the stack's page. TodoStepRefused when the person's tab is gone (tab_gone), " +
-    "couldn't keep the draft (not_kept), or this device doesn't have the issue (issue_not_found).",
+  description: "Draft a TODO from a GitHub issue, linked to it, for the person to commit to the repository's stack. In "
+    + "repo (owner/name), for issue number issue. The title and Markdown prompt are the issue's title and body unless "
+    + "you pass better ones; acceptance criteria are optional. The draft is private to the person: its card shows on "
+    + "the stack's page, where they edit it and press Commit. You never commit it. Answers { draftId, status: "
+    + "\"drafted\", path }, path being the stack's page. TodoStepRefused when the person's tab is gone (tab_gone), "
+    + "couldn't keep the draft (not_kept), or this device doesn't have the issue (issue_not_found).",
   modelInvocable: true,
   payload: issuePayload,
   success: Drafted,
@@ -169,10 +168,10 @@ export const ReadTodoStatus = Action.make("todo/inspect/read", {
 
 /** The current shared status of Tn, including its Cloud run and failure reason when present. */
 export const TodoInspect = Flow.make("todo/inspect", {
-  description: "Read the current status of a repository TODO Tn from the shared stack. Pass repo as owner/name and " +
-    "number as n. Answers found with state, step, failure, branch, pull request and Cloud run ID, or not_found after " +
-    "an authorized read. A refused or unavailable read is not evidence that no attempt started. Use this when asked " +
-    "about a TODO; run/list and run/inspect cover only this device's runs.",
+  description: "Read the current status of a repository TODO Tn from the shared stack. Pass repo as owner/name and "
+    + "number as n. Answers found with state, step, failure, branch, pull request and Cloud run ID, or not_found after "
+    + "an authorized read. A refused or unavailable read is not evidence that no attempt started. Use this when asked "
+    + "about a TODO; run/list and run/inspect cover only this device's runs.",
   modelInvocable: true,
   payload: { repo: RepoName, number: TodoNumber },
   success: TodoStatusResult,
@@ -182,8 +181,8 @@ export const TodoInspect = Flow.make("todo/inspect", {
 
 /** `todo/commit { repo, title, prompt, acceptance?, issue? }`: a person commits a TODO to the end of the stack. */
 export const TodoCommit = Flow.make("todo/commit", {
-  description: "Commit a TODO to the end of a repository's stack. Answers { opId, status: \"requested\" }: the stack " +
-    "numbers it once it has it.",
+  description: "Commit a TODO to the end of a repository's stack. Answers { opId, status: \"requested\" }: the stack "
+    + "numbers it once it has it.",
   modelInvocable: false,
   payload: commitPayload,
   success: ChangeRequested,
@@ -214,8 +213,8 @@ export const QueueAttach = Action.make("todo/attach/queue", {
  * (decision 0153). Never the agent's.
  */
 export const TodoAttach = Flow.make("todo/attach", {
-  description: "Attach a TODO with no issue, or a deleted one, to an issue of its repository. Answers { opId, status: " +
-    "\"requested\" }.",
+  description: "Attach a TODO with no issue, or a deleted one, to an issue of its repository. Answers { opId, status: "
+    + "\"requested\" }.",
   modelInvocable: false,
   payload: attachPayload,
   success: ChangeRequested,
@@ -225,11 +224,17 @@ export const TodoAttach = Flow.make("todo/attach", {
 
 /** Restart a failed TODO in place, keeping its immutable attempts. */
 export const QueueRetry = Action.make("todo/Retry/queue", {
-  payload: dropPayload, success: ChangeRequested, error: TodoStepRefused, retryPolicy: ASK_RETRY,
+  payload: dropPayload,
+  success: ChangeRequested,
+  error: TodoStepRefused,
+  retryPolicy: ASK_RETRY,
 })
 export const TodoRetry = Flow.make("todo/Retry", {
-  description: "Retry a failed or stopped TODO in repo (owner/name), by TODO number. Starts a new attempt in its existing stack position. Member may retry their own TODO; Maintainer may retry anyone's. Answers requested, not completed.",
+  description:
+    "Retry a failed or stopped TODO in repo (owner/name), by TODO number. Starts a new attempt in its existing stack position. Member may retry their own TODO; Maintainer may retry anyone's. Answers requested, not completed.",
   modelInvocable: true,
-  payload: dropPayload, success: ChangeRequested, error: TodoStepRefused,
+  payload: dropPayload,
+  success: ChangeRequested,
+  error: TodoStepRefused,
   body: Node.capture({ action: QueueRetry.name }, (payload) => QueueRetry.call(payload)),
 }).annotate(Flow.Placement, Placement.client())

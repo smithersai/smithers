@@ -1,4 +1,3 @@
-import { Context, Effect, Layer, Metric } from "effect"
 import { runners } from "../../boundary"
 import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
@@ -35,24 +34,28 @@ export class Theme extends Context.Service<Theme, { readonly queries: ThemeQueri
    */
   static readonly layer = Layer.effect(
     Theme,
-    Effect.gen(function* () {
-      const store = yield* ThemeStore
-      const { runPromise: run } = runners(yield* Effect.context<ThemeStore | FlowDispatch>(), "theme")
+    effect {
+      const store = try ThemeStore
+      const { runPromise: run } = runners(try Effect.context<ThemeStore | FlowDispatch>(), "theme")
       return Theme.of({
         queries: { theme: store.theme.tanstack, shown: store.shown, shownMode: store.shownMode.tanstack },
         actions: {
           toggle: () => run(toggleTheme.pipe(
             Effect.ignore,
-            Effect.catchDefect((defect) => Metric.update(toggleDefects, 1).pipe(
-              Effect.andThen(Effect.logError("theme.toggle.defect").pipe(
-                Effect.annotateLogs({ feature: "theme", errorCode: codeOf(defect) }),
-              )),
-              Effect.withSpan("theme.toggle.defect"),
-            )),
+            Effect.catchDefect((defect) =>
+              Metric.update(toggleDefects, 1).pipe(
+                Effect.andThen(
+                  Effect.logError("theme.toggle.defect").pipe(
+                    Effect.annotateLogs({ feature: "theme", errorCode: codeOf(defect) }),
+                  ),
+                ),
+                Effect.withSpan("theme.toggle.defect"),
+              )
+            ),
           )),
         },
       })
-    }),
+    },
   )
 }
 

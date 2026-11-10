@@ -1,5 +1,4 @@
 import type { Collection } from "@smthrs/effect-tanstack-db"
-import { Effect, Layer } from "effect"
 import { codeOf } from "../../errorCode"
 import { answerAskingTab } from "../../flows/askingTab"
 import { IssuesStore } from "../issues/store"
@@ -20,53 +19,56 @@ const ISSUES_WITHIN = "5 seconds"
  * Waits up to `ISSUES_WITHIN` for the issues' first sync (`preload`). One that fails leaves a draft's issue missing,
  * which the step reports as `issue_not_found`, so the failure is logged as `todos.issue.load`.
  */
-export const issuesSynced = (preload: Effect.Effect<void, Collection.LoadFailed>) =>
-  Effect.gen(function* () {
-    const loaded = yield* Effect.result(Effect.timeoutOption(preload, ISSUES_WITHIN))
+export const issuesSynced = (preload: void!Collection.LoadFailed) =>
+  effect {
+    const loaded = try Effect.result(Effect.timeoutOption(preload, ISSUES_WITHIN))
     if (loaded._tag === "Failure") {
-      yield* Effect.logWarning("todos.issue.load").pipe(
+      try Effect.logWarning("todos.issue.load").pipe(
         Effect.annotateLogs({ feature: "todos", outcome: "failed", errorCode: codeOf(loaded.failure) }),
       )
     }
-  })
+  }
 
 /** Answers the todos channel of engine `name` for this tab's requests until its scope closes. */
 export const tabTodos = (host: { readonly name: string }) =>
   Layer.effectDiscard(
-    Effect.gen(function* () {
-      const store = yield* TodosStore
-      const issues = yield* IssuesStore
+    effect {
+      const store = try TodosStore
+      const issues = try IssuesStore
       /**
        * The issue a draft is made from, as this device has it: kept on the device, else the network's first answer, from
        * its repository's issues (decision 0079 slice 1b).
        */
       const issueOf = (draft: Draft) =>
-        Effect.gen(function* () {
-          const repo = yield* issues.forRepo(draft.repoId)
-          yield* repo.requestDetails
+        effect {
+          const repo = try issues.forRepo(draft.repoId)
+          try repo.requestDetails
           const items = repo.details
           const find = Effect.map(
             items.toArray,
-            (rows) => rows.find((row) => row.repoId === draft.repoId && row.number === draft.issue && row.kind === "issue"),
+            (rows) =>
+              rows.find((row) => row.repoId === draft.repoId && row.number === draft.issue && row.kind === "issue"),
           )
           // expected: restore failures are logged by Collection
-          yield* repo.restored
-          const kept = yield* find
+          try repo.restored
+          const kept = try find
           if (kept !== undefined) return kept
-          yield* issuesSynced(items.preload)
-          return yield* find
-        })
+          try issuesSynced(items.preload)
+          return try find
+        }
       const keep = (draft: Draft) =>
-        Effect.gen(function* () {
-          if (draft.issue === undefined || (draft.title !== "" && draft.prompt !== "")) return yield* store.keepDraft(draft)
-          const item = yield* issueOf(draft)
+        effect {
+          if (draft.issue === undefined || (draft.title !== "" && draft.prompt !== "")) {
+            return try store.keepDraft(draft)
+          }
+          const item = try issueOf(draft)
           if (item === undefined) return { kept: false, issue: "missing" as const }
-          return yield* store.keepDraft(draftFromIssue(draft, item))
-        })
-      yield* answerAskingTab({
+          return try store.keepDraft(draftFromIssue(draft, item))
+        }
+      try answerAskingTab({
         channel: todosChannel(host.name),
         input: TodosCall,
         answer: (call) => (call.kind === "draft" ? keep(call.draft) : store.queue(call.op)),
       })
-    }),
+    },
   )

@@ -1,5 +1,4 @@
 import { FlowRuntime } from "@smthrs/flow"
-import { Effect } from "effect"
 import { requesterOf } from "../../flows/requests"
 
 // Where a step's view goes (decision 0013 §1), for every flow that adds views (`app/web/open`, `app/docs/search`): an
@@ -18,4 +17,7 @@ export const viewConversation = (conversationId: string | undefined) =>
   })
 
 /** Whether the running execution is the agent's call: a child of its answer's run. */
-export const isAgentCall = Effect.map(FlowRuntime.FlowInstance, ({ executionId }) => requesterOf(executionId) !== executionId)
+export const isAgentCall = Effect.map(
+  FlowRuntime.FlowInstance,
+  ({ executionId }) => requesterOf(executionId) !== executionId,
+)

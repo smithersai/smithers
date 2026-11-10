@@ -1,7 +1,6 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { WebPage } from "@smthrs/views"
-import { Schema } from "effect"
 import { KNOWN_DOCS, MAX_URL_LENGTH, SHOWN, WEB_MODES } from "./contract"
 import { REFUSALS } from "./url"
 
@@ -124,24 +123,31 @@ export const ShowPage = Action.make("app/web/show", {
 
 /** `app/web/open`: shows an outside web page in the conversation, or as a card that opens it in a new tab. */
 export const OpenWebPage = Flow.make("app/web/open", {
-  description: "Open an outside web page (an https URL) for the person. mode \"embed\", the default, shows the page " +
-    "inside the chat with its origin above it; mode \"tab\" adds a card whose Open in new tab button opens it in a " +
-    "new browser tab. Use it when the person asks to see, show, open or visit a page or a site's docs. For these docs " +
-    `open exactly this page: ${Object.entries(KNOWN_DOCS).map(([name, url]) => `${name} ${url}`).join(", ")}. For ` +
-    "another site, pick its URL yourself. Many sites refuse to be embedded, so the page is checked first. Answers " +
-    "{ viewId, origin, mode, shown, framing, title? }: shown \"page\" means the page is in the chat; shown \"card\" " +
-    "means a card with an Open in new tab button was added instead, because the site refuses embedding (framing " +
-    "\"refused\") or couldn't be checked (framing \"unknown\"). Then say you added a card that opens it in a new " +
-    "tab, never that the page is shown in the chat.",
+  description: "Open an outside web page (an https URL) for the person. mode \"embed\", the default, shows the page "
+    + "inside the chat with its origin above it; mode \"tab\" adds a card whose Open in new tab button opens it in a "
+    + "new browser tab. Use it when the person asks to see, show, open or visit a page or a site's docs. For these docs "
+    + `open exactly this page: ${Object.entries(KNOWN_DOCS).map(([name, url]) => `${name} ${url}`).join(", ")}. For `
+    + "another site, pick its URL yourself. Many sites refuse to be embedded, so the page is checked first. Answers "
+    + "{ viewId, origin, mode, shown, framing, title? }: shown \"page\" means the page is in the chat; shown \"card\" "
+    + "means a card with an Open in new tab button was added instead, because the site refuses embedding (framing "
+    + "\"refused\") or couldn't be checked (framing \"unknown\"). Then say you added a card that opens it in a new "
+    + "tab, never that the page is shown in the chat.",
   modelInvocable: true,
   payload,
   success: WebPageOpened,
   error: Schema.Union([WebPageRefused, WebPageForbidden, WebPageUnavailable]),
-  body: Node.capture({ check: CheckPage.name, preview: PreviewPage.name, show: ShowPage.name }, (page) =>
-    CheckPage.call(page).pipe(
-      Node.bindPlanned(Node.capture({ preview: PreviewPage.name, show: ShowPage.name }, (checked) =>
-        PreviewPage.call(checked).pipe(
-          Node.bindPlanned(Node.capture({ show: ShowPage.name }, (preview) => ShowPage.call({ page: checked, preview }))),
-        ))),
-    )),
+  body: Node.capture(
+    { check: CheckPage.name, preview: PreviewPage.name, show: ShowPage.name },
+    (page) =>
+      CheckPage.call(page).pipe(
+        Node.bindPlanned(
+          Node.capture({ preview: PreviewPage.name, show: ShowPage.name }, (checked) =>
+            PreviewPage.call(checked).pipe(
+              Node.bindPlanned(
+                Node.capture({ show: ShowPage.name }, (preview) => ShowPage.call({ page: checked, preview })),
+              ),
+            )),
+        ),
+      ),
+  ),
 }).annotate(Flow.Placement, Placement.client())

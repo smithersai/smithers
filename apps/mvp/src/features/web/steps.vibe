@@ -1,5 +1,4 @@
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
-import { Context, Effect, Layer } from "effect"
 import { requesterOf } from "../../flows/requests"
 import { ViewsClient } from "../views/api"
 import { viewConversation } from "../views/conversation"
@@ -19,6 +18,7 @@ import {
 } from "./flows"
 import { type Opening, recordOpening, withOpenSpan } from "./metrics"
 import { checkUrl, type Policy } from "./url"
+import { randomUUID } from "./steps.platform"
 
 // What `app/web/open`'s steps run on (docs/features/web-pages.md#the-flow): the host's URL policy (`WebPolicy`), ChatApi's
 // page check (`PreviewClient`) and ChatApi's views route (`ViewsClient`). Each step runs in a span `web.page.open`. The agent's openings are counted and
@@ -32,8 +32,11 @@ export class WebPolicy extends Context.Service<WebPolicy, Policy>()("@smthrs/mvp
 
 /** Records `opening` when the running execution is the agent's call; a person's tab records its own. */
 const recordAgentOpening = (opening: Omit<Opening, "door">) =>
-  Effect.flatMap(FlowRuntime.FlowInstance, ({ executionId }) =>
-    requesterOf(executionId) === executionId ? Effect.void : recordOpening({ ...opening, door: "agent" }))
+  Effect.flatMap(
+    FlowRuntime.FlowInstance,
+    ({ executionId }) =>
+      requesterOf(executionId) === executionId ? Effect.void : recordOpening({ ...opening, door: "agent" }),
+  )
 
 /** `app/web/check`: the URL against the host's policy, and a fresh id for the view. */
 export const check = (page: {
@@ -42,22 +45,22 @@ export const check = (page: {
   readonly conversationId?: string | undefined
 }) => {
   const mode = page.mode ?? "embed"
-  return Effect.gen(function* () {
-    const checked = checkUrl(page.url, mode, yield* WebPolicy)
+  return effect {
+    const checked = checkUrl(page.url, mode, try WebPolicy)
     if (checked.ok) {
       const { href, origin } = checked.page
       return {
-        viewId: crypto.randomUUID(),
+        viewId: randomUUID(),
         href,
         origin,
         mode,
         ...(page.conversationId === undefined ? {} : { conversationId: page.conversationId.toLowerCase() }),
       } satisfies CheckedPage
     }
-    yield* Effect.annotateCurrentSpan({ "smithers.web.outcome": "refused" })
-    yield* recordAgentOpening({ mode, outcome: "refused", reason: checked.reason })
-    return yield* new WebPageRefused({ reason: checked.reason })
-  }).pipe(withOpenSpan(mode))
+    try Effect.annotateCurrentSpan({ "smithers.web.outcome": "refused" })
+    try recordAgentOpening({ mode, outcome: "refused", reason: checked.reason })
+    throw new WebPageRefused({ reason: checked.reason })
+  }.pipe(withOpenSpan(mode))
 }
 
 /** What a refused request to ChatApi means to the step, and the outcome it is counted as. */
@@ -75,17 +78,17 @@ const failureOf = (status: number | undefined) =>
  * attempt of the agent's is recorded.
  */
 export const preview = (page: CheckedPage) =>
-  Effect.gen(function* () {
-    const checked = yield* (yield* PreviewClient).check({ url: page.href, mode: page.mode }).pipe(Effect.result)
+  effect {
+    const checked = try (try PreviewClient).check({ url: page.href, mode: page.mode }).pipe(Effect.result)
     if (checked._tag === "Success") {
-      yield* Effect.annotateCurrentSpan({ "smithers.web.framing": checked.success.framing })
+      try Effect.annotateCurrentSpan({ "smithers.web.framing": checked.success.framing })
       return checked.success
     }
     const failed = failureOf(checked.failure.status)
-    yield* Effect.annotateCurrentSpan({ "smithers.web.outcome": failed.outcome })
-    yield* recordAgentOpening({ mode: page.mode, outcome: failed.outcome })
-    return yield* Effect.fail(failed.error)
-  }).pipe(withOpenSpan(page.mode))
+    try Effect.annotateCurrentSpan({ "smithers.web.outcome": failed.outcome })
+    try recordAgentOpening({ mode: page.mode, outcome: failed.outcome })
+    throw (failed.error)
+  }.pipe(withOpenSpan(page.mode))
 
 /** What a card or a framed page shows of the page while it loads: its title, description and icon, when it has them. */
 const previewProps = ({ title, description, icon }: PreviewedPage["preview"]) => ({
@@ -101,20 +104,20 @@ const previewProps = ({ title, description, icon }: PreviewedPage["preview"]) =>
  * `WebPageUnavailable`, which the step's retry policy tries again.
  */
 export const show = ({ page, preview }: PreviewedPage) =>
-  Effect.gen(function* () {
+  effect {
     const framed = page.mode === "embed" && preview.framing === "allowed"
-    const added = yield* (yield* ViewsClient).add({
+    const added = try (try ViewsClient).add({
       id: page.viewId,
       template: framed ? "webpage" : "link",
       props: { url: page.href, ...previewProps(preview) },
-      ...(yield* viewConversation(page.conversationId)),
+      ...(try viewConversation(page.conversationId)),
     }).pipe(Effect.result)
     const outcome: WebOutcome = added._tag === "Success"
       ? framed ? "embedded" : "card"
       : failureOf(added.failure.status).outcome
-    yield* Effect.annotateCurrentSpan({ "smithers.web.outcome": outcome })
-    yield* recordAgentOpening({ mode: page.mode, outcome, framing: preview.framing })
-    if (added._tag === "Failure") return yield* Effect.fail(failureOf(added.failure.status).error)
+    try Effect.annotateCurrentSpan({ "smithers.web.outcome": outcome })
+    try recordAgentOpening({ mode: page.mode, outcome, framing: preview.framing })
+    if (added._tag === "Failure") throw (failureOf(added.failure.status).error)
     return {
       viewId: page.viewId,
       origin: page.origin,
@@ -123,7 +126,7 @@ export const show = ({ page, preview }: PreviewedPage) =>
       framing: preview.framing,
       ...(preview.title === undefined ? {} : { title: preview.title }),
     } satisfies WebPageOpened
-  }).pipe(withOpenSpan(page.mode))
+  }.pipe(withOpenSpan(page.mode))
 
 /** Registers `app/web/open` with its steps, over the host's `WebPolicy`, `PreviewClient` and `ViewsClient`. */
 export const registration = Interpreter.layerWithImplementations(

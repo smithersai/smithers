@@ -1,4 +1,3 @@
-import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary"
 import { cardOpened } from "./actions"
 
@@ -16,10 +15,10 @@ export class Web extends Context.Service<Web, { readonly actions: WebActions }>(
   /** Binds the actions for frontends, run with the services this layer was built with (`runners`). */
   static readonly layer = Layer.effect(
     Web,
-    Effect.gen(function* () {
-      const { runSync: run } = runners(yield* Effect.context<never>(), "web")
+    effect {
+      const { runSync: run } = runners(try Effect.context<never>(), "web")
       return Web.of({ actions: { cardOpened: () => run(cardOpened) } })
-    }),
+    },
   )
 }
 

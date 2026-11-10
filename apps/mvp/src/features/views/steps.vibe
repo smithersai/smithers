@@ -1,7 +1,6 @@
 import { type FlowEngineLike, ModelStep } from "@smthrs/agent"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { type Model, ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs/model"
-import { Context, Effect, Layer, Metric } from "effect"
 import { codeOf } from "../../errorCode"
 import { requesterOf } from "../../flows/requests"
 import { MODEL_ROUTE } from "../model/contract"
@@ -37,6 +36,7 @@ import {
 } from "./flows"
 import { readWritten, RENDERER_SYSTEM, rendererCorrection, rendererTask } from "./renderer"
 import type { IssuesWrite, RepoWrite } from "./schema"
+import { randomUUID } from "./steps.platform"
 
 // What the views flows' steps run on (docs/features/views.md#the-flows): ChatApi's views routes (`ViewsClient`) and the
 // renderer's seat (`RendererSeat`, the model endpoint's `renderer` role). An agent's call is a child execution of its
@@ -55,10 +55,14 @@ export class RendererSeat extends Context.Service<
   static readonly layer = (origin: string, model?: Model.Model, maxTokens = 8_000) =>
     Layer.effect(
       RendererSeat,
-      Effect.gen(function* () {
+      effect {
         const url = `${origin}${MODEL_ROUTE}/renderer`
-        return { model: model ?? (yield* ModelProxy.makeClient({ url })), route: { prepare: ModelProxy.prepare({ url }) }, maxTokens }
-      }),
+        return {
+          model: model ?? (try ModelProxy.makeClient({ url })),
+          route: { prepare: ModelProxy.prepare({ url }) },
+          maxTokens,
+        }
+      },
     )
 }
 
@@ -115,51 +119,66 @@ const record = (counter: typeof shown, attributes: Record<string, string>, line:
   )
 
 /** `ui/form/check`: the form's schema renders fields and asks for no secret; a fresh id for the view. */
-export const checkForm = (form: { readonly title: string; readonly schema: Readonly<Record<string, unknown>>; readonly submitLabel?: string | undefined }) =>
-  Effect.gen(function* () {
-    const refused = formRefusal(form.schema)
+export const checkForm = (
+  form: {
+    readonly title: string
+    readonly schema: Readonly<Record<string, unknown>>
+    readonly submitLabel?: string | undefined
+  },
+) =>
+  effect {
+    // Checking walks the form's schema; a throw there was a defect of this step.
+    const refused = try Effect.orDie(Effect.try({ try: () => formRefusal(form.schema), catch: (e) => e }))
     if (refused !== undefined) {
-      yield* record(shown, { template: "form", outcome: "refused", reason: refused }, "views.form")
-      return yield* new FormRefused({ reason: refused })
+      try record(shown, { template: "form", outcome: "refused", reason: refused }, "views.form")
+      throw new FormRefused({ reason: refused })
     }
     return {
-      viewId: crypto.randomUUID(),
+      viewId: randomUUID(),
       title: form.title,
       schema: form.schema,
       submitLabel: form.submitLabel ?? "Send",
     } satisfies CheckedForm
-  }).pipe(Effect.withSpan("views.form.check"))
+  }.pipe(Effect.withSpan("views.form.check"))
 
 /** `ui/form/show`: adds the form through ChatApi. */
 export const showForm = (form: CheckedForm) =>
-  Effect.gen(function* () {
-    const added = yield* (yield* ViewsClient).add({
+  effect {
+    const added = try (try ViewsClient).add({
       id: form.viewId,
       template: "form",
       props: { title: form.title, schema: form.schema, submitLabel: form.submitLabel },
-      ...(yield* placeOf),
+      ...(try placeOf),
     }).pipe(Effect.result)
     if (added._tag === "Failure") {
       if (added.failure.status === 400) {
-        yield* record(shown, { template: "form", outcome: "refused" }, "views.form")
-        return yield* new FormRefused({ reason: "no_fields" })
+        try record(shown, { template: "form", outcome: "refused" }, "views.form")
+        throw new FormRefused({ reason: "no_fields" })
       }
       const failed = failureOf(added.failure)
-      yield* record(shown, { template: "form", outcome: failed.outcome }, "views.form", added.failure)
-      return yield* Effect.fail(failed.error)
+      try record(shown, { template: "form", outcome: failed.outcome }, "views.form", added.failure)
+      throw (failed.error)
     }
-    yield* record(shown, { template: "form", outcome: "shown" }, "views.form")
+    try record(shown, { template: "form", outcome: "shown" }, "views.form")
     return { viewId: form.viewId, shown: "form" as const }
-  }).pipe(Effect.withSpan("views.form.show"))
+  }.pipe(Effect.withSpan("views.form.show"))
 
 /** `ui/render/plan`: a fresh id for the view, and where it shows first (`inline` unless asked). */
-export const planView = (task: { readonly description: string; readonly size?: "inline" | "full" | undefined; readonly data?: Readonly<Record<string, unknown>> | undefined }) =>
-  Effect.succeed({
-    viewId: crypto.randomUUID(),
-    description: task.description,
-    size: task.size ?? "inline",
-    ...(task.data === undefined ? {} : { data: task.data }),
-  } satisfies PlannedView)
+export const planView = (
+  task: {
+    readonly description: string
+    readonly size?: "inline" | "full" | undefined
+    readonly data?: Readonly<Record<string, unknown>> | undefined
+  },
+) =>
+  Effect.succeed(
+    {
+      viewId: randomUUID(),
+      description: task.description,
+      size: task.size ?? "inline",
+      ...(task.data === undefined ? {} : { data: task.data }),
+    } satisfies PlannedView,
+  )
 
 /** The renderer's failure as the step's: no model for the role (`no_route`) is `unconfigured`. */
 const modelFailure = (error: unknown) =>
@@ -173,13 +192,15 @@ const modelFailure = (error: unknown) =>
  * at most {@link MAX_CORRECTIONS} times; then the step fails `ViewNotRendered`.
  */
 export const writeView = (planned: PlannedView) =>
-  Effect.gen(function* () {
-    const seat = yield* RendererSeat
-    const client = yield* ViewsClient
-    const place = yield* placeOf
-    const messages: Array<ModelRequest.Message> = [ModelRequest.Message.user(rendererTask(planned))]
+  effect {
+    const seat = try RendererSeat
+    const client = try ViewsClient
+    const place = try placeOf
+    // The task serializes the planned data; a throw there was a defect of this step.
+    const task = try Effect.orDie(Effect.try({ try: () => rendererTask(planned), catch: (e) => e }))
+    const messages: Array<ModelRequest.Message> = [ModelRequest.Message.user(task)]
     for (let attempt = 0; attempt <= MAX_CORRECTIONS; attempt++) {
-      const result = yield* ModelStep.run({
+      const result = try ModelStep.run({
         name: `ui/render/model/${attempt}`,
         ...seat,
         request: ModelRequest.ModelRequest.make({
@@ -191,8 +212,12 @@ export const writeView = (planned: PlannedView) =>
           messages: [...messages],
         }),
       }).pipe(Effect.mapError(modelFailure))
-      if (result.error) return yield* modelFailure(result.error)
-      const reply = ModelEvent.settledMessage(result.events).message.content
+      if (result.error) return try modelFailure(result.error)
+      // Settling validates the reply's parts; a throw there was a defect of this step.
+      const settled = try Effect.orDie(
+        Effect.try({ try: () => ModelEvent.settledMessage(result.events), catch: (e) => e }),
+      )
+      const reply = settled.message.content
         .filter((part) => part.type === "text").map((part) => part.text).join("")
       messages.push(ModelRequest.Message.assistant(reply))
       const written = readWritten(reply)
@@ -200,7 +225,7 @@ export const writeView = (planned: PlannedView) =>
       let problem: string
       if (typeof written === "string") problem = written
       else {
-        const added = yield* client.add({
+        const added = try client.add({
           id: planned.viewId,
           template: "generated",
           title: written.title,
@@ -222,7 +247,7 @@ export const writeView = (planned: PlannedView) =>
           ),
         )
         if (added._tag === "Added") {
-          yield* record(shown, { template: "generated", outcome: "shown", corrections: String(attempt) }, "views.render")
+          try record(shown, { template: "generated", outcome: "shown", corrections: String(attempt) }, "views.render")
           return {
             viewId: planned.viewId,
             title: written.title,
@@ -234,13 +259,13 @@ export const writeView = (planned: PlannedView) =>
         problem = added.detail
       }
       if (attempt < MAX_CORRECTIONS) {
-        yield* Metric.update(corrections, 1)
+        try Metric.update(corrections, 1)
         messages.push(ModelRequest.Message.user(rendererCorrection(problem)))
       }
     }
-    yield* record(shown, { template: "generated", outcome: "not_rendered" }, "views.render")
-    return yield* new ViewNotRendered({ reason: "invalid" })
-  }).pipe(Effect.withSpan("views.render.write", { attributes: { "smithers.view.size": planned.size } }))
+    try record(shown, { template: "generated", outcome: "not_rendered" }, "views.render")
+    throw new ViewNotRendered({ reason: "invalid" })
+  }.pipe(withSpan("views.render.write", { attributes: { "smithers.view.size": planned.size } }))
 
 /** `view/set-state/send`: ChatApi makes the move; the view's new revision. */
 export const sendState = (move: {
@@ -248,34 +273,34 @@ export const sendState = (move: {
   readonly revision: number
   readonly event: { readonly name: string; readonly arg?: string }
 }) =>
-  Effect.gen(function* () {
+  effect {
     // The move's id is its execution's, so every retry of it, after a crash too, is the same move to ChatApi.
-    const { executionId } = yield* FlowRuntime.FlowInstance
-    const changed = yield* (yield* ViewsClient).setState(move.viewId.toLowerCase(), {
+    const { executionId } = try FlowRuntime.FlowInstance
+    const changed = try (try ViewsClient).setState(move.viewId.toLowerCase(), {
       moveId: executionId,
       revision: move.revision,
       event: move.event,
     }).pipe(Effect.result)
     if (changed._tag === "Success") {
-      yield* record(moves, { outcome: "moved" }, "views.move")
+      try record(moves, { outcome: "moved" }, "views.move")
       return { viewId: move.viewId, revision: changed.success }
     }
     const error = changed.failure
     if (error.status === 409 && error.revision !== undefined) {
-      yield* record(moves, { outcome: "stale" }, "views.move")
-      return yield* new ViewStale({ revision: error.revision })
+      try record(moves, { outcome: "stale" }, "views.move")
+      throw new ViewStale({ revision: error.revision })
     }
     if (error.status === 400 || error.status === 404 || error.status === 422) {
-      yield* record(moves, { outcome: "refused" }, "views.move")
-      return yield* new MoveRefused()
+      try record(moves, { outcome: "refused" }, "views.move")
+      throw new MoveRefused()
     }
     const failed = failureOf(error)
-    yield* record(moves, { outcome: failed.outcome }, "views.move", error)
-    return yield* Effect.fail(failed.error)
-  }).pipe(Effect.withSpan("views.move"))
+    try record(moves, { outcome: failed.outcome }, "views.move", error)
+    throw (failed.error)
+  }.pipe(Effect.withSpan("views.move"))
 
 /** `ui/repo/plan` and `ui/issues/plan`: a fresh id for the view. */
-export const planTemplate = <A extends object>(input: A) => Effect.sync(() => ({ viewId: crypto.randomUUID(), ...input }))
+export const planTemplate = <A extends object>(input: A) => Effect.sync(() => ({ viewId: randomUUID(), ...input }))
 
 /**
  * `ui/repo/show` and `ui/issues/show`: adds the view through ChatApi, to the conversation the running execution names
@@ -286,23 +311,23 @@ const showTemplate = (
   write: Pick<RepoWrite, "id" | "template" | "props"> | Pick<IssuesWrite, "id" | "template" | "props">,
   conversationId: string | undefined,
 ) =>
-  Effect.gen(function* () {
+  effect {
     const { id: viewId, template } = write
-    const added = yield* (yield* ViewsClient).add({ ...write, ...(yield* viewConversation(conversationId)) }).pipe(
+    const added = try (try ViewsClient).add({ ...write, ...(try viewConversation(conversationId)) }).pipe(
       Effect.result,
     )
     if (added._tag === "Failure") {
       if (added.failure.status === 400 || added.failure.status === 404 || added.failure.status === 409) {
-        yield* record(shown, { template, outcome: "refused" }, "views.template")
-        return yield* new TemplateRefused()
+        try record(shown, { template, outcome: "refused" }, "views.template")
+        throw new TemplateRefused()
       }
       const failed = failureOf(added.failure)
-      yield* record(shown, { template, outcome: failed.outcome }, "views.template", added.failure)
-      return yield* Effect.fail(failed.error)
+      try record(shown, { template, outcome: failed.outcome }, "views.template", added.failure)
+      throw (failed.error)
     }
-    yield* record(shown, { template, outcome: "shown" }, "views.template")
+    try record(shown, { template, outcome: "shown" }, "views.template")
     return { viewId, shown: template }
-  }).pipe(Effect.withSpan("views.template.show", { attributes: { template: write.template } }))
+  }.pipe(withSpan("views.template.show", { attributes: { template: write.template } }))
 
 /** `ui/repo/show`: the repository's view, with what it opens. */
 export const showRepo = ({ viewId, conversationId, ...props }: PlannedRepo) =>
@@ -317,7 +342,10 @@ export const showIssues = ({ viewId, conversationId, ...props }: PlannedIssues) 
  * `RendererSeat`.
  */
 export const registration = Layer.mergeAll(
-  Interpreter.layerWithImplementations(AskWithForm, Layer.mergeAll(CheckForm.toLayer(checkForm), ShowForm.toLayer(showForm))),
+  Interpreter.layerWithImplementations(
+    AskWithForm,
+    Layer.mergeAll(CheckForm.toLayer(checkForm), ShowForm.toLayer(showForm)),
+  ),
   Interpreter.layerWithImplementations(
     RenderView,
     Layer.mergeAll(PlanView.toLayer(planView), WriteView.toLayer(writeView)),

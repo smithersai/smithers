@@ -1,6 +1,5 @@
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
-import { Context, Effect, Layer, Schema } from "effect"
 import { TabCallFailed, TabPort } from "../../flows/tabPort"
 import { Mode } from "./schema"
 
@@ -18,7 +17,7 @@ export class PreferencesUnavailable extends Schema.TaggedError<PreferencesUnavai
 /** Where this device's preferences are written. */
 export class Preferences extends Context.Service<
   Preferences,
-  { readonly setTheme: (mode: typeof Mode.Type) => Effect.Effect<void, PreferencesUnavailable> }
+  { readonly setTheme: (mode: typeof Mode.Type) => void!PreferencesUnavailable }
 >()("@smthrs/mvp/theme/Preferences") {}
 
 /** What the theme flow answers: the mode it set, the receipt the agent reports from. */
@@ -43,10 +42,10 @@ export const SetTheme = Flow.make("app/theme/set", {
 
 /** What `app/theme/write` does: one write to this device's preferences, answered with the mode. */
 export const setTheme = (payload: { readonly mode: typeof Mode.Type }) =>
-  Effect.gen(function* () {
-    yield* (yield* Preferences).setTheme(payload.mode)
+  effect {
+    try (try Preferences).setTheme(payload.mode)
     return { mode: payload.mode }
-  })
+  }
 
 /** Registers `app/theme/set` with its step, writing through the host's `Preferences`. */
 export const registration = Interpreter.layerWithImplementations(SetTheme, WriteTheme.toLayer(setTheme))
@@ -54,11 +53,14 @@ export const registration = Interpreter.layerWithImplementations(SetTheme, Write
 /** The engine worker's `Preferences`: a call to the tab that started it, which writes its store (`tabHandlers`). */
 export const workerPreferences = Layer.effect(
   Preferences,
-  Effect.gen(function* () {
-    const port = yield* TabPort
+  effect {
+    const port = try TabPort
     return Preferences.of({
       setTheme: (mode) =>
-        port.call(WriteTheme.name, { mode }).pipe(Effect.asVoid, Effect.mapError((cause) => new PreferencesUnavailable({ cause }))),
+        port.call(WriteTheme.name, { mode }).pipe(
+          Effect.asVoid,
+          Effect.mapError((cause) => new PreferencesUnavailable({ cause })),
+        ),
     })
-  }),
+  },
 )

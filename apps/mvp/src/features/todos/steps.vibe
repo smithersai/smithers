@@ -1,6 +1,5 @@
 import { Uuid } from "@smthrs/crypto"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
-import { Clock, Context, type Duration, Effect, Layer, Metric, Option } from "effect"
 import { HttpClient } from "effect/http"
 import { asker } from "../../flows/askingTab"
 import type { Door } from "../../flows/dispatch"
@@ -60,15 +59,15 @@ export class TabTodos extends Context.Service<
   TabTodos,
   {
     /** Asks the tab that started `requester` to act on `call`; none when no tab answered within the wait. */
-    readonly ask: (call: { readonly requester: string; readonly call: TodosCall }) => Effect.Effect<Option.Option<Reply>>
+    readonly ask: (call: { readonly requester: string; readonly call: TodosCall }) => Option.Option<Reply>!!
   }
 >()("@smthrs/mvp/todos/TabTodos") {
   /** Over the todos channel of engine `name` (`TabChannel`), waiting `within` (`QUEUE_WITHIN` unless set). */
   static readonly layerChannel = (options: { readonly name: string; readonly within?: Duration.Input }) =>
     Layer.effect(
       TabTodos,
-      Effect.gen(function* () {
-        const ask = yield* asker<TodosCall, typeof Kept>({
+      effect {
+        const ask = try asker<TodosCall, typeof Kept>({
           channel: todosChannel(options.name),
           output: Kept,
           within: options.within ?? QUEUE_WITHIN,
@@ -76,10 +75,12 @@ export class TabTodos extends Context.Service<
         return TabTodos.of({
           ask: ({ requester, call }) =>
             ask(requester, call).pipe(
-              Effect.map(Option.map(({ door, output }) => ({ door, kept: output.kept, missing: output.issue === "missing" }))),
+              Effect.map(
+                Option.map(({ door, output }) => ({ door, kept: output.kept, missing: output.issue === "missing" })),
+              ),
             ),
         })
-      }),
+      },
     )
 }
 
@@ -95,8 +96,8 @@ const runOf = Effect.map(FlowRuntime.FlowInstance, ({ executionId }) => {
 
 /** Asks the asking tab, and answers how it went and through which door. */
 const askTab = (requester: string, via: StackVia, call: TodosCall) =>
-  Effect.gen(function* () {
-    const reply = yield* (yield* TabTodos).ask({ requester, call })
+  effect {
+    const reply = try (try TabTodos).ask({ requester, call })
     // The agent's call belongs to the answer its tab asked for; a tab's own dispatch names its door in its reply.
     const door: Door | "unknown" = via === "agent"
       ? "agent"
@@ -109,7 +110,7 @@ const askTab = (requester: string, via: StackVia, call: TodosCall) =>
       ? "issue_not_found"
       : "not_kept"
     return { door, outcome }
-  })
+  }
 
 /**
  * What `todo/draft/keep` and `todo/issue/keep` do: derive the draft's id from the run, ask the tab that started it to
@@ -125,12 +126,12 @@ export const keepDraft = (payload: {
   readonly acceptance?: ReadonlyArray<string> | undefined
   readonly issue?: number | undefined
 }) =>
-  Effect.gen(function* () {
-    const startedAt = yield* Clock.currentTimeMillis
-    const { executionId, requester, via } = yield* runOf
-    const draftId = yield* Uuid.v5(DRAFT_ID_NAMESPACE, executionId).pipe(Effect.orDie)
+  effect {
+    const startedAt = try Clock.currentTimeMillis
+    const { executionId, requester, via } = try runOf
+    const draftId = try Uuid.v5(DRAFT_ID_NAMESPACE, executionId).pipe(Effect.orDie)
     const [owner, name] = payload.repo.split("/") as [string, string]
-    const { door, outcome } = yield* askTab(requester, via, {
+    const { door, outcome } = try askTab(requester, via, {
       kind: "draft",
       draft: {
         id: draftId,
@@ -144,22 +145,22 @@ export const keepDraft = (payload: {
         ...(payload.issue === undefined ? {} : { issue: payload.issue }),
       },
     })
-    yield* Metric.update(Metric.withAttributes(drafts, { door, outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ draftId, via, door, outcome, fromIssue: payload.issue !== undefined })
-    yield* Effect.logWithLevel(outcome === "kept" ? "Info" : "Warn")("todos.draft").pipe(
+    try Metric.update(Metric.withAttributes(drafts, { door, outcome }), 1)
+    try Effect.annotateCurrentSpan({ draftId, via, door, outcome, fromIssue: payload.issue !== undefined })
+    try Effect.logWithLevel(outcome === "kept" ? "Info" : "Warn")("todos.draft").pipe(
       Effect.annotateLogs({
         draftId,
         via,
         door,
         outcome,
         fromIssue: payload.issue !== undefined,
-        durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+        durationMs: (try Clock.currentTimeMillis) - startedAt,
         feature: "todos",
       }),
     )
-    if (outcome !== "kept") return yield* new TodoStepRefused({ reason: outcome })
+    if (outcome !== "kept") throw new TodoStepRefused({ reason: outcome })
     return { draftId, status: "drafted", path: stackPath(owner, name) } satisfies Drafted
-  }).pipe(Effect.withSpan("todos.draft"))
+  }.pipe(Effect.withSpan("todos.draft"))
 
 /** A change's fields by operation, as the step reads them from its payload. */
 type Fields =
@@ -182,10 +183,10 @@ type Fields =
  * outcome, never the text. The agent's call, a tab gone, or an outbox that wouldn't take it, fails `TodoStepRefused`.
  */
 export const queueChange = (fields: Fields) =>
-  Effect.gen(function* () {
-    const startedAt = yield* Clock.currentTimeMillis
-    const { executionId, requester, via } = yield* runOf
-    const opId = yield* Uuid.v5(OP_ID_NAMESPACE, executionId).pipe(Effect.orDie)
+  effect {
+    const startedAt = try Clock.currentTimeMillis
+    const { executionId, requester, via } = try runOf
+    const opId = try Uuid.v5(OP_ID_NAMESPACE, executionId).pipe(Effect.orDie)
     const op: QueuedOp = fields.op === "commit"
       ? {
         id: opId,
@@ -198,27 +199,36 @@ export const queueChange = (fields: Fields) =>
         ...(fields.issue === undefined ? {} : { issue: fields.issue }),
       }
       : fields.op === "attach"
-      ? { id: opId, repo: fields.repo, op: "attach", title: "", prompt: "", acceptance: [], number: fields.number, issue: fields.issue }
+      ? {
+        id: opId,
+        repo: fields.repo,
+        op: "attach",
+        title: "",
+        prompt: "",
+        acceptance: [],
+        number: fields.number,
+        issue: fields.issue,
+      }
       : { id: opId, repo: fields.repo, op: fields.op, title: "", prompt: "", acceptance: [], number: fields.number }
     const { door, outcome } = via === "agent" && fields.op !== "retry"
       ? { door: "agent" as const, outcome: "agent" as const }
-      : yield* askTab(requester, via, { kind: "queue", op })
-    yield* Metric.update(Metric.withAttributes(queued, { op: fields.op, door, outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ opId, op: fields.op, via, door, outcome })
-    yield* Effect.logWithLevel(outcome === "kept" ? "Info" : "Warn")("todos.queue").pipe(
+      : try askTab(requester, via, { kind: "queue", op })
+    try Metric.update(Metric.withAttributes(queued, { op: fields.op, door, outcome }), 1)
+    try Effect.annotateCurrentSpan({ opId, op: fields.op, via, door, outcome })
+    try Effect.logWithLevel(outcome === "kept" ? "Info" : "Warn")("todos.queue").pipe(
       Effect.annotateLogs({
         opId,
         op: fields.op,
         via,
         door,
         outcome,
-        durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+        durationMs: (try Clock.currentTimeMillis) - startedAt,
         feature: "todos",
       }),
     )
-    if (outcome !== "kept") return yield* new TodoStepRefused({ reason: outcome })
+    if (outcome !== "kept") throw new TodoStepRefused({ reason: outcome })
     return { opId, status: "requested" } satisfies ChangeRequested
-  }).pipe(Effect.withSpan("todos.queue"))
+  }.pipe(Effect.withSpan("todos.queue"))
 
 /**
  * Registers `todo/draft`, `todo/issue`, `todo/commit` and `todo/drop` with their steps, asking through the host's
@@ -227,35 +237,55 @@ export const queueChange = (fields: Fields) =>
 export const registration = Layer.mergeAll(
   Interpreter.layerWithImplementations(TodoDraft, KeepDraft.toLayer(keepDraft)),
   Interpreter.layerWithImplementations(TodoIssue, KeepIssueDraft.toLayer(keepDraft)),
-  Interpreter.layerWithImplementations(TodoCommit, QueueCommit.toLayer((payload) => queueChange({ op: "commit", ...payload }))),
-  Interpreter.layerWithImplementations(TodoRetry, QueueRetry.toLayer((payload) => queueChange({ op: "retry", ...payload }))),
-  Interpreter.layerWithImplementations(TodoDrop, QueueDrop.toLayer((payload) => queueChange({ op: "drop", ...payload }))),
-  Interpreter.layerWithImplementations(TodoAttach, QueueAttach.toLayer((payload) => queueChange({ op: "attach", ...payload }))),
+  Interpreter.layerWithImplementations(
+    TodoCommit,
+    QueueCommit.toLayer((payload) => queueChange({ op: "commit", ...payload })),
+  ),
+  Interpreter.layerWithImplementations(
+    TodoRetry,
+    QueueRetry.toLayer((payload) => queueChange({ op: "retry", ...payload })),
+  ),
+  Interpreter.layerWithImplementations(
+    TodoDrop,
+    QueueDrop.toLayer((payload) => queueChange({ op: "drop", ...payload })),
+  ),
+  Interpreter.layerWithImplementations(
+    TodoAttach,
+    QueueAttach.toLayer((payload) => queueChange({ op: "attach", ...payload })),
+  ),
 )
 
 /** An agent status read uses the shared stack, never absence from this device's run list. */
 export const inspectStatus = (origin: string, payload: { readonly repo: string; readonly number: number }) =>
-  Effect.gen(function* () {
-    const startedAt = yield* Clock.currentTimeMillis
+  effect {
+    const startedAt = try Clock.currentTimeMillis
     const [owner, name] = payload.repo.split("/") as [string, string]
-    const result = yield* Effect.result(readTodoStatus(origin, owner, name, payload.number, "10 seconds"))
+    const result = try Effect.result(readTodoStatus(origin, owner, name, payload.number, "10 seconds"))
     const outcome = result._tag === "Success" ? result.success.kind : result.failure.reason
-    yield* Metric.update(Metric.withAttributes(statusReads, { outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ outcome })
-    yield* Effect.logWithLevel(result._tag === "Success" ? "Info" : "Warn")("todos.inspect").pipe(
-      Effect.annotateLogs({ outcome, durationMs: (yield* Clock.currentTimeMillis) - startedAt, feature: "todos" }),
+    try Metric.update(Metric.withAttributes(statusReads, { outcome }), 1)
+    try Effect.annotateCurrentSpan({ outcome })
+    try Effect.logWithLevel(result._tag === "Success" ? "Info" : "Warn")("todos.inspect").pipe(
+      Effect.annotateLogs({ outcome, durationMs: (try Clock.currentTimeMillis) - startedAt, feature: "todos" }),
     )
-    if (result._tag === "Failure") return yield* result.failure
+    if (result._tag === "Failure") return try result.failure
     return result.success
-  }).pipe(Effect.withSpan("todos.inspect"))
+  }.pipe(Effect.withSpan("todos.inspect"))
 
 /** Model-readable TODO status on the device's durable engine. */
-export const registrationAt = (origin: string) => Layer.mergeAll(
-  registration,
-  // Keep the host's authenticated transport when the engine supplies its step context.
-  Layer.unwrap(Effect.map(HttpClient.HttpClient, (client) =>
-    Interpreter.layerWithImplementations(TodoInspect, ReadTodoStatus.toLayer((payload) =>
-      inspectStatus(origin, payload).pipe(Effect.provideService(HttpClient.HttpClient, client)),
-    )),
-  )),
-)
+export const registrationAt = (origin: string) =>
+  Layer.mergeAll(
+    registration,
+    // Keep the host's authenticated transport when the engine supplies its step context.
+    Layer.unwrap(
+      Effect.map(
+        HttpClient.HttpClient,
+        (client) =>
+          Interpreter.layerWithImplementations(
+            TodoInspect,
+            ReadTodoStatus.toLayer((payload) =>
+              inspectStatus(origin, payload).pipe(Effect.provideService(HttpClient.HttpClient, client))
+            ),
+          ),
+      ),
+    ),
+  )

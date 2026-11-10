@@ -1,4 +1,3 @@
-import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { CONFIRM_401_HEADER, sessionCheckOf } from "../auth/contract"
 import { stackRoute, TODO_STATUS_NOT_FOUND, todoStatusRoute } from "./contract"
@@ -13,11 +12,11 @@ import { Refusal, Taken, TodoStatusRead } from "./schema"
  * but 200 and 202 (`status`, and the refusal's `code` when its body names one), or a 200 or 202 whose body isn't the
  * contract's. A `401` the page's transport checked against the session carries what it found (`sessionCheck`).
  */
-export class ChangeNotTaken extends Data.TaggedError("ChangeNotTaken")<{
-  readonly status?: number
-  readonly code?: string
-  readonly sessionCheck?: "same_person"
-}> {}
+export error ChangeNotTaken {
+  status?: number
+  code?: string
+  sessionCheck?: "same_person"
+}
 
 /** A change as the route takes it. It names no door: who acts is the session's to say. */
 export type ChangeRequest =
@@ -40,28 +39,38 @@ const decodeStatus = Schema.decodeUnknownEffect(TodoStatusRead)
 
 /** An authorized, current server read. A generic 404 is unavailable, never proof that a TODO is absent. */
 export const readTodoStatus = (origin: string, owner: string, name: string, number: number, within: Duration.Input) =>
-  Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient
-    const response = yield* client.execute(HttpClientRequest.get(`${origin}${todoStatusRoute(owner, name, number)}`)).pipe(
+  effect {
+    const client = try HttpClient.HttpClient
+    // The route encodes the names; a throw there was a defect of this read.
+    const route = try Effect.orDie(Effect.try({ try: () => todoStatusRoute(owner, name, number), catch: (e) => e }))
+    const response = try client.execute(HttpClientRequest.get(`${origin}${route}`)).pipe(
       Effect.mapError(() => new TodoStatusUnavailable({ reason: "unavailable" })),
     )
-    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+    try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
     if (response.status !== 200) {
-      const body = yield* response.json.pipe(Effect.orElseSucceed(() => undefined))
+      const body = try response.json.pipe(Effect.orElseSucceed(() => undefined))
       const code = Option.getOrUndefined(decodeRefusal(body))?.code
       if (response.status === 404 && code === TODO_STATUS_NOT_FOUND) {
         return { kind: "not_found", number } as const satisfies TodoStatusResult
       }
-      return yield* new TodoStatusUnavailable({ reason:
-        response.status === 401 && code === "authentication" ? "authentication" :
-        response.status === 403 && code === "forbidden" ? "forbidden" : "unavailable",
+      throw new TodoStatusUnavailable({
+        reason: response.status === 401 && code === "authentication"
+          ? "authentication"
+          : response.status === 403 && code === "forbidden"
+          ? "forbidden"
+          : "unavailable",
       })
     }
-    return yield* response.json.pipe(
+    return try response.json.pipe(
       Effect.flatMap(decodeStatus),
       Effect.mapError(() => new TodoStatusUnavailable({ reason: "unavailable" })),
     )
-  }).pipe(Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new TodoStatusUnavailable({ reason: "unavailable" })) }))
+  }.pipe(
+    Effect.timeoutOrElse({
+      duration: within,
+      orElse: () => Effect.fail(new TodoStatusUnavailable({ reason: "unavailable" })),
+    }),
+  )
 
 /** `POST /api/repos/<owner>/<name>/stack`: `202` took a new change, `200` had it already. */
 export const postChange = (
@@ -70,31 +79,35 @@ export const postChange = (
   change: ChangeRequest,
   within: Duration.Input,
 ) =>
-  Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient
-    const response = yield* client
+  effect {
+    const client = try HttpClient.HttpClient
+    // The route encodes the names; a throw there was a defect of this send.
+    const route = try Effect.orDie(
+      Effect.try({ try: () => stackRoute(repository.owner, repository.name), catch: (e) => e }),
+    )
+    const response = try client
       .execute(
-        HttpClientRequest.post(`${origin}${stackRoute(repository.owner, repository.name)}`).pipe(
+        HttpClientRequest.post(`${origin}${route}`).pipe(
           HttpClientRequest.bodyJsonUnsafe(change),
           // A 401 is checked against the session first: a change is queued, so it can be held (writes.ts).
           HttpClientRequest.setHeader(CONFIRM_401_HEADER, "1"),
         ),
       )
       .pipe(Effect.mapError(() => new ChangeNotTaken({})))
-    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+    try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
     if (response.status !== 200 && response.status !== 202) {
-      const refused = yield* response.json.pipe(Effect.option, Effect.map(Option.flatMap(decodeRefusal)))
-      return yield* new ChangeNotTaken({
+      const refused = try response.json.pipe(Effect.option, Effect.map(Option.flatMap(decodeRefusal)))
+      throw new ChangeNotTaken({
         status: response.status,
         ...(Option.isSome(refused) ? { code: refused.value.code } : {}),
         ...sessionCheckOf(response.headers),
       })
     }
-    return yield* response.json.pipe(
+    return try response.json.pipe(
       Effect.flatMap(decodeTaken),
       Effect.mapError(() => new ChangeNotTaken({ status: response.status })),
     )
-  }).pipe(
+  }.pipe(
     // Interrupting the request aborts its fetch, so a stalled body stops too.
     Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new ChangeNotTaken({})) }),
   )
@@ -105,7 +118,7 @@ export const postChange = (
  */
 export class StackClient extends Context.Service<
   StackClient,
-  { readonly change: (owner: string, name: string, change: ChangeRequest) => Effect.Effect<Taken, ChangeNotTaken> }
+  { readonly change: (owner: string, name: string, change: ChangeRequest) => Taken!ChangeNotTaken }
 >()("@smthrs/mvp/todos/StackClient") {
   /** The real client: ChatApi at `origin`, with `within` for each whole request. */
   static readonly layer = (options: { readonly origin: string; readonly within: Duration.Input }) =>

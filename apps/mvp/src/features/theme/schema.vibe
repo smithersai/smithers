@@ -1,4 +1,3 @@
-import { Schema } from "effect"
 import { THEME_MODES } from "./contract"
 
 // The theme's rows: one preference, this device's, kept on the device and never synced.

@@ -1,4 +1,3 @@
-import { Effect } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { ThemeStore } from "./store"
 
@@ -6,11 +5,11 @@ import { ThemeStore } from "./store"
 // flow the agent calls, with the mode other than the one the page shows, so both doors run one declaration.
 
 /** Switches to the other mode: reads the mode the page shows, then sets the opposite one through `app/theme/set`. */
-export const toggleTheme = Effect.gen(function* () {
-  const current = yield* (yield* ThemeStore).current
-  return yield* (yield* FlowDispatch).dispatch(
+export const toggleTheme = effect {
+  const current = try (try ThemeStore).current
+  return try (try FlowDispatch).dispatch(
     "app/theme/set",
     { mode: current === "dark" ? "light" : "dark" },
     { door: "button" },
   )
-})
+}

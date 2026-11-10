@@ -1,5 +1,4 @@
 import { WebPage } from "@smthrs/views"
-import { Context, Data, type Duration, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { WEB_PREVIEW_ROUTE, type WebMode } from "./contract"
 
@@ -8,7 +7,7 @@ import { WEB_PREVIEW_ROUTE, type WebMode } from "./contract"
 // device: a browser can't read another site's headers, nor why a frame of it stays blank.
 
 /** ChatApi didn't answer the check: no whole answer within the deadline or no network (`status` absent), or a refusal. */
-export class PreviewRefused extends Data.TaggedError("PreviewRefused")<{ readonly status?: number }> {}
+export error PreviewRefused { status?: number }
 
 /**
  * How long a step gives ChatApi to check a page. ChatApi's own request to the page has 8 s for its response and 3 s
@@ -22,36 +21,37 @@ const decodeChecked = Schema.decodeUnknownEffect(WebPage.Checked)
 export class PreviewClient extends Context.Service<
   PreviewClient,
   {
-    readonly check: (page: { readonly url: string; readonly mode: WebMode }) => Effect.Effect<
-      WebPage.Checked,
-      PreviewRefused
-    >
+    readonly check: (page: { readonly url: string; readonly mode: WebMode }) => WebPage.Checked!PreviewRefused
   }
 >()("@smthrs/mvp/web/PreviewClient") {
   /** The client over the host's `HttpClient`: `200` is the page's answer; anything else is refused. */
   static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
     Layer.effect(
       PreviewClient,
-      Effect.gen(function* () {
-        const client = yield* HttpClient.HttpClient
+      effect {
+        const client = try HttpClient.HttpClient
         return PreviewClient.of({
-          check: Effect.fn("chat.web.preview.post")(function* (page) {
-            const response = yield* client.execute(
-              HttpClientRequest.post(`${options.origin}${WEB_PREVIEW_ROUTE}`).pipe(HttpClientRequest.bodyJsonUnsafe(page)),
-            ).pipe(Effect.mapError(() => new PreviewRefused({})))
-            yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-            if (response.status !== 200) return yield* new PreviewRefused({ status: response.status })
-            return yield* response.json.pipe(
-              Effect.flatMap(decodeChecked),
-              Effect.mapError(() => new PreviewRefused({ status: response.status })),
-            )
-          }, (effect) =>
+          check: (page) =>
+            effect {
+              const response = try client.execute(
+                HttpClientRequest.post(`${options.origin}${WEB_PREVIEW_ROUTE}`).pipe(
+                  HttpClientRequest.bodyJsonUnsafe(page),
+                ),
+              ).pipe(Effect.mapError(() => new PreviewRefused({})))
+              try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+              if (response.status !== 200) throw new PreviewRefused({ status: response.status })
+              return try response.json.pipe(
+                Effect.flatMap(decodeChecked),
+                Effect.mapError(() => new PreviewRefused({ status: response.status })),
+              )
+            }
             // Interrupting the request aborts its fetch, so a stalled body stops too.
-            Effect.timeoutOrElse(effect, {
+            |> Effect.timeoutOrElse(%, {
               duration: options.within ?? PREVIEW_WITHIN,
               orElse: () => Effect.fail(new PreviewRefused({})),
-            })),
+            })
+            |> withSpan(%, "chat.web.preview.post"),
         })
-      }),
+      },
     )
 }

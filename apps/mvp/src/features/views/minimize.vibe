@@ -1,4 +1,3 @@
-import { Effect, Metric, Option } from "effect"
 import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import type { AppTemplate } from "./contract"
@@ -32,12 +31,16 @@ export const minimized = Metric.counter("smithers_views_minimized", {
  * Whether two views of `template` show the same thing: the same repository, whatever its case, and for a repository's
  * view the same ref and path (none is the default branch's root); a path's kind counts only when both name one.
  */
-export const sameTarget = (template: AppTemplate, a: Readonly<Record<string, unknown>>, b: Readonly<Record<string, unknown>>): boolean => {
+export const sameTarget = (
+  template: AppTemplate,
+  a: Readonly<Record<string, unknown>>,
+  b: Readonly<Record<string, unknown>>,
+): boolean => {
   if (String(a["repo"] ?? "").toLowerCase() !== String(b["repo"] ?? "").toLowerCase()) return false
   if (template === "issues") return true
   const kinds = [a["kind"], b["kind"]]
-  return a["ref"] === b["ref"] && (a["path"] ?? "") === (b["path"] ?? "") &&
-    (kinds.includes(undefined) || kinds[0] === kinds[1])
+  return a["ref"] === b["ref"] && (a["path"] ?? "") === (b["path"] ?? "")
+    && (kinds.includes(undefined) || kinds[0] === kinds[1])
 }
 
 const record = (
@@ -49,7 +52,13 @@ const record = (
   Effect.andThen(
     Metric.update(Metric.withAttributes(minimized, { returned, outcome }), 1),
     Effect.logWithLevel(outcome === "failed" ? "Warn" : "Info")("views.minimize").pipe(
-      Effect.annotateLogs({ returned, outcome, template, feature: "views", ...(reason === undefined ? {} : { reason }) }),
+      Effect.annotateLogs({
+        returned,
+        outcome,
+        template,
+        feature: "views",
+        ...(reason === undefined ? {} : { reason }),
+      }),
     ),
   )
 
@@ -71,21 +80,21 @@ export const opened = (viewId: string, template: AppTemplate, repo: string, retu
 
 /** Adds `target` to the home conversation unless it shows it already, once its views are on the device or the wait ends. */
 const leave = (target: Minimized) =>
-  Effect.gen(function* () {
-    const { views } = yield* ViewsStore
+  effect {
+    const { views } = try ViewsStore
     // A slow first sync is waited on only so long; one that fails leaves the device's views as if they were all.
-    const loaded = yield* Effect.result(Effect.timeoutOption(views.preload, HOME_VIEWS_WITHIN))
+    const loaded = try Effect.result(Effect.timeoutOption(views.preload, HOME_VIEWS_WITHIN))
     if (loaded._tag === "Failure") {
-      yield* Effect.logWarning("views.home.load").pipe(
+      try Effect.logWarning("views.home.load").pipe(
         Effect.annotateLogs({ feature: "views", outcome: "failed", errorCode: codeOf(loaded.failure) }),
       )
     }
-    const rows = yield* views.toArray
+    const rows = try views.toArray
     if (rows.some((row) => row.template === target.template && sameTarget(target.template, row.props, target.props))) {
-      return yield* record("chat", "kept", target.template)
+      return try record("chat", "kept", target.template)
     }
-    const flows = yield* FlowDispatch
-    const added = yield* Effect.result(
+    const flows = try FlowDispatch
+    const added = try Effect.result(
       target.template === "repo"
         ? flows.dispatch("ui/repo", target.props, { door: "button" })
         : flows.dispatch("ui/issues", target.props, { door: "button" }),
@@ -96,8 +105,8 @@ const leave = (target: Minimized) =>
       : added.success._tag === "Failed"
       ? String((added.success.error as { readonly _tag?: unknown })._tag)
       : undefined
-    yield* record("chat", reason === undefined ? "added" : "failed", target.template, reason)
-  })
+    try record("chat", reason === undefined ? "added" : "failed", target.template, reason)
+  }
 
 /**
  * Back to chat on a page that shows `target` full screen: the path to go to now. The page a view of the same repository
@@ -105,13 +114,15 @@ const leave = (target: Minimized) =>
  * background.
  */
 export const minimize = (target: Minimized) =>
-  Effect.gen(function* () {
-    const store = yield* ViewsStore
-    const origin = Option.getOrThrow(yield* store.opened.get(OPENED))
-    if (origin.returnTo !== null && origin.template === target.template && origin.repo === target.props.repo.toLowerCase()) {
-      yield* record("origin", "returned", target.template)
+  effect {
+    const store = try ViewsStore
+    const origin = Option.getOrThrow(try store.opened.get(OPENED))
+    if (
+      origin.returnTo !== null && origin.template === target.template && origin.repo === target.props.repo.toLowerCase()
+    ) {
+      try record("origin", "returned", target.template)
       return origin.returnTo
     }
-    yield* Effect.forkIn(leave(target), store.scope, { startImmediately: true })
+    try Effect.forkIn(leave(target), store.scope, { startImmediately: true })
     return CHAT_PATH
-  }).pipe(Effect.withSpan("views.minimize"))
+  }.pipe(Effect.withSpan("views.minimize"))
