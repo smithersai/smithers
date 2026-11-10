@@ -943,10 +943,20 @@ Tool fix: `verify/inventory.cjs` parsed the gitignored `src/assets/wiki.generate
 (typecheck and test run it), overflowed the compiler pipe (ENOBUFS) and failed after any build. It now skips
 `*.generated.vibe`; regression in `verify/inventory_test.cjs`, red first.
 
+Second session (main `1e4176bc`): the cases that failed only under load are deterministic. The refused-wait case
+in `signinEdges` raced a real 1,000 ms due time; `b6e944bf` landed the same fix first (GitHub answers the first
+check "pending" and refuses every later poll; the case asserts two polls), and this lane kept it. `mcp.test` hosts the same server in process behind a
+`ChildProcessSpawner` (`test/support/mcpInProcess.vibe`), so only the discovery case starts the built server; at
+load 169 the spawned cases had missed the client's 10-second initialization deadline. Suites that sign in load
+`@smthrs/platform-node` (about 600 modules) at collection rather than inside a case. Login and logout render,
+including a refused mock sign-out and a refusal's own sentence, are covered in process (`commandsEdges`); the built
+CLI case starts two processes instead of three. `commands.vibe` and `sessionFlow.vibe` are at 100% in the full run.
+
 | Left | Why |
 | --- | --- |
-| `src/surfaces/signin.vibe:101`, `:129`; `sessionFlow.vibe:70`; `commands.vibe:393` | Covered by `signinEdges` and `cli.test` cases that timed out in the full run at load 111; each file passes alone. `signin.vibe:101` (`stored?.login ?? ""`) is reached only if the session vanishes between its write and read |
-| `src/surfaces/mcp.vibe:36`, `:38` | `tapCause` never sees an interruption from outside, and closing stdin, a failing or dying stdin or stdout, malformed input and broken configuration all end as an interruption or a typed failure. Kept: they report a defect on stderr if one ever arrives |
+| `src/surfaces/signin.vibe:101` | `stored?.login ?? ""` is reached only if the session vanishes between its write and its read |
+| `src/surfaces/signin.vibe:129` | The durable wait's host failing mid-sign-in (a check's own failures are caught as `"failed"`). Every settings write re-runs `chmod 0700`, so no file fault holds until the wait; `PollExhausted` needs a grant that outlives 3,600 one-second polls. The only caller maps any other error to the same sentence; the `mapError` keeps `signIn`'s error a `SignInFailed` |
+| `src/surfaces/mcp.vibe:36`, `:38` | Effect skips every failure handler on a fiber that is itself interrupted (`effect/src/internal/core.ts`, the `getCont(contE)` loop), and closing stdin interrupts the server's own fiber; a dying stdin leaves the server running. The arms answer an interruption or defect joined from a child fiber, which the current `McpServer` doesn't produce. Kept: they report a defect on stderr if one arrives |
 | `src/history/tools.vibe:93` | The implicit no-match path after an exhaustive `match`; no type-correct value reaches it. VibeLang reproduction `coverage-exhaustive-match` (nyc-01 `~/vl/vibelang-bugs/`); an emitted-output change needs Will |
 | `src/history/mythical.vibe:562` | `rank < 0` after the epic check; kept for the history machine's Dafny proof |
 | `src/history/flows.vibe:213` | The provider writes a negative count (`[70, -21]`) for the implicit else; plain JS and in-process VibeLang controls count correctly. Reproduction `coverage-negative-branch`, for the provider patch's owner |
