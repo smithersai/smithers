@@ -57,8 +57,15 @@ const dirtyObjects = (root: unknown): Set<object> => {
     pending.push(root)
   }
   for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
-    if (next instanceof Set || next instanceof Map) dirty.add(next)
-    for (const child of children(next)) {
+    let kids: Array<unknown>
+    try {
+      kids = children(next)
+      if (next instanceof Set || next instanceof Map) dirty.add(next)
+    } catch {
+      // An object that cannot be inspected, such as a revoked proxy, is a leaf.
+      kids = []
+    }
+    for (const child of kids) {
       if (!isObject(child)) continue
       const known = parents.get(child)
       if (known === undefined) {
@@ -116,7 +123,15 @@ const rank = (value: unknown, path: Array<object> = []): string => {
       return `F${JSON.stringify(value.name)}`
   }
   if (value === null) return "z"
-  const object = value as object
+  try {
+    return rankObject(value as object, path)
+  } catch {
+    // An object that cannot be inspected, such as a revoked proxy, has no rank.
+    return "x"
+  }
+}
+
+const rankObject = (object: object, path: Array<object>): string => {
   const back = path.lastIndexOf(object)
   if (back !== -1) return `^${path.length - back}`
   if (object instanceof Date) return `d${object.getTime()}`

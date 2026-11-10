@@ -139,6 +139,18 @@ describe("sortCollections", () => {
     expect(sorted).toContain(values[16])
   })
 
+  it("treats an object it cannot inspect as an unranked leaf, and never throws", () => {
+    const revoked = Proxy.revocable({}, {})
+    revoked.revoke()
+    const overSet = new Proxy(new Set(["b", "a"]), {})
+    const value = { revoked: revoked.proxy, overSet }
+    expect(sortCollections(value)).toBe(value)
+    const sorted = sortCollections(new Set<unknown>(["b", revoked.proxy, "a"]))
+    const out = [...sorted]
+    expect(out.slice(0, 2)).toEqual(["a", "b"])
+    expect(out[2] === revoked.proxy).toBe(true)
+  })
+
   it("returns the value itself when it reaches no collection", () => {
     const value = { a: [1, { b: new Date(0) }], c: "d" }
     expect(sortCollections(value)).toBe(value)

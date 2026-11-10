@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 
+import { sortCollections } from "@smthrs/canonical"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { type DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import { ExecutionIdentityConflict } from "@smthrs/flow/FlowRuntime"
@@ -349,9 +350,13 @@ const requestCancellation = (memory: Memory, executionId: string): ReadonlyArray
  * target that names a dependency. The constructor also belongs to the
  * schema object itself, so a flow authored against a second `effect`
  * instance is rebuilt by the instance that owns it.
+ *
+ * The copy is made from the value with every `Set` and `Map` sorted
+ * (`sortCollections`), the order `Flow.payloadSnapshot` hashes and stores, so
+ * a body sees exactly what its identity covers (VIP-44).
  */
 const snapshot = (flow: Flow.Any, value: unknown): Effect.Effect<unknown> =>
-  Effect.orDie(flow.payloadSchema.makeEffect(value as never))
+  Effect.orDie(flow.payloadSchema.makeEffect(sortCollections(value) as never))
 
 const isPlainObject = (value: object): boolean => {
   const prototype = Object.getPrototypeOf(value)
@@ -396,13 +401,12 @@ const samePayload = (flow: Flow.Any, left: unknown, right: unknown): Effect.Effe
   Effect.gen(function*() {
     // A declared live reference need not have a JSON codec. Codec
     // construction itself can throw, so include it in the fallback.
-    const encoded = yield* Effect.exit(Effect.suspend(() => {
-      const encode = Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))
-      return Effect.zip(encode(left as never), encode(right as never)) as Effect.Effect<
-        [Schema.Json, Schema.Json],
-        Schema.SchemaError
-      >
-    }))
+    const encoded = yield* Effect.exit(Effect.suspend(() =>
+      Effect.zip(
+        Flow.payloadSnapshot(flow.payloadSchema, left),
+        Flow.payloadSnapshot(flow.payloadSchema, right)
+      ) as Effect.Effect<[Schema.Json, Schema.Json], Schema.SchemaError>
+    ))
     return Exit.isSuccess(encoded)
       ? sameShape(encoded.value[0], encoded.value[1], 64)
       : sameShape(left, right, 64)

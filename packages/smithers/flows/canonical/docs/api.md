@@ -210,6 +210,8 @@ payload codec: sort, `Schema.toCodecJson`, `Canonical`, SHA-256.
 - It copies only objects that reach a collection; everything else keeps its
   reference. Cycles and shared references survive. Accessors are never
   invoked. The input is never mutated.
+- It never throws. An object it cannot inspect, such as a revoked proxy, is a
+  leaf and ranks after every value it can inspect.
 
 ```ts
 import { sortCollections } from "@smthrs/canonical"

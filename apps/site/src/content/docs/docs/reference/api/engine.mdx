@@ -193,7 +193,7 @@ Creates the initial `FlowInstance` state for one flow execution. A runtime calls
 - **Since:** `0.1.0`
 - **Related:** `FlowEngine.makeUnsafe`
 
-The volatile in-memory implementation of the `FlowRuntime` port, for tests and local development where durability is not needed. It retains completed executions, action settlements, deferred results, and clocks until the layer scope closes, and it has no eviction option. It rebuilds a submitted payload through the flow's own payload schema constructor at admission and again on every re-drive: structs, arrays, and records the schema declares are copied, and values the schema declares opaque are shared by reference. Same-key in-flight actions share one settlement, so a concurrent duplicate dispatch waits instead of executing twice. Registrations of one flow tag stack, and the last still-open one serves.
+The volatile in-memory implementation of the `FlowRuntime` port, for tests and local development where durability is not needed. It retains completed executions, action settlements, deferred results, and clocks until the layer scope closes, and it has no eviction option. It rebuilds a submitted payload through the flow's own payload schema constructor at admission and again on every re-drive: structs, arrays, and records the schema declares are copied, and values the schema declares opaque are shared by reference. Every `Set` and `Map` is sorted first, so the body sees the order its identity hashes. Same-key in-flight actions share one settlement, so a concurrent duplicate dispatch waits instead of executing twice. Registrations of one flow tag stack, and the last still-open one serves.
 
 ### `FlowEngine.Lineage`
 

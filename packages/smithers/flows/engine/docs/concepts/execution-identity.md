@@ -39,10 +39,12 @@ conflicting reuses fail from `Flow.execute` with typed `ExecutionIdentityConflic
 | `"parent"`  | A durable row with the id belongs to another predecessor round.                                                          |
 
 For JSON-encodable payloads, `layerMemory` encodes both rebuilt snapshots
-through `Schema.toCodecJson` of the requesting declaration's payload schema
-and compares the encoded values structurally. Equal `Date` and `Schema.Class`
-values therefore join even when submitted as fresh instances. Object key order
-does not matter; array order and length do.
+with `Flow.payloadSnapshot` (every `Set` and `Map` sorted, then
+`Schema.toCodecJson` of the requesting declaration's payload schema) and
+compares the encoded values structurally. Equal `Date` and `Schema.Class`
+values therefore join even when submitted as fresh instances, and so do equal
+sets and maps inserted in different orders. Object key order does not matter;
+array order and length do.
 
 If codec construction or encoding fails, memory compares the rebuilt snapshots
 instead: arrays and plain objects (including null-prototype objects accepted

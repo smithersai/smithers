@@ -89,7 +89,8 @@ handler that mutated the value it received can reach the value a later drive
 runs on. The constructor is the copier because it is the only description of
 the payload the engine has: it rebuilds each struct, array, and record the
 schema declares, and hands back by reference the values the schema declares
-opaque. Same-key in-flight actions share one settlement, so a concurrent
+opaque. It copies the payload after `sortCollections`, so every `Set` and
+`Map` reaches the body in the sorted order its identity hashes (VIP-44). Same-key in-flight actions share one settlement, so a concurrent
 duplicate dispatch waits rather than executing twice.
 
 [`@smthrs/engine-store`](/api/engine-store) implements the same seam over a
