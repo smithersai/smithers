@@ -1,6 +1,6 @@
 // @vitest-environment node
 // A signed-in person's issue and wiki requests while GitHub is unreachable: reads answer "unavailable" within the
-// Accounts read deadline (decision 0030), and writes without a GitHub connection ask them to connect. Also the sign-in
+// Accounts read boundaries (decision 0030: issues 13 s, wiki 6 s), and writes without a GitHub connection ask them to connect. Also the sign-in
 // start that clears an abandoned sign-in. The Accounts object on a loopback server; GitHub is an offline HttpClient
 // (test/support/accountsWorld.vibe), an injected faulty service.
 import { it, expect } from "@effect/vitest"
@@ -49,12 +49,14 @@ effect function offlineJourney() {
         [401, { reason: "connect", unwritten: true }],
       ])
       expect(retained).toEqual({ page: "benchmarks", text: "new" })
-      expect(Math.max(issuesRead.ms, wikiRead.ms)).toBeLessThan(10_000)
+      // Each read answers inside its own Accounts boundary (0030): issues 13 s, wiki 6 s, queue time included.
+      expect(issuesRead.ms).toBeLessThan(13_000)
+      expect(wikiRead.ms).toBeLessThan(6_000)
     })
   }
 }
 
 it("a signed-in person's issue and wiki requests with GitHub unreachable", { timeout: 600_000 }, async ({ bench }) => {
   const result = await workload(bench, "accounts-github-offline", "async", () => runPromise(scoped(effect { provide NodeHttpServer.layerTest { try offlineJourney() } }))).run(slow)
-  await runPromise(artifact("accounts-github-offline", "Vitest built-in bench; the Accounts object on a real loopback server over in-memory object storage, a fresh object per sample, with GitHub unreachable (an offline HttpClient). A seeded abandoned sign-in row, a sign-in start that clears it, a person's OAuth sign-in, then their GET and POST /api/issues and /api/wiki without a GitHub connection. Checks the pruned row, each status and reason, the retained wiki draft, and that both reads answer within 10 s.", ["GitHub is an offline client: no GitHub latency. Reads measure the Accounts read deadline, not a GitHub answer.", "In-memory storage, not Durable Object SQLite.", "The person has no GitHub connection, so writes stop before GitHub."], result))
+  await runPromise(artifact("accounts-github-offline", "Vitest built-in bench; the Accounts object on a real loopback server over in-memory object storage, a fresh object per sample, with GitHub unreachable (an offline HttpClient). A seeded abandoned sign-in row, a sign-in start that clears it, a person's OAuth sign-in, then their GET and POST /api/issues and /api/wiki without a GitHub connection. Checks the pruned row, each status and reason, the retained wiki draft, and that the issue read answers within its 13 s boundary and the wiki read within 6 s (0030).", ["GitHub is an offline client: no GitHub latency. Reads measure the Accounts read deadline, not a GitHub answer.", "In-memory storage, not Durable Object SQLite.", "The person has no GitHub connection, so writes stop before GitHub."], result))
 })

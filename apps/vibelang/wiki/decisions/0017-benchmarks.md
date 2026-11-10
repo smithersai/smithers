@@ -319,6 +319,13 @@ injected faulty service: each read answers "unavailable" in about 6 s, and write
 `connect`. The exclusion of these routes from every benchmark above no longer applies to their refusal paths; their
 GitHub success paths still wait for a GitHub credential.
 
+**Finding: an unreachable GitHub now holds a signed-in issue read 12 s (2026-11-10, lane vl-bench2).** After `19d7afac`
+raised the issue read's engine deadline to 12 s and its Accounts boundary to 13 s (0030, cold reads), the same
+workload's issue read retries GitHub's immediate transport failure until the 12 s deadline: one sample took 12,091 ms,
+against about 5 s before. The wiki read still answers at its 5 s deadline. The benchmark's former shared 10 s bound
+failed; it now checks each route's own 0030 boundary, issues 13 s and wiki 6 s. Answering a connection failure before the
+deadline is a read-policy change for 0030's owner, so this lane records it and changes no product code.
+
 **Receipt (2026-11-10, lane vl-bench2, `f52ffeba`).** `pnpm bench:coverage`: 70/70 files and 148/148 tests pass; the
 strict per-file gate exits 1 for 102 files. Merged benchmark-only coverage is 6,989/7,576 `src/` + `worker/` lines
 (92.25%) and 2,010/2,299 `worker/` lines (87.43%). Accounts went from 82 uncovered lines to 8 (the read-queue
