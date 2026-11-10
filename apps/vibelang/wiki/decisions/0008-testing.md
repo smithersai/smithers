@@ -373,7 +373,7 @@ Hosted-broker main is independently measured by 54 benchmark files / 128 tests; 
 Hosted-broker main is independently measured by 54 benchmark files / 128 tests; 5,827/7,036 src/worker lines (82.82%), with 95 files below unchanged strict thresholds. Cookie admission and the broker-unavailable/credential-Connect fault contract are benchmarked without real OAuth. No new app tool or dependency.
 
 **Proof harness, lane vl-proveall2 (0018).** `verify/harness_test.py` gains a regression that a marked generic function is
-found and proved; 75 executable mutations join `verify:broken` in `verify/web_mutations.py`. No new tool or dependency.
+found and proved; 99 executable mutations join `verify:broken` in `verify/web_mutations.py`. No new tool or dependency.
 
 **Coverage boundary continuation (0016, 2026-11-10).** The fixture factories and sandbox accept injected faulty
 Effect engines; real flows retain their typed errors, and defects keep their whole cause. Both specification

@@ -21,12 +21,12 @@ const shellBoundaries = {
 
   'worker/Reply.vibe': 'Threads the proved Reply start/compose/settle model through actual Actions and calls the proved complete event router/completion choices; invalid telemetry retains prior valid spend and cannot publish success. Native SDK payload projection and effect orchestration remain unproved; native safe-integer observations, AgentAction internal event replay, DoneText/provider decoding and date/prompt formatting remain host boundaries.',
   'worker/Objects.vibe': 'The live dispatcher uses the proved scan/attempt/done transition; only a successful engine start writes a mark. Intent/storage codecs, engine execution, alarms and runtime composition remain host boundaries.',
-  'src/web/theatre.vibe': 'Calls the proved selector, speech action, audio identity, outcome and focus-index policies. DOM geometry and native number subtraction, speech APIs, persisted JSON decoding and host execution remain boundaries.',
+  'src/web/theatre.vibe': 'Calls the proved selector, speech action, audio identity, outcome, focus-index and spotlight-box policies. DOM geometry reads, native number subtraction in the box size, speech APIs, persisted JSON decoding and host execution remain boundaries.',
   "src/history/Sequencer.vibe": "Calls the proved history machine, rank validation, capacity guard and foldTarget, the proved stackDecision plan step, pair-safe fold title and first epic by title, and the followDecision replay cut. Decodes storage/replay/follow/bootstrap with redacted errors. The `Mythical:` trailer regexp (regexp.ts), locking, store-before-publish and PubSub delivery remain runtime boundaries.",
   'src/history/schemas.vibe': 'Rank bounds call proved validRank/validRanks; Schema safe-integer and JSON decoding remain runtime boundaries (unsafe-integer.ts, json-codec.ts).',
   'worker/HistoryObject.vibe': 'Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved.',
   'src/web/main.vibe': 'Calls proved six-field surface/tour projections, pane/media/response guards, scroll/focus policies and conversation transitions. Full Model composition, account/People transitions, numeric counter domains, retry selection and command execution remain unproved.',
-  'src/web/viewport.vibe': 'Calls the proved pause, scroll, follow and key steps in screenDecision. Host boundaries: DOM reads and writes, touch lookup and the PageUp distance (Math.floor).',
+  'src/web/viewport.vibe': 'Calls the proved pause, scroll, follow, key, page-scroll distance, active, scrollable and touch steps in screenDecision. Host boundaries: DOM reads and writes and the touch lookup by identifier.',
   'src/core/mockReplies.vibe': 'First matching script is proved in mockDecision; Unicode casing and slicing chunks remain unproved (unicode-case.ts, slice-clamp reproduction).',
   'src/core/wire.vibe': 'Length and method/subroute admission are proved in protocolDecision; URI codecs remain unproved (uri-codec.ts).',
   'src/core/LiveFactory.vibe': 'HTTP outcome choice is proved in protocolDecision; HTTP/SSE and Schema codecs remain runtime boundaries (json-codec.ts).',
@@ -68,7 +68,7 @@ const boundaries = {
   'src/web/modelDecision.vibe': 'Web update decisions: account failure text and retry routing, sign-in and role gates, people pane sizing, account-change and grant detection, stale-response fences for actions, issues and wiki, monotone actions clock, bounded slash highlight, sandbox minute notices and the running transition; proved (0018 batch 21).',
   'worker/replyProgressDecision.vibe': 'Complete event-kind routing, ignored/non-text identity transitions, closed bounded token invariant, zero base/exact sum recurrence, native-validation admission flags, text/retry/failure frames, latched malformed telemetry and completion precedence; proved over the established integer domain. Native Number.isSafeInteger observations and provider/DoneText decoding are host boundaries (safe-usage-integer.ts).',
   'worker/liveDispatchDecision.vibe': 'Proved exact scan cursor and first-unmarked selection, no skipped unmarked post, terminal idempotency and one engine attempt per invocation, including refusal; storage-mark truth and engine execution are host boundaries.',
-  'src/web/theatreDecision.vibe': 'Proved exact target selectors, speech cancellation/pause/resume/replacement priority, no duplicate speech on redraw, audio identity invalidation, bounded outcome labels and keyboard focus wrapping; native speech, DOM and persistence remain host boundaries.',
+  'src/web/theatreDecision.vibe': 'Proved exact target selectors, speech cancellation/pause/resume/replacement priority, no duplicate speech on redraw, audio identity invalidation, bounded outcome labels, keyboard focus wrapping and the spotlight box clamps; native speech, DOM and persistence remain host boundaries.',
   'src/web/startupDecision.vibe': 'Proved explicit query precedence, preference writes, authoritative role-list membership/default, saved tutorial controls and the opposite-mode switch; native URL/storage effects and storage-failure fallback remain host boundaries.',
   'src/web/viewDecision.vibe': 'Proved refusal/status labels, entry display flags, send/transition choices, sandbox pane/response/action guards and media failure/motion choices. Rendering, asset lookup and actual DOM execution remain host boundaries.',
   "src/surfaces/commandDecision.vibe": "Proved own-post/reply correlation, exact ordered event-number accumulation, text/restart/terminal state, outcome and error mapping, and every command argument decision (plan kind/target, history reads, unknown epic, total, issue detail/resume, write refusal, wiki page, run wait, action failure; 0018 third-lane batch 1). UUID generation, streams and rendering are in commands.vibe.",
@@ -150,6 +150,10 @@ const functionBoundaries = {
   "src/web/main.vibe:knownWikiSource": "Calls the proved knownSource (wikiEditorDecision): the first observed copy of the page, else the embedded one; beginWikiEdit reads it only for a wikiEditable page, which is always embedded.",
   "src/web/main.vibe:wikiDraft": "Translation of a waiting WikiRequest into the proved submit step's plain draft; an absent recovery key reads as empty.",
   "src/web/main.vibe:wikiRequest": "Translation of the proved submission into the flow's WikiRequest; an empty recovery key is omitted (test/inlineArms.test.vibe).",
+  "src/web/theatreDecision.vibe:measuresMenu": "Specification restated: only the composer also frames the menu. Native element selection and geometry reads stay in the host.",
+  "src/web/screenDecision.vibe:viewportActive": "Specification restated: an unhosted viewport is active; a hosted one requires chat with the palette closed. Native DOM selectors establish those observations.",
+  "src/web/screenDecision.vibe:pageScrollable": "Specification restated: an unhosted page or content taller than its viewport can scroll. Native dimensions establish those observations.",
+
   "src/web/actionModel.vibe:completions": "Calls the proved slashMatches (modelDecision): exactly the commands whose text starts with the draft's first word while the menu is open and that word starts with /; none otherwise. Reading the draft's first word is a native regexp outside the proof.",
   "src/core/sandboxMeter.vibe:meterDelayMilliseconds": "Calls the proved meter delay (sandboxDecision meterDelay): between 1 ms and one interval, and before the interval exactly the first whole millisecond at which running × elapsed reaches the remaining allowance.",
   "src/history/seed.vibe:areaOf": "Calls the proved first area naming the scope (seedDecision areaIndex); the scope regexps stay boundaries (regexp.ts).",
@@ -189,6 +193,15 @@ const functionBoundaries = {
   "src/history/roles.vibe:atLeast": "Calls the shared proved role threshold; validated roles use the existing authoritative standing order.",
   "src/history/wire.vibe:statusOf": "Calls proved exact forbidden/unavailable/other refusal HTTP status mapping; no codec decision here.",
   "src/history/flows.vibe:signature": "Calls proved exact name/agent signature projection.",
+  "src/web/historyApp.vibe:pageOf": "Calls the proved epicIndex (historyDecision); the indexed read of the page is the result.",
+  "src/web/historyApp.vibe:shownCommit": "Calls the proved commitShown; the commit-hash regexp test stays a host boundary (regexp.ts).",
+  "src/web/historyApp.vibe:hashReads": "Calls the proved hashRead; the hash regexp tests (regexp.ts) and Command construction stay host boundaries.",
+  "src/web/historyApp.vibe:shownReads": "Calls the proved hashRead, readOffsets and filterSearches; collecting Command values is Foldkit host work.",
+  "src/web/historyApp.vibe:update": "Each arm calls its proved historyDecision guard or frame (outlineArrival, commitApplies, matchesApply, eventArrival, navigatedFrame and the other nine-field frames, toggleEpic, epicOpenReads, validPlanField, planFields, resolvedRole, initialEpic) and spreads it over the model; the HistoryMessage match, the model spread and Command construction are Foldkit types LemmaScript cannot read.",
+  "src/web/historyApp.vibe:reasonOf": "Calls the proved failureReason; telling Refused from Unavailable is the Effect error channel.",
+  "src/web/historyApp.vibe:execute": "A read the Mythical service could not answer (a caught failure) answers FailedRead, else its Got message; a write calls the proved wroteCleanly. Service calls and Schema message construction are host boundaries.",
+  "src/web/historyApp.vibe:settledMessage": "Calls the proved wroteCleanly; Schema message construction is host work.",
+  "src/web/historyApp.vibe:subscriptions": "Calls the proved closesDialog; DOM event streams and the location hash are host reads.",
   "src/web/historyApp.vibe:allowed": "Calls the shared proved role threshold; no duplicate role ranking.",
   "src/web/historyView.vibe:badgeOf": "Calls proved exact commit-state badge mapping; HtmlBuilder execution is outside this label policy.",
   "src/web/historyView.vibe:refusalText": "Calls proved exact product refusal labels and unknown-label preservation.",
@@ -253,25 +266,25 @@ function containsEffects(node) {
     && ['scrollTop', 'scrollLeft', 'innerHTML', 'textContent'].includes(node.left.property?.name)) return true;
   return children(node).some(containsEffects);
 }
+// The contract block LemmaScript reads sits directly above its function: `//@` lines, optionally after a doc comment.
+// `pnpm verify` checks every file holding a `//@ verify` directive (verify/sources.py), so such a function is proved.
+const VERIFY = /^[ \t]*\/\/@[ \t]+verify\b/;
+function underVerify(lines, line) {
+  for (let i = line - 2; i >= 0 && /^[ \t]*\/\/@/.test(lines[i]); i--) if (VERIFY.test(lines[i])) return true;
+  return false;
+}
 function inventorySource(file, source) {
   const rel = path.relative(app, file);
   const parsed = spawnSync(path.join(app, 'node_modules/.bin/vibelang'), ['--estree', file],
-    { input: source, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+    { input: source, encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024 }); // The generated wiki's AST passed 16 MiB.
   if (parsed.error || parsed.status !== 0) throw Error(`${rel}: compiler AST failed: ${parsed.error?.message ?? parsed.stderr}`);
   const result = JSON.parse(parsed.stdout);
   if (result.error || !result.ast) throw Error(`${rel}: compiler parse failed: ${result.error?.message ?? 'missing AST'}`);
   const rows = [];
-  // A function whose leading `//@` block holds LemmaScript's verify directive (the harness's own pattern, sources.py)
-  // is proved by `pnpm verify`, with the callbacks inside it.
-  const directive = /^[ \t]*\/\/@[ \t]+verify\b/;
-  function markedAt(start) {
-    const before = source.slice(0, start).split('\n');
-    for (let i = before.length - 2; i >= 0 && /^[ \t]*\/\/@/.test(before[i]); i--) if (directive.test(before[i])) return true;
-    return false;
-  }
-  function walk(node, parent, parents = [], provedBy = false) {
+  const lines = source.split('\n');
+  function walk(node, parent, parents = [], provedParent = false) {
     let next = parents;
-    let proved = provedBy;
+    let proved = provedParent;
     if (functions.has(node.type) && node.body) {
       // ESTree ranges index the ORIGINAL JavaScript string (UTF-16). Projection
       // mappings instead use UTF-8 bytes and include generated $gen wrappers.
@@ -290,8 +303,8 @@ function inventorySource(file, source) {
       // effect functions do not turn a plain enclosing function into an Effect.
       const header = source.slice(range[0], node.body.range[0]);
       const effectful = /^(?:(?:export|default|static|public|private|protected|override)\s+)*effect\b/.test(header.trim()) || node.async || containsEffects(node.body);
-      const category = effectful ? 'effectful shell' : (containsLogic(node.body) || boundaries[rel] ? 'pure logic' : 'wiring');
-      proved = provedBy || (parents.length === 0 && markedAt(range[0]));
+      proved = provedParent || (parents.length === 0 && underVerify(lines, line));
+      const category = proved ? 'proved' : effectful ? 'effectful shell' : (containsLogic(node.body) || boundaries[rel] ? 'pure logic' : 'wiring');
       const boundary = boundaries[rel];
       const provedBoundary = proved && boundary && !boundary.startsWith('Proved') ? 'Proved: ' + boundary : boundary;
       const why = functionBoundaries[`${rel}:${parents[0] ?? name}`] || provedBoundary || shellBoundaries[rel]

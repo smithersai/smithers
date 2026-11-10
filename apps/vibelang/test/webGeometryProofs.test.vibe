@@ -1,0 +1,29 @@
+// Native boundary checks for the real-valued geometry and the integer viewport-distance proofs.
+import { expect, it } from "@effect/vitest"
+import { keyScrollTop } from "../src/web/screenDecision.vibe"
+import { theatreBox } from "../src/web/theatreDecision.vibe"
+
+it("PageUp rounds down at the forty-pixel boundary and at the proved integer limit", () => {
+  expect([0, 45, 46, 47, 801, 1125899906842623].map(height => keyScrollTop(true, height)))
+    .toEqual([-40, -40, -40, -41, -700, -985162418487295])
+  expect(keyScrollTop(false, 801)).toBe(-40)
+})
+
+it("the spotlight preserves fractional target edges and includes every menu edge", () => {
+  const rect = { top: 72.5, left: 16.25, right: 710.75, bottom: 450.25 }
+  const menu = { top: 61.5, left: 12.5, right: 900.25, bottom: 500.5 }
+  expect(theatreBox(rect, true, menu, false, 1024, 768))
+    .toEqual({ x: 16.25, y: 72.5, width: 694.5, height: 377.75 })
+  expect(theatreBox(rect, true, menu, true, 1024, 768))
+    .toEqual({ x: 12.5, y: 61.5, width: 887.75, height: 439 })
+})
+
+it("missing targets use defaults and oversized targets leave room for the controls", () => {
+  const rect = { top: -20, left: -10, right: 1200, bottom: 900 }
+  expect(theatreBox(rect, false, rect, false, 1024, 768))
+    .toEqual({ x: 16, y: 80, width: 992, height: 200 })
+  expect(theatreBox(rect, true, rect, false, 1024, 768))
+    .toEqual({ x: 8, y: 60, width: 1008, height: 488 })
+  expect(theatreBox(rect, true, rect, false, 10, 10))
+    .toEqual({ x: 8, y: 60, width: 1, height: 1 })
+})

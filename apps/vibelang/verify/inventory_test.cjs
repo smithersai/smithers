@@ -22,7 +22,7 @@ test('real flows and extracted selection retain original declarations without ge
   assert.equal(rows.find(row => row.label === 'endsTour')?.line, expectedLine);
   assert.equal(rows.find(row => row.label === 'unanswered')?.category, 'wiring');
   const decision = path.join(app, 'src/core/conversation.vibe');
-  assert.equal(inventorySource(decision, fs.readFileSync(decision, 'utf8')).find(row => row.label === 'unansweredIndexes')?.category, 'pure logic');
+  assert.equal(inventorySource(decision, fs.readFileSync(decision, 'utf8')).find(row => row.label === 'unansweredIndexes')?.category, 'proved');
   assert.equal(rows.filter(row => row.label.startsWith('unanswered/')).length, 0);
   assert.equal(rows.some(row => /\$gen|callback@85\/callback@85/.test(row.label)), false);
 });
@@ -37,6 +37,32 @@ test('original effect declarations, blocks, constructors, methods and getters ar
   const rows = inventorySource(path.join(app, 'inventory-fixture.vibe'), source);
   assert.deepEqual(rows.map(row => row.label), ['work', 'action', 'callback@3', 'constructor', 'value', 'run', 'read', 'write']);
   assert.deepEqual(rows.filter(row => row.category === 'effectful shell').map(row => row.label), ['work', 'action', 'callback@3', 'run', 'read', 'write']);
+});
+
+test('a source whose compiler AST is larger than 16 MiB is still inventoried', () => {
+  // The generated wiki module (src/assets/wiki.generated.vibe) crossed 16 MiB of AST JSON on 2026-11-10.
+  const source = `export const big = "${'a'.repeat(9 * 1024 * 1024)}"\nexport function positive(x: number) { return x > 0 }\n`;
+  const rows = inventorySource(path.join(app, 'inventory-fixture.vibe'), source);
+  assert.deepEqual(rows.map(({ label, line }) => ({ label, line })), [{ label: 'positive', line: 2 }]);
+});
+
+test('a function directly under a //@ verify contract, and its callbacks, are proved; others are not', () => {
+  const source = '/** Doc. */\n//@ verify\n//@ ensures \\result == (x > 0)\nexport function positive(x: number): boolean {\n' +
+    '  return [x].some(v => v > 0)\n}\n' +
+    'export function negative(x: number): boolean { return x < 0 }\n' +
+    '//@ verify\nexport function first(x: number): number { return x }\n' +
+    'const gap = 1\n' +
+    'export function after(x: number): boolean { return x > gap }\n' +
+    '/** Mentions //@ verify in prose. */\nexport function prose(x: number): boolean { return x > 1 }\n';
+  const rows = inventorySource(path.join(app, 'inventory-fixture.vibe'), source);
+  assert.deepEqual(rows.map(({ label, category }) => ({ label, category })), [
+    { label: 'positive', category: 'proved' },
+    { label: 'positive/callback@5', category: 'proved' },
+    { label: 'negative', category: 'pure logic' },
+    { label: 'first', category: 'proved' },
+    { label: 'after', category: 'pure logic' },
+    { label: 'prose', category: 'pure logic' },
+  ]);
 });
 
 test('no function marked //@ verify is labelled unproved, and a restated policy says so', () => {

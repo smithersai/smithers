@@ -232,3 +232,9 @@ Machine admission, receipt and checkpoint policies now delegate to fourteen `mac
 third-lane batch 15), with forty body mutations and failed-first native cases. Contracts keep the integer-domain
 boundary explicit; storage/locks/container execution and once-only delivery remain runtime obligations. Final
 extended proof and mutation receipts are pending; the earlier eight kernels passed eighteen contract rejections.
+
+**Viewport and spotlight completion (0018, lane vl-proveall2).** Proved PageUp distance, viewport activation,
+scrollability and tracked-touch decisions now drive the host. The spotlight specifies all four edge formulas and
+minimum dimensions over finite real coordinates; native IEEE subtraction remains outside that theorem.
+LemmaScript lowers real min/max and mixed real/integer conditionals with regression fixtures. The inventory
+distinguishes contracted functions from still-unproved logic; the proof gate checks those contracts independently.

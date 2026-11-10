@@ -1,4 +1,4 @@
-import { nearBottom, pauseViewport, scrolledViewport, followViewport, keyGesture, wheelPauses, touchPauses, type Viewport } from "./screenDecision.vibe"
+import { nearBottom, pauseViewport, scrolledViewport, followViewport, keyGesture, keyScrollTop, wheelPauses, viewportActive, pageScrollable, touchMoved, type TouchMark, type Viewport } from "./screenDecision.vibe"
 
 /** A scroll event measures the reader's position, independently of later transcript growth. */
 export function atBottom(document: Document): boolean {
@@ -6,19 +6,21 @@ export function atBottom(document: Document): boolean {
   return nearBottom(viewport.scrollHeight, viewport.clientHeight, document.defaultView?.scrollY ?? 0)
 }
 
+/** The touch read when none is tracked; `touchMoved` reads it only when told one is. */
+const NO_TOUCH: TouchMark = { id: 0, y: 0 }
+
 /** One subscription host owns this permission. Invalidate it on the native input stack, before queued messages,
  * renders or afterCommit continuations can run. A model carrying an older intent can never authorize a scroll.
  * The proved `screenDecision` steps choose every transition; this host only reads and writes the DOM. */
 export function transcriptViewport(page?: Document) {
   let viewport: Viewport = { intent: 0, paused: false, previousY: page?.defaultView?.scrollY ?? 0 }
-  let touch: { id: number; y: number } | undefined
-  const active = () => !page || (
-    page.querySelector(".vl-app[data-surface='chat']") !== null &&
-    page.querySelector("#vl-palette[data-state='open']") === null
-  )
+  let touch: TouchMark | undefined
+  const active = () => viewportActive(page !== undefined,
+    page?.querySelector(".vl-app[data-surface='chat']") != null,
+    page?.querySelector("#vl-palette[data-state='open']") != null)
   const position = () => page?.defaultView?.scrollY ?? 0
   // An upward gesture on a page too short to scroll moves nothing, so it is no reason to stop following.
-  const scrollable = () => !page || page.documentElement.scrollHeight > page.documentElement.clientHeight
+  const scrollable = () => pageScrollable(page !== undefined, page?.documentElement.scrollHeight ?? 0, page?.documentElement.clientHeight ?? 0)
   const pause = () => {
     const step = pauseViewport(viewport, active(), scrollable(), position())
     viewport = step.viewport
@@ -38,7 +40,7 @@ export function transcriptViewport(page?: Document) {
       if (position !== undefined && page?.defaultView) {
         event.preventDefault()
         if (gesture === "top") page.defaultView.scrollTo({ top: 0, behavior: "instant" })
-        else page.defaultView.scrollBy({ top: gesture === "page" ? -Math.max(40, Math.floor(page.documentElement.clientHeight * 0.875)) : -40, behavior: "instant" })
+        else page.defaultView.scrollBy({ top: keyScrollTop(gesture === "page", page.documentElement.clientHeight), behavior: "instant" })
       }
       return position
     },
@@ -48,10 +50,9 @@ export function transcriptViewport(page?: Document) {
     },
     touchMove: (event: TouchEvent) => {
       const current = Array.from(event.touches).find(item => item.identifier === touch?.id)
-      if (!touch || !current) return undefined
-      const upward = touchPauses(current.clientY, touch.y)
-      touch = { id: current.identifier, y: current.clientY }
-      return upward ? pause() : undefined
+      const step = touchMoved(touch !== undefined, touch ?? NO_TOUCH, current !== undefined, current?.clientY ?? 0)
+      touch = step.tracking ? step.touch : undefined
+      return step.pause ? pause() : undefined
     },
     touchEnd: () => { touch = undefined },
     scrolled: () => {

@@ -68,9 +68,7 @@ are `~/vl/vibelang-bugs/lemmascript-<fixture-name>/`; receipts are in the lane r
 
 ## Web viewport and history-page batch (0018, lane vl-proveall2)
 
-`real-math.ts`: `Math.max`/`Math.min` over `real` values lower to the int-only `MathMax`/`MathMin` helpers, and an
-integer literal in a real conditional branch is not coerced, so Dafny reports type errors. The tour spotlight's box
-(`theatre.vibe` `measure`) clamps this way and stays a tested host boundary. `loop-annotation-placement.ts`: loop
+`loop-annotation-placement.ts`: loop
 annotations written before `while` are dropped without a diagnostic, so the correct postcondition fails; inside the
 loop body they are kept. A method call on a spread array literal (`[...a, ...b].slice(0, n)`) is the
 `array-literal-map.ts` receiver-type gap; `historyDecision.vibe` binds the literal to a typed constant first.
@@ -79,7 +77,8 @@ Fixed in `packages/lemmascript` by this batch, each with a passing and a failing
 `//@ safe-slice` now clamps one-argument array slices and every string slice (`safe-slice-suffix.ts`); a two-parameter
 `map` callback binds the index (`map-index.ts`); a record field declared `real` is a Dafny `real`, where it was an
 integer (`real-field.ts`; before the fix `real-field-wrong.ts` verified a false claim); a generic interface or object
-alias keeps its type parameters (`generic-record.ts`).
+alias keeps its type parameters (`generic-record.ts`); `Math.max`/`Math.min` over `real` values use real helpers and an
+integer branch of a real conditional is lifted (`real-minmax.ts`; the reproduction `real-math.ts` is removed).
 
 
 generic-nullish.ts is a valid generic boxed-undefined presence check whose correct false result cannot currently lower: Dafny cannot infer the generic call argument from None. The false-contract twin also failed resolution, so no false proof or contract-rejection credit is claimed. Concrete generic-call instantiation remains an explicit tool boundary (0018, third-lane batch 15).

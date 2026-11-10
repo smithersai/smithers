@@ -1,4 +1,6 @@
 // Browser presentation decisions. Native speech, DOM queries, persistence and layout remain the injected host's effects.
+// LemmaScript real parameters cover finite fractional coordinates; native IEEE subtraction remains a host boundary.
+type real = number
 //@ verify
 //@ ensures \result == (target == "splash" ? ".vl-primary" : (target == "palette" ? ".sui-chat-messages" : (target == "issues" ? ".ix-surface" : (target.startsWith("issue:") || target == "issues:vips" ? ".sui-item-conv" : (target.startsWith("wiki:") ? ".vl-wiki" : (target == "history-nav" ? 'a[href="/history"]' : (target == "composer" ? 'form.sui-chat-composer[data-docked="true"]' : (target == "sandbox-pane" ? ".vl-sandboxes" : ".vl-chat"))))))))
 export function theatreSelector(target: string): string {
@@ -54,3 +56,33 @@ export function theatreFocusIndex(length: number, index: number, backward: boole
   if (index < 0) return backward ? length - 1 : 0
   return (index + (backward ? -1 : 1) + length) % length
 }
+
+/** A measured element's edges, in viewport pixels. */
+export interface Edges { readonly top: real; readonly left: real; readonly right: real; readonly bottom: real }
+/** The tour spotlight. */
+export interface TheatreBox { readonly x: real; readonly y: real; readonly width: real; readonly height: real }
+
+/** Only the composer step also frames the open completion menu. */
+//@ verify
+//@ ensures \result == (target == "composer")
+export function measuresMenu(target: string): boolean {
+  return target === "composer"
+}
+
+/** The spotlight frames the target and an open menu, kept below the top bar and inside the window, never empty. */
+//@ verify
+//@ ensures \result.y == Math.max(60, Math.min(hasRect ? rect.top : 80, hasMenu ? menu.top : innerHeight))
+//@ ensures \result.x == Math.max(8, Math.min(hasRect ? rect.left : 16, hasMenu ? menu.left : innerWidth))
+//@ ensures \result.width == Math.max(1, Math.min(innerWidth - 8, Math.max(hasRect ? rect.right : innerWidth - 16, hasMenu ? menu.right : 0)) - \result.x)
+//@ ensures \result.height == Math.max(1, Math.min(innerHeight - 220, Math.max(hasRect ? rect.bottom : \result.y + 200, hasMenu ? menu.bottom : 0)) - \result.y)
+//@ ensures \result.y >= 60 && \result.x >= 8 && \result.width >= 1 && \result.height >= 1
+//@ ensures \result.x <= (hasRect ? rect.left : 16) || \result.x == 8
+//@ ensures \result.y <= (hasRect ? rect.top : 80) || \result.y == 60
+export function theatreBox(rect: Edges, hasRect: boolean, menu: Edges, hasMenu: boolean, innerWidth: real, innerHeight: real): TheatreBox {
+  const top = Math.max(60, Math.min(hasRect ? rect.top : 80, hasMenu ? menu.top : innerHeight))
+  const left = Math.max(8, Math.min(hasRect ? rect.left : 16, hasMenu ? menu.left : innerWidth))
+  const right = Math.min(innerWidth - 8, Math.max(hasRect ? rect.right : innerWidth - 16, hasMenu ? menu.right : 0))
+  const bottom = Math.min(innerHeight - 220, Math.max(hasRect ? rect.bottom : top + 200, hasMenu ? menu.bottom : 0))
+  return { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) }
+}
+

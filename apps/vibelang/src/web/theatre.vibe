@@ -1,4 +1,4 @@
-import { theatreSelector, speechAction, audioIdentity, theatreOutcome, theatreFocusIndex } from "./theatreDecision.vibe"
+import { theatreSelector, speechAction, audioIdentity, theatreOutcome, theatreFocusIndex, measuresMenu, theatreBox, type Edges } from "./theatreDecision.vibe"
 // Browser presentation is an injected Effect service. No speech or storage host globals enter the flow or view.
 import { ExperimentalBrowserDocument, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
 import { WALKTHROUGH, walkthroughStop } from "../core/walkthroughSteps.vibe"
@@ -9,6 +9,9 @@ export service TourPresentation {
   measure(target: string): Box!!
 }
 export { theatreSelector } from "./theatreDecision.vibe"
+
+/** Edges for an element that is not on the page; `theatreBox` reads them only when told the element exists. */
+const NO_EDGES: Edges = { top: 0, left: 0, right: 0, bottom: 0 }
 
 const AudioStep = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(WALKTHROUGH.length))
 schema StoredAudio {
@@ -61,12 +64,8 @@ export const presentationFromHost = Layer.effect(TourPresentation, effect {
     }),
     measure: target => sync(() => {
       const rect = document.querySelector(theatreSelector(target))?.getBoundingClientRect()
-      const menu = target === "composer" ? document.querySelector(".sui-completion-list")?.getBoundingClientRect() : undefined
-      const top = Math.max(60, Math.min(rect?.top ?? 80, menu?.top ?? window.innerHeight))
-      const left = Math.max(8, Math.min(rect?.left ?? 16, menu?.left ?? window.innerWidth))
-      const right = Math.min(window.innerWidth - 8, Math.max(rect?.right ?? window.innerWidth - 16, menu?.right ?? 0))
-      const bottom = Math.min(window.innerHeight - 220, Math.max(rect?.bottom ?? top + 200, menu?.bottom ?? 0))
-      return { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) }
+      const menu = measuresMenu(target) ? document.querySelector(".sui-completion-list")?.getBoundingClientRect() : undefined
+      return theatreBox(rect ?? NO_EDGES, rect !== undefined, menu ?? NO_EDGES, menu !== undefined, window.innerWidth, window.innerHeight)
     }),
   }
 })

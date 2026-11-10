@@ -294,3 +294,42 @@ export function keyGesture(key: string, alt: boolean, control: boolean, meta: bo
   if (alt || (control || meta) && !pageTop || !keyPauses(key, prevented, editor)) return "browser"
   return pageTop ? "top" : key === "PageUp" ? "page" : "line"
 }
+
+/** A page key scrolls up the largest whole pixel count within seven eighths of the viewport, at least 40; a line key 40. */
+//@ verify
+//@ requires 0 <= clientHeight && clientHeight < 1125899906842624
+//@ ensures !page ==> \result == -40
+//@ ensures page ==> \result <= -40 && (-\result == 40 || 8 * -\result <= 7 * clientHeight)
+//@ ensures page ==> 8 * -\result > 7 * clientHeight - 8
+export function keyScrollTop(page: boolean, clientHeight: number): number {
+  return page ? -Math.max(40, Math.floor(clientHeight * 0.875)) : -40
+}
+
+/** The transcript follows only on the chat surface with the palette closed; with no page it is always active. */
+//@ verify
+//@ ensures \result == (!hosted || (chat && !paletteOpen))
+export function viewportActive(hosted: boolean, chat: boolean, paletteOpen: boolean): boolean {
+  return !hosted || chat && !paletteOpen
+}
+
+/** A page no taller than its viewport cannot scroll, so an upward gesture on it is no reason to stop following. */
+//@ verify
+//@ ensures \result == (!hosted || scrollHeight > clientHeight)
+export function pageScrollable(hosted: boolean, scrollHeight: real, clientHeight: real): boolean {
+  return !hosted || scrollHeight > clientHeight
+}
+
+/** The touch the transcript tracks: its identifier and last vertical position. */
+export interface TouchMark { readonly id: number; readonly y: real }
+export interface TouchStep { readonly tracking: boolean; readonly touch: TouchMark; readonly pause: boolean }
+
+/** A move of the tracked touch records its position and pauses when it moves down, which scrolls the page up; any other
+ * move changes nothing. */
+//@ verify
+//@ ensures !(tracking && found) ==> \result.tracking == tracking && \result.touch == touch
+//@ ensures tracking && found ==> \result.tracking && \result.touch.id == touch.id && \result.touch.y == y
+//@ ensures \result.pause == (tracking && found && touchPauses(y, touch.y))
+export function touchMoved(tracking: boolean, touch: TouchMark, found: boolean, y: real): TouchStep {
+  if (!tracking || !found) return { tracking, touch, pause: false }
+  return { tracking: true, touch: { id: touch.id, y }, pause: touchPauses(y, touch.y) }
+}

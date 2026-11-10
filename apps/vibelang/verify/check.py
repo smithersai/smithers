@@ -137,7 +137,8 @@ def verify(item):
    isolate = not mutations and origin in {APP/'src/core/conversation.vibe',APP/'src/core/decide.vibe',APP/'src/core/replayDecision.vibe'}
    if isolate: flags.append('--isolate-assertions')
    limit=time_limit(ts.stem,bool(mutations),proof_source)
-   c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','2' if isolate else '1','--verification-time-limit',str(limit),'--error-limit','0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work,3600 if isolate else max(180,limit+60))
+   # A single isolated file may use two cores; two file workers each use one solver core.
+   c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','2' if isolate and jobs == 1 else '1','--verification-time-limit',str(limit),'--error-limit','0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work,3600 if isolate else max(180,limit+60))
    code=c;out+=o
  if hashlib.sha256(original).hexdigest() != initial_hashes[ts]:
   code=2;out+='ERROR: source changed after strict typechecking started\n'
