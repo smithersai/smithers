@@ -110,7 +110,7 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "vibelang-runtime": "0.0.14-pre.b9285da0f2be"
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "peerDependencies": {
     "effect": "4.1.1"
@@ -132,8 +132,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.14-pre.b9285da0f2be",
-    "vibelang-vite": "0.0.14-pre.b9285da0f2be",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0"
   }
 }

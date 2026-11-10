@@ -292,7 +292,7 @@
     "@mdx-js/mdx": "3.1.1",
     "@smthrs/artifacts": "1.0.0-rc.16",
     "@smthrs/crypto": "1.0.0-rc.16",
-    "vibelang-runtime": "0.0.14-pre.b9285da0f2be"
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -317,8 +317,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.14-pre.b9285da0f2be",
-    "vibelang-vite": "0.0.14-pre.b9285da0f2be",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0",
     "@smthrs/engine": "1.0.0-rc.16"
   },

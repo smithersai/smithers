@@ -206,8 +206,8 @@
     "redis": "6.2.1",
     "undici": "8.12.4",
     "ws": "8.22.0",
-    "vibelang-runtime": "0.0.14-pre.b9285da0f2be",
-    "vibelang-unplugin": "0.0.14-pre.b9285da0f2be"
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc"
   },
   "peerDependencies": {
     "effect": "4.1.1"
@@ -232,8 +232,8 @@
     "microsandbox": "0.6.16",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.14-pre.b9285da0f2be",
-    "vibelang-vite": "0.0.14-pre.b9285da0f2be",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0"
   }
 }

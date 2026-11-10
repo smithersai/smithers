@@ -62,16 +62,16 @@ overrides:
   "vitest@5.0.0>happy-dom": "20.13.2"
   "@types/bun": "1.4.4"
   "effect": "4.1.1"
-  "vibelang": "file:./.vibelang-toolchain/0.0.14-pre.b9285da0f2be/tarballs/vibelang-0.0.14-pre.b9285da0f2be.tgz"
-  "vibelang-runtime": "file:./.vibelang-toolchain/0.0.14-pre.b9285da0f2be/tarballs/vibelang-runtime-0.0.14-pre.b9285da0f2be.tgz"
-  "vibelang-vite": "file:./.vibelang-toolchain/0.0.14-pre.b9285da0f2be/tarballs/vibelang-vite-0.0.14-pre.b9285da0f2be.tgz"
-  "vibelang-unplugin": "file:./.vibelang-toolchain/0.0.14-pre.b9285da0f2be/tarballs/vibelang-unplugin-0.0.14-pre.b9285da0f2be.tgz"
-  "vibelang-linux-x64": "file:./.vibelang-toolchain/0.0.14-pre.b9285da0f2be/tarballs/vibelang-linux-x64-0.0.14-pre.b9285da0f2be.tgz"
-  "vibelang-linux-arm64": "file:./.vibelang-toolchain/0.0.14-pre.b9285da0f2be/tarballs/vibelang-linux-arm64-0.0.14-pre.b9285da0f2be.tgz"
-  "vibelang-darwin-arm64": "file:./.vibelang-toolchain/0.0.14-pre.b9285da0f2be/tarballs/vibelang-darwin-arm64-0.0.14-pre.b9285da0f2be.tgz"
-  "vibelang-darwin-x64": "file:./.vibelang-toolchain/0.0.14-pre.b9285da0f2be/tarballs/vibelang-darwin-x64-0.0.14-pre.b9285da0f2be.tgz"
-  "@smthrs/cli-win32-x64": "file:./.vibelang-toolchain/0.0.14-pre.b9285da0f2be/tarballs/smthrs-cli-win32-x64-0.0.14-pre.b9285da0f2be.tgz"
-  "@smthrs/cli-win32-arm64": "file:./.vibelang-toolchain/0.0.14-pre.b9285da0f2be/tarballs/smthrs-cli-win32-arm64-0.0.14-pre.b9285da0f2be.tgz"
+  "vibelang": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-0.0.14-pre.6279f9f9fbfc.tgz"
+  "vibelang-runtime": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-runtime-0.0.14-pre.6279f9f9fbfc.tgz"
+  "vibelang-vite": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-vite-0.0.14-pre.6279f9f9fbfc.tgz"
+  "vibelang-unplugin": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-unplugin-0.0.14-pre.6279f9f9fbfc.tgz"
+  "vibelang-linux-x64": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-linux-x64-0.0.14-pre.6279f9f9fbfc.tgz"
+  "vibelang-linux-arm64": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-linux-arm64-0.0.14-pre.6279f9f9fbfc.tgz"
+  "vibelang-darwin-arm64": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-darwin-arm64-0.0.14-pre.6279f9f9fbfc.tgz"
+  "vibelang-darwin-x64": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-darwin-x64-0.0.14-pre.6279f9f9fbfc.tgz"
+  "@smthrs/cli-win32-x64": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/smthrs-cli-win32-x64-0.0.14-pre.6279f9f9fbfc.tgz"
+  "@smthrs/cli-win32-arm64": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/smthrs-cli-win32-arm64-0.0.14-pre.6279f9f9fbfc.tgz"
   "alchemy": "2.0.0-beta.85"
   "@alchemy.run/node-utils": "2.0.0-beta.85"
   "@alchemy.run/frontend-frameworks": "2.0.0-beta.85"
@@ -144,8 +144,8 @@ minimumReleaseAgeExclude:
   - 'vibelang-linux-x64'
   - 'vibelang-win32-arm64'
   - 'vibelang-win32-x64'
-  - '@smthrs/cli-win32-arm64@0.0.14-pre.b9285da0f2be'
-  - '@smthrs/cli-win32-x64@0.0.14-pre.b9285da0f2be'
+  - '@smthrs/cli-win32-arm64@0.0.14-pre.6279f9f9fbfc'
+  - '@smthrs/cli-win32-x64@0.0.14-pre.6279f9f9fbfc'
 
 # Alchemy publishes declarations importing workers-types but declares it only for development.
 # Give its declarations the same exact type dependency as the app, independent of hoisting.

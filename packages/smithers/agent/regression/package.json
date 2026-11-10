@@ -27,14 +27,14 @@
     "@smthrs/scorers": "workspace:*",
     "effect": "4.1.1",
     "yaml": "2.9.0",
-    "vibelang-runtime": "0.0.14-pre.b9285da0f2be"
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
     "@smthrs/targets": "workspace:*",
     "@types/node": "26.4.1",
     "bun-types": "^1.4.0",
     "typescript": "5.9.3",
-    "vibelang": "0.0.14-pre.b9285da0f2be"
+    "vibelang": "0.0.14-pre.6279f9f9fbfc"
   },
   "imports": {
     "#vibelang/emitted/character/rubric": {

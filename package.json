@@ -95,8 +95,8 @@
     "tinyglobby": "0.2.17",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.14-pre.b9285da0f2be",
-    "vibelang-unplugin": "0.0.14-pre.b9285da0f2be",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
     "vite": "^8.2.2",
     "ws": "8.22.0",
     "yaml": "2.9.0"
@@ -115,6 +115,6 @@
     "@effect/vitest": "4.1.1"
   },
   "dependencies": {
-    "vibelang-runtime": "0.0.14-pre.b9285da0f2be"
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   }
 }

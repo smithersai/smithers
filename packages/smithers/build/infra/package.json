@@ -28,8 +28,8 @@
     "alchemy": "2.0.0-beta.85",
     "effect": "4.1.1",
     "typescript": "5.9.3",
-    "vibelang": "0.0.14-pre.b9285da0f2be",
-    "vibelang-vite": "0.0.14-pre.b9285da0f2be",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0",
     "eslint": "9.39.1",
     "typescript-eslint": "8.65.0",
@@ -40,6 +40,6 @@
   "dependencies": {
     "@smthrs/canonical": "1.0.0-rc.16",
     "@smthrs/targets": "1.0.0-rc.16",
-    "vibelang-runtime": "0.0.14-pre.b9285da0f2be"
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   }
 }

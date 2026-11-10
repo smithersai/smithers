@@ -300,7 +300,7 @@
     "@lezer/highlight": "1.2.3",
     "y-protocols": "1.0.6",
     "@smthrs/views": "workspace:*",
-    "vibelang-runtime": "0.0.14-pre.b9285da0f2be"
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "peerDependencies": {
     "react": "^19.2.8",
@@ -322,8 +322,8 @@
     "playwright": "1.62.1",
     "quickjs-emscripten-core": "0.32.0",
     "happy-dom": "20.13.2",
-    "vibelang": "0.0.14-pre.b9285da0f2be",
-    "vibelang-unplugin": "0.0.14-pre.b9285da0f2be"
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc"
   },
   "imports": {
     "#vibelang/emitted/src/app-operations/index": {
