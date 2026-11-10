@@ -64,3 +64,18 @@ test('build output is not source: a generated module never enters the inventory'
   assert.equal(files.some(file => file.endsWith('.generated.vibe')), false);
   assert.ok(files.includes(path.join(app, 'src/core/flows.vibe')));
 });
+
+test('a function marked //@ verify reads as proved without a hand-written note; an unmarked one beside it does not', () => {
+  // decide.vibe and six other marked modules read "Not yet proved" while `pnpm verify` proved them (vl-audit-vl29).
+  const source = '// Fixture.\n//@ verify\n//@ ensures \\result == (a > b)\nexport function more(a: number, b: number) {\n  return [a].some(x => x > b)\n}\n' +
+    'export function less(a: number, b: number) { return a < b }\n  //@  verify\nfunction spaced(a: number) { return a > 0 }\n';
+  const rows = inventorySource(path.join(app, 'inventory-fixture.vibe'), source);
+  const why = Object.fromEntries(rows.map(row => [row.label, row.why]));
+  assert.match(why.more, /^Proved/);
+  assert.match(why['more/callback@5'], /^Proved/);
+  assert.match(why.less, /^Not yet proved/);
+  assert.match(why.spaced, /^Proved/);
+  const decide = path.join(app, 'src/core/decide.vibe');
+  const row = inventorySource(decide, fs.readFileSync(decide, 'utf8')).find(entry => entry.label === 'decide');
+  assert.match(row.why, /^Proved/);
+});

@@ -5,7 +5,10 @@
 The proof consumes production VibeLang modules in LemmaScript's plain TypeScript subset, with unchanged `//@`
 contracts. Effect shells call those same decisions. The harness discovers every marked module under `src/`,
 `worker/` and `scripts/`; omission of an emitted marked function fails. Mutations change executable text only,
-strictly typecheck, and must fail a Dafny obligation in their named function. Tool errors never count as rejection.
+strictly typecheck, and must fail a Dafny obligation located in their named function: a postcondition, an invariant, an
+assertion, or a callee's precondition at a call inside it (`verify/mutation_results.py`). Tool errors never count as
+rejection. A rejected mutant shows the contracts notice that change; it does not show they are complete (vl-review-proofs
+found four guard-narrowing mutants of `decide`, `stepRun` and `apply` that this harness passes).
 
 ## Proofs and boundaries
 
@@ -13,7 +16,7 @@ strictly typecheck, and must fail a Dafny obligation in their named function. To
 | --- | --- | --- |
 | `src/history/mythical.vibe` | Numbered history events, identity/rank uniqueness, epic membership, preservation of epics, real-commit prefixes and every commit's notes (a prefix, at most one appended), exactly-one folds, and a trailer folding only into an approved or landed commit (`foldTarget`) (0020) | Sequencer locking, store-before-publish, the trailer regexp and the bootstrap's grouping are tested, not proved |
 | `src/history/flowMachine.vibe` | Who may take each history action; authorize/record ordering; shared role thresholds, HTTP status/outcome mapping, Plan validation/field initialization, open-epic membership/append prefix, signatures and labels (0020) | Engine execution and journal replay, `Caller`'s source (0019), full page/model transitions and native codecs |
-| `src/core/sandboxDecision.vibe` | Role admission, running count, elapsed usage, nonnegative remaining allowance, ledger uniqueness, sequence and clock high-water preservation, and lease bounds (0024) | Host normalization, external containers and durable scheduling remain boundaries; exact guard and frame mutation receipts are recorded below |
+| `src/core/sandboxDecision.vibe` | Role admission, running count, an elapsed-usage clause the host never exercises (`src/core/sandboxHost.vibe:87` calls `decideSandbox` with `now: lastMeteredAt`, so elapsed is 0; minutes accrue in the unmarked `src/core/sandboxMeter.vibe` `meter`), nonnegative remaining allowance, ledger uniqueness, sequence and clock high-water preservation, and lease bounds (0024) | Host normalization, external containers and durable scheduling remain boundaries; exact guard and frame mutation receipts are recorded below |
 | `src/core/mockDecision.vibe` | Keyword membership, first matching script and fallback only if none matches | Input is already normalized; Unicode casing and script constants are outside the proof |
 | `src/core/protocolDecision.vibe` | Conversation/body length bounds; nonempty CLI/MCP identifiers and nonnegative cursors; exact method/subroute mapping; HTTP refusal/success; mock/live choice | Integer schema and URI/JSON/Schema decoding remain runtime boundaries; schema annotations are preserved |
 | `src/web/theatreDecision.vibe` | Target selectors, speech priority and redraw identity, bounded outcome labels and focus wrapping | Speech/DOM/storage execution, persisted JSON shape and layout geometry |
@@ -682,7 +685,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-3123 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+3126 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -797,9 +800,9 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/actions/tools.vibe:22` | `actionTools/handler` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/actions/tools.vibe:23` | `actionTools/handler` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/actions/tools.vibe:14` | `actionTools/callback@14` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/accountCookieDecision.vibe:5` | `cookieName` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/accountCookieDecision.vibe:12` | `localOrigin` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/accountCookieDecision.vibe:24` | `cookieAccepted` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/accountCookieDecision.vibe:5` | `cookieName` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/core/accountCookieDecision.vibe:12` | `localOrigin` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/core/accountCookieDecision.vibe:24` | `cookieAccepted` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
 | `src/core/accountCookies.vibe:3` | `sessionCookieName` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/accountCookies.vibe:6` | `validSessionCookie` | pure logic | Calls the proved local-origin and cookie acceptance rule; the URL parse and cookie regexps stay boundaries (uri-codec.ts, regexp.ts). |
 | `src/core/conversation.vibe:154` | `apply` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
@@ -882,12 +885,12 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/conversation.vibe:1173` | `wikiPermission` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
 | `src/core/conversation.vibe:1182` | `wikiPolicyAction` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
 | `src/core/conversation.vibe:1191` | `currentWikiEditor` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
-| `src/core/decide.vibe:43` | `accepted` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/decide.vibe:49` | `refused` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/decide.vibe:90` | `decide` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/decide.vibe:102` | `decide/callback@102` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/decide.vibe:105` | `decide/callback@105` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/decide.vibe:108` | `decide/callback@108` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/decide.vibe:43` | `accepted` | wiring | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/core/decide.vibe:49` | `refused` | wiring | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/core/decide.vibe:90` | `decide` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/core/decide.vibe:102` | `decide/callback@102` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/core/decide.vibe:105` | `decide/callback@105` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/core/decide.vibe:108` | `decide/callback@108` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
 | `src/core/flowDecision.vibe:7` | `appends` | pure logic | Reply start/composition/settlement and Tour active/ready/one-speaker/terminal ordering models, exact closed invariants and at-most-one stage bounds; append order, tour terminal events, reading time, first undispatched source index, exact private visit/hold identities and scalar walk control choices; proved. |
 | `src/core/flowDecision.vibe:14` | `endsTourEvent` | pure logic | Reply start/composition/settlement and Tour active/ready/one-speaker/terminal ordering models, exact closed invariants and at-most-one stage bounds; append order, tour terminal events, reading time, first undispatched source index, exact private visit/hold identities and scalar walk control choices; proved. |
 | `src/core/flowDecision.vibe:23` | `startAnswer` | pure logic | Reply start/composition/settlement and Tour active/ready/one-speaker/terminal ordering models, exact closed invariants and at-most-one stage bounds; append order, tour terminal events, reading time, first undispatched source index, exact private visit/hold identities and scalar walk control choices; proved. |
@@ -2139,28 +2142,28 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/web/historyView.vibe:347` | `plan/callback@347` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/historyView.vibe:354` | `plan/callback@354` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/web/historyView.vibe:364` | `plan/callback@364` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/issueDecision.vibe:53` | `issueOpRemembered` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:67` | `issueGateOp` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:88` | `issueStepError` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:144` | `issueAction` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:200` | `issueIsOperation` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:207` | `issueKnownAction` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:221` | `issueUiEffects` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:235` | `openedIssueCard` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/issueDecision.vibe:242` | `issueCardLoadsDetails` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:249` | `clickedIssuesLoads` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:256` | `issueProjectionApplies` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:264` | `issueDefaultRole` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:271` | `issueDataApplies` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:279` | `issueAssigneeAfter` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:290` | `issueRecoveredView` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:303` | `issueRecovered` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:327` | `issueLoaded` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:342` | `issueFailureText` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:359` | `issueFailed` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:367` | `issueDetailsFailed` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/issueDecision.vibe:375` | `issueRequestText` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/issueDecision.vibe:383` | `issueParent` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/web/issueDecision.vibe:53` | `issueOpRemembered` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:67` | `issueGateOp` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:88` | `issueStepError` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:144` | `issueAction` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:200` | `issueIsOperation` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:207` | `issueKnownAction` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:221` | `issueUiEffects` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:235` | `openedIssueCard` | wiring | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:242` | `issueCardLoadsDetails` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:249` | `clickedIssuesLoads` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:256` | `issueProjectionApplies` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:264` | `issueDefaultRole` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:271` | `issueDataApplies` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:279` | `issueAssigneeAfter` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:290` | `issueRecoveredView` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:303` | `issueRecovered` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:327` | `issueLoaded` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:342` | `issueFailureText` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:359` | `issueFailed` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:367` | `issueDetailsFailed` | wiring | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:375` | `issueRequestText` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/issueDecision.vibe:383` | `issueParent` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
 | `src/web/issues.vibe:38` | `parentNumber` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/issues.vibe:42` | `issueRequest` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/issues.vibe:46` | `issueScreen` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
@@ -2691,23 +2694,23 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/web/modelDecision.vibe:591` | `slashMatches` | pure logic | Web update decisions: account failure text and retry routing, sign-in and role gates, people pane sizing, account-change and grant detection, stale-response fences for actions, issues and wiki, monotone actions clock, bounded slash highlight, sandbox minute notices and the running transition; proved (0018 batch 21). |
 | `src/web/modelDecision.vibe:592` | `slashMatches/callback@592` | pure logic | Web update decisions: account failure text and retry routing, sign-in and role gates, people pane sizing, account-change and grant detection, stale-response fences for actions, issues and wiki, monotone actions clock, bounded slash highlight, sandbox minute notices and the running transition; proved (0018 batch 21). |
 | `src/web/modeSwitch.vibe:8` | `modeSwitch` | wiring | Calls the proved opposite-mode, mode name and label choices; HtmlBuilder rendering and native navigation remain host boundaries. |
-| `src/web/paneDecision.vibe:26` | `startSandboxAction` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/paneDecision.vibe:34` | `loadedSandbox` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/paneDecision.vibe:41` | `failedSandbox` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/paneDecision.vibe:52` | `polledSandbox` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/paneDecision.vibe:60` | `polledFailure` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/paneDecision.vibe:70` | `sandboxNotice` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/paneDecision.vibe:78` | `warnedMonthAfter` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/paneDecision.vibe:90` | `wikiEditTypes` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/paneDecision.vibe:97` | `updatedWikiEdit` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/paneDecision.vibe:108` | `wikiSubmitPlan` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/paneDecision.vibe:117` | `noWikiChanges` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/paneDecision.vibe:124` | `submittingWikiEdit` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/paneDecision.vibe:131` | `wikiBeginApplies` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/paneDecision.vibe:140` | `beganWikiEdit` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/paneDecision.vibe:147` | `wikiEditFailureApplies` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/paneDecision.vibe:156` | `failedWikiEdit` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/paneDecision.vibe:168` | `wikiEditErrorText` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/web/paneDecision.vibe:26` | `startSandboxAction` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:34` | `loadedSandbox` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:41` | `failedSandbox` | wiring | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:52` | `polledSandbox` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:60` | `polledFailure` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:70` | `sandboxNotice` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:78` | `warnedMonthAfter` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:90` | `wikiEditTypes` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:97` | `updatedWikiEdit` | wiring | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:108` | `wikiSubmitPlan` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:117` | `noWikiChanges` | wiring | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:124` | `submittingWikiEdit` | wiring | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:131` | `wikiBeginApplies` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:140` | `beganWikiEdit` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:147` | `wikiEditFailureApplies` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:156` | `failedWikiEdit` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/paneDecision.vibe:168` | `wikiEditErrorText` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
 | `src/web/roleView.vibe:8` | `badge` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/roleView.vibe:12` | `identityNav` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/roleView.vibe:20` | `identityNav/callback@20` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
@@ -2797,39 +2800,39 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/web/theatreDecision.vibe:35` | `audioIdentity` | pure logic | Proved exact target selectors, speech cancellation/pause/resume/replacement priority, no duplicate speech on redraw, audio identity invalidation, bounded outcome labels and keyboard focus wrapping; native speech, DOM and persistence remain host boundaries. |
 | `src/web/theatreDecision.vibe:42` | `theatreOutcome` | pure logic | Proved exact target selectors, speech cancellation/pause/resume/replacement priority, no duplicate speech on redraw, audio identity invalidation, bounded outcome labels and keyboard focus wrapping; native speech, DOM and persistence remain host boundaries. |
 | `src/web/theatreDecision.vibe:53` | `theatreFocusIndex` | pure logic | Proved exact target selectors, speech cancellation/pause/resume/replacement priority, no duplicate speech on redraw, audio identity invalidation, bounded outcome labels and keyboard focus wrapping; native speech, DOM and persistence remain host boundaries. |
-| `src/web/tourDecision.vibe:14` | `pauseTour` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/tourDecision.vibe:23` | `backTour` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/tourDecision.vibe:32` | `skipTour` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/tourDecision.vibe:40` | `toggledSound` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/tourDecision.vibe:47` | `remeasures` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/tourDecision.vibe:54` | `endsLateTour` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/tourDecision.vibe:61` | `failedTourKeeps` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/tourDecision.vibe:68` | `keptTour` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/tourDecision.vibe:75` | `autoTourStarts` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/tourDecision.vibe:82` | `failedEvents` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/tourDecision.vibe:90` | `reconnected` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/tourDecision.vibe:98` | `updatedDraftMenu` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/tourDecision.vibe:109` | `minimizedSandbox` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/tourDecision.vibe:140` | `startedTour` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/tourDecision.vibe:161` | `endedTour` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/tourDecision.vibe:175` | `tourReceived` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/tourDecision.vibe:185` | `presentedPaused` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/tourDecision.vibe:193` | `tourTarget` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/tourDecision.vibe:224` | `walkthroughPlan` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/updateDecision.vibe:37` | `pressedEscape` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/updateDecision.vibe:102` | `eventReceived` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/updateDecision.vibe:124` | `wikiAfterEvent` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/updateDecision.vibe:137` | `afterUpdate` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/updateDecision.vibe:154` | `submitKind` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/updateDecision.vibe:164` | `demonstrates` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/updateDecision.vibe:172` | `sentAfter` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/updateDecision.vibe:179` | `switchesMode` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/updateDecision.vibe:190` | `launchKind` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/updateDecision.vibe:198` | `launchRetries` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/updateDecision.vibe:223` | `visitedWiki` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/updateDecision.vibe:238` | `wikiLocationLeaves` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/updateDecision.vibe:245` | `docsRevealsWiki` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/updateDecision.vibe:256` | `retryIndex` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/web/tourDecision.vibe:14` | `pauseTour` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:23` | `backTour` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:32` | `skipTour` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:40` | `toggledSound` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:47` | `remeasures` | wiring | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:54` | `endsLateTour` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:61` | `failedTourKeeps` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:68` | `keptTour` | wiring | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:75` | `autoTourStarts` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:82` | `failedEvents` | wiring | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:90` | `reconnected` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:98` | `updatedDraftMenu` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:109` | `minimizedSandbox` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:140` | `startedTour` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:161` | `endedTour` | wiring | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:175` | `tourReceived` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:185` | `presentedPaused` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:193` | `tourTarget` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/tourDecision.vibe:224` | `walkthroughPlan` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/updateDecision.vibe:37` | `pressedEscape` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/updateDecision.vibe:102` | `eventReceived` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/updateDecision.vibe:124` | `wikiAfterEvent` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/updateDecision.vibe:137` | `afterUpdate` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/updateDecision.vibe:154` | `submitKind` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/updateDecision.vibe:164` | `demonstrates` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/updateDecision.vibe:172` | `sentAfter` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/updateDecision.vibe:179` | `switchesMode` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/updateDecision.vibe:190` | `launchKind` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/updateDecision.vibe:198` | `launchRetries` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/updateDecision.vibe:223` | `visitedWiki` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/updateDecision.vibe:238` | `wikiLocationLeaves` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/updateDecision.vibe:245` | `docsRevealsWiki` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/web/updateDecision.vibe:256` | `retryIndex` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
 | `src/web/view.vibe:29` | `view` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/view.vibe:36` | `view/callback@36` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/web/view.vibe:55` | `logo` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
@@ -3784,6 +3787,9 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `scripts/agent-context.vibe:33` | `generated/callback@33` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `scripts/agent-context.vibe:36` | `main` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `scripts/agent-context.vibe:41` | `main/callback@41` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `scripts/fuzz-preflight.vibe:15` | `message` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `scripts/fuzz-preflight.vibe:19` | `preflight` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `scripts/fuzz-preflight.vibe:30` | `main` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `scripts/mythical-seed.vibe:37` | `log` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `scripts/mythical-seed.vibe:38` | `log/callback@38` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `scripts/mythical-seed.vibe:62` | `titlesOf` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |

@@ -153,8 +153,17 @@ function inventorySource(file, source) {
   const result = JSON.parse(parsed.stdout);
   if (result.error || !result.ast) throw Error(`${rel}: compiler parse failed: ${result.error?.message ?? 'missing AST'}`);
   const rows = [];
-  function walk(node, parent, parents = []) {
+  // A function whose leading `//@` block holds LemmaScript's verify directive (the harness's own pattern, sources.py)
+  // is proved by `pnpm verify`, with the callbacks inside it.
+  const directive = /^[ \t]*\/\/@[ \t]+verify\b/;
+  function markedAt(start) {
+    const before = source.slice(0, start).split('\n');
+    for (let i = before.length - 2; i >= 0 && /^[ \t]*\/\/@/.test(before[i]); i--) if (directive.test(before[i])) return true;
+    return false;
+  }
+  function walk(node, parent, parents = [], provedBy = false) {
     let next = parents;
+    let proved = provedBy;
     if (functions.has(node.type) && node.body) {
       // ESTree ranges index the ORIGINAL JavaScript string (UTF-16). Projection
       // mappings instead use UTF-8 bytes and include generated $gen wrappers.
@@ -174,14 +183,16 @@ function inventorySource(file, source) {
       const header = source.slice(range[0], node.body.range[0]);
       const effectful = /^(?:(?:export|default|static|public|private|protected|override)\s+)*effect\b/.test(header.trim()) || node.async || containsEffects(node.body);
       const category = effectful ? 'effectful shell' : (containsLogic(node.body) || boundaries[rel] ? 'pure logic' : 'wiring');
-      const why = functionBoundaries[`${rel}:${parents[0] ?? name}`] || boundaries[rel] || shellBoundaries[rel] || (category === 'wiring'
+      proved = provedBy || (parents.length === 0 && markedAt(range[0]));
+      const why = functionBoundaries[`${rel}:${parents[0] ?? name}`] || boundaries[rel] || shellBoundaries[rel]
+        || (proved ? 'Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`).' : undefined) || (category === 'wiring'
         ? 'Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision.'
         : 'Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof.');
       const label = [...parents, name].join('/');
       rows.push({ file: rel, line, label, category, why });
       next = [...parents, name];
     }
-    for (const child of children(node)) walk(child, node, next);
+    for (const child of children(node)) walk(child, node, next, proved);
   }
   walk(result.ast);
   return rows;
