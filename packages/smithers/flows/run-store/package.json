@@ -58,8 +58,8 @@
       "default": "./.vibelang/js/src/Migrations.js"
     },
     "./Ownership": {
-      "types": "./src/Ownership.ts",
-      "vibelang-source": "./src/Ownership.ts",
+      "types": "./.vibe/declarations/src/Ownership.d.vibe.ts",
+      "vibelang-source": "./src/Ownership.vibe",
       "default": "./.vibelang/js/src/Ownership.js"
     },
     "./RunStore": {

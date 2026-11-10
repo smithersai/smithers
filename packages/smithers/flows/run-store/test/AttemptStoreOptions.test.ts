@@ -6,7 +6,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import * as AttemptStore from "../src/AttemptStore.vibe"
 import * as Migrations from "../src/Migrations.vibe"
-import type { OwnerId } from "../src/Ownership.ts"
+import type { OwnerId } from "../src/Ownership.vibe"
 import * as RunStore from "../src/RunStore.vibe"
 
 const owner: OwnerId = { hostId: "host", pid: 1, nonce: "n" }

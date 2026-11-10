@@ -80,7 +80,7 @@ const securityReview = Smithers.SecurityReview({
         "A same-host-pid-dead verdict accepted from a claimant on another host, or cross-host-unreachable-stale from the owner's own host.",
         "A steal UPDATE that drops the heartbeat_at_ms staleness predicate or the NULL claim-column predicates."
       ],
-      paths: ["src/RunStore.vibe", "src/Ownership.ts"]
+      paths: ["src/RunStore.vibe", "src/Ownership.vibe"]
     },
     {
       id: "lease-clock-bounds",
@@ -91,7 +91,7 @@ const securityReview = Smithers.SecurityReview({
         "A lease operation (claim, claimAndOwn, steal, heartbeat, recoverClaim) that uses snapshotTimestamp instead of snapshotLeaseReading for nowMs.",
         "heartbeatWriteTolerance not strictly less than heartbeatStaleAfter minus skew allowance and one interval, letting a lapsed owner keep working after a steal."
       ],
-      paths: ["src/RunStore.vibe", "src/Heartbeat.ts", "src/Ownership.ts"]
+      paths: ["src/RunStore.vibe", "src/Heartbeat.ts", "src/Ownership.vibe"]
     },
     {
       id: "pid-probe-scope",
@@ -102,7 +102,7 @@ const securityReview = Smithers.SecurityReview({
         "sameHostPidProbe probing a pid whose owner hostId differs from the claimant's hostId.",
         "An error other than ESRCH treated as proof of death."
       ],
-      paths: ["src/Ownership.ts"]
+      paths: ["src/Ownership.vibe"]
     },
     {
       id: "json-admission-bounds",

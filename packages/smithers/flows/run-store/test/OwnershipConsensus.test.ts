@@ -27,7 +27,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { heartbeatStaleAfter } from "../src/Heartbeat.ts"
 import * as Migrations from "../src/Migrations.vibe"
-import { heartbeatInterval, heartbeatLoop, type LivenessEvidence, type OwnerId } from "../src/Ownership.ts"
+import { heartbeatInterval, heartbeatLoop, type LivenessEvidence, type OwnerId } from "../src/Ownership.vibe"
 import { type RunSnapshot, RunStore } from "../src/RunStore.vibe"
 import * as RunStoreLive from "../src/RunStore.vibe"
 

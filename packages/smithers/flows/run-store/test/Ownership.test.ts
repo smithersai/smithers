@@ -31,7 +31,7 @@ import {
   sameHostIncarnation,
   sameHostPidProbe,
   singleIncarnationLiveness
-} from "../src/Ownership.ts"
+} from "../src/Ownership.vibe"
 import { type RunRow, type RunSnapshot, RunStore } from "../src/RunStore.vibe"
 import * as RunStoreLive from "../src/RunStore.vibe"
 

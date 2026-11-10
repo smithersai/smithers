@@ -3,7 +3,7 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect, Fiber, Layer, Option } from "effect"
 import * as AttemptStore from "../src/AttemptStore.vibe"
 import * as Migrations from "../src/Migrations.vibe"
-import type { OwnerId } from "../src/Ownership.ts"
+import type { OwnerId } from "../src/Ownership.vibe"
 import * as RunStore from "../src/RunStore.vibe"
 
 const owner: OwnerId = { hostId: "json-host", pid: 1, nonce: "json-owner" }

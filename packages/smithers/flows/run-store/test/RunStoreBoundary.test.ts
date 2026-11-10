@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import * as Migrations from "../src/Migrations.vibe"
-import type { OwnerId } from "../src/Ownership.ts"
+import type { OwnerId } from "../src/Ownership.vibe"
 import { type RunRow, RunStore } from "../src/RunStore.vibe"
 import * as RunStoreLive from "../src/RunStore.vibe"
 

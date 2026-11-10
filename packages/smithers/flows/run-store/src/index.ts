@@ -36,7 +36,7 @@ export * as RunStoreMetrics from "./RunStoreMetrics.vibe"
  * @category ownership
  * @since 0.1.0
  */
-export * as Ownership from "./Ownership.ts"
+export * as Ownership from "./Ownership.vibe"
 
 /**
  * @category services

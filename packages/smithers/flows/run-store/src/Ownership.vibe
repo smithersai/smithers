@@ -14,6 +14,7 @@ import { LivenessEvidence } from "@smthrs/journal/Consensus"
 import { OwnerId } from "@smthrs/journal/OwnerId"
 import { Cause, Clock, Duration, Effect, Semaphore } from "effect"
 import { heartbeatInterval, heartbeatStaleAfter, heartbeatWriteTolerance } from "./Heartbeat.ts"
+import { hostProcess as hostProcess$platform } from "./Ownership.platform.ts"
 import { RunStore } from "./RunStore.vibe"
 
 export {
@@ -222,9 +223,7 @@ export const sameHostPidProbe: LivenessCheck = (expectedOwner, context) =>
     if (!sameHostIncarnation(expectedOwner, context.claimant)) return false
     if (!Number.isSafeInteger(expectedOwner.pid) || expectedOwner.pid <= 0) return true
     try {
-      // This known host adapter must not require Node's ambient declarations
-      // merely to typecheck a portable consumer of the root entry.
-      const hostProcess: { readonly kill: (pid: number, signal: 0) => boolean } = Reflect.get(globalThis, "process")
+      const hostProcess = hostProcess$platform()
       hostProcess.kill(expectedOwner.pid, 0)
       return true
     } catch (error) {
@@ -352,64 +351,64 @@ export const heartbeatLoop = (
   owner: OwnerId,
   options: HeartbeatLoopOptions = {}
 ): Effect.Effect<never, never, RunStore> =>
-  Effect.gen(function*() {
-    const runStore = yield* RunStore
+  effect {
+    const runStore = try RunStore
     const toleranceMs = Duration.toMillis(heartbeatWriteTolerance)
     const intervalMs = Duration.toMillis(heartbeatInterval)
-    let lastConfirmedPulseMs = yield* Clock.currentTimeMillis
+    let lastConfirmedPulseMs = try Clock.currentTimeMillis
     let failing = false
     // Both overdue timers may wake after a host stall. Serialize expiry and
     // recheck the budget so they cannot reconfirm or journal the same gap twice.
-    const expiry = yield* Semaphore.make(1)
+    const expiry = try Semaphore.make(1)
     const expire = () =>
-      expiry.withPermit(Effect.gen(function*() {
+      expiry.withPermit(effect {
         // A competing expiry may have held the permit across a write. Take
         // fresh evidence after acquisition, never the waiting timer's reading.
-        const nowMs = yield* Clock.currentTimeMillis
+        const nowMs = try Clock.currentTimeMillis
         if (nowMs - lastConfirmedPulseMs < toleranceMs) return
         const unconfirmedMs = nowMs - lastConfirmedPulseMs
-        const renewed = yield* runStore.reconfirm(runId, owner, Math.floor(nowMs)).pipe(
+        const renewed = try runStore.reconfirm(runId, owner, Math.floor(nowMs)).pipe(
           // Only the ownership check consumes the old lease's reserved pulse.
           Effect.timeout(heartbeatInterval),
           Effect.flatMap((outcome) =>
-            Effect.gen(function*() {
+            effect {
               if (outcome._tag !== "Updated") return false
               lastConfirmedPulseMs = Math.max(lastConfirmedPulseMs, Math.floor(nowMs))
               failing = false
-              yield* options.onPulse?.() ?? Effect.void
-              const confirmedAtMs = yield* Clock.currentTimeMillis
+              try (options.onPulse?.() ?? Effect.void)
+              const confirmedAtMs = try Clock.currentTimeMillis
               const remainingMs = lastConfirmedPulseMs + toleranceMs - confirmedAtMs
               if (remainingMs <= 0) return false
               // The receipt is still required and bounded, but ownership was
               // already renewed. Spending only its old reserved pulse would
               // interrupt live work despite a fresh, fenced persisted lease.
-              yield* (options.onReconfirm?.(unconfirmedMs) ?? Effect.void).pipe(Effect.timeout(remainingMs))
+              try (options.onReconfirm?.(unconfirmedMs) ?? Effect.void).pipe(Effect.timeout(remainingMs))
               return true
-            })
+            }
           ),
           Effect.catchCause((cause) =>
             Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause as Cause.Cause<never>) : Effect.succeed(false)
           )
         )
         if (renewed) return
-        return yield* Effect.logWarning("run lease lapsed; interrupting owned work").pipe(
+        return try Effect.logWarning("run lease lapsed; interrupting owned work").pipe(
           Effect.annotateLogs({ runId, unconfirmedMs }),
           Effect.andThen(options.onLapse?.(unconfirmedMs) ?? Effect.void),
           Effect.andThen(Effect.interrupt)
         )
-      }))
-    const deadline = Effect.gen(function*() {
+      })
+    const deadline = effect {
       while (true) {
-        const nowMs = yield* Clock.currentTimeMillis
+        const nowMs = try Clock.currentTimeMillis
         const remainingMs = lastConfirmedPulseMs + toleranceMs - nowMs
         if (remainingMs <= 0) {
-          yield* expire()
+          try expire()
           continue
         }
         // Check alongside pulse intervals, with a shorter final wait when needed.
-        yield* Effect.sleep(Math.min(remainingMs, intervalMs))
+        try Effect.sleep(Math.min(remainingMs, intervalMs))
       }
-    })
+    }
     const pulses = Effect.sleep(heartbeatInterval).pipe(
       Effect.andThen(Clock.currentTimeMillis.pipe(Effect.map(Math.floor))),
       Effect.flatMap((nowMs) =>
@@ -435,5 +434,5 @@ export const heartbeatLoop = (
       ),
       Effect.forever
     )
-    return yield* Effect.raceFirst(pulses, deadline)
-  })
+    return try Effect.raceFirst(pulses, deadline)
+  }

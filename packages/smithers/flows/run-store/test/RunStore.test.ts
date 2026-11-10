@@ -13,7 +13,7 @@ import {
   heartbeatWriteTolerance,
   type LivenessEvidence,
   type OwnerId
-} from "../src/Ownership.ts"
+} from "../src/Ownership.vibe"
 import { type HeartbeatOutcome, type RunRow, type RunSnapshot, type RunStatus, RunStore } from "../src/RunStore.vibe"
 import * as RunStoreLive from "../src/RunStore.vibe"
 
