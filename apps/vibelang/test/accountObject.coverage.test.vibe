@@ -1,0 +1,122 @@
+// @vitest-environment node
+// A person's sandbox allowance object and its gateway (worker/accountObject.vibe), wired as live over SQLite storage and
+// a machine object whose container runs local processes (fuzz/machine-box.ts). Faults come from the box and from a
+// namespace whose binding throws, as workerd's does.
+import { describe, expect, it } from "@effect/vitest"
+import { RuntimeContext } from "alchemy"
+import { HttpServerRequest } from "effect/http"
+import { accountObject, gatewayOf, identityFromPolicy, noIdentity, SandboxIdentity } from "../worker/accountObject.vibe"
+import { machineObject, type MachineBox, type ObjectState } from "../worker/SandboxMachine.vibe"
+import { makeBox, namespaceOf } from "../fuzz/machine-box.ts"
+import { objectStorage } from "./support/objectStorage.ts"
+
+const OWNER = "person-1"
+type Role = "viewer" | "new" | "community" | "contributor" | "maintainer"
+
+function stateOf(storage: ReturnType<typeof objectStorage>, id: string) {
+  return { raw: { storage }, id: { toString: () => id } } as unknown as ObjectState
+}
+
+/** One person's account over a fresh machine: `person` asks as `role`, admitted by the policy when `allowed`. */
+effect function setup(options: { readonly person?: string; readonly role?: Role; readonly allowed?: boolean; readonly machineBinding?: boolean; readonly accountBinding?: boolean } = {}) {
+  const person = options.person ?? OWNER
+  const role = options.role ?? "maintainer"
+  const local = try Effect.acquireRelease(sync(() => makeBox()), (made) => sync(() => made.dispose()))
+  const storage = try Effect.try(() => objectStorage())
+  const machine = try machineObject(local.box as unknown as MachineBox, stateOf(try Effect.try(() => objectStorage()), "m"))
+  const identity = try Effect.provide(effect { return try SandboxIdentity }, identityFromPolicy(
+    () => succeed({ owner: person, role }),
+    () => succeed(role),
+    { authorize: () => options.allowed === false ? fail("denied") : Effect.void },
+  ))
+  const account = try accountObject(stateOf(storage, "a"), (try Effect.try(() => namespaceOf(() => options.machineBinding !== false, machine))) as never, identity)
+  const { gateway } = gatewayOf((try Effect.try(() => namespaceOf(() => options.accountBinding !== false, account))) as never, identity)
+  return { local, storage, account, gateway }
+}
+
+/** Runs a gateway call in a request, answering its success or failure as a value. */
+function asked<A, E>(program: A!E!(HttpServerRequest.HttpServerRequest | RuntimeContext)) {
+  return Effect.match(Effect.provideService(program, HttpServerRequest.HttpServerRequest, {} as never), {
+    onSuccess: (success): { readonly ok: true; readonly success: A } | { readonly ok: false; readonly failure: E } => ({ ok: true, success }),
+    onFailure: (failure) => ({ ok: false as const, failure }),
+  })
+}
+const provided = <A, E>(body: A!E!(RuntimeContext | Scope.Scope)) => Effect.scoped(Effect.provideService(body, RuntimeContext, {} as never))
+
+describe("a person's sandbox account", () => {
+  it.live("starts, runs a command, reads and stops the owner's sandbox, and keeps the first owner", () => provided(effect {
+    const s = try setup()
+    const started = try asked(s.gateway.startSandbox("c-1", "op-1"))
+    const generation = started.ok ? started.success.generation : -1
+    const output = try asked(s.gateway.sandboxCommand("c-1", "op-2", "echo hi", generation))
+    const read = try asked(s.gateway.sandbox("c-1"))
+    // A running sandbox's alarm keeps metering it.
+    const clock = s.storage as unknown as { alarmAt: number | undefined }
+    clock.alarmAt = undefined
+    try s.account.alarm()
+    const armed = clock.alarmAt
+    const stopped = try asked(s.gateway.stopSandbox("c-1", "op-3", generation))
+    const foreign = try s.account.run("person-2", "start", "c-1", "op-4", 0, "")
+    const blank = try s.account.run("", "start", "c-1", "op-5", 0, "")
+    try Effect.try(() => {
+      expect(started).toMatchObject({ ok: true, success: { status: "running" } })
+      expect(output).toEqual({ ok: true, success: "hi\n" })
+      expect(read).toMatchObject({ ok: true, success: { status: "running", generation } })
+      expect(armed).toBeDefined()
+      expect(stopped).toMatchObject({ ok: true, success: { status: "stopped" } })
+      expect(s.storage.kv.get("owner")).toBe(OWNER)
+      expect([foreign, blank]).toEqual([{ ok: false, refusal: "forbidden" }, { ok: false, refusal: "forbidden" }])
+    })
+  }), 60_000)
+
+  it.live("answers a signed-out read as signed out and refuses its writes, and refuses a person the policy or role denies", () => provided(effect {
+    const out = try setup({ person: "" })
+    const denied = try setup({ allowed: false })
+    const viewer = try setup({ role: "viewer" })
+    const read = try asked(out.gateway.sandbox("c-1"))
+    const answers = try Effect.all([
+      asked(out.gateway.startSandbox("c-1", "op-1")),
+      asked(denied.gateway.stopSandbox("c-1", "op-1", 0)),
+      asked(viewer.gateway.sandboxCommand("c-1", "op-1", "echo hi", 0)),
+    ])
+    // The gateway refuses before the object, so the object's own role check answers a direct call.
+    const direct = try viewer.account.run(OWNER, "start", "c-1", "op-2", 0, "")
+    const directDenied = try denied.account.run(OWNER, "start", "c-1", "op-2", 0, "")
+    const defaults = try Effect.provide(effect { return try SandboxIdentity }, noIdentity)
+    const signedOut = try Effect.all([defaults.request(), defaults.role("x")]).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, {} as never))
+    try Effect.try(() => {
+      expect(read).toMatchObject({ ok: true })
+      expect(answers.map((answer) => answer.ok ? answer : answer.failure)).toMatchObject([
+        { _tag: "Refused", refusal: "forbidden" }, { _tag: "Refused", refusal: "forbidden" }, { _tag: "Refused", refusal: "forbidden" },
+      ])
+      expect([direct, directDenied]).toEqual([{ ok: false, refusal: "forbidden" }, { ok: false, refusal: "forbidden" }])
+      expect(signedOut).toEqual([{ owner: "", role: "viewer" }, "viewer"])
+      expect(out.storage.kv.get("owner")).toBeUndefined()
+    })
+  }), 60_000)
+
+  it.live("answers a broken binding or a failing container as unavailable, and an idle account's alarm clears", () => provided(effect {
+    const noMachine = try setup({ machineBinding: false })
+    const noAccount = try setup({ accountBinding: false })
+    const failing = try setup()
+    failing.local.faults.add("start")
+    const answers = try Effect.all([
+      asked(noMachine.gateway.startSandbox("c-1", "op-1")),
+      asked(noAccount.gateway.startSandbox("c-1", "op-1")),
+      asked(failing.gateway.startSandbox("c-1", "op-1")),
+    ])
+    const clock = failing.storage as unknown as { alarmAt: number | undefined }
+    try failing.account.alarm()
+    // An account nobody has used meters as nobody's.
+    const unused = try setup()
+    try unused.account.alarm()
+    try Effect.try(() => {
+      expect(answers.map((answer) => answer.ok ? answer : answer.failure)).toMatchObject([
+        { _tag: "Refused", refusal: "unavailable" }, { _tag: "Unavailable", reason: "sandbox-binding" }, { _tag: "Refused", refusal: "unavailable" },
+      ])
+      // The alarm arms its retry before metering; with nothing running, the meter clears it.
+      expect(clock.alarmAt).toBeUndefined()
+      expect(unused.storage.kv.get("owner")).toBeUndefined()
+    })
+  }), 60_000)
+})

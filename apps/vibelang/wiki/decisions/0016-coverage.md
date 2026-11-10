@@ -683,6 +683,13 @@ runs the same flow in memory inside the record step, so a mock action's trace sh
 record after the host's. `Node.bindPlanned`'s callback needs `Node.capture`, or the engine refuses the graph as
 process-local. Resuming a history run journaled before this change is untested.
 
+**`worker/accountObject.vibe` (2026-11-10).** 10.41% of lines → 100% of lines, branches, functions and statements in
+Node, with no workerd: `test/accountObject.coverage.test.vibe` wires the account object and its gateway as live over
+SQLite storage and the machine object over local processes (`fuzz/machine-box.ts`), and injects a throwing namespace
+binding and a failing container. It covers the owner's start, command, read, alarm and stop; the first owner keeping
+the account; signed-out, policy-denied and viewer refusals at the gateway and at the object; unavailable bindings and
+containers; and an unused account's alarm. No bug found.
+
 **A reply-started tour stayed parked (fixed 2026-11-09).** A reply refused `busy` by a tour accepted after its
 dispatch ran that tour as its own child execution. Ending the tour woke only the tour the answer loop started, so the
 child stayed parked forever with no `vibelang.tour.run` outcome, though the reply still answered. Now each room has one
