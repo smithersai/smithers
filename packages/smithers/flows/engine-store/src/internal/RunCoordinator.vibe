@@ -39,48 +39,48 @@ export interface RunCoordinator<Key, E> {
    * @since 0.1.0
    * @category operations
    */
-  readonly active: Effect.Effect<ReadonlySet<Key>>
+  readonly active: ReadonlySet<Key>!!
   /**
    * Starts a drain while idle or joins the active drain for the key.
    *
    * @since 0.1.0
    * @category operations
    */
-  readonly run: (key: Key, ask?: Ask) => Effect.Effect<void, E>
+  readonly run: (key: Key, ask?: Ask) => void!E!
   /**
    * Joins the active drain for the key, and starts none while idle.
    *
    * @since 1.0.0
    * @category operations
    */
-  readonly join: (key: Key) => Effect.Effect<void, E>
+  readonly join: (key: Key) => void!E!
   /**
    * Starts an idle key without joining or requesting another active drain.
    *
    * @since 1.0.0
    * @category operations
    */
-  readonly schedule: (key: Key, ask?: Ask) => Effect.Effect<void>
+  readonly schedule: (key: Key, ask?: Ask) => void!!
   /** Reserves an idle key, then starts its drain only while the supplied durable readiness holds. */
-  readonly scheduleIf: (key: Key, ready: Effect.Effect<boolean>) => Effect.Effect<void>
+  readonly scheduleIf: (key: Key, ready: boolean!!) => void!!
   /**
    * Ensures one coalesced drain follows the active drain for the key.
    *
    * @since 0.1.0
    * @category operations
    */
-  readonly wake: (key: Key, ask?: Ask) => Effect.Effect<void>
+  readonly wake: (key: Key, ask?: Ask) => void!!
   /** Coalesces a wake only into an active, non-stopping drain; never starts an idle key. */
-  readonly wakeIfActive: (key: Key) => Effect.Effect<void>
+  readonly wakeIfActive: (key: Key) => void!!
   /**
    * Interrupts the active drain for the key and waits for its cleanup.
    *
    * @since 0.1.0
    * @category operations
    */
-  readonly interrupt: (key: Key) => Effect.Effect<void>
+  readonly interrupt: (key: Key) => void!!
   /** Sends interruption without awaiting cleanup; safe for a short commit publication. */
-  readonly requestInterrupt: (key: Key) => Effect.Effect<void>
+  readonly requestInterrupt: (key: Key) => void!!
 }
 
 type Entry<E> = {
@@ -110,20 +110,20 @@ type Entry<E> = {
  * @category constructors
  */
 export const make = <Key, E, R>(options: {
-  readonly drain: (key: Key) => Effect.Effect<void, E, R>
+  readonly drain: (key: Key) => void!E!R
   readonly resumeConcurrency?: number | undefined
-}): Effect.Effect<RunCoordinator<Key, E>, never, Scope.Scope | R> =>
-  Effect.gen(function*() {
+}): RunCoordinator<Key, E>!never!(Scope.Scope | R) =>
+  effect {
     const limit = options.resumeConcurrency
     if (limit !== undefined && !(Number.isSafeInteger(limit) && limit > 0)) {
-      return yield* Effect.die(new RangeError(`resumeConcurrency must be a positive integer, got ${limit}`))
+      return try Effect.die(new RangeError(`resumeConcurrency must be a positive integer, got ${limit}`))
     }
     const active = new Map<Key, Entry<E>>()
-    const fork = yield* FiberSet.makeRuntime<R, void, never>()
+    const runFork = try FiberSet.makeRuntime<R, void, never>()
     let free = limit ?? 0
     const waiting: Array<readonly [Key, Entry<E>]> = []
     // Closing the coordinator ends every drain; a key still waiting for a slot ends with them.
-    yield* Effect.addFinalizer(() =>
+    try Effect.addFinalizer(() =>
       Effect.sync(() => {
         for (const [key, entry] of waiting.splice(0)) {
           active.delete(key)
@@ -144,10 +144,10 @@ export const make = <Key, E, R>(options: {
       key: Key,
       entry: Entry<E>,
       successor = false,
-      onlyIf: Effect.Effect<boolean> = Effect.succeed(true)
+      onlyIf: boolean!! = Effect.succeed(true)
     ): void => {
       const ready = Deferred.makeUnsafe<void>()
-      const owner = fork(
+      const owner = runFork(
         (successor ? Effect.yieldNow : Deferred.await(ready)).pipe(
           Effect.andThen(onlyIf),
           Effect.flatMap((ready) => ready ? Effect.suspend(() => options.drain(key)) : Effect.void),
@@ -207,7 +207,7 @@ export const make = <Key, E, R>(options: {
       start(key, entry)
     }
 
-    const startIdle = (key: Key, onlyIf?: Effect.Effect<boolean>, ask?: Ask): Entry<E> => {
+    const startIdle = (key: Key, onlyIf?: boolean!!, ask?: Ask): Entry<E> => {
       const next = makeEntry()
       active.set(key, next)
       if (ask?.resumed === true && limit !== undefined) {
@@ -230,7 +230,7 @@ export const make = <Key, E, R>(options: {
       return entry
     }
 
-    const run = (key: Key, ask?: Ask): Effect.Effect<void, E> =>
+    const run = (key: Key, ask?: Ask): void!E! =>
       Effect.uninterruptibleMask((restore) => {
         const entry = asked(key, ask)
         if (entry !== undefined) {
@@ -251,23 +251,23 @@ export const make = <Key, E, R>(options: {
         return restore(Deferred.await(startIdle(key, undefined, ask).done))
       })
 
-    const join = (key: Key): Effect.Effect<void, E> =>
+    const awaitKey = (key: Key): void!E! =>
       Effect.suspend(() => {
         const entry = active.get(key)
         return entry === undefined ? Effect.void : Deferred.await(entry.done)
       })
 
-    const schedule = (key: Key, ask?: Ask): Effect.Effect<void> =>
+    const schedule = (key: Key, ask?: Ask): void!! =>
       Effect.sync(() => {
         if (asked(key, ask) === undefined) startIdle(key, undefined, ask)
       })
 
-    const scheduleIf = (key: Key, ready: Effect.Effect<boolean>): Effect.Effect<void> =>
+    const scheduleIf = (key: Key, ready: boolean!!): void!! =>
       Effect.sync(() => {
         if (asked(key, undefined) === undefined) startIdle(key, ready)
       })
 
-    const wake = (key: Key, ask?: Ask): Effect.Effect<void> =>
+    const wake = (key: Key, ask?: Ask): void!! =>
       Effect.sync(() => {
         const entry = asked(key, ask)
         if (entry !== undefined) {
@@ -278,7 +278,7 @@ export const make = <Key, E, R>(options: {
         startIdle(key, undefined, ask)
       })
 
-    const wakeIfActive = (key: Key): Effect.Effect<void> =>
+    const wakeIfActive = (key: Key): void!! =>
       Effect.sync(() => {
         const entry = active.get(key)
         if (entry !== undefined && !entry.stopping) entry.pendingWake = true
@@ -295,7 +295,7 @@ export const make = <Key, E, R>(options: {
       return true
     }
 
-    const interrupt = (key: Key): Effect.Effect<void> =>
+    const interrupt = (key: Key): void!! =>
       Effect.suspend(() => {
         if (promoteToCancel(key)) return Effect.void
         const entry = active.get(key)
@@ -305,7 +305,7 @@ export const make = <Key, E, R>(options: {
         return Fiber.interrupt(entry.owner)
       })
 
-    const requestInterrupt = (key: Key): Effect.Effect<void> =>
+    const requestInterrupt = (key: Key): void!! =>
       Effect.withFiber((fiber) =>
         Effect.sync(() => {
           if (promoteToCancel(key)) return
@@ -320,7 +320,7 @@ export const make = <Key, E, R>(options: {
     return {
       active: Effect.fn("RunCoordinator.active")(() => Effect.sync(() => new Set(active.keys())))(),
       run: Effect.fn("RunCoordinator.run")(run),
-      join: Effect.fn("RunCoordinator.join")(join),
+      join: Effect.fn("RunCoordinator.join")(awaitKey),
       schedule: Effect.fn("RunCoordinator.schedule")(schedule),
       scheduleIf: Effect.fn("RunCoordinator.scheduleIf")(scheduleIf),
       wake: Effect.fn("RunCoordinator.wake")(wake),
@@ -328,4 +328,4 @@ export const make = <Key, E, R>(options: {
       interrupt: Effect.fn("RunCoordinator.interrupt")(interrupt),
       requestInterrupt: Effect.fn("RunCoordinator.requestInterrupt")(requestInterrupt)
     }
-  })
+  }

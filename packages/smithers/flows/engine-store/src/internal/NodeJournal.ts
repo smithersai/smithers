@@ -25,7 +25,7 @@ import { canonicalize, isRecord } from "@smthrs/canonical"
 import type { FlowRuntime } from "@smthrs/flow"
 import { EngineEvent, JournalEvent, Redaction } from "@smthrs/journal"
 import type * as Schema from "effect/Schema"
-import * as JournalRecords from "./JournalRecords.ts"
+import * as JournalRecords from "./JournalRecords.vibe"
 
 /**
  * Where the records of one run are addressed from.

@@ -39,7 +39,7 @@ import { Node, Planned } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
 import { Context, Effect, Layer, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as Read from "./internal/ExecutionSnapshotRead.ts"
+import * as Read from "./internal/ExecutionSnapshotRead.vibe"
 import * as FailureDiagnostic from "./internal/FailureDiagnostic.ts"
 import { type Failure, RunState } from "./RunState.ts"
 

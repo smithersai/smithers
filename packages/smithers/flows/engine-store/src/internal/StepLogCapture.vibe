@@ -22,7 +22,7 @@ import * as Fiber from "effect/Fiber"
 import * as Logger from "effect/Logger"
 import * as Metric from "effect/Metric"
 import * as Queue from "effect/Queue"
-import * as EngineStoreMetrics from "../EngineStoreMetrics.ts"
+import * as EngineStoreMetrics from "../EngineStoreMetrics.vibe"
 import * as StepLogs from "../StepLogs.ts"
 
 /**
@@ -147,19 +147,19 @@ const drain = (target: Journal.Service, sink: Sink, runId: string) =>
  * left behind is interrupted with the body's.
  */
 const flush = (target: Journal.Service, sink: Sink, runId: string, worker: Fiber.Fiber<void>) =>
-  Effect.gen(function*() {
-    yield* Queue.end(sink.queue)
+  effect {
+    try Queue.end(sink.queue)
     // Most bodies log nothing: with nothing to deliver there is no wait and no timer.
-    if (sink.admitted > 0) yield* Effect.timeoutOption(Fiber.await(worker), sink.limits.flush)
-    yield* Fiber.interrupt(worker)
+    if (sink.admitted > 0) try Effect.timeoutOption(Fiber.await(worker), sink.limits.flush)
+    try Fiber.interrupt(worker)
     const stranded = Queue.sizeUnsafe(sink.queue)
     if (stranded > 0) {
       sink.dropped += stranded
-      yield* Metric.update(EngineStoreMetrics.stepLog.DroppedFlush, stranded)
+      try Metric.update(EngineStoreMetrics.stepLog.DroppedFlush, stranded)
     }
     if (sink.dropped === 0) return
-    const fiberId = yield* Effect.withFiber((fiber) => Effect.succeed(fiber.id))
-    const now = yield* Clock.currentTimeMillis
+    const fiberId = try Effect.withFiber((fiber) => Effect.succeed(fiber.id))
+    const now = try Clock.currentTimeMillis
     const summary: TelemetryLog.Log = {
       version: 1,
       level: "Warn",
@@ -169,8 +169,8 @@ const flush = (target: Journal.Service, sink: Sink, runId: string, worker: Fiber
       fiberId,
       timestamp: new Date(now).toISOString()
     }
-    yield* Effect.timeoutOption(journal(target, sink, runId, summary), sink.limits.flush)
-  })
+    try Effect.timeoutOption(journal(target, sink, runId, summary), sink.limits.flush)
+  }
 
 /**
  * Runs `body` with its log records journaled to `attribution`'s run, and its
@@ -181,29 +181,27 @@ const flush = (target: Journal.Service, sink: Sink, runId: string, worker: Fiber
  * @category combinators
  * @since 1.0.0
  */
-export const capture =
-  (target: Journal.Service, attribution: Attribution) =>
-  <A, E, R>(body: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-    Effect.gen(function*() {
-      const limits = yield* StepLogs.Limits
-      const annotated = Effect.annotateLogs(body, { stepKeyDigest: attribution.stepKeyDigest })
-      if (!(limits.records > 0)) return yield* annotated
-      const sink: Sink = {
-        queue: yield* Queue.bounded<TelemetryLog.Log, Cause.Done>(Math.max(1, Math.floor(limits.queue) || 1)),
-        limits,
-        annotations: {
-          runId: attribution.runId,
-          stepKeyDigest: attribution.stepKeyDigest,
-          attempt: attribution.attempt
-        },
-        admitted: 0,
-        dropped: 0
-      }
-      const worker = yield* Effect.forkChild(drain(target, sink, attribution.runId))
-      return yield* Effect.withFiber((fiber) =>
-        annotated.pipe(
-          Effect.provideService(CurrentSink, sink),
-          Effect.provideService(Logger.CurrentLoggers, new Set(fiber.getRef(Logger.CurrentLoggers)).add(stepLogger))
-        )
-      ).pipe(Effect.onExit(() => flush(target, sink, attribution.runId, worker)))
-    })
+export const capture = (target: Journal.Service, attribution: Attribution) => <A, E, R>(body: A!E!R): A!E!R =>
+  effect {
+    const limits = try StepLogs.Limits
+    const annotated = Effect.annotateLogs(body, { stepKeyDigest: attribution.stepKeyDigest })
+    if (!(limits.records > 0)) return try annotated
+    const sink: Sink = {
+      queue: try Queue.bounded<TelemetryLog.Log, Cause.Done>(Math.max(1, Math.floor(limits.queue) || 1)),
+      limits,
+      annotations: {
+        runId: attribution.runId,
+        stepKeyDigest: attribution.stepKeyDigest,
+        attempt: attribution.attempt
+      },
+      admitted: 0,
+      dropped: 0
+    }
+    const worker = try Effect.forkChild(drain(target, sink, attribution.runId))
+    return try Effect.withFiber((fiber) =>
+      annotated.pipe(
+        Effect.provideService(CurrentSink, sink),
+        Effect.provideService(Logger.CurrentLoggers, new Set(fiber.getRef(Logger.CurrentLoggers)).add(stepLogger))
+      )
+    ).pipe(Effect.onExit(() => flush(target, sink, attribution.runId, worker)))
+  }

@@ -69,20 +69,21 @@ export const exitTag = <A, E>(exit: Exit.Exit<A, E>): ExitTag =>
  * @category combinators
  * @since 0.1.0
  */
-export const observe = (instruments: {
-  readonly timer: Metric.Histogram<Duration.Duration>
-  readonly counter: { readonly [Tag in ExitTag]: Metric.Metric<number, Metric.CounterState<number>> }
-}) =>
-<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-  effect.pipe(
-    Effect.trackDuration(instruments.timer),
-    Effect.onExit((exit) => {
-      const tag = exitTag(exit)
-      return Effect.annotateCurrentSpan({ outcome: attributeValue(tag) }).pipe(
-        Effect.andThen(Metric.update(instruments.counter[tag], 1))
-      )
-    })
-  )
+export const observe =
+  (instruments: {
+    readonly timer: Metric.Histogram<Duration.Duration>
+    readonly counter: { readonly [Tag in ExitTag]: Metric.Metric<number, Metric.CounterState<number>> }
+  }) =>
+  <A, E, R>(effect: A!E!R): A!E!R =>
+    effect.pipe(
+      Effect.trackDuration(instruments.timer),
+      Effect.onExit((exit) => {
+        const tag = exitTag(exit)
+        return Effect.annotateCurrentSpan({ outcome: attributeValue(tag) }).pipe(
+          Effect.andThen(Metric.update(instruments.counter[tag], 1))
+        )
+      })
+    )
 
 const exitTags = ["Success", "Failure", "Interrupt"] as const
 

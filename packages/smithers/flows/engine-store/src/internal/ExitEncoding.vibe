@@ -437,7 +437,7 @@ const degrade = (result: Flow.Result<unknown, unknown>, projection: ResultProjec
 export const encode = (
   flow: Flow.Any,
   result: Flow.Result<unknown, unknown>
-): Effect.Effect<EncodedResult> =>
+): EncodedResult!! =>
   Schema.encodeEffect(
     Schema.toCodecJson(Flow.Result({
       success: flow.successSchema,
@@ -454,4 +454,4 @@ export const encode = (
         { encoded: degrade(result, projectResult(result, note)), note } satisfies EncodedResult
       )
     })
-  ) as Effect.Effect<EncodedResult>
+  ) as EncodedResult!!

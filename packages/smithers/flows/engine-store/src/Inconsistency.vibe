@@ -26,7 +26,7 @@ import type { CacheStore } from "@smthrs/step-cache"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as JournalRecords from "./internal/JournalRecords.ts"
+import * as JournalRecords from "./internal/JournalRecords.vibe"
 
 /**
  * Decision returned by an inconsistency receiver.
@@ -81,13 +81,13 @@ export interface BlobCorruption {
  * @since 0.1.0
  */
 export interface Service {
-  readonly note: (event: CacheConflict) => Effect.Effect<InconsistencyVerdict, Journal.JournalError>
+  readonly note: (event: CacheConflict) => InconsistencyVerdict!Journal.JournalError
   /**
    * Observes on-disk corruption of recorded boundary evidence (issue #150).
    * `"fail"` fails the dispatch; `"tolerate"` lets it fall back to a real
    * execution (which re-captures and heals the corrupt address).
    */
-  readonly noteCorruption: (event: BlobCorruption) => Effect.Effect<InconsistencyVerdict, Journal.JournalError>
+  readonly noteCorruption: (event: BlobCorruption) => InconsistencyVerdict!Journal.JournalError
 }
 
 /**
@@ -231,10 +231,10 @@ export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<Inconsi
  */
 export const layerStrict = (owner: Ownership.OwnerId): Layer.Layer<Inconsistency, never, Journal.Journal> =>
   Layer.effect(Inconsistency)(
-    Effect.gen(function*() {
-      const journal = yield* Journal.Journal
+    effect {
+      const journal = try Journal.Journal
       return make({ journal, verdict: "fail", owner })
-    })
+    }
   )
 
 /**
@@ -246,8 +246,8 @@ export const layerStrict = (owner: Ownership.OwnerId): Layer.Layer<Inconsistency
  */
 export const layerTolerant = (owner: Ownership.OwnerId): Layer.Layer<Inconsistency, never, Journal.Journal> =>
   Layer.effect(Inconsistency)(
-    Effect.gen(function*() {
-      const journal = yield* Journal.Journal
+    effect {
+      const journal = try Journal.Journal
       return make({ journal, verdict: "tolerate", owner })
-    })
+    }
   )

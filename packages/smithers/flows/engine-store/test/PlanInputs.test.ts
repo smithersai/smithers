@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { FileSet, KeyMaterial, Plan } from "@smthrs/plan"
 import { Effect } from "effect"
 import * as PlanInputs from "../src/internal/PlanInputs.vibe"
-import type * as PlanInputStore from "../src/PlanInputStore.ts"
+import type * as PlanInputStore from "../src/PlanInputStore.vibe"
 import { withCrypto } from "./Sha256.ts"
 
 const compile = (reads: Plan.NodeEffects["reads"]) =>

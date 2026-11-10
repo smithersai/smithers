@@ -7,8 +7,8 @@
 import { RunStoreError } from "@smthrs/run-store/RunStore"
 import { Context, Effect, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import type { Position } from "./ExecutionSnapshot.ts"
-import * as Read from "./internal/ExecutionSnapshotRead.ts"
+import type { Position } from "./ExecutionSnapshot.vibe"
+import * as Read from "./internal/ExecutionSnapshotRead.vibe"
 
 /**
  * A live-row change or retained tombstone.

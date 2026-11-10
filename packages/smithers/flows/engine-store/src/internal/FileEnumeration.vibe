@@ -25,22 +25,22 @@ const metadata = <A>(
   fs: FileSystem.FileSystem,
   paths: ReadonlyArray<string>,
   operation: "stat" | "readDirectory",
-  fallback: (path: string) => Effect.Effect<A, PlatformError.PlatformError>
-): Effect.Effect<ReadonlyArray<A>, PlatformError.PlatformError> =>
-  Effect.gen(function*() {
+  fallback: (path: string) => A!PlatformError.PlatformError
+): ReadonlyArray<A>!PlatformError.PlatformError =>
+  effect {
     const batch = KernelFileSystem.batch(fs)
     if (batch === undefined) {
-      return yield* Effect.forEach(paths, (path) => fallback(path), {
+      return try Effect.forEach(paths, (path) => fallback(path), {
         concurrency: KernelFileSystem.fallbackConcurrency
       })
     }
     const values: Array<A> = []
     for (let offset = 0; offset < paths.length; offset += batch.maxSize) {
-      const response = yield* batch.execute(
+      const response = try batch.execute(
         paths.slice(offset, offset + batch.maxSize).map((path) => ({ operation, path }))
       )
       for (const entry of [...response.entries].sort((a, b) => a.index - b.index)) {
-        const value = yield* Effect.fromResult(entry.result)
+        const value = try Effect.fromResult(entry.result)
         values.push(
           (value.operation === "stat"
             ? value.info
@@ -49,7 +49,7 @@ const metadata = <A>(
       }
     }
     return values
-  })
+  }
 
 /**
  * The default maximum number of directory entries visited by one expansion.
@@ -141,7 +141,7 @@ const explicitIgnoredDirectories = (patterns: Iterable<string>): ReadonlySet<str
   return explicit
 }
 
-const visit = (budget: EnumerationBudget): Effect.Effect<void, FileEnumerationError> => {
+const visit = (budget: EnumerationBudget): void!FileEnumerationError => {
   budget.count += 1
   if (budget.count <= budget.limit) return Effect.void
   const message = `enumerating pattern ${JSON.stringify(budget.pattern)} exceeded the ${budget.limit}-entry limit`
@@ -168,8 +168,8 @@ const enumerateUnder = (
   budget: EnumerationBudget,
   pruneIgnoredDirectories: boolean,
   explicit: ReadonlySet<string> = new Set()
-): Effect.Effect<EnumeratedEntries, PlatformError.PlatformError | FileEnumerationError> =>
-  Effect.gen(function*() {
+): EnumeratedEntries!(PlatformError.PlatformError | FileEnumerationError)! =>
+  effect {
     // A directory that is not there enumerates to nothing, and its own
     // listing reports that with `NotFound` — so no `exists` probe precedes
     // it. The probe asked the question the very next call answers anyway, and
@@ -178,7 +178,7 @@ const enumerateUnder = (
     // reaching the walk root. Only the root is probed this way; a subtree
     // discovered by `stat` inside the walk is read without a net, exactly as
     // before, so a listing that refuses there still fails the expansion.
-    const root = yield* metadata(fs, [resolve(dir)], "readDirectory", fs.readDirectory).pipe(
+    const root = try metadata(fs, [resolve(dir)], "readDirectory", fs.readDirectory).pipe(
       Effect.map((values) => values[0]!),
       Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined))
     )
@@ -200,11 +200,11 @@ const enumerateUnder = (
           pending.pop()
           continue
         }
-        yield* visit(budget)
+        try visit(budget)
         const relative = current.entries[current.index++]!.replaceAll("\\", "/")
         paths.push(current.path === "" ? relative : `${current.path}/${relative}`)
       }
-      const infos = yield* metadata(fs, paths.map(resolve), "stat", fs.stat)
+      const infos = try metadata(fs, paths.map(resolve), "stat", fs.stat)
       const children: Array<string> = []
       for (const [index, path] of paths.entries()) {
         const info = infos[index]!
@@ -218,13 +218,13 @@ const enumerateUnder = (
         directories.push(path)
         children.push(path)
       }
-      const listings = yield* metadata(fs, children.map(resolve), "readDirectory", fs.readDirectory)
+      const listings = try metadata(fs, children.map(resolve), "readDirectory", fs.readDirectory)
       for (const [index, path] of children.entries()) {
         pending.push({ path, entries: [...listings[index]!].sort(), index: 0 })
       }
     }
     return { files: files.sort(), directories: directories.sort() }
-  })
+  }
 
 /**
  * Every file under `dir` (workspace-relative; `""` for the workspace root),
@@ -241,17 +241,17 @@ export const filesUnder = (
   fs: FileSystem.FileSystem,
   dir: string,
   options: EnumerationOptions = {}
-): Effect.Effect<ReadonlyArray<string>, PlatformError.PlatformError | FileEnumerationError> =>
-  Effect.gen(function*() {
+): ReadonlyArray<string>!(PlatformError.PlatformError | FileEnumerationError)! =>
+  effect {
     const resolve = options.resolve ?? defaultResolve
-    return (yield* enumerateUnder(
+    return (try enumerateUnder(
       fs,
       dir,
       resolve,
       budgetFor(dir === "" ? "**" : `${dir}/**`, options),
       false
     )).files
-  })
+  }
 
 /**
  * Every file and every directory under `dir` (workspace-relative, non-empty),
@@ -269,14 +269,11 @@ export const entriesUnder = (
   fs: FileSystem.FileSystem,
   dir: string,
   options: EnumerationOptions = {}
-): Effect.Effect<
-  { readonly files: ReadonlyArray<string>; readonly directories: ReadonlyArray<string> },
-  PlatformError.PlatformError | FileEnumerationError
-> =>
-  Effect.gen(function*() {
+): { readonly files: ReadonlyArray<string>; readonly directories: ReadonlyArray<string> }!(PlatformError.PlatformError | FileEnumerationError)! =>
+  effect {
     const resolve = options.resolve ?? defaultResolve
-    return yield* enumerateUnder(fs, dir, resolve, budgetFor(`${dir}/**`, options), false)
-  })
+    return try enumerateUnder(fs, dir, resolve, budgetFor(`${dir}/**`, options), false)
+  }
 
 /**
  * The longest directory prefix of a pattern that contains no wildcard — the
@@ -311,8 +308,8 @@ export const expandGlob = (
   fs: FileSystem.FileSystem,
   glob: FileSet.Glob,
   options: EnumerationOptions = {}
-): Effect.Effect<ReadonlyArray<string>, PlatformError.PlatformError | FileEnumerationError> =>
-  Effect.gen(function*() {
+): ReadonlyArray<string>!(PlatformError.PlatformError | FileEnumerationError)! =>
+  effect {
     const resolve = options.resolve ?? defaultResolve
     const matched = new Set<string>()
     const budget = budgetFor("", options)
@@ -326,9 +323,9 @@ export const expandGlob = (
     for (const [prefix, includes] of groups) {
       budget.pattern = includes[0]!
       const explicit = explicitIgnoredDirectories(includes)
-      for (const path of (yield* enumerateUnder(fs, prefix, resolve, budget, true, explicit)).files) {
+      for (const path of (try enumerateUnder(fs, prefix, resolve, budget, true, explicit)).files) {
         if (FileSet.matchesGlob(glob, path)) matched.add(path)
       }
     }
     return [...matched].sort()
-  })
+  }

@@ -24,4 +24,4 @@ export {
   type Service
 } from "./internal/RunCatalogOps.vibe"
 
-export { Filters, type ListRunsOptions, maximumPageSize, type RunPage } from "./internal/RunListing.ts"
+export { Filters, type ListRunsOptions, maximumPageSize, type RunPage } from "./internal/RunListing.vibe"

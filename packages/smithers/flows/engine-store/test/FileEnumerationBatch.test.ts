@@ -4,7 +4,7 @@ import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Effect, FileSystem, PlatformError, Result } from "effect"
 import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
-import * as FileEnumeration from "../src/internal/FileEnumeration.ts"
+import * as FileEnumeration from "../src/internal/FileEnumeration.vibe"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import { hostPath } from "./HostPath.ts"
 

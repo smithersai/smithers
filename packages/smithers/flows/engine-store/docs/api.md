@@ -1088,7 +1088,7 @@ and never writes journal records.
 
 ## ArtifactSync
 
-[src/ArtifactSync.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/ArtifactSync.ts)
+[src/ArtifactSync.vibe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/ArtifactSync.vibe)
 
 The two-tier artifact protocol, and the seam a shared-cache composition injects
 into.
@@ -1139,7 +1139,7 @@ nothing, so the replay is refused either way and the step executes.
 
 ## CacheSync
 
-[src/CacheSync.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/CacheSync.ts)
+[src/CacheSync.vibe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/CacheSync.vibe)
 
 The second half of the ordering constraint: the shared step-result tier's `put`,
 run after the transaction that made the local row durable.
@@ -1266,7 +1266,7 @@ quiescent store: a write between the journal read and the rewrite is missed.
 
 ## Retention
 
-[src/Retention.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/Retention.ts)
+[src/Retention.vibe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/Retention.vibe)
 
 Explicit deletion of finished run state. Nothing schedules any of it.
 
@@ -1465,7 +1465,7 @@ Full guide: [Back up and restore the store](./guides/back-up-and-restore.md).
 
 ## Inconsistency
 
-[src/Inconsistency.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/Inconsistency.ts)
+[src/Inconsistency.vibe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/Inconsistency.vibe)
 
 The receiver for cache conflicts and corrupt evidence.
 
@@ -1576,7 +1576,7 @@ const quiet = Effect.provideService(StepLogs.Limits, { ...StepLogs.defaultLimits
 
 ## OwnerIdentity
 
-[src/OwnerIdentity.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/OwnerIdentity.ts)
+[src/OwnerIdentity.vibe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/OwnerIdentity.vibe)
 
 Mints the `OwnerId` an incarnation fences its writes with.
 
@@ -1637,7 +1637,7 @@ delivery stays store-driven.
 
 ## EngineStoreMetrics
 
-[src/EngineStoreMetrics.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/EngineStoreMetrics.ts)
+[src/EngineStoreMetrics.vibe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/EngineStoreMetrics.vibe)
 
 Metric handles and observation combinators for the engine hot paths. Exporters
 remain host-owned.

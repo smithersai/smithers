@@ -5,7 +5,7 @@
 
 import { FileSet, type Plan } from "@smthrs/plan"
 import { Effect } from "effect"
-import * as PlanInputStore from "../PlanInputStore.ts"
+import * as PlanInputStore from "../PlanInputStore.vibe"
 
 /**
  * Validates without publishing or mutating either the old pins or observations.

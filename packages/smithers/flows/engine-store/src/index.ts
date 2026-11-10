@@ -14,13 +14,13 @@ export * as ArtifactGc from "./ArtifactGc.vibe"
  * @since 0.1.0
  * @category services
  */
-export * as ArtifactSync from "./ArtifactSync.ts"
+export * as ArtifactSync from "./ArtifactSync.vibe"
 
 /**
  * @since 0.1.0
  * @category services
  */
-export * as CacheSync from "./CacheSync.ts"
+export * as CacheSync from "./CacheSync.vibe"
 
 /**
  * @since 0.1.0
@@ -44,7 +44,7 @@ export * as EngineStore from "./EngineStore.ts"
  * @since 0.1.0
  * @category metrics
  */
-export * as EngineStoreMetrics from "./EngineStoreMetrics.ts"
+export * as EngineStoreMetrics from "./EngineStoreMetrics.vibe"
 
 /**
  * Public engine observation exports.
@@ -52,7 +52,7 @@ export * as EngineStoreMetrics from "./EngineStoreMetrics.ts"
  * @since 1.0.0
  * @category services
  */
-export * as ExecutionSnapshot from "./ExecutionSnapshot.ts"
+export * as ExecutionSnapshot from "./ExecutionSnapshot.vibe"
 
 /**
  * Public engine observation exports.
@@ -75,7 +75,7 @@ export * as RunInspection from "./RunInspection.vibe"
  * @since 0.1.0
  * @category services
  */
-export * as PlanInputStore from "./PlanInputStore.ts"
+export * as PlanInputStore from "./PlanInputStore.vibe"
 
 /**
  * Owner-fenced plan merge decisions, recorded before a merge is appended.
@@ -83,7 +83,7 @@ export * as PlanInputStore from "./PlanInputStore.ts"
  * @since 1.0.0
  * @category services
  */
-export * as PlanMergeStore from "./PlanMergeStore.ts"
+export * as PlanMergeStore from "./PlanMergeStore.vibe"
 
 /**
  * Drives a persisted plan: the node scheduler.
@@ -121,7 +121,7 @@ export * as StepBoundary from "./StepBoundary.ts"
  * @category folds
  * @since 1.0.0
  */
-export * as DeferredClockFold from "./DeferredClockFold.ts"
+export * as DeferredClockFold from "./DeferredClockFold.vibe"
 
 /**
  * @category folds
@@ -151,13 +151,13 @@ export * as WorkspaceSandbox from "./WorkspaceSandbox.ts"
  * @since 0.1.0
  * @category services
  */
-export * as Inconsistency from "./Inconsistency.ts"
+export * as Inconsistency from "./Inconsistency.vibe"
 
 /**
  * @since 0.1.0
  * @category services
  */
-export * as OwnerIdentity from "./OwnerIdentity.ts"
+export * as OwnerIdentity from "./OwnerIdentity.vibe"
 
 /**
  * @since 1.0.0
@@ -193,7 +193,7 @@ export * as Migrations from "./Migrations.vibe"
  * @category retention
  * @since 1.0.0
  */
-export * as Retention from "./Retention.ts"
+export * as Retention from "./Retention.vibe"
 
 /**
  * @since 0.1.0

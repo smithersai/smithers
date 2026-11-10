@@ -26,9 +26,9 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as DurableEngineState from "../DurableEngineState.ts"
 import * as Migrations from "../Migrations.vibe"
-import * as OwnerIdentity from "../OwnerIdentity.ts"
-import * as PlanInputStore from "../PlanInputStore.ts"
-import * as PlanMergeStore from "../PlanMergeStore.ts"
+import * as OwnerIdentity from "../OwnerIdentity.vibe"
+import * as PlanInputStore from "../PlanInputStore.vibe"
+import * as PlanMergeStore from "../PlanMergeStore.vibe"
 
 /**
  * Options for the deterministic store bundle.

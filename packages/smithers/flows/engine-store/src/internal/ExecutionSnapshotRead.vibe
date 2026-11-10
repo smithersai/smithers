@@ -11,7 +11,7 @@ import { revisionTriggers } from "@smthrs/run-store/Migrations"
 import { RunStatus, RunStoreError } from "@smthrs/run-store/RunStore"
 import { Cause, Effect, Option, Schema } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
-import type { Batch } from "../ExecutionSnapshot.ts"
+import type { Batch } from "../ExecutionSnapshot.vibe"
 
 /**
  * Non-negative safe integer for timestamps and revisions.
@@ -60,7 +60,7 @@ export type Position = typeof Position.Type
  * @private
  * @since 1.0.0
  */
-export const boundary = <A, E, R>(method: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, RunStoreError, R> =>
+export const boundary = <A, E, R>(method: string, effect: A!E!R): A!RunStoreError!R =>
   effect.pipe(Effect.catchCause((cause) => {
     if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause as Cause.Cause<never>)
     const original = Cause.squash(cause)
@@ -102,7 +102,7 @@ export const decode = <S extends Schema.Top>(schema: S, input: unknown) =>
  * @private
  * @since 1.0.0
  */
-export const transaction = <A, E, R>(sql: SqlClient.SqlClient, effect: Effect.Effect<A, E, R>) =>
+export const transaction = <A, E, R>(sql: SqlClient.SqlClient, effect: A!E!R) =>
   Effect.flatMap(Effect.serviceOption(sql.transactionService), (joined) =>
     Option.isSome(joined)
       ? Effect.andThen(Dialect.flushDeferredTriggers(sql, revisionTriggers), effect)
@@ -209,12 +209,16 @@ export const selectColumns = (sql: SqlClient.SqlClient, hasWaitingRequest = true
     r.parent_run_id, r.execution_parent_id, r.lineage_id, r.round_ordinal,
     r.cancel_requested_at_ms, r.cancel_acknowledgement_json,
     r.waiting_reason, r.waiting_wake_at_ms, r.waiting_token, ${
-    hasWaitingRequest ? "r.waiting_request" : "NULL AS waiting_request"
-  },
+      hasWaitingRequest ? "r.waiting_request" : "NULL AS waiting_request"
+    },
     ${version} AS state_version, ${flow} AS flow_name, c.revision, c.deleted,
     (SELECT parent_id FROM flows_run_parents WHERE child_id = r.run_id ORDER BY seq, parent_id LIMIT 1) AS spawn_parent_id,
     (SELECT seq FROM flows_run_parents WHERE child_id = r.run_id ORDER BY seq, parent_id LIMIT 1) AS spawn_seq`
 }
+
+// A token the digest refuses is a defect, as the digest's throw inside the read always was.
+const tokenDigest = (token: string): Sha256.Digest!! =>
+  Effect.orDie(Effect.try({ try: () => Sha256.digestSync(token), catch: (error) => error }))
 
 /**
  * Decodes a run row and validates observation invariants.
@@ -223,8 +227,8 @@ export const selectColumns = (sql: SqlClient.SqlClient, hasWaitingRequest = true
  * @since 1.0.0
  */
 export const observed = (input: unknown, at: Position) =>
-  Effect.gen(function*() {
-    const row = yield* decode(Row, input)
+  effect {
+    const row = try decode(Row, input)
     const parentRunId = row.parent_run_id ?? row.spawn_parent_id
     const ownerFields = [row.owner_host_id, row.owner_pid, row.owner_nonce, row.heartbeat_at_ms]
     const validOwner = row.status === "running"
@@ -238,14 +242,12 @@ export const observed = (input: unknown, at: Position) =>
         row.waiting_request !== undefined && row.waiting_request !== null)) ||
       (row.cancel_acknowledgement_json !== null && row.cancel_requested_at_ms === null)
     ) {
-      return yield* Effect.fail(
-        new RunStoreError({
-          method: "ExecutionSnapshot.decode",
-          code: "decode_failed",
-          message: "stored execution observation violates its invariants",
-          cause: new Error("inconsistent execution identity, wait, cancellation or revision")
-        })
-      )
+      throw new RunStoreError({
+        method: "ExecutionSnapshot.decode",
+        code: "decode_failed",
+        message: "stored execution observation violates its invariants",
+        cause: new Error("inconsistent execution identity, wait, cancellation or revision")
+      })
     }
     return {
       _tag: "Observed" as const,
@@ -268,11 +270,11 @@ export const observed = (input: unknown, at: Position) =>
         kind: waitingKind(row.waiting_reason),
         reason: row.waiting_reason,
         wakeAtMs: row.waiting_wake_at_ms,
-        tokenDigest: row.waiting_token === null ? null : Sha256.digestSync(row.waiting_token),
+        tokenDigest: row.waiting_token === null ? null : try tokenDigest(row.waiting_token),
         ...(row.waiting_request === undefined || row.waiting_request === null ? {} : { request: row.waiting_request })
       }
     }
-  })
+  }
 
 /**
  * The result of a successful execution observation.
@@ -288,7 +290,7 @@ export type Observed = Effect.Success<ReturnType<typeof observed>>
  * @private
  * @since 1.0.0
  */
-export const coherentBatch = (runIds: ReadonlyArray<string>, batch: Batch): Effect.Effect<Batch, RunStoreError> => {
+export const coherentBatch = (runIds: ReadonlyArray<string>, batch: Batch): Batch!RunStoreError! => {
   const validPosition = Schema.is(Position)
   if (
     !validPosition(batch) || batch.snapshots.length !== runIds.length ||

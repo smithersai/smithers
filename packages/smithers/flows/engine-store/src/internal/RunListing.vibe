@@ -8,7 +8,7 @@ import * as Dialect from "@smthrs/database/Dialect"
 import { RunStatus } from "@smthrs/run-store/RunStore"
 import { Cause, Effect, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as Read from "./ExecutionSnapshotRead.ts"
+import * as Read from "./ExecutionSnapshotRead.vibe"
 import { RunCatalogError } from "./RunListingError.vibe"
 
 /**
@@ -61,7 +61,7 @@ export interface RunPage extends Read.Position {
  * @since 1.0.0
  */
 export interface Service {
-  readonly listRuns: (options?: ListRunsOptions) => Effect.Effect<RunPage, RunCatalogError>
+  readonly listRuns: (options?: ListRunsOptions) => RunPage!RunCatalogError!
 }
 /**
  * Maximum page size.
@@ -93,11 +93,11 @@ const Options = Schema.Struct({
  * @since 1.0.0
  */
 export const make = () =>
-  Effect.gen(function*() {
-    const sql = yield* SqlClient.SqlClient
+  effect {
+    const sql = try SqlClient.SqlClient
     const listRuns: Service["listRuns"] = (options = {}) =>
-      Effect.gen(function*() {
-        const admitted = yield* Schema.decodeUnknownEffect(Options)(options, { onExcessProperty: "error" }).pipe(
+      (effect {
+        const admitted = try Schema.decodeUnknownEffect(Options)(options, { onExcessProperty: "error" }).pipe(
           Effect.mapError((cause) =>
             new RunCatalogError({ code: "invalid_options", message: "invalid run page options", cause })
           )
@@ -114,24 +114,22 @@ export const make = () =>
         ])
         const cursor = admitted.cursor === undefined ?
           null :
-          yield* Schema.decodeUnknownEffect(Cursor)(admitted.cursor).pipe(
+          try Schema.decodeUnknownEffect(Cursor)(admitted.cursor).pipe(
             Effect.mapError((cause) =>
               new RunCatalogError({ code: "invalid_cursor", message: "malformed run cursor", cause })
             )
           )
         if (cursor !== null && cursor.filters !== tuple) {
-          return yield* Effect.fail(
-            new RunCatalogError({ code: "invalid_cursor", message: "run cursor belongs to another query" })
-          )
+          throw new RunCatalogError({ code: "invalid_cursor", message: "run cursor belongs to another query" })
         }
         const limit = admitted.limit ?? 100
-        return yield* Read.transaction(
+        return try Read.transaction(
           sql,
-          Effect.gen(function*() {
+          effect {
             // Discover optional legacy columns in the watermark statement,
             // keeping four statements per page without caching schema state
             // before migrations or across an upgrade.
-            const positions = yield* Dialect.query<{ has_waiting_request: boolean | number }>(
+            const positions = try Dialect.query<{ has_waiting_request: boolean | number }>(
               sql,
               `SELECT source, revision, EXISTS (SELECT 1 FROM ${
                 Dialect.isPostgres(sql)
@@ -140,11 +138,12 @@ export const make = () =>
               }) AS has_waiting_request FROM flows_run_source WHERE singleton = 1`,
               []
             )
-            const at = yield* Read.decode(Read.Position, positions[0])
+            const at = try Read.decode(Read.Position, positions[0])
             if (cursor !== null && cursor.source !== at.source) {
-              return yield* Effect.fail(
-                new RunCatalogError({ code: "source_changed", message: "run cursor belongs to another engine source" })
-              )
+              throw new RunCatalogError({
+                code: "source_changed",
+                message: "run cursor belongs to another engine source"
+              })
             }
             const predicates: Array<string> = []
             const values: Array<string | number | null> = []
@@ -175,7 +174,7 @@ export const make = () =>
               values.push(cursor.createdAtMs, cursor.runId)
             }
             values.push(limit + 1)
-            const rows = yield* Dialect.query(
+            const rows = try Dialect.query(
               sql,
               `SELECT ${
                 Read.selectColumns(
@@ -185,14 +184,14 @@ export const make = () =>
               } FROM flows_runs r ${Dialect.isPostgres(sql) ? "" : `INDEXED BY flows_runs_listing_${mask}`}
         LEFT JOIN flows_run_changes c ON c.run_id = r.run_id
         ${
-                predicates.length === 0
-                  ? ""
-                  : `WHERE ${predicates.join(" AND ")}`
-              }
+          predicates.length === 0
+            ? ""
+            : `WHERE ${predicates.join(" AND ")}`
+        }
         ORDER BY r.created_at_ms, r.run_id LIMIT ?`,
               values
             )
-            const decoded = yield* Effect.forEach(rows, (row) => Read.observed(row, at))
+            const decoded = try Effect.forEach(rows, (row) => Read.observed(row, at))
             const runs = decoded.slice(0, limit)
             const last = runs[runs.length - 1]
             return {
@@ -208,7 +207,7 @@ export const make = () =>
                 }) :
                 null
             }
-          })
+          }
         )
       }).pipe(Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause as Cause.Cause<never>)
@@ -222,4 +221,4 @@ export const make = () =>
         )
       }))
     return { listRuns }
-  })
+  }

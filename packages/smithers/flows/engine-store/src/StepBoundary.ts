@@ -24,7 +24,7 @@ import * as Path from "effect/Path"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as FileBoundarySnapshot from "./internal/FileBoundarySnapshot.ts"
-import * as FileEnumeration from "./internal/FileEnumeration.ts"
+import * as FileEnumeration from "./internal/FileEnumeration.vibe"
 import { compareText } from "./internal/Ordering.ts"
 
 /**

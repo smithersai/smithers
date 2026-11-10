@@ -33,7 +33,7 @@ import { describe, expect, it } from "vitest"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as Migrations from "../src/Migrations.vibe"
-import * as OwnerIdentity from "../src/OwnerIdentity.ts"
+import * as OwnerIdentity from "../src/OwnerIdentity.vibe"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import { withCrypto } from "./Sha256.ts"
 

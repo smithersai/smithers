@@ -12,7 +12,7 @@ import { mkdir, mkdtemp, realpath, rename, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import * as FileEnumeration from "../src/internal/FileEnumeration.ts"
+import * as FileEnumeration from "../src/internal/FileEnumeration.vibe"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import { hostPath } from "./HostPath.ts"
 

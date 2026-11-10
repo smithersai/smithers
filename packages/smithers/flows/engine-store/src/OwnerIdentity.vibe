@@ -19,6 +19,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Random from "effect/Random"
+import { hostProcessId } from "./OwnerIdentity.platform.ts"
 
 /**
  * Owner identity operations.
@@ -32,7 +33,7 @@ export interface Service {
    * host supplies the incarnation; the caller supplies the host id, because
    * which host a store speaks for is a composition decision, not a host fact.
    */
-  readonly ownerId: (hostId: string) => Effect.Effect<OwnerId>
+  readonly ownerId: (hostId: string) => OwnerId!!
 }
 
 /**
@@ -50,18 +51,6 @@ export class OwnerIdentity extends Context.Service<OwnerIdentity, Service>()("@s
  * @since 0.1.0
  */
 export const make = (service: Service): Service => OwnerIdentity.of(service)
-
-/**
- * The host's process identifier, when the platform has one.
- *
- * Read off `globalThis` rather than through a bare `process` reference so the
- * module carries no Node binding at all: a browser bundle sees `undefined`
- * here and falls through to a drawn incarnation number instead. The read
- * happens at layer construction — {@link layer} — so importing the module
- * touches nothing.
- */
-const hostProcessId = (): number | undefined =>
-  (globalThis as { readonly process?: { readonly pid?: number } }).process?.pid
 
 /**
  * Builds the standard identity source over an explicitly supplied process id
@@ -85,16 +74,16 @@ const hostProcessId = (): number | undefined =>
  * @since 0.1.0
  */
 export const makeIncarnation = (pid: number | undefined, random: typeof SecureRandom.SecureRandom.Service): Service => {
-  const incarnationId: Effect.Effect<number> = pid === undefined
+  const incarnationId: number!! = pid === undefined
     ? Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER, { halfOpen: true })
     : Effect.succeed(pid)
   return make({
-    ownerId: Effect.fn("OwnerIdentity.ownerId")(function*(hostId) {
-      yield* Effect.annotateCurrentSpan({ hostId })
+    ownerId: Effect.fn("OwnerIdentity.ownerId")(effect (hostId) => {
+      try Effect.annotateCurrentSpan({ hostId })
       return {
         hostId,
-        pid: yield* incarnationId,
-        nonce: yield* random.uuidV4().pipe(Effect.orDie)
+        pid: try incarnationId,
+        nonce: try random.uuidV4().pipe(Effect.orDie)
       } satisfies OwnerId
     })
   })

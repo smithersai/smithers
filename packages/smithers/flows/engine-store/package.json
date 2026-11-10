@@ -48,13 +48,13 @@
       "default": "./.vibelang/js/src/ArtifactGc.js"
     },
     "./ArtifactSync": {
-      "types": "./src/ArtifactSync.ts",
-      "vibelang-source": "./src/ArtifactSync.ts",
+      "types": "./.vibe/declarations/src/ArtifactSync.d.vibe.ts",
+      "vibelang-source": "./src/ArtifactSync.vibe",
       "default": "./.vibelang/js/src/ArtifactSync.js"
     },
     "./CacheSync": {
-      "types": "./src/CacheSync.ts",
-      "vibelang-source": "./src/CacheSync.ts",
+      "types": "./.vibe/declarations/src/CacheSync.d.vibe.ts",
+      "vibelang-source": "./src/CacheSync.vibe",
       "default": "./.vibelang/js/src/CacheSync.js"
     },
     "./DisasterRecovery": {
@@ -73,8 +73,8 @@
       "default": "./.vibelang/js/src/EngineStore.js"
     },
     "./EngineStoreMetrics": {
-      "types": "./src/EngineStoreMetrics.ts",
-      "vibelang-source": "./src/EngineStoreMetrics.ts",
+      "types": "./.vibe/declarations/src/EngineStoreMetrics.d.vibe.ts",
+      "vibelang-source": "./src/EngineStoreMetrics.vibe",
       "default": "./.vibelang/js/src/EngineStoreMetrics.js"
     },
     "./Errors": {
@@ -83,8 +83,8 @@
       "default": "./.vibelang/js/src/Errors.js"
     },
     "./ExecutionSnapshot": {
-      "types": "./src/ExecutionSnapshot.ts",
-      "vibelang-source": "./src/ExecutionSnapshot.ts",
+      "types": "./.vibe/declarations/src/ExecutionSnapshot.d.vibe.ts",
+      "vibelang-source": "./src/ExecutionSnapshot.vibe",
       "default": "./.vibelang/js/src/ExecutionSnapshot.js"
     },
     "./RunChangeFeed": {
@@ -98,8 +98,8 @@
       "default": "./.vibelang/js/src/RunInspection.js"
     },
     "./Inconsistency": {
-      "types": "./src/Inconsistency.ts",
-      "vibelang-source": "./src/Inconsistency.ts",
+      "types": "./.vibe/declarations/src/Inconsistency.d.vibe.ts",
+      "vibelang-source": "./src/Inconsistency.vibe",
       "default": "./.vibelang/js/src/Inconsistency.js"
     },
     "./Migrations": {
@@ -108,8 +108,8 @@
       "default": "./.vibelang/js/src/Migrations.js"
     },
     "./OwnerIdentity": {
-      "types": "./src/OwnerIdentity.ts",
-      "vibelang-source": "./src/OwnerIdentity.ts",
+      "types": "./.vibe/declarations/src/OwnerIdentity.d.vibe.ts",
+      "vibelang-source": "./src/OwnerIdentity.vibe",
       "default": "./.vibelang/js/src/OwnerIdentity.js"
     },
     "./PlanScheduler": {
@@ -118,13 +118,13 @@
       "default": "./.vibelang/js/src/PlanScheduler.js"
     },
     "./PlanInputStore": {
-      "types": "./src/PlanInputStore.ts",
-      "vibelang-source": "./src/PlanInputStore.ts",
+      "types": "./.vibe/declarations/src/PlanInputStore.d.vibe.ts",
+      "vibelang-source": "./src/PlanInputStore.vibe",
       "default": "./.vibelang/js/src/PlanInputStore.js"
     },
     "./PlanMergeStore": {
-      "types": "./src/PlanMergeStore.ts",
-      "vibelang-source": "./src/PlanMergeStore.ts",
+      "types": "./.vibe/declarations/src/PlanMergeStore.d.vibe.ts",
+      "vibelang-source": "./src/PlanMergeStore.vibe",
       "default": "./.vibelang/js/src/PlanMergeStore.js"
     },
     "./Reconciliation": {
@@ -138,8 +138,8 @@
       "default": "./.vibelang/js/src/ReplayOnly.js"
     },
     "./Retention": {
-      "types": "./src/Retention.ts",
-      "vibelang-source": "./src/Retention.ts",
+      "types": "./.vibe/declarations/src/Retention.d.vibe.ts",
+      "vibelang-source": "./src/Retention.vibe",
       "default": "./.vibelang/js/src/Retention.js"
     },
     "./RunCatalogRead": {
@@ -173,8 +173,8 @@
       "default": "./.vibelang/js/src/StepLogs.js"
     },
     "./DeferredClockFold": {
-      "types": "./src/DeferredClockFold.ts",
-      "vibelang-source": "./src/DeferredClockFold.ts",
+      "types": "./.vibe/declarations/src/DeferredClockFold.d.vibe.ts",
+      "vibelang-source": "./src/DeferredClockFold.vibe",
       "default": "./.vibelang/js/src/DeferredClockFold.js"
     },
     "./StepCacheFold": {

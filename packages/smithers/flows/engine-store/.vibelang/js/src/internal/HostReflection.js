@@ -4,7 +4,7 @@
  *
  * Projecting a settlement the flow's codec rejected must not execute user
  * code. A `Proxy` runs its handler on every reflective read, and the point of
- * `./ExitEncoding.ts` is to describe the value a round is already failing on,
+ * `./ExitEncoding.vibe` is to describe the value a round is already failing on,
  * not to hand that value another turn on the terminal-transition path. Node
  * answers the question from an internal slot, through `node:util/types`. No
  * ECMAScript operation does: virtualization is transparent by design, so a
@@ -15,7 +15,7 @@
  * browser entry point in the release policy and in
  * `packages/repo-targets/browser/browser-contract.mjs`, so the import fails `pnpm run browser`; and
  * it claims a capability every host has, which is false. This module reads the
- * predicates off the host instead, the way `../OwnerIdentity.ts` reads a
+ * predicates off the host instead, the way `../OwnerIdentity.vibe` reads a
  * process id: `process.getBuiltinModule` when the host offers it, portable
  * fallbacks when it does not. Node and Bun both take the first path, so on the
  * runtimes the durable engine supports the behavior is exactly what the static

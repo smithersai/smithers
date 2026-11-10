@@ -22,7 +22,7 @@ import { CacheStore } from "@smthrs/step-cache"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Migrations from "../../src/Migrations.vibe"
-import * as OwnerIdentity from "../../src/OwnerIdentity.ts"
+import * as OwnerIdentity from "../../src/OwnerIdentity.vibe"
 import { withCrypto } from "../Sha256.ts"
 import { ReclaimFlow } from "./LeaseReclaimFlow.ts"
 

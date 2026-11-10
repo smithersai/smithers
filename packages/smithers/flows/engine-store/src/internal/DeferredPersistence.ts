@@ -17,7 +17,7 @@ import * as Option from "effect/Option"
 import * as Schedule from "effect/Schedule"
 import type * as Scope from "effect/Scope"
 import * as DurableEngineState from "../DurableEngineState.ts"
-import * as JournalRecords from "./JournalRecords.ts"
+import * as JournalRecords from "./JournalRecords.vibe"
 import * as StateTransaction from "./StateTransaction.ts"
 
 /**

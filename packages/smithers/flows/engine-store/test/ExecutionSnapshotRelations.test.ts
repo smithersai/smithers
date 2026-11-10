@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as ExecutionSnapshot from "../src/ExecutionSnapshot.ts"
+import * as ExecutionSnapshot from "../src/ExecutionSnapshot.vibe"
 import { fixture, onFile, state } from "./ExecutionSnapshotFixture.ts"
 
 describe("engine-only related execution catalog", () => {

@@ -185,7 +185,7 @@ them stops reaching the host, so the list only shrinks.
 | `@smthrs/engine-store` `src/internal/HostReflection.ts`                                                                        | `getBuiltinModule("node:util/types")` | Proxy and native-error detection |
 | `@smthrs/engine` `src/internal/Diagnostic.ts`                                                                                  | `getBuiltinModule("node:util")`       | Proxy detection                  |
 | `@smthrs/run-store` `src/Ownership.ts`                                                                                         | `process.kill(pid, 0)`                | `sameHostPidProbe`               |
-| `@smthrs/engine-store` `src/OwnerIdentity.ts`                                                                                  | `process.pid`                         | The run owner's identity         |
+| `@smthrs/engine-store` `src/OwnerIdentity.platform.ts`                                                                         | `process.pid`                         | The run owner's identity         |
 | `@smthrs/kernel` `src/ChildProcessSpawner.ts`                                                                                  | `process.platform`, `process.env`     | A child's environment            |
 | `@smthrs/integrations` `src/Environment.ts`                                                                                    | `process.env`                         | Configuration                    |
 | `@smthrs/sandbox` `src/ContainerSandbox/existing.ts`, `src/DirectorySandbox/make.ts`, `src/RemoteChildProcessSpawner/layer.ts` | `process.env`                         | A command's environment          |

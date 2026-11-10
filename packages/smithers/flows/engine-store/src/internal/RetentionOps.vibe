@@ -181,7 +181,7 @@ export interface Service {
    */
   readonly retain: (
     options: RetainOptions
-  ) => Effect.Effect<RetainReport, RetentionError | Journal.JournalError>
+  ) => RetainReport!(RetentionError | Journal.JournalError)
 }
 
 /**
@@ -335,12 +335,12 @@ export const lineagePrelude = (
       WITH RECURSIVE
         link(child_id, parent_id) AS (
           ${
-  options.parentEdges
-    ? `SELECT child_id, parent_id FROM flows_run_parents
+            options.parentEdges
+              ? `SELECT child_id, parent_id FROM flows_run_parents
           UNION
           `
-    : ``
-}SELECT run_id, parent_run_id FROM flows_runs WHERE parent_run_id IS NOT NULL
+              : ``
+          }SELECT run_id, parent_run_id FROM flows_runs WHERE parent_run_id IS NOT NULL
         ),
         live(run_id) AS (
           SELECT run_id FROM flows_runs WHERE status NOT IN (${terminalList})
@@ -391,24 +391,23 @@ const scanPrelude = (
     readonly parentEdges: boolean
     readonly pins?: ReadonlyArray<string> | undefined
   }
-) =>
-  sql`
+) => sql`
       ${sql.unsafe(lineagePrelude({ parentEdges: options.parentEdges }))},
       eligible(run_id) AS (
         SELECT run_id FROM flows_runs
         WHERE ${sql.in("status", terminalStatuses)}
           AND ${
-    options.inclusive
-      ? sql`COALESCE(finished_at_ms, created_at_ms) <= ${options.cutoffMs}`
-      : sql`COALESCE(finished_at_ms, created_at_ms) < ${options.cutoffMs}`
-  }
+            options.inclusive
+              ? sql`COALESCE(finished_at_ms, created_at_ms) <= ${options.cutoffMs}`
+              : sql`COALESCE(finished_at_ms, created_at_ms) < ${options.cutoffMs}`
+          }
           AND run_id NOT IN (SELECT run_id FROM under_live)
           AND run_id NOT IN (SELECT run_id FROM over_live)
           AND ${
-    options.pins === undefined || options.pins.length === 0 ?
-      sql.literal("1 = 1")
-      : sql`run_id NOT IN ${sql.in(options.pins)}`
-  }
+            options.pins === undefined || options.pins.length === 0 ?
+              sql.literal("1 = 1")
+              : sql`run_id NOT IN ${sql.in(options.pins)}`
+          }
       ),
       blocked(run_id) AS (
         SELECT run_id FROM flows_runs WHERE run_id NOT IN (SELECT run_id FROM eligible)
@@ -444,7 +443,7 @@ export const candidatesOf = (
     readonly pins?: ReadonlyArray<string> | undefined
     readonly limit: number
   }
-): Effect.Effect<ReadonlyArray<Candidate>, SqlError> =>
+): ReadonlyArray<Candidate>!SqlError =>
   sql<{ readonly run_id: string; readonly parent_run_id: string | null }>`
     ${scanPrelude(sql, options)},
     depths(run_id, depth) AS (
@@ -520,7 +519,7 @@ export interface DeletionReport {
 }
 
 /** Reads the installed SQLite table names once for inventory decisions. */
-const installedTableNames = (sql: SqlClient.SqlClient): Effect.Effect<ReadonlySet<string>, RetentionError> =>
+const installedTableNames = (sql: SqlClient.SqlClient): ReadonlySet<string>!RetentionError =>
   Dialect.tables(sql).pipe(
     Effect.map((rows) => new Set(rows.map((row) => row.name))),
     Effect.mapError(scanning("the schema catalog"))
@@ -548,7 +547,7 @@ const installedTableNames = (sql: SqlClient.SqlClient): Effect.Effect<ReadonlySe
 export const installedTables = (
   sql: SqlClient.SqlClient,
   options: { readonly assumeLadder: boolean }
-): Effect.Effect<ReadonlyArray<RunScopedTable>, RetentionError> =>
+): ReadonlyArray<RunScopedTable>!RetentionError =>
   installedTableNames(sql).pipe(
     Effect.map((present) =>
       runScopedTables.filter((entry) => (options.assumeLadder && entry.ladder) || present.has(entry.table))
@@ -696,9 +695,9 @@ export const deleteRuns = (
   sql: SqlClient.SqlClient,
   candidates: ReadonlyArray<Candidate>,
   options: { readonly dryRun: boolean; readonly assumeLadder: boolean }
-): Effect.Effect<DeletionReport, RetentionError> =>
-  Effect.gen(function*() {
-    const installed = yield* installedTableNames(sql)
+): DeletionReport!RetentionError =>
+  effect {
+    const installed = try installedTableNames(sql)
     const tables = runScopedTables.filter((entry) =>
       (options.assumeLadder && entry.ladder) || installed.has(entry.table)
     )
@@ -712,7 +711,7 @@ export const deleteRuns = (
     // The foreign key, which no lineage filter covers: a child row that is
     // terminal and simply outside this pass — younger than the cutoff, or past
     // the bound — still points at its parent.
-    for (const child of yield* childrenOf(sql, candidateIds)) {
+    for (const child of try childrenOf(sql, candidateIds)) {
       if (candidateSet.has(child.runId)) continue
       pinAncestors(doomed, pinned, parentOf, child.parentRunId)
     }
@@ -728,11 +727,11 @@ export const deleteRuns = (
 
     const deleted: Record<string, number> = {}
     if (hasTimeTravelReceipts) {
-      const total = yield* countTimeTravelReceipts(sql, runIds)
+      const total = try countTimeTravelReceipts(sql, runIds)
       if (total > 0) deleted["flows_time_travel_receipts"] = total
     }
     for (const entry of tables) {
-      const total = yield* countIn(sql, entry.table, entry.column, idsFor(entry))
+      const total = try countIn(sql, entry.table, entry.column, idsFor(entry))
       if (total > 0) deleted[entry.table] = total
     }
     if (runIds.length > 0) deleted["flows_runs"] = runIds.length
@@ -740,17 +739,17 @@ export const deleteRuns = (
     if (!options.dryRun) {
       // Receipts have no run column, so remove them through their audits
       // before the ordinary inventory reaches and deletes those audit rows.
-      if (hasTimeTravelReceipts) yield* deleteTimeTravelReceipts(sql, runIds)
-      for (const entry of tables) yield* deleteIn(sql, entry.table, entry.column, idsFor(entry))
+      if (hasTimeTravelReceipts) try deleteTimeTravelReceipts(sql, runIds)
+      for (const entry of tables) try deleteIn(sql, entry.table, entry.column, idsFor(entry))
       // Last, and deepest generation first. The `flows_run_parents_gc`
       // trigger drops each run's DAG edges as its row goes.
       for (const generation of generations(doomed, parentOf)) {
-        yield* deleteIn(sql, "flows_runs", "run_id", generation)
+        try deleteIn(sql, "flows_runs", "run_id", generation)
       }
     }
 
     return { runIds, pinned: Array.from(pinned), deleted }
-  })
+  }
 
 /**
  * Builds the retention operation over the composition's own durable tables.
@@ -762,10 +761,10 @@ export const deleteRuns = (
  * @category constructors
  * @since 0.1.0
  */
-export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient | Journal.Journal> =>
-  Effect.gen(function*() {
-    const sql = yield* Effect.service(SqlClient.SqlClient)
-    const journal = yield* Journal.Journal
+export const make = (): Service!never!(SqlClient.SqlClient | Journal.Journal) =>
+  effect {
+    const sql = try Effect.service(SqlClient.SqlClient)
+    const journal = try Journal.Journal
 
     /**
      * Aged terminal runs held by live lineage or an excluded continuation
@@ -795,9 +794,9 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient | Jour
       `.pipe(Effect.mapError(scanning("the run lineage")))
 
     const pass = (options: RetainOptions, cutoffMs: number) =>
-      Effect.gen(function*() {
+      effect {
         const limit = normalizeLimit(options.limit)
-        const candidates = yield* candidatesOf(sql, { cutoffMs, inclusive: true, parentEdges: true, limit }).pipe(
+        const candidates = try candidatesOf(sql, { cutoffMs, inclusive: true, parentEdges: true, limit }).pipe(
           Effect.mapError(scanning("the run table"))
         )
         const retained = new Set<string>()
@@ -805,7 +804,7 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient | Jour
         // Why the workspace kept aged runs this pass. These never entered the
         // candidate set, so this only classifies them. It runs before the
         // deletes so the report describes the file the pass was handed.
-        for (const held of yield* retainedByLineage(cutoffMs, limit)) {
+        for (const held of try retainedByLineage(cutoffMs, limit)) {
           if (Number(held.live_descendant) > 0) retained.add(held.run_id)
           else retainedAbove.add(held.run_id)
         }
@@ -813,7 +812,7 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient | Jour
         // passes cannot hold different table lists or different orders. This
         // database is the engine's own ladder, so a table of it that the
         // catalog does not list is a broken schema and the delete says so.
-        const removed = yield* deleteRuns(sql, candidates, {
+        const removed = try deleteRuns(sql, candidates, {
           dryRun: options.dryRun === true,
           assumeLadder: true
         })
@@ -834,11 +833,11 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient | Jour
           timeTravelReceipts: removed.deleted["flows_time_travel_receipts"] ?? 0,
           dryRun: options.dryRun === true
         } satisfies RetainReport
-      })
+      }
 
     const retain: Service["retain"] = Effect.fn("Retention.retain")((options: RetainOptions) =>
-      Effect.gen(function*() {
-        const nowMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+      effect {
+        const nowMs = try Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         const cutoffMs = nowMs - Math.max(0, options.olderThanMs)
         // One commit: `transact` joins the run-row deletes, the dependent
         // deletes, and the journal truncation into a single write transaction,
@@ -846,12 +845,12 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient | Jour
         // without its run. A transaction that cannot commit fails as the
         // `JournalError` it is rather than being laundered into a retention
         // code that would claim to know why.
-        return yield* journal.transact(pass(options, cutoffMs))
-      })
+        return try journal.transact(pass(options, cutoffMs))
+      }
     )
 
     return { retain }
-  })
+  }
 
 /**
  * Provides run retention. Nothing schedules `retain()`; invoking it stays an

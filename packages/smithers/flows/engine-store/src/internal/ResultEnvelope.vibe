@@ -10,7 +10,7 @@ import type { Flow } from "@smthrs/flow"
 import * as EngineEvent from "@smthrs/journal/EngineEvent"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as ExitEncoding from "./ExitEncoding.ts"
+import * as ExitEncoding from "./ExitEncoding.vibe"
 
 /**
  * Encoded success or a classified failure.

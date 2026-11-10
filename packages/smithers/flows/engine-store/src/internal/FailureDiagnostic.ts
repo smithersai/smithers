@@ -13,7 +13,7 @@ import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import * as Exit from "effect/Exit"
 import type { Failure, FailureCoordinates } from "../RunState.ts"
-import * as ExitEncoding from "./ExitEncoding.ts"
+import * as ExitEncoding from "./ExitEncoding.vibe"
 import * as HostReflection from "./HostReflection.ts"
 
 const utf8 = new TextEncoder()

@@ -36,7 +36,7 @@ import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as Effect from "effect/Effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type { SqlError } from "effect/sql/SqlError"
-import * as RetentionOps from "./internal/RetentionOps.ts"
+import * as RetentionOps from "./internal/RetentionOps.vibe"
 
 export {
   defaultLimit,
@@ -58,7 +58,7 @@ export {
   runScopedTables,
   type Service,
   terminalStatuses
-} from "./internal/RetentionOps.ts"
+} from "./internal/RetentionOps.vibe"
 
 /**
  * What one retention pass would delete, or did.
@@ -95,12 +95,12 @@ export interface Options {
 }
 
 /** Whether a table exists in the connected database. */
-const hasTable = (table: string): Effect.Effect<boolean, SqlError, SqlClient.SqlClient> =>
-  Effect.gen(function*() {
-    const sql = yield* SqlClient.SqlClient
-    const rows = yield* Dialect.tables(sql).pipe(Effect.map((rows) => rows.filter((row) => row.name === table)))
+const hasTable = (table: string): boolean!SqlError!SqlClient.SqlClient =>
+  effect {
+    const sql = try SqlClient.SqlClient
+    const rows = try Dialect.tables(sql).pipe(Effect.map((rows) => rows.filter((row) => row.name === table)))
     return rows.length > 0
-  })
+  }
 
 /**
  * The runs one pass would delete, oldest first, each with the run it names as
@@ -119,22 +119,22 @@ const eligibleCandidates = (
   olderThanMs: number,
   limit: number | undefined,
   pins?: ReadonlyArray<string>
-): Effect.Effect<ReadonlyArray<RetentionOps.Candidate>, SqlError, SqlClient.SqlClient> =>
-  Effect.gen(function*() {
-    const sql = yield* SqlClient.SqlClient
-    if (!(yield* hasTable("flows_runs"))) return []
+): ReadonlyArray<RetentionOps.Candidate>!SqlError!SqlClient.SqlClient =>
+  effect {
+    const sql = try SqlClient.SqlClient
+    if (!(try hasTable("flows_runs"))) return []
     // The engine's edge table is absent from the control-plane database, which
     // migrates the run store and the journal and nothing else. The prelude
     // drops that half of the walk there and keeps the `parent_run_id` half, so
     // one guard covers both files.
-    return yield* RetentionOps.candidatesOf(sql, {
+    return try RetentionOps.candidatesOf(sql, {
       cutoffMs: olderThanMs,
       inclusive: false,
-      parentEdges: yield* hasTable("flows_run_parents"),
+      parentEdges: try hasTable("flows_run_parents"),
       pins,
       limit: RetentionOps.normalizeLimit(limit)
     })
-  })
+  }
 
 /**
  * The terminal runs one pass would delete, oldest first.
@@ -145,7 +145,7 @@ const eligibleCandidates = (
 export const eligible = (
   olderThanMs: number,
   limit = RetentionOps.defaultLimit
-): Effect.Effect<ReadonlyArray<string>, SqlError, SqlClient.SqlClient> =>
+): ReadonlyArray<string>!SqlError!SqlClient.SqlClient =>
   Effect.map(
     eligibleCandidates(olderThanMs, limit),
     (candidates) => candidates.map((candidate) => candidate.runId)
@@ -180,30 +180,32 @@ export const eligible = (
  */
 export const collect = (
   options: Options
-): Effect.Effect<Report, SqlError | RetentionOps.RetentionError, SqlClient.SqlClient> =>
-  Effect.gen(function*() {
-    const sql = yield* SqlClient.SqlClient
+): Report!(SqlError | RetentionOps.RetentionError)!SqlClient.SqlClient =>
+  effect {
+    const sql = try SqlClient.SqlClient
     const dryRun = options.dryRun === true
-    const pass = Effect.gen(function*() {
-      const candidates = yield* eligibleCandidates(options.olderThanMs, options.limit, options.pins)
-      return yield* RetentionOps.deleteRuns(sql, candidates, {
+    const pass = effect {
+      const candidates = try eligibleCandidates(options.olderThanMs, options.limit, options.pins)
+      return try RetentionOps.deleteRuns(sql, candidates, {
         dryRun,
         assumeLadder: false
       })
-    })
-    const removed = yield* (dryRun ? sql.withTransaction(pass) : DurableWriter.make(sql).write(pass).pipe(
-      Effect.catchIf(
-        (cause): cause is DurableWriter.DatabaseError => cause instanceof DurableWriter.DatabaseError,
-        (cause) =>
-          Effect.fail(
-            new RetentionOps.RetentionError({
-              code: "delete_failed",
-              message: "retention transaction failed; no history was deleted",
-              cause
-            })
-          )
-      )
-    ))
+    }
+    const removed = try (dryRun ?
+      sql.withTransaction(pass) :
+      (try sync(() => DurableWriter.make(sql))).write(pass).pipe(
+        Effect.catchIf(
+          (cause): cause is DurableWriter.DatabaseError => cause instanceof DurableWriter.DatabaseError,
+          (cause) =>
+            Effect.fail(
+              new RetentionOps.RetentionError({
+                code: "delete_failed",
+                message: "retention transaction failed; no history was deleted",
+                cause
+              })
+            )
+        )
+      ))
     return {
       database: options.database ?? "",
       olderThanMs: options.olderThanMs,
@@ -211,4 +213,4 @@ export const collect = (
       deleted: dryRun ? {} : removed.deleted,
       dryRun
     }
-  })
+  }

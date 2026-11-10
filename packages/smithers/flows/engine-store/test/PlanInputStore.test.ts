@@ -7,7 +7,7 @@ import { RunStore } from "@smthrs/run-store"
 import { Effect, Exit, Option } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Migrations from "../src/Migrations.vibe"
-import * as PlanInputStore from "../src/PlanInputStore.ts"
+import * as PlanInputStore from "../src/PlanInputStore.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 

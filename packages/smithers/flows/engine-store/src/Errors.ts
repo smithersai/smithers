@@ -25,5 +25,5 @@ export {
   CacheConflictDetected,
   CacheCorruptionDetected
 } from "./internal/ActionPersistence.ts"
-export { RetentionError, RetentionErrorCode } from "./internal/RetentionOps.ts"
+export { RetentionError, RetentionErrorCode } from "./internal/RetentionOps.vibe"
 export { RunCatalogError, RunCatalogErrorCode } from "./internal/RunCatalogOps.vibe"

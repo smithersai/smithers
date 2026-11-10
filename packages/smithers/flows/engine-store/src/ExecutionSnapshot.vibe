@@ -8,7 +8,7 @@ import * as Dialect from "@smthrs/database/Dialect"
 import type { RunStoreError } from "@smthrs/run-store/RunStore"
 import { Context, Effect, Layer, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as Read from "./internal/ExecutionSnapshotRead.ts"
+import * as Read from "./internal/ExecutionSnapshotRead.vibe"
 import * as Relations from "./internal/ExecutionSnapshotRelations.vibe"
 
 export type { RelatedOptions, RelatedPage } from "./internal/ExecutionSnapshotRelations.vibe"
@@ -86,8 +86,8 @@ export const withReadTransaction = Dialect.readTransaction
  * @since 1.0.0
  */
 export interface Service {
-  readonly read: (runIds: ReadonlyArray<string>) => Effect.Effect<Batch, RunStoreError>
-  readonly related: (options: Relations.RelatedOptions) => Effect.Effect<Relations.RelatedPage, RunStoreError>
+  readonly read: (runIds: ReadonlyArray<string>) => Batch!RunStoreError!
+  readonly related: (options: Relations.RelatedOptions) => Relations.RelatedPage!RunStoreError
 }
 /**
  * Engine observation service.
@@ -114,24 +114,24 @@ export const isNewer = (incoming: Position, current: Position): boolean =>
  * @category constructors
  * @since 1.0.0
  */
-export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient> =>
-  Effect.gen(function*() {
-    const sql = yield* SqlClient.SqlClient
+export const make = (): Service!never!SqlClient.SqlClient =>
+  effect {
+    const sql = try SqlClient.SqlClient
     const read: Service["read"] = (runIds) =>
       Read.boundary(
         "ExecutionSnapshot.read",
-        Effect.gen(function*() {
-          const ids = yield* Read.decode(
+        effect {
+          const ids = try Read.decode(
             Schema.Array(Read.Identifier).check(Schema.isMaxLength(maximumBatchSize)),
             runIds
           )
-          const batch = yield* Read.transaction(
+          const batch = try Read.transaction(
             sql,
-            Effect.gen(function*() {
-              const at = yield* Read.position(sql)
+            effect {
+              const at = try Read.position(sql)
               if (ids.length === 0) return { ...at, snapshots: [] }
-              const columns = yield* Dialect.columns(sql, "flows_runs")
-              const rows = yield* Dialect.query(
+              const columns = try Dialect.columns(sql, "flows_runs")
+              const rows = try Dialect.query(
                 sql,
                 `SELECT ${
                   Read.selectColumns(sql, columns.some((column) => column.name === "waiting_request"))
@@ -142,10 +142,10 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient> =>
               )
               const snapshots = new Map<string, Snapshot>()
               for (const row of rows) {
-                const value = yield* Read.observed(row, at)
+                const value = try Read.observed(row, at)
                 snapshots.set(value.runId, value)
               }
-              const changes = yield* Dialect.query<{ run_id: string; revision: number; deleted: number }>(
+              const changes = try Dialect.query<{ run_id: string; revision: number; deleted: number }>(
                 sql,
                 `SELECT run_id, revision, deleted FROM flows_run_changes WHERE run_id IN (${
                   ids.map(() => "?").join(",")
@@ -154,11 +154,11 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient> =>
               )
               for (const change of changes) {
                 if (snapshots.has(change.run_id)) continue
-                const revision = yield* Read.decode(
+                const revision = try Read.decode(
                   Read.Natural.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(at.revision)),
                   change.revision
                 )
-                yield* Read.decode(Schema.Literal(1), change.deleted)
+                try Read.decode(Schema.Literal(1), change.deleted)
                 snapshots.set(change.run_id, {
                   _tag: "Missing",
                   runId: change.run_id,
@@ -173,13 +173,13 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient> =>
                   snapshots.get(runId) ?? { _tag: "Missing", runId, ...at, deleted: false }
                 )
               }
-            })
+            }
           )
-          return yield* Read.coherentBatch(ids, batch)
-        })
+          return try Read.coherentBatch(ids, batch)
+        }
       )
     return { read, related: Relations.make(sql, read) }
-  })
+  }
 
 /**
  * Provides the SQL observation port.

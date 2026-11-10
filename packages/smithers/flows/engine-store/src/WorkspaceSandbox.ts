@@ -62,9 +62,9 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
-import * as EngineStoreMetrics from "./EngineStoreMetrics.ts"
+import * as EngineStoreMetrics from "./EngineStoreMetrics.vibe"
 import * as FileBoundarySnapshot from "./internal/FileBoundarySnapshot.ts"
-import * as FileEnumeration from "./internal/FileEnumeration.ts"
+import * as FileEnumeration from "./internal/FileEnumeration.vibe"
 import { compareText } from "./internal/Ordering.ts"
 
 /**

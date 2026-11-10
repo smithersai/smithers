@@ -17,9 +17,9 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Effect from "effect/Effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
-import * as RetentionOps from "../src/internal/RetentionOps.ts"
+import * as RetentionOps from "../src/internal/RetentionOps.vibe"
 import * as Migrations from "../src/Migrations.vibe"
-import * as Retention from "../src/Retention.ts"
+import * as Retention from "../src/Retention.vibe"
 
 const migrated = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
   effect.pipe(Effect.provide(Migrations.layer), Effect.provide(TestDatabase.layer))

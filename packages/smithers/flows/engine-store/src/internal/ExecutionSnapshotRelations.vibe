@@ -8,8 +8,8 @@ import * as Dialect from "@smthrs/database/Dialect"
 import { RunStoreError } from "@smthrs/run-store/RunStore"
 import { Effect } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
-import type { Batch, Snapshot } from "../ExecutionSnapshot.ts"
-import * as Read from "./ExecutionSnapshotRead.ts"
+import type { Batch, Snapshot } from "../ExecutionSnapshot.vibe"
+import * as Read from "./ExecutionSnapshotRead.vibe"
 
 /**
  * Child edges and trampoline rounds are different relations.

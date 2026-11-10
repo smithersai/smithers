@@ -146,7 +146,7 @@ export const KNOWN_HOST_ACCESS = [
     reason: "reads its configuration from process.env"
   },
   {
-    module: "packages/smithers/flows/engine-store/src/OwnerIdentity.ts",
+    module: "packages/smithers/flows/engine-store/src/OwnerIdentity.platform.ts",
     kinds: ["ambient-global"],
     reason: "reads process.pid into the run owner's identity"
   },

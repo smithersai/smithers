@@ -10,7 +10,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Random from "effect/Random"
-import * as OwnerIdentity from "../src/OwnerIdentity.ts"
+import * as OwnerIdentity from "../src/OwnerIdentity.vibe"
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 

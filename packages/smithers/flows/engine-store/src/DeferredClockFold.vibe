@@ -360,11 +360,11 @@ const foldEntries = (
   after: JournalEvent.Seq | undefined,
   upTo?: number | undefined
 ) =>
-  Effect.gen(function*() {
+  effect {
     let state = start
     let cursor = after
     while (true) {
-      const page = yield* journal.entries({
+      const page = try journal.entries({
         runId: runId as JournalEvent.RunId,
         eventTypes,
         limit: pageSize,
@@ -377,7 +377,7 @@ const foldEntries = (
       }
       if (!page.hasMore) return state
     }
-  })
+  }
 
 /** The run's compaction floor checkpoint, if compaction ever ran. */
 const floorOf = (sql: SqlClient.SqlClient, runId: string) =>
@@ -392,23 +392,23 @@ const floorOf = (sql: SqlClient.SqlClient, runId: string) =>
  * entry above the floor, up to and including `upTo` when given.
  */
 const foldRun = (runId: string, upTo?: number | undefined) =>
-  Effect.gen(function*() {
-    const journal = yield* Journal.Journal
-    const sql = yield* SqlClient.SqlClient
-    const floor = yield* floorOf(sql, runId)
-    if (floor === undefined) return yield* foldEntries(journal, runId, initial, undefined, upTo)
-    const kept = fromCheckpoint(JSON.parse(floor.state_json) as unknown)
+  effect {
+    const journal = try Journal.Journal
+    const sql = try SqlClient.SqlClient
+    const floor = try floorOf(sql, runId)
+    if (floor === undefined) return try foldEntries(journal, runId, initial, undefined, upTo)
+    const kept = fromCheckpoint(
+      try Effect.orDie(Effect.try({ try: () => JSON.parse(floor.state_json) as unknown, catch: (error) => error }))
+    )
     if (Option.isNone(kept)) {
-      return yield* Effect.fail(
-        new FoldIncomplete({
-          code: "fold_incomplete",
-          message: `run ${runId} was compacted below a checkpoint that keeps no deferred/clock fold`,
-          unjoined: [{ reason: "checkpoint_missing", executionId: runId }]
-        })
-      )
+      throw new FoldIncomplete({
+        code: "fold_incomplete",
+        message: `run ${runId} was compacted below a checkpoint that keeps no deferred/clock fold`,
+        unjoined: [{ reason: "checkpoint_missing", executionId: runId }]
+      })
     }
-    return yield* foldEntries(journal, runId, kept.value, Number(floor.seq) as JournalEvent.Seq, upTo)
-  })
+    return try foldEntries(journal, runId, kept.value, Number(floor.seq) as JournalEvent.Seq, upTo)
+  }
 
 /**
  * The fold of one run's entries up to and including `upTo`, for the state of
@@ -418,8 +418,8 @@ const foldRun = (runId: string, upTo?: number | undefined) =>
  * @category operations
  * @since 1.0.0
  */
-export const capture = Effect.fn("DeferredClockFold.capture")(function*(runId: string, upTo: number) {
-  return encode(yield* foldRun(runId, upTo))
+export const capture = Effect.fn("DeferredClockFold.capture")(effect (runId: string, upTo: number) => {
+  return encode(try foldRun(runId, upTo))
 })
 
 /**
@@ -431,12 +431,12 @@ export const capture = Effect.fn("DeferredClockFold.capture")(function*(runId: s
  * @category operations
  * @since 1.0.0
  */
-export const checkpointState = Effect.fn("DeferredClockFold.checkpointState")(function*(
+export const checkpointState = Effect.fn("DeferredClockFold.checkpointState")(effect (
   runId: string,
   upTo: number,
   base?: Readonly<Record<string, unknown>> | undefined
-) {
-  return { ...base, [checkpointKey]: yield* capture(runId, upTo) }
+) => {
+  return { ...base, [checkpointKey]: try capture(runId, upTo) }
 })
 
 /**
@@ -485,12 +485,12 @@ interface StoredDeferred {
  * @category operations
  * @since 1.0.0
  */
-export const rebuild = Effect.fn("DeferredClockFold.rebuild")(function*() {
-  const sql = yield* SqlClient.SqlClient
-  const writer = yield* DurableWriter
+export const rebuild = Effect.fn("DeferredClockFold.rebuild")(effect () => {
+  const sql = try SqlClient.SqlClient
+  const writer = try DurableWriter
   // A compacted run may have no fold entry left above its floor, so every run
   // with a compaction floor is folded too.
-  const runs = yield* sql<{ readonly run_id: string }>`
+  const runs = try sql<{ readonly run_id: string }>`
     SELECT run_id FROM flows_journal_events WHERE ${sql.in("event_type", eventTypes)}
     UNION
     SELECT run_id FROM flows_journal_checkpoints WHERE compacted_at_ms IS NOT NULL
@@ -500,7 +500,7 @@ export const rebuild = Effect.fn("DeferredClockFold.rebuild")(function*() {
   const clocks: Array<Clock> = []
   const deferreds: Array<Deferred> = []
   for (const { run_id } of runs) {
-    const state = yield* foldRun(run_id).pipe(
+    const state = try foldRun(run_id).pipe(
       Effect.catchTag("@smthrs/engine-store/DeferredClockFold/FoldIncomplete", (error) => {
         unjoined.push(...error.unjoined)
         return Effect.succeed(initial)
@@ -510,7 +510,7 @@ export const rebuild = Effect.fn("DeferredClockFold.rebuild")(function*() {
     deferreds.push(...state.deferreds.values())
   }
   const liveRuns = new Set(
-    (yield* sql<{ readonly run_id: string }>`SELECT run_id FROM flows_runs`).map((row) => row.run_id)
+    (try sql<{ readonly run_id: string }>`SELECT run_id FROM flows_runs`).map((row) => row.run_id)
   )
   for (const clock of clocks) {
     if (!liveRuns.has(clock.executionId)) {
@@ -523,7 +523,7 @@ export const rebuild = Effect.fn("DeferredClockFold.rebuild")(function*() {
     }
   }
   const stored = new Map(
-    (yield* sql<StoredDeferred>`
+    (try sql<StoredDeferred>`
       SELECT flow_name, execution_id, deferred_name, exit_json, metadata_json
       FROM flows_deferred_completions
     `).map((row) => [
@@ -546,18 +546,16 @@ export const rebuild = Effect.fn("DeferredClockFold.rebuild")(function*() {
     }
   }
   if (unjoined.length > 0) {
-    return yield* Effect.fail(
-      new FoldIncomplete({
-        code: "fold_incomplete",
-        message: `the journal references ${unjoined.length} deferred/clock rows the store cannot join`,
-        unjoined
-      })
-    )
+    throw new FoldIncomplete({
+      code: "fold_incomplete",
+      message: `the journal references ${unjoined.length} deferred/clock rows the store cannot join`,
+      unjoined
+    })
   }
-  yield* writer.write(Effect.gen(function*() {
-    yield* sql`DELETE FROM flows_clock_deadlines`
+  try writer.write(effect {
+    try sql`DELETE FROM flows_clock_deadlines`
     for (const clock of clocks) {
-      yield* sql`
+      try sql`
         INSERT INTO flows_clock_deadlines (
           flow_name, execution_id, clock_name, deferred_name, due_at_ms, completed_at_ms
         ) VALUES (
@@ -567,7 +565,7 @@ export const rebuild = Effect.fn("DeferredClockFold.rebuild")(function*() {
       `
     }
     for (const deferred of deferreds) {
-      yield* sql`
+      try sql`
         UPDATE flows_deferred_completions
         SET completed_at_ms = COALESCE(${deferred.completedAtMs}, completed_at_ms),
             consumed_at_ms = ${deferred.consumedAtMs}
@@ -576,7 +574,7 @@ export const rebuild = Effect.fn("DeferredClockFold.rebuild")(function*() {
           AND deferred_name = ${deferred.deferredName}
       `
     }
-  }))
+  })
   return {
     runs: runs.length,
     clocks: clocks.length,

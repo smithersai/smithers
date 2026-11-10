@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { RunStoreError } from "@smthrs/run-store/RunStore"
 import { Effect } from "effect"
-import type * as ExecutionSnapshot from "../src/ExecutionSnapshot.ts"
-import { coherentBatch } from "../src/internal/ExecutionSnapshotRead.ts"
+import type * as ExecutionSnapshot from "../src/ExecutionSnapshot.vibe"
+import { coherentBatch } from "../src/internal/ExecutionSnapshotRead.vibe"
 
 const source = "0123456789abcdef0123456789abcdef"
 const otherSource = "abcdef0123456789abcdef0123456789"

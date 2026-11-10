@@ -61,7 +61,7 @@ export interface Service {
    */
   readonly publishEntry: (
     entry: CacheStore.CacheEntry
-  ) => Effect.Effect<Option.Option<CacheStore.CacheStoreError>>
+  ) => Option.Option<CacheStore.CacheStoreError>!!
 }
 
 /**
@@ -127,5 +127,5 @@ export const make = (options: { readonly remote: CacheStore.Service }): Service 
  * @category layers
  */
 export const layer = <E, R>(
-  remote: Effect.Effect<CacheStore.Service, E, R>
+  remote: CacheStore.Service!E!R
 ): Layer.Layer<CacheSync, E, R> => Layer.effect(CacheSync)(Effect.map(remote, (shared) => make({ remote: shared })))

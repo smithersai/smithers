@@ -42,8 +42,8 @@ import type * as EffectDigest from "effect/crypto/Digest"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
-import * as ArtifactSync from "../ArtifactSync.ts"
-import * as CacheSync from "../CacheSync.ts"
+import * as ArtifactSync from "../ArtifactSync.vibe"
+import * as CacheSync from "../CacheSync.vibe"
 import * as StepBoundary from "../StepBoundary.ts"
 
 /** Resolves the configured protocol, defaulting to the single-tier one. */

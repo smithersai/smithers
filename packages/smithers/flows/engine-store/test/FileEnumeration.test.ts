@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"
 import * as PlatformError from "effect/PlatformError"
-import * as FileEnumeration from "../src/internal/FileEnumeration.ts"
+import * as FileEnumeration from "../src/internal/FileEnumeration.vibe"
 
 const fixture = () => {
   const directories = new Map<string, ReadonlyArray<string>>([

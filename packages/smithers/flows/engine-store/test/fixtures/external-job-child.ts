@@ -11,7 +11,7 @@ import { Effect, Layer, Option, Schema } from "effect"
 import { access, appendFile, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import * as Migrations from "../../src/Migrations.vibe"
-import * as OwnerIdentity from "../../src/OwnerIdentity.ts"
+import * as OwnerIdentity from "../../src/OwnerIdentity.vibe"
 import { withCrypto } from "../Sha256.ts"
 
 const directory = process.argv[2]!

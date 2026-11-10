@@ -9,7 +9,7 @@ import { ExecutionFact, type Journal, Redaction } from "@smthrs/journal"
 import type { RunStore } from "@smthrs/run-store"
 import { Effect, Option, Schema } from "effect"
 import type * as DurableEngineState from "./DurableEngineState.ts"
-import * as JournalRecords from "./internal/JournalRecords.ts"
+import * as JournalRecords from "./internal/JournalRecords.vibe"
 import * as StateTransaction from "./internal/StateTransaction.ts"
 
 /** Captured native services; never substitute an ambient control journal.

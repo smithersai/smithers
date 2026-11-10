@@ -190,8 +190,8 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/CacheAdmission.ts",
         "src/internal/CachePublication.ts",
         "src/internal/CacheOutputPolicy.ts",
-        "src/CacheSync.ts",
-        "src/ArtifactSync.ts",
+        "src/CacheSync.vibe",
+        "src/ArtifactSync.vibe",
         "src/internal/ActionPersistence.ts"
       ]
     },
@@ -220,10 +220,10 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/DurableEngineState.ts",
-        "src/OwnerIdentity.ts",
+        "src/OwnerIdentity.vibe",
         "src/internal/RunDriver.ts",
         "src/internal/AttemptLifecycle.vibe",
-        "src/internal/RunCoordinator.ts",
+        "src/internal/RunCoordinator.vibe",
         "src/DisasterRecovery.ts"
       ]
     },
@@ -238,12 +238,12 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/migrations/**",
         "src/internal/EngineStateSchema.vibe",
-        "src/internal/RunListing.ts",
+        "src/internal/RunListing.vibe",
         "src/Selection.vibe",
         "src/SelectionStore.vibe",
-        "src/internal/RetentionOps.ts",
-        "src/PlanInputStore.ts",
-        "src/PlanMergeStore.ts"
+        "src/internal/RetentionOps.vibe",
+        "src/PlanInputStore.vibe",
+        "src/PlanMergeStore.vibe"
       ]
     },
     {
@@ -258,11 +258,11 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/ArtifactRoots.ts",
-        "src/internal/ExitEncoding.ts",
+        "src/internal/ExitEncoding.vibe",
         "src/internal/ResultEnvelope.vibe",
-        "src/internal/JournalRecords.ts",
+        "src/internal/JournalRecords.vibe",
         "src/internal/CopiedRecord.vibe",
-        "src/internal/ExecutionSnapshotRead.ts"
+        "src/internal/ExecutionSnapshotRead.vibe"
       ]
     },
     {
@@ -275,7 +275,7 @@ const securityReview = Smithers.SecurityReview({
         "A root enumeration that skips a table or checkpoint column holding digests.",
         "Retention deleting a run that is still running, parked, or referenced by a child run."
       ],
-      paths: ["src/ArtifactGc.vibe", "src/Retention.ts", "src/internal/RetentionOps.ts", "src/internal/ArtifactRoots.ts"]
+      paths: ["src/ArtifactGc.vibe", "src/Retention.vibe", "src/internal/RetentionOps.vibe", "src/internal/ArtifactRoots.ts"]
     },
     {
       id: "wait-token-exposure",
@@ -289,8 +289,8 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/ExecutionFacts.ts",
-        "src/ExecutionSnapshot.ts",
-        "src/internal/ExecutionSnapshotRead.ts",
+        "src/ExecutionSnapshot.vibe",
+        "src/internal/ExecutionSnapshotRead.vibe",
         "src/DurableEngineState.ts",
         "src/RunCatalogRead.ts",
         "src/RunChangeFeed.vibe",

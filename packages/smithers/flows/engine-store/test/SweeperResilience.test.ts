@@ -33,8 +33,8 @@ import { withCrypto } from "./Sha256.ts"
  */
 const wakeFailures = vi.hoisted(() => ({ budget: 0 }))
 
-vi.mock("../src/internal/RunCoordinator.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/internal/RunCoordinator.ts")>()
+vi.mock("../src/internal/RunCoordinator.vibe", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/internal/RunCoordinator.vibe")>()
   return {
     ...actual,
     make: (options: never) =>
