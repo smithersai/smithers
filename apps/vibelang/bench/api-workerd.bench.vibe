@@ -35,17 +35,25 @@ it("the API Worker's production object bodies answer through workerd", { timeout
   await runPromise(scoped(effect {
     provide NodeHttpServer.layerTest {
       const model = try modelService()
+      const dayLimit = 2_000_000
       const api = try acquireRelease(serveApiObjects({
+        VIBELANG_ORIGIN: "http://127.0.0.1",
+        AUTH_BROKER_ORIGIN: "https://broker.invalid",
+        AUTH_BROKER_SITE_SECRET: "benchmark-only-public-read-site-key",
+        CHAT_DAILY_TOKENS: String(dayLimit),
         CHAT_MODEL: JSON.stringify({ protocol: "openai-chat", baseUrl: model, modelId: "deterministic", credential: "BENCH" }),
         SMITHERS_MODEL_KEY_BENCH: "benchmark-only", SMITHERS_MODEL_KEY_BENCH_ORIGIN: model,
       }), (served) => promise(served.dispose))
       // Sign-in configured with fixture-only secrets: no GitHub request is made by what this benchmark calls.
       const signedIn = try acquireRelease(serveApiObjects({
+        CHAT_DAILY_TOKENS: String(dayLimit),
         CHAT_MODEL: JSON.stringify({ protocol: "openai-chat", baseUrl: model, modelId: "deterministic", credential: "BENCH" }),
         SMITHERS_MODEL_KEY_BENCH: "benchmark-only", SMITHERS_MODEL_KEY_BENCH_ORIGIN: model,
         GITHUB_CLIENT_ID: "Iv1.bench", GITHUB_CLIENT_SECRET: "benchmark-only", VIBELANG_ORIGIN: "http://127.0.0.1",
         VIBELANG_INITIAL_MAINTAINER_ID: "1", SESSION_SECRET: "benchmark-only-signing-secret-32-chars",
         SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        AUTH_BROKER_ORIGIN: "https://broker.invalid",
+        AUTH_BROKER_SITE_SECRET: "benchmark-only-public-read-site-key",
       }), (served) => promise(served.dispose))
       provide LiveFactory(api.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
         const factory = try Factory
@@ -79,12 +87,22 @@ it("the API Worker's production object bodies answer through workerd", { timeout
         })
         const budget = workload(bench, "api-objects-budget", "async", async () => {
           const day = `bench-${++run}`
-          expect(await object(api.origin, "budget", day, "admit", [])).toBe(true)
-          expect(await object(api.origin, "budget", day, "spend", ["reply", 1])).toBeUndefined()
+          expect(await object(api.origin, "budget", day, "admit", ["reply", 100])).toBe(true)
+          expect(await object(api.origin, "budget", day, "admit", ["reply", 100])).toBe(true)
+          expect(await object(api.origin, "budget", day, "admit", ["overflow", dayLimit])).toBe(false)
+          expect(await object(api.origin, "budget", day, "spend", ["reply", 1, true, 100])).toBeUndefined()
+          expect(await object(api.origin, "budget", day, "spend", ["reply", 99, true, 100])).toBeUndefined()
+          expect(await object(api.origin, "budget", day, "admit", ["reply", 100])).toBe(false)
+          // Exact remaining capacity independently observes the one-token charge and released reservation.
+          expect(await object(api.origin, "budget", day, "admit", ["remaining", dayLimit - 1])).toBe(true)
+          expect(await object(api.origin, "budget", day, "spend", ["remaining", 0, true, dayLimit - 1])).toBeUndefined()
+          expect(await object(api.origin, "budget", day, "admit", ["whole-day", dayLimit])).toBe(false)
         })
         const runs = workload(bench, "api-objects-action-directory", "async", async () => {
           expect((await call(api.origin, "/api/actions/runs?flow=vibelang/none")).body).toBe("[]")
           expect((await call(api.origin, "/api/actions/runs/a-missing")).status).toBe(404)
+          const unsupported = await call(api.origin, "/api/actions/runs/a-missing/unsupported", { method: "POST", body: "{}" })
+          expect([unsupported.status, JSON.parse(unsupported.body)]).toEqual([404, { code: "not-found" }])
           expect(await object(api.origin, "actions", "vibelang", "cancel", ["a-missing", "viewer", ""])).toBe("not-found")
           expect(await object(api.origin, "actions", "vibelang", "rerun", ["a-missing", "a-next", "viewer", ""])).toBe("not-found")
         })
@@ -149,6 +167,10 @@ it("the API Worker's production object bodies answer through workerd", { timeout
         const signedInAccounts = workload(bench, "api-objects-signed-in-accounts", "async", async () => {
           const session = await call(signedIn.origin, "/api/auth/session")
           expect([session.status, JSON.parse(session.body)]).toEqual([200, { id: "", login: "", role: "viewer", available: false }])
+          // Configured public-read services initialize without contacting their broker on a health/session request.
+          const health = await call(signedIn.origin, "/api/health/objects")
+          expect(health.status).toBe(200)
+          expect(Object.values(JSON.parse(health.body).objects).every((status: any) => ["starting", "ready"].includes(status.startup))).toBe(true)
           const roles = await call(signedIn.origin, "/api/roles")
           // Configured sign-in refuses a signed-out caller (403); disabled sign-in answers 503.
           expect([roles.status, JSON.parse(roles.body)]).toEqual([403, { refusal: "forbidden" }])
@@ -164,9 +186,19 @@ it("the API Worker's production object bodies answer through workerd", { timeout
           expect(JSON.parse(read.body)).toMatchObject({ id, flow: "vibelang/Tour", door: "button", actor: "agent" })
           expect((await call(api.origin, `/api/actions/runs/${id}`, { method: "DELETE", headers: props })).status).toBe(200)
         })
+        const health = workload(bench, "api-objects-health", "async", async () => {
+          const answer = await call(api.origin, "/api/health/objects?conversation=health-bench")
+          expect(answer.status).toBe(200)
+          const body = JSON.parse(answer.body)
+          expect(Object.keys(body.objects).sort()).toEqual(["ActionIndex", "Budget", "Conversation", "History", "ProjectAccounts"])
+          for (const [name, status] of Object.entries(body.objects)) {
+            expect(status).toMatchObject({ objectClass: name, objectId: expect.any(String), codeVersion: expect.any(String) })
+            expect(["starting", "ready"]).toContain((status as { startup: string }).startup)
+          }
+        })
         const results = []
-        for (const each of [conversation, unbound, unconfigured, identity, budget, runs, history, tour, agentTools, historyWrite, actionRuns, signedInAccounts, ownedRun]) results.push(try tryPromise(() => each.run(slow)))
-        try artifact("api-objects", "Vitest built-in bench; the production bodies of worker/Api.vibe in real workerd SQLite through apiFetch, LiveFactory HTTP and alarms: posts, tour start/pause/resume/end, wiki open, an agent reply calling the history, wiki and docs tools (it opens the roadmap and a docs page in the pane), a guest history write, and an action run started, read, followed, cancelled and rerun, one started with an agent's trusted props, and ProjectAccounts with sign-in configured; deterministic HTTP model service.", ["No GitHub: History reads through an injected faulty client.", "Every caller is signed out (a viewer): signing in needs GitHub (0165), so tool, history and draft writes measure their refusal path, also on the instance with sign-in configured.", "Objects reach each other by fetch, not Alchemy RPC.", "Deterministic model; no inference latency."], results)
+        for (const each of [health, conversation, unbound, unconfigured, identity, budget, runs, history, tour, agentTools, historyWrite, actionRuns, signedInAccounts, ownedRun]) results.push(try tryPromise(() => each.run(slow)))
+        try artifact("api-objects", "Vitest built-in bench; the production bodies of worker/Api.vibe in real workerd SQLite through apiFetch, LiveFactory HTTP and alarms: public health for all five object classes, Budget admission/replay/settlement and independently observed exact remaining day capacity, posts, tour start/pause/resume/end, wiki open, an agent reply calling the history, wiki and docs tools (it opens the roadmap and a docs page in the pane), a guest history write, and an action run started, read, followed, cancelled and rerun, one started with an agent's trusted props, and ProjectAccounts with sign-in configured; deterministic HTTP model service.", ["No GitHub: History reads through an injected faulty client. Synthetic public-read broker configuration initializes real clients; no request in this workload calls that broker.", "Every caller is signed out (a viewer): signing in needs GitHub (0165), so tool, history and draft writes measure their refusal path, also on the instance with sign-in configured.", "Objects reach each other by fetch, not Alchemy RPC.", "Deterministic model; no inference latency."], results)
       }
     }
   }))

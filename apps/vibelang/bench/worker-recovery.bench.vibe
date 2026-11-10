@@ -1,0 +1,143 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { HttpServerResponse } from "effect/http"
+import * as Startup from "../worker/ObjectStartup.vibe"
+import * as History from "../worker/HistoryObject.vibe"
+import { make as history } from "../src/history/Sequencer.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("a chunked persisted history reload keeps every row and continues after the exact cursor", async ({ bench }) => {
+  const result = await workload(bench, "worker-history-snapshot-reopen", "async", () => runPromise(scoped(effect {
+    const kv = try Effect.try(() => objectStorage())
+    const store = History.storeOver(kv)
+    const seed = try History.seeded()
+    try store.seed(seed)
+    const loaded = try store.load()
+    const first = try history(store)
+    const planned = try first.plan({ how: "append", epic: "", newEpic: "Measured recovery", target: "", title: "Retained plan", task: "Exact retained task" })
+    const expected = try first.read()
+    const reopened = try history(History.storeOver(kv))
+    const answer = try reopened.read()
+    const after = try store.since(seed.seq)
+    try Effect.try(() => {
+      expect(loaded).toEqual({ base: seed, events: [] })
+      expect(planned.refusal).toBeNull()
+      expect(answer).toEqual(expected)
+      expect(answer.commits.find(row => row.id === planned.id)).toMatchObject({ title: "Retained plan", task: "Exact retained task", state: "planned" })
+      expect(after.map(event => [event.type, event.seq])).toEqual([["EpicOpened", seed.seq + 1], ["Planned", seed.seq + 2]])
+      expect(kv.kv.get("base")).toBeGreaterThan(1)
+      expect(after.reduce((seq, event) => event.seq === seq + 1 ? event.seq : -1, seed.seq)).toBe(answer.seq)
+    })
+  }))).run(slow)
+  await runPromise(artifact("worker-history-snapshot-reopen", "Production worker HistoryObject chunked KV store and history sequencer: seed the shipped complete snapshot, load its multi-chunk base, append one new epic/plan, reopen over identical storage and compare the entire state, retained task and exact next event cursor. Three fresh stores; snapshot decode, writes, sequencer construction and assertions included.", ["Node in-memory object KV, not disk or workerd crash durability. Uses the shipped snapshot and no GitHub, model or approval/fold."], result))
+})
+
+it("a request on an expired host is refused, then a fresh host reads the same stored history", async ({ bench }) => {
+  const result = await workload(bench, "worker-expired-host-recovery", "async", () => runPromise(scoped(effect {
+    const kv = try Effect.try(() => objectStorage())
+    const seed = try History.seeded()
+    try History.storeOver(kv).seed(seed)
+    const program = effect {
+      const sequencer = try Startup.step("storage", history(History.storeOver(kv)))
+      return { read: () => sequencer.read() }
+    }
+    // The object received an already closed host scope: the Alchemy bridge's historical failure mode (0030).
+    const expired = try Scope.make()
+    try Scope.close(expired, Exit.void)
+    const old = try Startup.make("History", { id: { toString: () => "bench-history" } } as never, program, { read: true }).pipe(Effect.provideService(Scope.Scope, expired))
+    const refused = try exit(old.read()).pipe(Effect.timeout("2 seconds"))
+    const failed = try old.health()
+    const fresh = try Startup.make("History", { id: { toString: () => "bench-history" } } as never, program, { read: true })
+    const restored = try fresh.read()
+    const ready = try fresh.health()
+    try Effect.try(() => {
+      expect(refused._tag).toBe("Failure")
+      if (refused._tag === "Failure") expect(Cause.squash(refused.cause)).toMatchObject({ _tag: "ObjectStartupFailed", objectClass: "History", objectId: "bench-history" })
+      expect(failed).toMatchObject({ startup: "failed", step: "initialize" })
+      expect(ready).toMatchObject({ startup: "ready", step: "storage" })
+      expect(restored).toEqual(seed)
+    })
+  }))).run(slow)
+  await runPromise(artifact("worker-expired-host-recovery", "Real ObjectStartup lifecycle and HistoryObject storage: retain the complete shipped history in chunked KV, make a History service under an expired host scope, issue a read bounded at two seconds and check safe ObjectStartupFailed/failed health, then a fresh scoped host restores the identical full state and reports its ready storage step. Three fresh worlds; all setup and assertions included.", ["Node Effect host lifetime and in-memory object KV. Models a closed host scope, not process death or workerd scheduling. No credentials, GitHub, model or recovery timer."], result))
+})
+
+it("a request deadline stays bounded while startup waits for critical storage", async ({ bench }) => {
+  const result = await workload(bench, "worker-startup-critical-wait", "async", () => runPromise(scoped(effect {
+    const kv = try Effect.try(() => objectStorage())
+    const seed = try History.seeded()
+    try History.storeOver(kv).seed(seed)
+    const gate = try Deferred.make<void>()
+    const counter = Metric.withAttributes(Metric.counter("vibelang_object_startup_wait_deadlines", { incremental: true }), { objectClass: "History" })
+    const before = (try Metric.value(counter)).count
+    const state = { id: { toString: () => "bench-critical-history" } } as never
+    const api = try Startup.make("History", state, effect {
+      const seq = try Startup.step("storage", Effect.uninterruptible(effect {
+        try Deferred.await(gate)
+        return try history(History.storeOver(kv))
+      }))
+      return { read: () => seq.read() }
+    }, { read: true })
+    // Release even on a failed assertion/outer deadline, so the host scope can always close.
+    const observed = try ensuring(effect {
+      const refused = try exit(api.read())
+      return { refused, health: try api.health() }
+    }, Deferred.succeed(gate, undefined)).pipe(Effect.timeout("8 seconds"))
+    const after = (try Metric.value(counter)).count
+    const fresh = try Startup.make("History", state, effect {
+      const seq = try history(History.storeOver(kv))
+      return { read: () => seq.read() }
+    }, { read: true })
+    const restored = try fresh.read()
+    try Effect.try(() => {
+      expect(observed.refused._tag).toBe("Failure")
+      if (observed.refused._tag === "Failure") expect(Cause.squash(observed.refused.cause)).toMatchObject({ _tag: "ObjectStartupFailed", objectId: "bench-critical-history" })
+      expect(observed.health).toMatchObject({ startup: "starting", step: "storage" })
+      expect(after - before).toBe(1)
+      expect(restored).toEqual(seed)
+    })
+  }))).run(slow)
+  await runPromise(artifact("worker-startup-critical-wait", "Real ObjectStartup over the complete persisted history, with its first storage load held in an uninterruptible faulty Effect service. A read must fail at the production five-second caller deadline while health still names starting/storage; require one deadline counter and exact history on a fresh host after releasing storage. Three fresh worlds, real wall clock, an eight-second outer deadline with unconditional release. All setup, policy wait and assertions included.", ["The five-second policy wait dominates; no throughput or tail claim. Node Effect host and memory KV, not actual disk contention/workerd scheduling. No credentials, network or model."], result))
+})
+
+it("failed storage answers a safe HTTP refusal and the person's next call retries initialization", async ({ bench }) => {
+  const result = await workload(bench, "worker-startup-failed-storage-retry", "async", () => runPromise(scoped(effect {
+    const kv = try Effect.try(() => objectStorage())
+    const seed = try History.seeded()
+    try History.storeOver(kv).seed(seed)
+    let faults = 1
+    let starts = 0
+    const faulty = { ...kv, get: async (key: string) => {
+      if (faults-- > 0) throw new Error("private storage diagnostic")
+      return await kv.get(key)
+    } }
+    const api = try Startup.make("History", { id: { toString: () => "bench-storage-retry" } } as never, effect {
+      starts += 1
+      const seq = try Startup.step("storage", effect {
+        const loaded = try history(History.storeOver(faulty))
+        try loaded.read()
+        return loaded
+      })
+      return { read: () => seq.read(), fetch: seq.read().pipe(Effect.map(snapshot => HttpServerResponse.jsonUnsafe(snapshot))) }
+    }, { read: true, fetch: true })
+    const response = try api.fetch.pipe(Effect.timeout("2 seconds"))
+    const body = try promise(() => HttpServerResponse.toWeb(response).json())
+    const failed = try api.health()
+    try api.health()
+    try Effect.try(() => {
+      expect([response.status, body]).toEqual([503, { reason: "unavailable" }])
+      expect(response.headers["cache-control"]).toBe("no-store")
+      expect(failed).toMatchObject({ startup: "failed", step: "storage" })
+      expect(starts).toBe(1)
+      expect(JSON.stringify(failed)).not.toContain("private")
+    })
+    const recovered = try api.read().pipe(Effect.timeout("2 seconds"))
+    const ready = try api.health()
+    try Effect.try(() => {
+      expect(recovered).toEqual(seed)
+      expect(ready).toMatchObject({ startup: "ready", step: "storage" })
+      expect(starts).toBe(2)
+    })
+  }))).run(slow)
+  await runPromise(artifact("worker-startup-failed-storage-retry", "Actual ObjectStartup and chunked HistoryObject store over a fresh persisted shipped snapshot. A faulty KV service rejects its first load with a private diagnostic. The forwarded fetch must return only 503/unavailable with no-store, health must retain failed/storage and cannot retry; the next ordinary read explicitly initializes once and restores the complete exact snapshot. Three fresh worlds, two-second caller deadlines, setup and assertions included.", ["Node Effect host/memory KV, not a deployed Worker or disk failure. Fault injection rejects a real storage operation; no request interception, GitHub, model or production storage mutation."], result))
+})
