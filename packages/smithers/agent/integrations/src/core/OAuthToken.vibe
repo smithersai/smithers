@@ -55,6 +55,7 @@ import type { Credential, CredentialRef } from "@smthrs/control/Credential"
 import { Duration, Effect, Redacted } from "effect"
 import * as HttpClient from "effect/http/HttpClient"
 import type { AccessTokenSource } from "./AccessToken.vibe"
+import { basicCredentials } from "./BasicCredentials.ts"
 import { forCredentials, retryAfterHeader, transportCause, webHeaders } from "./CredentialHttp.vibe"
 import { IntegrationError, isIntegrationError } from "./IntegrationError.ts"
 import { redactedError } from "./RedactedError.ts"
@@ -349,10 +350,9 @@ const requestGrant = (
 ): Grant!IntegrationError => {
   const plain = secrets.map(Redacted.value)
   const secret = endpoint.clientSecret === undefined ? undefined : Redacted.value(endpoint.clientSecret)
-  // Percent-encoding leaves only ASCII, which `btoa` encodes byte for byte.
   const basic = secret === undefined || endpoint.authentication !== "basic"
     ? undefined
-    : btoa(`${encodeURIComponent(endpoint.clientId)}:${encodeURIComponent(secret)}`)
+    : basicCredentials(endpoint.clientId, secret)
   const failure = redactedError([...plain, secret, basic])
   const provider = endpoint.provider
   const path = endpoint.url.pathname
