@@ -44,8 +44,7 @@ export effect function makeIssueStore(): FixtureStore!! {
   return { state: try Ref.make<typeof import("./issueSchemas.vibe").IssuesState.Type>({ ...emptyIssues, items: fixtureIssues, specification: fixtureSpecification, specificationHistory: fixtureSpecificationHistory }), lock: try Semaphore.make(1) }
 }
 
-export effect function fixtureHost(identity: FixtureIdentity, state: Ref.Ref<typeof import("./issueSchemas.vibe").IssuesState.Type>, gate?: Semaphore.Semaphore) {
-  const lock = gate ?? (try Semaphore.make(1))
+export effect function fixtureHost(identity: FixtureIdentity, state: Ref.Ref<typeof import("./issueSchemas.vibe").IssuesState.Type>, lock: Semaphore.Semaphore) {
   const host: IssueHost.Shape = {
     perform: (request) => lock.withPermit(effect {
       const person = try personOf(identity)

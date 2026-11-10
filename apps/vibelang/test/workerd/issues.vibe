@@ -27,7 +27,7 @@ export class IssuesObject {
       const authority: IssueAuthority.Shape = { current: () => Effect.succeed({ ...identity, connection: { person: 1, delegation: "fixture-delegation" } }) }
       const stored = try promise(() => state.storage.get("gates/fixture"))
       const current = try Ref.make(stored === undefined ? { seq: 0, items: fixtureIssues } : try Schema.decodeUnknownEffect(IssuesState)(stored))
-      const fixture = try fixtureHost(effect () => identity, current)
+      const fixture = try fixtureHost(effect () => identity, current, try Semaphore.make(1))
       const host: IssueHost.Shape = { perform: effect (payload) => {
         const result = try fixture.perform(payload)
         try promise(() => state.storage.put("gates/fixture", result))
@@ -106,7 +106,7 @@ export class IssuesObject {
     const initial = persisted === undefined ? { seq: 0, items: fixtureIssues } : Schema.decodeUnknownSync(IssuesState)(persisted)
     const result = await runPromise(scoped(effect {
       const current = try Ref.make(initial)
-      const host = try fixtureHost("maintainer", current)
+      const host = try fixtureHost("maintainer", current, try Semaphore.make(1))
       const flow = issueFlows.find((f) => f._tag === `vibelang/issues/${payload.op}`)!
       const executionId = `issues/fixture-maintainer/${payload.op}/${payload.key}`
       const runtime = CloudflareRuntime.layer({ hostId: this.state.id.toString(), executionId, flow: flow._tag }, issueRegistration).pipe(Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(IssueHost, host)))

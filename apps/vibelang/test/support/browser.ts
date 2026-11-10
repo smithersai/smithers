@@ -95,3 +95,14 @@ export function tallPage(height: number): () => void {
 export function chatShown(): boolean { return document.querySelector(".vl-app[data-surface='chat']") !== null }
 
 export function fire(target: EventTarget, type: string): void { target.dispatchEvent(new Event(type)) }
+
+/** The page's window with both storages refused, as a private window or a blocked site refuses them. */
+export function refusingStorage(): Window {
+  return new Proxy(window, {
+    get(target, property) {
+      if (property === "localStorage" || property === "sessionStorage") throw new DOMException("denied", "SecurityError")
+      const value = Reflect.get(target, property)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+}
