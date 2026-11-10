@@ -51,6 +51,20 @@ it("copies only hand-written declarations, keeping their nested paths", () => {
   expect(existsSync(join(root, "dist/esm/deep/er/shape.d.ts.map"))).toBe(false)
 })
 
+it("does not copy the compiler's x.d.ts shim over a .vibe module's emitted declarations", () => {
+  const root = scratch()
+  write(join(root, "src/Lookup.vibe"), "export const lookup = (key: string) => key\n")
+  write(join(root, "src/Lookup.d.ts"), "export * from \"./Lookup.vibe\";\n")
+  write(join(root, "src/View.vibex"), "export const view = 1\n")
+  write(join(root, "src/View.d.ts"), "export * from \"./View.vibex\";\n")
+  write(join(root, "src/ambient.d.ts"), "declare const top: 1\n")
+  write(join(root, "dist/esm/Lookup.d.ts"), "export declare const lookup: (key: string) => string;\n")
+  copyInputDeclarations(join(root, "src"), join(root, "dist/esm"))
+  expect(read(join(root, "dist/esm/Lookup.d.ts"))).toBe("export declare const lookup: (key: string) => string;\n")
+  expect(existsSync(join(root, "dist/esm/View.d.ts"))).toBe(false)
+  expect(read(join(root, "dist/esm/ambient.d.ts"))).toBe("declare const top: 1\n")
+})
+
 it("mirrors ESM declarations and maps into the CommonJS branch and marks it CommonJS", () => {
   const root = scratch()
   write(join(root, "dist/esm/index.js"), "export {}\n")

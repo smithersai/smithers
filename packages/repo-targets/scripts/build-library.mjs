@@ -28,7 +28,10 @@ const files = (directory) =>
 
 /** Input declarations are shipped beside generated declarations in every release. */
 export const copyInputDeclarations = (source, destination) => {
-  for (const file of files(source).filter((file) => file.endsWith(".d.ts"))) {
+  // x.d.ts beside x.vibe or x.vibex is the compiler's re-export shim for native .ts importers,
+  // not a hand-written declaration: the build emits x's real declarations into the destination.
+  const shim = (file) => [".vibe", ".vibex"].some((extension) => existsSync(file.slice(0, -".d.ts".length) + extension))
+  for (const file of files(source).filter((file) => file.endsWith(".d.ts") && !shim(file))) {
     const target = join(destination, relative(source, file))
     mkdirSync(dirname(target), { recursive: true })
     cpSync(file, target)
