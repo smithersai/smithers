@@ -5,7 +5,7 @@ import * as Exec from "../src/Exec.ts"
 import * as Shell from "../src/Shell.ts"
 import * as Target from "../src/Target.ts"
 import * as ToolBuild from "../src/ToolBuild.ts"
-import * as ToolRun from "../src/ToolRun.ts"
+import * as ToolRun from "../src/ToolRun.vibe"
 
 const Leaf = Target.make("RuleTestLeaf", {
   attrs: Schema.Struct({}),

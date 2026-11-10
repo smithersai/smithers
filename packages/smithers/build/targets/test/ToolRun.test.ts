@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import * as Input from "../src/Input.ts"
 import { HttpSecret, Secret } from "../src/Secret.ts"
 import * as Target from "../src/Target.ts"
-import { ToolRun } from "../src/ToolRun.ts"
+import { ToolRun } from "../src/ToolRun.vibe"
 import { plannedCalls } from "./plan.ts"
 
 describe("ToolRun", () => {

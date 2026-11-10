@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { Dev } from "../src/Dev.vibe"
 import * as Exec from "../src/Exec.ts"
-import { ToolRun } from "../src/ToolRun.ts"
+import { ToolRun } from "../src/ToolRun.vibe"
 import { plannedCalls } from "./plan.ts"
 
 describe("Dev lifetime", () => {

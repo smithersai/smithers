@@ -14,7 +14,7 @@ import * as Docker from "../src/Docker.ts"
 import { FaultSuite } from "../src/FaultSuite.ts"
 import * as Input from "../src/Input.ts"
 import * as Target from "../src/Target.ts"
-import * as Vitest from "../src/Vitest.ts"
+import * as Vitest from "../src/Vitest.vibe"
 import { plannedArgv, plannedCalls } from "./plan.ts"
 import { packageManager } from "./toolchain.ts"
 

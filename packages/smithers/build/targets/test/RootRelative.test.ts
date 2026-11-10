@@ -4,8 +4,8 @@
  */
 import { describe, expect, it } from "vitest"
 import * as Input from "../src/Input.ts"
-import * as NodeBinary from "../src/NodeBinary.ts"
-import * as NodeTest from "../src/NodeTest.ts"
+import * as NodeBinary from "../src/NodeBinary.vibe"
+import * as NodeTest from "../src/NodeTest.vibe"
 import * as PackageManager from "../src/PackageManager.ts"
 import * as Runtime from "../src/Runtime.ts"
 import * as Tsconfig from "../src/Tsconfig.ts"

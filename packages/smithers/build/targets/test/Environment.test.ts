@@ -5,7 +5,7 @@ import * as Environment from "../src/Environment.ts"
 import { Smithers } from "../src/index.ts"
 import * as Input from "../src/Input.ts"
 import * as Target from "../src/Target.ts"
-import * as TargetIndex from "../src/TargetIndex.ts"
+import * as TargetIndex from "../src/TargetIndex.vibe"
 import { plannedCalls } from "./plan.ts"
 
 const jq = {

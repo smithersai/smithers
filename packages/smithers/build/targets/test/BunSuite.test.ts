@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest"
 import { BunSuite } from "../src/BunSuite.ts"
 import * as Input from "../src/Input.ts"
 import * as Target from "../src/Target.ts"
-import type * as Vitest from "../src/Vitest.ts"
+import type * as Vitest from "../src/Vitest.vibe"
 import { plannedArgv } from "./plan.ts"
 
 const attrsOf = (target: unknown): Vitest.Attrs => Target.metadata(target as never).attrs as Vitest.Attrs

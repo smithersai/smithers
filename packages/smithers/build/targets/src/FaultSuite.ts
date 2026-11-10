@@ -8,7 +8,7 @@ import type * as Attr from "./Attr.ts"
 import * as Input from "./Input.ts"
 import type * as PackageManager from "./PackageManager.ts"
 import type * as Target from "./Target.ts"
-import { Vitest } from "./Vitest.ts"
+import { Vitest } from "./Vitest.vibe"
 
 /**
  * Options accepted by {@link FaultSuite}.

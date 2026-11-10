@@ -19,7 +19,7 @@
  */
 
 import * as CargoModule from "./Cargo.ts"
-import * as ChangesetsTargetModule from "./ChangesetsTarget.ts"
+import * as ChangesetsTargetModule from "./ChangesetsTarget.vibe"
 import * as CiToolchainModule from "./CiToolchain.ts"
 import * as DependencyDocs from "./DependencyDocs.ts"
 import * as DocsCheckModule from "./DocsCheck.ts"
@@ -29,7 +29,7 @@ import * as HomeModule from "./Home.vibe"
 import * as InputModule from "./Input.ts"
 import { Mise as MiseSurface } from "./Mise.ts"
 import * as NodeArtifactModule from "./NodeArtifact.ts"
-import * as NpmTargetModule from "./NpmTarget.ts"
+import * as NpmTargetModule from "./NpmTarget.vibe"
 import * as OwnersModule from "./Owners.ts"
 import * as PackageManagerModule from "./PackageManager.ts"
 import * as RuntimeModule from "./Runtime.ts"
@@ -151,7 +151,7 @@ export { isFilegroup } from "./Filegroup.ts"
 /** @category targets @since 0.1.0 */
 export { Install } from "./Install.ts"
 /** @category targets @since 0.1.0 */
-export { Lockfile } from "./Lockfile.ts"
+export { Lockfile } from "./Lockfile.vibe"
 /** @category targets @since 0.1.0 */
 export { PnpmWorkspace } from "./PnpmWorkspaceFile.ts"
 /** @category targets @since 0.1.0 */
@@ -169,13 +169,13 @@ export { DtsBuild } from "./DtsBuild.ts"
 /** @category targets @since 0.1.0 */
 export { Typecheck } from "./Typecheck.vibe"
 /** @category targets @since 0.1.0 */
-export { Vitest } from "./Vitest.ts"
+export { Vitest } from "./Vitest.vibe"
 /** @category targets @since 0.1.0 */
-export { VitestCoverage } from "./VitestCoverage.ts"
+export { VitestCoverage } from "./VitestCoverage.vibe"
 /** @category targets @since 0.1.0 */
-export { VitestWatch } from "./VitestWatch.ts"
+export { VitestWatch } from "./VitestWatch.vibe"
 /** @category targets @since 0.1.0 */
-export { BiomeCheck } from "./BiomeCheck.ts"
+export { BiomeCheck } from "./BiomeCheck.vibe"
 /** @category targets @since 0.1.0 */
 export { Dprint } from "./Dprint.vibe"
 /** @category targets @since 0.1.0 */
@@ -183,13 +183,13 @@ export { EsLint } from "./EsLint.vibe"
 /** @category targets @since 0.1.0 */
 export { DepsLint } from "./DepsLint.ts"
 /** @category targets @since 0.1.0 */
-export { PackageLint } from "./PackageLint.ts"
+export { PackageLint } from "./PackageLint.vibe"
 /** @category targets @since 0.1.0 */
 export { DocsParity } from "./DocsParity.ts"
 /** @category actions @since 0.1.0 */
 export { CheckDocs, DocsParityError } from "./DocsParity.ts"
 /** @category targets @since 0.1.0 */
-export { SortPackageJson } from "./SortPackageJson.ts"
+export { SortPackageJson } from "./SortPackageJson.vibe"
 /** @category constructors @since 0.1.0 */
 export { generated, PackageJson } from "./PackageJson.ts"
 /** @category targets @since 0.1.0 */
@@ -222,7 +222,7 @@ export { Lifecycle } from "./Factory.ts"
 
 export { FactoryProjection } from "./Factory.ts"
 /** @category targets @since 1.0.0 */
-export { TargetIndex } from "./TargetIndex.ts"
+export { TargetIndex } from "./TargetIndex.vibe"
 /** @category actions @since 1.0.0 */
 export { FactoryProjectionAction, FactoryProjectionError } from "./Factory.ts"
 /** @category guards @since 1.0.0 */
@@ -234,11 +234,11 @@ export { isHomeDeclaration } from "./Home.vibe"
 export * as GithubWorkflow from "./GithubWorkflow.vibe"
 /** @category targets @since 0.1.0 */
 /** @category targets @since 0.1.0 */
-export { NpmPublish } from "./NpmPublish.ts"
+export { NpmPublish } from "./NpmPublish.vibe"
 /** @category targets @since 0.1.0 */
-export { JsrPublish } from "./JsrPublish.ts"
+export { JsrPublish } from "./JsrPublish.vibe"
 /** @category targets @since 0.1.0 */
-export { TypedocDocs } from "./TypedocDocumentation.ts"
+export { TypedocDocs } from "./TypedocDocumentation.vibe"
 /** @category targets @since 0.1.0 */
 export { LlmLint } from "./LlmLint.ts"
 /** @category actions @since 0.1.0 */
@@ -256,14 +256,14 @@ export { Dev } from "./Dev.vibe"
 /** @category targets @since 0.1.0 */
 export { ToolBuild } from "./ToolBuild.ts"
 /** @category targets @since 0.1.0 */
-export { ToolRun } from "./ToolRun.ts"
+export { ToolRun } from "./ToolRun.vibe"
 /** @category targets @since 0.1.0 */
 /** @category targets @since 0.1.0 */
-export { NodeTest } from "./NodeTest.ts"
+export { NodeTest } from "./NodeTest.vibe"
 /** @category constructors @since 0.1.0 */
-export { entrypoint, testRunner, testSuite } from "./NodeTest.ts"
+export { entrypoint, testRunner, testSuite } from "./NodeTest.vibe"
 /** @category targets @since 0.1.0 */
-export { NodeBinary } from "./NodeBinary.ts"
+export { NodeBinary } from "./NodeBinary.vibe"
 /** @category actions @since 0.1.0 */
 export { CaptureOutputs, measureOutput, OutputError, readOutputManifest, verifyOutputs } from "./ToolBuild.ts"
 

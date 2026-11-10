@@ -6,10 +6,10 @@ import * as Install from "../src/Install.ts"
 import * as LlmLint from "../src/LlmLint.ts"
 import * as PackageManager from "../src/PackageManager.ts"
 import * as Runtime from "../src/Runtime.ts"
-import * as SortPackageJson from "../src/SortPackageJson.ts"
+import * as SortPackageJson from "../src/SortPackageJson.vibe"
 import * as Target from "../src/Target.ts"
 import * as TsBuild from "../src/TsBuild.ts"
-import * as TypedocDocs from "../src/TypedocDocumentation.ts"
+import * as TypedocDocs from "../src/TypedocDocumentation.vibe"
 import { packageManager, runtime } from "./toolchain.ts"
 
 describe("Install declared inputs", () => {

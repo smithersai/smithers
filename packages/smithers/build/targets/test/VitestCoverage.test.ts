@@ -5,7 +5,7 @@ import * as Path from "node:path"
 import { expect, it } from "vitest"
 import * as Target from "../src/Target.ts"
 import * as ToolBuild from "../src/ToolBuild.ts"
-import { CoverageReport, VitestCoverage } from "../src/VitestCoverage.ts"
+import { CoverageReport, VitestCoverage } from "../src/VitestCoverage.vibe"
 import { plannedValue } from "./plan.ts"
 import { packageManager } from "./toolchain.ts"
 

@@ -41,7 +41,7 @@ describe("unsupported catalog rules", () => {
   it("lists every rule the sources declare in the catalog table", () => {
     const documented = new Set(catalogRows().map((row) => row.rule))
     const declared = readdirSync(join(root, "src"))
-      .filter((file) => file.endsWith(".ts"))
+      .filter((file) => /\.(?:ts|vibe)$/.test(file))
       .flatMap((file) => [...read(`src/${file}`).matchAll(/Target\.make\(\s*"([^"]+)"/g)].map((match) => match[1]!))
     expect(declared).toContain("Npm.Publish")
     for (const rule of declared) expect(documented, rule).toContain(rule)

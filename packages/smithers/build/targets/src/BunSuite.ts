@@ -7,7 +7,7 @@
 import * as Input from "./Input.ts"
 import * as Runtime from "./Runtime.ts"
 import type * as Target from "./Target.ts"
-import { Vitest } from "./Vitest.ts"
+import { Vitest } from "./Vitest.vibe"
 
 /**
  * Options accepted by {@link BunSuite}.

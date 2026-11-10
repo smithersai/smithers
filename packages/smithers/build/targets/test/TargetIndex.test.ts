@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest"
 import * as Shell from "../src/Shell.ts"
 import * as Target from "../src/Target.ts"
-import * as TargetIndex from "../src/TargetIndex.ts"
+import * as TargetIndex from "../src/TargetIndex.vibe"
 import { plannedCalls } from "./plan.ts"
 
 const describeInput = (input: { readonly _tag: string; readonly path?: string; readonly pattern?: string }): string =>

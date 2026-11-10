@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { BiomeCheck } from "../src/BiomeCheck.ts"
+import { BiomeCheck } from "../src/BiomeCheck.vibe"
 import * as Input from "../src/Input.ts"
 import * as Target from "../src/Target.ts"
 import { plannedArgv, plannedCalls } from "./plan.ts"

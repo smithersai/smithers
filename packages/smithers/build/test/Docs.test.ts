@@ -269,7 +269,7 @@ describe("packages/smithers/build prose", () => {
   })
 
   it("describes the current Changesets namespace", () => {
-    const source = read("targets/src/ChangesetsTarget.ts")
+    const source = read("targets/src/ChangesetsTarget.vibe")
     const page = read("docs/reference/targets/changesets.md")
     for (const name of ["Version", "Publish"]) {
       expect(source).toContain(`Target.make("Changesets.${name}"`)

@@ -186,7 +186,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Exec.ts",
         "src/ExecSandbox.ts",
         "src/Shell.ts",
-        "src/ToolRun.ts",
+        "src/ToolRun.vibe",
         "src/LlmLint.ts",
         "src/Docker.ts",
         "src/Cargo.ts",
@@ -230,8 +230,8 @@ const securityReview = Smithers.SecurityReview({
         "src/Secret.ts",
         "src/SecretProxy.ts",
         "src/RemoteCache.ts",
-        "src/NpmPublish.ts",
-        "src/JsrPublish.ts",
+        "src/NpmPublish.vibe",
+        "src/JsrPublish.vibe",
         "src/LlmLint.ts"
       ]
     },
@@ -286,11 +286,11 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/Outward.vibe",
         "src/Changesets.vibe",
-        "src/ChangesetsTarget.ts",
-        "src/NpmPublish.ts",
-        "src/NpmTarget.ts",
-        "src/JsrPublish.ts",
-        "src/ToolRun.ts",
+        "src/ChangesetsTarget.vibe",
+        "src/NpmPublish.vibe",
+        "src/NpmTarget.vibe",
+        "src/JsrPublish.vibe",
+        "src/ToolRun.vibe",
         "src/GitTarget.ts",
         "src/GithubTarget.ts"
       ]
