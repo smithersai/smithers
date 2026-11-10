@@ -18,7 +18,7 @@ import { PublicReads } from "../worker/PublicReads.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { API, fakeClient, forked, seed } from "./issues-node-fake.vibe"
 import { delegated, reach, reached } from "./delegated.vibe"
-import { run, stepped, Finding, REPLAY_FLOOR } from "./run.vibe"
+import { run, stepped, Finding, STEERED_FLOOR } from "./run.vibe"
 import { faultyStore } from "./faulty-store.ts"
 
 const repo: WikiRepository = { owner: "o", name: "r", api: API, agent: "", root: "wiki" }
@@ -451,4 +451,4 @@ const steeredScenario = (scenario: typeof WIKI_SCENARIOS[number], pick: number, 
 it.live("wiki/steered-host", () => run("wiki/steered-host", Steered, ({ pick, text }) => effect {
   for (const scenario of WIKI_SCENARIOS) try steeredScenario(scenario, pick, text)
   return true
-}, undefined, { minimum: REPLAY_FLOOR }))
+}, undefined, { minimum: STEERED_FLOOR }))

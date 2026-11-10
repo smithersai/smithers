@@ -802,3 +802,9 @@ issues answer as `seq - 1`, which is -1 at seq 0 and fails the Model's `Seq` (`P
 executions). The client decodes every issues state, so the product never receives it. At seq 0 the target now sends no
 older answer; 248 executions pass at that seed.
 
+### Floor for steered targets under coverage
+
+`pnpm fuzz:coverage` at seed 20261122 on an idle 4-vCPU box (load 2.2) ran `wiki/steered-host` (15 s floor) and
+`actions/steered-runs` (5 s budget) for 0 executions, after 1 each in the run before: replaying the saved value and
+one execution took 21.7 s and 8.5 s with coverage counters. Both declare `STEERED_FLOOR` (30 s) in `fuzz/run.vibe`.
+With it, under coverage: `wiki/steered-host` 1 execution in 31.8 s, `actions/steered-runs` 7 in 31.7 s.
