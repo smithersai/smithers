@@ -1,13 +1,13 @@
 // Screens built the way a person reaches them, then the update branches and Commands that only those screens reach.
 import { it } from "@effect/vitest"
 import { Model, Message, accountOf, roleLabel, update, viewTransition, RunAction, ReadAction, CancelAction, LoadActions, SandboxAction, LoadPeople, GrantRole, LoadIssues, ActOnIssue, LoadIssueDetails, RefreshIssueProjection, OpenWikiEditor, SubmitWikiEdit } from "../src/web/main.vibe"
-import { Factory } from "../src/core/Factory.vibe"
+import { Factory, SandboxSnapshot } from "../src/core/Factory.vibe"
 import { Actions } from "../src/actions/Actions.vibe"
 import { IssueOperation, IssueRequest } from "../src/core/issueSchemas.vibe"
 import { WikiRequest } from "../src/core/wikiSchemas.vibe"
 import { pages } from "../src/core/wiki.vibe"
 import { actionsOf } from "../src/web/actionModel.vibe"
-import { backend, backendWithWiki, Backend, Role, WikiFault } from "./web-backends.vibe"
+import { backend, backendWithFailingPosts, backendWithWiki, Backend, Role, WikiFault } from "./web-backends.vibe"
 import { run, Finding, Int, Text, TextOrBoundary } from "./run.vibe"
 import { gesture, GRANTS, pump, tab, tourEnded, tourStop } from "./web-tab.vibe"
 
@@ -441,3 +441,87 @@ it.live("web/screen-answers", () => run("web/screen-answers", Answers, ({ sessio
   }
   return true
 }, backendWithWiki(role, wiki))))
+
+const Count = (maximum: number) => Schema.Int.check(Schema.isBetween({ minimum: 0, maximum }))
+const PostRetries = Schema.Struct({ session: Int, role: Role, texts: Schema.Array(Text).check(Schema.isMinLength(1), Schema.isMaxLength(3)), failures: Count(4), lost: Schema.Boolean, rounds: Count(4), stray: Schema.Boolean })
+
+/**
+ * Posts whose first answers fail, some after the server stored them, then retried by the person. Retry clears the
+ * post's error at once and resends the same text; a Retry for no failed post changes nothing; no post is lost; and no
+ * post is received twice.
+ */
+it.live("web/post-retry", () => run("web/post-retry", PostRetries, ({ session: id, role, texts, failures, lost, rounds, stray }) => Effect.provide(effect {
+  const session = try signedIn(`p${id}`, role)
+  const sent: Array<string> = []
+  for (const text of texts) {
+    try session.send(try Effect.try(() => Message.UpdatedDraft({ value: text })))
+    const known = new Set(session.model().client.pending.map((waiting) => waiting.clientId))
+    try session.send(try Effect.try(() => Message.SubmittedDraft()))
+    for (const waiting of session.model().client.pending) if (!known.has(waiting.clientId)) sent.push(waiting.clientId)
+  }
+  for (let round = 0; round <= rounds; round++) {
+    if (stray) {
+      const before = session.model()
+      try session.send(try Effect.try(() => Message.ClickedRetry({ clientId: "fuzz-no-post" })))
+      if (session.model() !== before) throw new Finding({ report: "a Retry for no failed post changed the screen" })
+    }
+    for (const waiting of session.model().client.pending.filter((post) => post.error !== "")) {
+      try session.hold(try Effect.try(() => Message.ClickedRetry({ clientId: waiting.clientId })))
+      const retried = session.model().client.pending.find((post) => post.clientId === waiting.clientId)
+      if (retried === undefined || retried.error !== "" || retried.text !== waiting.text) throw new Finding({ report: "Retry did not resend the failed post as it was" })
+      try session.settle
+    }
+    try pump(session)
+  }
+  const model = session.model()
+  const received = model.client.conversation.entries.map((entry) => entry.clientId).filter((clientId) => sent.includes(clientId))
+  if (new Set(received).size !== received.length) throw new Finding({ report: "a retried post was received twice" })
+  for (const clientId of sent) {
+    if (!received.includes(clientId) && !model.client.pending.some((post) => post.clientId === clientId)) throw new Finding({ report: "a post was lost" })
+  }
+  return true
+}, backendWithFailingPosts(role, failures, lost))))
+
+/** Reset months move forward: an answer keeps the month or starts the next one. */
+const MONTHS = [Date.UTC(2026, 10, 1), Date.UTC(2026, 11, 1), Date.UTC(2027, 0, 1), Date.UTC(2027, 1, 1)]
+const MinuteAnswer = Schema.Struct({
+  snapshot: Schema.Struct({ ...SandboxSnapshot.fields, id: Schema.Literals(["", "fuzz-sandbox"]), remaining: Count(12) }),
+  nextMonth: Schema.Boolean, stale: Schema.Boolean,
+})
+const MinuteAnswers = Schema.Struct({ session: Int, role: Role, answers: Schema.Array(MinuteAnswer).check(Schema.isMinLength(1), Schema.isMaxLength(10)) })
+
+/**
+ * Sandbox answers near the end of the month's minutes, while a sandbox request is out. A sandbox stopped with no minutes
+ * says so and names itself; minutes first running low in a month show how many are left, once; a new month with
+ * minutes to spare clears the notice; an answer for another request changes nothing.
+ */
+it.live("web/sandbox-minutes", () => run("web/sandbox-minutes", MinuteAnswers, ({ session: id, role, answers }) => Effect.provide(effect {
+  const session = try signedIn(`m${id}`, role)
+  try session.hold(try Effect.try(() => Message.StartedSandbox()))
+  let model = session.model()
+  let month = 0
+  const lows = new Set<number>()
+  for (const answer of answers) {
+    if (answer.nextMonth) month = Math.min(month + 1, MONTHS.length - 1)
+    const snapshot = { ...answer.snapshot, resetAt: MONTHS[month]! }
+    const before = model
+    const request = (before.sandboxRequest ?? 0) + (answer.stale ? 1 : 0)
+    const next = try Effect.try(() => update(before, Message.LoadedSandbox({ conversation: before.conversation, request, snapshot })))
+    if (answer.stale) {
+      if (next.model !== before) throw new Finding({ report: "a sandbox answer for another request changed the screen" })
+      continue
+    }
+    model = next.model
+    if (!Schema.is(Model)(model)) throw new Finding({ report: "LoadedSandbox left an invalid Model" })
+    const notice = model.minuteNotice ?? ""
+    const out = snapshot.remaining === 0 && snapshot.id !== "" && snapshot.status === "stopped"
+    if (out && !(notice.startsWith("Out of minutes") && notice.includes(snapshot.id))) throw new Finding({ report: "a sandbox stopped out of minutes did not say so" })
+    const low = !out && snapshot.remaining > 0 && snapshot.remaining <= 10
+    if (low && !lows.has(snapshot.resetAt)) {
+      if (notice !== `${snapshot.remaining} minutes left`) throw new Finding({ report: "minutes ran low and no notice said how many were left" })
+      lows.add(snapshot.resetAt)
+    } else if (!out && notice !== "" && notice !== (before.minuteNotice ?? "")) throw new Finding({ report: "a minutes notice appeared without minutes newly running low" })
+    if (!out && snapshot.remaining > 10 && before.sandbox !== undefined && before.sandbox.resetAt !== snapshot.resetAt && notice !== "") throw new Finding({ report: "a new month with minutes to spare kept the notice" })
+  }
+  return true
+}, backend("mock", role))))
