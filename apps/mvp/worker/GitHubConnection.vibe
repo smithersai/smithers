@@ -67,7 +67,7 @@ export const live = GitHubConnection.make(effect {
     const github = try GitHub.Auth.GitHubAuth.pipe(Effect.provide(GitHub.Auth.layer({ clientId: clientId.value, clientSecret: clientSecret.value }).pipe(Layer.provide(FetchHttpClient.layer))))
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
     const hosts = new Map<number, Effect.Success<ReturnType<typeof make>>>()
-    /** The router names this object by the same person, so one object only ever builds one host. */
+    /** The router names this object by its person; the host refuses any other (GitHubConnectionHost.make). */
     const host = effect (person: number) => {
       const known = hosts.get(person)
       if (known !== undefined) return known
@@ -81,9 +81,9 @@ export const live = GitHubConnection.make(effect {
         const person = Delegation.personOf(request.originalUrl)
         if (person === undefined) return HttpServerResponse.empty({ status: 400, headers: GitHub.Auth.Broker.HEADERS })
         const opened = try Effect.result(host(person))
-        return opened._tag === "Failure"
-          ? HttpServerResponse.jsonUnsafe({ reason: "unavailable" }, { status: 503, headers: GitHub.Auth.Broker.HEADERS })
-          : try opened.success.fetch
+        if (opened._tag === "Success") return try opened.success.fetch
+        const forbidden = opened.failure.reason === "forbidden"
+        return HttpServerResponse.jsonUnsafe({ reason: forbidden ? "forbidden" : "unavailable" }, { status: forbidden ? 403 : 503, headers: GitHub.Auth.Broker.HEADERS })
       },
       install: (input: InstallInput) => outcome(effect {
         return try (try host(input.person)).install({ origin: input.origin, login: input.login, tokens: { accessToken: Redacted.make(input.access), refreshToken: input.refresh === null ? null : Redacted.make(input.refresh), expiresAt: input.expires } })

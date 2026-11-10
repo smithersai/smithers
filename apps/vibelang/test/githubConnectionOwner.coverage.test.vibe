@@ -1,0 +1,25 @@
+// @vitest-environment node
+// smithers.sh's per-person GitHub connection object (apps/mvp/worker/GitHubConnectionHost.vibe, decision 0165) on real
+// SQLite object storage: the object belongs to the first person who reaches it, whatever a later URL names.
+import { expect, it } from "@effect/vitest"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { GitHub } from "@smthrs/integrations"
+import * as Connection from "../../mvp/worker/GitHubConnectionHost.vibe"
+
+const secret = Redacted.make("connection-owner-site-secret-32chars")
+const setup: Connection.Setup = { origin: "https://smithers.test", sites: [{ origin: "https://site.test", secret, grants: [] }], keyring: { active: "k1", keys: { k1: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=") } } }
+const die = () => Effect.die("unused")
+const github = GitHub.Auth.GitHubAuth.of({ authorizeUrl: () => "", exchange: die, user: die, permission: die, deviceCode: die, deviceToken: die, refresh: die, revoke: () => Effect.void })
+
+it.live("a connection object serves only the person who first reached it", () => scoped(effect {
+  const storage = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  const open = (person: number) => Effect.result(Connection.make(person, "person:7", storage as never, setup, github, () => (program) => program as never))
+  const owner = try open(7)
+  const stranger = try open(8)
+  const again = try open(7)
+  try Effect.try(() => {
+    expect(owner._tag).toBe("Success")
+    expect(stranger._tag === "Failure" ? stranger.failure.reason : "opened").toBe("forbidden")
+    expect(again._tag).toBe("Success")
+  })
+}))
