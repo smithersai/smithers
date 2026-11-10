@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect"
 import * as Base64 from "effect/encoding/Base64"
 import * as Base64Url from "effect/encoding/Base64Url"
 import type * as Result from "effect/Result"
+import { importSigningKey, signEs256 } from "./token.platform.ts"
 
 /**
  * A permission a token grants on its one repository.
@@ -60,16 +61,7 @@ const pkcs8 = (pem: string): Result.Result<Uint8Array, unknown> =>
 export const importKey = (pem: string): Effect.Effect<CryptoKey, unknown> =>
   Effect.flatMap(
     Effect.fromResult(pkcs8(pem)),
-    (der) =>
-      Effect.tryPromise(() =>
-        globalThis.crypto.subtle.importKey(
-          "pkcs8",
-          new Uint8Array(der),
-          { name: "ECDSA", namedCurve: "P-256" },
-          false,
-          ["sign"]
-        )
-      )
+    (der) => Effect.tryPromise(() => importSigningKey(der))
   )
 
 /**
@@ -91,10 +83,6 @@ export const sign = (key: CryptoKey, claims: Claims): Effect.Effect<string> =>
       iat: claims.issuedAt,
       exp: claims.issuedAt + claims.ttlSeconds
     }))
-    const signature = await globalThis.crypto.subtle.sign(
-      { name: "ECDSA", hash: "SHA-256" },
-      key,
-      encoder.encode(`${header}.${payload}`)
-    )
+    const signature = await signEs256(key, encoder.encode(`${header}.${payload}`))
     return `${header}.${payload}.${Base64Url.encode(new Uint8Array(signature))}`
   })

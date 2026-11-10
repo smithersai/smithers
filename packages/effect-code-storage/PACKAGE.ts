@@ -24,7 +24,7 @@ const securityReview = Smithers.SecurityReview({
         "The PEM key, the imported CryptoKey or a signed JWT in a span attribute, log annotation, metric attribute or error field.",
         "A token sent in a URL query parameter, where an HTTP client span records url.full, instead of the Authorization header."
       ],
-      paths: ["src/CodeStorage.vibe", "src/internal/token.ts"]
+      paths: ["src/CodeStorage.vibe", "src/internal/token.vibe", "src/internal/token.platform.ts"]
     },
     {
       id: "least-scope",
@@ -34,7 +34,7 @@ const securityReview = Smithers.SecurityReview({
         "A token without a repo claim, or with git:write or repo:write on a read.",
         "An exp more than 3,600 seconds after iat, or a lifetime a caller can raise past that."
       ],
-      paths: ["src/CodeStorage.vibe", "src/internal/token.ts"]
+      paths: ["src/CodeStorage.vibe", "src/internal/token.vibe", "src/internal/token.platform.ts"]
     },
     {
       id: "provider-text",

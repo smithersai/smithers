@@ -39,7 +39,7 @@ import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import type * as GitRemote from "./GitRemote.vibe"
 import { isReadLimit, readAtMost } from "./internal/bounded.vibe"
-import * as Token from "./internal/token.ts"
+import * as Token from "./internal/token.vibe"
 
 /**
  * What a call was doing when it failed. `configure` is building the layer:
