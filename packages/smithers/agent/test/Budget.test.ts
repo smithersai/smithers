@@ -1164,9 +1164,8 @@ describe("a budget across an engine boundary", () => {
     expect(observed.value).toEqual({ approved: true })
     // Before the restart: the first step answered and the second was refused.
     expect(observed.callsBefore).toBe(2)
-    // The second engine's own accumulator holds BOTH steps. Without the fold
-    // it would hold only the call it issued itself.
-    expect(observed.usage).toEqual({ tokens: 600, calls: 2, largestCall: 300 })
+    // Both paid steps and the real rate-limited call with unknown usage survive recovery.
+    expect(observed.usage).toEqual({ tokens: 600, calls: 3, largestCall: 300, unreported: 1 })
   }, 60_000)
 })
 
@@ -2726,8 +2725,8 @@ describe("a budget whose journal keeps nothing lossy", () => {
     expect(observed.value).toEqual({ approved: true })
     // The tally is projected from the DURABLE usage records, so closing the
     // lossy channel changes nothing about it.
-    expect(observed.usage).toEqual({ tokens: 600, calls: 2, largestCall: 300 })
-    expect(observed.supervised).toEqual({ tokens: 600, calls: 2, largestCall: 300 })
+    expect(observed.usage).toEqual({ tokens: 600, calls: 3, largestCall: 300, unreported: 1 })
+    expect(observed.supervised).toEqual({ tokens: 600, calls: 3, largestCall: 300, unreported: 1 })
   }, 60_000)
 })
 

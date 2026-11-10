@@ -1335,13 +1335,22 @@ treats `park` as `fail`.
 
 ```ts
 interface Service {
+  readonly reserveCall?: (
+    request: ModelRequest.ModelRequest
+  ) => Effect.Effect<string, AccountingUnavailable | HarnessError.HarnessError>
+  readonly recordCall?: (
+    receipt: string,
+    usage: ModelEvent.Usage,
+    settled: boolean
+  ) => Effect.Effect<void, AccountingUnavailable>
   readonly check: (stepKey: string | undefined) => Effect.Effect<Verdict, AccountingUnavailable>
   readonly reserve: (stepKey: string) => Effect.Effect<Verdict, AccountingUnavailable, Scope.Scope>
   readonly admitReading: (stepKey: string) => Effect.Effect<Verdict, AccountingUnavailable>
   readonly record: (
     stepKey: string,
     usage: ModelEvent.Usage,
-    modelId?: string
+    modelId?: string,
+    quality?: { readonly unreported?: true }
   ) => Effect.Effect<void, AccountingUnavailable>
   readonly usage: Effect.Effect<Usage, AccountingUnavailable>
   readonly usageOf: (runId: string) => Effect.Effect<Usage, AccountingUnavailable>
@@ -1352,6 +1361,15 @@ interface Service {
 class Budget extends Context.Service<Budget, Service>()("@smthrs/agent/Budget")
 ```
 
+- `reserveCall` and `recordCall` are an optional pair for a host that bills
+  each physical provider invocation. A model step calls `reserveCall` before it
+  opens each provider stream, including an in-step reissue, and saves the
+  returned receipt, the call's final usage and whether the stream settled with
+  the sealed answer. After sealing it calls `recordCall` for each receipt; a
+  ledger failure there replays the receipts without another provider call. A
+  failed unsealed call also reconciles its receipt. `recordCall` must be
+  idempotent in its receipt. The receipt must hold no credentials. The host
+  decides how to charge absent or partial usage. Supply both or neither.
 - `check` previews admission without reserving capacity. A step
   the ledger has already counted proceeds, whatever the ceiling says, because
   its replay costs nothing. `undefined` gets the projection, because a call the
@@ -1365,7 +1383,9 @@ class Budget extends Context.Service<Budget, Service>()("@smthrs/agent/Budget")
   maximum, latency or the UTC day exhausted, or a latch), under the same
   `onExceeded` policy, and reserves nothing. A counted key proceeds.
 - `record` accounts finite non-negative usage, idempotently in its step key,
-  priced under `modelId` when given, and replaces its reservation's estimate. Failed/uncommitted writes remain
+  priced under `modelId` when given, and replaces its reservation's estimate.
+  `quality.unreported` marks the charge's usage incomplete, as a reissued step's
+  aggregate is, so `usage` counts it in `unreported`. Failed/uncommitted writes remain
   retryable and block uncounted steps; retries must supply the same cost.
 - `usage` is what the current run has spent.
 - `usageOf` reads one named run's spend, from its live accumulator when this

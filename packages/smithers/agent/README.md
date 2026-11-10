@@ -746,3 +746,14 @@ are interrupted before completion; deadlines and coverage thresholds stay fixed.
 The declared test target provisions PostgreSQL for ModelStep's durable and
 process-boundary cases. Those cases require an authenticated server on the
 fixture's dedicated endpoint; a TCP listener alone does not satisfy them.
+
+A host with a shared billing limit may supply both `Budget.Service.reserveCall`
+and `recordCall`. Each physical provider invocation reserves before opening the
+stream, including an in-step reissue. Its credential-free string receipt, final
+usage and stream settlement flag are saved with the model step. Accounting runs
+after the answer is sealed; a ledger failure can replay the receipt without
+asking the provider again. `recordCall` must be idempotent. Unsealed failures
+also reconcile their receipts; a process killed before that write conservatively
+leaves the reservation held. Hosts decide how to charge absent or partial usage.
+Logical-step `record` still tracks aggregate agent usage and marks a reissued
+step's accounting as incomplete. It does not replace physical-call billing.

@@ -316,6 +316,26 @@ from `ledger.run(runId)`, so raising a cap and building a new budget over the
 same ledger resumes with the spend intact. A ledger write that fails leaves the
 usage pending and refuses new calls until it commits.
 
+## Bill each provider call
+
+`record` charges one logical step. A step can reach the provider more than once:
+a reissue inside the step is a second physical call. A host that bills every
+physical call supplies `reserveCall` and `recordCall` on its `Budget.Service`:
+
+- `reserveCall(request)` runs before each provider stream opens and returns a
+  receipt string with no credentials in it.
+- The receipt, the call's final usage and whether its stream settled are saved
+  with the sealed answer.
+- `recordCall(receipt, usage, settled)` runs after sealing, once per receipt. It
+  must be idempotent: a ledger failure replays the saved receipts and never asks
+  the provider again.
+
+A failed call before sealing also reconciles its receipt. A process killed before
+that write leaves the reservation held, which overstates spend rather than
+understating it. The host decides what an absent or partial usage report costs;
+charging the call's reserved ceiling keeps a shared limit a bound. Logical-step
+`record` still runs and marks a reissued step's usage as unreported.
+
 ## Inspect the spend
 
 `Budget.usageOf(runId)` reads one run's `{ tokens, calls, largestCall }`, plus

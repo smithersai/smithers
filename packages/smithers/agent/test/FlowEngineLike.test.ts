@@ -302,6 +302,109 @@ describe("FlowEngineLike conversions", () => {
 })
 
 describe("FlowEngineLike.make", () => {
+  it("replays a pre-receipt model answer without another provider call", async () => {
+    const calls: Array<string> = []
+    const legacy = Schema.Union([
+      Schema.Array(ModelEvent.ModelEvent),
+      Schema.Struct({ events: Schema.Array(ModelEvent.ModelEvent), error: Schema.optional(ModelError), correction: Schema.optional(Schema.Int) })
+    ])
+    const outcome = await drive(Effect.gen(function*() {
+      yield* Action.make({ name: "legacy-model", idempotencyKey: "legacy-model-key", tier: "sealed", success: legacy,
+        error: InternalModelStep.Failure, execute: Effect.succeed({ events: [] }) })
+      return yield* InternalModelStep.dispatch({ name: "legacy-model", key: "legacy-model-key", request: request("legacy"),
+        model: countingModel(calls), retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, jitterRatio: 0, maxAttempts: 1 }) })
+    }))
+    if (outcome._tag === "failed") throw outcome.error
+    expect(completed(outcome)).toMatchObject({ replayed: true, recorded: { events: [] } })
+    expect(calls).toEqual([])
+  })
+
+  it("counts an unreported unsealed call after known spend, live and recovered", async () => {
+    const outcome = await drive(Effect.gen(function*() {
+      const budget = yield* Budget.make({})
+      yield* budget.record("known", { totalTokens: 18 })
+      const model = Model.make({ stream: () => Stream.fail(new ModelError({ code: "rate_limited", message: "capacity without usage" })) })
+      const engine = yield* FlowEngineLike.make({ model, route: staticRoute() }).pipe(Effect.provideService(Budget.Budget, budget))
+      yield* Effect.exit(Stream.runCollect(engine.sealStep(step("no-usage"))))
+      const recovered = yield* Budget.make({})
+      return { live: yield* budget.usage, recovered: yield* recovered.usage }
+    }).pipe(Effect.provide(TestJournal.layer())))
+    const expected = { tokens: 18, calls: 2, largestCall: 18, unreported: 1 }
+    expect(completed(outcome)).toEqual({ live: expected, recovered: expected })
+  })
+
+  it("reserves every physical provider call and records separate durable receipts for reissues", async () => {
+    const order: Array<string> = []
+    let calls = 0
+    const model = Model.make({
+      stream: () => Stream.suspend(() => {
+        order.push("model")
+        calls++
+        return calls === 1
+          ? Stream.concat(Stream.make(ModelEvent.ModelEvent.Usage({ totalTokens: 3 })), Stream.fromEffect(Effect.never))
+          : Stream.make(ModelEvent.ModelEvent.Usage({ totalTokens: 7 }), ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" }))
+      })
+    })
+    const options = {
+      budgetMillis: 5_000, reissue: true, final: false,
+      reserveCall: () => Effect.sync(() => {
+          order.push("reserve")
+          return "call-" + (calls + 1)
+      })
+    }
+    await Effect.gen(function*() {
+      const fiber = yield* InternalModelStep.recordModelStep(model, request("guard"), options).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* TestClock.adjust("1 minute")
+      const recorded = yield* Fiber.join(fiber)
+      expect(recorded.calls).toEqual([
+        { receipt: "call-1", usage: { totalTokens: 3 }, settled: false },
+        { receipt: "call-2", usage: { totalTokens: 7 }, settled: true }
+      ])
+    }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise)
+    expect(order).toEqual(["reserve", "model", "reserve", "model"])
+  })
+
+  it("replays sealed physical-call receipts after accounting fails without another provider call", async () => {
+    const calls: Array<string> = []
+    let reserved = 0
+    let attempts = 0
+    const receipts: Array<string> = []
+    const outcome = await drive(Effect.gen(function*() {
+      const budget: Budget.Service = {
+        ...Budget.makeUnbounded(),
+        reserveCall: () => Effect.sync(() => { reserved++; return "physical-call-1" }),
+        recordCall: (receipt) => Effect.suspend(() => {
+          receipts.push(receipt)
+          return ++attempts === 1
+            ? Effect.fail(new Budget.AccountingUnavailable({ phase: "record", runId: "exec-1", message: "ledger unavailable" }))
+            : Effect.void
+        })
+      }
+      const port = yield* FlowEngineLike.make({ model: countingModel(calls), route: staticRoute() }).pipe(Effect.provideService(Budget.Budget, budget))
+      const first = yield* Effect.exit(Stream.runDrain(port.sealStep(step("physical-recovery"))))
+      expect(first._tag).toBe("Failure")
+      yield* Stream.runDrain(port.sealStep(step("physical-recovery")))
+      return "recovered"
+    }))
+    expect(completed(outcome)).toBe("recovered")
+    expect(calls).toEqual(["test-model"])
+    expect(reserved).toBe(1)
+    expect(receipts).toEqual(["physical-call-1", "physical-call-1"])
+  })
+
+  it("refuses a physical provider call before model invocation", async () => {
+    let calls = 0
+    const model = Model.make({ stream: () => { calls++; return Stream.make(ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })) } })
+    const options = {
+      reissue: false, final: true,
+      reserveCall: () => Effect.fail(new HarnessError({ code: "engine_failed", message: "The call cannot reserve its ceiling" }))
+    }
+    const result = await Effect.runPromiseExit(InternalModelStep.recordModelStep(model, request("refused"), options))
+    expect(result._tag).toBe("Failure")
+    expect(calls).toBe(0)
+  })
+
+
   it("keeps pre-retry array records decodable for resumed sealed steps", () => {
     const legacy = [
       ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "0" }),

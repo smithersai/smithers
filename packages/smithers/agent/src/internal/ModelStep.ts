@@ -19,6 +19,7 @@ import { Model, ModelError, ModelEvent, ModelRequest, RequestExecutor, type Rout
 import { StepKey } from "@smthrs/plan"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
+import * as Context from "effect/Context"
 import * as EffectDigest from "effect/crypto/Digest"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
@@ -40,6 +41,20 @@ import { tokensOf } from "../Budget.ts"
  * @category schemas
  * @since 0.1.0
  */
+const RecordedCall = Schema.Struct({ receipt: Schema.String, usage: ModelEvent.Usage, settled: Schema.Boolean })
+export interface CallReceipt {
+  readonly receipt: string
+  readonly usage: ModelEvent.Usage
+  readonly settled: boolean
+}
+
+// Preserve the exact declaration used before physical receipts were added.
+// The new optional field is backward compatible, but schemas are key material.
+const LegacyRecordedModelStep = Schema.Union([
+  Schema.Array(ModelEvent.ModelEvent),
+  Schema.Struct({ events: Schema.Array(ModelEvent.ModelEvent), error: Schema.optional(ModelError.ModelError), correction: Schema.optional(Schema.Int) })
+])
+
 export const RecordedModelStep = Schema.Union([
   Schema.Array(ModelEvent.ModelEvent),
   Schema.Struct({
@@ -62,7 +77,8 @@ export const RecordedModelStep = Schema.Union([
      * outside a correction ladder, and a record written before this field
      * existed, which a parked run may still resume onto.
      */
-    correction: Schema.optional(Schema.Int)
+    correction: Schema.optional(Schema.Int),
+    calls: Schema.optional(Schema.Array(RecordedCall))
   })
 ])
 
@@ -76,6 +92,7 @@ export interface Recorded {
   readonly events: ReadonlyArray<ModelEvent.ModelEvent>
   readonly error?: ModelError.ModelError | undefined
   readonly correction?: number | undefined
+  readonly calls?: ReadonlyArray<CallReceipt> | undefined
 }
 
 /**
@@ -292,6 +309,14 @@ export const withOverrunTeaching = (
  * @since 1.0.0
  */
 export interface RecordOptions {
+  /** Host billing guard around every physical invocation, before its provider stream opens. */
+  readonly reserveCall?: ((request: ModelRequest.ModelRequest) => Effect.Effect<
+    string,
+    HarnessError.HarnessError
+  >) | undefined
+  readonly onCall?: ((call: CallReceipt) => void) | undefined
+  /** Observes that a provider invocation was actually issued, not merely considered. */
+  readonly onStart?: (() => void) | undefined
   /** The overrun budget of one provider call; absent or zero disarms it. */
   readonly budgetMillis?: number | undefined
   /** The correction ordinal stamped onto the record. */
@@ -360,11 +385,12 @@ export const recordModelStep = (
   model: Model.Model,
   request: ModelRequest.ModelRequest,
   options: RecordOptions
-): Effect.Effect<Recorded, Model.ModelFailure> =>
+): Effect.Effect<Recorded, Model.ModelFailure | HarnessError.HarnessError> =>
   Effect.suspend(() => {
     const { onEvent, onUsage, reissue } = options
     const reissues: Array<ModelEvent.ModelEvent> = []
     const failedUsage: Array<ModelEvent.Usage> = []
+    const receipts: Array<CallReceipt> = []
     let attemptUsage: ModelEvent.Usage = {}
     /** When the call in flight was issued, so a re-issue can say how long the cut-off one ran. */
     let callStartedAt = 0
@@ -393,17 +419,17 @@ export const recordModelStep = (
     // so an action declared with `heartbeatTimeoutMs` fails only a call that
     // goes silent. Outside such an action a heartbeat does nothing.
     const collect = (input: ModelRequest.ModelRequest) =>
-      Effect.flatMap(Clock.currentTimeMillis, (issuedAt) => {
-        callStartedAt = issuedAt
+      Effect.scoped(Effect.gen(function*() {
+        const receipt = options.reserveCall === undefined ? undefined : yield* options.reserveCall(input)
+        callStartedAt = yield* Clock.currentTimeMillis
         attemptUsage = {}
+        options.onStart?.()
         const streamed = model.stream(input).pipe(
           Model.withGenAiSpan(input, model.providerName),
           Stream.provideService(Model.Liveness, Action.heartbeat),
-          // The engine decides retries, so a route's executor repeats nothing:
-          // one attempt is one request.
           Stream.provideService(RequestExecutor.Retries, 0)
         )
-        return Action.heartbeat.pipe(Effect.andThen(Stream.runCollect(
+        return yield* Action.heartbeat.pipe(Effect.andThen(Stream.runCollect(
           silent(streamed).pipe(Stream.tap((event) =>
             Effect.sync(() => {
               if (event.type !== "usage") return
@@ -415,8 +441,13 @@ export const recordModelStep = (
               onUsage?.(combineUsage([...failedUsage, attemptUsage]))
             }).pipe(Effect.andThen(Action.heartbeat), Effect.andThen(onEvent?.(event) ?? Effect.void))
           ))
-        )))
-      })
+        )), Effect.onExit((exit) => Effect.sync(() => {
+          if (receipt === undefined) return
+          const call = { receipt, usage: attemptUsage, settled: Exit.isSuccess(exit) && exit.value.some((event) => event.type === "settle") }
+          receipts.push(call)
+          options.onCall?.(call)
+        })))
+      }))
     // Suspended so each call reads the overruns the call before it left: that
     // is what puts the teaching on a re-issue and never on the first call.
     const collected = Effect.suspend(() =>
@@ -473,11 +504,11 @@ export const recordModelStep = (
     // One cut-off call of each kind is re-issued in place, and the re-issue
     // says so. Only a call this attempt cut off qualifies: a provider's own
     // `call_timeout` is its answer, sealed like any other.
-    const reissuable = (error: Model.ModelFailure): error is ModelError.ModelError =>
-      reissue &&
+    const reissuable = (error: Model.ModelFailure | HarnessError.HarnessError): error is ModelError.ModelError =>
+      reissue && error instanceof ModelError.ModelError &&
       ((overruns.has(error) && overruns.size <= defaultModelOverruns) ||
         (stalls.has(error) && stalls.size <= defaultModelOverruns))
-    const call: Effect.Effect<ReadonlyArray<ModelEvent.ModelEvent>, Model.ModelFailure> = callOnce.pipe(
+    const call: Effect.Effect<ReadonlyArray<ModelEvent.ModelEvent>, Model.ModelFailure | HarnessError.HarnessError> = callOnce.pipe(
       Effect.catchIf(reissuable, (error) =>
         Effect.gen(function*() {
           const failedAt = yield* Clock.currentTimeMillis
@@ -515,14 +546,14 @@ export const recordModelStep = (
     // claim to be correction zero of a ladder that never ran.
     const ladder = options.correction === undefined ? {} : { correction: options.correction }
     return call.pipe(
-      Effect.map((events) => ({ ...ladder, events: [...reissues, ...accountReissued(events)] })),
+      Effect.map((events) => ({ ...ladder, events: [...reissues, ...accountReissued(events)], ...(receipts.length === 0 ? {} : { calls: receipts }) })),
       Effect.catchIf(
         (error): error is ModelError.ModelError => error instanceof ModelError.ModelError,
         (error) =>
           (isCapacityRefusal(error) && !(options.sealTerminal === true && ModelError.isTerminalRefusal(error))) ||
             (!options.final && error.code === "transport" && !stalls.has(error))
             ? Effect.fail(error)
-            : Effect.succeed({ ...ladder, events: [...reissues, ...accountReissued([])], error })
+            : Effect.succeed({ ...ladder, events: [...reissues, ...accountReissued([])], error, ...(receipts.length === 0 ? {} : { calls: receipts }) })
       )
     )
   })
@@ -754,10 +785,12 @@ export interface Dispatch {
    */
   readonly unsealedUsage?:
     | Effect.Effect<
-      (usage: ModelEvent.Usage) => Effect.Effect<void, HarnessError.HarnessError>,
+      (usage: ModelEvent.Usage, quality?: { readonly unreported?: true }) => Effect.Effect<void, HarnessError.HarnessError>,
       HarnessError.HarnessError
     >
     | undefined
+  readonly reserveCall?: RecordOptions["reserveCall"]
+  readonly recordCall?: ((call: CallReceipt) => Effect.Effect<void, HarnessError.HarnessError>) | undefined
   /** The last word, inside the step, on whether a recorded value is sealed. */
   readonly settle?: ((recorded: Recorded) => Effect.Effect<Recorded, ModelError.ModelError>) | undefined
 }
@@ -817,6 +850,7 @@ export const dispatch = (
       retryPolicy: options.retryPolicy,
       ...(options.heartbeatTimeoutMs === undefined ? {} : { heartbeatTimeoutMs: options.heartbeatTimeoutMs }),
       success: RecordedModelStep,
+      annotations: Context.make(Action.CacheDeclaration, { success: LegacyRecordedModelStep, error: Failure }),
       error: Failure,
       tier: "sealed",
       idempotencyKey: options.key,
@@ -848,6 +882,9 @@ export const dispatch = (
         }
         const unsealed = options.unsealedUsage === undefined ? undefined : yield* options.unsealedUsage
         let reported: ModelEvent.Usage | undefined
+        let issued = false
+        let reissued = false
+        const receipts: Array<CallReceipt> = []
         // The attempt number is the engine's, restored from its own records
         // after a restart, so the last attempt is the last one however many
         // processes the earlier ones ran in.
@@ -858,7 +895,13 @@ export const dispatch = (
           onUsage: (usage) => {
             reported = usage
           },
-          onEvent: options.onEvent,
+          onEvent: (event) => {
+            if (event.type === "retry") reissued = true
+            return options.onEvent?.(event) ?? Effect.void
+          },
+          onStart: () => { issued = true },
+          reserveCall: options.reserveCall,
+          onCall: (call) => { receipts.push(call) },
           reissue: options.reissue === true,
           final: last !== undefined && attempt >= last,
           sealTerminal: options.sealTerminal === true
@@ -867,8 +910,10 @@ export const dispatch = (
           // A sealed value is accounted by the caller, on replay too. This
           // covers only exits that cannot seal, and runs uninterruptibly.
           Effect.onExit((exit) =>
-            Exit.isFailure(exit) && reported !== undefined && unsealed !== undefined ? unsealed(reported) : Effect.void
+            Exit.isFailure(exit) && issued && unsealed !== undefined ? unsealed(reported ?? {}, reissued ? { unreported: true } : undefined) : Effect.void
           ),
+          Effect.onExit((exit) => Exit.isFailure(exit) && options.recordCall !== undefined
+            ? Effect.forEach(receipts, options.recordCall, { discard: true }) : Effect.void),
           Effect.onExit((exit) =>
             Effect.gen(function*() {
               const at = yield* Clock.currentTimeMillis
@@ -897,6 +942,9 @@ export const dispatch = (
       })
     })
     const settled = normalizeRecordedModelStep(recorded)
+    // The answer is durable before accounting may fail. A retry replays these
+    // idempotent receipts instead of spending another provider call.
+    if (options.recordCall !== undefined) yield* Effect.forEach(settled.calls ?? [], options.recordCall, { discard: true })
     const outcome = !executed ? "replayed" : settled.error === undefined ? "sealed" : "sealed_error"
     if (!executed) {
       yield* Metric.update(Metric.withAttributes(replays, { step: options.name }), 1)

@@ -861,6 +861,10 @@ export const make = (
             callTimeoutMs: step.modelCallMs,
             correction,
             onEvent: onLive,
+            reserveCall: budget.reserveCall === undefined ? undefined : (request) => budget.reserveCall!(request).pipe(
+              Effect.mapError((error) => error instanceof HarnessError.HarnessError ? error : accountingFailed(error))
+            ),
+            recordCall: budget.recordCall === undefined ? undefined : (call) => budget.recordCall!(call.receipt, call.usage, call.settled).pipe(Effect.mapError(accountingFailed)),
             // This names an actual, unsealed invocation, not the logical
             // sealed key. A retry after capacity refusal is fresh provider
             // work; charging it under `key` would mark every later retry paid
@@ -872,8 +876,8 @@ export const make = (
               Effect.catchCause((cause) =>
                 Effect.fail(engineFailed("Could not allocate a model usage receipt", Cause.squash(cause)))
               ),
-              Effect.map((receipt) => (usage: ModelEvent.Usage) =>
-                budget.record(`unsealed-model/${key}/${receipt}`, usage, step.request.modelId).pipe(
+              Effect.map((receipt) => (usage: ModelEvent.Usage, quality?: { readonly unreported?: true }) =>
+                budget.record(`unsealed-model/${key}/${receipt}`, usage, step.request.modelId, quality).pipe(
                   Effect.mapError(accountingFailed)
                 )
               )
@@ -898,7 +902,7 @@ export const make = (
           // step key, so a step whose body really did re-run counts once, and
           // a resumed run folds back what it recorded before the restart from
           // the budget's own durable usage records.
-          yield* budget.record(key, ModelEvent.ModelEvent.settledMessage(normalized.events).usage, step.request.modelId)
+          yield* budget.record(key, ModelEvent.ModelEvent.settledMessage(normalized.events).usage, step.request.modelId, normalized.events.some((event) => event.type === "retry") ? { unreported: true } : undefined)
             .pipe(
               Effect.mapError(accountingFailed)
             )

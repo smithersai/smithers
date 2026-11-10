@@ -83,6 +83,7 @@ import * as EngineLike from "@smthrs/harness/EngineLike"
 import type * as HarnessError from "@smthrs/harness/HarnessError"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
+import type * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as Pricing from "@smthrs/model/Pricing"
 import { BudgetOnExceeded } from "@smthrs/registry/Descriptor"
 import * as Clock from "effect/Clock"
@@ -470,7 +471,7 @@ export interface Usage {
   /** The largest single call, which is what the next one is projected to cost. */
   readonly largestCall: number
   /**
-   * How many of `calls` reported no usable token count ({@link reportsTokens}), so
+   * How many accounting charges contain incomplete or unusable token usage ({@link reportsTokens}), so
    * `tokens` is a lower bound on what the provider charged. Absent when every
    * call reported one.
    */
@@ -506,6 +507,17 @@ export type Verdict =
  * @since 0.1.0
  */
 export interface Service {
+  /**
+   * Optional host billing guard around each physical provider invocation, including reissues.
+   * The receipt contains no credentials and is saved with the sealed answer.
+   * A replay reconciles that receipt without reserving or calling the provider.
+   */
+  readonly reserveCall?: ((request: ModelRequest.ModelRequest) => Effect.Effect<
+    string,
+    AccountingUnavailable | HarnessError.HarnessError
+  >) | undefined
+  /** Idempotently reconciles a physical call's receipt, after its answer is sealed. */
+  readonly recordCall?: ((receipt: string, usage: ModelEvent.Usage, settled: boolean) => Effect.Effect<void, AccountingUnavailable>) | undefined
   /**
    * Decides whether the model call keyed by `stepKey` may be made.
    *
@@ -552,7 +564,8 @@ export interface Service {
   readonly record: (
     stepKey: string,
     usage: ModelEvent.Usage,
-    modelId?: string
+    modelId?: string,
+    quality?: { readonly unreported?: true }
   ) => Effect.Effect<void, AccountingUnavailable>
   /** What the CURRENT run has spent. Outside a run, what the caller recorded. */
   readonly usage: Effect.Effect<Usage, AccountingUnavailable>
@@ -1888,7 +1901,7 @@ export const make = (
       reserve,
       admitReading: (stepKey) =>
         withRecovered((run, runId) => run.admission.withPermits(1)(checkAccount(run, runId, stepKey, "reading"))),
-      record: (stepKey, usage, modelId) =>
+      record: (stepKey, usage, modelId, quality) =>
         withRecovered((run, runId) =>
           Effect.gen(function*() {
             const weights = modelId === undefined ? undefined : policy.weights?.[modelId]
@@ -1899,7 +1912,7 @@ export const make = (
             }
             const spent = tokensOf(usage, weights)
             const priced = Pricing.cost(usage, modelId, { table: prices, at })
-            const unreported = reportsTokens(usage) ? {} : { unreported: true as const }
+            const unreported = quality?.unreported !== true && reportsTokens(usage) ? {} : { unreported: true as const }
             const charge: Charge = {
               spent,
               ...(priced === undefined ? {} : { costUsd: priced.costUsd }),
