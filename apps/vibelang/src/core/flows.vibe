@@ -24,6 +24,8 @@ import { RefusalReason } from "./schemas.vibe"
 
 /** A contended reply or remote object waits through the engine's journaled retry policy. */
 export const patient = RetryPolicy.make({ initialMs: 500, factor: 2, maxMs: 60_000, jitterRatio: 0.2 })
+/** A reply's engine deadline (0015): past it the reply fails visibly, with Retry, like any failed reply. */
+export const replyDeadline = "5 minutes"
 
 /** A post's answer: `null` once the sequencer recorded it, else why it refused. */
 export const PostAnswer = Schema.NullOr(RefusalReason)

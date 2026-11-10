@@ -11,13 +11,13 @@ import { promptWindow } from "../src/core/sequenceDecision.vibe"
 // becomes `FailReply` with a reason the person reads.
 import { Agent, AgentAction, Budget, EventSink, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
 import { WebCrypto } from "@smthrs/crypto"
-import { Action, Interpreter } from "@smthrs/flow"
+import { Action, Deadline, Interpreter } from "@smthrs/flow"
 import { type AgentEvent, DoneText, type FlowBinding } from "@smthrs/harness"
 import * as QuickJSWorkerd from "@smthrs/harness/QuickJSWorkerd"
 import { Evaluator, ModelRequest } from "@smthrs/model"
 import type { HostModel } from "@smthrs/model-host"
 import { Registry } from "@smthrs/registry"
-import { patient, Reply, ReplyStep, replyIdOf, Tours } from "../src/core/flows.vibe"
+import { patient, Reply, replyDeadline, ReplyStep, replyIdOf, Tours } from "../src/core/flows.vibe"
 import { wikiTools, WIKI_INSTRUCTION } from "./WikiTools.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
 import { AgentActions } from "../src/actions/agent.vibe"
@@ -341,7 +341,9 @@ export effect function answer(post: string) {
   }
   // Interruption is the engine's (a reset or a yielded drive): it resumes the flow, so it is never a failed reply.
   run = beginReplyComposition(run)
-  const outcome = try Effect.catchCause(compose(post, reply), (cause) => {
+  // The engine's deadline counts from the journaled start, so a restarted reply keeps it; expiry is a defect, a failed reply.
+  const bounded = try Effect.try(() => Deadline.bound({ flowName: Reply._tag, deadline: replyDeadline })).pipe(Effect.orDie)
+  const outcome = try Effect.catchCause(compose(post, reply).pipe(bounded), (cause) => {
     if (Cause.hasInterrupts(cause)) return Effect.failCause(cause)
     return Effect.as(
       Effect.logError("vibelang.reply").pipe(Effect.annotateLogs({ outcome: "failed", error: tagOf(Cause.squash(cause)) })),

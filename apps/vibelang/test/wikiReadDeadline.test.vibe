@@ -1,0 +1,69 @@
+// @vitest-environment node
+// A wiki read while GitHub keeps failing answers "unavailable" at the read flow's engine deadline (0015). The request
+// never waits out the flow's 120-second retry window. The failing GitHub is an injected faulty host; nothing is intercepted.
+import { describe, expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClientRequest, HttpServerRequest } from "effect/http"
+import { TestClock } from "effect/testing"
+import { serveWiki, WikiAuthority } from "../worker/Wiki.vibe"
+import { WikiHost } from "../src/core/wikiFlows.vibe"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
+import { pages } from "../src/core/wiki.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+
+/** Steps virtual time a second at a time, letting real promises (WebCrypto, storage) settle between steps. */
+effect function settleWithin<A, E>(fiber: Fiber.Fiber<A, E>, limitSeconds: number) {
+  let elapsed = 0
+  while (fiber.pollUnsafe() === undefined && elapsed < limitSeconds) {
+    try TestClock.withLive(sleep("5 millis"))
+    try TestClock.adjust("1 second")
+    elapsed += 1
+  }
+  try TestClock.withLive(sleep("5 millis"))
+  return { elapsed, exit: fiber.pollUnsafe() }
+}
+
+effect function read(host: WikiHost.Shape) {
+  const storage = try Effect.try(() => objectStorage()) as unknown as Storage
+  const authority: WikiAuthority.Shape = { current: () => Effect.succeed(undefined) }
+  const request = HttpServerRequest.fromClientRequest(HttpClientRequest.get("/api/wiki?page=roadmap"))
+  return try forkChild(serveWiki("wiki-read-deadline", storage).pipe(
+    Effect.provideService(HttpServerRequest.HttpServerRequest, request),
+    Effect.provideService(WikiAuthority, authority),
+    Effect.provideService(WikiHost, host),
+    Effect.provide(FetchHttpClient.layer),
+  ))
+}
+
+describe("a wiki read while GitHub fails", () => {
+  it.effect("still retries inside the deadline: a GitHub that recovers on its third answer serves the page", () => scoped(effect {
+    const roadmap = pages.find((page) => page.id === "roadmap")!
+    let attempts = 0
+    const recovering: WikiHost.Shape = { perform: () => Effect.suspend(() => {
+      attempts += 1
+      return attempts < 3 ? Effect.fail(new WikiFailure({ reason: "unavailable", code: "unavailable" })) : Effect.succeed({ seq: 1, pages: [{ id: "roadmap", source: roadmap.source, revision: "r1" }] })
+    }) }
+    const { exit } = try settleWithin(try read(recovering), 180)
+    try Effect.try(() => {
+      expect(exit?._tag === "Failure" ? Cause.pretty(exit.cause) : exit?._tag).toBe("Success")
+      expect(attempts).toBe(3)
+      expect(exit?._tag === "Success" ? exit.value.status : undefined).toBe(200)
+    })
+  }))
+  it.effect("answers 503 unavailable within ten seconds, not after the flow's retry window", () => scoped(effect {
+    let attempts = 0
+    const failing: WikiHost.Shape = { perform: () => Effect.suspend(() => { attempts += 1; return Effect.fail(new WikiFailure({ reason: "unavailable", code: "unavailable" })) }) }
+    const { elapsed, exit } = try settleWithin(try read(failing), 180)
+    try Effect.try(() => {
+      expect(elapsed).toBeLessThanOrEqual(10)
+      expect(attempts).toBeGreaterThan(1)
+      expect(exit?._tag === "Failure" ? Cause.pretty(exit.cause) : exit?._tag).toBe("Success")
+    })
+    const response = exit?._tag === "Success" ? exit.value : undefined
+    try Effect.try(() => {
+      const body = response?.body._tag === "Uint8Array" ? JSON.parse(new TextDecoder().decode(response.body.body)) : undefined
+      expect(response?.status).toBe(503)
+      expect(body).toEqual({ reason: "unavailable" })
+    })
+  }))
+})

@@ -59,8 +59,9 @@ const TOOL_CELL = "```cell\nvar out = {};\n" + [
 
 /**
  * The public wiki and issue routes build their GitHub hosts over `fetch`; here the same hosts run over `absentGitHub`,
- * so no request leaves the process. A refusing GitHub is retried for the flows' 120-second window (0015), longer than
- * a target's execution. The injected wiki host carries no person, so a draft through it is refused (0015).
+ * so no request leaves the process. A refusing GitHub is retried until the read's 5-second deadline, or for the writes'
+ * 120-second window (0015), longer than a target's step. The injected wiki host carries no person, so a draft through it
+ * is refused (0015).
  */
 effect function withAbsentGitHub<A, E, R>(program: A!E!R) {
   const anonymous = { current: () => Effect.succeed(undefined) } as never

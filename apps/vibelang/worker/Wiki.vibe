@@ -3,7 +3,7 @@ import { Digest, SecureRandom } from "effect/crypto"
 import { Base64 } from "effect/encoding"
 // The repository's Markdown is the wiki (GH-1, 0021): every edit is the person's own change, journaled once.
 import { GitHub } from "@smthrs/integrations"
-import { Action, FlowRuntime } from "@smthrs/flow"
+import { Action, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { CloudflareRuntime, ObjectDatabase, RunInspection } from "@smthrs/platform-cloudflare"
 import { HttpClient, FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { applyWikiEdits, emptyWikiEdits, wikiPermission, type WikiEdits, type WikiOperation, type WikiPageState } from "../src/core/conversation.vibe"
@@ -246,7 +246,13 @@ export effect function executeWiki(hostId: string, storage: Storage, input: Wiki
       }
     }
     return try engine.execute(flow, { executionId: target, payload: original })
-  }, runtime(target))).pipe(Effect.mapError((error) => error._tag === "WikiFailure" ? error : new WikiFailure({ reason: "unavailable" })))
+  }, runtime(target))).pipe(
+    Effect.mapError((error) => error._tag === "WikiFailure" ? error : new WikiFailure({ reason: "unavailable" })),
+    // The read flow's engine deadline (0015) settles it as a defect, journaled as an Error named by its tag; the person sees "unavailable" and Retry.
+    Effect.catchDefect((defect) => RetryPolicy.errorTag(defect) === "@smthrs/flow/DeadlineExceeded"
+      ? Effect.logWarning("vibelang.wiki.deadline").pipe(Effect.annotateLogs({ op: payload.op }), Effect.andThen(Metric.update(Metric.withAttributes(Metric.counter("vibelang_wiki_deadline", { incremental: true }), { op: payload.op }), 1)), Effect.andThen(Effect.fail(new WikiFailure({ reason: "unavailable", code: "unavailable" }))))
+      : Effect.die(defect)),
+  )
   return { ...result, role: actor?.role ?? "viewer" }
 }
 
