@@ -51,6 +51,7 @@ it("the API Worker's production object bodies answer through workerd", { timeout
           expect(await object(api.origin, "accounts", "project", "allowed", ["o", "sandbox"])).toBe(false)
           expect(await object(api.origin, "accounts", "project", "current", [undefined])).toEqual({ id: "", login: "", role: "viewer" })
           expect(await object(api.origin, "accounts", "project", "participation", [undefined])).toBeUndefined()
+          expect((await call(api.origin, "/api/roles")).status).toBe(503)
         })
         const identity = workload(bench, "api-objects-sandbox-identity", "async", async () => {
           expect(JSON.parse((await call(api.origin, "/__identity")).body)).toEqual({ principal: { owner: "", role: "viewer" }, role: "viewer" })
@@ -76,9 +77,56 @@ it("the API Worker's production object bodies answer through workerd", { timeout
           expect(events.status).toBe(200)
           await runPromise(Stream.runDrain(Stream.take(events.stream, 1)).pipe(Effect.timeout("3 seconds"), Effect.ignore))
         })
+        const typesUntil = async (room: string, last: string) => Array.from(await runPromise(Stream.runCollect(factory.events(room, 0).pipe(Stream.takeUntil((event) => event.type === last), Stream.timeout("20 seconds"))))).map((event) => event.type)
+        const tour = workload(bench, "api-objects-tour", "async", async () => {
+          const room = `bench-tour-${++run}`
+          await runPromise(factory.tour(room))
+          expect(await typesUntil(room, "TourStarted")).toContain("TourStarted")
+          await runPromise(factory.controlTour!(room, "pause", 0))
+          expect(await typesUntil(room, "TourPaused")).toContain("TourPaused")
+          await runPromise(factory.controlTour!(room, "resume", 0))
+          expect(await typesUntil(room, "TourResumed")).toContain("TourResumed")
+          await runPromise(factory.endTour(room))
+          expect(await typesUntil(room, "TourEnded")).toContain("TourEnded")
+          expect((await runPromise(Effect.result(factory.openWiki(room, "roadmap"))))._tag).toBe("Success")
+        })
+        const agentTools = workload(bench, "api-objects-agent-tools", "async", async () => {
+          const room = `bench-tools-${++run}`
+          await runPromise(factory.post(room, "a", "Bench", "Bench tools."))
+          const events = Array.from(await runPromise(Stream.runCollect(factory.events(room, 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished" || event.type === "ReplyFailed"), Stream.timeout("30 seconds")))))
+          expect(events.at(-1)).toMatchObject({ type: "ReplyFinished" })
+          const reply = (await runPromise(factory.read(room, 0))).entries.at(-1)!
+          expect(reply.author).toBe("agent")
+          // A signed-out guest is a viewer: the history machine refuses its Start, and a draft needs a signed-in owner.
+          const answered = JSON.parse(reply.text) as { readonly outline: boolean; readonly started: unknown; readonly drafted: { readonly ok: boolean; readonly error: { readonly code: string } } }
+          expect(answered.outline).toBe(true)
+          expect(answered.started).toEqual({ id: "", refusal: "forbidden" })
+          expect(answered.drafted).toMatchObject({ ok: false, error: { code: "flow_failed" } })
+        })
+        const historyWrite = workload(bench, "api-objects-history-write", "async", async () => {
+          // A signed-out guest is a viewer; the history machine refuses its fold before reaching GitHub.
+          const folded = await call(api.origin, "/api/history/fold", { method: "POST", body: "{}" })
+          expect([folded.status, JSON.parse(folded.body)]).toEqual([403, { refusal: "forbidden" }])
+        })
+        const actionRuns = workload(bench, "api-objects-action-runs", "async", async () => {
+          const id = `a-bench-${++run}`
+          const started = await call(api.origin, "/api/actions/runs", { method: "POST", body: JSON.stringify({ id, flow: "vibelang/Tour", input: null, door: "button" }) })
+          expect([started.status, JSON.parse(started.body)]).toEqual([202, { id }])
+          const read = await call(api.origin, `/api/actions/runs/${id}`)
+          expect(read.status).toBe(200)
+          expect(JSON.parse(read.body)).toMatchObject({ id, flow: "vibelang/Tour", door: "button" })
+          const events = await runPromise(http.execute(HttpClientRequest.get(`${api.origin}/api/actions/runs/${id}/events`)))
+          expect(events.status).toBe(200)
+          await runPromise(Stream.runDrain(Stream.take(events.stream, 1)).pipe(Effect.timeout("3 seconds"), Effect.ignore))
+          const cancelled = await call(api.origin, `/api/actions/runs/${id}`, { method: "DELETE" })
+          expect(cancelled.status).toBe(200)
+          const next = `${id}-again`
+          const rerun = await call(api.origin, `/api/actions/runs/${id}/rerun`, { method: "POST", body: JSON.stringify({ id: next }) })
+          expect([rerun.status, JSON.parse(rerun.body)]).toEqual([202, { id: next }])
+        })
         const results = []
-        for (const each of [conversation, unbound, unconfigured, identity, budget, runs, history]) results.push(try tryPromise(() => each.run(slow)))
-        try artifact("api-objects", "Vitest built-in bench; the production bodies of worker/Api.vibe in real workerd SQLite through apiFetch, LiveFactory HTTP and alarms; deterministic HTTP model service.", ["No GitHub: History reads through an injected faulty client.", "Sign-in unconfigured: ProjectAccounts' configured branch runs in accounts-workerd.", "Objects reach each other by fetch, not Alchemy RPC.", "Deterministic model; no inference latency."], results)
+        for (const each of [conversation, unbound, unconfigured, identity, budget, runs, history, tour, agentTools, historyWrite, actionRuns]) results.push(try tryPromise(() => each.run(slow)))
+        try artifact("api-objects", "Vitest built-in bench; the production bodies of worker/Api.vibe in real workerd SQLite through apiFetch, LiveFactory HTTP and alarms: posts, tour start/pause/resume/end, wiki open, an agent reply calling the history and wiki tools, a guest history write, and an action run started, read, followed, cancelled and rerun; deterministic HTTP model service.", ["No GitHub: History reads through an injected faulty client.", "Sign-in unconfigured, so every caller is a viewer: tool and history writes measure the refusal path.", "Objects reach each other by fetch, not Alchemy RPC.", "Deterministic model; no inference latency."], results)
       }
     }
   }))

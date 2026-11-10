@@ -36,9 +36,16 @@ export effect function modelService() {
     const body = try request.text
     const tour = body.includes("Give the tour now.")
     const fence = "`".repeat(3)
+    // "Bench tools." asks for a reply that calls the history and wiki tools and answers with what each returned.
+    const tools = [
+      `const outline = await ctx.call("vibelang/history/show", { what: "outline" });`,
+      `const started = await ctx.call("vibelang/history/Start", { id: "bench", lane: "bench" });`,
+      `let drafted; try { drafted = await ctx.call("vibelang/wiki/draft", { page: "roadmap", ask: "Bench" }); } catch (error) { drafted = String(error && error.message || error); }`,
+      `ctx.done(JSON.stringify({ outline: outline.seq > 0, started, drafted }));`,
+    ].join("\n")
     const cell = tour
       ? `${fence}cell\nctx.done({stops:["Deterministic tour 1.","Deterministic tour 2.","Deterministic tour 3.","Deterministic tour 4.","Deterministic tour 5."]});\n${fence}`
-      : `${fence}cell\nctx.done("Deterministic answer.");\n${fence}`
+      : body.includes("Bench tools.") ? `${fence}cell\n${tools}\n${fence}` : `${fence}cell\nctx.done("Deterministic answer.");\n${fence}`
     return HttpServerResponse.text([
       `data: ${JSON.stringify({ id: "bench", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: cell }, finish_reason: null }] })}\n\n`,
       `data: ${JSON.stringify({ id: "bench", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n`,
