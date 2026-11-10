@@ -5605,3 +5605,13 @@ cases.extend([('src/core/flowPolicyDecision.vibe', *case) for case in [
 ('flow-deadline-draft', 'readDeadline', 'return op === "read"', 'return op === "read" || op === "draft"', 'a draft has no deadline'),
 ('flow-deadline-read', 'readDeadline', 'return op === "read"', 'return op === "draft"', 'a read has a deadline'),
 ]])
+
+# Lane vl-proveall3, batch 19: the session cookie a request presents and the sign-in cookie name.
+cases.extend([('src/core/accountCookieDecision.vibe', *case) for case in [
+('signin-host', 'signInCookieName', 'secure ? "__Host-vibelang-sign-in"', 'secure ? "vibelang-sign-in"', 'HTTPS uses the host prefix'),
+('signin-plain', 'signInCookieName', ': "vibelang-sign-in"', ': "__Host-vibelang-sign-in"', 'local HTTP uses the plain name'),
+('presented-secure-plain', 'presentedSession', 'if (secure) return host', 'if (secure) return plain !== undefined ? plain : host', 'HTTPS never reads the plain cookie'),
+('presented-insecure-host', 'presentedSession', 'return plain !== undefined ? plain : host', 'return host', 'local HTTP prefers the plain cookie'),
+('presented-insecure-none', 'presentedSession', '? plain : host', '? plain : undefined', 'local HTTP falls back to the host cookie'),
+('presented-prefer', 'presentedSession', 'plain !== undefined ? plain : host', 'host !== undefined ? host : plain', 'the plain cookie outranks the host cookie on HTTP'),
+]])

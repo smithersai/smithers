@@ -1,0 +1,19 @@
+import { describe, expect, it } from "@effect/vitest"
+import { presentedSession, signInCookieName } from "../src/core/accountCookieDecision.vibe"
+
+describe("the session a request presents", () => {
+  it("reads only the host-prefixed cookie on HTTPS", () => {
+    expect(presentedSession(true, "h", "p")).toBe("h")
+    expect(presentedSession(true, undefined, "p")).toBeUndefined()
+  })
+  it("prefers the plain cookie on a local HTTP origin, else the host-prefixed one", () => {
+    expect(presentedSession(false, "h", "p")).toBe("p")
+    expect(presentedSession(false, "h", "")).toBe("")
+    expect(presentedSession(false, "h", undefined)).toBe("h")
+    expect(presentedSession(false, undefined, undefined)).toBeUndefined()
+  })
+  it("names the sign-in state cookie by scheme", () => {
+    expect(signInCookieName(true)).toBe("__Host-vibelang-sign-in")
+    expect(signInCookieName(false)).toBe("vibelang-sign-in")
+  })
+})

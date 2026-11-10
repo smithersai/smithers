@@ -145,7 +145,7 @@ const functionBoundaries = {
   "src/history/seed.vibe:seedOf": "Calls the proved entry use and join precedence (seedDecision entryUse, joins). Not proved: the commit graph walk, the claim of the oldest landed entry, epic order and id numbering (Maps, regexps).",
   // Policy tables whose contract is the table (0018, "Specifications restated").
   ...Object.fromEntries(['src/core/conversation.vibe:mayRun', 'src/core/conversation.vibe:runsOf', 'src/core/wikiDecision.vibe:wikiSubmissionAllowed', 'src/core/protocolDecision.vibe:accountRoute',
-    'worker/budgetDecision.vibe:canCharge', 'worker/budgetDecision.vibe:chargeKeyOf', 'src/core/accountCookieDecision.vibe:cookieName',
+    'worker/budgetDecision.vibe:canCharge', 'worker/budgetDecision.vibe:chargeKeyOf', 'src/core/accountCookieDecision.vibe:cookieName', 'src/core/accountCookieDecision.vibe:signInCookieName',
     'src/core/accountCookieDecision.vibe:localOrigin', 'src/core/accountCookieDecision.vibe:cookieAccepted', 'src/actions/catalogDecision.vibe:leastRoleOf',
     'src/actions/catalogDecision.vibe:inputOf', 'src/core/identityDecision.vibe:postLabel'].map((key) => [key, 'Specification restated: the contract is the table the body computes. It fixes the meaning other proofs rely on and rejects an edit to the table, but proves no further property, nor that callers pass the right argument.'])),
   "src/history/seed.vibe:pushOnce": "Calls the proved note-line admission (stackDecision admitsLine).",
@@ -158,6 +158,9 @@ const functionBoundaries = {
   "src/history/pages.vibe:matchesOf": "Calls the proved pair-safe search clip, match count and search predicate (pageDecision found: a nonempty needle that is the id or occurs in the lowered title); case folding and the stack sort are native (unicode-case.ts, sort-membership.ts) and stay boundaries.",
   "src/history/wire.vibe:pageRequestOf": "Calls the proved idAfter, digitsFrom and pageKind: outline, search, an m-commit id, then an e-epic id whose start is 1 to 9 digits, exactly as the replaced patterns; URLSearchParams and Number are native.",
   "src/history/wire.vibe:historyRouteOf": "Calls the proved routeKind and writeOf: GET events, a write path only by POST, else a GET at or under /api/history reads its page.",
+  "src/core/accountCookieDecision.vibe:presentedSession": "Proved: on HTTPS only the host-prefixed session cookie; on a local HTTP origin the plain cookie when present (even empty), else the host-prefixed one (0018 third-lane batch 19).",
+  "worker/Accounts.vibe:cookieOf": "Calls the proved presentedSession with the scheme of the request's original URL; URL parsing is native.",
+  "worker/Accounts.vibe:make/presented": "Calls the proved presentedSession with the configured origin's scheme.",
   "src/history/wire.vibe:pathOf": "Formats the request's own kind with native encodeURIComponent, which throws on a lone surrogate (then undefined); no admission decision.",
   "src/history/pages.vibe:foldCounts": "Calls the proved per-key totals (pageDecision totals): each mythical commit maps to exactly the number of real commits folded into it, and one with none is absent.",
   "src/history/pages.vibe:headOf": "Calls the proved totalOf for the fold count (0 when nothing folds into the commit); the rest copies fields and counts notes.",

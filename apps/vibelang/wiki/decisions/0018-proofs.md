@@ -691,7 +691,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-3270 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+3272 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -816,6 +816,8 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/accountCookieDecision.vibe:5` | `cookieName` | pure logic | Specification restated: the contract is the table the body computes. It fixes the meaning other proofs rely on and rejects an edit to the table, but proves no further property, nor that callers pass the right argument. |
 | `src/core/accountCookieDecision.vibe:12` | `localOrigin` | pure logic | Specification restated: the contract is the table the body computes. It fixes the meaning other proofs rely on and rejects an edit to the table, but proves no further property, nor that callers pass the right argument. |
 | `src/core/accountCookieDecision.vibe:24` | `cookieAccepted` | pure logic | Specification restated: the contract is the table the body computes. It fixes the meaning other proofs rely on and rejects an edit to the table, but proves no further property, nor that callers pass the right argument. |
+| `src/core/accountCookieDecision.vibe:34` | `signInCookieName` | pure logic | Specification restated: the contract is the table the body computes. It fixes the meaning other proofs rely on and rejects an edit to the table, but proves no further property, nor that callers pass the right argument. |
+| `src/core/accountCookieDecision.vibe:46` | `presentedSession` | pure logic | Proved: on HTTPS only the host-prefixed session cookie; on a local HTTP origin the plain cookie when present (even empty), else the host-prefixed one (0018 third-lane batch 19). |
 | `src/core/accountCookies.vibe:3` | `sessionCookieName` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/accountCookies.vibe:6` | `validSessionCookie` | pure logic | Calls the proved local-origin and cookie acceptance rule; the URL parse and cookie regexps stay boundaries (uri-codec.ts, regexp.ts). |
 | `src/core/actionRunDecision.vibe:11` | `replyChildId` | pure logic | Proved the reply child id and test, which runs a start runs and a cancel stops, the settled state and result, and when a start, a history action and a tour settle (0018 third-lane batch 11). |
@@ -3099,7 +3101,7 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `worker/accountObject.vibe:102` | `identityFromPolicy/request/callback@102` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/accountObject.vibe:105` | `identityFromPolicy/role` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/accountObject.vibe:106` | `identityFromPolicy/role/callback@106` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `worker/Accounts.vibe:26` | `cookieOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Accounts.vibe:27` | `cookieOf` | pure logic | Calls the proved presentedSession with the scheme of the request's original URL; URL parsing is native. |
 | `worker/Accounts.vibe:55` | `callback@55` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/Accounts.vibe:59` | `readSetup` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/Accounts.vibe:69` | `readSetup/callback@69` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
@@ -4845,3 +4847,16 @@ model may invoke the flow and its read deadline with inline conditions. Those ch
 
 `test/flowPolicyDecision.test.vibe` states the expected operation lists for all 13 issue and 4 wiki operations.
 The refactor keeps each flow's tier, key, model offer and deadline. 11 mutations, one per clause.
+
+## Third-lane batch 19: the session cookie a request presents
+
+`worker/Accounts.vibe` chose the presented session twice (`cookieOf` and `make`'s `presented`) with the same inline
+fallback, and named the sign-in state cookie inline. Both now call `src/core/accountCookieDecision.vibe`.
+
+| Function | What its contract states |
+| --- | --- |
+| `presentedSession` | On HTTPS, exactly the host-prefixed cookie; on a local HTTP origin, the plain cookie when present (an empty value counts), else the host-prefixed one. |
+| `signInCookieName` | `__Host-vibelang-sign-in` on HTTPS, else `vibelang-sign-in` (a restated table). |
+
+`test/presentedSession.test.vibe` failed first against stubs (3 of 3). The Connect GitHub path (`connectionKey`, the
+delegation record) is left alone (decision 0165 replaces it). 6 mutations.

@@ -1,4 +1,5 @@
 import { SESSION as HOST_SESSION, sessionCookieName } from "../src/core/accountCookies.vibe"
+import { presentedSession, signInCookieName } from "../src/core/accountCookieDecision.vibe"
 export { SESSION, sessionCookieName } from "../src/core/accountCookies.vibe"
 import { GitHubDelegate, type Connection, type Delegate } from "./GitHubDelegate.vibe"
 import { PublicReads, publicReads } from "./PublicReads.vibe"
@@ -25,8 +26,7 @@ export const CALLBACK = "/api/auth/callback"
 /** Alchemy preserves the original origin; loopback hosts use an unprefixed cookie over HTTP. */
 export function cookieOf(request: HttpServerRequest.HttpServerRequest): string | undefined {
   const origin = new URL(request.originalUrl).origin
-  const name = sessionCookieName(origin)
-  return request.cookies[name] ?? (name === HOST_SESSION ? undefined : request.cookies[HOST_SESSION])
+  return presentedSession(origin.startsWith("https:"), request.cookies[HOST_SESSION], request.cookies[sessionCookieName(origin)])
 }
 const AGE = 30 * 24 * 60 * 60 * 1000
 const noStore = { "cache-control": "no-store" }
@@ -107,8 +107,8 @@ export effect function disabled() {
 
 export effect function make(hostId: string, storage: Storage, setup: Setup) {
   const SESSION = sessionCookieName(setup.origin)
-  const presented = (request: HttpServerRequest.HttpServerRequest) => request.cookies[SESSION] ?? (SESSION === HOST_SESSION ? undefined : request.cookies[HOST_SESSION])
-  const STATE = setup.origin.startsWith("https:") ? "__Host-vibelang-sign-in" : "vibelang-sign-in"
+  const presented = (request: HttpServerRequest.HttpServerRequest) => presentedSession(setup.origin.startsWith("https:"), request.cookies[HOST_SESSION], request.cookies[SESSION])
+  const STATE = signInCookieName(setup.origin.startsWith("https:"))
   const http = try HttpClient.HttpClient
   const keys = try Core.CookieKeys.make({ primary: setup.signingSecret }, "primary")
   const broker = setup.broker?.secret === undefined ? undefined : (GitHub.Auth.Broker.site({ origin: setup.origin, brokerOrigin: setup.broker.origin, secret: setup.broker.secret, ...(setup.broker.localDevelopment === undefined ? {} : { localDevelopment: setup.broker.localDevelopment }) }) catch () => undefined)
