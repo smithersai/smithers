@@ -39,6 +39,14 @@ Pending after the package lands: conversation and delivery sequences, wire codec
 
 ## Confirmed app findings
 
+**Delegated reads dropped their query (vl-fuzz2, 2026-11-10).** `GitHub.Delegation`'s site `client` ignored
+`RequestOptions.query`, so `Contents.getText(..., { ref })` through smithers.sh read the branch tip. A wiki proposal
+whose base main had moved past checks the base against the commit its branch will use (`Wiki` 146); that read
+returned the tip, so the check passed and a review opened on a stale base. Found by `wiki/steered-host`
+`delegated`; fixed in `@smthrs/integrations` (`Delegation.vibe`, test "a delegated read keeps its query"); both
+`wiki/steered-host` and `wiki/host-calls` (which now asserts that a write behind an advanced main is a conflict) keep
+their failing values.
+
 The growing app suite retains every value under `fuzz/__fuzz__/` when its target lands. Unit regressions land with
 these fixes first. Malformed UTF-16 conversation ids and history ids/queries previously threw `URIError` while
 building URLs; public path helpers now refuse them and all nine live Factory operations, including the new sandbox operations, return typed `Unavailable` before HTTP.
@@ -233,8 +241,9 @@ first step. Against the same 5 s budget before them: Wiki 137/172 and 181/234, I
 
 Not reached, with the reason; none is excluded:
 
-- The person's own GitHub writes need a `GitHubDelegate` (decision 0165, skipped): `Wiki` 45-46, 103-160 and 171,
-  `Issues` 142-159 and the steps after each first write (171-175, 184-194, 211-217, 228, 231, 242-243).
+- The person's own GitHub writes run through smithers.sh's real delegation (`fuzz/delegated.vibe`, vl-connect) since
+  2026-11-10. Left: `Issues` 231 and `Wiki` 160 (an operation no branch handles; the request schema admits none),
+  and `Issues` 382 (`publicIssues` provides `FetchHttpClient`, the real network).
 - A store fault reaches every typed engine failure (below). A store *write* that fails is a defect by engine-store's
   contract (`RunDriver.ensureCreatedRun` dies on `persistence_failed`; a journal read in `retryFrom` dies on
   `JournalError`), as `Objects.post` already states for its own store. So `retryFrom`'s typed refusal (`Issues`
@@ -262,6 +271,8 @@ Reached this session (vl-fuzz2, 2026-11-10), each by a steered scenario that run
 | `objects/steered-host` `tour-seek-end` | a seek to step 11 | `Objects` 125 (`finish`) with no reading-hold wait |
 | `actions/held-replies` | a conversation log whose `finish` and `fail` die once | `ActionRuns` 116-118: the reply execution completes as a failure, the reply and its run end failed |
 | `actions/held-replies` | a ledger whose `admit` waits on a `Deferred` latch | `ActionRuns` 145-148: a person cancels the running reply; it ends cancelled |
+| `issues/steered-host` `delegated` | smithers.sh's delegation over the in-memory GitHub; `end` revokes it | `Issues` 162, 171-175 (a new issue and a split, linked), 184-194 (a whole VIP proposal), 243 (a read after the delegation ended falls back to public issues and reports the loss) |
+| `wiki/steered-host` `delegated` | the same, with an `authorize` and a kept draft | `Wiki` 103, 135, 137, 147 (main advanced past the base), 157 (the review replaces the kept text), 171 (the fallback read) |
 | `objects/steered-host` `tour-during-reply` | the same latch | a tour while the reply runs is `busy`; after it, a tour is accepted behind the reply and ending it reaches `Objects` 150 (the wake finds the reply's intent); the alarms then end the tour and the reply |
 
 A defect in a history tool or in the ledger's `spend` does not fail the reply execution: the agent sandbox and the

@@ -287,7 +287,7 @@ it.live("issues/vip-evidence-and-failure-mapping", () => run("issues/vip-evidenc
   return ["unknown", "rate-limited", "unavailable"].includes(expected) ? failure.code === expected : true
 }))
 
-const ISSUE_SCENARIOS = ["validations", "reviews", "resume", "spec", "shapes", "served", "demoted", "refusals", "draft", "store", "running"] as const
+const ISSUE_SCENARIOS = ["validations", "reviews", "resume", "spec", "shapes", "served", "demoted", "refusals", "draft", "store", "running", "delegated"] as const
 const SteeredIssues = Schema.Struct({
   pick: Int,
   title: Schema.Literals(["T", "A title", "Fix the parser"]),
@@ -561,13 +561,48 @@ const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: n
       if (after._tag !== "Success" || after.success.saved?.status !== "completed" || after.success.saved.selected !== 7) throw new Finding({ report: `the released write resumed as ${after._tag === "Success" ? after.success.saved?.status : reasonOf(after)}` })
       break
     }
+    case "delegated": {
+      // Connected through smithers.sh's real delegation: the person's own writes reach GitHub and complete.
+      forked(fake)
+      const site = try delegated(fakeClient(fake), reach())
+      const connected: Person = { ...maintainer, connection: site.connection }
+      const via = effect (label: string, wanted: string, patch: Partial<IssueRequest>) => {
+        count += 1
+        try Ref.set(principal, [connected])
+        const result = try Effect.result(executeIssues("issues-steered", storage, { ...base, key: `d${pick}-${count}`, ...patch } as IssueRequest, repo).pipe(
+          Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, site.http), Effect.provideService(GitHubDelegate, site.delegate),
+          Effect.provide(WebCrypto.layer), Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: error._tag })),
+        ))
+        if (reasonOf(result) !== wanted) throw new Finding({ report: `${label} answered ${reasonOf(result)}, not ${wanted}` })
+        return result
+      }
+      const selected = (result: Result.Result<typeof IssuesState.Type, IssueFailure>) => result._tag === "Success" ? result.success.selected : undefined
+      // A draft needs the writer this host was built without.
+      try via("a delegated draft with no writer", "unavailable", { op: "draft" })
+      const made = try via("a delegated new issue", "ok", { op: "new" })
+      const created = fake.issues.find((issue) => issue.number === selected(made))
+      if (created?.title !== title.trim()) throw new Finding({ report: "a delegated new issue was not selected on GitHub" })
+      const split = try via("a delegated split", "ok", { op: "split", number: 1 })
+      const child = fake.issues.find((issue) => issue.number === selected(split))
+      if (child?.parent_issue_url !== `${repo.api}/repos/o/r/issues/1`) throw new Finding({ report: "a delegated split was not linked under its issue" })
+      const proposed = try via("a delegated proposal", "ok", { ...complete })
+      if (proposed._tag !== "Success" || !proposed.success.items.some((item) => item.number === proposed.success.selected && item.vip !== "")) throw new Finding({ report: "a delegated proposal did not select its VIP" })
+      // The delegation ends at smithers.sh: the person's read falls back to public issues, and a write asks to connect.
+      try site.end()
+      const lostBefore = try Ref.get(lost)
+      const read = try via("a read after the delegation ended", "ok", { op: "read" })
+      if (read._tag !== "Success" || !read.success.items.some((item) => item.number === 1) || (try Ref.get(lost)) === lostBefore) throw new Finding({ report: "an ended delegation hid public issues or was not reported lost" })
+      try via("a write after the delegation ended", "connect", { op: "new" })
+      break
+    }
     case "draft": {
       const drafted = try execute({ op: "draft", title: "A proposal", text: "Why", example: "e", prior: "p" }, [maintainer], true)
       if (drafted._tag !== "Success" || drafted.success.draft?.title !== "A proposal") throw new Finding({ report: `a draft answered ${reasonOf(drafted)}` })
       break
     }
   }
-  if (fake.writes !== writesBefore) throw new Finding({ report: "a maintainer with no delegate wrote to GitHub" })
+  // Only the delegated scenario's person has a delegate; every other scenario writes nothing to GitHub.
+  if (scenario !== "delegated" && fake.writes !== writesBefore) throw new Finding({ report: "a maintainer with no delegate wrote to GitHub" })
   return true
 })
 
