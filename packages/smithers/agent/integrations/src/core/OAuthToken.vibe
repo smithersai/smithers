@@ -163,11 +163,9 @@ export const credentialStore = (credential: Credential, reference: CredentialRef
   return {
     load,
     replace: (previous, next) =>
-      (do { const catchProgram = (credential.rotate(reference, next, { expected: previous })
-      |> Effect.as(%, true)); effect { return catchProgram catch effect (e) => match (e) {
-        when { _tag: "/control/CredentialConflict" }: false;
-        default: throw e;
-      } } })
+      credential.rotate(reference, next, { expected: previous })
+      |> Effect.as(%, true)
+      |> Effect.catchTag(%, "/control/CredentialConflict", () => Effect.succeed(false))
       |> Effect.mapError(%, credentialFailure(reference))
   }
 }
