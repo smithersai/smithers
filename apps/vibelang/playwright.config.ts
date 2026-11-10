@@ -33,5 +33,5 @@ export default defineConfig({
   ],
   // The local e2e build also serves the fault-injection pages the recovery tests use, even when the rest run against a
   // deployment.
-  webServer: { command: `pnpm build --mode e2e && pnpm exec vite preview --port ${port} --strictPort`, url: `http://127.0.0.1:${port}`, reuseExistingServer: false, timeout: 120_000 },
+  webServer: { command: `pnpm build --mode e2e && pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`, url: `http://127.0.0.1:${port}`, reuseExistingServer: false, timeout: 120_000 },
 })
