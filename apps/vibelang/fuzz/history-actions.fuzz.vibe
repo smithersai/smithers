@@ -6,7 +6,7 @@ import { MockFactory } from "../src/core/MockFactory.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import * as HistoryActions from "../worker/HistoryActions.vibe"
 import { world, request, history } from "../test/support/actionObjects.vibe"
-import { run, Finding, Int } from "./run.vibe"
+import { run, Finding, Int, REPLAY_FLOOR } from "./run.vibe"
 
 const FLOWS = ["vibelang/history/show", "vibelang/history/Plan", "vibelang/history/Start", "vibelang/history/Note", "vibelang/sandbox/start", "vibelang/sandbox/stop", "vibelang/sandbox/command", "vibelang/EndTour", "vibelang/Post", "vibelang/Tour"] as const
 const inputOf = (flow: string, variant: number): Schema.Json => {
@@ -25,7 +25,7 @@ const MAINTAINER = { principal: { role: "maintainer" as const, name: "Ada", agen
 const Input = Schema.Struct({ flow: Schema.Literals(FLOWS), variant: Int, admit: Schema.Boolean, alarms: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 })), cancel: Schema.Boolean })
 
 /** A flow the host does not run is input; one it runs settles to a receipt, and once it holds an execution it is busy. */
-it.live("actions/history-host", () => run("actions/history-host", Input, (input) => effect {
+const drive = (input: typeof Input.Type) => effect {
   const w = try world()
   provide MockFactory, history {
     const device = try Factory
@@ -61,4 +61,10 @@ it.live("actions/history-host", () => run("actions/history-host", Input, (input)
       return true
     }
   }
-}))
+}
+
+// Every execution drives every flow, admitted and refused, with the drawn settings, so a short budget on a loaded host still reaches each one.
+it.live("actions/history-host", () => run("actions/history-host", Input, (input) => effect {
+  for (const flow of FLOWS) for (const admit of [true, false]) try drive({ ...input, flow, admit })
+  return true
+}, undefined, { minimum: REPLAY_FLOOR }))

@@ -72,6 +72,14 @@ export interface Fake {
   contentStatus: number
   /** A branch lookup answers this status when it is not 200. */
   refStatus: number
+  /** Every GET answers this status when it is not 200: GitHub is down. */
+  outage: number
+  /** After the next sub-issue link, this many GETs answer 503: GitHub wrote the link, then went down for a moment. */
+  dropAfterLink: number
+  /** GETs that still answer 503. */
+  dropping: number
+  /** Issue lists omit the VIP marker of bodies: GitHub has not shown a new issue's body yet. */
+  hideVip: boolean
 }
 
 function seedIssue(fake: Fake, number: number, state: "open" | "closed", labels: Array<string>, body: string, assignees: Array<{ id: number; login: string }>): void {
@@ -90,7 +98,7 @@ export function seed(): Fake {
     pulls: [], forks: {}, branches: { "o/r": { main: "a".repeat(40) } }, commits: {}, pullAdditions: {},
     writes: 0, nextId: 1000, nextIssue: 100, nextPull: 600, nextSha: 1,
     forbiddenNext: false, endlessIssues: false, endlessTimeline: false, endlessReviews: false, malformedIssues: false,
-    endlessComments: false, dropAssignees: false, noMain: false, files: {}, pinnedText: undefined, contentStatus: 200, refStatus: 200,
+    endlessComments: false, dropAssignees: false, noMain: false, files: {}, pinnedText: undefined, contentStatus: 200, refStatus: 200, outage: 200, dropAfterLink: 0, dropping: 0, hideVip: false,
   }
   seedIssue(fake, 1, "open", [], "A plain issue", [])
   fake.comments[1] = [{ id: 900, node_id: "comment-900", body: "First note", user: { id: 8, login: "reviewer" }, created_at: "2026-01-02T00:00:00Z", updated_at: "2026-01-02T00:00:00Z", issue_url: `${API}/repos/o/r/issues/1` }]
@@ -119,8 +127,18 @@ export function forked(fake: Fake, login = "fuzz"): void {
   fake.branches[`${login}/r`] = { ...fake.branches["o/r"] }
 }
 
-const jsonResponse = (request: HttpClientRequest.HttpClientRequest, status: number, body: unknown, headers: Record<string, string> = {}) =>
-  succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } }))))
+/** A JSON answer; a successful GET carries an ETag of its body, as GitHub's do, so a read cache keeps it. */
+const jsonResponse = (request: HttpClientRequest.HttpClientRequest, status: number, body: unknown, headers: Record<string, string> = {}) => {
+  const text = JSON.stringify(body)
+  const etag = request.method === "GET" && status === 200 ? { etag: `"${tagOf(text)}"` } : {}
+  return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(text, { status, headers: { "content-type": "application/json", ...etag, ...headers } }))))
+}
+
+function tagOf(text: string): string {
+  let hash = 0
+  for (let index = 0; index < text.length; index++) hash = (Math.imul(hash, 31) + text.charCodeAt(index)) | 0
+  return `${text.length}-${(hash >>> 0).toString(16)}`
+}
 
 /** An in-memory GitHub over the real client protocol: REST pagination, sub-issues, forks, refs, GraphQL commits. */
 export function fakeClient(fake: Fake): HttpClient.HttpClient {
@@ -140,6 +158,11 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       fake.writes += 1
       apply()
       return try jsonResponse(request, status, answer())
+    }
+    if (fake.outage !== 200 && request.method === "GET") return try jsonResponse(request, fake.outage, { message: "Unavailable" })
+    if (fake.dropping > 0 && request.method === "GET") {
+      fake.dropping -= 1
+      return try jsonResponse(request, 503, { message: "Unavailable" })
     }
     const page = (items: ReadonlyArray<unknown>, endless: boolean) =>
       jsonResponse(request, 200, items, endless ? { link: `<${API}${path}?page=2>; rel="next"` } : {})
@@ -167,7 +190,10 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       const existing = fake.forks[key]
       return try (existing === undefined ? jsonResponse(request, 404, { message: "Not Found" }) : jsonResponse(request, 200, existing))
     }
-    if (issuesList && request.method === "GET") return try page(fake.malformedIssues ? [{ garbage: true }, ...fake.issues] : fake.issues, fake.endlessIssues)
+    if (issuesList && request.method === "GET") {
+      const shown = fake.hideVip ? fake.issues.map((issue) => ({ ...issue, body: String(issue.body ?? "").replace(/<!-- vibelang:vip [^>]*-->/g, "") })) : fake.issues
+      return try page(fake.malformedIssues ? [{ garbage: true }, ...shown] : shown, fake.endlessIssues)
+    }
     if (issuesList && request.method === "POST") {
       const number = fake.nextIssue
       const title = String(body?.title ?? "")
@@ -203,6 +229,8 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       const child = fake.issues.find((candidate) => candidate.id === Number(body?.sub_issue_id))
       return try write(200, () => parent, () => {
         if (child !== undefined) child.parent_issue_url = `${API}/repos/o/r/issues/${parent.number}`
+        fake.dropping = fake.dropAfterLink
+        fake.dropAfterLink = 0
       })
     }
     if (timeline && request.method === "GET") return try page([
@@ -303,7 +331,7 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       if (file === undefined) return try jsonResponse(request, 404, { message: "Not Found" })
       const pinned = /^[0-9a-f]{40}$/.test(url.searchParams.get("ref") ?? "") && fake.pinnedText !== undefined
       const text = pinned ? fake.pinnedText! : file
-      return try jsonResponse(request, 200, { type: "file", encoding: "base64", content: Base64.encode(text), sha: `sha-${text.length}` }, { etag: `"sha-${text.length}"` })
+      return try jsonResponse(request, 200, { type: "file", encoding: "base64", content: Base64.encode(text), sha: `sha-${text.length}` })
     }
     if (path === "/graphql" && request.method === "POST") {
       const input = (body?.variables as { input: { branch: { repositoryNameWithOwner: string; branchName: string }; expectedHeadOid: string; message: { headline: string; body?: string }; fileChanges: { additions: Array<{ path: string; contents: string }> } } }).input

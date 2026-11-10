@@ -1,5 +1,6 @@
 // One bounded target, its persistent regressions, and content-free campaign receipts.
 import * as NodeServices from "@effect/platform-node/NodeServices"
+import { TestClock } from "effect/testing"
 import { Fuzz } from "@smthrs/fuzz"
 import { FuzzCorpus } from "@smthrs/testing"
 import { MAX_TEXT } from "../src/core/decide.vibe"
@@ -96,4 +97,24 @@ export function same(a: unknown, b: unknown): boolean {
     return value
   }
   try { return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b)) } catch { return false }
+}
+
+/**
+ * Runs `program` under a test clock stepped 250 ms at a time, letting real promises settle 10 ms between steps, so a
+ * flow's retries and deadlines pass in virtual time. A program still running after `limitSeconds` is a finding.
+ */
+export effect function stepped<A, E>(program: A!E!never, limitSeconds: number) {
+  return try Effect.provide(effect {
+    const fiber = try forkChild(program)
+    for (let step = 0; step < limitSeconds * 4 && fiber.pollUnsafe() === undefined; step++) {
+      try TestClock.withLive(sleep("10 millis"))
+      try TestClock.adjust("250 millis")
+    }
+    const exit = fiber.pollUnsafe()
+    if (exit === undefined) {
+      try Fiber.interrupt(fiber)
+      throw new Finding({ report: `a flow outlived ${limitSeconds} virtual seconds` })
+    }
+    return try exit
+  }, TestClock.layer())
 }

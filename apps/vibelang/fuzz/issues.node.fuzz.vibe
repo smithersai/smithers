@@ -8,12 +8,13 @@ import { IssueFailure, IssueRequest, IssuesState } from "../src/core/issueSchema
 import { IssueHost } from "../src/core/issueFlows.vibe"
 import { executeIssues, githubHost, issueFailureOf, publicIssues, serveIssues, verifiedVip, IssueAuthority, type Principal, type Repository } from "../worker/Issues.vibe"
 import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
+import { PublicReads } from "../worker/PublicReads.vibe"
 import { agentLayer, DraftAgent, writer } from "../worker/VipDraft.vibe"
 import { ChatModel, Spend } from "../worker/Reply.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { fakeClient, forked, repo, seed, type Fake } from "./issues-node-fake.vibe"
 import { delegated, reach, reached } from "./delegated.vibe"
-import { run, Finding, Int } from "./run.vibe"
+import { run, stepped, Finding, Int } from "./run.vibe"
 import { faultyStore } from "./faulty-store.ts"
 
 // The durable payload contract (DurableText) refuses lone surrogates; direct flow calls hold it.
@@ -302,7 +303,7 @@ it.live("issues/vip-evidence-and-failure-mapping", () => run("issues/vip-evidenc
   return ["unknown", "rate-limited", "unavailable"].includes(expected) ? failure.code === expected : true
 }))
 
-const ISSUE_SCENARIOS = ["validations", "reviews", "resume", "spec", "shapes", "served", "demoted", "refusals", "draft", "store", "running", "delegated"] as const
+const ISSUE_SCENARIOS = ["validations", "reviews", "resume", "spec", "shapes", "served", "demoted", "refusals", "draft", "store", "running", "delegated", "public"] as const
 const SteeredIssues = Schema.Struct({
   pick: Int,
   title: Schema.Literals(["T", "A title", "Fix the parser"]),
@@ -344,6 +345,13 @@ const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: n
     return try Effect.result(drafts ? Effect.provide(program, writerLayer(true, true)) : program)
   }
   const reasonOf = (result: Result.Result<unknown, IssueFailure>) => result._tag === "Failure" ? result.failure.reason : "ok"
+  /** One request to a served tracker: its status and body text. */
+  const serveGet = effect (served: HttpServerResponse.HttpServerResponse!unknown!HttpServerRequest.HttpServerRequest, method: "GET" | "POST", body: string | undefined) => {
+    const request = method === "GET" ? HttpClientRequest.get("https://fuzz.invalid/api/issues") : HttpClientRequest.bodyText(HttpClientRequest.post("https://fuzz.invalid/api/issues"), body ?? "")
+    const web = try HttpClientRequest.toWeb(request)
+    const response = try Effect.provideService(served, HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
+    return { status: response.status, text: try promise(() => HttpServerResponse.toWeb(response).text()) }
+  }
   const expect = effect (label: string, wanted: string, patch: Partial<IssueRequest>, as: ReadonlyArray<Person | undefined> = [maintainer], host?: IssueHost.Shape) => {
     const result = try execute(patch, as, false, host)
     if (reasonOf(result) !== wanted) throw new Finding({ report: `${label} answered ${reasonOf(result)}, not ${wanted}` })
@@ -391,6 +399,9 @@ const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: n
     case "reviews": {
       const proposal = fake.issues.find((issue) => issue.number === 4)!
       proposal.labels = [{ name: "vibelang:accepted" }]
+      // A label alone is no approval: before any maintainer accepts it here, the proposal reads as in review.
+      const unapproved = try expect("a read of a proposal accepted only on GitHub", "ok", { op: "read" })
+      if (unapproved._tag === "Success" && unapproved.success.items.find((entry) => entry.number === 4)?.vip !== "In review") throw new Finding({ report: "a GitHub label alone approved a proposal" })
       // Accepted on GitHub, unapproved here: accepting writes nothing and records this maintainer's approval.
       const accepted = try expect("an acceptance of an accepted proposal", "ok", { op: "accept", number: 4 })
       const item = accepted._tag === "Success" ? accepted.success.items.find((entry) => entry.number === 4) : undefined
@@ -399,6 +410,16 @@ const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: n
       const reread = try expect("a read after the approval", "ok", { op: "read" })
       const kept = reread._tag === "Success" ? reread.success.items.find((entry) => entry.number === 4) : undefined
       if (kept?.vip !== "Accepted" || kept.approvedBy !== "fuzz" || kept.approvedAt !== item.approvedAt) throw new Finding({ report: "the approval receipt was lost on a read" })
+      // An approval stored without its time (another writer, or a hand edit) keeps its approver and still decodes.
+      const stored = (try promise(() => storage.get("gates/state"))) as typeof IssuesState.Type
+      try promise(() => storage.put("gates/state", { ...stored, items: stored.items.map((entry) => {
+        if (entry.number !== 4) return entry
+        const { approvedAt: _approvedAt, ...withoutTime } = entry
+        return withoutTime
+      }) }))
+      const handEdited = try expect("a read of an approval stored without its time", "ok", { op: "read" })
+      const edited = handEdited._tag === "Success" ? handEdited.success.items.find((entry) => entry.number === 4) : undefined
+      if (edited?.approvedBy !== "fuzz" || edited.approvedAt !== undefined) throw new Finding({ report: "an approval stored without its time was dropped or given one" })
       proposal.labels = [{ name: "vibelang:declined" }]
       try expect("a decline of a declined open proposal", "connect", { op: "decline", number: 4 })
       proposal.state = "closed"
@@ -600,14 +621,65 @@ const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: n
       const split = try via("a delegated split", "ok", { op: "split", number: 1 })
       const child = fake.issues.find((issue) => issue.number === selected(split))
       if (child?.parent_issue_url !== `${repo.api}/repos/o/r/issues/1`) throw new Finding({ report: "a delegated split was not linked under its issue" })
+      // GitHub writes the link, then fails the reads after it: the retried split adopts its issue, sees the link, and
+      // writes no second one.
+      const linksBefore = fake.writes
+      fake.dropAfterLink = 3
+      const relinked = try stepped(via("a split whose reads failed after its link", "ok", { op: "split", number: 1 }), 60)
+      fake.dropAfterLink = 0
+      fake.dropping = 0
+      const relinkedChild = fake.issues.find((issue) => issue.number === selected(relinked))
+      if (relinkedChild?.parent_issue_url !== `${repo.api}/repos/o/r/issues/1` || fake.writes - linksBefore !== 2) throw new Finding({ report: `a retried split made ${fake.writes - linksBefore} writes` })
       const proposed = try via("a delegated proposal", "ok", { ...complete })
       if (proposed._tag !== "Success" || !proposed.success.items.some((item) => item.number === proposed.success.selected && item.vip !== "")) throw new Finding({ report: "a delegated proposal did not select its VIP" })
+      // GitHub never shows the new issue's VIP marker: no evidence of the proposal, so after the retry window it is unavailable.
+      fake.hideVip = true
+      try stepped(via("a proposal GitHub never showed as a VIP", "unavailable", { ...complete }), 150)
+      fake.hideVip = false
       // The delegation ends at smithers.sh: the person's read falls back to public issues, and a write asks to connect.
       try site.end()
       const lostBefore = try Ref.get(lost)
       const read = try via("a read after the delegation ended", "ok", { op: "read" })
       if (read._tag !== "Success" || !read.success.items.some((item) => item.number === 1) || (try Ref.get(lost)) === lostBefore) throw new Finding({ report: "an ended delegation hid public issues or was not reported lost" })
       try via("a write after the delegation ended", "connect", { op: "new" })
+      break
+    }
+    case "public": {
+      // A visitor reads through the site's cached public client. While GitHub is down, the last good copy answers,
+      // marked with when GitHub confirmed it.
+      const cache = try GitHub.ReadCache.make({ store: try GitHub.ReadCache.memoryStore(), upstream: fakeClient(fake), freshFor: 0 })
+      const visitor: IssueAuthority.Shape = { current: () => succeed(undefined) }
+      const readAs = (key: string) => Effect.result(executeIssues("issues-visitor", storage, { ...base, key }, repo).pipe(
+        Effect.provideService(IssueAuthority, visitor), Effect.provideService(PublicReads, { client: cache }),
+        Effect.provideService(HttpClient.HttpClient, fakeClient(fake)), Effect.provide(WebCrypto.layer),
+        Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: error._tag })),
+      ))
+      const first = try readAs(`fresh-${pick}`)
+      // publicIssues serves the product's own repository, so its first read fills the cache for that address.
+      const servedFresh = try serveGet(publicIssues("issues-public", storage, cache), "GET", undefined)
+      if (servedFresh.status !== 200) throw new Finding({ report: `a served visitor's read answered ${servedFresh.status}` })
+      if (first._tag !== "Success" || first.success.stale !== undefined || first.success.items.length === 0) throw new Finding({ report: `a visitor's read answered ${reasonOf(first)}` })
+      fake.outage = 503
+      const kept = try readAs(`kept-${pick}`)
+      const servedKept = try serveGet(publicIssues("issues-public", storage, cache), "GET", undefined)
+      fake.outage = 200
+      if (kept._tag !== "Success" || kept.success.stale === undefined || kept.success.items.length !== first.success.items.length) throw new Finding({ report: `a visitor's read while GitHub was down answered ${reasonOf(kept)}` })
+      if (servedKept.status !== 200 || (try Effect.try(() => JSON.parse(servedKept.text) as { stale?: number })).stale === undefined) throw new Finding({ report: `a served read while GitHub was down answered ${servedKept.status}` })
+      // Without the site's client the public tracker still serves; a request whose key is not a key is invalid.
+      const quiet: IssueHost.Shape = { perform: () => succeed({ seq: 1, items: [] }) }
+      const direct = publicIssues("issues-public-direct", storage).pipe(Effect.provideService(IssueHost, quiet))
+      const plain = try serveGet(direct, "GET", undefined)
+      if (plain.status !== 200) throw new Finding({ report: `a public read without the site's client answered ${plain.status}` })
+      const malformed = try serveGet(direct, "POST", JSON.stringify({ ...base, key: "not a key" }))
+      if (malformed.status !== 400 || (try Effect.try(() => JSON.parse(malformed.text) as { reason?: string })).reason !== "invalid") throw new Finding({ report: `a request with a malformed key answered ${malformed.status}` })
+      // GitHub never answers a read: the read flow's engine deadline settles it, in virtual time, as unavailable.
+      const silent: IssueHost.Shape = { perform: () => Effect.never }
+      const late = try stepped(execute({ op: "read" }, [maintainer], false, silent), 30)
+      if (reasonOf(late) !== "unavailable") throw new Finding({ report: `a read past its deadline answered ${reasonOf(late)}` })
+      // An issue whose comments never end is read as partial, never as a short thread.
+      fake.endlessComments = true
+      try expect("a read of an issue whose comments never end", "partial", { op: "read", number: 1 })
+      fake.endlessComments = false
       break
     }
     case "draft": {

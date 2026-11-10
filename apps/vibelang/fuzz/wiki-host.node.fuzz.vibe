@@ -3,7 +3,6 @@
 // with each reason, journaled and recovered.
 import { it } from "@effect/vitest"
 import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { TestClock } from "effect/testing"
 import { GitHub } from "@smthrs/integrations"
 import { WebCrypto } from "@smthrs/crypto"
 import { TestNodeRuntime } from "@smthrs/platform-node"
@@ -19,7 +18,7 @@ import { PublicReads } from "../worker/PublicReads.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { API, fakeClient, forked, seed } from "./issues-node-fake.vibe"
 import { delegated, reach, reached } from "./delegated.vibe"
-import { run, Finding, REPLAY_FLOOR } from "./run.vibe"
+import { run, stepped, Finding, REPLAY_FLOOR } from "./run.vibe"
 import { faultyStore } from "./faulty-store.ts"
 
 const repo: WikiRepository = { owner: "o", name: "r", api: API, agent: "", root: "wiki" }
@@ -161,26 +160,6 @@ it.live("wiki/served-failures", () => run("wiki/served-failures", Served, (input
   return true
 }))
 
-/**
- * Runs `program` under a test clock stepped 250 ms at a time, letting real promises settle 10 ms between steps, so a
- * flow's retries and deadlines pass in virtual time. A program still running after `limitSeconds` is a finding.
- */
-effect function stepped<A, E>(program: A!E!never, limitSeconds: number) {
-  return try Effect.provide(effect {
-    const fiber = try forkChild(program)
-    for (let step = 0; step < limitSeconds * 4 && fiber.pollUnsafe() === undefined; step++) {
-      try TestClock.withLive(sleep("10 millis"))
-      try TestClock.adjust("250 millis")
-    }
-    const exit = fiber.pollUnsafe()
-    if (exit === undefined) {
-      try Fiber.interrupt(fiber)
-      throw new Finding({ report: `a flow outlived ${limitSeconds} virtual seconds` })
-    }
-    return try exit
-  }, TestClock.layer())
-}
-
 const WIKI_SCENARIOS = ["recover", "changed-payload", "missing-page", "lost", "default-host", "served-reasons", "refusals", "connected", "store", "delegated", "signed-out", "deadline"] as const
 const Steered = Schema.Struct({
   pick: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 31 })),
@@ -255,6 +234,9 @@ const steeredScenario = (scenario: typeof WIKI_SCENARIOS[number], pick: number, 
       const bare = try githubWikiHost(repo).pipe(Effect.provideService(WikiAuthority, connected), Effect.provideService(HttpClient.HttpClient, fakeClient(fake)))
       const proposed = try Effect.result(bare.perform(proposal).pipe(Effect.provide(WebCrypto.layer)) as typeof WikiState.Type!WikiFailure)
       if (reasonOf(proposed) !== "connect") throw new Finding({ report: `a connected proposal with no storage answered ${reasonOf(proposed)}` })
+      // A write without a key cannot be journaled: the host asks the person to sign in before it reads anything.
+      const keyless = try Effect.result(bare.perform({ ...proposal, key: "" }).pipe(Effect.provide(WebCrypto.layer)) as typeof WikiState.Type!WikiFailure)
+      if (reasonOf(keyless) !== "sign-in") throw new Finding({ report: `a keyless proposal answered ${reasonOf(keyless)}` })
       // An unconnected person on a host with no storage: nothing keeps the text, and the host asks to connect.
       const unconnected = try githubWikiHost(repo).pipe(Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, fakeClient(fake)))
       const asked = try Effect.result(unconnected.perform(proposal).pipe(Effect.provide(WebCrypto.layer)) as typeof WikiState.Type!WikiFailure)
@@ -262,7 +244,7 @@ const steeredScenario = (scenario: typeof WIKI_SCENARIOS[number], pick: number, 
       break
     }
     case "served-reasons": {
-      for (const reason of ["fork", "install"]) {
+      for (const [reason, status] of [["fork", 400], ["install", 400], ["sign-in", 401], ["connect", 401]] as const) {
         const failing: WikiHost.Shape = { perform: () => fail(new WikiFailure({ reason })) }
         const web = try HttpClientRequest.toWeb(HttpClientRequest.bodyText(HttpClientRequest.post("https://fuzz.invalid/api/wiki"), JSON.stringify({ ...proposal, key: `${reason}-${pick}` })))
         const response = try Effect.provideService(serveWiki("served", storage, repo).pipe(
@@ -271,7 +253,7 @@ const steeredScenario = (scenario: typeof WIKI_SCENARIOS[number], pick: number, 
         ), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
         const text = try promise(() => HttpServerResponse.toWeb(response).text())
         const body = try Effect.try(() => JSON.parse(text) as { reason?: string })
-        if (response.status !== 400 || body.reason !== reason) throw new Finding({ report: `${reason} answered ${response.status}` })
+        if (response.status !== status || body.reason !== reason) throw new Finding({ report: `${reason} answered ${response.status}` })
       }
       break
     }
@@ -350,6 +332,9 @@ const steeredScenario = (scenario: typeof WIKI_SCENARIOS[number], pick: number, 
       if (fake.pulls.length !== pullsBefore) throw new Finding({ report: "a refused proposal opened a review" })
       // The person's kept text is the one proposed, so the review replaces it.
       try promise(() => storage.put(`wiki/draft/7/${page}`, { page, text }))
+      // A read by the person returns the kept text beside the page.
+      const reread = try via({ op: "read", page, base: "", text: "", key: `kept-${pick}` })
+      if (reread._tag !== "Success" || reread.success.draft?.text !== text) throw new Finding({ report: `a read with a kept text answered ${reasonOf(reread)}` })
       const proposed = try via({ ...proposal, key: `delegated-${pick}` })
       if ((try promise(() => storage.get(`wiki/draft/7/${page}`))) !== undefined) throw new Finding({ report: "a proposed text stayed kept after its review opened" })
       if ((try Ref.get(authorized)) === 0) throw new Finding({ report: "a delegated proposal skipped its authority" })

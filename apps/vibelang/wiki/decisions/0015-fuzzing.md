@@ -312,6 +312,34 @@ Campaign: seed 20261113, 240 s per target, 14 targets, 28.2 minutes wall on two 
 design; value kept) and `objects/conversation-host` (the deadlock above). Rerun at the same seed and budget: the
 deadlock is gone and the target found the open foreign-key failure; `actions/run-answers` passed (326 executions).
 
+Reached in the eighth session (vl-fuzz2, 2026-11-10). `fuzz/run.vibe`'s `stepped` runs a program under a test clock
+stepped 250 ms at a time, so a flow's retries and engine deadlines pass in virtual time inside a live target. The
+in-memory GitHub sends an ETag on every successful GET, as GitHub does, so `GitHub.ReadCache` keeps a copy; `outage`
+fails every GET, `dropAfterLink` fails the GETs after a sub-issue link, and `hideVip` hides new VIP markers.
+
+| Scenario | Fault or control | Reaches |
+| --- | --- | --- |
+| `issues/steered-host` `public` | a cached public client over GitHub, then an outage; `publicIssues` with and without the site's client; a malformed key; an `IssueHost` that never answers, stepped; endless comments | `Issues` 115 (`partial`), 138 (stale copy), 271 (400), 402 (read deadline), 411 |
+| `issues/steered-host` `delegated` | GitHub fails three GETs after the link; GitHub never shows the VIP marker; both stepped | `Issues` 181 (the retried split sees its link and writes no second one), 203 (`unavailable` after the retry window) |
+| `issues/steered-host` `reviews` | a label alone, then an approval stored without its time | `Issues` 333 (in review; approver kept, no time) |
+| `wiki/steered-host` `signed-out` | the cached public client, then a refused read; a visitor proposal served | `Wiki` 93 (stale copy); a visitor's proposal is 403 `forbidden`, as `test/wikiBoundary.coverage.test.vibe` specifies |
+| `wiki/steered-host` `deadline` | a `WikiHost` that never answers, stepped | `Wiki` 258-260 (`unavailable` at the read deadline) |
+| `wiki/steered-host` `delegated` | a blank text, no base branch, a refused branch read, a kept draft read back, and a review GitHub attributes to someone else (stepped) | `Wiki` 92 (draft), 140 (blank), 150 (no base branch), 163 (another author) |
+| `wiki/steered-host` `connected`, `served-reasons` | a keyless proposal on the host; `sign-in` and `connect` served | `Wiki` 95, 201 (401) |
+| `actions/steered-runs` | a tour with null input, an unavailable history, a model that refuses the reply, an engine that cannot cancel, an ownerless caller | `ActionRuns` 68, 105, 135, `cancel-failed`, `callerOf`'s `owner ?? ""` |
+| `actions/history-host` | now steered: every execution drives every flow, admitted and refused; declares `REPLAY_FLOOR` | `HistoryActions` stays 19/19 on a loaded host (a 5 s full run at load had dropped its `start` arms to 17/19) |
+
+Fuzz-only coverage of this lane's files, all 63 Node fuzz files at 5 s (63 files, 202 targets, exit 0):
+`worker/ActionRuns.vibe` 120/120 lines, 178/178 branches; `worker/Issues.vibe` 298/298, 452/453; `worker/Wiki.vibe`
+175/175, 233/234; `Objects`, `Sequencer`, `HistoryActions` and the five view files 100%. The two open arms are one
+guard, `retryFrom`'s `step === undefined` (`Issues` 374, `Wiki` 251): a failed execution the engine inspects always
+records its `perform` step, and the engine's `RunInspection` is built inside `executeIssues`/`executeWiki`, so no
+injected service reaches it. It stays as the guard for an engine that breaks that invariant.
+
+`test/entry.coverage.test.vibe` failed about half its runs with an unhandled teardown error: `src/web/entry.vibe`
+started the page with `Runtime.run` and kept no handle. It now starts it with `Runtime.embed` and exports the handle;
+each test disposes the page and waits until `#root` is empty. 20 consecutive runs passed.
+
 ## Status, 2026-11-09 (seventh session)
 
 Fuzz-only at `6386c557` plus the targets below: 6052/7232 lines (83.68%), 6167/8018 branches (76.91%), 49 of 144 files at 100%, 5 seconds per target at host load 42 to 50; goal not met. Both denominators grew with other lanes' code since the sixth session. At that load a 5-second target ran as few as 22 executions (`web/guided-commands`), so branches a target reaches alone can drop out of a full run: `fuzz:coverage` is bounded by time, not executions.
