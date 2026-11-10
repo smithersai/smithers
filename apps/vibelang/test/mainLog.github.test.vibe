@@ -1,0 +1,18 @@
+// Opt-in: reads main's first-parent log from real GitHub. Without GITHUB_TEST_TOKEN nothing leaves the machine.
+import { expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { githubMain } from "../worker/MainLog.vibe"
+
+const token = runSync(Config.option(Config.Redacted("GITHUB_TEST_TOKEN")))
+
+it.live.skipIf(Option.isNone(token))(Option.isNone(token) ? "SKIP: GITHUB_TEST_TOKEN is absent; real GitHub reads were not run" : "main's log from the empty cursor is the newest commits, each with a short sha and a title", () => effect {
+  if (Option.isNone(token)) return
+  provide FetchHttpClient.layer {
+    const commits = try githubMain("smithersai/effect", try HttpClient.HttpClient, Redacted.value(token.value)).since("")
+    expect(commits.length).toBeGreaterThan(0)
+    for (const commit of commits) {
+      expect(commit.sha).toMatch(/^[0-9a-f]{12}$/)
+      expect(typeof commit.title).toBe("string")
+    }
+  }
+}, 60_000)
