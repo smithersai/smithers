@@ -3375,8 +3375,7 @@ Vitest built-in bench, local. Load average 115 to 140 during the runs.
 **action-tour-repeat** (`bench/action-tour-repeat.bench.vibe`). The production action index and per-run hosts over
 node:sqlite object storage, a fresh world per sample. A maintainer starts Tour, then starts the same request again
 before its alarm: the second press joins the running tour. One running Tour run and one open guide entry are
-checked. A press that finds its tour accepted but still queued (`worker/ActionRuns.vibe` 54-61) needs a crash between
-admission and the run's start, so it stays uncovered.
+checked. A press that finds its tour accepted after its host stopped is action-crash-retry.
 
 **reply-outcomes** (`bench/reply-outcomes.bench.vibe`). The API Worker's production objects in workerd with the
 deterministic model service. Two posts per sample: the model answers "Bench empty." with an empty result and "Bench
@@ -3389,6 +3388,34 @@ page is checked against the one before it; both writes are refused `forbidden` f
 
 Limitations: deterministic model, so no inference latency; objects reach each other by fetch, not Alchemy RPC; the
 guest's Plan and Note measure their refusal, not a history write; the tour itself does not run in action-tour-repeat.
+
+## Runs interrupted partway (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/action-interrupted.bench.vibe`. Load average about 50.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| action-crash-retry | 314.5 | 3 | `2026-11-10T13-28-37.109Z-action-crash-retry.json` |
+| action-reply-interrupted | 719.5 | 3 | `2026-11-10T13-28-39.420Z-action-reply-interrupted.json` |
+
+**action-crash-retry.** The production per-run host over node:sqlite object storage, a fresh world per sample. The
+first host incarnation stops right after the conversation accepts a post (or starts a tour): that write commits and
+every later write on the incarnation dies (`stopsAfter`, `test/support/actionObjects.vibe`). The person's retry
+reaches a fresh incarnation over the same storage. Checked: the first start failed, the retry answers null without
+posting twice, the post run settles passed, the tour keeps one open guide entry, and both retries schedule the alarm.
+
+This workload found a bug, fixed with it: the post's first step traces before the post is accepted, so a stopped host
+leaves the run `running`, and the retry answered null with no alarm and no settlement. The post's run stayed running
+for good and its reply never woke. The retry now recovers a running post or tour as it does a queued one
+(`worker/ActionRuns.vibe`; regression tests in `test/actionRuns.coverage.test.vibe`).
+
+**action-reply-interrupted.** Same host with MockFactory, Mythical history and the scripted model service
+(`fuzz/model-server.vibe`). One post's reply meets a conversation log that dies on its first settle write: the engine
+fails the reply and the host fails its open entry ("Action failed"). Another post's reply is held at spend admission
+while the person cancels it, then released: it ends cancelled, not answered.
+
+Limitations: node:sqlite and an alarm field, not workerd scheduling; the stop is an injected sequencer, not an evicted
+isolate; scripted model, so no inference latency.
 
 ## Issues and wiki with GitHub unreachable (2026-11-10, nyc-01)
 

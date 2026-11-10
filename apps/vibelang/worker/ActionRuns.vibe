@@ -50,8 +50,10 @@ export effect function start(hostId: string, storage: Objects.Storage, sequencer
   const previous = try promise(() => storage.get<RunRequest>("action/request"))
   if (previous !== undefined && JSON.stringify(previous) !== JSON.stringify(request)) return "conflict"
   const existing = before.find(run => run.id === request.id)
-  if (existing !== undefined && existing.state !== "queued") return null
-  if (existing !== undefined && (request.flow === Tour._tag || request.flow === Post._tag)) {
+  const conversational = request.flow === Tour._tag || request.flow === Post._tag
+  // A host that stopped mid-start leaves its post or tour running: its first step's trace precedes the accepted write.
+  if (existing !== undefined && existing.state !== "queued" && !(conversational && existing.state === "running")) return null
+  if (existing !== undefined && conversational) {
     const snapshot = try sequencer.read(0)
     const accepted = request.flow === Tour._tag ? snapshot.entries.some(entry => entry.author === "agent" && !entry.done && entry.inReplyTo === "") : snapshot.entries.some(entry => entry.clientId === request.id)
     if (accepted) {
