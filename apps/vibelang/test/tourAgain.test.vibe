@@ -1,0 +1,57 @@
+// @vitest-environment node
+// A person ends a tour and presses Learn more again in the same conversation: the new tour starts over from its first
+// stop. The conversation object's own tour start, end and alarm (worker/Objects.vibe) over node:sqlite object storage.
+import { expect, it } from "@effect/vitest"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import * as Objects from "../worker/Objects.vibe"
+import { world, history } from "./support/actionObjects.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+
+it.live("a tour started after the person ended one starts over and greets them", () => scoped(effect {
+  const w = try world()
+  provide history {
+    const product = try Mythical
+    const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+    const sequencer = try Objects.conversation(storage)
+    const tours = effect () => (try sequencer.read(0)).entries.filter((entry) => entry.author === "agent")
+    const alarms = effect (count: number) => { for (let turn = 0; turn < count; turn++) try Objects.alarm("room", storage, sequencer, w.spend, w.model, product) }
+    expect(try Objects.tour("room", storage, sequencer)).toBeNull()
+    try alarms(2)
+    const greeting = (try tours())[0]!.text
+    expect(try Objects.endTour("room", storage, sequencer)).toBeNull()
+    const again = try Clock.currentTimeMillis
+    expect(try Objects.tour("room", storage, sequencer)).toBeNull()
+    try alarms(3)
+    const [first, second] = try tours()
+    const showing = (try sequencer.snapshot()).walkthrough
+    expect(greeting.length).toBeGreaterThan(0)
+    expect([first!.done, second!.done]).toEqual([true, false])
+    expect(second!.text).toBe(greeting)
+    expect(showing).toMatchObject({ step: 1, target: "splash" })
+    expect(showing!.at).toBeGreaterThanOrEqual(again)
+  }
+}), 60_000)
+
+it.live("in mock mode too, the tour after an ended one greets the person first", () => scoped(effect {
+  provide mockFactoryFor() {
+    const factory = try Factory
+    /** The first line the tour that starts after `after` says. */
+    const firstLine = (after: number) => effect {
+      const events = Array.from(try Stream.runCollect(factory.events("again", after).pipe(Stream.takeUntil((event) => event.type === "ReplyDelta"), Stream.timeout("5 seconds"))))
+      const said = events.at(-1)
+      return { types: events.map((event) => event.type), text: said?.type === "ReplyDelta" ? said.text : "" }
+    }
+    try factory.tour("again")
+    const first = try firstLine(0)
+    try factory.endTour("again")
+    const ended = (try factory.read("again", 0)).seq
+    try factory.tour("again")
+    const second = try firstLine(ended)
+    expect(first.text.length).toBeGreaterThan(0)
+    expect(second.types).toEqual(["TourStarted", "WalkthroughDriven", "ReplyDelta"])
+    expect(second.text).toBe(first.text)
+    try factory.endTour("again")
+  }
+}), 30_000)

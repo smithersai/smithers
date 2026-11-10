@@ -1088,6 +1088,19 @@ export function holdRemaining(remaining: number, started: number, now: number): 
 }
 
 /** Exact drive projection, returned as a required record for LemmaScript's optional-record boundary. */
+/**
+ * The walkthrough the running tour drove, `null` before it drove one. The conversation keeps an ended or finished
+ * tour's walkthrough; a later tour starts over instead of resuming it.
+ */
+//@ verify
+export function tourWalkthrough(conversation: Conversation): Walkthrough | null {
+  const showing = conversation.walkthrough
+  if (showing === undefined) return null
+  const tour = conversation.entries.find((entry) => entry.id === conversation.replying && entry.inReplyTo === "")
+  if (tour === undefined || showing.revision <= tour.seq) return null
+  return showing
+}
+
 //@ verify
 //@ ensures \result.step == step && \result.target == target && !\result.paused
 //@ ensures \result.revision == revision && \result.remaining == duration && \result.at == at
