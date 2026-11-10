@@ -33,7 +33,8 @@ export effect function main() {
   }
   // Node's statement structure is the gate; Chromium credits it only at identical source ranges (0015).
   const coverage = try Effect.try(() => createCoverageMap(mergeByPosition(inputs[0]!, inputs.slice(1))))
-  try Effect.try(() => coverage.filter((file) => file.startsWith(root) && /\/(?:src|worker)\/.*\.vibe$/.test(file) && file !== path.join(root, "worker/Api.vibe")))
+  // The unit gate's denominator: every source under src/, worker/, scripts/ and infra/, none excluded (VL-14).
+  try Effect.try(() => coverage.filter((file) => file.startsWith(root) && /\/(?:src|worker|scripts|infra)\/.*\.vibe$/.test(file)))
   const directory = path.join(root, "coverage/fuzz")
   try fs.makeDirectory(directory, { recursive: true })
   try fs.writeFileString(path.join(directory, "coverage-final.json"), JSON.stringify(coverage))

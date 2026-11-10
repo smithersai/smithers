@@ -16,9 +16,9 @@ export default defineConfig({
     ],
     coverage: {
       provider: "v8", autoAttachSubprocess: true,
-      include: ["src/**/*.vibe", "worker/**/*.vibe", "dist-factory/**/*.js"],
-      // Alchemy evaluates this declaration to build a Worker; the request code is Http/Objects in real workerd.
-      exclude: ["worker/Api.vibe"],
+      // The unit gate's denominator (vite.config.ts): VL-14 asks each suite to cover the whole codebase, so no file is
+      // excluded here either, including worker/Api.vibe, which Alchemy evaluates to build the Worker (0015).
+      include: ["src/**/*.vibe", "worker/**/*.vibe", "scripts/**/*.vibe", "infra/**/*.vibe", "dist-factory/**/*.js"],
       reporter: ["text", "json", "json-summary", "html", "lcov"],
       reportsDirectory: "coverage/fuzz-unit", reportOnFailure: true,
       ...(process.env.FUZZ_COLLECT_PARTIAL === "1" ? {} : { thresholds: { perFile: true, lines: 100, branches: 100, functions: 100, statements: 100 } }),
