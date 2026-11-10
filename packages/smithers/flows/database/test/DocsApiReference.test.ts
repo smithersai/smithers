@@ -31,7 +31,7 @@ const documented = (page: string, name: string): string => {
 describe("docs/api.md", () => {
   it("documents every afterCommit parameter", () => {
     const signature = documented(read("../docs/api.md"), "afterCommit")
-    const parameters = declared(read("../src/internal/CommitScope.ts"), "afterCommit")
+    const parameters = declared(read("../src/internal/CommitScope.vibe"), "afterCommit")
     expect(parameters.length).toBe(2)
     for (const parameter of parameters) expect(signature).toContain(parameter)
   })

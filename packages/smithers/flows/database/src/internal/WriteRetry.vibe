@@ -22,7 +22,7 @@ import * as SqlError from "effect/sql/SqlError"
 import * as DatabaseMetrics from "../DatabaseMetrics.vibe"
 // Type-only, so the module graph stays one-way: `DurableWriter` imports this
 // file at runtime, this file borrows only its code union.
-import type * as DurableWriter from "../DurableWriter.ts"
+import type * as DurableWriter from "../DurableWriter.vibe"
 
 /**
  * Configuration for write retries.

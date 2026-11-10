@@ -3,7 +3,7 @@ import { Context, Deferred, Effect, Fiber, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import { TestClock } from "effect/testing"
-import * as DurableWriter from "../src/DurableWriter.ts"
+import * as DurableWriter from "../src/DurableWriter.vibe"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
 
 const busy = new SqlError.SqlError({

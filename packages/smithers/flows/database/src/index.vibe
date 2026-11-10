@@ -21,7 +21,7 @@
  * @category services
  * @since 0.1.0
  */
-export * as DurableWriter from "./DurableWriter.ts"
+export * as DurableWriter from "./DurableWriter.vibe"
 
 /**
  * @category metrics
@@ -33,7 +33,7 @@ export * as DatabaseMetrics from "./DatabaseMetrics.vibe"
  * @category migrations
  * @since 0.1.0
  */
-export * as Migrations from "./Migrations.ts"
+export * as Migrations from "./Migrations.vibe"
 
 /**
  * @category models

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as SqlError from "effect/sql/SqlError"
-import { fromSqlError } from "../src/DurableWriter.ts"
+import { fromSqlError } from "../src/DurableWriter.vibe"
 
 // workerd's SQLite errors carry the SQLite diagnostic in message, without an extended numeric or string code.
 describe("workerd SQLite constraint provenance", () => {

@@ -131,7 +131,7 @@ const securityReview = Smithers.SecurityReview({
         "Dialect.query rewriting every '?' into $n, so a template containing a '?' in a string literal or a jsonb ?-operator binds values into the wrong position.",
         "A search_path setting, CREATE SCHEMA, or DROP SCHEMA that puts the schema into SQL text by hand instead of through sql(identifier), quote_ident or a bound parameter, or omits doubling embedded quotes."
       ],
-      paths: ["src/Dialect.vibe", "src/postgres/**", "src/test/TestDatabase.ts", "src/Migrations.ts"]
+      paths: ["src/Dialect.vibe", "src/postgres/**", "src/test/TestDatabase.ts", "src/Migrations.vibe"]
     },
     {
       id: "postgres-schema-isolation",
@@ -187,11 +187,11 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A misdeclared or malicious package migration set rewrites or drops another storage package's tables in the shared database.",
       lookFor: [
-        "A path in Migrations.ts finish or loaderFromPlan that applies a migration in a block whose recorded ledger names are not declared by the same namespace.",
+        "A path in Migrations.vibe finish or loaderFromPlan that applies a migration in a block whose recorded ledger names are not declared by the same namespace.",
         "previousNames accepting a name from another namespace, so a renamed migration adopts a foreign ledger row.",
         "A retry in run that re-applies a migration after a partial commit because the ledger insert and the migration are not in one transaction."
       ],
-      paths: ["src/Migrations.ts", "src/internal/WriteRetry.vibe"]
+      paths: ["src/Migrations.vibe", "src/internal/WriteRetry.vibe"]
     },
     {
       id: "test-helper-production-reach",

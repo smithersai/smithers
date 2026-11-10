@@ -4,8 +4,8 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { readFileSync } from "node:fs"
 import { inspect } from "node:util"
 import { expect, it } from "vitest"
-import * as DurableWriter from "../src/DurableWriter.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as DurableWriter from "../src/DurableWriter.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 import * as NodeDatabase from "../src/node/NodeDatabase.ts"
 
 it("prints exactly the SQLite row formatting shown in the quickstart", async () => {

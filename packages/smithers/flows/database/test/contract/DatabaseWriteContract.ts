@@ -27,8 +27,8 @@ import * as Fiber from "effect/Fiber"
 import * as Result from "effect/Result"
 import type * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
-import type * as DurableWriter from "../../src/DurableWriter.ts"
-import { affectedRows } from "../../src/DurableWriter.ts"
+import type * as DurableWriter from "../../src/DurableWriter.vibe"
+import { affectedRows } from "../../src/DurableWriter.vibe"
 import * as WriteRetry from "../../src/internal/WriteRetry.vibe"
 
 /**

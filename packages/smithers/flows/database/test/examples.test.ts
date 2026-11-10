@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { quickstart } from "../examples/quickstart.vibe"
-import * as DurableWriter from "../src/DurableWriter.ts"
+import * as DurableWriter from "../src/DurableWriter.vibe"
 
 describe("examples", () => {
   const directories: Array<string> = []

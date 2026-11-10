@@ -7,7 +7,7 @@ import { TestClock } from "effect/testing"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as NodeDatabase from "../src/node/NodeDatabase.ts"
 import { connect } from "./harness/connect.ts"
 

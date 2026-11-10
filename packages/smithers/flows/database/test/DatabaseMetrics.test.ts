@@ -9,7 +9,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import { TestClock } from "effect/testing"
 import * as DatabaseMetrics from "../src/DatabaseMetrics.vibe"
-import * as DurableWriter from "../src/DurableWriter.ts"
+import * as DurableWriter from "../src/DurableWriter.vibe"
 
 const sqliteError = (code: string): SqlError.SqlError =>
   new SqlError.SqlError({

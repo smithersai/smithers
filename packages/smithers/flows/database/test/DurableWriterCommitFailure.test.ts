@@ -3,7 +3,7 @@ import { Cause, Effect, Exit, Result } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import { expectTypeOf } from "vitest"
-import * as DurableWriter from "../src/DurableWriter.ts"
+import * as DurableWriter from "../src/DurableWriter.vibe"
 import * as NodeDatabase from "../src/node/NodeDatabase.ts"
 
 const deferredCommit = Effect.gen(function*() {

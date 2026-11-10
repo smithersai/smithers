@@ -47,13 +47,13 @@
       "default": "./.vibelang/js/src/DatabaseMetrics.js"
     },
     "./DurableWriter": {
-      "types": "./src/DurableWriter.ts",
-      "vibelang-source": "./src/DurableWriter.ts",
+      "types": "./.vibe/declarations/src/DurableWriter.d.vibe.ts",
+      "vibelang-source": "./src/DurableWriter.vibe",
       "default": "./.vibelang/js/src/DurableWriter.js"
     },
     "./Migrations": {
-      "types": "./src/Migrations.ts",
-      "vibelang-source": "./src/Migrations.ts",
+      "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
+      "vibelang-source": "./src/Migrations.vibe",
       "default": "./.vibelang/js/src/Migrations.js"
     },
     "./UnsupportedBackend": {

@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import * as DurableWriter from "../src/DurableWriter.ts"
+import * as DurableWriter from "../src/DurableWriter.vibe"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
 import { describeContract, type Harness } from "./contract/DatabaseWriteContract.ts"
 import { connect } from "./harness/connect.ts"

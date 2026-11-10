@@ -15,7 +15,7 @@
 import { Cause, Context, Effect, Exit, Layer, Option, Schema, Semaphore } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
-import * as CommitScope from "./internal/CommitScope.ts"
+import * as CommitScope from "./internal/CommitScope.vibe"
 import * as WriteLock from "./internal/WriteLock.vibe"
 import * as WriteRetry from "./internal/WriteRetry.vibe"
 
@@ -226,7 +226,7 @@ const rowCountOf = (raw: unknown, field: string): number | undefined => {
     return Number.isSafeInteger(count) && count >= 0 ? count : undefined
   }
   if (typeof count === "bigint") {
-    return count >= 0n && count <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(count) : undefined
+    return count >= 0n && count <= Number.MAX_SAFE_INTEGER ? Number(count) : undefined
   }
   return undefined
 }
@@ -284,13 +284,13 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
       effect: Effect.Effect<A, E, R>,
       writeOptions?: WriteOptions | undefined
     ): Effect.Effect<A, Exclude<E, SqlError.SqlError> | DatabaseError, R> =>
-      Effect.gen(function*() {
+      effect {
         const partition = writeOptions?.partition
-        const enclosing = yield* Effect.serviceOption(sql.transactionService)
-        const parent = yield* CommitScope.Current
+        const enclosing = try Effect.serviceOption(sql.transactionService)
+        const parent = try CommitScope.Current
         const nested = Option.isSome(enclosing)
         const managed = !nested || CommitScope.matches(parent, sql.transactionService, enclosing.value)
-        yield* Effect.annotateCurrentSpan({ nested, partitioned: partition !== undefined })
+        try Effect.annotateCurrentSpan({ nested, partitioned: partition !== undefined })
         // Allocate inside the retry boundary. Each savepoint also owns a fresh
         // list so a failure caught by its parent cannot publish rolled-back data.
         const attempt = Effect.suspend(() => {
@@ -328,11 +328,13 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
             Effect.catchCause((cause) =>
               Effect.failCause(
                 !bodyStarted || (!nested && bodySucceeded)
-                  ? Cause.fromReasons(cause.reasons.map((reason) =>
-                    Cause.isDieReason(reason) && SqlError.isSqlError(reason.defect)
-                      ? Cause.makeFailReason(reason.defect)
-                      : reason
-                  ))
+                  ? Cause.fromReasons(
+                    cause.reasons.map((reason) =>
+                      Cause.isDieReason(reason) && SqlError.isSqlError(reason.defect)
+                        ? Cause.makeFailReason(reason.defect)
+                        : reason
+                    )
+                  )
                   : cause
               )
             ),
@@ -342,7 +344,7 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
             Effect.map((value) => ({ value, effects }))
           )
         })
-        return yield* Effect.uninterruptibleMask((restore) => {
+        return try Effect.uninterruptibleMask((restore) => {
           // Only an outer write queues for the permit; a savepoint already owns
           // the connection. The permit is taken at the CALLER's interruptibility
           // and BEFORE Effect SQL masks its connection acquisition, so a queued
@@ -368,7 +370,7 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
             )
           )
         })
-      })
+      }
     )
   })
 }

@@ -55,11 +55,11 @@ export const afterCommit = (
   effect: Effect.Effect<void>,
   client?: SqlClient.SqlClient
 ): Effect.Effect<boolean> =>
-  Effect.gen(function*() {
-    const scope = yield* Current
+  effect {
+    const scope = try Current
     if (scope === undefined || (client !== undefined && scope.key !== client.transactionService)) return false
-    const transaction = yield* Effect.serviceOption(scope.key)
+    const transaction = try Effect.serviceOption(scope.key)
     if (Option.isNone(transaction) || !matches(scope, scope.key, transaction.value)) return false
     scope.effects.push(effect)
     return true
-  })
+  }

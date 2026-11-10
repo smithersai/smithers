@@ -13,7 +13,7 @@ import * as Exit from "effect/Exit"
 import * as Result from "effect/Result"
 import * as Migrator from "effect/sql/Migrator"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
 
 const createTable = (name: string) =>

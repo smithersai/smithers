@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as BunDatabase from "../../src/bun/BunDatabase.ts"
-import * as DurableWriter from "../../src/DurableWriter.ts"
+import * as DurableWriter from "../../src/DurableWriter.vibe"
 
 const root = mkdtempSync(join(tmpdir(), "flows-bun-native-"))
 const filename = join(root, "native.sqlite")

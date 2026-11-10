@@ -144,7 +144,7 @@ const migrationId = (value: unknown): Effect.Effect<number, Migrator.MigrationEr
   if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
     return Effect.succeed(value)
   }
-  if (typeof value === "bigint" && value >= 0n && value <= BigInt(Number.MAX_SAFE_INTEGER)) {
+  if (typeof value === "bigint" && value >= 0n && value <= Number.MAX_SAFE_INTEGER) {
     return Effect.succeed(Number(value))
   }
   return Effect.fail(fail(`${table} contains an invalid migration_id: ${String(value)}`))
@@ -160,9 +160,9 @@ const migrationId = (value: unknown): Effect.Effect<number, Migrator.MigrationEr
  *
  * @private
  */
-const appliedIds = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  const rows = yield* sql<{
+const appliedIds = effect {
+  const sql = try SqlClient.SqlClient
+  const rows = try sql<{
     readonly migration_id: unknown
     readonly name: string
   }>`SELECT migration_id, name FROM ${sql(table)}`.withoutTransform.pipe(
@@ -171,9 +171,9 @@ const appliedIds = Effect.gen(function*() {
     )
   )
   return new Map(
-    yield* Effect.forEach(rows, (row) => Effect.map(migrationId(row.migration_id), (id) => [id, row.name] as const))
+    try Effect.forEach(rows, (row) => Effect.map(migrationId(row.migration_id), (id) => [id, row.name] as const))
   )
-})
+}
 
 /**
  * The migration with global id zero, which `Migrator` can never run: it
@@ -199,10 +199,10 @@ interface ZeroMigration {
  * @private
  */
 const applyZero = (zero: ZeroMigration) =>
-  Effect.gen(function*() {
-    const sql = yield* SqlClient.SqlClient
-    yield* zero.migration
-    yield* sql`INSERT INTO ${sql(table)} ${sql.insert([{ migration_id: 0, name: zero.name }])}`.withoutTransform
+  (effect {
+    const sql = try SqlClient.SqlClient
+    try zero.migration
+    try sql`INSERT INTO ${sql(table)} ${sql.insert([{ migration_id: 0, name: zero.name }])}`.withoutTransform
   }).pipe(
     Effect.catch((cause) =>
       Effect.fail(new Migrator.MigrationError({ cause, kind: "Failed", message: `Migration "0_${zero.name}" failed` }))
@@ -254,20 +254,18 @@ const finish = (
   previousNames: ReadonlyMap<number, ReadonlySet<string>>,
   onLoaderApplied: (entry: readonly [id: number, name: string]) => Effect.Effect<void>
 ) =>
-  Effect.gen(function*() {
-    const recorded = yield* appliedIds
+  effect {
+    const recorded = try appliedIds
     const applied = new Set(recorded.keys())
     for (const [id, name] of resolved) {
       const recordedName = recorded.get(id)
       if (recordedName !== undefined && recordedName !== name && !previousNames.get(id)?.has(recordedName)) {
-        return yield* Effect.fail(
-          fail(`Migration ${id} was recorded as ${recorded.get(id)}, but this package declares ${name}`)
-        )
+        throw fail(`Migration ${id} was recorded as ${recorded.get(id)}, but this package declares ${name}`)
       }
     }
     if (applied.size === 0 && zero !== undefined) {
-      yield* applyZero(zero)
-      yield* onLoaderApplied([0, zero.name])
+      try applyZero(zero)
+      try onLoaderApplied([0, zero.name])
       applied.add(0)
     }
     const highWater = Math.max(0, ...applied)
@@ -282,10 +280,10 @@ const finish = (
     for (const [id, name] of resolved) {
       const block = Math.floor(id / idBlock)
       if (!applied.has(id) && installed.has(block) && !knownBlocks.has(block)) {
-        return yield* Effect.fail(fail(
+        throw fail(
           `Migration ${id}_${name} cannot append to installed block ${block * idBlock} ` +
             `without declaring a matching recorded migration`
-        ))
+        )
       }
     }
     // An existing package may append within its reserved block after another
@@ -295,20 +293,24 @@ const finish = (
       const block = Math.floor(id / idBlock)
       const previous = installed.get(block)
       if (id > highWater || applied.has(id) || previous === undefined || id <= previous) continue
-      const sql = yield* SqlClient.SqlClient
-      const migration = yield* load
-      yield* Effect.gen(function*() {
-        yield* migration
-        yield* sql`INSERT INTO ${sql(table)} ${sql.insert([{ migration_id: id, name }])}`.withoutTransform
-      }).pipe(Effect.catch((cause) =>
-        Effect.fail(new Migrator.MigrationError({ cause, kind: "Failed", message: `Migration "${id}_${name}" failed` }))
-      ))
+      const sql = try SqlClient.SqlClient
+      const migration = try load
+      try (effect {
+        try migration
+        try sql`INSERT INTO ${sql(table)} ${sql.insert([{ migration_id: id, name }])}`.withoutTransform
+      }).pipe(
+        Effect.catch((cause) =>
+          Effect.fail(
+            new Migrator.MigrationError({ cause, kind: "Failed", message: `Migration "${id}_${name}" failed` })
+          )
+        )
+      )
       applied.add(id)
       installed.set(block, id)
-      yield* onLoaderApplied([id, name])
+      try onLoaderApplied([id, name])
     }
-    return yield* rejectSkipped(resolved, applied)
-  })
+    return try rejectSkipped(resolved, applied)
+  }
 
 /**
  * Runs `migration` with `triggers` firing at the end of each statement, then
@@ -498,24 +500,24 @@ export const run = (
   SqlClient.SqlClient
 > => {
   const plan = snapshotMigrationSets(sets)
-  return Effect.gen(function*() {
-    const sql = yield* SqlClient.SqlClient
+  return effect {
+    const sql = try SqlClient.SqlClient
     // On PostgreSQL every pass below takes the schema's writer lock, which
     // holds up every other writer, and a Durable Object migrates at every
     // alarm. A ledger that already records every planned migration needs no
     // pass, so one lock-free read answers the common case.
-    if (sql.onDialectOrElse({ pg: () => true, orElse: () => false }) && (yield* installed(sql, plan))) return []
+    if (sql.onDialectOrElse({ pg: () => true, orElse: () => false }) && (try installed(sql, plan))) return []
     // Effect's PostgreSQL migrator probes before creating its ledger. Serialize
     // that first creation as well as the migration pass on a fresh schema.
-    yield* sql.onDialectOrElse({
+    try sql.onDialectOrElse({
       pg: () =>
         sql.withTransaction(sql`CREATE TABLE IF NOT EXISTS ${sql(table)} (
         migration_id INTEGER PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), name TEXT NOT NULL
       )`),
       orElse: () => Effect.void
     })
-    const loaderApplied = yield* Ref.make<ReadonlyArray<readonly [id: number, name: string]>>([])
-    const completed = yield* WriteRetry.withWriteRetry(
+    const loaderApplied = try Ref.make<ReadonlyArray<readonly [id: number, name: string]>>([])
+    const completed = try WriteRetry.withWriteRetry(
       Migrator.make({})({
         // Reset before each attempt: a retry that finds a peer already applied
         // a lower-block append must not report rolled-back applications.
@@ -525,9 +527,9 @@ export const run = (
         table
       })
     )
-    const appliedByLoader = yield* Ref.get(loaderApplied)
+    const appliedByLoader = try Ref.get(loaderApplied)
     return [...appliedByLoader, ...completed]
-  })
+  }
 }
 
 /**
@@ -545,22 +547,22 @@ const installed = (
   sql: SqlClient.SqlClient,
   plan: ReadonlyArray<PlannedMigrationSet>
 ): Effect.Effect<boolean> =>
-  Effect.gen(function*() {
-    if (Option.isSome(yield* Effect.serviceOption(sql.transactionService))) return false
-    const resolution = yield* Effect.option(resolvePlan(plan))
+  effect {
+    if (Option.isSome(try Effect.serviceOption(sql.transactionService))) return false
+    const resolution = try Effect.option(resolvePlan(plan))
     if (resolution._tag === "None") return false
-    const [ledger] = yield* sql<{ readonly found: boolean }>`
+    const [ledger] = try sql<{ readonly found: boolean }>`
       SELECT to_regclass(${table}) IS NOT NULL AS found
     `.pipe(Effect.orElseSucceed(() => []))
     if (ledger?.found !== true) return false
-    const recorded = yield* Effect.option(Effect.provideService(appliedIds, SqlClient.SqlClient, sql))
+    const recorded = try Effect.option(Effect.provideService(appliedIds, SqlClient.SqlClient, sql))
     if (recorded._tag === "None") return false
     const { previousNames, resolved } = resolution.value
     return resolved.every(([id, name]) => {
       const recordedName = recorded.value.get(id)
       return recordedName === name || (recordedName !== undefined && previousNames.get(id)?.has(recordedName) === true)
     })
-  })
+  }
 
 /**
  * Layer that runs the given migration sets before exposing the database to
