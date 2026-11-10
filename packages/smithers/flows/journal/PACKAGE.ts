@@ -70,7 +70,7 @@ const securityReview = Smithers.SecurityReview({
         "An idempotency or fingerprint comparison computed over the raw rather than the redacted value, so a reused source event stores or echoes unredacted text.",
         "A default that resolves to Redaction.makeNoop instead of Redaction.make when options.redact is omitted."
       ],
-      paths: ["src/SqlJournal.ts", "src/Journal.ts"]
+      paths: ["src/SqlJournal.ts", "src/Journal.vibe"]
     },
     {
       id: "redaction-rule-coverage",

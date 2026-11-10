@@ -6,7 +6,7 @@ import type * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
 import { TestClock } from "effect/testing"
-import { EntriesOptions, Journal, JournalError, maxEntriesLimit } from "../src/Journal.ts"
+import { EntriesOptions, Journal, JournalError, maxEntriesLimit } from "../src/Journal.vibe"
 import {
   Entry,
   Input,

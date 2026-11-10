@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Layer, Stream } from "effect"
-import { Journal } from "../src/Journal.ts"
-import * as JournalLive from "../src/Journal.ts"
+import { Journal } from "../src/Journal.vibe"
+import * as JournalLive from "../src/Journal.vibe"
 import * as Notifying from "../src/test/Notifying.ts"
 
 const record = (log: Array<string>): Notifying.Hook => (op, order, args) =>

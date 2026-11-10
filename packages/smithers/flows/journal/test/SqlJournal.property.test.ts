@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import * as FastCheck from "fast-check"
 import { effectProperty } from "../../../../repo-targets/test-utils/effect-property.mjs"
-import { type EntriesPage, Journal } from "../src/Journal.ts"
+import { type EntriesPage, Journal } from "../src/Journal.vibe"
 import type { Entry, RunId, Seq, SourceId } from "../src/JournalEvent.vibe"
 import * as TestJournal from "../src/test/TestJournal.vibe"
 

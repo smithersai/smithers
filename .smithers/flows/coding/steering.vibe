@@ -1,7 +1,7 @@
 /** Request messages belong to the coordinator; model settings keep their lane. */
 import type * as ControlRuntime from "@smthrs/control/ControlRuntime"
 import { Action, FlowRuntime } from "@smthrs/flow"
-import type * as Journal from "../../../packages/smithers/flows/journal/src/Journal.ts"
+import type * as Journal from "../../../packages/smithers/flows/journal/src/Journal.vibe"
 import * as JournalEvent from "../../../packages/smithers/flows/journal/src/JournalEvent.vibe"
 import * as Notification from "../../../packages/smithers/notifications/src/Notification.vibe"
 import * as NotificationEvent from "../../../packages/smithers/notifications/src/NotificationEvent.vibe"

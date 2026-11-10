@@ -467,13 +467,13 @@ export interface Service {
    * Rewinding adapters must advance the generation atomically with truncation.
    */
   readonly generation?:
-    | ((runId: RunId) => Effect.Effect<{
+    | ((runId: RunId) => {
       readonly generation: number
       readonly afterSeq: number
-    }, JournalError>)
+    }!JournalError)
     | undefined
-  readonly emitLossy: (input: Input) => Effect.Effect<EmitReceipt, JournalError>
-  readonly emitDurable: (input: Input, owner: OwnerId) => Effect.Effect<DurableReceipt, JournalError>
+  readonly emitLossy: (input: Input) => EmitReceipt!JournalError
+  readonly emitDurable: (input: Input, owner: OwnerId) => DurableReceipt!JournalError
   /**
    * The unfenced durable write: same durability and receipt contract as
    * {@link Service.emitDurable}, with no ownership fence.
@@ -487,7 +487,7 @@ export interface Service {
    * `OwnerId` must use `emitDurable`; reaching for this channel to dodge a
    * `fence_lost` is exactly the zombie write the fence exists to reject.
    */
-  readonly emitDurableUnfenced: (input: Input) => Effect.Effect<DurableReceipt, JournalError>
+  readonly emitDurableUnfenced: (input: Input) => DurableReceipt!JournalError
   /**
    * Queues a fenced lifecycle entry to commit with its run's next durable
    * write through this journal, instead of in a transaction of its own: the
@@ -512,7 +512,7 @@ export interface Service {
    *
    * Optional: a journal without it is used through `emitDurable`.
    */
-  readonly emitDeferred?: ((input: Input, owner: OwnerId) => Effect.Effect<void, JournalError>) | undefined
+  readonly emitDeferred?: ((input: Input, owner: OwnerId) => void!JournalError) | undefined
   /**
    * Reads the run's committed entries, its latest ones up to what this
    * journal keeps in memory, so that a re-emission of one is answered without
@@ -521,7 +521,7 @@ export interface Service {
    *
    * Optional: a journal without it answers every re-emission with a write.
    */
-  readonly recall?: ((runId: RunId) => Effect.Effect<void, JournalError>) | undefined
+  readonly recall?: ((runId: RunId) => void!JournalError) | undefined
   /**
    * Whether this journal knows `input` is committed: an entry with its
    * producer identity (`sourceId` and `sourceSeq`) and its content, from its
@@ -536,7 +536,7 @@ export interface Service {
    *
    * Optional: a journal without it knows nothing.
    */
-  readonly recorded?: ((input: Input) => Effect.Effect<boolean>) | undefined
+  readonly recorded?: ((input: Input) => boolean!!) | undefined
   /**
    * Runs `effect`, a state projection plus the `emitDurable` calls describing
    * it, inside ONE write transaction.
@@ -571,9 +571,9 @@ export interface Service {
    * only with that run's writers. Omitted, it serializes with every writer.
    */
   readonly transact: <A, E, R>(
-    effect: Effect.Effect<A, E, R>,
+    effect: A!E!R,
     options?: WriteOptions | undefined
-  ) => Effect.Effect<A, E | JournalError, R>
+  ) => A!(E | JournalError)!R
   /**
    * Publishes a short, non-failing process-local update after the current
    * transaction commits, or immediately when no transaction is open.
@@ -583,7 +583,7 @@ export interface Service {
    * already run. Failed savepoints and retries discard their registrations.
    * Test doubles that implement transactions must preserve this contract.
    */
-  readonly whenCommitted: (update: Effect.Effect<void>) => Effect.Effect<boolean>
+  readonly whenCommitted: (update: void!!) => boolean!!
   /**
    * Replays the run's durable history from `afterSequence`, then follows it.
    *
@@ -602,7 +602,7 @@ export interface Service {
    * compaction floor fails with `compacted`, exactly as `stream` does, so a
    * poller and a follower cannot disagree about what history exists.
    */
-  readonly entries: (options: EntriesOptions) => Effect.Effect<EntriesPage, JournalError>
+  readonly entries: (options: EntriesOptions) => EntriesPage!JournalError
   /**
    * Subscribes to entries this process commits, across every run.
    *
@@ -619,12 +619,12 @@ export interface Service {
    * Published entries are deeply frozen, so one subscriber cannot mutate the
    * value another subscriber is about to read.
    */
-  readonly changes: Effect.Effect<PubSub.Subscription<Entry>, never, Scope.Scope>
+  readonly changes: PubSub.Subscription<Entry>!never!Scope.Scope
   readonly project: <S, E, R>(
     projection: Projection<S, E, R>,
     options: StreamOptions
   ) => Stream.Stream<S, JournalError, R>
-  readonly flush: Effect.Effect<void, JournalError>
+  readonly flush: void!JournalError
   /**
    * Durably records the state that replays the run from `options.seq`.
    *
@@ -640,7 +640,7 @@ export interface Service {
    * `fence_lost`. The fence is mandatory: a zombie owner must not replace
    * replay state behind a live successor.
    */
-  readonly checkpoint: (options: CheckpointOptions, owner: OwnerId) => Effect.Effect<Checkpoint, JournalError>
+  readonly checkpoint: (options: CheckpointOptions, owner: OwnerId) => Checkpoint!JournalError
   /**
    * Reads the run's most recent checkpoint, compacted or not.
    *
@@ -648,7 +648,7 @@ export interface Service {
    * `checkpoint.state`, then continue from
    * `stream({ runId, afterSequence: checkpoint.seq })`.
    */
-  readonly latestCheckpoint: (runId: RunId) => Effect.Effect<Option.Option<Checkpoint>, JournalError>
+  readonly latestCheckpoint: (runId: RunId) => Option.Option<Checkpoint>!JournalError
   /**
    * Deletes the run's entries strictly below a checkpoint, atomically with
    * advancing the run's compaction floor.
@@ -663,7 +663,7 @@ export interface Service {
    * below the floor fails with `compacted` and the floor to resync from,
    * never a silently shortened history.
    */
-  readonly compact: (options: CompactOptions, owner: OwnerId) => Effect.Effect<Compacted, JournalError>
+  readonly compact: (options: CompactOptions, owner: OwnerId) => Compacted!JournalError
 }
 
 /**
@@ -707,7 +707,7 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service => {
      * `DurableEngineState`'s in-memory twin, whose `transaction` has no crash
      * window to close. A test double that models rollback overrides it.
      */
-    transact: <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | JournalError, R> => effect,
+    transact: <A, E, R>(effect: A!E!R): A!(E | JournalError)!R => effect,
     whenCommitted: (update) => Effect.as(update, true),
     stream: (options) =>
       Stream.unwrap(

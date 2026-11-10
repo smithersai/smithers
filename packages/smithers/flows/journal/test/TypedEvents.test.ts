@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import * as EngineEvent from "../src/EngineEvent.vibe"
-import * as Journal from "../src/Journal.ts"
+import * as Journal from "../src/Journal.vibe"
 import * as Event from "../src/JournalEvent.vibe"
 import * as TestJournal from "../src/test/TestJournal.vibe"
 

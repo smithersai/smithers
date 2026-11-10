@@ -35,7 +35,7 @@ describe("journal documentation contracts", () => {
   })
 
   it("lists every Service operation, including optional members", () => {
-    const service = read("../src/Journal.ts").split("export interface Service {")[1]!.split("\n}")[0]!
+    const service = read("../src/Journal.vibe").split("export interface Service {")[1]!.split("\n}")[0]!
     const members = [...service.matchAll(/^  readonly (\w+)(\?)?:/gm)]
       .map((match) => `${match[1]}${match[2] ?? ""}`)
     const reference = read("../docs/api.md")

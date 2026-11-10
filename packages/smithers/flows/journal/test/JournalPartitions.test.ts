@@ -19,7 +19,7 @@ import { Clock, Context, Deferred, Duration, Effect, Fiber, Layer } from "effect
 import * as SqlClient from "effect/sql/SqlClient"
 import { randomUUID } from "node:crypto"
 import { Consensus } from "../src/Consensus.vibe"
-import { Journal, JournalError, type Service } from "../src/Journal.ts"
+import { Journal, JournalError, type Service } from "../src/Journal.vibe"
 import { Input, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.vibe"
 import * as Migrations from "../src/Migrations.vibe"
 import type { OwnerId } from "../src/OwnerId.vibe"

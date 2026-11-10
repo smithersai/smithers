@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
-import { Journal } from "../src/Journal.ts"
+import { Journal } from "../src/Journal.vibe"
 import { Input, type RunId, type Seq, type SourceId } from "../src/JournalEvent.vibe"
 import * as Migrations from "../src/Migrations.vibe"
 import * as Projection from "../src/Projection.vibe"

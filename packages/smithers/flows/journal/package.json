@@ -43,8 +43,8 @@
     "./migrations/*": null,
     "./*/index": null,
     "./Journal": {
-      "types": "./src/Journal.ts",
-      "vibelang-source": "./src/Journal.ts",
+      "types": "./.vibe/declarations/src/Journal.d.vibe.ts",
+      "vibelang-source": "./src/Journal.vibe",
       "default": "./.vibelang/js/src/Journal.js"
     },
     "./JournalEvent": {

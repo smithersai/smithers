@@ -4,7 +4,7 @@ import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Stream } from "eff
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
 import { vi } from "vitest"
-import { Journal } from "../src/Journal.ts"
+import { Journal } from "../src/Journal.vibe"
 import { Input, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.vibe"
 import * as Migrations from "../src/Migrations.vibe"
 import * as SqlJournal from "../src/SqlJournal.ts"

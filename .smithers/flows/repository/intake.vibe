@@ -2,7 +2,7 @@
 import { FlowRuntime } from "@smthrs/flow"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
-import * as Journal from "../../../packages/smithers/flows/journal/src/Journal.ts"
+import * as Journal from "../../../packages/smithers/flows/journal/src/Journal.vibe"
 import * as JournalEvent from "../../../packages/smithers/flows/journal/src/JournalEvent.vibe"
 import { CodingError } from "../coding/schema.ts"
 import type { Event, IntakeScreening } from "./schema.vibe"

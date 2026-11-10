@@ -52,7 +52,7 @@ export * as StepFact from "./StepFact.vibe"
  * @category services
  * @since 0.1.0
  */
-export * as Journal from "./Journal.ts"
+export * as Journal from "./Journal.vibe"
 
 /**
  * @category layers

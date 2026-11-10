@@ -57,7 +57,7 @@ import {
   type OverflowPolicy,
   type Service,
   StreamOptions
-} from "./Journal.ts"
+} from "./Journal.vibe"
 import {
   type Dedupe,
   Entry,

@@ -18,7 +18,7 @@ import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { Journal } from "../../../packages/smithers/flows/journal/src/Journal.ts"
+import { Journal } from "../../../packages/smithers/flows/journal/src/Journal.vibe"
 import { Refreshed } from "../coding/planning-wiki.vibe"
 import { CreateStackBase, PrepareStackBase } from "../coding/stack.vibe"
 import { withDependencyPages } from "../coding/wiki-refresh.ts"
