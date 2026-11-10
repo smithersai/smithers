@@ -1901,3 +1901,13 @@ The full fuzz report also merges its Chromium evidence: 7247/7768 lines (93.29%)
 under the retained `coverage-source-ranges` negative control. The Node + workerd comparison above isolates this
 lane's measurement change. Unit and fuzz gates both retain every source in the audit's roster and their 100%
 thresholds. No dependency was added; no upstream compiler or package change was required for workerd measurement.
+
+## Every browser check carries evidence (vl-coverage, 2026-11-10)
+
+Chromium coverage is a Playwright fixture (`e2e/coverage.ts`): only a spec that imports `test` from `./coverage`
+collects it. `e2e/wikiEdit.spec.ts` and `e2e/authbroker.spec.ts` imported `@playwright/test`, so their 5 checks per
+project ran and passed while the report credited none of their code. In the last full snapshot `beginWikiEdit`,
+`wikiEditScreen` and `knownWikiSource` (`src/web/main.vibe`) read 0 calls although the edit checks ran them. Both specs
+now use the fixture. A focused dark-project run of the two: 6 passed, all with evidence, and the three functions read
+called. The reporter now names every executed check without evidence (`missingEvidence`), and `pnpm e2e:coverage`
+fails on one (`gateFailed`, `test/browserCoverageEvidence.test.vibe`), so a new spec can't hide its code again.

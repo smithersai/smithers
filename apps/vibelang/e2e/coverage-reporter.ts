@@ -97,11 +97,25 @@ export async function measure(entries: Iterable<any> | AsyncIterable<any>, direc
   return coverage
 }
 
+/**
+ * Whether the strict gate fails: a metric below 100%, an executed check that attached no Chromium evidence, or a green
+ * run with no evidence at all. A check without evidence ran code the report cannot see, so its gaps would be false.
+ */
+export function gateFailed(gaps: number, unmeasured: number, evidence: number, status: FullResult["status"]): boolean {
+  return gaps > 0 || unmeasured > 0 || (evidence === 0 && status === "passed")
+}
+
 /** Remaps every executed bundle with the compiler/Vite maps; no test or generated JS is credited as source. */
 export default class SourceCoverage implements Reporter {
   private readonly files = new Set<string>()
   private executed = 0
   private readonly counts = { passed: 0, expectedFailures: 0, skipped: 0, unexpected: 0 }
+  private readonly unmeasured: Array<string> = []
+
+  /** Executed checks with no Chromium evidence: their spec imports `test` from "@playwright/test", not "./coverage". */
+  get missingEvidence(): ReadonlyArray<string> {
+    return this.unmeasured
+  }
 
   onTestEnd(test: TestCase, result: TestResult) {
     if (result.status === "skipped") this.counts.skipped++
@@ -110,6 +124,9 @@ export default class SourceCoverage implements Reporter {
       if (result.status === "failed" && test.expectedStatus === "failed") this.counts.expectedFailures++
       else if (result.status === "passed" && test.expectedStatus === "passed") this.counts.passed++
       else this.counts.unexpected++
+      if (!result.attachments.some((attachment) => attachment.name === "chromium-coverage" && attachment.path)) {
+        this.unmeasured.push(`${test.location.file.startsWith(root) ? test.location.file.slice(root.length) : test.location.file}:${test.location.line} ${test.title}`)
+      }
     }
     for (const attachment of result.attachments) {
       if (attachment.name === "chromium-coverage" && attachment.path) this.files.add(attachment.path)
@@ -118,6 +135,7 @@ export default class SourceCoverage implements Reporter {
 
   async onEnd(result: FullResult) {
     console.info(`Chromium checks: ${this.counts.passed} passed; ${this.counts.expectedFailures} expected failures; ${this.counts.skipped} skipped; ${this.counts.unexpected} unexpected.`)
+    if (this.unmeasured.length > 0) console.error(`Chromium checks without coverage evidence (import test from "./coverage"): ${this.unmeasured.length}\n${this.unmeasured.join("\n")}`)
     if (this.executed === 0) return
     const files = this.files
     // One attachment at a time; each script's source and map are read once (coverageStore.ts).
@@ -137,6 +155,6 @@ export default class SourceCoverage implements Reporter {
     console.info(`Chromium coverage: ${coverage.files().length} files, ${gaps.length} metrics below 100%; report in coverage/browser.`)
     if (!strict) return
     if (gaps.length > 0) console.error(`Chromium coverage gate failed:\n${gaps.join("\n")}`)
-    if (gaps.length > 0 || (this.files.size === 0 && result.status === "passed")) return { status: "failed" as const }
+    if (gateFailed(gaps.length, this.unmeasured.length, this.files.size, result.status)) return { status: "failed" as const }
   }
 }

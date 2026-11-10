@@ -1,0 +1,35 @@
+// @vitest-environment node
+// A browser check that runs without the coverage fixture executes app code the Chromium report never sees, so the
+// report would call that code uncovered. The reporter names each such check, and the strict gate fails on it.
+import { describe, expect, it } from "@effect/vitest"
+import SourceCoverage, { gateFailed } from "../e2e/coverage-reporter.ts"
+
+const app = new URL("../", import.meta.url).pathname
+
+/** A finished Playwright check, as the reporter receives it: only the fields it reads. */
+function check(file: string, line: number, title: string, status: "passed" | "failed" | "skipped", evidence: boolean) {
+  const test = { title, expectedStatus: "passed", location: { file: `${app}${file}`, line, column: 1 } }
+  const result = { status, attachments: evidence ? [{ name: "chromium-coverage", path: "/tmp/chromium.json", contentType: "application/json" }] : [] }
+  return [test, result] as const
+}
+
+describe("Chromium coverage evidence", () => {
+  it("names each executed check that attached no evidence, and no skipped or measured one", () => {
+    const reporter = new SourceCoverage()
+    for (const [test, result] of [
+      check("e2e/wikiEdit.spec.ts", 6, "edits", "passed", false),
+      check("e2e/chat.spec.ts", 9, "answers", "passed", true),
+      check("e2e/tour.spec.ts", 3, "opt-in", "skipped", false),
+      check("e2e/authbroker.spec.ts", 4, "signs in", "failed", false),
+    ]) reporter.onTestEnd(test as never, result as never)
+    expect(reporter.missingEvidence).toEqual(["e2e/wikiEdit.spec.ts:6 edits", "e2e/authbroker.spec.ts:4 signs in"])
+  })
+
+  it("fails the strict gate on a gap, an unmeasured check, or a green run with no evidence", () => {
+    expect(gateFailed(0, 0, 3, "passed")).toBe(false)
+    expect(gateFailed(1, 0, 3, "passed")).toBe(true)
+    expect(gateFailed(0, 1, 3, "passed")).toBe(true)
+    expect(gateFailed(0, 0, 0, "passed")).toBe(true)
+    expect(gateFailed(0, 0, 0, "failed")).toBe(false)
+  })
+})
