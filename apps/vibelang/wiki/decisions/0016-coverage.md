@@ -715,6 +715,18 @@ the accounts object lost mid-run. The in-process world moved out of `fuzz/api-ob
 - **Found, kept:** losing the accounts object while the agent runs fails its whole reply ("The agent failed. Try
   again."), not just the tool: the history tools' role lookup (`identity.role`, line 239) dies. The person can retry.
 
+**`worker/SpecificationReviewers.vibe` (2026-11-10).** 33/51 statements → 50/51, all branches, 15/16 functions.
+`test/specificationReviewers.coverage.test.vibe` (7 cases) runs each of the four reviewers inside one durable
+execution on the memory engine against the scripted model: no record, a record whose credential is missing, a record
+that is not JSON (startup fails), an accepted verdict at the asked revision charged once, a rejected verdict or failed
+model answered `review` and still charged, a refused or unreachable budget asking no model, and a charge the ledger
+refuses once being retried. The execution helper and budget ledger moved from `fuzz/model-writers.node.fuzz.vibe` to
+`test/support/durableWriters.vibe`. Deleted, not covered: the `ConfigurationError` mapping of `Budget.make({})` (a
+constant valid policy) and the `review` mapping of the verdict decode (the agent already refused any output that is
+not a `Verdict`; the decode now only types it, with `orDie`). Left uncovered, not excluded: line 48, `usageOf` failing
+with `AccountingUnavailable`. That needs the journal unreadable while `review` reads its own run's usage, and no
+service a test can replace reaches that read without also replacing the agent's journal.
+
 **A reply-started tour stayed parked (fixed 2026-11-09).** A reply refused `busy` by a tour accepted after its
 dispatch ran that tour as its own child execution. Ending the tour woke only the tour the answer loop started, so the
 child stayed parked forever with no `vibelang.tour.run` outcome, though the reply still answered. Now each room has one

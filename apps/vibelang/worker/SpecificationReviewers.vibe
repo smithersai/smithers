@@ -37,7 +37,8 @@ export const liveSpecificationReviewers = Layer.effect(SpecificationReviewers, e
         return { day, admitted: try spend.admit(day).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" }))) }
       } })
       if (!admission.admitted) throw new IssueFailure({ reason: "budget", unwritten: true })
-      const meter = try Budget.make({}).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" })))
+      // An empty policy is valid, so making the meter cannot fail.
+      const meter = try Effect.orDie(Budget.make({}))
       const sink: EventSink.Service = { emit: event => Metric.update(Metric.withAttributes(Metric.counter("vibelang_specification_agent_events", { incremental: true }), { event: event._tag, reviewer }), 1) }
       const result = try Effect.result(effect {
         provide agentOf(Review.layer, model, sink, [], 0, meter), EventSink.EventSink = sink {
@@ -47,7 +48,8 @@ export const liveSpecificationReviewers = Layer.effect(SpecificationReviewers, e
       const usage = try meter.usageOf(instance.executionId).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" })))
       try Action.make({ name: "vibelang/specification/spend", error: IssueFailure, retryPolicy: patient, execute: spend.spend(admission.day, `specification/${instance.executionId}`, usage.tokens).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" }))) })
       if (result._tag === "Failure") throw new IssueFailure({ reason: "review" })
-      const answer = try Schema.decodeUnknownEffect(Verdict)(result.success).pipe(Effect.mapError(() => new IssueFailure({ reason: "review" })))
+      // The agent already refused an output that is not a Verdict (line above); this decode only types it.
+      const answer = try Effect.orDie(Schema.decodeUnknownEffect(Verdict)(result.success))
       // Receipt URL is assigned by the project host after the model result, never by the model.
       return { ...answer, revision: spec.revision, link: "#review" }
     },

@@ -1,0 +1,42 @@
+// One durable execution on the memory engine, and a day's budget ledger: the model writers' unit tests and fuzz targets
+// run the live writers inside both.
+import { Digest, SecureRandom } from "effect/crypto"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Spend } from "../../worker/Reply.vibe"
+import { Unreachable } from "../../worker/Unreachable.vibe"
+
+/** The budget's answer to every admission: admitted, refused, or unreachable. */
+export type Admission = "admit" | "refuse" | "fault"
+
+/** A budget answering `admission`, counting admissions and charges. */
+export function ledger(admission: Admission) {
+  const log = { admitted: 0, spent: 0 }
+  const spend: Spend.Shape = {
+    admit: () => effect {
+      log.admitted += 1
+      if (admission === "fault") throw new Unreachable({ what: "budget" })
+      return admission === "admit"
+    },
+    spend: () => sync(() => { log.spent += 1 }),
+  }
+  return { log, spend }
+}
+
+const Outcome = Flow.make("test/model-writers/outcome", { payload: {}, success: Schema.String, body: () => Node.succeed("") })
+
+/** One durable execution of `program`, whose string answer says how it ended. */
+effect function execution<S>(layer: Layer.Layer<S>, program: Effect<string, never, S | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom>) {
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    const services = try Effect.context<S | Digest.Digest | SecureRandom.SecureRandom>()
+    try engine.register(Outcome, () => Effect.provide(program, services) as never)
+  })
+  const context = try Layer.build(registration.pipe(Layer.provide(layer), Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer)))
+  return try Context.get(context, FlowRuntime.FlowRuntime).execute(Outcome, { executionId: "test/model-writers/fuzz", payload: {} })
+}
+
+// The engine's generic requirements stay unresolved over S; every service is provided above, and Scope remains.
+export const within = <S>(layer: Layer.Layer<S>, program: Effect<string, never, S | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom>) => execution(layer, program) as unknown as Effect<string, unknown, Scope.Scope>
