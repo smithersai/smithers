@@ -10,28 +10,36 @@ import { LoginOutput, LogoutOutput } from "../src/surfaces/signin.vibe"
 import { mockReply } from "../src/core/mockReplies.vibe"
 import { node } from "./support/processes.vibe"
 import { cliManifest, serverPath } from "./surface-host.vibe"
+import { inProcessServer } from "./support/mcpInProcess.vibe"
+// The durable sign-in host loads on first use (sessionFlow.vibe); load it with the suite, not inside a case's limit.
+import "@smthrs/platform-node"
 
 /** The platform the suites run on: Node.js's services and this Node.js executable. */
 const platform = Layer.mergeAll(NodeServices.layer, ExperimentalNodeServices.layer)
 
-/** A server with its own empty settings directory, so a sign-in test never touches another's (or a real one). */
-function clientLayer(settings: string) {
+/**
+ * A server with its own empty settings directory, so a sign-in test never touches another's (or a real one). The
+ * built server is a Node.js process; every other case hosts the same server in this process, so its time is the
+ * protocol's, not a cold start's on a loaded host.
+ */
+function clientLayer(settings: string, server: "built" | "in-process" = "in-process") {
   return Layer.unwrap(effect {
     const command = ChildProcess.make(try node(), [try serverPath(), "--mock"], { env: { XDG_CONFIG_HOME: settings }, extendEnv: true })
-    return McpClient.layerStdio({
+    const client = McpClient.layerStdio({
       name: "Factory surface tests", version: "1", protocol: McpProtocol.v2025_11_25, timeout: "10 seconds", command,
     })
-  }).pipe(Layer.provide(platform))
+    return client.pipe(Layer.provide(server === "built" ? platform : Layer.provide(inProcessServer(settings), platform)))
+  })
 }
 
 // Match the CLI process suite: allow startup plus the MCP client's ten-second protocol deadline.
 const LIMIT = 30_000
 
-describe("built MCP stdio server through McpClient", () => {
+describe("MCP stdio server through McpClient", () => {
   it.live("discovers the exact same names and schemas as the CLI manifest", () => effect {
     provide platform {
       const settings = try (try FileSystem.FileSystem).makeTempDirectory()
-      provide clientLayer(settings) {
+      provide clientLayer(settings, "built") {
       const client = try McpClient.McpClient
       const tools = try client.listTools()
       const markdown = try cliManifest()

@@ -1,0 +1,46 @@
+// The Factory MCP server hosted in this process behind a `ChildProcessSpawner`: McpClient speaks the same
+// newline-delimited JSON-RPC over stdin and stdout, without a cold Node.js start-up whose length depends on the host's load.
+// The built server's start-up stays covered by the suites that spawn it (mcp.test's discovery case, cli.test).
+import { ChildProcessSpawner } from "effect/process"
+import { mcp } from "../../src/surfaces/mcp.vibe"
+
+/** A spawner whose every process is `mcp(true)` reading `XDG_CONFIG_HOME = settings`; the command itself is ignored. */
+export function inProcessServer(settings: string) {
+  return Layer.effect(ChildProcessSpawner.ChildProcessSpawner, effect {
+    const services = try context<FileSystem.FileSystem | Path.Path>()
+    return ChildProcessSpawner.make((_command) => effect {
+      const input = try Queue.unbounded<Uint8Array, Cause.Done>()
+      const output = try Queue.unbounded<Uint8Array, Cause.Done>()
+      const encoder = new TextEncoder()
+      const stdio = Stdio.make({
+        args: succeed(["--mock"]),
+        stdin: Stream.fromQueue(input),
+        stdout: () => Sink.forEach((chunk: string | Uint8Array) => Queue.offer(output, typeof chunk === "string" ? encoder.encode(chunk) : chunk)),
+        stderr: () => Sink.drain,
+      })
+      const server = mcp(true, undefined).pipe(
+        Effect.provide(Layer.mergeAll(Layer.succeed(Stdio.Stdio, stdio), ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: settings })))),
+        Effect.provide(services),
+        Effect.ensuring(Queue.end(output)),
+      )
+      const fiber = try Effect.forkScoped(server)
+      const ended = try Deferred.make<void>()
+      try Effect.forkScoped(Effect.andThen(Fiber.await(fiber), Deferred.succeed(ended, undefined)))
+      const exitCode = Effect.map(Fiber.await(fiber), (exit) => ChildProcessSpawner.ExitCode(Exit.isSuccess(exit) ? 0 : 1))
+      return ChildProcessSpawner.makeHandle({
+        pid: ChildProcessSpawner.ProcessId(0),
+        exitCode,
+        isRunning: Effect.map(Deferred.isDone(ended), (done) => !done),
+        kill: () => Effect.asVoid(Fiber.interrupt(fiber)),
+        // The client closes stdin to end the server; the server then ends by itself, as its process does.
+        stdin: Sink.forEach((chunk: Uint8Array) => Queue.offer(input, chunk)).pipe(Sink.ensuring(Queue.end(input))),
+        stdout: Stream.fromQueue(output),
+        stderr: Stream.empty,
+        all: Stream.fromQueue(output),
+        getInputFd: () => Sink.drain,
+        getOutputFd: () => Stream.empty,
+        unref: succeed(Effect.void),
+      })
+    })
+  })
+}

@@ -8,11 +8,14 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Factory } from "../src/core/Factory.vibe"
+import { AccountUnavailable } from "../src/core/roles.vibe"
 import type { IssueRequest } from "../src/core/issueSchemas.vibe"
 import { MockMythical } from "../src/history/MockMythical.vibe"
 import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
 import { backend, SURFACE_PRINCIPAL } from "../src/surfaces/backend.vibe"
-import { Issue, Login, ShowHistory, Wiki } from "../src/surfaces/commands.vibe"
+import { Issue, Login, Logout, ShowHistory, Wiki } from "../src/surfaces/commands.vibe"
+// The durable sign-in host loads on first use (sessionFlow.vibe); load it with the suite, not inside a case's limit.
+import "@smthrs/platform-node"
 
 const failure = <A, R>(program: A!{ readonly message: string }!R) => Effect.map(Effect.flip(program), (error) => error.message)
 
@@ -104,6 +107,44 @@ describe("login", () => {
         provide backend(true, undefined) {
           const message = try failure(Login.run({}))
           try Effect.try(() => expect(message).toBe("Sign-in failed."))
+        }
+      }
+    }
+  }), 60_000)
+
+  it.live("a mock sign-in prints the agent's login, and sign-out says whether one was stored", () => scoped(effect {
+    provide NodeServices.layer {
+      const home = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: home })) {
+        provide backend(true, undefined) {
+          const signedIn = try Login.render({ wait: true }, false)
+          const out = try Logout.render({}, false)
+          const again = try Logout.render({}, false)
+          try Effect.try(() => expect([signedIn, out, again]).toEqual(["Signed in as will.", "Signed out.", "Not signed in."]))
+        }
+      }
+    }
+  }), 60_000)
+
+  it.live("a sign-in refused with its own sentence keeps that sentence", () => scoped(effect {
+    provide NodeServices.layer {
+      const home = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: home })) {
+        provide Layer.succeed(Factory, only({})) {
+          const message = try failure(Login.run({}))
+          try Effect.try(() => expect(message).toBe("Sign-in isn't available."))
+        }
+      }
+    }
+  }), 60_000)
+
+  it.live("a mock sign-out the accounts refuse fails in one sentence", () => scoped(effect {
+    provide NodeServices.layer {
+      const home = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: home })) {
+        provide Layer.succeed(Factory, only({ accounts: { signOut: () => Effect.fail(new AccountUnavailable({ reason: "down" })) } as unknown as NonNullable<Factory.Shape["accounts"]> })) {
+          const message = try failure(Logout.run({}))
+          try Effect.try(() => expect(message).toBe("Sign-out failed."))
         }
       }
     }

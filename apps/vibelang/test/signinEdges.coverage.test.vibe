@@ -10,6 +10,8 @@ import { Factory } from "../src/core/Factory.vibe"
 import { AccountUnavailable } from "../src/core/roles.vibe"
 import { readMockSession, readPending, readSession, settingsDir, writeMockSession, writePending, writeSession, type PendingDevice } from "../src/surfaces/session.vibe"
 import { signIn, signOutSurface, type LoginInput, SignInFailed } from "../src/surfaces/signin.vibe"
+// The durable sign-in host loads on first use (sessionFlow.vibe); load it with the suite, not inside a case's limit.
+import "@smthrs/platform-node"
 
 const NO_WAIT: LoginInput = { wait: false }
 const WAIT: LoginInput = { wait: true }
