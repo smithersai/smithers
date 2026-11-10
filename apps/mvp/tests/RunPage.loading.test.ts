@@ -10,7 +10,10 @@ import { REMOTE_RUN_SHAPE_ROUTE } from "../src/features/runs/contract"
 import { RemoteRunsClient } from "../src/features/runs/api"
 import { RepoRunsView } from "../src/features/runs/components/RepoRunsView"
 import { RunsProvider } from "../src/features/runs/components/RunsContext"
+import { Auth } from "../src/features/auth/auth"
+import { AuthProvider } from "../src/features/auth/components/AuthContext"
 import { Repo } from "../src/features/repo/repo"
+import { RepoProvider } from "../src/features/repo/components/RepoContext"
 import { Runs } from "../src/features/runs/runs"
 import type { Inspection } from "../src/features/runs/schema"
 import { ActionRunScreen } from "../src/screens/actions/ActionRunScreen"
@@ -82,7 +85,10 @@ test.each([true, false])("a run shows its frame while inspection and sync are he
     let loaded = false
     const startedAt = performance.now()
     const loading = router.load().then(() => { loaded = true })
-    act(() => { view.render(createElement(RunsProvider, { value: runs }, createElement(RouterProvider, { router }))) })
+    // The run page shows through the repository gate (`RepoGate`), which reads this tab's session and roles.
+    const auth = await device.runPromise(Effect.service(Auth))
+    act(() => { view.render(createElement(AuthProvider, { value: auth }, createElement(RepoProvider, { value: repo },
+      createElement(RunsProvider, { value: runs }, createElement(RouterProvider, { router }))))) })
     await vi.waitFor(async () => {
       await act(async () => {})
       expect(Effect.runSync(Deferred.isDone(requested))).toBe(true)
