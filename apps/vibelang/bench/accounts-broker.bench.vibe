@@ -1,0 +1,82 @@
+// @vitest-environment node
+// Sign-in and Connect GitHub through smithers.sh's real broker and the site's Accounts object in workerd
+// (test/workerd/authbroker.vibe), then Disconnect, and the requests either object refuses. GitHub is that host's
+// injected token service; no issue or wiki request is made, so no GitHub repository is read or written (0017).
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { GitHub } from "@smthrs/integrations"
+import { serveAuthBroker } from "../test/support/workerd.vibe"
+import { brokerConnect, brokerSignIn } from "../test/support/brokerWorld.vibe"
+import { github, offline, post, serve, setupWith, signIn } from "../test/support/accountsWorld.vibe"
+import { artifact, workload, quick, slow } from "./artifact.vibe"
+
+const manual = FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })))
+schema Connections { readonly revoked: number; readonly connections: ReadonlyArray<{ readonly origin: string }> }
+
+effect function journey(origin: string) {
+  const http = try HttpClient.HttpClient
+  const site = (path: string, cookie = "", body?: string) => http.execute((body === undefined ? HttpClientRequest.get(origin + path) : HttpClientRequest.post(origin + path).pipe(HttpClientRequest.bodyText(body, "application/json"))).pipe(
+    HttpClientRequest.setHeader("origin", origin), HttpClientRequest.setHeader("cookie", cookie)))
+  const connections = effect { return try Schema.decodeUnknownEffect(Connections)(try (try http.get(origin + "/__connection/state")).json) }
+  const { session, accepted } = try brokerSignIn(origin)
+  const cookie = "vibelang-session=" + session
+  const identity = try (try site("/api/auth/session", cookie)).json
+  const handoff = try site(GitHub.Auth.Broker.CALLBACK)
+  const unknown = try site("/api/auth/unknown")
+  const malformed = try site(GitHub.Auth.Broker.CALLBACK, "", "not json")
+  const refused = [
+    (try site("/api/auth/connect", "", "")).status,
+    (try site("/api/auth/connect?wiki-page=decisions", cookie, "")).status,
+    (try site("/api/auth/connect?resume-op=new", cookie, "")).status,
+    (try site("/api/auth/connect?resume-op=new&resume-key=k1&resume-recovery=no!", cookie, "")).status,
+    (try site("/api/auth/disconnect", "", "")).status,
+  ]
+  const wiki = try brokerConnect(origin, session, "?wiki-page=benchmarks")
+  const connected = try connections
+  const firstOut = try site("/api/auth/disconnect", cookie, "")
+  const resumed = try brokerConnect(origin, session, "?resume-op=new&resume-key=k1&resume-recovery=r1")
+  const secondOut = try site("/api/auth/disconnect", cookie, "")
+  const after = try connections
+  try Effect.try(() => {
+    expect(accepted.status).toBe(200)
+    expect(identity).toMatchObject({ id: "7", login: "ada", available: true })
+    expect([handoff.status, handoff.headers["content-security-policy"]?.includes("default-src 'none'")]).toEqual([200, true])
+    expect([unknown.status, malformed.status]).toEqual([404, 400])
+    expect(refused).toEqual([401, 400, 400, 400, 401])
+    expect([wiki.press.status, wiki.accepted.status, wiki.location.location]).toEqual([303, 200, "/wiki/benchmarks"])
+    expect(connected.connections.map((row) => row.origin)).toEqual([origin])
+    expect([firstOut.status, firstOut.headers["location"], secondOut.status]).toEqual([303, "/?issues=1", 303])
+    expect(resumed.location.location).toBe("/?issues=1&resume-op=new&resume-key=k1&resume-recovery=r1")
+    expect(after.connections).toEqual([])
+    expect(after.revoked - connected.revoked).toBe(2)
+  })
+}
+
+it("a person signs in through smithers.sh, connects GitHub twice and disconnects", async ({ bench }) => {
+  await runPromise(scoped(effect {
+    const host = try acquireRelease(serveAuthBroker(), (host) => promise(() => host.dispose()))
+    const result = try Effect.try(() => workload(bench, "accounts-broker-connect", "async", () => runPromise(journey(host.origin).pipe(Effect.provide(manual)))))
+    try artifact("accounts-broker-connect", "Vitest built-in bench; smithers.sh's broker, the site's Accounts object and the person's connection object in local workerd on durable SQLite, one host for all samples. Each sample: a broker sign-in (site start, broker, GitHub consent stand-in, handoff, site callback), the session, the handoff page, an unknown route, a malformed callback, five Connect and Disconnect refusals, Connect GitHub with a wiki page to return to, Disconnect, Connect with an issue to resume, Disconnect. Exact statuses, return locations, the person's identity, and the connection object's revocations checked. Host startup excluded.", ["GitHub is the host's injected token service: no GitHub request or latency.", "No issue or wiki request: those read and write a GitHub repository (0017).", "Broker and site share one workerd process over loopback, not the network between smithers.sh and the site."], try tryPromise(() => result.run(slow)))
+  }))
+})
+
+effect function agentAndUnbrokered() {
+  const { origin } = try serve(setupWith(github([{ id: 7, login: "ada" }]), "7")).pipe(Effect.provideService(HttpClient.HttpClient, offline))
+  provide manual {
+    const http = try HttpClient.HttpClient
+    const device = (try (try http.execute(post(origin, "/api/auth/device", { token: "token-7" }))).json) as { readonly cookie: string }
+    const agent = try http.execute(post(origin, "/api/auth/connect", {}, device.cookie))
+    const { cookie } = try signIn(http, origin, "7")
+    const person = try http.execute(post(origin, "/api/auth/connect", {}, cookie))
+    const out = try http.execute(post(origin, "/api/auth/disconnect", {}, cookie))
+    try Effect.try(() => {
+      expect([agent.status, person.status, out.status, out.headers["location"]]).toEqual([403, 503, 303, "/?issues=1"])
+    })
+  }
+}
+
+it("an agent's session cannot connect GitHub, and a site without a broker refuses Connect", async ({ bench }) => {
+  const result = await workload(bench, "accounts-connect-refused", "async", () => runPromise(scoped(effect { provide NodeHttpServer.layerTest { try agentAndUnbrokered() } }))).run(quick)
+  await runPromise(artifact("accounts-connect-refused", "Vitest built-in bench; the Accounts object on a real loopback server over in-memory object storage, a fresh object per sample. A device sign-in's agent session presses Connect GitHub (refused), a person signs in through the OAuth callback and presses Connect on a site with no broker configured (unavailable), then Disconnects. Exact statuses and location checked.", ["GitHub is an injected auth service: no network.", "In-memory storage, not Durable Object SQLite."], result))
+})

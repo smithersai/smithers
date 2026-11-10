@@ -1,6 +1,7 @@
 import { expect, it } from "@effect/vitest"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { serveAuthBroker } from "./support/workerd.vibe"
+import { brokerConnect, brokerSignIn } from "./support/brokerWorld.vibe"
 import { GitHub } from "@smthrs/integrations"
 
 const Delegation = GitHub.Delegation
@@ -54,19 +55,7 @@ it.live("runs both apps' durable auth hosts in workerd, binding both browser coo
 /** Complete both production hosts over HTTP; GitHub is an injected token service, never interception. */
 effect function signIn(hostOrigin: string) {
   const http = try HttpClient.HttpClient
-  const start = try http.get(hostOrigin + "/api/auth/sign-in")
-  const pending = start.cookies.cookies["vibelang-sign-in"]!.value
-  const atBroker = try http.get(start.headers.location!)
-  const browser = atBroker.cookies.cookies["smithers-broker"]!.value
-  const form = try (try http.get(atBroker.headers.location!)).text
-  const approved = try http.get(form.match(/href="([^"]+)"/)![1]!.replaceAll("&amp;", "&"))
-  const callback = try http.execute(HttpClientRequest.get(approved.headers.location!).pipe(HttpClientRequest.setHeader("cookie", "smithers-broker=" + browser)))
-  const fragment = new URLSearchParams(new URL(callback.headers.location!).hash.slice(1))
-  const accepted = try http.execute(HttpClientRequest.post(hostOrigin + GitHub.Auth.Broker.CALLBACK).pipe(
-    HttpClientRequest.setHeader("origin", hostOrigin), HttpClientRequest.setHeader("cookie", "vibelang-sign-in=" + pending),
-    HttpClientRequest.bodyJsonUnsafe({ code: fragment.get("code"), state: fragment.get("state") }),
-  ))
-  const session = accepted.cookies.cookies["vibelang-session"]!.value
+  const { accepted, session } = try brokerSignIn(hostOrigin)
   const identity = try (try http.execute(HttpClientRequest.get(hostOrigin + "/api/auth/session").pipe(HttpClientRequest.setHeader("cookie", "vibelang-session=" + session)))).json
   try Effect.try(() => {
     expect(accepted.status).toBe(200)
@@ -122,31 +111,6 @@ it.live("workerd: exhausted revocation retries count failure without failing sig
 }), 120_000)
 
 
-/** Sign in, then press Connect GitHub through both real hosts; GitHub is an injected token service and client. */
-effect function connected(hostOrigin: string, session: string) {
-  const http = try HttpClient.HttpClient
-  const brokerOrigin = hostOrigin.replace("127.0.0.1", "localhost")
-  const press = try http.execute(HttpClientRequest.post(hostOrigin + "/api/auth/connect").pipe(HttpClientRequest.setHeader("origin", hostOrigin), HttpClientRequest.setHeader("cookie", "vibelang-session=" + session)))
-  const pending = press.cookies.cookies["vibelang-sign-in"]!.value
-  const atBroker = try http.get(press.headers.location!)
-  const browser = atBroker.cookies.cookies["smithers-broker"]!.value
-  const form = try (try http.get(atBroker.headers.location!)).text
-  const approved = try http.get(form.match(/href="([^"]+)"/)![1]!.replaceAll("&amp;", "&"))
-  const callback = try http.execute(HttpClientRequest.get(approved.headers.location!).pipe(HttpClientRequest.setHeader("cookie", "smithers-broker=" + browser)))
-  const consentCookie = callback.cookies.cookies["smithers-broker"]!.value
-  const consent = new URL(callback.headers.location!).searchParams.get("consent")!
-  const page = try (try http.execute(HttpClientRequest.get(callback.headers.location!).pipe(HttpClientRequest.setHeader("cookie", "smithers-broker=" + consentCookie)))).text
-  const answered = try http.execute(HttpClientRequest.post(brokerOrigin + GitHub.Auth.Broker.CONSENT).pipe(
-    HttpClientRequest.setHeader("origin", brokerOrigin), HttpClientRequest.setHeader("sec-fetch-site", "same-origin"), HttpClientRequest.setHeader("cookie", "smithers-broker=" + consentCookie),
-    HttpClientRequest.bodyText(new URLSearchParams({ consent, answer: "connect" }).toString(), "application/x-www-form-urlencoded"),
-  ))
-  const fragment = new URLSearchParams(new URL(answered.headers.location!).hash.slice(1))
-  const accepted = try http.execute(HttpClientRequest.post(hostOrigin + GitHub.Auth.Broker.CALLBACK).pipe(
-    HttpClientRequest.setHeader("origin", hostOrigin), HttpClientRequest.setHeader("cookie", "vibelang-sign-in=" + pending + "; vibelang-session=" + session),
-    HttpClientRequest.bodyJsonUnsafe({ code: fragment.get("code"), state: fragment.get("state") }),
-  ))
-  return { press, page, answered, accepted, location: (try accepted.json) as { readonly location?: string } }
-}
 
 it.live("connects through smithers.sh, writes once as the person, and every revocation stops the next write", () => scoped(effect {
   const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
@@ -167,14 +131,14 @@ it.live("connects through smithers.sh, writes once as the person, and every revo
     const unsigned = try http.execute(HttpClientRequest.post(brokerOrigin + Delegation.ROUTE + "?person=9").pipe(HttpClientRequest.bodyJsonUnsafe({ origin: host.origin, person: 9, request: "", payload: "{}" })))
     const wronglySigned = try http.execute(HttpClientRequest.post(brokerOrigin + Delegation.ROUTE + "?person=9").pipe(HttpClientRequest.bodyJsonUnsafe(try forged.envelope(call))))
     const openedAfter = (try (try http.get(host.origin + "/__opened")).json) as number
-    const first = try connected(host.origin, session)
+    const first = try brokerConnect(host.origin, session)
     const written = try issue("key-1")
     const again = try issue("key-1")
     const afterWrite = try state
     const disconnect = try http.execute(HttpClientRequest.post(host.origin + "/api/auth/disconnect").pipe(HttpClientRequest.setHeader("origin", host.origin), HttpClientRequest.setHeader("cookie", "vibelang-session=" + session)))
     const afterDisconnect = try issue("key-2")
     const revokedOnce = (try state).revoked
-    try connected(host.origin, session)
+    try brokerConnect(host.origin, session)
     const rejoined = try issue("key-3", "Second")
     try http.get(host.origin + "/__connection/end")
     const afterGitHubRevoke = try issue("key-4")
