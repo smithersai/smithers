@@ -597,7 +597,7 @@ describe("GET /api/shapes/bug-reports", () => {
 
     expect([response.status, response.headers.get("retry-after")]).toEqual([503, "5"])
     expect(h.electric).toEqual([])
-    expect(h.count(BugsApi.shapes, { status: "503", live: "false" })).toBe(1)
+    expect(h.count(BugsApi.shapes, { status: "503", live: "false", reason: "shape_refused" })).toBe(1)
   })
 })
 
