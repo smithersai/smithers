@@ -1,0 +1,31 @@
+// The issues and wiki states cross the wire as JSON, which has no NaN or Infinity: their numbers are safe, nonnegative integers.
+import { describe, expect, it } from "@effect/vitest"
+import { IssuesState, IssueRequest } from "../src/core/issueSchemas.vibe"
+import { WikiState } from "../src/core/wikiSchemas.vibe"
+
+const record = { number: 1, githubId: 1001, title: "t", body: "", author: "a", age: "", state: "open", labels: [], parent: 0, task: "", assignee: "", vip: "", review: "", path: "", comments: 2, notes: [] }
+const request = { op: "comment", number: 1, parent: 0, title: "", text: "x", assignee: "", example: "", prior: "", key: "k" }
+
+describe("issue and wiki wire numbers", () => {
+  it.effect("a state JSON can carry decodes after the round trip", () => effect {
+    const state = { seq: 3, items: [record], saved: { request, status: "running", unwritten: false, selected: 1 }, stale: 1700000000000 }
+    const wire = try Effect.try(() => JSON.parse(JSON.stringify(state)))
+    const wiki = try Effect.try(() => JSON.parse(JSON.stringify({ seq: 2, pages: [], stale: 5 })))
+    try Effect.try(() => {
+      expect(Schema.decodeUnknownExit(IssuesState)(wire)._tag).toBe("Success")
+      expect(Schema.decodeUnknownExit(WikiState)(wiki)._tag).toBe("Success")
+    })
+  })
+
+  it("refuses the numbers JSON turns into null", () => {
+    for (const comments of [Infinity, -Infinity, Number.NaN]) expect(Schema.decodeUnknownExit(IssuesState)({ seq: 0, items: [{ ...record, comments }] })._tag).toBe("Failure")
+    expect(Schema.decodeUnknownExit(IssuesState)({ seq: Infinity, items: [] })._tag).toBe("Failure")
+    expect(Schema.decodeUnknownExit(IssueRequest)({ ...request, number: Number.NaN })._tag).toBe("Failure")
+    expect(Schema.decodeUnknownExit(WikiState)({ seq: 0, pages: [], stale: Infinity })._tag).toBe("Failure")
+  })
+
+  it("refuses fractional and negative counts", () => {
+    expect(Schema.decodeUnknownExit(IssuesState)({ seq: 1.5, items: [] })._tag).toBe("Failure")
+    expect(Schema.decodeUnknownExit(IssuesState)({ seq: 0, items: [{ ...record, comments: -1 }] })._tag).toBe("Failure")
+  })
+})

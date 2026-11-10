@@ -1,5 +1,6 @@
 // Wiki edit protocol; no credential, role or actor is accepted in a request payload (0021, 0022).
 import { DurableText } from "./wire.vibe"
+import { Seq } from "./schemas.vibe"
 export const WikiOperation = Schema.Literals(["read", "save", "propose", "draft"])
 export const WikiRequest = Schema.Struct({
   op: WikiOperation,
@@ -12,13 +13,13 @@ export const WikiRequest = Schema.Struct({
 export type WikiRequest = typeof WikiRequest.Type
 export const WikiPageState = Schema.Struct({ id: Schema.String, source: DurableText, revision: Schema.String })
 export const WikiState = Schema.Struct({
-  seq: Schema.Number,
+  seq: Seq,
   pages: Schema.Array(WikiPageState),
   review: Schema.optionalKey(Schema.String),
   draft: Schema.optionalKey(Schema.Struct({ page: Schema.String, text: Schema.String })),
   role: Schema.optionalKey(Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])),
   /** A signed-out read GitHub refused: the copy shown was last confirmed then, in milliseconds since the epoch (0031). */
-  stale: Schema.optionalKey(Schema.Number),
+  stale: Schema.optionalKey(Seq),
 })
 export schema error WikiFailure { reason: string; unwritten?: boolean; code?: string; retryAfterMillis?: number }
 export interface WikiApi {

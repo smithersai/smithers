@@ -164,8 +164,9 @@ it.live("reply/answers", () => run("reply/answers", ReplyInput, (input) => scope
   if (log.starts !== (input.kind === "busy-once" ? 2 : 1)) return false
   if (input.start === "refused") return log.finished.length === 0 && log.failed.length === 0 && charges.admitted === 0
   if (log.finished.length + log.failed.length !== 1) return false
+  // No model is checked before admission, so an unconfigured reply reserves nothing (c5bbf81b, 0015).
+  if (!input.bound) return log.failed[0] === REASONS.unconfigured && charges.admitted === 0 && charges.spent === 0
   if (input.admission === "refuse") return log.failed[0] === REASONS.budget && charges.spent === 0
-  if (!input.bound) return log.failed[0] === REASONS.unconfigured && charges.spent === 0
   if (input.kind === "history-defect") return log.failed[0] === REASONS.failed && charges.spent === 0
   if (charges.spent !== 1) return false
   const complete = input.kind === "answer" || input.kind === "chunked" || input.kind === "corrected" || input.kind === "busy-once"
