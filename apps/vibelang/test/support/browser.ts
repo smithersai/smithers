@@ -162,3 +162,33 @@ export function textOf(css: string): string | undefined {
 export function focusOn(css: string): void {
   document.querySelector<HTMLElement>(css)!.focus()
 }
+
+/** The real window with a recording speech host; `utterances: false` is a browser without SpeechSynthesisUtterance. */
+export function speakingWindow(utterances: boolean): { readonly window: Window; readonly calls: Array<string> } {
+  const calls: Array<string> = []
+  const speech = {
+    cancel: () => { calls.push("cancel") },
+    pause: () => { calls.push("pause") },
+    resume: () => { calls.push("resume") },
+    speak: (utterance: { readonly text: string }) => { calls.push(`speak ${utterance.text}`) },
+  }
+  class Utterance { constructor(readonly text: string) {} }
+  const page = new Proxy(window, {
+    get(target, property) {
+      if (property === "speechSynthesis") return speech
+      if (property === "SpeechSynthesisUtterance") return utterances ? Utterance : undefined
+      const value = Reflect.get(target, property)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+  return { window: page, calls }
+}
+
+/** An element of `className` in the page whose layout box is `box` (Happy DOM lays nothing out). */
+export function framed(tag: string, className: string, box: { readonly top: number; readonly left: number; readonly right: number; readonly bottom: number }): HTMLElement {
+  const node = document.createElement(tag)
+  node.className = className
+  node.getBoundingClientRect = () => DOMRect.fromRect({ x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top })
+  document.body.append(node)
+  return node
+}

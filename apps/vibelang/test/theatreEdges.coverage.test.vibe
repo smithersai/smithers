@@ -1,0 +1,51 @@
+// The tour's voice and layout through the real presentation service on an injected browser Window: a recording
+// speech host hears speak, keep, pause, resume and cancel in a tour's order; a browser without utterances stays
+// silent; the composer's frame grows to hold its open completion menu.
+import { expect, it } from "@effect/vitest"
+import { ExperimentalBrowserDocument } from "vibelang-runtime/experimental/platform-browser"
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
+import { presentation, presentationFromHost, TourPresentation } from "../src/web/theatre.vibe"
+import { forgetTours, framed, speakingWindow } from "./support/browser.ts"
+
+const KEYS = ["vibelang:tour-audio", "vibelang:tour-active"]
+const cleaned = acquireRelease(sync(() => { forgetTours(); KEYS.forEach((key) => window.sessionStorage.removeItem(key)) }), () => sync(() => { forgetTours(); KEYS.forEach((key) => window.sessionStorage.removeItem(key)) }))
+
+effect function presenting(page: Window) {
+  const style = try Effect.try(() => window.getComputedStyle.bind(window))
+  const host = Layer.merge(Layer.succeed(Experimental.Window.Window, Experimental.Window.make({ window: () => page, computedStyle: style })), ExperimentalBrowserDocument.layer)
+  return try Effect.provide(TourPresentation, presentationFromHost.pipe(Layer.provide(host)))
+}
+
+it.effect("the voice speaks a line, keeps it, pauses, resumes, and stops when the tour ends", () => scoped(effect {
+  try cleaned
+  const { window: page, calls } = try Effect.try(() => speakingWindow(true))
+  const presenter = try presenting(page)
+  const on = { step: 2, sound: true, active: true, paused: false }
+  try presenter.present(on)
+  try presenter.present(on)
+  try presenter.present({ ...on, paused: true })
+  try presenter.present(on)
+  try presenter.present({ ...on, active: false })
+  try Effect.try(() => expect(calls).toEqual(["cancel", `speak ${WALKTHROUGH[1]!.voice}`, "pause", "resume", "cancel"]))
+}))
+
+it.effect("a browser without utterances never speaks", () => scoped(effect {
+  try cleaned
+  const { window: page, calls } = try Effect.try(() => speakingWindow(false))
+  const presenter = try presenting(page)
+  try presenter.present({ step: 1, sound: true, active: true, paused: false })
+  try Effect.try(() => expect(calls).toEqual(["cancel"]))
+}))
+
+it.effect("the composer's frame grows up to its open completion menu", () => scoped(effect {
+  const presenter = try Effect.provide(TourPresentation, presentation)
+  const composer = try acquireRelease(sync(() => framed("form", "sui-chat-composer", { top: 500, left: 20, right: 700, bottom: 540 })), (node) => sync(() => node.remove()))
+  try Effect.try(() => composer.setAttribute("data-docked", "true"))
+  const alone = try presenter.measure("composer")
+  try acquireRelease(sync(() => framed("ul", "sui-completion-list", { top: 300, left: 20, right: 700, bottom: 490 })), (node) => sync(() => node.remove()))
+  const withMenu = try presenter.measure("composer")
+  try Effect.try(() => {
+    expect(alone).toEqual({ x: 20, y: 500, width: 680, height: 40 })
+    expect(withMenu).toEqual({ x: 20, y: 300, width: 680, height: 240 })
+  })
+}))

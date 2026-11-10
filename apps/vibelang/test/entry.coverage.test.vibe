@@ -1,0 +1,24 @@
+// The browser entry module, imported as the page loads it: /history starts the mythical history's page and every
+// other path starts the chat. Each import runs the real startup on Happy DOM's window, forced to the mock agent.
+import { expect, it } from "@effect/vitest"
+import { vi } from "vitest"
+import { container, fullLocation, hasAsk, remove, setLocation, textOf } from "./support/browser.ts"
+
+/** Loads entry.vibe afresh at `address` into a page with a #root, until `started` holds. */
+effect function loadedAt(address: string, started: () => void) {
+  const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+  const before = try sync(fullLocation)
+  try addFinalizer(() => sync(() => setLocation(before)))
+  try Effect.try(() => { const root = node.ownerDocument.createElement("div"); root.id = "root"; node.append(root); setLocation(address) })
+  try promise(async () => { vi.resetModules(); await import("../src/web/entry.vibe") })
+  try promise(() => vi.waitFor(started, { timeout: 15_000, interval: 50 }))
+}
+
+it.live("/history starts the history page", () => scoped(effect {
+  try loadedAt("/history?agent=mock", () => expect(textOf("body")).toContain("History · mythical"))
+  try Effect.try(() => expect(hasAsk()).toBe(false))
+}))
+
+it.live("any other path starts the chat", () => scoped(effect {
+  try loadedAt("/?agent=mock", () => expect(hasAsk()).toBe(true))
+}))
