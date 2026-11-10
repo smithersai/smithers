@@ -184,7 +184,8 @@ test("sidecars stay paired when a project's program reaches another package's na
       vibe: { sidecarDir: ".vibe/declarations" },
       compilerOptions: {
         target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true,
-        skipLibCheck: true, noEmit: true, rootDirs: [".", ".vibe/declarations"], allowArbitraryExtensions: true
+        skipLibCheck: true, noEmit: true, rootDirs: [".", ".vibe/declarations"], allowArbitraryExtensions: true,
+        allowImportingTsExtensions: true
       },
       include: ["src/**/*"]
     }))
@@ -248,4 +249,47 @@ test("a project that fails generation does not cost the others their loader reco
   assert.throws(() => prepareSidecars(dir, { stdio: "pipe" }), /bad\/tsconfig\.json: declaration generation failed/)
   assert.equal(checkLoaderRecord({ project: join(dir, "good/tsconfig.json") }).miss, undefined, "the generated project keeps its record")
   assert.notEqual(checkLoaderRecord({ project: join(dir, "bad/tsconfig.json") }).miss, undefined)
+}))
+
+
+test("native source imports require the same extension opt-in as TypeScript", () => fixture(dir => {
+  symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "dir")
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "source-extension-fixture", type: "module" }))
+  for (const [folder, extension] of [["src", "vibe"], ["twin", "ts"]]) {
+    mkdirSync(join(dir, folder))
+    writeFileSync(join(dir, folder, "value." + extension), "export const value = 1\n")
+    writeFileSync(join(dir, folder, "main." + extension),
+      'import { value } from "./value.' + extension + '"\nexport const main = value + 1\n')
+  }
+  const compiler = join(dirname(require.resolve("vibelang/package.json")), "bin/vibelang")
+  for (const allowed of [false, true]) {
+    const options = {
+      noEmit: true, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.NodeNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeNext, skipLibCheck: true, types: [],
+      allowImportingTsExtensions: allowed
+    }
+    const twin = ts.createProgram([join(dir, "twin/main.ts")], options)
+    assert.deepEqual(ts.getPreEmitDiagnostics(twin).map(diagnostic => diagnostic.code), allowed ? [] : [5097])
+    writeFileSync(join(dir, "twin/tsconfig.json"), JSON.stringify({
+      compilerOptions: { ...options, target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext" },
+      files: ["main.ts"]
+    }))
+    const tsc = join(dirname(require.resolve("typescript/package.json")), "bin/tsc")
+    const checkedTwin = spawnSync(process.execPath, [tsc, "-p", join(dir, "twin/tsconfig.json"), "--pretty", "false"], {
+      encoding: "utf8"
+    })
+    if (allowed) assert.equal(checkedTwin.status, 0, checkedTwin.stdout + checkedTwin.stderr)
+    else assert.match(checkedTwin.stdout + checkedTwin.stderr, /TS5097/)
+    writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({
+      compilerOptions: { ...options, target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext" },
+      files: ["src/main.vibe"]
+    }))
+    const checked = spawnSync(process.execPath, [compiler, "-p", join(dir, "tsconfig.json")], { encoding: "utf8" })
+    const diagnostics = checked.stdout + checked.stderr
+    if (allowed) assert.equal(checked.status, 0, diagnostics)
+    else {
+      assert.notEqual(checked.status, 0, diagnostics)
+      assert.match(diagnostics, /TS5097/)
+    }
+  }
 }))
