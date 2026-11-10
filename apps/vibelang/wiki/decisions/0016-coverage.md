@@ -1182,3 +1182,577 @@ command before starting a solver). Proof obligations, solver limits and the muta
 The benchmark lane added `bench/playwright-faults.config.ts` during the gatefix rebase. Its build and global deadlines
 also read `E2E_SERVER_SECONDS`. The moved artifact writer, `bench/browser-support.ts`, retains the same off-checkout
 revision fallback for both browser phases; the benchmark lane's helper extraction and navigation evidence are preserved.
+
+## vl-coverage, Codex continuation after session 13 (2026-11-10)
+
+The lead's known-red gate ruling above is settled. All four coverage gates retain their 100% per-file thresholds and
+stay exclusive until each passes and joins the default gate in that passing commit.
+
+The fixture factories' unreachable flow/default arms and injected-engine seams landed in `10ae763b`; their cycle,
+identity and multi-defect tests use faulty Effect runtimes over the real memory engine. The specification revision
+decision in `605333cd` takes a policy and tests both keep and reset. Production stays keep; conversation.vibe and
+its proved revision arms are unchanged.
+
+The sandbox fixture now accepts the same engine seam. Every operation preserves Refused and Unavailable reasons;
+a flow cycle becomes sandbox-flow unavailability. The signed-out policy determines the role. Wiki recovery scenes
+retain the edit and assert the actual Connect, Fork and Install destinations. The wiki pane accepts its document
+corpus (production: the built pages), so archived Replaced status is exercised through the real component.
+
+Tour view/theatre callers use a total stop lookup. A first-failing boundary regression caught undefined results for
+fractional/NaN inputs in the carried patch; the lookup rounds to the nearest stop, clamps the range and infinities,
+and selects the first stop for NaN. A heading's anchor, ended-tour status, restarted wiki key on another page and
+generator decisions without a Rulings line or with no named rulings are covered too.
+
+The seed program is separate from its CLI entry so its output URL and Effect host services can be supplied. A faulty
+ChildProcessSpawner still runs real jj but reports a shortened-hash collision while retaining distinct full hashes
+and consistent parent links. The command refuses that replay, keeps the previous output and recovers byte-identical
+output with the real host. Its Refused error now retains only a count: the previous serialized intent could expose
+commit text in CLI error logs. Both failure regressions fail before their fixes. The refusal guard remains.
+
+Three behavioral mutations are detected by five assertion failures; production files are restored and byte-checked.
+No dependency is added. The same Vitest/V8 5.0.0 and original .vibe maps are used. No production source is excluded.
+The remaining lane-owned unit gaps are the recorded V8 suspend/else range defect in history/flows and generated
+exhaustive-match fallthrough in history/tools; their reproductions remain in the denominator. Current measurements,
+including all worker/core gaps owned by the other coverage lane, follow below with exact snapshot provenance.
+
+
+### Measured continuation snapshot
+
+Runtime/test input: base main `f765f8ed` plus the three lane changes at `0852e764c332`; source archive and exact
+input id are retained in session14/input-source.tgz and final-input-tip.txt. Tables were added after measurement.
+The unit before-column is the retained 15:24 snapshot; the Chromium before-column is session 8's frozen report.
+Source rosters and counter structures change, so these are dated snapshots. A dash is an absent source, never an
+exclusion. Cells are covered/total, before → after; zero-runtime metrics retain their zero denominators.
+
+Unit: 2,078 passed, one expected failure, four skipped; 239 files passed / three skipped. All ordinary assertions
+pass. Coverage alone exits 1: lines 7,713/7,769 (99.27%), branches 8,096/8,221 (98.47%), functions 2,906/2,937
+(98.94%), statements 9,816/9,920 (98.95%); 27 of 164 files are below 100%. Fresh-main typecheck, inventory,
+target-index generation and target-index lint all exit 0.
+
+The new main file scripts/fuzz-preflight.vibe remains at zero despite its CLI test passing. A five-line native Vibe
+program and plain JavaScript control isolate the problem: two real subprocess assertions pass, JS gets 100%, and Vibe
+gets zero while the provider reports a parse error at raw effect syntax. Reproduction and controls:
+`~/vl/vibelang-bugs/coverage-native-loader/`. Exact-executable and source-map config probes do not fix it and were
+reverted. This is a collection gap; no compiler behavior or provider code was changed. The zero stays in the gate.
+
+| File | Lines | Branches | Functions | Statements |
+| --- | ---: | ---: | ---: | ---: |
+| `infra/SandboxImage.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 0/0 → 0/0 | 2/2 → 2/2 |
+| `infra/Stack.vibe` | 8/8 → 8/8 | 6/6 → 6/6 | 0/0 → 0/0 | 8/8 → 8/8 |
+| `infra/WorkerBuild.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `scripts/agent-context.vibe` | 22/22 → 22/22 | 4/4 → 4/4 | 5/5 → 5/5 | 23/23 → 23/23 |
+| `scripts/fuzz-preflight.vibe` | — → 0/16 | — → 0/4 | — → 0/3 | — → 0/18 |
+| `scripts/mythical-seed-program.vibe` | — → 50/50 | — → 18/18 | — → 15/15 | — → 63/63 |
+| `scripts/mythical-seed.vibe` | 51/51 → 1/1 | 17/18 → 0/0 | 15/16 → 0/0 | 63/65 → 1/1 |
+| `scripts/wiki.vibe` | 30/30 → 30/30 | 28/28 → 28/28 | 8/8 → 8/8 | 38/38 → 38/38 |
+| `src/actions/Actions.vibe` | 4/4 → 4/4 | 0/0 → 0/0 | 0/0 → 0/0 | 4/4 → 4/4 |
+| `src/actions/LiveActions.vibe` | 43/43 → 43/43 | 21/21 → 21/21 | 25/25 → 25/25 | 54/54 → 54/54 |
+| `src/actions/MockActions.vibe` | 114/114 → 114/114 | 85/85 → 85/85 | 40/40 → 40/40 | 153/153 → 153/153 |
+| `src/actions/agent.vibe` | 11/11 → 11/11 | 0/0 → 0/0 | 12/12 → 12/12 | 17/17 → 17/17 |
+| `src/actions/catalog.vibe` | 9/9 → 9/9 | 26/26 → 26/26 | 2/2 → 2/2 | 9/9 → 9/9 |
+| `src/actions/catalogDecision.vibe` | 3/3 → 3/3 | 12/12 → 12/12 | 2/2 → 2/2 | 4/4 → 4/4 |
+| `src/actions/execution.vibe` | 38/38 → 38/38 | 36/36 → 36/36 | 18/18 → 18/18 | 41/41 → 41/41 |
+| `src/actions/tools.vibe` | 13/13 → 13/13 | 1/1 → 1/1 | 7/7 → 7/7 | 14/14 → 14/14 |
+| `src/actions/wire.vibe` | 6/6 → 6/6 | 0/0 → 0/0 | 0/0 → 0/0 | 6/6 → 6/6 |
+| `src/assets/wiki.generated.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 0/0 → 0/0 | 2/2 → 2/2 |
+| `src/core/Factory.vibe` | 3/3 → 3/3 | 0/0 → 0/0 | 0/0 → 0/0 | 3/3 → 3/3 |
+| `src/core/IssuesFactory.vibe` | 74/74 → 74/74 | 118/118 → 118/118 | 15/15 → 15/15 | 96/96 → 96/96 |
+| `src/core/LiveAccounts.vibe` | 26/26 → 26/26 | 12/12 → 12/12 | 13/13 → 13/13 | 32/32 → 32/32 |
+| `src/core/LiveFactory.vibe` | 77/77 → 77/77 | 30/30 → 30/30 | 20/20 → 20/20 | 89/89 → 89/89 |
+| `src/core/LiveIssues.vibe` | 11/11 → 11/11 | 6/6 → 6/6 | 7/7 → 7/7 | 16/16 → 16/16 |
+| `src/core/LiveWiki.vibe` | 15/15 → 15/15 | 4/4 → 4/4 | 10/10 → 10/10 | 21/21 → 21/21 |
+| `src/core/MockAccounts.vibe` | 76/76 → 76/76 | 30/34 → 30/34 | 25/26 → 25/26 | 98/101 → 98/101 |
+| `src/core/MockFactory.vibe` | 266/266 → 266/266 | 138/139 → 138/139 | 79/79 → 79/79 | 319/320 → 319/320 |
+| `src/core/MockJournal.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 3/3 → 3/3 | 4/4 → 4/4 |
+| `src/core/VipWriter.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `src/core/WikiFactory.vibe` | 62/62 → 62/62 | 69/69 → 69/69 | 21/21 → 21/21 | 85/85 → 85/85 |
+| `src/core/WikiWriter.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `src/core/accountCookieDecision.vibe` | 5/5 → 5/5 | 15/15 → 15/15 | 3/3 → 3/3 | 7/7 → 7/7 |
+| `src/core/accountCookies.vibe` | 7/7 → 7/7 | 0/0 → 0/0 | 2/2 → 2/2 | 8/8 → 8/8 |
+| `src/core/conversation.vibe` | 246/246 → 246/246 | 410/410 → 410/410 | 80/80 → 80/80 | 339/339 → 339/339 |
+| `src/core/decide.vibe` | 55/55 → 55/55 | 107/107 → 107/107 | 6/6 → 6/6 | 87/87 → 87/87 |
+| `src/core/flowDecision.vibe` | 53/53 → 53/53 | 105/105 → 105/105 | 24/24 → 24/24 | 68/68 → 68/68 |
+| `src/core/flows.vibe` | 196/196 → 196/196 | 62/66 → 62/66 | 72/72 → 72/72 | 204/206 → 204/206 |
+| `src/core/followDecision.vibe` | 2/2 → 2/2 | 2/2 → 2/2 | 2/2 → 2/2 | 2/2 → 2/2 |
+| `src/core/identityDecision.vibe` | 2/2 → 2/2 | 4/4 → 4/4 | 1/1 → 1/1 | 3/3 → 3/3 |
+| `src/core/issueFlows.vibe` | 34/34 → 34/34 | 20/20 → 20/20 | 11/11 → 11/11 | 40/40 → 40/40 |
+| `src/core/issueSchemas.vibe` | 12/12 → 12/12 | 0/0 → 0/0 | 2/2 → 2/2 | 12/12 → 12/12 |
+| `src/core/mockDecision.vibe` | 17/17 → 17/17 | 6/6 → 6/6 | 4/4 → 4/4 | 19/19 → 19/19 |
+| `src/core/mockReplies.vibe` | 17/17 → 17/17 | 4/4 → 4/4 | 6/6 → 6/6 | 19/19 → 19/19 |
+| `src/core/protocolDecision.vibe` | 22/22 → 22/22 | 54/54 → 54/54 | 14/14 → 14/14 | 30/30 → 30/30 |
+| `src/core/roles.vibe` | 5/5 → 5/5 | 1/1 → 1/1 | 1/1 → 1/1 | 5/5 → 5/5 |
+| `src/core/sandboxDecision.vibe` | 59/59 → 59/59 | 78/78 → 78/78 | 16/16 → 16/16 | 80/80 → 80/80 |
+| `src/core/sandboxHost.vibe` | 175/175 → 175/175 | 137/137 → 137/137 | 27/27 → 27/27 | 209/209 → 209/209 |
+| `src/core/sandboxMeter.vibe` | 33/33 → 33/33 | 35/35 → 35/35 | 7/7 → 7/7 | 39/39 → 39/39 |
+| `src/core/sandboxMock.vibe` | 47/47 → 47/47 | 45/46 → 46/46 | 23/23 → 23/23 | 72/72 → 72/72 |
+| `src/core/sandboxPolicy.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 3/3 → 3/3 | 4/4 → 4/4 |
+| `src/core/schemas.vibe` | 30/30 → 30/30 | 0/0 → 0/0 | 0/0 → 0/0 | 30/30 → 30/30 |
+| `src/core/sequenceDecision.vibe` | 23/23 → 23/23 | 18/18 → 18/18 | 10/10 → 10/10 | 27/27 → 27/27 |
+| `src/core/sequencerDecision.vibe` | 16/16 → 16/16 | 28/28 → 28/28 | 8/8 → 8/8 | 23/23 → 23/23 |
+| `src/core/specification.vibe` | 34/34 → 34/34 | 59/59 → 59/59 | 6/6 → 6/6 | 46/46 → 46/46 |
+| `src/core/toolRefusal.vibe` | 5/5 → 5/5 | 18/18 → 18/18 | 1/1 → 1/1 | 6/6 → 6/6 |
+| `src/core/tourDecision.vibe` | 9/9 → 9/9 | 23/23 → 23/23 | 4/4 → 4/4 | 14/14 → 14/14 |
+| `src/core/walkthroughSteps.vibe` | 3/3 → 4/4 | 0/0 → 2/2 | 1/1 → 1/1 | 3/3 → 4/4 |
+| `src/core/wiki.vibe` | 15/15 → 15/15 | 22/22 → 22/22 | 10/10 → 10/10 | 27/27 → 27/27 |
+| `src/core/wikiDecision.vibe` | 1/1 → 1/1 | 3/3 → 3/3 | 1/1 → 1/1 | 1/1 → 1/1 |
+| `src/core/wikiFlows.vibe` | 34/34 → 34/34 | 23/23 → 23/23 | 11/11 → 11/11 | 40/40 → 40/40 |
+| `src/core/wikiLinks.vibe` | 15/15 → 15/15 | 29/29 → 29/29 | 1/1 → 1/1 | 18/18 → 18/18 |
+| `src/core/wikiSchemas.vibe` | 5/5 → 5/5 | 0/0 → 0/0 | 0/0 → 0/0 | 5/5 → 5/5 |
+| `src/core/wire.vibe` | 27/27 → 27/27 | 14/14 → 14/14 | 3/3 → 3/3 | 31/31 → 31/31 |
+| `src/history/LiveMythical.vibe` | 41/41 → 41/41 | 12/12 → 12/12 | 16/16 → 16/16 | 47/47 → 47/47 |
+| `src/history/MockMythical.vibe` | 35/35 → 35/35 | 5/5 → 5/5 | 27/27 → 27/27 | 42/42 → 42/42 |
+| `src/history/MythicalHistory.vibe` | 2/2 → 2/2 | 2/2 → 2/2 | 1/1 → 1/1 | 3/3 → 3/3 |
+| `src/history/Sequencer.vibe` | 94/94 → 94/94 | 36/36 → 36/36 | 35/35 → 35/35 | 110/110 → 110/110 |
+| `src/history/flowMachine.vibe` | 50/50 → 50/50 | 91/91 → 91/91 | 21/21 → 21/21 | 68/68 → 68/68 |
+| `src/history/flows.vibe` | 105/105 → 105/105 | 13/14 → 13/14 | 51/51 → 51/51 | 113/113 → 113/113 |
+| `src/history/mythical.vibe` | 141/141 → 141/141 | 191/191 → 191/191 | 29/29 → 29/29 | 195/195 → 195/195 |
+| `src/history/pageDecision.vibe` | 5/5 → 5/5 | 8/8 → 8/8 | 3/3 → 3/3 | 7/7 → 7/7 |
+| `src/history/pages.vibe` | 36/36 → 36/36 | 26/26 → 26/26 | 20/20 → 20/20 | 46/46 → 46/46 |
+| `src/history/roles.vibe` | 4/4 → 4/4 | 0/0 → 0/0 | 1/1 → 1/1 | 4/4 → 4/4 |
+| `src/history/schemas.vibe` | 31/31 → 31/31 | 0/0 → 0/0 | 3/3 → 3/3 | 33/33 → 33/33 |
+| `src/history/seed.vibe` | 161/161 → 161/161 | 87/87 → 87/87 | 25/25 → 25/25 | 185/185 → 185/185 |
+| `src/history/seed/vibelang.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 0/0 → 0/0 | 2/2 → 2/2 |
+| `src/history/seedDecision.vibe` | 25/25 → 25/25 | 40/40 → 40/40 | 7/7 → 7/7 | 38/38 → 38/38 |
+| `src/history/stackDecision.vibe` | 15/15 → 15/15 | 25/25 → 25/25 | 7/7 → 7/7 | 23/23 → 23/23 |
+| `src/history/tools.vibe` | 29/29 → 29/29 | 46/47 → 46/47 | 9/9 → 9/9 | 36/36 → 36/36 |
+| `src/history/wire.vibe` | 35/35 → 35/35 | 35/35 → 35/35 | 5/5 → 5/5 | 43/43 → 43/43 |
+| `src/surfaces/backend.vibe` | 45/45 → 45/45 | 31/31 → 31/31 | 15/15 → 15/15 | 58/58 → 58/58 |
+| `src/surfaces/cli-entry.vibe` | 8/8 → 8/8 | 2/2 → 2/2 | 2/2 → 2/2 | 9/9 → 9/9 |
+| `src/surfaces/cli.vibe` | 16/16 → 16/16 | 10/10 → 10/10 | 6/6 → 6/6 | 18/18 → 18/18 |
+| `src/surfaces/commandDecision.vibe` | 22/22 → 22/22 | 64/64 → 64/64 | 17/17 → 17/17 | 23/23 → 23/23 |
+| `src/surfaces/commands.vibe` | 171/171 → 171/171 | 112/112 → 112/112 | 73/73 → 73/73 | 207/207 → 207/207 |
+| `src/surfaces/manifest.vibe` | 4/4 → 4/4 | 0/0 → 0/0 | 2/2 → 2/2 | 5/5 → 5/5 |
+| `src/surfaces/mcp-entry.vibe` | 6/6 → 6/6 | 0/0 → 0/0 | 1/1 → 1/1 | 6/6 → 6/6 |
+| `src/surfaces/mcp.vibe` | 17/17 → 17/17 | 4/4 → 4/4 | 6/6 → 6/6 | 20/20 → 20/20 |
+| `src/surfaces/session.vibe` | 63/63 → 63/63 | 24/24 → 24/24 | 22/22 → 22/22 | 75/75 → 75/75 |
+| `src/surfaces/sessionFlow.vibe` | 40/40 → 40/40 | 2/2 → 2/2 | 20/20 → 20/20 | 50/50 → 50/50 |
+| `src/surfaces/signin.vibe` | 115/115 → 115/115 | 108/108 → 108/108 | 30/30 → 30/30 | 153/153 → 153/153 |
+| `src/web/actionModel.vibe` | 14/14 → 14/14 | 19/19 → 19/19 | 7/7 → 7/7 | 16/16 → 16/16 |
+| `src/web/actionView.vibe` | 30/30 → 30/30 | 123/123 → 123/123 | 27/27 → 27/27 | 41/41 → 41/41 |
+| `src/web/backend.vibe` | 64/64 → 64/64 | 15/15 → 15/15 | 38/38 → 38/38 | 72/72 → 72/72 |
+| `src/web/entry.vibe` | 8/8 → 8/8 | 4/4 → 4/4 | 0/0 → 0/0 | 8/8 → 8/8 |
+| `src/web/historyApp.vibe` | 152/152 → 152/152 | 54/54 → 54/54 | 97/97 → 97/97 | 192/192 → 192/192 |
+| `src/web/historyBackend.vibe` | 26/26 → 26/26 | 6/6 → 6/6 | 16/16 → 16/16 | 29/29 → 29/29 |
+| `src/web/historyDecision.vibe` | 42/42 → 42/42 | 31/31 → 31/31 | 29/29 → 29/29 | 48/48 → 48/48 |
+| `src/web/historyStartup.vibe` | 32/32 → 32/32 | 12/12 → 12/12 | 8/8 → 8/8 | 38/38 → 38/38 |
+| `src/web/historyView.vibe` | 73/73 → 73/73 | 145/145 → 145/145 | 43/43 → 43/43 | 82/82 → 82/82 |
+| `src/web/issueDecision.vibe` | 91/91 → 91/91 | 257/257 → 257/257 | 22/22 → 22/22 | 142/142 → 142/142 |
+| `src/web/issues.vibe` | 21/21 → 21/21 | 36/36 → 36/36 | 6/6 → 6/6 | 26/26 → 26/26 |
+| `src/web/issuesView.vibe` | 83/83 → 83/83 | 435/435 → 435/435 | 78/78 → 78/78 | 118/118 → 118/118 |
+| `src/web/main.vibe` | 666/666 → 667/667 | 815/815 → 819/819 | 369/369 → 369/369 | 883/883 → 884/884 |
+| `src/web/markdown.vibe` | 106/106 → 106/106 | 95/95 → 95/95 | 27/27 → 27/27 | 151/151 → 151/151 |
+| `src/web/media.vibe` | 6/6 → 6/6 | 0/0 → 0/0 | 2/2 → 2/2 | 7/7 → 7/7 |
+| `src/web/modeSwitch.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 1/1 → 1/1 | 2/2 → 2/2 |
+| `src/web/modelDecision.vibe` | 78/78 → 78/78 | 112/112 → 112/112 | 51/51 → 51/51 | 95/95 → 95/95 |
+| `src/web/paneDecision.vibe` | 18/18 → 20/20 | 42/42 → 48/48 | 15/15 → 17/17 | 20/20 → 22/22 |
+| `src/web/roleView.vibe` | 24/24 → 24/24 | 66/66 → 66/66 | 14/14 → 14/14 | 27/27 → 27/27 |
+| `src/web/sandboxView.vibe` | 19/19 → 19/19 | 88/88 → 88/88 | 6/6 → 6/6 | 21/21 → 21/21 |
+| `src/web/screenDecision.vibe` | 46/46 → 46/46 | 102/102 → 102/102 | 30/30 → 30/30 | 58/58 → 58/58 |
+| `src/web/startup.vibe` | 50/50 → 50/50 | 22/22 → 22/22 | 13/13 → 13/13 | 64/64 → 64/64 |
+| `src/web/startupDecision.vibe` | 11/11 → 11/11 | 22/22 → 22/22 | 8/8 → 8/8 | 14/14 → 14/14 |
+| `src/web/styles.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 2/2 → 2/2 | 2/2 → 2/2 |
+| `src/web/theatre.vibe` | 45/45 → 45/45 | 38/38 → 38/38 | 7/7 → 7/7 | 51/51 → 51/51 |
+| `src/web/theatreDecision.vibe` | 18/18 → 18/18 | 56/56 → 56/56 | 5/5 → 5/5 | 31/31 → 31/31 |
+| `src/web/tourDecision.vibe` | 27/27 → 27/27 | 54/54 → 54/54 | 19/19 → 19/19 | 33/33 → 33/33 |
+| `src/web/updateDecision.vibe` | 42/42 → 42/42 | 105/105 → 105/105 | 14/14 → 14/14 | 62/62 → 62/62 |
+| `src/web/view.vibe` | 53/53 → 53/53 | 159/159 → 159/159 | 33/33 → 33/33 | 58/58 → 58/58 |
+| `src/web/viewDecision.vibe` | 22/22 → 22/22 | 52/52 → 52/52 | 13/13 → 13/13 | 31/31 → 31/31 |
+| `src/web/viewport.vibe` | 37/37 → 37/37 | 41/41 → 41/41 | 14/14 → 14/14 | 45/45 → 45/45 |
+| `src/web/wikiView.vibe` | 28/28 → 27/27 | 91/95 → 96/96 | 19/19 → 19/19 | 39/39 → 38/38 |
+| `worker/Accounts.vibe` | 286/312 → 286/312 | 310/361 → 310/361 | 66/73 → 66/73 | 391/430 → 391/430 |
+| `worker/ActionDirectory.vibe` | 37/37 → 37/37 | 22/26 → 22/26 | 20/20 → 20/20 | 52/52 → 52/52 |
+| `worker/ActionIdentity.vibe` | 14/14 → 14/14 | 19/20 → 19/20 | 7/7 → 7/7 | 18/18 → 18/18 |
+| `worker/ActionRuns.vibe` | 120/120 → 120/120 | 173/178 → 173/178 | 36/36 → 36/36 | 161/163 → 161/163 |
+| `worker/ActionsHttp.vibe` | 41/41 → 41/41 | 91/95 → 91/95 | 9/10 → 9/10 | 60/61 → 60/61 |
+| `worker/AgentModel.vibe` | 9/9 → 9/9 | 0/0 → 0/0 | 3/3 → 3/3 | 9/9 → 9/9 |
+| `worker/Api.vibe` | 46/46 → 46/46 | 0/0 → 0/0 | 0/1 → 0/1 | 46/47 → 46/47 |
+| `worker/Budget.vibe` | 22/22 → 22/22 | 19/19 → 19/19 | 4/4 → 4/4 | 24/24 → 24/24 |
+| `worker/GitHubDelegate.vibe` | 4/4 → 4/4 | 11/11 → 11/11 | 3/3 → 3/3 | 6/6 → 6/6 |
+| `worker/HistoryActions.vibe` | 30/33 → 30/33 | 15/19 → 15/19 | 9/11 → 9/11 | 32/37 → 32/37 |
+| `worker/HistoryObject.vibe` | 57/59 → 57/59 | 15/15 → 15/15 | 29/32 → 29/32 | 71/74 → 71/74 |
+| `worker/HistoryTools.vibe` | 8/8 → 8/8 | 0/0 → 0/0 | 6/6 → 6/6 | 8/8 → 8/8 |
+| `worker/Http.vibe` | 93/93 → 93/93 | 100/100 → 100/100 | 23/23 → 23/23 | 126/126 → 126/126 |
+| `worker/Issues.vibe` | 297/298 → 297/298 | 450/453 → 450/453 | 64/66 → 64/66 | 399/401 → 399/401 |
+| `worker/MainLog.vibe` | 42/42 → 42/42 | 26/27 → 26/27 | 12/12 → 12/12 | 57/58 → 57/58 |
+| `worker/ObjectStartup.vibe` | 60/60 → 60/60 | 27/27 → 27/27 | 16/16 → 16/16 | 75/75 → 75/75 |
+| `worker/ObjectStorage.vibe` | 10/10 → 10/10 | 6/6 → 6/6 | 11/11 → 11/11 | 14/14 → 14/14 |
+| `worker/Objects.vibe` | 111/112 → 111/112 | 44/47 → 44/47 | 58/59 → 58/59 | 139/140 → 139/140 |
+| `worker/PublicReads.vibe` | 12/12 → 12/12 | 6/6 → 6/6 | 12/12 → 12/12 | 19/19 → 19/19 |
+| `worker/Reply.vibe` | 138/138 → 138/138 | 80/81 → 80/81 | 19/19 → 19/19 | 159/159 → 159/159 |
+| `worker/SandboxAccounts.vibe` | 11/11 → 11/11 | 2/2 → 2/2 | 0/0 → 0/0 | 12/12 → 12/12 |
+| `worker/SandboxHttp.vibe` | 28/30 → 28/30 | 33/34 → 33/34 | 7/10 → 7/10 | 39/42 → 39/42 |
+| `worker/SandboxMachine.vibe` | 4/4 → 4/4 | 0/0 → 0/0 | 0/0 → 0/0 | 4/4 → 4/4 |
+| `worker/SandboxTools.vibe` | 8/11 → 8/11 | 1/2 → 1/2 | 7/10 → 7/10 | 9/12 → 9/12 |
+| `worker/Sandboxes.vibe` | 22/22 → 22/22 | 21/21 → 21/21 | 17/17 → 17/17 | 37/37 → 37/37 |
+| `worker/Sequencer.vibe` | 118/118 → 118/118 | 60/62 → 60/62 | 44/44 → 44/44 | 140/140 → 140/140 |
+| `worker/SpecificationReviewers.vibe` | 31/31 → 31/31 | 8/8 → 8/8 | 8/9 → 8/9 | 41/42 → 41/42 |
+| `worker/Tour.vibe` | 1/2 → 1/2 | 0/0 → 0/0 | 0/1 → 0/1 | 1/2 → 1/2 |
+| `worker/Unreachable.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `worker/VipDraft.vibe` | 30/30 → 30/30 | 10/10 → 10/10 | 7/8 → 7/8 | 40/41 → 40/41 |
+| `worker/Wiki.vibe` | 175/175 → 175/175 | 234/234 → 234/234 | 49/49 → 49/49 | 240/240 → 240/240 |
+| `worker/WikiDraft.vibe` | 32/32 → 32/32 | 14/14 → 14/14 | 7/8 → 7/8 | 43/44 → 43/44 |
+| `worker/WikiTools.vibe` | 9/9 → 9/9 | 6/6 → 6/6 | 6/6 → 6/6 | 13/13 → 13/13 |
+| `worker/accountObject.vibe` | 48/48 → 48/48 | 35/35 → 35/35 | 39/39 → 39/39 | 79/79 → 79/79 |
+| `worker/agentContext.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `worker/apiObjects.vibe` | 214/214 → 214/214 | 70/73 → 70/73 | 94/94 → 94/94 | 254/254 → 254/254 |
+| `worker/budgetDecision.vibe` | 5/5 → 5/5 | 5/5 → 5/5 | 4/4 → 4/4 | 6/6 → 6/6 |
+| `worker/index.vibe` | 13/13 → 13/13 | 19/19 → 19/19 | 2/2 → 2/2 | 17/17 → 17/17 |
+| `worker/liveDispatchDecision.vibe` | 7/7 → 7/7 | 8/8 → 8/8 | 3/3 → 3/3 | 11/11 → 11/11 |
+| `worker/machineObject.vibe` | 62/63 → 62/63 | 57/83 → 57/83 | 17/17 → 17/17 | 77/92 → 77/92 |
+| `worker/replyProgressDecision.vibe` | 17/17 → 17/17 | 32/32 → 32/32 | 10/10 → 10/10 | 22/22 → 22/22 |
+| `worker/replyReasons.vibe` | 7/7 → 7/7 | 12/12 → 12/12 | 2/2 → 2/2 | 12/12 → 12/12 |
+
+
+Chromium: 288 passed, 12 opt-in skips, no expected or unexpected failures. Coverage alone exits 1: lines
+3,448/7,769 (44.38%), branches 3,466/8,203 (42.25%), functions 1,414/2,931 (48.24%), statements 4,001/9,897
+(40.42%); 151 of 164 files below 100% (542 metrics). This is Chromium execution alone, with unloaded modules seeded
+at zero. The unminified e2e build and original-map controls are retained. The run used gatefix's installed Chromium,
+configurable build budget and content-addressed capture store on a Playwright box. Its Node 24.22.2 is below the
+repository's >=26.4 engine requirement; this receipt records that limitation.
+
+| File | Lines | Branches | Functions | Statements |
+| --- | ---: | ---: | ---: | ---: |
+| `infra/SandboxImage.vibe` | 0/2 → 0/2 | 0/0 → 0/0 | 0/0 → 0/0 | 0/2 → 0/2 |
+| `infra/Stack.vibe` | 0/8 → 0/8 | 0/6 → 0/6 | 0/0 → 0/0 | 0/8 → 0/8 |
+| `infra/WorkerBuild.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 0/1 |
+| `scripts/agent-context.vibe` | 0/22 → 0/22 | 0/4 → 0/4 | 0/5 → 0/5 | 0/23 → 0/23 |
+| `scripts/fuzz-preflight.vibe` | — → 0/16 | — → 0/4 | — → 0/3 | — → 0/18 |
+| `scripts/mythical-seed-program.vibe` | — → 0/50 | — → 0/18 | — → 0/15 | — → 0/63 |
+| `scripts/mythical-seed.vibe` | 0/51 → 0/1 | 0/18 → 0/0 | 0/16 → 0/0 | 0/65 → 0/1 |
+| `scripts/wiki.vibe` | 0/30 → 0/30 | 0/28 → 0/28 | 0/8 → 0/8 | 0/38 → 0/38 |
+| `src/actions/Actions.vibe` | 5/5 → 4/4 | 0/0 → 0/0 | 0/0 → 0/0 | 6/6 → 4/4 |
+| `src/actions/LiveActions.vibe` | 2/45 → 1/43 | 0/39 → 0/21 | 0/34 → 0/25 | 4/86 → 1/54 |
+| `src/actions/MockActions.vibe` | 112/119 → 101/114 | 91/168 → 50/85 | 31/44 → 28/39 | 203/230 → 119/152 |
+| `src/actions/agent.vibe` | 7/12 → 6/11 | 0/0 → 0/0 | 6/14 → 5/12 | 15/31 → 7/17 |
+| `src/actions/catalog.vibe` | 5/8 → 6/9 | 78/80 → 26/26 | 4/4 → 2/2 | 8/11 → 6/9 |
+| `src/actions/catalogDecision.vibe` | — → 3/3 | — → 12/12 | — → 2/2 | — → 4/4 |
+| `src/actions/execution.vibe` | 17/40 → 7/38 | 6/53 → 6/36 | 4/30 → 3/18 | 24/79 → 7/41 |
+| `src/actions/tools.vibe` | 0/13 → 0/13 | 0/1 → 0/1 | 0/7 → 0/7 | 0/14 → 0/14 |
+| `src/actions/wire.vibe` | 6/6 → 6/6 | 0/0 → 0/0 | 0/0 → 0/0 | 8/8 → 6/6 |
+| `src/assets/wiki.generated.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 0/0 → 0/0 | 4/4 → 2/2 |
+| `src/core/Factory.vibe` | 4/4 → 3/3 | 0/0 → 0/0 | 0/0 → 0/0 | 6/6 → 3/3 |
+| `src/core/IssuesFactory.vibe` | 68/77 → 66/74 | 150/203 → 89/118 | 18/20 → 13/15 | 109/133 → 74/96 |
+| `src/core/LiveAccounts.vibe` | 0/26 → 0/26 | 0/20 → 0/12 | 0/22 → 0/13 | 0/51 → 0/32 |
+| `src/core/LiveFactory.vibe` | 11/87 → 11/77 | 1/52 → 1/30 | 5/24 → 3/20 | 21/141 → 12/89 |
+| `src/core/LiveIssues.vibe` | 0/11 → 0/11 | 0/12 → 0/6 | 0/9 → 0/7 | 0/26 → 0/16 |
+| `src/core/LiveWiki.vibe` | 1/17 → 1/15 | 0/8 → 0/4 | 0/11 → 0/10 | 2/33 → 1/21 |
+| `src/core/MockAccounts.vibe` | 82/84 → 66/76 | 35/63 → 21/34 | 26/31 → 23/26 | 142/150 → 78/100 |
+| `src/core/MockFactory.vibe` | 248/273 → 223/266 | 159/261 → 97/139 | 79/99 → 64/78 | 443/508 → 251/318 |
+| `src/core/MockJournal.vibe` | 2/2 → 1/1 | 0/0 → 0/0 | 5/5 → 3/3 | 8/8 → 3/4 |
+| `src/core/VipWriter.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 0/1 |
+| `src/core/WikiFactory.vibe` | 0/66 → 0/62 | 0/126 → 0/67 | 1/28 → 1/21 | 0/122 → 0/83 |
+| `src/core/WikiWriter.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 0/1 |
+| `src/core/accountCookieDecision.vibe` | 0/1 → 0/5 | 0/2 → 0/15 | 0/1 → 0/3 | 0/1 → 0/7 |
+| `src/core/accountCookies.vibe` | 0/9 → 0/7 | 0/11 → 0/0 | 0/2 → 0/2 | 0/12 → 0/8 |
+| `src/core/conversation.vibe` | 170/241 → 198/246 | 464/659 → 269/396 | 114/133 → 63/80 | 248/395 → 233/339 |
+| `src/core/decide.vibe` | 54/55 → 49/55 | 168/211 → 77/107 | 9/9 → 6/6 | 97/101 → 58/87 |
+| `src/core/flowDecision.vibe` | 24/65 → 21/53 | 54/168 → 22/105 | 36/48 → 13/24 | 29/93 → 22/68 |
+| `src/core/flows.vibe` | 130/168 → 186/196 | 93/152 → 41/66 | 35/66 → 69/72 | 232/293 → 192/204 |
+| `src/core/followDecision.vibe` | — → 2/2 | — → 1/2 | — → 2/2 | — → 2/2 |
+| `src/core/identityDecision.vibe` | 1/2 → 2/2 | 6/8 → 4/4 | 2/2 → 1/1 | 1/3 → 3/3 |
+| `src/core/issueFlows.vibe` | 31/34 → 29/34 | 27/36 → 16/20 | 11/12 → 10/11 | 53/57 → 32/40 |
+| `src/core/issueSchemas.vibe` | 11/12 → 11/12 | 0/0 → 0/0 | 2/3 → 1/2 | 21/22 → 11/12 |
+| `src/core/mockDecision.vibe` | 10/10 → 17/17 | 4/4 → 6/6 | 4/4 → 4/4 | 16/16 → 19/19 |
+| `src/core/mockReplies.vibe` | 16/19 → 14/17 | 4/8 → 2/4 | 5/9 → 3/6 | 29/37 → 15/19 |
+| `src/core/protocolDecision.vibe` | 2/17 → 2/22 | 0/50 → 0/54 | 4/12 → 2/14 | 2/25 → 2/30 |
+| `src/core/roles.vibe` | 7/7 → 5/5 | 1/1 → 1/1 | 2/2 → 1/1 | 10/10 → 5/5 |
+| `src/core/sandboxDecision.vibe` | 43/55 → 52/59 | 77/119 → 47/78 | 28/29 → 15/16 | 72/101 → 60/80 |
+| `src/core/sandboxHost.vibe` | 120/175 → 120/175 | 147/248 → 85/137 | 34/37 → 24/27 | 201/308 → 132/209 |
+| `src/core/sandboxMeter.vibe` | 31/33 → 31/33 | 48/62 → 27/35 | 11/11 → 7/7 | 48/56 → 32/39 |
+| `src/core/sandboxMock.vibe` | 48/50 → 40/47 | 25/84 → 18/46 | 27/30 → 20/23 | 99/106 → 56/72 |
+| `src/core/sandboxPolicy.vibe` | 2/3 → 1/2 | 0/0 → 0/0 | 0/4 → 0/3 | 3/6 → 1/4 |
+| `src/core/schemas.vibe` | 24/30 → 23/30 | 0/0 → 0/0 | 0/0 → 0/0 | 27/33 → 23/30 |
+| `src/core/sequenceDecision.vibe` | 0/20 → 0/23 | 0/12 → 0/18 | 0/8 → 0/10 | 0/23 → 0/27 |
+| `src/core/sequencerDecision.vibe` | — → 0/16 | — → 0/28 | — → 0/8 | — → 0/23 |
+| `src/core/specification.vibe` | 28/34 → 29/34 | 55/87 → 34/57 | 5/6 → 5/6 | 45/61 → 31/44 |
+| `src/core/toolRefusal.vibe` | — → 0/5 | — → 0/18 | — → 0/1 | — → 0/6 |
+| `src/core/tourDecision.vibe` | — → 3/9 | — → 5/23 | — → 2/4 | — → 3/14 |
+| `src/core/walkthroughSteps.vibe` | 2/2 → 3/4 | 0/0 → 1/2 | 0/0 → 1/1 | 3/3 → 3/4 |
+| `src/core/wiki.vibe` | 14/15 → 10/15 | 26/45 → 14/22 | 14/14 → 6/10 | 27/32 → 16/27 |
+| `src/core/wikiDecision.vibe` | 0/1 → 0/1 | 0/6 → 0/3 | 0/2 → 0/1 | 0/1 → 0/1 |
+| `src/core/wikiFlows.vibe` | 13/34 → 9/34 | 20/42 → 12/23 | 2/12 → 2/11 | 22/57 → 10/40 |
+| `src/core/wikiLinks.vibe` | 0/14 → 0/15 | 0/59 → 0/29 | 0/2 → 0/1 | 0/25 → 0/18 |
+| `src/core/wikiSchemas.vibe` | 5/5 → 5/5 | 0/0 → 0/0 | 0/0 → 0/0 | 10/10 → 5/5 |
+| `src/core/wire.vibe` | 9/27 → 8/27 | 0/18 → 0/14 | 0/4 → 0/3 | 14/38 → 8/31 |
+| `src/history/LiveMythical.vibe` | 3/44 → 3/41 | 0/16 → 0/12 | 0/24 → 0/16 | 6/76 → 3/47 |
+| `src/history/MockMythical.vibe` | 41/41 → 33/35 | 6/12 → 3/5 | 36/37 → 25/26 | 62/63 → 38/41 |
+| `src/history/MythicalHistory.vibe` | 2/3 → 2/2 | 1/4 → 1/2 | 1/1 → 1/1 | 2/5 → 2/3 |
+| `src/history/Sequencer.vibe` | 72/97 → 72/94 | 25/70 → 17/36 | 53/59 → 30/35 | 130/175 → 76/110 |
+| `src/history/flowMachine.vibe` | 27/51 → 25/50 | 59/157 → 30/91 | 34/41 → 14/21 | 30/73 → 25/68 |
+| `src/history/flows.vibe` | 64/78 → 100/105 | 17/36 → 7/14 | 24/38 → 50/51 | 114/142 → 106/113 |
+| `src/history/mythical.vibe` | 110/141 → 108/141 | 228/339 → 126/191 | 44/52 → 25/29 | 175/236 → 118/195 |
+| `src/history/pageDecision.vibe` | — → 4/5 | — → 6/8 | — → 3/3 | — → 5/7 |
+| `src/history/pages.vibe` | 28/36 → 28/36 | 39/54 → 18/26 | 28/29 → 19/20 | 52/62 → 37/46 |
+| `src/history/roles.vibe` | 5/7 → 3/4 | 0/0 → 0/0 | 2/2 → 1/1 | 8/10 → 3/4 |
+| `src/history/schemas.vibe` | 20/32 → 18/31 | 0/0 → 0/0 | 1/3 → 1/3 | 25/39 → 18/33 |
+| `src/history/seed.vibe` | 5/171 → 5/161 | 0/115 → 0/87 | 0/36 → 0/25 | 9/212 → 5/185 |
+| `src/history/seed/vibelang.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 0/0 → 0/0 | 4/4 → 2/2 |
+| `src/history/seedDecision.vibe` | — → 0/25 | — → 0/40 | — → 0/7 | — → 0/38 |
+| `src/history/stackDecision.vibe` | — → 6/15 | — → 7/25 | — → 2/7 | — → 8/23 |
+| `src/history/tools.vibe` | 3/27 → 5/29 | 0/82 → 0/47 | 1/17 → 0/9 | 7/47 → 5/35 |
+| `src/history/wire.vibe` | 8/35 → 8/35 | 0/35 → 0/35 | 0/6 → 0/5 | 10/47 → 8/43 |
+| `src/surfaces/backend.vibe` | 0/45 → 0/45 | 0/35 → 0/31 | 0/14 → 0/15 | 0/58 → 0/58 |
+| `src/surfaces/cli-entry.vibe` | 0/8 → 0/8 | 0/2 → 0/2 | 0/2 → 0/2 | 0/9 → 0/9 |
+| `src/surfaces/cli.vibe` | 0/16 → 0/16 | 0/10 → 0/10 | 0/6 → 0/6 | 0/18 → 0/18 |
+| `src/surfaces/commandDecision.vibe` | 0/9 → 0/22 | 0/33 → 0/64 | 0/5 → 0/17 | 0/10 → 0/23 |
+| `src/surfaces/commands.vibe` | 0/168 → 0/171 | 0/134 → 0/112 | 0/73 → 0/73 | 0/204 → 0/207 |
+| `src/surfaces/manifest.vibe` | 0/4 → 0/4 | 0/0 → 0/0 | 0/2 → 0/2 | 0/5 → 0/5 |
+| `src/surfaces/mcp-entry.vibe` | 0/6 → 0/6 | 0/0 → 0/0 | 0/1 → 0/1 | 0/6 → 0/6 |
+| `src/surfaces/mcp.vibe` | 0/17 → 0/17 | 0/4 → 0/4 | 0/6 → 0/6 | 0/20 → 0/20 |
+| `src/surfaces/session.vibe` | 0/63 → 0/63 | 0/24 → 0/24 | 0/22 → 0/22 | 0/75 → 0/75 |
+| `src/surfaces/sessionFlow.vibe` | 0/29 → 0/40 | 0/2 → 0/2 | 0/10 → 0/18 | 0/35 → 0/48 |
+| `src/surfaces/signin.vibe` | 0/108 → 0/115 | 0/94 → 0/108 | 0/26 → 0/29 | 0/141 → 0/151 |
+| `src/web/actionModel.vibe` | 17/17 → 14/14 | 39/57 → 16/19 | 17/17 → 7/7 | 32/33 → 15/16 |
+| `src/web/actionView.vibe` | 27/30 → 27/30 | 201/243 → 104/123 | 35/40 → 22/27 | 48/53 → 36/41 |
+| `src/web/backend.vibe` | 61/71 → 53/64 | 22/30 → 9/15 | 39/47 → 28/38 | 116/134 → 61/72 |
+| `src/web/entry.vibe` | 8/8 → 8/8 | 8/8 → 4/4 | 0/0 → 0/0 | 13/13 → 8/8 |
+| `src/web/historyApp.vibe` | 145/168 → 135/152 | 85/149 → 32/54 | 123/158 → 76/97 | 259/308 → 162/192 |
+| `src/web/historyBackend.vibe` | 26/27 → 23/26 | 8/12 → 3/6 | 20/22 → 14/16 | 56/57 → 25/29 |
+| `src/web/historyDecision.vibe` | — → 35/42 | — → 23/31 | — → 23/29 | — → 38/48 |
+| `src/web/historyStartup.vibe` | 30/32 → 30/32 | 15/22 → 11/12 | 11/11 → 8/8 | 51/55 → 34/38 |
+| `src/web/historyView.vibe` | 60/73 → 64/73 | 219/284 → 116/145 | 58/63 → 40/43 | 89/109 → 70/82 |
+| `src/web/issueDecision.vibe` | 48/89 → 79/91 | 305/441 → 173/257 | 28/39 → 16/22 | 73/152 → 99/142 |
+| `src/web/issues.vibe` | 21/21 → 21/21 | 63/74 → 31/36 | 12/12 → 6/6 | 33/34 → 25/26 |
+| `src/web/issuesView.vibe` | 74/78 → 78/83 | 686/853 → 348/435 | 96/102 → 72/78 | 129/137 → 105/118 |
+| `src/web/main.vibe` | 557/689 → 559/667 | 1151/1772 → 532/819 | 456/583 → 283/369 | 1054/1347 → 692/884 |
+| `src/web/markdown.vibe` | 61/106 → 65/106 | 77/178 → 44/95 | 22/43 → 13/27 | 109/206 → 78/145 |
+| `src/web/media.vibe` | 7/7 → 6/6 | 0/0 → 0/0 | 3/3 → 2/2 | 13/13 → 6/7 |
+| `src/web/modeSwitch.vibe` | 2/2 → 2/2 | 8/8 → 0/0 | 2/2 → 1/1 | 3/3 → 2/2 |
+| `src/web/modelDecision.vibe` | 26/54 → 53/78 | 56/120 → 74/112 | 52/80 → 37/51 | 26/67 → 60/95 |
+| `src/web/paneDecision.vibe` | 7/19 → 7/20 | 26/84 → 12/48 | 12/32 → 6/17 | 8/22 → 7/22 |
+| `src/web/roleView.vibe` | 23/24 → 21/24 | 123/132 → 62/66 | 21/21 → 12/14 | 37/39 → 24/27 |
+| `src/web/sandboxView.vibe` | 16/17 → 18/19 | 128/180 → 70/88 | 10/10 → 6/6 | 29/30 → 19/21 |
+| `src/web/screenDecision.vibe` | 28/41 → 45/46 | 128/164 → 87/102 | 52/55 → 30/30 | 30/53 → 54/58 |
+| `src/web/startup.vibe` | 47/50 → 46/50 | 25/40 → 16/22 | 15/19 → 12/13 | 91/100 → 56/64 |
+| `src/web/startupDecision.vibe` | 6/9 → 11/11 | 29/36 → 20/22 | 12/12 → 8/8 | 6/12 → 13/14 |
+| `src/web/styles.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 2/2 → 2/2 | 2/2 → 2/2 |
+| `src/web/theatre.vibe` | 46/46 → 42/45 | 74/79 → 35/38 | 10/10 → 7/7 | 85/85 → 48/51 |
+| `src/web/theatreDecision.vibe` | 5/18 → 16/18 | 98/112 → 51/56 | 10/10 → 5/5 | 5/31 → 29/31 |
+| `src/web/tourDecision.vibe` | 11/16 → 25/27 | 19/40 → 42/54 | 20/24 → 17/19 | 12/22 → 25/33 |
+| `src/web/updateDecision.vibe` | — → 39/42 | — → 88/105 | — → 13/14 | — → 56/62 |
+| `src/web/view.vibe` | 50/53 → 50/53 | 288/342 → 140/159 | 56/58 → 32/33 | 78/89 → 53/58 |
+| `src/web/viewDecision.vibe` | 12/22 → 21/22 | 75/104 → 40/52 | 24/26 → 12/13 | 12/32 → 25/31 |
+| `src/web/viewport.vibe` | 46/48 → 29/37 | 69/108 → 24/41 | 26/26 → 14/14 | 78/84 → 32/45 |
+| `src/web/wikiView.vibe` | 27/28 → 26/27 | 115/182 → 60/96 | 20/24 → 15/19 | 58/62 → 31/38 |
+| `worker/Accounts.vibe` | 0/267 → 0/312 | 0/342 → 0/361 | 0/62 → 0/73 | 0/369 → 0/430 |
+| `worker/ActionDirectory.vibe` | 0/36 → 0/37 | 0/24 → 0/26 | 0/17 → 0/20 | 0/50 → 0/52 |
+| `worker/ActionIdentity.vibe` | 0/14 → 0/14 | 0/20 → 0/20 | 0/7 → 0/7 | 0/18 → 0/18 |
+| `worker/ActionRuns.vibe` | 0/117 → 0/120 | 0/168 → 0/178 | 0/34 → 0/36 | 0/160 → 0/163 |
+| `worker/ActionsHttp.vibe` | 0/41 → 0/41 | 0/95 → 0/95 | 0/10 → 0/10 | 0/61 → 0/61 |
+| `worker/AgentModel.vibe` | 0/9 → 0/9 | 0/0 → 0/0 | 0/3 → 0/3 | 0/9 → 0/9 |
+| `worker/Api.vibe` | 0/231 → 0/46 | 0/59 → 0/0 | 0/79 → 0/1 | 0/263 → 0/47 |
+| `worker/Budget.vibe` | 0/22 → 0/22 | 0/19 → 0/19 | 0/4 → 0/4 | 0/24 → 0/24 |
+| `worker/GitHubDelegate.vibe` | — → 0/4 | — → 0/11 | — → 0/3 | — → 0/6 |
+| `worker/HistoryActions.vibe` | 0/33 → 0/33 | 0/19 → 0/19 | 0/11 → 0/11 | 0/37 → 0/37 |
+| `worker/HistoryObject.vibe` | 0/60 → 0/59 | 0/15 → 0/15 | 0/33 → 0/32 | 0/75 → 0/74 |
+| `worker/HistoryTools.vibe` | 0/8 → 0/8 | 0/0 → 0/0 | 0/6 → 0/6 | 0/8 → 0/8 |
+| `worker/Http.vibe` | 0/93 → 0/93 | 0/104 → 0/100 | 0/23 → 0/23 | 0/126 → 0/126 |
+| `worker/IssueCredentials.vibe` | 0/16 → — | 0/9 → — | 0/11 → — | 0/24 → — |
+| `worker/Issues.vibe` | 0/271 → 0/298 | 0/440 → 0/453 | 0/68 → 0/66 | 0/380 → 0/401 |
+| `worker/MainLog.vibe` | 0/43 → 0/42 | 0/29 → 0/27 | 0/12 → 0/12 | 0/60 → 0/58 |
+| `worker/ObjectStartup.vibe` | — → 0/60 | — → 0/27 | — → 0/16 | — → 0/75 |
+| `worker/ObjectStorage.vibe` | 0/10 → 0/10 | 0/6 → 0/6 | 0/11 → 0/11 | 0/14 → 0/14 |
+| `worker/Objects.vibe` | 0/108 → 0/112 | 0/46 → 0/47 | 0/60 → 0/59 | 0/136 → 0/140 |
+| `worker/PublicReads.vibe` | — → 0/12 | — → 0/6 | — → 0/12 | — → 0/19 |
+| `worker/Reply.vibe` | 0/136 → 0/138 | 0/81 → 0/81 | 0/17 → 0/19 | 0/155 → 0/158 |
+| `worker/SandboxAccounts.vibe` | 0/12 → 0/11 | 0/2 → 0/2 | 0/0 → 0/0 | 0/13 → 0/12 |
+| `worker/SandboxHttp.vibe` | 0/30 → 0/30 | 0/34 → 0/34 | 0/10 → 0/10 | 0/42 → 0/42 |
+| `worker/SandboxMachine.vibe` | 0/4 → 0/4 | 0/0 → 0/0 | 0/0 → 0/0 | 0/4 → 0/4 |
+| `worker/SandboxTools.vibe` | 0/11 → 0/11 | 0/2 → 0/2 | 0/10 → 0/10 | 0/12 → 0/12 |
+| `worker/Sandboxes.vibe` | 0/22 → 0/22 | 0/21 → 0/21 | 0/17 → 0/17 | 0/37 → 0/37 |
+| `worker/Sequencer.vibe` | 0/119 → 0/118 | 0/68 → 0/62 | 0/47 → 0/44 | 0/143 → 0/140 |
+| `worker/SpecificationReviewers.vibe` | 0/31 → 0/31 | 0/8 → 0/8 | 0/10 → 0/9 | 0/42 → 0/42 |
+| `worker/Tour.vibe` | 0/5 → 0/2 | 0/0 → 0/0 | 0/2 → 0/1 | 0/6 → 0/2 |
+| `worker/Unreachable.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 0/1 |
+| `worker/VipDraft.vibe` | 0/30 → 0/30 | 0/10 → 0/10 | 0/9 → 0/8 | 0/41 → 0/41 |
+| `worker/Wiki.vibe` | 0/152 → 0/175 | 0/213 → 0/234 | 0/51 → 0/49 | 0/221 → 0/240 |
+| `worker/WikiDraft.vibe` | 0/32 → 0/32 | 0/14 → 0/14 | 0/9 → 0/8 | 0/44 → 0/44 |
+| `worker/WikiTools.vibe` | 0/9 → 0/9 | 0/6 → 0/6 | 0/6 → 0/6 | 0/13 → 0/13 |
+| `worker/accountObject.vibe` | 0/48 → 0/48 | 0/35 → 0/35 | 0/39 → 0/39 | 0/79 → 0/79 |
+| `worker/agentContext.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 0/1 |
+| `worker/apiObjects.vibe` | — → 0/214 | — → 0/73 | — → 0/94 | — → 0/254 |
+| `worker/budgetDecision.vibe` | 0/5 → 0/5 | 0/5 → 0/5 | 0/4 → 0/4 | 0/6 → 0/6 |
+| `worker/index.vibe` | 0/13 → 0/13 | 0/19 → 0/19 | 0/2 → 0/2 | 0/17 → 0/17 |
+| `worker/liveDispatchDecision.vibe` | 0/7 → 0/7 | 0/8 → 0/8 | 0/3 → 0/3 | 0/11 → 0/11 |
+| `worker/machineObject.vibe` | 0/63 → 0/63 | 0/83 → 0/83 | 0/17 → 0/17 | 0/92 → 0/92 |
+| `worker/replyProgressDecision.vibe` | 0/17 → 0/17 | 0/32 → 0/32 | 0/10 → 0/10 | 0/22 → 0/22 |
+| `worker/replyReasons.vibe` | 0/7 → 0/7 | 0/12 → 0/12 | 0/2 → 0/2 | 0/12 → 0/12 |
+
+
+Workerd: 73 passed / three skipped, 16 passing files / one skipped, no test failures. Coverage alone exits 1:
+3,487/7,749 lines (~45.0%), 2,417/8,203 branches, 988/2,938 functions and 3,996/9,892 statements; 141 of 163
+files below 100%, with counters from 100 isolate files. This earlier snapshot predates the final main rebase and
+tour/error boundary refinements. Before below is this run's parent-Node coverage, after is parent plus isolate
+execution from these same tests; unit/Chromium hits are never borrowed. Native/Istanbul counter structures can
+differ, so both denominators are shown. The box also ran Node 24.22.2, below the repository engine requirement.
+
+| File | Lines | Branches | Functions | Statements |
+| --- | ---: | ---: | ---: | ---: |
+| `infra/SandboxImage.vibe` | 0/2 → 0/2 | 0/0 → 0/0 | 0/0 → 0/0 | 0/2 → 0/2 |
+| `infra/Stack.vibe` | 0/8 → 0/8 | 0/6 → 0/6 | 0/0 → 0/0 | 0/8 → 0/8 |
+| `infra/WorkerBuild.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 0/1 |
+| `scripts/agent-context.vibe` | 0/22 → 0/22 | 0/4 → 0/4 | 0/5 → 0/5 | 0/23 → 0/23 |
+| `scripts/mythical-seed-program.vibe` | 0/50 → 0/50 | 0/18 → 0/18 | 0/16 → 0/16 | 0/64 → 0/64 |
+| `scripts/mythical-seed.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 0/1 |
+| `scripts/wiki.vibe` | 0/30 → 0/30 | 0/28 → 0/28 | 0/8 → 0/8 | 0/38 → 0/38 |
+| `src/actions/Actions.vibe` | 4/4 → 4/4 | 0/0 → 0/0 | 0/0 → 0/0 | 4/4 → 4/4 |
+| `src/actions/LiveActions.vibe` | 40/43 → 40/43 | 15/21 → 15/21 | 20/25 → 20/25 | 45/54 → 45/54 |
+| `src/actions/MockActions.vibe` | 2/114 → 2/114 | 0/85 → 0/85 | 2/40 → 2/40 | 2/153 → 2/153 |
+| `src/actions/agent.vibe` | 4/11 → 5/11 | 0/0 → 0/0 | 2/12 → 3/12 | 5/17 → 7/17 |
+| `src/actions/catalog.vibe` | 4/9 → 9/9 | 0/26 → 26/26 | 0/2 → 2/2 | 4/9 → 9/9 |
+| `src/actions/catalogDecision.vibe` | 0/3 → 3/3 | 0/12 → 12/12 | 0/2 → 2/2 | 0/4 → 4/4 |
+| `src/actions/execution.vibe` | 1/38 → 11/38 | 0/36 → 10/36 | 0/18 → 5/18 | 1/41 → 12/41 |
+| `src/actions/tools.vibe` | 4/13 → 4/13 | 0/1 → 0/1 | 0/7 → 0/7 | 4/14 → 4/14 |
+| `src/actions/wire.vibe` | 6/6 → 6/6 | 0/0 → 0/0 | 0/0 → 0/0 | 6/6 → 6/6 |
+| `src/assets/wiki.generated.vibe` | 2/2 → 2/2 | 0/0 → 0/0 | 0/0 → 0/0 | 2/2 → 2/2 |
+| `src/core/Factory.vibe` | 3/3 → 3/3 | 0/0 → 0/0 | 0/0 → 0/0 | 3/3 → 3/3 |
+| `src/core/IssuesFactory.vibe` | 2/74 → 42/74 | 1/118 → 51/118 | 1/15 → 7/15 | 2/96 → 46/96 |
+| `src/core/LiveAccounts.vibe` | 7/26 → 7/26 | 0/12 → 0/12 | 1/13 → 1/13 | 7/32 → 7/32 |
+| `src/core/LiveFactory.vibe` | 51/77 → 51/77 | 7/30 → 7/30 | 13/20 → 13/20 | 51/89 → 51/89 |
+| `src/core/LiveIssues.vibe` | 3/11 → 3/11 | 0/6 → 0/6 | 1/7 → 1/7 | 3/16 → 3/16 |
+| `src/core/LiveWiki.vibe` | 4/15 → 4/15 | 0/4 → 0/4 | 1/10 → 1/10 | 4/21 → 4/21 |
+| `src/core/MockAccounts.vibe` | 4/76 → 4/76 | 0/34 → 0/34 | 0/26 → 0/26 | 4/101 → 4/101 |
+| `src/core/MockFactory.vibe` | 8/266 → 8/266 | 0/139 → 0/139 | 2/79 → 2/79 | 8/320 → 8/320 |
+| `src/core/MockJournal.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/3 → 0/3 | 0/4 → 0/4 |
+| `src/core/VipWriter.vibe` | 0/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 0/1 → 1/1 |
+| `src/core/WikiFactory.vibe` | 0/62 → 40/62 | 0/69 → 30/67 | 0/21 → 13/21 | 0/85 → 49/83 |
+| `src/core/WikiWriter.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `src/core/accountCookieDecision.vibe` | 4/5 → 5/5 | 10/15 → 12/15 | 2/3 → 3/3 | 4/7 → 5/7 |
+| `src/core/accountCookies.vibe` | 6/7 → 6/7 | 0/0 → 0/0 | 1/2 → 2/2 | 6/8 → 7/8 |
+| `src/core/conversation.vibe` | 96/246 → 186/246 | 137/410 → 274/410 | 31/80 → 57/80 | 103/339 → 223/339 |
+| `src/core/decide.vibe` | 1/55 → 53/55 | 0/107 → 81/107 | 0/6 → 6/6 | 1/87 → 64/87 |
+| `src/core/flowDecision.vibe` | 0/53 → 37/53 | 0/105 → 38/105 | 0/24 → 19/24 | 0/68 → 37/68 |
+| `src/core/flows.vibe` | 48/196 → 186/196 | 0/66 → 42/66 | 0/72 → 69/72 | 48/206 → 190/206 |
+| `src/core/followDecision.vibe` | 0/2 → 2/2 | 0/2 → 1/2 | 0/2 → 2/2 | 0/2 → 2/2 |
+| `src/core/identityDecision.vibe` | 0/2 → 2/2 | 0/4 → 4/4 | 0/1 → 1/1 | 0/3 → 3/3 |
+| `src/core/issueFlows.vibe` | 11/34 → 33/34 | 12/20 → 18/20 | 2/11 → 9/11 | 12/40 → 37/40 |
+| `src/core/issueSchemas.vibe` | 10/12 → 10/12 | 0/0 → 0/0 | 0/2 → 0/2 | 10/12 → 10/12 |
+| `src/core/mockDecision.vibe` | 0/17 → 0/17 | 0/6 → 0/6 | 0/4 → 0/4 | 0/19 → 0/19 |
+| `src/core/mockReplies.vibe` | 11/17 → 11/17 | 0/4 → 0/4 | 1/6 → 1/6 | 12/19 → 12/19 |
+| `src/core/protocolDecision.vibe` | 8/22 → 22/22 | 10/54 → 52/54 | 7/14 → 14/14 | 9/30 → 30/30 |
+| `src/core/roles.vibe` | 4/5 → 5/5 | 0/1 → 1/1 | 0/1 → 1/1 | 4/5 → 5/5 |
+| `src/core/sandboxDecision.vibe` | 1/59 → 57/59 | 0/78 → 57/78 | 0/16 → 15/16 | 1/80 → 65/80 |
+| `src/core/sandboxHost.vibe` | 1/175 → 126/175 | 0/137 → 93/137 | 0/27 → 23/27 | 1/209 → 137/209 |
+| `src/core/sandboxMeter.vibe` | 1/33 → 31/33 | 0/35 → 27/35 | 0/7 → 7/7 | 1/39 → 32/39 |
+| `src/core/sandboxMock.vibe` | 0/47 → 19/47 | 0/46 → 9/46 | 0/23 → 8/24 | 0/72 → 26/72 |
+| `src/core/sandboxPolicy.vibe` | 1/2 → 2/2 | 0/0 → 0/0 | 0/3 → 2/3 | 1/4 → 3/4 |
+| `src/core/schemas.vibe` | 30/30 → 30/30 | 0/0 → 0/0 | 0/0 → 0/0 | 30/30 → 30/30 |
+| `src/core/sequenceDecision.vibe` | 0/23 → 21/23 | 0/18 → 12/18 | 0/10 → 9/10 | 0/27 → 24/27 |
+| `src/core/sequencerDecision.vibe` | 0/16 → 5/16 | 0/28 → 8/28 | 0/8 → 4/8 | 0/23 → 8/23 |
+| `src/core/specification.vibe` | 6/34 → 27/34 | 0/59 → 27/59 | 1/6 → 4/6 | 6/46 → 30/46 |
+| `src/core/toolRefusal.vibe` | 1/5 → 1/5 | 0/18 → 0/18 | 0/1 → 0/1 | 1/6 → 1/6 |
+| `src/core/tourDecision.vibe` | 0/9 → 3/9 | 0/23 → 5/23 | 0/4 → 2/4 | 0/14 → 3/14 |
+| `src/core/walkthroughSteps.vibe` | 2/3 → 2/3 | 0/0 → 0/0 | 0/1 → 0/1 | 2/3 → 2/3 |
+| `src/core/wiki.vibe` | 0/15 → 6/15 | 0/22 → 7/22 | 0/10 → 2/10 | 0/27 → 8/27 |
+| `src/core/wikiDecision.vibe` | 0/1 → 1/1 | 0/3 → 3/3 | 0/1 → 1/1 | 0/1 → 1/1 |
+| `src/core/wikiFlows.vibe` | 11/34 → 30/34 | 12/23 → 22/23 | 2/11 → 8/11 | 12/40 → 35/40 |
+| `src/core/wikiLinks.vibe` | 0/15 → 0/15 | 0/29 → 0/29 | 0/1 → 0/1 | 0/18 → 0/18 |
+| `src/core/wikiSchemas.vibe` | 5/5 → 5/5 | 0/0 → 0/0 | 0/0 → 0/0 | 5/5 → 5/5 |
+| `src/core/wire.vibe` | 16/27 → 25/27 | 3/14 → 12/14 | 1/3 → 3/3 | 16/31 → 27/31 |
+| `src/history/LiveMythical.vibe` | 30/41 → 30/41 | 5/12 → 5/12 | 9/16 → 9/16 | 30/47 → 30/47 |
+| `src/history/MockMythical.vibe` | 0/35 → 0/35 | 0/5 → 0/5 | 0/27 → 0/27 | 0/42 → 0/42 |
+| `src/history/MythicalHistory.vibe` | 0/2 → 0/2 | 0/2 → 0/2 | 0/1 → 0/1 | 0/3 → 0/3 |
+| `src/history/Sequencer.vibe` | 2/94 → 47/94 | 0/36 → 17/36 | 0/35 → 17/35 | 2/110 → 53/110 |
+| `src/history/flowMachine.vibe` | 2/50 → 25/50 | 3/91 → 27/91 | 1/21 → 9/21 | 3/68 → 28/68 |
+| `src/history/flows.vibe` | 39/105 → 84/105 | 0/14 → 7/14 | 2/51 → 39/51 | 39/113 → 88/113 |
+| `src/history/mythical.vibe` | 4/141 → 60/141 | 0/191 → 48/191 | 0/29 → 13/29 | 4/195 → 64/195 |
+| `src/history/pageDecision.vibe` | 0/5 → 4/5 | 0/8 → 6/8 | 0/3 → 3/3 | 0/7 → 5/7 |
+| `src/history/pages.vibe` | 3/36 → 36/36 | 0/26 → 23/26 | 0/20 → 20/20 | 3/46 → 45/46 |
+| `src/history/roles.vibe` | 3/4 → 3/4 | 0/0 → 0/0 | 0/1 → 0/1 | 3/4 → 3/4 |
+| `src/history/schemas.vibe` | 30/31 → 31/31 | 0/0 → 0/0 | 0/3 → 1/3 | 30/33 → 31/33 |
+| `src/history/seed.vibe` | 16/161 → 16/161 | 0/87 → 0/87 | 0/25 → 0/25 | 16/185 → 16/185 |
+| `src/history/seed/vibelang.vibe` | 0/2 → 2/2 | 0/0 → 0/0 | 0/0 → 0/0 | 0/2 → 2/2 |
+| `src/history/seedDecision.vibe` | 0/25 → 0/25 | 0/40 → 0/40 | 0/7 → 0/7 | 0/38 → 0/38 |
+| `src/history/stackDecision.vibe` | 0/15 → 5/15 | 0/25 → 5/25 | 0/7 → 1/7 | 0/23 → 5/23 |
+| `src/history/tools.vibe` | 5/29 → 25/29 | 0/47 → 26/47 | 0/9 → 8/9 | 5/36 → 29/36 |
+| `src/history/wire.vibe` | 19/35 → 34/35 | 4/35 → 33/35 | 1/5 → 5/5 | 19/43 → 42/43 |
+| `src/surfaces/backend.vibe` | 29/45 → 29/45 | 14/31 → 14/31 | 6/15 → 6/15 | 31/58 → 31/58 |
+| `src/surfaces/cli-entry.vibe` | 8/8 → 8/8 | 2/2 → 2/2 | 2/2 → 2/2 | 9/9 → 9/9 |
+| `src/surfaces/cli.vibe` | 15/16 → 15/16 | 7/10 → 7/10 | 5/6 → 5/6 | 16/18 → 16/18 |
+| `src/surfaces/commandDecision.vibe` | 8/22 → 8/22 | 24/64 → 24/64 | 4/17 → 4/17 | 9/23 → 9/23 |
+| `src/surfaces/commands.vibe` | 93/171 → 93/171 | 16/112 → 16/112 | 14/73 → 14/73 | 97/207 → 97/207 |
+| `src/surfaces/manifest.vibe` | 4/4 → 4/4 | 0/0 → 0/0 | 2/2 → 2/2 | 5/5 → 5/5 |
+| `src/surfaces/mcp-entry.vibe` | 6/6 → 6/6 | 0/0 → 0/0 | 1/1 → 1/1 | 6/6 → 6/6 |
+| `src/surfaces/mcp.vibe` | 14/17 → 14/17 | 0/4 → 0/4 | 5/6 → 5/6 | 16/20 → 16/20 |
+| `src/surfaces/session.vibe` | 53/63 → 53/63 | 16/24 → 16/24 | 14/22 → 14/22 | 59/75 → 59/75 |
+| `src/surfaces/sessionFlow.vibe` | 40/40 → 40/40 | 1/2 → 1/2 | 19/20 → 19/20 | 49/50 → 49/50 |
+| `src/surfaces/signin.vibe` | 101/115 → 101/115 | 74/108 → 74/108 | 16/30 → 16/30 | 114/153 → 114/153 |
+| `src/web/actionModel.vibe` | 0/14 → 0/14 | 0/19 → 0/19 | 0/7 → 0/7 | 0/16 → 0/16 |
+| `src/web/actionView.vibe` | 0/30 → 0/30 | 0/123 → 0/123 | 0/27 → 0/27 | 0/41 → 0/41 |
+| `src/web/backend.vibe` | 29/64 → 29/64 | 6/15 → 6/15 | 6/38 → 6/38 | 30/72 → 30/72 |
+| `src/web/entry.vibe` | 0/8 → 0/8 | 0/4 → 0/4 | 0/0 → 0/0 | 0/8 → 0/8 |
+| `src/web/historyApp.vibe` | 0/152 → 0/152 | 0/54 → 0/54 | 0/97 → 0/97 | 0/192 → 0/192 |
+| `src/web/historyBackend.vibe` | 0/26 → 0/26 | 0/6 → 0/6 | 0/16 → 0/16 | 0/29 → 0/29 |
+| `src/web/historyDecision.vibe` | 0/42 → 0/42 | 0/31 → 0/31 | 0/29 → 0/29 | 0/48 → 0/48 |
+| `src/web/historyStartup.vibe` | 0/32 → 0/32 | 0/12 → 0/12 | 0/8 → 0/8 | 0/38 → 0/38 |
+| `src/web/historyView.vibe` | 0/73 → 0/73 | 0/145 → 0/145 | 0/43 → 0/43 | 0/82 → 0/82 |
+| `src/web/issueDecision.vibe` | 0/91 → 0/91 | 0/257 → 0/257 | 0/22 → 0/22 | 0/142 → 0/142 |
+| `src/web/issues.vibe` | 0/21 → 0/21 | 0/36 → 0/36 | 0/6 → 0/6 | 0/26 → 0/26 |
+| `src/web/issuesView.vibe` | 0/83 → 0/83 | 0/435 → 0/435 | 0/78 → 0/78 | 0/118 → 0/118 |
+| `src/web/main.vibe` | 0/666 → 0/666 | 0/815 → 0/815 | 0/369 → 0/369 | 0/883 → 0/883 |
+| `src/web/markdown.vibe` | 0/106 → 0/106 | 0/95 → 0/95 | 0/27 → 0/27 | 0/145 → 0/145 |
+| `src/web/media.vibe` | 0/6 → 0/6 | 0/0 → 0/0 | 0/2 → 0/2 | 0/7 → 0/7 |
+| `src/web/modeSwitch.vibe` | 0/2 → 0/2 | 0/0 → 0/0 | 0/1 → 0/1 | 0/2 → 0/2 |
+| `src/web/modelDecision.vibe` | 0/78 → 0/78 | 0/112 → 0/112 | 0/51 → 0/51 | 0/95 → 0/95 |
+| `src/web/paneDecision.vibe` | 0/18 → 0/18 | 0/42 → 0/42 | 0/15 → 0/15 | 0/20 → 0/20 |
+| `src/web/roleView.vibe` | 0/24 → 0/24 | 0/66 → 0/66 | 0/14 → 0/14 | 0/27 → 0/27 |
+| `src/web/sandboxView.vibe` | 0/19 → 0/19 | 0/88 → 0/88 | 0/6 → 0/6 | 0/21 → 0/21 |
+| `src/web/screenDecision.vibe` | 0/46 → 0/46 | 0/102 → 0/102 | 0/30 → 0/30 | 0/58 → 0/58 |
+| `src/web/startup.vibe` | 0/50 → 0/50 | 0/22 → 0/22 | 0/13 → 0/13 | 0/64 → 0/64 |
+| `src/web/startupDecision.vibe` | 0/11 → 0/11 | 0/22 → 0/22 | 0/8 → 0/8 | 0/14 → 0/14 |
+| `src/web/styles.vibe` | 0/1 → 0/1 | 0/0 → 0/0 | 0/2 → 0/2 | 0/2 → 0/2 |
+| `src/web/theatre.vibe` | 0/45 → 0/45 | 0/38 → 0/38 | 0/7 → 0/7 | 0/51 → 0/51 |
+| `src/web/theatreDecision.vibe` | 0/18 → 0/18 | 0/56 → 0/56 | 0/5 → 0/5 | 0/31 → 0/31 |
+| `src/web/tourDecision.vibe` | 0/27 → 0/27 | 0/54 → 0/54 | 0/19 → 0/19 | 0/33 → 0/33 |
+| `src/web/updateDecision.vibe` | 0/42 → 0/42 | 0/105 → 0/105 | 0/14 → 0/14 | 0/62 → 0/62 |
+| `src/web/view.vibe` | 0/53 → 0/53 | 0/159 → 0/159 | 0/33 → 0/33 | 0/58 → 0/58 |
+| `src/web/viewDecision.vibe` | 0/22 → 0/22 | 0/52 → 0/52 | 0/13 → 0/13 | 0/31 → 0/31 |
+| `src/web/viewport.vibe` | 0/37 → 0/37 | 0/41 → 0/41 | 0/14 → 0/14 | 0/45 → 0/45 |
+| `src/web/wikiView.vibe` | 0/27 → 0/27 | 0/96 → 0/96 | 0/19 → 0/19 | 0/38 → 0/38 |
+| `worker/Accounts.vibe` | 0/312 → 262/312 | 0/361 → 260/361 | 0/73 → 52/73 | 0/430 → 328/430 |
+| `worker/ActionDirectory.vibe` | 0/37 → 37/37 | 0/26 → 20/26 | 0/20 → 20/20 | 0/52 → 50/52 |
+| `worker/ActionIdentity.vibe` | 0/14 → 10/14 | 0/20 → 11/20 | 0/7 → 3/7 | 0/18 → 11/18 |
+| `worker/ActionRuns.vibe` | 0/120 → 104/120 | 0/178 → 110/178 | 0/36 → 28/36 | 0/163 → 126/163 |
+| `worker/ActionsHttp.vibe` | 0/41 → 40/41 | 0/95 → 78/95 | 0/10 → 7/10 | 0/61 → 50/61 |
+| `worker/AgentModel.vibe` | 0/9 → 9/9 | 0/0 → 0/0 | 0/3 → 3/3 | 0/9 → 9/9 |
+| `worker/Api.vibe` | 0/46 → 0/46 | 0/0 → 0/0 | 0/1 → 0/1 | 0/47 → 0/47 |
+| `worker/Budget.vibe` | 0/22 → 20/22 | 0/19 → 14/19 | 0/4 → 4/4 | 0/24 → 21/24 |
+| `worker/GitHubDelegate.vibe` | 0/4 → 4/4 | 0/11 → 7/11 | 0/3 → 3/3 | 0/6 → 5/6 |
+| `worker/HistoryActions.vibe` | 0/33 → 18/33 | 0/19 → 4/19 | 0/11 → 9/11 | 0/37 → 20/37 |
+| `worker/HistoryObject.vibe` | 0/59 → 54/59 | 0/15 → 15/15 | 0/32 → 24/32 | 0/74 → 65/74 |
+| `worker/HistoryTools.vibe` | 2/8 → 5/8 | 0/0 → 0/0 | 0/6 → 3/6 | 2/8 → 5/8 |
+| `worker/Http.vibe` | 0/93 → 91/93 | 0/100 → 80/100 | 0/23 → 14/23 | 0/126 → 109/126 |
+| `worker/Issues.vibe` | 0/298 → 215/298 | 0/453 → 220/453 | 0/66 → 48/68 | 0/401 → 253/402 |
+| `worker/MainLog.vibe` | 0/42 → 5/42 | 0/27 → 0/27 | 0/12 → 1/12 | 0/58 → 5/58 |
+| `worker/ObjectStartup.vibe` | 0/60 → 50/60 | 0/27 → 16/27 | 0/16 → 12/16 | 0/75 → 61/75 |
+| `worker/ObjectStorage.vibe` | 0/10 → 10/10 | 0/6 → 6/6 | 0/11 → 11/11 | 0/14 → 14/14 |
+| `worker/Objects.vibe` | 0/112 → 99/112 | 0/47 → 33/47 | 0/59 → 52/60 | 0/140 → 120/140 |
+| `worker/PublicReads.vibe` | 0/12 → 7/12 | 0/6 → 4/6 | 0/12 → 3/12 | 0/19 → 8/19 |
+| `worker/Reply.vibe` | 15/138 → 112/138 | 0/81 → 46/81 | 1/19 → 15/19 | 15/159 → 125/159 |
+| `worker/SandboxAccounts.vibe` | 0/11 → 0/11 | 0/2 → 0/2 | 0/0 → 0/0 | 0/12 → 0/12 |
+| `worker/SandboxHttp.vibe` | 0/30 → 24/30 | 0/34 → 20/34 | 0/10 → 6/10 | 0/42 → 27/42 |
+| `worker/SandboxMachine.vibe` | 0/4 → 0/4 | 0/0 → 0/0 | 0/0 → 0/0 | 0/4 → 0/4 |
+| `worker/SandboxTools.vibe` | 2/11 → 5/11 | 0/2 → 1/2 | 0/10 → 4/10 | 2/12 → 6/12 |
+| `worker/Sandboxes.vibe` | 0/22 → 22/22 | 0/21 → 21/21 | 0/17 → 17/17 | 0/37 → 37/37 |
+| `worker/Sequencer.vibe` | 1/118 → 98/118 | 0/62 → 32/62 | 0/44 → 39/44 | 1/140 → 111/140 |
+| `worker/SpecificationReviewers.vibe` | 0/31 → 5/31 | 0/8 → 0/8 | 0/9 → 0/9 | 0/42 → 5/42 |
+| `worker/Tour.vibe` | 0/2 → 1/2 | 0/0 → 0/0 | 0/1 → 0/1 | 0/2 → 1/2 |
+| `worker/Unreachable.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `worker/VipDraft.vibe` | 0/30 → 18/30 | 0/10 → 3/10 | 0/8 → 1/8 | 0/41 → 20/41 |
+| `worker/Wiki.vibe` | 0/175 → 51/175 | 0/234 → 47/234 | 0/49 → 7/50 | 0/240 → 57/240 |
+| `worker/WikiDraft.vibe` | 0/32 → 4/32 | 0/14 → 0/14 | 0/8 → 0/8 | 0/44 → 4/44 |
+| `worker/WikiTools.vibe` | 1/9 → 2/9 | 0/6 → 1/6 | 1/6 → 2/6 | 2/13 → 3/13 |
+| `worker/accountObject.vibe` | 0/48 → 0/48 | 0/35 → 0/35 | 0/39 → 0/39 | 0/79 → 0/79 |
+| `worker/agentContext.vibe` | 1/1 → 1/1 | 0/0 → 0/0 | 0/0 → 0/0 | 1/1 → 1/1 |
+| `worker/apiObjects.vibe` | 0/214 → 63/214 | 0/73 → 15/73 | 0/94 → 21/94 | 0/254 → 77/254 |
+| `worker/budgetDecision.vibe` | 0/5 → 5/5 | 0/5 → 4/5 | 0/4 → 4/4 | 0/6 → 5/6 |
+| `worker/index.vibe` | 0/13 → 12/13 | 0/19 → 15/19 | 0/2 → 2/2 | 0/17 → 14/17 |
+| `worker/liveDispatchDecision.vibe` | 0/7 → 7/7 | 0/8 → 4/8 | 0/3 → 3/3 | 0/11 → 7/11 |
+| `worker/machineObject.vibe` | 0/63 → 0/63 | 0/83 → 0/83 | 0/17 → 0/17 | 0/92 → 0/92 |
+| `worker/replyProgressDecision.vibe` | 1/17 → 9/17 | 0/32 → 10/32 | 1/10 → 5/10 | 1/22 → 12/22 |
+| `worker/replyReasons.vibe` | 0/7 → 6/7 | 0/12 → 7/12 | 0/2 → 2/2 | 0/12 → 7/12 |
+
+
+Full raw reports, original-line counters, per-file CSV and experiment/check receipts remain in
+`~/vl/vl-coverage-evidence/session14/`. `workerd-raw.tgz` retains isolate counters. All strict per-file thresholds
+stay at 100%; all known-red targets remain exclusive under the lead's ruling. Whole-app 100% is still unachieved.

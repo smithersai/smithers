@@ -139,3 +139,10 @@ brick                                   state         proof
 - **GitHub authorization after sign-out (smithers.sh 0165, lane vl-github-authz): landed.** GitHub's page at the
   eighth sign-in cycle is its hourly limit of ten new tokens; revoking a token keeps the authorization. Sign-out keeps
   revoking. `smithers_auth_github_consent` shows it in production; lead deploys.
+
+- **vl-coverage, current continuation (0016): in progress.** The factories' engine seams, both specification revision
+  policies, sandbox error preservation, wiki recovery/archive rendering, total tour lookup and real-jj seed
+  refusal/recovery are tested. The measured unit gaps in this lane are closed apart from the recorded V8 and
+  exhaustive-match branch gaps. Fresh main also exposes the native-loader collection gap for fuzz-preflight.
+  Whole-app coverage remains below 100%; independent unit, Chromium and workerd receipts are in 0016.
+  The lead keeps each strict gate opt-in until its passing commit.

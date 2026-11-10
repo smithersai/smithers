@@ -374,3 +374,11 @@ Hosted-broker main is independently measured by 54 benchmark files / 128 tests; 
 
 **Proof harness, lane vl-proveall2 (0018).** `verify/harness_test.py` gains a regression that a marked generic function is
 found and proved; 75 executable mutations join `verify:broken` in `verify/web_mutations.py`. No new tool or dependency.
+
+**Coverage boundary continuation (0016, 2026-11-10).** The fixture factories and sandbox accept injected faulty
+Effect engines; real flows retain their typed errors, and defects keep their whole cause. Both specification
+revision policies are tested with keep fixed in production. Wiki recovery links and archived status, numeric tour
+stop boundaries, and real-jj seed refusal/preservation/recovery are covered. Seed refusal diagnostics keep a count
+without intent payloads. Behavioral mutation controls detect each changed failure behavior. Existing Vitest and V8
+5.0.0 are unchanged; this continuation adds no dependency. All strict coverage gates remain exclusive until each
+passes, under the lead's recorded ruling; current unit, Chromium and isolate measurements are in 0016.
