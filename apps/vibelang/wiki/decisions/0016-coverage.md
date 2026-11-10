@@ -17,6 +17,29 @@ person runs them by name and a wildcard `smthrs test` skips them. Each joins the
 it pass, by removing its `exclusive: true` in that commit. Every gate keeps its 100% per-file thresholds meanwhile.
 `workerdCoverage` follows the same rule. The lead decided this for the lane; it does not go to Will.
 
+## Browser gate scope (the lead's call, 2026-11-10)
+
+The browser gate's denominator is the code a browser runs: every `.vibe` file in `src/web`, plus every app source
+(`src/`, `worker/`, `scripts/`, `infra/`) that the e2e build's source maps name. A bundled source counts whole,
+including exports that tree-shaking dropped. A `src/web` file that no chunk imports still counts.
+
+`src/surfaces`, `scripts`, `worker`, `infra` and the server-only parts of `src` run in no browser, so no browser
+journey can reach them. With them in the denominator the browser gate's 100% was unreachable (session 15: 153 of 167
+files below 100%). The unit gate (`pnpm test:coverage`) and the workerd gate still measure every file in all four
+directories; nothing leaves them. A server source that the bundle starts to import enters the browser gate on that
+build, with no configuration change.
+
+The roster is `browserSources` in `e2e/coverage-reporter.ts`. It reads `dist/assets/*.js.map`, fails if the build
+has no source maps, and the reporter prints its size on each run. Test: `test/browserCoverageScope.test.vibe`.
+
+Named browser gaps that stay open:
+
+| Site | Reason |
+| --- | --- |
+| `src/history/flows.vibe:213` | V8 range defect (`~/vl/vibelang-bugs/coverage-v8-suspend-else-arm/`), if the bundle ships it. |
+| `src/history/tools.vibe:93` | The compiler's exhaustive-match fallthrough arm (ruling VL-37; the fleet lead's compiler change). |
+| `src/web/wikiView.vibe:88` (`toHtml`) | Runs only when the repository's wiki source differs from the build. Needs a recorded fixture from `vl-record-replay`. |
+
 ## Landed behavior
 
 The new tests exercise sequencer replay, ordering and reply attempts; real loopback HTTP and product mock flows;

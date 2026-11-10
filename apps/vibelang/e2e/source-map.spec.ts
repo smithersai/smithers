@@ -1,6 +1,6 @@
 // Stays .ts: Playwright collects test files through its JS/TS loader.
 import { expect, test } from "./coverage"
-import { measure, readBuild } from "./coverage-reporter"
+import { measure, readBuild, sourcesIn } from "./coverage-reporter"
 import { resolve } from "node:path"
 
 test("Chromium remapping retains a tree-shaken export and an unvisited nested Effect branch, and credits what Rolldown leaves unmapped", async ({ context }, info) => {
@@ -28,7 +28,7 @@ test("Chromium remapping retains a tree-shaken export and an unvisited nested Ef
       if (sourceMap) entries.push({ ...script, sourceMap })
     }
     await info.attach("chromium-map-control", { body: JSON.stringify(entries), contentType: "application/json" })
-    const coverage = await measure(entries, ["e2e/coverage-fixtures"], await readBuild())
+    const coverage = await measure(entries, await sourcesIn(["e2e/coverage-fixtures"]), await readBuild())
     const file = coverage.fileCoverageFor(resolve("e2e/coverage-fixtures/fixture.vibe"))
     const misses = Object.entries(file.s).filter(([, count]) => count === 0).map(([id]) => file.statementMap[id].start.line)
     expect(misses).toContain(9)

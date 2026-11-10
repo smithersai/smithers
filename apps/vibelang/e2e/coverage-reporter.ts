@@ -19,7 +19,7 @@ const { mergeScriptCovs } = createRequire(require.resolve("@vitest/coverage-v8")
 const root = fileURLToPath(new URL("../", import.meta.url))
 
 /**
- * Full source roster plus actual V8 ranges. Exported for the real Chromium negative control.
+ * The roster's full sources plus actual V8 ranges. Exported for the real Chromium negative control.
  *
  * Each source's structure is the denominator: the structure of `build`, the bundle Chromium runs, for the code the
  * bundle contains, and the compiler's for the rest (tree-shaken exports, unloaded files). The compiler's starts alone
@@ -29,8 +29,9 @@ const root = fileURLToPath(new URL("../", import.meta.url))
  * credit the structure by identical source start only, the fuzz and bench gates' rule (test/support/coverageUnion.ts,
  * decisions 0015 and 0016). Without `build` (a deployment's run), the compiler's structure is the denominator.
  */
-export async function measure(entries: Iterable<any> | AsyncIterable<any>, directories = ["src", "worker", "scripts", "infra"], build: Iterable<BuiltScript> = []) {
-  const included = (file: string) => file.endsWith(".vibe") && directories.some((directory) => file.startsWith(resolve(root, directory) + "/"))
+export async function measure(entries: Iterable<any> | AsyncIterable<any>, sources: ReadonlyArray<string>, build: Iterable<BuiltScript> = []) {
+  const roster = new Set(sources)
+  const included = (file: string) => roster.has(file)
   /** A bundle's Istanbul structure per included source, after its source map; undefined when it has none. */
   const remap = async (entry: BuiltScript, functions: unknown[]) => {
     const map = structuredClone(entry.sourceMap)
@@ -43,7 +44,7 @@ export async function measure(entries: Iterable<any> | AsyncIterable<any>, direc
         throw new Error(`Source map does not describe this checkout: ${path}`)
       }
     }
-    // The app's denominator is its four source directories; unrelated workspace/vendor chunks have no app counters.
+    // Chunks with no measured source (vendor, workspace packages, fault pages) have no app counters.
     if (!map.sources.some((source: string) => included(fileURLToPath(source)))) return undefined
     return await convert({
       code: entry.source,
@@ -85,19 +86,15 @@ export async function measure(entries: Iterable<any> | AsyncIterable<any>, direc
     // Seed every full source, including loaded files: bundling may tree-shake an uncalled export from a loaded file.
     const compiler = projects({ root, project: resolve(root, "tsconfig.json"), compiler: findCompiler(root) })
     try {
-      for (const directory of directories) {
-        for (const entry of await readdir(resolve(root, directory), { recursive: true })) {
-          if (!entry.endsWith(".vibe")) continue
-          const file = resolve(root, directory, entry)
-          const result = await compiler.load(file)
-          if (result.error || result.errors.length > 0 || !result.map) throw new Error(`Cannot measure source: ${file}`)
-          const map = structuredClone(result.map) as NonNullable<Parameters<typeof convert>[0]["sourceMap"]>
-          map.sources = result.map.sources.map((source) => pathToFileURL(source).href)
-          seed.merge(await convert({
-            code: result.code, ast: await parseAstAsync(result.code), sourceMap: map,
-            coverage: { url: pathToFileURL(file).href, functions: [] }, wrapperLength: 0,
-          }))
-        }
+      for (const file of roster) {
+        const result = await compiler.load(file)
+        if (result.error || result.errors.length > 0 || !result.map) throw new Error(`Cannot measure source: ${file}`)
+        const map = structuredClone(result.map) as NonNullable<Parameters<typeof convert>[0]["sourceMap"]>
+        map.sources = result.map.sources.map((source) => pathToFileURL(source).href)
+        seed.merge(await convert({
+          code: result.code, ast: await parseAstAsync(result.code), sourceMap: map,
+          coverage: { url: pathToFileURL(file).href, functions: [] }, wrapperLength: 0,
+        }))
       }
     } finally {
       await compiler.close()
@@ -113,6 +110,41 @@ export async function measure(entries: Iterable<any> | AsyncIterable<any>, direc
       coverage.addFileCoverage(json)
     }
   return coverage
+}
+
+/** Every `.vibe` file under the given app directories: the fixture controls' roster. */
+export async function sourcesIn(directories: ReadonlyArray<string>, app = root): Promise<Array<string>> {
+  const files: Array<string> = []
+  for (const directory of directories) {
+    for (const entry of await readdir(resolve(app, directory), { recursive: true })) {
+      if (entry.endsWith(".vibe")) files.push(resolve(app, directory, entry))
+    }
+  }
+  return files.sort()
+}
+
+/** The app's source directories; an app source the bundle ships lies in one of them. */
+const appDirectories = ["src", "worker", "scripts", "infra"]
+
+/**
+ * The browser gate's roster (decision 0016, "Browser gate scope"): every `.vibe` file in `src/web`, plus every app
+ * source the build's source maps name. A bundled source counts whole, including exports tree-shaking dropped.
+ * `src/surfaces`, `scripts`, `worker` and `infra` code that no chunk ships runs in no browser; the unit and workerd gates
+ * measure it, so the browser gate's 100% is reachable without dropping anything from them.
+ */
+export async function browserSources(app = root): Promise<Array<string>> {
+  const files = new Set(await sourcesIn(["src/web"], app))
+  const assets = resolve(app, "dist/assets")
+  const names = (await readdir(assets).catch(() => [])).filter((name) => name.endsWith(".js.map"))
+  if (names.length === 0) throw new Error(`The browser gate found no source maps in ${assets}: build the site first`)
+  for (const name of names) {
+    const map = JSON.parse(await readFile(resolve(assets, name), "utf8")) as { sources: ReadonlyArray<string> }
+    for (const source of map.sources) {
+      const file = resolve(assets, source)
+      if (file.endsWith(".vibe") && appDirectories.some((directory) => file.startsWith(resolve(app, directory) + "/"))) files.add(file)
+    }
+  }
+  return [...files].sort()
 }
 
 /**
@@ -176,7 +208,9 @@ export default class SourceCoverage implements Reporter {
     // A deployment runs its own build; only a local run measures against the chunks it served (decision 0016).
     const build = process.env.E2E_BASE_URL === undefined ? await readBuild() : []
     console.info(`Chromium structure: ${build.length} build chunks.`)
-    const coverage = await measure(readEntries(files), undefined, build)
+    const sources = await browserSources()
+    console.info(`Chromium roster: ${sources.length} sources (src/web and what the bundle ships; decision 0016).`)
+    const coverage = await measure(readEntries(files), sources, build)
     const directory = resolve(root, "coverage/browser")
     await mkdir(directory, { recursive: true })
     await writeFile(resolve(directory, "coverage-final.json"), JSON.stringify(coverage))

@@ -95,9 +95,12 @@ const coverage = Smithers.Shell.Test({
   exclusive: true
 })
 
-/** Browser behavior and Chromium source coverage, kept independent from the unit coverage gate. */
+/**
+ * Browser behavior and Chromium source coverage, kept independent from the unit coverage gate. Its roster is `src/web`
+ * plus every app source the build's source maps name; the unit and workerd gates measure the rest (decision 0016).
+ */
 const browserCoverage = Smithers.Shell.Test({
-  summary: "Run the browser suite and report Chromium execution on the original .vibe sources.",
+  summary: "Run the browser suite and report Chromium execution on the .vibe sources a browser runs: src/web and what the bundle ships.",
   shell: "cd apps/vibelang && E2E_4502=4502 pnpm e2e:coverage",
   data: sources,
   timeout: "30m",

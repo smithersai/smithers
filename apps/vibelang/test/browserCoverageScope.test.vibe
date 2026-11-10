@@ -1,0 +1,51 @@
+// @vitest-environment node
+// The browser gate measures the code a browser runs: every `src/web` source, and every app source the build's source
+// maps name. Code no browser loads (`src/surfaces`, `scripts`, `worker`, `infra`) stays with the unit and workerd gates.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { browserSources } from "../e2e/coverage-reporter.ts"
+
+/** The roster `browserSources` gives for a throwaway app holding these files and these build maps, relative to it. */
+const rosterOf = (files: ReadonlyArray<string>, maps: Readonly<Record<string, ReadonlyArray<string>>>) => scoped(effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const root = try fs.makeTempDirectoryScoped({ prefix: "browser-scope-" })
+    for (const file of files) {
+      try fs.makeDirectory(path.dirname(path.join(root, file)), { recursive: true })
+      try fs.writeFileString(path.join(root, file), "export const one = 1\n")
+    }
+    for (const [name, sources] of Object.entries(maps)) {
+      try fs.makeDirectory(path.join(root, "dist/assets"), { recursive: true })
+      try fs.writeFileString(path.join(root, "dist/assets", name), JSON.stringify({ version: 3, sources, mappings: "" }))
+    }
+    const roster = try tryPromise(() => browserSources(root))
+    return roster.map(file => path.relative(root, file))
+  }
+})
+
+describe("browser gate scope", () => {
+  it.live("counts every src/web source and every app source the bundle ships, and nothing else", () => effect {
+    const roster = try rosterOf([
+      "src/web/main.vibe", "src/web/panes/unused.vibe", "src/core/flows.vibe", "src/core/serverOnly.vibe",
+      "src/surfaces/cli.vibe", "scripts/wiki.vibe", "worker/Api.vibe", "infra/Stack.vibe", "e2e/runtime/fault.vibe",
+    ], {
+      "index-a.js.map": ["../../src/web/main.vibe", "../../src/core/flows.vibe", "../../node_modules/effect/dist/Effect.js"],
+      // A fault page's chunk: a test page's source, a shared app source, and a workspace package outside the app.
+      "fault-b.js.map": ["../../e2e/runtime/fault.vibe", "../../src/core/flows.vibe", "../../../../packages/smithers/src/a.vibe"],
+      // Not a map: the chunk itself.
+      "index-a.js": ["../../src/surfaces/cli.vibe"],
+    })
+    try Effect.sync(() => expect(roster).toEqual(["src/core/flows.vibe", "src/web/main.vibe", "src/web/panes/unused.vibe"]))
+  })
+
+  it.live("counts a server source once the bundle ships it", () => effect {
+    const roster = try rosterOf(["src/web/main.vibe", "worker/shared.vibe"], { "index.js.map": ["../../worker/shared.vibe"] })
+    try Effect.sync(() => expect(roster).toEqual(["src/web/main.vibe", "worker/shared.vibe"]))
+  })
+
+  it.live("refuses to measure without a build, rather than measure src/web alone", () => effect {
+    const failure = try Effect.flip(rosterOf(["src/web/main.vibe"], {}))
+    try Effect.sync(() => expect(String((failure as { cause?: unknown }).cause)).toMatch(/no source maps in .*dist\/assets: build the site first/))
+  })
+})
