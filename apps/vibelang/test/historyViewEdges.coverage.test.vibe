@@ -1,11 +1,12 @@
 // The history page's view at its remaining edges, through the real update and view: an epic opened and closed by
-// keyboard, the folded-through mark, a note by a person, and a folded commit without a sha.
-import { Command, expect, given, keydown, role, scene, text } from "foldkit/scene"
+// keyboard, the folded-through mark, notes by a person and by the bootstrap, untitled and unfiled commits, a folded
+// commit without a sha, and an untitled epic in the plan form.
+import { click, Command, expect, given, keydown, role, scene, text, title, within } from "foldkit/scene"
 import { describe, it } from "@effect/vitest"
 import { apply, type History } from "../src/history/mythical.vibe"
 import { commitPageOf, epicPageOf, outlineOf } from "../src/history/pages.vibe"
-import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
-import { HistoryMessage, HistoryModel, init, ReadEpic, update } from "../src/web/historyApp.vibe"
+import { BOOTSTRAP, intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+import { HistoryMessage, HistoryModel, init, ReadEpic, ShowPlan, update } from "../src/web/historyApp.vibe"
 import { view } from "../src/web/historyView.vibe"
 
 const small: History = replay(intentsOf(seedOf("o/r", ["fix(compiler): one", "docs: two", "fix(compiler): three"].map((description, index) => ({
@@ -39,6 +40,25 @@ describe("the list", () => {
     scene(app, given({ ...model, outline: { ...model.outline, main: "abc1234" } }),
       expect(role("link", { name: "abc1234" })).toHaveAttr("href", "https://github.com/smithersai/vibelang/commit/abc1234"),
     )
+    scene(app, given({ ...model, outline: { ...model.outline, main: " " } }), expect(title("Folded through")).toBeAbsent())
+  })
+
+  it("open work without a title is named by its id, or Change with neither, and an unknown epic is left blank", () => {
+    const model = loaded("viewer")
+    const head = { id: "m9", epic: "e-missing", rank: 9, title: " ", state: "planned" as const, task: "", lane: "", notes: 0, folds: 0 }
+    scene(app, given({ ...model, outline: { ...model.outline, open: [head, { ...head, id: " ", rank: 10 }] } }),
+      expect(role("link", { name: "m9" })).toExist(),
+      expect(role("link", { name: "Change" })).toExist(),
+    )
+  })
+
+  it("an untitled epic is offered as Epic in the plan form", () => {
+    const model = loaded("contributor")
+    scene(app, given({ ...model, outline: { ...model.outline, epics: model.outline.epics.map((epic, index) => index === 0 ? { ...epic, title: " " } : epic) } }),
+      click(role("button", { name: "Plan work" })),
+      Command.resolve(ShowPlan, HistoryMessage.Settled()),
+      expect(role("option", { name: "Epic" })).toExist(),
+    )
   })
 })
 
@@ -48,6 +68,20 @@ describe("a commit's page", () => {
     scene(app, given(loaded("viewer", "m1", noted)),
       expect(text("Tried a cache.")).toExist(),
       expect(text(" · ada")).toExist(),
+    )
+    const seeded = apply(small, { type: "Noted", seq: small.seq + 1, id: "m1", section: "evidence", text: "Measured once.", by: BOOTSTRAP })
+    scene(app, given(loaded("viewer", "m1", seeded)),
+      expect(text("Measured once.")).toExist(),
+      expect(text(` · ${BOOTSTRAP}`)).toBeAbsent(),
+    )
+  })
+
+  it("a commit outside every epic has History alone in its trail", () => {
+    const model = loaded("viewer", "m1")
+    const page = model.commit!
+    scene(app, given({ ...model, commit: { ...page, commit: { ...page.commit!, epic: "e-missing" } } }),
+      expect(within(role("navigation", { name: "Breadcrumbs" }), role("link", { name: "History" }))).toExist(),
+      expect(within(role("navigation", { name: "Breadcrumbs" }), role("link", { name: outlineOf(small).epics[0]!.title }))).toBeAbsent(),
     )
   })
 

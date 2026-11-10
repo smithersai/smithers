@@ -3,7 +3,7 @@
 import { Command, click, expect, given, role, scene, text, type } from "foldkit/scene"
 import { describe, it } from "@effect/vitest"
 import { pages } from "../src/core/wiki.vibe"
-import { init, Message, OpenWikiCommand, update } from "../src/web/main.vibe"
+import { init, Message, OpenWikiCommand, signedOut, update } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
 
 const home = init({ session: "wiki-edges", mode: "mock", name: "Guest" }).model
@@ -64,5 +64,22 @@ it("a search matching home pages and others lists them all", () => {
     expect(role("link", { name: "Home" })).toExist(),
     expect(role("link", { name: matching[0]!.label })).toExist(),
     expect(role("link", { name: matching[1]!.label })).toExist(),
+  )
+})
+
+it("an edit whose submission failed offers Retry", () => {
+  const roadmap = pages.find((page) => page.id === "roadmap")!
+  const submission = { op: "save" as const, page: "roadmap", base: roadmap.source, text: roadmap.source + "\nMore.", key: "k1" }
+  const maintainer = { ...signedOut, identity: { id: "1", login: "will", role: "maintainer" as const } }
+  scene(app, given(at("/wiki/roadmap", { account: maintainer, wikiEdit: { page: "roadmap", base: roadmap.source, text: submission.text, busy: false, error: "", submission } })),
+    expect(role("button", { name: "Retry" })).toExist(),
+  )
+})
+
+it("a wiki address that names no page lists the pages and shows no page", () => {
+  scene(app, given(at("/wiki/no-such-page")),
+    expect(role("navigation", { name: "Wiki pages" })).toExist(),
+    expect(role("link", { name: "Home" })).toExist(),
+    expect(text("The wiki didn't load")).toBeAbsent(),
   )
 })
