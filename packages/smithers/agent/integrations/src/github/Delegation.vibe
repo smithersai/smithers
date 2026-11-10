@@ -302,7 +302,7 @@ export effect function make(options: {
     if (row === undefined) return
     if (revoke) {
       const token = try open(row.keyId, "github_access", row.access)
-      options.github.revoke(token) catch () => record("revoke", "failed")
+      options.github.revoke(token) catch effect () => try record("revoke", "failed")
     }
     try options.store.remove("credential")
   }

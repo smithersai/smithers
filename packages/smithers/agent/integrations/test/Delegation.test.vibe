@@ -258,6 +258,20 @@ it.effect("revoking one site keeps the token while another site's delegation liv
   try f.server.revoke(other)
   try Effect.try(() => { expect(kept).toBe(1); expect(f.world.revoked).toEqual(["stored-token", "second"]) })
 })
+it.effect("a failed revoke is logged and counted as revoke failed", () => effect {
+  const f = try fixture(blank({ revokeFails: true }))
+  const outcomes: Array<Readonly<Record<string, unknown>>> = []
+  const logger = Logger.make((entry) => {
+    if (entry.message === "github.delegation" || Array.isArray(entry.message) && entry.message.includes("github.delegation")) outcomes.push(entry.fiber.getRef(References.CurrentLogAnnotations))
+  })
+  provide Logger.CurrentLoggers = new Set([logger]) {
+    try f.server.revoke(origin)
+  }
+  try Effect.try(() => {
+    expect(f.world.revoked).toEqual(["stored-token"])
+    expect(outcomes).toContainEqual({ step: "revoke", outcome: "failed" })
+  })
+})
 it.effect("GitHub's revocation event ends the connection without calling GitHub", () => effect {
   const f = try fixture()
   try f.server.revokedAtGitHub()
