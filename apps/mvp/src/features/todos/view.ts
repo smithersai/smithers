@@ -119,6 +119,8 @@ export const notSentRows = (repoId: string, requested: ReadonlyArray<Requested>,
 /**
  * The op ids of this device's changes to repository `repoId` whose result Electric delivered: a commit whose TODO is
  * there, a drop whose TODO is dropped.
+ *
+ * @throws {never}
  */
 export const deliveredOf = (
   repoId: string,

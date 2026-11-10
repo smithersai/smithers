@@ -3,15 +3,25 @@ import { type CopyKind, SHA_PATTERN } from "./contract"
 // Where things are in a repository and in the app's URLs (decision 0006 §2, Routing). Pure functions: the actions,
 // the queries and the views share them.
 
-/** The key of a repository's file list at `sha`. */
+/**
+ * The key of a repository's file list at `sha`.
+ *
+ * @throws {never}
+ */
 export const treeKey = (id: string, sha: string): string => `${id}@${sha}`
 
-/** The key of a file at `sha`. */
+/**
+ * The key of a file at `sha`.
+ *
+ * @throws {never}
+ */
 export const blobKey = (id: string, sha: string, path: string): string => `${id}@${sha}:${path}`
 
 /**
  * The key of a repository's branches and tags as of the sync whose default branch is at `headSha` and the last ref
  * change after it (`refsChangedAt`, the row's): a ref that moves without the head moving reads them again.
+ *
+ * @throws {never}
  */
 export const refsKey = (id: string, headSha: string, refsChangedAt?: string | null): string =>
   `${id}@${headSha}@${refsChangedAt ?? ""}`
@@ -22,7 +32,11 @@ export const refsKey = (id: string, headSha: string, refsChangedAt?: string | nu
  */
 export const isMarkdownPath = (path: string): boolean => /\.(md|markdown)$/i.test(path)
 
-/** The README of directory `dir` (`""` is the root): its direct entry named `README.md`, in any case. */
+/**
+ * The README of directory `dir` (`""` is the root): its direct entry named `README.md`, in any case.
+ *
+ * @throws {never}
+ */
 export const readmeOf = (paths: ReadonlyArray<string>, dir: string): string | undefined => {
   const prefix = dir === "" ? "" : `${dir}/`
   return paths.find((path) => path.startsWith(prefix) && path.slice(prefix.length).toLowerCase() === "readme.md")
@@ -53,6 +67,8 @@ export interface KnownRefs {
  * arrives split across the ref and the path, so the two are matched together, and the longest name that leads them
  * wins; a branch wins over a tag of the same name. Without `refs` only the default branch and SHAs resolve. Anything
  * else names nothing the view can read: `undefined`.
+ *
+ * @throws {never}
  */
 export const resolveRef = (
   repository: { readonly defaultBranch: string | null; readonly headSha: string | null },
@@ -201,6 +217,8 @@ export interface CopySource {
  * `repo/copy`'s payload for what a Copy button copies from `view`: the clone URL always; the path of anything but the
  * root; a permalink at the view's commit, with its lines; a file's contents at its commit. `undefined` when the view
  * has nothing of that kind yet.
+ *
+ * @throws {never}
  */
 export const copyPayloadOf = (view: CopySource, what: CopyKind) => {
   const repo = `${view.owner}/${view.name}`

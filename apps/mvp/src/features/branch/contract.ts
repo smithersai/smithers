@@ -27,6 +27,8 @@ export const HOME_BRANCH = "main"
 /**
  * `POST <route>` `{ grantee | login, access }` changes who branch `branchId` is shared with: `branch/share`. Only the
  * branch's owner may (docs/features/branch-workspace.md#sharing).
+ *
+ * @throws {never}
  */
 export const sharesRoute = (branchId: string): string => `${BRANCHES_ROUTE}/${branchId}/shares`
 

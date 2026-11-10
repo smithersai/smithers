@@ -319,7 +319,11 @@ export const writeExecutionId = (writeId: string): string => `github-write:${wri
  */
 export const WRITE_ID_NAMESPACE = "6f9c1b2e-5d4a-4c8e-9b7f-0a1d2c3e4f50"
 
-/** The engine channel a write step asks the tab that started it on: `<engine name>/issues`. */
+/**
+ * The engine channel a write step asks the tab that started it on: `<engine name>/issues`.
+ *
+ * @throws {never}
+ */
 export const issuesChannel = (engineName: string): string => `${engineName}/issues`
 
 /** How long a write step waits for the tab that asked to put the write in its outbox. */
@@ -327,7 +331,9 @@ export const QUEUE_WITHIN = "10 seconds"
 
 /** The app's issue routes: GitHub's paths (decision 0012 §6). */
 export const issuesPath = (owner: string, name: string): string => `/${owner}/${name}/issues`
+/** @throws {never} */
 export const newIssuePath = (owner: string, name: string): string => `/${owner}/${name}/issues/new`
+/** @throws {never} */
 export const issuePath = (owner: string, name: string, number: number): string => `/${owner}/${name}/issues/${number}`
 
 /** The issue on github.com: "Open on GitHub ↗". */
@@ -344,8 +350,13 @@ export const issueNumberOf = (text: string): number | undefined => {
   return number <= MAX_ISSUE_NUMBER ? number : undefined
 }
 
-/** A draft's key on the device: the new-issue form's per repository, the comment composer's per issue. */
+/**
+ * A draft's key on the device: the new-issue form's per repository, the comment composer's per issue.
+ *
+ * @throws {never}
+ */
 export const newDraftKey = (repoId: string): string => `new:${repoId}`
+/** @throws {never} */
 export const commentDraftKey = (repoId: string, number: number): string => `comment:${itemId(repoId, number)}`
 
 /** The line the agent's text ends with on GitHub: agent text never shows under a person's name (decision 0012 §5). */
@@ -375,6 +386,8 @@ export type NotSentReason = (typeof NOT_SENT_REASONS)[number]
 /**
  * The route's refusal of a send, by status, and by `code` where one status has two reasons (a 404's App not installed,
  * decision 0079 §7): the rest (429, 5xx, no answer) are sent again.
+ *
+ * @throws {never}
  */
 export const refusalOf = (status: number | undefined, code?: string): NotSentReason | undefined =>
   status === 404 && code === "app_not_installed"

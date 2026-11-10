@@ -87,11 +87,19 @@ export const REFUSALS = [
 ] as const
 export type Refusal = (typeof REFUSALS)[number]
 
-/** Whether `owner` and `name` name a GitHub repository the app may clone: valid, and not a reserved first segment. */
+/**
+ * Whether `owner` and `name` name a GitHub repository the app may clone: valid, and not a reserved first segment.
+ *
+ * @throws {never}
+ */
 export const isRepository = (owner: string, name: string): boolean =>
   OWNER_PATTERN.test(owner) && NAME_PATTERN.test(name) && !RESERVED_OWNERS.includes(owner.toLowerCase())
 
-/** A repository's id: `github/<owner>/<name>`, lowercased. Also its Code Storage name and its clone's key. */
+/**
+ * A repository's id: `github/<owner>/<name>`, lowercased. Also its Code Storage name and its clone's key.
+ *
+ * @throws {never}
+ */
 export const repoId = (owner: string, name: string): string => `github/${owner}/${name}`.toLowerCase()
 
 /**
@@ -144,7 +152,11 @@ export const installUrl = (slug: string): string => `https://github.com/apps/${e
 /** One page of branches or tags from Code Storage. */
 export const REFS_PAGE_SIZE = 100
 
-/** What `git clone` takes for a repository: its GitHub URL, until Smithers serves git itself. */
+/**
+ * What `git clone` takes for a repository: its GitHub URL, until Smithers serves git itself.
+ *
+ * @throws {never}
+ */
 export const cloneUrl = (owner: string, name: string): string => `https://github.com/${owner}/${name}.git`
 
 /**
@@ -166,6 +178,8 @@ export const COPY_WITHIN = "5 seconds"
 /**
  * The `BroadcastChannel` `repo/copy`'s step asks the tabs of engine `name` on, as `app/navigate`'s does on its own: only
  * the tab that started the request writes its clipboard.
+ *
+ * @throws {never}
  */
 export const clipboardChannel = (name: string): string => `${name}/clipboard`
 

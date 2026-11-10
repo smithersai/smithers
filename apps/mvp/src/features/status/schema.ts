@@ -97,7 +97,11 @@ export const Run = Schema.Struct({
 })
 export type Run = typeof Run.Type
 
-/** Whether a run's row holds a question still open: it needs the person, and nobody has answered it. */
+/**
+ * Whether a run's row holds a question still open: it needs the person, and nobody has answered it.
+ *
+ * @throws {never}
+ */
 export const isOpen = (run: Pick<Run, "status" | "answeredAt">): boolean =>
   run.status === "needs_you" && run.answeredAt === null
 

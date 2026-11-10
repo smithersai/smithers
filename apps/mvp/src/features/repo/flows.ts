@@ -307,7 +307,11 @@ export const RepoCloneRequest = Flow.make("repo/clone", {
     )),
 }).annotate(Flow.Placement, Placement.client())
 
-/** `owner/name` as its two parts; `RepoName` has checked it. */
+/**
+ * `owner/name` as its two parts; `RepoName` has checked it.
+ *
+ * @throws {never}
+ */
 export const parts = (repo: string): readonly [string, string] => {
   const [owner, name] = repo.split("/") as [string, string]
   return [owner, name]

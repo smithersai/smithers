@@ -73,7 +73,11 @@ export const TodoRequest = Schema.Struct({
 })
 export type TodoRequest = typeof TodoRequest.Type
 
-/** A request row's key: `<todo id>/<revision>`. */
+/**
+ * A request row's key: `<todo id>/<revision>`.
+ *
+ * @throws {never}
+ */
 export const requestKey = (row: TodoRequest): string => `${row.todoId}/${row.revision}`
 
 /**

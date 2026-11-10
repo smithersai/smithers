@@ -27,6 +27,8 @@ export const repoVisibility = (session: Session, row: RepoRole | undefined): Vis
 /**
  * Whether `row` is ChatApi's answer that this person may not read the repository: no role there and no public read
  * (Astra on 0c7b9f01). A row with no answer (a failure, a refusal of the role read) says nothing of the kind.
+ *
+ * @throws {never}
  */
 export const grantsNothing = (row: RepoRole | undefined): boolean =>
   row !== undefined && row.failure === undefined && row.refused === undefined && row.role === null && row.readable !== true

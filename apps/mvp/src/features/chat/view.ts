@@ -4,7 +4,11 @@
 /** Postgres' text form of a `timestamptz`, as Electric delivers it: `2026-10-20 19:01:02.123456+00`. */
 const POSTGRES_TIME = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(?:([+-]\d{2})(?::?(\d{2}))?|Z)$/
 
-/** A `timestamptz` as Postgres prints it, in epoch milliseconds; `undefined` when it isn't one. */
+/**
+ * A `timestamptz` as Postgres prints it, in epoch milliseconds; `undefined` when it isn't one.
+ *
+ * @throws {never}
+ */
 export const postgresTime = (text: string): number | undefined => {
   const parts = POSTGRES_TIME.exec(text)
   if (parts === null) return undefined

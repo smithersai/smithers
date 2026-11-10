@@ -32,14 +32,26 @@ export const canSave = (session: Reader | undefined): boolean =>
   session !== undefined && session.status === "signed_in"
 
 
-/** Whether a write is on its way: sent, or taken and not yet in the rows. A second one waits. */
+/**
+ * Whether a write is on its way: sent, or taken and not yet in the rows. A second one waits.
+ *
+ * @throws {never}
+ */
 export const onItsWay = (form: Pick<Form, "state">): boolean => form.state === "sending" || form.state === "confirming"
 
-/** Whether the rows may still show a write landing: taken, late, or of unknown outcome. */
+/**
+ * Whether the rows may still show a write landing: taken, late, or of unknown outcome.
+ *
+ * @throws {never}
+ */
 export const awaiting = (form: Pick<Form, "state">): boolean =>
   form.state === "confirming" || form.state === "late" || form.state === "unknown"
 
-/** The rows' latest `updatedAt`, `null` with none: what a save remembers as `before`. */
+/**
+ * The rows' latest `updatedAt`, `null` with none: what a save remembers as `before`.
+ *
+ * @throws {never}
+ */
 export const latestUpdate = (rows: ReadonlyArray<PersonalModelRow>): string | null =>
   rows.reduce<string | null>((latest, row) => latest === null || row.updatedAt > latest ? row.updatedAt : latest, null)
 
@@ -48,6 +60,8 @@ export const latestUpdate = (rows: ReadonlyArray<PersonalModelRow>): string | nu
  * sent, in its order, and the latest `updatedAt` is another than the one before it was sent. A new connection has no id
  * to compare yet, and a Kimi connection's endpoint and models are the server's. The server's clock is never compared
  * with this device's.
+ *
+ * @throws {never}
  */
 export const landed = (form: Pick<Form, "op" | "before" | "sent">, rows: ReadonlyArray<PersonalModelRow>): boolean => {
   if (form.op === "remove") return rows.length === 0
@@ -63,11 +77,19 @@ export const landed = (form: Pick<Form, "op" | "before" | "sent">, rows: Readonl
   })
 }
 
-/** The latest `updatedAt` of the person's Codex rows: what a link remembers as `before`. */
+/**
+ * The latest `updatedAt` of the person's Codex rows: what a link remembers as `before`.
+ *
+ * @throws {never}
+ */
 export const latestLink = (rows: ReadonlyArray<PersonalModelRow>): string | null =>
   latestUpdate(rows.filter((row) => row.kind === "codex_subscription"))
 
-/** Whether a link waiting shows in the rows: a Codex row written since it started. */
+/**
+ * Whether a link waiting shows in the rows: a Codex row written since it started.
+ *
+ * @throws {never}
+ */
 export const linked = (link: Pick<LinkRow, "state" | "before">, rows: ReadonlyArray<PersonalModelRow>): boolean => {
   if (link.state !== "waiting") return false
   const latest = latestLink(rows)
@@ -80,6 +102,8 @@ export const answers = (rows: ReadonlyArray<SavedConnection>): boolean => resolv
 /**
  * The defaults a check of the saved list needs: a saved Kimi connection's endpoint, which the deployment chose, so a
  * connection kept keeps its credential whatever endpoint this build's `DEFAULTS` name.
+ *
+ * @throws {never}
  */
 export const defaultsFrom = (rows: ReadonlyArray<Pick<SavedConnection, "kind" | "baseUrl">>): Defaults => {
   const baseUrl = rows.find((row) => row.kind === "moonshot")?.baseUrl ?? DEFAULTS.moonshot.baseUrl
@@ -105,7 +129,11 @@ const keptOf = (row: PersonalModelRow): ConnectionPut => {
   }
 }
 
-/** The saved list as a save sends it, each credential kept. */
+/**
+ * The saved list as a save sends it, each credential kept.
+ *
+ * @throws {never}
+ */
 export const listOf = (rows: ReadonlyArray<PersonalModelRow>): ReadonlyArray<ConnectionPut> => rows.map(keptOf)
 
 /** `list` with no other active connection of `connection`'s kind when that kind allows one active. */
@@ -114,7 +142,11 @@ const single = (list: ReadonlyArray<ConnectionPut>, connection: ConnectionPut) =
     ? list.map((each) => (each.kind === connection.kind && each.id !== connection.id ? { ...each, active: false } : each))
     : list
 
-/** `list` with `added` last. */
+/**
+ * `list` with `added` last.
+ *
+ * @throws {never}
+ */
 export const withAdded = (list: ReadonlyArray<ConnectionPut>, added: ConnectionPut): ReadonlyArray<ConnectionPut> => [
   ...single(list, added),
   added,

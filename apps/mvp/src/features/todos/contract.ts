@@ -299,7 +299,11 @@ export const NOT_SENT_COPY: Readonly<Record<NotSentReason, string>> = {
 export const OP_ID_NAMESPACE = "0b6e2c4f-7a1d-4e38-9c52-1f0d3a8b6e74"
 export const DRAFT_ID_NAMESPACE = "5c3a9e17-2b84-4f60-a1d7-8e4f0c2b9d35"
 
-/** The engine channel a TODO step asks the tab that started it on: `<engine name>/todos`. */
+/**
+ * The engine channel a TODO step asks the tab that started it on: `<engine name>/todos`.
+ *
+ * @throws {never}
+ */
 export const todosChannel = (engineName: string): string => `${engineName}/todos`
 
 /** How long a TODO step waits for the tab that asked to keep its draft or queue its change. */
@@ -309,7 +313,11 @@ export const QUEUE_WITHIN = "10 seconds"
 export const STACK_FILTERS = ["open", "closed"] as const
 export type StackFilter = (typeof STACK_FILTERS)[number]
 
-/** The app's stack routes; `?state=closed` lists the merged and dropped TODOs. */
+/**
+ * The app's stack routes; `?state=closed` lists the merged and dropped TODOs.
+ *
+ * @throws {never}
+ */
 export const stackPath = (owner: string, name: string, state: StackFilter = "open"): string =>
   `/${owner}/${name}/stack${state === "closed" ? "?state=closed" : ""}`
 export const todoPath = (owner: string, name: string, number: number): string => `/${owner}/${name}/stack/${number}`
@@ -324,7 +332,11 @@ export const todoNumberOf = (text: string): number | undefined => {
   return number <= MAX_TODO_NUMBER ? number : undefined
 }
 
-/** A draft's title when the agent or the slash command gave none: the prompt's first line, cut to the limit. */
+/**
+ * A draft's title when the agent or the slash command gave none: the prompt's first line, cut to the limit.
+ *
+ * @throws {never}
+ */
 export const titleOf = (prompt: string): string => {
   const line = prompt.trim().split("\n", 1)[0]!.replace(/^#+\s*/, "").trim()
   const characters = Array.from(line)
@@ -350,6 +362,8 @@ export const clipPrompt = (text: string): string => {
 /**
  * A draft made from an issue (docs/features/todos.md#from-an-issue): a title or prompt it left out is the issue's
  * title, or its body (its title when the body is blank), cut to a TODO's limits.
+ *
+ * @throws {never}
  */
 export const draftFromIssue = <D extends { readonly title: string; readonly prompt: string }>(
   draft: D,
@@ -360,13 +374,25 @@ export const draftFromIssue = <D extends { readonly title: string; readonly prom
   prompt: draft.prompt !== "" ? draft.prompt : clipPrompt(issue.body.trim() === "" ? issue.title : issue.body),
 })
 
-/** Whether `title` is a TODO title: 1 to `MAX_TITLE_LENGTH` characters, not blank. */
+/**
+ * Whether `title` is a TODO title: 1 to `MAX_TITLE_LENGTH` characters, not blank.
+ *
+ * @throws {never}
+ */
 export const isTitle = (title: string): boolean => title.trim().length > 0 && Array.from(title).length <= MAX_TITLE_LENGTH
 
-/** Whether `prompt` is a TODO prompt: not blank, at most `MAX_PROMPT_BYTES`. */
+/**
+ * Whether `prompt` is a TODO prompt: not blank, at most `MAX_PROMPT_BYTES`.
+ *
+ * @throws {never}
+ */
 export const isPrompt = (prompt: string): boolean => prompt.trim().length > 0 && bytesOf(prompt) <= MAX_PROMPT_BYTES
 
-/** Whether `acceptance` is a TODO's acceptance criteria: at most `MAX_ACCEPTANCE`, each 1 to the limit, not blank. */
+/**
+ * Whether `acceptance` is a TODO's acceptance criteria: at most `MAX_ACCEPTANCE`, each 1 to the limit, not blank.
+ *
+ * @throws {never}
+ */
 export const isAcceptance = (acceptance: ReadonlyArray<string>): boolean =>
   acceptance.length <= MAX_ACCEPTANCE &&
   acceptance.every((line) => line.trim().length > 0 && line.length <= MAX_ACCEPTANCE_LENGTH)

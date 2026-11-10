@@ -6,6 +6,8 @@ import { defaultsFrom, type SaveForm } from "./view"
  * Why `draft`, the list on screen, can't be tested: what Save would refuse, `unsaved` unless it is the saved list, in
  * its order, field by field; else nothing. Keys stay in this synchronous check; only a saved connection's id may enter
  * model/test.
+ *
+ * @throws {never}
  */
 export const testDraftProblem = (draft: SaveForm, saved: ReadonlyArray<SavedConnection>): Refusal | "unsaved" | undefined => {
   const checked = checkSave(draft, saved, undefined, defaultsFrom(saved))

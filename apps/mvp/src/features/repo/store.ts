@@ -293,7 +293,11 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
         unprotect(id, mark)
       }
     }),
-    /** A role read sent after the refusal answered a role: the mark goes. Its caches sync from the start. */
+    /**
+     * A role read sent after the refusal answered a role: the mark goes. Its caches sync from the start.
+     *
+     * @throws {never}
+     */
     refusalSnapshot: (id: string) => [...new Set([...refusals.tanstack.values()].filter((row) => row.repoId === id).map((row) => row.id).concat([...(protectedMarks.get(id) ?? [])]))],
     clearRefusal: (id: string, seen = [...refusals.tanstack.values()].filter((row) => row.repoId === id).map((row) => row.id).concat([...(protectedMarks.get(id) ?? [])])) => Effect.gen(function* () {
       const expected = new Set(seen)
@@ -307,6 +311,7 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
       marked.delete(id)
       return true
     }),
+    /** @throws {never} */
     isRefused: (id: string) => marked.has(id),
     /** How many role answers this tab has had for repository `id`: a stack refused under one waits for the next. */
     answersOf: (id: string) => answers.get(id) ?? 0,
@@ -319,6 +324,7 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
     answerChanges: SubscriptionRef.changes(answerCount),
     /** A shape said less than the role this tab holds (a TODO shape's 403): the next route reads the role again. */
     markStale: (id: string) => Effect.sync(() => { stale.add(id) }),
+    /** @throws {never} */
     isStale: (id: string) => stale.has(id),
     /**
      * `write`, unless repository `id` refused this person since `fence` (`fenceOf`) was taken: a read that was on its way
@@ -326,7 +332,11 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
      */
     fenced: (id: string, fence: number, write: Effect.Effect<void>) =>
       Effect.suspend(() => (fences.get(id) ?? 0) === fence && !marked.has(id) ? write : Effect.void),
-    /** Moves with each refusal: a role read that started before one can't answer past it (`readRole`). */
+    /**
+     * Moves with each refusal: a role read that started before one can't answer past it (`readRole`).
+     *
+     * @throws {never}
+     */
     fenceOf: (id: string) => fences.get(id) ?? 0,
     /**
      * Every cache of a repository registers its `families` here, or the test in src/device/repoStores.test.ts fails.

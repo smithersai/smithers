@@ -71,7 +71,11 @@ export const siteOf = (hostname: string): string => {
 /** Whether `hostname` is `site` or one of its subdomains. */
 const within = (hostname: string, site: string): boolean => hostname === site || hostname.endsWith(`.${site}`)
 
-/** Checks `input`, opened as `mode`, against `policy`: the page to open, or why not. */
+/**
+ * Checks `input`, opened as `mode`, against `policy`: the page to open, or why not.
+ *
+ * @throws {never}
+ */
 export const checkUrl = (input: string, mode: WebMode, policy: Policy): Checked => {
   if (input.length > MAX_URL_LENGTH) return { ok: false, reason: "invalid" }
   const url = parse(input)

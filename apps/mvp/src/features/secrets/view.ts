@@ -33,7 +33,11 @@ export const formOf = (forms: ReadonlyArray<SecretForm>, key: string): SecretFor
 /** The hosts a row shows and its rotate form starts with: one per line. */
 export const hostsText = (hosts: ReadonlyArray<string>): string => hosts.join("\n")
 
-/** Whether a form's write is on its way: sent, or taken and not yet in the list. A second one waits. */
+/**
+ * Whether a form's write is on its way: sent, or taken and not yet in the list. A second one waits.
+ *
+ * @throws {never}
+ */
 export const onItsWay = (form: SecretForm): boolean => form.state === "sending" || form.state === "confirming"
 
 /** Whether the list may still show a form's write landing: taken, late, or of unknown outcome. */

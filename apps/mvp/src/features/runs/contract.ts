@@ -119,7 +119,11 @@ export type SteerRefusal = (typeof STEER_REFUSALS)[number]
  */
 export const STEER_ID_NAMESPACE = "6f1d2b8e-4c57-4a93-b0e6-2d9c7f3a1e58"
 
-/** The engine channel a steer step asks the tab that started it on: `<engine name>/runs`. */
+/**
+ * The engine channel a steer step asks the tab that started it on: `<engine name>/runs`.
+ *
+ * @throws {never}
+ */
 export const runsChannel = (engineName: string): string => `${engineName}/runs`
 
 /** How long a steer step waits for the tab that asked to queue its message. */
@@ -143,7 +147,11 @@ export const RUN_CHANGE_COLUMNS = ["run_id", "revision"] as const
 /** A TODO's run's execution id: `todo:<attempt id>` (src/features/pulls/contract.ts `todoExecutionId`). */
 const TODO_RUN = /^todo:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
-/** Whether this device reads `runId` from Cloudflare, not its own engine: a TODO's run. */
+/**
+ * Whether this device reads `runId` from Cloudflare, not its own engine: a TODO's run.
+ *
+ * @throws {never}
+ */
 export const isRemoteRun = (runId: string): boolean => TODO_RUN.test(runId)
 
 /**
@@ -179,7 +187,11 @@ export const listed = (flow: string): boolean => !flow.startsWith("run/") && !fl
 /** The engine's settled states: a run in one never changes again. */
 export const SETTLED = ["completed", "failed", "cancelled"] as const
 
-/** Whether a run in `status` has settled. */
+/**
+ * Whether a run in `status` has settled.
+ *
+ * @throws {never}
+ */
 export const settled = (status: string): boolean => (SETTLED as ReadonlyArray<string>).includes(status)
 
 /**
@@ -215,10 +227,18 @@ export const ACT_REFUSALS = [
  */
 export const REPO_RUN_ID_NAMESPACE = "1f8e5c2a-9b47-4d36-8e0a-6c3b7d2f9a51"
 
-/** The new run a retry starts for the act `actId`: one per act, so a repeated Retry starts one run. */
+/**
+ * The new run a retry starts for the act `actId`: one per act, so a repeated Retry starts one run.
+ *
+ * @throws {never}
+ */
 export const retriedRunId = (actId: string): string => `${actId}/run`
 
-/** The act a person's Retry dispatches as: `retry:<runId>:<n>`, the n-th retry of that run. */
+/**
+ * The act a person's Retry dispatches as: `retry:<runId>:<n>`, the n-th retry of that run.
+ *
+ * @throws {never}
+ */
 export const retryActId = (runId: string, n: number): string => `retry:${runId}:${n}`
 
 /**

@@ -52,7 +52,11 @@ const clip = (text: string) => {
 /** A message's summary while it still describes its text. */
 const said = (row: PhaseRow) => row.summary && (!row.summaryRevision || row.summaryRevision === revisionOf(row)) ? row.summary : clip(row.text)
 
-/** Every exchange that has settled, in order, up to the first that hasn't: phases never read a moving tail. */
+/**
+ * Every exchange that has settled, in order, up to the first that hasn't: phases never read a moving tail.
+ *
+ * @throws {never}
+ */
 export const exchangeUnits = (rows: ReadonlyArray<PhaseRow & { readonly arc?: string | null | undefined }>, mark: "phase" | "arc" = "phase"): ReadonlyArray<Unit> => {
   const answers = new Map(rows.flatMap(row => row.role === "assistant" && row.questionId ? [[row.questionId, row] as const] : []))
   const units: Array<Unit> = []
@@ -67,7 +71,11 @@ export const exchangeUnits = (rows: ReadonlyArray<PhaseRow & { readonly arc?: st
   return units
 }
 
-/** The closed phases, in order, as items for arcs. */
+/**
+ * The closed phases, in order, as items for arcs.
+ *
+ * @throws {never}
+ */
 export const phaseUnits = (rows: ReadonlyArray<PhaseRow & { readonly arc?: string | null | undefined }>): ReadonlyArray<Unit> =>
   rows.flatMap(row => {
     const mark = parseMark(row.phase)

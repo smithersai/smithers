@@ -41,9 +41,17 @@ export const generatedOf = (row: ViewRow): GeneratedShown | undefined =>
     }
     : undefined
 
-/** The row as a repository's view: what it opens; `undefined` for another template. */
+/**
+ * The row as a repository's view: what it opens; `undefined` for another template.
+ *
+ * @throws {never}
+ */
 export const repoOf = (row: ViewRow): RepoProps | undefined => (row.template === "repo" ? (row.props as RepoProps) : undefined)
 
-/** The row as a repository's issues view: whose issues; `undefined` for another template. */
+/**
+ * The row as a repository's issues view: whose issues; `undefined` for another template.
+ *
+ * @throws {never}
+ */
 export const issuesOf = (row: ViewRow): IssuesProps | undefined =>
   row.template === "issues" ? (row.props as IssuesProps) : undefined

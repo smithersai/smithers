@@ -60,7 +60,11 @@ export type Refusal = (typeof REFUSALS)[number]
 /** Why the browser's write was refused: one of the server's refusals, or `exists` for an Add of a name the list has. */
 export type WriteFailure = Refusal | "exists"
 
-/** The hosts a person typed: split on commas, spaces and line breaks, blanks dropped. The server checks each one. */
+/**
+ * The hosts a person typed: split on commas, spaces and line breaks, blanks dropped. The server checks each one.
+ *
+ * @throws {never}
+ */
 export const splitHosts = (text: string): ReadonlyArray<string> => text.split(/[\s,]+/).filter((host) => host !== "")
 
 /** The browser's records of secret writes (src/telemetry.ts): names, hosts, outcomes and codes; never a value. */

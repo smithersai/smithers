@@ -8,7 +8,11 @@ const decoded = (value: unknown): unknown => {
   try { return JSON.parse(value.text) } catch { return undefined }
 }
 
-/** A system TODO must start a fresh attempt through the stack, never replay its attempt payload. */
+/**
+ * A system TODO must start a fresh attempt through the stack, never replay its attempt payload.
+ *
+ * @throws {never}
+ */
 export const todoRetryPayload = (input: unknown): { readonly repo: string; readonly number: number } | undefined => {
   input = decoded(input)
   if (typeof input !== "object" || input === null) return undefined
@@ -39,11 +43,19 @@ export const answerOutcomeOf = (result: unknown): "succeeded" | "failed" | "unkn
   return decodedResult.status === "failed" ? "failed" : decodedResult.status === "done" ? "succeeded" : "unknown"
 }
 
-/** These client flows' domain result can differ from the engine settlement. */
+/**
+ * These client flows' domain result can differ from the engine settlement.
+ *
+ * @throws {never}
+ */
 export const hasDomainOutcome = (flowName: string): flowName is "flow/new" | "chat/Answer" =>
   flowName === "flow/new" || flowName === "chat/Answer"
 
-/** The finite domain result kept after a detail read, without answer or draft content. */
+/**
+ * The finite domain result kept after a detail read, without answer or draft content.
+ *
+ * @throws {never}
+ */
 export const domainOutcomeOf = (flowName: "flow/new" | "chat/Answer", result: unknown): "succeeded" | "failed" | "unknown" =>
   flowName === "chat/Answer" ? answerOutcomeOf(result) : draftOutcomeOf(result)
 

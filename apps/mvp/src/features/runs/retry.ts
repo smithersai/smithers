@@ -5,7 +5,11 @@ import { entryOf, type FlowName, names } from "../../flows/registry"
 // by asking again (decision 0002), a draft's answers by answering again, a person's flow's pinned child through its
 // `flow/run`. An act on a run (`run/*`) is not work.
 
-/** Whether a run of `flow` may be retried. */
+/**
+ * Whether a run of `flow` may be retried.
+ *
+ * @throws {never}
+ */
 export const retryable = (flow: string): boolean =>
   !flow.startsWith("run/") &&
   (names as ReadonlyArray<string>).includes(flow) &&

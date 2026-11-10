@@ -26,7 +26,11 @@ export const CONFIRM_401_HEADER = "x-smithers-confirm-401"
  */
 export const SESSION_CHECK_HEADER = "x-smithers-session-check"
 
-/** What a write's client reads from {@link SESSION_CHECK_HEADER}: `same_person`, or nothing. */
+/**
+ * What a write's client reads from {@link SESSION_CHECK_HEADER}: `same_person`, or nothing.
+ *
+ * @throws {never}
+ */
 export const sessionCheckOf = (headers: Readonly<Record<string, string | undefined>>) =>
   headers[SESSION_CHECK_HEADER] === "same_person" ? { sessionCheck: "same_person" as const } : {}
 
@@ -96,7 +100,11 @@ export type Role = (typeof ROLES)[number]
 /** The roles that may ask Smithers (`repo:ask`, decision 0007 §2): Member or above. */
 export const ASKING_ROLES: ReadonlyArray<Role> = ["admin", "maintainer", "member"]
 
-/** Whether a person with `role` may ask Smithers: Member, Maintainer or Admin; a Guest or no role may not. */
+/**
+ * Whether a person with `role` may ask Smithers: Member, Maintainer or Admin; a Guest or no role may not.
+ *
+ * @throws {never}
+ */
 export const mayAsk = (role: Role | null): boolean => role !== null && ASKING_ROLES.includes(role)
 
 /** The roles that may add and remove a repository's custom domains (`repo:domain-write`, decision 0039). */

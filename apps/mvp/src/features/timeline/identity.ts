@@ -4,7 +4,11 @@ import { Redaction } from "@smthrs/journal"
 /** Scrub recognized credential forms before clipping, including previously cached summaries. */
 export const safeTimelineText = (text: string): string => String(Redaction.redact(text))
 
-/** Full content identity; the model may receive a bounded excerpt of it. */
+/**
+ * Full content identity; the model may receive a bounded excerpt of it.
+ *
+ * @throws {never}
+ */
 export const revisionOf = (row: { readonly id: string; readonly role: string; readonly text: string }) => digestSync(JSON.stringify([1, row.id, row.role, row.text]))
 
 /** A chat's content identity for one segmentation: where it starts, its level and how many items it read. */

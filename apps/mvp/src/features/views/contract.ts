@@ -57,7 +57,11 @@ export const MAX_VIEW_JSON_BYTES = 16 * 1024
 /** The largest HTML a generated view keeps: 256 KiB, the `views.html` bound (0052_agent_views). */
 export const MAX_VIEW_HTML_BYTES = 256 * 1024
 
-/** ChatApi's route that changes a generated view's state by one declared event: `POST /api/views/<id>/state`. */
+/**
+ * ChatApi's route that changes a generated view's state by one declared event: `POST /api/views/<id>/state`.
+ *
+ * @throws {never}
+ */
 export const viewStateRoute = (viewId: string): string => `${VIEWS_ROUTE}/${viewId}/state`
 
 /** The event a form's submission names as its question's source. */

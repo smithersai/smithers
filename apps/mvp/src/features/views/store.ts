@@ -111,7 +111,11 @@ export class ViewsStore extends Context.Service<
     readonly shownViewsIn: (conversationId: string) => Effect.Effect<Gated<View>>
     /** The view this tab shows full screen from a branch conversation opened before, once the device has it. */
     readonly shownIn: (conversationId: string) => Shown<typeof shownQuery> | undefined
-    /** A conversation's views on this device, as a live query: the home conversation's, or a branch's opened before. */
+    /**
+     * A conversation's views on this device, as a live query: the home conversation's, or a branch's opened before.
+     *
+     * @throws {never}
+     */
     readonly rowsIn: (conversationId: string | undefined) => Shown<typeof rowsQuery>
   }
 >()("@smthrs/mvp/views/ViewsStore") {
