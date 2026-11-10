@@ -125,7 +125,17 @@ npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/dec
 expect_proof_failure \
   "a wrong twin verified (declared-union)" \
   npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/declared-union/use-wrong.ts"
-cp -R tools/fixtures/imported-const tools/fixtures/imported-const-wrong tools/fixtures/imported-const-collision "$fixture_dir/"
+cp -R tools/fixtures/imported-const tools/fixtures/imported-const-wrong tools/fixtures/imported-const-collision tools/fixtures/imported-nullish tools/fixtures/imported-nullish-wrong "$fixture_dir/"
+# A contract may read an optional with ??, locally and through an import; a wrong default is a proof failure.
+cp tools/fixtures/spec-nullish.ts tools/fixtures/spec-nullish-wrong.ts "$fixture_dir/"
+npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spec-nullish.ts"
+expect_proof_failure \
+  "Dafny accepted a contract whose ?? names the wrong default" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spec-nullish-wrong.ts"
+npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/imported-nullish/use.ts"
+expect_proof_failure \
+  "Dafny accepted more than an imported ?? contract says" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/imported-nullish-wrong/use.ts"
 npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/imported-const/use.ts"
 expect_proof_failure \
   "an imported constant verified against a value it does not have" \
