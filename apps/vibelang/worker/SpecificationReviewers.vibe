@@ -6,7 +6,7 @@ import { ModelRequest } from "@smthrs/model"
 import { SpecificationReviewers } from "../src/core/specification.vibe"
 import { IssueFailure } from "../src/core/issueSchemas.vibe"
 import { type SpecificationReviewer } from "../src/core/conversation.vibe"
-import { agentOf, dayOf, Spend, patient } from "./Reply.vibe"
+import { agentOf, dayOf, Spend, draftSpend, draftSpendFailed } from "./Reply.vibe"
 const ModelRecord = Schema.Struct({ protocol: Schema.String, baseUrl: Schema.optionalKey(Schema.String), path: Schema.optionalKey(Schema.String), modelId: Schema.String, credential: Schema.String, extraBody: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)) })
 export const Verdict = Schema.Struct({ verdict: Schema.Literals(["LGTM", "Changes requested"]), grade: Schema.Literals(["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"]), review: Schema.String })
 const Review = AgentAction.make("vibelang/specification/reviewer", {
@@ -46,7 +46,7 @@ export const liveSpecificationReviewers = Layer.effect(SpecificationReviewers, e
         }
       })
       const usage = try meter.usageOf(instance.executionId).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" })))
-      try Action.make({ name: "vibelang/specification/spend", error: IssueFailure, retryPolicy: patient, execute: spend.spend(admission.day, `specification/${instance.executionId}`, usage.tokens).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" }))) })
+      try Effect.tapError(effect { try Action.make({ name: "vibelang/specification/spend", error: IssueFailure, retryPolicy: draftSpend, execute: spend.spend(admission.day, `specification/${instance.executionId}`, usage.tokens).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" }))) }) }, () => draftSpendFailed("specification"))
       if (result._tag === "Failure") throw new IssueFailure({ reason: "review" })
       // The agent already refused an output that is not a Verdict (line above); this decode only types it.
       const answer = try Effect.orDie(Schema.decodeUnknownEffect(Verdict)(result.success))

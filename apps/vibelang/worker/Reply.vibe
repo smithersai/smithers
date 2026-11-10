@@ -11,7 +11,7 @@ import { promptForm, promptWindow, speaker } from "../src/core/sequenceDecision.
 // becomes `FailReply` with a reason the person reads.
 import { Agent, AgentAction, Budget, EventSink, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
 import { WebCrypto } from "@smthrs/crypto"
-import { Action, Deadline, Interpreter } from "@smthrs/flow"
+import { Action, Deadline, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { type AgentEvent, DoneText, type FlowBinding } from "@smthrs/harness"
 import * as QuickJSWorkerd from "@smthrs/harness/QuickJSWorkerd"
 import { Evaluator, ModelRequest } from "@smthrs/model"
@@ -96,6 +96,20 @@ export const AGENT_SEAT = "agent"
 export const LIMITS = { calls: 0, memoryBytes: 32 * 1024 * 1024, timeMs: 5_000 }
 
 export { patient } from "../src/core/flows.vibe"
+
+/**
+ * A draft's token charge (wiki draft, VIP draft, specification review) retries an unreachable Budget object for about
+ * two minutes of engine time, apart from the model call's deadline (0015); then the draft fails visibly, with Retry.
+ */
+export const draftSpend = RetryPolicy.make({ initialMs: 500, factor: 2, maxMs: 30_000, jitterRatio: 0.2, expirationMs: 120_000 })
+
+/** Logs and counts a draft whose charge gave up, under fixed names and the draft's kind only. */
+export function draftSpendFailed(draft: "wiki" | "vip" | "specification") {
+  return Effect.logWarning("vibelang.draft.spend").pipe(
+    Effect.annotateLogs({ draft, outcome: "unreachable" }),
+    Effect.andThen(Metric.update(Metric.withAttributes(Metric.counter("vibelang_draft_spend_failures", { incremental: true }), { draft }), 1)),
+  )
+}
 
 /** The UTC day of `millis`, as the budget names it: `2026-11-07`. */
 export function dayOf(millis: number): string {

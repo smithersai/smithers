@@ -6,7 +6,7 @@ import { ModelRequest } from "@smthrs/model"
 import { WikiDraft, WikiWriter } from "../src/core/WikiWriter.vibe"
 import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
-import { agentOf, ChatModel, dayOf, Spend, patient } from "./Reply.vibe"
+import { agentOf, ChatModel, dayOf, Spend, draftSpend, draftSpendFailed } from "./Reply.vibe"
 export const DraftWiki = AgentAction.make("vibelang/wiki/draft-agent", {
   payload: { page: Schema.String, source: Schema.String, ask: Schema.String },
   output: WikiDraft, seat: "agent", profile: "conversation", maxFrames: 8,
@@ -55,7 +55,7 @@ export const wikiWriter = Layer.effect(WikiWriter, effect {
       const meter = try Effect.orDie(Budget.make({}))
       const result = try Effect.result(agent.run(request, meter))
       const usage = try meter.usageOf(instance.executionId).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" })))
-      try Action.make({ name: "vibelang/wiki/draft-spend", error: WikiFailure, retryPolicy: patient, execute: spend.spend(admission.day, `wiki-draft/${instance.executionId}`, usage.tokens).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" }))) })
+      try Effect.tapError(effect { try Action.make({ name: "vibelang/wiki/draft-spend", error: WikiFailure, retryPolicy: draftSpend, execute: spend.spend(admission.day, `wiki-draft/${instance.executionId}`, usage.tokens).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" }))) }) }, () => draftSpendFailed("wiki"))
       if (result._tag === "Failure") throw result.failure
       return result.success
     },
