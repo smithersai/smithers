@@ -81,8 +81,9 @@ brick                                   state         proof
   reply interrupted by a reload no longer blocks its conversation. Other files below 100% remain.
 
 - **Unit coverage, third lane (0016, lane vl-coverage3): partial.** Surfaces, history and actions: 17 files missing
-  103 items down to 7 missing 15, each named in 0016 with its reason; four dead fallbacks deleted; the proof inventory
-  no longer fails after a build.
+  103 items down to 2 files missing 2 branches, each named in 0016 with its reason (an exhaustive `match`'s
+  no-match arm awaiting Will; a V8 range defect, reproduction `coverage-v8-suspend-else-arm`); four dead fallbacks
+  deleted; the proof inventory no longer fails after a build.
 
 - Brick 6: [0024](decisions/0024-sandboxes.md), sandbox UI and shared lifecycle flows; real Container activation awaits trusted 0019 identity and deployment receipts.
 

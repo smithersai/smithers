@@ -955,14 +955,20 @@ load 169 the spawned cases had missed the client's 10-second initialization dead
 including a refused mock sign-out and a refusal's own sentence, are covered in process (`commandsEdges`); the built
 CLI case starts two processes instead of three. `commands.vibe` and `sessionFlow.vibe` are at 100% in the full run.
 
+Third session (main `4513073e`): four of the six items are covered with faulty services, none by a code change.
+`signinEdges` adds a settings directory whose `chmod` is refused once the device code is shown (the durable wait
+fails as "Sign-in failed." after one poll, `signin.vibe:129`) and a mock session that can't be read back (signed in,
+no login, `:101`). `mcpFailures` starts the MCP server against an unreachable live Factory (its sentence on stderr),
+a settings store that dies (the defect on stderr) and one interrupted inside the server's own fiber (nothing
+written): Effect runs `tapCause` for an interrupt the fiber raises itself, so `mcp.vibe:36` and `:38` are reached.
+`mythicalEdges` plans before a commit whose rank is negative: no history `apply` builds holds one, but `decide` is
+total over `History` and its proved contract promises a rank >= 0, so the guard (`mythical.vibe:562`) stays and is
+tested at `decide`'s boundary rather than replaced by an unchecked `requires`. None of these files has a model path.
+
 | Left | Why |
 | --- | --- |
-| `src/surfaces/signin.vibe:101` | `stored?.login ?? ""` is reached only if the session vanishes between its write and its read |
-| `src/surfaces/signin.vibe:129` | The durable wait's host failing mid-sign-in (a check's own failures are caught as `"failed"`). Every settings write re-runs `chmod 0700`, so no file fault holds until the wait; `PollExhausted` needs a grant that outlives 3,600 one-second polls. The only caller maps any other error to the same sentence; the `mapError` keeps `signIn`'s error a `SignInFailed` |
-| `src/surfaces/mcp.vibe:36`, `:38` | Effect skips every failure handler on a fiber that is itself interrupted (`effect/src/internal/core.ts`, the `getCont(contE)` loop), and closing stdin interrupts the server's own fiber; a dying stdin leaves the server running. The arms answer an interruption or defect joined from a child fiber, which the current `McpServer` doesn't produce. Kept: they report a defect on stderr if one arrives |
 | `src/history/tools.vibe:93` | The implicit no-match path after an exhaustive `match`; no type-correct value reaches it. VibeLang reproduction `coverage-exhaustive-match` (nyc-01 `~/vl/vibelang-bugs/`); an emitted-output change needs Will |
-| `src/history/mythical.vibe:562` | `rank < 0` after the epic check; kept for the history machine's Dafny proof |
-| `src/history/flows.vibe:213` | The provider writes a negative count (`[70, -21]`) for the implicit else; plain JS and in-process VibeLang controls count correctly. Reproduction `coverage-negative-branch`, for the provider patch's owner |
+| `src/history/flows.vibe:213` | V8, not the provider: line 211's conditional has a never-taken else arm that suspends (`try` compiles to `yield*`), and V8 14.6 (Node 26.5) reports that arm's 0 range through the end of the function, so lines 212-213 read 0 and the implicit else becomes 0 - 9. Plain JavaScript reproduces it (`await` too); then arms, call arms and if statements are right. Reproduction `coverage-v8-suspend-else-arm`; the source was not rewritten around it |
 
 ## Coverage inside workerd (lane vl-coverage-workerd, 2026-11-10)
 
