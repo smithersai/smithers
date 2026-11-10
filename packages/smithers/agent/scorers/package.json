@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/scorers",
   "type": "module",
-  "version": "1.0.0-rc.16",
+  "version": "1.0.0-rc.17",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -219,10 +219,10 @@
     "test:matrix": "node ../../flows/database/scripts/test-matrix.mjs"
   },
   "dependencies": {
-    "@smthrs/core": "1.0.0-rc.16",
-    "@smthrs/database": "1.0.0-rc.16",
-    "@smthrs/journal": "1.0.0-rc.16",
-    "@smthrs/sandbox": "1.0.0-rc.16"
+    "@smthrs/core": "1.0.0-rc.17",
+    "@smthrs/database": "1.0.0-rc.17",
+    "@smthrs/journal": "1.0.0-rc.17",
+    "@smthrs/sandbox": "1.0.0-rc.17"
   },
   "peerDependencies": {
     "effect": "4.1.1"
@@ -248,8 +248,8 @@
     "vibelang-vite": "0.0.12",
     "vitest": "5.0.0",
     "@effect/platform-node": "4.1.1",
-    "@smthrs/kernel": "1.0.0-rc.16",
-    "@smthrs/platform-node": "1.0.0-rc.16",
+    "@smthrs/kernel": "1.0.0-rc.17",
+    "@smthrs/platform-node": "1.0.0-rc.17",
     "@smthrs/flow": "workspace:*",
     "@smthrs/plan": "workspace:*"
   }

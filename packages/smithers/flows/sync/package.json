@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/sync",
   "type": "module",
-  "version": "1.0.0-rc.16",
+  "version": "1.0.0-rc.17",
   "license": "MIT",
   "smthrs": {
     "group": "engine"
@@ -345,7 +345,7 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/journal": "1.0.0-rc.16",
+    "@smthrs/journal": "1.0.0-rc.17",
     "yjs": "13.6.32"
   },
   "devDependencies": {
@@ -353,8 +353,8 @@
     "@effect/platform-node": "4.1.1",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
-    "@smthrs/database": "1.0.0-rc.16",
-    "@smthrs/engine-store": "1.0.0-rc.16",
+    "@smthrs/database": "1.0.0-rc.17",
+    "@smthrs/engine-store": "1.0.0-rc.17",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
@@ -371,7 +371,7 @@
     "vibelang": "0.0.12",
     "vibelang-vite": "0.0.12",
     "vitest": "5.0.0",
-    "@smthrs/time-travel": "1.0.0-rc.16",
+    "@smthrs/time-travel": "1.0.0-rc.17",
     "fast-check": "4.9.0"
   },
   "peerDependencies": {

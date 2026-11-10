@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/targets",
   "type": "module",
-  "version": "1.0.0-rc.16",
+  "version": "1.0.0-rc.17",
   "license": "MIT",
   "smthrs": {
     "group": "tooling"
@@ -1120,12 +1120,12 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/build": "1.0.0-rc.16",
-    "@smthrs/flow": "1.0.0-rc.16",
-    "@smthrs/model": "1.0.0-rc.16",
-    "@smthrs/plan": "1.0.0-rc.16",
-    "@smthrs/platform-node": "1.0.0-rc.16",
-    "@smthrs/views": "1.0.0-rc.16",
+    "@smthrs/build": "1.0.0-rc.17",
+    "@smthrs/flow": "1.0.0-rc.17",
+    "@smthrs/model": "1.0.0-rc.17",
+    "@smthrs/plan": "1.0.0-rc.17",
+    "@smthrs/platform-node": "1.0.0-rc.17",
+    "@smthrs/views": "1.0.0-rc.17",
     "ignore": "7.0.8",
     "minimatch": "10.2.6",
     "yaml": "2.9.0"

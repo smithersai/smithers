@@ -30,7 +30,7 @@ package:
 mkdir time-travel-quickstart && cd time-travel-quickstart
 npm init -y && npm pkg set type=module
 npm install @smthrs/platform-node@next @smthrs/flows@next effect
-npm install @smthrs/time-travel@1.0.0-rc.16
+npm install @smthrs/time-travel@1.0.0-rc.17
 ```
 
 `@smthrs/flows` carries the durable engine and re-exports the `TimeTravel`

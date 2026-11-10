@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/engine-store",
   "type": "module",
-  "version": "1.0.0-rc.16",
+  "version": "1.0.0-rc.17",
   "license": "MIT",
   "smthrs": {
     "group": "engine"
@@ -457,20 +457,20 @@
     "test:matrix": "node ../database/scripts/test-matrix.mjs"
   },
   "dependencies": {
-    "@smthrs/artifacts": "1.0.0-rc.16",
-    "@smthrs/canonical": "1.0.0-rc.16",
-    "@smthrs/crypto": "1.0.0-rc.16",
-    "@smthrs/database": "1.0.0-rc.16",
-    "@smthrs/engine": "1.0.0-rc.16",
-    "@smthrs/flow": "1.0.0-rc.16",
-    "@smthrs/journal": "1.0.0-rc.16",
-    "@smthrs/kernel": "1.0.0-rc.16",
-    "@smthrs/keys": "1.0.0-rc.16",
-    "@smthrs/plan": "1.0.0-rc.16",
-    "@smthrs/plan-store": "1.0.0-rc.16",
-    "@smthrs/run-store": "1.0.0-rc.16",
-    "@smthrs/step-cache": "1.0.0-rc.16",
-    "@smthrs/capability": "1.0.0-rc.16"
+    "@smthrs/artifacts": "1.0.0-rc.17",
+    "@smthrs/canonical": "1.0.0-rc.17",
+    "@smthrs/crypto": "1.0.0-rc.17",
+    "@smthrs/database": "1.0.0-rc.17",
+    "@smthrs/engine": "1.0.0-rc.17",
+    "@smthrs/flow": "1.0.0-rc.17",
+    "@smthrs/journal": "1.0.0-rc.17",
+    "@smthrs/kernel": "1.0.0-rc.17",
+    "@smthrs/keys": "1.0.0-rc.17",
+    "@smthrs/plan": "1.0.0-rc.17",
+    "@smthrs/plan-store": "1.0.0-rc.17",
+    "@smthrs/run-store": "1.0.0-rc.17",
+    "@smthrs/step-cache": "1.0.0-rc.17",
+    "@smthrs/capability": "1.0.0-rc.17"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -478,8 +478,8 @@
     "@effect/sql-pg": "4.1.1",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
-    "@smthrs/core": "1.0.0-rc.16",
-    "@smthrs/platform-node": "1.0.0-rc.16",
+    "@smthrs/core": "1.0.0-rc.17",
+    "@smthrs/platform-node": "1.0.0-rc.17",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

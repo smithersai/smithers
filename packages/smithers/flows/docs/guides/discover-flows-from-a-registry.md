@@ -19,7 +19,7 @@ descriptor into a registered durable flow. `@smthrs/flows` does not install it,
 so add it at the version of `@smthrs/flows` you have:
 
 ```bash
-npm install @smthrs/registry@1.0.0-rc.16
+npm install @smthrs/registry@1.0.0-rc.17
 ```
 
 ```ts

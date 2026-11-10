@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/core",
   "type": "module",
-  "version": "1.0.0-rc.16",
+  "version": "1.0.0-rc.17",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -190,10 +190,10 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/canonical": "1.0.0-rc.16",
-    "@smthrs/crypto": "1.0.0-rc.16",
-    "@smthrs/flow": "1.0.0-rc.16",
-    "@smthrs/plan": "1.0.0-rc.16",
+    "@smthrs/canonical": "1.0.0-rc.17",
+    "@smthrs/crypto": "1.0.0-rc.17",
+    "@smthrs/flow": "1.0.0-rc.17",
+    "@smthrs/plan": "1.0.0-rc.17",
     "yaml": "2.9.0"
   },
   "devDependencies": {
@@ -201,7 +201,7 @@
     "@effect/platform-node": "4.1.1",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
-    "@smthrs/engine": "1.0.0-rc.16",
+    "@smthrs/engine": "1.0.0-rc.17",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/kernel",
   "type": "module",
-  "version": "1.0.0-rc.16",
+  "version": "1.0.0-rc.17",
   "license": "MIT",
   "smthrs": {
     "group": "engine"
@@ -333,10 +333,10 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/capability": "1.0.0-rc.16",
-    "@smthrs/crypto": "1.0.0-rc.16",
-    "@smthrs/jj": "1.0.0-rc.16",
-    "@smthrs/journal": "1.0.0-rc.16"
+    "@smthrs/capability": "1.0.0-rc.17",
+    "@smthrs/crypto": "1.0.0-rc.17",
+    "@smthrs/jj": "1.0.0-rc.17",
+    "@smthrs/journal": "1.0.0-rc.17"
   },
   "peerDependencies": {
     "effect": "4.1.1",
@@ -355,7 +355,7 @@
     "@effect/platform-node": "4.1.1",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
-    "@smthrs/database": "1.0.0-rc.16",
+    "@smthrs/database": "1.0.0-rc.17",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

@@ -111,6 +111,29 @@
     "@effect/sql-sqlite-bun": "4.1.1",
     "@effect/sql-sqlite-do": "4.1.1",
     "@effect/sql-sqlite-node": "4.1.1",
-    "@effect/vitest": "4.1.1"
+    "@effect/vitest": "4.1.1",
+    "vitest@5.0.0>happy-dom": "20.13.2",
+    "vibelang": "0.0.12",
+    "vibelang-runtime": "0.0.12",
+    "vibelang-vite": "0.0.12",
+    "vibelang-unplugin": "0.0.12",
+    "alchemy": "2.0.0-beta.85",
+    "@alchemy.run/node-utils": "2.0.0-beta.85",
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.85",
+    "@effect/sql-pg": "4.1.1"
+  },
+  "patchedDependencies": {
+    "@opentelemetry/otlp-transformer@0.222.0": "patches/@opentelemetry__otlp-transformer@0.222.0.patch",
+    "vibelang-runtime@0.0.12": "patches/vibelang-runtime@0.0.12.patch",
+    "alchemy@2.0.0-beta.85": "patches/alchemy@2.0.0-beta.85.patch",
+    "@alchemy.run/cloudflare@2.0.0-beta.85": "patches/@alchemy.run__cloudflare@2.0.0-beta.85.patch",
+    "@tanstack/db@0.15.1": "patches/@tanstack__db@0.15.1.patch",
+    "@tanstack/offline-transactions@1.1.3": "patches/@tanstack__offline-transactions@1.1.3.patch",
+    "@vitest/coverage-v8@5.0.0": "patches/@vitest__coverage-v8@5.0.0.patch",
+    "@tanstack/db-sqlite-persistence-core@0.4.11": "patches/@tanstack__db-sqlite-persistence-core@0.4.11.patch",
+    "@tanstack/browser-db-sqlite-persistence@0.2.36": "patches/@tanstack__browser-db-sqlite-persistence@0.2.36.patch",
+    "@effect/platform-node-shared@4.1.1": "patches/@effect__platform-node-shared@4.1.1.patch",
+    "effect@4.1.1": "patches/effect@4.1.1.patch",
+    "electrobun@1.18.1": "patches/electrobun@1.18.1.patch"
   }
 }

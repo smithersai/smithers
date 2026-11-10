@@ -1910,6 +1910,25 @@
       "flows": []
     },
     {
+      "id": "vibelang-fuzz",
+      "description": "Fuzz the VibeLang app in Effect, Chromium and workerd, retaining every regression and per-target budget receipt.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/vibelang-fuzz/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:env E2E_4501 E2E_PORT E2E_SERVER_SECONDS FUZZ_BUDGET FUZZ_COLLECT_PARTIAL FUZZ_EXECUTIONS FUZZ_SEED NODE_OPTIONS PLAYWRIGHT_BROWSERS_PATH WORKERD_COVERAGE WORKERD_COVERAGE_DIR -- pnpm *",
+        "net:get:**",
+        "net:post:**",
+        "net:private:**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
       "id": "wiki",
       "description": "Capture declared public source dependencies, independently review each engineering wiki page against its code, and write a provenance-bearing snapshot without modifying human intent.",
       "summary": null,

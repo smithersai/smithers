@@ -1,7 +1,7 @@
 {
   "name": "smthrs",
   "type": "module",
-  "version": "1.0.0-rc.16",
+  "version": "1.0.0-rc.17",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -35,7 +35,7 @@
     "smthrs": "./bin/smthrs.mjs"
   },
   "dependencies": {
-    "@smthrs/cli": "1.0.0-rc.16"
+    "@smthrs/cli": "1.0.0-rc.17"
   },
   "exports": {
     ".": "./src/index.ts"

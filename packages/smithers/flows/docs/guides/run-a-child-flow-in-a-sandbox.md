@@ -19,7 +19,7 @@ which `@smthrs/flows` depends on but does not re-export. Add
 `@smthrs/platform-node` at the version of `@smthrs/flows` you have:
 
 ```bash
-npm install @smthrs/platform-node@1.0.0-rc.16
+npm install @smthrs/platform-node@1.0.0-rc.17
 ```
 
 Every output block below is real output from 1.0.0-rc.6.
