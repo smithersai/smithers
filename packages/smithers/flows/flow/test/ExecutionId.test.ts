@@ -280,6 +280,42 @@ describe("the explicit payload-derived execution-id source", () => {
       Effect.provide(Flow.layerExecutionIds(Flow.derived))
     ))
 
+  /** VIP-44: a payload whose sets and maps differ only in insertion order. */
+  const Release = Flow.make("ExecutionId/Release", {
+    payload: {
+      tags: Schema.ReadonlySet(Schema.String),
+      owners: Schema.ReadonlyMap(Schema.String, Schema.ReadonlySet(Schema.String))
+    },
+    success: Schema.String,
+    body: ({ tags }) => Echo.call({ value: [...tags].join(",") })
+  })
+
+  derivedEffect("derives one id for equal sets and maps whatever their insertion order", () =>
+    Effect.gen(function*() {
+      const first = yield* Release.executionId({
+        tags: new Set(["a", "b"]),
+        owners: new Map([["x", new Set(["1", "2"])], ["y", new Set(["3"])]])
+      })
+      const reordered = yield* Release.executionId({
+        tags: new Set(["b", "a"]),
+        owners: new Map([["y", new Set(["3"])], ["x", new Set(["2", "1"])]])
+      })
+      const different = yield* Release.executionId({
+        tags: new Set(["a"]),
+        owners: new Map([["x", new Set(["1", "2"])], ["y", new Set(["3"])]])
+      })
+      expect(reordered).toBe(first)
+      expect(different).not.toBe(first)
+    }))
+
+  derivedEffect("keeps the id of a payload that holds no collection", () =>
+    Effect.gen(function*() {
+      // Pinned before VIP-44 added the sort: ids of collection-free payloads are unchanged.
+      expect(yield* Anonymous.executionId({ value: "stable" })).toBe(
+        "4e0ce36c0f8b5b0df75d428f7e2213ef1d093230f2fe17289ccc89e5a956e5e4"
+      )
+    }))
+
   derivedEffect("dies before engine invocation when the payload has no canonical form", () => {
     const Unreached = Action.make("ExecutionId/unreached", {
       payload: { value: Schema.String },

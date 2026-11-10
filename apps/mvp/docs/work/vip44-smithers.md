@@ -15,7 +15,7 @@ attempt (392b6cd8262d), which was never landed.
 
 | Row | Change | Commit |
 | --- | --- | --- |
-| 1 | `@smthrs/canonical` `sortCollections` | pending |
+| 1 | `@smthrs/canonical` `sortCollections` | f4b973ab2789 |
 | 2 | `ExecutionIds` sorts before encoding | pending |
 | 3 | One shared payload identity for every hashing site | pending |
 | 4 | Action results through `RpcSerialization.codecFor` | pending |

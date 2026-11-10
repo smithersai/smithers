@@ -72,7 +72,7 @@ Identity has three sources, consulted in this order:
 2. the `idempotencyKey` the flow declared, hashed together with the flow tag;
 3. the ambient `CurrentExecutionIds` source, whose default `fresh` mints a new cryptographic UUID.
 
-`layerExecutionIds(source)` replaces the third. Install `derived` when equal payloads deliberately name one piece of work; callers that name an `executionId` and flows that declare an `idempotencyKey` are unaffected, because both are decided before the source is consulted.
+`layerExecutionIds(source)` replaces the third. Install `derived` when equal payloads deliberately name one piece of work; it sorts every `Set` and `Map` in the payload before encoding, so equal collections derive one id; callers that name an `executionId` and flows that declare an `idempotencyKey` are unaffected, because both are decided before the source is consulted.
 
 `ExecutionIdRequired` is a defect, not a typed failure. The opt-in derived source raises it when the payload has no canonical form, for example a non-finite number, a lone surrogate, or a cycle. `Flow.executionId(payload)` likewise dies when the payload fails the flow's own payload schema, where `Flow.execute` fails with a typed `Schema.SchemaError` instead. Precompute an id with `executionId` only for a payload you have already validated.
 

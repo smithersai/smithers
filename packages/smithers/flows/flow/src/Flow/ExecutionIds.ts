@@ -16,6 +16,7 @@
  * @since 0.1.0
  */
 
+import { sortCollections } from "@smthrs/canonical"
 import { Sha256 } from "@smthrs/crypto"
 import { DerivedKey } from "@smthrs/keys"
 import * as Context from "effect/Context"
@@ -49,8 +50,13 @@ export interface ExecutionIdSource {
 }
 
 /**
- * The canonical key of an invocation: the flow's own payload codec, then RFC
- * 8785, then SHA-256.
+ * The canonical key of an invocation: `sortCollections`, the flow's own payload
+ * codec, then RFC 8785, then SHA-256.
+ *
+ * The sort comes first because `Schema.ReadonlySet` and `Schema.ReadonlyMap`
+ * encode in insertion order and RFC 8785 keeps array order, so equal sets
+ * would otherwise derive different ids (VIP-44). A payload that holds no set or
+ * map is not copied, so its key is unchanged.
  *
  * Encoding first is what makes the key agree with the durable driver, which
  * compares the ENCODED payload when it decides whether an existing run row is
@@ -68,7 +74,7 @@ const canonicalKey = <W extends Any>(
   ExecutionIdRequired,
   (EffectDigest.Digest | SecureRandom.SecureRandom) | W["payloadSchema"]["EncodingServices"]
 > =>
-  (Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))(payload) as Effect.Effect<
+  (Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))(sortCollections(payload)) as Effect.Effect<
     unknown,
     unknown,
     W["payloadSchema"]["EncodingServices"]

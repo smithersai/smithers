@@ -25,9 +25,11 @@ source is the host's blanket answer for every flow it drives. Both preimage
 encodings freeze at rc.0, and neither applies Unicode normalization.
 
 Install `Flow.derived` explicitly when equal encoded payloads of one flow are
-one piece of work. It encodes the payload with the flow's own codec,
-canonicalizes it under RFC 8785, hashes it, and hashes that together with the
-flow tag:
+one piece of work. It orders every `Set` and `Map` in the payload with
+`sortCollections` from `@smthrs/canonical`, encodes the payload with the flow's
+own codec, canonicalizes it under RFC 8785, hashes it, and hashes that together
+with the flow tag. Equal sets inserted in different orders therefore derive one
+id, and a payload with no set or map derives the id it always has (VIP-44):
 
 ```ts
 const derivedIdentity = Flow.layerExecutionIds(Flow.derived)
