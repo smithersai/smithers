@@ -4,6 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { pages, wikiLink } from "../core/wiki.vibe"
 import { wikiPermission } from "../core/conversation.vibe"
 import { toHtml } from "./markdown.vibe"
+import { staleMark } from "./issuesView.vibe"
 import { accountOf, Message, type Model } from "./main.vibe"
 type H = HtmlBuilder<Message>
 const max = "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"
@@ -38,7 +39,7 @@ export function wikiPane(model: Model, h: H, documents: ReadonlyArray<WikiPage> 
       h.div([h.Class("vl-wiki-crumb")], [
         ...((page === undefined || page.id === "index") ? [h.b([], ["Wiki"])] : [crumb("index", "Wiki"), "/"]),
         ...(page?.decision ? [crumb("decisions", "Decisions"), "/", h.b([], [page.id.slice(10, 14)])] : page && page.id !== "index" ? [h.b([], [page.label])] : []),
-        ...(editing === undefined ? [] : [h.span([h.Class("vl-wiki-editing")], ["· editing"])]),
+        ...(editing === undefined ? [] : [h.span([h.Class("vl-wiki-editing")], ["· editing"]), ...staleMark(h, editing.stale)]),
       ]),
       ...(model.tour || editing !== undefined || !canEdit || loading || error ? [] : [h.button([h.Class("vl-wiki-edit"), h.Type("button"), h.OnClick(Message.ClickedEditWiki())], ["Edit"])]),
       ...(model.tour ? [] : [h.button([h.Class("vl-wiki-toggle"), h.Type("button"), h.Disabled(loading), h.AriaLabel(maximized ? "Minimize the wiki" : "Maximize the wiki"), h.OnClick(Message.ClickedDocs())], [

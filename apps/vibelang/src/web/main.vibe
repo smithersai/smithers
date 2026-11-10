@@ -142,7 +142,7 @@ export schema Model {
   readonly wikiAfter?: string
   readonly wikiRequest?: number
   /** The pane's editor: the page, the repository source it started from, and the person's text. */
-  readonly wikiEdit?: { readonly page: string; readonly base: string; readonly text: string; readonly busy: boolean; readonly error: string; readonly submission?: WikiRequest | undefined } | undefined
+  readonly wikiEdit?: { readonly page: string; readonly base: string; readonly text: string; readonly busy: boolean; readonly error: string; readonly submission?: WikiRequest | undefined; readonly stale?: number } | undefined
   /** The repository-observed sources overlaying the build's embedded pages. */
   readonly wikiPages?: ReadonlyArray<{ readonly id: string; readonly source: string; readonly revision: string }>
   /** The person's open review change for a page, linked until they navigate away. */
@@ -264,7 +264,7 @@ export const Message = defineMessageUnion({
   UpdatedWikiEdit: { value: Schema.String },
   CanceledWikiEdit: {},
   SubmittedWikiEdit: {},
-  BeganWikiEdit: { request: Schema.Number, page: Schema.String, source: Schema.String, draft: Schema.String },
+  BeganWikiEdit: { request: Schema.Number, page: Schema.String, source: Schema.String, draft: Schema.String, stale: Schema.optionalKey(Schema.Number) },
   CompletedWikiEdit: { request: Schema.Number, page: Schema.String, source: Schema.String, revision: Schema.String, review: Schema.String },
   FailedWikiEdit: { request: Schema.Number, reason: Schema.String, unwritten: Schema.optionalKey(Schema.Boolean) },
 })
@@ -467,10 +467,10 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       const request: WikiRequest = editing.submission === undefined ? { op, page: editing.page, base: editing.base, text: editing.text, key: `${model.session}-wiki-${serial}` } : { ...editing.submission, recovery: `${model.session}-wiki-retry-${serial}` }
       return { model: { ...model, wikiSerial: serial, wikiEdit: { ...editing, ...PaneDecision.submittingWikiEdit(wikiEditScreen(editing)), submission: request } }, commands: [SubmitWikiEdit({ request, serial: model.wikiEditRequest ?? 0 })] }
     },
-    BeganWikiEdit: ({ request, page, source, draft }) => {
+    BeganWikiEdit: ({ request, page, source, draft, stale }) => {
       const editing = model.wikiEdit
       if (editing === undefined || !PaneDecision.wikiBeginApplies(editing.busy, Machine.currentWikiEditor(page, request, editing.page, model.wikiEditRequest ?? 0))) return { model }
-      return { model: { ...model, wikiEdit: { ...editing, ...PaneDecision.beganWikiEdit(wikiEditScreen(editing), source, draft) } }, commands: [FocusWikiEditor({})] }
+      return { model: { ...model, wikiEdit: { ...editing, ...PaneDecision.beganWikiEdit(wikiEditScreen(editing), source, draft), ...(stale === undefined ? {} : { stale }) } }, commands: [FocusWikiEditor({})] }
     },
     CompletedWikiEdit: ({ request, page, source, revision, review }) => model.wikiEdit === undefined || !Machine.currentWikiEditor(page, request, model.wikiEdit.page, model.wikiEditRequest ?? 0) ? { model } : ({ model: { ...model, wikiEdit: undefined, wikiPages: [...(model.wikiPages ?? []).filter((observed) => observed.id !== page), { id: page, source, revision }], ...(review === "" ? {} : { wikiReview: { page, url: review } }) } }),
     FailedWikiEdit: ({ request, reason, unwritten }) => {
@@ -963,7 +963,7 @@ export const OpenWikiEditor = Command.define("OpenWikiEditor", {
       if (result._tag === "Failure") return Message.FailedWikiEdit({ request, reason: result.failure.reason })
       const observed = result.success.pages.find((entry) => entry.id === page)
       const draft = result.success.draft !== undefined && result.success.draft.page === page ? result.success.draft.text : ""
-      return observed === undefined ? Message.FailedWikiEdit({ request, reason: "missing" }) : Message.BeganWikiEdit({ request, page, source: observed.source, draft })
+      return observed === undefined ? Message.FailedWikiEdit({ request, reason: "missing" }) : Message.BeganWikiEdit({ request, page, source: observed.source, draft, ...(result.success.stale === undefined ? {} : { stale: result.success.stale }) })
     })
   },
 })
