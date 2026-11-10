@@ -3356,3 +3356,19 @@ keys, tour docs paths and specification review recording, each against a written
 
 Limitations: pure decisions in one process; DOM, Commands and HTTP are measured by the browser and HTTP workloads;
 assertion overhead dominates the time.
+
+## Action kinds (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/action-kinds.bench.vibe`.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| action-kinds | 440.4 | 3 | `2026-11-10T08-06-21.914Z-action-kinds.json` |
+
+**action-kinds.** A fresh product `MockActions` over `MockFactory` per sample, as a contributor: history show (the
+outline, then commit m1), a note on m1, and a sandbox's start, command and stop, each started as a button action and
+followed to settlement. Settled state and exact results are checked (the sandbox keeps its id across the three
+steps; the stop's output holds the command and its answer).
+
+Limitations: the sandbox is the product's in-memory machine, not a container; history is the committed seed in
+memory; each sample includes building `MockFactory`, so the first sample (1,116 ms) carries the seed load.

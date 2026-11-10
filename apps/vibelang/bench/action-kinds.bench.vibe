@@ -1,0 +1,45 @@
+// The action kinds the mock-actions workload does not start: history show (outline and one commit), a note, and a
+// sandbox's start, command and stop, each run through the product MockActions to settlement.
+import { it, expect } from "@effect/vitest"
+import { Actions } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("history show, note and a sandbox's start, command and stop run as actions to settlement", async ({ bench }) => {
+  const result = await workload(bench, "action-kinds", "async", async () => {
+    // A fresh world per sample: the mock's sandbox and history live for one MockFactory.
+    const world = MockActions({ role: "contributor", actor: "person" }).pipe(Layer.provide(MockFactory))
+    await runPromise(scoped(effect {
+      provide world {
+        const actions = try Actions
+        const settled = effect (name: string, input: Schema.Json) => {
+          const run = try Stream.runLast(actions.follow(try actions.start(name, input, "button")).pipe(Stream.takeUntil((run) => run.state !== "running" && run.state !== "queued")))
+          if (Option.isNone(run)) return { state: "none", result: null as unknown }
+          return { state: run.value.state, result: (try Effect.try(() => JSON.parse(run.value.result))) as unknown }
+        }
+        const outline = try settled("vibelang/history/show", null)
+        const commit = try settled("vibelang/history/show", { what: "commit", id: "m1" })
+        const noted = try settled("vibelang/history/Note", { id: "m1", section: "tried", text: "Measured" })
+        const started = try settled("vibelang/sandbox/start", {})
+        const commanded = try settled("vibelang/sandbox/command", { generation: 1, command: "echo hi" })
+        const stopped = try settled("vibelang/sandbox/stop", { generation: 1 })
+        try Effect.try(() => {
+          expect(outline.state).toBe("passed")
+          expect((outline.result as { epics: ReadonlyArray<{ id: string; title: string }> }).epics[0]).toMatchObject({ id: "e1", title: "Foundations" })
+          expect(commit.state).toBe("passed")
+          expect((commit.result as { commit: unknown }).commit).toMatchObject({ id: "m1", epic: "e1", title: "Add repository README and ignore rules", state: "landed" })
+          expect(noted).toEqual({ state: "passed", result: { id: "m1", refusal: null } })
+          expect(started.state).toBe("passed")
+          expect(started.result).toMatchObject({ generation: 1, sequence: 1, status: "running", role: "contributor", allowance: 600, used: 0 })
+          expect(commanded).toEqual({ state: "passed", result: "hi" })
+          expect(stopped.state).toBe("passed")
+          expect(stopped.result).toMatchObject({ generation: 1, sequence: 2, status: "stopped", role: "contributor" })
+          expect((stopped.result as { output: string }).output).toContain("$ echo hi\nhi")
+          expect((stopped.result as { id: string }).id).toBe((started.result as { id: string }).id)
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("action-kinds", "Vitest built-in bench; a fresh product MockActions over MockFactory per sample, as a contributor: history show (outline, commit m1), a note on m1, and a sandbox start, command and stop, each started as a button action and followed to settlement. Settled state and exact results are checked.", ["Mock factory: the sandbox is the product's in-memory machine, not a container; history is the committed seed in memory.", "Includes MockFactory construction per sample."], result))
+}, 300_000)
