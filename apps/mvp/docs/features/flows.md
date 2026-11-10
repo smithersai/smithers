@@ -198,6 +198,8 @@ How a run of code fails, by the tag the run page shows (`src/features/flows-ui/r
 | `FlowCallRefused` | `action_not_allowed`, `seat`, `payload` | a call its list doesn't name, an agent step on another seat, a payload the flow won't read |
 | `FlowCodeFailed` | `invalid_source`, `execution_failed`, `runtime_failed`, `version` | it doesn't compile or its bytes changed, it threw or failed, the realm couldn't start, the realm changed since the run began |
 
+A store outage while the host starts an agent call remains an engine failure. The handler preserves the original coded cause for the host's failure handling.
+
 ```
 /app/flows/new: Name + What it should do ─ Draft ─▶ flow/new { name, request }   execution <draftId>:<round>
   flow/new/open   the draft row (drafting); a name you have edits that flow, from its latest source

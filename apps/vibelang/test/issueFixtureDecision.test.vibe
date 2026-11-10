@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { fixtureDraft, fixtureErrorReason, fixtureFailure, fixtureIdentity, fixtureIssueIndex, fixtureParticipation } from "../src/core/issueFixtureDecision.vibe"
+import { fixtureDraft, fixtureErrorReason, fixtureErrorUnwritten, fixtureFailure, fixtureIdentity, fixtureIssueIndex, fixtureParticipation } from "../src/core/issueFixtureDecision.vibe"
 describe("fixture issue decisions", () => {
   it("selects the first matching issue and never a different number", () => {
     const items = [{ number: 2 }, { number: 4 }, { number: 2 }]
@@ -28,7 +28,8 @@ describe("fixture issue decisions", () => {
     expect(["new", "comment", "propose", "read"].map(fixtureParticipation)).toEqual([true, true, false, false])
   })
   it("maps decorated execution identity conflicts without exposing engine errors", () => {
-    expect(["ExecutionIdentityConflict", "FlowRuntime.ExecutionIdentityConflict", "ExecutionIdentityConflictSuffix", "FlowCycleDetected"].map(fixtureErrorReason)).toEqual(["conflict", "conflict", "failed", "failed"])
+    expect(["ExecutionIdentityConflict", "FlowRuntime.ExecutionIdentityConflict", "ExecutionIdentityConflictSuffix", "FlowCycleDetected", "@smthrs/flow/StoreUnavailable", "StoreUnavailable"].map(fixtureErrorReason)).toEqual(["conflict", "conflict", "failed", "failed", "unavailable", "failed"])
+    expect(["@smthrs/flow/StoreUnavailable", "StoreUnavailable", "@smthrs/flow/ExecutionIdentityConflict", "FlowCycleDetected"].map(fixtureErrorUnwritten)).toEqual([false, true, true, true])
   })
 })
 

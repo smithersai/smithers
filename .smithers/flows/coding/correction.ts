@@ -715,7 +715,10 @@ export const correctionLayers = Layer.mergeAll(
       const executionId = Digest.digest(
         Digest.canonical(["coding/correction-pass/v1", instance.executionId, { plan, maxRounds, round, previous }])
       )
-      const execute: Effect.Effect<Result, typeof Error.Type | FlowRuntime.FlowCycleDetected> = cursor.previous === null
+      const execute: Effect.Effect<
+        Result,
+        typeof Error.Type | FlowRuntime.FlowCycleDetected | FlowRuntime.StoreUnavailable
+      > = cursor.previous === null
         ? runtime.execute(ObservePlan, { executionId, payload: { plan: cursor.plan } })
         : runtime.execute(RepairPass, { executionId, payload: { plan: cursor.plan, previous: cursor.previous } })
       const settled = execute.pipe(

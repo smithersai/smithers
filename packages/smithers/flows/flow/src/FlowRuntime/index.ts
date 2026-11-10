@@ -14,6 +14,7 @@ export * from "./FlowInstance.ts"
 export * from "./FlowRuntime.ts"
 export * from "./NodeRecord.ts"
 export * from "./RetryFromRefused.ts"
+export * from "./StoreUnavailable.ts"
 export * from "./WaitingAnnotation.ts"
 
 export * from "./ExecutionIdentityConflict.ts"

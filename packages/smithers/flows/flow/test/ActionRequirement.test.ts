@@ -129,7 +129,11 @@ describe("a flow carries what its body requires", () => {
       (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | ChargeNeeded
     >()
     expectTypeOf<Effect.Error<ReturnType<typeof Paying.execute>>>().toEqualTypeOf<
-      Schema.SchemaError | FlowRuntime.FlowCycleDetected | FlowRuntime.ExecutionIdentityConflict | string
+      | Schema.SchemaError
+      | FlowRuntime.FlowCycleDetected
+      | FlowRuntime.StoreUnavailable
+      | FlowRuntime.ExecutionIdentityConflict
+      | string
     >()
 
     // Neither reading an execution's state nor cancelling one drives a body,

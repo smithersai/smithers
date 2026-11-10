@@ -1992,3 +1992,64 @@ project ran and passed while the report credited none of their code. In the last
 now use the fixture. A focused dark-project run of the two: 6 passed, all with evidence, and the three functions read
 called. The reporter now names every executed check without evidence (`missingEvidence`), and `pnpm e2e:coverage`
 fails on one (`gateFailed`, `test/browserCoverageEvidence.test.vibe`), so a new spec can't hide its code again.
+
+## Unrecordable steps answer unavailable (lane vl-coverage2, 2026-11-10)
+
+A failed attempt admission or result write used to interrupt the caller of
+`FlowRuntime.execute`, so Issues and Wiki could not map the failure to their
+existing "unavailable" answer. The fix belongs to `@smthrs/engine-store` and
+the `@smthrs/flow` runtime contract: `FlowRuntime.StoreUnavailable`, with
+`code: "store_unavailable"` and the execution id, is a typed infrastructure
+failure at the outermost execute boundary.
+
+The step remains undecided and the durable run remains released. Child flows
+propagate that release to their parent before the outermost caller receives
+the typed failure. Cause annotations carry the reason to every caller joining
+the same drive, without a consumable marker or an execution-id table. A caller's
+own cancellation stays interruption. The existing metric, warning and dispatch
+span still identify storage failure without recording payloads or credentials.
+
+Package regression, faulty AttemptStore and Journal services over the real SQLite engine:
+five cases fail with interruption on the old adapter; both interruption controls
+already pass. With the fix, all seven pass: attempt admission, result recording,
+actual step-journal refusal, nested child, eight joining callers, a step's own
+interruption, and caller cancellation. Recovery tests
+reuse the same execution id and retain the unfinished attempt. Issues and Wiki
+retain their existing error mapping; their faulty-storage cases now assert the
+typed unavailable answer and no GitHub write.
+
+No dependency, coverage threshold change, source coverage exclusion or VibeLang behavior change.
+
+
+The flow and engine strict gates retain 100% on lines, branches, functions and
+statements. The durable store's SQLite/PostgreSQL matrix also passes at 100%
+(7277 lines, 4565 branches, 2275 functions, 8127 statements). Its individual
+backend runs pass 2399 and 2411 tests; the seven recording/cancellation cases also pass in a focused
+SQLite run. An obsolete codec assertion was removed after the existing linter
+refused it; the compiler accepts the same declared return type without it.
+The engine's linter now ignores emitted `*.d.vibe.ts` declarations, as its
+coverage config already does; the `.vibe` source remains measured.
+
+The full app suite exposed a test lifecycle leak: entry tests imported a real
+page and removed its DOM without leaving the page. Foldkit's delayed scan then
+read globals Happy DOM had torn down. The initial pagehide regression checks
+failed first and passed after waiting for disposal. Main subsequently added an
+explicit page handle and teardown regression; the rebase retains that API and
+its tests, which supersede this lane's temporary pagehide helper.
+
+
+An unavailable engine result does not prove that a write was unwritten. The
+fixture factories therefore report `unwritten: false` for StoreUnavailable,
+as the live hosts already do. A faulty runtime over the real memory engine
+loses one result after committing: the issue comment or wiki review exists,
+and retrying the same key reads it once. Both cases failed first on the
+unwritten claim; the pre-write fault cases also retain their no-mutation
+assertions. No request interception or new GitHub double.
+
+The issue fixture maps engine errors through the proved decisions in
+`src/core/issueFixtureDecision.vibe` (main moved the reason there while this
+change was open): `fixtureErrorReason` answers `unavailable` for
+`@smthrs/flow/StoreUnavailable`, and `fixtureErrorUnwritten` is false only for
+it. Four mutation cases in `verify/extended_mutations.py` cover both. Two
+hand mutations each fail 3 of 16 unit cases (`issueFixtureDecision`,
+`factoryEngineFaults`); `WikiFactory` keeps the same mapping inline.

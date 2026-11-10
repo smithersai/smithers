@@ -88,11 +88,11 @@ export effect function makeWikiFactory(identity: FixtureIdentity = "maintainer",
     const { recovery: _recovery, ...payload } = request
     const executionId = try wikiExecutionId(person.id || "public", request.op, request.key)
     const result = try runtime.execute(flow, { executionId, payload }).pipe(
-      Effect.catchCause((cause): Effect.Effect<never, WikiFailure | FlowRuntime.ExecutionIdentityConflict | FlowRuntime.FlowCycleDetected> => {
+      Effect.catchCause((cause): Effect.Effect<never, WikiFailure | FlowRuntime.ExecutionIdentityConflict | FlowRuntime.FlowCycleDetected | FlowRuntime.StoreUnavailable> => {
         const reason = cause.reasons.length === 1 ? cause.reasons.find(Cause.isDieReason) : undefined
         return reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict ? Effect.fail(reason.defect) : Effect.failCause(cause)
       }),
-      Effect.mapError((error) => error._tag === "WikiFailure" ? error : new WikiFailure({ reason: error._tag.endsWith("ExecutionIdentityConflict") ? "conflict" : "failed", unwritten: true })),
+      Effect.mapError((error) => error._tag === "WikiFailure" ? error : new WikiFailure({ reason: error._tag === "@smthrs/flow/StoreUnavailable" ? "unavailable" : error._tag.endsWith("ExecutionIdentityConflict") ? "conflict" : "failed", unwritten: error._tag !== "@smthrs/flow/StoreUnavailable" })),
     )
     return { ...result, role: person.role }
   }

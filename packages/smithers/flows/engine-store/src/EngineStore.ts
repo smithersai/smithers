@@ -1061,13 +1061,14 @@ const persistAction = (
     // recorded. Its outcome is not the action's: whatever did not commit
     // left the attempt row running, so the dispatch interrupts itself, as
     // it does on a lost fence, and the run is released for a later drive
-    // that adopts the attempt and records its result.
+    // that adopts the attempt and records its result. The outermost
+    // `execute` answers its caller `StoreUnavailable` (`executeOutermost`).
     Effect.catchIf(storageUnavailable, (error) =>
       Effect.annotateCurrentSpan({ outcome: "storage_unavailable" }).pipe(
         Effect.andThen(Effect.logWarning("action attempt interrupted: the engine store is unavailable")),
         Effect.annotateLogs({ ...logContext, error: error._tag, code: error.code }),
         Effect.andThen(Metric.update(EngineStoreMetrics.storageUnavailable, 1)),
-        Effect.andThen(Effect.interrupt)
+        Effect.andThen(Effect.failCause(Cause.annotate(Cause.interrupt(), Context.make(UnrecordedStep, true))))
       ))
   )
 
@@ -1328,6 +1329,29 @@ const recoverDeferred = (store: Store): Effect.Effect<void> =>
   })
 
 /**
+ * Marks an interrupted drive whose step could not be recorded. The cause is
+ * shared with every waiter and follows a child through its parent; no caller
+ * consumes another caller's evidence and no execution-id table outlives a drive.
+ */
+const UnrecordedStep = Context.Service<boolean>("@smthrs/engine-store/UnrecordedStep")
+
+/**
+ * Releases remain interruptions inside the engine so no undecided attempt is
+ * settled as a flow error. The outermost caller instead gets a typed failure;
+ * its own cancellation has no storage annotation and stays an interruption.
+ */
+const executeOutermost = (store: Store): FlowEngine.Encoded["execute"] => (flow, options) =>
+  store.driver.execute(flow, options).pipe(
+    Effect.catchCause((cause): Effect.Effect<never, FlowRuntime.FlowCycleDetected | FlowRuntime.StoreUnavailable> =>
+      options.parent === undefined &&
+        Cause.hasInterruptsOnly(cause) &&
+        Context.getOrUndefined(Cause.annotations(cause), UnrecordedStep) === true
+        ? Effect.fail(new FlowRuntime.StoreUnavailable({ executionId: options.executionId }))
+        : Effect.failCause(cause)
+    )
+  )
+
+/**
  * The engine operations this store answers: the run driver's, deferred
  * persistence's, and the action and node records it writes itself.
  */
@@ -1345,7 +1369,7 @@ const adapter = (store: Store): FlowEngine.Encoded => ({
           : recoverRegistration(store, flow)
       )
     ),
-  execute: store.driver.execute,
+  execute: executeOutermost(store),
   retryFrom: store.driver.retryFrom,
   poll: store.driver.poll,
   interrupt: store.driver.interrupt,

@@ -42,6 +42,7 @@ import type { FlowExecutionNotFound } from "./FlowExecutionNotFound.ts"
 import type { FlowInstance } from "./FlowInstance.ts"
 import type * as NodeRecord from "./NodeRecord.ts"
 import type { RetryFromRefused } from "./RetryFromRefused.ts"
+import type { StoreUnavailable } from "./StoreUnavailable.ts"
 
 /**
  * Result of atomically completing a deferred only while its run is parked.
@@ -140,7 +141,7 @@ export class FlowRuntime extends Context.Service<
       }
     ) => Effect.Effect<
       Discard extends true ? string : Success["Type"],
-      Error["Type"] | FlowCycleDetected,
+      Error["Type"] | FlowCycleDetected | StoreUnavailable,
       | Payload["EncodingServices"]
       | Success["DecodingServices"]
       | Error["DecodingServices"]

@@ -230,6 +230,8 @@ export const respond = (fault: Fault, state: State): Response =>
 register("@smthrs/flow/FlowRuntime/RetryFromRefused", "user")
 register("@smthrs/engine/ExecutionIdentityConflict", "bug")
 register("@smthrs/flow/InfraInterrupt", "infra")
+// The engine's store could not record a step; the run waits for the next execute.
+register("@smthrs/flow/StoreUnavailable", "infra")
 register("@smthrs/flow/InfraInterruptRetriesExhausted", "infra")
 register(
   "@smthrs/flow/HumanTaskFailed",

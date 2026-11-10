@@ -279,10 +279,10 @@ describe("the wiki through smithers.sh's delegation", () => {
     expect(failed(try w.act("save", { base: SOURCE, text: EDITED, key: "lost", recovery: "r1" }))?.reason).toBe("unavailable")
     expect(w.fake.writes).toBe(0)
 
-    // The engine interrupts a run whose attempt it cannot record; the person's request never answers from it.
+    // A step the engine cannot record answers unavailable before any GitHub write.
     w.store.fail(/^\s*INSERT INTO flows_attempts/)
-    const interrupted = try w.act("read")
-    expect(interrupted._tag === "Failure" && Cause.hasInterrupts(interrupted.cause)).toBe(true)
+    expect(failed(try w.act("read"))?.reason).toBe("unavailable")
+    expect(w.fake.writes).toBe(0)
   }))
 
   it.live("a host defect other than the read deadline stays a defect, never an answer", () => scoped(effect {

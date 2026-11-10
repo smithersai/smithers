@@ -35,6 +35,7 @@ import type { FlowCycleDetected } from "../FlowRuntime/FlowCycleDetected.ts"
 import type { FlowExecutionNotFound } from "../FlowRuntime/FlowExecutionNotFound.ts"
 import type { FlowInstance, FlowRuntime } from "../FlowRuntime/index.ts"
 import type { RetryFromRefused } from "../FlowRuntime/RetryFromRefused.ts"
+import type { StoreUnavailable } from "../FlowRuntime/StoreUnavailable.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
 import type { Outcome, To } from "./Outcome.ts"
 import type { Result } from "./Result.ts"
@@ -278,7 +279,11 @@ export interface Flow<
     }
   ) => Effect.Effect<
     Discard extends true ? string : Success["Type"],
-    Schema.SchemaError | FlowCycleDetected | ExecutionIdentityConflict | (Discard extends true ? never : Error["Type"]),
+    | Schema.SchemaError
+    | FlowCycleDetected
+    | StoreUnavailable
+    | ExecutionIdentityConflict
+    | (Discard extends true ? never : Error["Type"]),
     | FlowRuntime
     | (EffectDigest.Digest | SecureRandom.SecureRandom)
     | Requires

@@ -1,9 +1,9 @@
 import { expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import { build } from "esbuild"
-import vibelang from "vibelang-unplugin/esbuild"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import vibelang from "vibelang-unplugin/esbuild"
 import { main } from "../../examples/09-browser-use.ts"
 
 const here = dirname(fileURLToPath(import.meta.url))

@@ -294,6 +294,14 @@ adopts the attempt and records its result. Each one counts on
 `EngineStoreMetrics.storageUnavailable` and logs a warning naming the store's
 error code.
 
+A caller waiting on that drive through `FlowRuntime.execute` receives the typed
+`FlowRuntime.StoreUnavailable` error (`code: "store_unavailable"`), which a host
+can map to a retryable "unavailable" answer. The run remains released, and the
+next `execute` of the same execution id, once the store answers, adopts the
+unfinished attempt. A child flow propagates the release to its parent; only
+the outermost caller receives the typed error. Every caller joining that drive
+receives the failure. Cancellation of a caller's own fiber stays interruption.
+
 #### Drive budget
 
 A host whose invocations have a hard time limit passes `budgetMs`. A run with

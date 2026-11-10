@@ -5558,6 +5558,10 @@ cases.extend([('src/core/issueFixtureDecision.vibe', *case) for case in [
 ('fixture-error-suffix', 'fixtureErrorReason', 'tag.endsWith(', 'tag.startsWith(', 'a decorated conflict is recognized by its suffix'),
 ('fixture-error-conflict', 'fixtureErrorReason', '? "conflict" : "failed"', '? "failed" : "failed"', 'identity reuse is a typed conflict'),
 ('fixture-error-failed', 'fixtureErrorReason', '? "conflict" : "failed"', '? "conflict" : "conflict"', 'other engine errors are failed'),
+('fixture-error-unavailable', 'fixtureErrorReason', '? "unavailable" :', '? "failed" :', 'an unrecordable step is unavailable'),
+('fixture-error-unavailable-tag', 'fixtureErrorReason', 'tag === "@smthrs/flow/StoreUnavailable" ?', 'tag.endsWith("StoreUnavailable") ?', 'only the engine store error is unavailable'),
+('fixture-error-unwritten', 'fixtureErrorUnwritten', 'return tag !== "@smthrs/flow/StoreUnavailable"', 'return true', 'an unrecordable step may already have written'),
+('fixture-error-written', 'fixtureErrorUnwritten', 'return tag !== "@smthrs/flow/StoreUnavailable"', 'return false', 'the other engine refusals wrote nothing'),
 ]])
 cases.extend([('src/core/issueFixtureDecision.vibe', *case) for case in [
 ('fixture-index-last', 'fixtureIssueIndex', 'while (i < items.length)', 'while (i + 1 < items.length)', 'the last position participates in lookup'),

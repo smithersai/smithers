@@ -231,6 +231,17 @@ itself.
 **Fix.** Break the cycle, usually by turning the innermost call into a trampoline
 handoff.
 
+### `FlowRuntime.StoreUnavailable`
+
+`store_unavailable` means the durable engine could not record a step's attempt
+or result. The caller receives a typed failure; the run stays released for
+recovery. Map it to an unavailable answer, then execute the same execution id
+again after storage recovers. The normal unfinished-action recovery policy
+still applies; do not change the id or claim that an unrecorded effect succeeded.
+
+The release propagates through child flows before the outermost caller receives
+the error. Cancellation of the caller's own fiber remains interruption.
+
 ### A service is missing at run time
 
 Two service requirements are often missed, because they are not action

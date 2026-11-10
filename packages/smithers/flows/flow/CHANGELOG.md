@@ -4,6 +4,10 @@
 
 ### Added
 
+- `FlowRuntime.StoreUnavailable` is the typed infrastructure failure returned
+  when a durable engine cannot record a step. It carries `executionId` and
+  code `store_unavailable`; flow and engine execute contracts declare it.
+
 - `Action.CurrentRedispatch` is `true` while an action body re-runs an
   attempt an earlier execution started and never settled, so a body that
   cannot repeat its effect silently can count or reconcile the repeat.

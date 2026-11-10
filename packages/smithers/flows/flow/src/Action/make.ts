@@ -79,7 +79,7 @@ const codecOf = <S extends Schema.Constraint>(codecFor: RpcSerialization.CodecFo
   let codec = bySchema.get(schema)
   if (codec === undefined) bySchema.set(schema, codec = codecFor(schema as unknown as Schema.Top))
   // The codec cache is keyed by this exact schema and codec function.
-  return codec as StoredCodec<S>
+  return codec
 }
 
 /**

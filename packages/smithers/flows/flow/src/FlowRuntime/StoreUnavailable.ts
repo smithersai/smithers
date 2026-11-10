@@ -1,0 +1,44 @@
+/**
+ * Failure raised when `execute` waited on a drive that could not record a
+ * step because the engine's store was unavailable.
+ *
+ * @since 1.0.0
+ */
+
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
+
+/**
+ * Raised by `execute` when the drive it waited on could not record a step's
+ * attempt or result because the engine's store was unavailable.
+ *
+ * This is a **typed failure**, never a defect or an interruption: the caller
+ * was not cancelled and the run was not decided. A durable engine leaves the
+ * step's attempt unrecorded or running and releases the run, so the next
+ * `execute` of the same execution id, once the store is back, adopts it and
+ * answers its result. A host answering a person maps it to a retryable
+ * "unavailable".
+ *
+ * Only the outermost `execute` raises it. A flow body that executes a child
+ * keeps the engine's own release: its drive ends and the run is released
+ * with it.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class StoreUnavailable extends Schema.TaggedError<StoreUnavailable>()(
+  "@smthrs/flow/StoreUnavailable",
+  {
+    /** Stable public error code. */
+    code: Schema.Literal("store_unavailable").pipe(
+      Schema.withConstructorDefault(Effect.succeed("store_unavailable"))
+    ),
+    /** The execution whose drive could not record its step. */
+    executionId: Schema.String
+  }
+) {
+  /** @since 1.0.0 */
+  override get message(): string {
+    return `The engine store could not record a step of execution "${this.executionId}"`
+  }
+}

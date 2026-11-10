@@ -132,7 +132,7 @@ export interface Encoded {
     }
   ) => Effect.Effect<
     Discard extends true ? void : Flow.Result<unknown, unknown>,
-    FlowRuntime.FlowCycleDetected
+    FlowRuntime.FlowCycleDetected | FlowRuntime.StoreUnavailable
   >
   /**
    * The settlement of one execution of `flow`, when it has one.
