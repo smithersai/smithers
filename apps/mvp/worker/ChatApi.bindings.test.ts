@@ -55,6 +55,8 @@ const SETTINGS: Readonly<Record<string, string>> = {
   HOSTED_AUTH_SITES: JSON.stringify([{ origin: "https://vibelang.smithers.test", secret: "h".repeat(64) }]),
   AUTH_BROKER_ENCRYPTION_KEY: "a".repeat(43) + "=",
   AUTH_BROKER_ORIGIN: "https://smithers.test",
+  GITHUB_CONNECTION_KEYS: JSON.stringify({ k1: "a".repeat(43) + "=" }),
+  GITHUB_CONNECTION_KEY_ACTIVE: "k1",
   GITHUB_APP_CLIENT_ID: "Iv1.client",
   GITHUB_APP_CLIENT_SECRET: "client-secret",
   GITHUB_REPOSITORY: "acme/widgets",
