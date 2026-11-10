@@ -577,3 +577,17 @@ delays are included; process/IPC startup and actual Containers are outside this 
 these are command execution/formatting costs, not formatting CPU cost. The issue DOM corpus additionally checks a
 generic failure exposes its alert and no unrelated Fork or Install action. New observations and coverage receipts
 are recorded separately from the earlier frozen maps.
+
+
+**Daily reservation corpus after main's budget change (2026-11-10, Codex).** A real Budget over the object-storage
+ledger admits exactly one of two concurrent seven-token ceilings under a ten-token cap, retains one hold on replay,
+settles a reported two once, charges seven for an unusable report, refuses excess admission and records a one-token
+overshoot when a one-token call reports two. Exact receipts [2,7,2], totals [11,0,1] and zero holds are asserted.
+A second corpus injects four faulty Ledger reads and checks fail-closed/no write, then replays a seeded charged
+receipt with a retained hold and requires release without another charge. These use real semaphore/ledger/accounting
+code over the Node KV adapter, three unwarmed journeys each. No provider, real corruption, eviction or UTC rollover
+claim; the actual Worker companion uses the same named reservation/settlement API over real local RPC.
+
+After main's reservation change, `worker/budgetDecision.vibe`'s legacy `charge` function (lines 59–62 at c5bbf81b)
+has no src/worker callers. It remains counted; no direct invocation was added merely to credit this unused helper.
+It is an additional retained legacy/proof boundary, separate from the already named browser/Node source-map lines.

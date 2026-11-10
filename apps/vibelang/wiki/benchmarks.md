@@ -4006,3 +4006,39 @@ and sandbox start/replay/stop, checking literal output, exact identity/generatio
 settings IO, durable flows and scripted reply delays are included; CLI process/IPC startup, provider writes and
 Containers are measured elsewhere or remain unmeasured. Both use three unwarmed callbacks, with no tail-percentile
 claim. The issue DOM corpus includes the generic failure alert with no unrelated GitHub action.
+
+
+The daily-reservation corpora measure concurrent admission under a ten-token cap, exact reported/unknown/excess
+settlement, duplicate charging and charged-key refusal; four faulty ledger counts and a retained charged hold
+exercise fail-closed recovery. Exact receipts and global spent/reserved/overshoot totals are checked. Real Budget,
+semaphore and Node object-storage KV code; three unwarmed complete corpora, including initialization/assertions.
+This excludes provider/workerd/UTC-rollover latency and does not claim an actual corruption or crash. The Worker
+Budget workload separately performs five real RPCs per callback, checking admission and settlement replay.
+
+
+**Additional normal observations, 2026-11-10, nyc-01.** These retain their individual artifact timestamps and
+source revisions; they are not one simultaneous run. Node 26.5.0, the existing Vitest harness, two reserved cores
+on a shared host. Values are min/median/max milliseconds; no tail-percentile claim. Instrumented durations are
+excluded. Raw machine/toolchain/method records are retained with each artifact in the lane report's evidence.
+
+| Workload | Callbacks | Min ms | Median ms | Max ms | Artifact |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `web-sandbox-state` | 538 | 0.085 | 0.176 | 1.154 | `2026-11-10T18-06-13.480Z-web-sandbox-state.json` |
+| `issue-chat-cards` | 14 | 5.597 | 7.116 | 10.283 | `2026-11-10T18-33-24.649Z-issue-chat-cards.json` |
+| `action-deferred-binding` | 3 | 121.201 | 129.028 | 216.471 | `2026-11-10T18-06-15.622Z-action-deferred-binding.json` |
+| `action-device-unbound` | 3 | 0.206 | 0.233 | 0.691 | `2026-11-10T18-06-15.792Z-action-device-unbound.json` |
+| `surface-backend-session` | 3 | 7.362 | 8.990 | 48.443 | `2026-11-10T18-31-59.656Z-surface-backend-session.json` |
+| `surface-plain-commands` | 3 | 330.825 | 330.955 | 921.401 | `2026-11-10T18-30-48.468Z-surface-plain-commands.json` |
+| `budget-reservation-contention` | 3 | 2.836 | 3.335 | 10.565 | `2026-11-10T18-47-12.059Z-budget-reservation-contention.json` |
+| `budget-ledger-recovery` | 3 | 1.564 | 1.852 | 2.639 | `2026-11-10T18-47-12.176Z-budget-ledger-recovery.json` |
+
+Sandbox state is pure reduction with exact emitted commands/notices; cards are four Happy DOM/Foldkit scenes,
+with fixture/event setup excluded and no browser layout/paint. The deferred-action journey includes two explicit
+20 ms cancellation waits and scripted replies; unbound-device cost is three typed default-service refusals.
+Backend selection includes malformed configuration, real workerd health and a failed local connection; Worker and
+directory setup are excluded. Plain commands include fresh settings/layers, registered flows, replies, history and
+sandbox formatting; process/IPC startup and actual Containers are excluded. Budget corpora use real semaphore and
+accounting code over the Node KV adapter, including all setup/assertions. Ledger faults produce accounting defects
+and leave the backing store unchanged; seeded retained state is not evidence of an actual crash or corruption.
+These whole-corpus measurements are not individual operation latencies. Complete correctness checks and additional
+limitations are in 0017 and the named artifacts.

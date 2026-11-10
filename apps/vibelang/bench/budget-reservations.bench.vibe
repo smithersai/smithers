@@ -1,0 +1,74 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import * as Budget from "../worker/Budget.vibe"
+import { ledgerOver } from "../worker/ObjectStorage.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("concurrent ceilings reserve once and reported, unknown and excess usage settle exactly", async ({ bench }) => {
+  const result = await workload(bench, "budget-reservation-contention", "async", async () => {
+    await runPromise(scoped(effect {
+      const ledger = ledgerOver(try Effect.try(() => objectStorage()))
+      const api = try Budget.make(ledger, 10)
+      const admitted = try Effect.all([api.admit("a", 7), api.admit("b", 7)], { concurrency: 2 })
+      try Effect.try(() => expect(admitted.filter(value => value)).toHaveLength(1))
+      const winner = admitted[0] ? "a" : "b"
+      const later = admitted[0] ? "b" : "a"
+      const replayed = try api.admit(winner, 7)
+      const held = try ledger.read(Budget.RESERVED)
+      try api.spend(winner, 2, true, 7)
+      try api.spend(winner, 99, true, 7)
+      const spentOnce = try ledger.read(Budget.SPENT)
+      const second = try api.admit(later, 7)
+      try api.spend(later, NaN, true, 7)
+      const refused = try api.admit("no-room", 2)
+      const last = try api.admit("over", 1)
+      try api.spend("over", 2, true, 1)
+      const charged = try api.admit(winner, 7)
+      const full = try api.admit("full", 1)
+      const spent = try ledger.read(Budget.SPENT)
+      const reserved = try ledger.read(Budget.RESERVED)
+      const over = try ledger.read(Budget.OVER)
+      const receipts = [try ledger.read(`reply/${winner}`), try ledger.read(`reply/${later}`), try ledger.read("reply/over")]
+      const holds = [try ledger.read(`hold/${winner}`), try ledger.read(`hold/${later}`), try ledger.read("hold/over")]
+      try Effect.try(() => {
+        expect(replayed).toBe(true)
+        expect(held).toBe(7)
+        expect(spentOnce).toBe(2)
+        expect(second).toBe(true)
+        expect(refused).toBe(false)
+        expect(last).toBe(true)
+        expect(charged).toBe(false)
+        expect(full).toBe(false)
+        expect([spent, reserved, over]).toEqual([11, 0, 1])
+        expect(receipts).toEqual([2, 7, 2])
+        expect(holds).toEqual([0, 0, 0])
+      })
+    }))
+  }).run(slow)
+  await runPromise(artifact("budget-reservation-contention", "Vitest built-in bench; three fresh real Budget/ledger corpora at a ten-token cap. Two concurrent seven-token admissions permit exactly one; replay keeps one hold. Settle two reported tokens twice, admit the other call, charge its full seven-token ceiling for a nonfinite usage report, refuse an over-cap call, then report two tokens against a one-token hold. Exact receipts [2,7,2], zero holds and totals spent=11/reserved=0/overshoot=1 required; charged keys cannot re-enter. All storage, semaphore, metrics and assertions included.", ["Node object-storage KV adapter, no workerd RPC, real provider, model or UTC rollover. Race winner is unspecified; the admitted count and resulting accounting are exact. Three unwarmed whole journeys, not per-operation latency."], result))
+})
+
+it("faulty ledger counts fail closed and replay clears a retained charged reservation", async ({ bench }) => {
+  const result = await workload(bench, "budget-ledger-recovery", "async", async () => {
+    await runPromise(scoped(effect {
+      for (const [field, value] of [[Budget.SPENT, NaN], [Budget.SPENT, -1], [Budget.RESERVED, -1], [Budget.OVER, NaN]] as const) {
+        const real = ledgerOver(try Effect.try(() => objectStorage()))
+        const faulty: Budget.Ledger = { read: key => key === field ? succeed(value) : real.read(key), write: entries => real.write(entries) }
+        const api = try Budget.make(faulty, 10)
+        const refused = try exit(api.admit("bad-ledger", 1))
+        const spent = try real.read(Budget.SPENT)
+        const reserved = try real.read(Budget.RESERVED)
+        try Effect.try(() => { expect(refused._tag).toBe("Failure"); expect([spent, reserved]).toEqual([undefined, undefined]) })
+      }
+      const real = ledgerOver(try Effect.try(() => objectStorage()))
+      try real.write({ spent: 3, reserved: 2, over: 0, "hold/retained": 2, "reply/retained": 3 })
+      const api = try Budget.make(real, 10)
+      try api.spend("retained", 999, true, 2)
+      const refused = try api.admit("retained", 2)
+      const observed = [try real.read(Budget.SPENT), try real.read(Budget.RESERVED), try real.read(Budget.OVER), try real.read("hold/retained"), try real.read("reply/retained")]
+      try Effect.try(() => { expect(refused).toBe(false); expect(observed).toEqual([3, 0, 0, 0, 3]) })
+    }))
+  }).run(slow)
+  await runPromise(artifact("budget-ledger-recovery", "Vitest built-in bench; three corpora of four faulty Ledger read services (nonfinite/negative spent, reserved or overshoot), requiring failed admission with the healthy backing store unchanged. Then seed one charged receipt retaining a reservation, replay settlement with a different report and require release without another charge, unchanged receipt and refused readmission. Initialization and all assertions included.", ["Explicit faulty Effect ledger services and a seeded retained state over the real Node KV adapter; no request interception, actual disk corruption, crash or eviction. This measures defensive accounting/recovery overhead, not its production frequency."], result))
+})
