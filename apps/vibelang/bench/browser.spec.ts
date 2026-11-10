@@ -44,17 +44,28 @@ async function collectBrowserCoverage(context: BrowserContext, page: Page, baseU
   // subprocess pickup, so the separately bundled structure never merges with Node's structure of one source (0017).
   // Call the returned dump before every navigation as well as at the end: V8 precise coverage reports only the
   // current document's scripts, so a page left by page.goto loses its counts. Each dump resets the counters.
+  // A navigation the page starts itself (⌘K's /mock loads `?agent=mock`) cannot be preceded by a call, so each
+  // document also pauses in its own `beforeunload` while this session dumps, then resumes; the request is untouched.
+  // Script that runs after `beforeunload` (the rest of the command that navigated) is lost: the new document's commit
+  // ends a later pause (`pagehide` never pauses), so such lines need Node evidence (bench/web-commands.bench.vibe).
   if (process.env.BENCH_COVERAGE !== "1" || live) return undefined
   const directory = resolve("coverage/bench/chromium-raw")
   const session = await context.newCDPSession(page)
   await session.send("Profiler.enable")
   await session.send("Profiler.startPreciseCoverage", { callCount: true, detailed: true })
-  return async () => {
+  let sequence = 0
+  let pausedFailure: unknown
+  const dump = async () => {
+    if (pausedFailure !== undefined) throw pausedFailure
     const raw = await session.send("Profiler.takePreciseCoverage")
     const result = raw.result.filter(entry => entry.url.startsWith(`${baseURL}/assets/`)).map(entry => ({ ...entry, url: pathToFileURL(resolve("dist", new URL(entry.url).pathname.slice(1))).href }))
     await mkdir(directory, { recursive: true })
-    await writeFile(resolve(directory, `browser-${name}-${Date.now()}.json`), JSON.stringify({ result }), { flag: "wx" })
+    await writeFile(resolve(directory, `browser-${name}-${Date.now()}-${sequence++}.json`), JSON.stringify({ result }), { flag: "wx" })
   }
+  await page.addInitScript(() => addEventListener("beforeunload", () => { debugger }))
+  session.on("Debugger.paused", () => { void dump().catch(error => { pausedFailure ??= error }).finally(() => session.send("Debugger.resume").catch(error => { pausedFailure ??= error })) })
+  await session.send("Debugger.enable")
+  return dump
 }
 
 // A first visit to "/" starts the tour 1.2 s after load. These workloads drive the page themselves, so each visit is
@@ -959,7 +970,16 @@ test("tour controls, resize, Actions panel arms, slash keys, Escape arms and wik
       await expect.poll(() => page.evaluate(() => location.pathname)).toBe(before)
       await expect(wiki).toBeVisible()
     })
-    if (coverage) await coverage()
+    await time("command-k-mock-switch", async () => {
+      await page.keyboard.press("ControlOrMeta+k")
+      const prompt = page.getByRole("dialog", { name: "Ask the agent" }).getByRole("textbox", { name: "Message" })
+      await expect(prompt).toBeFocused()
+      await prompt.fill("/mock")
+      await Promise.all([page.waitForEvent("load"), prompt.press("Enter")])
+      expect(new URL(page.url()).searchParams.get("agent")).toBe("mock")
+      await expect(page.getByRole("link", { name: "Mock mode: switch to live", exact: true })).toBeVisible()
+      await expect(page.getByRole("dialog", { name: "Ask the agent" })).toHaveCount(0)
+    })
     await page.evaluate(() => { localStorage.clear(); sessionStorage.setItem("bench:first-visit", "yes") })
     await time("first-visit-auto-tour", async () => {
       await page.goto(`${baseURL}/?agent=mock`)
@@ -970,6 +990,6 @@ test("tour controls, resize, Actions panel arms, slash keys, Escape arms and wik
     })
   } finally {
     if (coverage) await coverage()
-    await save("local-arms-actions", { origin: baseURL, timings }, ["One serial native Chromium journey through product mock flows: tour focus, resize and orientation, sound, Skip and Back, Exit, Escape with nothing open, the Actions panel's Maximize, input, a run's step and Escape, slash-menu arrows and Escape, Escape on Issues, an in-content wiki link with browser Back, and a first visit whose tour starts on its own. Each step checks the resulting screen. No network, OAuth or model. Scripted waits and automation included; one sample per action establishes no percentile."])
+    await save("local-arms-actions", { origin: baseURL, timings }, ["One serial native Chromium journey through product mock flows: tour focus, resize and orientation, sound, Skip and Back, Exit, Escape with nothing open, the Actions panel's Maximize, input, a run's step and Escape, slash-menu arrows and Escape, Escape on Issues, an in-content wiki link with browser Back, ⌘K's /mock reloading the page in mock mode, and a first visit whose tour starts on its own. Each step checks the resulting screen. No network, OAuth or model. Scripted waits and automation included; one sample per action establishes no percentile."])
   }
 })

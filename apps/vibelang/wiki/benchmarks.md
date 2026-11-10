@@ -3490,6 +3490,24 @@ Limitations: one sample per action, no percentile; scripted waits and automation
 
 **Coverage collector fix.** Chromium coverage was dumped once, at the end of each workload. V8 precise coverage reports only the current document's scripts, so every workload that navigates mid-journey (history, sandbox, roles, wiki, issues) lost the counts from before its navigation. Each workload now dumps before every navigation. On the same Node and workerd evidence, this and the two workloads above raise `src/` + `worker/` from 6,660 to 6,778 of 7,551 lines; `src/web/main.vibe` from 71 to 25 uncovered lines, `issuesView.vibe` from 20 to 8, `historyApp.vibe` from 14 to 3.
 
+## ⌘K mode switch (2026-11-10, nyc-01)
+
+| Benchmark | Artifact | Result |
+| --- | --- | --- |
+| local-arms-actions `command-k-mock-switch` (Playwright, Chromium, production build, one sample, 14:00 UTC, load 27–33) | `2026-11-10T14-00-27.249Z-local-arms-actions.json` | 304 ms from ⌘K to the reloaded page in mock mode |
+| web-mode-switch-command (Vitest built-in bench, happy-dom, 3 samples) | `web-mode-switch-command` | 0.16–1.76 ms per `SwitchMode` command |
+
+The browser step opens ⌘K, submits `/mock`, waits for the reloaded document and checks the `agent=mock` parameter, the
+Mock mode link and a closed dialog. The Node bench checks the command's `FocusedPrompt` message and the window's
+`agent` parameter.
+
+Limitations: one browser sample, no percentile; the reload includes the local preview server. happy-dom changes the
+location without loading a document.
+
+**Coverage collector, reloads the page starts.** A dump before `page.goto` cannot precede a navigation the page starts
+itself. In coverage mode each document now pauses in its own `beforeunload` while the collector dumps, then resumes;
+the request is untouched. Lines that run after `beforeunload` in the navigating command need Node evidence (0017).
+
 ## CLI startup (2026-11-10, nyc-01)
 
 Vitest built-in bench, local, `bench/cli-startup.bench.vibe`. Five emitted CLI processes per command, no warmup, each
