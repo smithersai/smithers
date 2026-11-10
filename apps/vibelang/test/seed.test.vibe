@@ -29,6 +29,7 @@ describe("reading commit messages", () => {
     expect(scopeOf("fix(vite,unplugin): serve")).toBe("vite")
     expect(scopeOf("docs: describe")).toBe("docs")
     expect(scopeOf("mapper: read optional records")).toBe("mapper")
+    expect(scopeOf("Parser: read records")).toBe("parser")
     expect(scopeOf("Add repository README")).toBe("")
   })
 

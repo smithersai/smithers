@@ -48,6 +48,18 @@ export effect function personClient(origin: string, session?: Redacted.Redacted<
     ? request.pipe(HttpClientRequest.setHeader("cookie", credential.cookie), HttpClientRequest.setHeader("origin", origin)) : request))
 }
 
+/**
+ * A request to the Factory's own origin, carrying the stored session's cookie when it was stored for that origin and is
+ * valid, and no cookie when there is none or no settings directory to read it from (neither `XDG_CONFIG_HOME` nor
+ * `HOME`); a request to any other host is returned untouched, so the session never leaves its origin.
+ */
+export effect function withStoredSession(request: HttpClientRequest.HttpClientRequest, origin: string) {
+  if (!sameOriginRequest(request.url, origin)) return request
+  const stored = readSession() catch () => undefined
+  const cookie = stored === undefined ? "" : sessionCookie(stored.origin, origin, validSessionCookie(origin, stored.cookie), stored.cookie)
+  return request.pipe(HttpClientRequest.setHeader("origin", origin), HttpClientRequest.setHeader("cookie", cookie))
+}
+
 /** The live Factory, once its origin's health says it runs the live agent. */
 function liveBackend(probe = true) {
 return Layer.unwrap(effect {
@@ -57,12 +69,8 @@ return Layer.unwrap(effect {
   const native = try personClient(origin, Option.getOrUndefined(explicit))
   const captured = try context<FileSystem.FileSystem | Path.Path>()
   // Resolve settings per request: a long-lived MCP host sees CLI login/logout and its own tool calls immediately.
-  const client = Option.isSome(explicit) ? native : HttpClient.mapRequestEffect(native, effect request => {
-    if (!sameOriginRequest(request.url, origin)) return request
-    const stored = Effect.provide(readSession(), captured) catch () => undefined
-    const cookie = stored === undefined ? "" : sessionCookie(stored.origin, origin, validSessionCookie(origin, stored.cookie), stored.cookie)
-    return request.pipe(HttpClientRequest.setHeader("origin", origin), HttpClientRequest.setHeader("cookie", cookie))
-  })
+  const client = Option.isSome(explicit) ? native
+    : HttpClient.mapRequestEffect(native, request => Effect.provide(withStoredSession(request, origin), captured))
   if (probe) {
     const answer = health(origin).pipe(Effect.provideService(HttpClient.HttpClient, client)) catch effect () => {
       throw new LiveBackendNotDeployed({ message: unreachable(origin) })
@@ -76,14 +84,14 @@ const live = liveBackend()
 
 // The mock sign-in is the stored session's (0028): signed in, the fixture person acts as their agent; signed out,
 // the surface visits as the fixture maintainer, as before. No network, no model (VL-13).
+// With no settings directory to read (neither XDG_CONFIG_HOME nor HOME), no one is signed in. The mock factory always
+// has accounts.
 const surfaceMock = Layer.effect(Factory, effect {
   const stored = readMockSession() catch () => undefined
   const context = try Layer.build(mockFactoryFor())
   const factory = Context.get(context, Factory)
-  if (factory.accounts !== undefined) {
-    if (stored?.origin === "mock") try Effect.orDie(factory.accounts.signInAgent())
-    else try Effect.orDie(factory.accounts.choose("maintainer"))
-  }
+  if (stored?.origin === "mock") try Effect.orDie(factory.accounts!.signInAgent())
+  else try Effect.orDie(factory.accounts!.choose("maintainer"))
   return factory
 })
 const surfaceHistory = Layer.unwrap(effect {

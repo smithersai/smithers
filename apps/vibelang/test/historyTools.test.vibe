@@ -68,6 +68,8 @@ describe("the history's tools", () => {
     const decode = Schema.decodeUnknownSync(Schema.Struct(Show.payloadSchema.fields))
     expect(requestOf(decode({ what: "epic", id: "e2" }))).toEqual({ what: "epic", id: "e2", from: 0 })
     expect(requestOf(decode({ what: "search" }))).toEqual({ what: "search", query: "" })
+    expect(requestOf(decode({ what: "epic" }))).toEqual({ what: "epic", id: "", from: 0 })
+    expect(requestOf(decode({ what: "commit" }))).toEqual({ what: "commit", id: "" })
     expect(() => decode({ what: "epic", id: "e2", from: -1 })).toThrow()
     expect(() => decode({ what: "everything" })).toThrow()
   })

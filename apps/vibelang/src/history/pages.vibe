@@ -101,7 +101,7 @@ function headOf(commit: Commit, folds: Map<string, number>): Head {
 /** Every commit in stack order: epics in order, ranks inside each. */
 function stacked(history: History): ReadonlyArray<Commit> {
   const order = new Map(history.epics.map((epic, index) => [epic.id, index]))
-  return [...history.commits].sort((a, b) => (order.get(a.epic) ?? 0) - (order.get(b.epic) ?? 0) || a.rank - b.rank)
+  return [...history.commits].sort((a, b) => order.get(a.epic)! - order.get(b.epic)! || a.rank - b.rank)
 }
 
 export function outlineOf(history: History): Outline {

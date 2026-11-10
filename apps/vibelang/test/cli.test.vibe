@@ -119,6 +119,14 @@ layer(platform)("built CLI process", (it) => {
       expect(exists).toBe(false)
     })
   }, LIMIT)
+  it.effect("shows the help and succeeds when no subcommand is named", () => effect {
+    const result = try cli([])
+    try Effect.try(() => {
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain("vibelang-factory <subcommand>")
+      expect(result.stderr).toBe("")
+    })
+  }, LIMIT)
   it.effect.each([["--help"], ["ask", "--help"], ["--llms"]])("discovers %j without a backend", (args) => effect {
     const result = try cli(args)
     try Effect.try(() => {

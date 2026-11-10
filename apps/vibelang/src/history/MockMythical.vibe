@@ -10,7 +10,7 @@ import type { Mode } from "../core/Factory.vibe"
 import { Approve, Bootstrap, Fold, historyRegistration, MainLog, Note, Plan, Stack, Start } from "./flows.vibe"
 import { History as HistorySchema } from "./schemas.vibe"
 import type { History } from "./mythical.vibe"
-import { Mythical, settled, Unavailable } from "./MythicalHistory.vibe"
+import { Mythical, settled } from "./MythicalHistory.vibe"
 import { commitPageOf, epicPageOf, matchesOf, outlineOf } from "./pages.vibe"
 import { Caller, type Principal } from "./roles.vibe"
 import { make, memoryStore, type MainCommit, type Sequencer, stackOf } from "./Sequencer.vibe"
@@ -75,7 +75,7 @@ export function MockMythical(principal: Principal, seed: () => History!! = seede
 
     /** A page of the history now, computed where it lives, as the History object does. */
     function paged<A>(page: (history: History) => A) {
-      return Effect.mapError(Effect.map(sequencer.read(), page), () => new Unavailable({ reason: "history unreadable" }))
+      return Effect.map(sequencer.read(), page)
     }
 
     const mode: Mode = "mock"

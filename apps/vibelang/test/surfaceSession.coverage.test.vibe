@@ -1,0 +1,70 @@
+// @vitest-environment node
+// Which session a surface's request to the factory carries (wiki/decisions/0028-cli-and-mcp-sign-in.md, 0016): the
+// stored one, only to the origin it was stored for, never to another host, even one whose address merely starts the
+// same; and no session at all when there is no settings directory (neither XDG_CONFIG_HOME nor HOME), as for a
+// service. Real files.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { HttpClientRequest } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { backend, withStoredSession } from "../src/surfaces/backend.vibe"
+import { writeSession } from "../src/surfaces/session.vibe"
+
+const ORIGIN = "http://127.0.0.1:4000"
+
+function at(directory: string) {
+  return ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory }))
+}
+
+describe("a surface's request to the factory", () => {
+  it.live("carries the stored session to its own origin and nothing to any other host", () => scoped(effect {
+    provide NodeServices.layer {
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide at(directory) {
+        try writeSession({ origin: ORIGIN, cookie: "vibelang-session=stored", login: "ada" })
+        const own = try withStoredSession(HttpClientRequest.get(`${ORIGIN}/api/health`), ORIGIN)
+        const elsewhere = try withStoredSession(HttpClientRequest.get("https://elsewhere.test/api/health"), ORIGIN)
+        const lookalike = try withStoredSession(HttpClientRequest.get("http://127.0.0.1:40001/api/health"), ORIGIN)
+        try Effect.try(() => {
+          expect([own.headers["cookie"], own.headers["origin"]]).toEqual(["vibelang-session=stored", ORIGIN])
+          for (const request of [elsewhere, lookalike]) {
+            expect(request.headers["cookie"]).toBeUndefined()
+            expect(request.headers["origin"]).toBeUndefined()
+          }
+        })
+      }
+    }
+  }))
+
+  it.live("carries no cookie when the session was stored for another origin", () => scoped(effect {
+    provide NodeServices.layer {
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide at(directory) {
+        try writeSession({ origin: "http://127.0.0.1:5000", cookie: "vibelang-session=other", login: "ada" })
+        const request = try withStoredSession(HttpClientRequest.get(`${ORIGIN}/api/health`), ORIGIN)
+        try Effect.try(() => expect([request.headers["cookie"], request.headers["origin"]]).toEqual(["", ORIGIN]))
+      }
+    }
+  }))
+
+  it.live("carries no cookie when there is no settings directory to read a session from", () => scoped(effect {
+    provide NodeServices.layer, ConfigProvider.layer(ConfigProvider.fromUnknown({})) {
+      const request = try withStoredSession(HttpClientRequest.get(`${ORIGIN}/api/health`), ORIGIN)
+      try Effect.try(() => expect([request.headers["cookie"], request.headers["origin"]]).toEqual(["", ORIGIN]))
+    }
+  }))
+})
+
+describe("the mock surface", () => {
+  it.live("visits as the fixture maintainer when there is no settings directory to read a sign-in from", () => scoped(effect {
+    provide NodeServices.layer, ConfigProvider.layer(ConfigProvider.fromUnknown({})) {
+      provide backend(true, undefined) {
+        const person = try Effect.orDie((try Factory).accounts!.current())
+        try Effect.try(() => {
+          expect(person).toMatchObject({ role: "maintainer" })
+          expect(person.agent === true).toBe(false)
+        })
+      }
+    }
+  }))
+})

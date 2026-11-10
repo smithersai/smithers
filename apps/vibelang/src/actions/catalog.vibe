@@ -20,7 +20,7 @@ const TAGS: Tags = { post: Post._tag, tour: Tour._tag, endTour: EndTour._tag, ap
 
 /** Presentation and policy attach to a declaration's tag; adding a lane's flows extends this table. */
 export function registration(name: string): Registered {
-  const title = name === "vibelang/docs/open" ? "Docs" : name.split("/").at(-1) ?? name
+  const title = name === "vibelang/docs/open" ? "Docs" : name.split("/").at(-1)!
   const command = name === Post._tag ? "/post" : name === Tour._tag ? "/tour" : name === HistoryTools.Show._tag ? "/history" : name === Plan._tag ? "/plan" : name === Start._tag ? "/start" : name === Note._tag ? "/note" : name === SandboxStart._tag ? "/sandbox" : name === SandboxStop._tag ? "/sandbox-stop" : name === SandboxCommand._tag ? "/sandbox-run" : ""
   const runnable = command !== ""
   return {
