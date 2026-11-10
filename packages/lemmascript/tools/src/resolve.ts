@@ -1818,6 +1818,8 @@ function resolveFunction(
     decreases: fn.decreases ? resolveSpec(fn.decreases, requiresCtx) : null,
     isPure: opts?.forcePure !== undefined ? opts.forcePure : pureFns.has(fn.name),
     forcePure: fn.pure,
+    opaque: fn.opaque,
+    reveals: fn.reveals,
     autohavoc: fn.autohavoc,
     body: resolveBlock(fn.body, bodyCtx),
   };
@@ -1860,10 +1862,26 @@ function precomputeFieldTypesInner(typeDecls: TypeDeclInfo[]) {
   }
 }
 
+/**
+ * `//@ opaque` hides a pure function's body from every proof but its own contract lemma and the functions that
+ * `//@ reveal` it. Only a pure function can be opaque, and a reveal must name an opaque function of this module.
+ */
+function checkOpacity(functions: RawFunction[], pureFns: Set<string>): void {
+  const opaque = new Set(functions.filter(fn => fn.opaque).map(fn => fn.name));
+  for (const fn of functions) {
+    if (fn.opaque && !pureFns.has(fn.name)) throw new Error(`${fn.name}: //@ opaque applies only to a pure function`);
+    for (const name of fn.reveals) {
+      if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) throw new Error(`${fn.name}: //@ reveal takes one function name, not '${name}'`);
+      if (!opaque.has(name)) throw new Error(`${fn.name}: //@ reveal ${name} names no //@ opaque function in this module`);
+    }
+  }
+}
+
 export function resolveModule(raw: RawModule): TModule {
   _warnedRefEq.clear();
   precomputeFieldTypes(raw.typeDecls);
   const pureFns = computePureFns(raw.functions, raw.externs ?? []);
+  checkOpacity(raw.functions, pureFns);
   // Pre-compute function parameter and return types
   const fnParams = new Map<string, Ty[]>();
   const fnReturns = new Map<string, Ty>();

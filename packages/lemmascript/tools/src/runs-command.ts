@@ -35,6 +35,7 @@ const ANNOTATION_ROLES: Record<AnnotKind, "spec" | "proof"> = {
   decreases: "proof",
   done_with: "proof",
   type: "proof",
+  reveal: "proof",
 };
 
 /**

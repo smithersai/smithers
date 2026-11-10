@@ -9,6 +9,11 @@ import { freshName, freshNameWhere, userNames } from "./names.js";
 import { renameFreeVar } from "./transform.js";
 import { DEFAULT_OPTIONS, resolveOptions, type LscOptions } from "./config.js";
 
+/** `reveal f();` for each opaque function a proof body may unfold (`//@ opaque`, `//@ reveal`). */
+function revealLines(names: string[]): string[] {
+  return names.map(name => `  reveal ${escapeName(name)}();`);
+}
+
 /** Appended to a function's name for the lemma that carries its `//@ ensures`. */
 export const ENSURES_LEMMA_SUFFIX = "_ensures";
 
@@ -927,14 +932,19 @@ function emitDecl(d: Decl): string {
 
     case "def": {
       const tp = d.typeParams.length > 0 ? `<${d.typeParams.join(", ")}>` : "";
-      const lines = [`function ${escapeName(d.name)}${tp}(${paramList(d.params)}): ${tyToDafny(d.returnType)}`];
+      const lines = [`${d.opaque ? "opaque " : ""}function ${escapeName(d.name)}${tp}(${paramList(d.params)}): ${tyToDafny(d.returnType)}`];
       for (const r of d.requires) lines.push(`  requires ${emitExpr(r)}`);
+      // An opaque function's callers reason from its contract, so a non-recursive one carries it on the function,
+      // proved there against the body. A recursive contract names the function again and would instantiate without
+      // bound, so it stays on the companion lemma.
+      const contractOnFunction = d.opaque === true && d.decreases === null;
+      if (contractOnFunction) for (const e of d.ensures) lines.push(`  ensures ${emitExpr(e)}`);
       if (d.decreases) lines.push(`  decreases ${emitExpr(d.decreases)}`);
       lines.push(`{`);
       lines.push(emitPureExpr(d.body, 1));
       lines.push(`}`);
       // Companion lemma for ensures (proof target for LLM)
-      if (d.ensures.length > 0) {
+      if (d.ensures.length > 0 && !contractOnFunction) {
         // Strip constraints like (==) from type params — ghost lemmas don't need them
         const lemmaTP = d.typeParams.length > 0 ? `<${d.typeParams.map(t => t.replace(/\(.*\)/, '')).join(", ")}>` : "";
         lines.push("");
@@ -942,6 +952,7 @@ function emitDecl(d: Decl): string {
         for (const r of d.requires) lines.push(`  requires ${emitExpr(r)}`);
         for (const e of d.ensures) lines.push(`  ensures ${emitExpr(e)}`);
         lines.push(`{`);
+        lines.push(...revealLines([...(d.opaque ? [d.name] : []), ...(d.reveals ?? [])]));
         lines.push(`}`);
       }
       return lines.join("\n");
@@ -955,6 +966,7 @@ function emitDecl(d: Decl): string {
       lines.push(`{`);
       lines.push(`}`);
       lines.push(`by method {`);
+      lines.push(...revealLines(d.reveals ?? []));
       lines.push(emitStmts(d.methodBody, 1));
       lines.push(`}`);
       return lines.join("\n");
@@ -967,6 +979,7 @@ function emitDecl(d: Decl): string {
       for (const e of d.ensures) lines.push(`  ensures ${emitExpr(e)}`);
       if (d.decreases) lines.push(`  decreases ${emitExpr(d.decreases)}`);
       lines.push(`{`);
+      lines.push(...revealLines(d.reveals ?? []));
       lines.push(emitStmts(d.body, 1));
       lines.push(`}`);
       return lines.join("\n");

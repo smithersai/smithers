@@ -132,6 +132,8 @@ export interface FnDef {
   ensures: Expr[];   // used by Dafny backend for companion lemma
   decreases: Expr | null;
   body: Expr;
+  opaque?: boolean;   // //@ opaque: Dafny `opaque function`, revealed in its companion lemma
+  reveals?: string[]; // //@ reveal: opaque functions revealed in the companion lemma
 }
 
 export interface FnDefByMethod {
@@ -144,6 +146,7 @@ export interface FnDefByMethod {
   ensures: Expr[];
   decreases: Expr | null;
   methodBody: Stmt[];
+  reveals?: string[];
 }
 
 export interface FnMethod {
@@ -156,6 +159,7 @@ export interface FnMethod {
   ensures: Expr[];
   decreases: Expr | null;
   body: Stmt[];
+  reveals?: string[];  // //@ reveal: opaque functions revealed at the start of the body
 }
 
 export interface Namespace {

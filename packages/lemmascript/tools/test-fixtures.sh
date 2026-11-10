@@ -144,6 +144,35 @@ expect_failure \
   "an imported constant was merged with a local constant of the same name" \
   npx tsx tools/src/lsc.ts gen --backend=dafny "$fixture_dir/imported-const-collision/use.ts"
 
+# `//@ opaque` hides a measure's body from every proof but its contract lemma and `//@ reveal`.
+cp tools/fixtures/opaque-measure.ts tools/fixtures/opaque-measure-wrong.ts tools/fixtures/opaque-reveal-unknown.ts "$fixture_dir/"
+npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/opaque-measure.ts"
+if ! grep -Fq 'opaque function sumTo' "$fixture_dir/opaque-measure.dfy.gen" || [ "$(grep -c 'reveal sumTo();' "$fixture_dir/opaque-measure.dfy.gen")" != 2 ]; then
+  echo "ERROR: //@ opaque did not emit an opaque function revealed in its lemma and the revealing method"
+  exit 1
+fi
+expect_proof_failure \
+  "a loop followed an opaque measure it never revealed" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/opaque-measure-wrong.ts"
+expect_failure \
+  "//@ reveal accepted a function that is not opaque" \
+  npx tsx tools/src/lsc.ts gen --backend=dafny "$fixture_dir/opaque-reveal-unknown.ts"
+
+# A contract copied from another module keeps each constant it names there; a same-named local one is refused.
+cp -R tools/fixtures/imported-contract-const tools/fixtures/imported-contract-const-wrong tools/fixtures/imported-contract-const-collision "$fixture_dir/"
+npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/imported-contract-const/use.ts"
+expect_proof_failure \
+  "a copied contract's constant verified against a value it does not have" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/imported-contract-const-wrong/use.ts"
+expect_failure \
+  "a copied contract's constant was merged with a local constant of the same name" \
+  npx tsx tools/src/lsc.ts gen --backend=dafny "$fixture_dir/imported-contract-const-collision/use.ts"
+
+cp -R tools/fixtures/imported-contract-const-cross-collision "$fixture_dir/"
+expect_failure \
+  "two copied contracts conflated constants that have different values" \
+  npx tsx tools/src/lsc.ts gen --backend=dafny "$fixture_dir/imported-contract-const-cross-collision/use.ts"
+
 cp tools/fixtures/safe-slice-suffix-wrong.ts "$fixture_dir/safe-slice-suffix-wrong.ts"
 expect_failure \
   "a clamped suffix past the end verified as nonempty" \

@@ -22,6 +22,8 @@ tests read are unchanged except for the patches listed below.
 | A string-literal union value widens where TypeScript allows it: to a `string` slot, and to a union holding all of its members, in arguments, fields, returns and `==` | Offered upstream later |
 | A `<T extends Bound>` parameter inside a type expression (`ReadonlyArray<T>`, `readonly T[]`) reads as its bound, and an array-wrapped signature type keeps its declaration | Offered upstream later |
 | A constant imported by name from another module (`import { LIMIT as L }`) is declared with its value, with the constants its initializer reads; a name that collides with another constant is refused | Offered upstream later |
+| `//@ opaque` emits a Dafny `opaque function`: a non-recursive one carries its contract on the function, a recursive one keeps it on its companion lemma, which reveals the body; `//@ reveal f` reveals opaque `f` at the start of another function's proof (`opaque-measure.ts`) | Offered upstream later |
+| A contract copied from another module declares that module's constants it names, with the same collision check as a named const import; constants with the same name from different contracts are also refused (`imported-contract-const/`, `imported-contract-const-cross-collision/`) | Offered upstream later |
 | `//@ safe-slice` also clamps one-argument array slices and every string slice like JavaScript (`safe-slice-suffix.ts`) | Offered upstream later |
 | A two-parameter `map` callback binds the element's index (`map-index.ts`) | Offered upstream later |
 | A record field declared `real` (`type real = number`) is a Dafny `real`; it was an integer, which proved false claims about fractional values (`real-field.ts`) | Offered upstream later |

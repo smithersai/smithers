@@ -41,6 +41,8 @@ function withHavocKey<T>(key: string | null, fn: () => T): T {
  *  after project defaults and source overrides.
  *  Cleared at the start of every `extractModule`. */
 const _externs = new Map<string, import("./rawir.js").RawExtern>();
+/** Constants a copied cross-file contract names from its own module, by the name the contract reads. */
+const _externContractConsts = new Map<string, VariableDeclaration>();
 /** Signature types of *kept* externs, for the imported-type resolver: a type
  *  reachable ONLY through an imported function's signature (e.g. an extern
  *  returning PresentFact that no local signature mentions) must still be
@@ -78,6 +80,7 @@ function registerExternIfCrossFile(
   const ext = detectCrossFileExtern(callee, sourceFile, sigTypes);
   if (!ext || _externs.has(ext.qualified)) return;
   _externs.set(ext.qualified, ext);
+  registerContractConstants(callee, ext, sourceFile);
   // Only now that the extern is kept do its signature types become resolver
   // seeds — see `_externSigTypes`.
   _externSigTypes.push(...sigTypes);
@@ -101,6 +104,56 @@ function registerExternIfCrossFile(
   }
 }
 
+/** A module-level const another module may copy: a non-function value with a type the extractor reads. */
+function copyableConst(decl: VariableDeclaration): boolean {
+  if (decl.getSourceFile().getFilePath().endsWith(".d.ts")) return false;
+  const list = decl.getParent();
+  if (!Node.isVariableDeclarationList(list) || !(list.getFlags() & 2 /* const */)) return false;
+  if (!Node.isVariableStatement(list.getParent())) return false;
+  const init = decl.getInitializer();
+  if (!init || Node.isArrowFunction(init) || Node.isFunctionExpression(init)) return false;
+  return !typeToString(decl.getType()).startsWith("__");
+}
+
+/** A copied contract keeps the meaning it has in its own module: every module-level constant of that module it
+ *  names (not as a field) is declared beside it, as `importedConstants` declares a named import. */
+function registerContractConstants(
+  callee: import("ts-morph").PropertyAccessExpression | import("ts-morph").Identifier,
+  ext: import("./rawir.js").RawExtern,
+  sourceFile: SourceFile,
+): void {
+  let symbol = callee.getSymbol();
+  const aliased = symbol?.getAliasedSymbol();
+  if (aliased) symbol = aliased;
+  const home = symbol?.getDeclarations().find(d => d.getSourceFile().getFilePath() !== sourceFile.getFilePath())?.getSourceFile();
+  if (!home) return;
+  const text = [...ext.requires, ...ext.ensures].join("\n");
+  for (const statement of home.getVariableStatements()) {
+    for (const decl of statement.getDeclarations()) {
+      const name = decl.getName();
+      if (!new RegExp(`(?<![.\\w$])${name.replace(/\$/g, "\\$")}(?![\\w$])`).test(text)) continue;
+      if (copyableConst(decl)) {
+        const prior = _externContractConsts.get(name);
+        if (prior && prior !== decl) {
+          throw new Error(`imported const '${name}' from ${home.getBaseName()} collides with another contract's constant in ${prior.getSourceFile().getBaseName()}`);
+        }
+        _externContractConsts.set(name, decl);
+      }
+    }
+  }
+}
+
+/** Whether `name` in `sourceFile` is `decl` itself, declared or imported by name. */
+function sameConstant(sourceFile: SourceFile, name: string, decl: VariableDeclaration): boolean {
+  for (const imp of sourceFile.getImportDeclarations()) {
+    for (const spec of imp.getNamedImports()) {
+      const local = spec.getAliasNode() ?? spec.getNameNode();
+      if (local.getText() === name && crossFileConst(local, sourceFile.getFilePath()) === decl) return true;
+    }
+  }
+  return false;
+}
+
 /** The const declaration an identifier names, when it lives in another module. */
 function crossFileConst(id: Node, currentPath: string): VariableDeclaration | undefined {
   let symbol = id.getSymbol();
@@ -122,13 +175,15 @@ function crossFileConst(id: Node, currentPath: string): VariableDeclaration | un
  *  it is read by (`import { A as B }` declares `B`), so a contract or body that
  *  reads it resolves to the declared value. A copied name that collides with a
  *  different constant is refused rather than merged. */
-function importedConstants(sourceFile: SourceFile, localNames: ReadonlySet<string>): RawConst[] {
+function importedConstants(sourceFile: SourceFile, localNames: ReadonlySet<string>,
+  named = true, extra: ReadonlyMap<string, VariableDeclaration> = new Map()): RawConst[] {
   const currentPath = sourceFile.getFilePath();
   const out: RawConst[] = [];
   const copied = new Map<string, VariableDeclaration>();
   const copy = (name: string, decl: VariableDeclaration): void => {
     const prior = copied.get(name);
     if (prior === decl) return;
+    if (!prior && localNames.has(name) && sameConstant(sourceFile, name, decl)) return;
     if (prior || localNames.has(name)) {
       throw new Error(`imported const '${name}' from ${decl.getSourceFile().getBaseName()} collides with another constant of that name in ${sourceFile.getBaseName()}`);
     }
@@ -141,7 +196,7 @@ function importedConstants(sourceFile: SourceFile, localNames: ReadonlySet<strin
     }
     out.push({ name, tsType: typeToString(decl.getType()), value: extractExpr(init as Expression) });
   };
-  for (const imp of sourceFile.getImportDeclarations()) {
+  for (const imp of named ? sourceFile.getImportDeclarations() : []) {
     if (imp.isTypeOnly()) continue;
     for (const spec of imp.getNamedImports()) {
       if (spec.isTypeOnly()) continue;
@@ -150,6 +205,7 @@ function importedConstants(sourceFile: SourceFile, localNames: ReadonlySet<strin
       if (decl) copy(local.getText(), decl);
     }
   }
+  for (const [name, decl] of extra) copy(name, decl);
   return out;
 }
 
@@ -880,7 +936,7 @@ function extractExpr(node: Expression): RawExpr {
 // ── Annotation parsing ───────────────────────────────────────
 
 const PREFIX = "//@ ";
-const KEYWORDS = ["requires", "ensures", "contract", "invariant", "decreases", "done_with", "type"] as const;
+const KEYWORDS = ["requires", "ensures", "contract", "invariant", "decreases", "done_with", "type", "reveal"] as const;
 export type AnnotKind = (typeof KEYWORDS)[number];
 interface Annotation { kind: AnnotKind; expr: string }
 
@@ -2225,6 +2281,8 @@ function extractFunctionInner(fn: FunctionDeclaration, parentAnnotations?: Annot
     contract: annots.filter(a => a.kind === "contract").map(a => a.expr),
     decreases: annots.find(a => a.kind === "decreases")?.expr ?? null,
     pure: hasPureAnnotation(fn, body && Node.isBlock(body) ? body.getStatements() as Node[] : undefined),
+    opaque: hasBareFunctionAnnotation(fn, "opaque", body && Node.isBlock(body) ? body.getStatements() as Node[] : undefined),
+    reveals: annots.filter(a => a.kind === "reveal").map(a => a.expr),
     autohavoc: false,  // set in extractModule (file-level directive or per-function)
     typeAnnotations,
     body: extractedBody,
@@ -2248,6 +2306,7 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   // `extractExpr` during call extraction (only symbols *actually used* end up
   // here), deduped by qualified name.
   _externs.clear();
+  _externContractConsts.clear();
   _externSigTypes.length = 0;
 
   // A contract may call an imported function that no body calls (a mutant, or a
@@ -2945,6 +3004,10 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   // Clear the synth-union accumulator so typeToString reverts to plain
   // union stringification outside of an extractModule call.
   _synthArrayUnions = null;
+
+  // Constants that copied cross-file contracts name, known only once every body has registered its externs. A
+  // constant this module already declares or imports is the same declaration; any other same-named one is refused.
+  constants.unshift(...importedConstants(sourceFile, new Set(constants.map(c => c.name)), false, _externContractConsts));
 
   return {
     file: sourceFile.getFilePath(),

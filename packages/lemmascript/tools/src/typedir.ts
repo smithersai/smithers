@@ -172,6 +172,8 @@ export interface TFunction {
   decreases: TExpr | null;
   isPure: boolean;          // no while, no mutable let
   forcePure: boolean;       // //@ pure — emit function by method if body can't be pure
+  opaque: boolean;          // //@ opaque — emit `opaque function`, revealed in its own contract lemma
+  reveals: string[];        // //@ reveal f — reveal opaque `f` at the start of this function's proof
   autohavoc: boolean;       // //@ autohavoc — abstract unmodellable exprs to havoc
   body: TStmt[];
 }
