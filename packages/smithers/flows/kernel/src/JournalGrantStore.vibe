@@ -165,65 +165,63 @@ const replayRememberedRules = (
   sourceId: string,
   workspaceRoot: string
 ) =>
-  Effect.gen(function*() {
-    const journal = yield* JournalModule.Journal
+  effect {
+    const journal = try JournalModule.Journal
     const rules: Array<Rule> = []
     const seenRules = new Set<string>()
     const envelopeSignatures = new Set<string>()
     let after: JournalEvent.Seq | undefined
 
     for (;;) {
-      const page = yield* journal.entries({
+      const page = try journal.entries({
         runId: policyRunId as JournalEvent.RunId,
         ...(after === undefined ? {} : { after }),
         limit: 256
       })
       const last = page.entries.at(-1)
       if (last === undefined && page.hasMore) {
-        return yield* Effect.fail(emptyPage(policyRunId, after))
+        throw emptyPage(policyRunId, after)
       }
       if (last !== undefined && after !== undefined && last.seq <= after) {
         // A page that does not advance past the cursor it was asked for is
         // corrupt journal output. Following it would replay the same events
         // forever; accepting it would double-apply them. Refuse construction.
-        return yield* Effect.fail(
-          invalidReplay(`non-advancing journal page in run ${policyRunId} at sequence ${last.seq}`)
-        )
+        throw invalidReplay(`non-advancing journal page in run ${policyRunId} at sequence ${last.seq}`)
       }
       for (const entry of page.entries) {
-        const event = yield* decodeTrustedEntry(entry, sourceId, policyRunId)
+        const event = try decodeTrustedEntry(entry, sourceId, policyRunId)
         if (event === undefined) {
           continue
         }
         if (event.eventType === "flows.kernel.grant.remembered.v1") {
-          if (!GrantStore.isValidGrantPattern(event.pattern, event.capability, event.tier, workspaceRoot)) {
-            return yield* Effect.fail(
-              invalidReplay(`unsafe remembered grant event in run ${policyRunId} at sequence ${entry.seq}`)
-            )
+          if (
+            !(try Effect.sync(() =>
+              GrantStore.isValidGrantPattern(event.pattern, event.capability, event.tier, workspaceRoot)
+            ))
+          ) {
+            throw invalidReplay(`unsafe remembered grant event in run ${policyRunId} at sequence ${entry.seq}`)
           }
           appendReplayedRule(rules, seenRules, event.pattern)
           continue
         }
         if (event.eventType === "flows.kernel.grant.envelope.v1" && event.scope === "remembered") {
           if (event.patterns.some((pattern) => !GrantStore.isValidEnvelopePattern(pattern, workspaceRoot))) {
-            return yield* Effect.fail(
-              invalidReplay(`unsafe remembered envelope event in run ${policyRunId} at sequence ${entry.seq}`)
-            )
+            throw invalidReplay(`unsafe remembered envelope event in run ${policyRunId} at sequence ${entry.seq}`)
           }
           for (const pattern of event.patterns) appendReplayedRule(rules, seenRules, pattern)
-          envelopeSignatures.add(GrantStore.envelopeSignature(event.planDigest, event.scope, event.patterns))
+          envelopeSignatures.add(
+            try Effect.sync(() => GrantStore.envelopeSignature(event.planDigest, event.scope, event.patterns))
+          )
           continue
         }
-        return yield* Effect.fail(
-          invalidReplay(`run-scoped event found in policy journal run ${policyRunId} at sequence ${entry.seq}`)
-        )
+        throw invalidReplay(`run-scoped event found in policy journal run ${policyRunId} at sequence ${entry.seq}`)
       }
       after = last?.seq
       if (!page.hasMore) {
         return { rules, envelopeSignatures }
       }
     }
-  })
+  }
 
 const replayRunRules = (
   runId: string,
@@ -231,36 +229,34 @@ const replayRunRules = (
   planDigest: string,
   workspaceRoot: string
 ) =>
-  Effect.gen(function*() {
-    const journal = yield* JournalModule.Journal
+  effect {
+    const journal = try JournalModule.Journal
     const rules: Array<NonNullable<GrantStore.MakeOptions["runRules"]>[number]> = []
     const seenRules = new Set<string>()
     const envelopeSignatures = new Set<string>()
     let after: JournalEvent.Seq | undefined
 
     for (;;) {
-      const page = yield* journal.entries({
+      const page = try journal.entries({
         runId: runId as JournalEvent.RunId,
         ...(after === undefined ? {} : { after }),
         limit: 256
       })
       const last = page.entries.at(-1)
       if (last === undefined && page.hasMore) {
-        return yield* Effect.fail(emptyPage(runId, after))
+        throw emptyPage(runId, after)
       }
       if (last !== undefined && after !== undefined && last.seq <= after) {
         // See the identical guard in `replayRememberedRules`.
-        return yield* Effect.fail(invalidReplay(`non-advancing journal page in run ${runId} at sequence ${last.seq}`))
+        throw invalidReplay(`non-advancing journal page in run ${runId} at sequence ${last.seq}`)
       }
       for (const entry of page.entries) {
-        const event = yield* decodeTrustedEntry(entry, sourceId, runId)
+        const event = try decodeTrustedEntry(entry, sourceId, runId)
         if (event === undefined) {
           continue
         }
         if (event.runId !== runId) {
-          return yield* Effect.fail(
-            invalidReplay(`grant payload run mismatch in run ${runId} at journal sequence ${entry.seq}`)
-          )
+          throw invalidReplay(`grant payload run mismatch in run ${runId} at journal sequence ${entry.seq}`)
         }
         if (event.eventType === "flows.kernel.grant.once.v1" || event.eventType === "flows.kernel.grant.denied.v1") {
           continue
@@ -269,8 +265,12 @@ const replayRunRules = (
           if (event.planDigest !== planDigest) {
             continue
           }
-          if (!GrantStore.isValidGrantPattern(event.pattern, event.capability, event.tier, workspaceRoot)) {
-            return yield* Effect.fail(invalidReplay(`unsafe run grant event in run ${runId} at sequence ${entry.seq}`))
+          if (
+            !(try Effect.sync(() =>
+              GrantStore.isValidGrantPattern(event.pattern, event.capability, event.tier, workspaceRoot)
+            ))
+          ) {
+            throw invalidReplay(`unsafe run grant event in run ${runId} at sequence ${entry.seq}`)
           }
           const key = `run:${JSON.stringify([event.pattern, event.ceiling])}`
           if (!seenRules.has(key)) {
@@ -284,24 +284,22 @@ const replayRunRules = (
             continue
           }
           if (event.patterns.some((pattern) => !GrantStore.isValidEnvelopePattern(pattern, workspaceRoot))) {
-            return yield* Effect.fail(
-              invalidReplay(`unsafe run envelope event in run ${runId} at sequence ${entry.seq}`)
-            )
+            throw invalidReplay(`unsafe run envelope event in run ${runId} at sequence ${entry.seq}`)
           }
           for (const pattern of event.patterns) appendReplayedRule(rules, seenRules, pattern)
-          envelopeSignatures.add(GrantStore.envelopeSignature(event.planDigest, event.scope, event.patterns))
+          envelopeSignatures.add(
+            try Effect.sync(() => GrantStore.envelopeSignature(event.planDigest, event.scope, event.patterns))
+          )
           continue
         }
-        return yield* Effect.fail(
-          invalidReplay(`remembered event found in run journal ${runId} at sequence ${entry.seq}`)
-        )
+        throw invalidReplay(`remembered event found in run journal ${runId} at sequence ${entry.seq}`)
       }
       after = last?.seq
       if (!page.hasMore) {
         return { rules, envelopeSignatures }
       }
     }
-  })
+  }
 
 /**
  * Makes a grant store that replays remembered policy from, and writes decisions
@@ -315,26 +313,26 @@ const replayRunRules = (
  * @since 1.0.0-rc.0
  */
 export const make = (options: JournalGrantStoreOptions) =>
-  Effect.gen(function*() {
+  effect {
     const runId = options.runId
     const policyRunId = options.policyRunId
     const sourceId = options.sourceId
     const planDigest = options.planDigest
-    if (!validId(runId)) return yield* Effect.fail(invalidReplay("runId must be non-empty, bounded, well-formed text"))
+    if (!validId(runId)) throw invalidReplay("runId must be non-empty, bounded, well-formed text")
     if (!validId(policyRunId)) {
-      return yield* Effect.fail(invalidReplay("policyRunId must be non-empty, bounded, well-formed text"))
+      throw invalidReplay("policyRunId must be non-empty, bounded, well-formed text")
     }
     if (!validId(sourceId)) {
-      return yield* Effect.fail(invalidReplay("sourceId must be non-empty, bounded, well-formed text"))
+      throw invalidReplay("sourceId must be non-empty, bounded, well-formed text")
     }
     if (!validId(planDigest)) {
-      return yield* Effect.fail(invalidReplay("planDigest must be non-empty, bounded, well-formed text"))
+      throw invalidReplay("planDigest must be non-empty, bounded, well-formed text")
     }
     if (runId === policyRunId) {
-      return yield* Effect.fail(invalidReplay("runId and policyRunId must be distinct"))
+      throw invalidReplay("runId and policyRunId must be distinct")
     }
-    const journal = yield* JournalModule.Journal
-    const workspace = yield* Workspace
+    const journal = try JournalModule.Journal
+    const workspace = try Workspace
     const replayPolicy = replayRememberedRules(
       policyRunId,
       sourceId,
@@ -354,15 +352,15 @@ export const make = (options: JournalGrantStoreOptions) =>
         cause instanceof GrantStoreError ? cause : journalFailed("could not replay run grants", cause)
       )
     )
-    let replayedPolicy = yield* replayPolicy
-    let replayedRun = yield* replayRun
+    let replayedPolicy = try replayPolicy
+    let replayedRun = try replayRun
     const persist = (event: GrantEvent): Effect.Effect<void, GrantStoreError> => {
       const payload = encodeGrantEvent(event)
-      return Effect.gen(function*() {
+      return (effect {
         // Unfenced: the grant store is the kernel's own ledger, not a run's
         // lifecycle — it owns no run, and grant admissions are
         // first-writer-wins records replayed by every later process.
-        yield* journal.emitDurableUnfenced(
+        try journal.emitDurableUnfenced(
           new JournalEvent.Input({
             runId: (
               event.eventType === "flows.kernel.grant.remembered.v1"
@@ -434,34 +432,34 @@ export const make = (options: JournalGrantStoreOptions) =>
       })
     }
     if (envelope === undefined || envelope.patterns.length === 0) {
-      return yield* build()
+      return try build()
     }
     const scope = envelope.scope ?? "run"
-    const signature = GrantStore.envelopeSignature(planDigest, scope, envelope.patterns)
+    const signature = try Effect.sync(() => GrantStore.envelopeSignature(planDigest, scope, envelope.patterns))
     const replayedSignatures = scope === "remembered"
       ? replayedPolicy.envelopeSignatures
       : replayedRun.envelopeSignatures
     if (replayedSignatures.has(signature)) {
       // Already durable: the seeded signature makes the construction envelope
       // activate without persisting again.
-      return yield* build()
+      return try build()
     }
     // The envelope was absent when this constructor replayed, but a concurrent
     // constructor sharing this Journal service may persist it before we do.
     // Re-replay the target run inside the per-service critical section, so
     // exactly one such constructor appends the envelope and every other one
     // replays it instead.
-    return yield* constructionLock(journal).withPermit(
-      Effect.gen(function*() {
+    return try constructionLock(journal).withPermit(
+      effect {
         if (scope === "remembered") {
-          replayedPolicy = yield* replayPolicy
+          replayedPolicy = try replayPolicy
         } else {
-          replayedRun = yield* replayRun
+          replayedRun = try replayRun
         }
-        return yield* build()
-      })
+        return try build()
+      }
     )
-  })
+  }
 
 /**
  * Provides a journal-backed `GrantStore`.

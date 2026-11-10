@@ -7,7 +7,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { defaultInclude } from "vitest/config"
-import * as CommandLine from "../src/CommandLine.ts"
+import * as CommandLine from "../src/CommandLine.vibe"
 
 const readDoc = (path: string): Promise<string> => readFile(new URL(`../docs/${path}`, import.meta.url), "utf8")
 
@@ -74,7 +74,7 @@ describe("documentation contracts", () => {
     expect(grants.filter(({ resource }) => resource.includes("*"))).toEqual([])
   })
 
-  it.each(["docs/api.md", "docs/concepts/process-containment.md", "src/CommandLine.ts"])(
+  it.each(["docs/api.md", "docs/concepts/process-containment.md", "src/CommandLine.vibe"])(
     "states that each pipeline stage needs its own grant in %s",
     (path) => {
       // The behavior the prose must describe: `git status *` covers the first

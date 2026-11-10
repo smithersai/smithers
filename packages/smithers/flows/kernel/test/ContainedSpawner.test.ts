@@ -26,7 +26,7 @@ import {
   ProcessId
 } from "effect/process/ChildProcessSpawner"
 import * as GuardedSpawner from "../src/ChildProcessSpawner.ts"
-import * as ContainedSpawner from "../src/ContainedSpawner.ts"
+import * as ContainedSpawner from "../src/ContainedSpawner.vibe"
 import { GrantStore } from "../src/GrantStore.ts"
 import * as ProcessLedger from "../src/ProcessLedger.vibe"
 import * as Workspace from "../src/Workspace.vibe"

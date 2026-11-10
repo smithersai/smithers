@@ -12,7 +12,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as GrantStore from "../src/GrantStore.ts"
-import * as JournalGrantStore from "../src/JournalGrantStore.ts"
+import * as JournalGrantStore from "../src/JournalGrantStore.vibe"
 import * as Workspace from "../src/Workspace.vibe"
 
 const directories = new Set<string>()

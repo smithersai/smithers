@@ -48,7 +48,7 @@ export * as ChildProcessEnvironment from "./ChildProcessEnvironment.vibe"
  * @category namespace exports
  * @since 1.0.0-rc.0
  */
-export * as ContainedSpawner from "./ContainedSpawner.ts"
+export * as ContainedSpawner from "./ContainedSpawner.vibe"
 
 /**
  * Rendering `ChildProcess` commands back to command lines.
@@ -56,7 +56,7 @@ export * as ContainedSpawner from "./ContainedSpawner.ts"
  * @category namespace exports
  * @since 1.0.0-rc.0
  */
-export * as CommandLine from "./CommandLine.ts"
+export * as CommandLine from "./CommandLine.vibe"
 
 /**
  * The `fs:read`/`fs:write` middleware over Effect's own `FileSystem` tag.
@@ -124,7 +124,7 @@ export * as Jj from "./Jj.vibe"
  * @category namespace exports
  * @since 1.0.0-rc.0
  */
-export * as JournalGrantStore from "./JournalGrantStore.ts"
+export * as JournalGrantStore from "./JournalGrantStore.vibe"
 
 /**
  * The explicit pure path-service decision.

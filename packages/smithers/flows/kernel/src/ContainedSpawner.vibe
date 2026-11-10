@@ -32,7 +32,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import { type ChildProcessHandle, ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schedule from "effect/Schedule"
 import * as Scope from "effect/Scope"
-import * as CommandLine from "./CommandLine.ts"
+import * as CommandLine from "./CommandLine.vibe"
 import * as Containment from "./internal/Containment.vibe"
 import * as Pipeline from "./internal/Pipeline.vibe"
 import * as ProcessLedger from "./ProcessLedger.vibe"
@@ -183,22 +183,22 @@ export const layer = (
 ): Layer.Layer<ChildProcessSpawner, never, ChildProcessSpawner | ProcessLedger.ProcessLedger> =>
   Layer.effect(
     ChildProcessSpawner,
-    Effect.gen(function*() {
-      const spawner = yield* ChildProcessSpawner
-      const ledger = yield* ProcessLedger.ProcessLedger
+    effect {
+      const spawner = try ChildProcessSpawner
+      const ledger = try ProcessLedger.ProcessLedger
       const service = makeSpawner(
         (command) =>
           Effect.uninterruptibleMask((restore) =>
-            Effect.gen(function*() {
+            effect {
               // A failed startup must clean up even when its caller catches the
               // error and keeps the outer scope open. One child scope contains
               // the entire pipeline, so failure of a later leg also closes all
               // earlier legs. Successful spawns retain it until their caller closes.
-              const processScope = yield* Scope.fork(yield* Scope.Scope)
-              return yield* restore(
+              const processScope = try Scope.fork(try Scope.Scope)
+              return try restore(
                 Pipeline.spawn(
                   command,
-                  Effect.fn("ContainedSpawner.spawn")(function*(command) {
+                  Effect.fn("ContainedSpawner.spawn")(effect (command) => {
                     // The release finalizer is registered BEFORE the spawn, so scope
                     // closure runs it AFTER the spawn's own kill finalizer: finalizers
                     // run last-registered-first, and a ledger that announced an exit
@@ -209,21 +209,21 @@ export const layer = (
                     const slot: { current?: ProcessLedger.ProcessRecord; settled: Effect.Effect<boolean> } = {
                       settled: Effect.succeed(true)
                     }
-                    yield* Effect.addFinalizer(() =>
-                      Effect.gen(function*() {
+                    try Effect.addFinalizer(() =>
+                      effect {
                         if (slot.current === undefined) return
-                        if (yield* slot.settled) return yield* releaseQuietly(ledger, slot.current)
-                        yield* Effect.logWarning(
+                        if (try slot.settled) return try releaseQuietly(ledger, slot.current)
+                        try Effect.logWarning(
                           `process cleanup could not verify ${slot.current.pid}; retaining its ledger record`
                         )
-                      })
+                      }
                     )
                     const contained = withContainment(command, options) as ChildProcess.StandardCommand
-                    const watched = lifecycle === undefined ? undefined : yield* lifecycle(contained, spawner.spawn)
-                    const handle = watched?.handle ?? (yield* spawner.spawn(contained))
+                    const watched = lifecycle === undefined ? undefined : try lifecycle(contained, spawner.spawn)
+                    const handle = watched?.handle ?? (try spawner.spawn(contained))
                     slot.settled = watched?.settled ?? slot.settled
                     const pid = handle.pid as number
-                    slot.current = yield* ledger.record({
+                    slot.current = try ledger.record({
                       pid,
                       pgid: groupOf(command, pid, options?.platform),
                       commandDigest: CommandLine.executable(command)
@@ -235,18 +235,18 @@ export const layer = (
                       Effect.tapCause(() => Effect.ignore(handle.kill())),
                       Effect.mapError(unrecorded)
                     )
-                    if (watched !== undefined) yield* watched.activate
+                    if (watched !== undefined) try watched.activate
                     return handle
                   })
                 ).pipe(Scope.provide(processScope))
               ).pipe(
                 Effect.onError((cause) => Scope.close(processScope, Exit.failCause(cause)))
               )
-            })
+            }
           )
       )
       return lifecycle === undefined ? service : Containment.mark(service)
-    })
+    }
   )
 
 /** The spawn failure a caller sees when the ledger could not record a child. */

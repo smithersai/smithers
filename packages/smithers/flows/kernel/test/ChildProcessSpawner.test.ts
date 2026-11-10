@@ -12,7 +12,7 @@ import {
   ProcessId
 } from "effect/process/ChildProcessSpawner"
 import * as ChildProcessSpawner from "../src/ChildProcessSpawner.ts"
-import * as CommandLine from "../src/CommandLine.ts"
+import * as CommandLine from "../src/CommandLine.vibe"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import { emptyPolicy, GrantStore } from "../src/GrantStore.ts"
 import * as ProcessConfinement from "../src/ProcessConfinement.vibe"

@@ -26,7 +26,7 @@ const securityReview = Smithers.SecurityReview({
         "A spawner method (string, lines, exitCode, stream*) or pipeline leg that reaches the host spawner without passing the guarded spawn.",
         "An env override the child would not inherit (a name outside ChildProcessEnvironment.isInheritedName such as LD_PRELOAD, GIT_*, NODE_OPTIONS, or a PATH/HOME value that differs from the ambient one) missing from the CommandLine.resource env prefix, or a cwd outside Workspace.root missing its cwd prefix, so it changes what a granted line executes while staying outside the grant."
       ],
-      paths: ["src/ChildProcessSpawner.ts", "src/CommandLine.ts", "src/Rooted.vibe", "src/internal/Pipeline.vibe"]
+      paths: ["src/ChildProcessSpawner.ts", "src/CommandLine.vibe", "src/Rooted.vibe", "src/internal/Pipeline.vibe"]
     },
     {
       id: "child-env-least-authority",
@@ -37,7 +37,7 @@ const securityReview = Smithers.SecurityReview({
         "A path that passes extendEnv or merges process.env instead of the null-prototype record from ChildProcessEnvironment.make.",
         "Case-variant or duplicate names letting an ambient value survive a declared undefined removal."
       ],
-      paths: ["src/ChildProcessEnvironment.vibe", "src/ChildProcessSpawner.ts", "src/ContainedSpawner.ts"]
+      paths: ["src/ChildProcessEnvironment.vibe", "src/ChildProcessSpawner.ts", "src/ContainedSpawner.vibe"]
     },
     {
       id: "fs-confinement",
@@ -87,7 +87,7 @@ const securityReview = Smithers.SecurityReview({
         "Payload schema allowing excess properties, oversized patterns, or rule counts past maximumRules on replay.",
         "A replayed run grant activated without its captured ceiling."
       ],
-      paths: ["src/JournalGrantStore.ts", "src/GrantEvent.vibe"]
+      paths: ["src/JournalGrantStore.vibe", "src/GrantEvent.vibe"]
     },
     {
       id: "process-ledger-reaping",
@@ -98,7 +98,7 @@ const securityReview = Smithers.SecurityReview({
         "Records keyed by pid alone so pid reuse retires or signals the wrong process.",
         "commandDigest storing arguments (credentials) instead of CommandLine.executable."
       ],
-      paths: ["src/ProcessLedger.vibe", "src/ContainedSpawner.ts", "src/internal/Containment.vibe", "src/CommandLine.ts"]
+      paths: ["src/ProcessLedger.vibe", "src/ContainedSpawner.vibe", "src/internal/Containment.vibe", "src/CommandLine.vibe"]
     },
     {
       id: "jj-capability-resource",

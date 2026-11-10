@@ -6,7 +6,7 @@
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as Redacted from "effect/Redacted"
 import { describe, expect, it } from "vitest"
-import * as CommandLine from "../src/CommandLine.ts"
+import * as CommandLine from "../src/CommandLine.vibe"
 
 describe("CommandLine.render", () => {
   it("leaves a bare command and shell-safe arguments unquoted", () => {

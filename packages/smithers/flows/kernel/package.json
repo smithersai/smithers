@@ -57,13 +57,13 @@
       "default": "./.vibelang/js/src/ChildProcessSpawner.js"
     },
     "./CommandLine": {
-      "types": "./src/CommandLine.ts",
-      "vibelang-source": "./src/CommandLine.ts",
+      "types": "./.vibe/declarations/src/CommandLine.d.vibe.ts",
+      "vibelang-source": "./src/CommandLine.vibe",
       "default": "./.vibelang/js/src/CommandLine.js"
     },
     "./ContainedSpawner": {
-      "types": "./src/ContainedSpawner.ts",
-      "vibelang-source": "./src/ContainedSpawner.ts",
+      "types": "./.vibe/declarations/src/ContainedSpawner.d.vibe.ts",
+      "vibelang-source": "./src/ContainedSpawner.vibe",
       "default": "./.vibelang/js/src/ContainedSpawner.js"
     },
     "./FileSystem": {
@@ -105,8 +105,8 @@
       "default": "./.vibelang/js/src/Jj.js"
     },
     "./JournalGrantStore": {
-      "types": "./src/JournalGrantStore.ts",
-      "vibelang-source": "./src/JournalGrantStore.ts",
+      "types": "./.vibe/declarations/src/JournalGrantStore.d.vibe.ts",
+      "vibelang-source": "./src/JournalGrantStore.vibe",
       "default": "./.vibelang/js/src/JournalGrantStore.js"
     },
     "./Path": {
