@@ -1,14 +1,14 @@
 // @vitest-environment node
-// worker/Wiki.vibe as the site runs it after decision 0165: a page read, a drafted edit and a saved or proposed change
-// go through smithers.sh's real per-person connection host (fuzz/delegated.vibe) to an in-memory GitHub over the real
-// client protocol (fuzz/issues-node-fake.vibe), on the durable engine over SQLite. A misbehaving GitHub is a wrapped
-// client service; nothing intercepts a request.
+// worker/Wiki.vibe's unhappy paths as the site runs it after decision 0165: a page read, a drafted edit and a saved or
+// proposed change go through smithers.sh's real per-person connection host (fuzz/delegated.vibe) to a GitHub that
+// misbehaves, on the durable engine over SQLite: the in-memory protocol GitHub (fuzz/issues-node-fake.vibe) told to
+// fail, or a wrapped client service; nothing intercepts a request. The happy paths run on real GitHub's recorded
+// answers in test/wikiEdit.github.test.vibe (ruling VL-36).
 import { describe, expect, it } from "@effect/vitest"
 import { HttpClient, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { WebCrypto } from "@smthrs/crypto"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import { pages } from "../src/core/wiki.vibe"
-import { WikiWriter } from "../src/core/WikiWriter.vibe"
 import type { WikiRequest, WikiState } from "../src/core/wikiSchemas.vibe"
 import { WikiHost } from "../src/core/wikiFlows.vibe"
 import type { Principal } from "../worker/Issues.vibe"
@@ -26,14 +26,10 @@ interface Caller { readonly role: Principal["role"]; readonly connected?: boolea
 /** Answers one GitHub request in place of the in-memory GitHub, or undefined to let it answer. */
 type Fault = (request: HttpClientRequest.HttpClientRequest, url: URL) => globalThis.Response | undefined
 interface Options {
-  /** false: an authority with no live operation check. */
-  readonly authorize?: boolean
   /** false: the site has no smithers.sh delegate configured. */
   readonly delegate?: boolean
   /** false: a host with no object storage to keep drafts in. */
   readonly stored?: boolean
-  readonly writer?: boolean
-  readonly repo?: WikiRepository
 }
 
 const repo: WikiRepository = { owner: "o", name: "r", api: API, agent: "", root: "wiki" }
@@ -64,22 +60,21 @@ effect function world(options: Options = {}) {
   let then: { readonly from: number; readonly caller: Caller | undefined } | undefined
   const authority: WikiAuthority.Shape = {
     current: () => Effect.flatMap(Ref.updateAndGet(asked, (n) => n + 1), (n) => Effect.map(Ref.get(caller), (who) => principal(then !== undefined && n >= then.from ? then.caller : who))),
-    ...(options.authorize === false ? {} : { authorize: () => Effect.void }),
+    authorize: () => Effect.void,
     lost: () => Ref.update(lost, (n) => n + 1),
   }
-  const writer = Layer.succeed(WikiWriter, { draft: (request) => succeed({ page: request.page, text: `${request.source}\n${request.ask}` }) })
   const provided = <A, E, R>(program: A!E!R) => program.pipe(
     Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, site.http),
     Effect.provide(options.delegate === false ? Layer.empty : Layer.succeed(GitHubDelegate, site.delegate)),
-    Effect.provide(options.writer === true ? writer : Layer.empty), Effect.provide(WebCrypto.layer),
+    Effect.provide(WebCrypto.layer),
   )
   let keys = 0
   /** The durable flow, as HTTP, the CLI and the agent's tool run it. */
   const act = (op: Op, extra: Partial<WikiRequest> = {}) => {
     keys += 1
-    return Effect.exit(provided(executeWiki("wiki-delegated", store.storage, { ...blank, op, key: `k${keys}`, ...extra }, options.repo ?? repo)))
+    return Effect.exit(provided(executeWiki("wiki-delegated", store.storage, { ...blank, op, key: `k${keys}`, ...extra }, repo)))
   }
-  const host = try provided(githubWikiHost(options.repo ?? repo, options.stored === false ? undefined : store.storage))
+  const host = try provided(githubWikiHost(repo, options.stored === false ? undefined : store.storage))
   /** The host alone, off the engine: reads, drafts and the refusals before a journaled write. */
   const perform = (request: Partial<WikiRequest>) => Effect.exit(provided((host.perform as (request: WikiRequest) => State!unknown)({ ...blank, ...request })))
   const kept = () => promise(() => store.storage.get(`wiki/draft/7/${PAGE}`))
@@ -108,27 +103,6 @@ const succeeded = (exit: Exit.Exit<State, unknown>): State => {
 }
 
 describe("the wiki through smithers.sh's delegation", () => {
-  it.live("a read observes the page's source and revision, with the reader's kept text", () => scoped(effect {
-    const w = try world()
-    const read = succeeded(try w.perform({}))
-    expect(read.pages).toEqual([{ id: PAGE, source: SOURCE, revision: `sha-${SOURCE.length}` }])
-    expect(read.draft).toBeUndefined()
-    expect(try promise(() => w.store.storage.get(`wiki/page/${PAGE}`))).toEqual({ id: PAGE, source: SOURCE, revision: `sha-${SOURCE.length}` })
-    expect(try promise(() => w.store.storage.get("wiki/revision"))).toBe(read.seq)
-
-    try promise(() => w.store.storage.put(`wiki/draft/7/${PAGE}`, { page: PAGE, text: "Kept." }))
-    expect(succeeded(try w.perform({})).draft).toEqual({ page: PAGE, text: "Kept." })
-    // A visitor has no kept text, and a stored value that is not a draft is ignored.
-    try Ref.set(w.caller, undefined)
-    expect(succeeded(try w.perform({})).draft).toBeUndefined()
-    try Ref.set(w.caller, { role: "maintainer" })
-    try promise(() => w.store.storage.put(`wiki/draft/7/${PAGE}`, { text: 1 }))
-    expect(succeeded(try w.perform({})).draft).toBeUndefined()
-
-    const bare = try world({ stored: false })
-    expect(succeeded(try bare.perform({})).pages).toHaveLength(1)
-  }))
-
   it.live("a read names an unknown page, a missing file and GitHub's refusals", () => scoped(effect {
     const w = try world()
     expect(failed(try w.perform({ page: "decisions" }))).toEqual({ reason: "missing", unwritten: false })
@@ -154,27 +128,8 @@ describe("the wiki through smithers.sh's delegation", () => {
     expect(try Ref.get(fresh.lost)).toBe(0)
   }))
 
-  it.live("a save and a proposal open one review of exactly the page as the person, and clear the text they kept", () => scoped(effect {
+  it.live("a change refuses a missing or advanced main before any write", () => scoped(effect {
     const w = try world()
-    try promise(() => w.store.storage.put(`wiki/draft/7/${PAGE}`, { page: PAGE, text: EDITED }))
-    const saved = succeeded(try w.act("save", { base: SOURCE, text: EDITED }))
-    expect(saved.review).toBe("https://github.com/o/r/pull/600")
-    expect(w.fake.pulls.at(-1)).toMatchObject({ title: `Wiki: ${PAGE}`, files: [{ filename: PATH, status: "modified" }] })
-    expect(try w.kept()).toBeUndefined()
-
-    // A different kept text stays; a repository that names its branch cuts from it.
-    try promise(() => w.store.storage.put(`wiki/draft/7/${PAGE}`, { page: PAGE, text: "Other." }))
-    const branched = try world({ repo: { ...repo, branch: "main" } })
-    try promise(() => branched.store.storage.put(`wiki/draft/7/${PAGE}`, { page: PAGE, text: "Other." }))
-    expect(succeeded(try branched.act("propose", { base: SOURCE, text: EDITED })).review).toBe("https://github.com/o/r/pull/600")
-    expect(try branched.kept()).toEqual({ page: PAGE, text: "Other." })
-  }))
-
-  it.live("a change refuses a moved base, an empty or unchanged text, and a missing or advanced main, before any write", () => scoped(effect {
-    const w = try world()
-    expect(failed(try w.act("save", { base: "Stale.", text: EDITED }))).toEqual({ reason: "conflict", unwritten: true })
-    expect(failed(try w.act("save", { base: SOURCE, text: "  " }))).toEqual({ reason: "empty", unwritten: true })
-    expect(failed(try w.act("save", { base: SOURCE, text: SOURCE }))).toEqual({ reason: "empty", unwritten: true })
     w.fake.noMain = true
     expect(failed(try w.act("propose", { base: SOURCE, text: EDITED }))?.reason).toBe("missing")
     w.fake.noMain = false
@@ -226,25 +181,12 @@ describe("the wiki through smithers.sh's delegation", () => {
 
     const undelegated = try world({ delegate: false })
     expect(failed(try undelegated.act("save", { base: SOURCE, text: EDITED }))?.reason).toBe("connect")
-    const unchecked = try world({ authorize: false })
-    expect(succeeded(try unchecked.act("save", { base: SOURCE, text: EDITED })).review).toBe("https://github.com/o/r/pull/600")
     expect(w.fake.writes + undelegated.fake.writes).toBe(0)
   }))
 
-  it.live("an agent may draft but never save; a draft needs an ask and a writer, and is kept for the person", () => scoped(effect {
-    const w = try world({ writer: true })
-    try Ref.set(w.caller, { role: "maintainer", kind: "agent" })
-    expect(failed(try w.perform({ op: "save", base: SOURCE, text: EDITED }))?.reason).toBe("forbidden")
-    expect(failed(try w.perform({ op: "draft", text: " " }))?.reason).toBe("empty")
-    const drafted = succeeded(try w.perform({ op: "draft", text: "Shorter." }))
-    expect(drafted.draft).toEqual({ page: PAGE, text: `${SOURCE}\nShorter.` })
-    expect(try w.kept()).toEqual(drafted.draft)
-    expect(failed(try w.perform({ op: "draft", text: "Hi", key: "" }))?.reason).toBe("sign-in")
-
-    const unwritten = try world()
-    expect(failed(try unwritten.perform({ op: "draft", text: "Shorter." }))?.reason).toBe("unavailable")
-    const bare = try world({ writer: true, stored: false })
-    expect(succeeded(try bare.perform({ op: "draft", text: "Shorter." })).draft?.text).toBe(`${SOURCE}\nShorter.`)
+  it.live("a draft without a writer configured is unavailable", () => scoped(effect {
+    const w = try world()
+    expect(failed(try w.perform({ op: "draft", text: "Shorter." }))?.reason).toBe("unavailable")
   }))
 
   it.live("a GitHub refusal outside the delegation is named, and a malformed request is invalid before it runs", () => scoped(effect {

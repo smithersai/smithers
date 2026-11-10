@@ -45,22 +45,42 @@ it reads `HttpClient` from context.
   environment.
 - **Size.** A run's label (the names it creates) is fixed at record time and stored in the recording, so a replay asks
   for exactly what was recorded and a real run never meets an earlier run's issues. `prune` removes GitHub's
-  hypermedia links and fields no reader decodes (two thirds of an issue list). The code sees the pruned answer while
-  recording too, so a field it needs fails the recording run. Cleanup closes what the run made and blanks the bodies
-  of closed issues, because every read verifies each VIP marker in the repository. jj refuses a new file over 1 MiB;
-  the scan test holds every recording below it.
+  hypermedia links, fields no reader decodes (the App's `performed_via_github_app` was half of each issue it wrote),
+  and a pull request's repository records but for the six fields a reader uses. The code sees the pruned answer while
+  recording too, so a field it needs fails the recording run. The App cannot delete an issue, so every run leaves its
+  issues closed in the test repository; an issue list answer is recorded without closed issues and pull requests
+  whose title lacks this run's label (`keptInIssueList`). Without that cut each run grew every
+  later recording's lists by about 4 KB per list read: the first journey recording was 1.69 MB, and 532 KB with it.
+  Cleanup closes what the run made, blanks closed issues' bodies, removes the labels it brought, and closes and
+  deletes its reviews and branches. jj refuses a new file over 1 MiB; the scan test holds every recording below it.
+- **State.** A case writes the state it reads (issues with labels, assignees, sub-issues, comments, VIP claims, a
+  review comment) through the test's own client on the same recording, so a replay replays the seeding too. The
+  person's write count comes from smithers.sh's delegation (`fuzz/delegated.vibe`'s `reach`), which the seeding and
+  cleanup bypass. GitHub's issue list trails a write by seconds, so a case waits, 30 tries at most, until the list
+  shows what it seeded; a replay asks as often as the recording run did, without waiting.
+- **Benches.** A bench passes `"replay"` to `test/support/github.vibe`'s `github`: it repeats a test's recorded
+  journey on every callback and never reaches GitHub, whatever `VIBE_GITHUB` says. The journey is one function
+  (`test/support/issuesWorld.vibe`, `test/support/wikiWorld.vibe`) that the test runs first, so the bench claims a
+  prefix of the test's recording.
 
 ## What runs on recordings now
 
-| Test | Recording | Exchanges | Size |
+| Test or bench | Recording | Exchanges | Size |
 | --- | --- | --- | --- |
-| `test/issues.github.test.vibe`: new, split (with its sub-issue link), comment, commit, uncommit, read, through smithers.sh's real delegation host | `issues.json` | 92 | 637 KB |
-| `test/issues.github.test.vibe`: VIP proposal (branch, commit, review, issue), through the delegation | `issues-proposal.json` | 48 | 222 KB |
-| `test/wikiEdit.github.test.vibe`: a contributor's proposal and a maintainer's save on a disposable base branch, through the delegation | `wiki.json` | 62 | 117 KB |
+| `test/issues.github.test.vibe` and `bench/issues-delegated.bench.vibe`: a maintainer's new issue, split with its link, comment, VIP proposal (branch, commit, review, issue), link, commit to the agent, uncommit, accept, decline of a second claim; then accept and decline again with no write, and a read | `issues.json` | 290 | 558 KB |
+| `test/issues.github.test.vibe`: a read of seeded tasks (queued, running, done), a verified VIP in review with its reviewer, four claims that each fail one check, a sub-issue, comments and timeline notes; every refusal before a write (title, missing, empty, tree, closed, assignee, review, agent, unnamed maintainer, reused key); an authority with no live check; the stored revision and older gate state | `issues-read.json` | 318 | 806 KB |
+| `test/wikiEdit.github.test.vibe` and `bench/wiki-delegated.bench.vibe`: read, drafted edit kept and cleared, a maintainer's save and proposal on a disposable base branch; then stored and kept-text reads, a visitor's read, refusals before a write (moved base, empty, unchanged, agent save, empty draft, no key), and a contributor's proposal through an authority with no live check | `wiki.json` | 100 | 134 KB |
 | `test/mainLog.github.test.vibe`: main's first-parent log | `main-log.json` | 1 | 200 KB |
 
-All four ran skipped in CI before (the issues and wiki tests could not write at all since decision 0165, because they
-put a token on the principal). They now run on every `pnpm test`, without a token, in about 3 s.
+All of them ran skipped in CI before (the issues and wiki tests could not write at all since decision 0165, because
+they put a token on the principal). They now run on every `pnpm test`, without a token, in about 12 s. Checked red: with
+`verifiedVip`'s check for a padded review number removed, the `issues-read.json` replay fails with
+`[ '', 'In review', '', '' ]` where every claim must read as a plain issue.
+
+`test/issuesDelegated.coverage.test.vibe` (14 cases) and `test/wikiDelegated.coverage.test.vibe` (10 cases) keep only
+what real GitHub cannot be made to answer: deleted accounts and null fields, foreign parent links, a second assignable
+account, short pages, undecodable issues, outages, lag, refusals, lost roles and credentials, and failing journals.
+Each is the in-memory GitHub told to fail or a wrapped client service.
 
 ## Bug found by real GitHub
 
@@ -74,16 +94,12 @@ so `issues/steered-host`'s "GitHub never showed the VIP" case still means what i
 
 ## Remaining
 
-- `test/issuesDelegated.coverage.test.vibe` and `test/wikiDelegated.coverage.test.vibe` still run their happy-path
-  cases on the in-memory GitHub; their fault cases (wrapped client services) stay as they are. Each happy case moves
-  to a recording when its state can be built on the test repository. `bench/issues-delegated.bench.vibe` and
-  `bench/wiki-delegated.bench.vibe` (another lane, 2026-11-10) also run on the in-memory GitHub.
 - Fuzz targets generate requests a recording cannot hold. By VL-38 they keep the in-memory GitHub, checked against
   every committed recording by `test/fakeConformance.test.vibe` on every `pnpm test` (built, lane vl-fake-conformance).
 - The doubles `~/vl/review-tests.REPORT.md` finding 3 lists for device sign-in, accounts, the model provider and
   sandbox machines.
-- The test repository grows by three closed issues and one closed pull request per recording run (the App cannot
-  delete issues), which adds about 4 KB to each list read in later recordings.
+- The test repository keeps every closed issue a run made. The list cut keeps them out of recordings; a passthrough
+  run still reads them.
 
 ## Fake conformance (VL-38, lane vl-fake-conformance)
 
@@ -110,3 +126,16 @@ repository/author coordinates, ignored list query order/filtering, canned timeli
 cleanup and contents that ignored branch commits. The fake now models those operations and per-commit file text.
 A deliberate duplicate-label change from 422 to 200 is checked red and restored; the private lane report holds
 the exact output and check receipts. No dependency or coverage exclusion was added.
+
+**Held to the recordings of 0032's happy paths (lane vl-record-replay, 2026-11-11).** The issue and wiki recordings
+above go through the same check. The test repository passed GitHub's 100 entries a page, and the recordings cut
+earlier runs' closed issues (the App cannot delete one; `deleteIssue` answers "Viewer not authorized"), so the
+harness seeds every number below the run's first that no list showed as a hidden closed issue, applies the same cut
+to the fake's lists, and compares a next-page link without GitHub's opaque cursor (`page-cursor`). A parent's child
+count joins the schedules: GitHub's list showed a new count at once in one recording and one read late in the other.
+The fake now models what the recordings exercise and it did not: a review created on a pull request, labels and
+assignees named when an issue is created or patched, a repository label read and deleted, `closed` and `reopened`
+events, `sub_issue_added` on the parent, an empty body answered as `null`, labels by name in one issue's answer and
+in the order added in a list, newest first by default, a page link when a list passes one page, and `since` lists
+that include issues the run made. Seeding skips an issue the recording creates even when its first list read comes
+after the creation. Red: without the `closed` event the check fails at `issues-read.json` exchange 60.

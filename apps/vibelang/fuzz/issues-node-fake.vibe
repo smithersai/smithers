@@ -54,6 +54,10 @@ export interface Fake {
   repositories?: Record<string, unknown>
   author?: { id: number; login: string }
   sinceNumbers?: Array<number>
+  /** The list read from which GitHub shows a parent's child count `number:total`. */
+  summaryVisibleAt?: Record<string, number>
+  /** Issues the fake created: updated since any run's start. */
+  made?: Array<number>
   shaAllocations?: Array<string>
   commitNext?: Record<string, string>
   commitPages?: Record<string, Array<unknown>>
@@ -150,6 +154,10 @@ export function forked(fake: Fake, login = "fuzz"): void {
   fake.branches[`${login}/r`] = { ...fake.branches["o/r"] }
 }
 
+/** One issue as GitHub answers it alone: labels by name. A list keeps the order they were added in. */
+const sortedLabels = <A extends { readonly labels: ReadonlyArray<{ readonly name: string }> } | undefined>(issue: A): A =>
+  issue === undefined ? issue : { ...issue, labels: [...issue.labels].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0) }
+
 /** A JSON answer; a successful GET carries an ETag of its body, as GitHub's do, so a read cache keeps it. */
 const jsonResponse = (request: HttpClientRequest.HttpClientRequest, status: number, body: unknown, headers: Record<string, string> = {}) => {
   const text = JSON.stringify(body)
@@ -226,11 +234,24 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       let items = shown.filter((issue) => (fake.issueVisibleAt?.[issue.number] ?? 0) <= (fake.tick ?? Infinity))
       const state = url.searchParams.get("state")
       if (state === "open" || state === "closed") items = items.filter((issue) => issue.state === state)
-      if (url.searchParams.has("since") && fake.sinceNumbers !== undefined) items = items.filter((issue) => fake.sinceNumbers!.includes(issue.number) || issue.number >= Math.min(fake.nextIssue, fake.nextPull))
-      if (url.searchParams.has("sort")) items = [...items].sort((a, b) => (url.searchParams.get("direction") === "desc" ? -1 : 1) * (a.number - b.number))
+      if (url.searchParams.has("since") && fake.sinceNumbers !== undefined) items = items.filter((issue) => fake.sinceNumbers!.includes(issue.number) || issue.number >= Math.min(fake.nextIssue, fake.nextPull) || (fake.made ?? []).includes(issue.number))
+      // GitHub lists newest first unless asked otherwise (sort=created, direction=desc).
+      items = [...items].sort((a, b) => (url.searchParams.has("sort") && url.searchParams.get("direction") !== "desc" ? 1 : -1) * (a.number - b.number))
       const perPage = Number(url.searchParams.get("per_page") ?? 100)
       const offset = (Number(url.searchParams.get("page") ?? 1) - 1) * perPage
-      const response = try page(fake.malformedIssues ? [{ garbage: true }, ...items] : items.slice(offset, offset + perPage), fake.endlessIssues)
+      // A list longer than a page links its next page as GitHub does, by repository id; GitHub adds an opaque cursor.
+      const following = new URLSearchParams(url.searchParams)
+      following.set("page", String(Number(url.searchParams.get("page") ?? 1) + 1))
+      const id = (fake.repositories?.[repositoryPath] as { readonly id?: number } | undefined)?.id ?? REPOSITORY_ID
+      // GitHub's list may show a parent's previous child count for a read after a link (a schedule, summaryVisibleAt).
+      items = items.map((issue) => {
+        const total = issue.sub_issues_summary?.total
+        const visible = total === undefined ? undefined : fake.summaryVisibleAt?.[`${issue.number}:${total}`]
+        return visible === undefined || visible <= (fake.tick ?? Infinity) ? issue : { ...issue, sub_issues_summary: { ...issue.sub_issues_summary!, total: total! - 1 } }
+      })
+      const response = offset + perPage < items.length && !fake.endlessIssues && !fake.malformedIssues
+        ? try jsonResponse(request, 200, items.slice(offset, offset + perPage), { link: `<${url.origin}/repositories/${id}/issues?${following.toString()}>; rel="next"` })
+        : try page(fake.malformedIssues ? [{ garbage: true }, ...items] : items.slice(offset, offset + perPage), fake.endlessIssues)
       // A repository list may begin with a stale aggregate; subsequent reads derive it from the seeded children.
       for (const parent of fake.issues) {
         const children = fake.issues.filter((child) => child.parent_issue_url === `${repositoryUrl}/issues/${parent.number}`)
@@ -242,27 +263,34 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       const number = fake.nextIssue
       const title = String(body?.title ?? "")
       const textBody = String(body?.body ?? "")
-      return try write(201, () => fake.issues.find((issue) => issue.number === number), () => {
+      return try write(201, () => sortedLabels(fake.issues.find((issue) => issue.number === number)), () => {
+        ;(fake.made ??= []).push(number)
         fake.nextIssue += 1
         fake.nextPull = Math.max(fake.nextPull, fake.nextIssue)
+        // GitHub creates a label an issue names that the repository lacks, and assigns only assignable accounts.
+        const named = Array.isArray(body?.labels) ? (body.labels as Array<string>) : []
+        for (const name of named) if (!fake.labels.includes(name)) fake.labels.push(name)
+        const assigned = (Array.isArray(body?.assignees) ? (body.assignees as Array<string>) : []).flatMap((login) => fake.assignable.filter((user) => user.login === login))
         fake.issues.push({
-          id: fake.nextId++, node_id: `node-${number}`, number, title, body: textBody,
-          state: "open", state_reason: null, user: author, labels: [], comments: 0, sub_issues_summary: { total: 0, completed: 0 }, repository_url: repositoryUrl,
-          created_at: "2026-01-03T00:00:00Z", updated_at: "2026-01-03T00:00:00Z", closed_at: null, assignees: [],
+          id: fake.nextId++, node_id: `node-${number}`, number, title, body: textBody === "" ? null : textBody,
+          state: "open", state_reason: null, user: author, labels: named.map((name) => ({ name })), comments: 0, sub_issues_summary: { total: 0, completed: 0 }, repository_url: repositoryUrl,
+          created_at: "2026-01-03T00:00:00Z", updated_at: "2026-01-03T00:00:00Z", closed_at: null, assignees: assigned,
         })
         fake.comments[number] = []
         ;(fake.timelines ??= {})[number] = []
+        for (const user of assigned) event(number, "assigned", { assignee: user })
+        for (const name of named) event(number, "labeled", { label: { name } })
       })
     }
     if (issueOne && request.method === "GET") {
       const issue = fake.issues.find((candidate) => candidate.number === Number(issueOne[3]))
       const shown = issue !== undefined && fake.hideVip ? { ...issue, body: String(issue.body ?? "").replace(/<!-- vibelang:vip [^>]*-->/g, "") } : issue
-      return try (shown === undefined ? jsonResponse(request, 404, { message: "Not Found" }) : jsonResponse(request, 200, shown))
+      return try (shown === undefined ? jsonResponse(request, 404, { message: "Not Found" }) : jsonResponse(request, 200, sortedLabels(shown)))
     }
     if (issueOne && request.method === "PATCH") {
       const issue = fake.issues.find((candidate) => candidate.number === Number(issueOne[3]))
       if (issue === undefined) return try jsonResponse(request, 404, { message: "Not Found" })
-      return try write(200, () => issue, () => {
+      return try write(200, () => sortedLabels(issue), () => {
         if (Array.isArray(body?.assignees) && !fake.dropAssignees) {
           const before = issue.assignees
           const after = (body.assignees as Array<string>).map((login) => fake.assignable.find((user) => user.login === login) ?? { id: login === "vibe-agent" ? 8 : 7, login })
@@ -270,8 +298,16 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
           for (const user of after) if (!before.some((old) => old?.login === user.login)) event(issue.number, "assigned", { assignee: user })
           issue.assignees = after
         }
+        if (Array.isArray(body?.labels)) {
+          const after = body.labels as Array<string>
+          for (const label of issue.labels) if (!after.includes(label.name)) event(issue.number, "unlabeled", { label: { name: label.name } })
+          for (const name of after) if (!issue.labels.some((label) => label.name === name)) event(issue.number, "labeled", { label: { name } })
+          for (const name of after) if (!fake.labels.includes(name)) fake.labels.push(name)
+          issue.labels = after.map((name) => ({ name }))
+        }
         if (typeof body?.title === "string") issue.title = body.title
         if (typeof body?.body === "string") issue.body = body.body === "" ? null : body.body
+        if ((body?.state === "closed" || body?.state === "open") && body.state !== issue.state) event(issue.number, body.state === "closed" ? "closed" : "reopened")
         if (body?.state === "closed" || body?.state === "open") {
           issue.state = body.state
           issue.state_reason = body.state === "closed" ? "completed" : null
@@ -284,12 +320,18 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       if (parent === undefined) return try jsonResponse(request, 404, { message: "Not Found" })
       const child = fake.issues.find((candidate) => candidate.id === Number(body?.sub_issue_id))
       if (child === undefined) return try jsonResponse(request, 404, { message: "Not Found" })
-      return try write(201, () => parent, () => {
+      // The link's answer counts the new child; GitHub's issue list shows the old count until its next read.
+      const counted = () => {
+        const children = fake.issues.filter((issue) => issue.parent_issue_url === `${repositoryUrl}/issues/${parent.number}`)
+        return { ...parent, sub_issues_summary: { total: children.length, completed: children.filter((issue) => issue.state === "closed").length } }
+      }
+      return try write(201, counted, () => {
         const linked = `${repositoryUrl}/issues/${parent.number}`
         if (child.parent_issue_url !== linked) {
           child.parent_issue_url = linked
           parent.sub_issues_summary = { total: (parent.sub_issues_summary?.total ?? 0) + 1, completed: 0 }
           event(child.number, "parent_issue_added")
+          event(parent.number, "sub_issue_added")
         }
         fake.dropping = fake.dropAfterLink
         fake.dropAfterLink = 0
@@ -345,6 +387,26 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       const name = String(body?.name ?? "")
       if (fake.labels.includes(name)) return try jsonResponse(request, 422, { message: "Validation Failed", errors: [{ resource: "Label", code: "already_exists", field: "name" }] })
       return try write(201, () => ({ name, color: String(body?.color ?? "") }), () => { fake.labels.push(name) })
+    }
+    const labelOne = /^\/repos\/([^/]+)\/([^/]+)\/labels\/([^/]+)$/.exec(path)
+    if (labelOne && (request.method === "GET" || request.method === "DELETE")) {
+      const name = try Effect.try(() => decodeURIComponent(labelOne[3]!)).pipe(Effect.catch(() => succeed("")))
+      if (!fake.labels.includes(name)) return try jsonResponse(request, 404, { message: "Not Found" })
+      if (request.method === "GET") return try jsonResponse(request, 200, { name, color: "ededed", description: null, default: false })
+      if (fake.forbiddenNext) { fake.forbiddenNext = false; return try jsonResponse(request, 403, { message: "Forbidden" }) }
+      // Deleting a repository label removes it from every issue that carries it.
+      fake.labels = fake.labels.filter((label) => label !== name)
+      for (const issue of fake.issues) issue.labels = issue.labels.filter((label) => label.name !== name)
+      fake.writes += 1
+      return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 204 })))
+    }
+    if (pullReviews && request.method === "POST") {
+      const pull = fake.pulls.find((candidate) => candidate.number === Number(pullReviews[3]))
+      if (pull === undefined) return try jsonResponse(request, 404, { message: "Not Found" })
+      const states: Record<string, string> = { COMMENT: "COMMENTED", APPROVE: "APPROVED", REQUEST_CHANGES: "CHANGES_REQUESTED" }
+      const id = fake.nextId++
+      const review = { id, node_id: `review-${id}`, user: author, body: String(body?.body ?? ""), state: states[String(body?.event ?? "")] ?? "PENDING", submitted_at: "2026-01-03T00:00:00Z", commit_id: pull.head.sha }
+      return try write(200, () => review, () => { ((fake.reviews ??= {})[pull.number] ??= []).push(review) })
     }
     if (assignees && request.method === "GET") return try page(fake.assignable, false)
     if (pullsList && request.method === "GET") {

@@ -20,7 +20,7 @@ export const TEST_AUTHOR_ID = 297525718
 /** A person the test repository can assign: its owner. */
 export const TEST_ASSIGNEE = "codeplanesmithers"
 
-export const mode: HttpRecording.Mode = runSync(Config.schema(HttpRecording.Mode, "VIBE_GITHUB").pipe(Config.withDefault("replay" as const)))
+export const configured: HttpRecording.Mode = runSync(Config.schema(HttpRecording.Mode, "VIBE_GITHUB").pipe(Config.withDefault("replay" as const)))
 const token = runSync(Config.option(Config.Redacted("GITHUB_TEST_TOKEN")))
 
 /** The file a test's recording lives in, beside the tests. (A template literal here is a Vite asset glob.) */
@@ -34,8 +34,13 @@ const normalize = (request: HttpRecording.RecordedRequest): HttpRecording.Record
 
 /** The link fields a reader of GitHub's answers uses; every other `*_url` is hypermedia nothing reads. */
 const READ_LINKS = new Set(["html_url", "parent_issue_url", "repository_url", "issue_url", "target_url", "details_url"])
-/** Fields of GitHub's answers that no reader decodes (checked against the integration's schemas, 2026-11-10). */
-const UNREAD = new Set(["reactions", "closed_by", "issue_dependencies_summary", "issue_field_values", "active_lock_reason", "gravatar_id", "user_view_type", "site_admin"])
+/**
+ * Fields of GitHub's answers that no reader decodes (checked against the integration's schemas, 2026-11-10). The App's
+ * `performed_via_github_app` alone is half of each issue it wrote.
+ */
+const UNREAD = new Set(["reactions", "closed_by", "issue_dependencies_summary", "issue_field_values", "active_lock_reason", "gravatar_id", "user_view_type", "site_admin", "performed_via_github_app", "author_association", "locked", "milestone", "pinned_comment", "_links"])
+/** A pull request's head and base carry their repository's whole record; a reader uses only these fields of it. */
+const REPOSITORY_FIELDS = new Set(["id", "name", "full_name", "owner", "default_branch", "fork"])
 /**
  * GitHub's REST answers without hypermedia links and fields nothing reads: three quarters of an issue list. A field a
  * reader needs fails the recording run, which hands the code the pruned answer too.
@@ -43,19 +48,34 @@ const UNREAD = new Set(["reactions", "closed_by", "issue_dependencies_summary", 
 function prune(body: unknown): unknown {
   if (Array.isArray(body)) return body.map(prune)
   if (typeof body !== "object" || body === null) return body
-  return Object.fromEntries(Object.entries(body).filter(([key]) => !UNREAD.has(key) && (!key.endsWith("_url") || READ_LINKS.has(key))).map(([key, value]) => [key, prune(value)]))
+  return Object.fromEntries(Object.entries(body).filter(([key]) => !UNREAD.has(key) && (!key.endsWith("_url") || READ_LINKS.has(key))).map(([key, value]) => [key, key === "repo" && typeof value === "object" && value !== null ? prune(Object.fromEntries(Object.entries(value).filter(([field]) => REPOSITORY_FIELDS.has(field)))) : prune(value)]))
+}
+
+const ISSUE_LIST = `/repos/${TEST_REPOSITORY.owner}/${TEST_REPOSITORY.name}/issues`
+/**
+ * The test repository keeps every issue and pull request an earlier run made, closed: the App cannot delete an issue.
+ * Each run's issue list answers without them; it keeps every open entry and every entry whose title carries this
+ * run's label. Without this cut each run would grow every later recording's lists until they passed the 1 MiB guard.
+ * What remains is still GitHub's answer for the repository this run found, so the fuzz fake is held to it (VL-38).
+ */
+export const keptInIssueList = (label: string) => (entry: { readonly state?: unknown; readonly title?: unknown } | null): boolean =>
+  entry !== null && (entry.state === "open" || (typeof entry.title === "string" && entry.title.includes(label)))
+const pruneFor = (label: string) => (body: unknown, request: HttpRecording.RecordedRequest): unknown => {
+  if (request.method !== "GET" || new URL(request.url).pathname !== ISSUE_LIST || !Array.isArray(body)) return prune(body)
+  return prune(body.filter(keptInIssueList(label)))
 }
 
 /**
  * GitHub for one test: the client its requests go through, the token they carry (a placeholder on replay, which no
- * request reaches GitHub with), and the run's label, fresh when GitHub is real and the recorded one on replay.
+ * request reaches GitHub with), and the run's label, fresh when GitHub is real and the recorded one on replay. A bench
+ * passes `"replay"`: it repeats one recorded journey and never writes to GitHub.
  */
-export effect function github(name: string) {
+export effect function github(name: string, mode: HttpRecording.Mode = configured) {
   const path = try recordingPath(name)
   if (mode !== "replay" && Option.isNone(token)) return try Effect.die(new Error(`VIBE_GITHUB=${mode} needs GITHUB_TEST_TOKEN for ${TEST_REPOSITORY.owner}/${TEST_REPOSITORY.name}`))
   const label = mode === "replay" ? (try HttpRecording.load(path)).label ?? name : `${name}-${try Clock.currentTimeMillis}`
   const live = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
-  const client = try HttpRecording.make({ mode, path, live, label, normalize, prune, secrets: Option.isSome(token) ? [token.value] : [] })
+  const client = try HttpRecording.make({ mode, path, live, label, normalize, prune: pruneFor(label), secrets: Option.isSome(token) ? [token.value] : [] })
   try Effect.logInfo("github test client").pipe(Effect.annotateLogs({ mode, recording: name }))
-  return { client, label, token: Option.getOrElse(token, () => Redacted.make("replay-sends-no-token")) }
+  return { client, label, mode, token: Option.getOrElse(token, () => Redacted.make("replay-sends-no-token")) }
 }

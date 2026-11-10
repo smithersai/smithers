@@ -721,8 +721,8 @@ The unit gate still fails below 100%. No file below is excluded and no threshold
 | `worker/Api.vibe` | Closed 2026-11-10 (vl-coverage-workerd): its wiring runs only in workerd, and the suite now loads it there as Alchemy builds and bridges it (`test/workerd/api.vibe`), measured in the unit and fuzz gates. | `test/alchemyApi.workerd.test.vibe`; fuzz target `workerd/alchemy-api-requests` |
 | `worker/SpecificationReviewers.vibe` | Stays unbound by decision 0027. | None until it is bound |
 | `worker/VipDraft.vibe`, model paths of `worker/Reply.vibe` | A model credential reference in the environment. | `test/live.workerd.test.vibe` covers Reply, opt-in on `CEREBRAS_API_KEY`. `test/vipDraft.test.vibe` covers `VipDraft`, opt-in on the same key |
-| GitHub read, write, VIP proposal and label paths of `worker/Issues.vibe` (`githubHost`) | Covered. The happy paths replay real GitHub through smithers.sh's delegation (`test/issues.github.test.vibe`, recordings `issues.json` and `issues-proposal.json`, [0032](0032-record-replay.md)); the fault cases stay on the in-memory GitHub as wrapped client services. | `test/issues.github.test.vibe` (replay, no token) |
-| GitHub write paths of `worker/Wiki.vibe` | Covered. A proposal and a save replay real GitHub through smithers.sh's delegation (recording `wiki.json`, [0032](0032-record-replay.md)). | `test/wikiEdit.github.test.vibe` (replay, no token) |
+| GitHub read, write, VIP proposal and label paths of `worker/Issues.vibe` (`githubHost`) | Covered. The happy paths replay real GitHub through smithers.sh's delegation (`test/issues.github.test.vibe`, recordings `issues.json` and `issues-read.json`, [0032](0032-record-replay.md)): every write, its refusals, verified and refused VIP claims, tasks, sub-issues and notes; the fault cases stay on the in-memory GitHub as wrapped client services. | `test/issues.github.test.vibe` (replay, no token) |
+| GitHub write paths of `worker/Wiki.vibe` | Covered. Reads, kept drafts, a save, two proposals and the refusals before a write replay real GitHub through smithers.sh's delegation (recording `wiki.json`, [0032](0032-record-replay.md)). | `test/wikiEdit.github.test.vibe` (replay, no token) |
 
 ## Lane vl-coverage2 (2026-11-09)
 
@@ -861,7 +861,9 @@ in-memory GitHub (`fuzz/issues-node-fake.vibe`), on the durable engine over SQLi
 client service and a failing journal is `fuzz/faulty-store.ts`; nothing intercepts a request. The cases cover reads
 (tasks, VIP markers that fail each check, timelines, deleted accounts, short pages, undecodable issues), every write
 and its refusals, a role or credential lost between steps, an ended delegation falling back to public reads, kept wiki
-drafts, retries and resumes, and the HTTP routes' store failures.
+drafts, retries and resumes, and the HTTP routes' store failures. Since 0032 (2026-11-10) the happy cases replay real
+GitHub in `test/issues.github.test.vibe` and `test/wikiEdit.github.test.vibe`; the two coverage files keep 14 and 10
+fault cases.
 
 - **Bug fixed: a VIP proposal or wiki change could never be retried after its commit.** smithers.sh binds each write
   key to its operation's digest. On a retry, `branch.create`'s lookup adopts the branch, whose head is now the change's

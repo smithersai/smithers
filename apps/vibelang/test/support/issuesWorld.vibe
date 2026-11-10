@@ -1,0 +1,176 @@
+// The issues flow on real GitHub for a test or a bench (ruling VL-36): a person connected through smithers.sh's real
+// delegation host (fuzz/delegated.vibe) to codeplanesmithers/smithers-vibelang-e2e, on the durable engine over SQLite,
+// replayed from a recording unless VIBE_GITHUB says otherwise (test/support/github.vibe). The state a case needs is
+// written by the case itself through the same recorded client, so a replay replays it too, and `cleanup` puts the
+// repository back: issues it made closed and blanked, its reviews closed and their branches deleted, labels it created removed.
+import { expect } from "@effect/vitest"
+import { HttpClient } from "effect/http"
+import { GitHub } from "@smthrs/integrations"
+import { WebCrypto } from "@smthrs/crypto"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import type { HttpRecording } from "@smthrs/testing"
+import type { IssueRecord } from "../../src/core/conversation.vibe"
+import type { IssueRequest, IssuesState } from "../../src/core/issueSchemas.vibe"
+import { executeIssues, IssueAuthority, type Principal, type Repository } from "../../worker/Issues.vibe"
+import { GitHubDelegate } from "../../worker/GitHubDelegate.vibe"
+import type { Storage } from "../../worker/Objects.vibe"
+import { delegated, reach } from "../../fuzz/delegated.vibe"
+import { github, TEST_ASSIGNEE, TEST_AUTHOR, TEST_REPOSITORY } from "./github.vibe"
+
+export type State = typeof IssuesState.Type
+export const FULL = `${TEST_REPOSITORY.owner}/${TEST_REPOSITORY.name}`
+/** The agent a task is committed to: the test repository's one assignable account. */
+export const repo: Repository = { owner: TEST_REPOSITORY.owner, name: TEST_REPOSITORY.name, api: TEST_REPOSITORY.api, agent: TEST_ASSIGNEE }
+const blank: IssueRequest = { op: "read", number: 0, parent: 0, title: "", text: "", example: "", prior: "", assignee: "", key: "k" }
+/** Who is asking: GitHub id 7 as the repository's owner, a maintainer person unless it says otherwise. */
+export interface Caller { readonly role: Principal["role"]; readonly kind?: "person" | "agent"; readonly login?: string }
+
+export const item = (state: State, number: number): IssueRecord => state.items.find((entry) => entry.number === number)!
+/** The typed refusal, an engine error's tag, or "defect"; undefined on success. */
+export const failed = (exit: Exit.Exit<State, unknown>) => {
+  if (exit._tag === "Success") return undefined
+  const found = Cause.findErrorOption(exit.cause)
+  if (Option.isNone(found)) return { reason: "defect", unwritten: false }
+  const failure = found.value as { readonly _tag: string; readonly reason?: string; readonly unwritten?: boolean }
+  return { reason: failure.reason ?? failure._tag, unwritten: failure.unwritten === true }
+}
+export effect function succeeded(exit: Exit.Exit<State, unknown>) {
+  if (exit._tag === "Failure") return try Effect.die(new Error(`the flow failed: ${JSON.stringify(failed(exit))}`))
+  return exit.value
+}
+
+schema Made { readonly number: number; readonly id: number }
+
+export effect function issuesWorld(recording: string, mode?: HttpRecording.Mode) {
+  const real = try github(recording, mode)
+  const storage = (try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))) as unknown as Storage
+  const counter = reach()
+  const site = try delegated(real.client, counter, TEST_REPOSITORY.owner, { api: TEST_REPOSITORY.api, repository: FULL, repositoryId: TEST_REPOSITORY.id, token: real.token })
+  const caller = try Ref.make<Caller>({ role: "maintainer" })
+  const current = () => Effect.map(Ref.get(caller), (who): Principal => ({ id: "7", login: who.login ?? TEST_REPOSITORY.owner, role: who.role, ...(who.kind === undefined ? {} : { kind: who.kind }), connection: site.connection }))
+  const checked: IssueAuthority.Shape = { current, authorize: () => Effect.void }
+  /** An authority with no live operation check: the host still writes only as the connected person. */
+  const unchecked: IssueAuthority.Shape = { current }
+  let authority = checked
+  let keys = 0
+  /** The durable flow, as HTTP, the CLI and the agent's tool run it; its exit, so a refusal can be read. */
+  const act = (op: IssueRequest["op"], extra: Partial<IssueRequest> = {}) => {
+    keys += 1
+    return Effect.exit(executeIssues("issues-recorded", storage, { ...blank, op, key: `${real.label}-${keys}`, ...extra }, repo).pipe(
+      Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, site.http),
+      Effect.provideService(GitHubDelegate, site.delegate), Effect.provide(WebCrypto.layer),
+    ))
+  }
+  /** The test's own GitHub client: seeds, checks and cleanup, never counted as the person's writes. */
+  const client = try GitHub.GitHubClient.make({ token: Redacted.value(real.token) }, {}).pipe(Effect.provideService(HttpClient.HttpClient, real.client))
+  const made: Array<number> = []
+  const reviews: Array<{ number: number; branch: string }> = []
+  const labels: Array<string> = []
+  /** Seeds an issue as the test, not as the person; it is closed and blanked afterwards. */
+  const seedIssue = effect (title: string, fields: { readonly body?: string; readonly labels?: ReadonlyArray<string>; readonly assignees?: ReadonlyArray<string> } = {}) => {
+    // GitHub orders issues created in the same second arbitrarily; a second apart, its order is their numbers'.
+    if (real.mode !== "replay") try Effect.sleep("1100 millis")
+    const issue = try client.request("POST", `/repos/${FULL}/issues`, { title: `${real.label} ${title}`, body: fields.body ?? "", labels: fields.labels ?? [], assignees: fields.assignees ?? [] }, { schema: Made })
+    made.push(issue.number)
+    return issue
+  }
+  /** Removes `name` from the repository afterwards when this run is the one that brings it. */
+  const bringsLabel = effect (name: string) => {
+    const found = try Effect.result(client.request("GET", `/repos/${FULL}/labels/${encodeURIComponent(name)}`))
+    if (found._tag === "Failure") labels.push(name)
+  }
+  /**
+   * Waits until GitHub's issue list shows every one of `numbers`: the list trails a write by seconds. A replay asks as
+   * often as the recording run did, without waiting; a real GitHub that never shows them fails the case after 30 tries.
+   */
+  const listed = effect (numbers: ReadonlyArray<number>) => {
+    for (let attempt = 1; attempt <= 30; attempt++) {
+      const shown = try client.request("GET", `/repos/${FULL}/issues?state=all&per_page=100`, undefined, { schema: Schema.Array(Schema.Struct({ number: Schema.Number })) })
+      if (numbers.every((number) => shown.some((entry) => entry.number === number))) {
+        try Effect.logInfo("issues listed").pipe(Effect.annotateLogs({ attempts: attempt, issues: numbers.length }))
+        return
+      }
+      if (real.mode !== "replay") try Effect.sleep("1 second")
+    }
+    return try Effect.die(new Error(`GitHub's issue list never showed ${numbers.length} seeded issues`))
+  }
+  const cleanup = Effect.suspend(() => Effect.all([
+    // A closed issue's body is blanked: every read verifies each VIP marker in the repository, so markers left behind
+    // would grow every later recording.
+    Effect.forEach(made, (number) => client.request("PATCH", `/repos/${FULL}/issues/${number}`, { state: "closed", body: "", labels: [], assignees: [] }) |> ignore(%), { discard: true }),
+    Effect.forEach(reviews, (review) => effect {
+      try client.request("PATCH", `/repos/${FULL}/pulls/${review.number}`, { state: "closed" })
+      try client.request("DELETE", `/repos/${FULL}/git/refs/heads/${review.branch}`)
+    } |> ignore(%), { discard: true }),
+    Effect.forEach(labels, (name) => client.request("DELETE", `/repos/${FULL}/labels/${encodeURIComponent(name)}`) |> ignore(%), { discard: true }),
+  ], { discard: true }))
+  try Effect.addFinalizer(() => Effect.logInfo("issues recording world closed").pipe(Effect.annotateLogs({ recording, issues: made.length, reviews: reviews.length, labels: labels.length })))
+  return {
+    label: real.label, act, client, made, reviews, caller, storage, seedIssue, bringsLabel, listed, cleanup,
+    /** Writes GitHub accepted from smithers.sh for the person: the test's own seeds and cleanup are not counted. */
+    writes: () => counter.writes,
+    check: (live: boolean) => { authority = live ? checked : unchecked },
+  }
+}
+
+export type IssuesWorld = Effect.Success<ReturnType<typeof issuesWorld>>
+
+/**
+ * One maintainer's whole journey, the bench's workload: new issue, split, comment, VIP proposal, link, commit to the
+ * agent, uncommit, accept the VIP, then decline a second issue that points at the same review. Returns what each
+ * write left on GitHub, with the person's write count after the first three.
+ */
+export effect function journey(w: IssuesWorld) {
+  const made = try succeeded(try w.act("new", { title: `  ${w.label} issue  `, text: "Body" }))
+  const issue = made.selected!
+  w.made.push(issue)
+  const afterNew = w.writes()
+  const split = try succeeded(try w.act("split", { number: issue, title: `${w.label} child` }))
+  const child = split.selected!
+  w.made.push(child)
+  const afterSplit = w.writes()
+  const commented = try succeeded(try w.act("comment", { number: child, text: " Thanks " }))
+  const proposed = try succeeded(try w.act("propose", { title: `${w.label} tuples`, text: "Add tuples.", example: "const t = [1, 2]", prior: "Rust" }))
+  const vip = item(proposed, proposed.selected!)
+  w.made.push(vip.number)
+  const pull = Number(vip.review.split("/").at(-1))
+  const opened = try w.client.request("GET", `/repos/${FULL}/pulls/${pull}`, undefined, { schema: Schema.Struct({ title: Schema.String, head: Schema.Struct({ ref: Schema.String }) }) })
+  w.reviews.push({ number: pull, branch: opened.head.ref })
+  const linked = try succeeded(try w.act("link", { number: vip.number, parent: issue }))
+  const committed = try succeeded(try w.act("commit", { number: issue, assignee: "VibeLang agent" }))
+  const uncommitted = try succeeded(try w.act("uncommit", { number: issue }))
+  try w.bringsLabel("vibelang:accepted")
+  try w.bringsLabel("vibelang:declined")
+  const accepted = try succeeded(try w.act("accept", { number: vip.number }))
+  // A second claim on the same review, as the same author: a VIP in review too.
+  const second = try w.seedIssue("second claim", { body: `Proposal\n<!-- vibelang:vip path=${vip.path} review=${vip.review} -->` })
+  const declined = try succeeded(try w.act("decline", { number: second.number }))
+  return {
+    ids: { issue, child, vip: vip.number, second: second.number, pull },
+    made: [item(made, issue).title, item(made, issue).author, item(made, issue).parent],
+    split: [item(split, child).title, item(split, child).parent === issue],
+    comment: item(commented, child).notes.filter((note) => !note.event).map((note) => note.text),
+    propose: [vip.title, vip.vip, vip.review.startsWith(`https://github.com/${FULL}/pull/`), vip.path.startsWith("docs/design/vips/proposal-"), opened.title, opened.head.ref.startsWith("vibelang/vip-")],
+    link: item(linked, vip.number).parent === issue,
+    commit: [item(committed, issue).task, item(committed, issue).assignee, item(committed, issue).labels],
+    uncommit: [item(uncommitted, issue).task, item(uncommitted, issue).assignee, item(uncommitted, issue).labels],
+    accept: [item(accepted, vip.number).vip, item(accepted, vip.number).approvedBy],
+    decline: [item(declined, second.number).vip, item(declined, second.number).state],
+    writes: [afterNew, afterSplit],
+  }
+}
+
+/** What `journey` leaves on GitHub for `label`'s run: the same on every recording, so a bench checks it each callback. */
+export const journeyResult = (label: string) => ({
+  ids: expect.any(Object),
+  made: [`${label} issue`, TEST_AUTHOR, 0],
+  split: [`${label} child`, true],
+  comment: ["Thanks"],
+  propose: [`${label} tuples`, "In review", true, true, `VIP: ${label} tuples`, true],
+  link: true,
+  commit: ["Queued", TEST_ASSIGNEE, ["vibelang:task"]],
+  uncommit: ["", "", []],
+  accept: ["Accepted", TEST_REPOSITORY.owner],
+  decline: ["Declined", "closed"],
+  writes: [1, 3],
+})

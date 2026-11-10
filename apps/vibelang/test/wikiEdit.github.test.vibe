@@ -1,85 +1,60 @@
 // @vitest-environment node
-// Wiki edits as the site makes them after decision 0165, on real GitHub: a read, a contributor's proposal and a
-// maintainer's save go through smithers.sh's per-person connection host (fuzz/delegated.vibe) to
-// codeplanesmithers/smithers-vibelang-e2e, on the durable engine over SQLite, against a disposable base branch.
-// Nothing merges. Replayed from test/recordings/wiki.json unless VIBE_GITHUB says otherwise (test/support/github.vibe).
+// Wiki edits as the site makes them after decision 0165, on real GitHub: reads, a drafted edit, a maintainer's save and
+// proposal and a contributor's proposal go through smithers.sh's per-person connection host (fuzz/delegated.vibe) to
+// codeplanesmithers/smithers-vibelang-e2e, on the durable engine over SQLite, against a disposable base branch
+// (test/support/wikiWorld.vibe). Nothing merges. Replayed from test/recordings/wiki.json unless VIBE_GITHUB says
+// otherwise (test/support/github.vibe). Unhappy paths stay in test/wikiDelegated.coverage.test.vibe as injected faulty services.
 import { describe, expect, it } from "@effect/vitest"
-import { Base64 } from "effect/encoding"
-import { HttpClient } from "effect/http"
-import { GitHub } from "@smthrs/integrations"
-import { WebCrypto } from "@smthrs/crypto"
-import { TestNodeRuntime } from "@smthrs/platform-node"
-import { pages } from "../src/core/wiki.vibe"
-import type { WikiRequest } from "../src/core/wikiSchemas.vibe"
-import type { Principal } from "../worker/Issues.vibe"
-import { executeWiki, WikiAuthority, type WikiRepository } from "../worker/Wiki.vibe"
-import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
-import type { Storage } from "../worker/Objects.vibe"
-import { delegated, reach } from "../fuzz/delegated.vibe"
-import { github, TEST_AUTHOR, TEST_AUTHOR_ID, TEST_REPOSITORY } from "./support/github.vibe"
+import { TEST_AUTHOR } from "./support/github.vibe"
+import { failed, journey, journeyResult, PAGE, PATH, SOURCE, succeeded, wikiWorld } from "./support/wikiWorld.vibe"
 
-const full = `${TEST_REPOSITORY.owner}/${TEST_REPOSITORY.name}`
-const PAGE = pages[0]!.id
-const PATH = `wiki/${PAGE}.md`
-const SOURCE = "# Wiki fixture\n\nA real repository page.\n"
+const EDITED = `${SOURCE}\nBetter text.\n`
 
 describe("wiki edits on real GitHub through smithers.sh's delegation", () => {
-  it.live("a proposal and a save each open one review of exactly the page as the person, and leave the base untouched", () => scoped(effect {
-    const real = try github("wiki")
-    const client = try GitHub.GitHubClient.make({ token: Redacted.value(real.token) }, {}).pipe(Effect.provideService(HttpClient.HttpClient, real.client))
-    const asTest = <A, E>(program: A!E!GitHub.GitHubClient.GitHubClient) => Effect.provideService(program, GitHub.GitHubClient.GitHubClient, client)
-    const base = `vibelang/wiki-base-${real.label}`
-    const repo: WikiRepository = { owner: TEST_REPOSITORY.owner, name: TEST_REPOSITORY.name, api: TEST_REPOSITORY.api, agent: "", root: "wiki", branch: base }
-    const storage = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
-    const site = try delegated(real.client, reach(), TEST_REPOSITORY.owner, { api: TEST_REPOSITORY.api, repository: full, repositoryId: TEST_REPOSITORY.id, token: real.token })
-    // The person is GitHub's author of what the run writes: the host checks a review's author id against theirs.
-    const role = try Ref.make<Principal["role"]>("contributor")
-    const authority: WikiAuthority.Shape = {
-      current: () => Effect.map(Ref.get(role), (current) => ({ id: String(TEST_AUTHOR_ID), login: TEST_REPOSITORY.owner, role: current, connection: site.connection })),
-      authorize: () => Effect.void,
-    }
-    let keys = 0
-    const act = (op: WikiRequest["op"], extra: Partial<WikiRequest>) => {
-      keys += 1
-      return executeWiki("wiki-recorded", storage as unknown as Storage, { op, page: PAGE, base: "", text: "", key: `${real.label}-${keys}`, ...extra }, repo).pipe(
-        Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, site.http),
-        Effect.provideService(GitHubDelegate, site.delegate), Effect.provide(WebCrypto.layer),
-      )
-    }
-    const reviews: Array<{ number: number; branch: string }> = []
-    let cut = false
+  it.live("a read, a kept draft, a save and proposals each open one review of exactly the page as the person", () => scoped(effect {
+    const w = try wikiWorld("wiki")
     try ensuring(effect {
-      // The disposable base: the test's own branch and commit, written with the test's token.
-      const head = try asTest(GitHub.Refs.getBranch(TEST_REPOSITORY.owner, TEST_REPOSITORY.name, "main"))
-      if (Option.isNone(head)) return try Effect.die(new Error("the test repository has no main"))
-      try asTest(GitHub.Refs.createBranch(TEST_REPOSITORY.owner, TEST_REPOSITORY.name, { name: base, sha: head.value.sha }))
-      cut = true
-      try asTest(GitHub.Commits.createOnBranch(TEST_REPOSITORY.owner, TEST_REPOSITORY.name, { branch: base, expectedHeadOid: head.value.sha, headline: "Wiki test fixture", additions: [{ path: PATH, contents: try Effect.try(() => Base64.encode(SOURCE)) }], deletions: [] }))
+      expect(try journey(w)).toEqual(journeyResult)
+      const writes = w.writes()
 
-      const read = try act("read", {})
-      expect(JSON.stringify(read)).toContain("A real repository page.")
+      // A read observes the page's source and its blob revision on GitHub, and stores both.
+      const read = try succeeded(try w.perform({}))
+      expect(read.pages).toEqual([{ id: PAGE, source: SOURCE, revision: expect.stringMatching(/^[0-9a-f]{40}$/) }])
+      expect(read.draft).toBeUndefined()
+      expect(try promise(() => w.storage.get(`wiki/page/${PAGE}`))).toEqual(read.pages[0])
+      expect(try promise(() => w.storage.get("wiki/revision"))).toBe(read.seq)
+      // The reader's kept text comes back; a visitor has none, and a stored value that is not a draft is ignored.
+      try promise(() => w.storage.put(w.draftKey, { page: PAGE, text: "Kept." }))
+      expect((try succeeded(try w.perform({}))).draft).toEqual({ page: PAGE, text: "Kept." })
+      try Ref.set(w.caller, undefined)
+      expect((try succeeded(try w.perform({}))).draft).toBeUndefined()
+      try Ref.set(w.caller, { role: "maintainer" })
+      try promise(() => w.storage.put(w.draftKey, { text: 1 }))
+      expect((try succeeded(try w.perform({}))).draft).toBeUndefined()
+      expect((try succeeded(try w.perform({}, false))).pages).toHaveLength(1)
 
-      for (const [op, who] of [["propose", "contributor"], ["save", "maintainer"]] as const) {
-        try Ref.set(role, who)
-        const text = `${SOURCE}\nReviewed ${op}.\n`
-        const changed = try act(op, { base: SOURCE, text })
-        const number = Number(changed.review!.split("/").at(-1))
-        expect(changed.review).toBe(`https://github.com/${full}/pull/${number}`)
-        const pull = try client.request("GET", `/repos/${full}/pulls/${number}`, undefined, { schema: Schema.Struct({ merged: Schema.Boolean, title: Schema.String, user: Schema.Struct({ login: Schema.String }), base: Schema.Struct({ ref: Schema.String }), head: Schema.Struct({ ref: Schema.String }) }) })
-        reviews.push({ number, branch: pull.head.ref })
-        expect(pull).toMatchObject({ merged: false, title: `Wiki: ${PAGE}`, user: { login: TEST_AUTHOR }, base: { ref: base } })
-        expect(pull.head.ref).toMatch(/^vibelang\/wiki-/)
-        const files = try client.request("GET", `/repos/${full}/pulls/${number}/files`, undefined, { schema: Schema.Array(Schema.Struct({ filename: Schema.String, status: Schema.String })) })
-        expect(files).toEqual([expect.objectContaining({ filename: PATH, status: "modified" })])
-        expect(try asTest(GitHub.Contents.getText(TEST_REPOSITORY.owner, TEST_REPOSITORY.name, PATH, { ref: pull.head.ref }))).toMatchObject({ _tag: "Some", value: { text } })
-        expect(try asTest(GitHub.Contents.getText(TEST_REPOSITORY.owner, TEST_REPOSITORY.name, PATH, { ref: base }))).toMatchObject({ _tag: "Some", value: { text: SOURCE } })
-      }
-    }, Effect.suspend(() => Effect.all([
-      Effect.forEach(reviews, (review) => effect {
-        try client.request("PATCH", `/repos/${full}/pulls/${review.number}`, { state: "closed" })
-        try client.request("DELETE", `/repos/${full}/git/refs/heads/${review.branch}`)
-      } |> ignore(%), { discard: true }),
-      cut ? client.request("DELETE", `/repos/${full}/git/refs/heads/${base}`) |> ignore(%) : Effect.void,
-    ], { discard: true })))
-  }), 180_000)
+      // A change refuses a moved base and an empty or unchanged text before any write.
+      expect(failed(try w.act("save", { base: "Stale.", text: EDITED }))).toEqual({ reason: "conflict", unwritten: true })
+      expect(failed(try w.act("save", { base: SOURCE, text: "  " }))).toEqual({ reason: "empty", unwritten: true })
+      expect(failed(try w.act("save", { base: SOURCE, text: SOURCE }))).toEqual({ reason: "empty", unwritten: true })
+      // An agent may draft but never save; a draft needs an ask and a key.
+      try Ref.set(w.caller, { role: "maintainer", kind: "agent" })
+      expect(failed(try w.perform({ op: "save", base: SOURCE, text: EDITED }))?.reason).toBe("forbidden")
+      expect(failed(try w.perform({ op: "draft", text: " " }))?.reason).toBe("empty")
+      expect(failed(try w.perform({ op: "draft", text: "Hi", key: "" }))?.reason).toBe("sign-in")
+      const drafted = try succeeded(try w.perform({ op: "draft", text: "Shorter." }, false))
+      expect(drafted.draft).toEqual({ page: PAGE, text: `${SOURCE}\nShorter.\n` })
+      expect(w.writes()).toBe(writes)
+
+      // A contributor proposes through an authority with no live operation check: still one review, as the person.
+      try Ref.set(w.caller, { role: "contributor" })
+      w.check(false)
+      try promise(() => w.storage.put(w.draftKey, { page: PAGE, text: "Other." }))
+      const proposed = try succeeded(try w.act("propose", { base: SOURCE, text: EDITED }))
+      expect(try w.review(proposed.review!)).toMatchObject({ author: TEST_AUTHOR, files: [[PATH, "modified"]], head: EDITED, onBase: SOURCE })
+      // A different kept text stays.
+      expect(try w.kept()).toEqual({ page: PAGE, text: "Other." })
+      expect(w.writes()).toBe(writes + 3)
+    }, w.cleanup)
+  }), 300_000)
 })

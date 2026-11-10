@@ -413,6 +413,13 @@ draft. Product MockAccounts supplies local authority. No successful HTTP double,
 used; only counts are retained. Without the flag the two named cases skip and contribute no execution evidence.
 Anonymous quota and volatile provider state are limitations. GitHub write success paths remain unmeasured.
 
+**Recorded GitHub writes (2026-11-10, vl-record-replay).** `bench/issues-delegated.bench.vibe` and
+`bench/wiki-delegated.bench.vibe` replay real GitHub's recorded answers for `codeplanesmithers/smithers-vibelang-e2e`
+(`test/recordings/issues.json`, `wiki.json`; [0032](0032-record-replay.md)) instead of the in-memory GitHub. Each
+callback runs the journey the test recorded through smithers.sh's real delegation host and checks every write's
+visible result and the person's write count. They always replay and never reach GitHub; GitHub latency and rate
+limits are not measured.
+
 The same corpus adds an owner-bound agent reply whose draft reaches the account RPC and is refused for its viewer,
 and Escape during a pending wiki Save keeps the exact request without emitting more work. Sandbox recovery checks
 actual Stop receipts after exhausted minutes and a lost lease, a failed emergency stop recovered by a healthy host,

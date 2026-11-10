@@ -1,8 +1,9 @@
 // @vitest-environment node
-// worker/Issues.vibe as the site runs it after decision 0165: reads and every write go through smithers.sh's real
-// per-person connection host (fuzz/delegated.vibe) to an in-memory GitHub over the real client protocol
-// (fuzz/issues-node-fake.vibe), on the durable engine over SQLite. A misbehaving GitHub is a wrapped client service;
-// nothing intercepts a request.
+// worker/Issues.vibe's unhappy paths as the site runs it after decision 0165: reads and every write go through
+// smithers.sh's real per-person connection host (fuzz/delegated.vibe) to a GitHub that misbehaves, on the durable engine
+// over SQLite. A misbehaving GitHub is the in-memory protocol GitHub (fuzz/issues-node-fake.vibe) told to fail, or a
+// wrapped client service; nothing intercepts a request. The happy paths run on real GitHub's recorded answers in
+// test/issues.github.test.vibe (ruling VL-36).
 import { describe, expect, it } from "@effect/vitest"
 import { HttpClient, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { WebCrypto } from "@smthrs/crypto"
@@ -10,7 +11,6 @@ import { TestNodeRuntime } from "@smthrs/platform-node"
 import type { IssueRecord } from "../src/core/conversation.vibe"
 import { IssueFailure, type IssueRequest, type IssuesState } from "../src/core/issueSchemas.vibe"
 import { executeIssues, githubHost, publicIssues, serveIssues, IssueAuthority, type Principal } from "../worker/Issues.vibe"
-import { emptySpecification } from "../src/core/specification.vibe"
 import { IssueHost } from "../src/core/issueFlows.vibe"
 import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
 import type { Storage } from "../worker/Objects.vibe"
@@ -104,54 +104,36 @@ function addIssue(fake: Fake, number: number, fields: Partial<Fake["issues"][num
 }
 
 describe("issues through smithers.sh's delegation", () => {
-  it.live("a read shows each issue's task, review, parent and notes, and the agent first among assignees", () => scoped(effect {
+  // What only deleted accounts, null fields, foreign links and a second assignable account produce; the read of real
+  // GitHub (tasks, verified and refused VIP claims, parents, notes) is test/issues.github.test.vibe on a recording.
+  it.live("a read survives deleted accounts, null fields and foreign parent links, and lists the agent first among assignees", () => scoped(effect {
     const w = try world()
     const marker = (review: string, path = "docs/design/vips/proposal-seed.md") => `Proposal\n<!-- vibelang:vip path=${path} review=${review} -->`
-    addIssue(w.fake, 5, { state: "closed", labels: [{ name: "vibelang:task" }], assignees: [{ id: 8, login: "vibe-agent" }] })
     addIssue(w.fake, 6, { labels: [{ name: "vibelang:task" }, { name: "vibelang:running" }], assignees: [null, { id: 7, login: "fuzz" }] })
     addIssue(w.fake, 7, { user: null, body: null, parent_issue_url: `${API}/repos/o/r/issues/1` })
     addIssue(w.fake, 8, { parent_issue_url: "https://elsewhere.invalid/repos/o/r/issues/1" })
     addIssue(w.fake, 9, { parent_issue_url: `${API}/repos/o/r/issues/not-a-number` })
-    // Body markers are only claims: each of these fails one check and reads as a plain issue.
-    addIssue(w.fake, 10, { body: marker("https://github.com/other/r/pull/500") })
-    addIssue(w.fake, 11, { body: marker("https://github.com/o/r/pull/0500") })
-    addIssue(w.fake, 12, { body: marker("https://github.com/o/r/pull/999") })
+    // A claim by another account than the review's, or by a deleted one, reads as a plain issue.
     addIssue(w.fake, 13, { body: marker("https://github.com/o/r/pull/500"), user: { id: 8, login: "vibe-agent" } })
     addIssue(w.fake, 14, { body: marker("https://github.com/o/r/pull/500"), user: null })
-    addIssue(w.fake, 15, { body: marker("https://github.com/o/r/pull/500"), labels: [{ name: "vibelang:accepted" }] })
-    addIssue(w.fake, 16, { body: marker("https://github.com/o/r/pull/500"), labels: [{ name: "vibelang:declined" }] })
     w.fake.assignable.push({ id: 9, login: "alice" })
     w.fake.comments[1]!.push({ id: 901, node_id: "comment-901", body: null, user: null, created_at: "2026-01-03T00:00:00Z", updated_at: "2026-01-03T00:00:00Z", issue_url: `${API}/repos/o/r/issues/1` })
 
     const proposal = succeeded(try w.perform({ number: 4 }))
-    expect(proposal.items.map((entry) => entry.number)).toEqual([16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1])
-    expect(proposal.absoluteDates).toBe(true)
     expect(proposal.assignees).toEqual([{ login: "vibe-agent", label: "VibeLang agent" }, { login: "alice", label: "alice" }, { login: "fuzz", label: "fuzz" }])
-    expect(item(proposal, 4)).toMatchObject({ vip: "In review", review: "https://github.com/o/r/pull/500", path: "docs/design/vips/proposal-seed.md", body: "A reviewed proposal\n\n" })
-    // Only the opened issue's review is read: one named reviewer, a deleted account skipped.
+    // A deleted reviewer is skipped; deleted actors are named so.
     expect(proposal.reviewers).toEqual(["reviewer"])
-    expect(item(proposal, 4).notes).toEqual([
-      { age: "2026-01-02", author: "fuzz", text: "added the vibelang:task label", event: true },
-      { age: "", author: "deleted", text: "removed the old label", event: true },
-      { age: "", author: "fuzz", text: "assigned vibe-agent", event: true },
-      { age: "", author: "fuzz", text: "unassigned vibe-agent", event: true },
-      { age: "", author: "fuzz", text: "closed this issue", event: true },
-      { age: "2026-01-05", author: "deleted", text: "reopened this issue", event: true },
-    ])
-    expect([5, 6, 3, 1].map((number) => item(proposal, number).task)).toEqual(["Done", "Running", "Queued", ""])
+    expect(item(proposal, 4).notes.filter((note) => note.author === "deleted").map((note) => note.text)).toEqual(["removed the old label", "reopened this issue"])
     expect(item(proposal, 6).assignee).toBe("fuzz")
     expect(item(proposal, 7)).toMatchObject({ author: "deleted", body: "", parent: 1 })
     expect([8, 9].map((number) => item(proposal, number).parent)).toEqual([0, 0])
-    expect([10, 11, 12, 13, 14].map((number) => item(proposal, number).vip)).toEqual(["", "", "", "", ""])
-    expect([15, 16].map((number) => item(proposal, number).vip)).toEqual(["Accepted", "Declined"])
-    expect(item(proposal, 1).notes).toEqual([])
+    expect([13, 14].map((number) => item(proposal, number).vip)).toEqual(["", ""])
 
     const plain = succeeded(try w.perform({ number: 1 }))
     expect(item(plain, 1).notes.filter((note) => !note.event)).toEqual([
       { age: "2026-01-02", author: "reviewer", text: "First note", event: false },
       { age: "2026-01-03", author: "deleted", text: "", event: false },
     ])
-    expect(plain.reviewers).toEqual([])
   }))
 
   it.live("a read refuses an issue list, timeline, review or comment list GitHub cuts short, and an issue it cannot decode", () => scoped(effect {
@@ -189,23 +171,6 @@ describe("issues through smithers.sh's delegation", () => {
     expect(reads.count).toBe(1)
   }))
 
-  it.live("a new issue and a split are written once as the person and selected", () => scoped(effect {
-    const w = try world()
-    const made = succeeded(try w.act("new", { title: "  A new issue  ", text: "Body" }))
-    expect(made.selected).toBe(100)
-    expect(item(made, 100)).toMatchObject({ title: "A new issue", author: "fuzz", parent: 0 })
-    expect(w.fake.writes).toBe(1)
-
-    const split = succeeded(try w.act("split", { number: 1, title: "A child" }))
-    expect(split.selected).toBe(101)
-    expect(item(split, 101).parent).toBe(1)
-    expect(w.fake.writes).toBe(3)
-
-    expect(failed(try w.act("split", { number: 9999, title: "Orphan" }))?.reason).toBe("missing")
-    expect(failed(try w.act("new", { title: "   " }))).toEqual({ reason: "title", unwritten: true })
-    expect(w.fake.writes).toBe(3)
-  }))
-
   it.live("a split whose answer is lost after the link recovers without a second issue or link", () => scoped(effect {
     const w = try world()
     let linked = false
@@ -226,7 +191,7 @@ describe("issues through smithers.sh's delegation", () => {
     expect(w.fake.writes).toBe(writes)
   }))
 
-  it.live("a proposal opens the VIP's branch, commit, review and issue once, and refuses an incomplete one", () => scoped(effect {
+  it.live("a proposal refuses an incomplete one and a missing main, and adopts a review GitHub first shows changing another document", () => scoped(effect {
     const w = try world()
     const full = { title: "Tuples", text: "Add tuples.", example: "const t = [1, 2]", prior: "Rust" }
     expect(failed(try w.act("propose", { ...full, example: " " }))).toEqual({ reason: "incomplete", unwritten: true })
@@ -235,91 +200,30 @@ describe("issues through smithers.sh's delegation", () => {
     w.fake.noMain = false
     expect(w.fake.writes).toBe(0)
 
-    const proposed = succeeded(try w.act("propose", full))
-    const vip = item(proposed, proposed.selected!)
-    expect(vip.vip).toBe("In review")
-    expect(vip.review).toBe("https://github.com/o/r/pull/600")
-    expect(vip.path).toMatch(/^docs\/design\/vips\/proposal-[0-9a-f]{64}\.md$/)
-    expect(w.fake.pulls.at(-1)).toMatchObject({ title: "VIP: Tuples", head: { ref: expect.stringMatching(/^vibelang\/vip-/) } })
-
-    // PR 600 and its issue 601 share GitHub's number sequence; the next PR is 602.
     // GitHub's first read after the VIP's issue shows its review changing another document. The flow's retry adopts
     // the same issue, branch and review once GitHub shows the document: one VIP, never two.
     let issued = false
     let lagged = 0
     w.fault((request, url) => {
       if (request.method === "POST" && url.pathname === "/repos/o/r/issues") issued = true
-      if (!issued || lagged > 0 || request.method !== "GET" || url.pathname !== "/repos/o/r/pulls/602/files") return undefined
+      if (!issued || lagged > 0 || request.method !== "GET" || url.pathname !== "/repos/o/r/pulls/600/files") return undefined
       lagged += 1
       return json(200, [{ filename: "docs/design/vips/proposal-seed.md", status: "added" }])
     })
     const writes = w.fake.writes
     const records = succeeded(try w.act("propose", { ...full, title: "Records" }))
     expect(lagged).toBe(1)
-    expect(item(records, records.selected!)).toMatchObject({ title: "Records", vip: "In review", review: "https://github.com/o/r/pull/602" })
+    expect(item(records, records.selected!)).toMatchObject({ title: "Records", vip: "In review", review: "https://github.com/o/r/pull/600" })
     expect(records.items.filter((entry) => entry.title === "Records")).toHaveLength(1)
     expect(w.fake.writes - writes).toBe(4)
   }))
 
-  it.live("a comment, a link and an unchanged link write only what changes", () => scoped(effect {
+  it.live("a commit GitHub accepts but does not show is not labeled", () => scoped(effect {
     const w = try world()
-    addIssue(w.fake, 7, { parent_issue_url: `${API}/repos/o/r/issues/1` })
-    expect(failed(try w.act("comment", { number: 1, text: "  " }))).toEqual({ reason: "empty", unwritten: true })
-    expect(failed(try w.act("comment", { number: 9999, text: "Hi" }))?.reason).toBe("missing")
-    const commented = succeeded(try w.act("comment", { number: 1, text: " Thanks " }))
-    expect(item(commented, 1).notes.filter((note) => !note.event).map((note) => note.text)).toEqual(["First note", "Thanks"])
-    expect(w.fake.writes).toBe(1)
-
-    expect(failed(try w.act("link", { number: 1, parent: 1 }))).toEqual({ reason: "tree", unwritten: true })
-    expect(item(succeeded(try w.act("link", { number: 2, parent: 1 })), 2).parent).toBe(1)
-    expect(w.fake.writes).toBe(2)
-    expect(item(succeeded(try w.act("link", { number: 7, parent: 1 })), 7).parent).toBe(1)
-    expect(w.fake.writes).toBe(2)
-  }))
-
-  it.live("committing assigns and labels a task, uncommitting clears it, and bad assignees or closed issues are refused", () => scoped(effect {
-    const w = try world()
-    expect(failed(try w.act("commit", { number: 2, assignee: "fuzz" }))).toEqual({ reason: "closed", unwritten: true })
-    expect(failed(try w.act("commit", { number: 1, assignee: "ghost" }))).toEqual({ reason: "assignee", unwritten: true })
-    expect(failed(try w.act("commit", { number: 1, assignee: " " }))?.reason).toBe("assignee")
-    expect(w.fake.writes).toBe(0)
-
-    const committed = succeeded(try w.act("commit", { number: 1, assignee: "VibeLang agent" }))
-    expect(item(committed, 1)).toMatchObject({ task: "Queued", assignee: "vibe-agent", labels: ["vibelang:task"] })
-    const uncommitted = succeeded(try w.act("uncommit", { number: 1 }))
-    expect(item(uncommitted, 1)).toMatchObject({ task: "", assignee: "", labels: [] })
-
-    // GitHub accepts the assignment but does not show it: the task is not labeled.
     w.fake.dropAssignees = true
-    const writes = w.fake.writes
     expect(failed(try w.act("commit", { number: 1, assignee: "fuzz" }))?.reason).toBe("assignee")
-    expect(w.fake.writes).toBe(writes + 1)
+    expect(w.fake.writes).toBe(1)
     expect(w.fake.issues.find((issue) => issue.number === 1)!.labels).toEqual([])
-  }))
-
-  it.live("a maintainer accepts or declines a VIP in review; an agent, a plain issue or an unnamed maintainer cannot", () => scoped(effect {
-    const w = try world()
-    try Ref.set(w.caller, { role: "maintainer", kind: "agent" })
-    expect(failed(try w.act("accept", { number: 4 }))?.reason).toBe("forbidden")
-    expect(failed(try w.perform({ op: "decline", number: 4 }))?.reason).toBe("forbidden")
-    try Ref.set(w.caller, { role: "maintainer", login: "" })
-    expect(failed(try w.act("accept", { number: 4 }))?.reason).toBe("forbidden")
-    try Ref.set(w.caller, { role: "maintainer" })
-    expect(failed(try w.act("accept", { number: 1 }))).toEqual({ reason: "review", unwritten: true })
-    expect(w.fake.writes).toBe(0)
-
-    const accepted = succeeded(try w.act("accept", { number: 4 }))
-    expect(item(accepted, 4)).toMatchObject({ vip: "Accepted", approvedBy: "fuzz", state: "open" })
-    // Accepting again keeps the receipt and writes nothing new.
-    const writes = w.fake.writes
-    expect(item(succeeded(try w.act("accept", { number: 4 })), 4).vip).toBe("Accepted")
-    expect(w.fake.writes).toBe(writes)
-
-    addIssue(w.fake, 7, { body: "Proposal\n<!-- vibelang:vip path=docs/design/vips/proposal-seed.md review=https://github.com/o/r/pull/500 -->" })
-    const declined = succeeded(try w.act("decline", { number: 7 }))
-    expect(item(declined, 7)).toMatchObject({ vip: "Declined", state: "closed" })
-    // A declined, closed VIP declined again has nothing left to write.
-    expect(item(succeeded(try w.act("decline", { number: 7 })), 7).state).toBe("closed")
   }))
 
   it.live("every write re-reads who asks: a role, a person or a credential lost mid-flow stops the next write", () => scoped(effect {
@@ -338,12 +242,6 @@ describe("issues through smithers.sh's delegation", () => {
     expect(failed(try w.act("spec-review", { number: 1 }))?.reason).toBe("forbidden")
   }))
 
-  it.live("an authority with no live operation check still writes as the connected person", () => scoped(effect {
-    const w = try world({ authorize: false })
-    const commented = succeeded(try w.act("comment", { number: 1, text: "Hi" }))
-    expect(item(commented, 1).comments).toBe(2)
-  }))
-
   it.live("the host refuses a write without a key, a credential, or an operation it knows, and drafts only with a writer", () => scoped(effect {
     const w = try world()
     expect(failed(try w.perform({ op: "comment", number: 1, text: "Hi", key: "" }))?.reason).toBe("sign-in")
@@ -354,26 +252,6 @@ describe("issues through smithers.sh's delegation", () => {
     expect(failed(try w.perform({ op: "draft", title: "T" }))?.reason).toBe("unavailable")
     try Ref.set(w.caller, { role: "maintainer" })
     expect(failed(try w.perform({ op: "spec-review" as Op, number: 1 }))?.reason).toBe("unsupported")
-  }))
-
-  it.live("the durable flow counts reads from the stored revision and refuses a reused key with another payload", () => scoped(effect {
-    const w = try world()
-    try promise(() => w.store.storage.put("issues/revision", 41))
-    succeeded(try w.act("read"))
-    expect(try promise(() => w.store.storage.get("issues/revision"))).toBe(42)
-    try promise(() => w.store.storage.put("issues/revision", "lost"))
-    succeeded(try w.act("read"))
-    expect(try promise(() => w.store.storage.get("issues/revision"))).toBe(1)
-
-    // Gate state saved before the specification existed reads with an empty one.
-    try promise(() => w.store.storage.put("gates/state", { seq: 3, items: [] }))
-    const older = succeeded(try w.act("read"))
-    expect(older.specification).toEqual(emptySpecification)
-    expect(older.seq).toBe(4)
-
-    succeeded(try w.act("comment", { number: 1, text: "Once", key: "reused" }))
-    expect(failed(try w.act("comment", { number: 1, text: "Twice", key: "reused" }))?.reason).toBe("invalid")
-    expect(w.fake.writes).toBe(1)
   }))
 
   it.live("a store that fails while a retry or a replay inspects the journal answers unavailable and writes nothing", () => scoped(effect {

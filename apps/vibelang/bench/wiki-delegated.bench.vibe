@@ -1,82 +1,18 @@
 // @vitest-environment node
 // A wiki edit as the site runs it after decision 0165: worker/Wiki.vibe's durable flows over SQLite, every GitHub read
-// and write through smithers.sh's real per-person connection host (fuzz/delegated.vibe) to the in-memory GitHub that
-// speaks the real client protocol (fuzz/issues-node-fake.vibe). Nothing intercepts a request.
+// and write through smithers.sh's real per-person connection host (fuzz/delegated.vibe) to real GitHub's recorded
+// answers for codeplanesmithers/smithers-vibelang-e2e (test/recordings/wiki.json, ruling VL-36). The bench always
+// replays: it never writes to GitHub. Nothing intercepts a request.
 import { it, expect } from "@effect/vitest"
-import { WebCrypto } from "@smthrs/crypto"
-import { TestNodeRuntime } from "@smthrs/platform-node"
-import { pages } from "../src/core/wiki.vibe"
-import { WikiWriter } from "../src/core/WikiWriter.vibe"
-import type { WikiRequest, WikiState } from "../src/core/wikiSchemas.vibe"
-import { executeWiki, WikiAuthority, type WikiRepository } from "../worker/Wiki.vibe"
-import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
-import type { Storage } from "../worker/Objects.vibe"
-import { API, fakeClient, forked, seed } from "../fuzz/issues-node-fake.vibe"
-import { delegated, reach } from "../fuzz/delegated.vibe"
+import { journey, journeyResult, wikiWorld } from "../test/support/wikiWorld.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
-
-type State = typeof WikiState.Type
-const repo: WikiRepository = { owner: "o", name: "r", api: API, agent: "", root: "wiki" }
-const PAGE = pages[0]!.id
-const PATH = `wiki/${PAGE}.md`
-const SOURCE = "# Page\n\nThe repository text.\n"
-const blank: WikiRequest = { op: "read", page: PAGE, base: "", text: "", key: "k" }
-
-/** One maintainer reads a page, has the writer draft an edit, saves it, then proposes a second change. */
-effect function journey() {
-  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
-  const storage = raw as unknown as Storage
-  const fake = seed()
-  forked(fake)
-  fake.files[PATH] = SOURCE
-  const site = try delegated(fakeClient(fake), reach())
-  const authority: WikiAuthority.Shape = {
-    current: () => succeed({ id: "7", login: "fuzz", role: "maintainer", connection: site.connection }),
-    authorize: () => Effect.void,
-  }
-  const writer = Layer.succeed(WikiWriter, { draft: (request) => succeed({ page: request.page, text: `${request.source}\n${request.ask}\n` }) })
-  let keys = 0
-  const act = (op: WikiRequest["op"], extra: Partial<WikiRequest> = {}): State!unknown => {
-    keys += 1
-    return executeWiki("wiki-bench", storage, { ...blank, op, key: `k${keys}`, ...extra }, repo).pipe(
-      Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, site.http),
-      Effect.provideService(GitHubDelegate, site.delegate), Effect.provide(writer), Effect.provide(WebCrypto.layer),
-    )
-  }
-  const read = try act("read")
-  const drafted = try act("draft", { text: "Shorter." })
-  const kept = try promise(() => storage.get(`wiki/draft/7/${PAGE}`))
-  const saved = try act("save", { base: SOURCE, text: drafted.draft!.text })
-  const cleared = try promise(() => storage.get(`wiki/draft/7/${PAGE}`))
-  const proposed = try act("propose", { base: SOURCE, text: `${SOURCE}\nAnother.\n` })
-  return {
-    read: read.pages.map((page) => [page.id, page.source]),
-    draft: drafted.draft,
-    kept,
-    saved: saved.review,
-    cleared,
-    proposed: proposed.review,
-    pulls: fake.pulls.map((pull) => [pull.title, pull.files]),
-  }
-}
 
 it("wiki: read, drafted edit, save and proposal through smithers.sh's delegation", async ({ bench }) => {
   const seen: Array<unknown> = []
   const result = await workload(bench, "wiki-delegated-edit", "async", async () => {
-    seen.push(await runPromise(scoped(journey())))
+    seen.push(await runPromise(scoped(effect { return try journey(try wikiWorld("wiki", "replay")) })))
   }).run(slow)
   expect(seen.length).toBeGreaterThan(0)
-  const draft = { page: PAGE, text: `${SOURCE}\nShorter.\n` }
-  for (const each of seen) expect(each).toEqual({
-    read: [[PAGE, SOURCE]],
-    draft,
-    kept: draft,
-    saved: "https://github.com/o/r/pull/600",
-    cleared: undefined,
-    proposed: "https://github.com/o/r/pull/601",
-    pulls: expect.arrayContaining([
-      [`Wiki: ${PAGE}`, [{ filename: PATH, status: "modified" }]],
-    ]),
-  })
-  await runPromise(artifact("wiki-delegated-edit", "Vitest built-in bench; worker/Wiki.vibe's durable flows over Node SQLite object storage, a fresh store and GitHub each callback. One maintainer reads a page, asks the writer for a draft (kept for the person), saves it (one branch, commit and review of exactly that file; the kept text cleared), then proposes a second change from the same base. Every GitHub call goes through smithers.sh's real per-person connection host to an in-memory GitHub over the real client protocol. Checked every callback: the page source, the draft and its kept copy, both review URLs, the cleared draft and the review's changed file. Store setup, four flows and their re-reads included.", ["In-memory GitHub over the client protocol, not api.github.com: no network, rate limit or GitHub latency. Node SQLite storage, not a Durable Object. The writer is a deterministic WikiWriter service, not the model; the model-written draft is the opt-in live path. The live journey is the opt-in GITHUB_TEST_TOKEN test."], { seen, result }))
+  for (const each of seen) expect(each).toEqual(journeyResult)
+  await runPromise(artifact("wiki-delegated-edit", "Vitest built-in bench; worker/Wiki.vibe's durable flows over Node SQLite object storage, a fresh store and a fresh replay each callback. One maintainer reads a page on a disposable base branch, asks the writer for a draft (kept for the person), saves it (one branch, commit and review of exactly that file; the kept text cleared), then proposes a second change from the same base. Every GitHub call goes through smithers.sh's real per-person connection host to real GitHub's recorded answers (test/recordings/wiki.json). Checked every callback: the page source, the draft and its kept copy, the cleared draft, each review's title, author, base, changed file and head text, the base left untouched, and the person's write count. Store setup, the fixture branch, four flows and their re-reads included.", ["Recorded GitHub answers, not api.github.com: no network, rate limit or GitHub latency. Node SQLite storage, not a Durable Object. The writer is a deterministic WikiWriter service, not the model; the model-written draft is the opt-in live path. Recording and passthrough runs are test/wikiEdit.github.test.vibe with VIBE_GITHUB."], { seen, result }))
 }, 120_000)

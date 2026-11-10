@@ -1,0 +1,154 @@
+// Wiki edits on real GitHub for a test or a bench (ruling VL-36): a person connected through smithers.sh's real
+// delegation host (fuzz/delegated.vibe) to codeplanesmithers/smithers-vibelang-e2e, on the durable engine over SQLite,
+// against a disposable base branch the case cuts and commits its fixture page to. Replayed from a recording unless
+// VIBE_GITHUB says otherwise (test/support/github.vibe). Nothing merges; `cleanup` closes every review, deletes its
+// branch, and deletes the base.
+import { HttpClient } from "effect/http"
+import { Base64 } from "effect/encoding"
+import { GitHub } from "@smthrs/integrations"
+import { WebCrypto } from "@smthrs/crypto"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import type { HttpRecording } from "@smthrs/testing"
+import { pages } from "../../src/core/wiki.vibe"
+import { WikiWriter } from "../../src/core/WikiWriter.vibe"
+import type { WikiRequest, WikiState } from "../../src/core/wikiSchemas.vibe"
+import type { Principal } from "../../worker/Issues.vibe"
+import { executeWiki, githubWikiHost, WikiAuthority, type WikiRepository } from "../../worker/Wiki.vibe"
+import { GitHubDelegate } from "../../worker/GitHubDelegate.vibe"
+import type { Storage } from "../../worker/Objects.vibe"
+import { delegated, reach } from "../../fuzz/delegated.vibe"
+import { github, TEST_AUTHOR, TEST_AUTHOR_ID, TEST_REPOSITORY } from "./github.vibe"
+
+export type State = typeof WikiState.Type
+export const FULL = `${TEST_REPOSITORY.owner}/${TEST_REPOSITORY.name}`
+export const PAGE = pages[0]!.id
+export const PATH = `wiki/${PAGE}.md`
+export const SOURCE = "# Wiki fixture\n\nA real repository page.\n"
+const blank: WikiRequest = { op: "read", page: PAGE, base: "", text: "", key: "k" }
+/** Who is asking: the person GitHub names as the author of what the run writes, a maintainer unless it says otherwise. */
+export interface Caller { readonly role: Principal["role"]; readonly kind?: "person" | "agent" }
+schema Account { readonly login: string }
+schema End { readonly ref: string }
+schema Pull { readonly merged: boolean; readonly title: string; readonly user: Account; readonly base: End; readonly head: End }
+schema ChangedFile { readonly filename: string; readonly status: string }
+const Files = Schema.Array(ChangedFile)
+
+/** The typed refusal, an engine error's tag, or "defect"; undefined on success. */
+export const failed = (exit: Exit.Exit<State, unknown>) => {
+  if (exit._tag === "Success") return undefined
+  const found = Cause.findErrorOption(exit.cause)
+  if (Option.isNone(found)) return { reason: "defect", unwritten: false }
+  const failure = found.value as { readonly _tag: string; readonly reason?: string; readonly unwritten?: boolean }
+  return { reason: failure.reason ?? failure._tag, unwritten: failure.unwritten === true }
+}
+export effect function succeeded(exit: Exit.Exit<State, unknown>) {
+  if (exit._tag === "Failure") return try Effect.die(new Error(`the flow failed: ${JSON.stringify(failed(exit))}`))
+  return exit.value
+}
+
+export effect function wikiWorld(recording: string, mode?: HttpRecording.Mode) {
+  const real = try github(recording, mode)
+  const client = try GitHub.GitHubClient.make({ token: Redacted.value(real.token) }, {}).pipe(Effect.provideService(HttpClient.HttpClient, real.client))
+  const asTest = <A, E>(program: A!E!GitHub.GitHubClient.GitHubClient) => Effect.provideService(program, GitHub.GitHubClient.GitHubClient, client)
+  const base = `vibelang/wiki-base-${real.label}`
+  const repo: WikiRepository = { owner: TEST_REPOSITORY.owner, name: TEST_REPOSITORY.name, api: TEST_REPOSITORY.api, agent: "", root: "wiki", branch: base }
+  const storage = (try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))) as unknown as Storage
+  const counter = reach()
+  const site = try delegated(real.client, counter, TEST_REPOSITORY.owner, { api: TEST_REPOSITORY.api, repository: FULL, repositoryId: TEST_REPOSITORY.id, token: real.token })
+  // The person is GitHub's author of what the run writes: the host checks a review's author id against theirs.
+  const id = String(TEST_AUTHOR_ID)
+  const caller = try Ref.make<Caller | undefined>({ role: "maintainer" })
+  const current = () => Effect.map(Ref.get(caller), (who): Principal | undefined => who === undefined ? undefined : { id, login: TEST_REPOSITORY.owner, role: who.role, ...(who.kind === undefined ? {} : { kind: who.kind }), connection: site.connection })
+  const checked: WikiAuthority.Shape = { current, authorize: () => Effect.void }
+  /** An authority with no live operation check: the host still writes only as the connected person. */
+  const unchecked: WikiAuthority.Shape = { current }
+  let authority = checked
+  /** A deterministic writer: the model-written draft is the opt-in live path. */
+  const writer = Layer.succeed(WikiWriter, { draft: (request) => succeed({ page: request.page, text: `${request.source}\n${request.ask}\n` }) })
+  const provided = <A, E, R>(program: A!E!R) => program.pipe(
+    Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, site.http),
+    Effect.provideService(GitHubDelegate, site.delegate), Effect.provide(writer), Effect.provide(WebCrypto.layer),
+  )
+  let keys = 0
+  /** The durable flow, as HTTP, the CLI and the agent's tool run it; its exit, so a refusal can be read. */
+  const act = (op: WikiRequest["op"], extra: Partial<WikiRequest> = {}) => {
+    keys += 1
+    return Effect.exit(provided(executeWiki("wiki-recorded", storage, { ...blank, op, key: `${real.label}-${keys}`, ...extra }, repo)))
+  }
+  /** The host alone, off the engine, with object storage for drafts or (`stored: false`) without. */
+  const perform = (request: Partial<WikiRequest>, stored = true) => Effect.exit(provided(Effect.flatMap(githubWikiHost(repo, stored ? storage : undefined), (host) => (host.perform as (request: WikiRequest) => State!unknown)({ ...blank, ...request }))))
+  /** Where the host keeps the person's reviewed text for the page. */
+  const draftKey = `wiki/draft/${id}/${PAGE}`
+  const kept = () => promise(() => storage.get(draftKey))
+  const reviews: Array<{ number: number; branch: string }> = []
+  let cut = false
+  /** The disposable base: the test's own branch and commit of the fixture page, written with the test's token. */
+  const seed = effect {
+    const head = try asTest(GitHub.Refs.getBranch(TEST_REPOSITORY.owner, TEST_REPOSITORY.name, "main"))
+    if (Option.isNone(head)) return try Effect.die(new Error("the test repository has no main"))
+    try asTest(GitHub.Refs.createBranch(TEST_REPOSITORY.owner, TEST_REPOSITORY.name, { name: base, sha: head.value.sha }))
+    cut = true
+    try asTest(GitHub.Commits.createOnBranch(TEST_REPOSITORY.owner, TEST_REPOSITORY.name, { branch: base, expectedHeadOid: head.value.sha, headline: "Wiki test fixture", additions: [{ path: PATH, contents: try Effect.try(() => Base64.encode(SOURCE)) }], deletions: [] }))
+  }
+  /** A review the flow answered with, as GitHub holds it: the pull, its changed files, the page on its head and on the base. */
+  const review = effect (url: string) => {
+    const number = Number(url.split("/").at(-1))
+    const pull = try client.request("GET", `/repos/${FULL}/pulls/${number}`, undefined, { schema: Pull })
+    reviews.push({ number, branch: pull.head.ref })
+    const files = try client.request("GET", `/repos/${FULL}/pulls/${number}/files`, undefined, { schema: Files })
+    const head = try asTest(GitHub.Contents.getText(TEST_REPOSITORY.owner, TEST_REPOSITORY.name, PATH, { ref: pull.head.ref }))
+    const onBase = try asTest(GitHub.Contents.getText(TEST_REPOSITORY.owner, TEST_REPOSITORY.name, PATH, { ref: base }))
+    return {
+      url: url === `https://github.com/${FULL}/pull/${number}`, merged: pull.merged, title: pull.title, author: pull.user.login,
+      base: pull.base.ref === base, branch: pull.head.ref.startsWith("vibelang/wiki-"), files: files.map((file) => [file.filename, file.status]),
+      head: Option.getOrUndefined(head)?.text, onBase: Option.getOrUndefined(onBase)?.text,
+    }
+  }
+  const cleanup = Effect.suspend(() => Effect.all([
+    Effect.forEach(reviews, (each) => effect {
+      try client.request("PATCH", `/repos/${FULL}/pulls/${each.number}`, { state: "closed" })
+      try client.request("DELETE", `/repos/${FULL}/git/refs/heads/${each.branch}`)
+    } |> ignore(%), { discard: true }),
+    cut ? client.request("DELETE", `/repos/${FULL}/git/refs/heads/${base}`) |> ignore(%) : Effect.void,
+  ], { discard: true }))
+  try Effect.addFinalizer(() => Effect.logInfo("wiki recording world closed").pipe(Effect.annotateLogs({ recording, reviews: reviews.length })))
+  return {
+    label: real.label, act, perform, kept, draftKey, caller, storage, seed, review, cleanup, client,
+    /** Writes GitHub accepted from smithers.sh for the person: the test's own seed and cleanup are not counted. */
+    writes: () => counter.writes,
+    check: (live: boolean) => { authority = live ? checked : unchecked },
+  }
+}
+
+export type WikiWorld = Effect.Success<ReturnType<typeof wikiWorld>>
+
+/**
+ * One maintainer reads the page, has the writer draft an edit (kept for them), saves it (one review of exactly the
+ * page; the kept text cleared), then proposes a second change from the same base. The bench's workload.
+ */
+export effect function journey(w: WikiWorld) {
+  try w.seed
+  const read = try succeeded(try w.act("read"))
+  const drafted = try succeeded(try w.act("draft", { text: "Shorter." }))
+  const kept = try w.kept()
+  const saved = try succeeded(try w.act("save", { base: SOURCE, text: drafted.draft!.text }))
+  const cleared = try w.kept()
+  const proposed = try succeeded(try w.act("propose", { base: SOURCE, text: `${SOURCE}\nAnother.\n` }))
+  return {
+    read: read.pages.map((page) => [page.id, page.source]),
+    draft: drafted.draft, kept, cleared,
+    saved: try w.review(saved.review!),
+    proposed: try w.review(proposed.review!),
+    writes: w.writes(),
+  }
+}
+
+const reviewed = (text: string) => ({ url: true, merged: false, title: `Wiki: ${PAGE}`, author: TEST_AUTHOR, base: true, branch: true, files: [[PATH, "modified"]], head: text, onBase: SOURCE })
+const DRAFT = { page: PAGE, text: `${SOURCE}\nShorter.\n` }
+/** What `journey` leaves on GitHub: the same on every recording, so a bench checks it each callback. */
+export const journeyResult = {
+  read: [[PAGE, SOURCE]], draft: DRAFT, kept: DRAFT, cleared: undefined,
+  saved: reviewed(DRAFT.text), proposed: reviewed(`${SOURCE}\nAnother.\n`),
+  // Each change is one branch, one commit and one review.
+  writes: 6,
+}

@@ -1,107 +1,136 @@
 // @vitest-environment node
 // The issues flow as the site runs it after decision 0165, on real GitHub: every read and write goes through
 // smithers.sh's per-person connection host (fuzz/delegated.vibe) to codeplanesmithers/smithers-vibelang-e2e, on the
-// durable engine over SQLite. Replayed from test/recordings/issues.json unless VIBE_GITHUB says otherwise
-// (test/support/github.vibe); a replay needs no token and reaches no network. Unhappy paths stay in
-// test/issuesDelegated.coverage.test.vibe as injected faulty services.
+// durable engine over SQLite (test/support/issuesWorld.vibe). Replayed from test/recordings/issues*.json unless
+// VIBE_GITHUB says otherwise (test/support/github.vibe); a replay needs no token and reaches no network. Each case
+// writes the state it reads, and puts the repository back. Unhappy paths stay in test/issuesDelegated.coverage.test.vibe
+// as injected faulty services.
 import { describe, expect, it } from "@effect/vitest"
 import { Base64 } from "effect/encoding"
-import { HttpClient } from "effect/http"
+import { emptySpecification } from "../src/core/specification.vibe"
 import { GitHub } from "@smthrs/integrations"
-import { WebCrypto } from "@smthrs/crypto"
-import { TestNodeRuntime } from "@smthrs/platform-node"
-import type { IssueRecord } from "../src/core/conversation.vibe"
-import type { IssueRequest, IssuesState } from "../src/core/issueSchemas.vibe"
-import { executeIssues, IssueAuthority, type Repository } from "../worker/Issues.vibe"
-import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
-import type { Storage } from "../worker/Objects.vibe"
-import { delegated, reach } from "../fuzz/delegated.vibe"
-import { github, TEST_ASSIGNEE, TEST_AUTHOR, TEST_REPOSITORY } from "./support/github.vibe"
+import { TEST_ASSIGNEE, TEST_AUTHOR, TEST_REPOSITORY } from "./support/github.vibe"
+import { failed, FULL, issuesWorld, item, journey, journeyResult, succeeded } from "./support/issuesWorld.vibe"
 
-type State = typeof IssuesState.Type
-const repo: Repository = { owner: TEST_REPOSITORY.owner, name: TEST_REPOSITORY.name, api: TEST_REPOSITORY.api, agent: TEST_ASSIGNEE }
-const full = `${TEST_REPOSITORY.owner}/${TEST_REPOSITORY.name}`
-const blank: IssueRequest = { op: "read", number: 0, parent: 0, title: "", text: "", example: "", prior: "", assignee: "", key: "k" }
-const item = (state: State, number: number): IssueRecord => state.items.find((entry) => entry.number === number)!
-
-/** A person connected through smithers.sh to the test repository, on GitHub as `recording` holds it or as it is now. */
-effect function world(recording: string) {
-  const real = try github(recording)
-  const storage = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
-  const site = try delegated(real.client, reach(), TEST_REPOSITORY.owner, { api: TEST_REPOSITORY.api, repository: full, repositoryId: TEST_REPOSITORY.id, token: real.token })
-  const authority: IssueAuthority.Shape = {
-    current: () => succeed({ id: "7", login: TEST_REPOSITORY.owner, role: "maintainer" as const, connection: site.connection }),
-    authorize: () => Effect.void,
-  }
-  const provided = <A, E, R>(program: A!E!R) => program.pipe(
-    Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, site.http),
-    Effect.provideService(GitHubDelegate, site.delegate), Effect.provide(WebCrypto.layer),
-  )
-  let keys = 0
-  const act = (op: IssueRequest["op"], extra: Partial<IssueRequest> = {}) => {
-    keys += 1
-    return provided(executeIssues("issues-recorded", storage as unknown as Storage, { ...blank, op, key: `${real.label}-${keys}`, ...extra }, repo))
-  }
-  // Cleanup runs through the same recorded client, so a replay replays it too. A closed issue's body is blanked:
-  // every read verifies each VIP marker in the repository, so markers left behind would grow every later recording.
-  const client = try GitHub.GitHubClient.make({ token: Redacted.value(real.token) }, {}).pipe(Effect.provideService(HttpClient.HttpClient, real.client))
-  const made: Array<number> = []
-  const reviews: Array<{ number: number; branch: string }> = []
-  const cleanup = Effect.suspend(() => Effect.all([
-    Effect.forEach(made, (number) => client.request("PATCH", `/repos/${full}/issues/${number}`, { state: "closed", body: "" }) |> ignore(%), { discard: true }),
-    Effect.forEach(reviews, (review) => effect {
-      try client.request("PATCH", `/repos/${full}/pulls/${review.number}`, { state: "closed" })
-      try client.request("DELETE", `/repos/${full}/git/refs/heads/${review.branch}`)
-    } |> ignore(%), { discard: true }),
-  ], { discard: true }))
-  return { label: real.label, act, client, made, reviews, cleanup }
-}
+schema Opened { readonly number: number }
 
 describe("issues on real GitHub through smithers.sh's delegation", () => {
-  it.live("a person's issue, split, comment and task are GitHub's truth", () => scoped(effect {
-    const w = try world("issues")
+  it.live("a maintainer's new issue, split, comment, VIP, link, task, acceptance and decline are GitHub's truth", () => scoped(effect {
+    const w = try issuesWorld("issues")
     try ensuring(effect {
-      const created = try w.act("new", { title: `${w.label} parent`, text: "VibeLang issues recorded test." })
-      const parent = item(created, created.selected!)
-      w.made.push(parent.number)
-      expect(parent).toMatchObject({ title: `${w.label} parent`, author: TEST_AUTHOR, parent: 0, state: "open" })
+      const seen = try journey(w)
+      expect(seen).toEqual(journeyResult(w.label))
+      const { issue, child, vip, second, pull } = seen.ids
 
-      const split = try w.act("split", { number: parent.number, title: `${w.label} child` })
-      const child = item(split, split.selected!)
-      w.made.push(child.number)
-      expect(child).toMatchObject({ title: `${w.label} child`, parent: parent.number, author: TEST_AUTHOR })
-
-      const commented = try w.act("comment", { number: child.number, text: " A note " })
-      expect(item(commented, child.number).notes.filter((note) => !note.event).map((note) => note.text)).toEqual(["A note"])
-
-      const committed = try w.act("commit", { number: child.number, assignee: "VibeLang agent" })
-      expect(item(committed, child.number)).toMatchObject({ task: "Queued", assignee: TEST_ASSIGNEE, labels: ["vibelang:task"] })
-      const uncommitted = try w.act("uncommit", { number: child.number })
-      expect(item(uncommitted, child.number)).toMatchObject({ task: "", assignee: "", labels: [] })
-
-      // A read shows its selected issue as GitHub holds it now; the list itself trails writes by seconds.
-      expect(item(try w.act("read", { number: child.number }), child.number)).toMatchObject({ parent: parent.number, task: "" })
-    }, w.cleanup)
-  }), 180_000)
-
-  it.live("a person's VIP proposal opens its branch, document, review and issue on GitHub", () => scoped(effect {
-    const w = try world("issues-proposal")
-    try ensuring(effect {
-      const proposed = try w.act("propose", { title: `${w.label} tuples`, text: "One feature with an example.", example: "const tuple = [1, 2]", prior: "Rust tuple patterns" })
-      const vip = item(proposed, proposed.selected!)
-      w.made.push(vip.number)
-      expect(vip).toMatchObject({ title: `${w.label} tuples`, vip: "In review", task: "", author: TEST_AUTHOR })
-      expect(vip.path).toMatch(/^docs\/design\/vips\/proposal-[0-9a-f]{64}\.md$/)
-      const pullNumber = Number(vip.review.split("/").at(-1))
-      expect(vip.review).toBe(`https://github.com/${full}/pull/${pullNumber}`)
-      const pull = try w.client.request("GET", `/repos/${full}/pulls/${pullNumber}`, undefined, { schema: Schema.Struct({ title: Schema.String, user: Schema.Struct({ login: Schema.String }), head: Schema.Struct({ ref: Schema.String }) }) })
-      w.reviews.push({ number: pullNumber, branch: pull.head.ref })
-      expect(pull).toMatchObject({ title: `VIP: ${w.label} tuples`, user: { login: TEST_AUTHOR } })
-      expect(pull.head.ref).toMatch(/^vibelang\/vip-/)
-      const document = try w.client.request("GET", `/repos/${full}/contents/${vip.path}?ref=${encodeURIComponent(pull.head.ref)}`, undefined, { schema: Schema.Struct({ content: Schema.String }) })
+      const opened = try w.client.request("GET", `/repos/${FULL}/pulls/${pull}`, undefined, { schema: Schema.Struct({ user: Schema.Struct({ login: Schema.String }), head: Schema.Struct({ ref: Schema.String }) }) })
+      expect(opened.user.login).toBe(TEST_AUTHOR)
+      const path = item(try succeeded(try w.act("read", { number: vip })), vip).path
+      const document = try w.client.request("GET", `/repos/${FULL}/contents/${path}?ref=${encodeURIComponent(opened.head.ref)}`, undefined, { schema: Schema.Struct({ content: Schema.String }) })
       const text = Base64.decodeString(document.content.replace(/\s/g, ""))
-      expect(text._tag === "Success" ? text.success : "").toContain("## Example\n\n```vibe\nconst tuple = [1, 2]")
-      expect(item(try w.act("read", { number: vip.number }), vip.number)).toMatchObject({ vip: "In review", review: vip.review })
+      expect(text._tag === "Success" ? text.success : "").toContain("## Example\n\n```vibe\nconst t = [1, 2]")
+
+      // Accepting again keeps the receipt, and a declined, closed VIP declined again: nothing left to write.
+      const writes = w.writes()
+      expect(item(try succeeded(try w.act("accept", { number: vip })), vip).vip).toBe("Accepted")
+      expect(item(try succeeded(try w.act("decline", { number: second })), second)).toMatchObject({ vip: "Declined", state: "closed" })
+      expect(w.writes()).toBe(writes)
+      // A read shows its selected issue as GitHub holds it now; the list itself trails writes by seconds.
+      expect(item(try succeeded(try w.act("read", { number: child })), child)).toMatchObject({ parent: issue, task: "" })
     }, w.cleanup)
-  }), 180_000)
+  }), 300_000)
+
+  it.live("a read shows each issue's task, verified VIP, parent and notes; refusals write nothing", () => scoped(effect {
+    const w = try issuesWorld("issues-read")
+    try ensuring(effect {
+      // A VIP in review written as the test: its branch, document, review with one comment, and the issue claiming it.
+      const main = try w.client.request("GET", `/repos/${FULL}/git/ref/heads/main`, undefined, { schema: Schema.Struct({ object: Schema.Struct({ sha: Schema.String }) }) })
+      const branch = `vibelang/vip-${w.label}`
+      const path = `docs/design/vips/proposal-${w.label}.md`
+      try w.client.request("POST", `/repos/${FULL}/git/refs`, { ref: `refs/heads/${branch}`, sha: main.object.sha })
+      const contents = try Effect.try(() => Base64.encode("# A seeded proposal\n"))
+      try GitHub.Commits.createOnBranch(TEST_REPOSITORY.owner, TEST_REPOSITORY.name, { branch, expectedHeadOid: main.object.sha, headline: "A seeded proposal", additions: [{ path, contents }], deletions: [] }).pipe(Effect.provideService(GitHub.GitHubClient.GitHubClient, w.client))
+      const pull = try w.client.request("POST", `/repos/${FULL}/pulls`, { title: `VIP: ${w.label}`, head: branch, base: "main", body: "Seeded review" }, { schema: Opened })
+      w.reviews.push({ number: pull.number, branch })
+      try w.client.request("POST", `/repos/${FULL}/pulls/${pull.number}/reviews`, { event: "COMMENT", body: "Reviewed." })
+      const review = `https://github.com/${FULL}/pull/${pull.number}`
+      const marker = (url: string, at = path) => `<!-- vibelang:vip path=${at} review=${url} -->`
+      const inReview = try w.seedIssue("in review", { body: `A reviewed proposal\n\n${marker(review)}` })
+      // Body markers are only claims: each of these fails one check and reads as a plain issue.
+      const claims = [
+        try w.seedIssue("other repository", { body: marker(`https://github.com/other/r/pull/${pull.number}`) }),
+        try w.seedIssue("padded number", { body: marker(`https://github.com/${FULL}/pull/0${pull.number}`) }),
+        try w.seedIssue("no such review", { body: marker(`https://github.com/${FULL}/pull/999999`) }),
+        try w.seedIssue("other document", { body: marker(review, "docs/design/vips/proposal-elsewhere.md") }),
+      ]
+      try w.bringsLabel("vibelang:running")
+      const queued = try w.seedIssue("queued", { labels: ["vibelang:task"], assignees: [TEST_ASSIGNEE] })
+      const running = try w.seedIssue("running", { labels: ["vibelang:task", "vibelang:running"], assignees: [TEST_ASSIGNEE] })
+      const done = try w.seedIssue("done", { labels: ["vibelang:task"], assignees: [TEST_ASSIGNEE] })
+      const child = try w.seedIssue("child")
+      try w.client.request("POST", `/repos/${FULL}/issues/${queued.number}/sub_issues`, { sub_issue_id: child.id })
+      const plain = try w.seedIssue("plain")
+      try w.client.request("POST", `/repos/${FULL}/issues/${plain.number}/comments`, { body: "First note" })
+
+      try w.listed(w.made)
+      // Closed once GitHub lists it: its creation's label event is published by then, so the timeline's order is fixed.
+      try w.client.request("PATCH", `/repos/${FULL}/issues/${done.number}`, { state: "closed" })
+      const proposal = try succeeded(try w.act("read", { number: inReview.number }))
+      expect(proposal.absoluteDates).toBe(true)
+      expect(proposal.assignees).toEqual([{ login: TEST_ASSIGNEE, label: "VibeLang agent" }])
+      expect(item(proposal, inReview.number)).toMatchObject({ vip: "In review", review, path, body: "A reviewed proposal\n\n", author: TEST_AUTHOR })
+      // Only the opened issue's review is read.
+      expect(proposal.reviewers).toEqual([TEST_AUTHOR])
+      expect(claims.map((claim) => item(proposal, claim.number).vip)).toEqual(["", "", "", ""])
+      expect([done, running, queued, plain].map((issue) => item(proposal, issue.number).task)).toEqual(["Done", "Running", "Queued", ""])
+      expect(item(proposal, running.number).assignee).toBe(TEST_ASSIGNEE)
+      expect(item(proposal, child.number).parent).toBe(queued.number)
+      expect(item(proposal, plain.number).notes).toEqual([])
+
+      const noted = try succeeded(try w.act("read", { number: plain.number }))
+      expect(item(noted, plain.number).notes.filter((note) => !note.event).map(({ author, text }) => ({ author, text }))).toEqual([{ author: TEST_AUTHOR, text: "First note" }])
+      expect(noted.reviewers).toEqual([])
+      const closed = try succeeded(try w.act("read", { number: done.number }))
+      expect(item(closed, done.number).notes.filter((note) => note.event).map((note) => note.text)).toEqual(expect.arrayContaining(["added the vibelang:task label", `assigned ${TEST_ASSIGNEE}`, "closed this issue"]))
+
+      // Every refusal below is decided before a write: GitHub sees none of them.
+      expect(failed(try w.act("new", { title: "   " }))).toEqual({ reason: "title", unwritten: true })
+      expect(failed(try w.act("split", { number: 999999, title: "Orphan" }))?.reason).toBe("missing")
+      expect(failed(try w.act("comment", { number: plain.number, text: "  " }))).toEqual({ reason: "empty", unwritten: true })
+      expect(failed(try w.act("comment", { number: 999999, text: "Hi" }))?.reason).toBe("missing")
+      expect(failed(try w.act("link", { number: queued.number, parent: queued.number }))).toEqual({ reason: "tree", unwritten: true })
+      expect(item(try succeeded(try w.act("link", { number: child.number, parent: queued.number })), child.number).parent).toBe(queued.number)
+      expect(failed(try w.act("commit", { number: done.number, assignee: TEST_ASSIGNEE }))).toEqual({ reason: "closed", unwritten: true })
+      expect(failed(try w.act("commit", { number: queued.number, assignee: "ghost" }))).toEqual({ reason: "assignee", unwritten: true })
+      expect(failed(try w.act("commit", { number: queued.number, assignee: " " }))?.reason).toBe("assignee")
+      expect(failed(try w.act("accept", { number: plain.number }))).toEqual({ reason: "review", unwritten: true })
+      // An agent, or a maintainer GitHub names no one, cannot accept a VIP.
+      try Ref.set(w.caller, { role: "maintainer", kind: "agent" })
+      expect(failed(try w.act("accept", { number: inReview.number }))?.reason).toBe("forbidden")
+      try Ref.set(w.caller, { role: "maintainer", login: "" })
+      expect(failed(try w.act("accept", { number: inReview.number }))?.reason).toBe("forbidden")
+      try Ref.set(w.caller, { role: "maintainer" })
+      expect(w.writes()).toBe(0)
+
+      // An authority with no live operation check still writes as the connected person.
+      w.check(false)
+      expect(item(try succeeded(try w.act("comment", { number: plain.number, text: "Hi" })), plain.number).comments).toBe(2)
+      w.check(true)
+      // A reused key with another payload is refused before it writes.
+      try succeeded(try w.act("comment", { number: plain.number, text: "Once", key: `${w.label}-reused` }))
+      expect(failed(try w.act("comment", { number: plain.number, text: "Twice", key: `${w.label}-reused` }))?.reason).toBe("invalid")
+      expect(w.writes()).toBe(2)
+      // The durable flow counts reads from the stored revision.
+      try promise(() => w.storage.put("issues/revision", 41))
+      try succeeded(try w.act("read"))
+      expect(try promise(() => w.storage.get("issues/revision"))).toBe(42)
+      try promise(() => w.storage.put("issues/revision", "lost"))
+      try succeeded(try w.act("read"))
+      expect(try promise(() => w.storage.get("issues/revision"))).toBe(1)
+      // Gate state saved before the specification existed reads with an empty one.
+      try promise(() => w.storage.put("gates/state", { seq: 3, items: [] }))
+      const older = try succeeded(try w.act("read"))
+      expect(older.specification).toEqual(emptySpecification)
+      expect(older.seq).toBe(4)
+    }, w.cleanup)
+  }), 300_000)
 })

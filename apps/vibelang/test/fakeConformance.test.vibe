@@ -8,6 +8,7 @@ import { HttpClientRequest } from "effect/http"
 import { Base64 } from "effect/encoding"
 import { fakeClient, seed } from "../fuzz/issues-node-fake.vibe"
 import { GitHubCommit } from "../worker/MainLog.vibe"
+import { keptInIssueList } from "./support/github.vibe"
 
 type Wire = Record<string, any>
 
@@ -18,6 +19,7 @@ const NON_SEMANTIC_DIFFERENCES = [
   { name: "wall-clock", reason: "The fake has a fixed clock; timestamp presence and nullability still have to agree.", keys: /^(created_at|updated_at|closed_at|merged_at|submitted_at)$/ },
   { name: "base64-whitespace", reason: "REST wraps Base64 while GraphQL does not; whitespace is absent from the decoded file.", keys: /^content$/ },
   { name: "transport-headers", reason: "ETags identify one server's representation; URLs retain their resource path and query.", keys: /^etag$/ },
+  { name: "page-cursor", reason: "GitHub's next-page link carries an opaque cursor (after, before) and names the repository by id; the page, its size and the query compare exactly.", keys: /^(after|before)$/ },
 ] as const
 
 function normalize(value: unknown, key = "", stable = false, blob = false): unknown {
@@ -60,6 +62,7 @@ schema Ref { ref: string; object: { sha: string; type: string } }
 schema Repository { id: number; name: string; owner: { login: string }; default_branch: string }
 const File = Schema.Struct({ type: Schema.Literal("file"), encoding: Schema.Literal("base64"), content: Schema.String, sha: Schema.String })
 schema Account { id: number; login: string }
+schema RepositoryLabel { name: string }
 const GraphQL = Schema.Struct({
   data: Schema.optionalKey(Schema.NullOr(Schema.Struct({ createCommitOnBranch: Schema.NullOr(Schema.Struct({ commit: Schema.Struct({ oid: Schema.String }) })) }))),
   errors: Schema.optionalKey(Schema.Array(Schema.Struct({ message: Schema.String, type: Schema.optionalKey(Schema.String) }))),
@@ -75,8 +78,9 @@ function responseSchema(path: string, status: number): Schema.Decoder<unknown> |
   if (/\/issues\/\d+\/labels(?:\/[^/]+)?$/.test(path)) return Schema.Array(GitHub.Issues.IssueLabel)
   if (/\/issues(?:\/\d+(?:\/sub_issues)?)?$/.test(path)) return Schema.Union([GitHub.IssueChanges.WithAssignees, Schema.Array(GitHub.IssueChanges.WithAssignees)])
   if (/\/assignees$/.test(path)) return Schema.Array(Account)
+  if (/^\/repos\/[^/]+\/[^/]+\/labels(?:\/[^/]+)?$/.test(path)) return RepositoryLabel
   if (/\/pulls\/\d+\/files$/.test(path)) return Schema.Array(GitHub.Proposals.ReviewFile)
-  if (/\/pulls\/\d+\/reviews$/.test(path)) return Schema.Array(GitHub.Pulls.Review)
+  if (/\/pulls\/\d+\/reviews$/.test(path)) return Schema.Union([GitHub.Pulls.Review, Schema.Array(GitHub.Pulls.Review)])
   if (/\/pulls(?:\/\d+)?$/.test(path)) return Schema.Union([GitHub.Pulls.PullRequest, Schema.Array(GitHub.Pulls.PullRequest)])
   if (/\/git\/matching-refs\//.test(path)) return Schema.Array(Ref)
   if (/\/git\/(?:ref\/|refs)/.test(path)) return Ref
@@ -100,9 +104,15 @@ effect function initial(recording: HttpRecording.Recording) {
   fake.timelines = {}; fake.reviews = {}; fake.commitPages = {}; fake.commitNext = {}; fake.repositories = {}
   const createdBranches = new Set<string>()
   const createdFiles = new Set<string>()
+  // Issues and pulls the recording creates: a first list read after their creation must not seed them.
+  const createdNumbers = new Set(recording.exchanges.filter((e) => e.request.method === "POST" && /\/(issues|pulls)$/.test(new URL(e.request.url).pathname) && e.response.status === 201).map((e) => (e.response.body as Wire).number as number))
   let issuesRead = false
+  const writtenAt = (number: number) => recording.exchanges.findIndex((e) => e.request.method !== "GET" && new RegExp(`/(issues|pulls)/${number}(/|$)`).test(new URL(e.request.url).pathname))
+  let at = 0
+  const laterWritten = (number: number) => { const index = writtenAt(number); return index !== -1 && index < at }
   let assigneesRead = false
   for (const { request, response } of recording.exchanges) {
+    at++
     const url = new URL(request.url)
     const path = url.pathname
     const body = request.body as Wire | undefined
@@ -114,8 +124,12 @@ effect function initial(recording: HttpRecording.Recording) {
     }
     if (request.method !== "GET" || response.status !== 200) continue
     if (/^\/repos\/[^/]+\/[^/]+$/.test(path) && fake.repositories[repository!] === undefined) fake.repositories[repository!] = try copy(answer)
+    if (/\/issues$/.test(path) && issuesRead) {
+      // A later page of the same pass holds issues the first page could not: seed each from its first sight.
+      for (const issue of try copy(answer as unknown as typeof fake.issues)) if (!createdNumbers.has(issue.number) && !fake.issues.some((seen) => seen.number === issue.number) && !laterWritten(issue.number)) fake.issues.push(issue)
+    }
     if (/\/issues$/.test(path) && !issuesRead) {
-      fake.issues = try copy(answer as unknown as typeof fake.issues)
+      fake.issues = (try copy(answer as unknown as typeof fake.issues)).filter((issue) => !createdNumbers.has(issue.number))
       issuesRead = true
       fake.labels = [...new Set(fake.issues.flatMap((issue) => issue.labels.map((label) => label.name)))]
       // A duplicate-create refusal is the recording's observation of a pre-existing repository label.
@@ -138,6 +152,15 @@ effect function initial(recording: HttpRecording.Recording) {
   // Numeric issue/PR names are one repository-wide sequence. Its next value is an opaque allocation, not behavior.
   const firstNumber = recording.exchanges.find((e) => e.request.method === "POST" && /\/(issues|pulls)$/.test(new URL(e.request.url).pathname))
   fake.nextIssue = fake.nextPull = firstNumber === undefined ? 1 : (firstNumber.response.body as Wire).number
+  // A recording's issue lists leave out earlier runs' closed issues (test/support/github.vibe's keptInIssueList), but
+  // GitHub still pages them. Every number below the run's first that no list showed is such an issue: a hidden closed
+  // placeholder, so the fake's pages break where GitHub's did; the comparison cuts the fake's lists the same way.
+  if (recording.label !== undefined && firstNumber !== undefined) {
+    for (let number = 1; number < fake.nextIssue; number++) {
+      if (fake.issues.some((issue) => issue.number === number)) continue
+      fake.issues.push({ id: number, node_id: `hidden-${number}`, number, title: "", body: null, state: "closed", state_reason: "completed", user: null, labels: [], comments: 0, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z", closed_at: "2026-01-01T00:00:00Z", assignees: [] })
+    }
+  }
   fake.author = { id: 297525718, login: "smitherspreviewrelease[bot]" }
   fake.mergeShas = {}
   for (const { response } of recording.exchanges) {
@@ -156,12 +179,15 @@ effect function initial(recording: HttpRecording.Recording) {
  * delay fake-generated state; they never supply a successful answer, status, body, label, assignment or content.
  */
 function timing(recording: HttpRecording.Recording, fake: Wire) {
-  fake.issueVisibleAt = {}; fake.eventVisibleAt = {}; fake.mergeability = {}
+  fake.issueVisibleAt = {}; fake.eventVisibleAt = {}; fake.mergeability = {}; fake.summaryVisibleAt = {}
   for (let at = 0; at < recording.exchanges.length; at++) {
     const { request, response } = recording.exchanges[at]!
     const path = new URL(request.url).pathname
     if (request.method === "GET" && /\/issues$/.test(path) && !request.url.includes("since=")) {
-      for (const issue of response.body as Array<Wire>) fake.issueVisibleAt[issue.number] ??= at
+      for (const issue of response.body as Array<Wire>) {
+        fake.issueVisibleAt[issue.number] ??= at
+        if (typeof issue.sub_issues_summary?.total === "number") fake.summaryVisibleAt[`${issue.number}:${issue.sub_issues_summary.total}`] ??= at
+      }
     }
     if (request.method === "GET" && /\/timeline$/.test(path)) {
       const number = /\/issues\/(\d+)/.exec(path)![1]!
@@ -217,11 +243,18 @@ it.live("every real GitHub recording conforms to the fuzz fake", () => scoped(ef
         }
         const actual = try client.execute(wire).pipe(Effect.mapError(() => new Error(context + " differing field $.transport")))
         expect(actual.status, context + " differing field $.status").toBe(response.status)
-        const next = (headers: Readonly<Record<string, string>>) => /<([^>]+)>;\s*rel="next"/.exec(headers["link"] ?? "")?.[1]
+        const next = (headers: Readonly<Record<string, string>>) => {
+          const link = /<([^>]+)>;\s*rel="next"/.exec(headers["link"] ?? "")?.[1]
+          if (link === undefined) return undefined
+          const target = new URL(link)
+          for (const cursor of ["after", "before"]) target.searchParams.delete(cursor)
+          return target.toString()
+        }
         expect(next(actual.headers), context + " differing field $.headers.link.next").toBe(next(response.headers))
         expect(actual.headers["retry-after"], context + " differing field $.headers.retry-after").toBe(response.headers["retry-after"])
         if (response.status === 204) { expect(try actual.text, context + " differing field $.body").toBe(""); exchanges++; continue }
-        const answer = try actual.json.pipe(Effect.mapError(() => new Error(context + " differing field $.body (JSON)")))
+        const answered = try actual.json.pipe(Effect.mapError(() => new Error(context + " differing field $.body (JSON)")))
+        const answer = recording.label !== undefined && request.method === "GET" && /\/issues$/.test(url.pathname) && Array.isArray(answered) ? answered.filter(keptInIssueList(recording.label)) : answered
         const decoder = responseSchema(url.pathname, response.status)
         expect(decoder, context + " missing decoder coverage").toBeDefined()
         const realDecoded = try Schema.decodeUnknownEffect(decoder!)(response.body).pipe(Effect.mapError(() => new Error(context + " differing field $.body (GitHub decoder)")))
@@ -251,7 +284,9 @@ it.live("every real GitHub recording conforms to the fuzz fake", () => scoped(ef
         const left = normalize(realDecoded, "", (/^\/repos\/[^/]+\/[^/]+$/.test(url.pathname) || /\/assignees$/.test(url.pathname)), /\/contents\//.test(url.pathname))
         const right = normalize(fakeDecoded, "", (/^\/repos\/[^/]+\/[^/]+$/.test(url.pathname) || /\/assignees$/.test(url.pathname)), /\/contents\//.test(url.pathname))
         const field = difference(left, right)
-        if (field !== undefined) failures.push(context + " differing field " + field)
+        // A list that differs names its rows, so the issue the fake lacks or adds is in the failure itself.
+        const rows = (value: unknown) => Array.isArray(value) ? ` [${value.map((row: Wire) => row.number ?? row.event ?? "?").join(",")}]` : ""
+        if (field !== undefined) failures.push(context + " differing field " + field + (Array.isArray(realDecoded) ? ` recorded${rows(realDecoded)} fake${rows(fakeDecoded)}` : ""))
         exchanges++
       }
       try Effect.logInfo("fake conformance recording").pipe(Effect.annotateLogs({ recording: name, exchanges: recording.exchanges.length }))
