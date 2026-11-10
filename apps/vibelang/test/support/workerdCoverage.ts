@@ -2,6 +2,7 @@
 // evidence collection is plain CDP over a WebSocket; the VibeLang pipeline imports this from workerd.vibe.
 import { createRequire } from "node:module"
 import { mkdir, writeFile } from "node:fs/promises"
+import { fileURLToPath } from "node:url"
 
 const require = createRequire(import.meta.url)
 
@@ -48,6 +49,12 @@ export function instrumentModules<P extends EsbuildPlugin>(plugin: P, instrument
         if (map === null) throw new Error(`workerd coverage: ${args.path} compiled without a source map`)
         const code = result.contents.slice(0, map.index)
         const sourceMap = JSON.parse(Buffer.from(map[1]!, "base64").toString("utf8")) as Record<string, unknown>
+        // Map sources are URLs (ECMA-426) and the plugin writes absolute ones as file: URLs; Istanbul joins each
+        // source to the map's directory as a path, so it needs the path the merge gate filters on.
+        if (Array.isArray(sourceMap["sources"])) {
+          sourceMap["sources"] = (sourceMap["sources"] as unknown[]).map((source) =>
+            typeof source === "string" && source.startsWith("file:") ? fileURLToPath(source) : source)
+        }
         return { ...result, contents: instrumenter.instrumentSync(code, args.path, sourceMap) }
       }),
     } as never),
