@@ -1,30 +1,39 @@
 // Wiki identity is independent of the deployment. The build embeds current Markdown; the flow admits only its pages.
 import { pages } from "../assets/wiki.generated.vibe"
+import { editable, firstWithPrefix, longestIncluded, pageIdOf, pageIndex, wikiHref, wikiRequest } from "./wikiPageDecision.vibe"
 export { pages }
 export function wikiPath(page: string): string | undefined {
   const normalized = page.replace(/^\/wiki\/?/, "").replace(/\.md(?=#|$)/, "") || "index"
   const [raw, hash] = normalized.split("#")
-  const id = raw === "designs" ? "designs/index" : raw
-  if (!pages.some(page => page.id === id)) return undefined
+  const id = pageIdOf(raw ?? "")
+  if (pageIndex(pages, id) < 0) return undefined
   if (hash !== undefined && !/^[a-z0-9-]+$/.test(hash)) return undefined
-  return `/wiki/${id}${hash ? `#${hash}` : ""}`
+  return wikiHref(id, hash ?? "")
 }
 export function wikiPage(url: string) {
-  return pages.find(page => `/wiki/${page.id}` === url.split("#")[0])
+  const base = url.split("#")[0] ?? ""
+  const index = base.startsWith("/wiki/") ? pageIndex(pages, base.slice("/wiki/".length)) : -1
+  return index < 0 ? undefined : pages[index]
 }
 export { wikiLink } from "./wikiLinks.vibe"
 /** The repository holds this page's Markdown (the decisions index is generated at build time and read-only). */
 export function wikiEditable(id: string): boolean {
-  return id !== "decisions" && pages.some(page => page.id === id)
+  return editable(pages, id)
 }
 /** Scripted product agent's wiki request. Live replies discover the same pages through their tool catalog. */
 export function requestedWiki(text: string): string | undefined {
-  if (!/wiki/i.test(text)) return undefined
-  const direct = [...pages].sort((a, b) => b.id.length - a.id.length).find(page => text.toLowerCase().includes(page.id.toLowerCase()))
-  if (direct) return direct.id
-  if (/designs/i.test(text)) return "designs/index"
+  const lowered = text.toLowerCase()
+  const direct = longestIncluded(pages.map((page) => page.id.toLowerCase()), lowered)
   const number = /\b([0-9]{4})\b/.exec(text)?.[1]
-  if (number) return pages.find(page => page.id.startsWith(`decisions/${number}-`))?.id
-  // A request naming "rulings" or "roadmap" matched those pages above.
-  return "index"
+  switch (wikiRequest(/wiki/i.test(text), direct >= 0, /designs/i.test(text), number !== undefined)) {
+    case "none": return undefined
+    case "direct": return pages[direct]!.id
+    case "designs": return "designs/index"
+    case "decision": {
+      const decision = firstWithPrefix(pages.map((page) => page.id), `decisions/${number}-`)
+      return decision < 0 ? undefined : pages[decision]!.id
+    }
+    // A request naming "rulings" or "roadmap" matched those pages above.
+    case "index": return "index"
+  }
 }

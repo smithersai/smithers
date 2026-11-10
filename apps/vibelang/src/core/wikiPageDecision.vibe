@@ -1,0 +1,167 @@
+// The wiki's own decisions (wiki/decisions/0021-wiki.md, 0018 third-lane batch 9): which page an id names, which pages
+// the repository holds, how a link to a page reads, which page the scripted agent's request names, which failed edits
+// wrote nothing, and how the mock's fixture repository answers an edit. `src/core/wiki.vibe`, `worker/Wiki.vibe` and
+// `src/core/WikiFactory.vibe` call these; the regular expressions and case folding stay outside the proof.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
+
+/** A wiki page as these decisions read it: its id. */
+export interface PageId {
+  readonly id: string
+}
+
+/** The first page with `id`, or -1 when there is none. */
+//@ verify
+//@ ensures -1 <= \result && \result < pages.length
+//@ ensures \result >= 0 ==> pages[\result].id == id && forall(j, 0 <= j && j < \result ==> pages[j].id != id)
+//@ ensures \result == -1 ==> forall(j, 0 <= j && j < pages.length ==> pages[j].id != id)
+export function pageIndex(pages: ReadonlyArray<PageId>, id: string): number {
+  for (let i = 0; i < pages.length; i++) {
+    //@ invariant 0 <= i && i <= pages.length
+    //@ invariant forall(j, 0 <= j && j < i ==> pages[j].id != id)
+    if (pages[i]!.id === id) return i
+  }
+  return -1
+}
+
+/** Whether the repository holds a page's Markdown: a known page, except the decisions index, which the build makes. */
+//@ verify
+//@ ensures \result == (id != "decisions" && exists(i, 0 <= i && i < pages.length && pages[i].id == id))
+export function editable(pages: ReadonlyArray<PageId>, id: string): boolean {
+  if (id === "decisions") return false
+  return pageIndex(pages, id) >= 0
+}
+
+/** The page a path segment names: `designs` is the designs index, any other segment itself. */
+//@ verify
+//@ ensures raw == "designs" ==> \result == "designs/index"
+//@ ensures raw != "designs" ==> \result == raw
+export function pageIdOf(raw: string): string {
+  return raw === "designs" ? "designs/index" : raw
+}
+
+/** The link to a page, with its section when it has one. */
+//@ verify
+//@ ensures hash == "" ==> \result == "/wiki/" + id
+//@ ensures hash != "" ==> \result == "/wiki/" + id + "#" + hash
+export function wikiHref(id: string, hash: string): string {
+  return hash === "" ? "/wiki/" + id : "/wiki/" + id + "#" + hash
+}
+
+/**
+ * The longest id `text` contains, the earliest among ids of one length, or -1 when it contains none: the page a request
+ * names most precisely.
+ */
+//@ verify
+//@ ensures -1 <= \result && \result < ids.length
+//@ ensures \result >= 0 ==> text.includes(ids[\result])
+//@ ensures \result >= 0 ==> forall(j, 0 <= j && j < ids.length && text.includes(ids[j]) ==> ids[j].length < ids[\result].length || (ids[j].length == ids[\result].length && j >= \result))
+//@ ensures \result == -1 ==> forall(j, 0 <= j && j < ids.length ==> !text.includes(ids[j]))
+export function longestIncluded(ids: ReadonlyArray<string>, text: string): number {
+  let best = -1
+  for (let i = 0; i < ids.length; i++) {
+    //@ invariant 0 <= i && i <= ids.length
+    //@ invariant -1 <= best && best < i
+    //@ invariant best >= 0 ==> text.includes(ids[best])
+    //@ invariant best >= 0 ==> forall(j, 0 <= j && j < i && text.includes(ids[j]) ==> ids[j].length < ids[best].length || (ids[j].length == ids[best].length && j >= best))
+    //@ invariant best == -1 ==> forall(j, 0 <= j && j < i ==> !text.includes(ids[j]))
+    if (text.includes(ids[i]!) && (best < 0 || ids[i]!.length > ids[best]!.length)) best = i
+  }
+  return best
+}
+
+/** The first id that starts with `prefix`, or -1. */
+//@ verify
+//@ ensures -1 <= \result && \result < ids.length
+//@ ensures \result >= 0 ==> ids[\result].startsWith(prefix) && forall(j, 0 <= j && j < \result ==> !ids[j].startsWith(prefix))
+//@ ensures \result == -1 ==> forall(j, 0 <= j && j < ids.length ==> !ids[j].startsWith(prefix))
+export function firstWithPrefix(ids: ReadonlyArray<string>, prefix: string): number {
+  for (let i = 0; i < ids.length; i++) {
+    //@ invariant 0 <= i && i <= ids.length
+    //@ invariant forall(j, 0 <= j && j < i ==> !ids[j].startsWith(prefix))
+    if (ids[i]!.startsWith(prefix)) return i
+  }
+  return -1
+}
+
+/** Which page the scripted agent opens for a request. */
+export type WikiRequest = "none" | "direct" | "designs" | "decision" | "index"
+
+/**
+ * Only a request that says "wiki" opens a page: the page it names, then the designs index, then the decision its
+ * four-digit number names, else the wiki's index.
+ */
+//@ verify
+//@ ensures !wiki ==> \result == "none"
+//@ ensures wiki && named ==> \result == "direct"
+//@ ensures wiki && !named && designs ==> \result == "designs"
+//@ ensures wiki && !named && !designs && numbered ==> \result == "decision"
+//@ ensures wiki && !named && !designs && !numbered ==> \result == "index"
+export function wikiRequest(wiki: boolean, named: boolean, designs: boolean, numbered: boolean): WikiRequest {
+  if (!wiki) return "none"
+  if (named) return "direct"
+  if (designs) return "designs"
+  return numbered ? "decision" : "index"
+}
+
+/** Whether a failed wiki edit is marked `unwritten`: a first execution that wrote nothing, refused before writing. */
+//@ verify
+//@ ensures \result == (fresh && !touched && (reason == "conflict" || reason == "empty" || reason == "connect"))
+//@ ensures touched ==> !\result
+export function wikiUnwritten(fresh: boolean, touched: boolean, reason: string): boolean {
+  return fresh && !touched && (reason === "conflict" || reason === "empty" || reason === "connect")
+}
+
+/** How the mock's fixture repository answers a wiki request. */
+export type FixtureVerdict = "read" | "missing" | "invalid" | "empty" | "draft" | "conflict" | "write"
+
+/**
+ * The fixture repository's checks, in the GitHub host's order: a read needs a known page; an edit needs a key, a known
+ * page and text; a draft then needs nothing more; a save or proposal needs the page it was based on, and a change.
+ */
+//@ verify
+//@ ensures op == "read" ==> \result == (known ? "read" : "missing")
+//@ ensures op != "read" && keyless ==> \result == "invalid"
+//@ ensures op != "read" && !keyless && !known ==> \result == "missing"
+//@ ensures op != "read" && !keyless && known && blank ==> \result == "empty"
+//@ ensures op != "read" && !keyless && known && !blank && op == "draft" ==> \result == "draft"
+//@ ensures op != "read" && op != "draft" && !keyless && known && !blank && stale ==> \result == "conflict"
+//@ ensures op != "read" && op != "draft" && !keyless && known && !blank && !stale && unchanged ==> \result == "empty"
+//@ ensures op != "read" && op != "draft" && !keyless && known && !blank && !stale && !unchanged ==> \result == "write"
+//@ ensures \result == "write" ==> known && !keyless && !blank && !stale && !unchanged
+export function fixtureVerdict(op: string, known: boolean, keyless: boolean, blank: boolean, stale: boolean, unchanged: boolean): FixtureVerdict {
+  if (op === "read") return known ? "read" : "missing"
+  if (keyless) return "invalid"
+  if (!known) return "missing"
+  if (blank) return "empty"
+  if (op === "draft") return "draft"
+  if (stale) return "conflict"
+  return unchanged ? "empty" : "write"
+}
+
+/** The fixture's pull request number for its next review: past 1000, and one more for each review it holds. */
+//@ verify
+//@ requires reviews >= 0
+//@ ensures \result == 1001 + reviews
+//@ ensures \result > 1000
+export function reviewNumber(reviews: number): number {
+  return 1000 + reviews + 1
+}
+
+/** The HTTP status a wiki refusal is answered with. Anything unnamed is 503: never a success. */
+//@ verify
+//@ ensures reason == "forbidden" ==> \result == 403
+//@ ensures (reason == "sign-in" || reason == "connect") ==> \result == 401
+//@ ensures reason == "missing" ==> \result == 404
+//@ ensures (reason == "unknown" || reason == "conflict") ==> \result == 409
+//@ ensures (reason == "empty" || reason == "invalid" || reason == "fork" || reason == "install") ==> \result == 400
+//@ ensures reason != "forbidden" && reason != "sign-in" && reason != "connect" && reason != "missing" && reason != "unknown" && reason != "conflict" && reason != "empty" && reason != "invalid" && reason != "fork" && reason != "install" ==> \result == 503
+export function wikiRefusalStatus(reason: string): number {
+  if (reason === "forbidden") return 403
+  if (reason === "sign-in" || reason === "connect") return 401
+  if (reason === "missing") return 404
+  if (reason === "unknown" || reason === "conflict") return 409
+  if (reason === "empty" || reason === "invalid" || reason === "fork" || reason === "install") return 400
+  return 503
+}
