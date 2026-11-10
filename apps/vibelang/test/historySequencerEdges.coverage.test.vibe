@@ -1,0 +1,86 @@
+// The mythical history's sequencer (src/history/Sequencer.vibe) on the writes it refuses: a new epic it cannot open,
+// a commit of main folded twice, a fold into a full history, and a bootstrap over a history that already has events.
+import { describe, expect, it } from "@effect/vitest"
+import { empty, type History, MAX_TITLE } from "../src/history/mythical.vibe"
+import { FOUNDATIONS } from "../src/history/seed.vibe"
+import { make, memoryStore, type MainCommit } from "../src/history/Sequencer.vibe"
+
+const commit = (sha: string, title = "docs: explain folds"): MainCommit => ({ sha, change: `I${sha}`, title, message: title })
+/** A sequencer over a fresh store bootstrapped with `history`, and the store. */
+const over = (history: History) => effect {
+  const store = try memoryStore()
+  const sequencer = try make(store)
+  try sequencer.bootstrap(history)
+  return { sequencer, store }
+}
+const full: History = { ...empty, seq: Number.MAX_SAFE_INTEGER }
+
+describe("planning onto a new epic", () => {
+  it.effect("a new epic title too long to open refuses the plan and writes nothing", () => effect {
+    const { sequencer, store } = try over({ ...empty, seq: 1 })
+    const answer = try sequencer.plan({ how: "append", epic: "", newEpic: "x".repeat(MAX_TITLE + 1), target: "", title: "A task", task: "" })
+    const after = try sequencer.read()
+    const stored = try store.load()
+    try Effect.try(() => {
+      expect(answer).toEqual({ id: "", refusal: "too-long" })
+      expect(after.epics).toEqual([])
+      expect(after.commits).toEqual([])
+      expect(stored.events).toEqual([])
+    })
+  })
+})
+
+describe("folding main", () => {
+  it.effect("a commit folded twice answers duplicate the second time and changes nothing", () => effect {
+    const { sequencer } = try over({ ...empty, seq: 1 })
+    const first = try sequencer.fold(commit("abc"))
+    const once = try sequencer.read()
+    const second = try sequencer.fold(commit("abc", "docs: a retitled copy"))
+    const after = try sequencer.read()
+    try Effect.try(() => {
+      expect(first).toEqual({ id: "m1", refusal: null })
+      expect(once.real.map((real) => real.sha)).toEqual(["abc"])
+      expect(second).toEqual({ id: "", refusal: "duplicate" })
+      expect(after).toEqual(once)
+    })
+  })
+
+  it.effect("a full history cannot open the epic a fold needs", () => effect {
+    const { sequencer, store } = try over(full)
+    const answer = try sequencer.fold(commit("def"))
+    const after = try sequencer.read()
+    const stored = try store.load()
+    try Effect.try(() => {
+      expect(answer).toEqual({ id: "", refusal: "full" })
+      expect(after).toEqual(full)
+      expect(stored.events).toEqual([])
+    })
+  })
+
+  it.effect("a full history cannot take the new commit a fold appends to an existing epic", () => effect {
+    const history: History = { ...full, epics: [{ id: "e1", title: FOUNDATIONS }] }
+    const { sequencer, store } = try over(history)
+    const answer = try sequencer.fold(commit("0a1", "a commit with no scope"))
+    const after = try sequencer.read()
+    const stored = try store.load()
+    try Effect.try(() => {
+      expect(answer).toEqual({ id: "", refusal: "full" })
+      expect(after).toEqual(history)
+      expect(stored.events).toEqual([])
+    })
+  })
+})
+
+describe("bootstrapping", () => {
+  it.effect("a history that already has events is not replaced", () => effect {
+    const { sequencer, store } = try over({ ...empty, seq: 3, epics: [{ id: "e1", title: "Compiler" }] })
+    const replaced = try sequencer.bootstrap({ ...empty, seq: 9, epics: [{ id: "e1", title: "Other" }] })
+    const after = try sequencer.read()
+    const stored = try store.load()
+    try Effect.try(() => {
+      expect(replaced).toBe(false)
+      expect(after.epics).toEqual([{ id: "e1", title: "Compiler" }])
+      expect(stored.base?.seq).toBe(3)
+    })
+  })
+})

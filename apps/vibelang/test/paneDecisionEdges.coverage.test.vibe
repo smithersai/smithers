@@ -1,0 +1,31 @@
+// The wiki editor's submit plan and error words (src/web/paneDecision.vibe), on every arm their contracts state.
+import { describe, expect, it } from "@effect/vitest"
+import { wikiEditErrorText, wikiSubmitPlan } from "../src/web/paneDecision.vibe"
+
+describe("submitting the wiki editor", () => {
+  it.each([
+    ["while a write is in flight, whatever the text", true, "new", "old", true, true, "ignore"],
+    ["while busy even with no change", true, "same", "same", false, false, "ignore"],
+    ["with the page unchanged", false, "same", "same", true, true, "no-changes"],
+    ["as someone who may save", false, "new", "old", true, true, "save"],
+    ["as someone who may only propose", false, "new", "old", false, true, "propose"],
+    ["as someone who may do neither", false, "new", "old", false, false, "refuse"],
+  ] as const)("%s plans %s", (_name, busy, text, base, canSave, canPropose, plan) => {
+    expect(wikiSubmitPlan(busy, text, base, canSave, canPropose)).toBe(plan)
+  })
+})
+
+describe("the wiki editor's error words", () => {
+  it.each([
+    ["forbidden", "Not allowed."],
+    ["conflict", "The page changed. Reload the editor."],
+    ["connect", "Connect GitHub."],
+    ["sign-in", "Connect GitHub."],
+    ["fork", "Fork on GitHub."],
+    ["install", "Install Smithers on your fork."],
+    ["unavailable", "Couldn't save. Retry."],
+    ["", "Couldn't save. Retry."],
+  ] as const)("%j reads %j", (reason, words) => {
+    expect(wikiEditErrorText(reason)).toBe(words)
+  })
+})

@@ -1,0 +1,35 @@
+// The sandbox minute meter (src/core/sandboxMeter.vibe) refuses a clock or a ledger it cannot count from, before
+// counting anything, with the reason the host logs.
+import { describe, expect, it } from "@effect/vitest"
+import { emptySandboxLedger } from "../src/core/sandboxDecision.vibe"
+import { meter, monthOf } from "../src/core/sandboxMeter.vibe"
+
+const at = Date.UTC(2026, 10, 10)
+const ledger = { ...emptySandboxLedger("u", "contributor", 36000, monthOf(at), at), sandboxes: [{ id: "a", conversation: "a", running: true }] }
+const reasonOf = (program: ReturnType<typeof meter>) => Effect.flip(program).pipe(Effect.map((error) => error.reason))
+
+describe("a clock the meter cannot count from", () => {
+  it.effect.each([
+    ["a fractional now", ledger, at + 0.5],
+    ["a negative now", ledger, -1],
+    ["a now past the last representable month", ledger, 8640000000000000],
+    ["a fractional last reading", { ...ledger, lastMeteredAt: at + 0.5 }, at + 10],
+    ["a negative last reading", { ...ledger, lastMeteredAt: -1 }, at + 10],
+    ["a last reading past the last representable month", { ...ledger, lastMeteredAt: 8640000000000000 }, at + 10],
+  ] as const)("%s is an invalid clock", ([_name, value, now]) => effect {
+    const reason = try reasonOf(meter(value, {}, now, 36000))
+    try Effect.try(() => expect(reason).toBe("invalid-clock"))
+  })
+})
+
+describe("a ledger outside the meter's domain", () => {
+  it.effect.each([
+    ["negative used time", { ...ledger, usedMilliseconds: -1 }, 36000],
+    ["fractional used time", { ...ledger, usedMilliseconds: 0.5 }, 36000],
+    ["a negative allowance", ledger, -1],
+    ["an unsafe allowance", ledger, 2 ** 53],
+  ] as const)("%s is refused", ([_name, value, allowance]) => effect {
+    const reason = try reasonOf(meter(value, {}, at + 10, allowance))
+    try Effect.try(() => expect(reason).toBe("meter-domain"))
+  })
+})

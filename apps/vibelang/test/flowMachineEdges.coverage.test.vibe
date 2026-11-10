@@ -1,0 +1,75 @@
+// The history run machine's proof functions (src/history/flowMachine.vibe), asserted at the boundary cases their
+// contracts state: the invariant every reachable run keeps, a plan's action, and the words for each refusal.
+import { describe, expect, it } from "@effect/vitest"
+import { type Action, historyRefusal, initialEpic, lawful, type Phase, planAction, type Principal, type Run } from "../src/history/flowMachine.vibe"
+
+const maintainer: Principal = { role: "maintainer", name: "Will", agent: false }
+const viewer: Principal = { role: "viewer", name: "Guest", agent: false }
+const agent: Principal = { role: "maintainer", name: "Will", agent: true }
+const run = (action: Action, principal: Principal, phase: Phase, records: number): Run => ({ action, principal, phase, records })
+
+describe("a lawful history run", () => {
+  it.each([
+    ["has begun with nothing recorded", run("append", maintainer, "begun", 0)],
+    ["is authorized for someone who may act", run("append", maintainer, "authorized", 0)],
+    ["was forbidden before any record", run("approve", viewer, "forbidden", 0)],
+    ["recorded once", run("note", maintainer, "recorded", 1)],
+    ["is a fold that recorded many commits", run("fold", maintainer, "recorded", 3)],
+  ] as const)("holds for a run that %s", (_name, value) => {
+    expect(lawful(value)).toBe(true)
+  })
+
+  it.each([
+    ["counts negative records", run("append", maintainer, "begun", -1)],
+    ["recorded without being in the recorded phase", run("append", maintainer, "authorized", 1)],
+    ["is in the recorded phase with nothing recorded", run("append", maintainer, "recorded", 0)],
+    ["was authorized for a viewer appending", run("append", viewer, "authorized", 0)],
+    ["recorded an approval for the agent", run("approve", agent, "recorded", 1)],
+    ["recorded a non-fold twice", run("retell", maintainer, "recorded", 2)],
+  ] as const)("fails for a run that %s", (_name, value) => {
+    expect(lawful(value)).toBe(false)
+  })
+
+  it("a forbidden run is lawful whoever asked, as long as nothing was recorded", () => {
+    expect(lawful(run("fold", agent, "forbidden", 0))).toBe(true)
+    expect(lawful(run("fold", agent, "forbidden", 1))).toBe(false)
+  })
+})
+
+describe("a plan's action", () => {
+  it.each([["append", "append"], ["insert", "retell"], ["amend", "retell"]] as const)("%s is a %s", (how, action) => {
+    expect(planAction(how)).toBe(action)
+  })
+})
+
+describe("the epic a Plan form opens on", () => {
+  it("an append opens on the first epic, or on a new one when there is none", () => {
+    expect(initialEpic("append", "e1")).toBe("e1")
+    expect(initialEpic("append", undefined)).toBe("new")
+  })
+
+  it.each(["insert", "amend"] as const)("an %s opens on no epic", (how) => {
+    expect(initialEpic(how, "e1")).toBe("")
+    expect(initialEpic(how, undefined)).toBe("")
+  })
+})
+
+describe("the words for a history refusal", () => {
+  it.each([
+    ["forbidden", "Your role can't do that."],
+    ["empty", "Needs a title."],
+    ["too-long", "Too long."],
+    ["duplicate", "Already there."],
+    ["unknown", "No such epic or commit."],
+    ["state", "Not in that state."],
+    ["full", "History full."],
+    ["unavailable", "The history can't be reached."],
+  ] as const)("%s reads %j", (refusal, words) => {
+    expect(historyRefusal(refusal)).toBe(words)
+  })
+
+  it("an unnamed refusal is shown as it came", () => {
+    expect(historyRefusal("rate-limited")).toBe("rate-limited")
+    expect(historyRefusal("")).toBe("")
+  })
+})

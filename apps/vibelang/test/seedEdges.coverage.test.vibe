@@ -1,0 +1,85 @@
+// The mythical history's bootstrap (src/history/seed.vibe) on inputs the main cases leave out: an empty repository,
+// merges, queue entries that tell nothing, a landing with no gate, repeated titles and a seed folding into no commit.
+import { describe, expect, it } from "@effect/vitest"
+import { intentsOf, type QueueEntry, type RawCommit, replay, seedOf, titleOf, UNTITLED } from "../src/history/seed.vibe"
+
+const sha = (n: number) => `${n}`.padStart(12, "a")
+function linear(descriptions: ReadonlyArray<string>): ReadonlyArray<RawCommit> {
+  return descriptions.map((description, index) => ({ sha: sha(index + 1), change: `c${index + 1}`, description, parents: index === 0 ? [] : [sha(index)] }))
+}
+const entry = (id: string, state: string, titles: ReadonlyArray<string>, gate = ""): QueueEntry => ({ id, lane: `lane-${id}`, state, reason: "", gate, titles })
+const notesOf = (seed: ReturnType<typeof seedOf>) => seed.epics.flatMap((epic) => epic.commits.map((commit) => commit.notes))
+
+describe("a seed from nothing", () => {
+  it("a repository with no commits seeds no epics, no real commits and no main", () => {
+    expect(seedOf("o/r", [], [entry("q1", "landed", ["fix: a"], "gate")])).toEqual({ repository: "o/r", main: "", epics: [], real: [] })
+    expect(replay(intentsOf(seedOf("o/r", [], []))).refused).toEqual([])
+  })
+})
+
+describe("merges", () => {
+  it("a merge's side commits fold into the merge's mythical commit, never their own", () => {
+    const commits: ReadonlyArray<RawCommit> = [
+      { sha: "a".repeat(12), change: "ca", description: "docs: one", parents: [] },
+      { sha: "s".repeat(12), change: "cs", description: "fix(compiler): side work", parents: ["a".repeat(12)] },
+      { sha: "m".repeat(12), change: "cm", description: "docs: merge side work", parents: ["a".repeat(12), "s".repeat(12)] },
+    ]
+    const seed = seedOf("o/r", commits, [])
+    const titles = seed.epics.flatMap((epic) => epic.commits.map((commit) => commit.title))
+    expect(titles).toEqual(["docs: one", "docs: merge side work"])
+    const merge = seed.epics.flatMap((epic) => epic.commits).find((commit) => commit.title === "docs: merge side work")!
+    expect(seed.real.map((real) => [real.sha, real.into, real.title])).toEqual([
+      ["a".repeat(12), "m1", ""], ["s".repeat(12), merge.id, "fix(compiler): side work"], ["m".repeat(12), merge.id, ""],
+    ])
+    expect(replay(intentsOf(seed)).refused).toEqual([])
+  })
+})
+
+describe("the merge queue's entries", () => {
+  it("an entry still running, or one for regenerated docs, tells nothing", () => {
+    const seed = seedOf("o/r", linear(["docs: a page", "chore(docs): regenerate site"]), [
+      entry("q1", "running", ["docs: a page"]),
+      entry("q2", "landed", ["chore(docs): regenerate site"], "gate"),
+    ])
+    expect(notesOf(seed)).toEqual([[]])
+  })
+
+  it("an entry naming one title twice is claimed once", () => {
+    const seed = seedOf("o/r", linear(["docs: a page"]), [entry("q1", "rejected", ["docs: a page", "docs: a page"])])
+    expect(notesOf(seed)).toEqual([[{ section: "tried", text: "Rejected in the merge queue (lane-q1)." }]])
+  })
+
+  it("a landing with no gate says so without one", () => {
+    const seed = seedOf("o/r", linear(["docs: a page"]), [entry("q1", "landed", ["docs: a page"])])
+    expect(notesOf(seed)).toEqual([[{ section: "evidence", text: "Landed by the merge queue from lane lane-q1 (matched by title)." }]])
+  })
+})
+
+describe("repeated titles", () => {
+  it("a revert folds into the first commit with that title, not a later one", () => {
+    const seed = seedOf("o/r", linear(["docs: a page", "docs: a page", "Revert \"docs: a page\""]), [])
+    const commits = seed.epics.flatMap((epic) => epic.commits)
+    expect(commits.map((commit) => commit.id)).toEqual(["m1", "m2"])
+    expect(seed.real.map((real) => real.into)).toEqual(["m1", "m2", "m1"])
+    expect(commits[0]!.notes).toEqual([{ section: "tried", text: "Reverted in aaaaaaaaaaa3." }])
+  })
+})
+
+describe("a commit's title", () => {
+  it.each([
+    ["", UNTITLED],
+    ["\n\nbody only", UNTITLED],
+    ["  spaced title  \nbody", "spaced title"],
+    ["one line", "one line"],
+  ] as const)("the description %j is titled %j", (description, title) => {
+    expect(titleOf(description)).toBe(title)
+  })
+})
+
+describe("replaying a malformed seed", () => {
+  it("a real commit folding into no seeded commit is refused, with no title of its own", () => {
+    const intents = intentsOf({ repository: "o/r", main: "", epics: [], real: [{ sha: "f".repeat(12), change: "c", title: "", into: "m9" }] })
+    expect(intents).toEqual([{ type: "Fold", sha: "f".repeat(12), change: "c", title: "", into: "m9" }])
+    expect(replay(intents).refused).toEqual(intents)
+  })
+})

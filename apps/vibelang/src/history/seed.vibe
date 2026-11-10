@@ -263,7 +263,7 @@ export const UNTITLED = "(no description)"
 
 /** A description's first line, `UNTITLED` when it is empty. */
 export function titleOf(description: string): string {
-  const title = (description.split("\n")[0] ?? "").trim()
+  const title = description.replace(/\n[\s\S]*$/, "").trim()
   return title === "" ? UNTITLED : title
 }
 
