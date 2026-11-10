@@ -41,7 +41,7 @@ or duplicate a selected clause fail closed. Select the earliest broken contract:
 checked assertion can hide a later failure in an isolated check. A few prefix and delta-field mutations select that exact earlier assertion within its function or named switch case;
 missing or duplicate functions, cases and clauses fail closed. Other cases retain whole-function checks. A surviving mutation fails the gate. Positive checks verify every
 contract, without symbol or position filters. The conversation and `decide` modules isolate every assertion with two solver
-workers, a 60-second limit per batch and a 3,600-second process limit; other positives retain one core and a
+workers, a 120-second limit per batch and a 3,600-second process limit; other positives retain one core and a
 180-second process limit. [Dafny assertion batching](https://dafny.org/latest/HowToFAQ/FAQSplitHere) changes how
 obligations are grouped, never which obligations are checked. Its reported assertion-batch count is not comparable
 to earlier unsplit counts. Timeouts and backend errors never count as proofs or rejections.
@@ -56,7 +56,7 @@ mutation. Strict checking still runs separately over every selected source. The 
 Dafny and reduced generation from 25.795 s to 2.506 s on the loaded shared host; this is a diagnostic measurement, not
 a reproducible application benchmark claim.
 
-Production verification allows 60 seconds per Dafny assertion batch; conversation uses the assertion splitting
+Production verification allows 60 seconds per ordinary Dafny assertion batch and 120 seconds for the isolated conversation/decide relations; conversation uses the assertion splitting
 described above, while other modules use one solver core. The expanded role aggregate
 proved unchanged at 27M solver resources but its prior 30-second wall limit became contention-sensitive. Mutation
 verification keeps 30 seconds; a timeout never counts as a rejected mutation. No proof obligation is omitted.
@@ -71,7 +71,7 @@ hashes, and both fresh files remain in the run artifacts. The same insertion run
 The mutation CI target allows 120 minutes for the complete growing suite with the conservative two-worker default.
 Per-obligation and per-source solver/process limits are unchanged; a timeout still fails the gate.
 
-The full conversation relation has a finite 1,200-second pipeline budget after the walkthrough adds four event variants. Per-assertion positive solver limits remain 60 seconds, with every assertion isolated and checked; negative limits remain 30 seconds. The prior 600-second pipeline bound expired while checking the larger relation, without reporting a counterexample. The unchanged main baseline freshly verified 6,810 batches in 281 seconds on this host; the walkthrough apply relation alone generates 9,746 batches. This changes scheduling time, never obligations or accepted solver outcomes.
+The full conversation relation has a finite 1,200-second pipeline budget after the walkthrough adds four event variants. Per-assertion positive solver limits are 120 seconds for isolated relations, with every assertion isolated and checked; negative limits remain 30 seconds. The prior 600-second pipeline bound expired while checking the larger relation, without reporting a counterexample. The unchanged main baseline freshly verified 6,810 batches in 281 seconds on this host; the walkthrough apply relation alone generates 9,746 batches. This changes scheduling time, never obligations or accepted solver outcomes.
 
 Sandbox exact admission and frame clauses use quantified first-match source positions; their runtime loops are
 unchanged. `proof_additions.py` also inserts the checked recursive step into the specification-only
@@ -79,3 +79,11 @@ unchanged. `proof_additions.py` also inserts the checked recursive step into the
 a missing, duplicate or already populated lemma.
 
 `decide` lives in `src/core/decide.vibe`, separate from `apply`, so neither relation risks the wall limit. A module may import from a proved `./x.vibe`: the runner stages `x.vibe.ts` so LemmaScript reads the import's contracts as axioms, and the import is proved in its own module. Mutants of an importing module get the same sibling file. A type-only import (`import type { Message } from "./main.vibe"`) of a module that does not parse as TypeScript stages VibeLang's emitted declaration as `x.vibe.d.ts` beside the importer instead (`declarations.py`): its types are exact, and it carries no constant or contract to read.
+
+The receive run-frame assertion exceeded 60 seconds in the full merged 41-module check (40 passed); isolated positives now have 120 seconds per assertion. Every assertion remains checked, with the same two-core and 3,600-second process limits. Negatives retain their independent 30-second limit; no timeout is credited.
+
+The receive-field-seq mutation retains its earliest scalar prefix-sequence postcondition and has a bounded
+120-second solver limit. Both that selection and the later Posted-entry payload selection timed out at 30 seconds;
+the later selection is not used because earlier assumed postconditions can hide a failure. Other negatives retain
+30 seconds, all use one core, and the process remains bounded at 180 seconds. No source annotation or assertion
+is changed, and a timeout or backend error still fails the gate.

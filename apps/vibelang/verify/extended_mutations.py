@@ -5429,3 +5429,50 @@ cases.extend([('src/core/sandboxMockDecision.vibe', *case) for case in [
 ('sandbox-mock-lease', 'currentLease', 'return running && current === generation', 'return running', 'a stale generation holds no lease'),
 ('sandbox-mock-lease-running', 'currentLease', 'return running && current === generation', 'return current === generation', 'a stopped machine holds no lease'),
 ]])
+
+# Lane vl-proveall3, batch 13: seed-generator inputs.
+cases.extend([('src/history/seedInputDecision.vibe', *case) for case in [
+('seed-input-receipt', 'receiptCommits', 'if (receipt === undefined)', 'if (receipt === undefined || receipt.length === 0)', 'a present empty receipt never falls back'),
+('seed-input-revision', 'receiptCommits', 'return [revision]', 'return []', 'an absent receipt keeps the revision'),
+('seed-input-queue-missing', 'queueText', 'return text === undefined ? "" : text', 'return text === undefined ? "missing" : text', 'missing queue text is empty'),
+('seed-input-queue-present', 'queueText', 'return text === undefined ? "" : text', 'return ""', 'present queue text stays exact'),
+('seed-input-prefix-start', 'shortCommit', 'return id.slice(0, length)', 'return id.slice(1, length)', 'an abbreviation starts at the first unit'),
+('seed-input-prefix-size', 'shortCommit', 'return id.slice(0, length)', 'return id.slice(0, length + 1)', 'an abbreviation never adds a unit'),
+('seed-input-short-all', 'shortCommits', 'return ids.map(id => shortCommit(id, length))', 'return ids.slice(1).map(id => shortCommit(id, length))', 'every input id keeps its position'),
+('seed-input-short-size', 'shortCommits', 'shortCommit(id, length)', 'shortCommit(id, length + 1)', 'all abbreviations use the requested length'),
+('seed-input-batch-cap', 'batchEnd', 'return start + size < total ? start + size : total', 'return start + size', 'a final partial batch ends at the total'),
+('seed-input-batch-progress', 'batchEnd', 'return start + size < total ? start + size : total', 'return start', 'a nonempty batch advances'),
+('seed-input-batch-size', 'batchEnd', 'return start + size < total ? start + size : total', 'return total', 'a batch never exceeds its fixed size'),
+('seed-input-reference-empty', 'referenceList', 'if (start === end) return ""', 'if (start === end) return "|"', 'an empty revset has no separator'),
+('seed-input-reference-id', 'referenceList', 'ids[start]!', 'ids[end - 1]!', 'a revset starts with the first selected id'),
+('seed-input-reference-separator', 'referenceList', 'start + 1 === end ? "" : "|" + referenceList(ids, start + 1, end)', 'start + 1 === end ? "|" : "|" + referenceList(ids, start + 1, end)', 'the final id adds no trailing separator'),
+('seed-input-revset-start', 'batchRevset', 'ids.slice(start, end)', 'ids.slice(start + 1, end)', 'the first selected id is retained'),
+('seed-input-revset-end', 'batchRevset', 'ids.slice(start, end)', 'ids.slice(start, end + 1)', 'the half-open end is excluded'),
+('seed-input-revset-separator', 'batchRevset', '.join("|")', '.join(",")', 'jj alternatives are separated by a bar'),
+('seed-input-revset-present', 'batchRevset', '"present(" + id + ")"', '"(" + id + ")"', 'every id is wrapped by present'),
+('seed-input-titles-empty', 'selectedTitles', 'if (ids.length === 0) return []', 'if (ids.length === 0) return [""]', 'an empty input has no titles'),
+('seed-input-titles-known', 'selectedTitles', 'return titles.has(ids[0]!) ?', 'return !titles.has(ids[0]!) ?', 'only known ids add a title'),
+('seed-input-titles-order', 'selectedTitles', '[titles.get(ids[0]!)!, ...rest]', '[...rest, titles.get(ids[0]!)!]', 'known titles keep source order'),
+('seed-input-known-drop', 'knownTitles', 'return ids.flatMap(', 'return ids.slice(1).flatMap(', 'the first known title is retained'),
+('seed-input-known-absent', 'knownTitles', 'titles.has(id) ? [titles.get(id)!] : []', 'titles.has(id) ? [titles.get(id)!] : [""]', 'missing ids add no title'),
+('seed-input-known-value', 'knownTitles', '[titles.get(id)!]', '[id]', 'known ids select their title'),
+]])
+
+# Lane vl-proveall3, batch 14: action hosts.
+cases.extend([('src/actions/actionHostDecision.vibe', *case) for case in [
+('action-host-success', 'mockState', 'if (succeeded)', 'if (!succeeded)', 'only an engine success can pass'),
+('action-host-refusal', 'mockState', 'return refusal ? "failed" : "passed"', 'return "passed"', 'a refusal value fails'),
+('action-host-interrupt', 'mockState', 'return interrupted ? "cancelled" : "failed"', 'return "failed"', 'a pure interruption cancels'),
+('action-host-failure', 'mockState', 'return interrupted ? "cancelled" : "failed"', 'return "cancelled"', 'an engine failure does not pass as a cancellation'),
+('action-host-failure-text', 'mockFailureText', 'return failed ? "Action failed" : "Cancelled"', 'return failed ? "failed" : "Cancelled"', 'failure text stays fixed and private'),
+('action-host-cancel-text', 'mockFailureText', 'return failed ? "Action failed" : "Cancelled"', 'return failed ? "Action failed" : "Action failed"', 'a cancellation says Cancelled'),
+('action-host-viewer-owner', 'ownerRefused', 'return least !== "viewer" && owner !== person', 'return owner !== person', 'viewer work does not need the old owner'),
+('action-host-write-owner', 'ownerRefused', 'return least !== "viewer" && owner !== person', 'return false', 'a different owner cannot write'),
+('action-host-agent-door', 'actionActor', 'return door === "agent" ? "agent" : actor', 'return actor', 'an agent door is recorded as agent'),
+('action-host-principal-actor', 'actionActor', 'return door === "agent" ? "agent" : actor', 'return door === "agent" ? "agent" : "person"', 'other doors retain the principal actor'),
+('action-host-any-flow', 'matchingFlow', 'return filter === "" || flow === filter', 'return flow === filter', 'an empty filter lists every flow'),
+('action-host-selected-flow', 'matchingFlow', 'return filter === "" || flow === filter', 'return true', 'a named filter excludes other flows'),
+('action-host-own-index', 'indexedRun', 'return id === source || !indexed', 'return !indexed', 'an indexed run is listed from its own index'),
+('action-host-other-index', 'indexedRun', 'return id === source || !indexed', 'return true', 'a child indexed elsewhere is not listed twice'),
+('action-host-same-run', 'sameRun', 'return id === expected', 'return id !== expected', 'only the requested run is read or followed'),
+]])

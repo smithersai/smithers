@@ -403,3 +403,13 @@ precedence, action-run recovery and mock-device commands/leases. Executable muta
 or output while keeping its contracts. LemmaScript fixtures require actual proof failures for false Unicode casing
 and length claims, and successful proofs for ASCII mappings and quantifier-like parameter names. No dependency is added.
 The app proof harness limits isolated production relations to two solver cores; negatives retain two one-core workers.
+
+**Seed-generator proof tools (0018, third-lane batch 13).** Five failed-first native cases pin empty versus absent
+receipts, exact prefixes, batch boundaries, revsets and repeated/missing title ids; the real jj process integration
+is also exercised. Twenty-four executable mutations retain source contracts. FlatMap and specification-spread
+fixtures require successful exact-position proofs and actual proof failures for wrong order or dropped values.
+No new tool or dependency is added.
+
+**Action-host proof controls (0018, third-lane batch 14).** Seven native cases failed against initial kernels;
+fifteen production guard/output mutations retain their contracts. Mock/live action parity, owner/cancellation
+coverage and directory conflict tests exercise the callers. No dependency or tool is added.

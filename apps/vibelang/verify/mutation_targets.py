@@ -650,11 +650,13 @@ def invariant_line(generated, function, contains):
 # isolated check is a contract failure Dafny needs about 30 s to find gets headroom: replay-order took 24-31 s alone on a
 # 4-vCPU box and timed out at 30 s under load (2026-11-10); replay-skip timed out the same way. Unnamed mutants keep 30 s,
 # and positive proofs default to 60 s (PROOF_TIME_LIMITS below).
-TIME_LIMITS = {'replay-order': 120, 'replay-skip': 120}
+# receive-field-seq's one rejecting check (a run-append frame in `receive`) timed out at 30 s on a 2-core box (third lane, 2026-11-10).
+TIME_LIMITS = {'replay-order': 120, 'replay-skip': 120, 'receive-field-seq': 120}
 
 # Whole-suite history composition hit 60 s although the same module completed in 38-42 s alone.
 # Positive headroom is module-specific; it never changes a mutant's budget or rejection criteria.
-PROOF_TIME_LIMITS = {'src/history/replayDecision.vibe': 180}
+# The isolated conversation and decide relations timed out on conversation.receive at 60 s in a full two-core run (third lane).
+PROOF_TIME_LIMITS = {'src/history/replayDecision.vibe': 180, 'src/core/conversation.vibe': 120, 'src/core/decide.vibe': 120}
 
 def time_limit(stem, mutation, source=None):
     return TIME_LIMITS.get(stem, 30) if mutation else PROOF_TIME_LIMITS.get(source, 60)
