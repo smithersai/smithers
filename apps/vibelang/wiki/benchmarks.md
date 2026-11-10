@@ -3262,3 +3262,18 @@ Deterministic gate: complete roster of indexed entry reads, `ceil(baseline × 1.
 
 
 Publication continuity: after collection on production parent `ca292c70`, main advanced to `bf596767`. No app src/worker/bench/infra or native benchmark host changed. The browser helper only adds exports unused by benchmarks; new ordinary coverage tests and an unused helper are checked by the full post-rebase unit/typecheck run. MVP deployment/analytics changes do not reach the imported broker host; the private-adapter change emits declarations only. Timing and coverage remain attributed to their exact archived pre-rebase source, never relabeled. The intervening patch and validation receipts are retained with the lane report.
+
+## Device sign-in (2026-11-10, nyc-01)
+
+Vitest built-in bench, three fresh scoped samples each, local. `login` and `logout` run the actual `signIn`/`signOutSurface` over real loopback HTTP to the Accounts object and the identity-provider device fixture (`test/support/deviceSignIn.vibe`). No GitHub credential, no request interception.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| signin-device | 1141.9 | 3 | `2026-11-10T03-17-23.024Z-signin-device.json` |
+| signin-device-refusals | 1200.6 | 3 | `2026-11-10T03-17-26.828Z-signin-device-refusals.json` |
+
+**signin-device.** Start, a pending poll, an authorized poll, a remembered session, and a revoking sign-out. Exact statuses and an empty settings directory are checked.
+
+**signin-device-refusals.** Declined, expired, slow-down back-off to 30 s, a forged stored session, and a waited sign-in the person declines. Exact sentences and the back-off are checked.
+
+Limitations: the identity provider is a local fixture, so GitHub's latency and rate limits are absent; the fixture's poll interval is 0 s, so no poll waits; the slowed flow is not waited out.
