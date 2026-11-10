@@ -37,4 +37,4 @@ export * from "./SnapshotBoundary.vibe"
  * @category errors
  * @since 1.0.0
  */
-export { FlowNotRegistered, SuspendedResumeGaveUp } from "./Trampoline.ts"
+export { FlowNotRegistered, SuspendedResumeGaveUp } from "./Trampoline.vibe"

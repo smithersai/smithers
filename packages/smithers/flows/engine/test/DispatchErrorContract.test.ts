@@ -6,7 +6,7 @@ it("dispatch preserves the driver's declared cycle and storage failures in its E
   // The package check compiles this signature and its implementation. This
   // regression guards the private annotation without loading the whole SDK's
   // type graph into a coverage worker a second time.
-  const path = new URL("../src/FlowEngine/Trampoline.ts", import.meta.url)
+  const path = new URL("../src/FlowEngine/Trampoline.vibe", import.meta.url)
   const source = ts.createSourceFile(path.pathname, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true)
   let dispatch: ts.VariableDeclaration | undefined
   let contract: ts.TypeAliasDeclaration | undefined

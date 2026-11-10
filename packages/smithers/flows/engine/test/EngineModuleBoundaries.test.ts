@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { existsSync, readFileSync } from "node:fs"
 import { ExecutionIdentityConflict } from "../src/FlowEngine/layerMemory.ts"
 import { SnapshotBoundaryRequired } from "../src/FlowEngine/SnapshotBoundary.vibe"
-import { FlowNotRegistered, SuspendedResumeGaveUp } from "../src/FlowEngine/Trampoline.ts"
+import { FlowNotRegistered, SuspendedResumeGaveUp } from "../src/FlowEngine/Trampoline.vibe"
 import { FlowEngine } from "../src/index.ts"
 
 const at = (path: string) => new URL(path, import.meta.url)
@@ -15,13 +15,13 @@ const read = (path: string) => readFileSync(at(path), "utf8")
 const refusals = [
   {
     name: "SuspendedResumeGaveUp",
-    owner: "../src/FlowEngine/Trampoline.ts",
+    owner: "../src/FlowEngine/Trampoline.vibe",
     tag: "@smthrs/engine/SuspendedResumeGaveUp",
     declared: SuspendedResumeGaveUp
   },
   {
     name: "FlowNotRegistered",
-    owner: "../src/FlowEngine/Trampoline.ts",
+    owner: "../src/FlowEngine/Trampoline.vibe",
     tag: "@smthrs/engine/FlowNotRegistered",
     declared: FlowNotRegistered
   },
@@ -76,7 +76,7 @@ describe("engine module boundaries", () => {
   })
 
   it("carries the trampoline round state as one value, unshadowed", () => {
-    const trampoline = read("../src/FlowEngine/Trampoline.ts")
+    const trampoline = read("../src/FlowEngine/Trampoline.vibe")
     // The four `let round*` bindings were re-declared as `runRound`
     // parameters of the same names, so a reader could not tell which binding
     // a round identity came from. One replaced-whole record removes the

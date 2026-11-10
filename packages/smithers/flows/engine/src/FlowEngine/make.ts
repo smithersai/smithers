@@ -23,7 +23,7 @@ import { makeActionExecute } from "./Dispatch.ts"
 import type { Encoded } from "./Encoded.vibe"
 import { placeExecute, placeInterrupt, placeResume, placeRetryFrom } from "./Placed.ts"
 import { CurrentRegistrations, makeRegistrationGate } from "./RegistrationGate.vibe"
-import { type Declarations, makeExecute } from "./Trampoline.ts"
+import { type Declarations, makeExecute } from "./Trampoline.vibe"
 
 /** The typed port this module adapts the driver into. */
 type Port = FlowRuntime.FlowRuntime["Service"]

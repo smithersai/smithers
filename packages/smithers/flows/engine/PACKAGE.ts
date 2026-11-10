@@ -178,7 +178,7 @@ const securityReview = Smithers.SecurityReview({
         "src/FlowEngine/layerMemory.ts",
         "src/FlowEngine/make.ts",
         "src/FlowEngine/Round.vibe",
-        "src/FlowEngine/Trampoline.ts"
+        "src/FlowEngine/Trampoline.vibe"
       ]
     },
     {
