@@ -1,0 +1,85 @@
+// A faulty platform Digest opens the two reply/tour race windows while still computing every real digest.
+import { it, expect } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { Digest } from "effect/crypto"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { replyIdOf } from "../src/core/tourDecision.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+interface Latch { readonly marker: string; readonly entered: Deferred.Deferred<void>; readonly release: Deferred.Deferred<void> }
+effect function latch(marker: string): Latch!! {
+  return { marker, entered: try Deferred.make<void>(), release: try Deferred.make<void>() }
+}
+
+effect function heldDigest(latches: ReadonlyArray<Latch>) {
+  const real = try Effect.provide(Digest.Digest, WebCrypto.layer)
+  const armed = new Set(latches.map(each => each.marker))
+  const hold = effect (bytes: Uint8Array) => {
+    const text = try Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes)))
+    const found = latches.find(each => armed.has(each.marker) && text.includes(each.marker))
+    if (found === undefined) return
+    armed.delete(found.marker)
+    try Deferred.succeed(found.entered, undefined)
+    try Deferred.await(found.release)
+  }
+  const digest: Digest.Digest["Service"] = {
+    digest: (algorithm, data) => hold(data).pipe(Effect.andThen(real.digest(algorithm, data))),
+    digestHex: (algorithm, data) => hold(data).pipe(Effect.andThen(real.digestHex(algorithm, data))),
+  }
+  return digest
+}
+
+effect function contention(endBeforeDrive: boolean) {
+  const reply = try latch("vibelang/reply/answer")
+  const tour = try latch("vibelang/tour/start")
+  const gates = endBeforeDrive ? [reply, tour] : [reply]
+  const starts = try Ref.make<ReadonlyArray<string>>([])
+  const tourRun = try Deferred.make<string>()
+  const logs = Logger.layer([Logger.make(options => {
+    const name = String(options.message)
+    const outcome = String(options.fiber.getRef(References.CurrentLogAnnotations).outcome)
+    if (name === "vibelang.reply.start") runSync(Ref.update(starts, values => [...values, outcome]))
+    if (name === "vibelang.tour.run") runSync(Deferred.succeed(tourRun, outcome))
+  })], { mergeWithExisting: true })
+  const world = Layer.merge(MockFactory.pipe(Layer.provide(Layer.succeed(Digest.Digest, try heldDigest(gates)))), logs)
+  const cleanup = Effect.forEach(gates, gate => Deferred.succeed(gate.release, undefined), { discard: true })
+  try Effect.provide(ensuring(effect {
+    const factory = try Factory
+    try factory.post("contended", "a", "Benchmark", "install")
+    const post = (try factory.read("contended", 0)).entries[0]!
+    try Deferred.await(reply.entered).pipe(Effect.timeout("5 seconds"))
+    try factory.tour("contended")
+    try Deferred.succeed(reply.release, undefined)
+    if (endBeforeDrive) try Deferred.await(tour.entered).pipe(Effect.timeout("5 seconds"))
+    else try Stream.runDrain(factory.events("contended", 0).pipe(Stream.takeUntil(event => event.type === "ReplyDelta"), Stream.timeout("5 seconds")))
+    try factory.endTour("contended")
+    try Deferred.succeed(tour.release, undefined)
+    const events = Array.from(try Stream.runCollect(factory.events("contended", 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished" && event.id === replyIdOf(post.id)), Stream.timeout("15 seconds"))))
+    const runOutcome = try Deferred.await(tourRun).pipe(Effect.timeout("5 seconds"))
+    const outcomes = try Ref.get(starts)
+    const snapshot = try factory.read("contended", 0)
+    const response = snapshot.entries.find(entry => entry.inReplyTo === post.id)!
+    const types = events.map(event => event.type)
+    try Effect.try(() => {
+      expect(types.filter(type => type === "TourStarted")).toHaveLength(1)
+      expect(types.filter(type => type === "TourEnded")).toHaveLength(1)
+      expect(types.filter(type => type === "ReplyStarted")).toHaveLength(1)
+      expect(types.indexOf("TourStarted")).toBeGreaterThan(types.indexOf("Posted"))
+      expect(types.indexOf("TourEnded")).toBeLessThan(types.indexOf("ReplyStarted"))
+      expect(types.includes("WalkthroughDriven")).toBe(!endBeforeDrive)
+      expect(outcomes).toContain("contended")
+      expect(runOutcome).toBe("inactive")
+      expect([response.done, response.error]).toEqual([true, ""])
+      expect(response.text.includes("npm create vibelang@latest my-app")).toBe(true)
+      expect(events.map(event => event.seq)).toEqual(events.map((_, index) => index + 1))
+    })
+  }, cleanup), world)
+}
+
+it("a contended reply hands the tour over and answers once after either tour window ends", async ({ bench }) => {
+  const result = await workload(bench, "mock-reply-tour-contention", "async", async () => {
+    await runPromise(scoped(effect { try contention(false); try contention(true) }))
+  }).run(slow)
+  await runPromise(artifact("mock-reply-tour-contention", "Vitest built-in bench; the production MockFactory's sequencers and durable Reply/Tour flows with a faulty platform Digest that delays one real digest on explicit latches. Two fresh worlds per callback: accept a tour after reply dispatch but before reply start, then end it after its first delta; repeat with the tour ended before its handed-over run starts. Every wait is bounded and all latches release on exit. Check one tour, one reply, exact event order/cursors, driven versus undriven tour, actual contended-start log outcome, inactive tour-run outcome and the installation answer. Three two-window corpora, initialization and assertions included.", ["Controlled delay injection, not the natural probability or normal latency of either race. Memory flow host, real Web Crypto computation and scripted agent; no model, browser, network or provider request. Only fixed event/log outcomes are observed, no user text or secret is logged."], result))
+}, 180_000)

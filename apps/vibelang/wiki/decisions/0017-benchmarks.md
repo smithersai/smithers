@@ -85,7 +85,7 @@ Executable lines are statement start lines, as in Istanbul; a declaration's hit 
 - Fault arms that need a faulty service injected in the browser (media, tour events, sandbox, actions, post and tour refusals, roles and events streams: lines 320, 425, 451, 503, 510, 761, 895, 909, 1231, 1258, 1304, 1365 as of `7803d917`). The fault-injection pages exist only in the `e2e` build; the timing build is the production bundle. **Decided 2026-11-10 (the lead):** timing benchmarks stay on the production bundle, so their numbers describe what people run. Fault-path coverage runs against the `e2e` build as a separately named set, `bench/browser-faults.spec.ts` (`bench/playwright-faults.config.ts`, built into `dist-e2e/`, run by `bench/browser.bench.vibe` as `chromium-faults`). Its Chromium counts merge into this gate; its artifacts, `fault-coverage-<name>`, record build `e2e-fault-coverage` and the steps that passed, never a duration, and no timing from it is quoted. Seven workloads put one faulty Effect service under the real app (`test/support/FaultyFactory.vibe` faults `refuse`, `tour-refuse`, `disconnect`, `tour-events`, `end-tour-unavailable`, `sandbox-read`, `sandbox-start`, `roles`; `test/support/FaultyActions.vibe`; the media page's unloadable image) and check the screen the fault and its recovery leave; nothing intercepts a request.
   **Defect found by this set and fixed:** a failed sandbox start, stop or command lost its alert and Retry within a second, because the open pane's one-second read ran `loadedSandbox`, which ends any operation and clears its failure. The pane's read now runs `polledSandbox` and `polledFailure` (`src/web/paneDecision.vibe`, verified), which leave an operation's wait or failure alone; regression `test/sandboxFailure.runtime.test.vibe`.
 - The ⌘K `/mock` and `/live` switch (783–784, 1385–1387) reloads the page itself, and V8 drops a document's counts on reload. Covered since 2026-11-10 without touching the request: in coverage mode each document pauses in its own `beforeunload` while the collector dumps (783–784, 1385–1386, `command-k-mock-switch`). Line 1387 runs after `beforeunload`, and the new document's commit ends any later pause (`pagehide` never pauses), so Node covers it: `bench/web-commands.bench.vibe` runs `SwitchMode` in happy-dom (`web-mode-switch-command`).
-- Escape with nothing open on the chat surface reaches another arm, not `none` (611).
+- Escape during a pending wiki Save keeps the editor and request (`none`, line 611 at `7803d917`). The `web-wiki-state` corpus asserts unchanged model identity and no emitted command.
 - Seven lines ran in Chromium but compile to different statement ranges in the bundle than in Node (`main.vibe` 946, 1121, 1131; `roleView.vibe` 34, 36; `MockFactory.vibe` 338; `markdown.vibe` 114), and four have no bundle statement at all (`main.vibe` 1119, 1120, 1130, 1270). The merge credits only identical ranges, so no browser workload can cover them. These 11 lines wait for Will's answer on the VibeLang source-map fix (asked 2026-11-10); the merge does not guess across shapes in the meantime.
 
 **No exclusions (2026-11-10).** The gate excludes no line: a gate is not passed by hiding production code.
@@ -306,13 +306,12 @@ which bounds that history to a day's steps; `test/accountsRetention.test.vibe` p
 
 **Actions, replies and history tools (2026-11-10, lane vl-bench2).** `bench/action-tour-repeat.bench.vibe` presses
 Tour twice before its alarm on the production action hosts; the second press finds the tour running (`ActionRuns`
-line 53). The later `action-crash-retry` workload stops a host after acceptance and retries it over the same store, covering recovery. The deterministic model service (`bench/fixtures.vibe`)
+line 53), so the accepted-but-queued recovery at lines 54-61 stays uncovered. The deterministic model service (`bench/fixtures.vibe`)
 gains three phrases: "Bench empty." (an empty answer), "Bench throws." (a cell that throws) and "Bench history." (a cell
 that pages an epic, a commit and a search, then calls Plan and Note). `bench/reply-outcomes.bench.vibe` and
 `bench/agent-history.bench.vibe` post them to the API Worker's objects in workerd. Cancelling a post's reply while
-it runs is now measured by `action-reply-interrupted`: the scripted HTTP model pauses after its first SSE fragment,
-the person cancels, and a fresh host drives later alarms without another model request or a completed answer.
-The latch and joins have deadlines.
+it runs stays uncovered (`worker/ActionRuns.vibe` 145-148): the reply runs within the alarm that dispatches it, so
+cancelling it mid-run needs a model held mid-answer.
 
 **Issues and wiki with GitHub unreachable (2026-11-10, lane vl-bench2).** Decision 0030 bounds a signed-in person's
 issue and wiki reads, so `bench/accounts-offline.bench.vibe` now sends them with GitHub an offline HttpClient, an
@@ -342,7 +341,50 @@ bug made the first-visit tour workload fail: the shared init script marked every
 the workload's `bench:first-visit` session flag. The shared script now honors that flag, so the existing automatic-tour
 assertion exercises an actual first visit. No application tour behavior changed.
 
+**Remaining-gap corpus (2026-11-10, Codex continuation).** `mock-agent-requests.bench.vibe` drives the shipped mock
+agent through BrowserFactory and the registered action/issue/wiki flows: request Plan, refuse an unknown action,
+retain the original poster's authority across an identity change while a tour holds its reply, file an issue, split
+#38 and refuse a draft of the generated decisions index. Each sample checks the reply and resulting records.
+`history-recovery.bench.vibe` additionally folds unannotated and unknown-trailer commits into a new and then reused
+scope epic, checking the exact recovered history, event order and duplicate no-op. `api-workerd.bench.vibe` adds
+warm `/api/health/objects` reads for all five objects, checking startup, build and stable object identity. The first
+two measure product memory-host flows; the last uses the production object bodies in workerd. No successful GitHub
+response is synthesized, no new dependency is added, and none of these measurements includes model inference.
 
+`object-startup.bench.vibe` adds initialization/recovery around the real budget and object-storage ledger, with a
+faulty `Ledger.read` service. It checks failed health without health-triggered retries, unavailable HTTP forwarding,
+explicit recovery and once-only charging. After main introduced daily reservations, admission supplies a reply and ceiling, and settlement supplies its reported usage; the same case requires one five-token receipt, zero retained hold and seven total tokens. A second workload holds an uninterruptible ledger read through the real
+five-second call deadline, then releases it and retries. Its duration includes the designed deadline; it is not a
+normal request latency or CPU-throughput measurement. These are Node-host wrapper measurements; the separate
+workerd health workload checks the actual five production object bodies. Its Budget RPC corpus now supplies named reservation/settlement arguments, replays an open hold and a settled charge, and refuses readmission of the charged key; five real RPC calls per callback in the frozen c5bbf81b receipt. Current main's stronger nine-call corpus additionally refuses overflow and independently observes exact remaining day capacity; that corpus is preserved. Its cold health workload stays first, and the stable ready/identity checks are separately named api-objects-health-warm after the object journeys.
+
+
+**Public GitHub reads and remaining recovery gaps (2026-11-10, Codex).** Both project repositories are publicly
+readable; a GitHub test credential is not needed for those reads. `BENCH_GITHUB_READS=1 pnpm bench` and
+`BENCH_GITHUB_READS=1 pnpm bench:coverage` add the actual public issue/wiki hosts via their production durable read
+flows, product ETag cache and local SQLite/KV. One sample each: issue pagination, selected timeline/comments and exact
+read-receipt replay; wiki bytes/revision compared with the real provider, persisted projection and a restored local
+draft. Product MockAccounts supplies local authority. No successful HTTP double, credential or provider write is
+used; only counts are retained. Without the flag the two named cases skip and contribute no execution evidence.
+Anonymous quota and volatile provider state are limitations. GitHub write success paths remain unmeasured.
+
+The same corpus adds an owner-bound agent reply whose draft reaches the account RPC and is refused for its viewer,
+and Escape during a pending wiki Save keeps the exact request without emitting more work. Sandbox recovery checks
+actual Stop receipts after exhausted minutes and a lost lease, a failed emergency stop recovered by a healthy host,
+a pending start whose permission was revoked, and a held command whose uncertainty survives replay without another
+machine call. The platform uses product memoryMachines and a retained store in memory, with explicit faulty services.
+
+Retained mock journals cover a half-written reply becoming a visible failure before the next post answers, one
+resumed tour, and an ownerless sandbox request refusing to start. The journal is a healthy memory adapter with seeded
+records, not evidence of an actual process kill or browser storage durability. A delayed real Digest opens each of
+two Reply/Tour contention windows; exact event order, one reply, driven/undriven tour, actual contention log and tour
+run outcomes are checked. Latches are bounded and always released. Timings describe controlled fault overhead, not
+its natural frequency.
+
+`dispatch.bench.vibe` scans last/middle/none/all dispatched queues and projects started/driven/ended tours at 10,
+1,000 and 100,000 posts, with inputs built outside timing. The authorization-journal corpus checks an exact accepted
+event advances only the cursor and preserves roles/entries, while the viewer is refused. All assertions run inside
+the measured callback. No threshold, exclusion list, production behavior or language behavior is changed.
 
 **Cancellation during model streaming and browser setup (2026-11-10, lane vl-bench2, Codex).** The interrupted-reply
 benchmark previously held budget admission, before the model answered. Its loopback HTTP model now pauses between
@@ -488,3 +530,34 @@ contracts; actual workerd cases use native objects and SQLite reached through fe
 Every artifact retains the exact callback method, limitations, machine, versions, source revision and samples.
 The full coverage percentages remain the c5bbf81b source receipt, separate from these later compatibility checks.
 
+
+**Integrated benchmark-only receipt (2026-11-10, Codex).** On nyc-01, source `62cbbccd` on main `f765f8ed`, the
+full suite passed **83 files / 174 checks**, with public GitHub reads enabled, all production-bundle Chromium
+journeys and the separate e2e fault coverage set. Collection ran 16:54:13–17:23:52 UTC (08:54–09:23 PST), two reserved
+cores, matching local Chromium and the gatefix build deadline. The strict merged gate exited 1: 109 files missed
+at least one metric. Lines: src 5,198/5,318 (97.74%), worker 2,138/2,321 (92.12%), combined 7,336/7,639 (96.03%).
+All 256 collected source hashes matched before and after, including the generated wiki. These remain diagnostic
+coverage counts with the attribution qualifications above; instrumented timings are never published.
+
+An additive collection at `95de2858` passed **3 files / 13 checks**: web state, DOM views and action proxy/default
+host. SHA-256 verified unchanged production bytes before joining with the existing `mergeByPosition` helper.
+Only benchmark sources changed. This is one full run plus an additive run, not a single full run of the later
+roster. Combined lines: src **5,216/5,318 (98.08%)**, worker **2,138/2,321 (92.12%)**, total **7,354/7,639 (96.27%)**;
+108 files still miss at least one strict metric. Exact maps, source hashes and all per-file counts are retained in
+the lane report/evidence. No counters, thresholds, exclusions or merge semantics changed.
+
+The additive web corpus submits `/sandbox` and checks the exact start identity and dock command, low-minute warning
+retention, exhaustion, new-month clearing and stale response fences. DOM scenes verify GitHub connect/fork/install
+recovery controls and settled issue cards with exact linked children, closed state and a blank accessible label.
+The action proxy runs every door against product MockActions, cancels unbound calls before selection and checks
+settlement, replay, run order, cancellation and missing-run refusal. An embedded ActionDevice without a device
+refuses all three sandbox operations. Its two 20 ms waits and scripted mock delays are included and declared; no
+proxy CPU-only or container latency is claimed. `github-wiki-public-read` now labels its source.length count
+`sourceUtf16Length`; older artifacts named it `sourceBytes` incorrectly and hold UTF-16 code units, not bytes.
+The actual source/revision equality assertions are unchanged.
+
+Largest remaining gaps are the actual GitHub mutation hosts (Issues 91 lines, Wiki 46), Container bindings awaiting
+spend authorization, the five specification-only functions, the 11 already named browser/Node shape lines awaiting
+Will, and the retained error/invariant paths listed per file in the report. Public reads need no write token and
+have now run; mutation success remains unmeasured. Defensive history-only Post/Tour and impossible child-flow guards
+remain counted rather than being called solely to satisfy a counter. The 100% requirement remains open.

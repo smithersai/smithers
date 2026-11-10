@@ -5,6 +5,12 @@ Run `pnpm bench` for local in-process, browser and workerd observations plus the
 that spend real model tokens. `pnpm bench:coverage` measures only benchmark files
 with V8 and strict 100% per-file thresholds. No unit/fuzz tests enter this run.
 
+`BENCH_GITHUB_READS=1 pnpm bench` adds one actual public GitHub issue and wiki read journey each.
+Use `BENCH_GITHUB_READS=1 pnpm bench:coverage` to include those provider paths in the benchmark-only gate.
+They require network access and available anonymous GitHub quota; they make GET requests only, keep all writes in
+local SQLite/KV, and retain counts rather than issue/page text. Without the flag those two cases are explicitly
+skipped and their lines remain uncovered. No real login or provider write is measured by them.
+
 JSON observations live in ignored `bench/results/`; retain them with the run report.
 Each includes timestamp, machine, tool versions, source revision, method, limitations
 and raw samples. `baseline.json` is a reviewed deterministic input. Timing artifacts

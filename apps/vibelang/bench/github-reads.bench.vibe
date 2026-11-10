@@ -1,0 +1,100 @@
+// @vitest-environment node
+// Opt-in actual public GitHub reads through the production durable flows. No credential and no provider write.
+import { it, expect } from "@effect/vitest"
+import { GitHub } from "@smthrs/integrations"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import * as Accounts from "../src/core/MockAccounts.vibe"
+import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
+import { WikiFailure, type WikiRequest } from "../src/core/wikiSchemas.vibe"
+import * as Issues from "../worker/Issues.vibe"
+import * as Wiki from "../worker/Wiki.vibe"
+import { PublicReads, publicReads } from "../worker/PublicReads.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { artifact, workload } from "./artifact.vibe"
+
+const enabled = runSync(Config.withDefault(Config.Boolean("BENCH_GITHUB_READS"), false))
+const once = { time: 0, warmup: false, iterations: 1 }
+const issue: IssueRequest = { op: "read", key: "public-read-1", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "" }
+const wiki: WikiRequest = { op: "read", key: "public-read-1", page: "index", base: "", text: "" }
+
+it.skipIf(!enabled)("public GitHub issues are projected, selected comments agree, and exact replay is retained", async ({ bench }) => {
+  const counts: Array<unknown> = []
+  const result = await workload(bench, "github-issues-public-read", "async", async () => {
+    await runPromise(scoped(effect {
+      provide FetchHttpClient.layer {
+        const kv = try Effect.try(() => objectStorage())
+        const storage = kv as unknown as Storage
+        const cached = try publicReads(kv, undefined)
+        const accounts = try Accounts.make()
+        const actor = try accounts.choose("contributor")
+        provide Issues.IssueAuthority = { current: () => accounts.current().pipe(Effect.mapError(() => new IssueFailure({ reason: "unavailable" }))) }, PublicReads = { client: cached } {
+          const listed = try Issues.executeIssues("benchmark-public-issues", storage, issue).pipe(Effect.timeout("45 seconds"))
+          const selected = listed.items.find(item => item.state === "closed" && item.comments > 0) ?? listed.items.find(item => item.comments > 0) ?? listed.items[0]!
+          const detailed = try Issues.executeIssues("benchmark-public-issues", storage, { ...issue, key: "public-read-2", number: selected.number }).pipe(Effect.timeout("45 seconds"))
+          const repeated = try Issues.executeIssues("benchmark-public-issues", storage, { ...issue, key: "public-read-2", number: selected.number })
+          const detail = detailed.items.find(item => item.number === selected.number)!
+          const comments = try GitHub.Issues.listComments(Issues.repository.owner, Issues.repository.name, selected.number).pipe(
+            GitHub.Calls.withToken(Redacted.make(""), Issues.repository.api), Effect.provideService(HttpClient.HttpClient, cached), Effect.timeout("20 seconds"),
+          )
+          const actual = detail.notes.filter(note => !note.event)
+          const sameComments = actual.length === comments.items.length && actual.every((note, index) => {
+            const comment = comments.items[index]!
+            return note.author === (comment.user?.login ?? "deleted") && note.text === (comment.body ?? "") && note.age === comment.created_at.slice(0, 10)
+          })
+          try Effect.try(() => {
+            expect(listed.role).toBe("contributor")
+            expect(listed.connected).toBe(false)
+            expect(listed.items.length).toBeGreaterThan(0)
+            expect(new Set(listed.items.map(item => item.number)).size).toBe(listed.items.length)
+            expect(listed.items.every(item => Number.isSafeInteger(item.number) && item.number > 0 && Number.isSafeInteger(item.githubId) && item.githubId > 0 && ["open", "closed"].includes(item.state))).toBe(true)
+            expect(detailed.seq).toBe(listed.seq + 1)
+            expect(detail.githubId).toBe(selected.githubId)
+            expect(comments.truncated).toBe(false)
+            // Compare booleans so a failed assertion never prints actual issue or comment text.
+            expect(sameComments).toBe(true)
+            expect(JSON.stringify(repeated) === JSON.stringify(detailed)).toBe(true)
+          })
+          counts.push({ issues: listed.items.length, selectedComments: actual.length, selectedEvents: detail.notes.filter(note => note.event).length, accountRole: actor.role })
+        }
+      }
+    }))
+  }).run(once)
+  await runPromise(artifact("github-issues-public-read", "Vitest built-in bench; one opt-in real GitHub public read journey through executeIssues, its durable read flow and real githubHost, over local SQLite/KV and the product ETag cache. List all issues, read a closed issue with comments, compare projected comments to the actual provider result, then replay the exact durable read receipt. Check identity, uniqueness, role, sequence, complete comments and exact replay. Initialization, network and assertions included; only counts retained.", ["BENCH_GITHUB_READS=1 required. Actual anonymous GitHub GETs, no provider writes or authentication latency. A shipped product MockAccounts contributor supplies local authority, not a real signed-in identity. Public data, rate limits, provider/cache state and host load vary. One sample establishes no percentile."], { counts, result }))
+}, 180_000)
+
+it.skipIf(!enabled)("public GitHub wiki bytes and revision agree while a private draft stays local", async ({ bench }) => {
+  const counts: Array<unknown> = []
+  const result = await workload(bench, "github-wiki-public-read", "async", async () => {
+    await runPromise(scoped(effect {
+      provide FetchHttpClient.layer {
+        const kv = try Effect.try(() => objectStorage())
+        const storage = kv as unknown as Storage
+        const cached = try publicReads(kv, undefined)
+        const accounts = try Accounts.make()
+        const actor = try accounts.choose("contributor")
+        try promise(() => kv.put(`wiki/draft/${actor.id}/index`, { page: "index", text: "Benchmark retained draft" }))
+        provide Wiki.WikiAuthority = { current: () => accounts.current().pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" }))) }, PublicReads = { client: cached } {
+          const first = try Wiki.executeWiki("benchmark-public-wiki", storage, wiki).pipe(Effect.timeout("30 seconds"))
+          const again = try Wiki.executeWiki("benchmark-public-wiki", storage, { ...wiki, key: "public-read-2" }).pipe(Effect.timeout("30 seconds"))
+          const raw = try GitHub.Contents.getText(Wiki.wikiRepository.owner, Wiki.wikiRepository.name, `${Wiki.wikiRepository.root}/index.md`).pipe(
+            GitHub.Calls.withToken(Redacted.make(""), Wiki.wikiRepository.api), Effect.provideService(HttpClient.HttpClient, cached), Effect.timeout("20 seconds"),
+          )
+          const observed = first.pages.find(page => page.id === "index")
+          const expected = Option.getOrUndefined(raw)
+          const stored = try promise(() => kv.get("wiki/page/index")) as { readonly source: string; readonly revision: string } | undefined
+          try Effect.try(() => {
+            expect(expected !== undefined && observed !== undefined && observed.source === expected.text && observed.revision === expected.sha).toBe(true)
+            expect(observed?.source.startsWith("# VibeLang factory wiki")).toBe(true)
+            expect(first.draft).toEqual({ page: "index", text: "Benchmark retained draft" })
+            expect(again.draft).toEqual(first.draft)
+            expect(again.pages.filter(page => page.id === "index").length).toBe(1)
+            expect(stored !== undefined && stored.source === expected?.text && stored.revision === expected?.sha).toBe(true)
+          })
+          counts.push({ pages: first.pages.length, sourceUtf16Length: observed?.source.length, localDraft: first.draft !== undefined })
+        }
+      }
+    }))
+  }).run(once)
+  await runPromise(artifact("github-wiki-public-read", "Vitest built-in bench; one opt-in real GitHub public read journey through executeWiki, its durable read flow and real githubWikiHost, over local SQLite/KV and the product ETag cache. Two reads compare exact source bytes and revision with the provider, retain one page projection, persist its actual source/revision and restore a local draft. Initialization, network and assertions included; no page text retained in the artifact.", ["BENCH_GITHUB_READS=1 required. Actual anonymous GitHub GETs, no provider writes, real login or inference. Shipped product MockAccounts supplies a local contributor; the private draft is stored only in local test storage. Public data, rate limits, cache state and host load vary; one sample, no percentile."], { counts, result }))
+}, 120_000)

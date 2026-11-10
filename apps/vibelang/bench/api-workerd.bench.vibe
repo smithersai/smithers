@@ -196,9 +196,38 @@ it("the API Worker's production object bodies answer through workerd", { timeout
             expect(["starting", "ready"]).toContain((status as { startup: string }).startup)
           }
         })
+        const warmHealth = workload(bench, "api-objects-health-warm", "async", async () => {
+          const first = await call(api.origin, "/api/health/objects?conversation=bench-api-1")
+          expect(first.status).toBe(200)
+          const report = JSON.parse(first.body) as { commit: string; objects: Record<string, { objectClass: string; objectId: string; codeVersion: string; startup: string; step: string }> }
+          expect(report.commit).toBe("bench-commit")
+          expect(Object.keys(report.objects).sort()).toEqual(["ActionIndex", "Budget", "Conversation", "History", "ProjectAccounts"])
+          for (const [name, status] of Object.entries(report.objects)) {
+            expect(status).toMatchObject({ objectClass: name, startup: "ready", codeVersion: "unknown" })
+            expect(status.objectId.length).toBeGreaterThan(0)
+            expect(["initialize", "begin", "storage", "sequencer", "bootstrap", "accounts"]).toContain(status.step)
+          }
+          const again = await call(api.origin, "/api/health/objects?conversation=bench-api-1")
+          expect(again.status).toBe(200)
+          expect(JSON.parse(again.body)).toEqual(report)
+        })
+        const ownedTools = workload(bench, "api-objects-owned-agent-tools", "async", async () => {
+          const room = `bench-owned-tools-${++run}`
+          const props = { "x-bench-props": JSON.stringify({ actionOwner: "7", actionName: "Bench" }) }
+          const posted = await call(api.origin, `/api/conversations/${room}/posts`, { method: "POST", headers: props, body: JSON.stringify({ clientId: "a", name: "Bench", text: "Bench tools." }) })
+          expect(posted.status).toBe(200)
+          const events = Array.from(await runPromise(Stream.runCollect(factory.events(room, 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished" || event.type === "ReplyFailed"), Stream.timeout("60 seconds")))))
+          expect(events.at(-1)).toMatchObject({ type: "ReplyFinished" })
+          const reply = (await runPromise(factory.read(room, 0))).entries.at(-1)!
+          const answered = JSON.parse(reply.text)
+          // The unregistered owner is a viewer; the owner-aware account RPC must refuse its draft.
+          expect(answered.started).toEqual({ id: "", refusal: "forbidden" })
+          expect(answered.drafted).toMatchObject({ ok: false, error: { code: "flow_failed", message: "Flow vibelang/wiki/draft failed: forbidden" } })
+          expect([answered.outline, answered.wiki, answered.docs, reply.done, reply.error]).toEqual([true, true, true, true, ""])
+        })
         const results = []
-        for (const each of [health, conversation, unbound, unconfigured, identity, budget, runs, history, tour, agentTools, historyWrite, actionRuns, signedInAccounts, ownedRun]) results.push(try tryPromise(() => each.run(slow)))
-        try artifact("api-objects", "Vitest built-in bench; the production bodies of worker/Api.vibe in real workerd SQLite through apiFetch, LiveFactory HTTP and alarms: public health for all five object classes, Budget admission/replay/settlement and independently observed exact remaining day capacity, posts, tour start/pause/resume/end, wiki open, an agent reply calling the history, wiki and docs tools (it opens the roadmap and a docs page in the pane), a guest history write, and an action run started, read, followed, cancelled and rerun, one started with an agent's trusted props, and ProjectAccounts with sign-in configured; deterministic HTTP model service.", ["No GitHub: History reads through an injected faulty client. Synthetic public-read broker configuration initializes real clients; no request in this workload calls that broker.", "Every caller is signed out (a viewer): signing in needs GitHub (0165), so tool, history and draft writes measure their refusal path, also on the instance with sign-in configured.", "Objects reach each other by fetch, not Alchemy RPC.", "Deterministic model; no inference latency."], results)
+        for (const each of [health, conversation, unbound, unconfigured, identity, budget, runs, history, tour, agentTools, historyWrite, actionRuns, signedInAccounts, ownedRun, warmHealth, ownedTools]) results.push(try tryPromise(() => each.run(slow)))
+        try artifact("api-objects", "Vitest built-in bench; the production bodies of worker/Api.vibe in real workerd SQLite through apiFetch, LiveFactory HTTP and alarms: public health for all five object classes, Budget admission/replay/settlement and independently observed exact remaining day capacity, posts, tour start/pause/resume/end, wiki open, an agent reply calling the history, wiki and docs tools (it opens the roadmap and a docs page in the pane), a guest history write, and an action run started, read, followed, cancelled and rerun, one started with an agent's trusted props, and ProjectAccounts with sign-in configured; deterministic HTTP model service. Warm object-health reads additionally check ready startup, exact build and stable identities after the object journeys; an owner-bound reply reaches the account draft RPC and refuses its viewer.", ["No GitHub: History reads through an injected faulty client. Synthetic public-read broker configuration initializes real clients; no request in this workload calls that broker.", "Every caller is signed out (a viewer): signing in needs GitHub (0165), so tool, history and draft writes measure their refusal path, also on the instance with sign-in configured.", "Objects reach each other by fetch, not Alchemy RPC.", "Deterministic model; no inference latency."], results)
       }
     }
   }))

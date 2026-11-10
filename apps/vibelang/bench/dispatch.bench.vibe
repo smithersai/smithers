@@ -1,0 +1,36 @@
+// The resumed dispatch cursor and the active-tour projection, at the same history sizes as replay benchmarks.
+import { it, expect } from "@effect/vitest"
+import { firstUndispatched } from "../src/core/flowDecision.vibe"
+import { apply, tourWalkthrough } from "../src/core/conversation.vibe"
+import { transcript } from "./fixtures.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+for (const length of [10, 1_000, 100_000]) {
+  it(`resumed dispatch and active-tour projection at ${length} posts`, async ({ bench }) => {
+    const posts = Array.from({ length }, (_, index) => `m${index + 1}`)
+    const middle = Math.floor(length / 2)
+    const late = new Set(posts.slice(0, -1))
+    const gap = new Set(posts.filter((_, index) => index !== middle))
+    const full = new Set(posts)
+    const none = new Set<string>()
+    const before = transcript(length)
+    const started = apply(before, { type: "TourStarted", seq: length + 1, id: "tour" })
+    const driven = apply(started, { type: "WalkthroughDriven", seq: length + 2, id: "tour", step: 1, target: "splash", at: 0, duration: 1000 })
+    const ended = apply(driven, { type: "TourEnded", seq: length + 3, id: "tour" })
+    const results = []
+    results.push(await workload(bench, "post-dispatch-scan", "sync", () => {
+      expect(firstUndispatched(posts, late)).toBe(length - 1)
+      expect(firstUndispatched(posts, gap)).toBe(middle)
+      expect(firstUndispatched(posts, full)).toBe(length)
+      expect(firstUndispatched(posts, none)).toBe(0)
+      expect(late.size).toBe(length - 1)
+      expect(gap.size).toBe(length - 1)
+    }).run(quick))
+    results.push(await workload(bench, "active-tour-projection", "sync", () => {
+      expect(tourWalkthrough(started)).toBeNull()
+      expect(tourWalkthrough(driven)).toEqual({ step: 1, target: "splash", paused: false, revision: length + 2, remaining: 1000, at: 0 })
+      expect(tourWalkthrough(ended)).toBeNull()
+    }).run(quick))
+    await runPromise(artifact(`dispatch-${length}`, `Vitest built-in bench; ${length} completed person entries. Four resumed dispatch scans: last post pending, middle gap despite later dispatched posts, all dispatched and none dispatched; exact indexes and unchanged Set sizes checked. Three tour projections: started without checkpoint, a driven checkpoint after every person entry, and the ended tour; exact checkpoint fields and null projections checked. Datasets/sets/events constructed before measurement; assertions included.`, ["Pure in-process array/Set scanning and state projection, no engine, storage, UI rendering, network or model. A workload is the complete four-scan or three-projection corpus, not one dispatch."], results))
+  })
+}

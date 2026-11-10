@@ -1,0 +1,117 @@
+// The sandbox writer's retained operations: exhausted minutes, lost leases, failed stops, revoked starts and uncertain commands.
+import { it, expect } from "@effect/vitest"
+import { TestClock } from "effect/testing"
+import { makeSandboxHost, type Machines } from "../src/core/sandboxHost.vibe"
+import { mockPolicy } from "../src/core/sandboxPolicy.vibe"
+import { Unavailable } from "../src/core/Factory.vibe"
+import { ALLOWANCE, BEYOND_CALENDAR, change, failureOf, holding, pendingOf, world } from "../test/support/sandboxWorld.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+effect function exhausted() {
+  const w = try world()
+  const host = try makeSandboxHost(w.store, w.machines)
+  const home = try host.start("home", "home")
+  const away = try host.start("away", "away")
+  try change(w, state => ({ ...state, ledger: { ...state.ledger, usedMilliseconds: ALLOWANCE } }))
+  try host.tick()
+  const saved = (try Ref.get(w.state))!
+  const stops = [...w.receipts.values()].filter(receipt => receipt.request.operationId.startsWith("exhaust/"))
+  try Effect.try(() => {
+    expect([home.status, away.status]).toEqual(["running", "running"])
+    expect(saved.ledger.sandboxes.map(box => box.running)).toEqual([false, false])
+    expect(saved.ledger.usedMilliseconds).toBe(ALLOWANCE)
+    expect(stops.map(receipt => [receipt.request.kind, receipt.request.conversation, receipt.refusal]).sort()).toEqual([["stop", "away", ""], ["stop", "home", ""]])
+    expect(saved.pending).toBeNull()
+  })
+}
+
+effect function leaseEnded() {
+  const w = try world()
+  const host = try makeSandboxHost(w.store, { ...w.machines, lease: () => succeed(false) })
+  try host.start("home", "home")
+  try host.tick()
+  const saved = (try Ref.get(w.state))!
+  const stops = [...w.receipts.values()].filter(receipt => receipt.request.operationId.startsWith("ended/"))
+  try Effect.try(() => {
+    expect(saved.ledger.sandboxes.map(box => box.running)).toEqual([false])
+    expect(stops.map(receipt => [receipt.request.kind, receipt.request.conversation, receipt.refusal])).toEqual([["stop", "home", ""]])
+    expect(saved.pending).toBeNull()
+  })
+}
+
+effect function failedStop() {
+  const w = try world()
+  const faulty: Machines = { ...w.machines, stop: () => fail(new Unavailable({ reason: "stop-failed" })) }
+  const host = try makeSandboxHost(w.store, faulty)
+  try host.start("home", "home")
+  try TestClock.setTime(BEYOND_CALENDAR)
+  const refused = try Effect.result(host.snapshot("home"))
+  const failed = (try Ref.get(w.state))!
+  try TestClock.setTime(Date.UTC(2026, 10, 30))
+  const recovered = try makeSandboxHost(w.store, w.machines)
+  try recovered.tick()
+  const after = (try Ref.get(w.state))!
+  try Effect.try(() => {
+    expect(failureOf(refused)).toMatchObject({ reason: "invalid-clock" })
+    expect(failed.ledger.sandboxes[0]!.running).toBe(true)
+    expect(failed.pending?.kind).toBe("stop")
+    expect(failed.pending?.operationId.startsWith("fault/")).toBe(true)
+    expect(after.ledger.sandboxes[0]!.running).toBe(false)
+    expect(after.pending).toBeNull()
+    expect(after.meterFailure?.count).toBe(1)
+  })
+}
+
+effect function revokedStart() {
+  const w = try world()
+  const stopped: Array<string> = []
+  const machines: Machines = { ...w.machines, stop: (id, generation) => { stopped.push(id); return w.machines.stop(id, generation) } }
+  const host = try makeSandboxHost(w.store, machines)
+  const home = try host.start("home", "home")
+  try host.stop("home", "stop-home", home.generation)
+  stopped.length = 0
+  try change(w, state => ({ ...state, pending: pendingOf("start", "pending-away", "away") }))
+  const recovered = try makeSandboxHost(w.store, machines).pipe(Effect.provide(mockPolicy("viewer")))
+  try recovered.tick()
+  const saved = (try Ref.get(w.state))!
+  try Effect.try(() => {
+    expect(stopped).toEqual(["mock-person/away"])
+    expect(saved.pending).toBeNull()
+    expect(w.receipts.has("pending-away")).toBe(false)
+    expect(saved.ledger.sandboxes.every(box => !box.running)).toBe(true)
+  })
+}
+
+effect function uncertainCommand() {
+  const w = try world()
+  let commands = 0
+  const machines: Machines = { ...w.machines, command: (id, generation, operation, command) => { commands++; return w.machines.command(id, generation, operation, command) } }
+  const { held, entered, release } = try holding(machines)
+  const first = try makeSandboxHost(w.store, held)
+  const home = try first.start("home", "home")
+  const running = try Effect.forkScoped(Effect.result(first.command("home", "held", "echo late", home.generation)))
+  try Deferred.await(entered)
+  const other = try makeSandboxHost(w.store, machines)
+  try ensuring(other.tick(), Deferred.succeed(release, undefined))
+  const answered = try Fiber.join(running)
+  const repeated = try Effect.result(other.command("home", "held", "echo late", home.generation))
+  try Effect.try(() => {
+    expect(failureOf(answered)).toMatchObject({ reason: "command-uncertain" })
+    expect(failureOf(repeated)).toMatchObject({ reason: "command-uncertain" })
+    expect(commands).toBe(1)
+    expect(w.receipts.get("held")?.refusal).toBe("command-uncertain")
+  })
+}
+
+it("sandbox recovery persists actual stops and never repeats an uncertain command", async ({ bench }) => {
+  const result = await workload(bench, "sandbox-host-recovery", "async", async () => {
+    await runPromise(scoped(effect {
+      try exhausted()
+      try leaseEnded()
+      try failedStop()
+      try revokedStart()
+      try uncertainCommand()
+    }).pipe(Effect.provide(mockPolicy("contributor")), Effect.provide(TestClock.layer())))
+  }).run(slow)
+  await runPromise(artifact("sandbox-host-recovery", "Vitest built-in bench; the production sandbox writer with its retained memory store, real product memoryMachines and explicit faulty Machines services. Five fresh worlds per callback: two running sandboxes exhaust their allowance and get Stop receipts; a lost lease is stopped; an invalid clock and failed emergency stop keep the operation pending until a healthy host recovers it; a recovered start loses permission; a held command becomes uncertain at another host and its exact replay never calls the machine again. Check ledger states, precise stop receipts, pending operations, refusals and one actual command execution. Three samples, setup and assertions included.", ["TestClock time and in-memory host/machines; no real Container, disk persistence, eviction, scheduler delay or billing duration. Two host instances in one process represent recovery; the held command is an injected faulty Effect service, not request interception."], result))
+}, 120_000)
