@@ -33,7 +33,7 @@ export * as BunHost from "./BunHost.ts"
  * The durable flow runtime on Bun: the shared native lifecycle bound to Bun's
  * SQLite driver and this package's Host bundle.
  */
-export * as BunRuntime from "./BunRuntime.ts"
+export * as BunRuntime from "./BunRuntime.vibe"
 
 /** Electrobun window and native folder-picker services; FFI is loaded only when its layer is built. */
 export * as BunDesktop from "./BunDesktop.vibe"

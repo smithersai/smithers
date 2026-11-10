@@ -12,7 +12,7 @@ if ((runtime !== "node" && runtime !== "bun") || !directory || !phase) {
 }
 // Bun's driver loads `bun:sqlite`, so Node never imports the Bun runtime.
 const Native = runtime === "bun"
-  ? await import("../../src/BunRuntime.ts")
+  ? await import("../../src/BunRuntime.vibe")
   : (await import("@smthrs/platform-node")).NodeRuntime
 const marker = join(directory, "dispatches.txt")
 const gate = DurableDeferred.make("portability/approval", { success: Schema.String })

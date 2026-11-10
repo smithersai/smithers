@@ -8,7 +8,7 @@ import type * as Scope from "effect/Scope"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import type * as BunRuntime from "../src/BunRuntime.ts"
+import type * as BunRuntime from "../src/BunRuntime.vibe"
 
 /** Refuses a composition root that still owes a service. */
 type Complete<L> = [L] extends [Layer.Layer<infer _A, infer _E, infer R>] ? [R] extends [never] ? true : false
@@ -51,7 +51,7 @@ type _BunCompositionRootsAreComplete = [
  * with a name no consumer can call, construct, or narrow.
  */
 const publishedTypeNames = () => {
-  const source = readFileSync(fileURLToPath(new URL("../src/BunRuntime.ts", import.meta.url)), "utf8")
+  const source = readFileSync(fileURLToPath(new URL("../src/BunRuntime.vibe", import.meta.url)), "utf8")
   return [...source.matchAll(/^export type (?:\{([^}]*)\}|(\w+))/gm)]
     .flatMap(([, braced, declared]) => declared === undefined ? (braced ?? "").split(",") : [declared])
     .map((name) => name.trim().split(/\s+as\s+/).at(-1) ?? "")

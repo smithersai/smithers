@@ -16,7 +16,7 @@ vi.mock(
     process.versions.bun === undefined ? import("@smthrs/database/node/NodeDatabase") : importOriginal()
 )
 
-import * as BunRuntime from "../src/BunRuntime.ts"
+import * as BunRuntime from "../src/BunRuntime.vibe"
 
 it("composes the Bun facade over the same migrated SQL service and validates its configuration", async () => {
   const root = mkdtempSync(join(tmpdir(), "flows-bun-composition-"))

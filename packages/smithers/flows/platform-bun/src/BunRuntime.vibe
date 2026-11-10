@@ -8,8 +8,6 @@
  */
 
 import { NativeRuntime } from "@smthrs/platform-node"
-import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import * as Host from "./BunHost.ts"
 
 /** Native process and host configuration for `layerHost`.
@@ -31,7 +29,7 @@ const runtime = NativeRuntime.make({
   database: (filename) =>
     Layer.unwrap(
       Effect.map(
-        Effect.promise(() => import("@smthrs/database/bun/BunDatabase")),
+        promise(() => import("@smthrs/database/bun/BunDatabase")),
         (Database) => Database.layer({ filename })
       )
     ),

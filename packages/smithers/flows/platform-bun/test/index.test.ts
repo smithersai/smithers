@@ -24,7 +24,7 @@ import { describe, expect, it } from "vitest"
 import * as BunFileSystem from "../src/BunFileSystem.vibe"
 import * as BunGarbageCollector from "../src/BunGarbageCollector.vibe"
 import * as BunHost from "../src/BunHost.ts"
-import * as BunRuntime from "../src/BunRuntime.ts"
+import * as BunRuntime from "../src/BunRuntime.vibe"
 import * as Index from "../src/index.ts"
 
 describe("@smthrs/platform-bun barrel", () => {
