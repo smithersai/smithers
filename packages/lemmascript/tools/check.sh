@@ -7,7 +7,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-LSC="npx --prefix $SCRIPT_DIR tsx $SCRIPT_DIR/src/lsc.ts"
+# The package tsx, not npx: npm rejects the workspace root manifest pnpm-only override keys (EINVALIDTAGNAME).
+LSC="$SCRIPT_DIR/../node_modules/.bin/tsx $SCRIPT_DIR/src/lsc.ts"
 
 backend="${1:-all}"; shift 2>/dev/null || true
 
