@@ -348,7 +348,9 @@ export effect function make(options: {
     if (error.details?.["rateLimited"] === true) return refused("unavailable")
     if (status === 401) return refused("connect")
     if (onFork && (status === 403 || status === 404)) return refused("install")
-    if (status === 403) return refused("forbidden")
+    // 404 and 422 are GitHub's permanent answers to this request (a deleted base, a stranger as assignee): a retry
+    // would only spend the hour's writes.
+    if (status === 403 || status === 404 || status === 422) return refused("forbidden")
     return refused("unavailable")
   }
   const github = effect <A>(session: { readonly token: Redacted.Redacted<string> }, program: A!any!GitHubClient, onFork = false, missing?: Reason): A!DelegationRefused => {
@@ -372,6 +374,20 @@ export effect function make(options: {
     const personal = try repositoryOf(session, `${session.login}/${name}`, "fork")
     if (personal.fork !== true || personal.parent?.id !== grant.repositoryId) throw refused("fork")
     return { owner: session.login, name, onFork: true }
+  }
+  /** Repositories this object proved for a read, by grant id and name: proven once per object, as a write's target is per call. */
+  const proven = new Set<string>()
+  /**
+   * A read reaches only the grant's repository, by its immutable id, or the person's fork of it: never a same-named
+   * repository of theirs that is no fork, nor a stranger's repository that took the grant's name.
+   */
+  const provenRead = effect (session: { readonly token: Redacted.Redacted<string> }, target: Policy.ReadTarget) => {
+    const name = `${target.grant.repositoryId}:${target.owner}/${target.name}`.toLowerCase()
+    if (proven.has(name)) return
+    const found = try repositoryOf(session, `${target.owner}/${target.name}`, "missing")
+    const genuine = target.fork ? found.fork === true && found.parent?.id === target.grant.repositoryId : found.id === target.grant.repositoryId
+    if (!genuine) throw refused("forbidden")
+    proven.add(name)
   }
   const keyed = (operation: Policy.Operation, login: string, owner: string, name: string): Action.Keyed<unknown, any, GitHubClient> | undefined => {
     switch (operation.kind) {
@@ -400,12 +416,16 @@ export effect function make(options: {
     for (const field of ["number", "id", "sha", "name"]) if (typeof record[field] === "number" || typeof record[field] === "string") out[field] = record[field]
     return out
   }
+  /** The hour's write budget: checked before a write, spent only once GitHub accepts it, so a refusal costs nothing. */
+  const budget = effect (origin: string) => {
+    const counted = "rate/" + origin + "/" + Math.floor((try Clock.currentTimeMillis) / 3_600_000)
+    return { counted, used: Number(try options.store.get(counted) ?? 0) }
+  }
   const admitWrite = effect (origin: string) => {
-    const now = try Clock.currentTimeMillis
-    const hour = Math.floor(now / 3_600_000)
-    const counted = "rate/" + origin + "/" + hour
-    const used = Number(try options.store.get(counted) ?? 0)
-    if (used >= WRITES_PER_HOUR) throw refused("unavailable")
+    if ((try budget(origin)).used >= WRITES_PER_HOUR) throw refused("unavailable")
+  }
+  const spendWrite = effect (origin: string) => {
+    const { counted, used } = try budget(origin)
     try options.store.put(counted, used + 1)
   }
   const verify = effect (envelope: typeof Envelope.Type) => {
@@ -427,7 +447,9 @@ export effect function make(options: {
     const session = try token()
     if (claim.mode === "read") {
       const { path, paginate } = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ path: Schema.String, paginate: Schema.optional(Schema.Struct({ perPage: Schema.optional(Schema.Number), maxPages: Schema.optional(Schema.Number), withNext: Schema.optional(Schema.Boolean) })) })))(envelope.payload), () => refused("forbidden"))
-      if (!Policy.readable(site.grants, session.login, path)) throw refused("forbidden")
+      const target = Policy.readTarget(site.grants, session.login, path)
+      if (target === undefined) throw refused("forbidden")
+      try provenRead(session, target)
       return try github(session, Effect.flatMap(GitHubClient, (client) => paginate === undefined ? client.request("GET", path) : client.paginate(path, paginate)), false, "missing")
     }
     if (!/^[0-9a-f]{64}$/.test(claim.key)) throw refused("forbidden")
@@ -447,9 +469,14 @@ export effect function make(options: {
     }
     const answer = try options.journal("write/" + (try digestOf(`${site.origin}\n${claim.key}`)), effect {
       try admitWrite(site.origin)
-      if (write === undefined) { try github(session, unkeyed(operation as Parameters<typeof unkeyed>[0], target.owner, target.name)); return "{}" }
+      if (write === undefined) {
+        try github(session, unkeyed(operation as Parameters<typeof unkeyed>[0], target.owner, target.name))
+        try spendWrite(site.origin)
+        return "{}"
+      }
       const found = try github(session, write.find(claim.key), target.onFork)
       const value = Option.isSome(found) ? found.value : try github(session, write.perform(claim.key), target.onFork)
+      try spendWrite(site.origin)
       return JSON.stringify(receipt(value))
     })
     return try Effect.mapError(Effect.try(() => JSON.parse(answer) as unknown), () => refused("unavailable"))

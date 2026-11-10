@@ -74,17 +74,24 @@ export function permits(grants: ReadonlyArray<Grant>, login: string, operation: 
 
 const READS = ["issues", "pulls", "contents", "git/ref", "git/matching-refs", "branches", "commits", "assignees"]
 
-/** GET only, under a grant's repository or the same-named repository the person owns. Reads carry no write meaning. */
-export function readable(grants: ReadonlyArray<Grant>, login: string, path: string): boolean {
+/**
+ * GET only. The repository a read names, under a path reads may take: a grant's repository (`fork: false`) or the same-named repository the person owns
+ * (`fork: true`). The caller still proves it: the upstream by its immutable id, the person's copy as a fork of it.
+ */
+export interface ReadTarget { readonly grant: Grant; readonly owner: string; readonly name: string; readonly fork: boolean }
+export function readTarget(grants: ReadonlyArray<Grant>, login: string, path: string): ReadTarget | undefined {
   const pathname = path.split("?")[0]!
-  if (!pathname.startsWith("/repos/") || !safePath(pathname.slice(1))) return false
+  if (!pathname.startsWith("/repos/") || !safePath(pathname.slice(1))) return undefined
   const [owner, name, ...rest] = pathname.slice("/repos/".length).split("/")
-  if (owner === undefined || name === undefined) return false
-  const known = grants.some((grant) => same(grant.repository, `${owner}/${name}`) || (same(owner, login) && same(grant.repository.split("/")[1]!, name)))
-  if (!known) return false
+  if (owner === undefined || name === undefined) return undefined
   const tail = rest.join("/")
-  return tail === "" || READS.some((read) => tail === read || tail.startsWith(read + "/"))
+  if (tail !== "" && !READS.some((read) => tail === read || tail.startsWith(read + "/"))) return undefined
+  const upstream = grantOf(grants, `${owner}/${name}`)
+  if (upstream !== undefined) return { grant: upstream, owner, name, fork: false }
+  const copied = same(owner, login) ? grants.find((grant) => same(grant.repository.split("/")[1]!, name)) : undefined
+  return copied === undefined ? undefined : { grant: copied, owner, name, fork: true }
 }
+
 
 export function liveDelegation(state: string, expires: number, now: number): boolean {
   return state === "active" && expires > now

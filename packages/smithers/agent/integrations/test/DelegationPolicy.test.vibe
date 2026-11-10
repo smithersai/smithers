@@ -70,8 +70,8 @@ describe("DelegationPolicy.grantOf", () => {
   })
 })
 
-describe("DelegationPolicy.readable", () => {
-  const read = (path: string, login = "ada") => Policy.readable(grants, login, path)
+describe("DelegationPolicy.readTarget", () => {
+  const read = (path: string, login = "ada") => Policy.readTarget(grants, login, path) !== undefined
   for (const path of [
     "/repos/smithersai/vibelang", "/repos/smithersai/vibelang/issues?state=all", "/repos/SmithersAI/VibeLang/issues/3/timeline",
     "/repos/ada/smithers", "/repos/ada/smithers/git/ref/heads/x", "/repos/smithersai/smithers/contents/apps/vibelang/wiki/index.md",
@@ -123,5 +123,13 @@ describe("DelegationPolicy.validGrant", () => {
       { repository: "vibelang" }, { repository: "a/b/c" }, { repository: "/b" }, { repositoryId: 0 }, { repositoryId: 1.5 },
     ]
     expect(bad.map((change) => Policy.validGrant({ ...grants[0]!, ...change }))).toEqual(bad.map(() => false))
+  })
+})
+
+describe("DelegationPolicy.readTarget names what the caller must prove", () => {
+  check("the grant's repository as upstream, the person's same-named one as a fork", () => {
+    expect(Policy.readTarget(grants, "ada", "/repos/smithersai/vibelang/issues")).toMatchObject({ owner: "smithersai", name: "vibelang", fork: false })
+    expect(Policy.readTarget(grants, "ada", "/repos/ada/smithers/contents/apps/vibelang/wiki/x.md")).toMatchObject({ owner: "ada", name: "smithers", fork: true, grant: { repositoryId: 22 } })
+    expect(Policy.readTarget(grants, "smithersai", "/repos/smithersai/vibelang")).toMatchObject({ fork: false })
   })
 })

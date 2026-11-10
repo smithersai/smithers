@@ -527,7 +527,8 @@ it.effect("a delegated read keeps its query: a read at a commit reads that commi
   try reader.request("GET", `${path}?ref=main`, undefined, { query: { per_page: 1 } })
   try reader.request("GET", path, undefined, { query: {} })
   try Effect.try(() => {
-    expect(f.world.calls).toEqual([`GET ${path}?ref=${"a".repeat(40)}`, `GET ${path}?ref=main&per_page=1`, `GET ${path}`])
+    // The first read proves the repository once (its immutable id), then every read keeps its query.
+    expect(f.world.calls).toEqual(["GET /repos/smithersai/vibelang", `GET ${path}?ref=${"a".repeat(40)}`, `GET ${path}?ref=main&per_page=1`, `GET ${path}`])
   })
 })
 
@@ -655,4 +656,49 @@ it.effect("refuses to serve a registry holding a grant that fails validation", (
   const f = try fixture()
   const made = try Effect.result(Delegation.make({ origin: brokerOrigin, person: 7, sites: [{ origin, secret, grants: [{ ...grants[0]!, branchPrefix: "" }] }], keyring, store: f.store, journal: f.journal, github: f.github, act: () => (program) => program as never }))
   try Effect.try(() => expect(made._tag === "Failure" ? made.failure.reason : "made").toBe("unavailable"))
+})
+it.effect("GitHub's permanent refusal of a write answers forbidden, never a retry, and costs no write budget", () => effect {
+  const rejected = try fixture(blank({ status: 422 }))
+  const missingUpstream = try fixture(blank({ status: 404 }))
+  const onFork = try fixture(blank({ status: 422 }))
+  const answers = [try rejected.call("perform", create), try missingUpstream.call("perform", create), try onFork.call("perform", branchOp)]
+  // Sixty refusals in one hour, then a write GitHub accepts.
+  for (let index = 0; index < Delegation.WRITES_PER_HOUR; index++) try rejected.call("perform", create, index.toString(16).padStart(64, "0"))
+  delete rejected.world.status
+  const accepted = try rejected.call("perform", create, "e".repeat(64))
+  try Effect.try(() => {
+    expect(answers).toEqual(["forbidden", "forbidden", "forbidden"])
+    expect(accepted).toEqual({ number: 9, id: 5 })
+  })
+})
+it.effect("a write's budget counts each write once, when GitHub accepts it", () => effect {
+  const f = try fixture()
+  for (let index = 0; index < Delegation.WRITES_PER_HOUR; index++) try f.call("perform", create, index.toString(16).padStart(64, "0"))
+  const over = try f.call("perform", create, "e".repeat(64))
+  const replay = try f.call("perform", create, "0".repeat(64))
+  try Effect.try(() => {
+    expect(over).toBe("unavailable")
+    expect(replay).toEqual({ number: 9, id: 5 })
+  })
+})
+it.effect("a read reaches only the grant's repository by its id or the person's fork of it, proven once", () => effect {
+  const read = (f: Effect.Success<ReturnType<typeof fixture>>, path: string, key = "") => f.call("read", { path }, key)
+  const unrelated = try fixture(blank({ fork: { id: 12, fork: false } }))
+  const foreignFork = try fixture(blank({ fork: { id: 12, fork: true, parent: { id: 44 } } }))
+  const taken = try fixture(blank({ upstreamId: 99 }))
+  const fine = try fixture()
+  const answers = [
+    try read(unrelated, "/repos/ada/vibelang/contents/notes/private.md"),
+    try read(foreignFork, "/repos/ada/vibelang/contents/docs/x.md"),
+    try read(taken, "/repos/smithersai/vibelang/issues"),
+  ]
+  const first = try read(fine, "/repos/smithersai/vibelang/issues")
+  const second = try read(fine, "/repos/SmithersAI/VibeLang/issues/1")
+  const ownFork = try read(fine, "/repos/ada/vibelang/contents/docs/x.md")
+  try Effect.try(() => {
+    expect(answers).toEqual(["forbidden", "forbidden", "forbidden"])
+    expect([first, second, ownFork]).toEqual([{}, {}, {}])
+    expect(fine.world.calls.filter((call) => call === "GET /repos/smithersai/vibelang" || call === "GET /repos/SmithersAI/VibeLang")).toHaveLength(1)
+    expect(unrelated.world.calls).not.toContain("GET /repos/ada/vibelang/contents/notes/private.md")
+  })
 })
