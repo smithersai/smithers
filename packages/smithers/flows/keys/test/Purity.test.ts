@@ -11,7 +11,7 @@ const sourceFiles = async (directory: string): Promise<Array<string>> => {
   const entries = await readdir(directory, { withFileTypes: true })
   return (await Promise.all(entries.map(async (entry) => {
     const path = resolve(directory, entry.name)
-    return entry.isDirectory() ? sourceFiles(path) : entry.name.endsWith(".ts") ? [path] : []
+    return entry.isDirectory() ? sourceFiles(path) : (entry.name.endsWith(".ts") || entry.name.endsWith(".vibe")) ? [path] : []
   }))).flat()
 }
 
@@ -119,12 +119,12 @@ describe("source purity", () => {
     // barrels that add no dependency of their own.
     const files = await sourceFiles(sourceRoot)
     expect(files.map((file) => relative(sourceRoot, file)).sort()).toEqual([
-      "DerivedKey.ts",
+      "DerivedKey.vibe",
       "Key.ts",
-      "KeyDerivationError.ts",
-      "KeyV1.ts",
+      "KeyDerivationError.vibe",
+      "KeyV1.vibe",
       "StoredKey.ts",
-      "deriveKey.ts",
+      "deriveKey.vibe",
       "digest.ts",
       "index.ts"
     ])
@@ -134,30 +134,30 @@ describe("source purity", () => {
       moduleSpecifiers(source).map((specifier) => `${relative(sourceRoot, file)} -> ${specifier}`)
     )
     expect(found.sort()).toEqual([
-      "DerivedKey.ts -> ./KeyDerivationError.ts",
-      "DerivedKey.ts -> ./KeyV1.ts",
-      "DerivedKey.ts -> ./deriveKey.ts",
-      "DerivedKey.ts -> effect/Effect",
-      "DerivedKey.ts -> effect/Schema",
-      "DerivedKey.ts -> effect/SchemaGetter",
-      "DerivedKey.ts -> effect/SchemaIssue",
-      "DerivedKey.ts -> effect/SchemaParser",
-      "Key.ts -> ./DerivedKey.ts",
-      "Key.ts -> ./KeyDerivationError.ts",
-      "Key.ts -> ./KeyV1.ts",
+      "DerivedKey.vibe -> ./KeyDerivationError.vibe",
+      "DerivedKey.vibe -> ./KeyV1.vibe",
+      "DerivedKey.vibe -> ./deriveKey.vibe",
+      "DerivedKey.vibe -> effect/Effect",
+      "DerivedKey.vibe -> effect/Schema",
+      "DerivedKey.vibe -> effect/SchemaGetter",
+      "DerivedKey.vibe -> effect/SchemaIssue",
+      "DerivedKey.vibe -> effect/SchemaParser",
+      "Key.ts -> ./DerivedKey.vibe",
+      "Key.ts -> ./KeyDerivationError.vibe",
+      "Key.ts -> ./KeyV1.vibe",
       "Key.ts -> ./StoredKey.ts",
-      "Key.ts -> ./deriveKey.ts",
+      "Key.ts -> ./deriveKey.vibe",
       "Key.ts -> ./digest.ts",
-      "KeyDerivationError.ts -> effect/Schema",
-      "KeyV1.ts -> effect/Schema",
-      "StoredKey.ts -> ./KeyV1.ts",
-      "deriveKey.ts -> ./KeyDerivationError.ts",
-      "deriveKey.ts -> ./KeyV1.ts",
-      "deriveKey.ts -> @smthrs/canonical",
-      "deriveKey.ts -> @smthrs/crypto",
-      "deriveKey.ts -> effect/Effect",
-      "deriveKey.ts -> effect/Schema",
-      "deriveKey.ts -> effect/crypto/Digest",
+      "KeyDerivationError.vibe -> effect/Schema",
+      "KeyV1.vibe -> effect/Schema",
+      "StoredKey.ts -> ./KeyV1.vibe",
+      "deriveKey.vibe -> ./KeyDerivationError.vibe",
+      "deriveKey.vibe -> ./KeyV1.vibe",
+      "deriveKey.vibe -> @smthrs/canonical",
+      "deriveKey.vibe -> @smthrs/crypto",
+      "deriveKey.vibe -> effect/Effect",
+      "deriveKey.vibe -> effect/Schema",
+      "deriveKey.vibe -> effect/crypto/Digest",
       "digest.ts -> ./StoredKey.ts",
       "digest.ts -> @smthrs/crypto",
       "index.ts -> ./Key.ts"
@@ -228,12 +228,12 @@ describe("module layout", () => {
     // value and its same-name type count as one concept; a code literal set
     // belongs with the error that returns it.
     expect(await definitions()).toEqual({
-      DerivedKey: "DerivedKey.ts",
-      KeyDerivationError: "KeyDerivationError.ts",
-      KeyDerivationErrorCode: "KeyDerivationError.ts",
-      KeyV1: "KeyV1.ts",
+      DerivedKey: "DerivedKey.vibe",
+      KeyDerivationError: "KeyDerivationError.vibe",
+      KeyDerivationErrorCode: "KeyDerivationError.vibe",
+      KeyV1: "KeyV1.vibe",
       StoredKey: "StoredKey.ts",
-      deriveKey: "deriveKey.ts",
+      deriveKey: "deriveKey.vibe",
       digest: "digest.ts"
     })
   })

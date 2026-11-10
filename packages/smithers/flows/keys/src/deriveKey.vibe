@@ -11,8 +11,8 @@ import { digest as sha256 } from "@smthrs/crypto"
 import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { KeyDerivationError, type KeyDerivationErrorCode } from "./KeyDerivationError.ts"
-import type { KeyV1 } from "./KeyV1.ts"
+import { KeyDerivationError, type KeyDerivationErrorCode } from "./KeyDerivationError.vibe"
+import type { KeyV1 } from "./KeyV1.vibe"
 
 const derivationFailure = (
   code: KeyDerivationErrorCode,
@@ -41,9 +41,9 @@ const derivationFailure = (
  */
 export const deriveKey = (
   input: unknown
-): Effect.Effect<KeyV1, KeyDerivationError, EffectDigest.Digest> =>
-  Effect.gen(function*() {
-    const serialized = yield* Schema.decodeUnknownEffect(Canonical)(input, {
+): KeyV1!KeyDerivationError!EffectDigest.Digest =>
+  effect {
+    const serialized = try Schema.decodeUnknownEffect(Canonical)(input, {
       reportInput: false
     }).pipe(
       Effect.mapError((cause) =>
@@ -54,7 +54,7 @@ export const deriveKey = (
         )
       )
     )
-    const hash = yield* sha256(serialized).pipe(
+    const hash = try sha256(serialized).pipe(
       Effect.mapError((cause) =>
         derivationFailure(
           "digest_failed",
@@ -65,4 +65,4 @@ export const deriveKey = (
     )
 
     return `key1_${hash}` as KeyV1
-  })
+  }

@@ -6,7 +6,7 @@
  * @since 0.1.0
  */
 
-import { KeyV1 } from "./KeyV1.ts"
+import { KeyV1 } from "./KeyV1.vibe"
 
 /**
  * Every stored-key representation this release understands.

@@ -32,12 +32,12 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "Anyone reading logs, run records, or API errors learns secret-bearing key material a caller hashed into a flow key.",
       lookFor: [
-        "A KeyDerivationError message or SchemaIssue message in src/deriveKey.ts or src/DerivedKey.ts that interpolates the input or serialized value.",
+        "A KeyDerivationError message or SchemaIssue message in src/deriveKey.vibe or src/DerivedKey.vibe that interpolates the input or serialized value.",
         "A decode call on Canonical or the DerivedKey codec that omits `reportInput: false`, so the issue tree retains the input.",
         "The DerivedKey encode path (SchemaGetter.forbidden) or the declareConstructor parser returning an issue that embeds the key or its input.",
         "KeyDerivationError `cause` (Schema.Unknown) holding a schema issue or crypto failure that carries the input, since encoding the error for a journal or API ships `cause` too."
       ],
-      paths: ["src/deriveKey.ts", "src/DerivedKey.ts", "src/KeyDerivationError.ts"]
+      paths: ["src/deriveKey.vibe", "src/DerivedKey.vibe", "src/KeyDerivationError.vibe"]
     },
     {
       id: "key-collision",
@@ -46,10 +46,10 @@ const securityReview = Smithers.SecurityReview({
         "A flow author or run input gets a cached or approved result recorded under another computation's key by crafting input that canonicalizes to the same bytes.",
       lookFor: [
         "Values Canonical drops or coalesces before hashing (functions, undefined fields, symbols, NaN, -0) that deriveKey accepts without failing.",
-        "Hashing anything other than the full Canonical serialization, or a truncated digest, in src/deriveKey.ts.",
+        "Hashing anything other than the full Canonical serialization, or a truncated digest, in src/deriveKey.vibe.",
         "Docs or examples that build key input without a stable domain and version, so two protocols share one key space."
       ],
-      paths: ["src/deriveKey.ts", "docs/**", "README.md"]
+      paths: ["src/deriveKey.vibe", "docs/**", "README.md"]
     },
     {
       id: "stored-key-strict-parse",
@@ -57,11 +57,11 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A tampered store row or network message smuggles a malformed or unsupported key into cache, journal, or path lookups.",
       lookFor: [
-        "The KeyV1 pattern in src/KeyV1.ts losing its ^ or $ anchor, allowing uppercase, a different length, or path characters.",
+        "The KeyV1 pattern in src/KeyV1.vibe losing its ^ or $ anchor, allowing uppercase, a different length, or path characters.",
         "StoredKey in src/StoredKey.ts accepting a key<n>_ prefix this release cannot derive.",
         "`digest` in src/digest.ts accepting an unvalidated string or slicing without the KeyV1 brand guaranteeing the prefix."
       ],
-      paths: ["src/KeyV1.ts", "src/StoredKey.ts", "src/digest.ts"]
+      paths: ["src/KeyV1.vibe", "src/StoredKey.ts", "src/digest.ts"]
     },
     {
       id: "derive-vs-parse-confusion",
@@ -72,7 +72,7 @@ const securityReview = Smithers.SecurityReview({
         "DerivedKey decoding a string that already matches KeyV1 by returning it unchanged instead of hashing it.",
         "Docs or examples in docs/** that use DerivedKey or deriveKey to validate persisted or received keys instead of StoredKey."
       ],
-      paths: ["src/DerivedKey.ts", "src/StoredKey.ts", "docs/**"]
+      paths: ["src/DerivedKey.vibe", "src/StoredKey.ts", "docs/**"]
     },
     {
       id: "publish-surface",
@@ -82,9 +82,9 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "package.json exports or publishConfig.exports exposing ./internal/* or paths beyond ., ./Key, ./index and ./package.json.",
         "scripts/build.mjs or package.json `files` publishing sources outside src/ and dist/.",
-        "A digest import other than @smthrs/crypto `digest`, or a non-cryptographic hash, in src/deriveKey.ts."
+        "A digest import other than @smthrs/crypto `digest`, or a non-cryptographic hash, in src/deriveKey.vibe."
       ],
-      paths: ["package.json", "scripts/**", "src/deriveKey.ts"]
+      paths: ["package.json", "scripts/**", "src/deriveKey.vibe"]
     }
   ]
 })

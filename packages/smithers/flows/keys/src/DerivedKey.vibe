@@ -11,9 +11,9 @@ import * as Schema from "effect/Schema"
 import * as SchemaGetter from "effect/SchemaGetter"
 import * as SchemaIssue from "effect/SchemaIssue"
 import * as SchemaParser from "effect/SchemaParser"
-import { deriveKey } from "./deriveKey.ts"
-import type { KeyDerivationError } from "./KeyDerivationError.ts"
-import { KeyV1 } from "./KeyV1.ts"
+import { deriveKey } from "./deriveKey.vibe"
+import type { KeyDerivationError } from "./KeyDerivationError.vibe"
+import { KeyV1 } from "./KeyV1.vibe"
 
 const schemaIssue = (error: KeyDerivationError): SchemaIssue.InvalidValue =>
   new SchemaIssue.InvalidValue({

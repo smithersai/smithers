@@ -14,9 +14,9 @@
  * @since 0.1.0
  */
 
-export * from "./DerivedKey.ts"
-export * from "./deriveKey.ts"
+export * from "./DerivedKey.vibe"
+export * from "./deriveKey.vibe"
 export * from "./digest.ts"
-export * from "./KeyDerivationError.ts"
-export * from "./KeyV1.ts"
+export * from "./KeyDerivationError.vibe"
+export * from "./KeyV1.vibe"
 export * from "./StoredKey.ts"
