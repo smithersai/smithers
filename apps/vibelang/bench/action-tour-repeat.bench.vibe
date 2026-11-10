@@ -1,0 +1,29 @@
+// @vitest-environment node
+// A person presses Tour twice before its alarm runs: the second press joins the accepted run. Real action index and
+// per-run hosts (worker/ActionDirectory.vibe, worker/ActionRuns.vibe) over node:sqlite object storage.
+import { it, expect } from "@effect/vitest"
+import * as Runs from "../worker/ActionRuns.vibe"
+import { world, request } from "../test/support/actionObjects.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("a repeated Tour press joins its accepted run", async ({ bench }) => {
+  const result = await workload(bench, "action-tour-repeat", "async", async () => {
+    await runPromise(scoped(effect {
+      const w = try world()
+      const tour = request("atour", "vibelang/Tour", null, w.person.id)
+      const first = try w.directory.start(tour, "maintainer")
+      const touring = try w.object(tour.id)
+      const again = try w.directory.start(tour, "maintainer")
+      const runs = try Runs.read(touring.sequencer)
+      const guides = (try touring.sequencer.read(0)).entries.filter((entry) => entry.author === "agent")
+      try Effect.try(() => {
+        expect([first, again]).toEqual([null, null])
+        expect(runs.map((run) => [run.id, run.flow])).toEqual([["atour", "vibelang/Tour"]])
+        expect(["queued", "running"]).toContain(runs[0]!.state)
+        expect(guides).toHaveLength(1)
+        expect(guides[0]!.done).toBe(false)
+      })
+    }))
+  }).run(slow)
+  await runPromise(artifact("action-tour-repeat", "Vitest built-in bench; the production action index and per-run hosts over node:sqlite object storage with product MockAccounts, a fresh world per sample. A maintainer starts Tour, then starts the same request again before the alarm: the second answer joins the accepted run. Checks both answers, one queued Tour run, one open guide entry.", ["Node SQLite/KV/alarm adapter, not workerd scheduling.", "The tour itself does not run: no alarm fires in this workload."], result))
+})
