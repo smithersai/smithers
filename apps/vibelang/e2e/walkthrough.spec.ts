@@ -24,7 +24,8 @@ test("muted agent drives every real app surface, with pause, back, seek and exit
   await step(page, 1)
   await page.keyboard.press("Space")
   await expect(bar(page)).toHaveAttribute("data-paused", "true")
-  await page.waitForTimeout(5100) // Proves a paused reading hold does not advance across five seconds.
+  // Stop 1 holds max(7000, its reading time 4600) ms; staying paused past it proves Pause stopped the sequencer.
+  await page.waitForTimeout(8500)
   await step(page, 1)
   await page.keyboard.press("Space")
   await expect(bar(page)).toHaveAttribute("data-paused", "false")
