@@ -85,6 +85,15 @@ A line no benchmark should run is excluded only with its reason recorded in `mer
 guarantees by construction that `decide` accepts every seeded intent and `decideWithinCapacity` refuses only at
 2^53 events.
 
+Code with no runtime caller (2026-11-10). No benchmark should run what the product never runs:
+
+- `src/core/flowDecision.vibe` lines 75–118 (excluded lines listed in `merge-coverage.ts`): the post continuation
+  model `begin`, `record`, `canDispatch`, `dispatch` and `lawful`. Nothing in `src/` or `worker/` calls it, so its
+  proofs (0018) check the model, not the product.
+- Contract-only functions, named only by `//@` contracts and loop invariants and checked by the proofs:
+  `replyLawful` and `tourLawful` (`flowDecision.vibe` 199–204, 267–271), `issueAncestorAt` (`conversation.vibe`
+  817–823), `sameReply` (`tourDecision.vibe` 62–63) and `issueKnownAction` (`issueDecision.vibe` 207–208).
+
 The denominator includes `src/`, `worker/`, `infra/` and `scripts/`, matching the coverage lane’s source scope and adding the browser bundle solely to collect source-mapped evidence. No production line is excluded by this decision. The 100% benchmark-only coverage requirement remains open until
 its executed per-file report meets it; a configured threshold is not a coverage receipt. See `wiki/benchmarks.md`.
 

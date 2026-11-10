@@ -1,0 +1,93 @@
+// The decisions behind actions a person takes in the web app (the Actions panel, the issues screen, history
+// paging, account failures) and two the durable flows use (tour docs links, specification reviews), against
+// expected values written out here, not computed by the code under test.
+import { it, expect } from "@effect/vitest"
+import { accountFailureText, actionsEpochCurrent, actionsFailureApplies, slashHighlight, maximizedActions, updatedActionInput, retriedActions, failedActions, type ActionScreen } from "../src/web/modelDecision.vibe"
+import { issueAction, issueDefaultRole, issueAssigneeAfter, issueLoaded, type IssueScreen, type IssueFacts } from "../src/web/issueDecision.vibe"
+import { readOffsets, closesDialog } from "../src/web/historyDecision.vibe"
+import { docsPath } from "../src/core/tourDecision.vibe"
+import { recordSpecificationReview, type Specification, type SpecificationReview } from "../src/core/conversation.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+const actions: ActionScreen = { open: true, maximized: false, selected: "vibelang/Post", run: "", loading: false, starting: true, error: "", input: "", highlight: 0 }
+const screen: IssueScreen = {
+  open: true, screen: "list", kind: "All", state: "open", query: "", selected: 0, dialog: "", status: "loading", busy: false,
+  title: "", summary: "", example: "", prior: "", comment: "", parent: "", assignee: "", step: 1, error: "", serial: 4,
+}
+const facts: IssueFacts = {
+  retryOp: "", retryReviewer: "", retryAllowed: false, allowed: true, specText: "", number: 7, kind: "Issues", listState: "open",
+  blankTitle: false, blankSummary: false, blankExample: false, blankPrior: false,
+}
+const none: SpecificationReview = { verdict: "", grade: "", revision: 0, link: "" }
+const spec: Specification = { revision: 3, text: "spec", astra: none, sol: none, fable: none, opus: none }
+const lgtm: SpecificationReview = { verdict: "LGTM", grade: "A", revision: 3, link: "https://example.invalid/review" }
+
+function check() {
+  expect(accountFailureText("grant")).toBe("Role change failed.")
+  expect(accountFailureText("people")).toBe("People couldn’t load.")
+  expect(accountFailureText("sign-out")).toBe("Sign out failed.")
+  expect(accountFailureText("sign-in")).toBe("Sign-in failed. GitHub didn’t answer.")
+  expect(accountFailureText("roles")).toBe("Sign-in failed. GitHub didn’t answer.")
+
+  // A null epoch is the first load; a stale epoch is ignored.
+  expect(actionsEpochCurrent(null, null)).toBe(true)
+  expect(actionsEpochCurrent(null, 0)).toBe(true)
+  expect(actionsEpochCurrent(2, 2)).toBe(true)
+  expect(actionsEpochCurrent(1, 2)).toBe(false)
+  expect(actionsFailureApplies(null, 5)).toBe(true)
+  expect(actionsFailureApplies(0, null)).toBe(true)
+  expect(actionsFailureApplies(4, 5)).toBe(false)
+  expect(slashHighlight(0, -1, 3)).toBe(2)
+  expect(slashHighlight(2, 1, 3)).toBe(0)
+  expect(slashHighlight(1, 1, 0)).toBe(0)
+  expect(maximizedActions(actions)).toEqual({ state: { ...actions, maximized: true }, commands: [] })
+  expect(updatedActionInput(actions, "{\"text\":\"hi\"}")).toEqual({ state: { ...actions, input: "{\"text\":\"hi\"}" }, commands: [] })
+  expect(retriedActions({ ...actions, error: "unavailable" }, 6)).toEqual({ state: { ...actions, loading: true, error: "" }, commands: [{ type: "LoadActions", flow: "vibelang/Post", epoch: 6 }] })
+  expect(failedActions({ ...actions, loading: true }, "forbidden")).toEqual({ state: { ...actions, loading: false, starting: false, error: "forbidden" }, commands: [] })
+
+  // A specification review: fresh, the saved retry, a different saved retry, busy, and not allowed.
+  expect(issueAction(screen, "spec-review", "astra", facts)).toEqual({ state: { ...screen, busy: true, serial: 5, error: "" }, request: "fresh", focusCommit: false })
+  expect(issueAction(screen, "spec-review", "sol", { ...facts, retryOp: "spec-review", retryReviewer: "sol" })).toEqual({ state: { ...screen, busy: true, error: "" }, request: "saved", focusCommit: false })
+  expect(issueAction(screen, "spec-review", "sol", { ...facts, retryOp: "comment" })).toEqual({ state: { ...screen, error: "Retry the saved action." }, request: "none", focusCommit: false })
+  expect(issueAction({ ...screen, busy: true }, "spec-review", "sol", facts)).toEqual({ state: { ...screen, busy: true }, request: "idle", focusCommit: false })
+  expect(issueAction(screen, "spec-review", "sol", { ...facts, allowed: false })).toEqual({ state: screen, request: "idle", focusCommit: false })
+  expect(issueDefaultRole("mock")).toBe("maintainer")
+  expect(issueDefaultRole("live")).toBe("viewer")
+  expect(issueAssigneeAfter(true, "will", "agent")).toBe("will")
+  expect(issueAssigneeAfter(false, "will", "agent")).toBe("agent")
+  // A settled creation opens the new issue; an unsettled load keeps the draft and the dialog.
+  const committing: IssueScreen = { ...screen, busy: true, dialog: "commit", comment: "c" }
+  expect(issueLoaded(committing, true, true, false, "", "", "", "", "agent", 12)).toEqual({
+    state: { ...committing, busy: false, error: "", comment: "", dialog: "", screen: "detail", selected: 12, status: "ready", assignee: "agent" },
+    clearRetry: true, closeDialog: true,
+  })
+  expect(issueLoaded(committing, false, false, true, "T", "S", "E", "P", "", 12)).toEqual({
+    state: { ...committing, title: "T", summary: "S", example: "E", prior: "P", status: "ready", assignee: "" },
+    clearRetry: false, closeDialog: false,
+  })
+
+  expect(readOffsets(0, 50)).toEqual([0])
+  expect(readOffsets(50, 50)).toEqual([0])
+  expect(readOffsets(101, 50)).toEqual([0, 50, 100])
+  expect(closesDialog("Escape")).toBe(true)
+  expect(closesDialog("Enter")).toBe(false)
+
+  expect(docsPath("/docs/getting-started")).toBe(true)
+  expect(docsPath("")).toBe(false)
+  expect(docsPath("docs")).toBe(false)
+  expect(docsPath("/docs//twice")).toBe(false)
+  expect(docsPath("/Docs")).toBe(false)
+  expect(docsPath("/docs?x=1")).toBe(false)
+
+  for (const reviewer of ["astra", "sol", "fable", "opus"] as const) {
+    expect(recordSpecificationReview(spec, reviewer, reviewer, lgtm)).toEqual({ ...spec, [reviewer]: lgtm })
+  }
+  expect(recordSpecificationReview(spec, "astra", "sol", lgtm)).toBe(spec)
+  expect(recordSpecificationReview(spec, "astra", "astra", { ...lgtm, revision: 2 })).toBe(spec)
+  expect(recordSpecificationReview(spec, "codex", "codex", lgtm)).toBe(spec)
+}
+
+it("web-app and flow decision edges against written-out answers", async ({ bench }) => {
+  const result = await workload(bench, "decision-edges", "sync", check).run(quick)
+  await runPromise(artifact("decision-edges", "Vitest built-in bench; one callback checks the Actions panel steps (epochs, failure, retry, maximize, input, slash highlight), account failure text, the issues screen's specification-review action, default role, assignee and settled load, history read offsets and dialog keys, tour docs paths and specification review recording, each against a written-out expected value. Imports excluded; assertions included.", ["Pure decisions in one process; the web app's DOM, Commands and HTTP are measured by the browser and HTTP workloads.", "Assertion overhead dominates the time."], result))
+})

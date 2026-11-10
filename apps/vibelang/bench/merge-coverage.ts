@@ -54,6 +54,26 @@ const exclusions: ReadonlyArray<{ file: string; lines: ReadonlyArray<number>; re
     lines: [103],
     reason: "The Refused guard fires only if seedOf violates its contract: intentsOf guarantees decide accepts every seeded intent, and decideWithinCapacity refuses only at 2^53 events. Unreachable from real input.",
   },
+  {
+    file: "src/core/flowDecision.vibe",
+    lines: [75, 76, 87, 88, 89, 90, 95, 96, 105, 106, 107, 114, 115, 116, 117, 118, 199, 200, 201, 202, 203, 204, 267, 268, 269, 270, 271],
+    reason: "Lines 75-118: the post continuation model (begin, record, canDispatch, dispatch, lawful) has no runtime caller; flows.vibe and the workers never call it, so its proofs (0018) check the model, not the product. Lines 199-204 and 267-271: replyLawful and tourLawful are contract predicates that only //@ ensures clauses name. No runtime code calls any of them.",
+  },
+  {
+    file: "src/core/conversation.vibe",
+    lines: [817, 818, 819, 820, 821, 822, 823],
+    reason: "issueAncestorAt is a specification function: only //@ contracts and loop invariants name it, and the proofs (0018) check it. No runtime code calls it.",
+  },
+  {
+    file: "src/core/tourDecision.vibe",
+    lines: [62, 63],
+    reason: "sameReply has no caller outside its own //@ contract; the proofs (0018) check it. No runtime code calls it.",
+  },
+  {
+    file: "src/web/issueDecision.vibe",
+    lines: [207, 208],
+    reason: "issueKnownAction is a contract predicate: only issueAction's //@ ensures names it, and the proofs (0018) check it. No runtime code calls it.",
+  },
 ]
 
 const workerdDir = "coverage/bench/workerd-raw"

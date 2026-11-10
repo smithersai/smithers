@@ -3340,3 +3340,19 @@ build is excluded; module counts measure loading, not evaluation cost. What rema
 loading itself: about 860 modules, about 400 of them TypeScript that Node type-strips on every start. Node's compile
 cache removes that work (about 400 ms) but a `.vibe` entry cannot enable it
 (`~/vl/vibelang-bugs/compile-cache-from-vibe`).
+
+## Decision edges (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/decision-edges.bench.vibe`.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| decision-edges | 0.597 | 168 | `2026-11-10T07-57-46.278Z-decision-edges.json` |
+
+**decision-edges.** One callback checks the Actions panel steps (load and failure epochs, retry, maximize, input,
+slash highlight), account failure text, the issues screen's specification-review action (fresh, saved retry, a
+different saved retry, busy, not allowed), default role, assignee and settled load, history read offsets and dialog
+keys, tour docs paths and specification review recording, each against a written-out expected value.
+
+Limitations: pure decisions in one process; DOM, Commands and HTTP are measured by the browser and HTTP workloads;
+assertion overhead dominates the time.
