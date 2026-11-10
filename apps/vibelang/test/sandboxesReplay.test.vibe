@@ -1,0 +1,28 @@
+// @vitest-environment node
+// A real Container run's recording (VL-36) standing in for the vl-test stage in every ordinary run: the suite's body
+// (test/support/sandboxesLive.vibe) replayed through @smthrs/testing's HttpRecording, with no network and no token.
+// Until the lead records one (`VIBELANG_SANDBOX_MODE=record pnpm test:sandboxes-live`, decision 0024) it skips with
+// that reason; once committed, a changed request fails here until it is recorded again.
+import { describe, expect, it } from "@effect/vitest"
+import { HttpRecording } from "@smthrs/testing"
+import { HttpClient } from "effect/http"
+import { expectLifecycle, lifecycle, normalize, RECORDING, REPLAY_ORIGIN } from "./support/sandboxesLive.vibe"
+import { recordingText } from "./support/recordingFile.ts"
+
+const text = recordingText(RECORDING)
+
+describe.skipIf(text === undefined)(`a real Container run replayed (no ${RECORDING} yet: VIBELANG_SANDBOX_MODE=record pnpm test:sandboxes-live)`, () => {
+  it.live("replays start, command, checkpoint, restore, metering and sweep, claiming every recorded exchange", () => scoped(effect {
+    const recording = try HttpRecording.load(RECORDING)
+    const client = try Effect.try(() => HttpRecording.replay(recording, { normalize }))
+    const run = try Effect.provideService(lifecycle(REPLAY_ORIGIN, "replayed"), HttpClient.HttpClient, client)
+    try Effect.try(() => {
+      expectLifecycle(run, false)
+      expect(client.remaining()).toBe(0)
+    })
+  }))
+
+  it("holds no credential", () => {
+    expect(HttpRecording.scan(text!)).toEqual([])
+  })
+})

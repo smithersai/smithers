@@ -43,6 +43,7 @@ pnpm dev            # http://localhost:5178
 pnpm typecheck      # vibelang -p tsconfig.json
 pnpm test           # properties, integration, scenes, surfaces (mock backend)
 pnpm test:workerd   # the API Worker's Durable Objects in local workerd, through LiveFactory, the protocol and the CLI
+pnpm test:sandboxes-live   # real Cloudflare Containers in the vl-test stage, on demand (0024: deploy:sandboxes-test first)
 pnpm agent-context  # regenerate worker/agentContext.vibe after a VibeLang upgrade
 pnpm e2e            # browser tests against the built app (dark, light, phone), on the mock
 pnpm wiki:build && pnpm exec alchemy dev --stage dev   # site + API Worker locally at http://localhost:1337 (NODE_OPTIONS=--import=vibelang/register)

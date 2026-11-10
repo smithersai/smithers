@@ -1,0 +1,184 @@
+// @vitest-environment node
+// The vl-test stage's sandbox probe (worker/sandboxProbeFetch.vibe, decision 0024) served over real loopback HTTP, with
+// the product's account and machine objects over SQLite storage and a container whose commands are local processes
+// (fuzz/machine-box.ts). The real-Container suite's body (test/support/sandboxesLive.vibe) runs here unchanged, so every
+// ordinary run checks what `pnpm test:sandboxes-live` will ask of Cloudflare. Faults come from the box and from a
+// namespace whose binding throws; nothing intercepts a request.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { HttpRecording } from "@smthrs/testing"
+import { RuntimeContext } from "alchemy"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServer } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { accountObject, gatewayOf } from "../worker/accountObject.vibe"
+import { machineObject, type MachineBox, type ObjectState } from "../worker/machineObject.vibe"
+import { admitted, deadlineOf, leaseClamped, leaseFor, OWNER_HEADER, PROBE_CONVERSATION, PROBE_WINDOW_MS, probeFetch, probeIdentity, probeOwner } from "../worker/sandboxProbeFetch.vibe"
+import { makeBox, namespaceOf } from "../fuzz/machine-box.ts"
+import { objectStorage } from "./support/objectStorage.ts"
+import { expectLifecycle, lifecycle, normalize, probeClient, REPLAY_ORIGIN, sweep } from "./support/sandboxesLive.vibe"
+
+const TOKEN = "probe-token-for-tests"
+function stateOf(storage: ReturnType<typeof objectStorage>, id: string) {
+  return { raw: { storage }, id: { toString: () => id } } as unknown as ObjectState
+}
+const provided = <A, E>(body: A!E!(RuntimeContext | Scope.Scope | HttpServer.HttpServer | HttpClient.HttpClient)) => Effect.scoped(Effect.provide(Effect.provideService(body, RuntimeContext, {} as never), NodeHttpServer.layerTest))
+
+/** The probe Worker's body over one account and one machine, served on the test server's loopback origin. */
+effect function probe(options: { readonly accountBinding?: boolean } = {}) {
+  const local = try Effect.acquireRelease(sync(() => makeBox()), (made) => sync(() => made.dispose()))
+  const machineStorage = try Effect.try(() => objectStorage())
+  const machine = try machineObject(local.box as unknown as MachineBox, stateOf(machineStorage, "m"))
+  const identity = probeIdentity(TOKEN)
+  const machines = try Effect.try(() => namespaceOf(() => true, machine))
+  const account = try accountObject(stateOf(try Effect.try(() => objectStorage()), "a"), leaseClamped(machines) as never, identity)
+  const accounts = try Effect.try(() => namespaceOf(() => options.accountBinding !== false, account))
+  const { gateway } = gatewayOf(accounts as never, identity)
+  try HttpServer.serveEffect(probeFetch(TOKEN, gateway, accounts, machines))
+  return { local, machineStorage, account }
+}
+const reason = <A, R>(program: A!{ readonly _tag: string; readonly refusal?: string; readonly reason?: string }!R) => Effect.flip(program).pipe(Effect.map((error) => error.refusal ?? error.reason ?? error._tag))
+/** The Factory client as `owner` with `token`, against the test server. */
+function asOwner(token: string, owner: string) {
+  return LiveFactory("").pipe(Layer.provide(Layer.effect(HttpClient.HttpClient, Effect.map(HttpClient.HttpClient, (client) => probeClient(client, token, owner)))))
+}
+effect function asked<A, E>(token: string, owner: string, use: (factory: Factory.Shape) => A!E) {
+  provide asOwner(token, owner) {
+    return try use(try Factory)
+  }
+}
+
+describe("the sandbox probe", () => {
+  it.live("runs the real-Container suite: start, write, checkpoint, restore, read, meter, stop and sweep one sandbox", () => provided(effect {
+    const p = try probe()
+    const run = try lifecycle("", TOKEN)
+    const machine = p.machineStorage.kv.get("machine") as { readonly phase: string; readonly snapshot?: unknown }
+    try Effect.try(() => {
+      expect(deadlineOf(run.owner)).toBeGreaterThan(Date.now())
+      expect([run.first.status, run.first.generation, run.first.role, run.first.allowance]).toEqual(["running", 1, "contributor", 600])
+      expect([run.written, run.restored]).toEqual(["saved", "saved"])
+      expect([run.stopped.status, run.second.status, run.second.generation, run.ended.status]).toEqual(["stopped", "running", 2, "stopped"])
+      // The restart resumed from the checkpoint the first Stop took.
+      expect(p.local.state.restored).toHaveLength(1)
+      expect(machine.phase).toBe("stopped")
+      // Minutes metered: some time, never more than the run took, and remaining is the allowance left, rounded up.
+      expect(run.ended.used).toBeGreaterThan(0)
+      expect(run.ended.used * 60_000).toBeLessThanOrEqual(run.elapsed)
+      expect(run.ended.used).toBeGreaterThanOrEqual(run.stopped.used)
+      expect(run.ended.remaining).toBe(Math.ceil(run.ended.allowance - run.ended.used))
+      expect(run.swept).toEqual({ running: false, status: 200 })
+    })
+  }), 60_000)
+
+  it.live("records the suite's exchanges without its token or owner, and replays them with no server", () => provided(effect {
+    try probe()
+    provide NodeServices.layer {
+      const fs = try FileSystem.FileSystem
+      const path = `${try fs.makeTempDirectoryScoped()}/sandboxes-live.json`
+      // Effect's HttpClient takes absolute URLs only, so this run addresses the test server by its port, as a deployed
+      // probe is addressed by its URL.
+      const address = (try HttpServer.HttpServer).address
+      const origin = address._tag === "UnixPathAddress" ? "" : `http://127.0.0.1:${address.port}`
+      const live = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
+      const recorded = try scoped(effect {
+        const client = try HttpRecording.make({ mode: "record", path, live, secrets: [TOKEN], normalize })
+        return try Effect.provideService(lifecycle(origin, TOKEN), HttpClient.HttpClient, client)
+      })
+      const text = try fs.readFileString(path)
+      const replayed = try scoped(effect {
+        const client = try Effect.try(() => HttpRecording.replay(JSON.parse(text) as HttpRecording.Recording, { normalize }))
+        const run = try Effect.provideService(lifecycle(REPLAY_ORIGIN, "replayed"), HttpClient.HttpClient, client)
+        return { run, remaining: try Effect.try(() => client.remaining()) }
+      })
+      try Effect.try(() => {
+        expectLifecycle(recorded, true)
+        expectLifecycle(replayed.run, false)
+        expect(replayed.remaining).toBe(0)
+        expect([replayed.run.written, replayed.run.ended.used]).toEqual([recorded.written, recorded.ended.used])
+        expect(text).not.toContain(TOKEN)
+        expect(text).not.toContain(recorded.owner)
+        expect(HttpRecording.scan(text)).toEqual([])
+      })
+    }
+  }), 60_000)
+
+  it.live("treats a wrong token, an expired owner, one beyond the window and a malformed one as signed out", () => provided(effect {
+    try probe()
+    const now = Date.now()
+    const owners = [[TOKEN, probeOwner(now - 1)], [TOKEN, probeOwner(now + PROBE_WINDOW_MS + 60_000)], [TOKEN, "person-1"], ["wrong", probeOwner(now + 60_000)], ["", probeOwner(now + 60_000)]] as const
+    const refusals = try Effect.forEach(owners, ([token, owner]) => asked(token, owner, (factory) => reason(factory.startSandbox(PROBE_CONVERSATION, "op-1"))))
+    const read = try asked("wrong", probeOwner(now + 60_000), (factory) => factory.sandbox(PROBE_CONVERSATION))
+    try Effect.try(() => {
+      expect(refusals).toEqual(["forbidden", "forbidden", "forbidden", "forbidden", "forbidden"])
+      expect([read.status, read.generation, read.allowance]).toEqual(["stopped", 0, 0])
+    })
+  }), 30_000)
+
+  it.live("tears a sandbox down at its owner's deadline: leases end there, and the sweep's meter stops it as a Viewer", () => provided(effect {
+    const p = try probe()
+    const deadline = Date.now() + 3000
+    const owner = probeOwner(deadline)
+    const started = try asked(TOKEN, owner, (factory) => factory.startSandbox(PROBE_CONVERSATION, "start-1"))
+    // The account's alarm meters and renews the lease; the clamp ends it at the deadline, not hours later.
+    try p.account.alarm()
+    const leased = (p.machineStorage.kv.get("machine") as { readonly leaseUntil: number }).leaseUntil
+    try Effect.sleep(Duration.millis(Math.max(0, deadline - Date.now() + 50)))
+    const client = probeClient(try HttpClient.HttpClient, TOKEN, owner)
+    const swept = try sweep(client, "")
+    const refused = try asked(TOKEN, owner, (factory) => reason(factory.sandboxCommand(PROBE_CONVERSATION, "late", "pwd", started.generation)))
+    try Effect.try(() => {
+      expect(started.status).toBe("running")
+      expect(leased).toBeLessThanOrEqual(deadline + 5)
+      expect(swept).toEqual({ running: false, status: 200 })
+      expect((p.machineStorage.kv.get("machine") as { readonly phase: string }).phase).toBe("stopped")
+      expect(p.local.state.destroys).toBeGreaterThanOrEqual(1)
+      expect(refused).toBe("forbidden")
+    })
+  }), 30_000)
+
+  it.live("answers the sweep only with the token and a probe owner; any other path is not found", () => provided(effect {
+    try probe()
+    const client = try HttpClient.HttpClient
+    const statuses = try Effect.forEach([
+      HttpClientRequest.post("/api/probe/sweep").pipe(HttpClientRequest.setHeader(OWNER_HEADER, probeOwner(Date.now() + 60_000))),
+      HttpClientRequest.post("/api/probe/sweep").pipe(HttpClientRequest.setHeader("authorization", "Bearer wrong"), HttpClientRequest.setHeader(OWNER_HEADER, probeOwner(Date.now() + 60_000))),
+      HttpClientRequest.post("/api/probe/sweep").pipe(HttpClientRequest.setHeader("authorization", `Bearer ${TOKEN}`), HttpClientRequest.setHeader(OWNER_HEADER, "person-1")),
+      HttpClientRequest.get("/api/probe/sweep").pipe(HttpClientRequest.setHeader("authorization", `Bearer ${TOKEN}`)),
+      HttpClientRequest.get("/api/health"),
+    ], (request) => Effect.map(client.execute(request), (response) => response.status))
+    // An owner that never ran a sandbox has nothing running.
+    const idle = try sweep(probeClient(client, TOKEN, probeOwner(Date.now() + 60_000)), "")
+    try Effect.try(() => {
+      expect(statuses).toEqual([403, 403, 400, 404, 404])
+      expect(idle).toEqual({ running: false, status: 200 })
+    })
+  }), 30_000)
+
+  it.live("reports a sweep it could not finish as still running", () => provided(effect {
+    try probe({ accountBinding: false })
+    const failed = try sweep(probeClient(try HttpClient.HttpClient, TOKEN, probeOwner(Date.now() + 60_000)), "")
+    try Effect.try(() => expect(failed).toEqual({ running: true, status: 503 }))
+  }), 30_000)
+
+  it.live("reports a container whose state it cannot read as still running", () => provided(effect {
+    const p = try probe()
+    p.local.faults.add("running")
+    const swept = try sweep(probeClient(try HttpClient.HttpClient, TOKEN, probeOwner(Date.now() - 1)), "")
+    try Effect.try(() => expect(swept).toEqual({ running: true, status: 200 }))
+  }), 30_000)
+})
+
+describe("a probe owner", () => {
+  it("holds compute only before a deadline at most the window away", () => {
+    const now = 1_800_000_000_000
+    expect([probeOwner(now + 1), deadlineOf(probeOwner(now + 1)), deadlineOf("probe-12"), deadlineOf("person-1")]).toEqual([`probe-${now + 1}`, now + 1, undefined, undefined])
+    expect([admitted(probeOwner(now + 1), now), admitted(probeOwner(now), now), admitted(probeOwner(now + PROBE_WINDOW_MS), now), admitted(probeOwner(now + PROBE_WINDOW_MS + 1), now), admitted("person-1", now)]).toEqual([true, false, true, false, false])
+  })
+
+  it("leases until the deadline at most, and never under machineObject's one-second floor", () => {
+    const now = 1_800_000_000_000
+    const id = `${probeOwner(now + 300_000)}/${PROBE_CONVERSATION}`
+    expect([leaseFor(id, 21_600_000, now), leaseFor(id, 60_000, now), leaseFor(id, 60_000, now + 299_500), leaseFor(id, 60_000, now + 400_000), leaseFor("person-1/live", 60_000, now)]).toEqual([300_000, 60_000, 1000, 1000, 1000])
+  })
+})

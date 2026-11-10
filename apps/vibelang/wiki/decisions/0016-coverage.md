@@ -660,7 +660,7 @@ The unit gate still fails below 100%. No file below is excluded and no threshold
 
 | Path | Needs | Test that covers it once available |
 | --- | --- | --- |
-| `worker/SandboxMachine.vibe`, Container paths of `worker/SandboxAccounts.vibe` | A real Container binding. Live sandboxes wait on Will's yes/no (Containers spend). No scripted Container namespace. | `test/sandbox.container.workerd.test.vibe`, opt-in on `VIBELANG_SANDBOX_TEST_URL` and `VIBELANG_SANDBOX_TEST_COOKIE`, skipped with that reason |
+| `worker/SandboxMachine.vibe`, `worker/SandboxProbe.vibe`, Container paths of `worker/SandboxAccounts.vibe` | A real Container binding. Will ruled yes (VL-35, 2026-11-10); the `vl-test` stage declares one (0024) and awaits its first deploy. No scripted Container namespace. | `test/sandboxes.live.test.vibe` through `pnpm test:sandboxes-live` against the stage, on demand. Its body also runs in `pnpm test` over local processes (`test/sandboxProbe.test.vibe`), which covers `worker/sandboxProbeFetch.vibe` but not these bindings |
 | `worker/Api.vibe` | Closed 2026-11-10 (vl-coverage-workerd): its wiring runs only in workerd, and the suite now loads it there as Alchemy builds and bridges it (`test/workerd/api.vibe`), measured in the unit and fuzz gates. | `test/alchemyApi.workerd.test.vibe`; fuzz target `workerd/alchemy-api-requests` |
 | `worker/SpecificationReviewers.vibe` | Stays unbound by decision 0027. | None until it is bound |
 | `worker/VipDraft.vibe`, model paths of `worker/Reply.vibe` | A model credential reference in the environment. | `test/live.workerd.test.vibe` covers Reply, opt-in on `CEREBRAS_API_KEY`. `test/vipDraft.test.vibe` covers `VipDraft`, opt-in on the same key |

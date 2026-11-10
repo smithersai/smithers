@@ -8,7 +8,7 @@ import type { SandboxImage } from "../infra/SandboxImage.vibe"
 import { observed } from "../src/core/sandboxHost.vibe"
 import { checkpointOutput, checkpointPhase, checkpointed, commandOutput, commandTimeout, currentRunning, generationRefused, leaseDurationRefused, leaseExpired, receiptPassed, receiptText, restoredOptions, startRefused, stoppedPhase } from "../src/core/machineDecision.vibe"
 
-export type Operation = "start" | "stop" | "command" | "lease"
+export type Operation = "start" | "stop" | "command" | "lease" | "status"
 export interface MachineShape {
   apply(kind: Operation, generation: number, operationId: string, command: string): { readonly ok: boolean; readonly output: string }!!RuntimeContext
 }
@@ -29,6 +29,8 @@ export function machineObject(box: MachineBox, state: ObjectState) {
     }
     effect function saved() { return (try promise(() => state.raw.storage.get<Saved>("machine"))) ?? { generation: 0, phase: "stopped" as const } }
     effect function apply(kind: Operation, generation: number, operationId: string, command: string) {
+      // Whether the container runs, whatever its generation: the probe's sweep reports this, not the ledger (0024).
+      if (kind === "status") return { ok: true, output: (try box.running) ? "running" : "stopped" }
       const previous = try saved()
       if (!Number.isSafeInteger(generation) || generationRefused(kind === "start", generation, previous.generation)) return { ok: false, output: "" }
       if (kind === "lease") {
@@ -43,7 +45,7 @@ export function machineObject(box: MachineBox, state: ObjectState) {
         if (startRefused(generation, previous.generation, previous.phase)) return { ok: false, output: "" }
         const starting: Saved = { ...previous, generation, phase: "starting" }
         try promise(() => state.raw.storage.put("machine", starting))
-        try SandboxObject.wake({ ...box, start: (options) => box.start(restoredOptions(options, previous.snapshot)) }, { intercepts: [], inactivityTimeoutMs: 150000, startTimeoutMs: 150000 })
+        try SandboxObject.wake({ ...box, start: (options) => box.start(restoredOptions(options, previous.snapshot)) }, { intercepts: [], instance: "lite", inactivityTimeoutMs: 150000, startTimeoutMs: 150000 })
         if (!(try box.running)) return { ok: false, output: "" }
         const setup = try SandboxObject.run(box, ["sh", "-c", "mkdir -p /workspace /var/lib/vibelang/calls && chown 1000:1000 /workspace /var/lib/vibelang/calls"], { user: "0:0" })
         if (setup !== 0) return { ok: false, output: "" }
