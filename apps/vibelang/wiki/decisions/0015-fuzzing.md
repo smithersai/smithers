@@ -474,7 +474,11 @@ below was checked by breaking the code, seeing the test fail, and restoring it.
   `issues/steered-host` at 5 seconds, which passed at 60 seconds with one execution.
 - **No target reaches the network.** `history/github-public-read` left the suite; `test/mainLog.github.test.vibe`
   replays a recording of real GitHub and records again only with `VIBE_GITHUB=record` and `GITHUB_TEST_TOKEN`
-  ([0032](0032-record-replay.md)). Fuzz targets keep the in-memory GitHub: a recording cannot hold generated requests.
+  ([0032](0032-record-replay.md)). Fuzz targets keep the in-memory GitHub by VL-38: a recording cannot hold generated requests.
+  `test/fakeConformance.test.vibe` replays every committed real-GitHub recording through it on every `pnpm test`,
+  comparing status and every field the app's production decoders read ([0032](0032-record-replay.md#fake-conformance-vl-38-lane-vl-fake-conformance)).
+  The fake's visibility clock models delayed listings and timelines; no status or meaningful decoded value is
+  normalized away. Normalization rules and reasons live together in `NON_SEMANTIC_DIFFERENCES`.
 - **Named answers.** `sandbox/host-recovery`, `api-objects/world`, `web/subscriptions`, `wiki/tools`,
   `history/page-paths`, `reply/failure-tags`, `http/doors`, `actions/history-host`, `web/arbitrary-update`,
   `history/arbitrary-update` and `history/view-models` now require the expected outcome; the api-workerd bench reads one

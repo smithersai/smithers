@@ -1,0 +1,259 @@
+// @vitest-environment node
+// VL-38: every committed real-GitHub recording is a contract for the fuzz protocol fake.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import { GitHub } from "@smthrs/integrations"
+import { HttpRecording } from "@smthrs/testing"
+import { HttpClientRequest } from "effect/http"
+import { Base64 } from "effect/encoding"
+import { fakeClient, seed } from "../fuzz/issues-node-fake.vibe"
+import { GitHubCommit } from "../worker/MainLog.vibe"
+
+type Wire = Record<string, any>
+
+/** NON_SEMANTIC_DIFFERENCES: the only values comparison may erase. Null and missing stay distinct. */
+const NON_SEMANTIC_DIFFERENCES = [
+  { name: "allocated-identity", reason: "Database and node ids are server allocations; bind numeric references, retain types and compare account and repository ids exactly.", keys: /^(id|node_id)$/ },
+  { name: "allocated-sha", reason: "Only content blob hashes differ; decoded bytes agree. Commit, parent and merge hashes compare exactly using recorded allocations.", keys: /^sha$/ },
+  { name: "wall-clock", reason: "The fake has a fixed clock; timestamp presence and nullability still have to agree.", keys: /^(created_at|updated_at|closed_at|merged_at|submitted_at)$/ },
+  { name: "base64-whitespace", reason: "REST wraps Base64 while GraphQL does not; whitespace is absent from the decoded file.", keys: /^content$/ },
+  { name: "transport-headers", reason: "ETags identify one server's representation; URLs retain their resource path and query.", keys: /^etag$/ },
+] as const
+
+function normalize(value: unknown, key = "", stable = false, blob = false): unknown {
+  const stableIdentity = stable || /^(user|actor|assignee|assignees|owner)$/.test(key)
+  if (value === null || value === undefined) return value
+  if (key === "content" && typeof value === "string") return value.replace(/\s/g, "")
+  const rule = NON_SEMANTIC_DIFFERENCES.find((rule) => rule.keys.test(key) && !(stableIdentity && rule.name === "allocated-identity") && (rule.name !== "allocated-sha" || blob))
+  if (rule?.name === "allocated-identity" && ((typeof value === "number" && (!Number.isSafeInteger(value) || value <= 0)) || value === "")) return value
+  if (rule?.name === "wall-clock" && typeof value === "string" && !Number.isFinite(Date.parse(value))) return value
+  if (rule !== undefined) return `<${rule.name}:${typeof value}>`
+  if (Array.isArray(value)) return value.map((item) => normalize(item, "", stableIdentity, blob))
+  if (typeof value === "object") return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, normalize(item, name, stableIdentity, blob)]))
+  return value
+}
+
+function difference(expected: unknown, actual: unknown, field = "$"): string | undefined {
+  if (Object.is(expected, actual)) return undefined
+  if (Array.isArray(expected) && Array.isArray(actual)) {
+    if (expected.length !== actual.length) return field + ".length"
+    for (let i = 0; i < expected.length; i++) {
+      const found = difference(expected[i], actual[i], `${field}[${i}]`)
+      if (found !== undefined) return found
+    }
+    return undefined
+  }
+  if (expected !== null && actual !== null && typeof expected === "object" && typeof actual === "object") {
+    const left = expected as Record<string, unknown>
+    const right = actual as Record<string, unknown>
+    for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {
+      if (Object.hasOwn(left, key) !== Object.hasOwn(right, key)) return `${field}.${key}`
+      const found = difference(left[key], right[key], `${field}.${key}`)
+      if (found !== undefined) return found
+    }
+    return undefined
+  }
+  return field
+}
+
+schema Ref { ref: string; object: { sha: string; type: string } }
+schema Repository { id: number; name: string; owner: { login: string }; default_branch: string }
+const File = Schema.Struct({ type: Schema.Literal("file"), encoding: Schema.Literal("base64"), content: Schema.String, sha: Schema.String })
+schema Account { id: number; login: string }
+const GraphQL = Schema.Struct({
+  data: Schema.optionalKey(Schema.NullOr(Schema.Struct({ createCommitOnBranch: Schema.NullOr(Schema.Struct({ commit: Schema.Struct({ oid: Schema.String }) })) }))),
+  errors: Schema.optionalKey(Schema.Array(Schema.Struct({ message: Schema.String, type: Schema.optionalKey(Schema.String) }))),
+})
+
+/** Shared production decoders strip only fields the app never reads; unknown endpoints fail closed. */
+function responseSchema(path: string, status: number): Schema.Decoder<unknown> | undefined {
+  if (status === 204) return undefined
+  if (status >= 400) return Schema.Struct({ message: Schema.String })
+  if (path === "/graphql") return GraphQL
+  if (/\/issues\/\d+\/timeline$/.test(path)) return Schema.Array(GitHub.IssueChanges.TimelineEvent)
+  if (/\/issues\/\d+\/comments$/.test(path)) return Schema.Union([GitHub.Issues.IssueComment, Schema.Array(GitHub.Issues.IssueComment)])
+  if (/\/issues\/\d+\/labels(?:\/[^/]+)?$/.test(path)) return Schema.Array(GitHub.Issues.IssueLabel)
+  if (/\/issues(?:\/\d+(?:\/sub_issues)?)?$/.test(path)) return Schema.Union([GitHub.IssueChanges.WithAssignees, Schema.Array(GitHub.IssueChanges.WithAssignees)])
+  if (/\/assignees$/.test(path)) return Schema.Array(Account)
+  if (/\/pulls\/\d+\/files$/.test(path)) return Schema.Array(GitHub.Proposals.ReviewFile)
+  if (/\/pulls\/\d+\/reviews$/.test(path)) return Schema.Array(GitHub.Pulls.Review)
+  if (/\/pulls(?:\/\d+)?$/.test(path)) return Schema.Union([GitHub.Pulls.PullRequest, Schema.Array(GitHub.Pulls.PullRequest)])
+  if (/\/git\/matching-refs\//.test(path)) return Schema.Array(Ref)
+  if (/\/git\/(?:ref\/|refs)/.test(path)) return Ref
+  if (/\/contents\//.test(path)) return File
+  if (/\/commits$/.test(path)) return Schema.Array(GitHubCommit)
+  if (/^\/repos\/[^/]+\/[^/]+$/.test(path)) return Repository
+  return undefined
+}
+
+effect function copy<A>(value: A) {
+  return try Effect.try(() => JSON.parse(JSON.stringify(value)) as A)
+}
+
+/**
+ * Seed resources from their first reads, before a write to that resource. Never seed a created issue, pull, ref,
+ * comment or file from its later answer. Only opaque server allocations and external timing come from later exchanges.
+ */
+effect function initial(recording: HttpRecording.Recording) {
+  const fake = seed() as ReturnType<typeof seed> & Wire
+  fake.issues = []; fake.pulls = []; fake.comments = {}; fake.branches = {}; fake.files = {}
+  fake.timelines = {}; fake.reviews = {}; fake.commitPages = {}; fake.commitNext = {}; fake.repositories = {}
+  const createdBranches = new Set<string>()
+  const createdFiles = new Set<string>()
+  let issuesRead = false
+  let assigneesRead = false
+  for (const { request, response } of recording.exchanges) {
+    const url = new URL(request.url)
+    const path = url.pathname
+    const body = request.body as Wire | undefined
+    const answer = response.body as Wire
+    const repository = /^\/repos\/([^/]+\/[^/]+)/.exec(path)?.[1]
+    if (request.method === "POST" && /\/git\/refs$/.test(path)) createdBranches.add(`${repository}/${String(body!.ref).replace("refs/heads/", "")}`)
+    if (request.method === "POST" && path === "/graphql") {
+      for (const file of body!.variables.input.fileChanges.additions ?? []) createdFiles.add(file.path)
+    }
+    if (request.method !== "GET" || response.status !== 200) continue
+    if (/^\/repos\/[^/]+\/[^/]+$/.test(path) && fake.repositories[repository!] === undefined) fake.repositories[repository!] = try copy(answer)
+    if (/\/issues$/.test(path) && !issuesRead) {
+      fake.issues = try copy(answer as unknown as typeof fake.issues)
+      issuesRead = true
+      fake.labels = [...new Set(fake.issues.flatMap((issue) => issue.labels.map((label) => label.name)))]
+      // A duplicate-create refusal is the recording's observation of a pre-existing repository label.
+      for (const exchange of recording.exchanges) if (exchange.request.method === "POST" && /\/labels$/.test(new URL(exchange.request.url).pathname) && exchange.response.status === 422 && ((exchange.response.body as Wire).errors as Array<Wire> | undefined)?.some((error) => error.code === "already_exists")) fake.labels.push((exchange.request.body as Wire).name)
+      for (const issue of fake.issues) fake.comments[issue.number] = []
+    }
+    if (/\/assignees$/.test(path) && !assigneesRead) { fake.assignable = try copy(answer as unknown as typeof fake.assignable); assigneesRead = true }
+    const ref = /\/git\/ref\/heads\/(.+)$/.exec(path)
+    if (ref && !createdBranches.has(`${repository}/${ref[1]}`)) (fake.branches[repository!] ??= {})[ref[1]!] ??= answer.object.sha
+    const contents = /\/contents\/(.+)$/.exec(path)
+    if (contents && !createdFiles.has(contents[1]!) && fake.files[contents[1]!] === undefined) fake.files[contents[1]!] = try Effect.fromResult(Base64.decodeString(answer.content))
+    if (/\/commits$/.test(path)) {
+      const offset = (Number(url.searchParams.get("page") ?? 1) - 1) * Number(url.searchParams.get("per_page") ?? 100)
+      const page = try copy(answer as unknown as Array<unknown>)
+      ;(fake.commitPages[repository!] ??= []).splice(offset, page.length, ...page)
+      const next = /<([^>]+)>;\s*rel="next"/.exec(response.headers["link"] ?? "")?.[1]
+      if (next !== undefined) fake.commitNext[request.url] = next
+    }
+  }
+  // Numeric issue/PR names are one repository-wide sequence. Its next value is an opaque allocation, not behavior.
+  const firstNumber = recording.exchanges.find((e) => e.request.method === "POST" && /\/(issues|pulls)$/.test(new URL(e.request.url).pathname))
+  fake.nextIssue = fake.nextPull = firstNumber === undefined ? 1 : (firstNumber.response.body as Wire).number
+  fake.author = { id: 297525718, login: "smitherspreviewrelease[bot]" }
+  fake.mergeShas = {}
+  for (const { response } of recording.exchanges) {
+    const value = response.body as Wire | null
+    if (value !== null && typeof value === "object" && typeof value.number === "number" && typeof value.merge_commit_sha === "string") fake.mergeShas[value.number] ??= value.merge_commit_sha
+  }
+  // GitHub's normal 'since' was scrubbed to 'run'; its first read establishes that query's initial candidate set.
+  fake.sinceNumbers = (recording.exchanges.find((e) => e.request.method === "GET" && /[?&]since=/.test(e.request.url))?.response.body as Array<Wire> | undefined)?.map((issue) => issue.number) ?? []
+  fake.shaAllocations = recording.exchanges.filter((e) => new URL(e.request.url).pathname === "/graphql").map((e) => (e.response.body as Wire).data.createCommitOnBranch.commit.oid)
+  return fake
+}
+
+/**
+ * Recordings omit request times. Model the observable scheduling inputs separately from response normalization:
+ * first visibility of a newly allocated issue, timeline event and externally computed mergeability. These controls
+ * delay fake-generated state; they never supply a successful answer, status, body, label, assignment or content.
+ */
+function timing(recording: HttpRecording.Recording, fake: Wire) {
+  fake.issueVisibleAt = {}; fake.eventVisibleAt = {}; fake.mergeability = {}
+  for (let at = 0; at < recording.exchanges.length; at++) {
+    const { request, response } = recording.exchanges[at]!
+    const path = new URL(request.url).pathname
+    if (request.method === "GET" && /\/issues$/.test(path) && !request.url.includes("since=")) {
+      for (const issue of response.body as Array<Wire>) fake.issueVisibleAt[issue.number] ??= at
+    }
+    if (request.method === "GET" && /\/timeline$/.test(path)) {
+      const number = /\/issues\/(\d+)/.exec(path)![1]!
+      for (const [index] of (response.body as Array<Wire>).entries()) fake.eventVisibleAt[`${number}:${index}`] ??= at
+    }
+    if (/\/pulls\/\d+$/.test(path) && response.status === 200) {
+      const pull = response.body as Wire
+      ;(fake.mergeability[pull.number] ??= []).push({ at, state: pull.mergeable_state })
+    }
+  }
+}
+
+it.live("every real GitHub recording conforms to the fuzz fake", () => scoped(effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const directory = try path.fromFileUrl(new URL("./recordings/", import.meta.url))
+    const names = (try fs.readDirectory(directory)).filter((name) => name.endsWith(".json")).sort()
+    expect(names.length).toBeGreaterThan(0)
+    let exchanges = 0
+    const failures: Array<string> = []
+    for (const name of names) {
+      const recording = try HttpRecording.load(path.join(directory, name))
+      const fake = try initial(recording)
+      timing(recording, fake)
+      const client = fakeClient(fake)
+      const identities = new Map<string, string | number>()
+      const owners = new Map<string, string>()
+      // Initial identities are already known; allocated identities must remain consistent on every later read.
+      for (const kind of ["issue", "pull"] as const) {
+        for (const row of kind === "issue" ? fake.issues : fake.pulls) {
+          for (const field of ["id", "node_id"] as const) {
+            const key = `${kind}:${field}:${row[field]}`
+            identities.set(key, row[field])
+            owners.set(key, key)
+          }
+        }
+      }
+      for (let index = 0; index < recording.exchanges.length; index++) {
+        const { request, response } = recording.exchanges[index]!
+        const url = new URL(request.url)
+        const context = `${name} exchange ${index} ${request.method} ${url.pathname}`
+        fake.tick = index
+        let wire = HttpClientRequest.make(request.method as "GET")(request.url)
+        if (request.body !== undefined) {
+          const body = try copy(request.body as Wire)
+          if (typeof body.sub_issue_id === "number") body.sub_issue_id = identities.get("issue:id:" + body.sub_issue_id) ?? body.sub_issue_id
+          wire = HttpClientRequest.bodyJsonUnsafe(wire, body)
+        }
+        const actual = try client.execute(wire).pipe(Effect.mapError(() => new Error(context + " differing field $.transport")))
+        expect(actual.status, context + " differing field $.status").toBe(response.status)
+        const next = (headers: Readonly<Record<string, string>>) => /<([^>]+)>;\s*rel="next"/.exec(headers["link"] ?? "")?.[1]
+        expect(next(actual.headers), context + " differing field $.headers.link.next").toBe(next(response.headers))
+        expect(actual.headers["retry-after"], context + " differing field $.headers.retry-after").toBe(response.headers["retry-after"])
+        if (response.status === 204) { expect(try actual.text, context + " differing field $.body").toBe(""); exchanges++; continue }
+        const answer = try actual.json.pipe(Effect.mapError(() => new Error(context + " differing field $.body (JSON)")))
+        const decoder = responseSchema(url.pathname, response.status)
+        expect(decoder, context + " missing decoder coverage").toBeDefined()
+        const realDecoded = try Schema.decodeUnknownEffect(decoder!)(response.body).pipe(Effect.mapError(() => new Error(context + " differing field $.body (GitHub decoder)")))
+        const fakeDecoded = try Schema.decodeUnknownEffect(decoder!)(answer).pipe(Effect.mapError(() => new Error(context + " differing field $.body (fake decoder)")))
+        const kind = /\/issues(?:\/\d+(?:\/sub_issues)?)?$/.test(url.pathname) ? "issue"
+          : /\/pulls(?:\/\d+)?$/.test(url.pathname) ? "pull"
+          : /\/comments$/.test(url.pathname) ? "comment"
+          : /\/reviews$/.test(url.pathname) ? "review" : undefined
+        if (kind !== undefined && response.status < 400) {
+          const recordedRows = (Array.isArray(realDecoded) ? realDecoded : [realDecoded]) as Array<Wire>
+          const answeredRows = (Array.isArray(fakeDecoded) ? fakeDecoded : [fakeDecoded]) as Array<Wire>
+          for (let row = 0; row < Math.min(recordedRows.length, answeredRows.length); row++) {
+            for (const field of ["id", "node_id"] as const) {
+              const wanted = `${kind}:${field}:${recordedRows[row]![field]}`
+              const value = answeredRows[row]![field] as string | number
+              const claimed = `${kind}:${field}:${value}`
+              const previous = identities.get(wanted)
+              const location = `${context} differing field $[${row}].${field} (identity)`
+              if (previous === undefined) {
+                expect(owners.has(claimed), location + " collision").toBe(false)
+                identities.set(wanted, value)
+                owners.set(claimed, wanted)
+              } else expect(value, location + " changed").toBe(previous)
+            }
+          }
+        }
+        const left = normalize(realDecoded, "", (/^\/repos\/[^/]+\/[^/]+$/.test(url.pathname) || /\/assignees$/.test(url.pathname)), /\/contents\//.test(url.pathname))
+        const right = normalize(fakeDecoded, "", (/^\/repos\/[^/]+\/[^/]+$/.test(url.pathname) || /\/assignees$/.test(url.pathname)), /\/contents\//.test(url.pathname))
+        const field = difference(left, right)
+        if (field !== undefined) failures.push(context + " differing field " + field)
+        exchanges++
+      }
+      try Effect.logInfo("fake conformance recording").pipe(Effect.annotateLogs({ recording: name, exchanges: recording.exchanges.length }))
+    }
+    expect(failures).toEqual([])
+    try Metric.update(Metric.counter("vibelang.test.fake_conformance.exchanges"), exchanges)
+    try Effect.logInfo("fake conformance complete").pipe(Effect.annotateLogs({ recordings: names.length, exchanges }))
+  }
+}).pipe(Effect.withSpan("vibelang.test.fake_conformance")))

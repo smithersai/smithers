@@ -15,6 +15,8 @@ export interface FakeIssue {
   body: string | null
   state: "open" | "closed"
   state_reason: string | null
+  sub_issues_summary?: { total: number; completed: number } | null
+  repository_url?: string
   user: { id: number; login: string } | null
   labels: Array<{ name: string }>
   comments: number
@@ -36,6 +38,11 @@ export interface FakePull {
   head: { ref: string; sha: string }
   base: { ref: string; sha: string; repo: { default_branch: string } | null }
   changed_files: number
+  commits?: number
+  additions?: number
+  deletions?: number
+  mergeable_state?: string
+  merge_commit_sha?: string | null
   created_at: string
   updated_at: string
   closed_at: string | null
@@ -43,6 +50,21 @@ export interface FakePull {
 }
 
 export interface Fake {
+  /** Independent GitHub state and scheduling inputs used by recording conformance. */
+  repositories?: Record<string, unknown>
+  author?: { id: number; login: string }
+  sinceNumbers?: Array<number>
+  shaAllocations?: Array<string>
+  commitNext?: Record<string, string>
+  commitPages?: Record<string, Array<unknown>>
+  commitFiles?: Record<string, Record<string, string>>
+  timelines?: Record<number, Array<Record<string, unknown>>>
+  reviews?: Record<number, Array<unknown>>
+  tick?: number
+  issueVisibleAt?: Record<number, number>
+  eventVisibleAt?: Record<string, number>
+  mergeShas?: Record<number, string>
+  mergeability?: Record<number, Array<{ at: number; state: string }>>
   issues: Array<FakeIssue>
   comments: Record<number, Array<{ id: number; node_id: string; body: string | null; user: { id: number; login: string } | null; created_at: string; updated_at: string; issue_url: string }>>
   labels: Array<string>
@@ -94,7 +116,7 @@ function seedIssue(fake: Fake, number: number, state: "open" | "closed", labels:
 
 export function seed(): Fake {
   const fake: Fake = {
-    issues: [], comments: {}, labels: [], assignable: [{ id: 7, login: "fuzz" }, { id: 8, login: "vibe-agent" }],
+    issues: [], comments: {}, labels: ["vibelang:task"], assignable: [{ id: 7, login: "fuzz" }, { id: 8, login: "vibe-agent" }],
     pulls: [], forks: {}, branches: { "o/r": { main: "a".repeat(40) } }, commits: {}, pullAdditions: {},
     writes: 0, nextId: 1000, nextIssue: 100, nextPull: 600, nextSha: 1,
     forbiddenNext: false, endlessIssues: false, endlessTimeline: false, endlessReviews: false, malformedIssues: false,
@@ -118,6 +140,7 @@ export function seed(): Fake {
     changed_files: 1, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z", closed_at: null,
     files: [{ filename: "docs/design/vips/proposal-seed.md", status: "added" }],
   })
+  fake.timelines = {}
   return fake
 }
 
@@ -145,6 +168,13 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
   return HttpClient.make(effect (request) => {
     const url = new URL(request.url)
     const path = url.pathname
+    const repositoryPath = /^\/repos\/([^/]+\/[^/]+)/.exec(path)?.[1] ?? "o/r"
+    const author = fake.author ?? { id: 7, login: "fuzz" }
+    const repositoryUrl = `${url.origin}/repos/${repositoryPath}`
+    const event = (number: number, kind: string, extra: Record<string, unknown> = {}) => {
+      (fake.timelines ??= {})[number] ??= []
+      fake.timelines[number]!.push({ event: kind, actor: author, created_at: "2026-01-03T00:00:00Z", ...extra })
+    }
     const rawBody = request.body as { readonly _tag: string; readonly body?: unknown }
     const decode = (bytes: Uint8Array) => Effect.try(() => new TextDecoder().decode(bytes)).pipe(Effect.catch(() => succeed("")))
     const text = rawBody._tag === "Raw" ? typeof rawBody.body === "string" ? rawBody.body : rawBody.body instanceof Uint8Array ? try decode(rawBody.body) : undefined : rawBody._tag === "Uint8Array" ? try decode(rawBody.body as Uint8Array) : undefined
@@ -186,13 +216,27 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
     const commitOne = /^\/repos\/([^/]+)\/([^/]+)\/git\/commits\/([0-9a-f]+)$/.exec(path)
     if (repoOne && request.method === "GET") {
       const key = `${repoOne[1]}/${repoOne[2]}`
+      if (fake.repositories?.[key] !== undefined) return try jsonResponse(request, 200, fake.repositories[key])
       if (key === "o/r") return try jsonResponse(request, 200, { id: REPOSITORY_ID, name: "r", owner: { login: "o" }, default_branch: "main" })
       const existing = fake.forks[key]
       return try (existing === undefined ? jsonResponse(request, 404, { message: "Not Found" }) : jsonResponse(request, 200, existing))
     }
     if (issuesList && request.method === "GET") {
       const shown = fake.hideVip ? fake.issues.map((issue) => ({ ...issue, body: String(issue.body ?? "").replace(/<!-- vibelang:vip [^>]*-->/g, "") })) : fake.issues
-      return try page(fake.malformedIssues ? [{ garbage: true }, ...shown] : shown, fake.endlessIssues)
+      let items = shown.filter((issue) => (fake.issueVisibleAt?.[issue.number] ?? 0) <= (fake.tick ?? Infinity))
+      const state = url.searchParams.get("state")
+      if (state === "open" || state === "closed") items = items.filter((issue) => issue.state === state)
+      if (url.searchParams.has("since") && fake.sinceNumbers !== undefined) items = items.filter((issue) => fake.sinceNumbers!.includes(issue.number) || issue.number >= Math.min(fake.nextIssue, fake.nextPull))
+      if (url.searchParams.has("sort")) items = [...items].sort((a, b) => (url.searchParams.get("direction") === "desc" ? -1 : 1) * (a.number - b.number))
+      const perPage = Number(url.searchParams.get("per_page") ?? 100)
+      const offset = (Number(url.searchParams.get("page") ?? 1) - 1) * perPage
+      const response = try page(fake.malformedIssues ? [{ garbage: true }, ...items] : items.slice(offset, offset + perPage), fake.endlessIssues)
+      // A repository list may begin with a stale aggregate; subsequent reads derive it from the seeded children.
+      for (const parent of fake.issues) {
+        const children = fake.issues.filter((child) => child.parent_issue_url === `${repositoryUrl}/issues/${parent.number}`)
+        if (children.length > 0) parent.sub_issues_summary = { total: children.length, completed: children.filter((child) => child.state === "closed").length }
+      }
+      return response
     }
     if (issuesList && request.method === "POST") {
       const number = fake.nextIssue
@@ -200,12 +244,14 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       const textBody = String(body?.body ?? "")
       return try write(201, () => fake.issues.find((issue) => issue.number === number), () => {
         fake.nextIssue += 1
+        fake.nextPull = Math.max(fake.nextPull, fake.nextIssue)
         fake.issues.push({
           id: fake.nextId++, node_id: `node-${number}`, number, title, body: textBody,
-          state: "open", state_reason: null, user: { id: 7, login: "fuzz" }, labels: [], comments: 0,
+          state: "open", state_reason: null, user: author, labels: [], comments: 0, sub_issues_summary: { total: 0, completed: 0 }, repository_url: repositoryUrl,
           created_at: "2026-01-03T00:00:00Z", updated_at: "2026-01-03T00:00:00Z", closed_at: null, assignees: [],
         })
         fake.comments[number] = []
+        ;(fake.timelines ??= {})[number] = []
       })
     }
     if (issueOne && request.method === "GET") {
@@ -217,9 +263,18 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       const issue = fake.issues.find((candidate) => candidate.number === Number(issueOne[3]))
       if (issue === undefined) return try jsonResponse(request, 404, { message: "Not Found" })
       return try write(200, () => issue, () => {
-        if (Array.isArray(body?.assignees) && !fake.dropAssignees) issue.assignees = (body.assignees as Array<string>).map((login) => ({ id: login === "vibe-agent" ? 8 : 7, login }))
+        if (Array.isArray(body?.assignees) && !fake.dropAssignees) {
+          const before = issue.assignees
+          const after = (body.assignees as Array<string>).map((login) => fake.assignable.find((user) => user.login === login) ?? { id: login === "vibe-agent" ? 8 : 7, login })
+          for (const user of before) if (user && !after.some((next) => next.login === user.login)) event(issue.number, "unassigned", { assignee: user })
+          for (const user of after) if (!before.some((old) => old?.login === user.login)) event(issue.number, "assigned", { assignee: user })
+          issue.assignees = after
+        }
+        if (typeof body?.title === "string") issue.title = body.title
+        if (typeof body?.body === "string") issue.body = body.body === "" ? null : body.body
         if (body?.state === "closed" || body?.state === "open") {
           issue.state = body.state
+          issue.state_reason = body.state === "closed" ? "completed" : null
           issue.closed_at = body.state === "closed" ? "2026-01-04T00:00:00Z" : null
         }
       })
@@ -228,11 +283,21 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       const parent = fake.issues.find((candidate) => candidate.number === Number(subIssues[3]))
       if (parent === undefined) return try jsonResponse(request, 404, { message: "Not Found" })
       const child = fake.issues.find((candidate) => candidate.id === Number(body?.sub_issue_id))
-      return try write(200, () => parent, () => {
-        if (child !== undefined) child.parent_issue_url = `${API}/repos/o/r/issues/${parent.number}`
+      if (child === undefined) return try jsonResponse(request, 404, { message: "Not Found" })
+      return try write(201, () => parent, () => {
+        const linked = `${repositoryUrl}/issues/${parent.number}`
+        if (child.parent_issue_url !== linked) {
+          child.parent_issue_url = linked
+          parent.sub_issues_summary = { total: (parent.sub_issues_summary?.total ?? 0) + 1, completed: 0 }
+          event(child.number, "parent_issue_added")
+        }
         fake.dropping = fake.dropAfterLink
         fake.dropAfterLink = 0
       })
+    }
+    if (timeline && request.method === "GET" && fake.timelines?.[Number(timeline[3])] !== undefined) {
+      const number = Number(timeline[3])
+      return try page(fake.timelines[number]!.filter((_, index) => (fake.eventVisibleAt?.[`${number}:${index}`] ?? 0) <= (fake.tick ?? Infinity)), fake.endlessTimeline)
     }
     if (timeline && request.method === "GET") return try page([
       { event: "labeled", actor: { id: 7, login: "fuzz" }, created_at: "2026-01-02T00:00:00Z", label: { name: "vibelang:task" } },
@@ -251,25 +316,34 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       if (issue === undefined) return try jsonResponse(request, 404, { message: "Not Found" })
       const textBody = String(body?.body ?? "")
       return try write(201, () => fake.comments[number]!.at(-1), () => {
-        fake.comments[number]!.push({ id: fake.nextId++, node_id: `comment-${fake.nextId}`, body: textBody, user: { id: 7, login: "fuzz" }, created_at: "2026-01-03T00:00:00Z", updated_at: "2026-01-03T00:00:00Z", issue_url: `${API}/repos/o/r/issues/${number}` })
+        fake.comments[number]!.push({ id: fake.nextId++, node_id: `comment-${fake.nextId}`, body: textBody, user: author, created_at: "2026-01-03T00:00:00Z", updated_at: "2026-01-03T00:00:00Z", issue_url: `${repositoryUrl}/issues/${number}` })
         issue.comments += 1
+        event(number, "commented")
       })
     }
     if (labels && request.method === "POST") {
       const issue = fake.issues.find((candidate) => candidate.number === Number(labels[3]))
       if (issue === undefined) return try jsonResponse(request, 404, { message: "Not Found" })
       return try write(200, () => issue.labels, () => {
-        for (const name of (body?.labels as Array<string>) ?? []) if (!issue.labels.some((label) => label.name === name)) issue.labels.push({ name })
+        for (const name of (body?.labels as Array<string>) ?? []) if (!issue.labels.some((label) => label.name === name)) {
+          issue.labels.push({ name })
+          event(issue.number, "labeled", { label: { name } })
+        }
       })
     }
     if (removeLabel && request.method === "DELETE") {
       const issue = fake.issues.find((candidate) => candidate.number === Number(removeLabel[3]))
       if (issue === undefined) return try jsonResponse(request, 404, { message: "Not Found" })
       const name = try Effect.try(() => decodeURIComponent(removeLabel[4]!)).pipe(Effect.catch(() => succeed("")))
-      return try write(200, () => issue.labels, () => { issue.labels = issue.labels.filter((label) => label.name !== name) })
+      if (!issue.labels.some((label) => label.name === name)) return try jsonResponse(request, 404, { message: "Label does not exist" })
+      return try write(200, () => issue.labels, () => {
+        issue.labels = issue.labels.filter((label) => label.name !== name)
+        event(issue.number, "unlabeled", { label: { name } })
+      })
     }
     if (createLabel && request.method === "POST") {
       const name = String(body?.name ?? "")
+      if (fake.labels.includes(name)) return try jsonResponse(request, 422, { message: "Validation Failed", errors: [{ resource: "Label", code: "already_exists", field: "name" }] })
       return try write(201, () => ({ name, color: String(body?.color ?? "") }), () => { fake.labels.push(name) })
     }
     if (assignees && request.method === "GET") return try page(fake.assignable, false)
@@ -281,30 +355,67 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       const number = fake.nextPull
       const headName = String(body?.head ?? "")
       const branch = headName.includes(":") ? headName.split(":")[1]! : headName
-      const sha = fake.branches[`${headName.split(":")[0]}/r`]?.[branch]
+      const headOwner = headName.includes(":") ? headName.split(":")[0]! : pullsList[1]!
+      const sha = fake.branches[`${headOwner}/${pullsList[2]}`]?.[branch]
       // GitHub refuses a pull request whose head branch does not exist.
       if (sha === undefined) return try jsonResponse(request, 422, { message: "Validation Failed", errors: [{ resource: "PullRequest", field: "head", code: "invalid" }] })
       return try write(201, () => fake.pulls.find((pull) => pull.number === number), () => {
         fake.nextPull += 1
+        fake.nextIssue = Math.max(fake.nextIssue, fake.nextPull)
         const additions = fake.pullAdditions[sha] ?? []
+        const baseRef = String(body?.base ?? "main")
+        const baseSha = fake.branches[repositoryPath]?.[baseRef] ?? "a".repeat(40)
+        const before = fake.commitFiles?.[baseSha] ?? fake.files
+        const after = fake.commitFiles?.[sha] ?? fake.files
+        let added = 0
+        let removed = 0
+        for (const path of additions) {
+          const changes = lineChanges(before[path] ?? "", after[path] ?? "")
+          added += changes.additions
+          removed += changes.deletions
+        }
         fake.pulls.push({
           id: fake.nextId++, node_id: `pull-${number}`, number, title: String(body?.title ?? ""), body: String(body?.body ?? ""),
-          state: "open", user: { id: 7, login: "fuzz" }, head: { ref: branch, sha },
-          base: { ref: String(body?.base ?? "main"), sha: "a".repeat(40), repo: { default_branch: "main" } },
+          state: "open", user: author, head: { ref: branch, sha },
+          base: { ref: baseRef, sha: baseSha, repo: { default_branch: "main" } },
+          commits: 1, additions: added, deletions: removed, mergeable_state: "unknown",
           changed_files: additions.length, created_at: "2026-01-03T00:00:00Z", updated_at: "2026-01-03T00:00:00Z", closed_at: null,
-          files: additions.map((filename) => ({ filename, status: fake.files[filename] === undefined ? "added" as const : "modified" as const })),
+          files: additions.map((filename) => ({ filename, status: before[filename] === undefined ? "added" as const : "modified" as const })),
         })
+        {
+          const pull = fake.pulls.at(-1)!
+          fake.issues.push({
+            id: pull.id, node_id: pull.node_id, number, title: pull.title, body: pull.body, state: pull.state,
+            state_reason: null, user: author, labels: [], comments: 0, assignees: [],
+            created_at: pull.created_at, updated_at: pull.updated_at, closed_at: null,
+            repository_url: repositoryUrl,
+            pull_request: { url: `${repositoryUrl}/pulls/${number}`, html_url: `https://github.com/${repositoryPath}/pull/${number}`, merged_at: null },
+          } as FakeIssue)
+        }
       })
     }
     if (pullOne && request.method === "GET") {
       const pull = fake.pulls.find((candidate) => candidate.number === Number(pullOne[3]))
-      return try (pull === undefined ? jsonResponse(request, 404, { message: "Not Found" }) : jsonResponse(request, 200, pull))
+      const state = fake.mergeability?.[Number(pullOne[3])]?.filter((check) => check.at <= (fake.tick ?? Infinity)).at(-1)?.state
+      return try (pull === undefined ? jsonResponse(request, 404, { message: "Not Found" }) : jsonResponse(request, 200, state === undefined ? pull : { ...pull, mergeable_state: state, merge_commit_sha: state === "unknown" ? null : fake.mergeShas?.[pull.number] ?? pull.head.sha }))
+    }
+    if (pullOne && request.method === "PATCH") {
+      const pull = fake.pulls.find((candidate) => candidate.number === Number(pullOne[3]))
+      if (pull === undefined) return try jsonResponse(request, 404, { message: "Not Found" })
+      return try write(200, () => pull, () => {
+        if (body?.state === "closed" || body?.state === "open") {
+          pull.state = body.state
+          pull.closed_at = body.state === "closed" ? "2026-01-04T00:00:00Z" : null
+        }
+        const check = fake.mergeability?.[pull.number]?.filter((check) => check.at <= (fake.tick ?? Infinity)).at(-1)
+        if (check) { pull.mergeable_state = check.state; pull.merge_commit_sha = check.state === "unknown" ? null : fake.mergeShas?.[pull.number] ?? pull.head.sha }
+      })
     }
     if (pullFiles && request.method === "GET") return try page(fake.pulls.find((candidate) => candidate.number === Number(pullFiles[3]))?.files ?? [], false)
-    if (pullReviews && request.method === "GET") return try page([
+    if (pullReviews && request.method === "GET") return try page(fake.reviews?.[Number(pullReviews[3])] ?? (Number(pullReviews[3]) === 500 ? [
       { id: 1, node_id: "rev-1", user: { id: 8, login: "reviewer" }, body: null, state: "APPROVED", commit_id: null },
       { id: 2, node_id: "rev-2", user: null, body: "note", state: "COMMENTED", commit_id: "d".repeat(40) },
-    ], fake.endlessReviews)
+    ] : []), fake.endlessReviews)
     if (refOne && request.method === "GET") {
       if (fake.refStatus !== 200) return try jsonResponse(request, fake.refStatus, { message: "Refused" })
       const sha = fake.noMain && refOne[3] === "main" ? undefined : fake.branches[`${refOne[1]}/${refOne[2]}`]?.[refOne[3]!]
@@ -321,6 +432,22 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       const key = `${createRef[1]}/${createRef[2]}`
       return try write(201, () => ({ ref: `refs/heads/${name}`, object: { sha, type: "commit" } }), () => { (fake.branches[key] ??= {})[name] = sha })
     }
+    const deleteRef = /^\/repos\/([^/]+)\/([^/]+)\/git\/refs\/heads\/(.+)$/.exec(path)
+    if (deleteRef && request.method === "DELETE") {
+      const owned = fake.branches[`${deleteRef[1]}/${deleteRef[2]}`]
+      if (owned?.[deleteRef[3]!] === undefined) return try jsonResponse(request, 422, { message: "Reference does not exist" })
+      if (fake.forbiddenNext) { fake.forbiddenNext = false; return try jsonResponse(request, 403, { message: "Forbidden" }) }
+      delete owned[deleteRef[3]!]
+      fake.writes += 1
+      return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 204 })))
+    }
+    if (/\/commits$/.test(path) && request.method === "GET" && fake.commitPages !== undefined) {
+      const items = fake.commitPages[repositoryPath] ?? []
+      const perPage = Number(url.searchParams.get("per_page") ?? 100)
+      const start = (Number(url.searchParams.get("page") ?? 1) - 1) * perPage
+      const next = fake.commitNext?.[request.url]
+      return try jsonResponse(request, 200, items.slice(start, start + perPage), next === undefined ? {} : { link: `<${next}>; rel="next"` })
+    }
     if (commitOne && request.method === "GET") {
       const message = fake.commits[commitOne[3]!]
       return try (message === undefined ? jsonResponse(request, 404, { message: "Not Found" }) : jsonResponse(request, 200, { sha: commitOne[3], message, tree: { sha: "c".repeat(40) }, parents: [] }))
@@ -328,7 +455,9 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
     const contents = /^\/repos\/([^/]+)\/([^/]+)\/contents\/(.+)$/.exec(path)
     if (contents && request.method === "GET") {
       if (fake.contentStatus !== 200) return try jsonResponse(request, fake.contentStatus, { message: "Refused" })
-      const file = fake.files[contents[3]!]
+      const ref = url.searchParams.get("ref") ?? "main"
+      const sha = fake.branches[repositoryPath]?.[ref] ?? ref
+      const file = (fake.commitFiles?.[sha] ?? fake.files)[contents[3]!]
       if (file === undefined) return try jsonResponse(request, 404, { message: "Not Found" })
       const pinned = /^[0-9a-f]{40}$/.test(url.searchParams.get("ref") ?? "") && fake.pinnedText !== undefined
       const text = pinned ? fake.pinnedText! : file
@@ -338,9 +467,12 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       const input = (body?.variables as { input: { branch: { repositoryNameWithOwner: string; branchName: string }; expectedHeadOid: string; message: { headline: string; body?: string }; fileChanges: { additions: Array<{ path: string; contents: string }> } } }).input
       const owned = fake.branches[input.branch.repositoryNameWithOwner]
       if (owned === undefined || owned[input.branch.branchName] !== input.expectedHeadOid) return try jsonResponse(request, 200, { errors: [{ message: "Stale head", type: "STALE" }] })
-      const sha = fake.nextSha.toString(16).padStart(40, "0")
+      const sha = fake.shaAllocations?.shift() ?? fake.nextSha.toString(16).padStart(40, "0")
       return try write(200, () => ({ data: { createCommitOnBranch: { commit: { oid: sha } } } }), () => {
         fake.nextSha += 1
+        const snapshot = { ...(fake.commitFiles?.[input.expectedHeadOid] ?? fake.files) }
+        for (const addition of input.fileChanges.additions) snapshot[addition.path] = Base64.decodeString(addition.contents).pipe(Result.getOrElse(() => ""))
+        ;(fake.commitFiles ??= {})[sha] = snapshot
         owned[input.branch.branchName] = sha
         fake.commits[sha] = `${input.message.headline}${input.message.body === undefined ? "" : `\n\n${input.message.body}`}`
         fake.pullAdditions[sha] = input.fileChanges.additions.map((addition) => addition.path)
@@ -350,3 +482,16 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
   })
 }
 
+
+/** Lines outside the unchanged prefix and suffix, as GitHub counts a small single-file edit. */
+function lineChanges(before: string, after: string): { additions: number; deletions: number } {
+  const lines = (text: string) => text === "" ? [] : text.replace(/\n$/, "").split("\n")
+  const left = lines(before)
+  const right = lines(after)
+  let start = 0
+  while (start < left.length && start < right.length && left[start] === right[start]) start++
+  let oldEnd = left.length
+  let newEnd = right.length
+  while (oldEnd > start && newEnd > start && left[oldEnd - 1] === right[newEnd - 1]) { oldEnd--; newEnd-- }
+  return { additions: newEnd - start, deletions: oldEnd - start }
+}

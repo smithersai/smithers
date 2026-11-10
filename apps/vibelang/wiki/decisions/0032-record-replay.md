@@ -1,6 +1,6 @@
 # 0032 — External services in tests: record, replay or pass through
 
-Date: 2026-11-10. Lane vl-record-replay. Ruling [VL-36](../rulings.md).
+Date: 2026-11-10. Lane vl-record-replay. Rulings [VL-36 and VL-38](../rulings.md).
 
 ## Why
 
@@ -78,10 +78,35 @@ so `issues/steered-host`'s "GitHub never showed the VIP" case still means what i
   cases on the in-memory GitHub; their fault cases (wrapped client services) stay as they are. Each happy case moves
   to a recording when its state can be built on the test repository. `bench/issues-delegated.bench.vibe` and
   `bench/wiki-delegated.bench.vibe` (another lane, 2026-11-10) also run on the in-memory GitHub.
-- Fuzz targets generate requests a recording cannot hold. They keep the in-memory GitHub for generated happy paths
-  (VL-38). Not built yet: the test that replays every committed recording through the in-memory GitHub and fails when
-  it answers differently, so the fake can't drift from GitHub.
+- Fuzz targets generate requests a recording cannot hold. By VL-38 they keep the in-memory GitHub, checked against
+  every committed recording by `test/fakeConformance.test.vibe` on every `pnpm test` (built, lane vl-fake-conformance).
 - The doubles `~/vl/review-tests.REPORT.md` finding 3 lists for device sign-in, accounts, the model provider and
   sandbox machines.
 - The test repository grows by three closed issues and one closed pull request per recording run (the App cannot
   delete issues), which adds about 4 KB to each list read in later recordings.
+
+## Fake conformance (VL-38, lane vl-fake-conformance)
+
+`test/fakeConformance.test.vibe` discovers all JSON recordings, seeds the fake from the recording's first resource
+reads, sends every recorded request in order, and compares status and the production decoders' complete results.
+An unknown endpoint or a failed decoder fails the test. Failures name the recording, zero-based exchange, method,
+path and differing field. It does not reach the network. Logs, span and exchange counter carry counts and file names.
+
+`NON_SEMANTIC_DIFFERENCES` is the single named list of normalization rules, with one-line reasons. It preserves
+missing and null, types, numbers, text, roles, labels, assignments, event kinds, file names and states. Generated
+database identities are bound back into sub-issue requests; opaque SHA allocations are replayed, so branch parents
+and expected-head checks still use the same identities. Commit/parent/merge hashes and stable account/repository ids
+compare exactly; only content blob hashes normalize after their decoded bytes agree.
+
+GitHub's asynchronous inputs are explicit, separate from normalization: the recordings omit request times, so the
+first observed index visibility and timeline visibility supply the fake's logical-clock publication schedule.
+Mergeability is an external GitHub computation with its own observed schedule. Those controls delay fake-generated
+state or supply the external check result; they never supply an HTTP status, issue body, label, assignment or file
+content. Resource creation and mutations must still produce the recorded responses. The initial label-create 422
+also establishes that the repository already held that label (the recordings contain no repository-label listing).
+
+The regression exposed incorrect sub-issue status, duplicate-label success, absent-label success, hardcoded
+repository/author coordinates, ignored list query order/filtering, canned timelines/reviews, missing patch/delete
+cleanup and contents that ignored branch commits. The fake now models those operations and per-commit file text.
+A deliberate duplicate-label change from 422 to 200 is checked red and restored; the private lane report holds
+the exact output and check receipts. No dependency or coverage exclusion was added.
