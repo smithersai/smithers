@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { JournalDecode } from "@smthrs/flow"
 import { TestClock } from "effect/testing"
+import { HttpServerResponse } from "effect/http"
 import * as Startup from "../worker/ObjectStartup.vibe"
 const state = { id: { toString: () => "fixture-object" } } as never
 
@@ -14,7 +15,7 @@ describe("inspectable object startup", () => {
     const starting = try api.health()
     const waiting = try forkChild(api.ping())
     try Effect.try(() => {
-      expect(starting).toEqual({ objectClass: "ProjectAccounts", objectId: "fixture-object", codeVersion: "fixture-code", startup: "starting" })
+      expect(starting).toMatchObject({ objectClass: "ProjectAccounts", objectId: "fixture-object", codeVersion: "fixture-code", startup: "starting" })
       expect(waiting.pollUnsafe()).toBeUndefined()
       expect("alarm" in api).toBe(false)
       expect("fetch" in api).toBe(false)
@@ -91,5 +92,65 @@ it.effect("bounds calls while startup finishes an uninterruptible storage operat
     expect(waiting.startup).toBe("starting")
     expect(expired).toBe(1)
     if (timed?._tag === "Failure") expect(Cause.squash(timed.cause)).toMatchObject({ _tag: "ObjectStartupFailed", objectId: "fixture-object" })
+  })
+}))
+
+// Alchemy's Durable Object bridge handed constructors the Worker init's scope, closed once init returned
+// (production 2026-11-10): the initializer was interrupted before its first step and every object stayed starting.
+it.effect("reports an initializer interrupted before it ran as failed and refuses calls at once", () => effect {
+  const closed = try Scope.make()
+  try Scope.close(closed, Exit.void)
+  const api = try Startup.make("Budget", state, succeed({ ping: () => succeed("pong") }), { ping: true }).pipe(Effect.provideService(Scope.Scope, closed))
+  const pending = try forkChild(exit(api.ping()))
+  for (let turn = 0; turn < 20; turn += 1) try Effect.yieldNow
+  const refused = pending.pollUnsafe()
+  const status = try api.health()
+  try Fiber.interrupt(pending)
+  try Effect.try(() => {
+    expect(status).toMatchObject({ startup: "failed", step: "initialize" })
+    expect(refused?._tag).toBe("Success")
+    if (refused?._tag === "Success") expect(refused.value._tag).toBe("Failure")
+  })
+})
+
+it.effect("health names the step a starting object is in, and keeps the step it failed in", () => scoped(effect {
+  const gate = try Deferred.make<void>()
+  const api = try Startup.make("History", state, effect {
+    try Startup.step("sequencer", succeed(undefined))
+    try Startup.step("bootstrap", Deferred.await(gate))
+    return { ping: () => succeed("pong") }
+  }, { ping: true })
+  for (let turn = 0; turn < 20; turn += 1) try Effect.yieldNow
+  const waiting = try api.health()
+  try TestClock.adjust("6 seconds")
+  const failed = try api.health()
+  try Effect.try(() => {
+    expect(waiting).toMatchObject({ startup: "starting", step: "bootstrap" })
+    expect(failed).toMatchObject({ startup: "failed", step: "bootstrap" })
+  })
+}))
+
+it.effect("a step outside startup only runs its program", () => effect {
+  const value = try Startup.step("storage", succeed(7))
+  try Effect.try(() => expect(value).toBe(7))
+})
+
+it.effect("answers a forwarded request 503 unavailable when startup failed", () => scoped(effect {
+  const api = try Startup.make("History", state, fail("private storage value") as { fetch: HttpServerResponse.HttpServerResponse!! }!string, { fetch: true })
+  const response = try api.fetch
+  try Effect.try(() => {
+    expect(response.status).toBe(503)
+    expect(response.headers["cache-control"]).toBe("no-store")
+  })
+}))
+
+it.effect("reports a defect during startup as failed, and exposes no symbol members", () => scoped(effect {
+  const api = try Startup.make("Budget", state, Effect.die("broken invariant") as { ping: () => string!! }!!, { ping: true })
+  const refused = try exit(api.ping())
+  const status = try api.health()
+  try Effect.try(() => {
+    expect(status.startup).toBe("failed")
+    expect(refused._tag).toBe("Failure")
+    expect((api as unknown as Record<symbol, unknown>)[Symbol.iterator]).toBeUndefined()
   })
 }))

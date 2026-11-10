@@ -108,6 +108,9 @@ brick                                   state         proof
   starts with A, A, A-, A-; edits keep acceptance and receipts. Both explicit revision policies retain proofs and
   negative controls; memory/workerd, CLI/MCP, scene, fuzz, benchmark and browser cases track keep. Lead deploys.
 
+- **Object start-up hang (0030 amendment, lane vl-startup-hang): fixed locally.** Alchemy's bridge gave constructors a
+  closed Scope; patched, with a cold `alchemy dev` regression and named start-up steps. The lead deploys and watches
+  `/api/health/objects`.
 - **Hosted sign-in broker (0029, lane vl-authbroker): implemented locally.** Shared signed-origin/PKCE handoff through
   smithers.sh's existing callback; no new redirect URL. Both apps' local checks precede the lead's coordinated deploy.
 

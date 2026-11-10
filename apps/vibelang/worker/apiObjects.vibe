@@ -126,7 +126,7 @@ function actionIdentity(namespace: Namespace<AccountsShape>, runtime: RuntimeCon
 /** One UTC day's token budget. */
 function budgetBody(state: ObjectState, limit: number) {
   return effect {
-    const budget = try Objects.budget(state.raw.storage, limit)
+    const budget = try ObjectStartup.step("storage", Objects.budget(state.raw.storage, limit))
     return { admit: () => budget.admit(), spend: budget.spend }
   }
 }
@@ -135,9 +135,11 @@ function budgetBody(state: ObjectState, limit: number) {
 function historyBody(state: ObjectState, token: string | undefined, client: HttpClient.HttpClient) {
   return effect {
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
-    const sequencer = try HistoryObject.history(state.raw.storage)
+    const sequencer = try ObjectStartup.step("sequencer", HistoryObject.history(state.raw.storage))
     const main = githubMain("smithersai/vibelang", client, token)
-    if ((try sequencer.read()).seq === 0) try HistoryObject.bootstrap(hostId, state.raw.storage, sequencer, main)
+    try ObjectStartup.step("bootstrap", effect {
+      if ((try sequencer.read()).seq === 0) try HistoryObject.bootstrap(hostId, state.raw.storage, sequencer, main)
+    })
     return {
       // Each page is computed here, beside the history, so a reader gets only what it shows.
       page: (request: PageRequest) => Effect.map(sequencer.read(), (history) => pageOf(history, request) as unknown),
@@ -167,7 +169,7 @@ function accountsBody(state: ObjectState, budgets: Namespace<BudgetShape>, model
         return try Accounts.disabled()
       },
     }
-    const accounts = try Effect.orDie(Accounts.make(hostId, state.raw.storage, setup).pipe(Effect.provideService(HttpClient.HttpClient, client)))
+    const accounts = try ObjectStartup.step("accounts", Effect.orDie(Accounts.make(hostId, state.raw.storage, setup).pipe(Effect.provideService(HttpClient.HttpClient, client))))
     return {
       ...accounts,
       draftWiki: (owner: string, page: string, ask: string, key: string) => effect {
@@ -189,7 +191,7 @@ function conversationBody(state: ObjectState, budgets: Namespace<BudgetShape>, h
   return effect {
     // The object's id, the same for every incarnation: the engine's host id (it has none when Alchemy plans).
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
-    const sequencer = try Objects.conversation(state.raw.storage)
+    const sequencer = try ObjectStartup.step("sequencer", Objects.conversation(state.raw.storage))
     const identity = actionIdentity(accounts, try RuntimeContext)
     const actionRuns = ActionRuns.make(hostId, state.raw.storage, sequencer, identity)
 

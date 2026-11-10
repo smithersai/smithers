@@ -57,6 +57,27 @@ real persisted corrupt state/results, and action outcomes that fail their schema
 
 Browser auth projects use separate workerd stores: roles and successful write receipts must not leak across browsers.
 
+## Amendment: start-up under Alchemy's bridge (2026-11-10, lane vl-startup-hang)
+
+Deployed as `4827dd9d63`, every object stayed `starting` and every route but `/api/health` answered 503 after five
+seconds. The sentence above, "the object retains the host scope", was false in production. `worker/Api.vibe` provides
+each object's layer with `Effect.provide`, Alchemy's documented form. Effect builds that layer in a scope that closes
+when the Worker's init returns, and Alchemy's `DurableObject.make` captures that scope with the layer's services. Its
+bridge then handed the closed scope to every constructor. `Effect.forkIn` into a closed scope interrupts the
+initializer before its first instruction, so neither `ready` nor `failed` was ever logged and the initializer's own
+five-second bound never ran. The workerd suite's host builds plain objects and never runs the bridge.
+
+- **Fix:** the repository's `@alchemy.run/cloudflare` patch gives each constructor its own open, instance-lifetime
+  `Scope` ([patches/README.md](../../../../patches/README.md)).
+- **Interrupted initializer:** an initializer interrupted from outside settles as `failed`, logged with outcome
+  `interrupted`. Waiting calls are refused at once and the next call retries, instead of each waiting five seconds.
+- **Steps:** health and the `vibelang.object.startup` log name the step an object is in: `initialize`, `begin`, then
+  the body's `storage`, `sequencer`, `bootstrap` or `accounts`, each `started`, `done` or `failed`.
+  `vibelang_object_startup_steps` counts them by class, step and outcome. A stuck object's last line names its step.
+- **Regression:** `test/coldStartup.workerd.test.vibe` runs `alchemy dev`, Alchemy's own bundle and bridge with
+  `worker/Api.vibe`'s bindings. Its first requests reach every class cold at once; it requires every class to leave
+  `starting` and the four without GitHub reads to be `ready`.
+
 ## Validation
 
 The lane report records the executed commands, counts, exit codes and landed commits. The lead deploys main and
