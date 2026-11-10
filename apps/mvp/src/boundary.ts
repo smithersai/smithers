@@ -38,11 +38,17 @@ export const recordUnhandled = <A, E, R>(
  */
 export interface Runners<R> {
   readonly runSync: <A, E>(effect: Effect.Effect<A, E, R>) => A
+  /** @throws {never} */
   readonly runPromise: <A, E>(effect: Effect.Effect<A, E, R>, options?: Effect.RunOptions) => Promise<A>
+  /** @throws {never} */
   readonly runFork: <A, E>(effect: Effect.Effect<A, E, R>, options?: Effect.RunOptions) => Fiber.Fiber<A, E>
 }
 
-/** Runners over `context` that record what goes unhandled as `feature`'s (`recordUnhandled`). */
+/**
+ * Runners over `context` that record what goes unhandled as `feature`'s (`recordUnhandled`).
+ *
+ * @throws {never}
+ */
 export const runners = <R>(context: Context.Context<R>, feature: string): Runners<R> => ({
   runSync: (effect) => Effect.runSyncWith(context)(recordUnhandled(effect, feature, "sync")),
   runPromise: (effect, options) => Effect.runPromiseWith(context)(recordUnhandled(effect, feature, "promise"), options),

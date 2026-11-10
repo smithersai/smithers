@@ -483,7 +483,11 @@ export type FlowOf<N extends FlowName> = (typeof registry)[N]["flow"]
 /** The names in the registry, in order. */
 export const names = Object.keys(registry) as ReadonlyArray<FlowName>
 
-/** The entry registered under `name`. */
+/**
+ * The entry registered under `name`.
+ *
+ * @throws {never}
+ */
 export const entryOf = (name: FlowName): Entry => registry[name]
 
 
@@ -491,6 +495,7 @@ export const entryOf = (name: FlowName): Entry => registry[name]
 export class FlowRegistry extends Context.Service<FlowRegistry, {
   readonly entries: Readonly<Record<string, Entry>>
   readonly names: ReadonlyArray<FlowName>
+  /** @throws {never} */
   readonly entryOf: (name: FlowName) => Entry
 }>()("@smthrs/mvp/flows/FlowRegistry") {
   /** The app's declared references, without loading any flow implementation into the tab. */

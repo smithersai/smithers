@@ -79,6 +79,8 @@ export const completeFromRun = (intent: WriteIntent, state: "done" | "failed") =
 /**
  * How an admitted dispatch's run ended, from its own answer: done, failed (its declared failure, or the run dying), or
  * nothing proven (a read of the result that failed, or an interrupted wait).
+ *
+ * @throws {never}
  */
 export const runEnded = (ended: Exit.Exit<{ readonly _tag: "Done" | "Failed" }, DispatchFailed>): "done" | "failed" | undefined =>
   Exit.isSuccess(ended)

@@ -14,6 +14,8 @@ export const REMEMBERED = 1_024
  * requester;
  * the agent's flow call (`<answerId>/chat/Respond@…/call/<frame>.<ordinal>`, src/flows/catalog.ts `childExecutionId`)
  * belongs to the answer whose run made it, which the asking tab dispatched.
+ *
+ * @throws {never}
  */
 export const requesterOf = (executionId: string): string => {
   // A retry embeds the previous run id, including its slashes. Only an agent session/call suffix is stripped.
