@@ -13,7 +13,7 @@ import { ChatModel, Spend } from "../worker/Reply.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { fakeClient, forked, repo, seed, type Fake } from "./issues-node-fake.vibe"
 import { delegated, reach, reached } from "./delegated.vibe"
-import { run, Finding, Int, REPLAY_FLOOR } from "./run.vibe"
+import { run, Finding, Int } from "./run.vibe"
 import { faultyStore } from "./faulty-store.ts"
 
 // The durable payload contract (DurableText) refuses lone surrogates; direct flow calls hold it.
@@ -622,7 +622,9 @@ const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: n
 })
 
 // Every execution runs every scenario on fresh storage, so one execution reaches them all whatever the host load.
+// That makes one execution long: with coverage on an idle 4-vCPU box, replaying the saved value and one fresh
+// execution took the whole 15 s REPLAY_FLOOR (1 execution, then 0 on the next run), so it takes the 60 s floor.
 it.live("issues/steered-host", () => run("issues/steered-host", SteeredIssues, ({ pick, title }) => effect {
   for (const scenario of ISSUE_SCENARIOS) try steeredIssuesScenario(scenario, pick, title)
   return true
-}, undefined, { minimum: REPLAY_FLOOR }))
+}, undefined, { minimum: "60 seconds" }), 300000)

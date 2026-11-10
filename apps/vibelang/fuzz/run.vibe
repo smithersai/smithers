@@ -74,7 +74,8 @@ export effect function gate(name: string, budget: Duration.Duration, limit: Opti
 
 /**
  * Floor for a target whose one execution is seconds long: replaying its saved failure alone takes about 5 s,
- * so a fresh checkout at the 5 s coverage budget ran no execution even on an idle 4-vCPU box (0015).
+ * so a fresh checkout at the 5 s coverage budget ran no execution even on an idle 4-vCPU box (0015). Browser
+ * targets declare it too: at `FUZZ_BUDGET=5 seconds` two of them replayed their saved failures and never explored.
  */
 export const REPLAY_FLOOR = "15 seconds"
 
