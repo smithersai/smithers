@@ -3,6 +3,7 @@ import { test as base, expect } from "@playwright/test"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { storeScript } from "./coverageStore.ts"
 
 const root = fileURLToPath(new URL("../", import.meta.url))
 const buildFiles = new Map<string, Promise<string>>()
@@ -54,7 +55,9 @@ export const test = base.extend<{ sourceCoverage: void }>({
           })()
           maps.set(mapUrl.href, pending)
         }
-        entries.push({ ...script, sourceMap: await pending })
+        // The ranges stay with the test; the source and map are stored once per run (coverageStore.ts).
+        const { source, ...ranges } = script
+        entries.push({ ...ranges, script: await storeScript(resolve(info.project.outputDir, "chromium-scripts"), source!, await pending) })
       }
       const directory = info.outputPath("coverage")
       await mkdir(directory, { recursive: true })

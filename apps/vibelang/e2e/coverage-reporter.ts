@@ -9,6 +9,7 @@ import convert from "ast-v8-to-istanbul"
 import { parseAstAsync } from "vite"
 import { findCompiler, projects } from "vibelang/project"
 import { normalizeEndColumns, unionEvidence, type FileCoverageJSON } from "../test/support/coverageUnion.ts"
+import { readEntries } from "./coverageStore.ts"
 
 const require = createRequire(import.meta.url)
 const { createCoverageMap } = require("istanbul-lib-coverage")
@@ -119,10 +120,8 @@ export default class SourceCoverage implements Reporter {
     console.info(`Chromium checks: ${this.counts.passed} passed; ${this.counts.expectedFailures} expected failures; ${this.counts.skipped} skipped; ${this.counts.unexpected} unexpected.`)
     if (this.executed === 0) return
     const files = this.files
-    // One attachment at a time: each repeats the whole bundle and map, and together they exceed the heap.
-    const coverage = await measure((async function* () {
-      for (const file of files) yield* JSON.parse(await readFile(file, "utf8"))
-    })())
+    // One attachment at a time; each script's source and map are read once (coverageStore.ts).
+    const coverage = await measure(readEntries(files))
     const directory = resolve(root, "coverage/browser")
     await mkdir(directory, { recursive: true })
     await writeFile(resolve(directory, "coverage-final.json"), JSON.stringify(coverage))
