@@ -150,7 +150,7 @@ describe("the signed-in CLI process in local workerd", () => {
   afterAll(async () => { await device?.dispose() })
 
   /** An external identity provider fixture over a real socket; the shared GitHub adapter makes every request. */
-  effect function provider() {
+  effect function provider(refusal?: { readonly error: string; readonly status: number }) {
     const status = try Ref.make("authorization_pending")
     const calls = try Ref.make(0)
     const address = (try HttpServer.HttpServer).address
@@ -158,6 +158,7 @@ describe("the signed-in CLI process in local workerd", () => {
     try HttpServer.serveEffect(effect {
       const request = try HttpServerRequest.HttpServerRequest
       const path = new URL(request.url, origin).pathname
+      if (path === "/login/device/code" && refusal !== undefined) return HttpServerResponse.jsonUnsafe({ error: refusal.error }, { status: refusal.status })
       if (path === "/login/device/code") return HttpServerResponse.jsonUnsafe({ device_code: "private-device-code", user_code: "ABCD-EFGH", verification_uri: origin + "/device", expires_in: 600, interval: 1 })
       if (path === "/login/oauth/access_token") {
         try Ref.update(calls, count => count + 1)
@@ -168,6 +169,28 @@ describe("the signed-in CLI process in local workerd", () => {
     })
     return { origin, status, calls }
   }
+
+  it.live.each([
+    ["device_flow_disabled", 400, true],
+    ["unauthorized_client", 200, true],
+    ["unavailable", 500, false],
+  ] as const)("CLI login reports GitHub's %s and leaves no pending grant", ([error, status, off]) => scoped(effect {
+    provide platform, NodeHttpServer.layerTest {
+      const github = try provider({ error, status })
+      const fs = try FileSystem.FileSystem
+      const settings = try fs.makeTempDirectoryScoped()
+      const result = try run(try node(), [try cliPath(), "login", "--wait", "false"], {
+        VIBELANG_FACTORY: "", VIBELANG_FACTORY_URL: device!.origin, VIBELANG_GITHUB_WEB: github.origin, XDG_CONFIG_HOME: settings, NO_COLOR: "1",
+      })
+      const pending = try fs.exists((try Path.Path).join(settings, "vibelang-factory", "device.json"))
+      try Effect.try(() => {
+        expect(result.status).toBe(1)
+        expect(result.stderr).toContain(off ? `Device sign-in is off for ${device!.origin}.` : "GitHub refused the device sign-in.")
+        expect(result.stdout).toBe("")
+        expect(pending).toBe(false)
+      })
+    }
+  }), deadline(120_000))
 
   it.live("CLI device sign-in persists across processes, then logout revokes the session and a denied login fails", () => scoped(effect {
     provide platform, NodeHttpServer.layerTest {

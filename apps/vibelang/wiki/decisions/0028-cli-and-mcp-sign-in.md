@@ -97,3 +97,9 @@ name the opt-in. The lead deploys; production browser tests opt in with an agent
 Mock identity uses `mock-session.json` separately from the live `session.json` and pending device grant. Its login
 and logout never overwrite/revoke the live credential or make a network request, including when a live session or
 `VIBELANG_SESSION` is already configured. A real loopback refusal service counts requests in the regression: zero.
+
+## Clarified notes
+
+`GET /api/auth/device` stays unchanged: only GitHub knows whether device flow is on, and the server cannot ask without minting a device code.
+
+CLI and MCP login report a `misconfigured` device start as `Device sign-in is off for <origin>.`; other reasons keep their existing message. The SDK classifies GitHub's four client/configuration error codes at any HTTP status, with real-socket SDK and emitted CLI regressions.

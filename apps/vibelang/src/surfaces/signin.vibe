@@ -157,7 +157,7 @@ effect function startLogin() {
   if (pending !== undefined && pending.origin === origin) return "pending" as const
   const clientId = try clientIdOf(origin)
   const auth = try githubAuth(clientId)
-  const started = try Effect.mapError(auth.deviceCode(), () => new SignInFailed({ message: "GitHub refused the device sign-in." }))
+  const started = try Effect.mapError(auth.deviceCode(), error => new SignInFailed({ message: error.reason === "misconfigured" ? `Device sign-in is off for ${origin}.` : "GitHub refused the device sign-in." }))
   const now = try Clock.currentTimeMillis
   try safeSettings(writePending({
     origin, clientId, deviceCode: Redacted.value(started.deviceCode), userCode: started.userCode,

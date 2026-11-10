@@ -77,6 +77,21 @@ describe("a factory or GitHub that answers wrongly", () => {
     }
   }), 60_000)
 
+  it.live("GitHub disabling device sign-in names the factory and keeps no grant", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const origin = try serve((method, path) => path === "/login/device/code" ? json({ error: "device_flow_disabled" }, 400) : factoryAndGitHub(notFound)(method, path))
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        const failure = try message(signIn(NO_WAIT))
+        const left = try readPending()
+        try Effect.try(() => {
+          expect(failure).toBe(`Device sign-in is off for ${origin}.`)
+          expect(left).toBeUndefined()
+        })
+      }
+    }
+  }), 60_000)
+
   it.live("GitHub refusing a poll fails and keeps the grant for the next try", () => scoped(effect {
     provide NodeServices.layer, NodeHttpServer.layerTest, live {
       const origin = try serve(factoryAndGitHub(json({ error: "unavailable" }, 500)))
