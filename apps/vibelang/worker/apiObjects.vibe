@@ -19,7 +19,7 @@ import * as ActionRuns from "./ActionRuns.vibe"
 import * as ActionDirectory from "./ActionDirectory.vibe"
 import * as Accounts from "./Accounts.vibe"
 import { postName, type Identity } from "../src/core/roles.vibe"
-import { FetchHttpClient, HttpClient, HttpServerRequest } from "effect/http"
+import { HttpClient, HttpServerRequest } from "effect/http"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
 import { type PageRequest, pageOf } from "../src/history/pages.vibe"
 import type { Write } from "../src/history/wire.vibe"
@@ -152,8 +152,8 @@ export function historyObject(state: ObjectState, token: string | undefined, cli
   }
 }
 
-/** The project's accounts; `setup` is undefined when sign-in is not configured. */
-export function accountsObject(state: ObjectState, budgets: Namespace<BudgetShape>, model: Model, setup: Setup | undefined) {
+/** The project's accounts; `setup` is undefined when sign-in is not configured. `client` reaches GitHub for the wiki and issues. */
+export function accountsObject(state: ObjectState, budgets: Namespace<BudgetShape>, model: Model, setup: Setup | undefined, client: HttpClient.HttpClient) {
   return effect {
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
     if (setup === undefined) return {
@@ -166,7 +166,7 @@ export function accountsObject(state: ObjectState, budgets: Namespace<BudgetShap
         return try Accounts.disabled()
       },
     }
-    const accounts = try Effect.orDie(Accounts.make(hostId, state.raw.storage, setup).pipe(Effect.provide(FetchHttpClient.layer)))
+    const accounts = try Effect.orDie(Accounts.make(hostId, state.raw.storage, setup).pipe(Effect.provideService(HttpClient.HttpClient, client)))
     return {
       ...accounts,
       draftWiki: (owner: string, page: string, ask: string, key: string) => effect {

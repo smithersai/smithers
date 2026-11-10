@@ -1,7 +1,8 @@
 // The API Worker's object bodies (worker/apiObjects.vibe) wired to each other in one process over in-memory SQLite object
 // storage: requests through `apiFetch`, alarms with a scripted model, the sandbox gateway's identity and the day's budget.
-// A namespace may be unbound or unreachable: those are the injected faults. GitHub refuses (history) or has nothing
-// (wiki, issues); the model is unusable, failing, or a local scripted server.
+// A namespace may be unbound or unreachable: those are the injected faults. GitHub refuses (history), has nothing
+// (public wiki, issues) or serves the wiki's pages (the accounts object's own client); the model is unusable, failing,
+// or a local scripted server.
 import { it } from "@effect/vitest"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -16,7 +17,7 @@ import { IssueHost } from "../src/core/issueFlows.vibe"
 import { accountRoute } from "../src/core/protocolDecision.vibe"
 import { Post, Tour } from "../src/core/flows.vibe"
 import { refuseBinding } from "../test/support/refuseBinding.ts"
-import { scriptedModel } from "./model-server.vibe"
+import { cell, scriptedModel } from "./model-server.vibe"
 import { run, same, Finding, Int, TextOrBoundary } from "./run.vibe"
 
 const KINDS = ["conversation", "accounts", "budget", "history", "actions"] as const
@@ -30,6 +31,21 @@ const runtime = {} as never
 const refusingGitHub = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "GitHub is not part of this target" }) })))
 /** GitHub answering 404 to everything: a missing page or issue list, which the wiki and issue flows do not retry. */
 const absentGitHub = HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({}, { status: 404 })))))
+/** GitHub serving every wiki page as a short file, and nothing else: the accounts object's client for agent drafts. */
+const WIKI_FILE = "/repos/smithersai/smithers/contents/apps/vibelang/wiki/"
+const wikiGitHub = HttpClient.make((request) => {
+  const url = new URL(request.url)
+  const found = url.pathname.startsWith(WIKI_FILE) && url.pathname.endsWith(".md")
+  const file = { type: "file", encoding: "base64", content: "IyBQYWdlCgpUZXh0Lgo=", sha: "fuzz-sha" }
+  return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(found ? file : {}, { status: found ? 200 : 404 }))))
+})
+/** The wiki draft agent's answer: the page it was asked about, edited. Its system prompt names it. */
+const DRAFT = { when: "Draft one edit to the given project wiki page", answer: { kind: "stream", pieces: [cell(JSON.stringify({ page: "rulings", text: "# Page\n\nShorter.\n" }))], prompt: 2, completion: 3 } } as const
+
+/** An ask the draft agent answers with a broken stream: the accounts object refuses that draft as `draft`. */
+const UNDRAFTABLE = "Fuzz: no draft."
+const UNDRAFTED = { when: UNDRAFTABLE, answer: { kind: "garbage" } } as const
+
 /** Sign-in configured: GitHub's exchange succeeds for person 1, the project's first maintainer. */
 const setup = {
   origin: ORIGIN,
@@ -50,6 +66,7 @@ const setup = {
 /** The agent's one cell: every tool the alarm binds, each call's failure kept so the next still runs. */
 const TOOL_CELL = "```cell\nvar out = {};\n" + [
   ["draft", "vibelang/wiki/draft", { page: "rulings", ask: "Shorter." }],
+  ["undrafted", "vibelang/wiki/draft", { page: "rulings", ask: UNDRAFTABLE }],
   ["show", "vibelang/history/show", { what: "outline" }],
   ["note", "vibelang/history/Note", { id: "m1", section: "tried", text: "Tried it." }],
   ["listed", "vibelang/actions/List", {}],
@@ -60,8 +77,8 @@ const TOOL_CELL = "```cell\nvar out = {};\n" + [
 /**
  * The public wiki and issue routes build their GitHub hosts over `fetch`; here the same hosts run over `absentGitHub`,
  * so no request leaves the process. A refusing GitHub is retried until the read's 5-second deadline, or for the writes'
- * 120-second window (0015), longer than a target's step. The injected wiki host carries no person, so a draft through it
- * is refused (0015).
+ * 120-second window (0015), longer than a target's step. An agent's draft is not wrapped: it runs over the accounts
+ * object's own client, `wikiGitHub`, with the person the alarm names.
  */
 effect function withAbsentGitHub<A, E, R>(program: A!E!R) {
   const anonymous = { current: () => Effect.succeed(undefined) } as never
@@ -77,7 +94,7 @@ effect function world(signIn: boolean, limit: number, agent: Agent) {
   const stores = new Map<string, ReturnType<typeof TestNodeRuntime.sqliteObjectStorage>>()
   try Effect.addFinalizer(() => Effect.sync(() => { for (const store of stores.values()) store.close() }))
   const model = agent === "unusable" ? { model: undefined, unusable: "unset" }
-    : { model: (try scriptedModel([agent === "failing" ? { kind: "status", status: 400, code: "invalid_request" } : { kind: "stream", pieces: [TOOL_CELL], prompt: 3, completion: 4 }])).model, unusable: "" }
+    : { model: (try scriptedModel([agent === "failing" ? { kind: "status", status: 400, code: "invalid_request" } : { kind: "stream", pieces: [TOOL_CELL], prompt: 3, completion: 4 }], agent === "tools" ? [UNDRAFTED, DRAFT] : [])).model, unusable: "" }
   const faults: Record<Kind, Mode> = { conversation: "ok", accounts: "ok", budget: "ok", history: "ok", actions: "ok" }
   const calls: Record<Kind, { bindings: number; methods: number }> = { conversation: { bindings: 0, methods: 0 }, accounts: { bindings: 0, methods: 0 }, budget: { bindings: 0, methods: 0 }, history: { bindings: 0, methods: 0 }, actions: { bindings: 0, methods: 0 } }
   const after: Record<Kind, number> = { conversation: 1, accounts: 1, budget: 1, history: 1, actions: 1 }
@@ -95,7 +112,7 @@ effect function world(signIn: boolean, limit: number, agent: Agent) {
   const builders: Record<Kind, (name: string) => Api!!> = {
     budget: effect (name) => { return (try budgetObject(try stateOf("budget", name), limit)) as never },
     history: effect (name) => { return (try historyObject(try stateOf("history", name), undefined, refusingGitHub)) as never },
-    accounts: effect (name) => { return (try accountsObject(try stateOf("accounts", name), namespaces.budget, model as never, signIn ? setup : undefined)) as never },
+    accounts: effect (name) => { return (try accountsObject(try stateOf("accounts", name), namespaces.budget, model as never, signIn ? setup : undefined, wikiGitHub)) as never },
     conversation: effect (name) => { return (try conversationObject(try stateOf("conversation", name), namespaces.budget, namespaces.history, namespaces.accounts, model as never, clientOf as never).pipe(Effect.provideService(RuntimeContext, runtime))) as never },
     actions: effect (name) => { return (try actionIndexObject(try stateOf("actions", name), namespaces.accounts, namespaces.conversation).pipe(Effect.provideService(RuntimeContext, runtime))) as never },
   }
@@ -119,7 +136,7 @@ effect function world(signIn: boolean, limit: number, agent: Agent) {
           const call = Effect.flatMap(object(kind, name), (api) => method === "fetch"
             ? Effect.provideService(api.fetch as Effect.Effect<unknown, unknown, HttpServerRequest.HttpServerRequest>, HttpServerRequest.HttpServerRequest, args[0] as HttpServerRequest.HttpServerRequest)
             : (api[method] as (...input: Array<unknown>) => Effect.Effect<unknown>)(...args))
-          return kind === "accounts" ? withAbsentGitHub(call) : call
+          return kind === "accounts" && method !== "draftWiki" ? withAbsentGitHub(call) : call
         },
       })
     },
@@ -277,8 +294,8 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
       case "alarm":
       case "run-alarm": {
         const call = method("conversation", step.op === "alarm" ? `room${step.room % 3}` : `action-a${step.pick % 4}`, "alarm")
-        // A reply retries an unreachable object with no deadline (flows.vibe `patient`): under a fault the alarm may
-        // outlive its invocation, which ends it as the platform would. Healthy, it settles within the step's deadline.
+        // A reply retries an unreachable object until its 5-minute deadline (flows.vibe `replyDeadline`): under a fault the
+        // alarm outlives this step's window, which ends it as the platform would. Healthy, it settles within the step's deadline.
         // A binding lost mid-alarm lets the reply reach its tools first, so it gets the time a model call takes.
         const window = KINDS.some((kind) => w.faults[kind].endsWith("-later")) ? "3 seconds" : "300 millis"
         try direct(step.op, healthy() ? call : Effect.timeoutOption(call, window))
@@ -331,8 +348,11 @@ effect function drive(input: { readonly signIn: boolean; readonly limit: number;
         return
       }
       case "draft": {
-        const exit = try direct("draft", withAbsentGitHub(method("accounts", "project", "draftWiki", step.trusted ?? "", "rulings", step.text, `k${step.pick}`)))
+        const exit = try direct("draft", method("accounts", "project", "draftWiki", step.trusted ?? "", "rulings", step.text, `k${step.pick}`))
         if (Exit.isSuccess(exit) && !input.signIn && exit.value !== "forbidden") throw new Finding({ report: "draft: a wiki draft without sign-in" })
+        // The maintainer's nonempty ask with a working agent and budget is drafted; a reused key with another ask is invalid.
+        const drafts = input.signIn && healthy() && input.agent === "tools" && input.limit > 1 && step.trusted === "1" && step.text.trim() !== ""
+        if (drafts && !(Exit.isSuccess(exit) && (exit.value === null || exit.value === "invalid"))) throw new Finding({ report: `draft: the maintainer's draft answered ${Exit.isSuccess(exit) ? String(exit.value) : "a failure"}` })
         return
       }
       case "sign-in": {

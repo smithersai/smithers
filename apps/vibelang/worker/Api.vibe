@@ -31,7 +31,7 @@ const AccountsLive = ProjectAccounts.make(effect {
   const model = try Effect.orDie(chatModel())
   try Effect.orDie(specificationModels())
   const setup = try Effect.orDie(Accounts.configured().pipe(Effect.provide(FetchHttpClient.layer)))
-  return accountsObject(state, budgets, model, setup)
+  return accountsObject(state, budgets, model, setup, try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
 })
 
 const BudgetLive = Budget.make(effect {

@@ -316,7 +316,7 @@ No value is retained in the corpus: both stored values were target findings, rec
 
 ### Lines fuzzing cannot execute, continued
 
-`worker/apiObjects.vibe` line 248, the branch where `refusal === null`: the agent's wiki draft succeeding inside an alarm. `Accounts.draftWiki` builds its wiki host inside `executeWiki`, using the request's authority and the `fetch` client that `Accounts.make` captured (`accountsObject` provides `FetchHttpClient.layer`). A Node target can inject only a `WikiHost` built before the request. That host's authority carries no person, so it refuses the draft (`worker/Wiki.vibe` line 81). The seam that would reach this branch: `accountsObject` taking its GitHub client, as `historyObject` already does. The branch stays in the denominator.
+`worker/apiObjects.vibe` line 248, the alarm's wiki draft answered by the accounts object: reachable since the ninth session. `accountsObject` takes its GitHub client, as `historyObject` does; `worker/Api.vibe` passes the `fetch` client. `api-objects/world` passes `wikiGitHub`, which serves every wiki page, and no longer wraps `draftWiki` in the injected `WikiHost`. The scripted model routes the draft agent's own call by its system prompt (`Routed` in `fuzz/model-server.vibe`): `Shorter.` gets an edited page and is drafted; `Fuzz: no draft.` gets a broken stream and is refused as `draft`. A new oracle requires the signed-in maintainer's nonempty draft to be drafted (or `invalid` for a reused key); with the accounts client swapped back to the 404 GitHub, it fails with `draft: the maintainer's draft answered missing`. Fuzz-only coverage at 5 seconds: `worker/apiObjects.vibe` 193/193 lines, 59/59 branches, 86/86 functions.
 
 ### Containers: Alchemy's local runtime
 

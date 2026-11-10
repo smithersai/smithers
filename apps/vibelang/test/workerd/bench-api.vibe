@@ -83,7 +83,7 @@ export class ProjectAccounts extends ObjectHost {
       const model = try Effect.orDie(configured(env, chatModel()))
       // readSetup builds the GitHub layer, which needs a Scope; without one configured() answers undefined (sign-in off).
       const setup = try Effect.orDie(scoped(configured(env, Accounts.configured()).pipe(Effect.provide(FetchHttpClient.layer))))
-      return try accountsObject(stateOf(state), named(env.BUDGET), model, setup)
+      return try accountsObject(stateOf(state), named(env.BUDGET), model, setup, try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
     })
   }
 }

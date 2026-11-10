@@ -25,13 +25,21 @@ function responseOf(script: Scripted) {
 /** A model cell that ends the run with `output`, passed as written. */
 export const cell = (output: string) => "```cell\nctx.done(" + output + ");\n```"
 
-/** Serves `scripts` in order, repeating the last, for this scope; `model` is bound to the server's own origin. */
-export effect function scriptedModel(scripts: ReadonlyArray<Scripted>) {
+/** A request whose body contains `when` gets `answer`, outside the ordered scripts: a second agent's own call. */
+export interface Routed { readonly when: string; readonly answer: Scripted }
+
+/**
+ * Serves `scripts` in order, repeating the last, for this scope; `model` is bound to the server's own origin. A request
+ * that a `routes` entry matches gets that entry's answer and does not advance the order.
+ */
+export effect function scriptedModel(scripts: ReadonlyArray<Scripted>, routes: ReadonlyArray<Routed> = []) {
   const calls = try Ref.make(0)
   const context = try Layer.build(NodeHttpServer.layerTest)
   const server = Context.get(context, HttpServer.HttpServer)
   try Effect.provideService(HttpServer.serveEffect(effect {
-    try (try HttpServerRequest.HttpServerRequest).text
+    const body = try (try HttpServerRequest.HttpServerRequest).text
+    const routed = routes.find((route) => body.includes(route.when))
+    if (routed !== undefined) return responseOf(routed.answer)
     const index = try Ref.getAndUpdate(calls, (count) => count + 1)
     return responseOf(scripts[Math.min(index, scripts.length - 1)]!)
   }), HttpServer.HttpServer, server)
