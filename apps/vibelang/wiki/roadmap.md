@@ -80,6 +80,10 @@ brick                                   state         proof
   reach 100% unit coverage on all four metrics; `src/core/MockFactory.vibe` keeps three race-only or invariant-guarded paths. A mock
   reply interrupted by a reload no longer blocks its conversation. Other files below 100% remain.
 
+- **Unit coverage, third lane (0016, lane vl-coverage3): partial.** Surfaces, history and actions: 17 files missing
+  103 items down to 7 missing 15, each named in 0016 with its reason; four dead fallbacks deleted; the proof inventory
+  no longer fails after a build.
+
 - Brick 6: [0024](decisions/0024-sandboxes.md), sandbox UI and shared lifecycle flows; real Container activation awaits trusted 0019 identity and deployment receipts.
 
 - **Rulings audit (vl-audit):** [rulings status](rulings-status.md) holds each ruling's state, evidence and owner.

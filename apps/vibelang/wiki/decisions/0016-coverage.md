@@ -889,3 +889,38 @@ The landed denominators are the sources' own (7479 lines, 8096 branches). Tests:
 (a real minified Vite build of the fixture under native V8, through `measure`; failed on the old reporter with 4
 branches for 2) and two cases in `test/fuzzCoverage.test.vibe` (same starts credit whatever the ends; other starts
 credit nothing; the first failed on the full-range rule).
+
+## Lane vl-coverage3: surfaces, history and actions (2026-11-10)
+
+Scope: every file under `src/surfaces/`, `src/history/` and `src/actions/` below 100% on any unit metric. At main
+`88991cf3`, 17 files missed 103 items in all; after this lane and `70fb3ce6` (another lane's overlapping seed,
+sequencer, flow machine and LiveMythical cases, kept; this lane's duplicates dropped), 7 files miss 15, every one
+listed below. Whole unit suite at that run (main `93fb9651` plus this lane): lines 99.24%, branches 97.31%, functions 98.62%, statements 98.62% (97.18%, 93.42%, 96.82%, 95.84% at `88991cf3`; other lanes landed between).
+
+Tests: `historyFlowEdges` (Fold with main unreadable through a faulty `MainLog`, a main listing a commit twice, a
+second Bootstrap, on the engine in memory over the real sequencer), `commandsEdges` (history text with no commit, an
+issue change's resume and recovery keys at the issues API, an issue draft, a wiki review, login's device code from a
+loopback GitHub, a settings home that is a file), `surfaceSession` (the stored session only to its own origin, not a
+look-alike port; none with no settings directory), cases in `actionClients.coverage` (follow skips other runs'
+events; a JSON error that isn't the protocol), `cli.test` (a bare invocation shows the help, exit 0), `historyTools`,
+`pages` and `seed`.
+
+`src/surfaces/backend.vibe`'s per-request session guard is now `withStoredSession`, so a test reaches the cross-origin
+arm no live client produces (every request URL is `origin + "/…"`). It is a trust boundary and stays.
+
+Dead code deleted: `factory.accounts !== undefined` in the mock surface (the mock factory always has accounts),
+`?? name` after `split("/").at(-1)` (catalog), the `mapError` on `MockMythical`'s page read (the sequencer's read
+cannot fail), and `?? 0` for a commit's epic order (pages: decide admits no commit without its epic; no event
+removes one).
+
+Tool fix: `verify/inventory.cjs` parsed the gitignored `src/assets/wiki.generated.vibe` that `pnpm wiki:build` writes
+(typecheck and test run it), overflowed the compiler pipe (ENOBUFS) and failed after any build. It now skips
+`*.generated.vibe`; regression in `verify/inventory_test.cjs`, red first.
+
+| Left | Why |
+| --- | --- |
+| `src/surfaces/signin.vibe:101`, `:129`; `sessionFlow.vibe:70`; `commands.vibe:393` | Covered by `signinEdges` and `cli.test` cases that timed out in the full run at load 111; each file passes alone. `signin.vibe:101` (`stored?.login ?? ""`) is reached only if the session vanishes between its write and read |
+| `src/surfaces/mcp.vibe:36`, `:38` | `tapCause` never sees an interruption from outside, and closing stdin, a failing or dying stdin or stdout, malformed input and broken configuration all end as an interruption or a typed failure. Kept: they report a defect on stderr if one ever arrives |
+| `src/history/tools.vibe:93` | The implicit no-match path after an exhaustive `match`; no type-correct value reaches it. VibeLang reproduction `coverage-exhaustive-match` (nyc-01 `~/vl/vibelang-bugs/`); an emitted-output change needs Will |
+| `src/history/mythical.vibe:562` | `rank < 0` after the epic check; kept for the history machine's Dafny proof |
+| `src/history/flows.vibe:213` | The provider writes a negative count (`[70, -21]`) for the implicit else; plain JS and in-process VibeLang controls count correctly. Reproduction `coverage-negative-branch`, for the provider patch's owner |
