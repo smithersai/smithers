@@ -39,7 +39,7 @@ inside `vibelang/Account` steps. Mock identity selection and CLI/MCP device auth
 
 The registry contains exact HTTPS origins served by the deployment, including declared smithers.sh subdomains and
 custom domains. It accepts no wildcard or suffix-only grant. Origins with userinfo, noncanonical spelling, a path,
-query or fragment are refused; HTTP is permitted only by an explicitly injected loopback development host.
+query or fragment are refused; HTTP is permitted only by an explicitly injected loopback development host. Configuration cannot inject one: an alchemy dev deployment on a loopback origin with `AUTH_BROKER_SITE_SECRET` keeps device flow, and its session reports browser sign-in unavailable (`test/accountsConfig.test.vibe`).
 Unknown origins never receive a redirect. Every stage reads the deployed registry; removing an entry in the next deployment prevents starts and exchanges.
 
 ## Security review
