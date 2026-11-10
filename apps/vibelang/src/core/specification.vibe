@@ -1,7 +1,7 @@
 // Both hosts run these transitions inside vibelang/issues flows. Review answers are host-produced, never request data.
 import { FlowRuntime } from "@smthrs/flow"
 import { Digest, SecureRandom } from "effect/crypto"
-import { unansweredSpecificationReview, reviseSpecification, recordSpecificationReview, type Specification, type SpecificationReviewer, SPEC_REVISION_POLICY } from "./conversation.vibe"
+import { unansweredSpecificationReview, reviseSpecificationUnder, recordSpecificationReview, type Specification, type SpecificationReviewer, type SpecRevisionPolicy, SPEC_REVISION_POLICY } from "./conversation.vibe"
 import { IssueFailure, type IssueRequest, IssuesState, SpecificationReview } from "./issueSchemas.vibe"
 export const reviewers: ReadonlyArray<{ readonly id: SpecificationReviewer; readonly name: string }> = [
   { id: "astra", name: "Codex Astra" }, { id: "sol", name: "Codex Sol" }, { id: "fable", name: "Claude Fable" }, { id: "opus", name: "Claude Opus" },
@@ -19,6 +19,16 @@ export const fixtureSpecificationHistory = [
 export service SpecificationReviewers {
   review(reviewer: SpecificationReviewer, spec: Specification): typeof SpecificationReview.Type!IssueFailure!(FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom)
 }
+/**
+ * A revision's next state: the specification revised under `policy` and one history entry, or `before` when the text is unchanged.
+ * Production always runs SPEC_REVISION_POLICY ("keep"); tests also drive "reset".
+ */
+export function revisedSpecificationState(before: typeof IssuesState.Type, text: string, at: string, policy: SpecRevisionPolicy = SPEC_REVISION_POLICY): typeof IssuesState.Type {
+  const spec = before.specification ?? emptySpecification
+  const next = reviseSpecificationUnder(spec, text, policy)
+  if (next === spec) return before
+  return { ...before, seq: before.seq + 1, specification: next, specificationHistory: [...(before.specificationHistory ?? []), { revision: next.revision, event: policy === "reset" ? "reset" as const : "revision" as const, reviewer: "", verdict: "", grade: "", link: "", at }] }
+}
 /** Scripted product mode. Unreviewed Opus first returns B+; later reviews use the accepted round-6 grades. No input can choose a verdict. */
 export effect function performSpecification(before: typeof IssuesState.Type, request: IssueRequest, scripted = true) {
   const spec = before.specification ?? emptySpecification
@@ -27,9 +37,7 @@ export effect function performSpecification(before: typeof IssuesState.Type, req
   const at = new Date(try Clock.currentTimeMillis).toISOString()
   if (request.op === "spec-revise") {
     if (request.text.trim() === "" || spec.revision >= Number.MAX_SAFE_INTEGER) throw new IssueFailure({ reason: "invalid", unwritten: true })
-    const next = reviseSpecification(spec, request.text)
-    if (next === spec) return before
-    return { ...before, seq: before.seq + 1, specification: next, specificationHistory: [...history, { revision: next.revision, event: SPEC_REVISION_POLICY === "reset" ? "reset" as const : "revision" as const, reviewer: "", verdict: "", grade: "", link: "", at }] }
+    return revisedSpecificationState(before, request.text, at)
   }
   const reviewer = request.reviewer
   if (reviewer === undefined || spec.revision === 0) throw new IssueFailure({ reason: "invalid", unwritten: true })

@@ -1,10 +1,10 @@
 // The specification gate at the issues flow a person, the CLI and MCP all use: a store with no specification yet,
 // revisions that change nothing or cannot be numbered, reviews with no seat, and host reviewers answering incompletely.
 import { describe, expect, it } from "@effect/vitest"
-import { emptyIssues } from "../src/core/conversation.vibe"
+import { emptyIssues, specificationAcceptedUnder } from "../src/core/conversation.vibe"
 import { makeIssueFactory } from "../src/core/IssuesFactory.vibe"
 import { IssueFailure, type IssueRequest, type IssuesApi, type IssuesState } from "../src/core/issueSchemas.vibe"
-import { emptySpecification, requestedSpecificationReview, SpecificationReviewers } from "../src/core/specification.vibe"
+import { emptySpecification, fixtureSpecification, fixtureSpecificationHistory, requestedSpecificationReview, revisedSpecificationState, SpecificationReviewers } from "../src/core/specification.vibe"
 
 type State = typeof IssuesState.Type
 const request = (op: IssueRequest["op"], key: string, over: Partial<IssueRequest> = {}): IssueRequest =>
@@ -140,4 +140,28 @@ describe("the chat agent's review request", () => {
     const reason = try failureOf(requestedSpecificationReview(api, "Review the specification with Codex Sol", "chat-3"))
     try Effect.try(() => expect(reason).toBe("invalid"))
   }))
+})
+
+describe("revising an accepted specification under each revision policy", () => {
+  const accepted: State = { ...emptyIssues, specification: fixtureSpecification, specificationHistory: fixtureSpecificationHistory }
+  const at = "2026-11-10T00:00:00Z"
+
+  it.effect("the project's policy keeps the four answers and records a revision", () => effect {
+    const next = revisedSpecificationState(accepted, "# Spec, revised", at)
+    try Effect.try(() => {
+      expect(next.specification).toMatchObject({ revision: 3, text: "# Spec, revised", astra: fixtureSpecification.astra, opus: fixtureSpecification.opus })
+      expect(next.specificationHistory!.at(-1)).toEqual({ revision: 3, event: "revision", reviewer: "", verdict: "", grade: "", link: "", at })
+      expect(specificationAcceptedUnder(next.specification!, "keep")).toBe(true)
+    })
+  })
+
+  it.effect("the reset policy clears the four answers, records a reset and is no longer accepted", () => effect {
+    const next = revisedSpecificationState(accepted, "# Spec, revised", at, "reset")
+    try Effect.try(() => {
+      expect([next.specification!.astra, next.specification!.sol, next.specification!.fable, next.specification!.opus].map((answer) => answer.verdict)).toEqual(["", "", "", ""])
+      expect(next.specificationHistory!.at(-1)).toMatchObject({ revision: 3, event: "reset" })
+      expect(next.specificationHistory).toHaveLength(fixtureSpecificationHistory.length + 1)
+      expect(specificationAcceptedUnder(next.specification!, "reset")).toBe(false)
+    })
+  })
 })
