@@ -1,5 +1,3 @@
-import { Schema } from "effect"
-
 // The plugin host's state on this tab (decision 0017): which plugin view is shown, and per view what the host's action
 // strip holds. Plugin code never writes it; it asks the host through `PluginHost.select` and `propose`.
 
@@ -39,8 +37,10 @@ export const fresh = (id: string): ViewState => ({
  * The strip's note for one item of one view, kept on the device so a reload keeps it (src/device/registry.ts): keyed by
  * `draftKey`, so a note belongs to the item it was written for and never rides with another.
  */
-export const Draft = Schema.Struct({ id: Schema.String, text: Schema.String })
-export type Draft = typeof Draft.Type
+export schema Draft {
+  readonly id: string
+  readonly text: string
+}
 
 /** The key of view `view`'s note for item `item`. */
 export const draftKey = (view: string, item: string): string => `${view}\u0000${item}`

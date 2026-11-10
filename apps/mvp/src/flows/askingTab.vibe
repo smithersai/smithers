@@ -1,8 +1,8 @@
 import { TabChannel } from "@smthrs/platform-browser"
-import { type Duration, Effect, Option, Schema, Stream } from "effect"
 import { DOORS } from "./contract"
 import type { Door } from "./dispatch"
 import { TabRequests } from "./requests"
+import { randomId } from "./askingTab.platform.ts"
 
 // The engine worker's line to the tab that asked (docs/features/flows.md#the-tab-that-asked). Every client flow runs in
 // the leader tab's engine worker, so a step that acts on the tab whose request started its run, such as moving it,
@@ -35,7 +35,7 @@ export interface Answered<O> {
 }
 
 /** Asks the tab that started `requester` with `input`; none when no tab answered within the wait. */
-export type Ask<I, O> = (requester: string, input: I) => Effect.Effect<Option.Option<Answered<O>>>
+export type Ask<I, O> = (requester: string, input: I) => Option.Option<Answered<O>>!!
 
 /**
  * The step's side of `channel`: asks the tab that started a requester, and waits `within` for its answer, which must
@@ -46,30 +46,30 @@ export const asker = <I, S extends Schema.Constraint>(options: {
   readonly output: S
   readonly within: Duration.Input
 }) =>
-  Effect.gen(function* () {
-    const port = yield* (yield* TabChannel.TabChannel).open(options.channel)
+  effect {
+    const port = try (try TabChannel.TabChannel).open(options.channel)
     const isOutput = Schema.is(options.output)
     const ask: Ask<I, S["Type"]> = (requester, input) =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const id = crypto.randomUUID()
-          const replies = yield* port.subscribe
-          yield* port.post({ kind: "smithers/asking-tab", id, requester, input } satisfies typeof Call.Type)
-          const reply = yield* Stream.fromQueue(replies).pipe(
+      scoped(
+        effect {
+          const id = randomId()
+          const replies = try port.subscribe
+          try port.post({ kind: "smithers/asking-tab", id, requester, input } satisfies typeof Call.Type)
+          const reply = try Stream.fromQueue(replies).pipe(
             Stream.filter((message) => isReply(message) && message.id === id && isOutput(message.output)),
             Stream.runHead,
             // Fallen the channel's capacity behind, this step hears no answer: as when the tab is gone. The channel logs it.
-            Effect.orElseSucceed(Option.none),
-            Effect.timeoutOption(options.within),
+            orElseSucceed(Option.none),
+            timeoutOption(options.within),
           )
           return Option.map(Option.flatten(reply), (answered) => {
             const { door, output } = answered as typeof Reply.Type
             return { door, output: output as S["Type"] }
           })
-        }),
+        },
       )
     return ask
-  })
+  }
 
 /**
  * The tab's side of `channel`: answers each call whose input is an `input`, for a request this tab started, with
@@ -79,28 +79,28 @@ export const asker = <I, S extends Schema.Constraint>(options: {
 export const answerAskingTab = <S extends Schema.Constraint, O, R>(options: {
   readonly channel: string
   readonly input: S
-  readonly answer: (input: S["Type"], door: Door) => Effect.Effect<O, never, R>
+  readonly answer: (input: S["Type"], door: Door) => O!!R
 }) =>
-  Effect.gen(function* () {
-    const requests = yield* TabRequests
-    const port = yield* (yield* TabChannel.TabChannel).open(options.channel)
-    const calls = yield* port.subscribe
+  effect {
+    const requests = try TabRequests
+    const port = try (try TabChannel.TabChannel).open(options.channel)
+    const calls = try port.subscribe
     const isInput = Schema.is(options.input)
     // Fallen the channel's capacity behind, this tab stops answering, and steps that ask it find it gone; the channel
     // logs and counts it.
-    yield* Stream.fromQueue(calls).pipe(
+    try Stream.fromQueue(calls).pipe(
       Stream.filter(isCall),
       Stream.runForEach((call) =>
-        Effect.gen(function* () {
+        effect {
           if (!isInput(call.input)) return
-          const door = yield* requests.doorOf(call.requester)
+          const door = try requests.doorOf(call.requester)
           if (Option.isNone(door)) return
-          const output = yield* options.answer(call.input, door.value)
-          yield* port.post(
+          const output = try options.answer(call.input, door.value)
+          try port.post(
             { kind: "smithers/asking-tab-reply", id: call.id, door: door.value, output } satisfies typeof Reply.Type,
           )
-        })
+        }
       ),
-      Effect.forkScoped,
+      forkScoped,
     )
-  })
+  }

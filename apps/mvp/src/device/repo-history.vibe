@@ -1,4 +1,3 @@
-import { Schema } from "effect"
 const CAPACITY_REASONS = ["paused", "storage", "reads", "too_large", "size_unknown"] as const
 const CLONE_STAGES = ["requested", "fetching", "indexing"] as const
 const FAILURES = ["not_found", "empty", "unavailable", "timed_out"] as const

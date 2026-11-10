@@ -1,4 +1,3 @@
-import { Schema } from "effect"
 import { MAX_ANSWER_LENGTH } from "../features/status/contract"
 import { Run } from "../features/status/schema"
 
@@ -17,6 +16,8 @@ export const RunV2 = Schema.Struct(v2Fields)
 export const RunV1 = Schema.Struct({
   ...v2Fields,
   answer: Schema.NullOr(
-    Schema.Struct({ value: Schema.Union([Schema.String.check(Schema.isMaxLength(MAX_ANSWER_LENGTH)), Schema.Boolean]) }),
+    Schema.Struct({
+      value: Schema.Union([Schema.String.check(Schema.isMaxLength(MAX_ANSWER_LENGTH)), Schema.Boolean]),
+    }),
   ),
 })

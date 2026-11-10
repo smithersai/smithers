@@ -1,6 +1,5 @@
 import { Bind, Keys, When } from "@smthrs/plugin"
 import { runners } from "../boundary"
-import { Effect, Metric, Result } from "effect"
 import { FlowDispatch } from "../flows/dispatch"
 import type { FlowName } from "../flows/registry"
 import { CHORD_WITHIN_MS } from "./contract"
@@ -37,11 +36,15 @@ export const pressedOf = (event: Partial<KeyboardEvent>): Keys.Pressed => ({
  * holds, `partial` when it starts a two-stroke key, else nothing.
  */
 export const resolve = (strokes: ReadonlyArray<Keys.Pressed>, focusInput: boolean, mac: boolean) =>
-  Effect.gen(function* () {
-    const plugins = yield* Plugins
-    const view = yield* shownView
-    const item = view === undefined ? undefined : yield* selectedOf(view.id)
-    const scope = { ...(view === undefined ? {} : { view: view.id }), ...(item === undefined ? {} : { item }), focusInput }
+  effect {
+    const plugins = try Plugins
+    const view = try shownView
+    const item = view === undefined ? undefined : try selectedOf(view.id)
+    const scope = {
+      ...(view === undefined ? {} : { view: view.id }),
+      ...(item === undefined ? {} : { item }),
+      focusInput,
+    }
     const last = strokes.at(-1)!
     const typing = focusInput && !last.meta && !last.ctrl && !last.alt
     let partial = false
@@ -54,22 +57,22 @@ export const resolve = (strokes: ReadonlyArray<Keys.Pressed>, focusInput: boolea
       }
     }
     return partial ? { kind: "partial" as const } : undefined
-  })
+  }
 
 /** Runs what `resolve` found. */
 const fire = (found: Exclude<NonNullable<Effect.Success<ReturnType<typeof resolve>>>, { readonly kind: "partial" }>) =>
-  Effect.gen(function* () {
-    const plugins = yield* Plugins
+  effect {
+    const plugins = try Plugins
     const { binding, index, view } = found
-    yield* Metric.update(Metric.withAttributes(keyPresses, { plugin: binding.plugin, key: binding.key }), 1)
-    yield* Effect.logInfo("plugin.key").pipe(Effect.annotateLogs({ plugin: binding.plugin, key: binding.key }))
+    try Metric.update(Metric.withAttributes(keyPresses, { plugin: binding.plugin, key: binding.key }), 1)
+    try logInfo("plugin.key").pipe(annotateLogs({ plugin: binding.plugin, key: binding.key }))
     if ("command" in binding) {
       const command = plugins.contributions.commands.find((candidate) => candidate.id === binding.command)!
       // A command's args are fixed values (the loader refuses a reference in them).
-      const flows = yield* FlowDispatch
-      yield* flows.dispatch(command.flow as FlowName, { ...command.args } as never, { door: "key" }).pipe(
-        Effect.ignore,
-        Effect.forkIn(plugins.scope),
+      const flows = try FlowDispatch
+      try Effect.forkIn(
+        ignore(flows.dispatch(command.flow as FlowName, { ...command.args } as never, { door: "key" })),
+        plugins.scope,
       )
       return
     }
@@ -79,17 +82,20 @@ const fire = (found: Exclude<NonNullable<Effect.Success<ReturnType<typeof resolv
       Bind.bind(binding.fields, { item: undefined, event: {}, ...(index === undefined ? {} : { key: { index } }) }),
     )
     const event = view!.events.find((candidate) => candidate.name === binding.event)!
-    if (!personOnly(event)) return yield* deliver(binding.view, event.name, fields)
-    yield* press(binding.view, { event: event.name, fields: fields as Record<string, unknown>, label: "" }, "key")
-  })
+    if (!personOnly(event)) return try deliver(binding.view, event.name, fields)
+    try press(binding.view, { event: event.name, fields: fields as Record<string, unknown>, label: "" }, "key")
+  }
 
 /** Binds the plugins' keys on `target` (the window) while the scope is open; `mac` maps `mod` to ⌘, else Ctrl. */
-export const pluginKeys = Effect.fnUntraced(function* (target: EventTarget, mac: boolean) {
-  const { runSync: run } = runners(yield* Effect.context<Plugins | FlowDispatch>(), "plugins")
+export effect function pluginKeys(target: EventTarget, mac: boolean) {
+  const { runSync: run } = runners(try context<Plugins | FlowDispatch>(), "plugins")
   let recent: Array<{ readonly stroke: Keys.Pressed; readonly at: number }> = []
   const onKey = (event: Event) => {
     const key = event as Partial<KeyboardEvent>
-    if (event.defaultPrevented || typeof key.key !== "string" || ["meta", "control", "alt", "shift"].includes(key.key.toLowerCase())) return
+    if (
+      event.defaultPrevented || typeof key.key !== "string"
+      || ["meta", "control", "alt", "shift"].includes(key.key.toLowerCase())
+    ) return
     const from = event.target as Partial<Element> | null
     const focusInput = typeof from?.closest === "function" && from.closest(FIELD) !== null
     const at = event.timeStamp
@@ -101,8 +107,8 @@ export const pluginKeys = Effect.fnUntraced(function* (target: EventTarget, mac:
     recent = []
     run(fire(found))
   }
-  yield* Effect.acquireRelease(
-    Effect.sync(() => target.addEventListener("keydown", onKey)),
-    () => Effect.sync(() => target.removeEventListener("keydown", onKey)),
+  try acquireRelease(
+    sync(() => target.addEventListener("keydown", onKey)),
+    () => sync(() => target.removeEventListener("keydown", onKey)),
   )
-})
+}

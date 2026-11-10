@@ -1,5 +1,4 @@
 import { Bind, type Contribution, When } from "@smthrs/plugin"
-import { Result } from "effect"
 
 // The host's action strip (decision 0017, "The host owns person-only actions"): what it draws under a view for the
 // item the person is looking at. Every event of the view whose flow is person-only is one of its buttons, never plugin
@@ -61,8 +60,8 @@ const choiceOf = (event: ViewEvent): { readonly list: string; readonly field: st
   for (const reference of Result.getOrThrow(Bind.references(event.args))) {
     const [list, pick] = reference.path
     if (
-      reference.root === "item" && reference.path.length === 2 && typeof list === "string" &&
-      typeof pick === "object" && pick !== null && "event" in pick
+      reference.root === "item" && reference.path.length === 2 && typeof list === "string"
+      && typeof pick === "object" && pick !== null && "event" in pick
     ) {
       return { list, field: pick.event }
     }
@@ -83,13 +82,20 @@ export const stripOf = (
   for (const event of view.events) {
     if (!("flow" in event) || !event.personOnly) continue
     // Only this view's own keys: another plugin's binding of an event with the same name is never this one's.
-    const keys = keybindings.filter((binding) => "event" in binding && binding.view === view.id && binding.event === event.name)
+    const keys = keybindings.filter((binding) =>
+      "event" in binding && binding.view === view.id && binding.event === event.name
+    )
     if (keys.length > 0 && !keys.some((binding) => When.evaluate(binding.when, scope))) continue
     if (textFields(event).length > 0) note = true
     const key = keys[0]?.key
     const choice = choiceOf(event)
     if (choice === undefined) {
-      buttons.push({ event: event.name, fields: {}, label: titled(event.name), ...(key === undefined ? {} : { key: keyLabel(key) }) })
+      buttons.push({
+        event: event.name,
+        fields: {},
+        label: titled(event.name),
+        ...(key === undefined ? {} : { key: keyLabel(key) }),
+      })
       continue
     }
     const list = item[choice.list]

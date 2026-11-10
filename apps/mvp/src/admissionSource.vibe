@@ -1,0 +1,58 @@
+import { setDraft } from "./features/chat/actions"
+import { COMPOSER, HOME_DRAFT, PLACE } from "./features/chat/schema"
+import { ChatStore } from "./features/chat/store"
+import { admissionReceipt, WriteIntents, type WriteIntent } from "./writeAdmission"
+
+/** Admission and Retry share the same source cleanup, including its actual persistence receipt. */
+export const clearComposerSource = (source: NonNullable<WriteIntent["composer"]>) =>
+  map(
+    exit(effect {
+      const chat = try serviceOption(ChatStore)
+      if (Option.isNone(chat)) return false
+      const store = chat.value
+      const matches = (generation: string | undefined) => generation === source.generation
+      try store.drafts.restored
+      const place = Option.getOrThrow(try store.place.get(PLACE))
+      const composer = Option.getOrThrow(try store.composer.get(COMPOSER))
+      if (
+        place.conversationId === source.conversationId && composer.draft === source.text && matches(composer.generation)
+      ) {
+        try setDraft("", undefined, true).pipe(provideService(ChatStore, store))
+      }
+      const key = source.conversationId ?? HOME_DRAFT
+      const pending = try store.drafts.pendingWrites(key)
+      try forEach(pending, (write) => write.persisted)
+      // A newer edit can arrive while those receipts wait. Retain cleanup until a subsequent recovery confirms it.
+      if ((try store.drafts.pendingWrites(key)).length !== 0) return false
+      const draft = try store.drafts.get(key)
+      if (Option.isSome(draft)) {
+        if (draft.value.text === source.text && matches(draft.value.generation)) {
+          try (try store.drafts.delete(key)).persisted
+        } else if (!(try store.drafts.isSynced(key))) return false
+      }
+      // Optimistic replacement text cannot prove the submitted source is gone from disk yet.
+      const latest = Option.getOrThrow(try store.composer.get(COMPOSER))
+      const current = Option.getOrThrow(try store.place.get(PLACE))
+      return current.conversationId !== source.conversationId || latest.saved
+    }),
+    exit => Exit.isSuccess(exit) && exit.value,
+  )
+
+/** A non-composer write needs no composer services. Never retire a source that could not confirm cleanup. */
+export const clearWriteComposer = (writeId: string) => effect {
+  const intents = try serviceOption(WriteIntents)
+  if (Option.isNone(intents)) return true
+  const intent = try sync(() =>
+    intents.value.pending().find(row => row.writeId === writeId || intents.value.byWrite.get(writeId) === row.commandId)
+  )
+  if (intent?.composer === undefined) return true
+  return as(
+    admissionReceipt(
+      flatMap(clearComposerSource(intent.composer), confirmed => confirmed ? Effect.void : fail("unconfirmed")),
+      intent.commandId,
+      intent.flow,
+      "source",
+    ),
+    true,
+  ) catch () => false
+}

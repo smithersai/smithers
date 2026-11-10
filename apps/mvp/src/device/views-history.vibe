@@ -1,5 +1,3 @@
-import { Schema } from "effect"
-
 const TEMPLATES = ["webpage", "link"] as const
 const MAX_URL_LENGTH = 2_048
 const MAX_TITLE = 200

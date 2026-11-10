@@ -1,11 +1,9 @@
-import { Schema } from "effect"
-
-const Part = Schema.Struct({
-  id: Schema.String,
-  kind: Schema.Literal("step"),
-  flow: Schema.String,
-  status: Schema.Literals(["running", "done", "failed"]),
-})
+schema Part {
+  readonly id: string
+  readonly kind: "step"
+  readonly flow: string
+  readonly status: "running" | "done" | "failed"
+}
 
 /** Deployed messages v3, before terminal model quota refusals (decision 0021). */
 export const MessageV3 = Schema.Struct({

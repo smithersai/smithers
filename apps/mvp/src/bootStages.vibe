@@ -1,5 +1,3 @@
-import { Effect, Metric } from "effect"
-
 // The page's boot, as stages on its timeline (docs/decisions/0108-first-load.md): when each happened, in milliseconds
 // from the page's start, marked once with `performance.mark` so DevTools, a test or the first-load benchmark
 // (bench/first-load.ts) reads it, and recorded once the page renders as one `boot.stages` log and a histogram point per
@@ -47,10 +45,10 @@ export const bootStageTime = Metric.histogram("smithers_web_boot_stage_ms", {
 
 /** Logs the stages marked on `timeline` as `boot.stages` and records each in `smithers_web_boot_stage_ms`. */
 export const recordStages = (timeline: Timeline) =>
-  Effect.gen(function* () {
+  effect {
     const times = stageTimes(timeline)
     for (const [stage, ms] of Object.entries(times)) {
-      yield* Metric.update(Metric.withAttributes(bootStageTime, { stage }), ms)
+      try Metric.update(Metric.withAttributes(bootStageTime, { stage }), ms)
     }
-    yield* Effect.logInfo("boot.stages").pipe(Effect.annotateLogs(times))
-  })
+    try logInfo("boot.stages").pipe(annotateLogs(times))
+  }
