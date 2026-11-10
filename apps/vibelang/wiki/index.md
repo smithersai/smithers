@@ -87,3 +87,5 @@ apps/vibelang/
 
 
 [Benchmark methods and measurements](benchmarks.md).
+
+- Machine generation, receipt and checkpoint proof boundaries: [0018](decisions/0018-proofs.md#third-lane-batch-15-machine-admission-and-checkpoint-policies).

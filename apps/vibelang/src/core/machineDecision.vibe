@@ -1,0 +1,103 @@
+// Machine-object policies (0018, third-lane batch 15). Numeric contracts use the existing integer domain.
+// Native generation safe-integer validation, container/storage execution and lease clocks stay in the host.
+
+//@ verify
+//@ ensures \result == (generation < current || (!start && generation != current))
+//@ ensures generation < current ==> \result
+//@ ensures !start && !\result ==> generation == current
+export function generationRefused(start: boolean, generation: number, current: number): boolean {
+  return generation < current || (!start && generation !== current)
+}
+
+//@ verify
+//@ ensures \result == ((generation == current && phase == "stopped") || (generation > current && phase != "stopped"))
+//@ ensures generation == current ==> (\result == (phase == "stopped"))
+//@ ensures generation > current ==> (\result == (phase != "stopped"))
+export function startRefused(generation: number, current: number, phase: string): boolean {
+  return (generation === current && phase === "stopped") || (generation > current && phase !== "stopped")
+}
+
+//@ verify
+//@ ensures \result == (generation == current && phase == "running")
+export function currentRunning(generation: number, current: number, phase: string): boolean {
+  return generation === current && phase === "running"
+}
+
+//@ verify
+//@ ensures \result == (phase == "done" && prior == command)
+export function receiptPassed(phase: string, prior: string, command: string): boolean {
+  return phase === "done" && prior === command
+}
+
+//@ verify
+//@ ensures output == null ==> \result == ""
+//@ ensures output != null ==> \result == output
+export function receiptText(output: string | null): string {
+  return output ?? ""
+}
+
+//@ verify
+//@ ensures \result == (remaining <= 0)
+export function leaseExpired(remaining: number): boolean {
+  return remaining <= 0
+}
+
+//@ verify
+//@ ensures \result == (phase != "stopping")
+export function checkpointPhase(phase: string): boolean {
+  return phase !== "stopping"
+}
+
+//@ verify
+//@ ensures \result == (failed ? "checkpoint-failed" : "")
+export function checkpointOutput(failed: boolean): string {
+  return failed ? "checkpoint-failed" : ""
+}
+
+export interface MachineStartOptions<I, S> {
+  readonly enableInternet: boolean
+  readonly instance?: I
+  readonly containerSnapshot?: S
+}
+//@ verify
+//@ ensures \result.enableInternet == options.enableInternet
+//@ ensures \result.instance == options.instance
+//@ ensures snapshot != undefined ==> \result.containerSnapshot == snapshot
+//@ ensures snapshot == undefined ==> \result.containerSnapshot == options.containerSnapshot
+export function restoredOptions<I, S>(options: MachineStartOptions<I, S>, snapshot: S | undefined): MachineStartOptions<I, S> {
+  return { ...options, ...(snapshot === undefined ? {} : { containerSnapshot: snapshot }) }
+}
+
+//@ verify
+//@ requires remaining >= 1
+//@ ensures 1 <= \result && \result <= 600
+//@ ensures remaining < 1000 ==> \result == 1
+//@ ensures remaining >= 600000 ==> \result == 600
+//@ ensures 1000 <= remaining && remaining < 600000 ==> \result * 1000 <= remaining && remaining < (\result + 1) * 1000
+export function commandTimeout(remaining: number): number {
+  return Math.max(1, Math.min(600, Math.floor(remaining / 1000)))
+}
+//@ verify
+//@ ensures \result == stdout + stderr + (truncated ? "\n[truncated]" : "") + (failed ? "\nExit " + code : "")
+export function commandOutput(stdout: string, stderr: string, truncated: boolean, failed: boolean, code: string): string {
+  return stdout + stderr + (truncated ? "\n[truncated]" : "") + (failed ? "\nExit " + code : "")
+}
+//@ verify
+//@ ensures \result == (duration < 1000 || duration > 21600000)
+export function leaseDurationRefused(duration: number): boolean {
+  return duration < 1000 || duration > 21600000
+}
+//@ verify
+//@ ensures \result == (phase == "stopped")
+export function stoppedPhase(phase: string): boolean {
+  return phase === "stopped"
+}
+export type CheckpointResult<S> = { readonly _tag: "Success"; readonly success: S } | { readonly _tag: "Failure" }
+export interface CheckpointState<S> { readonly snapshot: S | undefined; readonly failed: boolean }
+//@ verify
+//@ ensures result._tag == "Success" ==> \result.snapshot == result.success && !\result.failed
+//@ ensures result._tag == "Failure" ==> \result.snapshot == previous && \result.failed
+export function checkpointed<S>(previous: S | undefined, result: CheckpointResult<S>): CheckpointState<S> {
+  if (result._tag === "Success") return { snapshot: result.success, failed: false }
+  return { snapshot: previous, failed: true }
+}

@@ -413,3 +413,10 @@ No new tool or dependency is added.
 **Action-host proof controls (0018, third-lane batch 14).** Seven native cases failed against initial kernels;
 fifteen production guard/output mutations retain their contracts. Mock/live action parity, owner/cancellation
 coverage and directory conflict tests exercise the callers. No dependency or tool is added.
+
+
+**Machine policies (0018, third-lane batch 15).** Failed-first cases cover generation/start/command admission,
+receipt identity, lease bounds, snapshot restoration, checkpoint frames and exact command output/timeouts.
+Forty production-body mutations retain the original contracts. LemmaScript optional generic record regressions
+use positive/wrong fixture pairs. Qualified storage/SQLite inventory detection has an independent failing-first
+regression. Existing dependencies are unchanged; the extended final checks are pending.

@@ -9,6 +9,8 @@ function scan(folder) {
     e.isDirectory() ? scan(path.join(folder,e.name)) : e.name.endsWith('.vibe') ? [path.join(folder,e.name)] : []);
 }
 const shellBoundaries = {
+  'worker/machineObject.vibe': 'Calls machineDecision for exact generation/start/running guards, receipt replay/text, lease boundary and duration, snapshot restoration, checkpoint success/failure frame, stop phase, bounded floor-cell timeout and exact output markers. Native safe-integer checks and clocks, SQLite command fencing, storage-before-destroy, locking, container execution and snapshot capture remain tested host boundaries. No end-to-end once-only execution or numeric floating-point proof is claimed.',
+
   'src/core/roles.vibe': 'Post author formatting delegates to the proved identityDecision; role grants delegate to the existing proved policy. Session signature/expiry checks and Effect service execution remain host/library boundaries.',
   'src/surfaces/session.vibe': 'Private atomic settings and credential-origin decoding are OS/FileSystem/Schema boundaries, exercised over real files and a faulty permissions service. No proof of filesystem permissions, atomic rename or JSON decoding is claimed.',
   'src/surfaces/signin.vibe': 'GitHub device transport, interval persistence, session validation and logout run inside journaled native Actions. GitHub responses, clocks, HTTP, private settings and Effect execution remain tested host boundaries, not formal proofs.',
@@ -204,9 +206,21 @@ function containsLogic(node) {
 }
 const effectRoots = new Set(['Effect', 'Ref', 'Queue', 'PubSub', 'Semaphore', 'Clock', 'Console', 'Logger', 'Runtime', 'Dom', 'document', 'window']);
 const domEffects = new Set(['focus', 'blur', 'scrollTo', 'scrollIntoView', 'setAttribute', 'appendChild', 'removeChild', 'addEventListener', 'removeEventListener', 'getBoundingClientRect', 'querySelector', 'querySelectorAll']);
+// Recognize concrete native APIs; RegExp.exec and a Map named storage remain logic.
+function memberPath(node) {
+  if (node?.type === 'Identifier') return [node.name];
+  if (node?.type !== 'MemberExpression' || node.computed || node.property?.type !== 'Identifier') return undefined;
+  const prefix = memberPath(node.object);
+  return prefix && [...prefix, node.property.name];
+}
 function containsEffects(node) {
   if (functions.has(node.type)) return false;
   if (node.type === 'CallExpression') {
+    const parts = memberPath(node.callee);
+    if (parts && (parts.join('.') === 'Date.now'
+      || parts.slice(-3).join('.') === 'storage.sql.exec'
+      || (parts.at(-3) === 'raw' && parts.at(-2) === 'storage'
+        && ['get', 'put', 'list', 'delete'].includes(parts.at(-1))))) return true;
     let root = node.callee;
     while (root?.type === 'MemberExpression') root = root.object;
     if (effectRoots.has(root?.name) || ['fetch', 'setTimeout', 'queueMicrotask'].includes(root?.name)

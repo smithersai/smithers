@@ -5476,3 +5476,53 @@ cases.extend([('src/actions/actionHostDecision.vibe', *case) for case in [
 ('action-host-other-index', 'indexedRun', 'return id === source || !indexed', 'return true', 'a child indexed elsewhere is not listed twice'),
 ('action-host-same-run', 'sameRun', 'return id === expected', 'return id !== expected', 'only the requested run is read or followed'),
 ]])
+
+# Lane vl-proveall3, batch 15: machine-generation and receipt policies.
+cases.extend([('src/core/machineDecision.vibe', *case) for case in [
+('machine-generation-equal', 'generationRefused', 'generation < current', 'generation <= current', 'the current generation is not stale'),
+('machine-generation-start', 'generationRefused', '(!start && generation !== current)', '(generation !== current)', 'only start may use a newer generation'),
+('machine-generation-other', 'generationRefused', 'generation !== current', 'generation === current', 'other operations need exactly the current generation'),
+('machine-start-same-phase', 'startRefused', '(generation === current && phase === "stopped")', '(generation === current)', 'an interrupted same-generation start may resume'),
+('machine-start-stopped', 'startRefused', 'phase === "stopped"', 'phase === "running"', 'a stopped generation cannot restart'),
+('machine-start-new', 'startRefused', 'generation > current', 'generation >= current', 'a same-generation running start is not refused as a new generation'),
+('machine-start-active', 'startRefused', '(generation > current && phase !== "stopped")', 'false', 'a new generation waits for stop'),
+('machine-running-generation', 'currentRunning', 'return generation === current && phase === "running"', 'return phase === "running"', 'a stale command cannot acknowledge'),
+('machine-running-phase', 'currentRunning', 'return generation === current && phase === "running"', 'return generation === current', 'a stopped machine cannot acknowledge'),
+('machine-receipt-done', 'receiptPassed', 'return phase === "done" && prior === command', 'return prior === command', 'an uncertain command never reports done'),
+('machine-receipt-command', 'receiptPassed', 'return phase === "done" && prior === command', 'return phase === "done"', 'a changed command cannot reuse a receipt'),
+('machine-receipt-null', 'receiptText', 'return output ?? ""', 'return output ?? "missing"', 'SQL null output is empty'),
+('machine-receipt-output', 'receiptText', 'return output ?? ""', 'return ""', 'completed output is retained'),
+('machine-lease-zero', 'leaseExpired', 'return remaining <= 0', 'return remaining < 0', 'zero remaining lease refuses compute'),
+('machine-lease-positive', 'leaseExpired', 'return remaining <= 0', 'return remaining >= 0', 'positive compute time is admitted'),
+('machine-checkpoint-phase', 'checkpointPhase', 'return phase !== "stopping"', 'return phase === "stopping"', 'a stop already checkpointed does not checkpoint again'),
+('machine-checkpoint-failed', 'checkpointOutput', 'return failed ? "checkpoint-failed" : ""', 'return failed ? "failed" : ""', 'checkpoint failure has a fixed public marker'),
+('machine-checkpoint-ok', 'checkpointOutput', 'return failed ? "checkpoint-failed" : ""', 'return "checkpoint-failed"', 'a successful checkpoint has no failure marker'),
+]])
+
+cases.extend([('src/core/machineDecision.vibe', *case) for case in [
+('machine-restore-present', 'restoredOptions', 'return { ...options, ...(snapshot === undefined ? {} : { containerSnapshot: snapshot }) }', 'return options', 'a stored snapshot replaces the start snapshot'),
+('machine-restore-absent', 'restoredOptions', 'return { ...options, ...(snapshot === undefined ? {} : { containerSnapshot: snapshot }) }', 'return { enableInternet: options.enableInternet, ...(options.instance === undefined ? {} : { instance: options.instance }), ...(snapshot === undefined ? {} : { containerSnapshot: snapshot }) }', 'an absent stored snapshot retains the original start snapshot'),
+('machine-restore-internet', 'restoredOptions', 'return { ...options, ...(', 'return { ...options, enableInternet: !options.enableInternet, ...(', 'restoration preserves the SDK internet flag'),
+('machine-restore-instance', 'restoredOptions', 'return { ...options, ...(snapshot === undefined ? {} : { containerSnapshot: snapshot }) }', 'return { enableInternet: options.enableInternet, ...(options.containerSnapshot === undefined ? {} : { containerSnapshot: options.containerSnapshot }), ...(snapshot === undefined ? {} : { containerSnapshot: snapshot }) }', 'restoration preserves the requested instance'),
+]])
+
+cases.extend([('src/core/machineDecision.vibe', *case) for case in [
+('machine-timeout-zero', 'commandTimeout', 'Math.max(1,', 'Math.max(0,', 'subsecond work receives at least one second'),
+('machine-timeout-cap', 'commandTimeout', 'Math.min(600,', 'Math.min(601,', 'command timeout never exceeds ten minutes'),
+('machine-timeout-round', 'commandTimeout', 'Math.floor(remaining / 1000)', 'Math.ceil(remaining / 1000)', 'middle timeouts use the exact floor cell'),
+('machine-timeout-scale', 'commandTimeout', 'remaining / 1000', 'remaining / 100', 'milliseconds convert to seconds'),
+('machine-output-stdout', 'commandOutput', 'return stdout + stderr', 'return stderr', 'stdout precedes stderr'),
+('machine-output-stderr', 'commandOutput', 'return stdout + stderr', 'return stdout', 'stderr is retained'),
+('machine-output-truncated', 'commandOutput', 'truncated ? "\\n[truncated]" : ""', 'truncated ? "" : "\\n[truncated]"', 'only truncated output gets the marker'),
+('machine-output-failed', 'commandOutput', 'failed ? "\\nExit " + code : ""', 'failed ? "" : "\\nExit " + code', 'only failure gets the exit suffix'),
+('machine-output-code', 'commandOutput', '"\\nExit " + code', '"\\nExit "', 'failure retains the formatted exit code'),
+('machine-duration-min', 'leaseDurationRefused', 'duration < 1000', 'duration <= 1000', 'one second is admitted'),
+('machine-duration-max', 'leaseDurationRefused', 'duration > 21600000', 'duration >= 21600000', 'six hours is admitted'),
+('machine-duration-low', 'leaseDurationRefused', 'duration < 1000 ||', 'false ||', 'subsecond leases are refused'),
+('machine-duration-high', 'leaseDurationRefused', '|| duration > 21600000', '|| false', 'leases above six hours are refused'),
+('machine-stopped-phase', 'stoppedPhase', 'return phase === "stopped"', 'return phase !== "stopped"', 'stopped is the only terminal phase'),
+('machine-checkpoint-success-snapshot', 'checkpointed', 'return { snapshot: result.success, failed: false }', 'return { snapshot: previous, failed: false }', 'success retains the new snapshot'),
+('machine-checkpoint-success-flag', 'checkpointed', 'snapshot: result.success, failed: false', 'snapshot: result.success, failed: true', 'success clears failure'),
+('machine-checkpoint-failure-snapshot', 'checkpointed', 'return { snapshot: previous, failed: true }', 'return { snapshot: undefined, failed: true }', 'failure retains the previous snapshot'),
+('machine-checkpoint-failure-flag', 'checkpointed', 'snapshot: previous, failed: true', 'snapshot: previous, failed: false', 'failure is reported'),
+]])

@@ -226,3 +226,9 @@ array-valued spread in specifications, with positive and false-contract fixtures
 **Action hosts (0018, third-lane batch 14).** Mock settlement, failure wording, ownership, door actor and run/flow
 selection plus the directory's source-index admission are marked scalar contracts. Existing cancellation and
 post-child relations are reused; native sorting, private ids, request JSON and SDK ordering remain unproved.
+
+
+Machine admission, receipt and checkpoint policies now delegate to fourteen `machineDecision` kernels (0018,
+third-lane batch 15), with forty body mutations and failed-first native cases. Contracts keep the integer-domain
+boundary explicit; storage/locks/container execution and once-only delivery remain runtime obligations. Final
+extended proof and mutation receipts are pending; the earlier eight kernels passed eighteen contract rejections.

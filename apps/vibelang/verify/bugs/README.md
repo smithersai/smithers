@@ -81,3 +81,5 @@ Fixed in `packages/lemmascript` by this batch, each with a passing and a failing
 integer (`real-field.ts`; before the fix `real-field-wrong.ts` verified a false claim); a generic interface or object
 alias keeps its type parameters (`generic-record.ts`).
 
+
+generic-nullish.ts is a valid generic boxed-undefined presence check whose correct false result cannot currently lower: Dafny cannot infer the generic call argument from None. The false-contract twin also failed resolution, so no false proof or contract-rejection credit is claimed. Concrete generic-call instantiation remains an explicit tool boundary (0018, third-lane batch 15).

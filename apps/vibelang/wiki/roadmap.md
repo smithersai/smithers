@@ -162,3 +162,5 @@ brick                                   state         proof
 
 - **Public reads follow-up (0030/0031, lane vl-public-reads):** repository-ID pagination, bounded cold issue reads,
   cache patience, health that waits briefly for startup, and a `Stale` mark with its confirmation time. The lead deploys.
+
+- VL-9 / VL-29: machine policy proof batch covers fourteen kernels and forty mutations; final gates pending, durable host boundaries remain in 0018.
