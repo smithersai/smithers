@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as Filegroup from "../src/Filegroup.ts"
+import * as Filegroup from "../src/Filegroup.vibe"
 import * as Input from "../src/Input.ts"
 import * as Shell from "../src/Shell.ts"
 import * as Target from "../src/Target.ts"

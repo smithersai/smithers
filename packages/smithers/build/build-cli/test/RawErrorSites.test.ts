@@ -56,10 +56,10 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number]> = [
   ["src/WorkspaceToolchain.ts", 5],
   ["src/engine.ts", 1],
   ["src/internal/DeclarationDependencies.ts", 2],
-  ["src/internal/PackagePlanner.ts", 14],
+  ["src/internal/PackagePlanner.vibe", 14],
   ["src/internal/PackageRunner.ts", 6],
   ["src/internal/ParseModule.ts", 1],
-  ["src/internal/rules/DocsCheckRule.ts", 4],
+  ["src/internal/rules/DocsCheckRule.vibe", 4],
   ["src/internal/rules/FetchExecutor.ts", 1],
   ["src/internal/rules/NativeArtifactOutput.ts", 5],
   ["src/internal/rules/NativeFileRule.ts", 3],
@@ -70,7 +70,7 @@ const sources = (directory: string): ReadonlyArray<string> =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) return sources(path)
-    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : []
+    return /\.(?:tsx?|vibe)$/.test(entry.name) && !/\.test\.(?:tsx?|vibe)$/.test(entry.name) ? [path] : []
   })
 
 const lines = sources(sourceRoot).map((path) => ({

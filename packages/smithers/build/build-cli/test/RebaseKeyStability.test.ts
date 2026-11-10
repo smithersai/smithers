@@ -15,7 +15,7 @@ import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterEach, expect, it } from "vitest"
 import * as GoExec from "../src/GoExec.ts"
-import { plan } from "../src/internal/PackagePlanner.ts"
+import { plan } from "../src/internal/PackagePlanner.vibe"
 import { execute } from "../src/internal/PackageRunner.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 

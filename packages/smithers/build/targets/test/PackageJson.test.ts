@@ -29,7 +29,7 @@ import {
 } from "../src/PackageJson.ts"
 import * as PackageJsonTemplate from "../src/PackageJsonTemplate.ts"
 import * as Target from "../src/Target.ts"
-import { Attrs as TsBuildAttrs, distributionLayout, type Tool, TsBuild } from "../src/TsBuild.ts"
+import { Attrs as TsBuildAttrs, distributionLayout, type Tool, TsBuild } from "../src/TsBuild.vibe"
 import { Vitest } from "../src/Vitest.vibe"
 import { plannedCalls } from "./plan.ts"
 import { packageManager } from "./toolchain.ts"

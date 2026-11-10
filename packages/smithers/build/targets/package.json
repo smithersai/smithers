@@ -134,13 +134,13 @@
       "default": "./.vibelang/js/src/DocsCheck.js"
     },
     "./DocsPage": {
-      "types": "./src/DocsPage.ts",
-      "vibelang-source": "./src/DocsPage.ts",
+      "types": "./.vibe/declarations/src/DocsPage.d.vibe.ts",
+      "vibelang-source": "./src/DocsPage.vibe",
       "default": "./.vibelang/js/src/DocsPage.js"
     },
     "./DocsParity": {
-      "types": "./src/DocsParity.ts",
-      "vibelang-source": "./src/DocsParity.ts",
+      "types": "./.vibe/declarations/src/DocsParity.d.vibe.ts",
+      "vibelang-source": "./src/DocsParity.vibe",
       "default": "./.vibelang/js/src/DocsParity.js"
     },
     "./Dprint": {
@@ -149,13 +149,13 @@
       "default": "./.vibelang/js/src/Dprint.js"
     },
     "./DtsBuild": {
-      "types": "./src/DtsBuild.ts",
-      "vibelang-source": "./src/DtsBuild.ts",
+      "types": "./.vibe/declarations/src/DtsBuild.d.vibe.ts",
+      "vibelang-source": "./src/DtsBuild.vibe",
       "default": "./.vibelang/js/src/DtsBuild.js"
     },
     "./Environment": {
-      "types": "./src/Environment.ts",
-      "vibelang-source": "./src/Environment.ts",
+      "types": "./.vibe/declarations/src/Environment.d.vibe.ts",
+      "vibelang-source": "./src/Environment.vibe",
       "default": "./.vibelang/js/src/Environment.js"
     },
     "./EsLint": {
@@ -189,8 +189,8 @@
       "default": "./.vibelang/js/src/Fetch.js"
     },
     "./Filegroup": {
-      "types": "./src/Filegroup.ts",
-      "vibelang-source": "./src/Filegroup.ts",
+      "types": "./.vibe/declarations/src/Filegroup.d.vibe.ts",
+      "vibelang-source": "./src/Filegroup.vibe",
       "default": "./.vibelang/js/src/Filegroup.js"
     },
     "./Flow": {
@@ -299,8 +299,8 @@
       "default": "./.vibelang/js/src/Mount.js"
     },
     "./NewPackage": {
-      "types": "./src/NewPackage.ts",
-      "vibelang-source": "./src/NewPackage.ts",
+      "types": "./.vibe/declarations/src/NewPackage.d.vibe.ts",
+      "vibelang-source": "./src/NewPackage.vibe",
       "default": "./.vibelang/js/src/NewPackage.js"
     },
     "./Nix": {
@@ -469,8 +469,8 @@
       "default": "./.vibelang/js/src/Toolchain.js"
     },
     "./TsBuild": {
-      "types": "./src/TsBuild.ts",
-      "vibelang-source": "./src/TsBuild.ts",
+      "types": "./.vibe/declarations/src/TsBuild.d.vibe.ts",
+      "vibelang-source": "./src/TsBuild.vibe",
       "default": "./.vibelang/js/src/TsBuild.js"
     },
     "./Tsconfig": {

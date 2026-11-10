@@ -213,7 +213,7 @@ const securityReview = Smithers.SecurityReview({
         "src/PackageTree.ts",
         "src/GitSubmoduleExec.ts",
         "src/Owners.ts",
-        "src/internal/PackagePlanner.ts",
+        "src/internal/PackagePlanner.vibe",
         "src/internal/ContainedProcess.ts"
       ]
     },
@@ -349,7 +349,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/GitSubmoduleExec.ts",
-        "src/internal/PackagePlanner.ts",
+        "src/internal/PackagePlanner.vibe",
         "src/internal/PackageRunner.ts",
         "src/internal/RulePolicy.ts"
       ]

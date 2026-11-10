@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import * as AgentTarget from "../src/AgentTarget.ts"
-import * as Filegroup from "../src/Filegroup.ts"
+import * as Filegroup from "../src/Filegroup.vibe"
 import * as Input from "../src/Input.ts"
 import * as Target from "../src/Target.ts"
 import { plannedCalls } from "./plan.ts"

@@ -9,7 +9,7 @@ import { lstat, readdir } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import * as ContainedProcess from "./internal/ContainedProcess.ts"
-import { PackageError } from "./PackageError.ts"
+import { PackageError } from "./PackageError.vibe"
 
 /** Runs fresh CLI processes until interrupted, cancelling stale work when an input changes.
  * @category execution

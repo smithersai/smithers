@@ -39,7 +39,7 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number]> = [
   ["src/Input.ts", 15],
   ["src/Install.ts", 1],
   ["src/LlmLint.ts", 34],
-  ["src/NewPackage.ts", 6],
+  ["src/NewPackage.vibe", 6],
   ["src/Nix.ts", 4],
   ["src/Owners.ts", 15],
   ["src/Package.ts", 1],
@@ -68,7 +68,7 @@ const sources = (directory: string): ReadonlyArray<string> =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) return sources(path)
-    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : []
+    return /\.(?:tsx?|vibe)$/.test(entry.name) && !/\.test\.(?:tsx?|vibe)$/.test(entry.name) ? [path] : []
   })
 
 const lines = sources(sourceRoot).map((path) => ({

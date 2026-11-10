@@ -1,0 +1,172 @@
+/**
+ * The platform code of PackagePlanner.vibe, which a .vibe file does not import
+ * as a value (EK4402): host paths, files, and process facts.
+ *
+ * @since 1.0.0
+ */
+
+import * as NodeFs from "node:fs"
+import * as Fs from "node:fs/promises"
+import * as NodeOs from "node:os"
+import * as NodePath from "node:path"
+
+/**
+ * Joins host path segments.
+ * @category paths
+ * @since 1.0.0
+ */
+export const join = NodePath.join
+
+/**
+ * Whether a host path is absolute.
+ * @category paths
+ * @since 1.0.0
+ */
+export const isAbsolute = NodePath.isAbsolute
+
+/**
+ * The directory part of a host path.
+ * @category paths
+ * @since 1.0.0
+ */
+export const dirname = NodePath.dirname
+
+/**
+ * The last segment of a host path.
+ * @category paths
+ * @since 1.0.0
+ */
+export const basename = NodePath.basename
+
+/**
+ * Resolves host path segments to an absolute path.
+ * @category paths
+ * @since 1.0.0
+ */
+export const resolve = NodePath.resolve
+
+/**
+ * The host relative path from one path to another.
+ * @category paths
+ * @since 1.0.0
+ */
+export const relative = NodePath.relative
+
+/**
+ * The POSIX directory part of a path.
+ * @category paths
+ * @since 1.0.0
+ */
+export const posixDirname = NodePath.posix.dirname
+
+/**
+ * The host PATH list delimiter.
+ * @category paths
+ * @since 1.0.0
+ */
+export const delimiter: string = NodePath.delimiter
+
+/**
+ * The host path separator.
+ * @category paths
+ * @since 1.0.0
+ */
+export const sep: string = NodePath.sep
+
+/**
+ * Reads a host file.
+ * @category files
+ * @since 1.0.0
+ */
+export const readFile = Fs.readFile
+
+/**
+ * Tests a host path's accessibility.
+ * @category files
+ * @since 1.0.0
+ */
+export const access = Fs.access
+
+/**
+ * Resolves a host path to its canonical form.
+ * @category files
+ * @since 1.0.0
+ */
+export const realpath = Fs.realpath
+
+/**
+ * Opens a host file.
+ * @category files
+ * @since 1.0.0
+ */
+export const open = Fs.open
+
+/**
+ * Whether a host path exists.
+ * @category files
+ * @since 1.0.0
+ */
+export const existsSync = NodeFs.existsSync
+
+/**
+ * Resolves a host path to its canonical form, synchronously.
+ * @category files
+ * @since 1.0.0
+ */
+export const realpathSync = NodeFs.realpathSync
+
+/**
+ * Appends to a host file, synchronously.
+ * @category files
+ * @since 1.0.0
+ */
+export const appendFileSync = NodeFs.appendFileSync
+
+/**
+ * The host temporary directory.
+ * @category files
+ * @since 1.0.0
+ */
+export const tmpdir = NodeOs.tmpdir
+
+/**
+ * A zero-filled byte buffer.
+ * @category bytes
+ * @since 1.0.0
+ */
+export const allocBuffer = (size: number): Buffer => Buffer.alloc(size)
+
+/**
+ * The byte length of a string in an encoding.
+ * @category bytes
+ * @since 1.0.0
+ */
+export const byteLength = (text: string, encoding: BufferEncoding): number => Buffer.byteLength(text, encoding)
+
+/**
+ * This process's environment, read when called.
+ * @category process
+ * @since 1.0.0
+ */
+export const env = (): NodeJS.ProcessEnv => process.env
+
+/**
+ * This process's operating system platform.
+ * @category process
+ * @since 1.0.0
+ */
+export const platform = (): NodeJS.Platform => process.platform
+
+/**
+ * This process's Node.js version string.
+ * @category process
+ * @since 1.0.0
+ */
+export const version = (): string => process.version
+
+/**
+ * This process's CPU architecture.
+ * @category process
+ * @since 1.0.0
+ */
+export const arch = (): NodeJS.Architecture => process.arch

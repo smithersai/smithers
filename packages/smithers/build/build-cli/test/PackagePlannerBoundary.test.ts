@@ -21,7 +21,7 @@ import {
   planEffect,
   PlanningServices,
   planningServicesLive
-} from "../src/internal/PackagePlanner.ts"
+} from "../src/internal/PackagePlanner.vibe"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"

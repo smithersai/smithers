@@ -6,13 +6,13 @@
 
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as NodePath from "node:path"
 import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 import * as PackageManager from "./PackageManager.ts"
 import * as Runtime from "./Runtime.ts"
 import * as Target from "./Target.ts"
 import { BuildError, captureOutputs, Outputs } from "./ToolBuild.ts"
+import * as $platform from "./TsBuild.platform.ts"
 
 /**
  * Schema for a distribution built by the TypeScript compiler.
@@ -223,7 +223,9 @@ export const distributionLayout = (attrs: Attrs): ReadonlyArray<DistributionLayo
   const formats: ReadonlyArray<"esm" | "cjs"> = attrs.format === "dual" ? ["esm", "cjs"] : [attrs.format]
   const source = attrs.entries[0]
   // A `.vibe` entry compiles to the same `<name>.js` and `<name>.d.ts`.
-  const base = source === undefined ? undefined : NodePath.basename(source.path).replace(/\.(?:(?:m|c)?tsx?|vibe)$/, "")
+  const base = source === undefined
+    ? undefined
+    : $platform.basename(source.path).replace(/\.(?:(?:m|c)?tsx?|vibe)$/, "")
   return formats.map((format) => {
     const directory = attrs.tool.name === "tsup" ? attrs.outDir : `${attrs.outDir}/${format}`
     const entry = attrs.tool.name === "tsup" || base === undefined ? null : `${directory}/${base}.js`

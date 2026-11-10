@@ -12,10 +12,9 @@ import * as Target from "@smthrs/targets/Target"
 import * as Clock from "effect/Clock"
 import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
-import * as Fs from "node:fs/promises"
-import * as NodePath from "node:path"
 import * as Diagnostic from "../../Diagnostic.ts"
 import type * as Rule from "../RuleContract.ts"
+import * as $platform from "./DocsCheckRule.platform.ts"
 
 /**
  * Evidence that cannot support the planned documentation check.
@@ -85,7 +84,7 @@ export const contract: Rule.Contract<Selection, Request, { readonly output?: unk
     const evidence = attrs.evidence ?? []
     const observations = await Promise.all(evidence.map(async (input) => {
       const path = Input.resolvePath(node.packagePath, input.file.path)
-      const text = await SafeFs.readText(NodePath.join(root, ...path.split("/")), { root, signal })
+      const text = await SafeFs.readText($platform.join(root, ...path.split("/")), { root, signal })
       return { input, path, text }
     }))
     const now = await Effect.runPromise(Clock.currentTimeMillis)
@@ -109,8 +108,8 @@ export const contract: Rule.Contract<Selection, Request, { readonly output?: unk
       }
       files[index] = { path, digest }
     }
-    const stampPath = NodePath.join(root, ...lane.stamp.split("/"))
-    const outputPath = NodePath.join(root, ...lane.output.split("/"))
+    const stampPath = $platform.join(root, ...lane.stamp.split("/"))
+    const outputPath = $platform.join(root, ...lane.output.split("/"))
     const text = attrs.ignore === undefined ? undefined : await SafeFs.readText(outputPath, { root, signal })
     const output: Input.FileDigest = {
       path: lane.output,
@@ -140,7 +139,7 @@ export const contract: Rule.Contract<Selection, Request, { readonly output?: unk
     }
     let stampText: string | undefined
     try {
-      stampText = await Fs.readFile(stampPath, "utf8")
+      stampText = await $platform.readFileUtf8(stampPath)
     } catch (cause) {
       if ((cause as { readonly code?: unknown }).code !== "ENOENT") {
         throw new Error(`Docs.Check could not read ${lane.stamp}: ${Diagnostic.describe(cause)}`)

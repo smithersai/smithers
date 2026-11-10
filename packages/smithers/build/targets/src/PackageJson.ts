@@ -52,7 +52,7 @@ import { Engine } from "./ModelEngine.vibe"
 import { assertNotManagerOwned, isTemplate, managerOwnedFields, type Template } from "./PackageJsonTemplate.ts"
 import * as SafeFs from "./SafeFs.ts"
 import * as Target from "./Target.ts"
-import * as TsBuild from "./TsBuild.ts"
+import * as TsBuild from "./TsBuild.vibe"
 
 /**
  * The SPDX identifiers a package may declare, `MIT` by default.

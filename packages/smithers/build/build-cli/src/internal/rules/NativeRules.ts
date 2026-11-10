@@ -8,7 +8,7 @@ import type * as DocsCheck from "@smthrs/targets/DocsCheck"
 import type * as Input from "@smthrs/targets/Input"
 import type * as Target from "@smthrs/targets/Target"
 import type * as Rule from "../RuleContract.ts"
-import * as DocsCheckRule from "./DocsCheckRule.ts"
+import * as DocsCheckRule from "./DocsCheckRule.vibe"
 import * as FetchRule from "./FetchRule.ts"
 import * as NativeFileRule from "./NativeFileRule.ts"
 

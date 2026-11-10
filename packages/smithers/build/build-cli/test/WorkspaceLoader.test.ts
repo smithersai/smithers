@@ -4,7 +4,7 @@
  */
 import { Smithers as S } from "@smthrs/targets"
 import { describe, expect, it } from "vitest"
-import { isPackageError } from "../src/PackageError.ts"
+import { isPackageError } from "../src/PackageError.vibe"
 import { validateWorkspaceModule } from "../src/WorkspaceLoader.ts"
 
 /** A minimal workspace declaration for module validation unit tests. */

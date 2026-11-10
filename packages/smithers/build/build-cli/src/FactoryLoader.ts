@@ -19,7 +19,7 @@ import * as Package from "@smthrs/targets/Package"
 import * as Target from "@smthrs/targets/Target"
 import * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
 import { byCodeUnit } from "./internal/Text.ts"
-import { PackageError } from "./PackageError.ts"
+import { PackageError } from "./PackageError.vibe"
 
 /**
  * One evaluated, validated FACTORY.ts module.

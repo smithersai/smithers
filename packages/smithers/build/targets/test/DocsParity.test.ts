@@ -7,7 +7,7 @@ import * as PackageDiscovery from "../../build-cli/src/PackageDiscovery.ts"
 import * as PackageExec from "../../build-cli/src/PackageExec.ts"
 import { PackageIndex } from "../../build-cli/src/PackageIndex.ts"
 import * as PackageLoader from "../../build-cli/src/PackageLoader.ts"
-import * as DocsParity from "../src/DocsParity.ts"
+import * as DocsParity from "../src/DocsParity.vibe"
 import * as Target from "../src/Target.ts"
 import { packageManager } from "./toolchain.ts"
 

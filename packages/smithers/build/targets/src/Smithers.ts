@@ -23,7 +23,7 @@ import * as ChangesetsTargetModule from "./ChangesetsTarget.vibe"
 import * as CiToolchainModule from "./CiToolchain.ts"
 import * as DependencyDocs from "./DependencyDocs.ts"
 import * as DocsCheckModule from "./DocsCheck.ts"
-import * as DocsPageModule from "./DocsPage.ts"
+import * as DocsPageModule from "./DocsPage.vibe"
 import * as FactoryModule from "./Factory.ts"
 import * as HomeModule from "./Home.vibe"
 import * as InputModule from "./Input.ts"
@@ -141,13 +141,13 @@ export { BunSuite } from "./BunSuite.ts"
 /** @category macros @since 0.1.0 */
 export { FaultSuite } from "./FaultSuite.ts"
 /** @category targets @since 0.1.0 */
-export { Filegroup } from "./Filegroup.ts"
+export { Filegroup } from "./Filegroup.vibe"
 /** @category targets @since 0.1.0 */
 export { Fetch } from "./Fetch.ts"
 /** @category actions @since 0.1.0 */
-export { ExpandFilegroup, FilegroupError } from "./Filegroup.ts"
+export { ExpandFilegroup, FilegroupError } from "./Filegroup.vibe"
 /** @category guards @since 0.1.0 */
-export { isFilegroup } from "./Filegroup.ts"
+export { isFilegroup } from "./Filegroup.vibe"
 /** @category targets @since 0.1.0 */
 export { Install } from "./Install.ts"
 /** @category targets @since 0.1.0 */
@@ -163,9 +163,9 @@ export { HttpSecret } from "./Secret.ts"
 /** @category constructors @since 0.1.0 */
 export { SecretOrigin } from "./Secret.ts"
 /** @category targets @since 0.1.0 */
-export { TsBuild } from "./TsBuild.ts"
+export { TsBuild } from "./TsBuild.vibe"
 /** @category targets @since 0.1.0 */
-export { DtsBuild } from "./DtsBuild.ts"
+export { DtsBuild } from "./DtsBuild.vibe"
 /** @category targets @since 0.1.0 */
 export { Typecheck } from "./Typecheck.vibe"
 /** @category targets @since 0.1.0 */
@@ -185,9 +185,9 @@ export { DepsLint } from "./DepsLint.vibe"
 /** @category targets @since 0.1.0 */
 export { PackageLint } from "./PackageLint.vibe"
 /** @category targets @since 0.1.0 */
-export { DocsParity } from "./DocsParity.ts"
+export { DocsParity } from "./DocsParity.vibe"
 /** @category actions @since 0.1.0 */
-export { CheckDocs, DocsParityError } from "./DocsParity.ts"
+export { CheckDocs, DocsParityError } from "./DocsParity.vibe"
 /** @category targets @since 0.1.0 */
 export { SortPackageJson } from "./SortPackageJson.vibe"
 /** @category constructors @since 0.1.0 */
@@ -197,9 +197,9 @@ export { PackageJsonCheck, PackageJsonWrite } from "./PackageJson.ts"
 /** @category actions @since 0.1.0 */
 export { SyncPackageJson } from "./PackageJson.ts"
 /** @category targets @since 0.1.0 */
-export { NewPackage } from "./NewPackage.ts"
+export { NewPackage } from "./NewPackage.vibe"
 /** @category actions @since 0.1.0 */
-export { ScaffoldPackage } from "./NewPackage.ts"
+export { ScaffoldPackage } from "./NewPackage.vibe"
 /** @category actions @since 0.1.0 */
 export {
   CheckFile,
@@ -506,7 +506,7 @@ export * as Stamp from "./Stamp.ts"
 export * as Nix from "./Nix.ts"
 
 /** Prepared-environment toolchain pins, digests and destinations. */
-export * as Environment from "./Environment.ts"
+export * as Environment from "./Environment.vibe"
 
 /**
  * npm-facing workspace declarations: `Npm.NodeModules({ packageJson })`.

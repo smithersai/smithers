@@ -19,7 +19,7 @@ import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import { factoryFileBeside } from "./FactoryLoader.ts"
 import { byCodeUnit, posix } from "./internal/Text.ts"
-import { PackageError } from "./PackageError.ts"
+import { PackageError } from "./PackageError.vibe"
 
 /** Hard traversal ceilings; a workspace beyond them fails, never truncates. */
 const limits = {

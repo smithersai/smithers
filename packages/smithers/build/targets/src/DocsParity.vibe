@@ -12,11 +12,11 @@ import { Action, type FlowRuntime } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import * as NodePath from "node:path"
 import { failureMessage } from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
 import * as SafeFs from "./SafeFs.ts"
 import * as Target from "./Target.ts"
+import * as $platform from "./DocsParity.platform.ts"
 
 /**
  * Default number of prose characters a README must carry beyond its badges,
@@ -197,7 +197,7 @@ export const CheckDocs = Action.make("smithers-build/check-docs", {
 })
 
 /** Applies the parity policy to one README's contents. */
-const judge = (payload: ReadmePayload, contents: string | undefined): Effect.Effect<void, DocsParityError> => {
+const judge = (payload: ReadmePayload, contents: string | undefined): void!DocsParityError => {
   if (contents === undefined) {
     return Effect.fail(
       new DocsParityError({ path: payload.path, message: "the package has no README.md" })
@@ -230,13 +230,13 @@ const judge = (payload: ReadmePayload, contents: string | undefined): Effect.Eff
  */
 export const checkDocs = (options: {
   readonly workspaceRoot: string
-}, payload: ReadmePayload): Effect.Effect<void, DocsParityError> =>
+}, payload: ReadmePayload): void!DocsParityError =>
   Effect.flatMap(
     Effect.tryPromise({
       try: async (signal) => {
         const root = await SafeFs.canonicalRoot(options.workspaceRoot)
         const relative = Input.resolvePath("", payload.path)
-        return SafeFs.readText(NodePath.join(root, relative), {
+        return SafeFs.readText($platform.join(root, relative), {
           root,
           signal,
           symlinks: "follow",

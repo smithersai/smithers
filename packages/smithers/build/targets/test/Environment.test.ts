@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import * as Attr from "../src/Attr.ts"
-import * as Environment from "../src/Environment.ts"
+import * as Environment from "../src/Environment.vibe"
 import { Smithers } from "../src/index.ts"
 import * as Input from "../src/Input.ts"
 import * as Target from "../src/Target.ts"

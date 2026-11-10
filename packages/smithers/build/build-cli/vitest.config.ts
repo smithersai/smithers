@@ -40,7 +40,7 @@ export default defineConfig({
         // which is exactly where it hid before.
         "src/PackageExec.ts": { statements: 76, branches: 67, functions: 83, lines: 80 },
         // The original coordinator floor follows every extracted implementation.
-        "src/internal/{PackagePlanner,PackageRunner,RulePolicy,rules/{NativeRules,NativeFileRule,DocsCheckRule}}.ts": {
+        "src/internal/{PackagePlanner,PackageRunner,RulePolicy,rules/{NativeRules,NativeFileRule,DocsCheckRule}}{.ts,.vibe,.platform.ts}": {
           statements: 76,
           branches: 67,
           functions: 83,

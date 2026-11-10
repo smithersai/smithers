@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, expect, it } from "vitest"
 import * as Generated from "../src/GeneratedFile.ts"
-import * as Scaffold from "../src/NewPackage.ts"
+import * as Scaffold from "../src/NewPackage.vibe"
 import * as ToolBuild from "../src/ToolBuild.ts"
 
 let root: string

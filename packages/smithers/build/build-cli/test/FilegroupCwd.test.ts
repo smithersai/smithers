@@ -6,7 +6,7 @@ import * as Path from "node:path"
 import { expect, it } from "vitest"
 import * as Affected from "../src/Affected.ts"
 import { inputPackage } from "../src/internal/InputPackage.ts"
-import { plan } from "../src/internal/PackagePlanner.ts"
+import { plan } from "../src/internal/PackagePlanner.vibe"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as TargetIndex from "../src/TargetIndex.ts"
 

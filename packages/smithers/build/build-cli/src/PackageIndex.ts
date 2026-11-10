@@ -20,7 +20,7 @@ import { collectTargets } from "./internal/Attrs.ts"
 import * as Path from "./internal/Path.ts"
 import { byCodeUnit, posix } from "./internal/Text.ts"
 import * as Label from "./Label.ts"
-import { PackageError } from "./PackageError.ts"
+import { PackageError } from "./PackageError.vibe"
 import type { LoadedGraph } from "./PackageLoader.ts"
 
 /**

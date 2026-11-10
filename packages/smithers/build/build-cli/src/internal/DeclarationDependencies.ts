@@ -13,7 +13,7 @@ import { realpathSync } from "node:fs"
 import { findPackageJSON } from "node:module"
 import { dirname } from "node:path"
 import { pathToFileURL } from "node:url"
-import { PackageError } from "../PackageError.ts"
+import { PackageError } from "../PackageError.vibe"
 
 const sharedPackages = ["effect", "@smthrs/targets", "@smthrs/plan", "@smthrs/core", "@smthrs/flow"] as const
 

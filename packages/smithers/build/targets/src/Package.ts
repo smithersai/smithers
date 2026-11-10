@@ -14,7 +14,7 @@
  */
 
 import * as NodeUtil from "node:util/types"
-import { Filegroup } from "./Filegroup.ts"
+import { Filegroup } from "./Filegroup.vibe"
 import * as Input from "./Input.ts"
 import * as Owners from "./Owners.ts"
 import * as Target from "./Target.ts"

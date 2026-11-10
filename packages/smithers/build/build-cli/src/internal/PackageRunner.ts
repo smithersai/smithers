@@ -58,7 +58,7 @@ import { runTarget } from "../TargetExecution.ts"
 import * as Workspace from "../Workspace.ts"
 import * as ApprovalBridge from "./ApprovalBridge.ts"
 import type { ExecuteOptions, PackageNode, PackagePlan, TestOperandPlan } from "./PackageOptions.ts"
-import type { StoredResolve } from "./PackagePlanner.ts"
+import type { StoredResolve } from "./PackagePlanner.vibe"
 import {
   binaryIdentity,
   bundlerScratchDirectory,
@@ -73,7 +73,7 @@ import {
   staticPrefixOf,
   takesExclusiveTreePermit,
   workspaceRootToken
-} from "./PackagePlanner.ts"
+} from "./PackagePlanner.vibe"
 import * as RulePolicy from "./RulePolicy.ts"
 import * as NativeRules from "./rules/NativeRules.ts"
 import { posix, sha256Hex } from "./Text.ts"

@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { installEffectResolution } from "../src/effect-resolution.js"
 import { assertDeclarationDependencies } from "../src/internal/DeclarationDependencies.ts"
-import { PackageError } from "../src/PackageError.ts"
+import { PackageError } from "../src/PackageError.vibe"
 import * as PackageLoader from "../src/PackageLoader.ts"
 
 const dependencies = ["effect", "@smthrs/targets", "@smthrs/plan", "@smthrs/core", "@smthrs/flow"]

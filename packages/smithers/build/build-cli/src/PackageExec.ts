@@ -7,7 +7,7 @@
 import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import type * as Executor from "./Executor.ts"
 import type { PlanReport, RunOptions } from "./internal/PackageOptions.ts"
-import { plan } from "./internal/PackagePlanner.ts"
+import { plan } from "./internal/PackagePlanner.vibe"
 import { execute, sandboxRequest } from "./internal/PackageRunner.ts"
 export type {
   CrateRow,
@@ -33,7 +33,7 @@ export {
   takesExclusiveTreePermit,
   wildcardOmits,
   workspaceRootToken
-} from "./internal/PackagePlanner.ts"
+} from "./internal/PackagePlanner.vibe"
 export { execute } from "./internal/PackageRunner.ts"
 
 /**

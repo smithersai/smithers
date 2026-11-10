@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("node:fs/promises", async (original) => ({ ...await original<typeof Fs>() }))
 import * as Compose from "../src/Compose.ts"
-import * as Filegroup from "../src/Filegroup.ts"
+import * as Filegroup from "../src/Filegroup.vibe"
 import * as Input from "../src/Input.ts"
 import * as Reference from "../src/Reference.ts"
 import * as Shell from "../src/Shell.ts"

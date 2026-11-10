@@ -5,7 +5,7 @@
 import { Smithers as S } from "@smthrs/targets"
 import { describe, expect, it } from "vitest"
 import { factoryFileBeside, validateFactoryModule } from "../src/FactoryLoader.ts"
-import { isPackageError } from "../src/PackageError.ts"
+import { isPackageError } from "../src/PackageError.vibe"
 
 const review = S.Flow({ flow: "review", summary: "Review the change.", featured: true })
 const factory = S.Factory({ summary: "How unit develops itself.", flows: [review], on: { "issue.opened": "issue" } })

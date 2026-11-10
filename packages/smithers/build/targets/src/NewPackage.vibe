@@ -16,16 +16,13 @@ import type * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { randomUUID } from "node:crypto"
 import type * as NodeFs from "node:fs"
-import * as Fs from "node:fs/promises"
-import * as NodePath from "node:path"
-import * as NodeUtil from "node:util/types"
 import { failureMessage, type FilePayload, WriteFileError, writeGeneratedFile } from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
 import { assertPackageName, License, merge, render } from "./PackageJson.ts"
 import * as SafeFs from "./SafeFs.ts"
 import * as Target from "./Target.ts"
+import * as $platform from "./NewPackage.platform.ts"
 
 /**
  * Payload for one scaffold run.
@@ -255,26 +252,26 @@ const ensureDirectory = async (root: string, relative: string): Promise<string> 
   let current = root
   for (const segment of relative === "." ? [] : relative.split("/")) {
     const parent = current
-    const candidate = NodePath.join(parent, segment)
+    const candidate = $platform.join(parent, segment)
     let stats: NodeFs.Stats
     let created = false
     try {
-      stats = await Fs.lstat(candidate)
+      stats = await $platform.lstat(candidate)
     } catch (cause) {
       if (SafeFs.errorCode(cause) !== "ENOENT") throw cause
       try {
-        await Fs.mkdir(candidate)
+        await $platform.mkdir(candidate)
         created = true
       } catch (mkdirCause) {
         if (SafeFs.errorCode(mkdirCause) !== "EEXIST") throw mkdirCause
       }
       if (created) await SafeFs.syncDirectory(parent)
-      stats = await Fs.lstat(candidate)
+      stats = await $platform.lstat(candidate)
     }
     if (stats.isSymbolicLink() || !stats.isDirectory()) {
       throw new Error(`package scaffold parent is not a real directory: ${candidate}`)
     }
-    const canonical = await Fs.realpath(candidate)
+    const canonical = await $platform.realpath(candidate)
     if (!SafeFs.inside(root, canonical)) {
       throw new Error(`package scaffold parent leaves the workspace: ${candidate}`)
     }
@@ -299,19 +296,19 @@ const reclaimStaleTemporaries = async (
   remove: (path: string) => Promise<void>
 ): Promise<void> => {
   const cutoff = Date.now() - staleTemporaryMs
-  for (const entry of await Fs.readdir(parent)) {
+  for (const entry of await $platform.readdir(parent)) {
     if (!/^\.smthrs-scaffold-.*\.tmp$/.test(entry)) continue
-    const path = NodePath.join(parent, entry)
+    const path = $platform.join(parent, entry)
     // Best effort: a leftover that vanished or cannot be read is not ours to fail on.
     // lstat reports a symbolic link as a non-directory, so links are never followed.
-    const stats = await Fs.lstat(path).catch(() => undefined)
+    const stats = await $platform.lstat(path).catch(() => undefined)
     if (stats?.isDirectory() === true && stats.mtimeMs < cutoff) await remove(path)
   }
 }
 
 const absent = async (path: string): Promise<boolean> => {
   try {
-    await Fs.lstat(path)
+    await $platform.lstat(path)
     return false
   } catch (cause) {
     if (SafeFs.errorCode(cause) === "ENOENT") return true
@@ -333,7 +330,7 @@ const absent = async (path: string): Promise<boolean> => {
 export const scaffold = (
   options: ScaffoldOptions,
   payload: ScaffoldPayload
-): Effect.Effect<ScaffoldReport, WriteFileError> =>
+): ScaffoldReport!WriteFileError =>
   Effect.tryPromise({
     try: async (signal): Promise<ScaffoldReport> => {
       const directory = Input.resolvePath("", payload.directory)
@@ -345,23 +342,24 @@ export const scaffold = (
       const created = directory === "." ? directoryName(name) : `${directory}/${directoryName(name)}`
       const root = await SafeFs.canonicalRoot(options.workspaceRoot)
       const parent = await ensureDirectory(root, directory)
-      const destination = NodePath.join(parent, directoryName(name))
+      const destination = $platform.join(parent, directoryName(name))
       if (!await absent(destination)) throw new Error(`${created} already exists; scaffolding never overwrites`)
 
       const io = options.io
-      const write = io?.writeFile ?? ((workspaceRoot, file, childSignal) =>
-        Effect.runPromise(writeGeneratedFile(workspaceRoot, file), { signal: childSignal }))
-      const rename = io?.rename ?? Fs.rename
-      const remove = io?.remove ?? ((path) => Fs.rm(path, { recursive: true, force: true }))
+      const write = io?.writeFile ??
+        ((workspaceRoot, file, childSignal) =>
+          Effect.runPromise(writeGeneratedFile(workspaceRoot, file), { signal: childSignal }))
+      const rename = io?.rename ?? $platform.rename
+      const remove = io?.remove ?? ((path) => $platform.removeRecursive(path))
       await reclaimStaleTemporaries(parent, remove)
-      const temporary = NodePath.join(parent, `.smthrs-scaffold-${randomUUID()}.tmp`)
-      const temporaryRelative = NodePath.relative(root, temporary).split(NodePath.sep).join("/")
+      const temporary = $platform.join(parent, `.smthrs-scaffold-${$platform.randomUUID()}.tmp`)
+      const temporaryRelative = $platform.relative(root, temporary).split($platform.sep).join("/")
       const files: Array<string> = []
       let temporaryCreated = false
       let published = false
       let primary: unknown
       try {
-        await Fs.mkdir(temporary)
+        await $platform.mkdir(temporary)
         temporaryCreated = true
         for (const [relative, contents] of boilerplate(name, payload)) {
           signal.throwIfAborted()
@@ -394,13 +392,13 @@ export const scaffold = (
     },
     catch: (cause) => {
       let directory = "package"
-      if (!NodeUtil.isProxy(payload)) {
+      if (!$platform.isProxy(payload)) {
         const descriptor = Object.getOwnPropertyDescriptor(payload, "directory")
         if (descriptor !== undefined && "value" in descriptor && typeof descriptor.value === "string") {
           directory = descriptor.value
         }
       }
-      return !NodeUtil.isProxy(cause) && cause instanceof WriteFileError
+      return !$platform.isProxy(cause) && cause instanceof WriteFileError
         ? cause
         : new WriteFileError({ path: directory, message: failureMessage(cause) })
     }

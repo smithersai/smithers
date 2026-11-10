@@ -43,7 +43,7 @@ import { type LoadedFactory, validateFactoryModule } from "./FactoryLoader.ts"
 import { assertDeclarationDependencies } from "./internal/DeclarationDependencies.ts"
 import { byCodeUnit, posix } from "./internal/Text.ts"
 import type { Discovery } from "./PackageDiscovery.ts"
-import { PackageError } from "./PackageError.ts"
+import { PackageError } from "./PackageError.vibe"
 import { validateWorkspaceModule } from "./WorkspaceLoader.ts"
 
 /**

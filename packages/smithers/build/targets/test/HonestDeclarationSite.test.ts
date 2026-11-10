@@ -4,7 +4,7 @@ import { dirname, join } from "node:path"
 import { compileFunction } from "node:vm"
 import { expect, it } from "vitest"
 import * as Compose from "../src/Compose.ts"
-import * as Filegroup from "../src/Filegroup.ts"
+import * as Filegroup from "../src/Filegroup.vibe"
 import * as Input from "../src/Input.ts"
 import * as Target from "../src/Target.ts"
 

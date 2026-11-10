@@ -214,8 +214,8 @@
       "default": "./.vibelang/js/src/PackageDiscovery.js"
     },
     "./PackageError": {
-      "types": "./src/PackageError.ts",
-      "vibelang-source": "./src/PackageError.ts",
+      "types": "./.vibe/declarations/src/PackageError.d.vibe.ts",
+      "vibelang-source": "./src/PackageError.vibe",
       "default": "./.vibelang/js/src/PackageError.js"
     },
     "./PackageExec": {

@@ -6,7 +6,7 @@ import * as NodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { writeGeneratedFile } from "../src/GeneratedFile.ts"
 import * as Input from "../src/Input.ts"
-import { boilerplate, scaffold, type ScaffoldPayload, type ScaffoldReport } from "../src/NewPackage.ts"
+import { boilerplate, scaffold, type ScaffoldPayload, type ScaffoldReport } from "../src/NewPackage.vibe"
 import { matches, PackageDefaults } from "../src/PackageDefaults.ts"
 import * as PackageJsonTemplate from "../src/PackageJsonTemplate.ts"
 

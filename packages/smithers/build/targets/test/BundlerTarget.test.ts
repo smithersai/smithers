@@ -7,7 +7,7 @@
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import * as BundlerTarget from "../src/BundlerTarget.ts"
-import { Filegroup } from "../src/Filegroup.ts"
+import { Filegroup } from "../src/Filegroup.vibe"
 import * as Input from "../src/Input.ts"
 import * as Target from "../src/Target.ts"
 import { plannedCalls } from "./plan.ts"

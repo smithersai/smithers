@@ -211,7 +211,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Input.ts",
         "src/GeneratedFile.ts",
         "src/Fetch.ts",
-        "src/Filegroup.ts",
+        "src/Filegroup.vibe",
         "src/ToolBuild.ts",
         "src/Compose.ts"
       ]

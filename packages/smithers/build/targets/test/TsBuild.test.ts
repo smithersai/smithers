@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import * as Input from "../src/Input.ts"
 import * as Target from "../src/Target.ts"
-import { Attrs, distributionLayout, outputPaths, TsBuild } from "../src/TsBuild.ts"
+import { Attrs, distributionLayout, outputPaths, TsBuild } from "../src/TsBuild.vibe"
 import { packageManager } from "./toolchain.ts"
 
 const base = {
