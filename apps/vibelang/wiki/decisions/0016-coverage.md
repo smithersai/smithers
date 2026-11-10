@@ -1079,36 +1079,45 @@ and `worker/SpecificationReviewers.vibe` need a model. These are test gaps for t
 
 ## Measuring every gate (lane vl-gatefix, 2026-11-10)
 
-vl-audit-vl29 could not measure the VL-29 gates on the machines there are: nyc-01 at load 80 to 95, nyc-02 short of
-disk, and 4-vCPU Cloudflare boxes. Each gate now runs from one command, on a host or a box, through `run-heavy`. Run it
-from a lane workspace on nyc-01 or nyc-02 (`<ws>` is the workspace directory; give the job your lane's name):
+The audit could not complete the gates on the available hosts or 4-vCPU boxes. These commands include the app and
+fuzz-flow install and the matching Chromium download. They retain the 100% thresholds: a coverage exit of 1 still
+means the measured suite is below its gate, and a fuzz target with zero executions still fails.
+
+**Required box image:** Node **>= 26.4** (`engines.node`; nyc-01 uses 26.5.0), git **>= 2.41** for jj's real repository
+fixtures, Python 3, and the Playwright system libraries for browser gates. The current `node`/`playwright` boxes have
+Node **24.22.2** and git **2.39.5**. Request to the lead: upgrade both images; keep the repository's engine requirement.
+The old git fails `test/mythicalSeedProcess.test.vibe` and `bench/scripts.bench.vibe`. Receipts from that image are
+identified below; they do not establish support for Node 24. Install the proof tools once with `bash verify/install.sh`.
+
+From the lane workspace on nyc-01 (`ws` names that workspace), run one command per gate after these shell variables:
 
 ```sh
+ws="$HOME/vl/ws-gatefix"
 I='cd ../.. && pnpm install --frozen-lockfile --filter "@smthrs/vibelang-site..." --filter "@smithers/release-workflows..." && cd apps/vibelang'
-~/lanes/bin/run-heavy --name vl-<lane>:<gate> <options> <ws>/apps/vibelang -- "set -o pipefail; $I && <command>"
+B="$I && export PLAYWRIGHT_BROWSERS_PATH=\$PWD/node_modules/.cache/ms-playwright && pnpm exec playwright install chromium"
 ```
 
-| Gate | `<command>` | `<options>` |
-| --- | --- | --- |
-| Unit coverage | `pnpm test:coverage` | `--image node --cores 4` |
-| Fuzz coverage | `pnpm fuzz:coverage` | `--image playwright --cores 4` |
-| Benchmark coverage | `pnpm bench:coverage` | `--image playwright --cores 4 --env BENCH_REVISION=$(jj log --no-graph -r @ -T commit_id)` |
-| Browser (e2e) coverage | `E2E_PORT=<lane port> pnpm e2e:coverage` | `--image playwright --cores 4` |
-| Proofs | `pnpm verify` | `--image node --cores 2 --add apps/vibelang/verify/.tools` |
-| Mutations | `CHECK_JOBS=4 pnpm verify:broken` | `--image node --cores 2 --add apps/vibelang/verify/.tools` |
+```sh
+~/lanes/bin/run-heavy --name vl-gatefix:unit --image node --cores 4 "$ws/apps/vibelang" -- "$I && pnpm test:coverage"
+~/lanes/bin/run-heavy --name vl-gatefix:fuzz --image playwright --cores 4 "$ws/apps/vibelang" -- "$I && E2E_PORT=4552 pnpm fuzz:coverage"
+~/lanes/bin/run-heavy --name vl-gatefix:bench --image playwright --cores 4 --env BENCH_REVISION="$(cd "$ws" && jj log --no-graph -r @ -T commit_id)" "$ws/apps/vibelang" -- "$B && E2E_PORT=4552 pnpm bench:coverage"
+~/lanes/bin/run-heavy --name vl-gatefix:e2e --image playwright --cores 4 "$ws/apps/vibelang" -- "$B && E2E_PORT=4552 pnpm e2e:coverage"
+~/lanes/bin/run-heavy --name vl-gatefix:proofs --image node --cores 2 --add apps/vibelang/verify/.tools "$ws/apps/vibelang" -- "$I && pnpm verify"
+~/lanes/bin/run-heavy --name vl-gatefix:mutations --image node --cores 2 --add apps/vibelang/verify/.tools "$ws/apps/vibelang" -- "$I && CHECK_JOBS=2 pnpm verify:broken"
+```
 
-A box has nothing but the packed tree, so each command installs first (about a minute). The proof gates also carry the
-Dafny download (`verify/.tools`, from `bash verify/install.sh` in the workspace); `lsc_fresh.py` rebuilds LemmaScript
-there. **Box image (a request to the lead, not an engine change):** the repository wants Node >= 26.4 (`engines.node`) and
-the boxes have Node 24.22.2; every gate above runs on it today. The boxes' git is 2.39.5, and `jj git fetch` needs git
->= 2.41, so `test/mythicalSeedProcess.test.vibe` and `bench/scripts.bench.vibe` fail there and nowhere else.
+`run-heavy` packs tracked sources, without node_modules or a jj checkout. Every command installs inside that tree;
+proof commands also carry the downloaded Dafny files and rebuild vendored LemmaScript there. The fuzz flow installs
+its matching Chromium itself. `BENCH_REVISION` is captured before packing; artifacts in a checkout prefer its own `@`.
+Use `pnpm bench` instead of `pnpm bench:coverage` for timing measurements with the same install/revision arguments.
+A box-image upgrade is a prerequisite for the supported configuration above, not a reason to lower `engines.node`.
 
 What changed so these run anywhere:
 
 - **Browser phases.** `playwright.config.ts`, `bench/playwright.config.ts` and `fuzz/browser.config.ts` build the site
   inside Playwright's `webServer`. Its limit was 120 s (fuzz 180 s); the build takes longer on a box or a loaded host,
   so no browser phase ran there. The limit is now `E2E_SERVER_SECONDS`, default 600 s, and the fuzz flow passes it
-  through (`.smithers/flows/vibelang-fuzz`, v7). The benchmark's global deadline grows with it.
+  through (`.smithers/flows/vibelang-fuzz`, v7). The benchmark's global deadline and its parent Vitest timeout grow with it; the wrapper accepts the executed workload count instead of a stale fixed count.
 - **Browser coverage on a small disk.** Each test's Chromium evidence repeated the whole bundle and its source map
   (about 20 MB), so `pnpm e2e:coverage` filled a box's disk (`ENOSPC`, then crashed pages: 70 of 300 checks) before
   the phone project ended. A test's file now keeps its ranges and names the script by content; `e2e/coverageStore.ts`
@@ -1125,7 +1134,10 @@ What changed so these run anywhere:
 - **Fuzz budget floor.** A target whose saved failures replay inside the deadline before its first new execution ran
   none at the coverage budget of 5 s (`NoExecution`). `10b73c23` gave `run` a `minimum` (`REPLAY_FLOOR`, 15 s) for the
   steered-host targets; `surfaces/cli-arguments` and `surfaces/mcp-arguments` (4.6 s per replay and execution on an
-  idle box) now declare it too. A target that executes nothing still fails.
+  idle box) now declare it too. Instrumented cold replay also needs 60 s for `issues/steered-host`,
+  `actions/object-lifecycles` and `api-objects/world`, and 30 s for `objects/conversation-host` and
+  `storage/conversation-flows`. Workerd setup hooks get 600 s; each API-world operation remains bounded at 20 s,
+  matching the object-host target. A target that executes nothing still fails.
 - **Fuzz denominator.** `fuzz.config.ts` and `fuzz/coverage.vibe` counted `src/` and `worker/` without
   `worker/Api.vibe`; they now count the unit gate's roster, `src/`, `worker/`, `scripts/` and `infra/`, none excluded.
 - **Proof inventory.** A function marked `//@ verify` read "Not yet proved" unless `verify/inventory.cjs` had a

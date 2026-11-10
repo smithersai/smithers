@@ -130,7 +130,7 @@ brick                                   state         proof
   deploys.
 - **Test quality (0015, lane vl-test-quality): landed.** Review findings 1, 2 and 4 to 11 fixed with mutation checks; sign-in wall-clock waits and the protocol-double ruling (finding 3) open.
 
-- **Every VL-29 gate measurable (0016 "Measuring every gate", lane vl-gatefix): landed.** One `run-heavy` command per gate runs on a 4-vCPU box: web-server limit from `E2E_SERVER_SECONDS`, Chromium evidence stored once per run, `BENCH_REVISION` off a checkout, relative `lsc`, fuzz install check, fuzz roster equal to the unit gate's, proof inventory read from `//@ verify`. Box image needs Node 26 and git >= 2.41 (lead).
+- **VL-29 measurement tooling (0016 "Measuring every gate", lane vl-gatefix).** One `run-heavy` command per gate for a 4-vCPU box: web-server limit from `E2E_SERVER_SECONDS`, Chromium evidence stored once per run, `BENCH_REVISION` off a checkout, relative `lsc`, fuzz install check, fuzz roster equal to the unit gate's, proof inventory read from `//@ verify`. Supported box image needs Node >= 26.4 and git >= 2.41; the current Node 24.22.2/git 2.39.5 image needs an upgrade (lead). Coverage gates remain red until the suite lanes close their measured gaps.
 
 - **Public reads (0031, lane vl-public-reads): implemented locally.** Signed-out wiki, issue and history reads go through
   smithers.sh's App (0165 addendum), cached with ETags and served stale when GitHub refuses; `GITHUB_TOKEN` is gone.
