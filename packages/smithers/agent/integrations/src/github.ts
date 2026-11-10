@@ -125,7 +125,7 @@ export * as Delegation from "./github/Delegation.vibe"
  * @category delegation
  * @since 1.0.0
  */
-export * as DelegationPolicy from "./github/DelegationPolicy.vibe"
 export * as Calls from "./github/Calls.vibe"
+export * as DelegationPolicy from "./github/DelegationPolicy.vibe"
 export * as IssueChanges from "./github/IssueChanges.vibe"
 export * as Proposals from "./github/Proposals.vibe"

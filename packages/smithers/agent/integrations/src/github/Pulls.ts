@@ -48,21 +48,22 @@ import { isOwner, IssueNumber, requireRepositoryPath } from "./Repository.ts"
  * @category constructors
  * @since 1.0.0
  */
-export const requireHead = (head: string): Effect.Effect<string, IntegrationError> => Effect.gen(function*() {
-  const parts = head.split(":")
-  if (parts.length === 1) return yield* requireBranch(head)
-  if (parts.length === 2 && isOwner(parts[0])) {
-    const branch = yield* requireBranch(parts[1]!)
-    return `${parts[0]}:${branch}`
-  }
-  return yield* Effect.fail(
-    new IntegrationError("invalid-config", "A pull request head is a branch or a fork's owner:branch.", {
-      field: "head",
-      branch: head.slice(0, 64),
-      retryable: false
-    })
-  )
-})
+export const requireHead = (head: string): Effect.Effect<string, IntegrationError> =>
+  Effect.gen(function*() {
+    const parts = head.split(":")
+    if (parts.length === 1) return yield* requireBranch(head)
+    if (parts.length === 2 && isOwner(parts[0])) {
+      const branch = yield* requireBranch(parts[1]!)
+      return `${parts[0]}:${branch}`
+    }
+    return yield* Effect.fail(
+      new IntegrationError("invalid-config", "A pull request head is a branch or a fork's owner:branch.", {
+        field: "head",
+        branch: head.slice(0, 64),
+        retryable: false
+      })
+    )
+  })
 
 /**
  * One end of a pull request: its branch and the commit it points at.

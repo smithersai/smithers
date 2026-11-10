@@ -37,27 +37,27 @@ Values may contain punctuation. This restriction prevents delimiter ambiguity wh
 
 A hosted site never holds a GitHub token. `GitHub.Delegation` keeps one sealed user token per person on the host and lets a registered site act for that person through a delegation.
 
-| Step | Call |
-| --- | --- |
-| Start Connect | `GitHub.Auth.Broker.site(...).begin({ connect: { person } })` |
-| Redeem | `exchange` answers `{ id, login, delegation, expires }` |
-| Write once | `Action.once(name, delegate.keyed(person, delegation, operation))` |
-| Idempotent write | `delegate.write(person, delegation, key, operation)` |
+| Step               | Call                                                                                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Start Connect      | `GitHub.Auth.Broker.site(...).begin({ connect: { person } })`                                                                                                 |
+| Redeem             | `exchange` answers `{ id, login, delegation, expires }`                                                                                                       |
+| Write once         | `Action.once(name, delegate.keyed(person, delegation, operation))`                                                                                            |
+| Idempotent write   | `delegate.write(person, delegation, key, operation)`                                                                                                          |
 | Read as the person | `delegate.client(person, delegation, http)`, GET only. A request's `query` travels in the read's path, so `Contents.getText(..., { ref })` reads that commit. |
-| Disconnect | `delegate.revoke(person, delegation)` |
+| Disconnect         | `delegate.revoke(person, delegation)`                                                                                                                         |
 
 `GitHub.DelegationPolicy.permits` decides whether an operation falls inside the site's grants. A refused call fails with one reason:
 
-| Reason | Meaning |
-| --- | --- |
-| `connect` | No live delegation or token. Connect again. |
-| `fork` | The person has no fork of the repository. |
-| `install` | The GitHub App isn't installed on the person's fork. |
-| `forbidden` | Outside the grants, or GitHub refused. |
-| `unavailable` | Try again with the same key. |
-| `unknown` | GitHub's answer was lost. Retry with the same key to join it. |
-| `key_conflict` | The key already names a different operation. |
-| `missing` | A read found nothing: GitHub answered 404. The site's GitHub error carries `status: 404`, so helpers such as `Contents.getText` answer none. |
+| Reason         | Meaning                                                                                                                                      |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `connect`      | No live delegation or token. Connect again.                                                                                                  |
+| `fork`         | The person has no fork of the repository.                                                                                                    |
+| `install`      | The GitHub App isn't installed on the person's fork.                                                                                         |
+| `forbidden`    | Outside the grants, or GitHub refused.                                                                                                       |
+| `unavailable`  | Try again with the same key.                                                                                                                 |
+| `unknown`      | GitHub's answer was lost. Retry with the same key to join it.                                                                                |
+| `key_conflict` | The key already names a different operation.                                                                                                 |
+| `missing`      | A read found nothing: GitHub answered 404. The site's GitHub error carries `status: 404`, so helpers such as `Contents.getText` answer none. |
 
 Calls post to `Delegation.ROUTE?person=<id>`. The host's router calls `Delegation.route({ origin, sites }, forward)`. It checks the site's origin and signature, the audience, route and expiry, and that the envelope names the URL's person. Only then does it call `forward(person, request)` to reach that person's single-writer object. A refused call answers `403` and addresses no object, so it creates none. The object then claims the call's nonce and checks the delegation. `connections()` lists a person's sites for a Disconnect page.
 
