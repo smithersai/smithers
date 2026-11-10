@@ -5526,3 +5526,42 @@ cases.extend([('src/core/machineDecision.vibe', *case) for case in [
 ('machine-checkpoint-failure-snapshot', 'checkpointed', 'return { snapshot: previous, failed: true }', 'return { snapshot: undefined, failed: true }', 'failure retains the previous snapshot'),
 ('machine-checkpoint-failure-flag', 'checkpointed', 'snapshot: previous, failed: true', 'snapshot: previous, failed: false', 'failure is reported'),
 ]])
+
+# Lane vl-proveall3, batch 16: the memory issue flow host's actual decisions.
+cases.extend([('src/core/issueFixtureDecision.vibe', *case) for case in [
+('fixture-index-first', 'fixtureIssueIndex', 'let i = 0', 'let i = 1', 'the first position participates in lookup'),
+('fixture-index-number', 'fixtureIssueIndex', 'items[i]!.number === wanted', 'items[i]!.number !== wanted', 'lookup uses exact issue identity'),
+('fixture-index-missing', 'fixtureIssueIndex', 'return -1', 'return 0', 'an absent number has no source position'),
+('fixture-refusal-existing', 'fixtureFailure', '!creating && !known', '!known', 'new and proposal may create an unknown issue'),
+('fixture-refusal-missing', 'fixtureFailure', 'if (!creating && !known) return "missing"', 'if (false) return "missing"', 'updates require the target issue'),
+('fixture-refusal-title', 'fixtureFailure', 'creating && titleBlank', 'creating && !titleBlank', 'a creation needs a title'),
+('fixture-refusal-split-priority', 'fixtureFailure', 'if (creating && titleBlank)', 'if (op === "split" && !known) return "missing"\n  if (creating && titleBlank)', 'a missing split parent does not hide a missing title'),
+('fixture-refusal-proposal', 'fixtureFailure', 'op === "propose" && incomplete', 'op === "propose" && !incomplete', 'a proposal needs all three document fields'),
+('fixture-refusal-split', 'fixtureFailure', 'if (op === "split" && !known) return "missing"', 'if (false) return "missing"', 'a split requires its parent'),
+('fixture-refusal-tree', 'fixtureFailure', 'op === "link" && !linkAllowed', 'op === "link" && linkAllowed', 'linking respects the independently proved graph verdict'),
+('fixture-refusal-open', 'fixtureFailure', '(!open || assigneeBlank)', '(false || assigneeBlank)', 'a closed issue cannot be committed'),
+('fixture-refusal-assignee', 'fixtureFailure', '(!open || assigneeBlank)', '(!open || false)', 'commitment needs an assignee'),
+('fixture-refusal-comment', 'fixtureFailure', 'op === "comment" && textBlank', 'op === "comment" && !textBlank', 'a comment needs text'),
+('fixture-refusal-accept', 'fixtureFailure', '(op === "accept" || op === "decline")', '(op === "decline")', 'acceptance requires a VIP in review'),
+('fixture-refusal-decline', 'fixtureFailure', '(op === "accept" || op === "decline")', '(op === "accept")', 'decline requires a VIP in review'),
+('fixture-refusal-review', 'fixtureFailure', '&& !reviewing', '&& reviewing', 'only an in-review VIP may be reviewed'),
+('fixture-draft-title-empty', 'fixtureDraft', 'title || "Tuple patterns"', 'title || "Other"', 'a blank title has the fixed fixture default'),
+('fixture-draft-title-kept', 'fixtureDraft', 'title || "Tuple patterns"', '"Tuple patterns"', 'a supplied title is retained'),
+('fixture-draft-summary-empty', 'fixtureDraft', 'summary || "Bind the elements of a tuple in one pattern."', 'summary || ""', 'a blank summary has the fixture default'),
+('fixture-draft-summary-kept', 'fixtureDraft', 'summary || "Bind the elements of a tuple in one pattern."', '"Bind the elements of a tuple in one pattern."', 'a supplied summary is retained'),
+('fixture-draft-example-empty', 'fixtureDraft', 'example || "const pair = [1, 2]"', 'example || ""', 'a blank example has the fixture default'),
+('fixture-draft-example-kept', 'fixtureDraft', 'example || "const pair = [1, 2]"', '"const pair = [1, 2]"', 'a supplied example is retained'),
+('fixture-draft-prior-empty', 'fixtureDraft', 'prior || "Rust tuple patterns\\nTypeScript tuple types"', 'prior || ""', 'blank prior art has the fixture default'),
+('fixture-draft-prior-kept', 'fixtureDraft', 'prior || "Rust tuple patterns\\nTypeScript tuple types"', '"Rust tuple patterns\\nTypeScript tuple types"', 'supplied prior art is retained'),
+('fixture-participation-new', 'fixtureParticipation', 'op === "new" || ', '', 'a new issue records participation'),
+('fixture-participation-comment', 'fixtureParticipation', ' || op === "comment"', '', 'a comment records participation'),
+('fixture-error-suffix', 'fixtureErrorReason', 'tag.endsWith(', 'tag.startsWith(', 'a decorated conflict is recognized by its suffix'),
+('fixture-error-conflict', 'fixtureErrorReason', '? "conflict" : "failed"', '? "failed" : "failed"', 'identity reuse is a typed conflict'),
+('fixture-error-failed', 'fixtureErrorReason', '? "conflict" : "failed"', '? "conflict" : "conflict"', 'other engine errors are failed'),
+]])
+cases.extend([('src/core/issueFixtureDecision.vibe', *case) for case in [
+('fixture-index-last', 'fixtureIssueIndex', 'while (i < items.length)', 'while (i + 1 < items.length)', 'the last position participates in lookup'),
+('fixture-index-position', 'fixtureIssueIndex', 'return i', 'return i + 1', 'a match returns its actual source position'),
+('fixture-identity-number', 'fixtureIdentity', 'number: issue,', 'number: issue + 1,', 'the record keeps its issue number'),
+('fixture-identity-offset', 'fixtureIdentity', 'githubId: issue + 1000', 'githubId: issue', 'the GitHub id is offset from the number'),
+]])

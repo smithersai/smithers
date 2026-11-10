@@ -691,7 +691,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-3255 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+3260 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -1009,6 +1009,12 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/followDecision.vibe:16` | `followCut` | pure logic | Proved replay cut (the later of cursor and last replayed number) and strict freshness, used by both sequencers so a live event at or below the replay is never sent twice (0018 third-lane batch 1). |
 | `src/core/followDecision.vibe:23` | `fresh` | pure logic | Proved replay cut (the later of cursor and last replayed number) and strict freshness, used by both sequencers so a live event at or below the replay is never sent twice (0018 third-lane batch 1). |
 | `src/core/identityDecision.vibe:6` | `postLabel` | pure logic | Specification restated: the contract is the table the body computes. It fixes the meaning other proofs rely on and rejects an edit to the table, but proves no further property, nor that callers pass the right argument. |
+| `src/core/issueFixtureDecision.vibe:9` | `fixtureIssueIndex` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/core/issueFixtureDecision.vibe:25` | `fixtureFailure` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/core/issueFixtureDecision.vibe:42` | `fixtureDraft` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/core/issueFixtureDecision.vibe:47` | `fixtureParticipation` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/core/issueFixtureDecision.vibe:52` | `fixtureErrorReason` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/core/issueFixtureDecision.vibe:60` | `fixtureIdentity` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
 | `src/core/issueFlows.vibe:16` | `callback@16` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/issueFlows.vibe:21` | `callback@16/idempotencyKey` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/core/issueFlows.vibe:28` | `callback@16/callback@28` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
@@ -1069,14 +1075,13 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/issueHostDecision.vibe:228` | `timelineText` | pure logic | Proved request-key admission (exactly /^[A-Za-z0-9-]{1,100}$/), GitHub failure classification and retry codes, the HTTP status of every refusal, the unwritten mark (a first execution refused before any write), the agent accept and decline refusal, task and VIP reading, the receipt-gated Accepted projection, the advancing revision, resumable operations and resume status, the agent's choice label both ways, and timeline event text (0018 third-lane batch 6). |
 | `src/core/issueSchemas.vibe:32` | `vipDocument` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/issueSchemas.vibe:37` | `vipIssueBody` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/IssuesFactory.vibe:11` | `item` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/IssuesFactory.vibe:36` | `noteOf` | pure logic | The event line each edit adds to its issue: product text, no decision. The edit itself goes through the proved issuesAfter. |
-| `src/core/IssuesFactory.vibe:49` | `personOf` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/IssuesFactory.vibe:56` | `makeIssueStore` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/IssuesFactory.vibe:60` | `fixtureHost` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/IssuesFactory.vibe:62` | `fixtureHost/perform` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/IssuesFactory.vibe:62` | `fixtureHost/perform/callback@62` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/IssuesFactory.vibe:76` | `fixtureHost/perform/callback@62/callback@76` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/IssuesFactory.vibe:13` | `item` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/IssuesFactory.vibe:38` | `noteOf` | pure logic | The event line each edit adds to its issue: product text, no decision. The edit itself goes through the proved issuesAfter. |
+| `src/core/IssuesFactory.vibe:51` | `personOf` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/IssuesFactory.vibe:58` | `makeIssueStore` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/IssuesFactory.vibe:62` | `fixtureHost` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/IssuesFactory.vibe:64` | `fixtureHost/perform` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/IssuesFactory.vibe:64` | `fixtureHost/perform/callback@64` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/IssuesFactory.vibe:102` | `makeIssueFactory` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/IssuesFactory.vibe:107` | `makeIssueFactory/act` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/IssuesFactory.vibe:118` | `makeIssueFactory/act/callback@118` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
@@ -4770,3 +4775,26 @@ No dependency was added.
 Batch15 follow-up: generic union matches use their base declaration in LemmaScript, retaining the instantiated scrutinee and testing pure/imperative arms with differing generic parameter names. verify/bugs/generic-nullish.ts records concrete generic-call inference from undefined as an unproved tool boundary; the false-presence twin failed resolution, never verified. No timeout or resolution error counts as a mutation rejection.
 
 Batch15 optional-field follow-up: two real restoration mutants still failed resolution after literal projection was fixed. Present-field substitution narrowed an Option slot to its payload but wrapping consulted the old slot type. The transform now consults the substituted expression type; the optional-spread fixture reconstructs optional record fields as well as standalone optional parameters. Both actual application contracts stay intact.
+
+## Third-lane batch 16: the fixture issue host's refusals
+
+The mock issues host (`src/core/IssuesFactory.vibe`, VL-13) now calls six kernels in `src/core/issueFixtureDecision.vibe`.
+
+| Function | What its contract states |
+| --- | --- |
+| `fixtureIssueIndex` | The first position whose issue number matches, or -1 when none does. |
+| `fixtureFailure` | The exact refusal and its precedence: missing, title, incomplete proposal, missing split parent, link outside the tree, commit without an open issue or assignee, empty comment, review of a VIP not in review; `""` admits. |
+| `fixtureDraft` | Each blank draft field takes its fixed default; a supplied field is kept. |
+| `fixtureParticipation` | Only a new issue and a comment record participation. |
+| `fixtureErrorReason` | A tag ending in `ExecutionIdentityConflict` is a conflict; every other engine error is failed. |
+| `fixtureIdentity` | A fixture issue's GitHub id is its number plus 1000. |
+
+Creation (`issueCreates`), the link verdict (`canLinkIssues`), the next number and every write (`issuesAfter`) stay
+in the fifth lane's `issueGraphDecision.vibe`; the host passes their results in. A draft of this batch also extracted
+creation, the counter step and the note append; those duplicated the fifth lane's landed kernels and were dropped.
+Whitespace trimming, role and identity gates, storage and engine execution remain host boundaries.
+
+The identity test failed first against a stub. The first `fixtureIssueIndex` proof failed a postcondition on its
+early return; with the parameter renamed from `number` (the field's name) to `wanted` and the found-case postconditions
+joined as `pageIndex` states them, it proves. Which of the two changes was needed is not isolated. 33 mutations, all
+rejected in their intended function; the six functions prove in 4.2 s.
