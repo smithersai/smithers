@@ -1,0 +1,39 @@
+// @vitest-environment node
+// Literal source ranges for the browser gate's structure (e2e/coverage-reporter.ts `measure` with a build).
+import { it, expect } from "@effect/vitest"
+import { builtStructure } from "./support/coverageUnion.ts"
+
+const file = "/app/e2e/coverage-fixtures/initializer.vibe"
+const range = (line: number, start: number, endLine: number, end: number) => ({ start: { line, column: start }, end: { line: endLine, column: end } })
+const empty = { path: file, statementMap: {}, fnMap: {}, branchMap: {}, s: {}, f: {}, b: {} }
+const starts = (ranges: Readonly<Record<string, { readonly start: { readonly line: number; readonly column: number | null } }>>) =>
+  Object.values(ranges).map(loc => `${loc.start.line}:${loc.start.column}`)
+
+// The compiler starts `const next = (serial ?? 0) + 1` at `(`; Rolldown's map has no segment there, so the bundle starts
+// it at `next`. `dropped` (line 10) is tree-shaken from the bundle.
+// A multi-line initializer starts on line 5 in the compiler's map and at its name on line 4 in the bundle's.
+const compiler = {
+  ...empty,
+  statementMap: { "0": range(4, 15, 4, 32), "1": range(10, 2, 10, 11), "2": range(6, 4, 7, 9) }, s: { "0": 0, "1": 0, "2": 0 },
+  fnMap: { "0": { name: "make", decl: range(2, 16, 2, 24), loc: range(2, 24, 6, 1) }, "1": { name: "dropped", decl: range(9, 16, 9, 23), loc: range(9, 26, 11, 1) } },
+  f: { "0": 0, "1": 0 },
+}
+// Rolldown renames a colliding inner function `make_2`; both map to the compiler's one function start.
+const bundle = {
+  ...empty,
+  statementMap: { "0": range(4, 8, 4, 32), "1": range(5, 8, 7, 9) }, s: { "0": 0, "1": 0 },
+  fnMap: { "0": { name: "make", decl: range(2, 16, 2, 24), loc: range(2, 24, 6, 1) }, "1": { name: "make_2", decl: range(2, 16, 2, 24), loc: range(2, 24, 6, 1) } },
+  f: { "0": 0, "1": 0 },
+}
+
+it("the build's structure replaces each compiler item it contains, and keeps tree-shaken code", () => {
+  const json = builtStructure(compiler, bundle)
+  expect(starts(json.statementMap)).toEqual(["4:8", "5:8", "10:2"])
+  expect(Object.values(json.fnMap).map(fn => fn.name)).toEqual(["make", "dropped"])
+})
+
+it("the build's structure counts one item per source start, as the gate credits it", () => {
+  const json = builtStructure(compiler, bundle)
+  expect(Object.keys(json.f)).toHaveLength(2)
+  expect(starts(Object.fromEntries(Object.entries(json.fnMap).map(([id, fn]) => [id, fn.loc!])))).toEqual(["2:24", "9:26"])
+})

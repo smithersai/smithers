@@ -8,7 +8,7 @@ import { createHash } from "node:crypto"
 import convert from "ast-v8-to-istanbul"
 import { parseAstAsync } from "vite"
 import { findCompiler, projects } from "vibelang/project"
-import { normalizeEndColumns, unionEvidence, type FileCoverageJSON } from "../test/support/coverageUnion.ts"
+import { builtStructure, normalizeEndColumns, unionEvidence, type FileCoverageJSON } from "../test/support/coverageUnion.ts"
 import { readEntries } from "./coverageStore.ts"
 
 const require = createRequire(import.meta.url)
@@ -21,13 +21,38 @@ const root = fileURLToPath(new URL("../", import.meta.url))
 /**
  * Full source roster plus actual V8 ranges. Exported for the real Chromium negative control.
  *
- * The compiler's structure of each source is the denominator. Vite's minified bundle has another shape for the same
- * source (two `if` returns folded into one ternary), and Istanbul's `merge` unions what it cannot match, so a merged
- * file counted both shapes. The bundle now credits the compiler structure by identical source range only, the fuzz
- * and bench gates' rule (test/support/coverageUnion.ts, decisions 0015 and 0016).
+ * Each source's structure is the denominator: the structure of `build`, the bundle Chromium runs, for the code the
+ * bundle contains, and the compiler's for the rest (tree-shaken exports, unloaded files). The compiler's starts alone
+ * are not enough: Rolldown prints no source-map segment at some of them (decision 0016), so Chromium's run of those
+ * statements could never count. Vite's minified bundle has another shape again (two `if` returns folded into one
+ * ternary), and Istanbul's `merge` unions what it cannot match, so a merged file counted both shapes. Executed bundles
+ * credit the structure by identical source start only, the fuzz and bench gates' rule (test/support/coverageUnion.ts,
+ * decisions 0015 and 0016). Without `build` (a deployment's run), the compiler's structure is the denominator.
  */
-export async function measure(entries: Iterable<any> | AsyncIterable<any>, directories = ["src", "worker", "scripts", "infra"]) {
+export async function measure(entries: Iterable<any> | AsyncIterable<any>, directories = ["src", "worker", "scripts", "infra"], build: Iterable<BuiltScript> = []) {
   const included = (file: string) => file.endsWith(".vibe") && directories.some((directory) => file.startsWith(resolve(root, directory) + "/"))
+  /** A bundle's Istanbul structure per included source, after its source map; undefined when it has none. */
+  const remap = async (entry: BuiltScript, functions: unknown[]) => {
+    const map = structuredClone(entry.sourceMap)
+    // Build sources are relative to dist/assets; keep all maps, filter only after remapping.
+    map.sources = map.sources.map((source: string) => pathToFileURL(resolve(root, "dist/assets", source)).href)
+    for (const [index, source] of map.sources.entries()) {
+      const path = fileURLToPath(source)
+      if (!included(path)) continue
+      if (map.sourcesContent?.[index] !== await readFile(path, "utf8")) {
+        throw new Error(`Source map does not describe this checkout: ${path}`)
+      }
+    }
+    // The app's denominator is its four source directories; unrelated workspace/vendor chunks have no app counters.
+    if (!map.sources.some((source: string) => included(fileURLToPath(source)))) return undefined
+    return await convert({
+      code: entry.source,
+      ast: await parseAstAsync(entry.source),
+      sourceMap: map,
+      coverage: { url: pathToFileURL(resolve(root, "dist/assets", new URL(entry.url).pathname.split("/").at(-1)!)).href, functions: functions as any },
+      wrapperLength: 0,
+    }) as Record<string, FileCoverageJSON>
+  }
     const evidence: Array<Record<string, FileCoverageJSON>> = []
     // Merge Chromium ranges before parsing identical bundles; each test still retains its original evidence.
     const bundles = new Map<string, { entry: any; scripts: any[] }>()
@@ -43,26 +68,18 @@ export async function measure(entries: Iterable<any> | AsyncIterable<any>, direc
         }
     }
     for (const { entry, scripts } of bundles.values()) {
-        const map = structuredClone(entry.sourceMap)
-        // Build sources are relative to dist/assets; keep all maps, filter only after remapping.
-        map.sources = map.sources.map((source: string) => pathToFileURL(resolve(root, "dist/assets", source)).href)
-        for (const [index, source] of map.sources.entries()) {
-          const path = fileURLToPath(source)
-          if (!included(path)) continue
-          if (map.sourcesContent?.[index] !== await readFile(path, "utf8")) {
-            throw new Error(`Source map does not describe this checkout: ${path}`)
-          }
-        }
-        // The app's denominator is its four source directories; unrelated workspace/vendor chunks have no app counters.
-        if (!map.sources.some((source: string) => included(fileURLToPath(source)))) continue
-        const converted = await convert({
-          code: entry.source,
-          ast: await parseAstAsync(entry.source),
-          sourceMap: map,
-          coverage: { url: pathToFileURL(resolve(root, "dist/assets", new URL(entry.url).pathname.split("/").at(-1)!)).href, functions: mergeScriptCovs(scripts).functions },
-          wrapperLength: 0,
-        })
-        evidence.push(converted as Record<string, FileCoverageJSON>)
+        const converted = await remap(entry, mergeScriptCovs(scripts).functions)
+        if (converted) evidence.push(converted)
+    }
+    // The build's structure with no hits: each chunk once, executed or not.
+    const built = createCoverageMap({})
+    const chunks = new Set<string>()
+    for (const chunk of build) {
+      const hash = createHash("sha256").update(chunk.source).digest("hex")
+      if (chunks.has(hash)) continue
+      chunks.add(hash)
+      const converted = await remap(chunk, [])
+      if (converted) built.merge(converted)
     }
     const seed = createCoverageMap({})
     // Seed every full source, including loaded files: bundling may tree-shake an uncalled export from a loaded file.
@@ -89,6 +106,7 @@ export async function measure(entries: Iterable<any> | AsyncIterable<any>, direc
     for (const file of seed.files() as string[]) {
       const text = await readFile(file, "utf8")
       let json = normalizeEndColumns(seed.fileCoverageFor(file).toJSON() as FileCoverageJSON, text)
+      if (built.data[file] !== undefined) json = builtStructure(json, normalizeEndColumns(built.fileCoverageFor(file).toJSON() as FileCoverageJSON, text))
       for (const bundle of evidence) {
         if (bundle[file] !== undefined) json = unionEvidence(json, normalizeEndColumns(bundle[file]!, text))
       }
@@ -103,6 +121,22 @@ export async function measure(entries: Iterable<any> | AsyncIterable<any>, direc
  */
 export function gateFailed(gaps: number, unmeasured: number, evidence: number, status: FullResult["status"]): boolean {
   return gaps > 0 || unmeasured > 0 || (evidence === 0 && status === "passed")
+}
+
+/** One emitted chunk and its source map, as Vite wrote them. */
+export interface BuiltScript { readonly url: string; readonly source: string; readonly sourceMap: any }
+
+/** Every chunk of a local build that has a source map: the structure Chromium runs, executed or not. */
+export async function readBuild(directory = resolve(root, "dist/assets")): Promise<BuiltScript[]> {
+  const chunks: BuiltScript[] = []
+  for (const name of (await readdir(directory)).sort()) {
+    if (!name.endsWith(".js")) continue
+    const path = resolve(directory, name)
+    const mapText = await readFile(`${path}.map`, "utf8").catch(() => undefined)
+    if (mapText === undefined) continue
+    chunks.push({ url: pathToFileURL(path).href, source: await readFile(path, "utf8"), sourceMap: JSON.parse(mapText) })
+  }
+  return chunks
 }
 
 /** Remaps every executed bundle with the compiler/Vite maps; no test or generated JS is credited as source. */
@@ -139,7 +173,10 @@ export default class SourceCoverage implements Reporter {
     if (this.executed === 0) return
     const files = this.files
     // One attachment at a time; each script's source and map are read once (coverageStore.ts).
-    const coverage = await measure(readEntries(files))
+    // A deployment runs its own build; only a local run measures against the chunks it served (decision 0016).
+    const build = process.env.E2E_BASE_URL === undefined ? await readBuild() : []
+    console.info(`Chromium structure: ${build.length} build chunks.`)
+    const coverage = await measure(readEntries(files), undefined, build)
     const directory = resolve(root, "coverage/browser")
     await mkdir(directory, { recursive: true })
     await writeFile(resolve(directory, "coverage-final.json"), JSON.stringify(coverage))

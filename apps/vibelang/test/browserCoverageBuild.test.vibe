@@ -1,0 +1,74 @@
+// @vitest-environment node
+// A real unminified Vite build, executed under native V8, through the e2e reporter's `measure` with the build it ran.
+import { it, expect } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { build } from "vite"
+import { measure } from "../e2e/coverage-reporter.ts"
+import { node, run } from "./support/processes.vibe"
+
+interface Range { readonly start: { readonly line: number; readonly column: number } }
+interface Coverage {
+  readonly statementMap: Readonly<Record<string, Range>>
+  readonly fnMap: Readonly<Record<string, { readonly name: string; readonly decl: Range }>>
+  readonly s: Readonly<Record<string, number>>
+  readonly f: Readonly<Record<string, number>>
+}
+const hitsAt = (file: Coverage, line: number) =>
+  Object.entries(file.statementMap).filter(([, range]) => range.start.line === line).map(([id]) => Math.min(file.s[id] ?? 0, 1))
+const functionHitsAt = (file: Coverage, line: number) =>
+  Object.entries(file.fnMap).filter(([, fn]) => fn.decl.start.line === line).map(([id]) => Math.min(file.f[id] ?? 0, 1))
+
+it.live("the browser gate credits a statement whose start Rolldown leaves unmapped", () => effect {
+  const observed = try scoped(effect {
+    provide NodeServices.layer, ExperimentalNodeServices.layer {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const app = try path.fromFileUrl(new URL("../", import.meta.url))
+      const fixture = path.join(app, "e2e/coverage-fixtures/initializer.vibe")
+      // Inside the app's node_modules so the entry resolves like the app does; removed with the scope.
+      const root = try fs.makeTempDirectoryScoped({ directory: path.join(app, "node_modules"), prefix: ".browser-coverage-build-" })
+      try fs.writeFileString(path.join(root, "entry.mjs"), `import { scrolled } from ${JSON.stringify(fixture)}\nconsole.log(scrolled(undefined, 1))\n`)
+      const output = path.join(root, "dist")
+      // Unminified, as the e2e build is: Rolldown still prints no segment at `() =>` or `(serial ?? 0)`.
+      try tryPromise(() => build({
+        root, configFile: path.join(app, "vite.config.ts"), mode: "production", logLevel: "silent",
+        build: { outDir: output, sourcemap: true, minify: false, rolldownOptions: { input: path.join(root, "entry.mjs"), output: { entryFileNames: "bundle.mjs" } } },
+      }))
+      const raw = path.join(root, "raw")
+      try fs.makeDirectory(raw)
+      const bundle = path.join(output, "bundle.mjs")
+      const executed = try run(try node(), [bundle], { NODE_V8_COVERAGE: raw })
+      const url = (try path.toFileUrl(bundle)).href
+      let native: { scriptId: string; url: string; functions: unknown } | undefined
+      for (const name of try fs.readDirectory(raw)) {
+        const json = try fs.readFileString(path.join(raw, name))
+        const record = try Effect.try(() => JSON.parse(json) as { result: Array<{ scriptId: string; url: string; functions: unknown }> })
+        native ??= record.result.find(script => script.url === url)
+      }
+      const mapText = try fs.readFileString(bundle + ".map")
+      const sourceMap = try Effect.try(() => JSON.parse(mapText) as { sources: string[] })
+      // `measure` reads map sources relative to the app's dist/assets, where the e2e build writes its chunks.
+      sourceMap.sources = sourceMap.sources.map(source => path.relative(path.join(app, "dist/assets"), path.resolve(output, source)))
+      const source = try fs.readFileString(bundle)
+      const directories = [path.relative(app, path.dirname(fixture))]
+      const coverage = try tryPromise(() => measure([{ ...native!, source, sourceMap }], directories, [{ url, source, sourceMap }]))
+      const file = try Effect.try(() => coverage.fileCoverageFor(fixture).toJSON() as Coverage)
+      return { status: executed.status, stderr: executed.stderr, stdout: executed.stdout, native: native !== undefined, file }
+    }
+  })
+  const { status, stderr, stdout, native, file } = observed
+  try Effect.try(() => {
+    expect(status, stderr).toBe(0)
+    expect(stdout.trim()).toBe("2")
+    expect(native).toBe(true)
+    // Both initializers ran. The compiler's map starts them at `(` (3:19, 4:15); the bundle's map has no segment
+    // there, so its statements start at the names. The build's structure is the denominator, so each is credited.
+    for (const line of [3, 4, 5]) expect([line, hitsAt(file, line).length > 0 && hitsAt(file, line).every(hit => hit === 1)]).toEqual([line, true])
+    expect(functionHitsAt(file, 2)).toEqual([1])
+    // The tree-shaken export is in no chunk: the compiler's structure keeps it in the denominator, uncovered.
+    expect(hitsAt(file, 10)).toEqual([0])
+    expect(functionHitsAt(file, 9)).toEqual([0])
+  })
+  // A real Vite build: about a minute alone on a loaded host.
+}, 300_000)
