@@ -7,7 +7,7 @@ import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
 import { MockActions } from "../src/actions/MockActions.vibe"
 
-export const Backend = Schema.Literals(["mock", "live", "bare", "faulty"])
+export const Backend = Schema.Literals(["mock", "live", "bare", "faulty", "closing"])
 export const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
 export type Backend = typeof Backend.Type
 
@@ -43,16 +43,21 @@ const noActions: Actions.Shape = {
   rerun: () => fail(new ActionFailure({ code: "fault" })), cancel: () => fail(new ActionFailure({ code: "fault" })), follow: () => Stream.fail(new ActionFailure({ code: "fault" })),
 }
 
+/** Accounts whose role stream ends at once, as when the server closes it. */
+function closingRoles(accounts: NonNullable<Factory.Shape["accounts"]>): NonNullable<Factory.Shape["accounts"]> {
+  return Object.assign(Object.create(accounts), { events: () => Stream.empty })
+}
+
 /** The same service object with some members replaced; a service's methods do not survive an object spread. */
 function changedFactory(factory: Factory.Shape, change: Record<string, unknown>): Factory.Shape {
   return Object.assign(Object.create(factory) as Factory.Shape, change)
 }
 
-/** The real mock Factory and Actions, the same seen as live, without optional services, or failing everywhere. */
+/** The real mock Factory and Actions, the same seen as live, without optional services, failing everywhere, or with a role stream the server closes. */
 export function backend(kind: Backend, role: typeof Role.Type) {
   if (kind === "faulty") return Layer.merge(Layer.succeed(Factory, faulty), Layer.succeed(Actions, noActions))
   const mock = mockFactoryFor(role)
-  const changed = Layer.effect(Factory, map(Factory, (factory) => kind === "live" ? changedFactory(factory, { mode: "live" }) : kind === "bare" ? changedFactory(factory, { accounts: undefined, issues: undefined, wiki: undefined, controlTour: undefined }) : factory)).pipe(Layer.provide(mock))
+  const changed = Layer.effect(Factory, map(Factory, (factory) => kind === "live" ? changedFactory(factory, { mode: "live" }) : kind === "bare" ? changedFactory(factory, { accounts: undefined, issues: undefined, wiki: undefined, controlTour: undefined }) : kind === "closing" ? changedFactory(factory, { accounts: closingRoles(factory.accounts!) }) : factory)).pipe(Layer.provide(mock))
   return Layer.provideMerge(MockActions({ actor: "person" }), changed)
 }
 

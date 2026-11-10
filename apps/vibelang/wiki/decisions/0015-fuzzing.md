@@ -645,3 +645,47 @@ cover setup and exploration. Action lifecycle replay takes a 60 s floor; convers
 targets take 30 s. Workerd setup hooks allow 600 s, and API-world operations stay bounded at 20 s. These are tooling
 budgets, not coverage thresholds: zero executions and every below-100% file still fail. Full commands and the required
 Node >= 26.4 box image are in [0016](0016-coverage.md#measuring-every-gate-lane-vl-gatefix-2026-11-10).
+
+## Status, 2026-11-10 (eleventh session)
+
+### Finding: a reused action-run id died
+
+`actions/object-lifecycles` (campaign 9, seed 20261118) found that a start refused before its run stored the request
+(`input`, `forbidden`) left only the `RequestAction` journal's record, so a different request under the same id died
+with `ExecutionIdentityConflict`. `worker/ActionDirectory.vibe` now answers `conflict`, logs `vibelang.actions.start`
+with `outcome: conflict` and counts `vibelang_action_start_conflicts`. The value is kept in
+`fuzz/__fuzz__/actions-object-lifecycles-5d1960d89c610f6f/`; `test/actionDirectoryConflict.test.vibe` failed before
+the fix and passes after.
+
+### Honest coverage, idle box
+
+`pnpm fuzz:coverage` (seed 20261120, 5 s) on a 4-vCPU Playwright box: all 63 target files passed, no `NoExecution`.
+
+| Scope | Lines | Branches |
+| --- | ---: | ---: |
+| All files | 92.63% | 86.36% |
+| `src/web/main.vibe` | 658/667 | 759/819 |
+
+74 of 163 files are at 100% lines and branches; 281 per-file gates still fail. The tenth session's
+`ClickedRetry` and sandbox minute-notice arms are reached: they were missing because 7 targets starved, not because
+no target reached them.
+
+### `src/web/main.vibe`: the last lines
+
+| Lines | Path | Change |
+| --- | --- | --- |
+| 1259 | the role stream ends, so the tab shows `FailedRoles` | `closing` backend (`fuzz/web-backends.vibe`): the mock with a role stream the server closes at once |
+| 1483 to 1486 | `FocusIssueControl` | `issue-key` gesture: open issues, choose a kind from the keyboard |
+| 1365, 1366 | a sandbox command's success | `terminal-run` gesture: open sandboxes, start, type, submit. Not reached yet: a tab runs at most 48 Commands in total, so a late gesture's Commands do not run |
+| 1030, 1031 | `CancelAction`'s success | open: every mock run settles before Cancel is pressed |
+
+Measured on the web targets at seed 20261120, 5 s: lines 658 to 663 of 667. Branches 755 then 747 of 819: at 24 to
+64 executions per target per 5 s the reached arms change between runs, so branch counts from one short run are noise.
+
+Measured and dropped: a per-gesture Command cap in `tab` (instead of 48 per tab) lowered `main.vibe` to 648 lines and
+721 branches, because each execution ran longer and fewer ran.
+
+### Campaign 10
+
+Seed 20261121, `FUZZ_BUDGET=20 seconds`, on a 4-vCPU Playwright box at `74f29e44`: exit 0, 205 receipts,
+36,602,466 executions, none at zero, none falsified; 63 target files and 5 browser tests passed. No new finding.
