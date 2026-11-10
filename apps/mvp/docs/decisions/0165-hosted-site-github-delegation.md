@@ -119,6 +119,60 @@ A Fable review of `main` `5540b9b2` found nine defects; lane vl-connect-hardenin
 
 **Deployment contract.** ChatApi gains the Rate Limiting binding `BROKER_LIMIT` (namespace 71003, 300 requests a minute per network) on the broker's four routes; Alchemy creates it. No secret, variable or GitHub App setting changes. Existing `HostedAuthBroker` executions are forgotten a day after they settle, starting with the first request after deploy. An existing connection object binds to its person on its next request. A registry entry that fails `validGrant` now disables connections (`github.connection.config`, `invalid_grant`); today's entries pass.
 
+## Revocation and the authorization
+
+2026-11-10, lane vl-github-authz. A production smoke test (05:10 PST) connected the test account, then signed in to
+smithers.sh and out again seven times; each sign-out revokes that session's token. The eighth sign-in showed
+GitHub's "Authorize SmithersPreviewRelease" page, and the connected issues read then answered 403. The hypothesis was
+that revoking a person's last token ends the App's authorization. It is false: the page is GitHub's limit of ten new
+tokens an hour, and the 403 is not the connection's.
+
+What GitHub documents:
+
+| Question | GitHub says | Source |
+| --- | --- | --- |
+| Does deleting one token end the authorization? | Not stated. `DELETE .../token` revokes a single token; `DELETE .../grant` deletes the grant and all its tokens | [OAuth authorizations](https://docs.github.com/en/rest/apps/oauth-applications) |
+| How many live tokens? | "a limit of ten tokens that are issued per user/application/scope combination"; past it GitHub revokes the oldest | [Creating multiple tokens](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#creating-multiple-tokens-for-oauth-apps) |
+| How many new tokens an hour? | "a rate limit of ten tokens created per hour. … Hitting the hourly rate limit will not revoke your oldest token. Instead, it will trigger a re-authorization prompt within the browser" | same section |
+| Does a refresh count toward either limit? | Not stated. A refresh returns a new pair and the old pair stops working | [Refreshing user access tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens) |
+
+GitHub documents both limits for OAuth apps; its GitHub App pages are silent. Production shows they apply to the App.
+
+**Experiments** with the test account through the persistent browser profile (scripts and logs:
+`~/vl/scratch-github-authz/mac/` on nyc-01). Each smithers.sh sign-in creates one token and each sign-out revokes it.
+
+| Run (UTC) | Sequence | GitHub page |
+| --- | --- | --- |
+| 14:28 | 3 sign-ins, within the hour after other test sign-ins | every one: "This application has made an unusually high number of requests to access your account. Please reauthorize the application to continue." |
+| 15:41 | 2 sign-in and sign-out cycles, vibelang sign-in, Connect, 5 cycles | none for tokens 1 to 9; the prompt at the tenth |
+| 16:47 | 3 cycles, each revoking the person's only smithers.sh token, vibelang sign-in, Connect, 4 cycles | none for tokens 1 to 9; the prompt at the tenth |
+
+Revocation never brought a page: none at the 12 sign-ins that followed one below the tenth token, 5 of them after the person's only smithers.sh token was revoked. The prompt came at exactly the tenth token
+created in an hour, twice. With the prompt unanswered, the connected wiki read still answered 200. The issues read
+answered 503 `unavailable` right after Connect, before any cycle, and answers 503 signed out too: it is a separate
+fault of `/api/issues`, not the connection's. Headless Chromium keeps the prompt's Authorize button disabled even
+with focus and hover, so whether answering it creates a token is unmeasured. Whether a refresh counts is unmeasured: a
+refresh needs an 8-hour-old token.
+
+**Decision.** Sign-out keeps revoking, and nothing else changes. Revocation costs the authorization nothing, and it is
+what keeps a person under ten live tokens, so the connection's token is never the one GitHub evicts
+(`test/authBroker.workerd.test.vibe`, "eight sign-in and sign-out cycles keep a person's connection": an injected
+GitHub with both limits, the connection answering 401 for any token GitHub dropped; with the broker's revocation
+removed, the person holds 10 live tokens instead of 2). Not revoking on sign-out would trade a page nobody sees under
+ten sign-ins an hour for the eviction of the connection after ten sign-ins in total. The remaining eviction path is
+the one under "One token survives": ten live smithers.sh sessions after a Connect.
+
+**Smoke-test contract.** One account creates at most nine tokens per rolling hour: each smithers.sh or vibelang
+sign-in, each Connect, each device sign-in is one. A run that needs more waits an hour or uses a second account.
+
+**Observed in production.** Every successful callback, smithers.sh's own and the broker's, records whether GitHub
+showed a page before it (the callback's `Referer` is GitHub's origin), whether we had revoked one of the person's
+tokens since their previous sign-in, and whether nine or more tokens were created for them in the hour before:
+`smithers_auth_github_consent` (`page`, `after_revocation`, `hourly_tokens`, `path`) and the span and log
+`auth.github.consent` ([observability](../observability.md)). If revocation ended the authorization, `page: shown`
+would follow `after_revocation: yes` under `hourly_tokens: under_limit`; the experiments predict it follows
+`at_limit` instead.
+
 ## Trust limit
 
 A compromised site holds its key, so it can act as any person connected to that site, within its grants and that person's GitHub power, bypassing its own role checks. It cannot use another site's delegations, widen a scope, merge, approve, read a token, or reach another repository. Registry removal stops it at the next deploy; each person's smithers.sh Disconnect stops it for that person.
@@ -133,7 +187,7 @@ Open, for the production smoke test:
 
 1. GitHub documents no event-specific field naming who revoked. The handler reads `sender.id`, ignores the `ghost` placeholder, and relies on a 401 otherwise. Confirm a real delivery.
 2. That a person's fork with a selected-repository install accepts `createCommitOnBranch` and the upstream pull.
-3. That ten further sign-ins leave the stored token usable, and whether a refresh counts as a new token toward the ten.
+3. Whether a refresh counts as a new token toward either limit, and whether answering GitHub's hourly prompt creates one. Ten further sign-ins leave the stored token usable (see "Revocation and the authorization").
 
 ## Addendum: public reads (2026-11-10, lane vl-public-reads)
 

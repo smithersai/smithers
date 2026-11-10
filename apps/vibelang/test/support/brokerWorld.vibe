@@ -24,7 +24,9 @@ export effect function brokerSignIn(hostOrigin: string) {
     HttpClientRequest.bodyJsonUnsafe({ code: fragment.get("code"), state: fragment.get("state") }),
   ))
   const session = accepted.cookies.cookies["vibelang-session"]?.value ?? ""
-  return { start, accepted, session }
+  // The page GitHub's stand-in showed, by its title.
+  const github = form.match(/<title>([^<]*)<\/title>/)?.[1] ?? ""
+  return { start, accepted, session, github }
 }
 
 /** Press Connect GitHub (with the query the page would add), consent at the broker, and finish at the site. */

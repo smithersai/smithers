@@ -1,7 +1,13 @@
 import { GitHub } from "@smthrs/integrations"
 const { GitHubAuth, GitHubRefused } = GitHub.Auth
 
-/** Injected OAuth service: ten live token pairs per person/app, evicting the least recently used pair. */
+/**
+ * Injected OAuth service: ten live token pairs per person/app, evicting the least recently used pair, and GitHub's
+ * hourly count of new tokens. Past nine new tokens in an hour GitHub shows its re-authorization page instead of
+ * redirecting at once; it revokes nothing for it ("Creating multiple tokens for OAuth apps",
+ * https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps; production showed the page
+ * at the tenth, smithers.sh decision 0165).
+ */
 export effect function tokenService() {
   const issued: Array<{ accessToken: Redacted.Redacted<string>; refreshToken: Redacted.Redacted<string>; expiresAt: null }> = []
   let serial = 0
@@ -9,7 +15,9 @@ export effect function tokenService() {
   let failures = 0
   let attempts = 0
   const pairs = new Map<string, { refresh: string; used: number }>()
+  const issuedAt: Array<number> = []
   const issue = effect () => {
+    issuedAt.push(try Clock.currentTimeMillis)
     const token = "fixture-token-private-" + ++serial
     if (pairs.size === 10) {
       const oldest = [...pairs].sort((left, right) => left[1].used - right[1].used)[0]!
@@ -44,6 +52,10 @@ export effect function tokenService() {
     deviceCode: () => fail(new GitHubRefused({ step: "device", reason: "unavailable" })),
     deviceToken: () => fail(new GitHubRefused({ step: "device", reason: "unavailable" })),
   } satisfies GitHub.Auth.GitHubAuth["Service"])
+  // A pair the person held from before the last hour.
   const kept = try issue()
-  return { github, kept, issued, failRevocations: (count: number) => sync(() => { failures = count }), stats: () => sync(() => ({ live: pairs.size, attempts })) }
+  issuedAt.length = 0
+  return { github, kept, issued, failRevocations: (count: number) => sync(() => { failures = count }), stats: () => sync(() => ({ live: pairs.size, attempts })),
+    /** Whether GitHub would show its re-authorization page before the next token: nine or more new in the last hour. */
+    reauthorize: () => effect { const now = try Clock.currentTimeMillis; return issuedAt.filter((at) => at > now - 3_600_000).length >= 9 } }
 }

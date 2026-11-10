@@ -135,3 +135,7 @@ brick                                   state         proof
 - **Public reads (0031, lane vl-public-reads): implemented locally.** Signed-out wiki, issue and history reads go through
   smithers.sh's App (0165 addendum), cached with ETags and served stale when GitHub refuses; `GITHUB_TOKEN` is gone.
   Lead deploys smithers.sh first, with `reads` on vibelang's registry entry.
+
+- **GitHub authorization after sign-out (smithers.sh 0165, lane vl-github-authz): landed.** GitHub's page at the
+  eighth sign-in cycle is its hourly limit of ten new tokens; revoking a token keeps the authorization. Sign-out keeps
+  revoking. `smithers_auth_github_consent` shows it in production; lead deploys.

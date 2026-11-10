@@ -25,9 +25,12 @@ export class HostedConnection {
   issues: Array<Record<string, unknown>> = []
   revoked: Array<string> = []
   service: Promise<Effect.Success<ReturnType<typeof Connection.make>>> | undefined
-  constructor(readonly state: State) { opened.add(state.id.toString()) }
-  client(): GitHub.GitHubClient.GitHubClient {
-    const request = (method: string, path: string, body?: { readonly title?: string; readonly body?: string }): Effect.Effect<any, any> => {
+  constructor(readonly state: State, readonly env: Env) { opened.add(state.id.toString()) }
+  /** The connection's GitHub, answering 401 once the injected GitHub no longer holds `token`, as GitHub's API does. */
+  client(token: Redacted.Redacted<string>, brokerOrigin: string): GitHub.GitHubClient.GitHubClient {
+    const live = promise(() => (this.env.BROKER.getByName("auth") as unknown as { fetch(url: string, init: { method: string; body: string }): Promise<Response> }).fetch(brokerOrigin + "/__live", { method: "POST", body: Redacted.value(token) }).then((response) => response.json() as Promise<boolean>))
+    const unauthorized = Effect.fail({ details: { status: 401 } })
+    const answer = (method: string, path: string, body?: { readonly title?: string; readonly body?: string }): Effect.Effect<any, any> => {
       if (path === "/repos/smithersai/vibelang") return succeed({ id: 11, name: "vibelang", owner: { login: "smithersai" }, default_branch: "main" })
       if (path.startsWith("/repos/smithersai/vibelang/issues?") || path === "/repos/smithersai/vibelang/issues" && method === "GET") return succeed(this.issues)
       if (method === "POST" && path === "/repos/smithersai/vibelang/issues") {
@@ -38,7 +41,8 @@ export class HostedConnection {
       }
       return missing()
     }
-    return { request: request as GitHub.GitHubClient.GitHubClient["request"], paginate: (path) => request("GET", path).pipe(Effect.map((items) => ({ items, truncated: false, next: null })), Effect.catch(() => succeed({ items: [], truncated: false, next: null }))) as never, count: () => Effect.die("unused") }
+    const request = (method: string, path: string, body?: { readonly title?: string; readonly body?: string }): Effect.Effect<any, any> => Effect.flatMap(live, (held) => held ? answer(method, path, body) : unauthorized)
+    return { request: request as GitHub.GitHubClient.GitHubClient["request"], paginate: (path) => Effect.flatMap(live, (held) => held ? answer("GET", path).pipe(Effect.map((items) => ({ items, truncated: false, next: null })), Effect.catch(() => succeed({ items: [], truncated: false, next: null }))) : unauthorized) as never, count: () => Effect.die("unused") }
   }
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
@@ -50,7 +54,7 @@ export class HostedConnection {
       refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
       revoke: (token) => { this.revoked.push(Redacted.value(token)); return Effect.void },
     })
-    this.service ??= runPromise(Connection.make(7, this.state.id.toString(), this.state.storage as never, { origin: brokerOrigin, sites: [{ origin: site, secret, grants }], keyring: connectionKeys }, github, () => (program) => Effect.provideService(program, GitHub.GitHubClient.GitHubClient, this.client()) as never))
+    this.service ??= runPromise(Connection.make(7, this.state.id.toString(), this.state.storage as never, { origin: brokerOrigin, sites: [{ origin: site, secret, grants }], keyring: connectionKeys }, github, (token) => (program) => Effect.provideService(program, GitHub.GitHubClient.GitHubClient, this.client(token, brokerOrigin)) as never))
     const service = await this.service
     const answer = (value: unknown) => HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(value))
     if (url.pathname === "/__connection/install") {
@@ -124,13 +128,20 @@ export class HostedBroker {
       const failures = await runPromise(Metric.value(Metric.counter("smithers_auth_broker_revocation_failures", { incremental: true })))
       return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({ ...stats, kept: Exit.isSuccess(kept), failures: Number(failures.count) }))
     }
+    // Whether the injected GitHub still holds a token; a use, as GitHub's least-recently-used eviction counts one.
+    if (url.pathname === "/__live") {
+      const held = await runPromise(exit(tokens.github.user(Redacted.make(await request.text()))))
+      return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(Exit.isSuccess(held)))
+    }
     if (url.pathname === "/__fault-revoke") {
       await runPromise(tokens.failRevocations(Number(url.searchParams.get("count"))))
       return HttpServerResponse.toWeb(HttpServerResponse.empty())
     }
     if (url.pathname === "/__github") {
       const allow = origin.broker + "/__allow?" + url.searchParams
-      return HttpServerResponse.toWeb(HttpServerResponse.text('<!doctype html><title>GitHub fixture</title><a href="' + allow.replaceAll("&", "&amp;") + '">Continue</a>', { contentType: "text/html" }))
+      // GitHub's re-authorization page past its hourly count of new tokens; Continue answers it, as Authorize does.
+      const title = await runPromise(tokens.reauthorize()) ? "GitHub fixture: reauthorize" : "GitHub fixture"
+      return HttpServerResponse.toWeb(HttpServerResponse.text('<!doctype html><title>' + title + '</title><a href="' + allow.replaceAll("&", "&amp;") + '">Continue</a>', { contentType: "text/html" }))
     }
     if (url.pathname === "/__allow") {
       const code = await runPromise(Core.Pkce.createCodeVerifier())

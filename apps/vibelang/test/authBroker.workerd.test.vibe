@@ -1,7 +1,7 @@
 import { expect, it } from "@effect/vitest"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { deadline, serveAuthBroker } from "./support/workerd.vibe"
-import { brokerConnect, brokerSignIn } from "./support/brokerWorld.vibe"
+import { brokerConnect, brokerOf, brokerSignIn } from "./support/brokerWorld.vibe"
 import { GitHub } from "@smthrs/integrations"
 
 const Delegation = GitHub.Delegation
@@ -166,6 +166,46 @@ it.live("connects through smithers.sh, writes once as the person, and every revo
       expect(final.connections).toEqual([])
       expect(final.revoked).toBe(1)
       expect(brokerOrigin).not.toBe(host.origin)
+    })
+  }
+}), deadline(120_000))
+
+// Production, 2026-11-10 (smithers.sh decision 0165, "Revocation and the authorization"): after a Connect, the eighth
+// sign-in-and-out cycle met GitHub's re-authorization page. Here GitHub's stand-in counts new tokens per hour as
+// GitHub documents, and the connection's GitHub answers 401 for any token it no longer holds.
+it.live("workerd: eight sign-in and sign-out cycles keep a person's connection", () => scoped(effect {
+  const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
+  const broker = brokerOf(host.origin)
+  provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+    const http = try HttpClient.HttpClient
+    const asPerson = (session: string) => HttpClientRequest.setHeaders({ origin: host.origin, cookie: "vibelang-session=" + session })
+    const write = (session: string, key: string) => http.execute(HttpClientRequest.post(host.origin + "/api/issues").pipe(asPerson(session),
+      HttpClientRequest.bodyJsonUnsafe({ op: "new", key, number: 0, parent: 0, title: key, text: "private-issue-body", assignee: "", example: "", prior: "" })))
+    const first = try brokerSignIn(host.origin)
+    const connected = try brokerConnect(host.origin, first.session)
+    const before = try write(first.session, "before")
+    let session = first.session
+    const cycles: Array<{ readonly out: number; readonly ended: unknown; readonly page: string; readonly signedIn: number }> = []
+    for (let cycle = 0; cycle < 8; cycle++) {
+      const out = try http.execute(HttpClientRequest.post(host.origin + "/api/auth/sign-out").pipe(asPerson(session)))
+      const ended = (try (try http.execute(HttpClientRequest.get(host.origin + "/api/auth/session").pipe(asPerson(session)))).json as { id: string }).id
+      const next = try brokerSignIn(host.origin)
+      cycles.push({ out: out.status, ended, page: next.github, signedIn: next.accepted.status })
+      session = next.session
+    }
+    const after = try write(session, "after")
+    const tokens = try (try http.get(broker + "/__tokens")).json
+    const state = (try (try http.get(host.origin + "/__connection/state")).json) as { issues: Array<{ title: string }>; connections: Array<{ origin: string }> }
+    try Effect.try(() => {
+      expect([first.github, connected.accepted.status, before.status]).toEqual(["GitHub fixture", 200, 200])
+      expect(cycles.map((cycle) => [cycle.out, cycle.ended, cycle.signedIn])).toEqual(cycles.map(() => [204, "", 200]))
+      // The eighth sign-in is the tenth new token in the hour: GitHub asks again, as it did on production.
+      expect(cycles.map((cycle) => cycle.page)).toEqual([...cycles.slice(1).map(() => "GitHub fixture"), "GitHub fixture: reauthorize"])
+      expect(after.status).toBe(200)
+      expect(state.issues.map((issue) => issue.title)).toEqual(["before", "after"])
+      expect(state.connections.map((row) => row.origin)).toEqual([host.origin])
+      // Every sign-in's token was revoked: the person holds only the pair from before and the connection's.
+      expect(tokens).toMatchObject({ kept: true, live: 2, attempts: 9 })
     })
   }
 }), deadline(120_000))
