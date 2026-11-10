@@ -1,0 +1,265 @@
+// Every command in src/surfaces/commands.vibe, in process, over the CLI's own mock backend (backend.vibe), a mock without
+// its optional services, and a backend whose every operation fails typed. Each execution runs every command; the
+// fuzzer picks the texts, numbers and output format. A command answers its text or one CommandError sentence; nothing dies.
+import { it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { mockReply } from "../src/core/mockReplies.vibe"
+import { Actions } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { empty as emptyHistory } from "../src/history/mythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { backend as surfaceBackend } from "../src/surfaces/backend.vibe"
+import * as C from "../src/surfaces/commands.vibe"
+import { backend as webBackend } from "./web-backends.vibe"
+import { run, Int, Text } from "./run.vibe"
+
+const Kind = Schema.Literals(["surface", "bare", "faulty"])
+const Input = Schema.Struct({ text: Text, title: Text, n: Int, json: Schema.Boolean, conversation: Schema.Literals(["home", "fuzz-1", "bad id!", ""]) })
+
+/** A command's answer: its rendered text, or the one sentence its CommandError carries. */
+effect function attempt(command: { readonly render: (value: unknown, json: boolean) => string!C.CommandError!any }, value: unknown, json: boolean) {
+  const result = try Effect.result(command.render(value, json))
+  return result._tag === "Success" ? { ok: true as const, text: result.success } : { ok: false as const, text: result.failure.message }
+}
+
+/** An answer a person can read: never empty, never a printed object; a refusal's sentence never says `undefined`. */
+function readable(answer: { readonly ok: boolean; readonly text: string }): boolean {
+  return answer.text.trim() !== "" && !answer.text.includes("[object Object]") && (answer.ok || !answer.text.includes("undefined"))
+}
+
+function layerOf(kind: typeof Kind.Type) {
+  if (kind === "surface") return surfaceBackend(true, undefined)
+  const history = MockMythical({ role: "maintainer", name: "Fuzz", agent: false }, () => succeed(emptyHistory))
+  return Layer.merge(webBackend(kind, "maintainer"), history)
+}
+
+it.live("surfaces/every-command", () => run("surfaces/every-command", Input, (fuzzed) => scoped(effect {
+  for (const kind of Kind.literals) {
+    const broken = try everyCommand({ ...fuzzed, kind })
+    if (broken !== "") { try Console.error("every-command broken: " + broken); return false }
+  }
+  return true
+}), undefined, { minimum: "60 seconds" }), 300000)
+
+effect function everyCommand(input: typeof Input.Type & { readonly kind: typeof Kind.Type }) {
+  provide NodeServices.layer {
+    const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory })) {
+      provide layerOf(input.kind) {
+        const answers: Array<{ readonly ok: boolean; readonly text: string }> = []
+        const note = (answer: { readonly ok: boolean; readonly text: string }) => { answers.push(answer); return answer }
+        // A terminal command's output may be empty; its refusal may not.
+        // A sandbox command's refusal names the sandbox, never a message.
+        let misnamed = ""
+        const sandbox = (answer: { readonly ok: boolean; readonly text: string }) => {
+          if (!answer.ok && answer.text.includes("refused") && !answer.text.startsWith(C.SANDBOX_REFUSED + ": ")) misnamed = answer.text
+          return answer
+        }
+        const terminal = (answer: { readonly ok: boolean; readonly text: string }) => sandbox(answer.ok ? answer : note(answer))
+        const faulty = input.kind === "faulty"
+        const bare = input.kind === "bare"
+        const json = input.json
+        const conversation = input.conversation
+
+        // Conversation: ask and read.
+        const asked = note(try attempt(C.Ask, { text: "install", conversation }, json))
+        // Any nonempty conversation id is one (the wire encodes it); an empty one is refused before the Factory.
+        if (conversation === "" ? asked.ok : asked.ok === faulty) return `${input.kind}: line 60`
+        if (asked.ok && !json && !asked.text.startsWith(mockReply("install"))) return `${input.kind}: line 61`
+        note(try attempt(C.Read, { conversation, after: input.n }, json))
+        const quiet = note(try attempt(C.Read, { conversation: "fresh" }, false))
+        if (!faulty && quiet.text !== "No entries. Event: 0") return `${input.kind}: an empty conversation reads ${quiet.text}`
+
+        // Sandboxes: read, start, run, stop; the mock's generation comes from the start.
+        const first = try Effect.result(C.StartSandbox.run({ conversation: "home", operationId: `op-${input.n}` }))
+        if (first._tag === "Success") {
+          const generation = first.success.generation
+          sandbox(note(try attempt(C.Sandboxes, { conversation: "home" }, json)))
+          terminal(try attempt(C.RunSandbox, { conversation: "home", generation, command: input.text || "ls" }, json))
+          terminal(try attempt(C.RunSandbox, { conversation: "home", generation, command: "ls" }, json))
+          sandbox(note(try attempt(C.StopSandbox, { conversation: "home", generation }, json)))
+          sandbox(note(try attempt(C.StopSandbox, { conversation: "home", generation, operationId: "stop-again" }, json)))
+        } else if (!faulty && first.failure.message === "") return `${input.kind}: line 73`
+        sandbox(note(try attempt(C.Sandboxes, { conversation: "home" }, json)))
+        const none = sandbox(note(try attempt(C.Sandboxes, { conversation: "fresh" }, false)))
+        if (none.ok && !none.text.startsWith("Sandboxes  ")) return `${input.kind}: no sandbox reads ${none.text}`
+        sandbox(note(try attempt(C.StartSandbox, { conversation: "home" }, json)))
+        terminal(try attempt(C.RunSandbox, { conversation: "home", generation: input.n, command: "ls" }, json))
+
+        if (misnamed !== "") return `${input.kind}: sandbox refusal ${misnamed}`
+
+        // Issues: list, then a flow per operation; without the service both answer one sentence.
+        const listed = note(try attempt(C.Issues, {}, json))
+        if (bare && listed.text !== "Issues unavailable.") return `${input.kind}: line 80`
+        if (faulty && listed.text !== "Issues unavailable.") return `${input.kind}: line 81`
+        // A missing key is generated; a resume carries its recovery when given, and a recovery travels alone.
+        const carried = { read: {}, new: { key: "" }, comment: { resumeOp: "new", resumeKey: "k-old", resumeRecovery: "rr" }, "spec-review": { resumeOp: "new", resumeKey: "k-old" }, propose: { recovery: "r" }, draft: {} }
+        for (const op of ["read", "new", "comment", "spec-review", "propose", "draft"] as const) {
+          const answer = note(try attempt(C.Issue, { op, title: input.title || "Fuzz", text: input.text, number: input.n % 3, key: `k-${op}-${input.n}`, ...carried[op] }, json))
+          if (bare && answer.text !== "Issues unavailable.") return `${input.kind}: line 84`
+          if (answer.ok && !answer.text.includes('"detail"')) return `${input.kind}: line 85`
+        }
+
+        // Wiki: read and each write; without the service one sentence.
+        for (const page of ["", "index"]) {
+          for (const op of ["read", "draft", "save", "propose"] as const) {
+            const answer = note(try attempt(C.Wiki, { op, page, base: "", text: input.text, key: page === "" ? "" : `w-${op}`, recovery: page === "" ? "" : "r" }, json))
+            if (bare && answer.text !== "Wiki unavailable.") return `${input.kind}: line 91`
+            if (answer.ok && !answer.text.includes('"seq"')) return `${input.kind}: line 92`
+          }
+        }
+        // A maintainer's save on the page's current source is written; a proposal opens a review.
+        const current = try Effect.result(C.Wiki.run({ op: "read", page: "index" }))
+        if (current._tag === "Success") {
+          const source = current.success.pages.find((each) => each.id === "index")?.source ?? ""
+          const saved = note(try attempt(C.Wiki, { op: "save", page: "index", base: source, text: source + "\nFuzz " + input.n, key: `save-${input.n}` }, false))
+          if (input.kind === "surface" && !saved.ok) return `${input.kind}: a save on the current source answered ${saved.text}`
+          const again = try Effect.result(C.Wiki.run({ op: "read", page: "index" }))
+          const next = again._tag === "Success" ? again.success.pages.find((each) => each.id === "index")?.source ?? "" : ""
+          note(try attempt(C.Wiki, { op: "propose", page: "index", base: next, text: next + "\nProposed", key: `propose-${input.n}` }, false))
+          note(try attempt(C.Wiki, { op: "draft", page: "index", base: next, text: "Shorter.", key: `draft-${input.n}` }, false))
+        }
+
+        // Actions: list, run (input JSON, wait), trace, rerun, cancel.
+        const actions = note(try attempt(C.ListActions, {}, json))
+        if (!faulty && (!actions.ok || !actions.text.includes("vibelang/history/show"))) return `${input.kind}: line 97`
+        const invalid = note(try attempt(C.RunWorkflow, { flow: "vibelang/history/show", input: "{oops" }, json))
+        if (invalid.ok || invalid.text !== "Invalid action input.") return `${input.kind}: line 99`
+        const shown = try Effect.result(C.RunWorkflow.run({ flow: "vibelang/history/show", wait: true }))
+        if (shown._tag === "Success") {
+          const traced = note(try attempt(C.ReadRun, { id: shown.success.id }, json))
+          if (!traced.ok || (!json && !traced.text.startsWith("passed"))) return `${input.kind}: line 103`
+          note(try attempt(C.Rerun, { id: shown.success.id }, json))
+          note(try attempt(C.CancelRun, { id: shown.success.id }, json))
+        } else if (bare ? shown.failure.message !== "Action: forbidden" : !faulty) return `${input.kind}: line 106`
+        // A refused history write settles failed, and waiting on it says so.
+        const refused = note(try attempt(C.RunWorkflow, { flow: "vibelang/history/Start", input: JSON.stringify({ id: "m-missing", lane: "fuzz" }), wait: true }, json))
+        // Without accounts the actor is a viewer, and only a tour is a viewer's.
+        if (!faulty && (refused.ok || refused.text !== (bare ? "Action: forbidden" : "Action failed."))) return `${input.kind}: line 109`
+        const requested = note(try attempt(C.RunWorkflow, { flow: "vibelang/history/show" }, false))
+        if (input.kind === "surface" && !requested.text.startsWith("Requested a")) return `${input.kind}: a run without waiting answered ${requested.text}`
+        note(try attempt(C.RunWorkflow, { flow: "unknown/flow" }, json))
+        note(try attempt(C.ReadRun, { id: "a-missing" }, json))
+        note(try attempt(C.CancelRun, { id: "a-missing" }, json))
+        note(try attempt(C.Rerun, { id: "a-missing" }, json))
+
+        // History: plan, start, note; a person's approval and fold then show the landed commit with its real commit.
+        const planned = try Effect.result(C.PlanWork.run({ title: input.title || "Fuzz", newEpic: "Fuzz epic", task: input.text }))
+        if (planned._tag === "Success") {
+          const id = planned.success.id
+          note(try attempt(C.StartWork, { id, lane: `lane-${input.n}` }, json))
+          note(try attempt(C.AddNote, { id, section: "evidence", text: "Seen " + input.text }, json))
+          const mythical = try Mythical
+          const landed = input.kind !== "surface" && (try Effect.result(mythical.approve(id)))._tag === "Success"
+          if (landed) try Effect.orDie(mythical.fold())
+          const shownCommit = note(try attempt(C.ShowHistory, { commit: id }, json))
+          if (!shownCommit.ok) return `${input.kind}: line 125`
+          if (landed && !(json ? shownCommit.text.includes('"real":["f01d') : shownCommit.text.includes("real f01d"))) return `${input.kind}: line 126`
+          const epics = try mythical.outline()
+          const epic = epics.epics.at(-1)?.id ?? "e1"
+          const page = note(try attempt(C.ShowHistory, { epic, from: input.n % 2 }, json))
+          // Past an epic's end a page is empty; the first page counts what it shows.
+          if (!page.ok || (!json && input.n % 2 === 0 && !page.text.includes(" of "))) return `${input.kind}: line 130`
+          // The seeded history's largest epic fills a whole page.
+          const first = [...epics.epics].sort((a, b) => b.commits - a.commits)[0]
+          if (input.kind === "surface" && first !== undefined) {
+            const full = try C.ShowHistory.run({ epic: first.id })
+            if (full.commits.length !== Math.min(50, full.total)) return `${input.kind}: a first page holds ${full.commits.length} of ${full.total}`
+          }
+        }
+        note(try attempt(C.ShowHistory, { search: input.title }, json))
+        const missing = note(try attempt(C.ShowHistory, { epic: "e-missing" }, json))
+        if (missing.ok || missing.text !== "No epic e-missing.") return `${input.kind}: line 134`
+        note(try attempt(C.PlanWork, { title: " " }, json))
+        const second = note(try attempt(C.PlanWork, { title: "Second " + input.n, newEpic: "Fuzz epic" }, false))
+        if (input.kind !== "faulty" && !second.text.startsWith("Planned m")) return `${input.kind}: a plan answered ${second.text}`
+
+        // With no settings place, the CLI's mock still starts, as the fixture maintainer.
+        if (input.kind === "surface") {
+          const homeless = try Effect.result(Effect.provide(C.Read.run({ conversation: "fresh" }), Layer.fresh(surfaceBackend(true, undefined)).pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ HOME: "" }))))))
+          if (homeless._tag !== "Success") return `${input.kind}: no settings place: ${homeless.failure.message}`
+        }
+
+        // Sign-in, mock mode: the CLI's own session file.
+        const login = note(try attempt(C.Login, { wait: false }, json))
+        if (input.kind === "surface" && (!login.ok || (!json && !login.text.startsWith("Signed in as ")))) return `${input.kind}: line 139`
+        if (bare && login.text !== "Sign-in isn't available.") return `${input.kind}: line 140`
+        // Signed in, a new mock backend acts as the person's agent: its notes are signed `<login> (agent)`.
+        if (input.kind === "surface" && login.ok) {
+          const name = (try C.Login.run({ wait: false })).login
+          provide Layer.fresh(surfaceBackend(true, undefined)) {
+            const mine = try C.PlanWork.run({ title: "Agent " + input.n, newEpic: "Agents" })
+            try C.AddNote.run({ id: mine.id, section: "tried", text: "Signed" })
+            const read = try C.ShowHistory.run({ commit: mine.id })
+            if (!read.commit?.notes.some((each) => each.includes(`(${name} (agent))`))) return `${input.kind}: the agent's note is signed ${JSON.stringify(read.commit?.notes)}`
+          }
+        }
+        const out = note(try attempt(C.Logout, {}, json))
+        if (input.kind === "surface" && (!out.ok || (!json && out.text !== "Signed out."))) return `${input.kind}: line 142`
+        const again = note(try attempt(C.Logout, {}, json))
+        // Signed out, the person is a viewer: a write is not theirs, and the history still reads.
+        if (input.kind === "surface") {
+          const refusedIssue = note(try attempt(C.Issue, { op: "new", title: "Viewer", key: `viewer-${input.n}` }, json))
+          if (refusedIssue.text !== "Not allowed.") return `${input.kind}: a viewer's issue answered ${refusedIssue.text}`
+          if (!note(try attempt(C.ShowHistory, {}, json)).ok) return `${input.kind}: a viewer can't read the history`
+          const viewerNote = note(try attempt(C.PlanWork, { title: "Viewer plan" }, json))
+          if (viewerNote.text !== "The history refused it: forbidden") return `${input.kind}: a viewer's plan answered ${viewerNote.text}`
+        }
+        if (input.kind === "surface" && (!again.ok || (!json && again.text !== "Not signed in."))) return `${input.kind}: line 144`
+
+        const unreadable = answers.findIndex((answer) => !readable(answer))
+        return unreadable === -1 ? "" : `${input.kind}: unreadable answer ${unreadable} ${JSON.stringify(answers.map((answer) => answer.text.slice(0, 40)))}`
+      }
+    }
+  }
+}
+
+const Event = Schema.Struct({
+  kind: Schema.Literals(["Posted", "OtherPost", "ReplyStarted", "OtherReply", "ReplyDelta", "ReplyRestarted", "ReplyFinished", "ReplyFailed"]),
+  text: Text,
+})
+
+/**
+ * `ask` over a conversation whose events a script decides (an injected Factory): it waits for its own post's reply,
+ * ignores others', answers that reply's text after its last restart, and says why when it failed or never finished.
+ */
+it.live("surfaces/ask-correlation", () => run("surfaces/ask-correlation", Schema.Array(Event).check(Schema.isMaxLength(12)), (script) => effect {
+  const own = { clientId: "" }
+  const scripted = Layer.effect(Factory, map(Factory, (factory) => Object.assign(Object.create(factory) as Factory.Shape, {
+    post: (_conversation: string, clientId: string) => effect { own.clientId = clientId },
+    events: () => Stream.suspend(() => Stream.fromIterable(script.map((event, index) => {
+      const seq = index + 1
+      switch (event.kind) {
+        case "Posted": return { type: "Posted" as const, seq, id: "p1", clientId: own.clientId, name: "Factory CLI", text: "q" }
+        case "OtherPost": return { type: "Posted" as const, seq, id: "p2", clientId: "someone-else", name: "Ada", text: "q" }
+        case "ReplyStarted": return { type: "ReplyStarted" as const, seq, id: "r1", inReplyTo: "p1" }
+        case "OtherReply": return { type: "ReplyStarted" as const, seq, id: "r2", inReplyTo: "p2" }
+        case "ReplyDelta": return { type: "ReplyDelta" as const, seq, id: index % 2 === 0 ? "r1" : "r2", text: event.text }
+        case "ReplyRestarted": return { type: "ReplyRestarted" as const, seq, id: "r1" }
+        case "ReplyFinished": return { type: "ReplyFinished" as const, seq, id: "r1" }
+        case "ReplyFailed": return { type: "ReplyFailed" as const, seq, id: "r1", reason: event.text || "fault" }
+      }
+    }))),
+  }))).pipe(Layer.provide(mockFactoryFor("maintainer")))
+  provide scripted {
+    const answer = try Effect.result(C.Ask.run({ text: "install" }))
+    // The reference: the first own post, then the first reply to it; its events until it finishes or fails.
+    let posted = false, started = false, text = "", outcome: "failed" | "done" | "ended" = "ended", reason = ""
+    for (const [index, event] of script.entries()) {
+      if (outcome !== "ended") break
+      if (event.kind === "Posted") posted = true
+      else if (event.kind === "ReplyStarted" && posted) started = true
+      else if (!started) continue
+      else if (event.kind === "ReplyDelta" && index % 2 === 0) text += event.text
+      else if (event.kind === "ReplyRestarted") text = ""
+      else if (event.kind === "ReplyFinished") outcome = "done"
+      else if (event.kind === "ReplyFailed") { outcome = "failed"; reason = event.text || "fault" }
+    }
+    if (outcome === "done") return answer._tag === "Success" && answer.success.text === text
+    if (answer._tag === "Success") return false
+    return outcome === "failed" ? answer.failure.message === `The agent's reply failed: ${reason}` : answer.failure.message === "The conversation ended before the agent's reply finished."
+  }
+}))

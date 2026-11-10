@@ -1,0 +1,56 @@
+// src/history/seed.vibe's pure bootstrap functions with independent properties: notes cut at sentence ends, a
+// merge's side commits bucketed with it, a seed's intents replayed (an unknown one refused).
+import { it } from "@effect/vitest"
+import { MAX_NOTE } from "../src/history/mythical.vibe"
+import { bucketsOf, endsSentence, intentsOf, replay, wholeSentences, type RawCommit } from "../src/history/seed.vibe"
+import { run, Int } from "./run.vibe"
+
+const Sentence = Schema.Struct({ words: Schema.Array(Schema.Literals(["Fix", "the", "parser", "Then", "A1", "ok", "(x)"])).check(Schema.isMinLength(1), Schema.isMaxLength(40)), end: Schema.Literals([".", "!", "?", ".)", "", ","]) })
+
+/** A note keeps whole sentences: within `max` (or its one long first sentence, within MAX_NOTE), ended, a prefix. */
+it.live("history/seed-sentences", () => run("history/seed-sentences", Schema.Struct({ sentences: Schema.Array(Sentence).check(Schema.isMaxLength(6)), max: Int, long: Schema.Boolean }), ({ sentences, max, long }) => {
+  const text = sentences.map((each) => each.words.join(" ") + each.end).join(" ") + (long ? " " + "Word ".repeat(260) + "end." : "")
+  const out = wholeSentences(text, max)
+  if (out === "") return true
+  const trimmed = text.trim().replace(/[\s,;:]+$/, "")
+  const ended = endsSentence(trimmed) ? trimmed : `${trimmed}.`
+  return endsSentence(out) && ended.startsWith(out) && (out.length <= max || (out.length <= MAX_NOTE && !out.slice(0, -1).match(/[.!?]["'`)\]]*\s+["'`(\[]?[A-Z0-9]/)))
+}))
+
+/** Every reachable commit lands in exactly one bucket, after its side commits' parents, with the step that brought it. */
+it.live("history/seed-buckets", () => run("history/seed-buckets", Schema.Array(Schema.Struct({ merge: Schema.Boolean, side: Int })).check(Schema.isMinLength(1), Schema.isMaxLength(10)), (steps) => {
+  const commits: Array<RawCommit> = []
+  let tip = ""
+  steps.forEach((step, i) => {
+    const sides: Array<string> = []
+    let parent = tip
+    // A merge needs a main parent: the first commit has none, so it is never one.
+    for (let k = 0; step.merge && tip !== "" && k < (step.side % 4) + 1; k++) {
+      const sha = `s${i}-${k}`
+      commits.push({ sha, change: "", description: `side ${i} ${k}`, parents: parent === "" ? [] : [parent] })
+      sides.push(sha)
+      parent = sha
+    }
+    const sha = `m${i}`
+    commits.push({ sha, change: "", description: `main ${i}`, parents: [...(tip === "" ? [] : [tip]), ...(sides.length > 0 ? [sides.at(-1)!] : [])] })
+    tip = sha
+  })
+  const buckets = bucketsOf(commits)
+  const order = buckets.map((each) => each.commit.sha)
+  if (new Set(order).size !== order.length || order.length !== commits.length) return false
+  // A side commit belongs to the merge after it, and comes before it and after its own parent.
+  return buckets.every((each) => (each.commit.sha.startsWith("m") ? each.step === each.commit.sha : each.step === `m${each.commit.sha.slice(1).split("-")[0]}`)
+    && each.commit.parents.every((parent) => order.indexOf(parent) < order.indexOf(each.commit.sha)))
+}))
+
+/** A seed's intents replay to its history: a real commit without a title takes its mythical commit's; nothing is refused. */
+it.live("history/seed-replay", () => run("history/seed-replay", Schema.Struct({ titled: Schema.Boolean, extra: Schema.Boolean }), ({ titled, extra }) => {
+  const seed = {
+    repository: "r", main: "abc",
+    epics: [{ id: "e1", title: "One", commits: [{ id: "m1", title: "First", notes: [{ section: "tried" as const, text: "Tried." }] }] }],
+    real: [{ sha: "abc", change: "", title: titled ? "Real" : "", into: "m1" }],
+  }
+  const intents = intentsOf(seed)
+  const replayed = replay(extra ? [...intents, { type: "Start", id: "m-missing", lane: "x" }] : intents)
+  return replayed.history.real[0]?.title === (titled ? "Real" : "First") && replayed.refused.length === (extra ? 1 : 0)
+}))

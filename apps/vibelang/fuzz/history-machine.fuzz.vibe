@@ -1,0 +1,150 @@
+// src/history/flowMachine.vibe's contracts as executable oracles over arbitrary runs and inputs (the Dafny proofs
+// check the same text; this checks the running code), and src/history/wire.vibe's paths: what `pathOf` writes,
+// `historyRouteOf` reads back as the same page.
+import { it } from "@effect/vitest"
+import * as M from "../src/history/flowMachine.vibe"
+import * as H from "../src/history/mythical.vibe"
+import { HISTORY_PATH, historyRouteOf, pageRequestOf, pathOf } from "../src/history/wire.vibe"
+import { run, Int, Text } from "./run.vibe"
+
+const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
+const Action = Schema.Literals(["show", "append", "retell", "start", "note", "approve", "fold"])
+const Word = Schema.Union([Text, Schema.Literals(["forbidden", "empty", "too-long", "duplicate", "unknown", "state", "full", "unavailable", "planned", "working", "approved", "landed", "new", "how", "live", "mock"])])
+const Step = Schema.Literals(["authorize", "record", "begin"])
+const Input = Schema.Struct({
+  role: Role, action: Action, agent: Schema.Boolean, name: Text, steps: Schema.Array(Step).check(Schema.isMaxLength(8)),
+  word: Word, other: Word, status: Schema.Literals([200, 201, 400, 403, 404, 409, 500, 503]), ids: Schema.Array(Word).check(Schema.isMaxLength(4)),
+  how: Schema.Literals(["append", "insert", "amend"]), first: Schema.NullOr(Word),
+})
+
+it.live("history/machine-contracts", () => run("history/machine-contracts", Input, (input) => {
+  const principal: M.Principal = { role: input.role, name: input.name, agent: input.agent }
+  const may = !(input.agent && (input.action === "approve" || input.action === "fold")) && M.standing(input.role) >= M.standing(M.leastRole(input.action))
+  if (M.may(principal, input.action) !== may || M.peopleOnly(input.action) !== (input.action === "approve" || input.action === "fold")) return false
+  if (M.atLeast(input.role, "contributor") !== (M.standing(input.role) >= 3)) return false
+  // A run through any steps stays lawful; it records only after authorization and, but for a fold, once.
+  let state = M.begin(input.action, principal)
+  for (const step of input.steps) {
+    const next = step === "authorize" ? M.authorize(state) : step === "record" ? M.record(state) : M.begin(input.action, principal)
+    if (!M.lawful(next)) return false
+    if (step === "authorize" && state.phase === "begun" && next.phase !== (may ? "authorized" : "forbidden")) return false
+    if (step === "authorize" && state.phase !== "begun" && next !== state) return false
+    if (step === "record" && (M.canRecord(state) ? next.records !== state.records + 1 || next.phase !== "recorded" : next !== state)) return false
+    state = next
+  }
+  // A forged run is not lawful.
+  if (M.lawful({ ...state, records: -1 }) || M.lawful({ ...state, phase: "recorded", records: 0 })) return false
+  if (!may && M.lawful({ ...state, phase: "authorized", records: 0 })) return false
+  if (input.action !== "fold" && M.lawful({ ...state, phase: "recorded", records: 2 })) return false
+  // The small decisions, against their stated contracts.
+  const status = M.historyStatus(input.word)
+  if (status !== (input.word === "forbidden" ? 403 : input.word === "unavailable" ? 503 : 409)) return false
+  const response = M.historyResponse(input.status)
+  if (response !== (input.status === 200 ? "accepted" : [403, 409, 503].includes(input.status) ? "refused" : "unavailable")) return false
+  if (M.historySignature(input.name, input.agent) !== (input.agent ? `${input.name} (agent)` : input.name)) return false
+  if (M.resolvedRole(input.word, input.role) !== (input.word === "live" ? "viewer" : input.role)) return false
+  const toggled = M.toggleEpic(input.ids, input.word)
+  if (input.ids.includes(input.word) ? toggled.includes(input.word) : !toggled.includes(input.word) || toggled.length !== input.ids.length + 1) return false
+  const fields = M.planFields(input.how, input.word, input.other)
+  if (fields.how !== input.how || fields.epic !== (input.word === "new" ? "" : input.word) || fields.newEpic !== (input.how === "append" && input.word === "new" ? input.other : "")) return false
+  const badge = M.historyBadge(input.word)
+  if (badge !== ({ planned: "sui-badge-warning", working: "sui-badge-default", approved: "sui-badge-success" } as Record<string, string>)[input.word] && badge !== "sui-badge-secondary") return false
+  const sentence = M.historyRefusal(input.word)
+  if (["forbidden", "empty", "too-long", "duplicate", "unknown", "state", "full", "unavailable"].includes(input.word) === (sentence === input.word)) return false
+  if (M.initialEpic(input.how, input.first ?? undefined) !== (input.how === "append" ? (input.first ?? "new") : "")) return false
+  return M.validPlanField(input.word, input.other) === (input.word !== "how" || ["append", "insert", "amend"].includes(input.other))
+}))
+
+const Page = Schema.Union([
+  Schema.Struct({ what: Schema.Literal("outline") }),
+  Schema.Struct({ what: Schema.Literal("epic"), id: Schema.Union([Schema.Literals(["e1", "e12", "e", "m1", "e1/x", "\ud800"]), Text]), from: Int }),
+  Schema.Struct({ what: Schema.Literal("commit"), id: Schema.Union([Schema.Literals(["m1", "m999999999", "m1234567890", "e1", "\udc00"]), Text]) }),
+  Schema.Struct({ what: Schema.Literal("search"), query: Schema.Union([Text, Schema.Literals(["", "a&b=c", "😀", "\ud800"])]) }),
+])
+
+/** A page's path is read back as that page when its id is one the route accepts; a malformed id writes no path. */
+it.live("history/wire-paths", () => run("history/wire-paths", Schema.Struct({ page: Page, method: Schema.Literals(["GET", "POST", "PUT"]), suffix: Schema.Literals(["", "/", "/x", "?from=-1", "?from=1e3"]) }), ({ page, method, suffix }) => {
+  // Writes are POSTs only; a search may omit its query.
+  for (const write of ["plan", "start", "note", "approve", "fold"]) {
+    const route = historyRouteOf(method, `${HISTORY_PATH}/${write}`)
+    if (method === "POST" ? route?.kind !== "history-write" : route !== undefined) return false
+  }
+  const bare = historyRouteOf("GET", `${HISTORY_PATH}/search`, new URLSearchParams())
+  if (bare?.kind !== "history-search" || JSON.stringify(bare.page) !== JSON.stringify({ what: "search", query: "" })) return false
+  const path = pathOf(page)
+  if (path === undefined) return /(?:[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff])/.test("id" in page ? page.id : "query" in page ? page.query : "")
+  const url = new URL(path + (page.what === "outline" && suffix.startsWith("?") ? suffix : ""), "https://h.invalid")
+  const route = historyRouteOf(method, url.pathname, url.searchParams)
+  if (method !== "GET") return route === undefined
+  const accepted = page.what === "outline" || page.what === "search" || (page.what === "epic" && /^e\d{1,9}$/.test(page.id)) || (page.what === "commit" && /^m\d{1,9}$/.test(page.id))
+  if (!accepted) return route === undefined
+  if (route === undefined || route.kind === "history-events" || route.kind === "history-write") return false
+  if (JSON.stringify(route.page) !== JSON.stringify(page)) return false
+  // Anything after a page's path names no page.
+  const extra = pageRequestOf(url.pathname.slice(HISTORY_PATH.length) + (suffix.startsWith("?") ? "" : suffix), url.searchParams)
+  return suffix === "" || suffix.startsWith("?") || extra === undefined
+}))
+
+const Id = Schema.Literals(["", "e1", "e2", "m1", "m2", "m3", "missing"])
+const Field = Schema.Literals(["", "Fuzz", "x"])
+const AnyEvent = Schema.Struct({
+  type: Schema.Literals(["EpicOpened", "Planned", "Amended", "Started", "Approved", "Folded", "Noted"]),
+  seq: Schema.Literals(["next", "same", "skip"]), id: Id, epic: Id, rank: Schema.Literals([-1, 0, 1, 5]), title: Field, text: Field,
+})
+
+/**
+ * Every copy applies the events it receives (mythical.vibe `apply`), including ones `decide` never makes: a wrong
+ * number changes nothing; a malformed event only advances the number. The history stays well formed; at the last
+ * safe number it is full: `decide` refuses and replay changes nothing.
+ */
+it.live("history/apply-any-event", () => run("history/apply-any-event", Schema.Struct({ prefix: Schema.Array(AnyEvent).check(Schema.isMaxLength(12)), full: Schema.Boolean }), ({ prefix, full }) => {
+  let state = H.empty
+  for (const each of prefix) {
+    const seq = each.seq === "next" ? state.seq + 1 : each.seq === "same" ? state.seq : state.seq + 2
+    const event = eventOf(each, seq)
+    const next = H.apply(state, event)
+    if (seq !== state.seq + 1) { if (next !== state) return false; continue }
+    if (next.seq !== seq || !wellFormed(next)) return false
+    // A copy that replays the same events reaches the same history.
+    state = next
+  }
+  if (!full) return true
+  const last = { ...state, seq: Number.MAX_SAFE_INTEGER }
+  const refused = H.decideWithinCapacity(last, { type: "OpenEpic", id: "e9", title: "Full" })
+  // Replay keeps a full snapshot: every event after it is stale (the wire refuses unsafe numbers before `apply`).
+  return !refused.ok && refused.refusal === "full" && H.replayEvent(last, eventOf(prefix[0] ?? { type: "EpicOpened", seq: "next", id: "e1", epic: "e1", rank: 0, title: "x", text: "x" }, Number.MAX_SAFE_INTEGER + 1)) === last
+}))
+
+function eventOf(each: typeof AnyEvent.Type, seq: number): H.Event {
+  switch (each.type) {
+    case "EpicOpened": return { type: "EpicOpened", seq, id: each.epic, title: each.title }
+    case "Planned": return { type: "Planned", seq, id: each.id, epic: each.epic, rank: each.rank, title: each.title, task: each.text }
+    case "Amended": return { type: "Amended", seq, id: each.id, task: each.text }
+    case "Started": return { type: "Started", seq, id: each.id, lane: each.text }
+    case "Approved": return { type: "Approved", seq, id: each.id, by: each.text }
+    case "Folded": return { type: "Folded", seq, sha: each.title === "" ? "" : `s${each.rank}`, change: "", title: each.text, into: each.id }
+    case "Noted": return { type: "Noted", seq, id: each.id, section: "tried", text: each.text, by: each.title }
+  }
+}
+
+/** Ids unique, every commit in an epic with a rank of its own, every real commit naming a commit, main the last. */
+function wellFormed(h: H.History): boolean {
+  return new Set(h.epics.map((e) => e.id)).size === h.epics.length && new Set(h.commits.map((c) => c.id)).size === h.commits.length
+    && h.commits.every((c) => h.epics.some((e) => e.id === c.epic) && h.commits.filter((o) => o.epic === c.epic && o.rank === c.rank).length === 1)
+    && h.real.every((r) => h.commits.some((c) => c.id === r.mythical)) && h.main === (h.real.at(-1)?.sha ?? "")
+}
+
+/** Refused intents: an insert before an unknown commit, a fold with no sha, an epic or plan the history lacks. */
+it.live("history/decide-refusals", () => run("history/decide-refusals", Schema.Struct({ title: Field, before: Id, epic: Id }), ({ title, before, epic }) => {
+  let state = H.empty
+  for (const intent of [{ type: "OpenEpic", id: "e1", title: "One" }, { type: "Plan", id: "m1", epic: "e1", before: "", title: "First", task: "" }] as const) {
+    const decision = H.decide(state, intent)
+    if (!decision.ok) return false
+    state = H.apply(state, decision.event)
+  }
+  const insert = H.decide(state, { type: "Plan", id: "m9", epic, before, title: title || "T", task: "" })
+  const valid = epic === "e1" && (before === "" || before === "m1")
+  if (insert.ok !== valid || (!insert.ok && !["unknown", "duplicate"].includes(insert.refusal))) return false
+  const fold = H.decide(state, { type: "Fold", sha: "", change: "", title, into: "m1" })
+  return !fold.ok && fold.refusal === "empty"
+}))

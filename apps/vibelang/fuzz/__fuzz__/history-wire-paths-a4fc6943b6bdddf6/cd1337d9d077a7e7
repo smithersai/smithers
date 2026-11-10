@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 32
+bias 2
+null-prototype false
+key 2812108484
+tape ghsn1hqhbNyTvwqyYUZSJngi620
+schedule-key 873230142
+schedule 
+signature "ReturnedFalse"
+path 
+codec "json"
+value "{\"page\":{\"what\":\"search\",\"query\":\"😀\"},\"method\":\"GET\",\"suffix\":\"/x\"}"
+# ReturnedFalse
+# {"page":{"what":"search","query":"😀"},"method":"GET","suffix":"/x"}

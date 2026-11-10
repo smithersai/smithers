@@ -1,0 +1,337 @@
+// src/surfaces/signin.vibe, steered: every execution runs every sign-in and sign-out scenario against one scripted
+// server on a real socket (the Factory's device route and session, and GitHub's device flow), through the real durable
+// session host. The fuzzer picks the person's code, login, intervals and GitHub's slow-down answer. Each scenario
+// has one expected answer; no device code, token or cookie reaches a message or an answer.
+import { it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { readPending, readSession, settingsDir, writePending, writeSession } from "../src/surfaces/session.vibe"
+import { Login, Logout } from "../src/surfaces/commands.vibe"
+import { signIn, signOutSurface } from "../src/surfaces/signin.vibe"
+import { backend as webBackend } from "./web-backends.vibe"
+import { run, Int } from "./run.vibe"
+
+const DEVICE_CODE = "private-device-code"
+const TOKEN = "private-access-token"
+const COOKIE = "vibelang-session=private.cookie"
+const SECRETS = [DEVICE_CODE, TOKEN, COOKIE, "private.cookie"]
+const Word = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9-]{1,16}$/))
+const Input = Schema.Struct({ userCode: Word, login: Word, interval: Int, slowDown: Schema.NullOr(Int) })
+
+/** What the scripted server answers; each scenario sets it before it runs. */
+interface Script {
+  route: "ok" | "refused" | "garbage" | "wrong-shape"
+  device: "ok" | "refused"
+  grant: "authorization_pending" | "slow_down" | "access_denied" | "expired_token" | "authorized" | "garbage"
+  exchange: "ok" | "refused" | "garbage" | "wrong-shape"
+  session: "agent" | "person" | "signed-out" | "refused" | "garbage"
+  slow: "fuzzed" | "none"
+  queue: ReadonlyArray<"authorization_pending" | "authorized">
+  expires: number
+  revoke: "ok" | "refused"
+}
+const initial: Script = { route: "ok", device: "ok", grant: "authorized", exchange: "ok", session: "agent", revoke: "ok", slow: "fuzzed", expires: 600, queue: [] }
+
+const live = Layer.succeed(Factory, { mode: "live" } as unknown as Factory["Service"])
+const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status })
+const text = (body: string) => HttpServerResponse.text(body, { status: 200 })
+
+/** The answer of `work`: its value, or its failure's message; a defect fails the property. */
+effect function answer<A>(work: A!{ readonly message: string }!any) {
+  const result = try Effect.result(work)
+  return result._tag === "Success" ? { ok: true as const, value: result.success, message: "" } : { ok: false as const, value: undefined, message: result.failure.message }
+}
+
+it.live("signin/steered", () => run("signin/steered", Input, (input) => steered(input, "answers"), undefined, { minimum: "60 seconds" }), 300000)
+it.live("signin/steered-waits", () => run("signin/steered-waits", Input, (input) => steered(input, "waits"), undefined, { minimum: "60 seconds" }), 300000)
+it.live("signin/steered-wait-refusals", () => run("signin/steered-wait-refusals", Input, (input) => steered(input, "refusals"), undefined, { minimum: "60 seconds" }), 300000)
+
+/** `answers`: every one-call scenario; `waits` and `refusals`: the CLI's login that polls until the person answers. */
+function steered(input: typeof Input.Type, part: "answers" | "waits" | "refusals") {
+  return scoped(effect {
+  provide NodeServices.layer, NodeHttpServer.layerTest {
+    const address = (try HttpServer.HttpServer).address
+    const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+    const script: Script = { ...initial }
+    const hits: Array<string> = []
+    try HttpServer.serveEffect(effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      const path = new URL(request.url, origin).pathname
+      hits.push(path)
+      if (path === "/api/auth/device" && request.method === "GET") return script.route === "ok" ? json({ clientId: "fixture-client" }) : script.route === "refused" ? json({}, 503) : script.route === "garbage" ? text("{") : json({ clientId: 7 })
+      if (path === "/api/auth/device") return script.exchange === "ok" ? json({ cookie: COOKIE, login: input.login }) : script.exchange === "refused" ? json({}, 403) : script.exchange === "garbage" ? text("{") : json({ cookie: 1 })
+      if (path === "/login/device/code") return script.device === "ok" ? json({ device_code: DEVICE_CODE, user_code: input.userCode, verification_uri: origin + "/device", expires_in: script.expires, interval: input.interval }) : json({}, 500)
+      if (path === "/login/oauth/access_token") {
+        const grant = script.queue.length > 0 ? script.queue[0]! : script.grant
+        if (script.queue.length > 0) script.queue = script.queue.slice(1)
+        if (grant === "authorized") return json({ access_token: TOKEN, token_type: "bearer", scope: "read:user" })
+        if (grant === "garbage") return text("{")
+        return json({ error: grant, ...(grant === "slow_down" && script.slow === "fuzzed" ? { interval: 6 + (input.slowDown ?? 0) } : {}) })
+      }
+      if (path === "/api/auth/session") return script.session === "agent" ? json({ id: "1", agent: true }) : script.session === "person" ? json({ id: "1" }) : script.session === "signed-out" ? json({ id: "" }) : script.session === "garbage" ? text("{") : json({}, 401)
+      if (path === "/api/auth/sign-out") return script.revoke === "ok" ? HttpServerResponse.empty({ status: 204 }) : json({}, 500)
+      return json({}, 404)
+    })
+    const fs = try FileSystem.FileSystem
+    const failures: Array<string> = []
+
+    /** One scenario in a fresh settings directory, against the Factory at `factory`, with the server answering `change`. */
+    effect function scenario(name: string, change: Partial<Script>, body: () => boolean!unknown!any, factory = origin, layer: Layer.Layer<Factory, never, never> = live) {
+      Object.assign(script, initial, change)
+      hits.length = 0
+      const directory = try fs.makeTempDirectoryScoped()
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_FACTORY_URL: factory, VIBELANG_GITHUB_WEB: origin, XDG_CONFIG_HOME: directory })), layer {
+        if (!(try body())) failures.push(name)
+      }
+    }
+    const pending = (nextPollAt: number) => writePending({ origin, clientId: "fixture-client", deviceCode: DEVICE_CODE, userCode: input.userCode, verificationUri: origin + "/device", intervalSeconds: 0, expiresAt: Date.now() + 600_000, nextPollAt })
+    const fails = (message: string) => effect () => {
+      const out = try answer(signIn({ wait: false }))
+      return !out.ok && out.message === message
+    }
+
+    if (part === "refusals") {
+      for (const [grant, message] of [["access_denied", "Sign-in declined."], ["expired_token", "Sign-in expired."], ["garbage", "Sign-in failed."]] as const) {
+        try scenario(`wait-${grant}`, { grant }, effect () => {
+          const out = try answer(signIn({ wait: true }))
+          return !out.ok && out.message === message
+        })
+      }
+      if (failures.length > 0) try Console.error("signin/steered-wait-refusals failed: " + failures.join(", "))
+      return failures.length === 0
+    }
+    if (part === "waits") {
+      try scenario("wait-authorized", {}, effect () => {
+        const out = try signIn({ wait: true })
+        return out.status === "signed-in" && out.login === input.login
+      })
+      // A due flow that GitHub says is still pending keeps the CLI waiting until the person answers.
+      try scenario("wait-pending-then-authorized", { queue: ["authorization_pending", "authorized"] }, effect () => {
+        try pending(0)
+        const out = try signIn({ wait: true })
+        return out.status === "signed-in" && out.login === input.login
+      })
+      // A device code that expires at once leaves nothing to wait on.
+      try scenario("wait-expired-code", { expires: 0 }, effect () => {
+        const out = try answer(signIn({ wait: true }))
+        return !out.ok && out.message === "Sign-in expired."
+      })
+      if (failures.length > 0) try Console.error("signin/steered-waits failed: " + failures.join(", "))
+      return failures.length === 0
+    }
+
+    // The Factory's device route.
+    try scenario("route-unreachable", {}, fails("Sign-in at http://127.0.0.1:9 can't be reached."), "http://127.0.0.1:9")
+    try scenario("route-refused", { route: "refused" }, fails(`Sign-in isn't available at ${origin}.`))
+    try scenario("route-garbage", { route: "garbage" }, fails(`Sign-in at ${origin} can't be understood.`))
+    try scenario("route-wrong-shape", { route: "wrong-shape" }, fails(`Sign-in at ${origin} can't be understood.`))
+    try scenario("device-refused", { device: "refused" }, fails("GitHub refused the device sign-in."))
+    for (const factory of ["http://example.invalid", "not a url", `${origin}/path`, "ftp://127.0.0.1"]) {
+      try scenario(`origin ${factory}`, {}, fails("Invalid factory origin."), factory)
+    }
+
+    // A started flow offers the person's code and keeps it for a later call, which waits out GitHub's interval.
+    try scenario("started", { grant: "authorization_pending" }, effect () => {
+      const first = try signIn({ wait: false })
+      const kept = try readPending()
+      if (first.status !== "started" || first.userCode !== input.userCode || first.verificationUri !== origin + "/device" || first.login !== "") return false
+      // The command says where to go and what to enter.
+      if ((try Login.render({ wait: false }, false)) !== `Open ${origin}/device and enter ${input.userCode}.`) return false
+      if (kept === undefined || kept.intervalSeconds !== input.interval) return false
+      if (input.interval === 0) return true
+      // Its interval not yet passed, a later call answers pending without asking GitHub.
+      try writePending({ ...kept, nextPollAt: Date.now() + 600_000 })
+      const before = hits.filter((path) => path === "/login/oauth/access_token").length
+      const second = try signIn({ wait: false })
+      return second.status === "pending" && second.userCode === input.userCode && hits.filter((path) => path === "/login/oauth/access_token").length === before
+    })
+
+    // Each answer GitHub gives a due poll.
+    try scenario("poll-pending", { grant: "authorization_pending" }, effect () => {
+      try pending(0)
+      const out = try signIn({ wait: false })
+      return out.status === "pending" && out.userCode === input.userCode
+    })
+    for (const slow of ["fuzzed", "none"] as const) {
+      try scenario(`poll-slow-down-${slow}`, { grant: "slow_down", slow }, effect () => {
+        try pending(0)
+        const out = try signIn({ wait: false })
+        const kept = try readPending()
+        // GitHub's own interval, when given, is above the five seconds a slow-down adds, so it must win.
+        const given = slow === "fuzzed" ? 6 + (input.slowDown ?? 0) : 0
+        return out.status === "pending" && kept !== undefined && kept.intervalSeconds === Math.max(5, given) && kept.nextPollAt > Date.now()
+      })
+    }
+    for (const [grant, message] of [["access_denied", "Sign-in declined."], ["expired_token", "Sign-in expired."]] as const) {
+      try scenario(`poll-${grant}`, { grant }, effect () => {
+        try pending(0)
+        const out = try answer(signIn({ wait: false }))
+        return !out.ok && out.message === message && (try readPending()) === undefined
+      })
+    }
+    try scenario("poll-garbage", { grant: "garbage" }, effect () => {
+      try pending(0)
+      const out = try answer(signIn({ wait: false }))
+      return !out.ok && out.message === "GitHub refused the device sign-in." && (try readPending()) !== undefined
+    })
+    try scenario("poll-authorized", {}, effect () => {
+      try pending(0)
+      const out = try signIn({ wait: false })
+      const stored = try readSession()
+      return out.status === "signed-in" && out.login === input.login && out.userCode === "" && stored?.cookie === COOKIE && (try readPending()) === undefined
+    })
+    for (const [exchange, message] of [["refused", `Sign-in at ${origin} was refused.`], ["garbage", `Sign-in at ${origin} can't be understood.`], ["wrong-shape", `Sign-in at ${origin} can't be understood.`]] as const) {
+      try scenario(`exchange-${exchange}`, { exchange }, effect () => {
+        try pending(0)
+        const out = try answer(signIn({ wait: false }))
+        return !out.ok && out.message === message && (try readSession()) === undefined
+      })
+    }
+
+    // The Factory's exchange can't be reached: the pending flow's own origin is down.
+    try scenario("exchange-unreachable", {}, effect () => {
+      try writePending({ origin: "http://127.0.0.1:9", clientId: "fixture-client", deviceCode: DEVICE_CODE, userCode: input.userCode, verificationUri: origin + "/device", intervalSeconds: 0, expiresAt: Date.now() + 600_000, nextPollAt: 0 })
+      const out = try answer(signIn({ wait: false }))
+      return !out.ok && out.message === "Sign-in at http://127.0.0.1:9 can't be reached."
+    }, "http://127.0.0.1:9")
+    // The session file can't be written once GitHub says yes: one sentence, and the flow stays pending.
+    try scenario("session-unwritable", {}, effect () => {
+      try pending(0)
+      const files = (try settingsDir()) + "/session.json"
+      try fs.makeDirectory(files + "/blocked", { recursive: true })
+      const out = try answer(signIn({ wait: false }))
+      return !out.ok && out.message === "The sign-in settings couldn't be written."
+    })
+    // A stored session whose Factory is down answers that.
+    try scenario("stored-unreachable", {}, effect () => {
+      try writeSession({ origin: "http://127.0.0.1:9", cookie: COOKIE, login: "stored" })
+      const out = try answer(signIn({ wait: false }))
+      return !out.ok && out.message === "Sign-in can't be reached."
+    }, "http://127.0.0.1:9")
+
+    // A stored session: kept while the Factory says it is the person's agent, else replaced by a new flow.
+    for (const session of ["agent", "person", "signed-out", "refused", "garbage"] as const) {
+      try scenario(`stored-${session}`, { session }, effect () => {
+        try writeSession({ origin, cookie: COOKIE, login: "stored" })
+        const out = try signIn({ wait: false })
+        if (session === "agent") return out.status === "signed-in" && out.login === "stored" && !hits.includes("/login/device/code")
+        return out.status === "started" && (try readSession()) === undefined
+      })
+    }
+
+    // Sign-out revokes the remote session; local state is gone whatever the Factory answers.
+    for (const [revoke, factory, message] of [["ok", origin, ""], ["refused", origin, "Sign-out was refused."], ["ok", "http://127.0.0.1:9", "Sign-out couldn't reach the factory."]] as const) {
+      try scenario(`logout-${revoke}-${factory}`, { revoke }, effect () => {
+        try writeSession({ origin: factory, cookie: COOKIE, login: "stored" })
+        try pending(Date.now() + 600_000)
+        const out = try answer(signOutSurface())
+        const gone = (try readSession()) === undefined && (try readPending()) === undefined
+        return gone && (message === "" ? out.ok && out.value?.signedOut === true : !out.ok && out.message === message)
+      })
+    }
+    try scenario("logout-none", {}, effect () => (try signOutSurface()).signedOut === false)
+
+    // Mock mode: no accounts service, or one that fails.
+    try scenario("mock-no-accounts", {}, effect () => {
+      const out = try answer(signIn({ wait: false }))
+      return !out.ok && out.message === "Sign-in isn't available."
+    }, origin, webBackend("bare", "maintainer"))
+    try scenario("mock-faulty", {}, effect () => {
+      const login = try answer(signIn({ wait: false }))
+      const logout = try answer(signOutSurface())
+      return !login.ok && login.message === "Sign-in isn't available." && !logout.ok && logout.message === "Sign-out failed."
+    }, origin, webBackend("faulty", "maintainer"))
+    try scenario("mock-signed-in", {}, effect () => {
+      const login = try signIn({ wait: false })
+      const logout = try signOutSurface()
+      return login.status === "signed-in" && login.login !== "" && logout.signedOut
+    }, origin, mockFactoryFor("maintainer"))
+
+    if (failures.length > 0) try Console.error("signin/steered failed: " + failures.join(", "))
+    return failures.length === 0
+  }
+  })
+}
+
+/** Settings that can't be written fail typed, carrying no secret, in both modes. */
+it.live("signin/unwritable-settings", () => run("signin/unwritable-settings", Schema.Literals(["live", "mock"]), (mode) => scoped(effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const directory = try fs.makeTempDirectoryScoped()
+    const blocked = directory + "/file"
+    try fs.writeFileString(blocked, "not a directory")
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_FACTORY_URL: "http://127.0.0.1:9", XDG_CONFIG_HOME: blocked })), (mode === "live" ? live : mockFactoryFor("maintainer")) {
+      const login = try Effect.result(signIn({ wait: false }))
+      const logout = try Effect.result(signOutSurface())
+      // The commands say one sentence for a failure that is not the sign-in's own.
+      const command = try Effect.result(Login.run({ wait: false }))
+      const out = try Effect.result(Logout.run({}))
+      const sentences = ["Sign-in failed.", "The sign-in settings couldn't be written."]
+      if (command._tag !== "Failure" || !sentences.includes(command.failure.message) || out._tag !== "Failure" || !sentences.includes(out.failure.message)) return false
+      return login._tag === "Failure" && logout._tag === "Failure" && ![JSON.stringify(login.failure), JSON.stringify(logout.failure)].some((printed) => SECRETS.some((secret) => printed.includes(secret)))
+    }
+  }
+})))
+
+const Stored = Schema.Struct({ file: Schema.Literals(["missing", "garbage", "wrong-shape", "valid"]), explicit: Schema.Literals(["none", "valid", "not-json", "bad-cookie"]), login: Word })
+
+/**
+ * src/surfaces/session.vibe: a settings file that is missing, unreadable or of another shape reads as none; an expired
+ * device flow is forgotten; a settings place that can't be found or cleared fails typed; the explicit VIBELANG_SESSION
+ * wins for sign-out only when it is a valid session.
+ */
+it.live("signin/session-files", () => run("signin/session-files", Word, (login) => effect {
+  // Every execution covers every stored file against every explicit session.
+  for (const file of Stored.fields.file.literals) {
+    for (const explicit of Stored.fields.explicit.literals) {
+      if (!(try sessionFiles({ file, explicit, login }))) {
+        try Console.error(`signin/session-files failed: ${file} ${explicit}`)
+        return false
+      }
+    }
+  }
+  return true
+}, undefined, { minimum: "10 seconds" }))
+
+function sessionFiles(input: typeof Stored.Type) {
+  return scoped(effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const directory = try fs.makeTempDirectoryScoped()
+    const explicit = input.explicit === "none" ? {} : { VIBELANG_SESSION: input.explicit === "valid" ? JSON.stringify({ origin: "http://127.0.0.1:9", cookie: COOKIE }) : input.explicit === "not-json" ? "{" : JSON.stringify({ origin: "http://127.0.0.1:9", cookie: "x=<y>" }) }
+    // No XDG_CONFIG_HOME and no HOME: there is no settings place, and every read and write says so.
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({ HOME: "" })) {
+      if ((try Effect.result(readSession()))._tag !== "Failure" || (try Effect.result(writeSession({ origin: "o", cookie: "c", login: "l" })))._tag !== "Failure") return false
+    }
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({ HOME: directory })) {
+      if (!(try settingsDir()).startsWith(directory + "/.config/")) return false
+    }
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory, ...explicit })), live {
+      const dir = try settingsDir()
+      try fs.makeDirectory(dir, { recursive: true })
+      const text = input.file === "garbage" ? "{" : input.file === "wrong-shape" ? JSON.stringify({ origin: 1 }) : JSON.stringify({ origin: "http://127.0.0.1:9", cookie: COOKIE, login: input.login })
+      if (input.file !== "missing") try fs.writeFileString(dir + "/session.json", text)
+      const read = try readSession()
+      if (input.file === "valid" ? read?.login !== input.login : read !== undefined) return false
+      // An expired device flow reads as none and is gone.
+      try writePending({ origin: "o", clientId: "c", deviceCode: DEVICE_CODE, userCode: "U", verificationUri: "v", intervalSeconds: 0, expiresAt: 1, nextPollAt: 0 })
+      if ((try readPending()) !== undefined || (try fs.exists(dir + "/device.json"))) return false
+      // Sign-out with an explicit session: a valid one is revoked (here its Factory is down); another fails typed.
+      const out = try Effect.result(signOutSurface())
+      if (input.explicit === "valid") return out._tag === "Failure" && out.failure.message === "Sign-out couldn't reach the factory."
+      if (input.explicit !== "none") return out._tag === "Failure" && !SECRETS.some((secret) => JSON.stringify(out.failure).includes(secret))
+      // A settings file that can't be removed fails typed.
+      if (input.file === "valid") {
+        try fs.remove(dir + "/session.json", { force: true })
+        try fs.makeDirectory(dir + "/session.json/inside", { recursive: true })
+        const blocked = try Effect.result(signOutSurface())
+        if (blocked._tag !== "Failure") return false
+      }
+      return true
+    }
+  }
+  })
+}

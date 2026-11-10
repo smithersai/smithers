@@ -34,6 +34,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0014 production fixes](decisions/0014-agent-tour.md#other-choices) | Tour docs and current narration stay in view; durable reading holds, paragraphs, keyboard control, inert background and control announcements |
 | [0015](decisions/0015-fuzzing.md) | Effect fork as `@smthrs/fuzz`, corpus, budgets, whole-app fuzz targets and independent coverage |
 | [0015 worker and view branches](decisions/0015-fuzzing.md#lane-vl-fuzz2-worker-and-view-branches-2026-11-09) | Lane vl-fuzz2: steered targets for the view, viewport, sequencer, action runs, conversation object, issues and wiki hosts |
+| [0015 surfaces, history and actions](decisions/0015-fuzzing.md#lane-vl-fuzz3-surfaces-history-and-actions-2026-11-10) | Lane vl-fuzz3: steered targets for the CLI, MCP and sign-in, the mythical history's sequencer and machines, and registered actions |
 | [0016](decisions/0016-coverage.md) | Boundary tests, prepared source coverage gates and recorded measurement limitations |
 | [0015 test-quality fixes](decisions/0015-fuzzing.md#test-quality-review-fixes-lane-vl-test-quality-2026-11-10) | Zero-execution gate, named oracles, clocks instead of sleeps, GitHub doubles that refuse (lane vl-test-quality) |
 | [0016 vl-coverage2](decisions/0016-coverage.md#lane-vl-coverage2-2026-11-09) | HTTP, browser factory, mock actions, mock factory, state machine and live wiki at their boundaries; the reload-mid-reply fix (lane vl-coverage2) |

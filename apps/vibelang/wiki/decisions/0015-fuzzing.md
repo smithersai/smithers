@@ -441,3 +441,149 @@ below was checked by breaking the code, seeing the test fail, and restoring it.
   time: their checks run inside the durable session host (`sessionOperation`, `waitForSignIn` on `NodeRuntime`), which
   does not read the test clock (a check due at test-clock 1000 polled at test-clock 0). Whether protocol doubles may
   answer happy paths waits for Will (review finding 3).
+
+## Lane vl-fuzz3: surfaces, history and actions, 2026-11-10
+
+A third fuzz lane drove fuzz-only branch coverage of every file under `src/surfaces/`, `src/history/` and
+`src/actions/`. The existing targets ran 0 to 6 executions in 5 seconds at host load 60 to 150 (`signin/device-flow`
+6, `surfaces/cli-arguments` 0), so most arms depended on what one random input picked. The new targets follow
+vl-fuzz2's steered form: each execution runs every scenario, and the fuzzer picks only values (texts, codes, logins,
+intervals, roles). Where a target crosses a process or a socket it uses the real boundary: the emitted CLI and MCP
+server, a scripted Factory and GitHub device flow on a loopback socket, the real durable session host, and the real
+action handler over SQLite run hosts. Unhappy paths are faulty Effect services (an `HttpClient`, a `Factory`, a
+history `Store`), never request interception.
+
+| Target | File | Exercises |
+| --- | --- | --- |
+| `surfaces/every-command` | `fuzz/surfaces-commands.node.fuzz.vibe` | all 20 commands, every execution, over the CLI's own mock backend, a mock without accounts, issues and wiki, and a backend that fails every call; a fresh mock that reads the stored session; a viewer after sign-out |
+| `surfaces/ask-correlation` | same | `ask` over a scripted event stream: its own post's reply only, the text after the last restart, why it failed or never finished |
+| `surfaces/live-backend` | `fuzz/surfaces-backend.node.fuzz.vibe` | the live backend's health probe and session cookie over a real socket: explicit, stored, foreign and missing sessions |
+| `surfaces/person-client` | same | an explicit session's cookie and origin reach only its own origin |
+| `surfaces/process-edges` | same | the emitted CLI's `--llms`, help, a refused flag, no subcommand, and the CLI and MCP server against a Factory nothing answers |
+| `signin/steered`, `signin/steered-waits`, `signin/steered-wait-refusals` | `fuzz/signin-steered.node.fuzz.vibe` | every sign-in and sign-out answer of the Factory and GitHub, slow-downs, stored sessions, waits, unwritable settings |
+| `signin/session-files`, `signin/unwritable-settings` | same | missing, corrupt and foreign settings files, an expired flow, the explicit `VIBELANG_SESSION`, a settings place that can't be found or cleared |
+| `actions/live-client`, `actions/live-faults` | `fuzz/actions-live.node.fuzz.vibe` | `LiveActions` against the real handler and run hosts; every verb over a transport that fails or answers any status and body |
+| `actions/mock-steered`, `actions/mock-factories`, `actions/mock-closed`, `actions/device-default` | `fuzz/actions-mock.node.fuzz.vibe` | every action scenario on the in-memory engine for the fuzzed role and a maintainer: slash commands, history writes, tours cancelled or ended, sandboxes, the selection proxy, the agent's tool bindings, faulty and unpoliced factories, a closed world, a host without the person's device |
+| `history/sequencer-operations`, `history/sequencer-corrupt-store` | `fuzz/history-sequencer.fuzz.vibe` | plans, approvals and folds with and without trailers, long and surrogate titles, a full history; a second sequencer and a follower over the same store; a corrupt store dies naming no stored text |
+| `history/machine-contracts`, `history/wire-paths`, `history/apply-any-event`, `history/decide-refusals` | `fuzz/history-machine.fuzz.vibe` | `flowMachine.vibe`'s contracts as runtime oracles; page paths read back as their page; any event applied (malformed ones only advance the number); refusals |
+| `history/seed-sentences`, `history/seed-buckets`, `history/seed-replay` | `fuzz/history-seed.fuzz.vibe` | notes cut at sentence ends; a merge's side commits bucketed with it; a seed's intents replayed |
+
+### A target's minimum budget
+
+`c3ff469d` made a target that runs no fresh execution fail (`NoExecution`), and `10b73c23` gave `run` a `minimum`
+budget for targets whose saved values take the deadline to replay. This lane's steered targets declare one: one replay
+of `surfaces/every-command` or `signin/steered` takes 10 to 30 seconds, so they declare 60 seconds (and a 300 s test
+timeout); `actions/live-client`, `actions/mock-steered` and `signin/session-files` declare 10 to 15 seconds. `pnpm fuzz`
+takes a few minutes longer.
+
+### Product findings fixed
+
+| Finding | Target | Fix and regression |
+| --- | --- | --- |
+| `sandbox-run`, `sandbox-stop` and `sandbox-start` refusals read "The message was refused: stopped": the copy `ask` uses | `surfaces/every-command` | The four sandbox commands say "The sandbox refused it: <refusal>" (`SANDBOX_REFUSED`). `test/commands.test.vibe` "says the sandbox refused a sandbox command, not a message" failed first; the target fails on the old copy. `bench/cli-text.bench.vibe`'s two expected sentences follow the new copy |
+| `logout` died with a defect when its private settings file could not be removed: the cleanup ran in an `ensuring` finalizer under `Effect.orDie`, so the CLI printed a stack instead of one sentence | `signin/session-files` | `signOutSurface` still tries the cleanup in the finalizer (so an interrupted sign-out forgets local state), then runs it again typed; a failure reaches `safeSettings` as "The sign-in settings couldn't be written." `test/signoutCleanup.test.vibe` (mock and live) failed first on `Cause.hasDies` |
+
+### Oracle and harness corrections (values kept in `fuzz/__fuzz__/`)
+
+| Finding | Kind | Resolution |
+| --- | --- | --- |
+| The live server answers an unknown flow `forbidden` to a non-maintainer; the mock answers `not-found` | oracle | The server checks the role before the catalog. Both are typed refusals and the catalog is public, so the target accepts either. Mock and live differ here |
+| Empty terminal output read as an unreadable answer | oracle | `ls` in a fresh sandbox prints nothing; only a refusal must be a sentence |
+| A backend without accounts was expected to run history actions | oracle | Its actor is a viewer; only a tour is a viewer's |
+| A tour action started while a reply ran failed | oracle | The conversation answers the tour `busy` (vl-fuzz2's deadlock fix); tours run before the post |
+| `apply` accepted an event numbered 2^53 on a full history | oracle | `replayEvent` keeps a full snapshot; `apply` only receives decoded events, and the wire refuses unsafe numbers |
+| A merge as the first commit | harness | A merge needs a main parent |
+| The target removed a settings file sign-out had already removed | harness | `force: true` |
+| A note of one space was expected to be written | oracle | It trims to empty and is refused `empty`; the target trims before its default |
+| A title of a tab was expected to plan | oracle | `"\t"` is truthy but trims to empty, and the plan is refused `empty`; the target trims before its default |
+| `"bad id!"` was expected to be refused as a conversation | oracle | Any nonempty id is one (the wire encodes it); `""` is the refused case |
+| Page 1 of a one-commit epic was expected to count its commits | oracle | Past an epic's end the page is empty |
+| A tour asked for after a post never settled | oracle | Whether the post's reply still runs is timing (a viewer's post run is accepted, its record refused): the tour is refused and settles, or begins and the target cancels it |
+
+### Not fixed: recorded for their owners
+
+- `trailerOf` (`src/history/Sequencer.vibe`) reads the first `Mythical: m<n>` line anywhere in a message, not the
+  trailer paragraph. A squash of two changes, or a body that quotes another commit's trailer, folds into the first one
+  named. 0020 says "the trailer"; which line wins is the mythical history's call.
+- `deferredActions` (`src/actions/agent.vibe`) has no caller outside its own test (`test/actionProxy.test.vibe`).
+  `actions/mock-steered` checks it answers what the service it selects answers; whether it is dead code is its owner's
+  call.
+- `api-objects/world` (vl-fuzzpkg) failed once in the full run at host load 110: "alarm did not return", its 300 ms
+  alarm bound. Its value was not committed.
+
+### What is left, and why
+
+2 lines and 20 branch arms in the three directories, listed by kind. None is excluded.
+
+- Race guards: `MockActions` 112 (a run cancelled before its fiber starts) and 117 (the owner changes between the
+  request and the run); `signin` 173 (the pending flow removed between the check and the poll).
+- Fallbacks of total functions no caller reaches: `mythical` 377, 411 and 562 (`taskOf`, `rankOf` and an insert's
+  rank, asked only about commits that exist: the 2 lines); `history/tools` 93 (the compiled end of an exhaustive
+  `match`); `catalog` 23 (`split("/").at(-1)` is never undefined); `seed` 444 (a seeded real commit into a commit the
+  seed lacks); `signin` 101 (a signed-in answer with no stored session).
+- Defensive arms: `backend` 61 (a live request to another origin: every live client asks its own origin, and
+  redirects are errors) and 83 (the CLI's mock always has accounts); `MockMythical` 78 and `schemas` 92 (decoders that
+  die before their callback); `commands` 351 (`--wait` on a run whose stream ends before its first state);
+  `LiveActions` 66 (an event the stream sends before its run exists).
+- `mcp` 36 and 38: the server's own interruption by a host signal, and a defect, not a failure, at start.
+  `test/support/processes.vibe` keeps a child's stdin open, so a client hanging up can't be simulated through it.
+- `flows` 248 and 257, `seed` 355: a fold the main log repeats, a second bootstrap, and a queue entry whose landed
+  title repeats. The mock never produces them; the History object's main log and the bootstrap's real queue do.
+- `MockActions` 33, 68 and 102: a policy that refuses after the role allowed, a person with no login running a
+  history action, and a guide whose event stream ends before the tour does.
+- `signin` 129: the durable poll itself failing (not GitHub's answer, which is a status).
+
+### Coverage (fuzz-only, `vitest --config fuzz.config.ts --coverage`, 5 s per target, Node and happy-dom)
+
+The full suite with coverage (`build:surfaces`, then every target at 5 seconds, host load 110 to 150), unioned
+measured at `4827dd9d` (before `d28aa766` removed `flowMachine.planAction` and other code the product never runs),
+with three reruns of steered targets after their last scenarios landed (`actions/live-client`, the sign-in targets,
+`surfaces/every-command`). Lines are statement start lines, as in vl-fuzz2's table. 25 of 36 files are at 100% of lines and branches.
+
+| File | Lines | Branches | Before this lane |
+| --- | ---: | ---: | --- |
+| `src/actions/MockActions.vibe` | 114/114 | 81/85 | 88/114, 46/85 |
+| `src/history/mythical.vibe` | 139/141 | 190/191 | 137/141, 173/191 |
+| `src/history/flows.vibe` | 105/105 | 11/14 | 105/105, 11/14 |
+| `src/surfaces/signin.vibe` | 115/115 | 106/108 | 59/112, 53/106 |
+| `src/surfaces/mcp.vibe` | 17/17 | 2/4 | 14/17, 0/4 |
+| `src/surfaces/backend.vibe` | 45/45 | 31/33 | 22/45, 7/33 |
+| `src/history/seed.vibe` | 171/171 | 100/102 | 170/171, 98/104 |
+| `src/surfaces/commands.vibe` | 171/171 | 111/112 | 123/170, 49/112 |
+| `src/history/tools.vibe` | 29/29 | 46/47 | 29/29, 46/47 |
+| `src/actions/catalog.vibe` | 9/9 | 27/28 | 9/9, 27/28 |
+| `src/actions/LiveActions.vibe` | 43/43 | 20/21 | 20/43, 9/21 |
+| `src/surfaces/sessionFlow.vibe` | 40/40 | 2/2 | 29/40, 2/2 |
+| `src/surfaces/session.vibe` | 63/63 | 24/24 | 56/63, 16/24 |
+| `src/surfaces/mcp-entry.vibe` | 6/6 | 0/0 | 100% |
+| `src/surfaces/manifest.vibe` | 4/4 | 0/0 | 100% |
+| `src/surfaces/commandDecision.vibe` | 22/22 | 64/64 | 15/22, 41/64 |
+| `src/surfaces/cli.vibe` | 16/16 | 10/10 | 15/16, 8/10 |
+| `src/surfaces/cli-entry.vibe` | 8/8 | 2/2 | 100% |
+| `src/history/wire.vibe` | 35/35 | 35/35 | 34/35, 31/35 |
+| `src/history/stackDecision.vibe` | 15/15 | 25/25 | 10/15, 15/25 |
+| `src/history/seed/vibelang.vibe` | 2/2 | 0/0 | 100% |
+| `src/history/schemas.vibe` | 32/32 | 0/0 | 100% |
+| `src/history/roles.vibe` | 6/6 | 0/0 | 100% |
+| `src/history/pages.vibe` | 36/36 | 30/30 | 100% |
+| `src/history/pageDecision.vibe` | 5/5 | 8/8 | 100% |
+| `src/history/flowMachine.vibe` | 51/51 | 93/93 | 45/51, 67/93 |
+| `src/history/Sequencer.vibe` | 94/94 | 36/36 | 83/94, 25/36 |
+| `src/history/MythicalHistory.vibe` | 2/2 | 2/2 | 100% |
+| `src/history/MockMythical.vibe` | 35/35 | 5/5 | 100% |
+| `src/history/LiveMythical.vibe` | 41/41 | 12/12 | 100% |
+| `src/actions/wire.vibe` | 6/6 | 0/0 | 100% |
+| `src/actions/tools.vibe` | 13/13 | 1/1 | 10/13, 0/1 |
+| `src/actions/execution.vibe` | 38/38 | 36/36 | 25/38, 26/36 |
+| `src/actions/catalogDecision.vibe` | 3/3 | 12/12 | 100% |
+| `src/actions/agent.vibe` | 11/11 | 0/0 | 5/11, 0/0 |
+| `src/actions/Actions.vibe` | 4/4 | 0/0 | 100% |
+| **36 files** | **1546/1548** | **1122/1142** | 1293/1544, 821/1142 |
+
+### Mutation checks
+
+Each mutant changed one line, ran one target, and was restored: a session cookie sent to any origin
+(`surfaces/live-backend`), a cancel that never settles (`actions/mock-steered`), a fold title cut inside a surrogate
+pair (`history/sequencer-operations`), a live failure code replaced by `unavailable` (`actions/live-faults`), a search
+query read from the wrong parameter (`history/wire-paths`), and GitHub's slow-down interval ignored
+(`signin/steered`, after steering its interval above five seconds). Each target failed.

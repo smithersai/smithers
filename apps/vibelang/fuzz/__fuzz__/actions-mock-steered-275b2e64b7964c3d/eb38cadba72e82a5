@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 32
+bias 4
+null-prototype false
+key 1882183106
+tape WGlbgw1dDBZWEplkTXV7ch8GxX7_d0_7Wn1CU0Q2VZBesG0yX-hHirB6Pb-Sw5-3MosoVPWK7FNGQ11f12jrRHenD7p2QsvmsLK-AnZVY_hu9K8vo9NUlE5vjIPgLDXIY1Gf08YMyI3RerGQJzAcX-KDdE1evjmBu5sSWDdZCmpAmO6FxAxvXsNyQ65EotGyojResFO5MzvdMgsdpw3Fgg
+schedule-key 3638507498
+schedule 
+signature "PropertyError:TimeoutError"
+path 0.0.0
+codec "json"
+value "{\"role\":\"community\",\"text\":\"\",\"title\":\"\",\"actor\":\"person\",\"json\":false}"
+# PropertyError:TimeoutError
+# {"role":"community","text":"","title":"","actor":"person","json":false}
