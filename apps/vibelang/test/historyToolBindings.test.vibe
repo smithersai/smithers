@@ -1,0 +1,42 @@
+// The agent reaches the real offline history through the same binding catalog and stable call identities used live.
+import { expect, it } from "@effect/vitest"
+import { Cell, FlowBinding } from "@smthrs/harness"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { empty } from "../src/history/mythical.vibe"
+import { historyTools } from "../worker/HistoryTools.vibe"
+
+it.live("plans, starts, notes and reads through actual bindings, replaying a cell without a second mutation", () => effect {
+  provide MockMythical({ role: "contributor", name: "Ada", agent: true }, () => succeed(empty)) {
+    const history = try Mythical
+    const catalog = try FlowBinding.catalog([historyTools(history)])
+    effect function call(name: string, input: Schema.Json, ordinal: number) {
+      const binding = catalog.bindings.get(name)!
+      const request = try Effect.try(() => new Cell.Call({ flowName: name, input, capabilities: [],
+        effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" }, placement: Option.none(),
+        identity: new Cell.CallIdentity({ session: "history-bindings", frame: 0, cell: "plan", ordinal, declaration: Cell.declarationDigest(binding.descriptor), layers: [] }),
+      }))
+      return try binding.run(request)
+    }
+    const input = { how: "append", epic: "", newEpic: "Coverage", target: "", title: "Agent plan", task: "Use the real history" }
+    const planned = try call("vibelang/history/Plan", input, 0)
+    const replayed = try call("vibelang/history/Plan", input, 0)
+    const started = try call("vibelang/history/Start", { id: "m1", lane: "coverage" }, 1)
+    const noted = try call("vibelang/history/Note", { id: "m1", section: "evidence", text: "Observed at the public binding" }, 2)
+    const noteReplay = try call("vibelang/history/Note", { id: "m1", section: "evidence", text: "Observed at the public binding" }, 2)
+    const shown = try call("vibelang/history/show", { what: "commit", id: "m1" }, 3)
+    const actual = try history.commit("m1")
+    const outline = try history.outline()
+    try Effect.try(() => {
+      for (const result of [planned, replayed, started, noted, noteReplay, shown]) expect(result.outcome).toBe("success")
+      expect(planned.value).toEqual({ id: "m1", refusal: null })
+      expect(replayed.value).toEqual(planned.value)
+      expect(started.value).toEqual({ id: "m1", refusal: null })
+      expect(noted.value).toEqual({ id: "m1", refusal: null })
+      expect(noteReplay.value).toEqual(noted.value)
+      expect(shown.value).toMatchObject({ commit: { id: "m1", state: "working", lane: "coverage" } })
+      expect(actual.commit?.notes).toEqual([{ section: "evidence", text: "Observed at the public binding", by: "Ada (agent)" }])
+      expect(outline.epics).toHaveLength(1)
+    })
+  }
+}, 30_000)

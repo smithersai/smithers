@@ -1,7 +1,7 @@
 # apps/vibelang
 
 vibelang.smithers.sh, the VibeLang factory. Read [the wiki](wiki/index.md) first: [Will's rulings](wiki/rulings.md)
-(VL-1 to VL-26) are the source of truth for this app, and every decision lands in `wiki/decisions/` in the same change
+(VL-1 to VL-33) are the source of truth for this app, and every decision lands in `wiki/decisions/` in the same change
 as its code (VL-23).
 
 ## Rules
@@ -36,7 +36,7 @@ pnpm test           # properties, integration, scenes, surfaces (mock backend)
 pnpm test:workerd   # the API Worker's Durable Objects in local workerd, through LiveFactory, the protocol and the CLI
 pnpm agent-context  # regenerate worker/agentContext.vibe after a VibeLang upgrade
 pnpm e2e            # browser tests against the built app (dark, light, phone), on the mock
-pnpm exec alchemy dev --stage dev   # site + API Worker locally at http://localhost:1337 (NODE_OPTIONS=--import=vibelang/register)
+pnpm wiki:build && pnpm exec alchemy dev --stage dev   # site + API Worker locally at http://localhost:1337 (NODE_OPTIONS=--import=vibelang/register)
 E2E_LIVE_URL=http://localhost:1337 pnpm exec playwright test e2e/live.spec.ts   # the live agent in a browser
 pnpm run deploy     # Alchemy, with Cloudflare credentials, VIBELANG_DOMAIN and the model's key set (0010)
 E2E_BASE_URL=https://vibelang.smithers.sh pnpm e2e   # the same tests against the deployment

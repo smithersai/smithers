@@ -1,0 +1,90 @@
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
+import { it } from "@effect/vitest"
+import { Fuzz } from "@smthrs/fuzz"
+import * as Reply from "../worker/Reply.vibe"
+import { chunks, mockReply } from "../src/core/mockReplies.vibe"
+import { DOCS_ORIGIN, docsPage, endsTour, replyIdOf } from "../src/core/flows.vibe"
+import { EventSchema } from "../src/core/schemas.vibe"
+import { run, same, Text, TextOrBoundary, Int } from "./run.vibe"
+
+const Code = Schema.Union([Text, Schema.Literals(["content_policy", "out_of_credit", "quota_exceeded", "rate_limited", "unavailable"])])
+
+it.live("reply/reasons", () => run("reply/reasons", Code, (code) => {
+  const expected = code === "content_policy" ? Reply.REASONS.refused : code === "out_of_credit" || code === "quota_exceeded" ? Reply.REASONS.credit : Reply.REASONS.unavailable
+  const reason = Reply.reasonOf({ code })
+  return reason === expected
+}))
+
+it.live("reply/failure-tags", () => run("reply/failure-tags", Schema.Union([
+  Schema.Unknown, Schema.Struct({ _tag: Schema.Unknown }),
+  Schema.Struct({ _tag: Schema.Struct({ toString: Schema.Int }) }),
+]), (value) => typeof Reply.tagOf(value) === "string"))
+
+it.live("reply/failure-reasons", () => run("reply/failure-reasons", Schema.Struct({ tag: Schema.Union([Text, Schema.Literals(["@smthrs/agent/Seat/SeatUnresolved", "x/StructuredOutputFailure"])]), code: Code, failed: Schema.Boolean }), ({ tag, code, failed }) => {
+  const progress = { ...Reply.started, failed: failed ? code : undefined }
+  const expected = tag === "@smthrs/agent/Seat/SeatUnresolved" ? Reply.REASONS.unconfigured : tag.endsWith("StructuredOutputFailure") ? Reply.REASONS.empty : failed ? Reply.reasonOf({ code }) : Reply.REASONS.failed
+  return Reply.failureReason(tag, progress) === expected
+}))
+
+it.live("reply/prompt", () => run("reply/prompt", Schema.Array(Schema.Struct({ author: Schema.Literals(["person", "agent"]), text: Text })).check(Schema.isMaxLength(30)), (turns) => {
+  const output = Reply.promptOf({ turns })
+  const tail = turns.slice(-Reply.MAX_TURNS)
+  if (tail.length === 0) return output === ""
+  if (tail.length === 1) return output === tail[0]!.text
+  return output.endsWith(`The person now asks: ${tail.at(-1)!.text}`) && tail.slice(0, -1).every((turn) => output.includes(`${turn.author === "person" ? "Person" : "VibeLang agent"}: ${turn.text}`))
+}))
+
+it.live("reply/mock-script", () => run("reply/mock-script", TextOrBoundary, (text) => {
+  const answer = mockReply(text)
+  return answer.length > 0 && chunks(answer).join("") === answer && chunks(text).join("") === text && WALKTHROUGH.length === 10
+}))
+
+it.live("tour/pages-and-identity", () => run("tour/pages-and-identity", Schema.Struct({ path: TextOrBoundary, event: EventSchema }), ({ path, event }) => effect {
+  const page = docsPage(path)
+  try Fuzz.observe(page === undefined ? "refused" : "opened")
+  if (page !== undefined && (!page.startsWith(DOCS_ORIGIN + "/") || path.includes("//") || /[^a-z0-9/\-]/.test(path))) return false
+  const expected = ["TourEnded", "ReplyFinished", "ReplyFailed"].includes(event.type)
+  return endsTour(event, event.id) === expected && !endsTour(event, event.id + "other") && replyIdOf("m123") === "r123"
+}))
+
+import { AgentEvent } from "@smthrs/harness"
+
+it.live("reply/event-progress", () => run("reply/event-progress", Schema.Array(AgentEvent.AgentEvent).check(Schema.isMaxLength(30)), (events) => effect {
+  let progress = Reply.started
+  let tokens = 0
+  let lastFailure: string | undefined
+  let usageValid = true
+  for (const event of events) {
+    const previous = progress
+    progress = Reply.fold(progress, event)
+    if (event._tag === "model-settled") {
+      const input = event.usage.inputTokens ?? 0
+      const output = event.usage.outputTokens ?? 0
+      if (Number.isSafeInteger(input) && input >= 0 && Number.isSafeInteger(output) && output >= 0) {
+        // Independent unbounded arithmetic checks the native safe-sum boundary.
+        const sum = try Effect.try(() => BigInt(tokens) + BigInt(input) + BigInt(output))
+        if (sum <= 9007199254740991n) tokens = Number(sum)
+        else usageValid = false
+      } else usageValid = false
+    }
+    if (event._tag === "model-failed") lastFailure = event.code
+    if ((event._tag === "model-requested" || event._tag === "model-retried") && (progress.reply !== "" || progress.text !== previous.text)) return false
+    if (progress.tokens !== tokens || progress.failed !== lastFailure || progress.usageValid !== usageValid) return false
+  }
+  return typeof progress.text === "string" && typeof progress.reply === "string"
+}))
+
+it.live("reply/streamed-answer", () => run("reply/streamed-answer", Schema.Struct({ text: Text, split: Int }), ({ text, split }) => {
+  const source = "```cell\nctx.done(" + JSON.stringify(text) + ")\n```"
+  const parts = Array.from({ length: Math.ceil(source.length / (split + 1)) }, (_, at) => source.slice(at * (split + 1), (at + 1) * (split + 1)))
+  const events = parts.map((part) => new AgentEvent.ModelDelta({ eventType: "flows.harness.model-delta.v1", delta: { type: "text-delta", id: "fuzz", text: part } }))
+  const result = events.reduce(Reply.fold, Reply.started)
+  return result.text === text && result.reply === source
+}))
+
+it.live("reply/hostile-failure-tags", () => run("reply/hostile-failure-tags", Schema.Struct({ tag: Schema.Union([Schema.String, Schema.Int, Schema.Null, Schema.Boolean]), hostile: Schema.Boolean }), ({ tag, hostile }) => {
+  const revocable = Proxy.revocable({}, {})
+  if (hostile) revocable.revoke()
+  const failure = hostile ? revocable.proxy : { _tag: tag }
+  return Reply.tagOf(failure) === (hostile || typeof tag !== "string" ? "defect" : tag)
+}))

@@ -1,0 +1,48 @@
+import { it } from "@effect/vitest"
+import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { handle, afterOf, eventStream, type Conversations, type Histories } from "../worker/Http.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { MAX_POST_BYTES, MAX_NAME, PostBody } from "../src/core/wire.vibe"
+import { run, Int, TextOrBoundary } from "./run.vibe"
+
+it.live("http/requests-and-faults", () => run("http/requests-and-faults", Schema.Struct({ kind: Int, text: TextOrBoundary, id: Int, fault: Schema.Boolean, length: Schema.Literals(["0", "-1", "NaN", "1000000"]) }), ({ kind, text, id, fault, length }) => effect {
+  provide MockFactory {
+    const factory = try Factory
+    const failed = new Unreachable({ what: "conversation" })
+    const conversations: Conversations = {
+      openWiki: (room, page) => fault ? Effect.fail(failed) : Effect.match(factory.openWiki(room, page), { onSuccess: () => null, onFailure: (error) => error._tag === "Refused" ? error.refusal : "unavailable" }),
+      post: (room, body) => fault ? Effect.fail(failed) : Effect.catch(Effect.as(factory.post(room, body.clientId, body.name, body.text), null), (error) => error._tag === "Refused" ? succeed(error.refusal) : Effect.fail(failed)),
+      read: (room, after) => fault ? Effect.fail(failed) : Effect.orDie(factory.read(room, after)),
+      tour: (room) => fault ? Effect.fail(failed) : Effect.match(factory.tour(room), { onSuccess: () => null, onFailure: (error) => error._tag === "Refused" ? error.refusal : "unavailable" }),
+      endTour: (room) => fault ? Effect.fail(failed) : Effect.match(factory.endTour(room), { onSuccess: () => null, onFailure: (error) => error._tag === "Refused" ? error.refusal : "unavailable" }),
+      events: (room) => fault ? Effect.fail(failed) : succeed(eventStream(factory.events(room, 0).pipe(Stream.orDie))),
+    }
+    const histories: Histories = { page: () => Effect.fail(new Unreachable({ what: "history" })), write: () => Effect.fail(new Unreachable({ what: "history" })), events: () => Effect.fail(new Unreachable({ what: "history" })) }
+    let route = `/api/conversations/http-${id}`
+    let method: "GET" | "POST" | "DELETE" = "GET"
+    let body = ""
+    let expected: ReadonlyArray<number>
+    switch (kind % 10) {
+      case 0: route = "/api/health"; expected = [200]; break
+      case 1: route = "/missing"; expected = [404]; break
+      case 2: route += "/posts"; method = "POST"; body = JSON.stringify({ clientId: `c${id}`, name: "Guest", text }); expected = !Schema.is(PostBody)({ clientId: `c${id}`, name: "Guest", text }) ? [400] : fault ? [503] : [200, 409]; break
+      case 3: route += "/posts"; method = "POST"; body = "{"; expected = [400]; break
+      case 4: route += "/posts"; method = "POST"; body = JSON.stringify({ clientId: `c${id}`, name: "x".repeat(MAX_NAME + 1), text }); expected = [400]; break
+      case 5: route += "/tour"; method = "POST"; expected = fault ? [503] : [200]; break
+      case 6: route += "/tour"; method = "DELETE"; expected = fault ? [503] : [409]; break
+      case 7: route += "?after=01"; expected = [400]; break
+      case 8: route = "/api/history"; expected = [503]; break
+      default: expected = fault ? [503] : [200]
+    }
+    let input = HttpClientRequest.make(method)("http://fuzz.test" + route)
+    if (method === "POST") input = HttpClientRequest.bodyText(input, body)
+    const web = try HttpClientRequest.toWeb(input)
+    const request = HttpServerRequest.fromWeb(web)
+    const response = try Effect.provideService(handle(conversations, histories), HttpServerRequest.HttpServerRequest, request)
+    if (!expected.includes(response.status)) return false
+    const output = try promise(() => HttpServerResponse.toWeb(response).json())
+    return typeof output === "object" && output !== null && afterOf(new URL("http://fuzz.test/?after=" + id)) === id
+  }
+}))

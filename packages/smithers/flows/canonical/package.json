@@ -56,6 +56,11 @@
       "types": "./src/Serializer.ts",
       "vibelang-source": "./src/Serializer.ts",
       "default": "./.vibelang/js/src/Serializer.js"
+    },
+    "./sortCollections": {
+      "types": "./src/sortCollections.ts",
+      "vibelang-source": "./src/sortCollections.ts",
+      "default": "./.vibelang/js/src/sortCollections.js"
     }
   },
   "files": [
@@ -155,6 +160,16 @@
         "require": {
           "types": "./dist/cjs/Serializer.d.ts",
           "default": "./dist/cjs/Serializer.js"
+        }
+      },
+      "./sortCollections": {
+        "import": {
+          "types": "./dist/esm/sortCollections.d.ts",
+          "default": "./dist/esm/sortCollections.js"
+        },
+        "require": {
+          "types": "./dist/cjs/sortCollections.d.ts",
+          "default": "./dist/cjs/sortCollections.js"
         }
       }
     }

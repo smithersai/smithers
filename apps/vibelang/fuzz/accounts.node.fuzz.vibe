@@ -1,0 +1,243 @@
+import { it } from "@effect/vitest"
+import { HttpClient, HttpClientError, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { GitHub } from "@smthrs/integrations"
+import type * as Objects from "../worker/Objects.vibe"
+import * as Accounts from "../worker/Accounts.vibe"
+import { run, Text } from "./run.vibe"
+
+const PersonId = Schema.Literals(["1", "2", "3"])
+const Op = Schema.Struct({
+  kind: Schema.Literals(["session", "sign-in", "callback", "sign-out", "grant", "members", "unknown", "events"]),
+  person: PersonId,
+  role: Schema.Literals(["new", "community", "contributor", "maintainer"]),
+  target: PersonId,
+  tamper: Schema.Boolean,
+  exchangeFails: Schema.Boolean,
+  text: Text,
+})
+const Input = Schema.Array(Op).check(Schema.isMaxLength(16))
+
+const offlineClient = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request }) })))
+let failExchange = false
+let userPerson = "1"
+const refused = new GitHub.Auth.GitHubRefused({ step: "exchange", reason: "unavailable" })
+const setup = (login: string) => ({
+  origin: "https://fuzz.invalid",
+  initialMaintainer: "1",
+  clientId: "fixture-client-id",
+  signingSecret: Redacted.make("signing-secret-for-the-fuzz-target-32"),
+  encryptionKey: Redacted.make("ZnV6ei1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcy0wMDA="),
+  github: {
+    authorizeUrl: ({ state }: { readonly state: string }) => `https://github.invalid/authorize?state=${state}`,
+    exchange: () => failExchange ? fail(refused) : succeed({ accessToken: Redacted.make("token"), expiresAt: null, refreshToken: null }),
+    refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "unavailable" })),
+    user: () => succeed({ id: Number(userPerson), login }),
+    permission: () => succeed("read" as const),
+    revoke: () => Effect.void,
+  } as never,
+})
+
+interface Jar { readonly cookies: ReadonlyMap<string, string> }
+
+type AccountsApi = Effect.Success<ReturnType<typeof Accounts.make>>
+
+interface Jar { readonly cookies: ReadonlyMap<string, string> }
+
+effect function ask(accounts: AccountsApi, jar: Jar, method: "GET" | "POST", path: string, body?: string, stream?: boolean, origin?: string, absolute?: string) {
+  let input = HttpClientRequest.make(method)(absolute ?? `https://fuzz.invalid${path}`)
+  input = HttpClientRequest.setHeader(input, "origin", origin ?? "https://fuzz.invalid")
+  if (jar.cookies.size > 0) input = HttpClientRequest.setHeader(input, "cookie", [...jar.cookies].map(([name, value]) => `${name}=${value}`).join("; "))
+  if (body !== undefined) input = HttpClientRequest.bodyText(input, body)
+  const web = try HttpClientRequest.toWeb(input)
+  const request = HttpServerRequest.fromWeb(web)
+  const response = try Effect.provideService(accounts.fetch, HttpServerRequest.HttpServerRequest, request)
+  const webResponse = HttpServerResponse.toWeb(response)
+  const next = new Map(jar.cookies)
+  for (const cookie of webResponse.headers.getSetCookie()) {
+    const pair = cookie.split(";")[0]!
+    const at = pair.indexOf("=")
+    const value = pair.slice(at + 1)
+    if (value === "") next.delete(pair.slice(0, at))
+    else next.set(pair.slice(0, at), value)
+  }
+  return { status: response.status, jar: { cookies: next }, text: stream === true ? "" : try promise(() => webResponse.text()) }
+}
+
+/** The accounts object over real storage and a canned GitHub: sessions, grants, and every refusal stay typed. */
+it.live("accounts/worker-sign-in-sequences", () => run("accounts/worker-sign-in-sequences", Input, (ops) => effect {
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  const storage = raw as unknown as Objects.Storage
+  userPerson = "1"
+  failExchange = false
+  const offline = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request }) })))
+  const accounts = try Effect.provideService(Accounts.make("accounts-fuzz", storage, setup("Fuzz User")), HttpClient.HttpClient, offline)
+  let jar: Jar = { cookies: new Map() }
+  let signedIn: string | undefined
+  let maintainer = false
+  for (const op of ops) {
+    userPerson = op.person
+    failExchange = op.exchangeFails
+    const asking = op.tamper && op.kind !== "callback" ? { cookies: new Map([["__Host-vibelang-session", "bogus"]]) } : jar
+    const answer = op.kind === "callback" ? try callback(accounts, jar, storage, op) : try ask(accounts, asking, op.kind === "sign-out" || op.kind === "grant" ? "POST" : "GET", op.kind === "sign-in" ? "/api/auth/sign-in" : op.kind === "sign-out" ? "/api/auth/sign-out" : op.kind === "grant" ? "/api/roles" : op.kind === "members" ? "/api/roles" : op.kind === "events" ? "/api/roles/events?after=0" : op.kind === "session" ? "/api/auth/session" : `/api/missing-${op.person}`, op.kind === "grant" ? JSON.stringify({ id: op.target, role: op.role }) : undefined, op.kind === "events")
+    if (![200, 204, 302, 400, 401, 403, 404, 405, 408, 413, 503].includes(answer.status)) return false
+    if (!(op.tamper && op.kind !== "callback")) jar = answer.jar
+    if (op.kind === "callback" && answer.status === 302 && !op.tamper && !op.exchangeFails) {
+      signedIn = op.person
+      maintainer = op.person === "1"
+    }
+    if (op.kind === "sign-out" && answer.status === 204 && !op.tamper) {
+      signedIn = undefined
+      maintainer = false
+    }
+    if (op.kind === "session" && answer.status === 200) {
+      const body = try Effect.try(() => JSON.parse(answer.text))
+      if (op.tamper || signedIn === undefined) { if (body.id !== "") return false } else if (body.id !== signedIn) return false
+    }
+    if (op.kind === "members" && !op.tamper) {
+      if (answer.status === 200 && signedIn === undefined) return false
+      if (answer.status === 200 && !Array.isArray(try Effect.try(() => JSON.parse(answer.text)))) return false
+    }
+    if (op.kind === "grant" && answer.status === 200 && !op.tamper && (!maintainer && signedIn !== op.target)) return false
+    if (op.kind === "grant" && answer.status === 200 && !op.tamper && signedIn === "1" && maintainer && op.target === "1") maintainer = op.role === "maintainer"
+  }
+  return true
+}))
+
+effect function callback(accounts: AccountsApi, jar: Jar, storage: Objects.Storage, op: { readonly tamper: boolean }) {
+  const stored = try promise(() => storage.list({ prefix: "sign-in/" }))
+  const found = [...stored.keys()].map((key) => key.slice("sign-in/".length))
+  const state = found[found.length - 1]
+  return state === undefined || op.tamper
+    ? try ask(accounts, jar, "GET", "/api/auth/callback?state=tampered&code=x")
+    : try ask(accounts, jar, "GET", `/api/auth/callback?state=${state}&code=code`)
+}
+
+const Lifecycle = Schema.Struct({
+  person: Schema.Literals(["1", "2"]),
+  grant: Schema.Literals(["new", "community", "contributor", "maintainer"]),
+  target: Schema.Literals(["1", "2"]),
+  resume: Schema.Boolean,
+  badOrigin: Schema.Boolean,
+  badMethod: Schema.Boolean,
+  resumeGarbage: Schema.Boolean,
+  badGithubId: Schema.Boolean,
+  connectSignedOut: Schema.Boolean,
+  grantGarbage: Schema.Boolean,
+  grantOversized: Schema.Boolean,
+  crossOrigin: Schema.Boolean,
+  text: Text,
+})
+
+/** The documented lifecycle always works: sign-in, session, members, grants, the event stream, connect and sign-out. */
+it.live("accounts/worker-lifecycle", () => run("accounts/worker-lifecycle", Lifecycle, (input) => effect {
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  const storage = raw as unknown as Objects.Storage
+  userPerson = input.person
+  failExchange = false
+  const offline = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request }) })))
+  const accounts = try Effect.provideService(Accounts.make("accounts-life", storage, setup("Fuzz User")), HttpClient.HttpClient, offline)
+  let jar: Jar = { cookies: new Map() }
+  if (input.crossOrigin) {
+    const wrongHeader = try ask(accounts, jar, "POST", "/api/auth/sign-out", undefined, undefined, "https://evil.invalid")
+    // Serving is host-tolerant by design: loopback and proxy hosts reach the configured origin's object.
+    // An absolute URL naming another host reads the same signed-out session; writes bind the Origin header.
+    const wrongUrl = try ask(accounts, jar, "GET", "/api/auth/session", undefined, undefined, undefined, "https://evil.invalid/api/auth/session")
+    if (wrongHeader.status !== 403) return false
+    const named = try Effect.try(() => JSON.parse(wrongUrl.text))
+    if (wrongUrl.status !== 200 || named.id !== "") return false
+  }
+  const step = (method: "GET" | "POST", path: string, body?: string, stream?: boolean, origin?: string) => effect {
+    const answer = try ask(accounts, jar, method, path, body, stream, origin)
+    if (origin === undefined) jar = answer.jar
+    return answer
+  }
+  const callbackStep = (tamper: boolean) => effect {
+    const stored = try promise(() => storage.list({ prefix: "sign-in/" }))
+    const found = [...stored.keys()].map((key) => key.slice("sign-in/".length))
+    const state = found[found.length - 1]
+    const answer = try ask(accounts, jar, "GET", state === undefined || tamper ? "/api/auth/callback?state=tampered&code=x" : `/api/auth/callback?state=${state}&code=code`)
+    jar = answer.jar
+    return answer
+  }
+
+  if (input.connectSignedOut) {
+    const connect = try step("POST", "/api/auth/connect")
+    if (connect.status !== 401) return false
+  }
+  const signIn = try step("GET", input.resumeGarbage ? "/api/auth/sign-in?resume-op=commit" : input.resume ? "/api/auth/sign-in?resume-op=commit&resume-key=abc&resume-recovery=rec-1" : "/api/auth/sign-in")
+  if (signIn.status !== 302) return false
+  const callback = try callbackStep(false)
+  if (callback.status !== 302) return false
+  const session = try step("GET", "/api/auth/session")
+  const me = try Effect.try(() => JSON.parse(session.text))
+  if (session.status !== 200 || me.id !== input.person) return false
+  const expectedRole = input.person === "1" ? "maintainer" : "new"
+  if (me.role !== expectedRole) return false
+  const members = try step("GET", "/api/roles")
+  if (members.status !== 200 || !Array.isArray(try Effect.try(() => JSON.parse(members.text)))) return false
+  const events = try step("GET", "/api/roles/events?after=0", undefined, true)
+  if (events.status !== 200) return false
+  if (input.badOrigin) {
+    const evil = try ask(accounts, jar, "POST", "/api/roles", JSON.stringify({ id: "2", role: "maintainer" }), undefined, "https://evil.invalid")
+    if (evil.status !== 403) return false
+  }
+  if (input.badMethod) {
+    const wrong = try step("POST", "/api/auth/session")
+    if (wrong.status !== 404 && wrong.status !== 405) return false
+  }
+  if (input.grantGarbage) {
+    const garbage = try step("POST", "/api/roles", "{not json")
+    if (garbage.status !== 400) return false
+  }
+  if (input.grantOversized) {
+    const big = try step("POST", "/api/roles", JSON.stringify({ id: "2", role: "new", pad: "x".repeat(4096) }))
+    if (big.status !== 413) return false
+  }
+  const grant = try step("POST", "/api/roles", JSON.stringify({ id: input.target, role: input.grant }))
+  const selfDemotion = input.person === "1" && input.target === "1" && input.grant !== "maintainer"
+  if (input.person === "1" && grant.status !== (selfDemotion ? 403 : 200)) return false
+  if (input.person === "2" && input.target !== "2" && grant.status === 200) return false
+  if ((try step("POST", "/api/auth/connect")).status !== 503) return false
+  const signOut = try step("POST", "/api/auth/sign-out")
+  if (signOut.status !== 204) return false
+  const after = try step("GET", "/api/auth/session")
+  const out = try Effect.try(() => JSON.parse(after.text))
+  return out.id === ""
+}))
+
+/** The unconfigured host refuses politely; the exposed role, policy and participation surfaces answer typed. */
+it.live("accounts/worker-surface", () => run("accounts/worker-surface", Schema.Struct({ person: Schema.Literals(["1", "2"]), path: Schema.Literals(["/api/auth/session", "/api/auth/sign-in", "/missing"]) }), (input) => effect {
+  provide Layer.succeed(HttpClient.HttpClient, offlineClient) {
+  const missing = try Accounts.configured()
+  if (missing !== undefined) return false
+  const request = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(HttpClientRequest.make("GET")(`https://fuzz.invalid${input.path}`)))
+  const off = try Effect.provideService(Accounts.disabled(), HttpServerRequest.HttpServerRequest, request)
+  if (input.path === "/api/auth/session") {
+    const offText = try promise(() => HttpServerResponse.toWeb(off).text())
+    const body = try Effect.try(() => JSON.parse(offText))
+    if (off.status !== 200 || body.available !== false || body.id !== "") return false
+  } else if (off.status !== 503) return false
+
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  const storage = raw as unknown as Objects.Storage
+  userPerson = input.person
+  failExchange = false
+  const accounts = try Effect.provideService(Accounts.make("accounts-surface", storage, setup("Fuzz User")), HttpClient.HttpClient, offlineClient)
+  if ((try accounts.role("1")) !== "maintainer") return false
+  if ((try accounts.allowed("1", "merge")) !== true || (try accounts.allowed("", "people")) !== false) return false
+  try accounts.participation(undefined)
+  let jar: Jar = { cookies: new Map() }
+  const signIn = try ask(accounts, jar, "GET", "/api/auth/sign-in")
+  jar = signIn.jar
+  const stored = try promise(() => storage.list({ prefix: "sign-in/" }))
+  const state = [...stored.keys()].map((key) => key.slice("sign-in/".length))[0]!
+  const callback = try ask(accounts, jar, "GET", `/api/auth/callback?state=${state}&code=code`)
+  jar = callback.jar
+  const cookie = jar.cookies.get("__Host-vibelang-session") ?? ""
+  try accounts.participation(cookie)
+  const session = try ask(accounts, jar, "GET", "/api/auth/session")
+  const me = try Effect.try(() => JSON.parse(session.text))
+  return me.id === input.person && me.role === (input.person === "1" ? "maintainer" : "community")
+  }
+}))

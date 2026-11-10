@@ -42,6 +42,19 @@ const Parent = Flow.make("child/parent", {
   body: ({ value }) => Child.child({ value }).pipe(Node.map((settled) => settled * 10))
 })
 
+/** VIP-44: a child whose payload holds a set. */
+const Tagged = Flow.make("child/tagged", {
+  payload: { tags: Schema.ReadonlySet(Schema.String) },
+  success: Schema.Number,
+  body: ({ tags }) => Bump.call({ value: tags.size })
+})
+
+const TagParent = Flow.make("child/tag-parent", {
+  payload: { reversed: Schema.Boolean },
+  success: Schema.Number,
+  body: ({ reversed }) => Tagged.child({ tags: new Set(reversed ? ["b", "a"] : ["a", "b"]) })
+})
+
 /** The node id the boundary in `Parent`'s body is recorded under. */
 const boundaryNode = "root.flow.map"
 
@@ -336,6 +349,30 @@ describe("the interpreter drives a child boundary as a real execution", () => {
       )
 
       expect(value).toBe(3)
+    }))
+
+  // Known broken (TEST-5): `@smthrs/plan` JSON-mirrors an authored `.child()` payload and refuses a
+  // Set before the child id is derived. The id itself routes through `Flow.payloadPreimage`.
+  it.effect.fails("runs a child whose payload holds a set, under one id whatever the insertion order", () =>
+    Effect.gen(function*() {
+      calls.length = 0
+      const layer = wired(Layer.mergeAll(Interpreter.layer(TagParent), Interpreter.layer(Tagged)))
+
+      const settled = yield* withCrypto(
+        Effect.gen(function*() {
+          const value = yield* TagParent.execute({ reversed: true }, { executionId: "tag-parent-1" })
+          const sorted = yield* Flow.payloadPreimage(Tagged.payloadSchema, { tags: new Set(["a", "b"]) })
+          const reversed = yield* Flow.payloadPreimage(Tagged.payloadSchema, { tags: new Set(["b", "a"]) })
+          const childId = yield* Interpreter.childExecutionId("tag-parent-1", "root.flow", Tagged._tag, sorted)
+          return { value, sorted, reversed, childResult: yield* Tagged.poll(childId) }
+        }).pipe(Effect.provide(layer))
+      )
+
+      expect(settled.value).toBe(3)
+      expect(settled.sorted).toEqual(["snapshot", { tags: ["a", "b"] }])
+      expect(settled.reversed).toEqual(settled.sorted)
+      // The child ran under the id its sorted payload derives, though its parent built ["b", "a"].
+      expect(Option.isSome(settled.childResult)).toBe(true)
     }))
 
   it.effect("runs the callee under a derived execution id and settles the node with its success", () =>

@@ -14,6 +14,7 @@
  * @since 0.1.0
  */
 
+import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Effects from "./Effects.vibe"
 
@@ -33,7 +34,9 @@ import * as Effects from "./Effects.vibe"
  * @category schemas
  */
 export const InputRef = Schema.Union([
-  Schema.TaggedStruct("Literal", { value: Schema.Unknown }),
+  // JSON omits an undefined literal's value. Restore that value when reading
+  // persisted plans, keeping the required Type field and the original key.
+  Schema.TaggedStruct("Literal", { value: Schema.Unknown.pipe(Schema.withDecodingDefaultKey(Effect.void)) }),
   Schema.TaggedStruct("Ref", { from: Schema.NonEmptyString, path: Schema.Array(Schema.String) }),
   Schema.TaggedStruct("Pending", { from: Schema.NonEmptyString })
 ])

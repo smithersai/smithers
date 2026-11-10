@@ -302,3 +302,27 @@ your own `Action.make` over `GitHubClient` for any other endpoint; the client
 carries the rate-limit, pagination, and credential behavior, and the action
 makes it journaled. [Durable actions](../concepts/durable-actions.md) shows
 the shape.
+
+## Issue trees and a person's proposal
+
+`GitHub.Calls.withToken` supplies an explicit redacted user credential and never reads an ambient token.
+Smithers' app reuses this wrapper. `GitHub.IssueChanges.get` reads assignments, `update` changes supplied labels,
+assignees or state, and `link` writes GitHub's sub-issue relationship by the child's database ID. Coordinates are
+validated before a credential-bearing request. An ambiguous link is reported as an unknown outcome; the client
+does not repeat it. Use a durable step and reconcile from GitHub before another write.
+
+`GitHub.Proposals.ensureFork` uses the source repository when that person owns it. Otherwise it reuses an existing
+fork only when GitHub confirms its parent, creates a missing fork, and refuses a same-named unrelated repository.
+Its `sourceDefaultBranch` always names the upstream default, even when the personal fork renamed its default. Compose it with `GitHub.Once.branch`, `commitOnBranch` and `pull` inside
+`Action.once` to open the person's review change. People merge. These operations never merge a proposal.
+
+Endpoint contracts: [sub-issues](https://docs.github.com/en/rest/issues/sub-issues) and
+[issue updates](https://docs.github.com/en/rest/issues/issues#update-an-issue).
+
+`GitHub.IssueChanges.timeline` reads native issue events with their actual actors.
+It bounds pagination and refuses incomplete history. The caller chooses which event kinds to display;
+comments have their existing dedicated reader. [Timeline endpoint](https://docs.github.com/en/rest/issues/timeline).
+
+Native timeline records retain an optional `created_at` timestamp when GitHub supplies it. Consumers may show the actual calendar date; missing timestamps remain missing rather than becoming invented relative ages.
+
+`Proposals.documentReview` reads a PR’s numeric author and complete native changed-file set, with a head recheck. A 404 or deleted author yields None; truncation, GitHub’s file cap, concurrent head changes and provider failures remain errors. Callers validate their exact document path and compare immutable author IDs. This is read-only; span/log/counter outcomes contain no document path or content.

@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 80
+bias 2
+null-prototype false
+key 1525245650
+tape onjQc-Kx5O3KwThj2LMkpOjDbhS0muXIcPz-FHYsTQxEtLrs6_1jLSzajGKa4AQHbiDkPw
+schedule-key 3248200076
+schedule 
+signature "ReturnedFalse"
+path 
+codec "json"
+value "{\"op\":\"split\",\"role\":\"maintainer\",\"signedOut\":false,\"noToken\":false,\"number\":0,\"parent\":4,\"blank\":false,\"blankKey\":false,\"bogus\":false,\"demote\":true,\"assignee\":\"fuzz\",\"withWriter\":false,\"authorizeFails\":false}"
+# ReturnedFalse
+# {"op":"split","role":"maintainer","signedOut":false,"noToken":false,"number":0,"parent":4,"blank":false,"blankKey":false,"bogus":false,"demote":true,"assignee":"fuzz","withWriter":false,"authorizeFails":false}

@@ -1,0 +1,755 @@
+// The mythical history's state machine (wiki/decisions/0020-mythical-history.md), shared by every client and by the
+// history's sequencer, as the conversation's is (0003).
+//
+//   intent ──decide──▶ event (numbered seq = last + 1) ──apply──▶ history      on the sequencer
+//                      event ──apply──▶ history                                  on every client
+//
+// The history is one linear stack of mythical commits grouped into epics. Its order is (epic order, rank within the
+// epic): epics are only appended, and an insert shifts the ranks after it, so the stack stays a strict total order
+// without splicing an array. `real` is main's first-parent history in order, each real commit with the one mythical
+// commit it folds into. Nothing is ever removed: a fold, a plan or an amend keeps every commit and every real commit.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Every function is total.
+
+/** Where a mythical commit is: planned onto the stack, worked in a lane, approved by a person, or landed on main. */
+export type CommitState = "planned" | "working" | "approved" | "landed"
+
+/** What a note holds: attempts that failed or were abandoned, evidence it works, or an intent an amend replaced. */
+export type Section = "tried" | "evidence" | "superseded"
+
+/** One line of a mythical commit's notes: what a rebase would lose. */
+export interface Note {
+  readonly section: Section
+  readonly text: string
+  /** Who or what wrote it: a person's name, the agent, or a flow such as `bootstrap`. */
+  readonly by: string
+}
+
+/** A run of adjacent mythical commits that tells one part of the story. */
+export interface Epic {
+  readonly id: string
+  readonly title: string
+}
+
+/** One mythical commit: one intent, in one epic, at one rank. */
+export interface Commit {
+  /** Stable for ever; a real commit's `Mythical: <id>` trailer names it. */
+  readonly id: string
+  readonly epic: string
+  /** Its place inside its epic; unique among the epic's commits. */
+  readonly rank: number
+  readonly title: string
+  readonly state: CommitState
+  /** The open task that planned or amends it; `""` when none is open. */
+  readonly task: string
+  /** The lane working it; `""` when none is. */
+  readonly lane: string
+  readonly notes: ReadonlyArray<Note>
+}
+
+/** A commit on main's first-parent history, and the one mythical commit it folds into. */
+export interface Real {
+  readonly sha: string
+  /** Its jj change id; `""` when unknown. */
+  readonly change: string
+  readonly title: string
+  readonly mythical: string
+}
+
+/** The mythical history as of event `seq`. `main` is the last real commit folded into it, `""` before the first. */
+export interface History {
+  readonly seq: number
+  readonly epics: ReadonlyArray<Epic>
+  readonly commits: ReadonlyArray<Commit>
+  readonly real: ReadonlyArray<Real>
+  readonly main: string
+}
+
+/** The sequencer's numbered events. `seq` starts at 1 and counts up by one. */
+export type Event =
+  | { readonly type: "EpicOpened"; readonly seq: number; readonly id: string; readonly title: string }
+  | {
+    readonly type: "Planned"
+    readonly seq: number
+    readonly id: string
+    readonly epic: string
+    readonly rank: number
+    readonly title: string
+    readonly task: string
+  }
+  | { readonly type: "Amended"; readonly seq: number; readonly id: string; readonly task: string }
+  | { readonly type: "Started"; readonly seq: number; readonly id: string; readonly lane: string }
+  | { readonly type: "Approved"; readonly seq: number; readonly id: string; readonly by: string }
+  | {
+    readonly type: "Folded"
+    readonly seq: number
+    readonly sha: string
+    readonly change: string
+    readonly title: string
+    readonly into: string
+  }
+  | { readonly type: "Noted"; readonly seq: number; readonly id: string; readonly section: Section; readonly text: string; readonly by: string }
+
+/** A history before its first event. */
+export const empty: History = { seq: 0, epics: [], commits: [], real: [], main: "" }
+
+/** The most characters an id may hold. */
+export const MAX_ID = 64
+
+/** The most characters a title, task or lane may hold. */
+export const MAX_TITLE = 200
+
+/** The most characters one note line may hold. */
+export const MAX_NOTE = 1000
+
+// ── apply: every copy ──────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The history after `event`. An event other than the next one changes nothing. The next one always advances `seq`,
+ * even when its content doesn't fit, so one bad event can't stall every later one; the sequencer never numbers such an
+ * event (`decide`). Nothing is removed: every commit keeps its index and id, and every real commit stays.
+ */
+//@ verify
+//@ requires 0 <= history.seq && history.seq < 9007199254740991
+//@ ensures \result.seq == history.seq || \result.seq == history.seq + 1
+//@ ensures event.seq != history.seq + 1 ==> \result == history
+//@ ensures event.seq == history.seq + 1 ==> \result.seq == event.seq
+//@ ensures \result.epics.length >= history.epics.length && forall(i, 0 <= i && i < history.epics.length ==> \result.epics[i] == history.epics[i])
+//@ ensures \result.commits.length >= history.commits.length && forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].id == history.commits[i].id && \result.commits[i].epic == history.commits[i].epic)
+//@ ensures \result.real.length >= history.real.length && forall(i, 0 <= i && i < history.real.length ==> \result.real[i] == history.real[i])
+//@ ensures \result.real.length <= history.real.length + 1
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < history.commits.length ==> history.commits[i].id != history.commits[j].id))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.commits.length ==> \result.commits[i].id != \result.commits[j].id)))
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < history.epics.length ==> history.epics[i].id != history.epics[j].id))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.epics.length ==> \result.epics[i].id != \result.epics[j].id)))
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < history.commits.length && history.commits[i].epic == history.commits[j].epic ==> history.commits[i].rank != history.commits[j].rank))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.commits.length && \result.commits[i].epic == \result.commits[j].epic ==> \result.commits[i].rank != \result.commits[j].rank)))
+//@ ensures (forall(i, 0 <= i && i < history.commits.length ==> history.commits[i].rank >= 0)) ==> (forall(i, 0 <= i && i < \result.commits.length ==> \result.commits[i].rank >= 0))
+//@ ensures (forall(i, 0 <= i && i < history.commits.length ==> exists(k, 0 <= k && k < history.epics.length && history.epics[k].id == history.commits[i].epic))) ==> (forall(i, 0 <= i && i < \result.commits.length ==> exists(k, 0 <= k && k < \result.epics.length && \result.epics[k].id == \result.commits[i].epic)))
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < history.real.length ==> history.real[i].sha != history.real[j].sha))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.real.length ==> \result.real[i].sha != \result.real[j].sha)))
+//@ ensures (forall(i, 0 <= i && i < history.real.length ==> exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == history.real[i].mythical))) ==> (forall(i, 0 <= i && i < \result.real.length ==> exists(j, 0 <= j && j < \result.commits.length && \result.commits[j].id == \result.real[i].mythical)))
+//@ ensures event.seq == history.seq + 1 && event.type == "Planned" && event.title != "" && event.rank >= 0 && event.epic != "" && event.id != "" && !(exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id)) && exists(k, 0 <= k && k < history.epics.length && history.epics[k].id == event.epic) ==> \result.commits.length == history.commits.length + 1 && \result.commits[history.commits.length].id == event.id && \result.commits[history.commits.length].state == "planned"
+//@ ensures \result.real.length == history.real.length + 1 ==> event.type == "Folded" && \result.real[history.real.length].sha == event.sha && \result.real[history.real.length].mythical == event.into && \result.main == event.sha
+//@ ensures event.seq == history.seq + 1 && event.type == "Folded" && event.sha != "" && event.into != "" && !(exists(i, 0 <= i && i < history.real.length && history.real[i].sha == event.sha)) && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.into) ==> \result.real.length == history.real.length + 1
+//@ ensures event.seq == history.seq + 1 && event.type == "EpicOpened" && (event.title != "" && event.id != "" && !(exists(j, 0 <= j && j < history.epics.length && history.epics[j].id == event.id))) ==> \result.epics.length == history.epics.length + 1 && \result.epics[history.epics.length].id == event.id && \result.epics[history.epics.length].title == event.title && \result.commits == history.commits && \result.real == history.real && \result.main == history.main
+//@ ensures event.seq == history.seq + 1 && event.type == "EpicOpened" && !(event.title != "" && event.id != "" && !(exists(j, 0 <= j && j < history.epics.length && history.epics[j].id == event.id))) ==> \result.commits == history.commits && \result.epics == history.epics && \result.real == history.real && \result.main == history.main
+//@ ensures event.seq == history.seq + 1 && event.type == "Amended" && (event.task != "" && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].state == "landed") && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].task == "" && forall(k, 0 <= k && k < j ==> history.commits[k].id != event.id))) ==> \result.commits.length == history.commits.length && forall(i, 0 <= i && i < history.commits.length ==> (history.commits[i].id == event.id ? \result.commits[i].state == "planned" && \result.commits[i].task == event.task && \result.commits[i].notes == history.commits[i].notes && \result.commits[i].lane == history.commits[i].lane : \result.commits[i] == history.commits[i]))
+//@ ensures event.seq == history.seq + 1 && event.type == "Amended" && !(event.task != "" && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].state == "landed") && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].task == "" && forall(k, 0 <= k && k < j ==> history.commits[k].id != event.id))) ==> \result.commits == history.commits && \result.epics == history.epics && \result.real == history.real && \result.main == history.main
+//@ ensures event.seq == history.seq + 1 && event.type == "Started" && (event.lane != "" && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].state == "planned")) ==> \result.commits.length == history.commits.length && forall(i, 0 <= i && i < history.commits.length ==> (history.commits[i].id == event.id ? \result.commits[i].state == "working" && \result.commits[i].lane == event.lane && \result.commits[i].notes == history.commits[i].notes && \result.commits[i].task == history.commits[i].task : \result.commits[i] == history.commits[i]))
+//@ ensures event.seq == history.seq + 1 && event.type == "Started" && !(event.lane != "" && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].state == "planned")) ==> \result.commits == history.commits && \result.epics == history.epics && \result.real == history.real && \result.main == history.main
+//@ ensures event.seq == history.seq + 1 && event.type == "Approved" && (event.by != "" && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].state == "working")) ==> \result.commits.length == history.commits.length && forall(i, 0 <= i && i < history.commits.length ==> (history.commits[i].id == event.id ? \result.commits[i].state == "approved" && \result.commits[i].notes.length == history.commits[i].notes.length + 1 && \result.commits[i].notes[history.commits[i].notes.length].section == "evidence" && \result.commits[i].notes[history.commits[i].notes.length].text == "approved" && \result.commits[i].notes[history.commits[i].notes.length].by == event.by : \result.commits[i] == history.commits[i]))
+//@ ensures event.seq == history.seq + 1 && event.type == "Approved" && !(event.by != "" && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].state == "working")) ==> \result.commits == history.commits && \result.epics == history.epics && \result.real == history.real && \result.main == history.main
+//@ ensures event.seq == history.seq + 1 && event.type == "Noted" && (event.text != "" && event.by != "" && (event.id == "" || exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id))) ==> \result.commits.length == history.commits.length && forall(i, 0 <= i && i < history.commits.length ==> (history.commits[i].id == event.id ? \result.commits[i].notes.length == history.commits[i].notes.length + 1 && \result.commits[i].notes[history.commits[i].notes.length].section == event.section && \result.commits[i].notes[history.commits[i].notes.length].text == event.text && \result.commits[i].notes[history.commits[i].notes.length].by == event.by : \result.commits[i] == history.commits[i]))
+//@ ensures event.seq == history.seq + 1 && event.type == "Noted" && !(event.text != "" && event.by != "" && (event.id == "" || exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id))) ==> \result.commits == history.commits && \result.epics == history.epics && \result.real == history.real && \result.main == history.main
+//@ ensures forall(i, 0 <= i && i < history.commits.length ==> 0 <= history.commits[i].rank && history.commits[i].rank < history.seq) && (event.type != "Planned" || (0 <= event.rank && event.rank < event.seq)) ==> forall(i, 0 <= i && i < \result.commits.length ==> 0 <= \result.commits[i].rank && \result.commits[i].rank < \result.seq)
+//@ ensures event.type != "EpicOpened" ==> \result.epics == history.epics
+//@ ensures event.type != "Folded" ==> \result.real == history.real && \result.main == history.main
+//@ ensures event.type != "Planned" ==> \result.commits.length == history.commits.length && forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].rank == history.commits[i].rank && \result.commits[i].title == history.commits[i].title)
+//@ ensures forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].notes.length >= history.commits[i].notes.length && forall(j, 0 <= j && j < history.commits[i].notes.length ==> \result.commits[i].notes[j] == history.commits[i].notes[j]))
+//@ ensures event.seq == history.seq + 1 && event.type == "Planned" && !(event.title != "" && event.rank >= 0 && event.epic != "" && event.id != "" && !exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id) && exists(j, 0 <= j && j < history.epics.length && history.epics[j].id == event.epic)) ==> \result.commits == history.commits && \result.epics == history.epics && \result.real == history.real && \result.main == history.main
+//@ ensures event.seq == history.seq + 1 && event.type == "Folded" && !(event.sha != "" && event.into != "" && !exists(j, 0 <= j && j < history.real.length && history.real[j].sha == event.sha) && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.into)) ==> \result.commits == history.commits && \result.epics == history.epics && \result.real == history.real && \result.main == history.main
+//@ ensures event.seq == history.seq + 1 && event.type == "Planned" && (event.title != "" && event.rank >= 0 && event.epic != "" && event.id != "" && !exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id) && exists(j, 0 <= j && j < history.epics.length && history.epics[j].id == event.epic)) ==> \result.commits.length == history.commits.length + 1 && \result.commits[history.commits.length].id == event.id && \result.commits[history.commits.length].epic == event.epic && \result.commits[history.commits.length].rank == event.rank && \result.commits[history.commits.length].title == event.title && \result.commits[history.commits.length].state == "planned" && \result.commits[history.commits.length].task == event.task && \result.commits[history.commits.length].lane == "" && \result.commits[history.commits.length].notes.length == 0
+//@ ensures event.seq == history.seq + 1 && event.type == "Planned" && (event.title != "" && event.rank >= 0 && event.epic != "" && event.id != "" && !exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id) && exists(j, 0 <= j && j < history.epics.length && history.epics[j].id == event.epic)) ==> forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].rank == (history.commits[i].epic == event.epic && history.commits[i].rank >= event.rank ? history.commits[i].rank + 1 : history.commits[i].rank) && \result.commits[i].title == history.commits[i].title && \result.commits[i].state == history.commits[i].state && \result.commits[i].task == history.commits[i].task && \result.commits[i].lane == history.commits[i].lane && \result.commits[i].notes == history.commits[i].notes)
+//@ ensures event.seq == history.seq + 1 && event.type == "Folded" && (event.sha != "" && event.into != "" && !exists(j, 0 <= j && j < history.real.length && history.real[j].sha == event.sha) && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.into)) ==> \result.real.length == history.real.length + 1 && \result.real[history.real.length].sha == event.sha && \result.real[history.real.length].mythical == event.into && \result.real[history.real.length].change == event.change && \result.real[history.real.length].title == event.title && \result.main == event.sha
+//@ ensures event.seq == history.seq + 1 && event.type == "Folded" && (event.sha != "" && event.into != "" && !exists(j, 0 <= j && j < history.real.length && history.real[j].sha == event.sha) && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.into)) ==> forall(i, 0 <= i && i < history.commits.length ==> (history.commits[i].id == event.into ? \result.commits[i].state == "landed" && \result.commits[i].task == "" && \result.commits[i].lane == "" && \result.commits[i].notes == history.commits[i].notes : \result.commits[i] == history.commits[i]))
+//@ ensures event.type == "Approved" || event.type == "Noted" ==> forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].task == history.commits[i].task && \result.commits[i].lane == history.commits[i].lane)
+//@ ensures event.type == "Noted" ==> forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].state == history.commits[i].state)
+//@ ensures forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].notes.length >= history.commits[i].notes.length && \result.commits[i].notes.length <= history.commits[i].notes.length + 1 && forall(k, 0 <= k && k < history.commits[i].notes.length ==> \result.commits[i].notes[k] == history.commits[i].notes[k]))
+//@ ensures forall(i, history.commits.length <= i && i < \result.commits.length ==> \result.commits[i].notes.length == 0)
+export function apply(history: History, event: Event): History {
+  if (event.seq !== history.seq + 1) return history
+  const next = { ...history, seq: event.seq }
+  switch (event.type) {
+    case "EpicOpened": {
+      if (event.title === "" || hasEpic(history.epics, event.id)) return next
+      const epics = [...history.epics, { id: event.id, title: event.title }]
+      //@ assert forall(i, 0 <= i && i < history.epics.length ==> epics[i] == history.epics[i])
+      return { ...next, epics }
+    }
+    case "Planned": {
+      if (event.title === "" || event.rank < 0 || event.epic === "" || hasCommit(history.commits, event.id) || !hasEpic(history.epics, event.epic)) return next
+      // Every commit of the epic at or after the new rank moves up one, so the new commit takes the rank alone.
+      const shifted = history.commits.map((commit) =>
+        commit.epic === event.epic && commit.rank >= event.rank ? { ...commit, rank: commit.rank + 1 } : commit
+      )
+      const commit: Commit = {
+        id: event.id,
+        epic: event.epic,
+        rank: event.rank,
+        title: event.title,
+        state: "planned",
+        task: event.task,
+        lane: "",
+        notes: [],
+      }
+      const commits = [...shifted, commit]
+      //@ assert forall(i, 0 <= i && i < history.commits.length ==> commits[i].id == history.commits[i].id && commits[i].epic == history.commits[i].epic)
+      return { ...next, commits }
+    }
+    case "Amended": {
+      if (event.task === "" || !isIn(history.commits, event.id, "landed") || taskOf(history.commits, event.id) !== "") return next
+      return { ...next, commits: history.commits.map((commit) => commit.id === event.id ? amended(commit, event.task) : commit) }
+    }
+    case "Started": {
+      if (event.lane === "" || !isIn(history.commits, event.id, "planned")) return next
+      return { ...next, commits: history.commits.map((commit) => commit.id === event.id ? started(commit, event.lane) : commit) }
+    }
+    case "Approved": {
+      if (event.by === "" || !isIn(history.commits, event.id, "working")) return next
+      const approval: Note = { section: "evidence", text: "approved", by: event.by }
+      return {
+        ...next,
+        commits: history.commits.map((commit) => commit.id === event.id ? approved(commit, approval) : commit),
+      }
+    }
+    case "Folded": {
+      if (event.sha === "" || event.into === "" || hasSha(history.real, event.sha) || !hasCommit(history.commits, event.into)) return next
+      const real = [...history.real, { sha: event.sha, change: event.change, title: event.title, mythical: event.into }]
+      //@ assert forall(i, 0 <= i && i < history.real.length ==> real[i] == history.real[i])
+      const commits = history.commits.map((commit) => commit.id === event.into ? landed(commit) : commit)
+      //@ assert forall(i, 0 <= i && i < history.commits.length ==> commits[i].id == history.commits[i].id)
+      return { ...next, real, commits, main: event.sha }
+    }
+    case "Noted": {
+      if (event.text === "" || event.by === "" || !hasCommit(history.commits, event.id)) return next
+      const note: Note = { section: event.section, text: event.text, by: event.by }
+      return { ...next, commits: history.commits.map((commit) => commit.id === event.id ? noted(commit, note) : commit) }
+    }
+  }
+}
+
+/** A landed commit reopened for the task that amends it; its notes stay as they were. */
+//@ verify
+//@ ensures \result.id == commit.id
+//@ ensures \result.epic == commit.epic
+//@ ensures \result.rank == commit.rank
+//@ ensures \result.title == commit.title
+//@ ensures \result.state == "planned"
+//@ ensures \result.task == task
+//@ ensures \result.lane == commit.lane
+//@ ensures \result.notes == commit.notes
+//@ ensures \result.id == commit.id && \result.epic == commit.epic && \result.notes == commit.notes
+function amended(commit: Commit, task: string): Commit {
+  return { ...commit, state: "planned", task }
+}
+
+/** A planned commit as its lane starts working it; its notes stay as they were. */
+//@ verify
+//@ ensures \result.id == commit.id
+//@ ensures \result.epic == commit.epic
+//@ ensures \result.rank == commit.rank
+//@ ensures \result.title == commit.title
+//@ ensures \result.state == "working"
+//@ ensures \result.task == commit.task
+//@ ensures \result.lane == lane
+//@ ensures \result.notes == commit.notes
+//@ ensures \result.id == commit.id && \result.epic == commit.epic && \result.notes == commit.notes
+function started(commit: Commit, lane: string): Commit {
+  return { ...commit, state: "working", lane }
+}
+
+/** A worked commit a person approved, with the approval appended to its evidence: every earlier note stays. */
+//@ verify
+//@ ensures \result.id == commit.id
+//@ ensures \result.epic == commit.epic
+//@ ensures \result.rank == commit.rank
+//@ ensures \result.title == commit.title
+//@ ensures \result.state == "approved"
+//@ ensures \result.task == commit.task
+//@ ensures \result.lane == commit.lane
+//@ ensures \result.notes.length == commit.notes.length + 1 && forall(i, 0 <= i && i < commit.notes.length ==> \result.notes[i] == commit.notes[i]) && \result.notes[commit.notes.length] == approval
+//@ ensures \result.id == commit.id && \result.epic == commit.epic
+//@ ensures \result.notes.length == commit.notes.length + 1 && \result.notes[commit.notes.length] == approval
+//@ ensures forall(k, 0 <= k && k < commit.notes.length ==> \result.notes[k] == commit.notes[k])
+function approved(commit: Commit, approval: Note): Commit {
+  return { ...commit, state: "approved", notes: [...commit.notes, approval] }
+}
+
+/** A commit with `note` appended: every earlier note stays, in order. */
+//@ verify
+//@ ensures \result.id == commit.id && \result.epic == commit.epic
+//@ ensures \result.notes.length == commit.notes.length + 1 && \result.notes[commit.notes.length] == note
+//@ ensures forall(k, 0 <= k && k < commit.notes.length ==> \result.notes[k] == commit.notes[k])
+//@ ensures \result.rank == commit.rank
+//@ ensures \result.title == commit.title
+//@ ensures \result.state == commit.state
+//@ ensures \result.task == commit.task
+//@ ensures \result.lane == commit.lane
+function noted(commit: Commit, note: Note): Commit {
+  return { ...commit, notes: [...commit.notes, note] }
+}
+
+/** A commit that a real commit of main folded into: landed, with no open task or lane; its notes stay as they were. */
+//@ verify
+//@ ensures \result.id == commit.id
+//@ ensures \result.epic == commit.epic
+//@ ensures \result.rank == commit.rank
+//@ ensures \result.title == commit.title
+//@ ensures \result.state == "landed"
+//@ ensures \result.task == ""
+//@ ensures \result.lane == ""
+//@ ensures \result.notes == commit.notes
+//@ ensures \result.id == commit.id && \result.epic == commit.epic && \result.notes == commit.notes
+function landed(commit: Commit): Commit {
+  return { ...commit, state: "landed", task: "", lane: "" }
+}
+
+/**
+ * Whether an epic already has `id`. `""` always counts as taken, so no epic is opened without an id.
+ */
+//@ verify
+//@ ensures \result == (id == "" || exists(j, 0 <= j && j < epics.length && epics[j].id == id))
+export function hasEpic(epics: ReadonlyArray<Epic>, id: string): boolean {
+  if (id === "") return true
+  let i = 0
+  while (i < epics.length) {
+    //@ invariant 0 <= i && i <= epics.length
+    //@ invariant forall(j, 0 <= j && j < i ==> epics[j].id != id)
+    //@ decreases epics.length - i
+    if (epics[i]!.id === id) return true
+    i++
+  }
+  return false
+}
+
+/**
+ * Whether a mythical commit already has `id`. `""` always counts as taken.
+ */
+//@ verify
+//@ ensures \result == (id == "" || exists(j, 0 <= j && j < commits.length && commits[j].id == id))
+export function hasCommit(commits: ReadonlyArray<Commit>, id: string): boolean {
+  if (id === "") return true
+  let i = 0
+  while (i < commits.length) {
+    //@ invariant 0 <= i && i <= commits.length
+    //@ invariant forall(j, 0 <= j && j < i ==> commits[j].id != id)
+    //@ decreases commits.length - i
+    if (commits[i]!.id === id) return true
+    i++
+  }
+  return false
+}
+
+/**
+ * Whether a real commit with `sha` is already folded.
+ */
+//@ verify
+//@ ensures \result == exists(j, 0 <= j && j < real.length && real[j].sha == sha)
+export function hasSha(real: ReadonlyArray<Real>, sha: string): boolean {
+  let i = 0
+  while (i < real.length) {
+    //@ invariant 0 <= i && i <= real.length
+    //@ invariant forall(j, 0 <= j && j < i ==> real[j].sha != sha)
+    //@ decreases real.length - i
+    if (real[i]!.sha === sha) return true
+    i++
+  }
+  return false
+}
+
+/** Whether a mythical commit with `id` is in `state`. */
+//@ verify
+//@ ensures \result == exists(j, 0 <= j && j < commits.length && commits[j].id == id && commits[j].state == state)
+export function isIn(commits: ReadonlyArray<Commit>, id: string, state: CommitState): boolean {
+  let i = 0
+  while (i < commits.length) {
+    //@ invariant 0 <= i && i <= commits.length
+    //@ invariant forall(j, 0 <= j && j < i ==> !(commits[j].id == id && commits[j].state == state))
+    //@ decreases commits.length - i
+    if (commits[i]!.id === id && commits[i]!.state === state) return true
+    i++
+  }
+  return false
+}
+
+/** A mythical commit's open task, `""` when it has none or doesn't exist. */
+//@ verify
+//@ ensures exists(j, 0 <= j && j < commits.length && commits[j].id == id) ==> exists(j, 0 <= j && j < commits.length && commits[j].id == id && \result == commits[j].task && forall(k, 0 <= k && k < j ==> commits[k].id != id))
+//@ ensures forall(j, 0 <= j && j < commits.length && commits[j].id == id && forall(k, 0 <= k && k < j ==> commits[k].id != id) ==> \result == commits[j].task)
+//@ ensures forall(j, 0 <= j && j < commits.length ==> commits[j].id != id) ==> \result == ""
+export function taskOf(commits: ReadonlyArray<Commit>, id: string): string {
+  let i = 0
+  while (i < commits.length) {
+    //@ invariant 0 <= i && i <= commits.length
+    //@ invariant forall(j, 0 <= j && j < i ==> commits[j].id != id)
+    //@ decreases commits.length - i
+    if (commits[i]!.id === id) return commits[i]!.task
+    i++
+  }
+  return ""
+}
+
+/** The epic of a mythical commit, `""` when there is none with `id`. */
+//@ verify
+//@ ensures exists(j, 0 <= j && j < commits.length && commits[j].id == id) ==> exists(j, 0 <= j && j < commits.length && commits[j].id == id && \result == commits[j].epic && forall(k, 0 <= k && k < j ==> commits[k].id != id))
+//@ ensures forall(j, 0 <= j && j < commits.length && commits[j].id == id && forall(k, 0 <= k && k < j ==> commits[k].id != id) ==> \result == commits[j].epic)
+//@ ensures forall(j, 0 <= j && j < commits.length ==> commits[j].id != id) ==> \result == ""
+export function epicOf(commits: ReadonlyArray<Commit>, id: string): string {
+  let i = 0
+  while (i < commits.length) {
+    //@ invariant 0 <= i && i <= commits.length
+    //@ invariant forall(j, 0 <= j && j < i ==> commits[j].id != id)
+    //@ decreases commits.length - i
+    if (commits[i]!.id === id) return commits[i]!.epic
+    i++
+  }
+  return ""
+}
+
+/** A mythical commit's rank, `-1` when there is none with `id`. */
+//@ verify
+//@ ensures exists(j, 0 <= j && j < commits.length && commits[j].id == id) ==> exists(j, 0 <= j && j < commits.length && commits[j].id == id && \result == commits[j].rank && forall(k, 0 <= k && k < j ==> commits[k].id != id))
+//@ ensures forall(j, 0 <= j && j < commits.length && commits[j].id == id && forall(k, 0 <= k && k < j ==> commits[k].id != id) ==> \result == commits[j].rank)
+//@ ensures forall(j, 0 <= j && j < commits.length ==> commits[j].id != id) ==> \result == -1
+export function rankOf(commits: ReadonlyArray<Commit>, id: string): number {
+  let i = 0
+  while (i < commits.length) {
+    //@ invariant 0 <= i && i <= commits.length
+    //@ invariant forall(j, 0 <= j && j < i ==> commits[j].id != id)
+    //@ decreases commits.length - i
+    if (commits[i]!.id === id) return commits[i]!.rank
+    i++
+  }
+  return -1
+}
+
+/** The rank after the last commit of `epic`: where an appended commit goes. */
+//@ verify
+//@ ensures \result >= 0
+//@ ensures forall(j, 0 <= j && j < commits.length && commits[j].epic == epic ==> commits[j].rank < \result)
+//@ ensures \result == 0 || exists(j, 0 <= j && j < commits.length && commits[j].epic == epic && commits[j].rank + 1 == \result)
+export function endOf(commits: ReadonlyArray<Commit>, epic: string): number {
+  let end = 0
+  let i = 0
+  while (i < commits.length) {
+    //@ invariant 0 <= i && i <= commits.length
+    //@ invariant end >= 0
+    //@ invariant forall(j, 0 <= j && j < i && commits[j].epic == epic ==> commits[j].rank < end)
+    //@ invariant end == 0 || exists(j, 0 <= j && j < i && commits[j].epic == epic && commits[j].rank + 1 == end)
+    //@ decreases commits.length - i
+    if (commits[i]!.epic === epic && commits[i]!.rank >= end) end = commits[i]!.rank + 1
+    i++
+  }
+  return end
+}
+
+/**
+ * The mythical commit a real commit of main folds into when its message's `Mythical:` trailer names `trailer`: that
+ * commit once a person approved it, or once it has landed; `""` otherwise (no trailer, no such commit, or one still
+ * planned or working), and the fold appends a new commit instead. So a fold into the commit a trailer names never
+ * runs before that commit's approval (0020, "Proofs").
+ */
+//@ verify
+//@ ensures \result == "" || \result == trailer
+//@ ensures \result != "" ==> exists(j, 0 <= j && j < commits.length && commits[j].id == \result && (commits[j].state == "approved" || commits[j].state == "landed"))
+//@ ensures trailer != "" && exists(j, 0 <= j && j < commits.length && commits[j].id == trailer && (commits[j].state == "approved" || commits[j].state == "landed")) ==> \result == trailer
+export function foldTarget(commits: ReadonlyArray<Commit>, trailer: string): string {
+  if (trailer === "") return ""
+  if (isIn(commits, trailer, "approved") || isIn(commits, trailer, "landed")) return trailer
+  return ""
+}
+
+// ── decide: the sequencer ──────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What the history's sequencer is asked to record. A flow opens an epic, plans a commit onto the stack (appended to
+ * its epic when `before` is `""`, else inserted just before that commit of the same epic), reopens a landed commit for
+ * an amending task, starts it in a lane, has a person approve it, folds a real commit of main into it, or adds a note.
+ */
+export type Intent =
+  | { readonly type: "OpenEpic"; readonly id: string; readonly title: string }
+  | { readonly type: "Plan"; readonly id: string; readonly epic: string; readonly before: string; readonly title: string; readonly task: string }
+  | { readonly type: "Amend"; readonly id: string; readonly task: string }
+  | { readonly type: "Start"; readonly id: string; readonly lane: string }
+  | { readonly type: "Approve"; readonly id: string; readonly by: string }
+  | { readonly type: "Fold"; readonly sha: string; readonly change: string; readonly title: string; readonly into: string }
+  | { readonly type: "AddNote"; readonly id: string; readonly section: Section; readonly text: string; readonly by: string }
+
+/** Why the sequencer refused an intent. */
+export type Refusal = "empty" | "too-long" | "duplicate" | "unknown" | "state" | "full"
+
+/** The sequencer's answer: the next event, or why there is none. */
+export type Decision =
+  | { readonly ok: true; readonly event: Event }
+  | { readonly ok: false; readonly refusal: Refusal }
+
+// Typed constructors keep nested union construction explicit for LemmaScript.
+//@ verify
+//@ ensures \result.ok && \result.event == event
+function accepted(event: Event): Decision {
+  return { ok: true, event }
+}
+
+//@ verify
+//@ ensures !\result.ok && \result.refusal == refusal
+function refused(refusal: Refusal): Decision {
+  return { ok: false, refusal }
+}
+
+/**
+ * The event that records `intent` as the next one, or a refusal. Every event it returns is one `apply` takes as is.
+ */
+//@ verify
+//@ requires 0 <= history.seq && history.seq < 9007199254740991
+//@ ensures \result.ok ==> \result.event.seq == history.seq + 1
+//@ ensures \result.ok && \result.event.type == "Folded" ==> \result.event.sha != "" && !(exists(i, 0 <= i && i < history.real.length && history.real[i].sha == \result.event.sha)) && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == \result.event.into)
+//@ ensures \result.ok && \result.event.type == "Planned" ==> \result.event.id != "" && \result.event.rank >= 0 && \result.event.title != "" && !(exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == \result.event.id)) && exists(k, 0 <= k && k < history.epics.length && history.epics[k].id == \result.event.epic)
+//@ ensures \result.ok && \result.event.type == "Planned" ==> \result.event.id.length <= MAX_ID && \result.event.title.length <= MAX_TITLE && \result.event.task.length <= MAX_TITLE
+//@ ensures \result.ok && \result.event.type == "Folded" ==> \result.event.sha.length <= MAX_ID && \result.event.title.length <= MAX_TITLE
+//@ ensures \result.ok && \result.event.type == "Noted" ==> \result.event.text != "" && \result.event.text.length <= MAX_NOTE && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == \result.event.id)
+//@ ensures \result.ok && \result.event.type == "Approved" ==> \result.event.by != "" && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == \result.event.id && history.commits[j].state == "working")
+//@ ensures intent.type == "OpenEpic" ==> (\result.ok == (intent.id != "" && intent.title.trim() != "" && intent.id.length <= MAX_ID && intent.title.length <= MAX_TITLE && !(exists(j, 0 <= j && j < history.epics.length && history.epics[j].id == intent.id))))
+//@ ensures intent.type == "Amend" ==> (\result.ok == (intent.task.trim() != "" && intent.task.length <= MAX_TITLE && intent.id != "" && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id)) && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id && history.commits[j].state == "landed")) && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id && history.commits[j].task == "" && forall(k, 0 <= k && k < j ==> history.commits[k].id != intent.id)))))
+//@ ensures intent.type == "Start" ==> (\result.ok == (intent.lane.trim() != "" && intent.lane.length <= MAX_TITLE && intent.id != "" && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id)) && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id && history.commits[j].state == "planned"))))
+//@ ensures intent.type == "Approve" ==> (\result.ok == (intent.by != "" && intent.id != "" && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id)) && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id && history.commits[j].state == "working"))))
+//@ ensures intent.type == "Fold" ==> (\result.ok == (intent.sha != "" && intent.sha.length <= MAX_ID && intent.change.length <= MAX_ID && intent.title.length <= MAX_TITLE && !(exists(j, 0 <= j && j < history.real.length && history.real[j].sha == intent.sha)) && intent.into != "" && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.into))))
+//@ ensures intent.type == "AddNote" ==> (\result.ok == (intent.text.trim() != "" && intent.by != "" && intent.text.trim().length <= MAX_NOTE && intent.by.length <= MAX_TITLE && intent.id != "" && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id))))
+//@ ensures intent.type == "Plan" ==> (\result.ok == (intent.id != "" && intent.title.trim() != "" && intent.id.length <= MAX_ID && intent.title.trim().length <= MAX_TITLE && intent.task.length <= MAX_TITLE && !(exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id)) && intent.epic != "" && (exists(j, 0 <= j && j < history.epics.length && history.epics[j].id == intent.epic)) && (intent.before == "" || (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.before && history.commits[j].epic == intent.epic && history.commits[j].rank >= 0 && forall(k, 0 <= k && k < j ==> history.commits[k].id != intent.before))))))
+//@ ensures intent.type == "OpenEpic" && \result.ok ==> \result.event.type == "EpicOpened" && \result.event.id == intent.id && \result.event.title == intent.title.trim()
+//@ ensures intent.type == "Plan" && \result.ok ==> \result.event.type == "Planned" && \result.event.id == intent.id && \result.event.epic == intent.epic && \result.event.title == intent.title.trim() && \result.event.task == intent.task
+//@ ensures intent.type == "Amend" && \result.ok ==> \result.event.type == "Amended" && \result.event.id == intent.id && \result.event.task == intent.task
+//@ ensures intent.type == "Start" && \result.ok ==> \result.event.type == "Started" && \result.event.id == intent.id && \result.event.lane == intent.lane
+//@ ensures intent.type == "Approve" && \result.ok ==> \result.event.type == "Approved" && \result.event.id == intent.id && \result.event.by == intent.by
+//@ ensures intent.type == "Fold" && \result.ok ==> \result.event.type == "Folded" && \result.event.sha == intent.sha && \result.event.change == intent.change && \result.event.title == intent.title && \result.event.into == intent.into
+//@ ensures intent.type == "AddNote" && \result.ok ==> \result.event.type == "Noted" && \result.event.id == intent.id && \result.event.section == intent.section && \result.event.text == intent.text.trim() && \result.event.by == intent.by
+//@ ensures forall(i, 0 <= i && i < history.commits.length ==> 0 <= history.commits[i].rank && history.commits[i].rank < history.seq) && \result.ok && \result.event.type == "Planned" ==> 0 <= \result.event.rank && \result.event.rank < \result.event.seq
+//@ ensures intent.type == "OpenEpic" && (intent.id == "" || intent.title.trim() == "") ==> !\result.ok && \result.refusal == "empty"
+//@ ensures intent.type == "OpenEpic" && !(intent.id == "" || intent.title.trim() == "") && (intent.id.length > MAX_ID || intent.title.length > MAX_TITLE) ==> !\result.ok && \result.refusal == "too-long"
+//@ ensures intent.type == "OpenEpic" && !(intent.id == "" || intent.title.trim() == "") && !(intent.id.length > MAX_ID || intent.title.length > MAX_TITLE) && (exists(i, 0 <= i && i < history.epics.length && history.epics[i].id == intent.id)) ==> !\result.ok && \result.refusal == "duplicate"
+//@ ensures intent.type == "Plan" && (intent.id == "" || intent.title.trim() == "") ==> !\result.ok && \result.refusal == "empty"
+//@ ensures intent.type == "Plan" && !(intent.id == "" || intent.title.trim() == "") && (intent.id.length > MAX_ID || intent.title.trim().length > MAX_TITLE || intent.task.length > MAX_TITLE) ==> !\result.ok && \result.refusal == "too-long"
+//@ ensures intent.type == "Plan" && !(intent.id == "" || intent.title.trim() == "") && !(intent.id.length > MAX_ID || intent.title.trim().length > MAX_TITLE || intent.task.length > MAX_TITLE) && (exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id)) ==> !\result.ok && \result.refusal == "duplicate"
+//@ ensures intent.type == "Plan" && !(intent.id == "" || intent.title.trim() == "") && !(intent.id.length > MAX_ID || intent.title.trim().length > MAX_TITLE || intent.task.length > MAX_TITLE) && !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id)) && (intent.epic == "" || !exists(i, 0 <= i && i < history.epics.length && history.epics[i].id == intent.epic)) ==> !\result.ok && \result.refusal == "unknown"
+//@ ensures intent.type == "Plan" && !(intent.id == "" || intent.title.trim() == "") && !(intent.id.length > MAX_ID || intent.title.trim().length > MAX_TITLE || intent.task.length > MAX_TITLE) && !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id)) && !(intent.epic == "" || !exists(i, 0 <= i && i < history.epics.length && history.epics[i].id == intent.epic)) && (intent.before != "" && !exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.before && history.commits[i].epic == intent.epic && history.commits[i].rank >= 0 && forall(j, 0 <= j && j < i ==> history.commits[j].id != intent.before))) ==> !\result.ok && \result.refusal == "unknown"
+//@ ensures intent.type == "Amend" && (intent.task.trim() == "") ==> !\result.ok && \result.refusal == "empty"
+//@ ensures intent.type == "Amend" && !(intent.task.trim() == "") && (intent.task.length > MAX_TITLE) ==> !\result.ok && \result.refusal == "too-long"
+//@ ensures intent.type == "Amend" && !(intent.task.trim() == "") && !(intent.task.length > MAX_TITLE) && (intent.id == "" || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id))) ==> !\result.ok && \result.refusal == "unknown"
+//@ ensures intent.type == "Amend" && !(intent.task.trim() == "") && !(intent.task.length > MAX_TITLE) && !(intent.id == "" || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id))) && (!(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id && history.commits[i].state == "landed")) || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id && history.commits[i].task == "" && forall(j, 0 <= j && j < i ==> history.commits[j].id != intent.id)))) ==> !\result.ok && \result.refusal == "state"
+//@ ensures intent.type == "Start" && (intent.lane.trim() == "") ==> !\result.ok && \result.refusal == "empty"
+//@ ensures intent.type == "Start" && !(intent.lane.trim() == "") && (intent.lane.length > MAX_TITLE) ==> !\result.ok && \result.refusal == "too-long"
+//@ ensures intent.type == "Start" && !(intent.lane.trim() == "") && !(intent.lane.length > MAX_TITLE) && (intent.id == "" || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id))) ==> !\result.ok && \result.refusal == "unknown"
+//@ ensures intent.type == "Start" && !(intent.lane.trim() == "") && !(intent.lane.length > MAX_TITLE) && !(intent.id == "" || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id))) && (!(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id && history.commits[i].state == "planned"))) ==> !\result.ok && \result.refusal == "state"
+//@ ensures intent.type == "Approve" && (intent.by == "") ==> !\result.ok && \result.refusal == "empty"
+//@ ensures intent.type == "Approve" && !(intent.by == "") && (intent.id == "" || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id))) ==> !\result.ok && \result.refusal == "unknown"
+//@ ensures intent.type == "Approve" && !(intent.by == "") && !(intent.id == "" || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id))) && (!(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id && history.commits[i].state == "working"))) ==> !\result.ok && \result.refusal == "state"
+//@ ensures intent.type == "Fold" && (intent.sha == "") ==> !\result.ok && \result.refusal == "empty"
+//@ ensures intent.type == "Fold" && !(intent.sha == "") && (intent.sha.length > MAX_ID || intent.change.length > MAX_ID || intent.title.length > MAX_TITLE) ==> !\result.ok && \result.refusal == "too-long"
+//@ ensures intent.type == "Fold" && !(intent.sha == "") && !(intent.sha.length > MAX_ID || intent.change.length > MAX_ID || intent.title.length > MAX_TITLE) && (exists(i, 0 <= i && i < history.real.length && history.real[i].sha == intent.sha)) ==> !\result.ok && \result.refusal == "duplicate"
+//@ ensures intent.type == "Fold" && !(intent.sha == "") && !(intent.sha.length > MAX_ID || intent.change.length > MAX_ID || intent.title.length > MAX_TITLE) && !(exists(i, 0 <= i && i < history.real.length && history.real[i].sha == intent.sha)) && (intent.into == "" || !exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.into)) ==> !\result.ok && \result.refusal == "unknown"
+//@ ensures intent.type == "AddNote" && (intent.text.trim() == "" || intent.by == "") ==> !\result.ok && \result.refusal == "empty"
+//@ ensures intent.type == "AddNote" && !(intent.text.trim() == "" || intent.by == "") && (intent.text.trim().length > MAX_NOTE || intent.by.length > MAX_TITLE) ==> !\result.ok && \result.refusal == "too-long"
+//@ ensures intent.type == "AddNote" && !(intent.text.trim() == "" || intent.by == "") && !(intent.text.trim().length > MAX_NOTE || intent.by.length > MAX_TITLE) && (intent.id == "" || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id))) ==> !\result.ok && \result.refusal == "unknown"
+//@ ensures intent.type == "Plan" && \result.ok && intent.before == "" ==> \result.event.type == "Planned" && \result.event.rank >= 0 && forall(i, 0 <= i && i < history.commits.length && history.commits[i].epic == intent.epic ==> \result.event.rank > history.commits[i].rank) && (\result.event.rank == 0 || exists(i, 0 <= i && i < history.commits.length && history.commits[i].epic == intent.epic && \result.event.rank == history.commits[i].rank + 1))
+//@ ensures intent.type == "Plan" && \result.ok && intent.before != "" ==> \result.event.type == "Planned" && exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.before && \result.event.rank == history.commits[i].rank && forall(j, 0 <= j && j < i ==> history.commits[j].id != intent.before))
+export function decide(history: History, intent: Intent): Decision {
+  const seq = history.seq + 1
+  switch (intent.type) {
+    case "OpenEpic": {
+      if (intent.id === "" || intent.title.trim() === "") return refused("empty")
+      if (intent.id.length > MAX_ID || intent.title.length > MAX_TITLE) return refused("too-long")
+      if (hasEpic(history.epics, intent.id)) return refused("duplicate")
+      return accepted({ type: "EpicOpened", seq, id: intent.id, title: intent.title.trim() })
+    }
+    case "Plan": {
+      const title = intent.title.trim()
+      if (intent.id === "" || title === "") return refused("empty")
+      if (intent.id.length > MAX_ID || title.length > MAX_TITLE || intent.task.length > MAX_TITLE) return refused("too-long")
+      if (hasCommit(history.commits, intent.id)) return refused("duplicate")
+      if (intent.epic === "" || !hasEpic(history.epics, intent.epic)) return refused("unknown")
+      if (intent.before === "") {
+        return accepted({ type: "Planned", seq, id: intent.id, epic: intent.epic, rank: endOf(history.commits, intent.epic), title, task: intent.task })
+      }
+      if (epicOf(history.commits, intent.before) !== intent.epic) return refused("unknown")
+      const rank = rankOf(history.commits, intent.before)
+      if (rank < 0) return refused("unknown")
+      return accepted({ type: "Planned", seq, id: intent.id, epic: intent.epic, rank, title, task: intent.task })
+    }
+    case "Amend": {
+      if (intent.task.trim() === "") return refused("empty")
+      if (intent.task.length > MAX_TITLE) return refused("too-long")
+      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")
+      if (!isIn(history.commits, intent.id, "landed") || taskOf(history.commits, intent.id) !== "") return refused("state")
+      return accepted({ type: "Amended", seq, id: intent.id, task: intent.task })
+    }
+    case "Start": {
+      if (intent.lane.trim() === "") return refused("empty")
+      if (intent.lane.length > MAX_TITLE) return refused("too-long")
+      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")
+      if (!isIn(history.commits, intent.id, "planned")) return refused("state")
+      return accepted({ type: "Started", seq, id: intent.id, lane: intent.lane })
+    }
+    case "Approve": {
+      if (intent.by === "") return refused("empty")
+      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")
+      if (!isIn(history.commits, intent.id, "working")) return refused("state")
+      return accepted({ type: "Approved", seq, id: intent.id, by: intent.by })
+    }
+    case "Fold": {
+      if (intent.sha === "") return refused("empty")
+      if (intent.sha.length > MAX_ID || intent.change.length > MAX_ID || intent.title.length > MAX_TITLE) return refused("too-long")
+      if (hasSha(history.real, intent.sha)) return refused("duplicate")
+      if (intent.into === "" || !hasCommit(history.commits, intent.into)) return refused("unknown")
+      return accepted({ type: "Folded", seq, sha: intent.sha, change: intent.change, title: intent.title, into: intent.into })
+    }
+    case "AddNote": {
+      const text = intent.text.trim()
+      if (text === "" || intent.by === "") return refused("empty")
+      if (text.length > MAX_NOTE || intent.by.length > MAX_TITLE) return refused("too-long")
+      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")
+      return accepted({ type: "Noted", seq, id: intent.id, section: intent.section, text, by: intent.by })
+    }
+  }
+}
+
+//@ verify
+//@ ensures \result == (0 <= rank && rank < seq)
+export function validRank(rank: number, seq: number): boolean {
+  return 0 <= rank && rank < seq
+}
+
+//@ verify
+//@ ensures \result == forall(i, 0 <= i && i < history.commits.length ==> 0 <= history.commits[i].rank && history.commits[i].rank < history.seq)
+export function validRanks(history: History): boolean {
+  let i = 0
+  while (i < history.commits.length) {
+    //@ invariant 0 <= i && i <= history.commits.length
+    //@ invariant forall(j, 0 <= j && j < i ==> 0 <= history.commits[j].rank && history.commits[j].rank < history.seq)
+    //@ decreases history.commits.length - i
+    if (!validRank(history.commits[i]!.rank, history.seq)) return false
+    i++
+  }
+  return true
+}
+
+//@ verify
+//@ ensures history.seq < 0 || history.seq >= 9007199254740991 ==> !\result.ok && \result.refusal == "full"
+//@ ensures \result.ok ==> 0 <= history.seq && history.seq < 9007199254740991 && \result.event.seq == history.seq + 1
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (\result.ok ==> \result.event.seq == history.seq + 1)
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (\result.ok && \result.event.type == "Folded" ==> \result.event.sha != "" && !(exists(i, 0 <= i && i < history.real.length && history.real[i].sha == \result.event.sha)) && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == \result.event.into))
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (\result.ok && \result.event.type == "Planned" ==> \result.event.id != "" && \result.event.rank >= 0 && \result.event.title != "" && !(exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == \result.event.id)) && exists(k, 0 <= k && k < history.epics.length && history.epics[k].id == \result.event.epic))
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (\result.ok && \result.event.type == "Planned" ==> \result.event.id.length <= MAX_ID && \result.event.title.length <= MAX_TITLE && \result.event.task.length <= MAX_TITLE)
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (\result.ok && \result.event.type == "Folded" ==> \result.event.sha.length <= MAX_ID && \result.event.title.length <= MAX_TITLE)
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (\result.ok && \result.event.type == "Noted" ==> \result.event.text != "" && \result.event.text.length <= MAX_NOTE && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == \result.event.id))
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (\result.ok && \result.event.type == "Approved" ==> \result.event.by != "" && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == \result.event.id && history.commits[j].state == "working"))
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "OpenEpic" ==> (\result.ok == (intent.id != "" && intent.title.trim() != "" && intent.id.length <= MAX_ID && intent.title.length <= MAX_TITLE && !(exists(j, 0 <= j && j < history.epics.length && history.epics[j].id == intent.id)))))
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Amend" ==> (\result.ok == (intent.task.trim() != "" && intent.task.length <= MAX_TITLE && intent.id != "" && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id)) && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id && history.commits[j].state == "landed")) && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id && history.commits[j].task == "" && forall(k, 0 <= k && k < j ==> history.commits[k].id != intent.id))))))
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Start" ==> (\result.ok == (intent.lane.trim() != "" && intent.lane.length <= MAX_TITLE && intent.id != "" && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id)) && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id && history.commits[j].state == "planned")))))
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Approve" ==> (\result.ok == (intent.by != "" && intent.id != "" && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id)) && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id && history.commits[j].state == "working")))))
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Fold" ==> (\result.ok == (intent.sha != "" && intent.sha.length <= MAX_ID && intent.change.length <= MAX_ID && intent.title.length <= MAX_TITLE && !(exists(j, 0 <= j && j < history.real.length && history.real[j].sha == intent.sha)) && intent.into != "" && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.into)))))
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "AddNote" ==> (\result.ok == (intent.text.trim() != "" && intent.by != "" && intent.text.trim().length <= MAX_NOTE && intent.by.length <= MAX_TITLE && intent.id != "" && (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id)))))
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Plan" ==> (\result.ok == (intent.id != "" && intent.title.trim() != "" && intent.id.length <= MAX_ID && intent.title.trim().length <= MAX_TITLE && intent.task.length <= MAX_TITLE && !(exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.id)) && intent.epic != "" && (exists(j, 0 <= j && j < history.epics.length && history.epics[j].id == intent.epic)) && (intent.before == "" || (exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == intent.before && history.commits[j].epic == intent.epic && history.commits[j].rank >= 0 && forall(k, 0 <= k && k < j ==> history.commits[k].id != intent.before)))))))
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "OpenEpic" && \result.ok ==> \result.event.type == "EpicOpened" && \result.event.id == intent.id && \result.event.title == intent.title.trim())
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Plan" && \result.ok ==> \result.event.type == "Planned" && \result.event.id == intent.id && \result.event.epic == intent.epic && \result.event.title == intent.title.trim() && \result.event.task == intent.task)
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Amend" && \result.ok ==> \result.event.type == "Amended" && \result.event.id == intent.id && \result.event.task == intent.task)
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Start" && \result.ok ==> \result.event.type == "Started" && \result.event.id == intent.id && \result.event.lane == intent.lane)
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Approve" && \result.ok ==> \result.event.type == "Approved" && \result.event.id == intent.id && \result.event.by == intent.by)
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Fold" && \result.ok ==> \result.event.type == "Folded" && \result.event.sha == intent.sha && \result.event.change == intent.change && \result.event.title == intent.title && \result.event.into == intent.into)
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "AddNote" && \result.ok ==> \result.event.type == "Noted" && \result.event.id == intent.id && \result.event.section == intent.section && \result.event.text == intent.text.trim() && \result.event.by == intent.by)
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (forall(i, 0 <= i && i < history.commits.length ==> 0 <= history.commits[i].rank && history.commits[i].rank < history.seq) && \result.ok && \result.event.type == "Planned" ==> 0 <= \result.event.rank && \result.event.rank < \result.event.seq)
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "OpenEpic" && (intent.id == "" || intent.title.trim() == "") ==> !\result.ok && \result.refusal == "empty")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "OpenEpic" && !(intent.id == "" || intent.title.trim() == "") && (intent.id.length > MAX_ID || intent.title.length > MAX_TITLE) ==> !\result.ok && \result.refusal == "too-long")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "OpenEpic" && !(intent.id == "" || intent.title.trim() == "") && !(intent.id.length > MAX_ID || intent.title.length > MAX_TITLE) && (exists(i, 0 <= i && i < history.epics.length && history.epics[i].id == intent.id)) ==> !\result.ok && \result.refusal == "duplicate")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Plan" && (intent.id == "" || intent.title.trim() == "") ==> !\result.ok && \result.refusal == "empty")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Plan" && !(intent.id == "" || intent.title.trim() == "") && (intent.id.length > MAX_ID || intent.title.trim().length > MAX_TITLE || intent.task.length > MAX_TITLE) ==> !\result.ok && \result.refusal == "too-long")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Plan" && !(intent.id == "" || intent.title.trim() == "") && !(intent.id.length > MAX_ID || intent.title.trim().length > MAX_TITLE || intent.task.length > MAX_TITLE) && (exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id)) ==> !\result.ok && \result.refusal == "duplicate")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Plan" && !(intent.id == "" || intent.title.trim() == "") && !(intent.id.length > MAX_ID || intent.title.trim().length > MAX_TITLE || intent.task.length > MAX_TITLE) && !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id)) && (intent.epic == "" || !exists(i, 0 <= i && i < history.epics.length && history.epics[i].id == intent.epic)) ==> !\result.ok && \result.refusal == "unknown")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Plan" && !(intent.id == "" || intent.title.trim() == "") && !(intent.id.length > MAX_ID || intent.title.trim().length > MAX_TITLE || intent.task.length > MAX_TITLE) && !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id)) && !(intent.epic == "" || !exists(i, 0 <= i && i < history.epics.length && history.epics[i].id == intent.epic)) && (intent.before != "" && !exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.before && history.commits[i].epic == intent.epic && history.commits[i].rank >= 0 && forall(j, 0 <= j && j < i ==> history.commits[j].id != intent.before))) ==> !\result.ok && \result.refusal == "unknown")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Amend" && (intent.task.trim() == "") ==> !\result.ok && \result.refusal == "empty")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Amend" && !(intent.task.trim() == "") && (intent.task.length > MAX_TITLE) ==> !\result.ok && \result.refusal == "too-long")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Amend" && !(intent.task.trim() == "") && !(intent.task.length > MAX_TITLE) && (intent.id == "" || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id))) ==> !\result.ok && \result.refusal == "unknown")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Amend" && !(intent.task.trim() == "") && !(intent.task.length > MAX_TITLE) && !(intent.id == "" || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id))) && (!(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id && history.commits[i].state == "landed")) || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id && history.commits[i].task == "" && forall(j, 0 <= j && j < i ==> history.commits[j].id != intent.id)))) ==> !\result.ok && \result.refusal == "state")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Start" && (intent.lane.trim() == "") ==> !\result.ok && \result.refusal == "empty")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Start" && !(intent.lane.trim() == "") && (intent.lane.length > MAX_TITLE) ==> !\result.ok && \result.refusal == "too-long")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Start" && !(intent.lane.trim() == "") && !(intent.lane.length > MAX_TITLE) && (intent.id == "" || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id))) ==> !\result.ok && \result.refusal == "unknown")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Start" && !(intent.lane.trim() == "") && !(intent.lane.length > MAX_TITLE) && !(intent.id == "" || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id))) && (!(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id && history.commits[i].state == "planned"))) ==> !\result.ok && \result.refusal == "state")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Approve" && (intent.by == "") ==> !\result.ok && \result.refusal == "empty")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Approve" && !(intent.by == "") && (intent.id == "" || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id))) ==> !\result.ok && \result.refusal == "unknown")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Approve" && !(intent.by == "") && !(intent.id == "" || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id))) && (!(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id && history.commits[i].state == "working"))) ==> !\result.ok && \result.refusal == "state")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Fold" && (intent.sha == "") ==> !\result.ok && \result.refusal == "empty")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Fold" && !(intent.sha == "") && (intent.sha.length > MAX_ID || intent.change.length > MAX_ID || intent.title.length > MAX_TITLE) ==> !\result.ok && \result.refusal == "too-long")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Fold" && !(intent.sha == "") && !(intent.sha.length > MAX_ID || intent.change.length > MAX_ID || intent.title.length > MAX_TITLE) && (exists(i, 0 <= i && i < history.real.length && history.real[i].sha == intent.sha)) ==> !\result.ok && \result.refusal == "duplicate")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Fold" && !(intent.sha == "") && !(intent.sha.length > MAX_ID || intent.change.length > MAX_ID || intent.title.length > MAX_TITLE) && !(exists(i, 0 <= i && i < history.real.length && history.real[i].sha == intent.sha)) && (intent.into == "" || !exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.into)) ==> !\result.ok && \result.refusal == "unknown")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "AddNote" && (intent.text.trim() == "" || intent.by == "") ==> !\result.ok && \result.refusal == "empty")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "AddNote" && !(intent.text.trim() == "" || intent.by == "") && (intent.text.trim().length > MAX_NOTE || intent.by.length > MAX_TITLE) ==> !\result.ok && \result.refusal == "too-long")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "AddNote" && !(intent.text.trim() == "" || intent.by == "") && !(intent.text.trim().length > MAX_NOTE || intent.by.length > MAX_TITLE) && (intent.id == "" || !(exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.id))) ==> !\result.ok && \result.refusal == "unknown")
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Plan" && \result.ok && intent.before == "" ==> \result.event.type == "Planned" && \result.event.rank >= 0 && forall(i, 0 <= i && i < history.commits.length && history.commits[i].epic == intent.epic ==> \result.event.rank > history.commits[i].rank) && (\result.event.rank == 0 || exists(i, 0 <= i && i < history.commits.length && history.commits[i].epic == intent.epic && \result.event.rank == history.commits[i].rank + 1)))
+//@ ensures 0 <= history.seq && history.seq < 9007199254740991 ==> (intent.type == "Plan" && \result.ok && intent.before != "" ==> \result.event.type == "Planned" && exists(i, 0 <= i && i < history.commits.length && history.commits[i].id == intent.before && \result.event.rank == history.commits[i].rank && forall(j, 0 <= j && j < i ==> history.commits[j].id != intent.before)))
+export function decideWithinCapacity(history: History, intent: Intent): Decision {
+  if (history.seq < 0 || history.seq >= 9007199254740991) return refused("full")
+  return decide(history, intent)
+}
+
+/** Replay accepts a full safe snapshot; every validated event is then stale and leaves it unchanged.
+ */
+//@ verify
+//@ requires 0 <= event.seq && event.seq <= 9007199254740991
+//@ requires 0 <= history.seq && history.seq <= 9007199254740991
+//@ ensures \result.seq == history.seq || \result.seq == history.seq + 1
+//@ ensures event.seq != history.seq + 1 ==> \result == history
+//@ ensures event.seq == history.seq + 1 ==> \result.seq == event.seq
+//@ ensures \result.epics.length >= history.epics.length && forall(i, 0 <= i && i < history.epics.length ==> \result.epics[i] == history.epics[i])
+//@ ensures \result.commits.length >= history.commits.length && forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].id == history.commits[i].id && \result.commits[i].epic == history.commits[i].epic)
+//@ ensures \result.real.length >= history.real.length && forall(i, 0 <= i && i < history.real.length ==> \result.real[i] == history.real[i])
+//@ ensures \result.real.length <= history.real.length + 1
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < history.commits.length ==> history.commits[i].id != history.commits[j].id))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.commits.length ==> \result.commits[i].id != \result.commits[j].id)))
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < history.epics.length ==> history.epics[i].id != history.epics[j].id))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.epics.length ==> \result.epics[i].id != \result.epics[j].id)))
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < history.commits.length && history.commits[i].epic == history.commits[j].epic ==> history.commits[i].rank != history.commits[j].rank))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.commits.length && \result.commits[i].epic == \result.commits[j].epic ==> \result.commits[i].rank != \result.commits[j].rank)))
+//@ ensures (forall(i, 0 <= i && i < history.commits.length ==> history.commits[i].rank >= 0)) ==> (forall(i, 0 <= i && i < \result.commits.length ==> \result.commits[i].rank >= 0))
+//@ ensures (forall(i, 0 <= i && i < history.commits.length ==> exists(k, 0 <= k && k < history.epics.length && history.epics[k].id == history.commits[i].epic))) ==> (forall(i, 0 <= i && i < \result.commits.length ==> exists(k, 0 <= k && k < \result.epics.length && \result.epics[k].id == \result.commits[i].epic)))
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < history.real.length ==> history.real[i].sha != history.real[j].sha))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.real.length ==> \result.real[i].sha != \result.real[j].sha)))
+//@ ensures (forall(i, 0 <= i && i < history.real.length ==> exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == history.real[i].mythical))) ==> (forall(i, 0 <= i && i < \result.real.length ==> exists(j, 0 <= j && j < \result.commits.length && \result.commits[j].id == \result.real[i].mythical)))
+//@ ensures event.seq == history.seq + 1 && event.type == "Planned" && event.title != "" && event.rank >= 0 && event.epic != "" && event.id != "" && !(exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id)) && exists(k, 0 <= k && k < history.epics.length && history.epics[k].id == event.epic) ==> \result.commits.length == history.commits.length + 1 && \result.commits[history.commits.length].id == event.id && \result.commits[history.commits.length].state == "planned"
+//@ ensures \result.real.length == history.real.length + 1 ==> event.type == "Folded" && \result.real[history.real.length].sha == event.sha && \result.real[history.real.length].mythical == event.into && \result.main == event.sha
+//@ ensures event.seq == history.seq + 1 && event.type == "Folded" && event.sha != "" && event.into != "" && !(exists(i, 0 <= i && i < history.real.length && history.real[i].sha == event.sha)) && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.into) ==> \result.real.length == history.real.length + 1
+//@ ensures event.seq == history.seq + 1 && event.type == "EpicOpened" && (event.title != "" && event.id != "" && !(exists(j, 0 <= j && j < history.epics.length && history.epics[j].id == event.id))) ==> \result.epics.length == history.epics.length + 1 && \result.epics[history.epics.length].id == event.id && \result.epics[history.epics.length].title == event.title && \result.commits == history.commits && \result.real == history.real && \result.main == history.main
+//@ ensures event.seq == history.seq + 1 && event.type == "EpicOpened" && !(event.title != "" && event.id != "" && !(exists(j, 0 <= j && j < history.epics.length && history.epics[j].id == event.id))) ==> \result.commits == history.commits && \result.epics == history.epics && \result.real == history.real && \result.main == history.main
+//@ ensures event.seq == history.seq + 1 && event.type == "Amended" && (event.task != "" && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].state == "landed") && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].task == "" && forall(k, 0 <= k && k < j ==> history.commits[k].id != event.id))) ==> \result.commits.length == history.commits.length && forall(i, 0 <= i && i < history.commits.length ==> (history.commits[i].id == event.id ? \result.commits[i].state == "planned" && \result.commits[i].task == event.task && \result.commits[i].notes == history.commits[i].notes && \result.commits[i].lane == history.commits[i].lane : \result.commits[i] == history.commits[i]))
+//@ ensures event.seq == history.seq + 1 && event.type == "Amended" && !(event.task != "" && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].state == "landed") && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].task == "" && forall(k, 0 <= k && k < j ==> history.commits[k].id != event.id))) ==> \result.commits == history.commits && \result.epics == history.epics && \result.real == history.real && \result.main == history.main
+//@ ensures event.seq == history.seq + 1 && event.type == "Started" && (event.lane != "" && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].state == "planned")) ==> \result.commits.length == history.commits.length && forall(i, 0 <= i && i < history.commits.length ==> (history.commits[i].id == event.id ? \result.commits[i].state == "working" && \result.commits[i].lane == event.lane && \result.commits[i].notes == history.commits[i].notes && \result.commits[i].task == history.commits[i].task : \result.commits[i] == history.commits[i]))
+//@ ensures event.seq == history.seq + 1 && event.type == "Started" && !(event.lane != "" && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].state == "planned")) ==> \result.commits == history.commits && \result.epics == history.epics && \result.real == history.real && \result.main == history.main
+//@ ensures event.seq == history.seq + 1 && event.type == "Approved" && (event.by != "" && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].state == "working")) ==> \result.commits.length == history.commits.length && forall(i, 0 <= i && i < history.commits.length ==> (history.commits[i].id == event.id ? \result.commits[i].state == "approved" && \result.commits[i].notes.length == history.commits[i].notes.length + 1 && \result.commits[i].notes[history.commits[i].notes.length].section == "evidence" && \result.commits[i].notes[history.commits[i].notes.length].text == "approved" && \result.commits[i].notes[history.commits[i].notes.length].by == event.by : \result.commits[i] == history.commits[i]))
+//@ ensures event.seq == history.seq + 1 && event.type == "Approved" && !(event.by != "" && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id && history.commits[j].state == "working")) ==> \result.commits == history.commits && \result.epics == history.epics && \result.real == history.real && \result.main == history.main
+//@ ensures event.seq == history.seq + 1 && event.type == "Noted" && (event.text != "" && event.by != "" && (event.id == "" || exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id))) ==> \result.commits.length == history.commits.length && forall(i, 0 <= i && i < history.commits.length ==> (history.commits[i].id == event.id ? \result.commits[i].notes.length == history.commits[i].notes.length + 1 && \result.commits[i].notes[history.commits[i].notes.length].section == event.section && \result.commits[i].notes[history.commits[i].notes.length].text == event.text && \result.commits[i].notes[history.commits[i].notes.length].by == event.by : \result.commits[i] == history.commits[i]))
+//@ ensures event.seq == history.seq + 1 && event.type == "Noted" && !(event.text != "" && event.by != "" && (event.id == "" || exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id))) ==> \result.commits == history.commits && \result.epics == history.epics && \result.real == history.real && \result.main == history.main
+//@ ensures forall(i, 0 <= i && i < history.commits.length ==> 0 <= history.commits[i].rank && history.commits[i].rank < history.seq) && (event.type != "Planned" || (0 <= event.rank && event.rank < event.seq)) ==> forall(i, 0 <= i && i < \result.commits.length ==> 0 <= \result.commits[i].rank && \result.commits[i].rank < \result.seq)
+//@ ensures event.type != "EpicOpened" ==> \result.epics == history.epics
+//@ ensures event.type != "Folded" ==> \result.real == history.real && \result.main == history.main
+//@ ensures event.type != "Planned" ==> \result.commits.length == history.commits.length && forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].rank == history.commits[i].rank && \result.commits[i].title == history.commits[i].title)
+//@ ensures forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].notes.length >= history.commits[i].notes.length && forall(j, 0 <= j && j < history.commits[i].notes.length ==> \result.commits[i].notes[j] == history.commits[i].notes[j]))
+//@ ensures event.seq == history.seq + 1 && event.type == "Planned" && !(event.title != "" && event.rank >= 0 && event.epic != "" && event.id != "" && !exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id) && exists(j, 0 <= j && j < history.epics.length && history.epics[j].id == event.epic)) ==> \result.commits == history.commits && \result.epics == history.epics && \result.real == history.real && \result.main == history.main
+//@ ensures event.seq == history.seq + 1 && event.type == "Folded" && !(event.sha != "" && event.into != "" && !exists(j, 0 <= j && j < history.real.length && history.real[j].sha == event.sha) && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.into)) ==> \result.commits == history.commits && \result.epics == history.epics && \result.real == history.real && \result.main == history.main
+//@ ensures event.seq == history.seq + 1 && event.type == "Planned" && (event.title != "" && event.rank >= 0 && event.epic != "" && event.id != "" && !exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id) && exists(j, 0 <= j && j < history.epics.length && history.epics[j].id == event.epic)) ==> \result.commits.length == history.commits.length + 1 && \result.commits[history.commits.length].id == event.id && \result.commits[history.commits.length].epic == event.epic && \result.commits[history.commits.length].rank == event.rank && \result.commits[history.commits.length].title == event.title && \result.commits[history.commits.length].state == "planned" && \result.commits[history.commits.length].task == event.task && \result.commits[history.commits.length].lane == "" && \result.commits[history.commits.length].notes.length == 0
+//@ ensures event.seq == history.seq + 1 && event.type == "Planned" && (event.title != "" && event.rank >= 0 && event.epic != "" && event.id != "" && !exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id) && exists(j, 0 <= j && j < history.epics.length && history.epics[j].id == event.epic)) ==> forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].rank == (history.commits[i].epic == event.epic && history.commits[i].rank >= event.rank ? history.commits[i].rank + 1 : history.commits[i].rank) && \result.commits[i].title == history.commits[i].title && \result.commits[i].state == history.commits[i].state && \result.commits[i].task == history.commits[i].task && \result.commits[i].lane == history.commits[i].lane && \result.commits[i].notes == history.commits[i].notes)
+//@ ensures event.seq == history.seq + 1 && event.type == "Folded" && (event.sha != "" && event.into != "" && !exists(j, 0 <= j && j < history.real.length && history.real[j].sha == event.sha) && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.into)) ==> \result.real.length == history.real.length + 1 && \result.real[history.real.length].sha == event.sha && \result.real[history.real.length].mythical == event.into && \result.real[history.real.length].change == event.change && \result.real[history.real.length].title == event.title && \result.main == event.sha
+//@ ensures event.seq == history.seq + 1 && event.type == "Folded" && (event.sha != "" && event.into != "" && !exists(j, 0 <= j && j < history.real.length && history.real[j].sha == event.sha) && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.into)) ==> forall(i, 0 <= i && i < history.commits.length ==> (history.commits[i].id == event.into ? \result.commits[i].state == "landed" && \result.commits[i].task == "" && \result.commits[i].lane == "" && \result.commits[i].notes == history.commits[i].notes : \result.commits[i] == history.commits[i]))
+//@ ensures event.type == "Approved" || event.type == "Noted" ==> forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].task == history.commits[i].task && \result.commits[i].lane == history.commits[i].lane)
+//@ ensures event.type == "Noted" ==> forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].state == history.commits[i].state)
+//@ ensures forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].notes.length >= history.commits[i].notes.length && \result.commits[i].notes.length <= history.commits[i].notes.length + 1 && forall(k, 0 <= k && k < history.commits[i].notes.length ==> \result.commits[i].notes[k] == history.commits[i].notes[k]))
+//@ ensures forall(i, history.commits.length <= i && i < \result.commits.length ==> \result.commits[i].notes.length == 0)
+//@ ensures 0 <= \result.seq && \result.seq <= 9007199254740991
+export function replayEvent(history: History, event: Event): History {
+  if (history.seq === 9007199254740991) return history
+  return apply(history, event)
+}
+
+/** Replays validated events over a validated snapshot, including one already at capacity.
+ */
+//@ verify
+//@ requires 0 <= initial.seq && initial.seq <= 9007199254740991
+//@ requires forall(i, 0 <= i && i < initial.commits.length ==> 0 <= initial.commits[i].rank && initial.commits[i].rank < initial.seq)
+//@ requires forall(i, 0 <= i && i < events.length ==> 0 <= events[i].seq && events[i].seq <= 9007199254740991 && (events[i].type != "Planned" || (0 <= events[i].rank && events[i].rank < events[i].seq)))
+//@ ensures initial.seq <= \result.seq && \result.seq <= 9007199254740991 && \result.seq <= initial.seq + events.length
+//@ ensures forall(i, 0 <= i && i < \result.commits.length ==> 0 <= \result.commits[i].rank && \result.commits[i].rank < \result.seq)
+//@ ensures forall(i, 0 <= i && i < events.length ==> events[i].seq == initial.seq + i + 1) ==> \result.seq == initial.seq + events.length
+export function replayHistory(initial: History, events: ReadonlyArray<Event>): History {
+  let history = initial
+  let i = 0
+  while (i < events.length) {
+    //@ invariant 0 <= i && i <= events.length
+    //@ invariant initial.seq <= history.seq && history.seq <= 9007199254740991 && history.seq <= initial.seq + i
+    //@ invariant forall(j, 0 <= j && j < history.commits.length ==> 0 <= history.commits[j].rank && history.commits[j].rank < history.seq)
+    //@ invariant forall(j, 0 <= j && j < events.length ==> events[j].seq == initial.seq + j + 1) ==> history.seq == initial.seq + i
+    //@ decreases events.length - i
+    history = replayEvent(history, events[i]!)
+    i++
+  }
+  return history
+}

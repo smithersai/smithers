@@ -1,0 +1,58 @@
+// Dogfooding (VL-26, multiplayer 0007): the agent works through the Factory commands the CLI and MCP server run while
+// a person works in the real web app, in one conversation. The app joins the shared conversation when it starts, so
+// the person sees the agent's work without posting first, and the agent reads the person's post.
+import { expect, it } from "@effect/vitest"
+import { vi } from "vitest"
+import { Runtime } from "foldkit"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { mockReply } from "../src/core/mockReplies.vibe"
+import { Ask, Read } from "../src/surfaces/commands.vibe"
+import { init } from "../src/web/main.vibe"
+import { application } from "./support/application.vibe"
+import { activeId, clickMinimize, commandK, container, hasAsk, remove, send, transcript } from "./support/browser.ts"
+
+it.live("a person in the app and the agent through the Factory commands work in one conversation", () => scoped(effect {
+  provide MockFactory {
+    const factory = try Factory
+    const shared = Layer.succeed(Factory, factory)
+    let latest = init({ session: "will", name: "Will", mode: "mock" }).model
+    const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+    const program = try Effect.try(() => application(node, shared, (model) => { latest = model }))
+    try acquireRelease(
+      sync(() => Runtime.embed(program, { flags: succeed({ session: "will", name: "Will", mode: "mock" as const }) })),
+      (handle) => sync(() => handle.dispose()),
+    )
+    try promise(() => vi.waitFor(() => expect(hasAsk()).toBe(true)))
+    // The agent works first; the person has not posted.
+    const first = try Ask.run({ text: "How do I install it?" })
+    try promise(() => vi.waitFor(() => expect(latest.client.conversation.entries.map((entry) => entry.done)).toEqual([true, true])))
+    try sync(clickMinimize)
+    try promise(() => vi.waitFor(() => expect(transcript()).toEqual([
+      ["Factory CLI", "How do I install it?"], ["VibeLang agent", "done=true"],
+    ])))
+    // The same label component receives the signed-in agent identity without additional UI copy.
+    try factory.accounts!.signInAgent()
+    // While the person reads, the agent's next post arrives live.
+    const second = try Ask.run({ text: "What is a service?" })
+    try promise(() => vi.waitFor(() => expect(transcript().slice(2)).toEqual([
+      ["will (agent)", "What is a service?"], ["VibeLang agent", "done=true"],
+    ])))
+    try factory.accounts!.signOut()
+    // The person posts; the agent reads it with the reply.
+    try sync(commandK)
+    try promise(() => vi.waitFor(() => expect(activeId()).toBe("vl-palette-prompt")))
+    try sync(() => send("How do errors work?"))
+    try promise(() => vi.waitFor(() => expect(latest.client.conversation.entries.map((entry) => entry.done)).toEqual([true, true, true, true, true, true]), { timeout: 4000 }))
+    const read = try Read.run({ after: second.events.at(-1)! })
+    try Effect.try(() => {
+      expect([first.text, second.text]).toEqual([mockReply("How do I install it?"), mockReply("What is a service?")])
+      expect(latest.client.conversation.entries.filter((entry) => entry.author === "agent").map((entry) => entry.text))
+        .toEqual([first.text, second.text, mockReply("How do errors work?")])
+      expect(read.entries.map((entry) => [entry.name, entry.text])).toEqual([
+        ["Will", "How do errors work?"], ["VibeLang agent", mockReply("How do errors work?")],
+      ])
+      expect(transcript().at(-2)).toEqual(["You", "How do errors work?"])
+    })
+  }
+}))

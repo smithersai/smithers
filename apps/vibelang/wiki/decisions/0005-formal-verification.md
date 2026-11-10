@@ -7,7 +7,7 @@
 1. [LemmaScript](https://github.com/midspiral/lemmascript), by **Midspiral** (MIT), reads its normal `//@` contracts;
    Dafny proves them. LemmaScript reads TypeScript, and the module stays in its verifiable subset, which is plain
    TypeScript syntax: `pnpm verify` proves an exact `.ts` copy of the file's text, staged under the ignored
-   `verify/.checks/`. (`vibelang --ts-projection` keeps the text and all 83 `//@` comments but appends an import of
+   `verify/.checks/`. (`vibelang --ts-projection` keeps the text and its `//@` comments but appends an import of
    `vibelang-ts-mapper/prelude`, which the proof's strict typecheck can't resolve, TS2307.) This is verification
    tooling, not a runtime dependency. VibeLang's VIP-43 has not landed; move these contracts into its syntax when it
    does.
@@ -18,12 +18,12 @@
 
 From `apps/vibelang`, run `pnpm verify`. On the first run it installs the lockfile-pinned LemmaScript **0.6.6** npm
 closure and **Dafny 4.11.0** into ignored `verify/.tools`. The installer verifies the official Dafny release archive's
-SHA-256 before extraction. It supports Linux x86_64 and macOS arm64/x86_64; only Linux was exercised on this lane.
+SHA-256 before extraction. It supports Linux x 86_64 and macOS arm 64/x 86_64; only Linux was exercised on this lane.
 Node >=18, npm, Python >=3.9, curl and unzip are prerequisites; there is no global tool installation.
 
 Every check strictly typechecks the selected source, creates a unique ignored `verify/.checks/run-*` directory,
-generates fresh Dafny, and invokes Dafny with one solver core and a 30-second limit per assertion batch. It never
-accepts a saved `.dfy` proof. All eleven exported transitions/queries and both typed decision constructors opt in with
+generates fresh Dafny, and invokes Dafny with one solver core and a 60-second limit per positive assertion batch (30 seconds for a negative case). It never
+accepts a saved `.dfy` proof. Each marked production transition, query and typed decision constructor opts in with
 `//@ verify`. Missing emitted marked functions and source edits during a check fail the harness. Dafny locations are
 mapped back to TypeScript function names and declaration lines; raw generated locations remain in the diagnostic.
 Summaries, SHA-256 source identities, raw logs and Dafny CSV timings are retained under that run directory.
@@ -95,8 +95,7 @@ Tool defects and minimal reproductions live in `verify/bugs/`; they are not coun
 
 No proof yet covers eventual network delivery/replay convergence, liveness, the Durable Object/WebSocket/agent-flow
 protocol, rendering, Effect execution, authentication, or deployment. Protocol modeling belongs with roadmap 1b
-(TLA+/TLC). The existing `Arbitrary` suite checks replay convergence empirically. CI wiring for this local command is
-still pending. The proof trusts TypeScript erasure, LemmaScript's lowering and local library, Dafny/Z3 and the stated
+(TLA+/TLC). The existing `Arbitrary` suite checks replay convergence empirically. The app's `PACKAGE.ts` runs proof and mutation gates in normal CI (0018). The proof trusts TypeScript erasure, LemmaScript's lowering and local library, Dafny/Z3 and the stated
 JS number/UTF-16 model; it is not a proof of those toolchains. macOS installers have not been executed here.
 
 **Fable finding 3.** `canReplyTo` and the start correlation contracts pass a fresh Linux run: **25 verified, 0 errors**. Six additional executable mutations cover missing/non-person/already-answered targets, omitted admission guard, mismatched event target and projected target. Final mutation receipts are in the lane report.
@@ -115,3 +114,94 @@ errors** in 27.9 s; `pnpm verify:broken` rejected **50/50** mutations in 480.1 s
 lets Effect code (the live sequencer, 0010) call the machine directly; LemmaScript reads only `//@` lines, and the
 mutation copies were regenerated with byte-identical contracts. Receipts: `pnpm verify` **28 verified, 0 errors** in
 20.8 s; `pnpm verify:broken` rejected **50/50** in 375.2 s.
+
+**All app decisions (VL-29).** [0018](0018-proofs.md) extends the harness beyond this conversation module and records
+the function inventory, production extractions, executable mutations and every remaining proof boundary. The gate
+automatically discovers marked production modules; every module is freshly generated and strictly typechecked.
+
+**Whole-app second batch (0018).** The conversation's contracts now include at most one answer per post, ignored
+text after a terminal reply/tour, exact delta/failure payloads, and admissible intent completeness. The shared gate
+also proves browser, mock and protocol policies. Five expensive negative cases select a named production
+postcondition with fail-closed matching; positive proofs still check every obligation. Parser errors and solver
+timeouts remain failures of the mutation gate, never successful rejections. Current receipts are in 0018.
+
+**History and numeric boundaries (0018).** Exact mythical transitions, refusal precedence and rank-bound induction
+are proved. Runtime decoding now enforces the safe-integer domain before replay, follow and bootstrap; sequence
+exhaustion is refused before incrementing. The unsafe-integer fixture records why a mathematical integer proof
+alone does not establish IEEE-754 behavior. Receiver proofs additionally cover gap frames and pending membership.
+
+The current shared gate passes 161 obligations in ten modules and rejects 302 executable mutations; 0018 records
+the exact receipt composition and the remaining proof boundaries.
+
+**Shared surfaces and model context (0018).** The twelve-module gate now proves 182 obligations and rejects 346
+mutations. Ordered index witnesses establish exact model-context selection; shared CLI/MCP accumulation and safe
+budget admission/addition are proved and integrated into their Effect shells.
+
+**Exact conversation and ordered selection (0018).** Every apply entry field and state frame is specified and
+lifted to receive, including role-ledger prepend order. Pending removal and unanswered posts carry source-position
+witnesses; replay carries a retained-log bound. The fresh Dafny proof adds only a checked recursive lemma call for
+the pending-count measure. Every positive assertion is checked, with conversation assertions split for tractability;
+its batch count is recorded separately from ordinary obligations. Stored conversation rows are decoded before replay.
+
+History replay (0018) now carries every apply contract through a maximum-cursor wrapper. Its production fold proves
+safe cursor and rank preservation and exact numbering for contiguous events; this is not a proof of journal ordering
+or full replay-state equivalence. Every decide clause is retained through the writer's capacity wrapper.
+
+Web decisions (0018) now include exact six-field screen projections and presentation/media guards. Finite coordinate
+comparisons use the backend's real type; native subtraction remains outside the proof, with a retained rounding
+counterexample. Host Model composition and account/People transitions are not inferred from the projection proof.
+
+Sandbox guard/frame proofs (0018) use quantified first-match source positions while retaining iterative runtime
+traversals. The newly exact running-count measure has an additions-only, checked induction call in its fresh empty
+Dafny lemma. No original contract, emitted statement or generated condition is removed.
+
+Startup choices (0018) now share an import-free proved kernel. Browser startup, history role selection and mode
+navigation call it; native storage/URL operations and their failure fallbacks remain explicit host boundaries.
+
+Theatre presentation (0018) now calls a proved kernel for speech decisions, selectors and keyboard focus wrapping.
+Actual speech, DOM layout and persisted-state decoding remain host/library boundaries.
+
+The live dispatcher (0018) threads a proved scan/attempt/done model through actual storage observations and engine
+attempts. It stops on the first unmarked post even when busy; engine execution and journal/lock correctness remain
+library/host assumptions.
+
+Post/StartTour (0018) thread a shared record-once/dispatch-once continuation model through their actual Actions.
+The proof preserves its accepted-receipt invariant and terminal guards; journal/replay behavior remains an SDK
+assumption, separately tested through real engines.
+
+Issue-link admission (0018) proves a bounded first-match parent path reaches the root without visiting the child.
+The recursive measure has its own exact step clauses; runtime traversal remains iterative. Global graph preservation
+and acceptance completeness remain outside this theorem. The optional-union-default reproduction records a separate
+LemmaScript union/optional contract lowering gap; no weakened request projection is substituted.
+
+Reply progress (0018) proves the zero base and exact bounded addition recurrence, admission flags, full field
+frames, latched malformed usage and completion precedence. The host establishes safe integers before arithmetic;
+`safe-usage-integer.ts` records that native predicate emission gap. Event routing, provider decoding and SDK replay
+remain explicit boundaries. No contract is weakened to admit a non-integer or overflowing settlement.
+
+The shared history flow machine (0018) also proves role thresholds, HTTP outcomes, Plan operation/field policies,
+open-epic membership and append-prefix behavior, agent signatures and product labels. Actual browser and protocol
+callers use these decisions. Full page merging, response admission and model frames remain explicit unfinished work.
+
+Reply event routing (0018) now lives in the proved kernel: every recognized kind selects its exact transition,
+non-text/unrelated events are identities, bounded tokens remain bounded and invalidity never clears. The native
+wrapper only projects SDK payloads and native observations. The optional-member conditional reproduction retains
+the backend failure; equivalent undefined/present postconditions preserve the full original relation.
+
+The Reply body (0018) threads the proved start-receipt/composition/settlement run through its real Actions. Only done
+admits composition, settlement requires completed composition, terminal/refused states are immutable, and all counters
+are bounded by one. SDK retries/replay stay outside this per-invocation order theorem. Nullable-member inequality
+emission has a retained exact reproduction; no existing production contract is weakened.
+
+Tour/EndTour ordering (0018) now shares proved admission and phase/counter invariants: accepted end before wake,
+current active observation before one speaker, and absorbing inactive/finished/ended states. The actual body still
+uses the same SDK race/cancellation; the conversation machine separately proves no writes after end. Nullable
+record guard/union fixtures retain the backend failures for the prospective complete walk cursor.
+
+Walkthrough counter extension (0018, batch20): actual private visit/hold identities use exact BigInt plus-one; pause/seek/clock choices carry contracts and 12 new mutants. Seven regression cases include the observed native-number collision beyond 2**53. No new dependency.
+
+**LemmaScript source and the web update (0018).** LemmaScript is now the workspace package `packages/lemmascript`, a copy of 0.6.6 with listed
+patches; `verify/install.sh` builds it, so npm no longer supplies the tool. `update` in `src/web/main.vibe` moves arm by arm onto plain state
+with commands as data; the arms proved so far, and those still inline, are listed in 0018.
+
+**Sequencers and commands (0018, third lane).** Both sequencers call proved decisions for their follow cut, plan steps, title cuts, reply attempts and finish plans; the CLI and MCP commands call proved argument decisions. A function named by a Dafny keyword is now verified under its escaped name.

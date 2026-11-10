@@ -1,0 +1,185 @@
+// One browser tab for the web targets: the Commands `update` returns run in a closed loop, each Command's Message going back
+// through `update` as the Foldkit runtime does, and a person's gestures chosen from what the screen offers.
+import { Factory } from "../src/core/Factory.vibe"
+import { Model, Flags, Message, init, update, accountOf, tourConversation, walkthroughSession } from "../src/web/main.vibe"
+import { pages, wikiEditable } from "../src/core/wiki.vibe"
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
+import { actionsOf } from "../src/web/actionModel.vibe"
+import { Finding, Int, TextOrBoundary } from "./run.vibe"
+
+const MAX_COMMANDS = 48
+
+/** One tab: every Command ends in a Message, the Message goes back through `update`, and the Model stays valid. */
+export function tab(flags: Flags) {
+  const first = init(flags)
+  let model = first.model
+  const pending = [...(first.commands ?? [])]
+  let ran = 0
+  const accept = (message: Message): string | undefined => {
+    const next = update(model, message)
+    model = next.model
+    pending.push(...(next.commands ?? []))
+    const checked = Schema.decodeUnknownExit(Schema.toType(Model))(model)
+    return checked._tag === "Success" ? undefined : Cause.pretty(checked.cause)
+  }
+  const settle = effect {
+    while (pending.length > 0 && ran < MAX_COMMANDS) {
+      const command = pending.shift()!
+      ran++
+      const result = try exit(timeout(command.effect, "5 seconds"))
+      if (result._tag === "Failure") throw new Finding({ report: `${command.name}: ${Cause.pretty(result.cause)}` })
+      if (!Schema.is(Message)(result.value)) throw new Finding({ report: `${command.name}: answered with an undeclared Message` })
+      const invalid = accept(result.value)
+      if (invalid !== undefined) throw new Finding({ report: `${command.name}: left an invalid Model: ${invalid}` })
+    }
+  }
+  return {
+    model: () => model,
+    settle,
+    send: effect (message: Message) => {
+      const invalid = accept(message)
+      if (invalid !== undefined) throw new Finding({ report: `${message._tag}: left an invalid Model: ${invalid}` })
+      try settle
+    },
+  }
+}
+
+const PUMP_WINDOW = "20 millis"
+
+/** What the event subscriptions would deliver: anything the conversation and tour streams hold right now. */
+export effect function pump(session: ReturnType<typeof tab>) {
+  const factory = try Factory
+  const collect = (conversation: string, after: number) => Effect.result(Stream.runCollect(factory.events(conversation, after).pipe(Stream.interruptWhen(Effect.sleep(PUMP_WINDOW)))))
+  const before = session.model()
+  const events = try collect(before.conversation, before.client.conversation.seq)
+  if (events._tag === "Failure") try session.send(try Effect.try(() => Message.FailedEvents({ reason: events.failure.reason })))
+  else for (const event of events.success) try session.send(try Effect.try(() => Message.ReceivedEvent({ event })))
+  const state = session.model()
+  if (state.tourClient === undefined) return
+  const tour = try collect(tourConversation(walkthroughSession(state)), state.tourClient.conversation.seq)
+  if (tour._tag === "Failure") try session.send(try Effect.try(() => Message.FailedTourEvents()))
+  else for (const event of tour.success) try session.send(try Effect.try(() => Message.ReceivedTourEvent({ event })))
+}
+
+export const Op = Schema.Literals([
+  "post", "mock-mode", "live-mode", "sandbox-command", "slash", "palette", "escape", "splash", "chat", "docs", "reconnect", "retry", "latest",
+  "actions", "maximize-actions", "select-action", "action-input", "run-action", "cancel-action", "select-run", "tick", "retry-actions", "move-slash", "pick-slash",
+  "wiki", "filter-wiki", "wiki-location", "edit-wiki", "wiki-draft", "edit-text", "edit-same", "save-wiki", "cancel-edit",
+  "account", "sign-in", "sign-out", "choose", "people", "close-people", "toggle-people", "select-role", "confirm-role", "cancel-role", "dismiss", "retry-account", "resolve-mock", "resolve-live",
+  "issues", "issue-ui", "issue-card", "sandboxes", "maximize-sandboxes", "start-sandbox", "stop-sandbox", "terminal", "submit-terminal",
+  "tour", "auto-tour", "pause-tour", "back-stop", "skip-stop", "tour-sound", "end-tour", "measure", "remeasure", "tour-focus", "media", "pump", "noise", "wiki-save", "wiki-no-change", "drive-tour", "tour-event-end", "pick-mode",
+])
+const ISSUE_ACTIONS = ["retry", "close", "specification", "spec-review", "roles", "list", "select", "kind", "state", "query", "title", "summary", "example", "prior", "comment-text", "parent", "assignee", "cancel", "back", "continue", "new-form", "vip-form", "commit-dialog", "split-dialog", "link-dialog", "kind-key", "focus"]
+const ISSUE_KINDS = ["All", "Issues", "Tasks", "VIPs"]
+const REVIEWERS = ["astra", "sol", "fable", "opus"]
+export const ROLES = ["viewer", "new", "community", "contributor", "maintainer"] as const
+export const GRANTS = ["new", "community", "contributor", "maintainer"] as const
+export const Step = Schema.Struct({ op: Op, n: Int, text: TextOrBoundary })
+
+export const TOUR_ID = "fuzz-tour"
+
+/** The sequencer's next tour events for this tab: the tour starts if it has not, then the agent drives to `step`. */
+export function tourStop(model: Model, step: number): ReadonlyArray<Message> {
+  const conversation = model.tourClient?.conversation
+  const seq = conversation?.seq ?? 0
+  const started = conversation?.replying === TOUR_ID
+  return [
+    ...(started ? [] : [Message.ReceivedTourEvent({ event: { type: "TourStarted", seq: seq + 1, id: TOUR_ID } })]),
+    // The fold ignores a stop with no target, so the agent names the step's own.
+    Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", seq: seq + (started ? 1 : 2), id: TOUR_ID, step, target: WALKTHROUGH[step - 1]!.target, at: 1, duration: 1 } }),
+  ]
+}
+
+export function tourEnded(model: Model): ReadonlyArray<Message> {
+  const seq = model.tourClient?.conversation.seq ?? 0
+  return [Message.ReceivedTourEvent({ event: { type: "TourEnded", seq: seq + 1, id: TOUR_ID } })]
+}
+
+/** A person's next gesture, chosen from what the screen currently offers so sequences get past the first dialog. */
+export function gesture(model: Model, { op, n, text }: typeof Step.Type): ReadonlyArray<Message> {
+  const actions = actionsOf(model)
+  const entry = actions.entries[n % Math.max(1, actions.entries.length)]
+  const command = actions.commands[n % Math.max(1, actions.commands.length)]
+  const page = pages[n % pages.length]!
+  const editable = pages.filter((entry) => wikiEditable(entry.id))[n % pages.filter((entry) => wikiEditable(entry.id)).length]!
+  const person = accountOf(model).members[n % Math.max(1, accountOf(model).members.length)]
+  switch (op) {
+    case "post": return [Message.UpdatedDraft({ value: text === "" ? "install" : text }), Message.SubmittedDraft()]
+    case "mock-mode": return [Message.UpdatedDraft({ value: "/mock" }), Message.SubmittedDraft()]
+    case "live-mode": return [Message.UpdatedDraft({ value: "/live" }), Message.SubmittedDraft()]
+    case "sandbox-command": return [Message.UpdatedDraft({ value: "/sandbox" }), Message.SubmittedDraft()]
+    // Completions match the command word (`/post`), never the flow's name.
+    case "slash": return [Message.UpdatedDraft({ value: `${command?.command ?? "/" + text} ${text}` }), Message.SubmittedDraft()]
+    case "palette": return [Message.PressedCommandK()]
+    case "escape": return [Message.PressedEscape()]
+    case "splash": return [Message.ClickedSplash()]
+    case "chat": return [Message.ClickedChat()]
+    case "docs": return [Message.ClickedDocs()]
+    case "reconnect": return [Message.ClickedReconnect()]
+    case "retry": return [Message.ClickedRetry({ clientId: model.client.conversation.entries[n % Math.max(1, model.client.conversation.entries.length)]?.clientId ?? text })]
+    case "latest": return [Message.ClickedLatest()]
+    case "actions": return [Message.ClickedActions()]
+    case "maximize-actions": return [Message.MaximizedActions()]
+    case "select-action": return entry === undefined ? [] : [Message.SelectedAction({ name: entry.name })]
+    case "action-input": return [Message.UpdatedActionInput({ value: n % 2 === 0 ? text : "{\"a\":1}" })]
+    case "run-action": return [Message.ClickedRunAction()]
+    case "cancel-action": return [Message.ClickedCancelAction()]
+    case "select-run": return [Message.SelectedRun({ id: actions.runs[n % Math.max(1, actions.runs.length)]?.id ?? text })]
+    case "tick": return [Message.TickedActions({ at: n * 1000 })]
+    case "retry-actions": return [Message.RetriedActions()]
+    case "move-slash": return [Message.UpdatedDraft({ value: "/" }), Message.MovedSlash({ delta: n % 2 === 0 ? 1 : -1 })]
+    case "pick-slash": return command === undefined ? [] : [Message.UpdatedDraft({ value: "/" }), Message.PickedSlash({ name: command.name })]
+    case "pick-mode": return [Message.UpdatedDraft({ value: "/" }), Message.PickedSlash({ name: ["mode/mock", "mode/live", `mode/${text}`][n % 3]! })]
+    case "wiki": return [Message.ClickedWiki({ page: page.id })]
+    case "filter-wiki": return [Message.FilteredWiki({ value: text })]
+    case "wiki-location": return [Message.WikiLocationChanged({ page: n % 2 === 0 ? `/wiki/${page.id}#a` : "/" })]
+    case "edit-wiki": return [Message.ClickedWiki({ page: page.id }), Message.ClickedEditWiki()]
+    case "wiki-draft": return [Message.ClickedWikiDraft({ page: page.id })]
+    case "edit-text": return [Message.UpdatedWikiEdit({ value: `${text}!` })]
+    case "edit-same": return [Message.UpdatedWikiEdit({ value: model.wikiEdit?.base ?? text })]
+    case "save-wiki": return [Message.SubmittedWikiEdit()]
+    case "cancel-edit": return [Message.CanceledWikiEdit()]
+    case "account": return [Message.ClickedAccount()]
+    case "sign-in": return [Message.ClickedSignIn()]
+    case "sign-out": return [Message.ClickedSignOut()]
+    case "choose": return [Message.ChoseIdentity({ role: ROLES[n % ROLES.length]! })]
+    case "people": return [Message.ClickedPeople()]
+    case "close-people": return [Message.ClosedPeople()]
+    case "toggle-people": return [Message.ToggledPeople()]
+    case "select-role": return [Message.SelectedRole({ id: person?.id ?? text, role: GRANTS[n % GRANTS.length]! })]
+    case "confirm-role": return [Message.ConfirmedRole()]
+    case "cancel-role": return [Message.CancelledRole()]
+    case "dismiss": return [Message.DismissedAccountError()]
+    case "retry-account": return [Message.RetriedAccount()]
+    case "resolve-mock": return [Message.ResolvedMode({ mode: "mock" })]
+    case "resolve-live": return [Message.ResolvedMode({ mode: "live" })]
+    case "issues": return [Message.ClickedIssues()]
+    case "issue-ui": {
+      const action = ISSUE_ACTIONS[n % ISSUE_ACTIONS.length]!
+      return [Message.IssueUi({ action, value: action === "kind" ? ISSUE_KINDS[n % ISSUE_KINDS.length]! : action === "state" ? (n % 2 === 0 ? "open" : "closed") : action === "select" ? String(n) : action === "kind-key" ? ISSUE_KINDS[n % ISSUE_KINDS.length]! : action === "focus" ? "ix-commit" : action === "spec-review" ? REVIEWERS[n % REVIEWERS.length]! : text })]
+    }
+    case "issue-card": return [Message.OpenIssueCard({ number: n })]
+    case "sandboxes": return [Message.ClickedSandboxes()]
+    case "maximize-sandboxes": return [Message.MaximizedSandboxes()]
+    case "start-sandbox": return [Message.StartedSandbox()]
+    case "stop-sandbox": return [Message.StoppedSandbox()]
+    case "terminal": return [Message.UpdatedTerminal({ value: text })]
+    case "submit-terminal": return [Message.SubmittedTerminal()]
+    case "tour": return [Message.ClickedLearnMore()]
+    case "auto-tour": return [Message.AutoTour()]
+    case "pause-tour": return [Message.ClickedPauseTour()]
+    case "back-stop": return [Message.ClickedBackStop()]
+    case "skip-stop": return [Message.ClickedSkipStop()]
+    case "tour-sound": return [Message.ToggledTourSound()]
+    case "end-tour": return [Message.ClickedEndTour()]
+    case "measure": return [Message.MeasuredTheatre({ x: n, y: n, width: n, height: n })]
+    case "remeasure": return [Message.RemeasureTheatre()]
+    case "tour-focus": return [Message.MovedTourFocus({ backward: n % 2 === 0 })]
+    case "media": return [n % 2 === 0 ? Message.LoadedMedia({ kind: "image" }) : Message.FailedMedia({ src: text, kind: "video" })]
+    case "pump": case "noise": return []
+    case "wiki-save": return [Message.ClickedWiki({ page: editable.id }), Message.ClickedEditWiki(), Message.UpdatedWikiEdit({ value: `${text}!` }), Message.SubmittedWikiEdit()]
+    case "wiki-no-change": return [Message.ClickedWiki({ page: editable.id }), Message.ClickedEditWiki(), Message.SubmittedWikiEdit()]
+    case "drive-tour": return tourStop(model, n % 10 + 1)
+    case "tour-event-end": return tourEnded(model)
+  }
+}

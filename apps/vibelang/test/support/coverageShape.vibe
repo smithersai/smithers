@@ -1,0 +1,2 @@
+// A namespace call as an arrow's whole body: the statement shape the bundle-level source map misplaced (0017).
+export const answer = (flag: boolean) => Effect.runSync(Effect.succeed(flag ? 1 : 2))

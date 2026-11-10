@@ -1,0 +1,56 @@
+// The chat agent's history tools (wiki/decisions/0020-mythical-history.md; FLOW-3): `vibelang/history/show`, `Plan`,
+// `Start` and `Note`, the flows the CLI and MCP server reach, bound into smithers.sh's agent (0012) as the tour once
+// bound its pane tools. A call is a journaled step of the agent's run; a write runs its flow in the History object,
+// which checks who asks, so the agent in the chat is refused what its person may not do, and approving and folding
+// are not tools at all.
+import { FlowBinding } from "@smthrs/harness"
+import { Note, Plan, Start } from "../src/history/flows.vibe"
+import { type HistoryReader, note, plan, Show, show, start } from "../src/history/tools.vibe"
+import { operation } from "./SandboxTools.vibe"
+
+/** The most tool calls one cell of a reply may make: a few reads and a write, with room for a retry. */
+export const REPLY_CALLS = 8
+
+/** What the reply agent is told about its tools, beside VibeLang's reference. */
+export const HISTORY_INSTRUCTION = [
+  "Work on VibeLang runs through its mythical history: epics of small commits, each with notes on what was tried and what proves it.",
+  "To answer about it, call vibelang/history/show, starting with what: outline; open an epic or a commit only as needed.",
+  "When the person asks you to plan, start or note work on it, call vibelang/history/Plan, Start or Note; say what the history answered. You never approve or fold.",
+].join("\n")
+
+/** A flow declaration as the agent's catalog shows it: its own name, description and schemas. */
+function declared<I extends Schema.Top, O extends Schema.Top>(flow: { readonly _tag: string; readonly description?: string | undefined; readonly payloadSchema: I; readonly successSchema: O }) {
+  return {
+    name: flow._tag,
+    description: flow.description,
+    input: flow.payloadSchema,
+    output: flow.successSchema,
+    capabilities: [],
+    effects: undefined,
+    modelInvocable: true,
+  }
+}
+
+/** The history's tools over `history`, for the agent in the chat. */
+export function historyTools(history: HistoryReader): FlowBinding.Source {
+  return FlowBinding.source("vibelang-history", [
+    FlowBinding.make({ flow: declared(Show), handler: (input: Parameters<typeof show>[1]) => show(history, input) }),
+    // Each write is keyed by its call: a call the harness re-executes after a crash records once.
+    FlowBinding.make({ flow: declared(Plan), handler: effect (input: Parameters<typeof plan>[1], call) => { return try plan(history, input, try operation(call)) } }),
+    FlowBinding.make({
+      flow: declared(Start),
+      handler: effect (input: { readonly id: string; readonly lane: string }, call) => { return try start(history, input.id, input.lane, try operation(call)) },
+    }),
+    FlowBinding.make({
+      flow: declared(Note),
+      handler: effect (input: { readonly id: string; readonly section: "tried" | "evidence" | "superseded"; readonly text: string }, call) => {
+        return try note(history, input.id, input.section, input.text, try operation(call))
+      },
+    }),
+  ])
+}
+
+/** The history the reply's agent reaches through its tools. */
+export service HistoryTools {
+  readonly history: HistoryReader
+}

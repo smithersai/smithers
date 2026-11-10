@@ -1,0 +1,83 @@
+// The wrapper runs under V8 against actual Electrobun APIs in a separate native host.
+import { inject } from "vitest"
+import { expect, it } from "@effect/vitest"
+import { BunDesktop } from "../src/index.ts"
+import { bindings, choose, nativeMeta, delay, faulty } from "./native/config.ts"
+import type * as Native from "#electrobun"
+
+const fixture = inject("nativeFixture")
+const native = bindings(fixture)
+const meta = () => nativeMeta(fixture)
+const withNative = <A, E, R>(body: A!E!R, port: typeof Native = native) => scoped(body.pipe(Effect.provide(BunDesktop.layerWith({ load: Effect.succeed(port) }))))
+const unavailable = async (body: unknown!BunDesktop.DesktopUnavailable!BunDesktop.DesktopWindow, port: typeof Native = native) => {
+  const result = await runPromise(exit(withNative(body, port)))
+  expect(Exit.isFailure(result)).toBe(true)
+  if (Exit.isFailure(result)) expect(Cause.squash(result.cause)).toBeInstanceOf(BunDesktop.DesktopUnavailable)
+}
+
+it.live("opens a real CEF window, applies navigation rules, and closes it with its scope", () => tryPromise(async () => {
+  await runPromise(withNative(effect {
+    const desktop = try BunDesktop.DesktopWindow
+    try Effect.try(() => expect(desktop.resources).toBe(fixture.resources))
+    try desktop.open(fixture.url + "/window")
+    try tryPromise(async () => {
+      const deadline = Date.now() + 10000
+      while ((await meta()).loaded === 0 && Date.now() < deadline) await delay(50)
+      expect((await meta()).loaded).toBeGreaterThan(0)
+      expect((await meta()).windows).toBe(1)
+    })
+  }))
+  expect((await meta()).windows).toBe(0)
+}))
+
+it.live("selects and cancels the actual GTK directory dialog", () => tryPromise(async () => {
+  for (const cancel of [false, true]) {
+    const result = await runPromise(withNative(effect {
+      const desktop = try BunDesktop.DesktopWindow
+      return try tryPromise(async () => {
+        const selected = runPromise(desktop.chooseDirectory())
+        await delay(150)
+        await choose(fixture, cancel)
+        return await selected
+      })
+    }))
+    expect(result).toBe(cancel ? null : fixture.directory + "/chosen")
+  }
+}))
+
+it.live("opens HTTPS through the real system browser with literal argv", () => tryPromise(async () => {
+  await runPromise(withNative(effect {
+    const desktop = try BunDesktop.DesktopWindow
+    try desktop.openExternal("https://example.com/")
+  }))
+}))
+
+it.live("maps faulty foreign bindings to a safe typed failure", () => tryPromise(async () => {
+  await unavailable(effect { const desktop = try BunDesktop.DesktopWindow; try desktop.open(fixture.url) }, faulty(native, "constructor"))
+  await unavailable(effect { const desktop = try BunDesktop.DesktopWindow; try desktop.open(fixture.url) }, faulty(native, "rules"))
+  expect((await meta()).windows).toBe(0)
+  await unavailable(effect { const desktop = try BunDesktop.DesktopWindow; try desktop.openExternal("https://example.com/") }, { ...native, Utils: { ...native.Utils, openExternal: () => false } })
+  await unavailable(effect { const desktop = try BunDesktop.DesktopWindow; try desktop.openExternal("https://example.com/") }, faulty(native, "external"))
+  await unavailable(effect { const desktop = try BunDesktop.DesktopWindow; try desktop.chooseDirectory() }, { ...native, Utils: { ...native.Utils, openFileDialog: () => Promise.reject(new Error("private-dialog-message")) } })
+  const empty = await runPromise(withNative(effect { const desktop = try BunDesktop.DesktopWindow; return try desktop.chooseDirectory() }, { ...native, Utils: { ...native.Utils, openFileDialog: () => Promise.resolve([""]) } }))
+  expect(empty).toBeNull()
+}))
+
+it.live("rejects malformed, non-HTTPS and credentialed links before the native opener", () => tryPromise(async () => {
+  for (const url of ["bad-url", "http://example.com/", "https://user@example.com/", "https://:password@example.com/"]) {
+    await unavailable(effect { const desktop = try BunDesktop.DesktopWindow; try desktop.openExternal(url) })
+  }
+  await unavailable(effect { const desktop = try BunDesktop.DesktopWindow; try desktop.open("bad-url") })
+}))
+
+it.live("refuses an unpatched peer or a failed native loader", () => tryPromise(async () => {
+  const unpatched = await runPromise(exit(scoped(Layer.build(BunDesktop.layerWith({ load: Effect.succeed({ ...native, SMITHERS_BUN14_COMPAT: 0 }) })))))
+  const failed = await runPromise(exit(scoped(Layer.build(BunDesktop.layerWith({ load: Effect.fail(new BunDesktop.DesktopUnavailable()) })))))
+  expect(Exit.isFailure(unpatched)).toBe(true)
+  expect(Exit.isFailure(failed)).toBe(true)
+}))
+
+it.live("redacts a native close failure and still releases the real window", () => tryPromise(async () => {
+  await unavailable(effect { const desktop = try BunDesktop.DesktopWindow; try desktop.open(fixture.url + "/window") }, faulty(native, "close"))
+  expect((await meta()).windows).toBe(0)
+}))

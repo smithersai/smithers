@@ -1,0 +1,9 @@
+import { FlowRuntime } from "@smthrs/flow"
+import { Digest, SecureRandom } from "effect/crypto"
+import { WikiFailure } from "./wikiSchemas.vibe"
+export schema WikiDraft { readonly page: string; readonly text: string }
+/** Drafting has no repository write. The person reviews the draft before Save or Propose starts a change. */
+export service WikiWriter { draft(request: { readonly page: string; readonly source: string; readonly ask: string }): WikiDraft!WikiFailure!(FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom) }
+
+/** Only draft is delegated to a live reply. Submission stays a person's explicit action. */
+export service WikiDrafting { draft(page: string, ask: string, key: string): void!WikiFailure }

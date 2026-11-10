@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema"
 import { readFileSync } from "node:fs"
 import * as ts from "typescript"
 import { describe, expect, it } from "vitest"
-import { BoundedJson } from "../src/index.vibe"
+import { BoundedJson, sortCollections } from "../src/index.vibe"
 import { firstPath } from "../src/IssuePath.vibe"
 import { make } from "../src/ReadonlyMap.ts"
 
@@ -15,12 +15,14 @@ const runExample = (needle: string, result: string): unknown => {
   const { outputText } = ts.transpileModule(code.replace(/^import .*$/gm, ""), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None }
   })
-  return new Function("BoundedJson", "Schema", "make", "firstPath", `${outputText}\nreturn ${result}`)(
-    BoundedJson,
-    Schema,
-    make,
-    firstPath
-  )
+  return new Function(
+    "BoundedJson",
+    "Schema",
+    "make",
+    "firstPath",
+    "sortCollections",
+    `${outputText}\nreturn ${result}`
+  )(BoundedJson, Schema, make, firstPath, sortCollections)
 }
 
 describe("API documentation examples", () => {
@@ -41,6 +43,10 @@ describe("API documentation examples", () => {
   it("constructs an iterable read-only registry", () => {
     expect(runExample("const registry", "({ enabled: registry.get('build')?.enabled, keys: [...registry.keys()] })"))
       .toEqual({ enabled: true, keys: ["build"] })
+  })
+
+  it("sorts a set and leaves an array in its order", () => {
+    expect(runExample("const order", "({ tags, steps: order.steps })")).toEqual({ tags: ["a", "b"], steps: ["b", "a"] })
   })
 
   it("reports a schema field path without the rejected value", () => {

@@ -1,0 +1,12 @@
+// An idiomatic VibeLang action bundled into an ordinary Node guest by SandboxedFlow.
+import { Action, Flow } from "@smthrs/flow"
+
+const Echo = Action.make("fixtures/vibe/Echo", { payload: { value: Schema.String }, success: Schema.String })
+export const layer = Echo.toLayer(effect ({ value }) => {
+  try yieldNow
+  return `Vibe: ${value}`
+})
+export const Answer = Flow.make("fixtures/vibe/Answer", {
+  payload: { value: Schema.String }, success: Schema.String,
+  body: (payload) => Echo.call(payload),
+})

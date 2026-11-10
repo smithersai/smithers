@@ -1,0 +1,98 @@
+import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Role, SignedRole } from "../core/conversation.vibe"
+import { accountOf, roleLabel, Message, type Model, type Message as AppMessage } from "./main.vibe"
+import { modeSwitch } from "./modeSwitch.vibe"
+
+type H = HtmlBuilder<AppMessage>
+const roles: ReadonlyArray<Role> = ["viewer", "new", "community", "contributor", "maintainer"]
+export function badge(h: H, role: Role): Html {
+  const variant = role === "maintainer" ? "default" : role === "contributor" ? "success" : role === "community" ? "secondary" : "outline"
+  return h.span([h.Class("sui-badge sui-badge-" + variant)], [roleLabel(role)])
+}
+export function identityNav(model: Model, h: H): ReadonlyArray<Html> {
+  const account = accountOf(model)
+  const identity = account.identity
+  return [h.div([h.Class("vl-identity-tools")], [
+    ...(model.mode === "pending" ? [] : [modeSwitch(model.mode, h)]),
+    ...(model.mode === "mock" ? [
+      h.label([h.Class("vl-visit")], [
+        h.span([h.Class("vl-visit-as")], ["Visit as"]),
+        h.select([h.Class("sui-select-trigger"), h.AriaLabel("Visit as"), h.Value(identity.role), h.OnChange(role => Message.ChoseIdentity({ role: role as Role }))],
+          roles.map(role => h.option([h.Value(role)], [roleLabel(role)]))),
+      ]),
+    ] : []),
+    ...(identity.id === "" ? model.mode === "pending" ? [] : [
+      h.button([h.Class("sui-button sui-button-solid"), h.Type("button"), h.Disabled(account.pending), h.OnClick(Message.ClickedSignIn())], [account.pending ? "Signing in…" : "Sign in"]),
+    ] : [
+      h.span([h.Class("vl-nav-role")], [badge(h, identity.role)]),
+      h.div([h.Class("vl-account")], [
+        h.button([h.Id("vl-account"), h.Class("sui-avatar"), h.DataAttribute("lane", "4"), h.Type("button"), h.AriaLabel("Account"), h.AriaExpanded(account.menu), h.OnClick(Message.ClickedAccount())], [identity.login.slice(0, 1).toUpperCase()]),
+        ...(account.menu ? [
+          h.div([h.Class("sui-action-menu"), h.Role("menu"), h.AriaLabel("Account menu")], [
+            h.div([h.Class("sui-action-menu-head")], [h.span([], ["Signed in as ", h.strong([], [identity.login])]), badge(h, identity.role)]),
+            h.button([h.Id("vl-account-people"), h.Class("sui-action-menu-item"), h.Type("button"), h.Role("menuitem"), h.OnClick(Message.ClickedPeople()),
+              h.OnKeyDownFocus(key => (key === "ArrowDown" || key === "ArrowUp") ? Option.some({ focusSelector: "#vl-account-out", message: Message.FocusedPrompt() }) : Option.none())], ["People"]),
+            h.button([h.Id("vl-account-out"), h.Class("sui-action-menu-item"), h.Type("button"), h.Role("menuitem"), h.OnClick(Message.ClickedSignOut()),
+              h.OnKeyDownFocus(key => (key === "ArrowUp" || key === "ArrowDown") ? Option.some({ focusSelector: "#vl-account-people", message: Message.FocusedPrompt() }) : Option.none())], ["Sign out"]),
+          ]),
+        ] : []),
+      ]),
+    ]),
+  ])]
+}
+export function peoplePane(model: Model, h: H): ReadonlyArray<Html> {
+  const account = accountOf(model)
+  if (account.people === "closed" || account.identity.id === "") return []
+  return [
+    h.section([h.Class("vl-people"), h.AriaLabel("People"), h.DataAttribute("maximized", String(account.people === "max"))], [
+      h.div([h.Class("vl-people-bar")], [
+        h.strong([], ["People · " + account.members.length]),
+        h.button([h.Class("vl-people-toggle"), h.Type("button"), h.AriaLabel(account.people === "max" ? "Minimize People" : "Maximize People"), h.OnClick(Message.ToggledPeople())], ["⤢"]),
+        h.button([h.Class("vl-people-toggle"), h.Type("button"), h.AriaLabel("Close People"), h.OnClick(Message.ClosedPeople())], ["×"]),
+      ]),
+      h.div([h.Class("vl-people-list")], account.members.map((person, index) => h.div([h.Class("vl-person"), h.Key(person.id)], [
+        h.span([h.Class("sui-avatar"), h.DataAttribute("lane", String(index % 6)), h.AriaHidden(true)], [person.login.slice(0, 1).toUpperCase()]),
+        h.div([h.Class("vl-person-who")], [
+          h.span([h.Class("vl-person-name")], [person.login]),
+          ...(person.id === account.identity.id ? [h.span([h.Class("vl-person-handle")], ["you"])] : []),
+        ]),
+        ...(account.identity.role === "maintainer" && person.id !== account.identity.id ? [
+          h.select([h.Key(person.id + account.target), h.Class("sui-select-trigger"), h.AriaLabel("Role for " + person.login), h.Value(person.role), h.OnChange(role => Message.SelectedRole({ id: person.id, role: role as SignedRole }))],
+            roles.filter(role => role !== "viewer").map(role => h.option([h.Value(role), h.Disabled(role === "new")], [roleLabel(role)]))),
+        ] : [badge(h, person.role)]),
+      ]))),
+    ]),
+  ]
+}
+export function accountOverlays(model: Model, h: H): ReadonlyArray<Html> {
+  const account = accountOf(model)
+  const person = account.members.find(person => person.id === account.target)
+  const demotion = person !== undefined && roles.indexOf(account.targetRole) < roles.indexOf(person.role)
+  const verb = demotion ? "Demote" : "Promote"
+  const consequence = account.targetRole === "maintainer" ? "Maintainers merge, promote and edit the wiki directly." : account.targetRole === "contributor" ? "Contributors triage, run actions and start sandboxes." : "Community members participate."
+  return [
+    h.dialog([h.Id("vl-role-dialog"), h.Class("vl-role-dialog"), h.AriaLabel(verb + " " + (person?.login ?? "") + " to " + roleLabel(account.targetRole) + "?"), h.AriaModal(true), h.DataAttribute("state", account.target === "" ? "closed" : "open"), h.OnCancelPreventDefault(Message.CancelledRole())], [
+      h.h2([h.Class("sui-dialog-title")], [verb + " " + (person?.login ?? "") + " to " + roleLabel(account.targetRole) + "?"]),
+      h.p([h.Class("sui-dialog-description")], [consequence]),
+      ...(account.error === "" ? [] : [h.p([h.Role("alert")], [account.error])]),
+      h.div([h.Class("sui-dialog-footer")], [
+        h.button([h.Id("vl-role-cancel"), h.Class("sui-button"), h.Type("button"), h.OnClick(Message.CancelledRole())], ["Cancel"]),
+        h.button([h.Class("sui-button sui-button-solid"), h.Type("button"), h.Disabled(account.pending), h.OnClick(account.error === "" ? Message.ConfirmedRole() : Message.RetriedAccount())], [account.error === "" ? verb : "Retry"]),
+      ]),
+    ]),
+    ...(account.error === "" || account.target !== "" ? [] : [
+      h.div([h.Class("sui-toast-stack")], [
+        h.div([h.Class("sui-toast"), h.DataAttribute("tone", "failed"), h.Role("alert")], [
+          h.span([h.Class("sui-toast-text")], [account.error]),
+          h.button([h.Class("sui-button"), h.Type("button"), h.OnClick(Message.RetriedAccount())], ["Retry"]),
+          h.button([h.Class("sui-toast-hide"), h.Type("button"), h.AriaLabel("Dismiss"), h.OnClick(Message.DismissedAccountError())], ["×"]),
+        ]),
+      ]),
+    ]),
+    ...(account.pending ? [h.div([h.Class("sui-loading-bar"), h.AriaHidden(true)], [])] : []),
+  ]
+}
+export function accountNotice(model: Model, h: H): ReadonlyArray<Html> {
+  const text = accountOf(model).notice
+  return text === "" ? [] : [h.div([h.Class("sui-chat-message"), h.DataAttribute("role", "system"), h.Role("status")], [h.div([h.Class("sui-chat-bubble")], [text])])]
+}

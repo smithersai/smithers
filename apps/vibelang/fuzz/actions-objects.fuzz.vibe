@@ -1,0 +1,85 @@
+import { it } from "@effect/vitest"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { Post, Tour } from "../src/core/flows.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import { world, request, history } from "../test/support/actionObjects.vibe"
+import { run, Int } from "./run.vibe"
+
+const FLOWS = [Post._tag, Tour._tag, "vibelang/history/Plan", "vibelang/sandbox/start", "vibelang/no-such-flow"] as const
+const states = ["queued", "running", "passed", "failed", "cancelled"]
+const refusals = ["forbidden", "input", "conflict", "failed", "not-found", "cancel-failed", "busy", "full", "too-long"]
+const Op = Schema.Struct({
+  op: Schema.Literals(["start", "alarm", "cancel", "rerun", "demote"]),
+  id: Int,
+  flow: Int,
+  well: Schema.Boolean,
+  role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]),
+})
+const Input = Schema.Array(Op).check(Schema.isMaxLength(8))
+
+const inputOf = (flow: string, id: string, well: boolean): Schema.Json => !well ? { nonsense: 1 }
+  : flow === Post._tag ? { text: `Question ${id}` }
+  : flow === "vibelang/history/Plan" ? { how: "append", epic: "", newEpic: "Fuzz", target: "", title: `Plan ${id}`, task: "Task" }
+  : flow === "vibelang/sandbox/start" ? { conversation: `sandbox-${id}` }
+  : {}
+
+/** Random run lifecycles on the real durable objects: only typed refusals, known states, no duplicated run. */
+it.live("actions/object-lifecycles", () => run("actions/object-lifecycles", Input, (ops) => effect {
+  const w = try world()
+  provide MockFactory, history {
+    const device = try Factory
+    try device.accounts!.choose("maintainer")
+    const product = try Mythical
+    provide ActionDevice = device {
+      const used = new Set<string>()
+      // Each execution first walks every flow's lifecycle: a 250 ms default budget affords only a few of these objects.
+      const lifecycle = FLOWS.flatMap((_, flow) => [
+        { op: "start" as const, id: flow * 3, flow, well: true, role: "maintainer" as const },
+        { op: "alarm" as const, id: flow * 3, flow, well: true, role: "maintainer" as const },
+        { op: "rerun" as const, id: flow * 3, flow, well: true, role: "maintainer" as const },
+        { op: "start" as const, id: flow * 3 + 1, flow, well: false, role: "maintainer" as const },
+        { op: "start" as const, id: flow * 3 + 2, flow, well: true, role: "maintainer" as const },
+        { op: "cancel" as const, id: flow * 3 + 2, flow, well: true, role: "maintainer" as const },
+      ])
+      for (const op of [...lifecycle, ...ops]) {
+        const id = `arun${op.id % 16}`
+        const flow = FLOWS[op.flow % FLOWS.length]!
+        if (op.op === "demote") {
+          try device.accounts!.choose(op.role)
+          continue
+        }
+        if (op.op === "start") {
+          const answer = try w.directory.start(request(id, flow, inputOf(flow, id, op.well), w.person.id), op.role)
+          if (answer !== null && !refusals.includes(answer)) return false
+          if (answer === null) used.add(id)
+        }
+        if (op.op === "rerun") {
+          const next = `anext${op.id % 16}`
+          const answer = try w.directory.rerun(id, next, op.role, w.person.id)
+          if (answer !== null && !refusals.includes(answer)) return false
+          if (answer === null) used.add(next)
+        }
+        if (op.op === "cancel") {
+          const answer = try w.directory.cancel(id, op.role, w.person.id)
+          if (answer !== null && !refusals.includes(answer)) return false
+          // A start refused after recording its request leaves a terminal failed row, so the rows decide, not the start's answer.
+          const recorded = (try Runs.read((try w.object(id)).sequencer)).some((row) => row.id === id)
+          if (recorded === (answer === "not-found")) return false
+        }
+        if (op.op === "alarm" && used.has(id)) {
+          const object = try w.object(id)
+          try object.host.alarm(w.spend, w.model, product)
+        }
+        for (const known of used) {
+          const rows = try Runs.read((try w.object(known)).sequencer)
+          if (rows.some((row) => !states.includes(row.state))) return false
+          if (new Set(rows.map((row) => row.id)).size !== rows.length) return false
+        }
+      }
+      return true
+    }
+  }
+}))

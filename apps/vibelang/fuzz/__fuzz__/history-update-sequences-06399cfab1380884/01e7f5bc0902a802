@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 6
+bias 2
+null-prototype false
+key 1406717971
+tape j_s29bfdYNseRExSzJ31rGQHalg8OuCgidrPZ4-P_fUcPfp6NxAowHKFdCDshIcMngz4rGqEqxbjnmWfqL_NqDDAHkaTg6q2AjQ9eBnl1KV730L5gHoyZfokiPoZhu_Tefux86VGI-ddDocbr-nqlJyKn5jN_83JhDo1hLvewbJJ792k6rpvs4fFaJ2IbDwLcC1arUN7ayjiekAl-kJsrpDwcBcty47S35IS1YvI8HOS0Df5QdCnFIPkDVcjq968wPDSYtGaoTBE1Pmyy6wAzKRSaS2I4-xblbAwLKma-QCMHhWkx7pxJfUwafFaTD8_Jvr2CYuPFdG93m9Vjr0naBm8CxzEtOasYS9JVLsZukxnTSNbh8MQBTeA5N3DHBjRy2iLMo9GqjV6r4hGiR3STs2cNBsWIG9C7Kt7QUHk3GkwhxIZ468IpTW64OBYB1S9PSIvZKsKW-Lsu8jqPWYOj5tLlp81NxiBY4iyOQ1fbAg
+schedule-key 1039041555
+schedule 
+signature "ReturnedFalse"
+path 0.3.3
+codec "json"
+value "{\"flags\":{\"mode\":\"pending\",\"role\":\"maintainer\",\"hash\":\"\"},\"messages\":[{\"_tag\":\"UpdatedForm\",\"field\":\"how\",\"value\":\"\"}]}"
+# ReturnedFalse
+# {"flags":{"mode":"pending","role":"maintainer","hash":""},"messages":[{"_tag":"UpdatedForm","field":"how","value":""}]}

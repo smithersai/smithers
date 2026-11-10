@@ -1,0 +1,163 @@
+// @vitest-environment node
+// The wiki HTTP boundary over a real loopback server: durable executions journal on in-memory object storage and
+// the fixture repository answers through the injected host. No request is intercepted.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServer, HttpServerRequest } from "effect/http"
+import { serveWiki, WikiAuthority } from "../worker/Wiki.vibe"
+import { fixtureWikiHost, makeWikiStore } from "../src/core/WikiFactory.vibe"
+import { WikiHost } from "../src/core/wikiFlows.vibe"
+import { WikiState } from "../src/core/wikiSchemas.vibe"
+import { pages } from "../src/core/wiki.vibe"
+import type { Principal } from "../worker/Issues.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+
+const roadmap = pages.find((page) => page.id === "roadmap")!
+const will: Principal = { id: "fixture-maintainer", login: "will", role: "maintainer", connection: { person: 1, delegation: "fixture-delegation" } }
+const jun: Principal = { id: "fixture-contributor", login: "jun", role: "contributor", connection: { person: 1, delegation: "fixture-delegation" } }
+const FailureBody = Schema.Struct({ reason: Schema.String })
+
+interface Answer { readonly status: number; readonly state?: typeof WikiState.Type | undefined; readonly reason?: string }
+
+/** Sessions name people in this harness, exactly as the deployment's authority derives them from its cookie. */
+effect function served(sessions: Readonly<Record<string, Principal>>) {
+  const storage = try Effect.try(() => objectStorage()) as unknown as Storage
+  const store = try makeWikiStore()
+  const server = try HttpServer.HttpServer
+  try HttpServer.serveEffect(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const actor = sessions[request.cookies["session"] ?? ""]
+    const host = try fixtureWikiHost(effect () => actor === undefined ? { id: "", login: "Guest", role: "viewer" as const } : actor, store)
+    const authority: WikiAuthority.Shape = { current: () => Effect.succeed(actor) }
+    return try serveWiki("wiki-http", storage).pipe(
+      Effect.provideService(WikiAuthority, authority),
+      Effect.provideService(WikiHost, host),
+      Effect.provide(FetchHttpClient.layer),
+    )
+  })
+  const address = server.address
+  return { origin: address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}` }
+}
+
+effect function call(origin: string, request: { readonly method: string; readonly path: string; readonly body?: unknown; readonly cookie?: string }): Answer!import("effect/http").HttpClientError.HttpClientError!HttpClient.HttpClient {
+  const client = try HttpClient.HttpClient
+  const wire = (request.method === "GET" ? HttpClientRequest.get(origin + request.path) : HttpClientRequest.post(origin + request.path).pipe(HttpClientRequest.bodyJsonUnsafe(request.body))).pipe(
+    HttpClientRequest.setHeader("cookie", request.cookie ?? ""),
+  )
+  const response = try client.execute(wire)
+  const json = (response.json catch () => undefined)
+  const state = Schema.decodeUnknownOption(WikiState)(json)
+  const failure = Schema.decodeUnknownOption(FailureBody)(json)
+  return { status: response.status, ...(Option.isSome(state) ? { state: state.value } : {}), ...(Option.isSome(failure) ? { reason: failure.value.reason } : {}) }
+}
+
+describe("the wiki HTTP boundary", () => {
+  it.live("reads are public, writes are the person's, and a replayed save is the same journaled execution", () => scoped(effect {
+    provide NodeHttpServer.layerTest, FetchHttpClient.layer {
+      const { origin } = try served({ will, jun })
+      const before = try call(origin, { method: "GET", path: "/api/wiki?page=roadmap" })
+      const base = before.state?.pages.find((p) => p.id === "roadmap")?.source ?? ""
+      try Effect.try(() => {
+        expect(before.status).toBe(200)
+        expect(base).toBe(roadmap.source)
+      })
+      const edited = base.trimEnd() + "\n\n2 wiki editing landed\n"
+      const save = { op: "save", page: "roadmap", base, text: edited, key: "http-save-1" }
+      const anonymous = try call(origin, { method: "POST", path: "/api/wiki", body: save })
+      const contributors = try call(origin, { method: "POST", path: "/api/wiki", body: { ...save, key: "http-save-2" }, cookie: "session=jun" })
+      try Effect.try(() => {
+        expect(anonymous.status).toBe(403)
+        expect(anonymous.reason).toBe("forbidden")
+        expect(contributors.status).toBe(403)
+      })
+      const saved = try call(origin, { method: "POST", path: "/api/wiki", body: save, cookie: "session=will" })
+      const replay = try call(origin, { method: "POST", path: "/api/wiki", body: save, cookie: "session=will" })
+      const after = try call(origin, { method: "GET", path: "/api/wiki?page=roadmap" })
+      try Effect.try(() => {
+        expect(saved.status).toBe(200)
+        expect(saved.state?.pages.find((p) => p.id === "roadmap")?.source).toBe(base)
+        expect(replay.status).toBe(200)
+        expect(replay.state).toEqual(saved.state)
+        expect(after.state?.pages.find((p) => p.id === "roadmap")?.source).toBe(base)
+      })
+      const stale = try call(origin, { method: "POST", path: "/api/wiki", body: { ...save, base: "# old\n", key: "http-save-3" }, cookie: "session=will" })
+      const missing = try call(origin, { method: "GET", path: "/api/wiki?page=decisions/9999-nope" })
+      const invalid = try call(origin, { method: "POST", path: "/api/wiki", body: { op: "save", page: "roadmap" }, cookie: "session=will" })
+      const generated = try call(origin, { method: "POST", path: "/api/wiki", body: { op: "propose", page: "decisions", base: "", text: "x", key: "http-prop-2" }, cookie: "session=jun" })
+      const proposed = try call(origin, { method: "POST", path: "/api/wiki", body: { op: "propose", page: "roadmap", base, text: base + "A contributor line.\n", key: "http-prop-1" }, cookie: "session=jun" })
+      const afterProposal = try call(origin, { method: "GET", path: "/api/wiki?page=roadmap" })
+      try Effect.try(() => {
+        expect(stale.status).toBe(409)
+        expect(stale.reason).toBe("conflict")
+        expect(missing.status).toBe(404)
+        expect(invalid.status).toBe(400)
+        expect(generated.status).toBe(404)
+        expect(proposed.status).toBe(200)
+        expect(proposed.state?.review).toMatch(/\/pull\/[0-9]+$/)
+        expect(afterProposal.state?.pages.find((p) => p.id === "roadmap")?.source).toBe(base)
+      })
+    }
+  }))
+})
+
+it.live("a write key cannot adopt a changed payload", () => scoped(effect {
+  provide NodeHttpServer.layerTest, FetchHttpClient.layer {
+    const { origin } = try served({ will })
+    const before = try call(origin, { method: "GET", path: "/api/wiki?page=roadmap" })
+    const base = before.state!.pages.find(p => p.id === "roadmap")!.source
+    const request = { op: "save", page: "roadmap", base, text: base + "\nFirst.\n", key: "fixed-key" }
+    const first = try call(origin, { method: "POST", path: "/api/wiki", body: request, cookie: "session=will" })
+    const changed = try call(origin, { method: "POST", path: "/api/wiki", body: { ...request, text: base + "\nChanged.\n" }, cookie: "session=will" })
+    try Effect.try(() => { expect(first.status).toBe(200); expect(changed.status).toBe(400); expect(changed.reason).toBe("invalid") })
+  }
+}))
+
+it.live("the largest actual wiki page fits the bounded edit request", () => scoped(effect {
+  provide NodeHttpServer.layerTest, FetchHttpClient.layer {
+    const { origin } = try served({ will })
+    const id = "decisions/0018-proofs"
+    const source = pages.find(page => page.id === id)!.source
+    const answer = try call(origin, { method: "POST", path: "/api/wiki", cookie: "session=will", body: { op: "save", page: id, base: source, text: source + "\nReviewed.\n", key: "large-page" } })
+    try Effect.try(() => { expect(source.length).toBeGreaterThan(262_144); expect(answer.status).toBe(200); expect(answer.state?.review).toMatch(/\/pull\/[0-9]+$/) })
+  }
+}))
+
+it.live("an agent principal can draft but cannot submit even with a maintainer's role", () => scoped(effect {
+  provide NodeHttpServer.layerTest, FetchHttpClient.layer {
+    const { origin } = try served({ agent: { ...will, kind: "agent" } })
+    const base = roadmap.source
+    const answer = try call(origin, { method: "POST", path: "/api/wiki", cookie: "session=agent", body: { op: "save", page: "roadmap", base, text: base + "\nAgent write.\n", key: "agent-write" } })
+    try Effect.try(() => { expect(answer.status).toBe(403); expect(answer.reason).toBe("forbidden") })
+  }
+}))
+
+import { executeWiki } from "../worker/Wiki.vibe"
+it.live("an unconnected person keeps their reviewed text before credential connection, without a GitHub request", () => scoped(effect {
+  const storage = try Effect.try(() => objectStorage()) as unknown as Storage
+  const { connection: _connection, ...unconnected } = will
+  const outcome = try Effect.result(executeWiki("unconnected-wiki", storage, { op: "save", page: "roadmap", base: roadmap.source, text: roadmap.source + "\nRetain my edit.\n", key: "connect-edit" }).pipe(
+    Effect.provideService(WikiAuthority, { current: () => Effect.succeed(unconnected) }), Effect.provide(FetchHttpClient.layer),
+  ))
+  const stored = try promise(() => storage.get(`wiki/draft/${will.id}/roadmap`))
+  try Effect.try(() => {
+    expect(outcome).toMatchObject({ _tag: "Failure", failure: { reason: "connect", unwritten: true } })
+    expect(stored).toEqual({ page: "roadmap", text: roadmap.source + "\nRetain my edit.\n" })
+  })
+}))
+
+import { liveWiki } from "../src/core/LiveWiki.vibe"
+it.live("live wiki reads refuse malformed Unicode before URL encoding", () => scoped(effect {
+  provide NodeHttpServer.layerTest, FetchHttpClient.layer {
+    const { origin } = try served({})
+    const wiki = try liveWiki(origin)
+    const result = try Effect.exit(wiki.read("bad\ud800"))
+    try Effect.try(() => {
+      expect(result._tag).toBe("Failure")
+      if (result._tag === "Failure") {
+        expect(Cause.hasDies(result.cause)).toBe(false)
+        expect(Cause.findError(result.cause)).toMatchObject({ _tag: "Success", success: { reason: "invalid" } })
+      }
+    })
+  }
+}))

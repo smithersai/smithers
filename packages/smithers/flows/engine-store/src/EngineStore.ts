@@ -32,6 +32,7 @@ import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
+import * as RpcSerialization from "effect/rpc/RpcSerialization"
 import type * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
@@ -532,12 +533,40 @@ interface DeferredRecovery {
 }
 
 /**
+ * The `RpcSerialization` in context cannot store action results here (VIP-44).
+ *
+ * This store keeps every action result as the JSON value its serializer's
+ * `codecFor` encodes, so it holds only a serializer whose `codecFor` is the
+ * JSON codec: `RpcSerialization.json`, `ndjson`, `jsonRpc` and `ndJsonRpc`,
+ * which all store the same bytes. Schema-binary and custom codecs need stored
+ * frames with a recorded content type, which this store does not have yet. The
+ * store is refused when it is built, as a defect, so nothing is stored under a
+ * codec it cannot read back.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class UnstorableSerialization extends Schema.TaggedError<UnstorableSerialization>()(
+  "@smthrs/engine-store/UnstorableSerialization",
+  {
+    code: Schema.Literal("unstorable_serialization"),
+    contentType: Schema.String
+  }
+) {}
+
+/**
  * Opens one engine store: the services it captures at composition, the
  * in-process tables its dispatches share, its run driver, and its deferred
  * persistence.
  */
 const openStore = Effect.fnUntraced(function*(options: Options) {
   const host = yield* CapabilitySet.current
+  const serialization = yield* Effect.serviceOption(RpcSerialization.RpcSerialization)
+  if (Option.isSome(serialization) && serialization.value.codecFor !== RpcSerialization.json.codecFor) {
+    return yield* Effect.die(
+      new UnstorableSerialization({ code: "unstorable_serialization", contentType: serialization.value.contentType })
+    )
+  }
   const ownerIdentity = yield* OwnerIdentity.OwnerIdentity
   const owner = yield* ownerIdentity.ownerId(options.owner.hostId)
   const attemptStore = yield* AttemptStore.AttemptStore
@@ -603,6 +632,8 @@ const openStore = Effect.fnUntraced(function*(options: Options) {
     options,
     host,
     owner,
+    // The serializer action results are stored and decoded with (VIP-44).
+    serialization: Option.getOrElse(serialization, () => RpcSerialization.json),
     // One admission mutex per incarnation, shared by every dispatch this
     // store drives: `ActionPersistence.make` runs per dispatch below, so a
     // per-make default would never contend and the same-key exclusion the
@@ -984,7 +1015,12 @@ const persistAction = (
     sourceId: store.options.journalSource,
     isAlive: store.options.isAlive,
     engineJj: store.engineJj,
-    execute: (actionInput) => (actionInput.action as Action.Any).executeEncoded as Effect.Effect<unknown, unknown>,
+    // The serializer the store accepted, never one a caller scoped around the
+    // dispatch: dispatch decodes with the adapter's, so both must be the same.
+    execute: (actionInput) =>
+      (actionInput.action as Action.Any).executeEncoded.pipe(
+        Effect.provideService(Action.StoredSerialization, store.serialization)
+      ) as Effect.Effect<unknown, unknown>,
     idempotencyKey: input.action.idempotencyKey === undefined
       ? undefined
       : input.key,
@@ -1318,6 +1354,7 @@ const adapter = (store: Store): FlowEngine.Encoded => ({
   // with `unsafe_interrupt_unsupported` here too (the release policy).
   interruptUnsafe: store.driver.interruptUnsafe,
   resume: store.driver.resume,
+  serialization: store.serialization,
   actionExecute: (input) => actionExecute(store, input),
   nodeRecordBytes: (input) => {
     const record = observation(store, input)

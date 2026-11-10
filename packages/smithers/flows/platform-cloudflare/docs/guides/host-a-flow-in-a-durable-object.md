@@ -151,4 +151,9 @@ kind and code, and for a lost or refused connection the driver's text for it. No
 statement and the database's message. [Troubleshooting](../troubleshooting.md) maps each `error.type` to its
 cause.
 
+An object that runs many executions over its own storage (`ObjectDatabase`) keeps every settled run until
+something deletes it. Pass `retention: { olderThanMs }` to `CloudflareRuntime.layer` and each invocation deletes up
+to 100 runs that settled at least that long ago, logged as `smithers.cloudflare.retention` and counted by outcome
+([API reference](../api.md#cloudflareruntimeretention)).
+
 Keep one `ExecutionObject.make` instance per object incarnation. Its alarm handler serializes concurrent drives, including RPC calls that drive an admitted execution immediately. Waiting callers reuse the recorded result after the active drive completes. Cancellation uses its own admission gate and can still interrupt the active drive.

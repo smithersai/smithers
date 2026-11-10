@@ -1,0 +1,6 @@
+import { FlowRuntime } from "@smthrs/flow"
+import { Digest, SecureRandom } from "effect/crypto"
+import { IssueFailure, IssueRequest } from "./issueSchemas.vibe"
+export schema VipDraft { readonly title: string; readonly summary: string; readonly example: string; readonly prior: string }
+/** Drafting has no repository write. The person reviews this result before Submit VIP starts a change. */
+export service VipWriter { draft(request: IssueRequest): VipDraft!IssueFailure!(FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom) }

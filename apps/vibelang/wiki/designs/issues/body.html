@@ -1,0 +1,528 @@
+<body>
+<header class="d-bar">
+  <b>Issues, tasks, VIPs</b>
+  <label>Screen
+    <select id="d-screen">
+      <option value="s-issues" selected>Issues</option>
+      <option value="s-tasks">Tasks</option>
+      <option value="s-vips">VIPs</option>
+      <option value="s-issue">Issue · open</option>
+      <option value="s-commit">Issue · commit dialog</option>
+      <option value="s-committed">Issue · committed task</option>
+      <option value="s-vip1">Propose a VIP · 1 Summary</option>
+      <option value="s-vip2">Propose a VIP · 2 Example</option>
+      <option value="s-vip3">Propose a VIP · 3 Prior art</option>
+      <option value="s-vip4">Propose a VIP · 4 Review</option>
+      <option value="s-vip-review">VIP · in review</option>
+      <option value="s-vip-accepted">VIP · accepted</option>
+      <option value="s-chat-file">Chat · agent files an issue</option>
+      <option value="s-chat-split">Chat · agent splits and links</option>
+      <option value="s-roles">Roles · who may do what</option>
+    </select>
+  </label>
+  <label>Role
+    <select id="d-role">
+      <option value="viewer">Viewer</option>
+      <option value="new">New</option>
+      <option value="community">Community</option>
+      <option value="contributor">Contributor</option>
+      <option value="maintainer" selected>Maintainer</option>
+    </select>
+  </label>
+  <label>List
+    <select id="d-state">
+      <option value="populated" selected>Populated</option>
+      <option value="empty">Empty</option>
+      <option value="loading">Loading</option>
+      <option value="error">Error</option>
+    </select>
+  </label>
+</header>
+
+<div class="vl-app">
+  <header class="vl-top">
+    <button aria-label="Home" class="vl-home" type="button"><span class="vl-logo"><img src="logo-dark.svg" alt="VibeLang" style="height:20px"></span></button>
+    <nav class="vl-nav">
+      <span class="vl-pill">Mock</span>
+      <a class="vl-nav-link" href="#">Docs<span aria-hidden="true" class="vl-away">↗</span></a>
+      <a class="vl-nav-link" href="#"><svg viewBox="0 0 16 16" aria-hidden="true" class="vl-mark"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>GitHub<span aria-hidden="true" class="vl-away">↗</span></a>
+      <a class="vl-nav-link" href="#" data-only-role="viewer">Sign in</a>
+    </nav>
+  </header>
+
+  <section class="d-screen" id="s-issues" data-kind="all"></section>
+  <section class="d-screen" id="s-tasks" data-kind="tasks"></section>
+  <section class="d-screen" id="s-vips" data-kind="vips"></section>
+  <section class="d-screen" id="s-issue"></section>
+  <section class="d-screen" id="s-commit"></section>
+  <section class="d-screen" id="s-committed"></section>
+  <section class="d-screen" id="s-vip1"></section>
+  <section class="d-screen" id="s-vip2"></section>
+  <section class="d-screen" id="s-vip3"></section>
+  <section class="d-screen" id="s-vip4"></section>
+  <section class="d-screen" id="s-vip-review"></section>
+  <section class="d-screen" id="s-vip-accepted"></section>
+
+  <section class="d-screen" id="s-chat-file">
+    <div class="vl-chat">
+      <div class="sui-chat-transcript">
+        <div class="sui-msg-scroller"><div class="sui-msg-scroller-viewport"><div class="sui-msg-scroller-content">
+          <div class="sui-chat-messages">
+            <button class="vl-pane" type="button"><span class="vl-pane-text">Issues · 9 open</span><span class="vl-pane-expand"><svg class="vl-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg></span></button>
+            <div class="sui-chat-message" data-role="user"><div class="sui-chat-bubble">The formatter can't find its binary on Linux. File it.</div></div>
+            <div class="sui-chat-message" data-role="assistant">
+              <div class="sui-chat-message-label">VibeLang agent</div>
+              <div class="sui-chat-bubble">Filed #48.</div>
+            </div>
+            <div class="sui-chat-message" data-role="assistant">
+              <div class="sui-card ix-chat-card">
+                <div class="sui-card-header"><span class="sui-card-title">Formatter can't resolve its shipped binary on Linux</span><span class="sui-card-action"><span class="sui-badge sui-badge-success">Open</span></span></div>
+                <div class="sui-card-content"><div class="sui-card-description">#48 · opened just now · bug, cli</div></div>
+                <div class="sui-card-footer"><a class="sui-button sui-button-sm" href="#">Open issue</a></div>
+              </div>
+            </div>
+          </div>
+        </div></div></div>
+      </div>
+      <form class="sui-chat-composer" data-docked="true">
+        <textarea class="sui-chat-composer-input" placeholder="Ask about VibeLang" aria-label="Ask about VibeLang" rows="1"></textarea>
+        <div class="sui-chat-composer-toolbar">
+          <span class="sui-chat-composer-status">Ready</span>
+          <div class="sui-chat-composer-actions"><button class="vl-send sui-chat-composer-send" type="submit" aria-label="Send">↑</button></div>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="d-screen" id="s-chat-split">
+    <div class="vl-chat">
+      <div class="sui-chat-transcript">
+        <div class="sui-msg-scroller"><div class="sui-msg-scroller-viewport"><div class="sui-msg-scroller-content">
+          <div class="sui-chat-messages">
+            <button class="vl-pane" type="button"><span class="vl-pane-text">Issues · 9 open</span><span class="vl-pane-expand"><svg class="vl-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg></span></button>
+            <div class="sui-chat-message" data-role="user"><div class="sui-chat-bubble">Break #38 into pieces an agent can pick up.</div></div>
+            <div class="sui-chat-message" data-role="assistant">
+              <div class="sui-chat-message-label">VibeLang agent</div>
+              <div class="sui-chat-bubble">Split #38 into three children, linked under it.</div>
+            </div>
+            <div class="sui-chat-message" data-role="assistant">
+              <div class="sui-card ix-chat-card">
+                <div class="sui-card-header"><span class="sui-card-title">Effect-native modules</span><span class="sui-card-action"><span class="sui-badge sui-badge-secondary">#38 · 3 children</span></span></div>
+                <div class="sui-card-content">
+                  <div class="ix-mini" data-row-icon="running"><a href="#">#39 Elide type-only imports</a><span class="ix-tree-meta"><span class="sui-badge sui-badge-default">Task</span></span></div>
+                  <div class="ix-mini" data-row-icon="open"><a href="#">#40 Cycle errors read like English</a></div>
+                  <div class="ix-mini" data-row-icon="open"><a href="#">#41 Package exports map</a></div>
+                </div>
+                <div class="sui-card-footer"><a class="sui-button sui-button-sm" href="#">Open #38</a></div>
+              </div>
+            </div>
+          </div>
+        </div></div></div>
+      </div>
+      <form class="sui-chat-composer" data-docked="true">
+        <textarea class="sui-chat-composer-input" placeholder="Ask about VibeLang" aria-label="Ask about VibeLang" rows="1"></textarea>
+        <div class="sui-chat-composer-toolbar">
+          <span class="sui-chat-composer-status">Ready</span>
+          <div class="sui-chat-composer-actions"><button class="vl-send sui-chat-composer-send" type="submit" aria-label="Send">↑</button></div>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="d-screen" id="s-roles">
+    <header class="sui-page-header"><div class="sui-page-header-inner">
+      <div class="sui-page-header-back"><a href="#">‹ Chat</a></div>
+      <h1 class="sui-page-header-title">Roles</h1>
+    </div></header>
+    <div class="sui-page-body" data-width="narrow">
+      <div class="sui-table-container" data-variant="card">
+        <table class="sui-table ix-roles">
+          <thead><tr><th>Action</th><th>Viewer</th><th>New</th><th>Community</th><th>Contributor</th><th>Maintainer</th></tr></thead>
+          <tbody>
+            <tr><td>Read issues, tasks, VIPs</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td></tr>
+            <tr><td>Comment</td><td class="ix-no">—</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td></tr>
+            <tr><td>File an issue</td><td class="ix-no">—</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td></tr>
+            <tr><td>Propose a VIP</td><td class="ix-no">—</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td></tr>
+            <tr><td>Link issues</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td></tr>
+            <tr><td>Split an issue</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td></tr>
+            <tr><td>Triage labels</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-yes">✓</td><td class="ix-yes">✓</td></tr>
+            <tr><td>Commit a task</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-yes">✓</td></tr>
+            <tr><td>Review a VIP</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-yes">✓</td></tr>
+            <tr><td>Close any issue</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-yes">✓</td></tr>
+            <tr><td>Promote a role</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-no">—</td><td class="ix-yes">✓</td></tr>
+          </tbody>
+          <caption>The agent acts through the same actions. Anything above your role never appears.</caption>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+const GH = '';
+const IC = {
+  open: k => `<svg class="sui-state-icon"${k ? ` data-kind="${k}"` : ''} viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6.75" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2.5" fill="currentColor"/></svg>`,
+  check: k => `<svg class="sui-state-icon"${k ? ` data-kind="${k}"` : ''} viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.3 8.3l1.8 1.8 3.6-3.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  queued: `<svg class="sui-state-icon" data-kind="queued" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6.75" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.6 2.4"/></svg>`,
+  running: `<svg class="sui-state-icon" data-kind="running" data-live viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.25A6.75 6.75 0 0 1 8 14.75Z" fill="currentColor"/></svg>`,
+  comment: `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round"><path d="M2.5 2.5h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7.2L4 14.7a.3.3 0 0 1-.5-.2V12H2.5a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1Z"/></svg>`
+};
+
+const ISSUES = [
+  { n: 48, t: "Formatter can't resolve its shipped binary on Linux", k: 'issue', s: 'open', task: { s: 'Queued', by: 'VibeLang agent' }, labels: ['bug', 'cli'], by: 'jun', age: '2d', c: 4 },
+  { n: 46, t: 'is stops matching a subclass of an error after --fix', k: 'issue', s: 'open', task: { s: 'Running', by: 'VibeLang agent' }, labels: ['bug', 'compiler'], by: 'maya', age: '3d', c: 6 },
+  { n: 45, t: 'Pattern matching in case', k: 'vip', vip: 'In review', s: 'open', by: 'jun', age: '2d', c: 3 },
+  { n: 44, t: 'for-await over streams', k: 'vip', vip: 'Accepted', s: 'open', by: 'maya', age: '5d', c: 8 },
+  { n: 42, t: 'Case branches on tuples', k: 'issue', s: 'open', labels: ['compiler'], by: 'jun', age: '3d', c: 6, parent: 38, kids: 2 },
+  { n: 40, t: 'Cycle errors read like English', k: 'issue', s: 'open', by: 'noor', age: '4d', c: 1, parent: 38 },
+  { n: 39, t: 'Elide type-only imports', k: 'issue', s: 'open', task: { s: 'Running', by: 'VibeLang agent' }, labels: ['compiler'], by: 'will', age: '4d', c: 5, parent: 38 },
+  { n: 38, t: 'Effect-native modules', k: 'issue', s: 'open', labels: ['language'], by: 'will', age: '1w', c: 12, kids: 4 },
+  { n: 36, t: 'Sandbox minutes show in the prompt footer', k: 'issue', s: 'open', by: 'noor', age: '1w', c: 0 },
+  { n: 43, t: 'Labeled errors in A!E!R', k: 'vip', vip: 'Declined', s: 'closed', by: 'noor', age: '1w', c: 9 },
+  { n: 41, t: 'Package exports map', k: 'issue', s: 'closed', task: { s: 'Done', by: 'Will' }, by: 'will', age: '6d', c: 2, parent: 38 },
+  { n: 37, t: 'Playground share links', k: 'issue', s: 'closed', task: { s: 'Done', by: 'VibeLang agent' }, by: 'maya', age: '1w', c: 3 },
+  { n: 35, t: 'Watch mode rebuilds twice', k: 'issue', s: 'closed', labels: ['bug', 'cli'], by: 'jun', age: '2w', c: 2 },
+  { n: 34, t: 'Docs search indexes headings', k: 'issue', s: 'closed', by: 'noor', age: '2w', c: 1 },
+  { n: 33, t: 'Install fails behind a proxy', k: 'issue', s: 'closed', labels: ['bug'], by: 'maya', age: '3w', c: 4 },
+  { n: 31, t: 'Rename effect to fx', k: 'issue', s: 'closed', by: 'will', age: '3w', c: 7 }
+];
+
+function iconFor(i) {
+  if (i.task) return i.task.s === 'Running' ? IC.running : i.task.s === 'Queued' ? IC.queued : IC.check('merged');
+  if (i.vip) return i.vip === 'In review' ? IC.open('in_review') : i.vip === 'Accepted' ? IC.check('merged') : IC.check('');
+  return i.s === 'open' ? IC.open('open') : IC.check('');
+}
+function badgesFor(i) {
+  let b = '';
+  if (i.vip) b += `<span class="sui-badge ${i.vip === 'In review' ? 'sui-badge-warning' : i.vip === 'Accepted' ? 'sui-badge-success' : 'sui-badge-destructive'}">VIP · ${i.vip}</span>`;
+  if (i.task) b += `<span class="sui-badge ${i.task.s === 'Done' ? 'sui-badge-muted' : 'sui-badge-default'}">Task · ${i.task.s}</span>`;
+  for (const l of i.labels || []) b += `<span class="sui-badge sui-badge-secondary">${l}</span>`;
+  return b;
+}
+function rowHTML(i) {
+  const meta = [`<span class="sui-issues-number">#${i.n}</span>`, `${i.s === 'open' ? 'opened' : 'closed'} ${i.age} ago by ${i.by}`];
+  if (i.parent) meta.push(`child of #${i.parent}`);
+  if (i.kids) meta.push(`${i.kids} children`);
+  if (i.task) meta.push(`→ ${i.task.by}`);
+  return `<li class="sui-issues-row">
+    <span class="sui-issues-state">${iconFor(i)}</span>
+    <div class="sui-issues-main">
+      <div class="sui-issues-title-line"><a class="sui-issues-link sui-issues-title" href="#">${i.t}</a>${badgesFor(i)}</div>
+      <div class="sui-issues-meta">${meta.join(' · ')}</div>
+    </div>
+    ${i.c ? `<span class="sui-issues-comments">${IC.comment}${i.c}</span>` : ''}
+  </li>`;
+}
+
+const KINDS = {
+  all: { title: 'Issues', seg: 'All', action: 'New issue', match: () => true },
+  tasks: { title: 'Tasks', seg: 'Tasks', action: 'New issue', match: i => !!i.task },
+  vips: { title: 'VIPs', seg: 'VIPs', action: 'Propose a VIP', match: i => i.k === 'vip' }
+};
+
+function listHTML(kind) {
+  const K = KINDS[kind];
+  const segs = ['All', 'Issues', 'Tasks', 'VIPs'].map(s => `<button class="sui-segmented-item" role="radio" aria-checked="${s === K.seg}">${s}</button>`).join('');
+  return `
+  <header class="sui-page-header"><div class="sui-page-header-inner">
+    <div class="sui-page-header-back"><a href="#">‹ Chat</a></div>
+    <h1 class="sui-page-header-title">${K.title}</h1>
+    <div class="sui-page-header-actions"><a class="sui-button sui-button-sm sui-button-default" href="#" data-min-role="new">${K.action}</a></div>
+  </div></header>
+  <div class="sui-page-body">
+    <div class="sui-issues-view" data-list-view>
+      <div class="sui-issues-header">
+        <div class="sui-issues-filters">
+          <a class="sui-issues-filter" href="#" aria-current="page">${IC.open('open')} Open <span class="sui-issues-filter-count" data-open-count></span></a>
+          <a class="sui-issues-filter" href="#">${IC.check('')} Closed <span class="sui-issues-filter-count" data-closed-count></span></a>
+        </div>
+        <div class="sui-segmented" data-size="sm" role="radiogroup" aria-label="Kind">${segs}</div>
+        <div class="sui-issues-actions"><input class="sui-input" type="search" placeholder="Search" aria-label="Search issues" style="width:180px"></div>
+      </div>
+      <ul class="sui-issues-list" data-list tabindex="0" aria-label="${K.title}"></ul>
+      <div class="sui-empty" data-empty hidden>
+        <div class="sui-empty-icon">${IC.open('open')}</div>
+        <div class="sui-empty-title">${kind === 'vips' ? 'No VIPs in review' : kind === 'tasks' ? 'No tasks committed' : 'No open issues'}</div>
+        <div class="sui-empty-action"><a class="sui-button sui-button-sm sui-button-default" href="#" data-min-role="new">${K.action}</a></div>
+      </div>
+      <div class="sui-issues-loading" data-loading hidden>
+        <span class="sui-skeleton sui-issues-skeleton"></span><span class="sui-skeleton sui-issues-skeleton"></span><span class="sui-skeleton sui-issues-skeleton"></span><span class="sui-skeleton sui-issues-skeleton"></span><span class="sui-skeleton sui-issues-skeleton"></span>
+      </div>
+      <div data-error hidden style="padding:12px 14px;display:grid;gap:10px;justify-items:start">
+        <div class="sui-alert sui-alert-destructive" style="width:100%"><div class="sui-alert-title">Couldn't load issues</div></div>
+        <button class="sui-button sui-button-sm" type="button">Retry</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderList(sec) {
+  const kind = sec.dataset.kind;
+  const K = KINDS[kind];
+  const rows = ISSUES.filter(i => K.match(i));
+  const open = rows.filter(i => i.s === 'open');
+  sec.querySelector('[data-open-count]').textContent = open.length;
+  sec.querySelector('[data-closed-count]').textContent = rows.length - open.length;
+  sec.querySelector('[data-list]').innerHTML = open.map(rowHTML).join('');
+}
+
+/* ── Issue detail ─────────────────────────────────────────── */
+
+function issueHTML(mode) {
+  const committed = mode === 'committed';
+  const stateBadges = committed
+    ? `<span class="sui-item-conv-state sui-badge sui-badge-success">${IC.open('open')} Open</span><span class="sui-badge sui-badge-default">Task · Queued</span>`
+    : `<span class="sui-item-conv-state sui-badge sui-badge-success">${IC.open('open')} Open</span>`;
+  const actions = committed
+    ? `<button class="sui-button sui-button-sm" type="button" data-min-role="contributor">Split</button><button class="sui-button sui-button-sm" type="button" data-min-role="maintainer">Uncommit</button>`
+    : `<button class="sui-button sui-button-sm" type="button" data-min-role="contributor">Split</button><button class="sui-button sui-button-sm sui-button-default" type="button" data-min-role="maintainer">Commit</button>`;
+  const assignees = committed
+    ? `<span class="ix-aside-row"><span class="ix-avatar" data-agent="true">V</span> VibeLang agent</span>`
+    : `<span class="ix-aside-muted">No one</span>`;
+  const taskSection = committed
+    ? `<div class="ix-aside-section"><span class="sui-label">Task</span><span class="ix-aside-row">${IC.queued} Queued</span></div>`
+    : '';
+  const commitEvent = committed
+    ? `<li class="sui-item-conv-event"><span class="sui-item-conv-event-icon">→</span><span class="sui-item-conv-event-text"><b>will</b> committed this as a task and assigned <b>VibeLang agent</b> · just now</span></li>`
+    : '';
+  return `
+  <header class="sui-page-header"><div class="sui-page-header-inner">
+    <div class="sui-page-header-back"><a href="#">‹ Issues</a></div>
+    <h1 class="sui-page-header-title">#42</h1>
+  </div></header>
+  <div class="sui-page-body">
+    <div class="sui-item-conv" data-aside>
+      <div class="sui-item-conv-header">
+        <h1 class="sui-item-conv-title">Case branches on tuples <span class="sui-item-conv-number">#42</span></h1>
+        <div class="sui-item-conv-meta">
+          ${stateBadges}
+          <span>jun opened 3 days ago · 6 comments</span>
+          <span class="sui-item-conv-header-actions">${actions}</span>
+        </div>
+      </div>
+      <div class="sui-item-conv-main">
+        <div class="sui-item-conv-post">
+          <div class="sui-item-conv-comment-meta"><span class="ix-avatar">J</span><span class="sui-item-conv-author">jun</span><span>3 days ago</span></div>
+          <p style="margin:0">case on a pair should match the shape: <code>(0, rest)</code> binds <code>rest</code>, <code>(n, _)</code> binds <code>n</code>. Today only literal values match.</p>
+        </div>
+        <div class="sui-card">
+          <div class="sui-card-header"><div class="sui-card-title">Tree</div><span class="sui-card-action"><span class="sui-badge sui-badge-secondary">2 children</span></span></div>
+          <div class="sui-card-content ix-tree">
+            <div class="ix-tree-parent">Part of <a href="#">#38 Effect-native modules</a></div>
+            <ul class="ix-tree-list">
+              <li class="ix-tree-row">${IC.open('open')}<a href="#">#49 Parse tuple patterns</a></li>
+              <li class="ix-tree-row">${IC.queued}<a href="#">#50 Type tuple branches</a><span class="ix-tree-meta"><span class="sui-badge sui-badge-default">Task · Queued</span><span class="ix-avatar" data-agent="true" title="VibeLang agent">V</span></span></li>
+            </ul>
+          </div>
+        </div>
+        <ol class="sui-item-conv-events">
+          <li class="sui-item-conv-event"><span class="sui-item-conv-event-icon">+</span><span class="sui-item-conv-event-text"><b>maya</b> added the <span class="sui-badge sui-badge-secondary">compiler</span> label · 3d</span></li>
+          <li class="sui-item-conv-event"><span class="sui-item-conv-event-icon">↳</span><span class="sui-item-conv-event-text"><b>will</b> linked this under <a class="sui-item-conv-meta-link" href="#">#38</a> · 2d</span></li>
+          ${commitEvent}
+        </ol>
+        <ol class="sui-item-conv-comments">
+          <li class="sui-item-conv-comment">
+            <div class="sui-item-conv-comment-meta"><span class="ix-avatar">M</span><span class="sui-item-conv-author">maya</span><span>2 days ago</span></div>
+            <p style="margin:0">Rust lets the binding sit inside the pattern. Worth copying.</p>
+          </li>
+          <li class="sui-item-conv-comment">
+            <div class="sui-item-conv-comment-meta"><span class="ix-avatar" data-agent="true">V</span><span class="sui-item-conv-author">VibeLang agent</span><span class="sui-badge sui-badge-secondary">agent</span><span>1 day ago</span></div>
+            <p style="margin:0">Related: <a class="sui-item-conv-meta-link" href="#">#46</a> — is stops matching a subclass after --fix.</p>
+          </li>
+        </ol>
+        <div class="sui-item-conv-composer" data-min-role="new">
+          <textarea class="sui-textarea" placeholder="Comment" aria-label="Comment"></textarea>
+          <div class="sui-item-conv-composer-actions"><button class="sui-button sui-button-sm sui-button-default" type="button">Comment</button></div>
+        </div>
+      </div>
+      <aside class="sui-item-conv-aside">
+        <div class="ix-aside-section"><span class="sui-label">Assignees</span>${assignees}</div>
+        ${taskSection}
+        <div class="ix-aside-section"><span class="sui-label">Labels</span><span class="sui-badge sui-badge-secondary">compiler</span></div>
+        <div class="ix-aside-section"><span class="sui-label">Parent</span><a class="sui-button-link" href="#">#38 Effect-native modules</a></div>
+      </aside>
+    </div>
+  </div>`;
+}
+
+const DIALOG = `
+  <div class="sui-dialog-overlay"></div>
+  <div class="sui-dialog-content" role="dialog" aria-modal="true" aria-labelledby="ix-d-title">
+    <button class="sui-dialog-close" type="button" aria-label="Cancel">✕</button>
+    <div class="sui-dialog-header"><div class="sui-dialog-title" id="ix-d-title">Commit #42 as a task</div></div>
+    <div class="sui-field"><span class="sui-label">Assignee</span>
+      <div class="ix-pick" role="radiogroup">
+        <label><input type="radio" name="ix-as" checked><span class="ix-avatar" data-agent="true">V</span> VibeLang agent</label>
+        <label><input type="radio" name="ix-as"><span class="ix-avatar">W</span> Will</label>
+        <label><input type="radio" name="ix-as"><span class="ix-avatar">M</span> Maya</label>
+      </div>
+    </div>
+    <div class="sui-dialog-footer"><button class="sui-button sui-button-sm" type="button">Cancel</button><button class="sui-button sui-button-sm sui-button-solid" type="button">Commit</button></div>
+  </div>`;
+
+/* ── VIP propose flow ─────────────────────────────────────── */
+
+const VIP = {
+  title: 'Pattern matching in case',
+  summary: 'Let case match on shapes, not just values: tuples, records and literals, with bindings inside the pattern.',
+  example: 'case pair {\n  (0, rest) -> rest\n  (n, _)    -> n\n}',
+  prior: 'Rust — match ergonomics\nScala — pattern matching\nTC39 — proposal-pattern-matching'
+};
+
+function vipFormHTML(step) {
+  const steps = ['Summary', 'Example', 'Prior art', 'Review'].map((s, i) =>
+    `<li ${i + 1 === step ? 'aria-current="step"' : ''} ${i + 1 < step ? 'data-done="true"' : ''}><span class="ix-n">${i + 1 < step ? '✓' : i + 1}</span>${s}</li>`).join('');
+  let fields = '';
+  if (step === 1) fields = `
+    <div class="sui-field"><label class="sui-label" for="ix-vt">Title</label><input class="sui-input" id="ix-vt" placeholder="One language feature" value="${VIP.title}"></div>
+    <div class="sui-field"><label class="sui-label" for="ix-vs">Summary</label><textarea class="sui-textarea" id="ix-vs">${VIP.summary}</textarea></div>`;
+  if (step === 2) fields = `
+    <div class="sui-field"><label class="sui-label" for="ix-ve">Example</label><textarea class="sui-textarea" id="ix-ve" data-code rows="5">${VIP.example}</textarea></div>`;
+  if (step === 3) fields = `
+    <div class="sui-field"><label class="sui-label" for="ix-vp">Prior art</label><textarea class="sui-textarea" id="ix-vp" placeholder="One per line">${VIP.prior}</textarea></div>`;
+  if (step === 4) fields = `
+    <div class="sui-card">
+      <div class="sui-card-header"><span class="sui-card-title">${VIP.title}</span><span class="sui-card-action"><span class="sui-badge sui-badge-outline">VIP</span></span></div>
+      <div class="sui-card-content">
+        <div><span class="sui-label">Summary</span><p style="margin:4px 0 0;font-size:13px">${VIP.summary}</p></div>
+        <div><span class="sui-label">Example</span><pre class="vl-code"><code>${VIP.example}</code></pre></div>
+        <div><span class="sui-label">Prior art</span><p style="margin:4px 0 0;font-size:13px;white-space:pre-line">${VIP.prior}</p></div>
+      </div>
+    </div>`;
+  const back = step > 1 ? `<button class="sui-button sui-button-sm" type="button">Back</button>` : '';
+  const next = step < 4
+    ? `<button class="sui-button sui-button-sm sui-button-solid" type="button">Continue</button>`
+    : `<button class="sui-button sui-button-sm sui-button-solid" type="button">Submit VIP</button>`;
+  return `
+  <header class="sui-page-header"><div class="sui-page-header-inner">
+    <div class="sui-page-header-back"><a href="#">‹ VIPs</a></div>
+    <h1 class="sui-page-header-title">Propose a VIP</h1>
+  </div></header>
+  <div class="sui-page-body" data-width="narrow">
+    <ol class="ix-steps">${steps}</ol>
+    <form class="sui-issue-form">${fields}
+      <div class="sui-issue-form-actions">${back}${next}</div>
+    </form>
+  </div>`;
+}
+
+/* ── VIP detail ───────────────────────────────────────────── */
+
+function vipDetailHTML(mode) {
+  const accepted = mode === 'accepted';
+  const badge = accepted
+    ? `<span class="sui-badge sui-badge-success">VIP · Accepted</span>`
+    : `<span class="sui-badge sui-badge-warning">VIP · In review</span>`;
+  const actions = accepted ? '' : `<button class="sui-button sui-button-sm sui-button-destructive" type="button" data-min-role="maintainer">Decline</button><button class="sui-button sui-button-sm sui-button-solid" type="button" data-min-role="maintainer">Accept</button>`;
+  const events = accepted
+    ? `<li class="sui-item-conv-event"><span class="sui-item-conv-event-icon">◦</span><span class="sui-item-conv-event-text"><b>maya</b> proposed this VIP · 5d</span></li>
+       <li class="sui-item-conv-event"><span class="sui-item-conv-event-icon">✓</span><span class="sui-item-conv-event-text"><b>will</b> accepted this VIP · 1d</span></li>
+       <li class="sui-item-conv-event"><span class="sui-item-conv-event-icon">→</span><span class="sui-item-conv-event-text"><b>will</b> committed <a class="sui-item-conv-meta-link" href="#">#47</a> as a task and assigned <b>Will</b> · 1d</span></li>`
+    : `<li class="sui-item-conv-event"><span class="sui-item-conv-event-icon">◦</span><span class="sui-item-conv-event-text"><b>jun</b> proposed this VIP · 2d</span></li>`;
+  const taskAside = accepted
+    ? `<div class="ix-aside-section"><span class="sui-label">Task</span><a class="sui-button-link" href="#">#47 Stream for-await in the compiler</a><span class="sui-badge sui-badge-muted">Task · Done</span></div>`
+    : '';
+  const n = accepted ? 44 : 45;
+  const t = accepted ? 'for-await over streams' : VIP.title;
+  const by = accepted ? 'maya' : 'jun';
+  const initial = accepted ? 'M' : 'J';
+  const age = accepted ? '5 days ago' : '2 days ago';
+  const comments = accepted ? 8 : 3;
+  const body = accepted
+    ? `<p style="margin:0">Streams should work in <code>for await</code>: <code>for await (const chunk of stream)</code> reads to the end, typed errors included.</p>`
+    : `<p style="margin:0">${VIP.summary}</p><pre class="vl-code"><code>${VIP.example}</code></pre><p style="margin:0;white-space:pre-line">${VIP.prior}</p>`;
+  return `
+  <header class="sui-page-header"><div class="sui-page-header-inner">
+    <div class="sui-page-header-back"><a href="#">‹ VIPs</a></div>
+    <h1 class="sui-page-header-title">#${n}</h1>
+  </div></header>
+  <div class="sui-page-body">
+    <div class="sui-item-conv" data-aside>
+      <div class="sui-item-conv-header">
+        <h1 class="sui-item-conv-title">${t} <span class="sui-item-conv-number">#${n}</span></h1>
+        <div class="sui-item-conv-meta">
+          <span class="sui-item-conv-state sui-badge sui-badge-success">${IC.open('open')} Open</span>${badge}
+          <span>${by} opened ${age} · ${comments} comments</span>
+          ${actions ? `<span class="sui-item-conv-header-actions">${actions}</span>` : ''}
+        </div>
+      </div>
+      <div class="sui-item-conv-main">
+        <div class="sui-item-conv-post">
+          <div class="sui-item-conv-comment-meta"><span class="ix-avatar">${initial}</span><span class="sui-item-conv-author">${by}</span><span>${age}</span></div>
+          ${body}
+        </div>
+        <ol class="sui-item-conv-events">${events}</ol>
+        <ol class="sui-item-conv-comments">
+          <li class="sui-item-conv-comment">
+            <div class="sui-item-conv-comment-meta"><span class="ix-avatar">M</span><span class="sui-item-conv-author">maya</span><span>2 days ago</span></div>
+            <p style="margin:0">${accepted ? 'Streams already type their errors; this stays honest to that.' : 'Rust\u2019s match ergonomics already cover bindings; the proposal links it.'}</p>
+          </li>
+        </ol>
+        <div class="sui-item-conv-composer" data-min-role="new">
+          <textarea class="sui-textarea" placeholder="Comment" aria-label="Comment"></textarea>
+          <div class="sui-item-conv-composer-actions"><button class="sui-button sui-button-sm sui-button-default" type="button">Comment</button></div>
+        </div>
+      </div>
+      <aside class="sui-item-conv-aside">
+        <div class="ix-aside-section"><span class="sui-label">Proposer</span><span class="ix-aside-row"><span class="ix-avatar">${initial}</span> ${by}</span></div>
+        <div class="ix-aside-section"><span class="sui-label">Reviewer</span><span class="ix-aside-row"><span class="ix-avatar">W</span> Will</span></div>
+        ${taskAside}
+      </aside>
+    </div>
+  </div>`;
+}
+
+/* ── Mount ────────────────────────────────────────────────── */
+
+document.getElementById('s-issues').innerHTML = listHTML('all');
+document.getElementById('s-tasks').innerHTML = listHTML('tasks');
+document.getElementById('s-vips').innerHTML = listHTML('vips');
+document.getElementById('s-issue').innerHTML = issueHTML('open');
+document.getElementById('s-commit').innerHTML = issueHTML('open') + DIALOG;
+document.getElementById('s-committed').innerHTML = issueHTML('committed');
+document.getElementById('s-vip1').innerHTML = vipFormHTML(1);
+document.getElementById('s-vip2').innerHTML = vipFormHTML(2);
+document.getElementById('s-vip3').innerHTML = vipFormHTML(3);
+document.getElementById('s-vip4').innerHTML = vipFormHTML(4);
+document.getElementById('s-vip-review').innerHTML = vipDetailHTML('review');
+document.getElementById('s-vip-accepted').innerHTML = vipDetailHTML('accepted');
+
+document.querySelectorAll('.d-screen[data-kind]').forEach(renderList);
+document.querySelectorAll('[data-row-icon]').forEach(el => {
+  el.insertAdjacentHTML('afterbegin', el.dataset.rowIcon === 'running' ? IC.running : IC.open('open'));
+});
+
+/* ── Switcher ─────────────────────────────────────────────── */
+
+const RANK = { viewer: 0, new: 1, community: 2, contributor: 3, maintainer: 4 };
+const screenSel = document.getElementById('d-screen');
+const roleSel = document.getElementById('d-role');
+const stateSel = document.getElementById('d-state');
+
+function applyScreen() {
+  document.querySelectorAll('.d-screen').forEach(s => s.dataset.on = String(s.id === screenSel.value));
+  window.scrollTo(0, 0);
+}
+function applyRole() {
+  const r = RANK[roleSel.value];
+  document.querySelectorAll('[data-min-role]').forEach(el => { el.hidden = RANK[el.dataset.minRole] > r; });
+  document.querySelectorAll('[data-only-role]').forEach(el => { el.hidden = el.dataset.onlyRole !== roleSel.value; });
+}
+function applyState() {
+  const st = stateSel.value;
+  document.querySelectorAll('[data-list-view]').forEach(v => {
+    v.querySelector('[data-list]').hidden = st !== 'populated';
+    v.querySelector('[data-empty]').hidden = st !== 'empty';
+    v.querySelector('[data-loading]').hidden = st !== 'loading';
+    v.querySelector('[data-error]').hidden = st !== 'error';
+  });
+}
+screenSel.addEventListener('change', applyScreen);
+roleSel.addEventListener('change', applyRole);
+stateSel.addEventListener('change', applyState);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && screenSel.value === 's-commit') { screenSel.value = 's-issue'; applyScreen(); }
+});
+applyScreen(); applyRole(); applyState();
+</script>
+</body>

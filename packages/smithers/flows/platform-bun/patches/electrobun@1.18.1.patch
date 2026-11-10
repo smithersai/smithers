@@ -1,0 +1,160 @@
+diff --git a/dist/api/bun/core/Utils.ts b/dist/api/bun/core/Utils.ts
+index 54d6298012e94df1f6ee34e6ba376d336938a98e..15eb17323e9c06f67222535bc64db827e0ac444f 100644
+--- a/dist/api/bun/core/Utils.ts
++++ b/dist/api/bun/core/Utils.ts
+@@ -31,7 +31,11 @@ export const showItemInFolder = (path: string) => {
+  * openExternal("slack://open");
+  */
+ export const openExternal = (url: string): boolean => {
+-	return ffi.request.openExternal({ url });
++	// Keep URL data out of the native Linux shell fallback and its diagnostics.
++	const command = OS === "macos" ? ["open", url] : OS === "linux" ? ["xdg-open", url] : undefined;
++	if (command === undefined) return false;
++	const child = Bun.spawnSync(command, { stdout: "ignore", stderr: "ignore", timeout: 10000 });
++	return child.exitCode === 0;
+ };
+ 
+ /**
+diff --git a/dist/api/bun/index.ts b/dist/api/bun/index.ts
+index 8af542a997e3fb25cab3700875063cead1493f26..9b62173b2c0cbcc0f22a9ef65c6fef8f95c3d6b2 100644
+--- a/dist/api/bun/index.ts
++++ b/dist/api/bun/index.ts
+@@ -261,3 +261,6 @@ const Electrobun = {
+ 
+ // Electrobun
+ export default Electrobun;
++
++// This native port accepts decoded Bun 1.4 cstrings and never logs callback payloads.
++export const SMITHERS_BUN14_COMPAT = 3;
+diff --git a/dist/api/bun/proc/native.ts b/dist/api/bun/proc/native.ts
+index f0f6c2532ba2eb467ec1d452a25c835b6db72661..f55366abdc25c41eb29fb6eaebfa0c8d84b8034d 100644
+--- a/dist/api/bun/proc/native.ts
++++ b/dist/api/bun/proc/native.ts
+@@ -1646,7 +1646,7 @@ window.__electrobunBunBridge = window.__electrobunBunBridge || window.webkit?.me
+ 				allowsMultipleSelection ? 1 : 0,
+ 			);
+ 
+-			return filePath.toString();
++			return filePath?.toString() ?? "";
+ 		},
+ 		showMessageBox: (params: {
+ 			type?: string;
+@@ -2481,7 +2481,7 @@ const webviewEventHandler = (id: number, eventName: string, detail: string) => {
+ 		try {
+ 			parsedDetail = JSON.parse(detail);
+ 		} catch (e) {
+-			console.error("[webviewEventHandler] Failed to parse JSON:", e);
++			console.error("[webviewEventHandler] Invalid JSON");
+ 			// Fallback to string if parsing fails (backward compatibility)
+ 			parsedDetail = detail;
+ 		}
+@@ -2498,6 +2498,10 @@ const webviewEventHandler = (id: number, eventName: string, detail: string) => {
+ 	electrobunEventEmitter.emitEvent(event, id);
+ };
+ 
++// Bun 1.4 decodes FFIType.cstring callback arguments; older Bun passes pointers.
++const callbackString = (value: unknown): string =>
++	typeof value === "string" ? value : new CString(value as Pointer).toString();
++
+ const webviewEventJSCallback = new JSCallback(
+ 	(id, _eventName, _detail) => {
+ 		let eventName = "";
+@@ -2505,14 +2509,10 @@ const webviewEventJSCallback = new JSCallback(
+ 
+ 		try {
+ 			// Convert cstring pointers to actual strings
+-			eventName = new CString(_eventName).toString();
+-			detail = new CString(_detail).toString();
++			eventName = callbackString(_eventName);
++			detail = callbackString(_detail);
+ 		} catch (err) {
+-			console.error("[webviewEventJSCallback] Error converting strings:", err);
+-			console.error("[webviewEventJSCallback] Raw values:", {
+-				_eventName,
+-				_detail,
+-			});
++			console.error("[webviewEventJSCallback] Invalid native strings");
+ 			return;
+ 		}
+ 
+@@ -2528,7 +2528,7 @@ const webviewEventJSCallback = new JSCallback(
+ const bunBridgePostmessageHandler = new JSCallback(
+ 	(id, msg) => {
+ 		try {
+-			const msgStr = new CString(msg);
++			const msgStr = callbackString(msg);
+ 
+ 			if (!msgStr.length) {
+ 				return;
+@@ -2544,7 +2544,7 @@ const bunBridgePostmessageHandler = new JSCallback(
+ 
+ 			webview.rpcHandler?.(msgJson);
+ 		} catch (err) {
+-			console.error("error sending message to bun: ", err);
++			console.error("Invalid native bridge message");
+ 		}
+ 	},
+ 	{
+@@ -2564,7 +2564,7 @@ const bunBridgePostmessageHandler = new JSCallback(
+ const eventBridgeHandler = new JSCallback(
+ 	(_id: number, msg: number) => {
+ 		try {
+-			const message = new CString(msg as unknown as Pointer);
++			const message = callbackString(msg);
+ 			const rawMessage = message.toString().trim();
+ 			if (!rawMessage || (rawMessage[0] !== "{" && rawMessage[0] !== "[")) {
+ 				return;
+@@ -2578,7 +2578,7 @@ const eventBridgeHandler = new JSCallback(
+ 			}
+ 			// Silently ignore any other message types - sandboxed webviews shouldn't send them
+ 		} catch (err) {
+-			console.error("error in eventBridgeHandler: ", err);
++			console.error("Invalid native event message");
+ 		}
+ 	},
+ 	{
+@@ -2593,7 +2593,7 @@ const eventBridgeHandler = new JSCallback(
+ const internalBridgeHandler = new JSCallback(
+ 	(_id: number, msg: number) => {
+ 		try {
+-			const batchMessage = new CString(msg as unknown as Pointer);
++			const batchMessage = callbackString(msg);
+ 			const jsonBatch = JSON.parse(batchMessage.toString());
+ 
+ 			if (jsonBatch.id === "webviewEvent") {
+@@ -2649,7 +2649,7 @@ const internalBridgeHandler = new JSCallback(
+ 				}
+ 			});
+ 		} catch (err) {
+-			console.error("error in internalBridgeHandler: ", err);
++			console.error("Invalid native internal message");
+ 			// console.log('msgStr: ', id, new CString(msg));
+ 		}
+ 	},
+@@ -2664,7 +2664,7 @@ const trayItemHandler = new JSCallback(
+ 	(id, action) => {
+ 		// Note: Some invisible character that doesn't appear in .length
+ 		// is causing issues
+-		const actionString = (new CString(action).toString() || "").trim();
++		const actionString = (callbackString(action) || "").trim();
+ 
+ 		// Use shared deserialization method
+ 		const { action: actualAction, data } = deserializeMenuAction(actionString);
+@@ -2688,7 +2688,7 @@ const trayItemHandler = new JSCallback(
+ 
+ const applicationMenuHandler = new JSCallback(
+ 	(id, action) => {
+-		const actionString = new CString(action).toString();
++		const actionString = callbackString(action);
+ 
+ 		// Use shared deserialization method
+ 		const { action: actualAction, data } = deserializeMenuAction(actionString);
+@@ -2711,7 +2711,7 @@ const applicationMenuHandler = new JSCallback(
+ 
+ const contextMenuHandler = new JSCallback(
+ 	(_id, action) => {
+-		const actionString = new CString(action).toString();
++		const actionString = callbackString(action);
+ 
+ 		// Use shared deserialization method
+ 		const { action: actualAction, data } = deserializeMenuAction(actionString);

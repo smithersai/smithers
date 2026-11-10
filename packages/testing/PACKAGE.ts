@@ -1,10 +1,14 @@
 import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
+import { Typecheck } from "@smthrs/targets/Typecheck"
+import { Package as fuzz } from "../fuzz/PACKAGE.ts"
 
 const cwd = "packages/testing"
 
 const standard = BuildAndCheckTypeScriptPackage({
   cwd,
+  deps: [fuzz.lib],
+  testData: ["test/__fuzz__/**"],
   // examples/ is type-checked and formatted with the tests, and run by
   // test/examples/; each example is documentation users copy, so it is not
   // held to the library lint rules.
@@ -18,6 +22,16 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
 const modelServer = Smithers.Filegroup({
   cwd,
   srcs: [Smithers.file("package.json"), Smithers.glob("bin/**/*"), Smithers.glob("src/**/*.{ts,vibe}")]
+})
+
+// The unmodified Effect contribution tests use the fork's indexed-access setting.
+const fuzzTypes = Typecheck({
+  cwd,
+  deps: [lib, fuzz.lib],
+  tsconfig: Smithers.file("tsconfig.fuzz.json"),
+  srcs: [Smithers.glob("{src,test}/**/*.ts"), Smithers.file("tsconfig.json"), Smithers.file("tsconfig.test.json")],
+  buildMode: false,
+  incremental: false
 })
 
 const securityReview = Smithers.SecurityReview({
@@ -132,5 +146,5 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, lib, lint, modelServer, test, ...securityReview }
+  targets: { fuzzTypes, check, circular, docs, docsFiles, fmt, lib, lint, modelServer, test, ...securityReview }
 })

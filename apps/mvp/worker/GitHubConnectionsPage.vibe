@@ -1,0 +1,42 @@
+// A person's sites connected to GitHub through smithers.sh (decision 0165): the Disconnect that doesn't depend on the site.
+import { nameOf, type GitHubConnection } from "./GitHubConnection.vibe"
+import { Sessions } from "./Actor.vibe"
+import { GitHub } from "@smthrs/integrations"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import * as SessionStore from "./SessionStore.ts"
+
+export const ROUTE = "/api/auth/connections"
+export const handles = (url: string) => new URL(url, "https://broker.invalid").pathname === ROUTE
+const HEADERS = { ...GitHub.Auth.Broker.HEADERS, "content-security-policy": GitHub.Auth.Broker.CONSENT_CSP }
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+export function pageHtml(origins: ReadonlyArray<string>): string {
+  const rows = origins.map((origin) => `<form method="post"><input type="hidden" name="origin" value="${escapeHtml(origin)}"><p>${escapeHtml(new URL(origin).host)} <button>Disconnect</button></p></form>`).join("")
+  return `<!doctype html><meta name="referrer" content="no-referrer"><title>GitHub connections</title><h1>GitHub connections</h1>${rows === "" ? "<p>No connections.</p>" : rows}`
+}
+const page = (html: string, status = 200) => HttpServerResponse.text(html, { status, contentType: "text/html; charset=utf-8", headers: HEADERS })
+const empty = (status: number) => HttpServerResponse.empty({ status, headers: GitHub.Auth.Broker.HEADERS })
+
+export effect function serve(objects: Effect.Success<typeof GitHubConnection>) {
+  const request = try HttpServerRequest.HttpServerRequest
+  if (request.method !== "GET" && request.method !== "POST") return empty(405)
+  const origin = new URL(request.originalUrl).origin
+  // This page is no-referrer, so a browser sends `Origin: null` on its own form.
+  if (request.method === "POST" && request.headers.origin !== origin && !(request.headers.origin === "null" && request.headers["sec-fetch-site"] === "same-origin")) return empty(403)
+  const sessions = try Sessions
+  const actor = sessions.resolve catch () => Option.none()
+  // Only the person: an agent, flow or sandbox holding a session never reaches this page (AUTH-8).
+  if (Option.isNone(actor) || actor.value.act !== undefined) return page("<!doctype html><title>Sign in</title><p>Sign in.</p>", 401)
+  const person = SessionStore.githubIdOf(actor.value.subject.id) catch () => undefined
+  if (person === undefined) return page("<!doctype html><title>Sign in</title><p>Sign in.</p>", 401)
+  const object = try Effect.orDie(Effect.try(() => objects.getByName(nameOf(person))))
+  if (request.method === "POST") {
+    const text = try Effect.orDie(request.text)
+    const target = new URLSearchParams(text).get("origin") ?? ""
+    const ended = try object.revoke(person, target)
+    if ("reason" in ended) return page("<!doctype html><title>Unavailable</title><p>Couldn't disconnect. Retry.</p>", 503)
+    return HttpServerResponse.empty({ status: 303, headers: { ...GitHub.Auth.Broker.HEADERS, location: ROUTE } })
+  }
+  const listed = try object.connections(person)
+  if ("reason" in listed) return page("<!doctype html><title>Unavailable</title><p>Couldn't load. Retry.</p>", 503)
+  return page(pageHtml(listed.ok.map((row) => row.origin)))
+}

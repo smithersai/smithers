@@ -1,0 +1,86 @@
+import { describe, expect, it } from "@effect/vitest"
+import { applyIssues, emptyIssues, issuePermission } from "../src/core/conversation.vibe"
+import { fixtureIssues, makeIssueFactory } from "../src/core/IssuesFactory.vibe"
+import { IssueRequest } from "../src/core/issueSchemas.vibe"
+
+describe("GitHub issues and commitments", () => {
+  it.effect("starts with the design's tree, tasks and VIPs; a task remains the same issue", () => scoped(effect {
+    const api = try makeIssueFactory("maintainer")
+    const before = try api.read()
+    const issue = before.items.find((i) => i.number === 42)!
+    const after = try api.act({ op: "commit", number: 42, text: "", title: "", parent: 0, assignee: "VibeLang agent", example: "", prior: "", key: "commit-42" })
+    try Effect.try(() => {
+      expect(issue.parent).toBe(38)
+      expect(before.items.filter((i) => i.parent === 42).map((i) => i.number)).toEqual([49, 50])
+      expect(after.items.find((i) => i.number === 42)).toMatchObject({ number: 42, task: "Queued", assignee: "VibeLang agent" })
+      expect(after.items.length).toBe(before.items.length)
+    })
+    const replay = try api.act({ op: "commit", number: 42, text: "", title: "", parent: 0, assignee: "VibeLang agent", example: "", prior: "", key: "commit-42" })
+    try Effect.try(() => expect(replay).toEqual(after))
+  }))
+
+  it.effect("refuses role escalation, invalid trees and empty work before changing anything", () => scoped(effect {
+    const api = try makeIssueFactory("new")
+    const before = try api.read()
+    for (const op of ["commit", "split", "propose", "accept", "decline", "link"] as const) {
+      const result = try Effect.result(api.act({ op, number: 42, parent: 38, title: "Feature", text: "Summary", example: "try work()", prior: "Effect", assignee: "Will", key: op }))
+      try Effect.try(() => expect(result._tag).toBe("Failure"))
+    }
+    const after = try api.read()
+    try Effect.try(() => expect(after.items).toEqual(before.items))
+  }))
+
+  it("replay is ordered and idempotent, and unauthorized transitions are impossible", () => {
+    const event = { seq: 1, type: "IssuesObserved" as const, items: fixtureIssues }
+    const projected = applyIssues(emptyIssues, event)
+    expect(projected.seq).toBe(1)
+    expect(applyIssues(projected, event)).toEqual(projected)
+    expect(applyIssues(emptyIssues, { ...event, seq: 2 })).toEqual(emptyIssues)
+    expect(issuePermission("new", "propose")).toBe(false)
+    expect(issuePermission("community", "propose")).toBe(true)
+    expect(issuePermission("contributor", "commit")).toBe(false)
+    expect(issuePermission("maintainer", "commit")).toBe(true)
+  })
+})
+it.effect("a proposal is drafted before explicit submission, then review does not commit work", () => scoped(effect {
+  const api = try makeIssueFactory("maintainer")
+  const request = { op: "draft" as const, number: 0, parent: 0, title: "Tuple patterns", text: "", assignee: "", example: "", prior: "", key: "draft" }
+  const before = try api.read()
+  const drafted = try api.act(request)
+  try Effect.try(() => {
+    expect(drafted.items).toEqual(before.items)
+    expect(drafted.draft).toMatchObject({ title: "Tuple patterns", example: "const pair = [1, 2]" })
+  })
+  const proposed = try api.act({ ...request, op: "propose", text: drafted.draft!.summary, example: drafted.draft!.example, prior: drafted.draft!.prior, key: "proposal" })
+  const vip = proposed.items[0]!
+  try Effect.try(() => {
+    expect(vip.vip).toBe("In review")
+    expect(vip.path).toMatch(/^docs\/design\/vips\//)
+    expect(vip.review).toContain("/pull/")
+    expect(vip.body).toContain(drafted.draft!.prior)
+  })
+  const accepted = try api.act({ ...request, op: "accept", number: vip.number, key: "accept" })
+  try Effect.try(() => expect(accepted.items.find((i) => i.number === vip.number)).toMatchObject({ vip: "Accepted", task: "", state: "open" }))
+}))
+
+it.effect("splitting and linking preserve a tree; cycles and missing parents are refused", () => scoped(effect {
+  const api = try makeIssueFactory("contributor")
+  const request = { op: "split" as const, number: 42, parent: 0, title: "A nested tuple case", text: "One smaller case.", assignee: "", example: "", prior: "", key: "split" }
+  const split = try api.act(request)
+  const child = split.items[0]!
+  try Effect.try(() => expect(child.parent).toBe(42))
+  const linked = try api.act({ ...request, op: "link", number: child.number, parent: 38, key: "link" })
+  try Effect.try(() => expect(linked.items.find((i) => i.number === child.number)?.parent).toBe(38))
+  for (const parent of [0, 38, child.number, 100000]) {
+    const bad = try Effect.result(api.act({ ...request, op: "link", number: 38, parent, key: `bad-${parent}` }))
+    try Effect.try(() => expect(bad._tag).toBe("Failure"))
+  }
+}))
+
+it("refuses a lone surrogate in any request field before the durable engine can see it", () => {
+  const valid = { op: "decline" as const, number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k" }
+  for (const field of ["title", "text", "assignee", "example", "prior", "key"] as const) {
+    expect(Schema.decodeUnknownExit(IssueRequest)({ ...valid, [field]: "\ud824" })._tag).toBe("Failure")
+    expect(Schema.decodeUnknownExit(IssueRequest)({ ...valid, [field]: "paired \ud83d\ude00 ok" })._tag).toBe("Success")
+  }
+})

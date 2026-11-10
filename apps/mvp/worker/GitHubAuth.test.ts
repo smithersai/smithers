@@ -214,7 +214,7 @@ describe("the GitHub App adapter", () => {
       authorization: `Basic ${btoa("Iv1.loopback:loopback-secret")}`,
     })
     expect(JSON.parse(seen[0]!.body)).toEqual({ access_token: "ghu_loopback" })
-    for (const status of [404, 422]) {
+    for (const status of [404]) {
       const gone = await github(() => ({ status, body: { message: "Not Found" } }))
       expect(await run(gone.service.revoke(token)), String(status)).toEqual(Exit.void)
     }
@@ -224,6 +224,7 @@ describe("the GitHub App adapter", () => {
     const cases: ReadonlyArray<readonly [number, GitHubRefused["reason"]]> = [
       [401, "misconfigured"],
       [403, "misconfigured"],
+      [422, "unavailable"],
       [429, "unavailable"],
       [502, "unavailable"],
     ]

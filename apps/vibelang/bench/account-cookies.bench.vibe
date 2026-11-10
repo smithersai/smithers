@@ -1,0 +1,30 @@
+// Origin and cookie admission rules, independent of a provider grant or signature verification.
+import { it, expect } from "@effect/vitest"
+import { cookieName } from "../src/core/accountCookieDecision.vibe"
+import { sessionCookieName, validSessionCookie } from "../src/core/accountCookies.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+it("cookie admission confines local names and rejects noncanonical origins and credentials", async ({ bench }) => {
+  const result = await workload(bench, "account-cookie-admission", "sync", () => {
+    expect([cookieName(true), cookieName(false)]).toEqual(["__Host-vibelang-session", "vibelang-session"])
+    for (const origin of ["https://factory.invalid", "https://factory.invalid:8443", "https://localhost"]) {
+      expect(sessionCookieName(origin)).toBe("__Host-vibelang-session")
+      for (const value of ["a", "signed_1.2:3-4", "x".repeat(4096)]) {
+        expect(validSessionCookie(origin, "__Host-vibelang-session=" + value)).toBe(true)
+        expect(validSessionCookie(origin, "vibelang-session=" + value)).toBe(false)
+      }
+    }
+    for (const origin of ["http://localhost", "http://localhost:4503", "http://127.0.0.1:4503", "http://[::1]:4503"]) {
+      expect(sessionCookieName(origin)).toBe("vibelang-session")
+      for (const prefix of ["vibelang-session=", "__Host-vibelang-session="]) expect(validSessionCookie(origin, prefix + "fixture")).toBe(true)
+    }
+    for (const origin of ["", "not-an-origin", "http://factory.invalid", "ftp://localhost", "https://factory.invalid/", "https://factory.invalid?q=1", "https://factory.invalid#x", "https://user@factory.invalid", "https://FACTORY.invalid", "https://factory.invalid:443", "http://127.1:4503"]) {
+      expect(validSessionCookie(origin, "__Host-vibelang-session=fixture")).toBe(false)
+    }
+    for (const value of ["", "x".repeat(4097), "a b", "a=b", "a;b", "a%2F", "a\n", "a\r\n", "a\u2028", "a💥"]) {
+      for (const prefix of ["__Host-vibelang-session=", "vibelang-session="]) expect(validSessionCookie("http://127.0.0.1:4503", prefix + value)).toBe(false)
+    }
+    expect(validSessionCookie("https://factory.invalid", "wrong=fixture")).toBe(false)
+  }).run(quick)
+  await runPromise(artifact("account-cookie-admission", "Vitest built-in bench; production cookie-name and admission functions. Exact secure/local names, three hosted origins, four loopback origins, 1/4096/4097-character values, eleven invalid/noncanonical origins, invalid characters and line terminators checked in every callback. Setup and assertions included.", ["Pure URL/cookie syntax admission; does not establish a valid signature, identity, broker exchange, role, real OAuth or production session. No network, request interception or credential used."], result))
+})

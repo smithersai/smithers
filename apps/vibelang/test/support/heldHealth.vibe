@@ -1,0 +1,36 @@
+// A faulty HttpClient service: health stays unresolved until the test releases it. No request interception.
+import { HttpClient, HttpClientResponse } from "effect/http"
+import { healthResponse } from "./browser.ts"
+
+export effect function heldHealth() {
+  const clock = try Clock.Clock
+  const answer = try Deferred.make<"mock" | "live">()
+  let calls = 0
+  let settled = false
+  let cancelled = false
+  const client = HttpClient.make(effect (request) => {
+    calls++
+    const agent = try Deferred.await(answer).pipe(Effect.onInterrupt(() => sync(() => { cancelled = true })))
+    settled = true
+    return HttpClientResponse.fromWeb(request, try orDie(Effect.try(() => healthResponse(agent))))
+  })
+  return {
+    layer: Layer.succeed(HttpClient.HttpClient, client),
+    // This injected clock can hold the health deadline beyond wall time. Time reads and every other sleep use
+    // the real service, so forced-mock paths (which never release health) still stream their replies.
+    deadlineClock: {
+      currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe(),
+      currentTimeMillis: clock.currentTimeMillis,
+      currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe(),
+      currentTimeNanos: clock.currentTimeNanos,
+      monotonicTimeNanosUnsafe: () => clock.monotonicTimeNanosUnsafe(),
+      monotonicTimeNanos: clock.monotonicTimeNanos,
+      sleep: effect (duration: Duration.Duration) => {
+        if (Duration.toMillis(duration) === 3000) try Deferred.await(answer)
+        try clock.sleep(duration)
+      },
+    },
+    release: (mode: "mock" | "live") => Deferred.succeed(answer, mode),
+    snapshot: () => ({ calls, settled, cancelled }),
+  }
+}

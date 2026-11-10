@@ -1,0 +1,180 @@
+// A conversation's Durable Object body on the real Node SQLite adapter: posts, tours, tour controls, wiki pages and
+// alarms in any order, with a budget that admits or refuses. A fresh incarnation over the same storage agrees.
+import { it } from "@effect/vitest"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { Unavailable } from "../src/core/Factory.vibe"
+import { ExecutionObject } from "@smthrs/platform-cloudflare"
+import { Reply, touring } from "../src/core/flows.vibe"
+import { wikiPath } from "../src/core/wiki.vibe"
+import type { HistoryReader } from "../src/history/tools.vibe"
+import * as Objects from "../worker/Objects.vibe"
+import { run, same, Finding, Int, TextOrBoundary } from "./run.vibe"
+
+const unavailable = () => fail(new Unavailable({ reason: "injected history failure" }))
+const history: HistoryReader = { outline: unavailable, epic: unavailable, commit: unavailable, search: unavailable, plan: unavailable, start: unavailable, note: unavailable }
+const model = { model: undefined, unusable: "unset" }
+const POSTS = [null, "invalid", "empty", "too-long", "duplicate", "busy", "full"]
+const TOURS = [null, "busy", "not-replying", "full"]
+
+effect function storage() {
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  return raw as unknown as Objects.Storage
+}
+
+const Step = Schema.Struct({
+  op: Schema.Literals(["post", "repost", "tour", "endTour", "pause", "resume", "seek", "wiki", "alarm", "dispatch"]),
+  pick: Int, text: TextOrBoundary, admit: Schema.Boolean,
+  page: Schema.Literals(["index", "rulings", "roadmap", "decisions/0015-fuzzing", "nope", ""]),
+})
+
+it.live("objects/conversation-host", () => run("objects/conversation-host", Schema.Array(Step).check(Schema.isMaxLength(14)), (steps) => effect {
+  const object = try storage()
+  const sequencer = try Objects.conversation(object)
+  const clients: Array<string> = []
+  const apply = effect (step: typeof Step.Type) => {
+    const before = try sequencer.snapshot()
+    switch (step.op) {
+      case "post":
+      case "repost": {
+        const clientId = step.op === "repost" && clients.length > 0 ? clients[step.pick % clients.length]! : `c${step.pick}-${clients.length}`
+        const answer = try Objects.post("conv", object, sequencer, clientId, "Guest", step.text)
+        if (!POSTS.includes(answer)) throw new Finding({ report: "objects:40 !POSTS.includes(answer)" })
+        const posted = (try sequencer.snapshot()).entries.filter((entry) => entry.clientId === clientId)
+        if (answer === null && posted.length !== 1) throw new Finding({ report: "objects:42 answer === null && posted.length !== 1" })
+        if (posted.length > 1) throw new Finding({ report: "objects:43 posted.length > 1" })
+        if (answer === null) clients.push(clientId)
+        break
+      }
+      case "tour": {
+        const answer = try Objects.tour("conv", object, sequencer)
+        if (!TOURS.includes(answer)) throw new Finding({ report: "objects:49 !TOURS.includes(answer)" })
+        if (answer === null && touring(try sequencer.snapshot()) === "") throw new Finding({ report: "objects:50 answer === null && touring(try sequencer.snapshot()) === ''" })
+        break
+      }
+      case "endTour": {
+        const answer = try Objects.endTour("conv", object, sequencer)
+        if (!TOURS.includes(answer)) throw new Finding({ report: "objects:55 !TOURS.includes(answer)" })
+        if (answer === null && touring(try sequencer.snapshot()) !== "") throw new Finding({ report: "objects:56 answer === null && touring(try sequencer.snapshot()) !== ''" })
+        if ((answer === null) !== (touring(before) !== "")) throw new Finding({ report: "objects:57 (answer === null) !== (touring(before) !== '')" })
+        break
+      }
+      case "pause":
+      case "resume":
+      case "seek": {
+        try Objects.controlTour("conv", object, sequencer, step.op, 1 + step.pick % 10)
+        if (touring(before) === "" && (try sequencer.snapshot()).seq !== before.seq) throw new Finding({ report: "objects:64 touring(before) === '' && (try sequencer.snapshot()).seq !== before.seq" })
+        break
+      }
+      case "wiki": {
+        const answer = try Objects.openWiki("conv", object, sequencer, step.page)
+        if (answer !== null && answer !== "empty") throw new Finding({ report: "objects:69 answer !== null && answer !== 'empty'" })
+        if (answer === null && wikiPath(step.page) === undefined) throw new Finding({ report: "objects:70 answer === null && wikiPath(step.page) === undefined" })
+        break
+      }
+      case "alarm": {
+        const spend = { admit: () => succeed(step.admit), spend: () => Effect.void }
+        try Objects.alarm("conv", object, sequencer, spend, model, history)
+        break
+      }
+      default: try sequencer.ensureDispatched()
+    }
+  }
+  for (const step of steps) {
+    // Every object call answers within the request: one that never returns is a finding with its input.
+    const finished = try Effect.timeoutOption(apply(step), "20 seconds")
+    if (Option.isNone(finished)) throw new Finding({ report: `${step.op} did not return` })
+    // A fresh incarnation over the same storage replays the same conversation.
+    const reloaded = try Objects.conversation(object)
+    if (!same(try reloaded.snapshot(), try sequencer.snapshot())) throw new Finding({ report: "a fresh incarnation replayed another conversation" })
+  }
+  return true
+}))
+
+const OBJECT_SCENARIOS = ["post-behind-tour", "seek-behind-reply", "tour-behind-reply", "wiki-pages", "routing", "unadmitted-receipt"] as const
+const Scenario = Schema.Struct({ pick: Int, text: TextOrBoundary, admit: Schema.Boolean })
+const PAGES = ["index", "rulings", "nope", "", "decisions/0015-fuzzing"]
+
+/**
+ * Preludes that reach the object's held-execution states in one execution, instead of waiting for random sequences:
+ * a reply dispatched while a tour holds the object, a tour control while a reply holds it, every wiki page answer, the
+ * router a reply or tour must never use, the receipt of an execution never admitted, and Learn more behind a reply
+ * that has not started.
+ */
+const objectScenario = (scenario: typeof OBJECT_SCENARIOS[number], pick: number, text: string, admit: boolean) => scoped(effect {
+  const object = try storage()
+  const sequencer = try Objects.conversation(object)
+  const spend = { admit: () => succeed(admit), spend: () => Effect.void }
+  const bounded = effect <A, E>(label: string, body: A!E) => {
+    const finished = try Effect.timeoutOption(body, "20 seconds")
+    if (Option.isNone(finished)) throw new Finding({ report: `${label} did not return` })
+    return finished.value
+  }
+  switch (scenario) {
+    case "post-behind-tour": {
+      if ((try Objects.tour("conv", object, sequencer)) !== null) throw new Finding({ report: "a first tour was refused" })
+      try bounded("alarm", Objects.alarm("conv", object, sequencer, spend, model, history))
+      // Ended, the tour's parked execution still holds the object until an alarm settles it.
+      if ((try bounded("end tour", Objects.endTour("conv", object, sequencer))) !== null) throw new Finding({ report: "ending a running tour was refused" })
+      const answer = try bounded("post", Objects.post("conv", object, sequencer, `c${pick}`, "Guest", text))
+      if (!POSTS.includes(answer)) throw new Finding({ report: "a post behind a tour answered outside its reasons" })
+      // The tour holds the object's execution, so the reply waits: nothing has answered it yet.
+      const entries = (try sequencer.snapshot()).entries
+      const asked = entries.find((entry) => entry.clientId === `c${pick}`)
+      const reply = asked === undefined ? undefined : entries.find((entry) => entry.inReplyTo === asked.id)
+      if (reply?.done === true) throw new Finding({ report: "a reply finished while the tour held the object" })
+      break
+    }
+    case "seek-behind-reply": {
+      const posted = try bounded("post", Objects.post("conv", object, sequencer, `c${pick}`, "Guest", text))
+      try bounded("alarm", Objects.alarm("conv", object, sequencer, spend, model, history))
+      const toured = try bounded("tour", Objects.tour("conv", object, sequencer))
+      if (!TOURS.includes(toured)) throw new Finding({ report: "a tour behind a reply answered outside its reasons" })
+      const before = try sequencer.snapshot()
+      try bounded("seek", Objects.controlTour("conv", object, sequencer, "seek", 1 + pick % 10))
+      if (touring(before) === "" && (try sequencer.snapshot()).seq !== before.seq) throw new Finding({ report: `a seek with no tour wrote an event (post ${posted})` })
+      break
+    }
+    case "tour-behind-reply": {
+      // The reply is dispatched and holds the object's one execution, but no alarm has started it: a tour accepted
+      // now would wait on that reply while the reply's start waits on the tour.
+      const posted = try bounded("post", Objects.post("conv", object, sequencer, `c${pick}`, "Guest", text))
+      if (posted !== null) break
+      const toured = try bounded("tour", Objects.tour("conv", object, sequencer))
+      if (toured !== "busy") throw new Finding({ report: `a tour behind an unstarted reply answered ${toured}` })
+      if (touring(try sequencer.snapshot()) !== "") throw new Finding({ report: "a refused tour was recorded" })
+      break
+    }
+    case "wiki-pages": {
+      for (const page of PAGES) {
+        const answer = try bounded("wiki", Objects.openWiki("conv", object, sequencer, page))
+        if ((answer === null) !== (wikiPath(page) !== undefined)) throw new Finding({ report: `wiki ${page === "" ? "(blank)" : "page"} answered ${answer}` })
+      }
+      break
+    }
+    case "routing": {
+      const intent = try Effect.orDie(ExecutionObject.intent(Reply, { executionId: `reply/m${pick}`, payload: { post: `m${pick}` } }))
+      const started = try exit(Objects.unrouted.start(intent))
+      const woken = try exit(Objects.unrouted.wake(`reply/m${pick}`))
+      if (started._tag !== "Failure" || woken._tag !== "Failure") throw new Finding({ report: "a reply or tour execution routed a flow" })
+      // Tours with no host wake: waking them writes nothing and arms nothing.
+      const before = try sequencer.snapshot()
+      try Objects.toursOf(sequencer).wake()
+      if (!same(try sequencer.snapshot(), before)) throw new Finding({ report: "a hostless tour wake changed the conversation" })
+      break
+    }
+    case "unadmitted-receipt": {
+      // No execution was admitted and none was cancelled: there is no receipt to read, and asking is a defect.
+      const intent = try Effect.orDie(ExecutionObject.intent(Reply, { executionId: `reply/m${pick}`, payload: { post: `m${pick}` } }))
+      const read = try exit(Objects.executionResult("conv", object, intent))
+      if (read._tag !== "Failure") throw new Finding({ report: "an unadmitted, uncancelled execution had a receipt" })
+      break
+    }
+  }
+  return true
+})
+
+// Every execution runs every scenario on fresh storage, so one execution reaches them all whatever the host load.
+it.live("objects/steered-host", () => run("objects/steered-host", Scenario, ({ pick, text, admit }) => effect {
+  for (const scenario of OBJECT_SCENARIOS) try objectScenario(scenario, pick, text, admit)
+  return true
+}))

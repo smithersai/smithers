@@ -1,0 +1,84 @@
+// @vitest-environment node
+// Run the production object functions over the existing real SQLite/KV/alarm host adapter, independently of tests.
+import { it, expect } from "@effect/vitest"
+import { ExecutionObject } from "@smthrs/platform-cloudflare"
+import { Reply } from "../src/core/flows.vibe"
+import { readerOver } from "../worker/HistoryObject.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import * as Objects from "../worker/Objects.vibe"
+import { REASONS } from "../worker/Reply.vibe"
+import { eventKey, logOver, ledgerOver } from "../worker/ObjectStorage.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const unavailableHistory = readerOver(() => fail(new Unreachable({ what: "history" })), () => fail(new Unreachable({ what: "history" })))
+
+it("SQLite conversation hosts settle queued replies, recover and preserve ownership", async ({ bench }) => {
+  const result = await workload(bench, "object-post-alarm-recovery", "async", async () => {
+    await runPromise(scoped(effect {
+      const kv = try Effect.try(() => objectStorage())
+      const storage = kv as unknown as Objects.Storage
+      const sequencer = try Objects.conversation(storage)
+      const invalid = try Objects.post("bench", storage, sequencer, "bad", "Ada", "\uD800")
+      const posted = try Objects.post("bench", storage, sequencer, "one", "Ada", "first", "person-1")
+      const duplicate = try Objects.post("bench", storage, sequencer, "one", "Changed", "wrong", "person-2")
+      const queued = try Objects.post("bench", storage, sequencer, "two", "Ada", "second")
+      const before = try sequencer.read(0)
+      const budget = try Objects.budget(storage, 100)
+      const spend = { admit: (_day: string) => budget.admit(), spend: (_day: string, reply: string, tokens: number) => budget.spend(reply, tokens) }
+      const model = { model: undefined, unusable: "unconfigured" }
+      const outcomes: Array<string> = []
+      for (let index = 0; index < 5; index++) outcomes.push((try Objects.alarm("bench", storage, sequencer, spend, model, unavailableHistory))._tag)
+      const recovered = try Objects.conversation(storage)
+      const snapshot = try recovered.read(0)
+      const events = try logOver(storage).read()
+      const ledger = ledgerOver(storage)
+      try ledger.write({ tokens: 7 })
+      const tokens = try ledger.read("tokens")
+      const absent = try ledger.read("absent")
+      const execution = Objects.executionStorage(storage)
+      try execution.put("probe", "value")
+      const value = try execution.get<string>("probe")
+      try execution.setAlarm(1234)
+      const alarmAt = kv.alarmAt
+      try execution.deleteAlarm()
+      const deleted = try execution.delete("probe")
+      try Effect.try(() => {
+        expect([invalid, posted, duplicate, queued]).toEqual(["invalid", null, "duplicate", null])
+        expect(before.entries.map(entry => entry.text)).toEqual(["first", "second"])
+        expect(outcomes).toEqual(["Settled", "Forgotten", "Settled", "Forgotten", "Idle"])
+        expect(snapshot.entries.map(entry => [entry.id, entry.text, entry.error, entry.done])).toEqual([
+          ["m1", "first", "", true], ["m2", "second", "", true],
+          ["r1", "", REASONS.unconfigured, true], ["r2", "", REASONS.unconfigured, true],
+        ])
+        expect(events.map(event => event.type)).toEqual(["Posted", "Posted", "ReplyStarted", "ReplyFailed", "ReplyStarted", "ReplyFailed"])
+        expect(events.map(event => event.seq)).toEqual([1, 2, 3, 4, 5, 6])
+        expect(kv.kv.get("post-owner/m1")).toBe("person-1")
+        expect(kv.kv.has(ExecutionObject.intentKey)).toBe(false)
+        expect([...kv.kv.keys()].filter(key => key.startsWith("dispatched/"))).toEqual(["dispatched/m1", "dispatched/m2"])
+        expect([tokens, absent, value, alarmAt, deleted, kv.alarmAt]).toEqual([7, undefined, "value", 1234, true, undefined])
+        expect(eventKey(10) > eventKey(9)).toBe(true)
+      })
+    }))
+  }).run(slow)
+  await runPromise(artifact("object-host", "Vitest built-in bench; production conversation/request/alarm functions on the existing real node:sqlite host adapter. Two queued posts, malformed input and changed-owner duplicate, five alarms, exact ordered failure events, fresh sequencer recovery and ownership, budget/execution storage read/write/delete/alarm checks. Three fresh databases; initialization, durable migrations and assertions included.", ["Node SQLite with in-memory KV/alarm host, not workerd scheduling or disk durability. Deliberately unconfigured model exercises configuration failure, not inference. Actual workerd success paths remain separate workloads."], result))
+})
+
+it("missing execution receipts require a durable cancellation tombstone", async ({ bench }) => {
+  const result = await workload(bench, "object-cancelled-receipt", "async", async () => {
+    await runPromise(scoped(effect {
+      const kv = try Effect.try(() => objectStorage())
+      const storage = kv as unknown as Objects.Storage
+      const intent = try Effect.orDie(ExecutionObject.intent(Reply, { executionId: "missing", payload: { post: "m1" } }))
+      const missing = try exit(Objects.executionResult("bench", storage, intent))
+      try promise(() => kv.put(ExecutionObject.cancelledKey, 1234))
+      const cancelled = try Objects.executionResult("bench", storage, intent)
+      try Effect.try(() => {
+        expect(Exit.isFailure(missing)).toBe(true)
+        if (Exit.isFailure(missing)) expect(Cause.pretty(missing.cause)).toContain("FlowExecutionNotFound")
+        expect(Option.isNone(cancelled)).toBe(true)
+      })
+    }))
+  }).run(slow)
+  await runPromise(artifact("object-cancelled-receipt", "Vitest built-in bench; real SQLite journal polling of an absent reply before and after a durable cancellation tombstone. Missing execution must remain an error; only recorded pre-admission cancellation returns no receipt. Three fresh scoped databases, setup and assertions included.", ["Deliberate absent-journal recovery boundary; no active model call or remote object."], result))
+})

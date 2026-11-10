@@ -87,3 +87,6 @@ export * as ContainerSession from "./ContainerSession.vibe"
  * @since 1.0.0-rc.17
  */
 export * as SandboxObject from "./SandboxObject.vibe"
+
+/** Read the durable engine this host already provides. @since 1.0.0 */
+export { RunInspection } from "@smthrs/engine-store"

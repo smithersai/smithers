@@ -1,0 +1,74 @@
+// The actual declarations and host bodies; no second graph, schema, or workflow runtime.
+import { Action, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Post, Tour, SandboxCommand, SandboxCommandAction, SandboxStart, SandboxStartAction, SandboxStop, SandboxStopAction } from "../core/flows.vibe"
+import { HistoryAnswer, Note, Plan, Start } from "../history/flows.vibe"
+import { type HistoryReader, note, plan, Show, show, start } from "../history/tools.vibe"
+import { Factory, Refused } from "../core/Factory.vibe"
+import { ActionFailure } from "./Actions.vibe"
+
+effect function decode<A, I>(schema: Schema.Codec<A, I>, input: unknown) {
+  return try Effect.mapError(Schema.decodeUnknownEffect(schema)(input), () => new ActionFailure({ code: "input" }))
+}
+export effect function prepare(name: string, input: Schema.Json, id: string) {
+  const raw: Readonly<Record<string, Schema.Json>> = input !== null && typeof input === "object" && !Array.isArray(input) ? input as Readonly<Record<string, Schema.Json>> : {}
+  switch (name) {
+    case Post._tag: return { kind: "post" as const, payload: try decode(Post.payloadSchema, { clientId: id, name: "Guest", text: raw.text ?? "" }) }
+    case Tour._tag: return { kind: "tour" as const, payload: { tour: id } }
+    case Show._tag: return { kind: "show" as const, payload: try decode(Show.payloadSchema, Object.keys(raw).length === 0 ? { what: "outline" } : input) }
+    case Plan._tag: return { kind: "plan" as const, payload: try decode(Plan.payloadSchema, input) }
+    case Start._tag: return { kind: "start" as const, payload: try decode(Start.payloadSchema, input) }
+    case Note._tag: return { kind: "note" as const, payload: try decode(Note.payloadSchema, input) }
+    case SandboxStart._tag: return { kind: "sandbox-start" as const, payload: try decode(SandboxStart.payloadSchema, { ...raw, conversation: raw.conversation ?? "home", operationId: id }) }
+    case SandboxStop._tag: return { kind: "sandbox-stop" as const, payload: try decode(SandboxStop.payloadSchema, { ...raw, conversation: raw.conversation ?? "home", operationId: id }) }
+    case SandboxCommand._tag: return { kind: "sandbox-command" as const, payload: try decode(SandboxCommand.payloadSchema, { ...raw, conversation: raw.conversation ?? "home", operationId: id }) }
+    default: throw new ActionFailure({ code: "not-found" })
+  }
+}
+export type Invocation = Effect.Success<ReturnType<typeof prepare>>
+
+/** A history write answers its refusal as a value, so its flow succeeds. The run still failed: nothing was written. */
+export function refused(answer: unknown): boolean {
+  return Schema.is(HistoryAnswer)(answer) && answer.refusal !== null
+}
+
+/** History operations still execute their owning API's durable flows, with its policy. */
+export function historyRegistration<R>(history: HistoryReader!never!R) {
+  return Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    try engine.register(Show, effect (input) => try Action.make({ name: "vibelang/history/show/read", success: Show.successSchema, execute: Effect.orDie(show(try history, input)) }))
+    try engine.register(Plan, effect (input, executionId) => try Action.make({ name: "vibelang/history/Plan/call", success: Plan.successSchema, execute: plan(try history, input, executionId) }))
+    try engine.register(Start, effect (input, executionId) => try Action.make({ name: "vibelang/history/Start/call", success: Start.successSchema, execute: start(try history, input.id, input.lane, executionId) }))
+    try engine.register(Note, effect (input, executionId) => try Action.make({ name: "vibelang/history/Note/call", success: Note.successSchema, execute: note(try history, input.id, input.section, input.text, executionId) }))
+  })
+}
+export effect function execute(engine: FlowRuntime.FlowRuntime["Service"], invocation: Invocation, id: string) {
+  switch (invocation.kind) {
+    case "sandbox-start": return try engine.execute(SandboxStart, { payload: invocation.payload, executionId: id })
+    case "sandbox-stop": return try engine.execute(SandboxStop, { payload: invocation.payload, executionId: id })
+    case "sandbox-command": return try engine.execute(SandboxCommand, { payload: invocation.payload, executionId: id })
+    case "post": return try engine.execute(Post, { payload: invocation.payload, executionId: id })
+    case "tour": return try engine.execute(Tour, { payload: invocation.payload, executionId: id })
+    case "show": return try engine.execute(Show, { payload: invocation.payload, executionId: id })
+    case "plan": return try engine.execute(Plan, { payload: invocation.payload, executionId: id })
+    case "start": return try engine.execute(Start, { payload: invocation.payload, executionId: id })
+    case "note": return try engine.execute(Note, { payload: invocation.payload, executionId: id })
+  }
+}
+
+/** The owning Factory still enforces current identity, allowance and generation. */
+export service ActionDevice {
+  static readonly defaultValue = () => ({
+    startSandbox: () => fail(new Refused({ refusal: "forbidden" })),
+    stopSandbox: () => fail(new Refused({ refusal: "forbidden" })),
+    sandboxCommand: () => fail(new Refused({ refusal: "forbidden" })),
+  })
+  readonly startSandbox: Factory.Shape["startSandbox"]
+  readonly stopSandbox: Factory.Shape["stopSandbox"]
+  readonly sandboxCommand: Factory.Shape["sandboxCommand"]
+}
+/** An action's sandbox steps run on the caller's device: the person's own factory, through `ActionDevice`. */
+export const deviceRegistration = Layer.mergeAll(
+  Interpreter.layerWithImplementations(SandboxStart, SandboxStartAction.toLayer(effect (p) => try (try ActionDevice).startSandbox(p.conversation, p.operationId))),
+  Interpreter.layerWithImplementations(SandboxStop, SandboxStopAction.toLayer(effect (p) => try (try ActionDevice).stopSandbox(p.conversation, p.operationId, p.generation))),
+  Interpreter.layerWithImplementations(SandboxCommand, SandboxCommandAction.toLayer(effect (p) => try (try ActionDevice).sandboxCommand(p.conversation, p.operationId, p.command, p.generation))),
+)

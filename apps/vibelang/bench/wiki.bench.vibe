@@ -1,0 +1,27 @@
+// Independent, correctness-checked whole wiki edit journeys; no live GitHub/model timing is claimed.
+import { it, expect } from "@effect/vitest"
+import { makeWikiFactory, makeWikiStore } from "../src/core/WikiFactory.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+it("wiki drafts, person submissions and replay preserve the repository source", async ({ bench }) => {
+  const result = await workload(bench, "wiki-edit-journeys", "async", () => runPromise(scoped(effect {
+    for (const role of ["maintainer", "contributor"] as const) {
+      const store = try makeWikiStore()
+      const wiki = try makeWikiFactory(role, store)
+      const base = (try wiki.read("roadmap")).pages.find(page => page.id === "roadmap")!.source
+      const drafted = try wiki.act({ op: "draft", page: "roadmap", base: "", text: "A benchmark wiki edit", key: "bench-draft" })
+      const request = { op: role === "maintainer" ? "save" as const : "propose" as const, page: "roadmap", base, text: drafted.draft!.text, key: "bench-submit" }
+      const first = try wiki.act(request)
+      const replay = try wiki.act(request)
+      const after = try wiki.read("roadmap")
+      const proposals = try Ref.get(store.proposals)
+      try Effect.try(() => {
+        expect(first.review).toMatch(/\/pull\/[0-9]+$/)
+        expect(replay).toEqual(first)
+        expect(after.pages.find(page => page.id === "roadmap")?.source).toBe(base)
+        expect(after.draft).toBeUndefined()
+        expect(proposals).toHaveLength(1)
+      })
+    }
+  }))).run(slow)
+  await runPromise(artifact("wiki-edit-journeys", "Vitest built-in bench, three whole-journey samples. Each sample initializes two independent real fixture repositories/engines, reads source, drafts, submits by each role, replays and verifies unchanged Markdown and exactly one review per repository. Assertions included.", ["Product fixture mode; excludes real GitHub, credentials, model generation and network. Whole-journey latency is not per-command latency or a coverage claim."], result))
+})

@@ -509,7 +509,7 @@ Run with the compose Postgres up (`pnpm db:up`). GitHub is the second scripted s
 | `worker/flows/RecheckRole.test.ts` | the flow on the Node host; a retried GitHub failure; refreshing an expiring token and using the new one; an expired refresh token ending the session; a refresh rotated, or stored, while the step waited on GitHub; requests an hour apart while a check is paused after GitHub redeemed its refresh token start that one check, one engine per execution as on Cloudflare, and the session keeps its replacement; a replacement Postgres refused to store, then the engine dying and a new one resuming the run, redeems once and leaves the session live with the replacement; a redemption whose answer was lost ends the session; a check that fails every attempt keeping the role; tokens GitHub no longer accepts; unopenable tokens; no token or login in its records |
 | `worker/flows/RevokeGitHubToken.test.ts` | sign-out, and signing in again, starting the flow with the sealed tokens kept, and again only while the tokens wait; the flow ending a session still live before it revokes; the flow on the Node host revoking the token on GitHub and forgetting it; a token GitHub no longer has; GitHub down once and retried; every attempt failing and the tokens forgotten anyway; GitHub or Postgres failing each step by reason; an unopenable token forgotten without GitHub; a live session, no session and a session GitHub refused left alone; no token or login in its records |
 | `worker/ExecutionHost.test.ts` | the deployed remote host runs `auth/RecheckRole` and `auth/RevokeGitHubToken` over the app's tables |
-| `worker/GitHubAuth.test.ts` | the real adapter against a scripted GitHub on loopback HTTP, GitHub's `200 OK` OAuth errors included; revoking a token as the App (`204`, `404` and `422` revoked; `401` and `403` misconfigured; `429` and `502` unavailable) |
+| `worker/GitHubAuth.test.ts` | the real adapter against a scripted GitHub on loopback HTTP, GitHub's `200 OK` OAuth errors included; revoking a token as the App (`204` and `404` revoked; `401` and `403` misconfigured; `422`, `429` and `502` unavailable) |
 | `worker/GitHubAuth.live.test.ts` | the real GitHub: the App's credentials, a callback URL, and a real user token's person and role; each case skips naming the variables it needs |
 | `src/wipe.test.ts` | reopening every page without a wipe; a sealed page's memory stores and unavailable engine; the browser's wipe on Node's Web Locks and BroadcastChannel, with stand-ins for OPFS and IndexedDB: a page still holding the data holds the wipe off, and the wipe then deletes both stores and clears the mark; it waits for the leading engine worker's lock; two pages booting at once delete once; a delete another connection holds off finishes when it closes; a failed delete keeps the mark and opens unwiped; every page, the signing-out one included, stops its program and loads again once; an unwiped page's stores are memory and its engine is unavailable with `WipeUnfinished` |
 | `e2e/sign-in.spec.ts` | in a real browser: a tab sealed while its owner was signed out reopens with their draft once a reconnect's session check finds them; another person signing in on the browser sees neither the device's draft nor its queued question, which isn't sent as them and stays on the device, and both are back, the question sent once, when its owner signs in again; signing out wipes the device (the unsent question gone, the outbox empty, the shape from offset -1); with two tabs, a tab slow to unload holds the other's wipe off, then both open as visitors with nothing of the session, the mark cleared; a new device opened while every session read answers 503 (`?faults=session-503`, the engine worker's too) shows the sign-in prompt, then, once ChatApi answers, the composer on the same page within 35 s, the device its person's, and asking taken (`202`); an evicted device whose outbox kept the earlier owner's queued question, taken in place by the next person to sign in, who never sees or sends it, and whose own ask is taken |
@@ -675,7 +675,7 @@ No subsequent request is needed, including after a failed cleanup admission.
 The sweep starts unfinished rows older than five minutes. Successful cleanup
 clears both sealed columns and sets `finished_at`, retaining the unique access
 `pair_digest`. The sweeper deletes finished tombstones after 30 days; a replay
-past retention may enqueue again, and GitHub’s 404 or 422 is success.
+past retention may enqueue again, and GitHub’s 404 is success; its 422 validation/spam response retries.
 
 Reauthentication preserves a newer role observation and its verification time.
 A delayed callback cannot extend the newer receipt's authorization deadline.
@@ -699,3 +699,38 @@ Tests: `worker/Reauthentication.test.ts`, `worker/SignIn.handoff.test.ts`,
 hold, session-tag continuation and wipe behavior remain step 3.
 
 The deployment role window is captured while the host and request services are built, and travels with their runtime authority service. Losing ambient runtime configuration cannot widen it. A credential publication that cannot persist retains its privacy fence, while another context's queued write-lock acquisition ends on cancellation or after two seconds with retryable `credential_stale`. The caller's existing durable retry policy owns the next attempt; session reads and sign-out remain available.
+
+## Independently hosted sites
+
+`GitHub.Auth.Broker` in `@smthrs/integrations` lets hosted sites use this deployment's existing GitHub callback.
+`HostedAuthBroker` hosts `/api/auth/broker/start`, `/api/auth/broker/exchange`, and only the broker's exact callback
+state format; ordinary sign-in, alias handoff and sessions keep their existing handlers. Every operation is an
+`auth/Broker` step in the object's SQLite journal; only its operation name and null result are journaled.
+
+Configure `HOSTED_AUTH_SITES` as redacted JSON entries `{origin, secret}` for the exact HTTPS origins this deployment
+serves, with distinct keys of at least 32 characters, and `AUTH_BROKER_ENCRYPTION_KEY` as a base64 32-byte key.
+`AUTH_BROKER_ORIGIN` defaults to HTTPS `APP_DOMAIN` and must be the already-registered callback's origin. Existing
+GitHub client credentials and `SESSION_SECRET` remain. A site has only its own registry key and its own session.
+No redirect URL is added. The deployment adds the `HostedAuthBroker` class/binding through Alchemy.
+
+A site with `grants` in `HOSTED_AUTH_SITES` can also act on GitHub for a person, through `GitHubConnection`, one Durable Object per person ([decision 0165](../decisions/0165-hosted-site-github-delegation.md)). It holds that person's one sealed token and answers signed `POST /api/auth/broker/delegation?person=<id>` calls. `GITHUB_CONNECTION_KEYS` (`{ id: base64 32-byte key }`) and `GITHUB_CONNECTION_KEY_ACTIVE` seal tokens; without them the broker refuses Connect. A person disconnects a site at `/api/auth/connections`. GitHub's `github_app_authorization` webhook ends every delegation.
+
+The chosen single-use code and signed-identity alternative, origin/PKCE checks, sixty-second expiry, fragment
+handoff, logging and security review are in [VibeLang decision 0029](../../../vibelang/wiki/decisions/0029-hosted-sign-in-broker.md)
+and [the integrations guide](../../../../packages/smithers/agent/integrations/README.md#hosted-site-sign-in).
+The new Worker modules are VibeLang; the rule scopes include `.vibe` and exempt only their host composition roots
+from the rule against Cloudflare in portable flows. This lane does not deploy the app.
+
+The shared `httpPolicy` is registered through Alchemy `Telemetry.layer` for ChatApi and HostedAuthBroker, so the HTTP tracer redacts query values before exporting spans. Proxy/native access logs must also omit OAuth query values and callback/exchange bodies.
+
+### Tokens from a failed callback
+
+Ordinary successful sign-in stores its encrypted GitHub pair for later API calls. If a callback fails after the
+exchange and before session issuance commits, it seals the unused pair into `github_token_cleanups` and admits
+`auth/RevokeReplacedGitHubToken`. Its existing flow retries revocation and its existing durable maintenance admits
+an interrupted launch. No token enters a flow payload. A failure to persist cleanup logs/counts fixed
+`auth.token_cleanup`, `smithers_auth_token_cleanup { outcome: failed }`, without changing the callback response.
+The hosted identity broker independently revokes its temporary pair through `auth/broker/revoke`; its success and
+exhaustion counters are `smithers_auth_broker_revocations` and `smithers_auth_broker_revocation_failures`.
+
+The hosted sign-in broker writes structured JSON logs through `@smthrs/observability` in its own Durable Object. Each `auth.broker.revoke` record keeps its `outcome` (`revoked` or `failed`) and current trace and span identifiers; it never logs tokens or identity content.

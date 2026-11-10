@@ -1,0 +1,261 @@
+// LemmaScript real parameters cover finite fractional coordinates; native IEEE arithmetic remains a host boundary.
+type real = number
+
+// Pure screen decisions. Foldkit and the DOM execute the returned choices; they do not choose a second policy.
+export interface Follow { readonly following: boolean; readonly followIntent: number; readonly stale: boolean }
+export interface NativeScroll { readonly paused: boolean; readonly intent: number; readonly bottom: boolean }
+export type EscapeAction = "tour" | "palette" | "docs" | "splash"
+
+/** Escape takes back the tour before closing the innermost visible surface. */
+//@ verify
+//@ ensures (tour || touring) ==> \result == "tour"
+//@ ensures !tour && !touring && palette ==> \result == "palette"
+//@ ensures !tour && !touring && !palette && surface == "chat" && docs == "max" ==> \result == "docs"
+//@ ensures !tour && !touring && !palette && (surface != "chat" || docs != "max") ==> \result == "splash"
+export function escapeAction(tour: boolean, touring: boolean, palette: boolean, surface: string, docs: string): EscapeAction {
+  if (tour || touring) return "tour"
+  if (palette) return "palette"
+  if (surface === "chat" && docs === "max") return "docs"
+  return "splash"
+}
+
+/** A splash shrinks when messages, pending posts or a retained pane exist. */
+//@ verify
+//@ ensures \result == (surface == "splash" && (entries > 0 || pending > 0 || pane != ""))
+export function canMinimize(surface: string, entries: number, pending: number, pane: string): boolean {
+  return surface === "splash" && (entries > 0 || pending > 0 || pane !== "")
+}
+
+/** Messages, pending posts or a retained pane make the chat available. */
+//@ verify
+//@ ensures \result == (entries > 0 || pending > 0 || pane != "")
+export function hasContent(entries: number, pending: number, pane: string): boolean {
+  return entries > 0 || pending > 0 || pane !== ""
+}
+
+/** Only the maximized docs shrink; every other docs state maximizes. */
+//@ verify
+//@ ensures docs == "max" ==> \result == "pane"
+//@ ensures docs != "max" ==> \result == "max"
+export function toggleDocs(docs: string): "pane" | "max" {
+  return docs === "max" ? "pane" : "max"
+}
+
+/** A stale scroll notification changes nothing; inactive surfaces acknowledge intent without resuming. */
+//@ verify
+//@ ensures \result.stale == (intent < previous)
+//@ ensures intent < previous ==> \result.following == following && \result.followIntent == previous
+//@ ensures intent >= previous ==> \result.followIntent == intent
+//@ ensures intent >= previous && surface == "chat" && !palette ==> \result.following == bottom
+//@ ensures intent >= previous && (surface != "chat" || palette) ==> \result.following == following
+//@ ensures \result.followIntent >= previous
+export function scrollFollow(surface: string, palette: boolean, following: boolean, previous: number, bottom: boolean, intent: number): Follow {
+  if (intent < previous) return { following, followIntent: previous, stale: true }
+  if (surface !== "chat" || palette) return { following, followIntent: intent, stale: false }
+  return { following: bottom, followIntent: intent, stale: false }
+}
+
+/** Only a visible, unoccluded chat that is following schedules a native scroll. */
+//@ verify
+//@ ensures \result == (surface == "chat" && following && !palette)
+export function follows(surface: string, following: boolean, palette: boolean): boolean {
+  return surface === "chat" && following && !palette
+}
+
+/** A native write requires this intent revision and an active surface. */
+//@ verify
+//@ ensures \result == (authorized == current && active)
+export function nativeFollow(authorized: number, current: number, active: boolean): boolean {
+  return authorized === current && active
+}
+
+/** A paused reader resumes only on downward movement to the bottom, never a stale bottom notification. */
+//@ verify
+//@ requires 0 <= intent && intent < 9007199254740991
+//@ ensures \result.bottom == (atBottom && (!paused || y > previousY))
+//@ ensures \result.paused == !\result.bottom
+//@ ensures \result.intent == intent || \result.intent == intent + 1
+//@ ensures !\result.bottom && !paused ==> \result.intent == intent + 1
+//@ ensures \result.bottom || paused ==> \result.intent == intent
+export function nativeScroll(atBottom: boolean, paused: boolean, y: real, previousY: real, intent: number): NativeScroll {
+  const bottom = atBottom && (!paused || y > previousY)
+  return { bottom, paused: !bottom, intent: !bottom && !paused ? intent + 1 : intent }
+}
+
+/** An upward gesture only pauses a visible page that can scroll. */
+//@ verify
+//@ ensures \result == (active && scrollable)
+export function canPause(active: boolean, scrollable: boolean): boolean {
+  return active && scrollable
+}
+
+/** Wheel zoom belongs to the browser; only a plain upward wheel pauses chat following. */
+//@ verify
+//@ ensures \result == (delta < 0 && !control)
+export function wheelPauses(delta: real, control: boolean): boolean {
+  return delta < 0 && !control
+}
+
+/** Editor cursor navigation and already-handled keys cannot pause the transcript. */
+//@ verify
+//@ ensures \result == (!prevented && !editor && (key == "PageUp" || key == "Home" || key == "ArrowUp"))
+export function keyPauses(key: string, prevented: boolean, editor: boolean): boolean {
+  return !prevented && !editor && (key === "PageUp" || key === "Home" || key === "ArrowUp")
+}
+
+/** A touch moving down moves the page up. */
+//@ verify
+//@ ensures \result == (current > previous)
+export function touchPauses(current: real, previous: real): boolean {
+  return current > previous
+}
+
+/** The fixed composer leaves a 48px tail allowance. */
+//@ verify
+//@ ensures \result == (height - viewport - y <= 48)
+export function nearBottom(height: number, viewport: number, y: number): boolean {
+  return height - viewport - y <= 48
+}
+
+/** Failure retains control only for a busy, still-running tour in this conversation. */
+//@ verify
+//@ ensures \result == (reason == "busy" && touring)
+export function failedTourKeepsControl(reason: string, touring: boolean): boolean {
+  return reason === "busy" && touring
+}
+
+export interface PaletteChange { readonly palette: boolean; readonly focus: "palette" | "previous" }
+
+/** Opening focuses the palette; dismissal restores the prior control. */
+//@ verify
+//@ ensures \result.palette == open
+//@ ensures open ==> \result.focus == "palette"
+//@ ensures !open ==> \result.focus == "previous"
+export function paletteChange(open: boolean): PaletteChange {
+  return { palette: open, focus: open ? "palette" : "previous" }
+}
+
+/** Learn more opens or resumes the stream, restarting from the correct conversation cursor. */
+export interface StreamChange { readonly opening: boolean; readonly epoch: number; readonly from: number }
+//@ verify
+//@ requires 0 <= epoch && epoch < 9007199254740991
+//@ ensures \result.opening == (fresh || stream != "open")
+//@ ensures \result.epoch == (\result.opening ? epoch + 1 : epoch)
+//@ ensures \result.from == (fresh ? 0 : \result.opening ? seq : from)
+export function tourStream(fresh: boolean, stream: string, epoch: number, seq: number, from: number): StreamChange {
+  const opening = fresh || stream !== "open"
+  return { opening, epoch: opening ? epoch + 1 : epoch, from: fresh ? 0 : opening ? seq : from }
+}
+
+/** A terminal event is announced once, only when it advances this copy. */
+//@ verify
+//@ ensures \result == (next > previous && (kind == "ReplyFinished" || kind == "ReplyFailed" || kind == "TourEnded"))
+export function completedEvent(previous: number, next: number, kind: string): boolean {
+  return next > previous && (kind === "ReplyFinished" || kind === "ReplyFailed" || kind === "TourEnded")
+}
+
+/** A completed entry announces its text or the product's failure phrase; other events keep the last announcement. */
+//@ verify
+//@ ensures found && error == "" ==> \result == text
+//@ ensures found && error != "" ==> \result == "Answer failed"
+//@ ensures !found ==> \result == previous
+export function answerAnnouncement(found: boolean, error: string, text: string, previous: string): string {
+  return found ? error === "" ? text : "Answer failed" : previous
+}
+
+/** Shortcut precedence after the platform's Unicode lowercase operation. */
+//@ verify
+//@ ensures normalized == "k" && (meta || control) ==> \result == "palette"
+//@ ensures (normalized != "k" || (!meta && !control)) && escape ==> \result == "escape"
+//@ ensures (normalized != "k" || (!meta && !control)) && !escape ==> \result == ""
+export function screenKey(normalized: string, escape: boolean, meta: boolean, control: boolean): "escape" | "palette" | "" {
+  if ((meta || control) && normalized === "k") return "palette"
+  if (escape) return "escape"
+  return ""
+}
+
+/** The screen projection updated by surface and tour actions; the host retains its other model fields. */
+export interface ScreenState {
+  readonly surface: "splash" | "chat"
+  readonly palette: boolean
+  readonly tour: boolean
+  readonly tourError: string
+  readonly docs: "pane" | "max"
+  readonly following: boolean
+}
+
+//@ verify
+//@ ensures \result.surface == "splash" && !\result.palette
+//@ ensures \result.tour == state.tour && \result.tourError == state.tourError && \result.docs == state.docs && \result.following == state.following
+export function showSplash(state: ScreenState): ScreenState {
+  return { surface: "splash", palette: false, tour: state.tour, tourError: state.tourError, docs: state.docs, following: state.following }
+}
+
+//@ verify
+//@ ensures !\result.tour && \result.docs == "pane"
+//@ ensures \result.surface == state.surface && \result.palette == state.palette && \result.tourError == state.tourError && \result.following == state.following
+export function endScreenTour(state: ScreenState): ScreenState {
+  return { surface: state.surface, palette: state.palette, tour: false, tourError: state.tourError, docs: "pane", following: state.following }
+}
+
+//@ verify
+//@ ensures \result.palette == open
+//@ ensures \result.surface == state.surface && \result.tour == state.tour && \result.tourError == state.tourError && \result.docs == state.docs && \result.following == state.following
+export function setScreenPalette(state: ScreenState, open: boolean): ScreenState {
+  return { surface: state.surface, palette: open, tour: state.tour, tourError: state.tourError, docs: state.docs, following: state.following }
+}
+
+//@ verify
+//@ ensures !canMinimize(state.surface, entries, pending, pane) ==> \result == state
+//@ ensures canMinimize(state.surface, entries, pending, pane) ==> \result.surface == "chat"
+//@ ensures \result.palette == state.palette && \result.tour == state.tour && \result.tourError == state.tourError && \result.docs == state.docs && \result.following == state.following
+export function minimizeScreen(state: ScreenState, entries: number, pending: number, pane: string): ScreenState {
+  if (!canMinimize(state.surface, entries, pending, pane)) return state
+  return { surface: "chat", palette: state.palette, tour: state.tour, tourError: state.tourError, docs: state.docs, following: state.following }
+}
+
+//@ verify
+//@ ensures state.tour ==> \result == state
+//@ ensures !state.tour ==> \result.surface == "chat" && !\result.palette && \result.tour && \result.tourError == "" && \result.docs == "max" && \result.following
+export function beginScreenTour(state: ScreenState): ScreenState {
+  if (state.tour) return state
+  return { surface: "chat", palette: false, tour: true, tourError: "", docs: "max", following: true }
+}
+
+//@ verify
+//@ ensures \result.tour == failedTourKeepsControl(reason, touring)
+//@ ensures \result.docs == (failedTourKeepsControl(reason, touring) ? "max" : "pane") && \result.tourError == reason
+//@ ensures \result.surface == state.surface && \result.palette == state.palette && \result.following == state.following
+export function failScreenTour(state: ScreenState, reason: string, touring: boolean): ScreenState {
+  const keep = failedTourKeepsControl(reason, touring)
+  return { surface: state.surface, palette: state.palette, tour: keep, tourError: reason, docs: keep ? "max" : "pane", following: state.following }
+}
+
+//@ verify
+//@ ensures \result.tour == touring && \result.docs == (touring ? "max" : state.docs)
+//@ ensures \result.surface == state.surface && \result.palette == state.palette && \result.tourError == state.tourError && \result.following == state.following
+export function failedScreenEnd(state: ScreenState, touring: boolean): ScreenState {
+  return { surface: state.surface, palette: state.palette, tour: touring, tourError: state.tourError, docs: touring ? "max" : state.docs, following: state.following }
+}
+
+//@ verify
+//@ ensures \result.tour == (toured ? false : state.tour)
+//@ ensures \result.docs == (toured && kind != "ReplyFinished" ? "pane" : state.docs)
+//@ ensures \result.surface == state.surface && \result.palette == state.palette && \result.tourError == state.tourError && \result.following == state.following
+export function completeScreenTour(state: ScreenState, toured: boolean, kind: string): ScreenState {
+  return { surface: state.surface, palette: state.palette, tour: toured ? false : state.tour, tourError: state.tourError, docs: toured && kind !== "ReplyFinished" ? "pane" : state.docs, following: state.following }
+}
+
+//@ verify
+//@ ensures \result.following
+//@ ensures \result.surface == state.surface && \result.palette == state.palette && \result.tour == state.tour && \result.tourError == state.tourError && \result.docs == state.docs
+export function latestScreen(state: ScreenState): ScreenState {
+  return { surface: state.surface, palette: state.palette, tour: state.tour, tourError: state.tourError, docs: state.docs, following: true }
+}
+
+//@ verify
+//@ ensures \result.docs == toggleDocs(state.docs)
+//@ ensures \result.surface == state.surface && \result.palette == state.palette && \result.tour == state.tour && \result.tourError == state.tourError && \result.following == state.following
+export function toggleScreenDocs(state: ScreenState): ScreenState {
+  return { surface: state.surface, palette: state.palette, tour: state.tour, tourError: state.tourError, docs: toggleDocs(state.docs), following: state.following }
+}

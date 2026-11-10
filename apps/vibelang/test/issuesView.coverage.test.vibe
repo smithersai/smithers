@@ -1,0 +1,269 @@
+// What each person sees of the issue tracker, screen by screen: states, permissions and each form of failure.
+import { expect, given, role, scene, text, within } from "foldkit/scene"
+import { describe, it } from "@effect/vitest"
+import { init, signedOut, update, Message } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+import { initialIssues } from "../src/web/issues.vibe"
+import { issueChatCard } from "../src/web/issuesView.vibe"
+import { emptySpecification, fixtureSpecification, reviewers } from "../src/core/specification.vibe"
+
+type Record = Parameters<typeof issueChatCard>[1]
+type Ui = NonNullable<ReturnType<typeof init>["model"]["issues"]>
+
+const issue = (over: Partial<Record> = {}): Record => ({
+  number: 7, githubId: 70, title: "Tuple patterns", body: "A body with #8 and `code`.", author: "ada", age: "3d", state: "open", labels: ["language", "vibelang:internal"],
+  parent: 0, task: "", assignee: "", vip: "", review: "", path: "", comments: 0, notes: [], ...over,
+})
+const home = init({ session: "view", mode: "mock", name: "Will" }).model
+const account = { ...signedOut, identity: { id: "1", login: "will", role: "maintainer" as const } }
+const ui = (over: Partial<Ui> = {}, items: ReadonlyArray<Record> = [issue()]): Ui => ({ ...initialIssues, status: "ready", role: "maintainer", data: { seq: 1, items }, ...over })
+const model = (issues: Ui) => ({ ...home, account: { ...account, identity: { ...account.identity, role: issues.role } }, issues })
+const app = { update, view }
+
+describe("the list", () => {
+  it("shows a skeleton while loading and a retry after a failure", () => {
+    scene(app, given(model(ui({ status: "loading" }))), expect(role("status", { name: "Loading issues" })).toExist())
+    scene(app, given(model(ui({ status: "error" }))), expect(text("Couldn't load issues")).toExist(), expect(role("button", { name: "Retry" })).toExist())
+  })
+  for (const [kind, empty] of [["Tasks", "No tasks committed"], ["VIPs", "No VIPs in review"], ["Issues", "No open issues"]] as const) {
+    it(`says ${empty} on an empty ${kind} list`, () => {
+      scene(app, given(model(ui({ kind }, []))), expect(text(empty)).toExist())
+    })
+  }
+  it("distinguishes no matches from an empty list, and an empty closed list", () => {
+    scene(app, given(model(ui({ query: "absent" }))), expect(text("No matches")).toExist())
+    scene(app, given(model(ui({ state: "closed" }))), expect(text("No closed issues")).toExist())
+  })
+  it("filters by kind, across tasks, VIPs and plain issues", () => {
+    const items = [issue({ number: 1, title: "Plain" }), issue({ number: 2, title: "Task one", task: "Queued" }), issue({ number: 3, title: "Vip one", vip: "In review" })]
+    scene(app, given(model(ui({ kind: "Issues" }, items))), expect(role("link", { name: "Plain" })).toExist(), expect(role("link", { name: "Task one" })).toBeAbsent())
+    scene(app, given(model(ui({ kind: "Tasks" }, items))), expect(role("link", { name: "Task one" })).toExist(), expect(role("link", { name: "Plain" })).toBeAbsent())
+    scene(app, given(model(ui({ kind: "VIPs" }, items))), expect(role("link", { name: "Vip one" })).toExist(), expect(role("link", { name: "Plain" })).toBeAbsent(), expect(text("Propose a VIP")).toExist())
+  })
+  it("states each row's lineage, child count and assignee", () => {
+    const items = [issue({ number: 1, title: "Parent" }), issue({ number: 2, title: "Only", parent: 1, assignee: "maya" }), issue({ number: 3, title: "Pair" }), issue({ number: 4, parent: 3 }), issue({ number: 5, parent: 3 })]
+    scene(app, given(model(ui({}, items))),
+      expect(text("#1 · opened 3d ago by ada · 1 child")).toExist(),
+      expect(text("#2 · opened 3d ago by ada · child of #1 · → maya")).toExist(),
+      expect(text("#3 · opened 3d ago by ada · 2 children")).toExist(),
+    )
+  })
+  it("labels a closed row and honors absolute dates; a blank title falls back to the number", () => {
+    scene(app, given(model(ui({ state: "closed" }, [issue({ state: "closed", age: "just now" })]))), expect(text("#7 · closed just now by ada")).toExist())
+    scene(app, given({ ...model(ui()), issues: ui({ data: { seq: 1, absoluteDates: true, items: [issue({ age: "2026-01-02" })] } }) }), expect(text("#7 · opened 2026-01-02 by ada")).toExist())
+    scene(app, given(model(ui({}, [issue({ title: "  " })]))), expect(role("link", { name: "#7" })).toExist())
+  })
+  it("offers GitHub connection only to a signed-in, unconnected person, at the configured address", () => {
+    const unconnected = (over: Partial<Ui>) => model(ui({ ...over, data: { seq: 1, connected: false, items: [issue()] } }))
+    scene(app, given(unconnected({ role: "new" })), expect(role("button", { name: "Connect GitHub" })).toExist(), expect(role("button", { name: "New issue" })).toBeAbsent())
+    const retry = { op: "new", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k" } as NonNullable<Ui["retry"]>
+    scene(app, given(unconnected({ role: "new", retry })), expect(role("button", { name: "Connect GitHub" })).toExist())
+    scene(app, given(unconnected({ role: "new", retry: { ...retry, recovery: "r" } })), expect(role("button", { name: "Connect GitHub" })).toExist())
+    scene(app, given(unconnected({ role: "viewer" })), expect(role("button", { name: "Connect GitHub" })).toBeAbsent())
+  })
+  it("shows a list-level failure with retry only when the role may retry it", () => {
+    const retry = { op: "new", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k" } as NonNullable<Ui["retry"]>
+    scene(app, given(model(ui({ error: "Couldn't save. Retry.", retry }))), expect(role("alert")).toExist(), expect(role("button", { name: "Retry" })).toExist())
+    scene(app, given(model(ui({ error: "Couldn't save. Retry.", retry, role: "viewer" }))), expect(role("button", { name: "Retry" })).toBeAbsent())
+    scene(app, given(model(ui({ error: "Couldn't load comments. Retry." }))), expect(role("button", { name: "Retry" })).toExist())
+    scene(app, given(model(ui({ error: "Other" }))), expect(role("button", { name: "Retry" })).toBeAbsent())
+  })
+  for (const [task, vip, label] of [["Running", "", "Task · Running"], ["Queued", "", "Task · Queued"], ["Done", "", "Task · Done"], ["", "In review", "VIP · In review"], ["", "Accepted", "VIP · Accepted"], ["", "Declined", "VIP · Declined"]] as const) {
+    it(`badges ${label}`, () => {
+      scene(app, given(model(ui({}, [issue({ task, vip })]))), expect(text(label)).toExist(), expect(text("vibelang:internal")).toBeAbsent())
+    })
+  }
+})
+
+describe("an issue", () => {
+  const detail = (over: Partial<Ui>, items: ReadonlyArray<Record>) => model(ui({ screen: "detail", selected: 7, ...over }, items))
+  it("says so when the issue no longer exists", () => {
+    scene(app, given(detail({ selected: 99 }, [])), expect(text("Issue unavailable")).toExist())
+  })
+  it("links a referenced issue and leaves an unknown reference as text", () => {
+    scene(app, given(detail({}, [issue({ body: "See #8 and #99." }), issue({ number: 8, title: "Other" })])),
+      expect(role("link", { name: "#8" })).toExist(),
+      expect(role("link", { name: "#99" })).toBeAbsent(),
+    )
+  })
+  it("draws the tree: its parent, and a single child in the singular", () => {
+    const items = [issue({ number: 1, title: "Root" }), issue({ parent: 1 }), issue({ number: 9, title: "Kid", parent: 7, assignee: "maya", task: "Queued" })]
+    scene(app, given(detail({}, items)),
+      expect(text("1 child")).toExist(),
+      expect(text("1 children")).toBeAbsent(),
+      expect(text("Part of #1 Root")).toExist(),
+      expect(role("link", { name: "#1 Root" })).toExist(),
+      expect(role("link", { name: "#9 Kid" })).toExist(),
+    )
+  })
+  it("draws plural children and hides the tree on a VIP", () => {
+    const kids = [issue(), issue({ number: 8, parent: 7 }), issue({ number: 9, parent: 7 })]
+    scene(app, given(detail({}, kids)), expect(text("2 children")).toExist())
+    scene(app, given(detail({}, [issue({ vip: "In review" }), issue({ number: 8, parent: 7 })])), expect(text("Tree")).toBeAbsent())
+  })
+  it("records the proposal gate, including who approved it", () => {
+    scene(app, given(detail({}, [issue({ vip: "Accepted", approvedBy: "will", approvedAt: "2026-02-03" })])),
+      expect(role("region", { name: "Proposal gate" })).toExist(),
+      expect(text("2026-02-03")).toExist(),
+    )
+    scene(app, given(detail({}, [issue({ vip: "Declined" })])), expect(role("region", { name: "Proposal gate" })).toExist(), expect(text("2026-02-03")).toBeAbsent())
+  })
+  it("keeps Accept and Decline for a maintainer's connected view of a VIP in review", () => {
+    scene(app, given(detail({}, [issue({ vip: "In review" })])), expect(role("button", { name: "Accept" })).toExist(), expect(role("button", { name: "Decline" })).toExist())
+    scene(app, given(detail({ role: "contributor" }, [issue({ vip: "In review" })])), expect(role("button", { name: "Accept" })).toBeAbsent())
+  })
+  it("offers Commit, Uncommit or neither by state", () => {
+    scene(app, given(detail({}, [issue()])), expect(role("button", { name: "Commit" })).toExist())
+    scene(app, given(detail({}, [issue({ task: "Queued" })])), expect(role("button", { name: "Uncommit" })).toExist())
+    scene(app, given(detail({}, [issue({ state: "closed" })])), expect(role("button", { name: "Commit" })).toBeAbsent())
+  })
+  it("renders events by kind, and comments with the agent marked", () => {
+    const notes = [
+      { author: "will", age: "1d", text: "added the bug label", event: true },
+      { author: "will", age: "", text: "removed the bug label", event: true },
+      { author: "will", age: "2d", text: "accepted the proposal", event: true },
+      { author: "ada", age: "3d", text: "proposed VIP-1", event: true },
+      { author: "ada", age: "4d", text: "linked #8", event: true },
+      { author: "VibeLang agent", age: "5d", text: "An answer.", event: false },
+      { author: "ada", age: "", text: "A reply.", event: false },
+    ]
+    scene(app, given(detail({}, [issue({ notes, comments: 2 })])),
+      expect(text("agent")).toExist(),
+      expect(text("An answer.")).toExist(),
+      expect(text("A reply.")).toExist(),
+      expect(text("ada opened 3 days ago · 2 comments")).toExist(),
+    )
+  })
+  it("the composer belongs to connected people who may comment, and locks while a write is unfinished", () => {
+    const retry = { op: "comment", number: 7, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k" } as NonNullable<Ui["retry"]>
+    scene(app, given(detail({}, [issue()])), expect(role("textbox", { name: "Comment" })).toExist())
+    scene(app, given(detail({ role: "viewer" }, [issue()])), expect(role("textbox", { name: "Comment" })).toBeAbsent())
+    scene(app, given(detail({ retry, error: "Connect GitHub." }, [issue()])), expect(role("textbox", { name: "Comment" })).toBeDisabled(), expect(role("button", { name: "Connect GitHub" })).toExist(), expect(role("button", { name: "Retry" })).toExist())
+    scene(app, given(detail({ error: "Couldn't load comments. Retry." }, [issue()])), expect(role("button", { name: "Retry" })).toExist())
+    scene(app, given(detail({ error: "x", retry, role: "viewer" }, [issue()])), expect(role("button", { name: "Retry" })).toBeAbsent())
+  })
+  it("the aside names the assignee, task, parent and proposer", () => {
+    scene(app, given(detail({}, [issue()])), expect(text("No one")).toExist())
+    scene(app, given(detail({}, [issue({ assignee: "maya", task: "Running", parent: 1 }), issue({ number: 1, title: "Root" })])), expect(text("maya")).toExist(), expect(text("Running")).toExist(), expect(text("Parent")).toExist())
+    scene(app, given(detail({}, [issue({ vip: "In review" })])), expect(text("Proposer")).toExist())
+  })
+  it("reads relative ages in words on the detail screen", () => {
+    scene(app, given(detail({}, [issue({ age: "1d", author: "ada" })])), expect(text("ada opened 1 day ago · 0 comments")).toExist())
+    scene(app, given(detail({}, [issue({ age: "2w", author: "ada" })])), expect(text("ada opened 2 weeks ago · 0 comments")).toExist())
+    scene(app, given(detail({}, [issue({ age: "", author: "ada" })])), expect(text("ada opened  · 0 comments")).toExist())
+  })
+})
+
+describe("the forms", () => {
+  const form = (over: Partial<Ui>) => model(ui({ screen: "vip", ...over }))
+  it("walks the VIP through its four steps, keeping Back off the first", () => {
+    scene(app, given(form({ step: 1 })), expect(role("button", { name: "Draft with agent" })).toExist(), expect(role("button", { name: "Back" })).toBeAbsent(), expect(role("button", { name: "Continue" })).toExist())
+    scene(app, given(form({ step: 2, example: "code" })), expect(role("textbox", { name: "Example" })).toExist(), expect(role("button", { name: "Back" })).toExist())
+    scene(app, given(form({ step: 3 })), expect(role("textbox", { name: "Prior art" })).toExist())
+    scene(app, given(form({ step: 4, title: "Reviewable" })), expect(text("Reviewable")).toExist(), expect(role("button", { name: "Submit VIP" })).toExist())
+  })
+  it("a new issue is one step and names its failure", () => {
+    scene(app, given(model(ui({ screen: "new" }))), expect(role("textbox", { name: "Title" })).toExist(), expect(role("button", { name: "New issue" })).toExist())
+    scene(app, given(model(ui({ screen: "new", error: "Connect GitHub." }))), expect(role("alert")).toExist(), expect(role("button", { name: "Connect GitHub" })).toExist())
+  })
+  it("locks fields while a submission is pending", () => {
+    const retry = { op: "new", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k" } as NonNullable<Ui["retry"]>
+    scene(app, given(model(ui({ screen: "new", retry, error: "x" }))), expect(role("textbox", { name: "Title" })).toBeDisabled(), expect(role("button", { name: "Retry" })).toExist())
+    scene(app, given(model(ui({ screen: "new", busy: true }))), expect(role("textbox", { name: "Title" })).toBeDisabled())
+  })
+})
+
+describe("the dialogs", () => {
+  for (const [dialog, name, verb] of [["commit", "Commit #7 as a task", "Commit"], ["split", "Split #7", "Split"], ["link", "Link #7", "Link"]] as const) {
+    it(`names ${verb}, and shows a failure with its retry`, () => {
+      const retry = { op: dialog, number: 7, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k" } as NonNullable<Ui["retry"]>
+      scene(app, given(model(ui({ screen: "detail", selected: 7, dialog }))), expect(within(role("dialog", { name }), role("button", { name: verb }))).toExist())
+      scene(app, given(model(ui({ screen: "detail", selected: 7, dialog, retry, error: "Connect GitHub." }))), expect(within(role("dialog", { name }), role("button", { name: "Connect GitHub" }))).toExist(), expect(within(role("dialog", { name }), role("button", { name: verb }))).toBeDisabled())
+      scene(app, given(model(ui({ screen: "detail", selected: 7, dialog, retry: undefined, error: "Couldn't load comments. Retry." }))), expect(within(role("dialog", { name }), role("button", { name: "Retry" }))).toExist())
+    })
+  }
+  it("a commit lists the project's people, and drops a blank name", () => {
+    const assignees = [{ login: "maya", label: "Maya Y" }, { login: "kai", label: "" }, { login: "", label: "  " }]
+    const data = { seq: 1, assignees, items: [issue()] }
+    scene(app, given({ ...model(ui({ screen: "detail", selected: 7, dialog: "commit" })), issues: ui({ screen: "detail", selected: 7, dialog: "commit", data }) }),
+      expect(role("radio", { name: "Maya Y" })).toExist(),
+      expect(role("radio", { name: "kai" })).toExist(),
+    )
+  })
+})
+
+describe("the specification", () => {
+  const spec = (over: Partial<Ui>) => model(ui({ screen: "specification", ...over }))
+  it("an unreviewed specification is in review, with dashes and nothing to request for a viewer", () => {
+    scene(app, given(spec({ role: "viewer", data: { seq: 1, items: [], specification: emptySpecification } })),
+      expect(role("status", { name: "Specification gate" })).toHaveText("In review"),
+      expect(role("button", { name: "Request review" })).toBeAbsent(),
+      expect(text("Save revision")).toBeAbsent(),
+    )
+  })
+  it("defaults to the empty specification when the projection has none", () => {
+    scene(app, given(spec({})), expect(text("Revision 0")).toExist())
+  })
+  it("an accepted one shows its reviews and self-consistency", () => {
+    scene(app, given(spec({ data: { seq: 1, items: [], specification: fixtureSpecification } })),
+      expect(role("status", { name: "Specification gate" })).toHaveText("Accepted"),
+      expect(text("Self-consistency")).toExist(),
+      expect(role("button", { name: "Request review" })).toExist(),
+    )
+  })
+  it("the editor saves only a real change and reports a failure with its retry", () => {
+    const retry = { op: "spec-revise", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k" } as NonNullable<Ui["retry"]>
+    const data = { seq: 1, items: [], specification: { ...emptySpecification, text: "same" } }
+    scene(app, given(spec({ data, summary: "same" })), expect(role("button", { name: "Save revision" })).toBeDisabled())
+    scene(app, given(spec({ data, summary: "  " })), expect(role("button", { name: "Save revision" })).toBeDisabled())
+    scene(app, given(spec({ data, summary: "changed" })), expect(role("button", { name: "Save revision" })).toBeEnabled())
+    scene(app, given(spec({ data, error: "Failed", retry })), expect(text("Failed")).toExist(), expect(role("button", { name: "Retry" })).toExist())
+    scene(app, given(spec({ data, error: "Failed" })), expect(role("button", { name: "Retry" })).toBeAbsent())
+  })
+  it("its history distinguishes resets, named and unknown reviewers, with an optional review", () => {
+    const specificationHistory = [
+      { revision: 1, event: "reset" as const, reviewer: "", verdict: "", grade: "", at: "t1", link: "" },
+      { revision: 2, event: "review" as const, reviewer: "astra", verdict: "accept", grade: "A", at: "t2", link: "", review: "Looks right" },
+      { revision: 3, event: "review" as const, reviewer: "someone", verdict: "reject", grade: "C", at: "t3", link: "" },
+    ]
+    scene(app, given(spec({ data: { seq: 1, items: [], specificationHistory } })),
+      expect(text("r1 · Reset · t1")).toExist(),
+      expect(text(`r2 · ${reviewers.find(reviewer => reviewer.id === "astra")!.name} · accept · A · t2`)).toExist(),
+      expect(text("Looks right")).toExist(),
+      expect(text("r3 · someone · reject · C · t3")).toExist(),
+    )
+  })
+})
+
+describe("the chat card", () => {
+  type Model = ReturnType<typeof init>["model"]
+  const answered = (items: ReadonlyArray<Record>, reply: string): Model => {
+    const events = [
+      { type: "Posted" as const, seq: 1, id: "p1", clientId: "p1", name: "Ada", text: "q", at: 0 },
+      { type: "ReplyStarted" as const, seq: 2, id: "r1", inReplyTo: "p1" },
+      { type: "ReplyDelta" as const, seq: 3, id: "r1", text: reply },
+      { type: "ReplyFinished" as const, seq: 4, id: "r1" },
+    ]
+    return events.reduce((model: Model, event) => update(model, Message.ReceivedEvent({ event })).model, { ...home, account, surface: "chat" as const, issues: ui({ open: false }, items) })
+  }
+  it("states an open childless issue with its labels, and opens it", () => {
+    scene(app, given(answered([issue()], "Filed. [Open issue](#issue-7)")),
+      expect(role("button", { name: "Open issue" })).toExist(),
+      expect(text("Tuple patterns")).toExist(),
+      expect(text("Filed. [Open issue](#issue-7)")).toBeAbsent(),
+    )
+  })
+  it("states a closed issue without labels", () => {
+    scene(app, given(answered([issue({ state: "closed", labels: [] })], "[Open issue](#issue-7)")), expect(text("Closed")).toExist())
+  })
+  it("counts children, singular and plural, and links each", () => {
+    scene(app, given(answered([issue(), issue({ number: 8, parent: 7, title: "Kid" })], "[Open issue](#issue-7)")), expect(text("#7 · 1 child")).toExist())
+    scene(app, given(answered([issue(), issue({ number: 8, parent: 7 }), issue({ number: 9, parent: 7 })], "[Open issue](#issue-7)")), expect(text("#7 · 2 children")).toExist())
+  })
+  it("a blank link label still names the card's open button (fuzz web/view-branches)", () => {
+    scene(app, given(answered([issue()], "Filed. [\t](#issue-7)")), expect(role("button", { name: "Open #7" })).toExist())
+  })
+  it("a link to an unknown issue stays plain text and shows no card", () => {
+    scene(app, given(answered([issue()], "[Open issue](#issue-99)")), expect(role("button", { name: "Open issue" })).toBeAbsent())
+  })
+})

@@ -1,0 +1,39 @@
+// The trusted local test host: the same durable flow, SQLite and production file boundaries, with real Node services.
+import * as Process from "vibelang-runtime/experimental/Process"
+import { ExperimentalNodeProcess } from "vibelang-runtime/experimental/platform-node"
+import { SecureRandom } from "effect/crypto"
+import * as Boundary from "@effect/platform-node/NodeRuntime"
+import { Action, Interpreter } from "@smthrs/flow"
+import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
+import { NodeHost, NodeRuntime } from "@smthrs/platform-node"
+import { ProcessLedger } from "@smthrs/kernel"
+import { Ownership } from "@smthrs/run-store"
+import flow, { layer } from "./flow.ts"
+
+export effect function main() {
+  const root = (try Path.Path).resolve(".")
+  const coverage = try Config.Boolean("FUZZ_COVERAGE").pipe(Config.withDefault(false))
+  const configuredBudget = try Config.option(Config.String("FUZZ_BUDGET"))
+  const budget = Option.getOrElse(configuredBudget, () => coverage ? "5 seconds" : "250 millis")
+  const browserBudget = Option.getOrElse(configuredBudget, () => "25 seconds")
+  const seed = try Config.String("FUZZ_SEED").pipe(Config.withDefault("20261107"))
+  const executions = try Config.option(Config.Int("FUZZ_EXECUTIONS"))
+  const hostId = try Config.String("HOSTNAME").pipe(Config.withDefault("vibelang-fuzz-local"))
+  const requested = try Config.option(Config.String("FUZZ_RUN_ID"))
+  const executionId = Option.isSome(requested) ? requested.value : `vibelang-fuzz/${try (try SecureRandom.SecureRandom).uuidV4()}`
+  const registered = Interpreter.layer(flow).pipe(Layer.provideMerge(layer), Layer.provideMerge(Action.layerImplementations))
+  const filename = (try Path.Path).join(root, ".flows/vibelang-fuzz/engine.db")
+  const ledger = ProcessLedger.layer({ hostId, ownerPid: try (try Process.Process).pid }).pipe(
+    Layer.provide(NodeRuntime.storage(filename, root)),
+    Layer.provide(Layer.merge(NodeHost.layerAt(root), NodeHost.NodeCrypto.layer)),
+  )
+  const host = Layer.merge(NodeHost.layerContainedAt(root, { graceMs: 1000 }).pipe(Layer.provide(ledger)), NodeHost.NodeCrypto.layer)
+  const runtime = NodeRuntime.layer(
+    { filename, workspaceRoot: root, owner: { hostId }, isAlive: Ownership.sameHostPidProbe },
+    StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), registered,
+  ).pipe(Layer.provide(host))
+  try Console.log(`Fuzz run: ${executionId}`)
+  try scoped(Effect.provide(flow.execute({ coverage, budget, browserBudget, seed, ...(Option.isSome(executions) ? { executions: executions.value } : {}) }, { executionId }), runtime))
+}
+
+Boundary.runMain(Effect.provide(main(), Layer.mergeAll(NodeHost.layer, NodeHost.NodeCrypto.layer, ExperimentalNodeProcess.layer)))

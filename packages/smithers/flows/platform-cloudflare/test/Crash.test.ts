@@ -24,7 +24,15 @@ const incarnation = (
   Effect.promise(() =>
     new Promise<{ readonly steps: ReadonlyArray<string>; readonly outcome: unknown; readonly signal: string | null }>(
       (resolve, reject) => {
-        const child = spawn(process.execPath, [fixture, mode, target.url, schema, hostId, JSON.stringify(intent)], {
+        const child = spawn(process.execPath, [
+          "--import=vibelang/register",
+          fixture,
+          mode,
+          target.url,
+          schema,
+          hostId,
+          JSON.stringify(intent)
+        ], {
           stdio: ["ignore", "pipe", "pipe"]
         })
         const steps: Array<string> = []

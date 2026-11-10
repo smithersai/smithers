@@ -1,0 +1,90 @@
+// The desktop wrapper's behavior independent of the native runtime and model server.
+import { describe, expect, it } from "@effect/vitest"
+import { canSend, init, Message, update } from "../src/view/main.vibe"
+import { endpointOf, relativeFile } from "../src/policy.vibe"
+const initial = () => init({ session: "desktop", name: "Guest", mode: "mock" }).model
+
+describe("desktop controls", () => {
+  it("keeps the shared mock tour usable when a selected local model has failed", () => {
+    const model = { ...initial(), conversation: "tour-desktop", desktop: { mock: false, folder: null, tools: [], model: { endpoint: "http://localhost:1234", model: "local", state: "failed" as const } } }
+    expect(canSend(model)).toBe(true)
+    const selected = update(model, Message.Select({ model: "local" })).model
+    expect(selected.conversation).toBe("home")
+    const keyboard = update({ ...model, available: ["local"], picker: true }, Message.PickerKey({ key: "Enter" })).model
+    expect(keyboard.conversation).toBe("home")
+  })
+  it("starts in mock without a model; a pending picker never sends a post", () => {
+    const model = initial()
+    expect(canSend(model)).toBe(true)
+    const opened = update(model, Message.OpenFolder())
+    expect(opened.model.busy).toBe(true)
+    expect(canSend(opened.model)).toBe(false)
+    expect(update(opened.model, Message.SubmittedDraft()).commands).toBeUndefined()
+    expect(opened.commands?.[0]?.name).toBe("Desktop.Change")
+  })
+  it("selects a model, restarts the stream at zero and preserves the draft", () => {
+    const model = { ...initial(), draft: "keep this" }
+    const next = update(model, Message.Snapshot({ state: { mock: false, folder: null, tools: [], model: { endpoint: "http://localhost:1234", model: "local", state: "ready" } } })).model
+    expect(next.mode).toBe("live")
+    expect(next.epoch).toBe(1)
+    expect(next.from).toBe(0)
+    expect(next.stream).toBe("open")
+    expect(next.draft).toBe("keep this")
+    expect(canSend(next)).toBe(true)
+    expect(canSend({ ...next, desktop: { ...next.desktop, model: { ...next.desktop.model!, state: "failed" } } })).toBe(false)
+    expect(canSend({ ...next, offline: true })).toBe(true)
+  })
+  it("closes the model picker before the pane and retains chat's Escape behavior", () => {
+    const model = { ...initial(), picker: true, manager: true }
+    const next = update(model, Message.PressedEscape()).model
+    expect(next.picker).toBe(false)
+    expect(next.manager).toBe(true)
+    expect(update(next, Message.PressedEscape()).model.manager).toBe(false)
+  })
+  it("wraps keyboard selection, selects Mock, and closes on Escape", () => {
+    const model = { ...initial(), available: ["one", "two"], picker: true }
+    const up = update(model, Message.PickerKey({ key: "ArrowUp" })).model
+    expect(up.highlighted).toBe(2)
+    expect(update(up, Message.PickerKey({ key: "Enter" })).commands?.[0]?.args).toMatchObject({ operation: "mock" })
+    expect(update(up, Message.PickerKey({ key: "Escape" })).model.picker).toBe(false)
+  })
+  it("shows selection failures without breaking mock chat", () => {
+    const model = update(initial(), Message.Connect()).model
+    const failed = update(model, Message.Failed({ reason: "Model unavailable" })).model
+    expect(failed.error).toBe("Model unavailable")
+    expect(failed.busy).toBe(false)
+    expect(canSend(failed)).toBe(true)
+  })
+})
+
+it.effect("fuzzes file admission and model origins with Effect Arbitrary", () => effect {
+  const checked = try Arbitrary.checkEffect(Arbitrary.schema(Schema.String), (name) => {
+    const endpoint = endpointOf(name)
+    return (!relativeFile(name) || (name.length > 0 && !name.startsWith("/") && !name.includes("\\") && !name.split("/").includes(".."))) &&
+      (endpoint === "" || /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(endpoint))
+  }, { runs: 1000 })
+  try Effect.try(() => expect(Arbitrary.formatCheckFailure(checked)).toBeUndefined())
+})
+
+
+it("local selection clears Mock project authority before session I/O and rejects late identities", () => {
+  const account = { ...initial().account!, identity: { id: "1", login: "will", role: "maintainer" as const } }
+  const state = { mock: false, folder: null, tools: [], model: { endpoint: "http://localhost:1234", model: "local", state: "ready" as const } }
+  const selected = update({ ...initial(), account }, Message.Snapshot({ state })).model
+  expect(selected.account?.identity).toEqual({ id: "", login: "", role: "viewer", available: false })
+  const late = update(selected, Message.AccountLoaded({ identity: account.identity })).model
+  expect(late.account?.identity).toEqual({ id: "", login: "", role: "viewer", available: false })
+  const beforeLoad = update({ ...selected, account }, Message.ClickedSignIn())
+  expect(beforeLoad.commands ?? []).toHaveLength(0)
+  expect(beforeLoad.model.account?.error).toBe("Sign-in unavailable.")
+  const failed = update(selected, Message.AccountFailed()).model
+  expect(update(failed, Message.ClickedSignIn()).model.account?.error).toBe("Sign-in unavailable.")
+})
+
+
+it("a late local session cannot replace a newer Mock identity", () => {
+  const account = { ...initial().account!, identity: { id: "1", login: "will", role: "maintainer" as const } }
+  const model = { ...initial(), account }
+  const late = update(model, Message.AccountLoaded({ identity: { id: "", login: "", role: "viewer", available: false } })).model
+  expect(late.account?.identity).toEqual(account.identity)
+})

@@ -1,0 +1,31 @@
+// @vitest-environment node
+// Found by fuzz objects/conversation-host: a tour accepted while a post's reply was still waiting, then an alarm
+// whose daily budget refuses the reply.
+import { describe, expect, it } from "@effect/vitest"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { Unavailable } from "../src/core/Factory.vibe"
+import type { HistoryReader } from "../src/history/tools.vibe"
+import * as Objects from "../worker/Objects.vibe"
+
+const unavailable = () => fail(new Unavailable({ reason: "injected history failure" }))
+const history: HistoryReader = { outline: unavailable, epic: unavailable, commit: unavailable, search: unavailable, plan: unavailable, start: unavailable, note: unavailable }
+
+describe("Learn more while a question waits for its answer", () => {
+  it.live("is busy, the alarm answers the question, and the tour then starts", () => scoped(effect {
+    const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+    const object = raw as unknown as Objects.Storage
+    const sequencer = try Objects.conversation(object)
+    const posted = try Objects.post("conv", object, sequencer, "c1", "Guest", "R@s")
+    const toured = try Objects.tour("conv", object, sequencer)
+    const outcome = try Effect.timeoutOption(Objects.alarm("conv", object, sequencer, { admit: () => succeed(false), spend: () => Effect.void }, { model: undefined, unusable: "unset" }, history), "10 seconds")
+    const reply = (try sequencer.read(0)).entries.find((entry) => entry.inReplyTo === "m1")
+    try Objects.alarm("conv", object, sequencer, { admit: () => succeed(false), spend: () => Effect.void }, { model: undefined, unusable: "unset" }, history)
+    const later = try Objects.tour("conv", object, sequencer)
+    try Effect.try(() => {
+      expect([posted, toured]).toEqual([null, "busy"])
+      expect(Option.isSome(outcome)).toBe(true)
+      expect(reply).toMatchObject({ done: true })
+      expect(later).toBeNull()
+    })
+  }), 30_000)
+})

@@ -577,15 +577,28 @@ head -c "$max" -- "$d/err"`
 
 /** The runner `$1` with the rest of its arguments, in the foreground, the first time its fence `$2` is made. */
 const RUN = `d=$2; max=$6
+# Old lossy fences carry no identity. Refuse an ambiguous old receipt rather than executing again or returning
+# another call's output. New fences record the exact JSON string identity before starting the command.
+if [ "$d" != "$7" ] && [ -d "$7" ]; then
+  [ -f "$7/identity" ] && [ "$(cat -- "$7/identity")" != "$8" ] || exit 75
+fi
+if [ -d "$d" ]; then
+  [ -f "$d/identity" ] && [ "$(cat -- "$d/identity")" = "$8" ] || exit 75
+fi
 umask 002
 mkdir -p -- "\${d%/*}" 2>/dev/null || exit 125
-if mkdir -- "$d" 2>/dev/null; then sh -c "$1" sandbox-run "$2" "$3" "$4" "$5" </dev/null >/dev/null 2>&1 || exit 125; fi
+if mkdir -- "$d" 2>/dev/null; then printf '%s' "$8" >"$d/identity" || exit 125; sh -c "$1" sandbox-run "$2" "$3" "$4" "$5" </dev/null >/dev/null 2>&1 || exit 125; fi
 ${ANSWER}`
 
 /** The fence directory of `id` under `callsDirectory`, when that is an absolute guest path. */
 const fenceOf = (callsDirectory: string, id: string): string | undefined => {
   const calls = resolve("/", callsDirectory)
-  return calls === undefined ? undefined : `${calls}/${id.replaceAll(/[^A-Za-z0-9._-]/g, "_")}`
+  if (calls === undefined) return undefined
+  // Encode UTF-16 code units injectively, including percent and lone surrogates. Chunk long names so no component
+  // exceeds the guest filesystem's filename limit; slash is never confused with an underscore or a chunk boundary.
+  const encoded = id.replaceAll(/[^A-Za-z0-9._-]/g, (char) => `%${char.charCodeAt(0).toString(16).padStart(4, "0")}`)
+  const chunks = encoded.match(/.{1,128}/g) ?? ["%empty"]
+  return `${calls}/${chunks.join("/")}`
 }
 
 /** A command's result from an `ANSWER`'s output: its exit code, whether it timed out, and its kept streams. */
@@ -618,7 +631,7 @@ const run = effect (session: Session, call: typeof Run.Type, options: ExecuteOpt
   const max = limits.outputBytes
   const { code, stdout } = try gather(
     session,
-    script(RUN, [RUNNER, fence, String(timeout), cwd, call.command, String(max)]),
+    script(RUN, [RUNNER, fence, String(timeout), cwd, call.command, String(max), `${resolve("/", options.callsDirectory)}/${options.callId.replaceAll(/[^A-Za-z0-9._-]/g, "_")}`, JSON.stringify(options.callId)]),
     2 * max + 128
   )
   if (code !== 0) throw failedWith(code)

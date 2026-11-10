@@ -177,3 +177,7 @@ rather than failing on an interrupt it did not request.
 | `non_content_material` | A content or dispatch key was asked for on non-sealed material.               |
 
 [Troubleshooting](../troubleshooting.md) states the fix for each one.
+
+A `Literal` may contain `undefined`, including the terminal value of a void
+flow. JSON omits that field; decoding a persisted plan restores an own `value`
+field containing `undefined`. Its step key and approval identity stay the same.

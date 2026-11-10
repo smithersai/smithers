@@ -1,0 +1,110 @@
+// The history sequencer's own decisions (src/history/stackDecision.vibe, proved; 0018 "History sequencer decisions")
+// as the running sequencer and the seed use them.
+import { describe, expect, it } from "@effect/vitest"
+import { MAX_TITLE } from "../src/history/mythical.vibe"
+import { make, memoryStore } from "../src/history/Sequencer.vibe"
+import { seedOf } from "../src/history/seed.vibe"
+import { followCut, fresh } from "../src/core/followDecision.vibe"
+import { epicByTitle, foldTitle, pairCut, planStep } from "../src/history/stackDecision.vibe"
+
+/** Whether `text` holds only whole UTF-16 characters: `encodeURIComponent` throws on half a surrogate pair. */
+const whole = (text: string) => {
+  try {
+    encodeURIComponent(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** A title of `MAX_TITLE + 4` units whose cut point falls inside an emoji's surrogate pair. */
+const straddling = "a".repeat(MAX_TITLE - 2) + "\u{1F600}tail"
+
+/** A commit title with a scope whose cut point also falls inside the pair. */
+const scoped = "fix(compiler): " + "a".repeat(MAX_TITLE - 2 - "fix(compiler): ".length) + "\u{1F600}tail"
+
+describe("a long title's cut", () => {
+  it.effect("never splits a character when the sequencer folds a commit of main", () => effect {
+    const sequencer = try make(try memoryStore())
+    const answer = try sequencer.fold({ sha: "a1", change: "", title: scoped, message: "" })
+    const history = try sequencer.read()
+    const title = history.commits.find((commit) => commit.id === answer.id)?.title ?? ""
+    try Effect.try(() => {
+      expect(answer.refusal).toBeNull()
+      expect(whole(title)).toBe(true)
+      expect(title.length).toBeLessThanOrEqual(MAX_TITLE)
+      expect(title.endsWith("…")).toBe(true)
+      expect(history.real.every((real) => whole(real.title))).toBe(true)
+    })
+  })
+
+  it("never splits a character when the seed clips a commit's title", () => {
+    const seed = seedOf("o/r", [{ sha: "000000000001", change: "", description: scoped, parents: [] }], [])
+    const titles = seed.epics.flatMap((epic) => epic.commits.map((commit) => commit.title))
+    expect(titles.length).toBe(1)
+    expect(whole(titles[0]!)).toBe(true)
+    expect(titles[0]!.length).toBeLessThanOrEqual(MAX_TITLE)
+  })
+
+  it("keeps a title that fits, and cuts one unit short of a straddled pair", () => {
+    expect(foldTitle("short", MAX_TITLE)).toBe("short")
+    expect(foldTitle("x".repeat(MAX_TITLE + 1), MAX_TITLE)).toBe("x".repeat(MAX_TITLE - 1) + "…")
+    expect(pairCut(straddling, MAX_TITLE - 1)).toBe(MAX_TITLE - 2)
+    expect(pairCut("x".repeat(MAX_TITLE + 1), MAX_TITLE - 1)).toBe(MAX_TITLE - 1)
+  })
+})
+
+describe("a plan's next step", () => {
+  it("checks an amend's task only, an empty title before a long one, and opens an epic only for an admitted append", () => {
+    expect(planStep("amend", 0, 5, true)).toBe("amend")
+    expect(planStep("insert", 0, 5, false)).toBe("empty")
+    expect(planStep("append", 6, 5, true)).toBe("too-long")
+    expect(planStep("insert", 5, 5, true)).toBe("insert")
+    expect(planStep("append", 1, 5, true)).toBe("open-epic")
+    expect(planStep("append", 1, 5, false)).toBe("append")
+  })
+
+  it.effect("refuses an empty title without opening the new epic it names", () => effect {
+    const sequencer = try make(try memoryStore())
+    const answer = try sequencer.plan({ how: "append", epic: "", newEpic: "Docs", target: "", title: "  ", task: "" })
+    const history = try sequencer.read()
+    try Effect.try(() => {
+      expect(answer).toEqual({ id: "", refusal: "empty" })
+      expect(history.epics).toEqual([])
+    })
+  })
+})
+
+describe("the epic a fold appends to", () => {
+  it("is the first with the commit's area as its title, else none", () => {
+    const epics = [{ id: "e1", title: "Docs" }, { id: "e2", title: "The compiler" }, { id: "e3", title: "The compiler" }]
+    expect(epicByTitle(epics, "The compiler")).toBe("e2")
+    expect(epicByTitle(epics, "Tests")).toBe("")
+  })
+
+  it.effect("reuses an existing epic rather than opening a second with the same title", () => effect {
+    const sequencer = try make(try memoryStore())
+    try sequencer.fold({ sha: "a1", change: "", title: "fix(compiler): one", message: "" })
+    try sequencer.fold({ sha: "b2", change: "", title: "fix(compiler): two", message: "" })
+    const history = try sequencer.read()
+    try Effect.try(() => expect(history.epics.length).toBe(1))
+  })
+})
+
+describe("a follower's stream", () => {
+  it("sends only events after the later of its start and the history's number", () => {
+    expect(followCut(3, 7)).toBe(7)
+    expect(followCut(9, 7)).toBe(9)
+    expect([6, 7, 8].filter((seq) => fresh(seq, followCut(3, 7)))).toEqual([8])
+  })
+
+  it.effect("delivers each event once, replay then live, in order", () => effect {
+    const sequencer = try make(try memoryStore())
+    try sequencer.record({ type: "OpenEpic", id: "e1", title: "Docs" })
+    const seen = try Effect.forkChild(Stream.runCollect(sequencer.follow(0).pipe(Stream.take(3))))
+    try sequencer.record({ type: "OpenEpic", id: "e2", title: "Tests" })
+    try sequencer.record({ type: "OpenEpic", id: "e3", title: "Tools" })
+    const events = try Fiber.join(seen)
+    try Effect.try(() => expect(Array.from(events).map((event) => event.seq)).toEqual([1, 2, 3]))
+  })
+})

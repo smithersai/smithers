@@ -1,0 +1,21 @@
+import { it } from "@effect/vitest"
+import { specificationAccepted, specificationAcceptedUnder, reviseSpecification, reviseSpecificationUnder, recordSpecificationReview, approveVip, type Specification } from "../src/core/conversation.vibe"
+import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
+import { run } from "./run.vibe"
+const Seat = Schema.Struct({ approves: Schema.Boolean, grade: Schema.Literals(["A+", "A", "A-", "B+", "B", "C", "F", "", "a"]), current: Schema.Boolean, linked: Schema.Boolean })
+const Candidate = Schema.Struct({ astra: Seat, sol: Seat, fable: Seat, opus: Seat, person: Schema.Boolean, maintainer: Schema.Boolean })
+it.live("gates/four-A-minus-or-better-reviews-and-human-proposals", () => run("gates/four-A-minus-or-better-reviews-and-human-proposals", Candidate, input => {
+  const answer = (seat: typeof Seat.Type) => ({ verdict: seat.approves ? "LGTM" as const : "Changes requested" as const, grade: seat.grade, revision: seat.current ? 2 : 1, link: seat.linked ? "#review" : "" })
+  const spec: Specification = { revision: 2, text: "specification", astra: answer(input.astra), sol: answer(input.sol), fable: answer(input.fable), opus: answer(input.opus) }
+  const seats = [input.astra, input.sol, input.fable, input.opus]
+  const expected = seats.every(seat => seat.approves && ["A+", "A", "A-"].includes(seat.grade) && seat.current && seat.linked)
+  // Keep accepts a unanimous earlier revision too; mixed revisions cannot pass either rule.
+  const keepExpected = seats.every(seat => seat.approves && ["A+", "A", "A-"].includes(seat.grade) && seat.linked) && seats.every(seat => seat.current === input.astra.current)
+  if (specificationAcceptedUnder(spec, "reset") !== expected || specificationAccepted(spec) !== keepExpected) return false
+  if (specificationAccepted(reviseSpecification(spec, "new revision")) !== keepExpected) return false
+  if (specificationAcceptedUnder(reviseSpecificationUnder(spec, "new revision", "reset"), "reset")) return false
+  if (recordSpecificationReview(spec, "astra", "person", { verdict: "LGTM", grade: "A", revision: 2, link: "#forged" }) !== spec) return false
+  const vip = fixtureIssues.find(i => i.number === 45)!
+  const approved = approveVip(vip, input.maintainer ? "maintainer" : "contributor", input.person ? "person" : "agent", "will", "2026-11-08")
+  return (approved.vip === "Accepted") === (input.person && input.maintainer)
+}, undefined, { revision: "2" }))

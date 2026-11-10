@@ -1,0 +1,78 @@
+// Invalid identifiers must fail through the public Effect API before the transport runs.
+import { describe, expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientError } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { Actions } from "../src/actions/Actions.vibe"
+import { LiveActions } from "../src/actions/LiveActions.vibe"
+
+effect function offline() {
+  const requests = try Ref.make(0)
+  const client = HttpClient.make((request) => effect {
+    try Ref.update(requests, count => count + 1)
+    throw new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) })
+  })
+  return { client, requests }
+}
+
+const conversationCalls = [
+  ["post", (api: Factory.Shape, id: string) => api.post(id, "client", "Guest", "hello")],
+  ["read", (api: Factory.Shape, id: string) => api.read(id, 0)],
+  ["events", (api: Factory.Shape, id: string) => Stream.runCollect(api.events(id, 0))],
+  ["wiki", (api: Factory.Shape, id: string) => api.openWiki(id, "index")],
+  ["tour", (api: Factory.Shape, id: string) => api.tour(id)],
+  ["end tour", (api: Factory.Shape, id: string) => api.endTour(id)],
+  ["tour control", (api: Factory.Shape, id: string) => api.controlTour!(id, "pause", 0)],
+  ["sandbox", (api: Factory.Shape, id: string) => api.sandbox(id)],
+  ["start sandbox", (api: Factory.Shape, id: string) => api.startSandbox(id, "op")],
+  ["stop sandbox", (api: Factory.Shape, id: string) => api.stopSandbox(id, "op", 1)],
+  ["sandbox command", (api: Factory.Shape, id: string) => api.sandboxCommand(id, "op", "pwd", 1)],
+] as const
+
+describe("conversation identifier admission", () => {
+  for (const [label, id] of [["empty", ""], ["too long", "a".repeat(129)], ["high surrogate", "\uD800"], ["low surrogate", "\uDFFF"]] as const) {
+    for (const [operation, call] of conversationCalls) {
+      it.effect(`${operation} refuses ${label} without transport`, () => effect {
+        const { client, requests } = try offline()
+        provide Layer.succeed(HttpClient.HttpClient, client) {
+          provide LiveFactory("http://127.0.0.1") {
+            const failure = try Effect.flip(call(try Factory, id))
+            const sent = try Ref.get(requests)
+            try Effect.try(() => {
+              expect(failure).toMatchObject({ _tag: "Unavailable", reason: "invalid conversation" })
+              expect(sent).toBe(0)
+            })
+          }
+        }
+      })
+    }
+  }
+})
+
+const actionCalls = [
+  ["runs", (api: Actions.Shape, id: string) => api.runs(id)],
+  ["read", (api: Actions.Shape, id: string) => api.read(id)],
+  ["rerun", (api: Actions.Shape, id: string) => api.rerun(id)],
+  ["cancel", (api: Actions.Shape, id: string) => api.cancel(id)],
+  ["follow", (api: Actions.Shape, id: string) => Stream.runCollect(api.follow(id))],
+] as const
+
+describe("action path encoding", () => {
+  for (const [label, id] of [["high surrogate", "\uD800"], ["low surrogate", "\uDFFF"]] as const) {
+    for (const [operation, call] of actionCalls) {
+      it.effect(`${operation} refuses ${label} as a typed input failure`, () => effect {
+        const { client, requests } = try offline()
+        provide Layer.succeed(HttpClient.HttpClient, client) {
+          provide LiveActions("http://127.0.0.1") {
+            const failure = try Effect.flip(call(try Actions, id))
+            const sent = try Ref.get(requests)
+            try Effect.try(() => {
+              expect(failure).toMatchObject({ _tag: "ActionFailure", code: "input" })
+              expect(sent).toBe(0)
+            })
+          }
+        }
+      })
+    }
+  }
+})

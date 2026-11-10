@@ -1,0 +1,141 @@
+import { it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { McpClient, McpProtocol } from "effect/ai"
+import { ChildProcess } from "effect/process"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { empty as emptyHistory } from "../src/history/mythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { mockReply } from "../src/core/mockReplies.vibe"
+import { AddNote, PlanWork, ShowHistory, StartWork, HistoryOutput, WrittenOutput, Ask, AskInput, AskOutput, Read, ReadInput, ReadOutput } from "../src/surfaces/commands.vibe"
+import { cliPath, serverPath } from "../test/surface-host.vibe"
+import { node, run as processRun } from "../test/support/processes.vibe"
+import { run, Int, Text, TextOrBoundary } from "./run.vibe"
+
+const platform = Layer.mergeAll(NodeServices.layer, ExperimentalNodeServices.layer)
+const Topic = Schema.Literals(["install", "VIP", "error", "service", "function", "hello"])
+const Arguments = Schema.Struct({ topic: Topic, suffix: Text, id: Int, json: Schema.Boolean, flagFirst: Schema.Boolean })
+
+it.live("surfaces/command-registry", () => run("surfaces/command-registry", Schema.Struct({ input: Arguments, text: TextOrBoundary }), ({ input, text }) => effect {
+  provide MockFactory {
+    const conversation = `fuzz-${input.id}`
+    const value = try Ask.run({ text: input.topic, conversation })
+    const decoded = try Schema.decodeUnknownEffect(AskOutput)(value)
+    if (decoded.text !== mockReply(input.topic) || decoded.events[0] !== 1 || decoded.events.at(-1) !== decoded.events.length) return false
+    const snapshot = try Read.run({ conversation })
+    if (snapshot.seq !== decoded.events.at(-1) || snapshot.entries.at(-1)?.text !== decoded.text) return false
+    const rendered = try Read.render({ conversation }, input.json)
+    if (input.json ? !rendered.includes('"entries"') : !rendered.includes(decoded.text)) return false
+    const tail = try Read.run({ conversation, after: snapshot.seq })
+    if (tail.entries.length !== 0) return false
+    const refused = try exit(Ask.run({ conversation, text }))
+    const invalid = try exit(Read.run({ after: -1 }))
+    if (invalid._tag !== "Failure" || Cause.hasDies(invalid.cause)) return false
+    return refused._tag === "Success" || !Cause.hasDies(refused.cause)
+  }
+}))
+
+it.live("surfaces/cli-arguments", () => run("surfaces/cli-arguments", Arguments, ({ topic, id, json, flagFirst }) => effect {
+  provide platform {
+    const flags = ["--mock", ...(json ? ["--json"] : [])]
+    const args = flagFirst ? [...flags, "ask", topic, "--conversation", `fuzz-${id}`] : ["ask", topic, "--conversation", `fuzz-${id}`, ...flags]
+    const result = try processRun(try cliPath(), args, { NO_COLOR: "1", VIBELANG_FACTORY: "mock" })
+    if (result.status !== 0 || result.stderr !== "") return false
+    if (!json) return result.stdout.includes(mockReply(topic)) && result.stdout.includes("Events: 1, 2, 3")
+    const output = try Schema.decodeUnknownEffect(Schema.fromJsonString(AskOutput))(result.stdout)
+    return output.text === mockReply(topic) && output.conversation === `fuzz-${id}` && output.events[0] === 1
+  }
+}))
+
+it.live("surfaces/cli-rejects-garbage", () => run("surfaces/cli-rejects-garbage", Schema.Tuple([Int, Text]), ([kind, text]) => effect {
+  provide platform {
+    const cases = [["--fuzz-unknown-" + text], ["--mock", "read", "--after", "-" + (kind + 1)], ["--mock", "ask"], ["--mock", "ask", " "]]
+    const result = try processRun(try cliPath(), cases[kind % cases.length]!, { NO_COLOR: "1", VIBELANG_FACTORY: "mock" })
+    return result.status === 1 && result.stderr.length > 0 && !result.stderr.includes("[object Object]")
+  }
+}))
+
+it.live("surfaces/mcp-arguments", () => run("surfaces/mcp-arguments", Arguments, ({ topic, id }) => effect {
+  const clients = Layer.unwrap(effect {
+    provide platform {
+      const command = ChildProcess.make(try node(), [try serverPath(), "--mock"])
+      return McpClient.layerStdio({ name: "Fuzz", version: "1", protocol: McpProtocol.v2025_11_25, timeout: "15 seconds", command })
+    }
+  }).pipe(Layer.provide(platform))
+  provide clients {
+    const client = try McpClient.McpClient
+    const tools = try client.listTools()
+    const ask = tools.find((tool) => tool.name === "ask")!
+    const read = tools.find((tool) => tool.name === "read")!
+    const conversation = `fuzz-${id}`
+    const answer = try client.callTool({ tool: ask, schema: AskOutput, arguments: { text: topic, conversation } })
+    const snapshot = try client.callTool({ tool: read, schema: ReadOutput, arguments: { conversation } })
+    const invalid = try exit(client.callTool({ tool: read, schema: ReadOutput, arguments: { after: -id - 1 } }))
+    const missing = try client.callTool({ tool: ask, arguments: { text: " ", conversation } })
+    return answer.text === mockReply(topic) && snapshot.entries.at(-1)?.text === answer.text && invalid._tag === "Failure" && !Cause.hasDies(invalid.cause) && missing.isError === true
+  }
+}))
+
+it.live("surfaces/schema-decode", () => run("surfaces/schema-decode", Schema.Struct({ text: TextOrBoundary, id: Int }), ({ text, id }) => effect {
+  const ask = try exit(Schema.decodeUnknownEffect(AskInput)({ text, conversation: `fuzz-${id}` }))
+  const read = try exit(Schema.decodeUnknownEffect(ReadInput)({ after: -id - 1 }))
+  return ask._tag === "Success" && read._tag === "Failure" && !Cause.hasDies(read.cause)
+}))
+
+
+it.live("surfaces/history-command-sequences", () => run("surfaces/history-command-sequences", Schema.Struct({ text: Text, id: Int, json: Schema.Boolean }), ({ text, id, json }) => effect {
+  provide MockMythical({ role: "maintainer", name: "Fuzz", agent: false }, () => succeed(emptyHistory)) {
+    const planned = try PlanWork.run({ title: "Change " + text, newEpic: "Epic", task: "fuzz" })
+    try StartWork.render({ id: planned.id, lane: `lane-${id}` }, json)
+    try AddNote.render({ id: planned.id, section: "tried", text: "Tried " + text }, json)
+    const outline = try ShowHistory.run({})
+    const epic = outline.epics[0]!.id
+    for (const input of [{ epic }, { commit: planned.id }, { search: "Change" }]) {
+      const value = try ShowHistory.run(input)
+      if (!Schema.is(HistoryOutput)(value)) return false
+      const rendered = try ShowHistory.render(input, json)
+      if (json ? !rendered.includes('"main"') : !rendered.includes("Folded through")) return false
+    }
+    for (const input of [{ epic: "missing" }, { commit: "missing" }, { from: -id - 1 }]) {
+      const result = try exit(ShowHistory.run(input))
+      if (result._tag !== "Failure" || Cause.hasDies(result.cause)) return false
+    }
+    try (try Mythical).approve(planned.id)
+    try (try Mythical).fold()
+    const amended = try PlanWork.run({ title: "", amend: planned.id, task: "Amended" })
+    const before = try PlanWork.run({ title: "Before", before: amended.id })
+    return amended.id === planned.id && before.id !== amended.id
+  }
+}))
+
+it.live("surfaces/history-cli-arguments", () => run("surfaces/history-cli-arguments", Schema.Struct({ op: Int, id: Int, json: Schema.Boolean }), ({ op, id, json }) => effect {
+  provide platform {
+    const cases = [["history"], ["history", "--epic", "e1", "--from", String(id)], ["history", "--commit", "m1"], ["history", "--search", "compiler"], ["plan", "Fuzz change", "--new-epic", "Fuzz"], ["start", "missing", "--lane", "fuzz"], ["note", "missing", "Fuzz note", "--section", "tried"]]
+    const args = ["--mock", ...(json ? ["--json"] : []), ...cases[op % cases.length]!]
+    const result = try processRun(try cliPath(), args, { NO_COLOR: "1", VIBELANG_FACTORY: "mock" })
+    const writeRefused = op % cases.length >= 5
+    return result.status === (writeRefused ? 1 : 0) && (writeRefused ? result.stderr.includes("unknown") : result.stdout.trim().length > 0) && !result.stderr.includes("[object Object]")
+  }
+}))
+
+
+it.live("surfaces/history-mcp-arguments", () => run("surfaces/history-mcp-arguments", Schema.Struct({ title: Text, id: Int }), ({ title, id }) => effect {
+  const clients = Layer.unwrap(effect {
+    provide platform {
+      return McpClient.layerStdio({ name: "Fuzz history", version: "1", protocol: McpProtocol.v2025_11_25, timeout: "15 seconds", command: ChildProcess.make(try node(), [try serverPath(), "--mock"]) })
+    }
+  }).pipe(Layer.provide(platform))
+  provide clients {
+    const client = try McpClient.McpClient
+    const tools = try client.listTools()
+    if (tools.some((tool) => tool.name === "approve" || tool.name === "fold")) return false
+    const find = (name: string) => tools.find((tool) => tool.name === name)!
+    const planned = try client.callTool({ tool: find("plan"), schema: WrittenOutput, arguments: { title: "Fuzz " + title, newEpic: "Fuzz epic", task: `task-${id}` } })
+    try client.callTool({ tool: find("start"), schema: WrittenOutput, arguments: { id: planned.id, lane: `lane-${id}` } })
+    try client.callTool({ tool: find("note"), schema: WrittenOutput, arguments: { id: planned.id, section: "tried", text: "Attempt " + title } })
+    const read = try client.callTool({ tool: find("history"), schema: HistoryOutput, arguments: { commit: planned.id } })
+    const bad = try client.callTool({ tool: find("plan"), arguments: { title: " " } })
+    return bad.isError === true && read.commit?.id === planned.id && read.commit.state === "working" && read.commit.notes.length === 1
+  }
+}))

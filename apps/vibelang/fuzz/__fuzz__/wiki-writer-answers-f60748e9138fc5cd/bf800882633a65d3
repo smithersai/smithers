@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 23
+bias 5
+null-prototype true
+key 3292352743
+tape RAefKJTJYi09y6N1
+schedule-key 1888189485
+schedule 
+signature "ReturnedFalse"
+path 0
+codec "json"
+value "{\"answer\":\"draft\",\"ask\":\"\"}"
+# ReturnedFalse
+# {"answer":"draft","ask":""}

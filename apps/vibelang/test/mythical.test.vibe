@@ -1,0 +1,227 @@
+// Properties and cases of the mythical history's state machine (wiki/decisions/0020-mythical-history.md): random
+// intents run through the real sequencer (`decide`, `apply`), and every state they reach keeps the stack linear,
+// loses nothing, and maps every real commit of main to exactly one mythical commit.
+import { describe, expect, it } from "@effect/vitest"
+import { apply, decide, empty, type Event, type History, type Intent, MAX_NOTE, MAX_TITLE } from "../src/history/mythical.vibe"
+
+// Small domains, so ids, epics and shas collide often.
+const Id = Schema.Literals(["", "m1", "m2", "m3", "m4"])
+const EpicId = Schema.Literals(["", "e1", "e2"])
+const Sha = Schema.Literals(["", "a1", "b2", "c3"])
+const Title = Schema.Literals(["fix(compiler): a", "docs: b", "", "x".repeat(MAX_TITLE + 1)])
+const Text = Schema.Literals(["", "tried once", "x".repeat(MAX_NOTE + 1)])
+const Who = Schema.Literals(["", "Ada"])
+
+const IntentSchema = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("OpenEpic"), id: EpicId, title: Title }),
+  Schema.Struct({ type: Schema.Literal("Plan"), id: Id, epic: EpicId, before: Id, title: Title, task: Schema.Literals(["", "t1"]) }),
+  Schema.Struct({ type: Schema.Literal("Amend"), id: Id, task: Schema.Literals(["", "t2"]) }),
+  Schema.Struct({ type: Schema.Literal("Start"), id: Id, lane: Schema.Literals(["", "lane-a"]) }),
+  Schema.Struct({ type: Schema.Literal("Approve"), id: Id, by: Who }),
+  Schema.Struct({ type: Schema.Literal("Fold"), sha: Sha, change: Schema.Literal("c"), title: Title, into: Id }),
+  Schema.Struct({ type: Schema.Literal("AddNote"), id: Id, section: Schema.Literals(["tried", "evidence", "superseded"]), text: Text, by: Who }),
+])
+
+// Every run opens two epics first, so plans, inserts and folds are reachable in most runs.
+const PRELUDE: ReadonlyArray<Intent> = [
+  { type: "OpenEpic", id: "e1", title: "fix(compiler): a" },
+  { type: "OpenEpic", id: "e2", title: "docs: b" },
+]
+const intents = Arbitrary.map(
+  Arbitrary.array(Arbitrary.schema(IntentSchema), { minLength: 30, maxLength: 80 }),
+  (list): ReadonlyArray<Intent> => [...PRELUDE, ...list],
+)
+
+/** The sequencer's run over `list`: every state it passed through and every event it numbered. */
+function run(list: ReadonlyArray<Intent>) {
+  const states: Array<History> = [empty]
+  const log: Array<Event> = []
+  let state = empty
+  for (const intent of list) {
+    const decision = decide(state, intent)
+    if (!decision.ok) continue
+    log.push(decision.event)
+    state = apply(state, decision.event)
+    states.push(state)
+  }
+  return { state, states, log }
+}
+
+/** The stack in order: by epic order, then by rank inside the epic. */
+export function stack(history: History): ReadonlyArray<string> {
+  const order = new Map(history.epics.map((epic, index) => [epic.id, index]))
+  return [...history.commits]
+    .sort((a, b) => (order.get(a.epic)! - order.get(b.epic)!) || a.rank - b.rank)
+    .map((commit) => commit.id)
+}
+
+/** The invariants every reachable history keeps. */
+function invariant(history: History): boolean {
+  const ids = history.commits.map((commit) => commit.id)
+  if (ids.some((id) => id === "") || new Set(ids).size !== ids.length) return false
+  const epics = history.epics.map((epic) => epic.id)
+  if (epics.some((id) => id === "") || new Set(epics).size !== epics.length) return false
+  // Linear: every commit is in an epic, at a rank no other commit of that epic has.
+  if (!history.commits.every((commit) => epics.includes(commit.epic) && commit.rank >= 0)) return false
+  const places = history.commits.map((commit) => `${commit.epic}/${commit.rank}`)
+  if (new Set(places).size !== places.length) return false
+  // Every real commit maps to exactly one mythical commit, and each is folded once.
+  if (!history.real.every((real) => history.commits.filter((commit) => commit.id === real.mythical).length === 1)) return false
+  const shas = history.real.map((real) => real.sha)
+  if (shas.some((sha) => sha === "") || new Set(shas).size !== shas.length) return false
+  if (history.main !== (history.real[history.real.length - 1]?.sha ?? "")) return false
+  // A landed commit has a real commit; nothing else does.
+  return history.commits.every((commit) =>
+    (commit.state === "landed") === history.real.some((real) => real.mythical === commit.id) || commit.task !== "")
+}
+
+/** Whether `after` lost nothing `before` had: epics, commits (by index, id and epic), real commits and notes. */
+function keeps(before: History, after: History): boolean {
+  if (!before.epics.every((epic, index) => after.epics[index] === epic)) return false
+  if (!before.real.every((real, index) => after.real[index] === real)) return false
+  return before.commits.every((commit, index) => {
+    const now = after.commits[index]
+    return now !== undefined && now.id === commit.id && now.epic === commit.epic &&
+      commit.notes.every((note, at) => now.notes[at] === note)
+  })
+}
+
+effect function holds<A>(arbitrary: Arbitrary.Arbitrary<A>, property: (value: A) => boolean) {
+  const result = try Arbitrary.checkEffect(arbitrary, property, { runs: 400 })
+  try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+}
+
+describe("the history's sequencer", () => {
+  it.effect("numbers its events 1, 2, 3, … with no gaps", () =>
+    holds(intents, (list) => run(list).log.every((event, index) => event.seq === index + 1)))
+
+  it.effect("keeps the stack linear and every real commit mapped once in every state it reaches", () =>
+    holds(intents, (list) => run(list).states.every(invariant)))
+
+  it.effect("never loses an epic, a commit, a real commit or a note", () =>
+    holds(intents, (list) => {
+      const { states } = run(list)
+      return states.every((state, index) => index === 0 || keeps(states[index - 1]!, state))
+    }))
+
+  it.effect("keeps every commit's notes as a prefix and appends at most one note to a commit per event", () =>
+    holds(intents, (list) => {
+      const { states } = run(list)
+      return states.every((state, index) => index === 0 || states[index - 1]!.commits.every((commit, at) => {
+        const now = state.commits[at]!.notes
+        return now.length <= commit.notes.length + 1 && commit.notes.every((note, k) => now[k] === note)
+      }) && state.commits.slice(states[index - 1]!.commits.length).every((commit) => commit.notes.length === 0))
+    }))
+
+  it.effect("keeps the stack's order but for the commit an event plans", () =>
+    holds(intents, (list) => {
+      const { states, log } = run(list)
+      return log.every((event, index) => {
+        const before = stack(states[index]!)
+        const after = stack(states[index + 1]!)
+        if (event.type !== "Planned") return JSON.stringify(after) === JSON.stringify(before)
+        return JSON.stringify(after.filter((id) => id !== event.id)) === JSON.stringify(before)
+      })
+    }))
+
+  it.effect("applies only the next event; a replay of the log builds the same history", () =>
+    holds(intents, (list) => {
+      const { state, log } = run(list)
+      const stale = log.reduce((history, event) => apply(apply(history, event), event), empty)
+      return JSON.stringify(stale) === JSON.stringify(state) && apply(state, { ...log[0]!, seq: 1 }) === state || log.length === 0
+    }))
+})
+
+/** The history after `list`, every intent required to be accepted. */
+function built(list: ReadonlyArray<Intent>): History {
+  const { state, log } = run(list)
+  expect(log.length).toBe(list.length)
+  return state
+}
+
+const base: ReadonlyArray<Intent> = [
+  { type: "OpenEpic", id: "e1", title: "The compiler" },
+  { type: "OpenEpic", id: "e2", title: "Docs" },
+  { type: "Plan", id: "m1", epic: "e1", before: "", title: "fix(compiler): one", task: "" },
+  { type: "Plan", id: "m2", epic: "e2", before: "", title: "docs: two", task: "" },
+  { type: "Plan", id: "m3", epic: "e1", before: "", title: "fix(compiler): three", task: "" },
+]
+
+describe("planning onto the stack", () => {
+  it("appends to the end of its epic, not of the stack", () => {
+    expect(stack(built(base))).toEqual(["m1", "m3", "m2"])
+  })
+
+  it("inserts just before the commit it names, in that commit's epic", () => {
+    const history = built([...base, { type: "Plan", id: "m4", epic: "e1", before: "m3", title: "fix(compiler): between", task: "t" }])
+    expect(stack(history)).toEqual(["m1", "m4", "m3", "m2"])
+    expect(history.commits.find((commit) => commit.id === "m4")).toMatchObject({ state: "planned", task: "t", lane: "" })
+  })
+
+  it("refuses an insert before a commit of another epic, or of none", () => {
+    const history = built(base)
+    expect(decide(history, { type: "Plan", id: "m4", epic: "e1", before: "m2", title: "x", task: "" })).toEqual({ ok: false, refusal: "unknown" })
+    expect(decide(history, { type: "Plan", id: "m4", epic: "e1", before: "m9", title: "x", task: "" })).toEqual({ ok: false, refusal: "unknown" })
+    expect(decide(history, { type: "Plan", id: "m4", epic: "", before: "", title: "x", task: "" })).toEqual({ ok: false, refusal: "unknown" })
+    expect(decide(history, { type: "Plan", id: "m1", epic: "e1", before: "", title: "x", task: "" })).toEqual({ ok: false, refusal: "duplicate" })
+    expect(decide(history, { type: "Plan", id: "m4", epic: "e1", before: "", title: " ", task: "" })).toEqual({ ok: false, refusal: "empty" })
+  })
+
+  it("walks a task from planned through working and approved to landed, then reopens it for an amend", () => {
+    let history = built([...base, { type: "Start", id: "m3", lane: "lane-a" }, { type: "Approve", id: "m3", by: "Ada" }])
+    expect(history.commits.find((commit) => commit.id === "m3")).toMatchObject({ state: "approved", lane: "lane-a" })
+    expect(history.commits.find((commit) => commit.id === "m3")!.notes).toEqual([{ section: "evidence", text: "approved", by: "Ada" }])
+    history = apply(history, (decide(history, { type: "Fold", sha: "abc", change: "", title: "fix(compiler): three", into: "m3" }) as { readonly event: Event }).event)
+    expect(history.commits.find((commit) => commit.id === "m3")).toMatchObject({ state: "landed", lane: "", task: "" })
+    expect(history.main).toBe("abc")
+    expect(decide(history, { type: "Start", id: "m3", lane: "b" })).toEqual({ ok: false, refusal: "state" })
+    const amend = decide(history, { type: "Amend", id: "m3", task: "t9" })
+    expect(amend.ok).toBe(true)
+    history = apply(history, (amend as { readonly event: Event }).event)
+    expect(history.commits.find((commit) => commit.id === "m3")).toMatchObject({ state: "planned", task: "t9" })
+    expect(decide(history, { type: "Amend", id: "m3", task: "t10" })).toEqual({ ok: false, refusal: "state" })
+  })
+
+  it("keeps every note in order as a commit is noted, worked, approved, folded and amended", () => {
+    const history = built([
+      ...base,
+      { type: "AddNote", id: "m3", section: "tried", text: "A table first.", by: "Ada" },
+      { type: "Start", id: "m3", lane: "lane-a" },
+      { type: "AddNote", id: "m3", section: "evidence", text: "Tests: 3 passed", by: "Ada (agent)" },
+      { type: "Approve", id: "m3", by: "Bea" },
+      { type: "Fold", sha: "abc", change: "", title: "fix(compiler): three", into: "m3" },
+      { type: "Amend", id: "m3", task: "t9" },
+      { type: "AddNote", id: "m3", section: "superseded", text: "Three, as first told.", by: "Bea" },
+    ])
+    expect(history.commits.find((commit) => commit.id === "m3")!.notes).toEqual([
+      { section: "tried", text: "A table first.", by: "Ada" },
+      { section: "evidence", text: "Tests: 3 passed", by: "Ada (agent)" },
+      { section: "evidence", text: "approved", by: "Bea" },
+      { section: "superseded", text: "Three, as first told.", by: "Bea" },
+    ])
+  })
+
+  it("refuses to approve what no lane worked, and to fold a sha twice or into nothing", () => {
+    const history = built([...base, { type: "Fold", sha: "a", change: "", title: "x", into: "m1" }])
+    expect(decide(history, { type: "Approve", id: "m2", by: "Ada" })).toEqual({ ok: false, refusal: "state" })
+    expect(decide(history, { type: "Approve", id: "m9", by: "Ada" })).toEqual({ ok: false, refusal: "unknown" })
+    expect(decide(history, { type: "Fold", sha: "a", change: "", title: "x", into: "m2" })).toEqual({ ok: false, refusal: "duplicate" })
+    expect(decide(history, { type: "Fold", sha: "b", change: "", title: "x", into: "" })).toEqual({ ok: false, refusal: "unknown" })
+    expect(decide(history, { type: "AddNote", id: "m1", section: "tried", text: "x".repeat(MAX_NOTE + 1), by: "Ada" })).toEqual({ ok: false, refusal: "too-long" })
+  })
+})
+
+describe("apply on events the sequencer never numbers", () => {
+  it("only advances seq for an empty epic, an empty fold target or a plan into no epic", () => {
+    const history = built(base)
+    const seq = history.seq + 1
+    for (const event of [
+      { type: "Planned", seq, id: "m9", epic: "", rank: 0, title: "x", task: "" },
+      { type: "Folded", seq, sha: "z", change: "", title: "x", into: "" },
+      { type: "EpicOpened", seq, id: "", title: "x" },
+      { type: "Planned", seq, id: "m9", epic: "e1", rank: -1, title: "x", task: "" },
+    ] satisfies ReadonlyArray<Event>) {
+      expect(apply(history, event)).toEqual({ ...history, seq })
+    }
+  })
+})

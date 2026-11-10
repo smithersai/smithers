@@ -1,0 +1,21 @@
+import { it, expect } from "@effect/vitest"
+import { selectModelTurns, promptWindow } from "../src/core/sequenceDecision.vibe"
+import { transcript } from "./fixtures.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+for (const length of [10, 1000, 100000]) {
+  it(`model context at ${length} transcript entries`, async ({ bench }) => {
+    const entries = transcript(length).entries
+    const expected = Array.from({ length }, (_, index) => ({ author: "person", text: `post ${index + 1}` }))
+    const expectedIndexes = Array.from({ length }, (_, index) => index)
+    const tail = expected.slice(-12)
+    const result = await workload(bench, "model-context-select-and-window", "sync", () => {
+      const selection = selectModelTurns(entries, `m${length}`)
+      expect(selection.end).toBe(length)
+      expect(selection.indexes).toEqual(expectedIndexes)
+      expect(selection.turns).toEqual(expected)
+      expect(promptWindow(selection.turns, 12)).toEqual(tail)
+    }).run(quick)
+    await runPromise(artifact(`model-context-${length}`, `Vitest built-in bench; ${length} completed person posts; select through the last post, preserve every ordered index/turn, then take the final 12. Full independent expected arrays and window checked. Setup excluded; assertions included.`, ["In-process collection/scan/allocation plus full equality checks, no model tokenization/inference or network. The selection scans the full prefix before windowing."], result))
+  })
+}

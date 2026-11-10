@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 13
+bias 3
+null-prototype false
+key 93005914
+tape TMIJMMKxtSYm96IHppiUvxNwd2WphBRJYUIeRQ
+schedule-key 4183760380
+schedule 
+signature "PropertyError:HttpClientError"
+path 
+codec "json"
+value "{\"id\":0,\"expired\":false,\"tampered\":true,\"text\":\"\\u0000\"}"
+# PropertyError:HttpClientError
+# {"id":0,"expired":false,"tampered":true,"text":"\u0000"}

@@ -16,12 +16,15 @@ import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Predicate from "effect/Predicate"
 import * as Result from "effect/Result"
+import * as RpcSerialization from "effect/rpc/RpcSerialization"
 import * as Schema from "effect/Schema"
 import { renderDiagnostic } from "../internal/Diagnostic.ts"
 import { toJsonExit } from "../internal/JsonExit.vibe"
 import { actionKey, ActionKeyEncoding, keyEncodings, ordinalScope, uncanonicalKey } from "./ActionKey.vibe"
 import type { ActionExecuteOptions, Encoded } from "./Encoded.vibe"
 import { SnapshotBoundary, type SnapshotBoundaryOptions, SnapshotBoundaryRequired } from "./SnapshotBoundary.vibe"
+
+import * as StepTrace from "../StepTrace.vibe"
 
 import { FailureSite } from "./FailureSite.vibe"
 
@@ -349,7 +352,13 @@ const runAttempt = (
   const execute = action.tier === "compensable"
     ? executeCompensable(options, instance, input)
     : settleTimedOut(driverExecute(options, input))
-  return execute.pipe(
+  return StepTrace.observed(execute, {
+    run: instance.executionId,
+    flow: instance.flow._tag,
+    name: action.name,
+    key,
+    attempt
+  }).pipe(
     Effect.provideService(Action.CurrentAttempt, attempt),
     Effect.provideService(CurrentActionParent, { executionId: instance.executionId, key }),
     // DECIDED: the implementation gets the dispatch's own key. Durable state
@@ -382,9 +391,15 @@ const decodeOutcome = <Success extends Schema.Constraint, Error extends Schema.C
   options: Encoded,
   action: Action.Action<Success, Error, R>,
   recorded: Exit.Exit<unknown, unknown>
-) =>
-  Effect.orDie(
-    Schema.decodeEffect(action.exitSchemaPartial)(toJsonExit(encodeEngineFailures(options, recorded))).pipe(
+) => {
+  const serialization = options.serialization ?? RpcSerialization.json
+  return Effect.orDie(
+    Schema.decodeEffect(Action.exitSchemasFor(serialization, action).exitSchemaPartial)(
+      // A JSON store reads `undefined` back as `null`; another codec's values never were JSON.
+      serialization.codecFor === RpcSerialization.json.codecFor
+        ? toJsonExit(encodeEngineFailures(options, recorded))
+        : encodeEngineFailures(options, recorded)
+    ).pipe(
       Effect.map((decoded) =>
         Exit.isFailure(recorded) && Exit.isFailure(decoded)
           ? Exit.failCause(Cause.fromReasons(decoded.cause.reasons.map((reason, index) => {
@@ -403,6 +418,7 @@ const decodeOutcome = <Success extends Schema.Constraint, Error extends Schema.C
       )
     )
   )
+}
 
 /** Whether every reason in a failure is a Fail, or a Die carrying an encoded engine failure. */
 const onlyEngineFailures = (

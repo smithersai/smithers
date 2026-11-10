@@ -1,0 +1,120 @@
+import { it } from "@effect/vitest"
+import { HttpClient, HttpClientError, HttpClientResponse, HttpServerResponse } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { LiveMythical } from "../src/history/LiveMythical.vibe"
+import { BrowserFactory, AgentBackend } from "../src/web/backend.vibe"
+import { BrowserMythical, HistoryBackend } from "../src/web/historyBackend.vibe"
+import { chatModel, dailyTokens, DEFAULT_DAILY_TOKENS } from "../worker/AgentModel.vibe"
+import { run, Int, Text } from "./run.vibe"
+
+const Input = Schema.Struct({ operation: Int, fault: Schema.Literals(["transport", "json", "schema", "refusal", "status", "stream"]), text: Text })
+
+/** A deliberately faulty Effect transport; no network interception or replacement global. */
+function faulty(fault: typeof Input.Type["fault"], text: string) {
+  return HttpClient.make((request) => {
+    if (fault === "transport") return fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request }) }))
+    const status = fault === "status" ? 502 : fault === "refusal" ? 409 : 200
+    let body = fault === "json" ? "{" : fault === "refusal" ? JSON.stringify({ refusal: "busy" })
+      : fault === "stream" ? "data: {\n\n" : JSON.stringify({ unexpected: text })
+    if (status === 200 && request.headers["accept"] === "text/event-stream") body = "data: " + (fault === "json" || fault === "stream" ? "{" : JSON.stringify({ unexpected: text })) + "\n\n"
+    return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(body, { status }))))
+  })
+}
+
+function typed(result: Exit.Exit<unknown, unknown>, expectedSuccess = false): boolean {
+  return result._tag === "Success" ? expectedSuccess : !Cause.hasDies(result.cause) && !Cause.hasInterrupts(result.cause)
+}
+
+it.live("clients/conversation-faults", () => run("clients/conversation-faults", Input, ({ operation, fault, text }) => effect {
+  const client = Layer.succeed(HttpClient.HttpClient, faulty(fault, text))
+  const h = try exit(Effect.provide(health("http://fault.invalid"), client))
+  if (!typed(h)) return false
+  provide LiveFactory("http://fault.invalid").pipe(Layer.provide(client)) {
+    const factory = try Factory
+    const op = operation % 5
+    const result = try exit(op === 0 ? factory.post("fuzz", "c", "Guest", text) : op === 1 ? factory.tour("fuzz") : op === 2 ? factory.endTour("fuzz") : op === 3 ? factory.read("fuzz", 0) : Stream.runDrain(factory.events("fuzz", 0)))
+    return typed(result, op < 3 && fault !== "transport" && fault !== "status" && fault !== "refusal")
+  }
+}))
+
+it.live("clients/history-faults", () => run("clients/history-faults", Input, ({ operation, fault, text }) => effect {
+  provide LiveMythical("http://fault.invalid").pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, faulty(fault, text)))) {
+    const history = try Mythical
+    const result = try exit(effect {
+      switch (operation % 10) {
+        case 0: return try history.outline()
+        case 1: return try history.plan({ how: "append", epic: "", newEpic: "Epic", target: "", title: text, task: "" })
+        case 2: return try history.start("m1", "lane")
+        case 3: return try history.note("m1", "tried", text)
+        case 4: return try history.approve("m1")
+        case 5: return try history.fold()
+        case 6: return try Stream.runDrain(history.events(0))
+        case 7: return try history.epic(text, operation)
+        case 8: return try history.commit(text)
+        default: return try history.search(text)
+      }
+    })
+    return typed(result)
+  }
+}))
+
+it.live("clients/browser-fallback", () => run("clients/browser-fallback", Schema.Struct({ forced: Schema.Boolean, id: Int }), ({ forced, id }) => effect {
+  const client = Layer.succeed(HttpClient.HttpClient, faulty("transport", ""))
+  provide BrowserFactory("http://fault.invalid", forced).pipe(Layer.provide(client)) {
+    const factory = try Factory
+    if (factory.mode !== "pending" && factory.mode !== "mock") return false
+    if ((try (try AgentBackend).ready) !== "mock" || factory.mode !== "mock") return false
+    const room = `f${id}`
+    try factory.post(room, "c", "Guest", "install")
+    const events = try Stream.runCollect(factory.events(room, 0).pipe(Stream.take(1)))
+    if (events.length !== 1 || (try factory.read(room, 0)).entries.length < 1) return false
+    try exit(factory.tour(room))
+    try exit(factory.endTour(room))
+  }
+  provide BrowserMythical("http://fault.invalid", forced, { role: "maintainer", name: "Fuzz", agent: false }).pipe(Layer.provide(client)) {
+    const history = try Mythical
+    if (history.mode !== "pending" && history.mode !== "mock") return false
+    if ((try (try HistoryBackend).ready) !== "mock" || history.mode !== "mock") return false
+    const before = try history.outline()
+    const listening = fork Stream.runCollect(history.events(before.seq).pipe(Stream.take(1)))
+    const id = try history.plan({ how: "append", epic: "", newEpic: "Fuzz", target: "", title: "Fuzz", task: "" })
+    try history.start(id, "fuzz")
+    try history.note(id, "tried", "Fuzz")
+    try history.approve(id)
+    try history.fold()
+    const seen = join listening
+    return seen.length === 1 && (try history.commit(id)).commit?.id === id
+  }
+}))
+
+it.live("config/model-records", () => run("config/model-records", Schema.Struct({ kind: Int, amount: Int }), ({ kind, amount }) => effect {
+  const mode = kind % 5
+  const record = mode === 1 ? "{" : JSON.stringify({ protocol: mode === 2 ? "unknown" : "openai-chat", baseUrl: "https://fuzz.invalid", modelId: "fuzz", credential: "FUZZ" })
+  const values = mode === 0 ? {} : { CHAT_MODEL: record, CHAT_DAILY_TOKENS: String(amount), ...(mode === 4 ? { SMITHERS_MODEL_KEY_FUZZ: "synthetic-test-credential", SMITHERS_MODEL_KEY_FUZZ_ORIGIN: "https://fuzz.invalid" } : {}) }
+  provide ConfigProvider.layer(ConfigProvider.fromUnknown(values)) {
+    const result = try exit(chatModel())
+    if (mode === 1) return typed(result)
+    if (result._tag === "Failure" || (mode === 4 && result.value.model === undefined) || (mode !== 4 && result.value.model !== undefined)) return false
+    const limit = try dailyTokens
+    return typeof result.value.unusable === "string" && limit === (mode === 0 ? DEFAULT_DAILY_TOKENS : amount)
+  }
+}))
+
+it.live("clients/history-agent-identity-boundary", () => run("clients/history-agent-identity-boundary", Text, (operation) => effect {
+  const unreachable = HttpClient.make(() => Effect.die("an internal replay identity escaped to public HTTP"))
+  provide LiveMythical("https://api.invalid").pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, unreachable))) {
+    const history = try Mythical
+    const answers = [
+      try exit(history.plan({ how: "append", epic: "e1", newEpic: "", target: "", title: "Change", task: "" }, operation)),
+      try exit(history.start("m1", "fuzz", operation)),
+      try exit(history.note("m1", "tried", "Attempt.", operation)),
+    ]
+    return answers.every((answer) => {
+      if (answer._tag === "Success" || Cause.hasDies(answer.cause)) return false
+      const failure = Cause.findError(answer.cause)
+      return failure._tag === "Success" && failure.success._tag === "Unavailable" && failure.success.reason === "history replay unavailable"
+    })
+  }
+}))

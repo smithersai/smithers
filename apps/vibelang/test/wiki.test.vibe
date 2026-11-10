@@ -1,0 +1,113 @@
+// Wiki behavior through the real product mock and the public tool binding, not invented events or intercepted HTTP.
+import { describe, expect, it } from "@effect/vitest"
+import { apply, empty, receive, newClient } from "../src/core/conversation.vibe"
+import { decide } from "../src/core/decide.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { pages, wikiPath, wikiPage, requestedWiki } from "../src/core/wiki.vibe"
+import { toHtml, compile, safeLink } from "../src/web/markdown.vibe"
+
+describe("wiki documents", () => {
+  it("ships current source, stable Markdown links and every design and decision", () => {
+    expect(wikiPage("/wiki/index")?.html).toContain("VL-33")
+    expect(wikiPage("/wiki/index")?.html).toMatch(/<td[^>]*><a[^>]*href="\/wiki\/decisions\/0021-wiki"/)
+    expect(wikiPath("decisions/0014-agent-tour.md")).toBe("/wiki/decisions/0014-agent-tour")
+    expect(wikiPath("/wiki/rulings#vl-28")).toBe("/wiki/rulings#vl-28")
+    for (const invalid of ["../rulings", "missing", "https://example.test", "rulings#<script>"]) expect(wikiPath(invalid)).toBeUndefined()
+    expect(pages.some(page => page.id === "designs/wiki/NOTES")).toBe(true)
+    expect(requestedWiki("Open wiki designs")).toBe("designs/index")
+    expect(requestedWiki("Open wiki designs/wiki/NOTES")).toBe("designs/wiki/NOTES")
+    expect(wikiPage("/wiki/decisions/0014-agent-tour")?.rulings).toContain("VL-28")
+  })
+  it("renders shared Markdown structure and escapes HTML and unsafe links", () => {
+    const html = toHtml('# Heading\n\n| Page | Why |\n| --- | --- |\n| [Home](index.md) | **Memory** |\n\n- `code`\n\n> Quote\n\n<script>alert(1)</script>\n\n[x](javascript:alert)')
+    expect(html).toContain('<h1 class="sui-md-heading sui-md-h1" id="heading">Heading</h1>')
+    expect(html).toContain('<table')
+    expect(html).toContain('<strong')
+    expect(html).toContain('<blockquote')
+    expect(html).toContain('&lt;script&gt;')
+    expect(html).not.toContain('href="javascript:')
+    expect(compile("```vibe\nconst x = 1")[0]?.tag).toBe("pre")
+    expect(safeLink("//evil.test")).toBe(false)
+    expect(safeLink("\\\\evil.test")).toBe(false)
+    expect(safeLink("  javascript:alert")).toBe(false)
+  })
+})
+
+describe("wiki sequenced openings", () => {
+  it.effect("a person's click records only PaneOpened; replay yields the same pane and invalid pages record nothing", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      try factory.openWiki("wiki", "rulings")
+      try factory.openWiki("wiki", "roadmap")
+      const events = Array.from(try Stream.runCollect(factory.events("wiki", 0) |> Stream.take(%, 2)))
+      const invalid = try exit(factory.openWiki("wiki", "../../secrets"))
+      const snapshot = try factory.read("wiki", 0)
+      try Effect.try(() => {
+        expect(events).toEqual([{ type: "PaneOpened", seq: 1, id: "", url: "/wiki/rulings" }, { type: "PaneOpened", seq: 2, id: "", url: "/wiki/roadmap" }])
+        const client = events.reduce(receive, newClient)
+        expect(client.conversation.pane).toBe("/wiki/roadmap")
+        expect(client.conversation).toEqual(events.reduce(apply, empty))
+        expect(snapshot).toEqual({ seq: 2, entries: [] })
+        expect(Exit.isFailure(invalid)).toBe(true)
+      })
+    }
+  })
+  it.live("the scripted agent opens the page after starting its reply and before saying it opened it", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      try factory.post("wiki-agent", "request", "Guest", "Open wiki decision 0013")
+      const events = Array.from(try Stream.runCollect(factory.events("wiki-agent", 0) |> Stream.takeUntil(%, event => event.type === "ReplyFinished")))
+      const state = events.reduce(apply, empty)
+      try Effect.try(() => {
+        expect(events.slice(0, 3).map(event => event.type)).toEqual(["Posted", "ReplyStarted", "PaneOpened"])
+        expect(state.pane).toBe("/wiki/decisions/0013-dark-only")
+        expect(state.entries.at(-1)?.text).toContain("Opened decisions/0013-dark-only")
+        expect(events.reduce(receive, newClient).conversation).toEqual(state)
+      })
+    }
+  })
+  it("stale agents and blank pages cannot move the pane; people can open while the agent is idle", () => {
+    const direct = decide(empty, { type: "OpenPane", id: "", url: "/wiki/index" })
+    expect(direct.ok).toBe(true)
+    const stale = decide(empty, { type: "OpenPane", id: "r-old", url: "/wiki/index" })
+    expect(stale).toEqual({ ok: false, refusal: "not-replying" })
+    expect(apply(empty, { type: "PaneOpened", seq: 1, id: "r-old", url: "/wiki/index" }).pane).toBe("")
+    expect(decide(empty, { type: "OpenPane", id: "", url: "" })).toEqual({ ok: false, refusal: "empty" })
+  })
+})
+
+it.live("opening records outcome logs without the requested path or caller content", () => effect {
+  const lines = try Ref.make<ReadonlyArray<string>>([])
+  const capture = Logger.layer([Logger.make(options => {
+    Effect.runSync(Ref.update(lines, all => [...all, JSON.stringify({ message: options.message, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })]))
+  })])
+  provide capture, MockFactory {
+    const factory = try Factory
+    try factory.openWiki("private-conversation", "rulings")
+    try exit(factory.openWiki("private-conversation", "private-invalid-page"))
+  }
+  const output = (try Ref.get(lines)).filter(line => line.includes("vibelang.wiki.open"))
+  try Effect.try(() => {
+    expect(output).toHaveLength(2)
+    expect(output[0]).toContain('"outcome":"opened"')
+    expect(output[1]).toContain('"outcome":"unknown-page"')
+    for (const line of output) {
+      expect(line).not.toContain("rulings")
+      expect(line).not.toContain("private")
+    }
+  })
+})
+
+it.live("an explicit wiki request for the mythical-history decision opens the page instead of answering from history tools", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    try factory.post("wiki-history", "request", "Guest", "Open wiki decision 0020 mythical history")
+    const events = Array.from(try Stream.runCollect(factory.events("wiki-history", 0) |> Stream.takeUntil(%, event => event.type === "ReplyFinished")))
+    const state = events.reduce(apply, empty)
+    try Effect.try(() => {
+      expect(state.pane).toBe("/wiki/decisions/0020-mythical-history")
+      expect(state.entries.at(-1)?.text).toBe("Opened decisions/0020-mythical-history.")
+    })
+  }
+})

@@ -1,0 +1,56 @@
+// Browser presentation decisions. Native speech, DOM queries, persistence and layout remain the injected host's effects.
+//@ verify
+//@ ensures \result == (target == "splash" ? ".vl-primary" : (target == "palette" ? ".sui-chat-messages" : (target == "issues" ? ".ix-surface" : (target.startsWith("issue:") || target == "issues:vips" ? ".sui-item-conv" : (target.startsWith("wiki:") ? ".vl-wiki" : (target == "history-nav" ? 'a[href="/history"]' : (target == "composer" ? 'form.sui-chat-composer[data-docked="true"]' : (target == "sandbox-pane" ? ".vl-sandboxes" : ".vl-chat"))))))))
+export function theatreSelector(target: string): string {
+  if (target === "splash") return ".vl-primary"
+  if (target === "palette") return ".sui-chat-messages"
+  if (target === "issues") return ".ix-surface"
+  if (target.startsWith("issue:") || target === "issues:vips") return ".sui-item-conv"
+  if (target.startsWith("wiki:")) return ".vl-wiki"
+  if (target === "history-nav") return 'a[href="/history"]'
+  if (target === "composer") return 'form.sui-chat-composer[data-docked="true"]'
+  if (target === "sandbox-pane") return ".vl-sandboxes"
+  return ".vl-chat"
+}
+
+export type SpeechAction = "cancel" | "pause" | "resume" | "speak" | "keep"
+
+/** Identical-step redraws do not speak twice; pause/resume retains the current utterance, and a seek replaces it. */
+//@ verify
+//@ ensures \result == (!sound || (!active && !finish) ? "cancel" : paused ? (previousStep != step ? "cancel" : "pause") : previousStep == step && previousSound && previousActive && previousPaused ? "resume" : previousStep != step || !previousSound || !previousActive ? "speak" : "keep")
+//@ ensures !sound ==> \result == "cancel"
+//@ ensures sound && (active || finish) && paused && previousStep == step ==> \result == "pause"
+//@ ensures sound && (active || finish) && !paused && previousStep == step && previousSound && previousActive && previousPaused ==> \result == "resume"
+export function speechAction(step: number, sound: boolean, active: boolean, paused: boolean, finish: boolean, previousStep: number, previousSound: boolean, previousActive: boolean, previousPaused: boolean): SpeechAction {
+  if (!sound || (!active && !finish)) return "cancel"
+  if (paused) return previousStep !== step ? "cancel" : "pause"
+  if (previousStep === step && previousSound && previousActive && previousPaused) return "resume"
+  if (previousStep !== step || !previousSound || !previousActive) return "speak"
+  return "keep"
+}
+
+/** A paused seek clears the voice identity, so the next numbered drive speaks its new line once. */
+//@ verify
+//@ ensures \result == (paused && (previousStep != step || !previousActive || !previousSound) ? 0 : step)
+export function audioIdentity(step: number, paused: boolean, previousStep: number, previousActive: boolean, previousSound: boolean): number {
+  return paused && (previousStep !== step || !previousActive || !previousSound) ? 0 : step
+}
+
+/** Log labels are bounded product states, never narration or a path. */
+//@ verify
+//@ ensures \result == (active ? (paused ? "paused" : sound ? "sound" : "muted") : "ended")
+export function theatreOutcome(active: boolean, paused: boolean, sound: boolean): string {
+  return active ? paused ? "paused" : sound ? "sound" : "muted" : "ended"
+}
+
+/** Tab wraps among enabled controls. The empty-list sentinel is never dereferenced by the host. */
+//@ verify
+//@ requires 0 <= length && length <= 4294967295 && -1 <= index && index < length
+//@ ensures length > 0 ==> 0 <= \result && \result < length
+//@ ensures index < 0 ==> \result == (backward ? length - 1 : 0)
+//@ ensures index >= 0 && backward ==> \result == (index == 0 ? length - 1 : index - 1)
+//@ ensures index >= 0 && !backward ==> \result == (index + 1 == length ? 0 : index + 1)
+export function theatreFocusIndex(length: number, index: number, backward: boolean): number {
+  if (index < 0) return backward ? length - 1 : 0
+  return (index + (backward ? -1 : 1) + length) % length
+}

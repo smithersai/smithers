@@ -1,3 +1,7 @@
+import { WikiDrafting } from "../src/core/WikiWriter.vibe"
+import { beginReply, recordReplyStart, canComposeReply, beginReplyComposition, finishReplyComposition, canSettleReply, recordReplySettlement } from "../src/core/flowDecision.vibe"
+import { initialProgress, advanceProgress, completion, type ProgressState } from "./replyProgressDecision.vibe"
+import { promptWindow } from "../src/core/sequenceDecision.vibe"
 // The agent's reply to one post, a durable `@smthrs/flow` flow (rulings VL-11; wiki/decisions/0010-live-agent.md,
 // 0012-smithers-agent.md). Every side effect is a journaled step, so a reset Durable Object resumes the reply where it
 // stopped. The answer is smithers.sh's agent: `@smthrs/agent`'s `AgentAction`, the codemode loop apps/mvp's chat runs
@@ -7,16 +11,22 @@
 // becomes `FailReply` with a reason the person reads.
 import { Agent, AgentAction, Budget, EventSink, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
 import { WebCrypto } from "@smthrs/crypto"
-import { Action, FlowRuntime, RetryPolicy } from "@smthrs/flow"
-import { type AgentEvent, DoneText } from "@smthrs/harness"
+import { Action, Interpreter } from "@smthrs/flow"
+import { type AgentEvent, DoneText, type FlowBinding } from "@smthrs/harness"
 import * as QuickJSWorkerd from "@smthrs/harness/QuickJSWorkerd"
 import { Evaluator, ModelRequest } from "@smthrs/model"
 import type { HostModel } from "@smthrs/model-host"
 import { Registry } from "@smthrs/registry"
-import { Reply, replyIdOf } from "../src/core/flows.vibe"
+import { patient, Reply, ReplyStep, replyIdOf, Tours } from "../src/core/flows.vibe"
+import { wikiTools, WIKI_INSTRUCTION } from "./WikiTools.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
+import { AgentActions } from "../src/actions/agent.vibe"
+import { actionTools } from "../src/actions/tools.vibe"
+import { HISTORY_INSTRUCTION, historyTools, HistoryTools, REPLY_CALLS } from "./HistoryTools.vibe"
+import { closed, SandboxAgent, sandboxTools, SANDBOX_INSTRUCTION } from "./SandboxTools.vibe"
 import { Turn, type Answer } from "./Sequencer.vibe"
 import { Unreachable } from "./Unreachable.vibe"
+import { reasonCode, failureCode } from "./replyReasons.vibe"
 
 /** Another reply streams in this conversation; starting waits for it. */
 export schema error Busy {}
@@ -56,6 +66,16 @@ export const REASONS = {
   failed: "The agent failed. Try again.",
 } as const
 
+/** The fixed product wording for the proved model failure code. */
+export function reasonOf(error: { readonly code: string }): string {
+  return REASONS[reasonCode(error.code)]
+}
+
+/** The fixed product wording for the proved agent failure code. */
+export function failureReason(tag: string, progress: Progress): string {
+  return REASONS[failureCode(tag, progress.failed)]
+}
+
 /** The most tokens one model call may write, and the most turns of the conversation the agent reads. */
 export const MAX_ANSWER_TOKENS = 2048
 export const MAX_TURNS = 24
@@ -70,13 +90,12 @@ export const CONTEXT_WINDOW_TOKENS = 32_768
 export const AGENT_SEAT = "agent"
 
 /**
- * One cell's limits: no tool calls (the agent has none in a Worker yet, 0012), a QuickJS heap well inside the
- * isolate's 128 MiB, and five seconds of evaluation.
+ * One cell's limits: no tool calls unless the agent is given tools (`agentOf`'s `calls`), a QuickJS heap well inside
+ * the isolate's 128 MiB, and five seconds of evaluation.
  */
 export const LIMITS = { calls: 0, memoryBytes: 32 * 1024 * 1024, timeMs: 5_000 }
 
-/** A step that waits on the budget's object, or on another reply: it retries until it can, at most a minute apart. */
-const patient = RetryPolicy.make({ initialMs: 500, factor: 2, maxMs: 60_000, jitterRatio: 0.2 })
+export { patient } from "../src/core/flows.vibe"
 
 /** The UTC day of `millis`, as the budget names it: `2026-11-07`. */
 export function dayOf(millis: number): string {
@@ -85,7 +104,7 @@ export function dayOf(millis: number): string {
 
 /** The agent's task: the conversation so far, then the post it answers, as smithers.sh's chat asks it. */
 export function promptOf(payload: { readonly turns: ReadonlyArray<Turn> }): string {
-  const turns = payload.turns.slice(-MAX_TURNS)
+  const turns = promptWindow(payload.turns, MAX_TURNS)
   const asked = turns.at(-1)
   const history = turns.slice(0, -1)
   if (asked === undefined) return ""
@@ -98,67 +117,83 @@ export function promptOf(payload: { readonly turns: ReadonlyArray<Turn> }): stri
   ].join("\n")
 }
 
-/** `vibelang/reply/agent`: smithers.sh's agent answers the post, VibeLang's own reference its system context. */
+/**
+ * `vibelang/reply/agent`: smithers.sh's agent answers the post, VibeLang's own reference its system context, the
+ * mythical history its tools (HistoryTools.vibe).
+ */
 export const Respond = AgentAction.make("vibelang/reply/agent", {
   payload: { turns: Schema.Array(Turn) },
   output: Schema.String,
   seat: AGENT_SEAT,
-  system: [AGENT_CONTEXT],
+  system: [AGENT_CONTEXT, HISTORY_INSTRUCTION, SANDBOX_INSTRUCTION, WIKI_INSTRUCTION, "Use vibelang/actions/List to discover registered actions. Start them with vibelang/actions/Start, then Read their run ids for progress or Cancel when asked. A request is not completion; report the actual result."],
   profile: "conversation",
   prompt: promptOf,
   maxFrames: MAX_FRAMES,
   modelParams: ModelRequest.GenerationParams.make({ maxTokens: MAX_ANSWER_TOKENS }),
 })
 
-/** The reason a person reads for a model call that failed with `code`. */
-export function reasonOf(error: { readonly code: string }): string {
-  if (error.code === "content_policy") return REASONS.refused
-  // The provider's billing, not this deployment's daily budget (Budget.vibe): a person must not read one as the other.
-  if (error.code === "out_of_credit" || error.code === "quota_exceeded") return REASONS.credit
-  return REASONS.unavailable
-}
-
 /** A failure's tag for the logs: never its message, which can carry a provider's words or a person's text. */
-function tagOf(error: unknown): string {
-  return typeof error === "object" && error !== null && "_tag" in error ? String(error._tag) : "defect"
-}
-
-/** What the agent showed and spent while it answered, folded from its events. */
-export interface Progress {
-  /** The current model call's text so far. */
-  readonly reply: string
-  /** The answer as far as it has arrived: the literal the reply passes to its last `ctx.done(` (`DoneText`). */
-  readonly text: string
-  readonly tokens: number
-  /** The code of the last model call that failed, if one did. */
-  readonly failed: string | undefined
-}
-
-export const started: Progress = { reply: "", text: "", tokens: 0, failed: undefined }
-
-/** Folds one agent event into the reply's progress. A new model call or a retry starts the reply's text over. */
-export function fold(progress: Progress, event: AgentEvent.AgentEvent): Progress {
-  switch (event._tag) {
-    case "model-requested":
-    case "model-retried":
-      return { ...progress, reply: "" }
-    case "model-delta": {
-      if (event.delta.type !== "text-delta") return progress
-      const reply = progress.reply + event.delta.text
-      const text = Option.getOrUndefined(DoneText.project(reply))
-      return { ...progress, reply, text: text ?? progress.text }
-    }
-    case "model-settled":
-      return { ...progress, tokens: progress.tokens + (event.usage.inputTokens ?? 0) + (event.usage.outputTokens ?? 0) }
-    case "model-failed":
-      return { ...progress, failed: event.code }
-    default:
-      return progress
+export function tagOf(error: unknown): string {
+  try {
+    if (typeof error !== "object" || error === null || !("_tag" in error)) return "defect"
+    const tag = error._tag
+    return typeof tag === "string" ? tag : "defect"
+  } catch {
+    return "defect"
   }
 }
 
-/** smithers.sh's agent over `model`: no registry, no tools, the cell sandbox on workerd, its events to `sink`. */
-export function agentOf(model: HostModel["Service"], sink: EventSink.Service) {
+/** What the agent showed and spent while it answered, folded from its events. */
+export type Progress = ProgressState
+
+export const started: Progress = initialProgress()
+
+/** Folds one agent event into the reply's progress. A new model call or a retry starts the reply's text over. */
+export function fold(progress: Progress, event: AgentEvent.AgentEvent): Progress {
+  let piece = ""
+  let projected: string | undefined = undefined
+  let textDelta = false
+  let input = 0
+  let output = 0
+  let code = ""
+  let safeTotal = false
+  let safeInput = false
+  let safeOutput = false
+  // SDK payload projection and DoneText stay at this native boundary; the kernel owns every state choice.
+  switch (event._tag) {
+    case "model-delta":
+      if (event.delta.type === "text-delta") {
+        textDelta = true
+        piece = event.delta.text
+        projected = Option.getOrUndefined(DoneText.project(progress.reply + piece))
+      }
+      break
+    case "model-settled":
+      input = event.usage.inputTokens ?? 0
+      output = event.usage.outputTokens ?? 0
+      safeTotal = Number.isSafeInteger(progress.tokens)
+      safeInput = Number.isSafeInteger(input)
+      safeOutput = Number.isSafeInteger(output)
+      break
+    case "model-failed":
+      code = event.code
+      break
+  }
+  return advanceProgress(progress, { kind: event._tag, textDelta, piece, projected, input, output, code, safeTotal, safeInput, safeOutput })
+}
+
+/**
+ * smithers.sh's agent running `action` over `model`: no registry, the cell sandbox on workerd, its events to `sink`.
+ * Its agent calls `flows`, at most `calls` times a cell: the reply's are the mythical history's (0020).
+ */
+export function agentOf<ROut, E, RIn>(
+  action: Layer.Layer<ROut, E, RIn>,
+  model: HostModel["Service"],
+  sink: EventSink.Service,
+  flows: ReadonlyArray<FlowBinding.Source> = [],
+  calls = 0,
+  budget: Budget.Service = Budget.makeUnbounded(),
+) {
   const seat = Seat.make({
     id: AGENT_SEAT,
     modelId: model.modelId,
@@ -166,12 +201,12 @@ export function agentOf(model: HostModel["Service"], sink: EventSink.Service) {
     route: model.route,
     contextWindowTokens: CONTEXT_WINDOW_TOKENS,
   })
-  return Respond.layer.pipe(
+  return action.pipe(
     Layer.provide(Layer.mergeAll(
       AgentAction.layerHost({
         registry: Registry.makeNoop(),
-        flows: [],
-        limits: LIMITS,
+        flows,
+        limits: { ...LIMITS, calls },
         capabilityEnvelope: [],
         maxFrames: MAX_FRAMES,
       }),
@@ -183,21 +218,13 @@ export function agentOf(model: HostModel["Service"], sink: EventSink.Service) {
       Agent.layer,
       EventSink.layer(sink),
     )),
-    Layer.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
+    Layer.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Layer.succeed(Budget.Budget, budget))),
     Layer.provide(Layer.mergeAll(Agent.layerDefaultsWithVariant, Evaluator.layerUnavailable())),
     Layer.provide(QuickJSWorkerd.variant),
   )
 }
 
 data Outcome { Answered { text: string }; Failed { reason: string } }
-
-/** The reason a person reads for the agent's failure `tag`, given what its events said. */
-export function failureReason(tag: string, progress: Progress): string {
-  if (tag === "@smthrs/agent/Seat/SeatUnresolved") return REASONS.unconfigured
-  if (tag.endsWith("StructuredOutputFailure")) return REASONS.empty
-  if (progress.failed !== undefined) return reasonOf({ code: progress.failed })
-  return REASONS.failed
-}
 
 /**
  * Runs the agent on `turns`, streaming its visible answer into `reply`: each event goes on a queue (the sink runs
@@ -227,15 +254,21 @@ effect function respond(reply: string, model: HostModel["Service"], turns: Reado
       shown = next.text
     }
   }
-  const answered = try exit(run(model, sink, turns))
+  const answered = try exit(run(reply, model, sink, turns))
   try Queue.offer(events, undefined)
   join streamer
   return { answered, progress: try Ref.get(progress) }
 }
 
-/** One run of `vibelang/reply/agent`, as the journaled step its declaration makes. */
-effect function run(model: HostModel["Service"], sink: EventSink.Service, turns: ReadonlyArray<Turn>) {
-  provide agentOf(model, sink), EventSink.EventSink = sink {
+/** One run of the reply agent, with both history and captured pane tools. */
+effect function run(reply: string, model: HostModel["Service"], sink: EventSink.Service, turns: ReadonlyArray<Turn>) {
+  const tours = try Tours
+  const { history } = try HistoryTools
+  const sandbox = Option.getOrElse(try Effect.serviceOption(SandboxAgent), () => closed)
+  const drafting = Option.getOrUndefined(try Effect.serviceOption(WikiDrafting))
+  const tools = try AgentActions
+  const actions = tools.actions === undefined ? [] : [actionTools(tools.actions, tools.announce)]
+  provide agentOf(Respond.layer, model, sink, [historyTools(history), sandboxTools(sandbox.factory, sandbox.conversation), wikiTools(reply, tours, drafting), ...actions], REPLY_CALLS), EventSink.EventSink = sink {
     const implementation = try Respond.requirement
     return try implementation.action({ turns })
   }
@@ -276,14 +309,18 @@ effect function compose(post: string, reply: string) {
   })
   if (Exit.isFailure(answered) && Cause.hasInterrupts(answered.cause)) return try Effect.failCause(answered.cause)
   const tag = Exit.isFailure(answered) ? tagOf(Cause.squash(answered.cause)) : "answered"
-  try Effect.logInfo("vibelang.reply.agent").pipe(Effect.annotateLogs({ outcome: progress.failed ?? tag, tokens: progress.tokens }))
-  if (Exit.isFailure(answered)) return Outcome.Failed({ reason: failureReason(tag, progress) })
-  const text = answered.value
-  return typeof text === "string" && text.trim() !== "" ? Outcome.Answered({ text }) : Outcome.Failed({ reason: REASONS.empty })
+  try Effect.logInfo("vibelang.reply.agent").pipe(Effect.annotateLogs({ outcome: progress.usageValid ? progress.failed ?? tag : "invalid-usage", tokens: progress.tokens }))
+  const rawText = Exit.isSuccess(answered) ? answered.value : undefined
+  const text = typeof rawText === "string" ? rawText : ""
+  const disposition = completion(Exit.isFailure(answered), progress.usageValid, text.trim() !== "")
+  if (disposition === "answered") return Outcome.Answered({ text })
+  if (disposition === "empty") return Outcome.Failed({ reason: REASONS.empty })
+  return Outcome.Failed({ reason: Exit.isFailure(answered) ? failureReason(tag, progress) : REASONS.failed })
 }
 
 /** The reply flow's body: start the reply, compose it, then settle it as finished or failed. */
 export effect function answer(post: string) {
+  let run = beginReply()
   const replies = try Replies
   const reply = replyIdOf(post)
   const started = try Action.make({
@@ -297,28 +334,33 @@ export effect function answer(post: string) {
       return answered
     },
   })
-  if (started !== "done") {
+  run = recordReplyStart(run, started)
+  if (!canComposeReply(run)) {
     try Effect.logWarning("vibelang.reply").pipe(Effect.annotateLogs({ outcome: "refused" }))
     return null
   }
   // Interruption is the engine's (a reset or a yielded drive): it resumes the flow, so it is never a failed reply.
+  run = beginReplyComposition(run)
   const outcome = try Effect.catchCause(compose(post, reply), (cause) => {
     if (Cause.hasInterrupts(cause)) return Effect.failCause(cause)
     return Effect.as(
-      Effect.logError("vibelang.reply") |> Effect.annotateLogs({ outcome: "failed", error: tagOf(Cause.squash(cause)) })(%),
+      Effect.logError("vibelang.reply").pipe(Effect.annotateLogs({ outcome: "failed", error: tagOf(Cause.squash(cause)) })),
       Outcome.Failed({ reason: REASONS.failed }),
     )
   })
+  run = finishReplyComposition(run)
   const settled = match (outcome) {
     when { _tag: "Answered", let text }: replies.finish(reply, text);
     when { _tag: "Failed", let reason }: replies.fail(reply, reason);
   }
-  try Action.make({ name: "vibelang/reply/settle", success: Answered, execute: settled })
+  if (canSettleReply(run)) {
+    try Action.make({ name: "vibelang/reply/settle", success: Answered, execute: settled })
+    run = recordReplySettlement(run)
+  }
+  try Effect.logInfo("vibelang.reply.order").pipe(Effect.annotateLogs({ startReceipts: run.starts, compositions: run.compositions, settlementReceipts: run.settlements }))
   return null
 }
 
 /** Registers `Reply` with the engine; its steps reach the sequencer, the budget and the model through services. */
-export const registration = Layer.effectDiscard(effect {
-  const engine = try FlowRuntime.FlowRuntime
-  try engine.register(Reply, (payload) => Effect.orDie(answer(payload.post)))
-}).pipe(Layer.provide(WebCrypto.layer))
+export const registration = Interpreter.layerWithImplementations(Reply, ReplyStep.toLayer((payload) => Effect.orDie(answer(payload.post))))
+  .pipe(Layer.provide(WebCrypto.layer))

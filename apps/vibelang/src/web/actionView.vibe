@@ -1,0 +1,94 @@
+import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Registered, Run } from "../actions/Actions.vibe"
+import { actionsOf, completions, resultText, selectedStep } from "./actionModel.vibe"
+import { type Message as AppMessage, Message, type Model } from "./main.vibe"
+type H = HtmlBuilder<AppMessage>
+
+function icon(h: H, max = false): Html {
+  return h.svg([h.Class("vl-icon"), h.ViewBox("0 0 24 24"), h.AriaHidden(true)], [h.path([h.D(max ? "M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" : "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7")], [])])
+}
+/** A flow or step always shows a name, so its control keeps one when the source sent none. */
+function title(name: string): string { const last = name.slice(name.lastIndexOf("/") + 1); return last.trim() === "" ? "Action" : last }
+function status(run: Run): string { return run.state === "passed" ? "Passed" : run.state === "failed" ? "Failed" : run.state === "cancelled" ? "Cancelled" : "Running" }
+function duration(run: Run, now = run.at): string { return `${Math.max(0, Math.floor(((run.state === "queued" || run.state === "running" ? Math.max(now, run.at) : run.at) - run.started) / 1000))}s` }
+function dot(h: H, state?: string): Html { return h.span([h.Class(`vl-dot ${state === "passed" ? "vl-dot-ok" : state === "failed" ? "vl-dot-bad" : state === "running" || state === "queued" ? "vl-dot-run" : ""}`), h.AriaHidden(true)], []) }
+function badge(h: H, run: Run): Html {
+  return h.span([h.Class(`sui-badge sui-badge-${run.state === "passed" ? "success" : run.state === "failed" ? "destructive" : "secondary"}`)], [dot(h, run.state), status(run)])
+}
+function actionRow(h: H, entry: Registered, model: Model): Html {
+  const latest = actionsOf(model).runs.find((run) => run.flow === entry.name)
+  return h.button([h.Class("sui-row-button vl-wf"), h.Type("button"), h.DataAttribute("active", String(actionsOf(model).selected === entry.name)), h.OnClick(Message.SelectedAction({ name: entry.name }))], [
+    dot(h, latest?.state), h.span([h.Class("vl-wf-name")], [entry.title.trim() === "" ? title(entry.name) : entry.title]), h.span([h.Class("vl-wf-meta")], [latest ? duration(latest) : ""]),
+  ])
+}
+function runRows(h: H, runs: ReadonlyArray<Run>, now = 0): Html {
+  return h.div([h.Class("vl-act-main")], runs.length === 0 ? [h.div([h.Class("sui-empty")], ["No runs yet"])] : runs.map((run) =>
+    h.button([h.Class("sui-row-button vl-run"), h.Type("button"), h.OnClick(Message.SelectedRun({ id: run.id }))], [
+      dot(h, run.state), h.span([h.Class("vl-run-main")], [h.span([h.Class("vl-run-title")], [`${title(run.flow)} #${run.id}`]), h.span([h.Class("vl-run-meta")], [`${run.actor} · ${status(run)}`])]), h.span([h.Class("vl-run-dur")], [duration(run, now)]),
+    ])
+  ))
+}
+function steps(h: H, run: Run, interactive = false): Html {
+  return h.ol([h.Class("sui-plan-steps"), h.AriaLabel("Steps")], run.steps.map((step) => h.li([h.Class("sui-plan-step"), h.DataAttribute("status-class", step.state === "passed" ? "ok" : step.state === "failed" ? "bad" : step.state === "running" ? "run" : "muted")], [
+    h.div([h.Class("sui-plan-step-row")], [h.span([h.Class("sui-plan-step-dot")], []), interactive ? h.button([h.Class("sui-plan-step-label vl-link"), h.Type("button"), h.OnClick(Message.SelectedActionStep({ key: `${step.key}/${step.attempt}` }))], [title(step.name)]) : h.span([h.Class("sui-plan-step-label")], [title(step.name)]), h.span([h.Class("sui-plan-step-elapsed")], [`${Math.max(0, Math.floor((step.at - step.started) / 1000))}s`])]),
+  ])))
+}
+function trace(h: H, run: Run, now = 0, chosen = ""): Html {
+  const step = selectedStep(run, chosen)
+  return h.div([h.Class("vl-trace")], [
+    h.div([h.Class("vl-trace-steps")], [steps(h, run, true)]),
+    h.div([h.Class("vl-term")], [
+      h.div([h.Class("vl-term-bar")], [title(run.flow), duration(run, now)]),
+      h.pre([h.Class("vl-term-body"), h.AriaLabel("Logs")], [step === undefined ? "" : `${title(step.name)} · ${step.state}`]),
+      ...(run.result === "" ? [] : [h.div([h.Class("vl-term-bar"), h.AriaLabel("Result")], [resultText(run.result)])]),
+    ]),
+  ])
+}
+export function actionsPane(model: Model, h: H): Html {
+  const state = actionsOf(model)
+  const latest = state.runs[0]
+  if (!state.open) return h.button([h.Class("vl-pane"), h.Type("button"), h.AriaLabel("Expand Actions"), h.OnClick(Message.ClickedActions())], [h.span([], ["▷"]), h.span([h.Class("vl-pane-text")], ["Actions"]), ...(latest ? [h.span([h.Class("sui-badge sui-badge-secondary")], [`${title(latest.flow)} · ${duration(latest, state.now)}`])] : []), icon(h)])
+  const selected = state.entries.find((entry) => entry.name === state.selected)
+  const run = state.runs.find((run) => run.id === state.run)
+  const permitted = selected !== undefined && state.commands.some((entry) => entry.name === selected.name)
+  const cancellingReply = run !== undefined && run.flow === "vibelang/Reply" && run.id.endsWith("-reply") && (run.state === "queued" || run.state === "running") && state.commands.some(entry => entry.name === "vibelang/Post")
+  const back = run ? title(run.flow) : selected ? "Actions" : ""
+  const bar = run ? `${title(run.flow)} #${run.id}` : selected?.title ?? "Actions"
+  return h.section([h.Class("vl-docs vl-actions-pane"), h.AriaLabel("Actions"), h.DataAttribute("maximized", String(state.maximized))], [
+    h.div([h.Class("vl-docs-bar")], [
+      h.div([h.Class("vl-docs-page")], [
+        ...(back === "" ? [] : [h.button([h.Class("vl-link"), h.Type("button"), h.OnClick(Message.SelectedAction({ name: run?.flow ?? "" }))], [`‹ ${back}`])]),
+        h.span([], [bar]),
+        ...(run ? [badge(h, run)] : []),
+      ]),
+      h.div([h.Class("vl-docs-actions")], [
+        ...(permitted || cancellingReply ? [h.button([h.Class(`sui-button sui-button-sm ${run && (run.state === "running" || run.state === "queued") ? "sui-button-destructive" : "sui-button-default"}`), h.Type("button"), h.Disabled(state.starting), h.OnClick(run && (run.state === "running" || run.state === "queued") ? Message.ClickedCancelAction() : Message.ClickedRunAction())], [run && (run.state === "running" || run.state === "queued") ? "Cancel" : run ? "Re-run" : "Run"])] : []),
+        h.button([h.Class("vl-docs-toggle"), h.Type("button"), h.AriaLabel(state.maximized ? "Minimize Actions" : "Maximize Actions"), h.OnClick(Message.MaximizedActions())], [icon(h, state.maximized)]),
+        h.button([h.Class("vl-docs-toggle"), h.Type("button"), h.AriaLabel("Collapse Actions"), h.OnClick(Message.ClickedActions())], ["×"]),
+      ]),
+    ]),
+    h.div([h.Class("vl-act-body")], state.loading ? [h.div([h.Class("sui-skeleton"), h.AriaLabel("Loading actions"), h.Style({ height: "32px" })], [])] : state.error !== "" ? [
+      h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], ["Couldn't load runs", h.button([h.Class("vl-link"), h.Type("button"), h.OnClick(Message.RetriedActions())], ["Retry"])]),
+    ] : run ? [trace(h, run, state.now, state.step)] : [
+      ...(selected && permitted && (selected.input === "text" || selected.input === "json") ? [h.textarea([h.Class("sui-input"), h.AriaLabel("Action input"), h.Placeholder(selected.input === "json" ? "{}" : "Message"), h.Value(state.input), h.OnInput((value) => Message.UpdatedActionInput({ value }))])]: []),
+      state.maximized ? h.div([h.Class("vl-act-grid")], [
+        h.div([h.Class("vl-act-side")], state.entries.map((entry) => actionRow(h, entry, model))),
+        selected ? runRows(h, state.runs.filter((run) => run.flow === selected.name), state.now) : h.div([h.Class("vl-act-main")], []),
+      ]) : selected ? runRows(h, state.runs.filter((run) => run.flow === selected.name), state.now) : h.div([h.Class("vl-act-main")], state.entries.map((entry) => actionRow(h, entry, model))),
+    ]),
+  ])
+}
+export function actionCards(model: Model, h: H): ReadonlyArray<Html> {
+  return actionsOf(model).runs.map((run) => h.article([h.Class("sui-chat-message"), h.DataAttribute("role", "assistant")], [
+    h.div([h.Class("sui-chat-message-label")], [run.actor === "agent" ? "VibeLang agent" : "You"]),
+    h.button([h.Class("vl-runcard"), h.Type("button"), h.AriaLabel(`Open ${title(run.flow)} run ${run.id}`), h.OnClick(Message.SelectedRun({ id: run.id }))], [
+      h.span([h.Class("vl-runcard-top")], [h.span([h.Class("vl-runcard-name")], [title(run.flow)]), badge(h, run)]), steps(h, run), h.span([h.Class("vl-runcard-meta")], [`${run.actor} · ${duration(run, actionsOf(model).now)}`]),
+    ]),
+  ]))
+}
+export function slashMenu(model: Model, h: H): ReadonlyArray<Html> {
+  const menu = completions(model)
+  return menu.length === 0 ? [] : [h.div([h.Class("sui-completion-list"), h.Role("listbox"), h.AriaLabel("Commands")], menu.map((entry, index) => h.button([
+    h.Class("sui-completion-option"), h.AriaLabel(`${entry.command} ${entry.detail}`), h.Type("button"), h.Role("option"), h.AriaSelected(index === actionsOf(model).highlight), h.DataAttribute("highlighted", String(index === actionsOf(model).highlight)), h.OnClick(Message.PickedSlash({ name: entry.name })),
+  ], [h.span([h.Class("sui-completion-label")], [entry.command]), h.span([h.Class("sui-completion-detail")], [entry.detail])])))]
+}

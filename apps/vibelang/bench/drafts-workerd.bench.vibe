@@ -1,0 +1,43 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { serveDraftsBenchmark } from "../test/support/workerd.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("production drafting and specification agents settle and replay without another model request", { timeout: 240_000 }, async ({ bench }) => {
+  const result = await workload(bench, "drafts-workerd", "async", () => runPromise(scoped(effect {
+    provide NodeHttpServer.layerTest, FetchHttpClient.layer {
+      const calls = try Ref.make(0)
+      try HttpServer.serveEffect(effect {
+        const body = try (try HttpServerRequest.HttpServerRequest).text
+        try Ref.update(calls, n => n + 1)
+        const answer = body.includes("Draft one VibeLang language feature") ? { title: "Measured VIP", summary: "Summary", example: "const n = 1", prior: "Effect" }
+          : body.includes("Draft one edit to the given project wiki page") ? { page: "roadmap", text: "# Measured" }
+          : { verdict: "LGTM", grade: "A", review: "Measured" }
+        const cell = "```cell\nctx.done(" + JSON.stringify(answer) + ");\n```"
+        return HttpServerResponse.text(
+          "data: " + JSON.stringify({ id: "bench", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: cell }, finish_reason: null }] }) + "\n\n" +
+          "data: " + JSON.stringify({ id: "bench", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }) + "\n\n" + "data: [DONE]\n\n",
+          { contentType: "text/event-stream" },
+        )
+      })
+      const origin = HttpServer.formatAddress((try HttpServer.HttpServer).address).replace("0.0.0.0", "127.0.0.1").replace("[::]", "127.0.0.1")
+      const model = JSON.stringify({ protocol: "openai-chat", baseUrl: origin, modelId: "deterministic", credential: "BENCH" })
+      const server = try acquireRelease(serveDraftsBenchmark({ CHAT_MODEL: model, SPEC_REVIEW_ASTRA: model, SMITHERS_MODEL_KEY_BENCH: "benchmark-only", SMITHERS_MODEL_KEY_BENCH_ORIGIN: origin }), server => promise(server.dispose))
+      const client = try HttpClient.HttpClient
+      const first = try client.get(server.origin + "/drafts")
+      const answer = try first.json
+      const replay = try client.get(server.origin + "/drafts")
+      const cached = try replay.json
+      const count = try Ref.get(calls)
+      try Effect.try(() => {
+        expect([first.status, replay.status]).toEqual([200, 200])
+        expect(answer).toEqual({ answer: { vip: { title: "Measured VIP", summary: "Summary", example: "const n = 1", prior: "Effect" }, wiki: { page: "roadmap", text: "# Measured" }, review: { verdict: "LGTM", grade: "A", review: "Measured", revision: 1, link: "#review" } }, spent: 6 })
+        expect(cached).toEqual(answer)
+        expect(count).toBe(3)
+      })
+    }
+  }))).run(slow)
+  await runPromise(artifact("drafts-workerd", "Vitest built-in bench; three fresh native workerd worlds run production VIP draft, wiki draft and specification reviewer AgentActions, SDK model HTTP/SSE, QuickJS and SQLite over one deterministic local model service. Exact schema answers, six metered tokens, three HTTP model calls and cached replay with no further call checked. Bundling/startup/assertions included.", ["Deterministic model responses measure flow/agent overhead without inference or WAN. No GitHub write, OAuth, Container or real provider spending. Whole fresh-host corpus is not per-request latency."], result))
+})

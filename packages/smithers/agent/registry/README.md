@@ -256,3 +256,12 @@ regardless of `initialFlows`. Outside directory and entry-file symlinks produce
 The `smithers.registry.catalog` span and Debug body-load logs report the flow name,
 outcome, elapsed milliseconds and final loaded/refused/deferred counts, never
 payloads. These logs stay below the CLI's Info floor.
+
+## Bundled declarations
+
+A browser or Worker with statically imported flows uses `Bundled.make([flow, …])`
+from the package root. `list()` returns those actual declarations, and `get(tag)`
+returns the declaration or `BundledError` (`not_found`). Duplicate tags fail
+construction (`duplicate_name`). No filesystem, discovery, prompt loader or
+synthetic source descriptor is required. The host still supplies each flow's
+ordinary engine registration; a catalog never substitutes an implementation.

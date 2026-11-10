@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 32
+bias 2
+null-prototype false
+key 2812108484
+tape ghsn1hqhbNyTvwqyYUZSJngi621zm38jUCer70xwRlFBNwuPMb41xCNgnOyfMhJweQ3mYm_AlHmKORRCo1c0AOzjAYVRVzg_HBi6AgMGtoaB3VjAQBpJCBvC3I-tG8nxE1PbVFPTl41ZpAqPrYBrY3tFol0MyjCeEVSBgru7mk8rariR5wlyaNL3u5HsyKkL10Gm93-sEVtmFcK5dCg93as6Bv65njsaKwMZJ8lW5g_HuAXt1T44GK3FOG8Jn1OJiBoQXBOsi081BfwypWdDcLPAzUomh0eYqq5-0iG61Q8JEuKxMT6tnWJZ_p8k7f6KJRppZ3zqAv25WbuCqROFkqG2yrkMZ9p1H22DECz-MmIgC-0kHvrdTsPEyQ_N91p9QRuSU_XpD4AX5rYIiSqbWWJx8rtKyaNKvv71VaTGMH1KDp47mDeCFjoQJTDYn8UGSfMPR3W9UY6u5Gxn5E9NUNmIlmyo-jA8JYrknsOmHoXBlnNdfZYbsLMCo90DA5UWwYtYdMCHGWWScl2m2zJ_tcIv2bOakURcGgdymKglwk5wLoyQWqoBGkv9CXWnTUxC-JycxVVgdgYfxhSgjkhejRwlu3AYcuZXLewl8_6EB9b89G0JCWOMdD0jFzTs9ltA3ByPSePJpeso5YgsOvUHC-a9b61DZR0EwEhiD0mzFGkdckQjyMIVzU73gjo4DO-jjp2ruCkt-Ony_N1gmnAP4UWCG1Au5pETbzoTuZKVuu3yPKsgJIJFrPGEoGDS_j3iQJH0muhjHGnOb5i4QGXEkfwMWLZn08ihFJ113sjLN8PXWkWAGRAYbcpFs8-wpSHdD2M-EAyElrte9s65k5ZMJnyIlk8
+schedule-key 873230142
+schedule 
+signature "ReturnedFalse"
+path 0.2.2.3.3.3
+codec "json"
+value "{\"session\":0,\"role\":\"contributor\",\"happenings\":[{\"kind\":\"answer-issue\",\"n\":0,\"text\":\"\",\"sandbox\":false,\"edit\":false}]}"
+# ReturnedFalse
+# {"session":0,"role":"contributor","happenings":[{"kind":"answer-issue","n":0,"text":"","sandbox":false,"edit":false}]}

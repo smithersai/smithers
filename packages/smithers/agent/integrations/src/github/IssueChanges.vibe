@@ -1,0 +1,57 @@
+// Missing issue mutation endpoints over the same validated Effect client used by smithers.sh.
+import { IntegrationError } from "../core/IntegrationError.ts"
+import { GitHubClient } from "./GitHubClient.vibe"
+import { Issue, IssueUser } from "./Issues.vibe"
+import { IssueNumber, requireRepositoryPath } from "./Repository.vibe"
+
+const WithAssignees = Schema.Struct({ ...Issue.fields, assignees: Schema.Array(IssueUser).pipe(Schema.withDecodingDefault(Effect.succeed([]))) })
+export { WithAssignees }
+export effect function issuePath(owner: string, repo: string, number: number) {
+  const repository = try requireRepositoryPath(owner, repo)
+  if (!Schema.is(IssueNumber)(number)) throw new IntegrationError("invalid-config", "Expected an issue number.", { retryable: false })
+  return `/repos/${repository}/issues/${number}`
+}
+
+/** Patch only fields supplied by the caller. GitHub owns labels, state and assignments. */
+export effect function update(owner: string, repo: string, number: number, input: { readonly labels?: ReadonlyArray<string>; readonly assignees?: ReadonlyArray<string>; readonly state?: "open" | "closed" }) {
+  const client = try GitHubClient
+  const path = try issuePath(owner, repo, number)
+  return try client.request("PATCH", path, input, { schema: WithAssignees, retryUnsafeWrites: true })
+}
+
+/** Add a GitHub sub-issue by its numeric database ID, moving it only when explicitly requested. */
+export effect function link(owner: string, repo: string, parent: number, childId: number) {
+  const client = try GitHubClient
+  const path = try issuePath(owner, repo, parent)
+  if (!Number.isSafeInteger(childId) || childId <= 0) throw new IntegrationError("invalid-config", "Expected a sub-issue ID.", { retryable: false })
+  return try client.request("POST", `${path}/sub_issues`, { sub_issue_id: childId, replace_parent: true }, { schema: Issue })
+}
+
+/** Read assignments without changing the established Issue codec's public shape. */
+export effect function get(owner: string, repo: string, number: number) {
+  const client = try GitHubClient
+  return try client.request("GET", try issuePath(owner, repo, number), undefined, { schema: WithAssignees })
+}
+
+/** The repository's actual assignable accounts. An incomplete listing never becomes a complete picker. */
+export effect function assignees(owner: string, repo: string) {
+  const client = try GitHubClient
+  const repository = try requireRepositoryPath(owner, repo)
+  const listed = try client.paginate(`/repos/${repository}/assignees`, { maxPages: 10 })
+  if (listed.truncated) throw new IntegrationError("poll-failed", "Assignable accounts listing is incomplete.", { incomplete: true, retryable: false })
+  return try Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ id: Schema.Number, login: Schema.String })))(listed.items).pipe(Effect.mapError(() => new IntegrationError("decode-failed", "Assignable accounts were not the protocol.", { retryable: false })))
+}
+
+/** A native issue timeline event, including its actual actor. Unknown event kinds remain readable. */
+export const TimelineEvent = Schema.Struct({
+  event: Schema.String, actor: Schema.optionalKey(IssueUser), created_at: Schema.optionalKey(Schema.String),
+  label: Schema.optionalKey(Schema.NullOr(Schema.Struct({ name: Schema.String }))),
+  assignee: Schema.optionalKey(IssueUser),
+})
+export effect function timeline(owner: string, repo: string, number: number) {
+  const client = try GitHubClient
+  const path = try issuePath(owner, repo, number)
+  const page = try client.paginate(`${path}/timeline`, { maxPages: 20 })
+  if (page.truncated) throw new IntegrationError("poll-failed", "Issue timeline is incomplete.", { incomplete: true, retryable: false })
+  return try Schema.decodeUnknownEffect(Schema.Array(TimelineEvent))(page.items).pipe(Effect.mapError(() => new IntegrationError("decode-failed", "Issue timeline was not the protocol.", { retryable: false })))
+}

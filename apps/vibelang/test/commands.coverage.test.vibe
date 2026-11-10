@@ -1,0 +1,236 @@
+// @vitest-environment node
+// Every command's CLI text and failure wording, through the mock factory's real flows. An unhappy path wraps that
+// factory in a faulty service: the real event stream cut short, or one operation that fails.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { Factory, Unavailable } from "../src/core/Factory.vibe"
+import { MockFactory, mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { IssueFailure } from "../src/core/issueSchemas.vibe"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
+import { Actions, ActionFailure, Run } from "../src/actions/Actions.vibe"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+import { backend, SURFACE_PRINCIPAL } from "../src/surfaces/backend.vibe"
+import {
+  AddNote, Ask, CancelRun, Issue, Issues, ListActions, PlanWork, Read, ReadRun, Rerun, RunSandbox, RunWorkflow,
+  Sandboxes, ShowHistory, StartSandbox, StartWork, StopSandbox, Wiki,
+} from "../src/surfaces/commands.vibe"
+
+const failure = <A, R>(program: A!{ readonly message: string }!R) => Effect.map(Effect.flip(program), (error) => error.message)
+
+const offline = () => Effect.fail(new Unavailable({ reason: "offline" }))
+
+/** A factory that is entirely down, except the operations a case names. */
+function closed(over: Partial<Factory.Shape>): Factory.Shape {
+  return {
+    mode: "mock", post: offline, read: offline, events: () => Stream.fail(new Unavailable({ reason: "offline" })), tour: offline, endTour: offline,
+    openWiki: offline, sandbox: offline, startSandbox: offline, stopSandbox: offline, sandboxCommand: offline, ...over,
+  }
+}
+
+/** Accepts a post, then fails the reply to it. */
+function failingReply(): Factory.Shape {
+  let clientId = ""
+  return closed({
+    post: (_conversation, id) => Effect.sync(() => { clientId = id }),
+    events: () => Stream.suspend(() => Stream.fromIterable([
+      { type: "Posted" as const, seq: 1, id: "p", clientId, name: "Factory CLI", text: "install" },
+      { type: "ReplyStarted" as const, seq: 2, id: "a", inReplyTo: "p" },
+      { type: "ReplyFailed" as const, seq: 3, id: "a", reason: "model down" },
+    ])),
+  })
+}
+
+/** An action service that accepts the request and reports only the given progress. */
+function requesting(progress: Stream.Stream<typeof Run.Type, ActionFailure>): Actions.Shape {
+  const fail = () => Effect.fail(new ActionFailure({ code: "offline" }))
+  return { list: fail, commands: fail, runs: fail, read: fail, follow: () => progress, start: () => Effect.succeed("r"), command: fail, rerun: fail, cancel: fail }
+}
+
+const small = () => {
+  const commits = ["fix(compiler): one", "docs: two", "fix(compiler): three"].map((description, index) => ({
+    sha: `${index + 1}`.padStart(12, "0"), change: "", description, parents: index === 0 ? [] : [`${index}`.padStart(12, "0")],
+  }))
+  return Effect.succeed(replay(intentsOf(seedOf("o/r", commits, []))).history)
+}
+
+describe("ask and read", () => {
+  it.live("print an answer with its events, and entries with their event", () => effect {
+    provide MockFactory {
+      const empty = try Read.render({}, false)
+      const answer = try Ask.render({ text: "How do I install it?" }, false)
+      const read = try Read.render({}, false)
+      const json = try Read.render({}, true)
+      try Effect.try(() => {
+        expect(empty).toBe("No entries. Event: 0")
+        expect(answer).toMatch(/\n\nEvents: 1(, \d+)+$/)
+        expect(read).toMatch(/: How do I install it\?\n\n.*\n\nEvent: \d+$/s)
+        expect(JSON.parse(json).entries).toHaveLength(2)
+      })
+    }
+  })
+
+  it.live("report a reply that fails, with the failure's reason", () => effect {
+    const message = try failure(Effect.provideService(Ask.run({ text: "install" }), Factory, failingReply()))
+    try Effect.try(() => expect(message).toBe("The agent's reply failed: model down"))
+  })
+
+  it.live("report a conversation that closes before the reply finishes", () => effect {
+    const message = try failure(Effect.provideService(Ask.run({ text: "install" }), Factory, closed({ post: () => Effect.void, events: () => Stream.empty })))
+    try Effect.try(() => expect(message).toBe("The conversation ended before the agent's reply finished."))
+  })
+
+  it.live("report the factory's own unavailability reason", () => effect {
+    const message = try failure(Effect.provideService(Read.run({}), Factory, closed({})))
+    try Effect.try(() => expect(message).toBe("offline"))
+  })
+})
+
+describe("history text", () => {
+  const mock = MockMythical(SURFACE_PRINCIPAL, small)
+
+  it.effect("prints writes, open work, an epic's page and a commit", () => effect {
+    provide mock {
+      const planned = try PlanWork.render({ title: "fix(compiler): four", epic: "e1" }, false)
+      const started = try StartWork.render({ id: "m4", lane: "lane-a" }, false)
+      const noted = try AddNote.render({ id: "m4", section: "tried", text: "A cache." }, false)
+      const page = try ShowHistory.render({ epic: "e1", commit: "m4" }, false)
+      try Effect.try(() => {
+        expect([planned, started, noted]).toEqual(["Planned m4.", "Started m4.", "Noted m4."])
+        expect(page).toContain("m4  working  fix(compiler): four")
+        expect(page).toMatch(/\n\d+ of \d+\n/)
+        expect(page).toContain("tried: A cache.")
+      })
+    }
+  })
+
+  it.effect("searches, pages from an offset, and refuses an unknown epic", () => effect {
+    provide mock {
+      const found = try ShowHistory.run({ search: "three" })
+      const rest = try ShowHistory.run({ epic: "e1", from: 1 })
+      const missing = try failure(ShowHistory.run({ epic: "e9" }))
+      try Effect.try(() => {
+        expect(found.commits.map((commit) => commit.title)).toEqual(["fix(compiler): three"])
+        expect(found.total).toBe(1)
+        expect(rest).toMatchObject({ total: 2 })
+        expect(rest.commits).toHaveLength(1)
+        expect(missing).toBe("No epic e9.")
+      })
+    }
+  })
+})
+
+describe("sandbox text", () => {
+  it.live("prints each state and generates an operation id when none is given", () => effect {
+    provide mockFactoryFor("contributor") {
+      const idle = try Sandboxes.render({}, false)
+      const started = try StartSandbox.run({})
+      const running = try Sandboxes.render({}, false)
+      const startedText = try StartSandbox.render({ operationId: "again" }, false)
+      const output = try RunSandbox.render({ generation: started.generation, command: "echo hi" }, false)
+      const stopped = try StopSandbox.render({ generation: started.generation }, false)
+      try Effect.try(() => {
+        expect(idle).toMatch(/^Sandboxes {2}stopped {2}\d+ min$/)
+        expect(running).toMatch(new RegExp(`^${started.id} {2}\\w+ {2}\\d+ min$`))
+        expect(startedText).toContain(" min")
+        expect(output).toBe("hi")
+        expect(stopped).toMatch(new RegExp(`^${started.id} {2}\\w+$`))
+      })
+    }
+  })
+})
+
+describe("issue commands", () => {
+  it.effect("print tasks and refuse a person without the role", () => effect {
+    provide MockFactory {
+      const accounts = (try Factory).accounts!
+      try accounts.choose("maintainer")
+      const filed = try Issue.run({ op: "new", title: "A task", text: "Steps", key: "filed" })
+      try Issue.run({ op: "commit", number: filed.items[0]!.number, assignee: "Will", key: "commit" })
+      const listed = try Issues.render({}, false)
+      const generated = try Issue.render({ op: "comment", number: filed.items[0]!.number, text: "Note" }, false)
+      const specification = (try Issue.run({ op: "read" })).detail
+      const unknown = try Issue.run({ op: "read", number: 999999 })
+      try accounts.choose("viewer")
+      const refused = try failure(Issue.run({ op: "new", title: "No", text: "No", key: "refused" }))
+      try Effect.try(() => {
+        expect(listed).toContain("A task · Task · Queued")
+        expect(JSON.parse(generated).detail).toContain("Note")
+        expect(Object.keys(JSON.parse(specification))).toEqual(expect.arrayContaining(["specification", "history"]))
+        expect(unknown.detail).toBe("null")
+        expect(refused).toBe("Not allowed.")
+      })
+    }
+  })
+
+  it.effect("report a missing or failing issue service", () => effect {
+    const failing = () => Effect.fail(new IssueFailure({ reason: "offline" }))
+    const faulty = closed({ issues: { read: failing, act: failing } })
+    const messages = [
+      try failure(Effect.provideService(Issues.run({}), Factory, closed({}))),
+      try failure(Effect.provideService(Issue.run({ op: "read" }), Factory, closed({}))),
+      try failure(Effect.provideService(Issues.run({}), Factory, faulty)),
+      try failure(Effect.provideService(Issue.run({ op: "read" }), Factory, faulty)),
+    ]
+    try Effect.try(() => expect(messages).toEqual(["Issues unavailable.", "Issues unavailable.", "Issues unavailable.", "Issue change failed."]))
+  })
+})
+
+describe("action commands", () => {
+  it.live("print the catalog, a run, a re-run and a cancellation, and name an action failure", () => effect {
+    provide NodeServices.layer {
+    provide backend(true, undefined) {
+      const list = try ListActions.render({}, false)
+      const requested = try RunWorkflow.run({ flow: "vibelang/Post", input: '{"text":"How do I install it?"}', wait: true })
+      const requestedText = try RunWorkflow.render({ flow: "vibelang/Post", input: '{"text":"errors"}' }, false)
+      const trace = try ReadRun.render(requested, false)
+      const again = try Rerun.render(requested, false)
+      const cancelled = try CancelRun.render(requested, false)
+      const missing = try failure(ReadRun.run({ id: "missing" }))
+      try Effect.try(() => {
+        expect(list).toContain("vibelang/Post")
+        expect(requestedText).toMatch(/^Requested .+\.$/)
+        expect(trace.split("\n")[0]).toBe("passed")
+        expect(again).toMatch(/^Requested .+\.$/)
+        expect(cancelled).toBe(`Cancellation requested ${requested.id}.`)
+        expect(missing).toBe("Action: not-found")
+      })
+    }
+    }
+  })
+
+  it.live("fail a waited run that does not pass, or never reports", () => effect {
+    const run: typeof Run.Type = { id: "r", flow: "vibelang/Post", state: "failed", door: "agent", actor: "agent", started: 0, at: 0, steps: [], result: "Action failed" }
+    const waiting = { flow: "vibelang/Post", input: "{}", wait: true }
+    const failed = try failure(Effect.provideService(RunWorkflow.run(waiting), Actions, requesting(Stream.make(run))))
+    const silent = try failure(Effect.provideService(RunWorkflow.run(waiting), Actions, requesting(Stream.empty)))
+    try Effect.try(() => expect([failed, silent]).toEqual(["Action failed.", "Action failed."]))
+  })
+})
+
+describe("wiki command", () => {
+  it.effect("reads the index by default, drafts, and prints the draft's page", () => effect {
+    provide MockFactory {
+      try (try Factory).accounts!.choose("maintainer")
+      const index = try Wiki.run({ op: "read" })
+      const draft = try Wiki.render({ op: "draft", page: index.pages[0]!.id, text: "More", key: "d" }, false)
+      const generated = try Wiki.run({ op: "draft", page: index.pages[0]!.id, text: "Again", recovery: "r" })
+      try Effect.try(() => {
+        expect(index.pages.length).toBeGreaterThan(0)
+        expect(JSON.parse(draft).draft).toBe(index.pages[0]!.id)
+        expect(generated.draft?.page).toBe(index.pages[0]!.id)
+      })
+    }
+  })
+
+  it.effect("refuses a person without the role, and reports a missing or failing wiki", () => effect {
+    provide MockFactory {
+      try (try Factory).accounts!.choose("viewer")
+      const refused = try failure(Wiki.run({ op: "draft", page: "index", text: "x", key: "r" }))
+      const missing = try failure(Effect.provideService(Wiki.run({ op: "read" }), Factory, closed({})))
+      const failing = () => Effect.fail(new WikiFailure({ reason: "conflict" }))
+      const failed = try failure(Effect.provideService(Wiki.run({ op: "save", page: "index", text: "x", key: "f" }), Factory, closed({ wiki: { read: failing, act: failing } })))
+      try Effect.try(() => expect([refused, missing, failed]).toEqual(["Not allowed.", "Wiki unavailable.", "Wiki change failed."]))
+    }
+  })
+})

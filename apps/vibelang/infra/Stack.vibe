@@ -30,7 +30,7 @@ export default Alchemy.Stack(
     const site = try Cloudflare.Website.Vite("vibelang-site", {
       main: "worker/index.vibe",
       compatibility: { date: "2026-10-01" },
-      assets: { notFoundHandling: "single-page-application" },
+      assets: { runWorkerFirst: true, notFoundHandling: "single-page-application" },
       env: { API: api },
       ...(Option.isSome(domain) ? { domain: domain.value } : {}),
       observability: {

@@ -1,0 +1,20 @@
+// A correctness-checked local benchmark; no latency threshold or claim about a real Cloudflare Container.
+import { expect, it } from "@effect/vitest"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+it.live("benchmarks 100 complete sandbox file/Stop/Start cycles through the real mock flows", () => effect {
+  provide mockFactoryFor("contributor") {
+    const factory = try Factory
+    const begin = try Clock.currentTimeMillis
+    let current = try factory.startSandbox("bench", "initial")
+    for (let n = 0; n < 100; n++) {
+      try factory.sandboxCommand("bench", `write-${n}`, `echo ${n} > keep`, current.generation)
+      const stopped = try factory.stopSandbox("bench", `stop-${n}`, current.generation)
+      current = try factory.startSandbox("bench", `start-${n}`)
+      const bytes = try factory.sandboxCommand("bench", `read-${n}`, "cat keep", current.generation)
+      try Effect.try(() => { expect(stopped.status).toBe("stopped"); expect(bytes).toBe(`${n}\n`); expect(current.generation).toBe(n + 2) })
+    }
+    const elapsedMs = (try Clock.currentTimeMillis) - begin
+    try Console.log(JSON.stringify({ benchmark: "sandbox-mock-file-restart", cycles: 100, flowCalls: 401, elapsedMs, millisecondsPerCycle: elapsedMs / 100 }))
+  }
+}, 60000)

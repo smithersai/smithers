@@ -1,0 +1,302 @@
+// The sandbox writer's recovery and refusal paths at its public boundary: faults come from a faulty machine service
+// and crash states from what the store holds after a process dies.
+import { TestClock } from "effect/testing"
+import { describe, expect, it } from "@effect/vitest"
+import { makeSandboxHost, type Machines, type Pending, type Receipt, type SandboxState, type Store } from "../src/core/sandboxHost.vibe"
+import { ALLOWANCES } from "../src/core/sandboxDecision.vibe"
+import { memoryMachines } from "../src/core/sandboxMock.vibe"
+import { mockPolicy, SandboxPolicy } from "../src/core/sandboxPolicy.vibe"
+import { Unavailable } from "../src/core/Factory.vibe"
+
+const ALLOWANCE = ALLOWANCES.contributor * 60000
+const BEYOND_CALENDAR = 8640000000000001
+
+effect function world() {
+  try TestClock.setTime(Date.UTC(2026, 10, 30))
+  const state = try Ref.make<SandboxState | undefined>(undefined)
+  const receipts = new Map<string, Receipt>()
+  const store: Store = {
+    read: () => Ref.get(state),
+    receipt: (id) => succeed(receipts.get(id)),
+    write: (next, receipt) => effect { if (receipt) receipts.set(receipt.request.operationId, receipt); try Ref.set(state, next) },
+    alarm: () => Effect.void,
+  }
+  return { state, receipts, store, machines: memoryMachines() }
+}
+const change = (w: { readonly state: Ref.Ref<SandboxState | undefined> }, edit: (state: SandboxState) => SandboxState) => Ref.update(w.state, (state) => edit(state!))
+const pendingOf = (kind: Pending["kind"], operationId: string, conversation = "home", generation = 1, command = ""): Pending => ({ kind, conversation, operationId, generation, command })
+const failureOf = <A, E>(result: { readonly _tag: "Success"; readonly success: A } | { readonly _tag: "Failure"; readonly failure: E }) => result._tag === "Failure" ? result.failure : undefined
+/** A machine whose command waits at `release` while `held` says so. */
+effect function holding(machines: Machines) {
+  const entered = try Deferred.make<void>()
+  const release = try Deferred.make<void>()
+  const control = { held: true }
+  const held: Machines = { ...machines, command: (id, generation, operationId, command) => effect {
+    const output = try machines.command(id, generation, operationId, command)
+    if (control.held) { try Deferred.succeed(entered, undefined); try Deferred.await(release) }
+    return output
+  } }
+  return { held, entered, release, control }
+}
+
+describe("sandbox writer boundaries", () => {
+  it.effect("refuses a clock outside the calendar and stops only what is running", () => effect {
+    provide mockPolicy("contributor") {
+      const w = try world()
+      const host = try makeSandboxHost(w.store, w.machines)
+      const home = try host.start("home", "start-home")
+      const away = try host.start("away", "start-away")
+      try host.stop("away", "stop-away", away.generation)
+      try TestClock.setTime(BEYOND_CALENDAR)
+      const refused = try Effect.result(host.snapshot("home"))
+      const saved = (try Ref.get(w.state))!
+      try Effect.try(() => {
+        expect(failureOf(refused)).toMatchObject({ reason: "invalid-clock" })
+        expect(home.status).toBe("running")
+        expect(saved.ledger.sandboxes.map((box) => box.running)).toEqual([false, false])
+        expect(saved.meterFailure?.count).toBe(1)
+        expect(saved.pending).toBeNull()
+      })
+    }
+  })
+
+  it.effect("keeps a stop pending when the fail-closed stop itself fails", () => effect {
+    provide mockPolicy("contributor") {
+      const w = try world()
+      const faulty: Machines = { ...w.machines, stop: () => fail(new Unavailable({ reason: "stop-failed" })) }
+      const host = try makeSandboxHost(w.store, faulty)
+      try host.start("home", "start-home")
+      try TestClock.setTime(BEYOND_CALENDAR)
+      try Effect.result(host.snapshot("home"))
+      const saved = (try Ref.get(w.state))!
+      try Effect.try(() => {
+        expect(saved.ledger.sandboxes[0]!.running).toBe(true)
+        expect(saved.pending?.kind).toBe("stop")
+        expect(saved.pending?.operationId.startsWith("fault/")).toBe(true)
+      })
+    }
+  })
+
+  it.effect("stores nothing when the first read has an invalid clock", () => effect {
+    provide mockPolicy("contributor") {
+      const w = try world()
+      const host = try makeSandboxHost(w.store, w.machines)
+      try TestClock.setTime(BEYOND_CALENDAR)
+      const refused = try Effect.result(host.snapshot("home"))
+      const saved = try Ref.get(w.state)
+      try Effect.try(() => { expect(failureOf(refused)).toMatchObject({ reason: "invalid-clock" }); expect(saved).toBeUndefined() })
+    }
+  })
+
+  it.effect("refuses a person who does not own the ledger", () => effect {
+    const w = try world()
+    const host = try makeSandboxHost(w.store, w.machines).pipe(Effect.provide(mockPolicy("contributor")))
+    try host.start("home", "start-home").pipe(Effect.provide(mockPolicy("contributor")))
+    const other = Layer.succeed(SandboxPolicy, { current: () => succeed({ owner: "someone-else", role: "contributor" as const }) })
+    const intruder = try makeSandboxHost(w.store, w.machines).pipe(Effect.provide(other))
+    const refused = try Effect.result(intruder.snapshot("home"))
+    try Effect.try(() => expect(failureOf(refused)).toMatchObject({ refusal: "forbidden" }))
+  })
+
+  it.effect("refuses a stop when the ledger's sequence is exhausted", () => effect {
+    provide mockPolicy("contributor") {
+      const w = try world()
+      const host = try makeSandboxHost(w.store, w.machines)
+      const started = try host.start("home", "start-home")
+      try change(w, (state) => ({ ...state, ledger: { ...state.ledger, sequence: Number.MAX_SAFE_INTEGER } }))
+      const refused = try Effect.result(host.stop("home", "stop-home", started.generation))
+      try Effect.try(() => expect(failureOf(refused)).toMatchObject({ reason: "sequence-overflow" }))
+    }
+  })
+
+  it.effect("settles a recovered stop whose sandbox has already stopped", () => effect {
+    provide mockPolicy("contributor") {
+      const w = try world()
+      const host = try makeSandboxHost(w.store, w.machines)
+      const started = try host.start("home", "start-home")
+      try host.stop("home", "stop-home", started.generation)
+      try change(w, (state) => ({ ...state, pending: pendingOf("stop", "late-stop", "home", started.generation) }))
+      try host.tick()
+      const saved = (try Ref.get(w.state))!
+      try Effect.try(() => {
+        expect(saved.pending).toBeNull()
+        expect(saved.ledger.sandboxes[0]!.running).toBe(false)
+        expect(w.receipts.get("late-stop")?.snapshot.status).toBe("stopped")
+      })
+    }
+  })
+
+  it.effect("does not repeat a pending operation whose receipt is already stored", () => effect {
+    provide mockPolicy("contributor") {
+      const w = try world()
+      let stops = 0
+      const counted: Machines = { ...w.machines, stop: (id, generation) => { stops += 1; return w.machines.stop(id, generation) } }
+      const host = try makeSandboxHost(w.store, counted)
+      const started = try host.start("home", "start-home")
+      const request = pendingOf("stop", "already-done", "home", started.generation)
+      w.receipts.set("already-done", { ...w.receipts.get("start-home")!, request })
+      try change(w, (state) => ({ ...state, pending: request }))
+      try host.tick()
+      const saved = (try Ref.get(w.state))!
+      try Effect.try(() => { expect(saved.pending).toBeNull(); expect(stops).toBe(0); expect(saved.ledger.sandboxes[0]!.running).toBe(true) })
+    }
+  })
+
+  it.effect("cancels a start that outlasts the allowance while it provisions", () => effect {
+    provide mockPolicy("contributor") {
+      const w = try world()
+      const stopped: Array<string> = []
+      const slow: Machines = {
+        ...w.machines,
+        start: (id, generation) => effect {
+          if (id.endsWith("/away")) try TestClock.adjust("2 seconds")
+          try w.machines.start(id, generation)
+        },
+        stop: (id, generation) => { stopped.push(id); return w.machines.stop(id, generation) },
+      }
+      const host = try makeSandboxHost(w.store, slow)
+      try host.start("home", "start-home")
+      try change(w, (state) => ({ ...state, ledger: { ...state.ledger, usedMilliseconds: ALLOWANCE - 1000 } }))
+      const refused = try Effect.result(host.start("away", "start-away"))
+      const away = try host.snapshot("away")
+      try Effect.try(() => {
+        expect(failureOf(refused)).toMatchObject({ reason: "start-failed" })
+        expect(away.status).toBe("stopped")
+        expect(stopped).toEqual(["mock-person/away"])
+        expect(w.receipts.get("start-away")?.request.kind).toBe("start")
+      })
+    }
+  })
+
+  it.effect("records a stop when a running sandbox has lost its lease", () => effect {
+    provide mockPolicy("contributor") {
+      const w = try world()
+      const host = try makeSandboxHost(w.store, { ...w.machines, lease: () => succeed(false) })
+      try host.start("home", "start-home")
+      try host.tick()
+      const saved = (try Ref.get(w.state))!
+      try Effect.try(() => {
+        expect(saved.ledger.sandboxes[0]!.running).toBe(false)
+        expect([...w.receipts.keys()].some((id) => id.startsWith("ended/"))).toBe(true)
+      })
+    }
+  })
+
+  it.effect("abandons a recovered start after the person loses the right to start", () => effect {
+    const w = try world()
+    const stopped: Array<string> = []
+    const counted: Machines = { ...w.machines, stop: (id, generation) => { stopped.push(id); return w.machines.stop(id, generation) } }
+    const host = try makeSandboxHost(w.store, counted).pipe(Effect.provide(mockPolicy("contributor")))
+    const first = try host.start("home", "start-home").pipe(Effect.provide(mockPolicy("contributor")))
+    try host.stop("home", "stop-home", first.generation).pipe(Effect.provide(mockPolicy("contributor")))
+    stopped.length = 0
+    try change(w, (state) => ({ ...state, pending: pendingOf("start", "start-away", "away") }))
+    const demoted = try makeSandboxHost(w.store, counted).pipe(Effect.provide(mockPolicy("viewer")))
+    try demoted.tick()
+    const saved = (try Ref.get(w.state))!
+    try Effect.try(() => { expect(stopped).toEqual(["mock-person/away"]); expect(saved.pending).toBeNull(); expect(w.receipts.has("start-away")).toBe(false) })
+  })
+
+  it.effect("marks a command orphaned by a crash as uncertain and refuses its replay", () => effect {
+    provide mockPolicy("contributor") {
+      const w = try world()
+      const first = try makeSandboxHost(w.store, w.machines)
+      const started = try first.start("home", "start-home")
+      try change(w, (state) => ({ ...state, pending: pendingOf("command", "orphan", "home", started.generation, "echo lost") }))
+      const recovered = try makeSandboxHost(w.store, w.machines)
+      try recovered.tick()
+      const replay = try Effect.result(recovered.command("home", "orphan", "echo lost", started.generation))
+      const saved = (try Ref.get(w.state))!
+      try Effect.try(() => {
+        expect(saved.pending).toBeNull()
+        expect(w.receipts.get("orphan")?.refusal).toBe("command-uncertain")
+        expect(failureOf(replay)).toMatchObject({ reason: "command-uncertain" })
+      })
+    }
+  })
+
+  it.effect("refuses one operation id reused for a different command", () => effect {
+    provide mockPolicy("contributor") {
+      const w = try world()
+      const host = try makeSandboxHost(w.store, w.machines)
+      const started = try host.start("home", "start-home")
+      const first = try host.command("home", "once", "echo a", started.generation)
+      const refused = try Effect.result(host.command("home", "once", "echo b", started.generation))
+      const same = try host.command("home", "once", "echo a", started.generation)
+      try Effect.try(() => { expect(failureOf(refused)).toMatchObject({ refusal: "operation-conflict" }); expect(same).toBe(first) })
+    }
+  })
+
+  it.effect("refuses a start with no minutes left", () => effect {
+    provide mockPolicy("contributor") {
+      const w = try world()
+      const host = try makeSandboxHost(w.store, w.machines)
+      const started = try host.start("home", "start-home")
+      try host.stop("home", "stop-home", started.generation)
+      try change(w, (state) => ({ ...state, ledger: { ...state.ledger, usedMilliseconds: ALLOWANCE } }))
+      const refused = try Effect.result(host.start("home", "start-again"))
+      try Effect.try(() => expect(failureOf(refused)).toMatchObject({ refusal: "out-of-minutes" }))
+    }
+  })
+
+  it.effect("refuses a second copy of a command still running", () => effect {
+    provide mockPolicy("contributor") {
+      const w = try world()
+      const { held, entered, release } = try holding(w.machines)
+      const host = try makeSandboxHost(w.store, held)
+      const started = try host.start("home", "start-home")
+      const running = try Effect.forkChild(host.command("home", "slow", "echo late", started.generation))
+      try Deferred.await(entered)
+      const refused = try Effect.result(host.command("home", "slow", "echo late", started.generation))
+      try Deferred.succeed(release, undefined)
+      const output = try Fiber.join(running)
+      try Effect.try(() => { expect(failureOf(refused)).toMatchObject({ refusal: "busy" }); expect(output).toBe("late") })
+    }
+  })
+
+  it.effect("refuses a start when the generation is exhausted", () => effect {
+    provide mockPolicy("contributor") {
+      const w = try world()
+      const host = try makeSandboxHost(w.store, w.machines)
+      const started = try host.start("home", "start-home")
+      try host.stop("home", "stop-home", started.generation)
+      try change(w, (state) => ({ ...state, generations: { ...state.generations, home: Number.MAX_SAFE_INTEGER } }))
+      const refused = try Effect.result(host.start("home", "start-again"))
+      try Effect.try(() => expect(failureOf(refused)).toMatchObject({ reason: "generation-overflow" }))
+    }
+  })
+
+  it.effect("a held command reports the uncertainty another host recorded for it", () => effect {
+    provide mockPolicy("contributor") {
+      const w = try world()
+      const { held, entered, release } = try holding(w.machines)
+      const host = try makeSandboxHost(w.store, held)
+      const started = try host.start("home", "start-home")
+      const running = try Effect.forkChild(Effect.result(host.command("home", "slow", "echo late", started.generation)))
+      try Deferred.await(entered)
+      const other = try makeSandboxHost(w.store, w.machines)
+      try other.tick()
+      try Deferred.succeed(release, undefined)
+      const result = try Fiber.join(running)
+      try Effect.try(() => expect(failureOf(result)).toMatchObject({ reason: "command-uncertain" }))
+    }
+  })
+
+  it.effect("a held command returns the answer another host already recorded", () => effect {
+    provide mockPolicy("contributor") {
+      const w = try world()
+      const { held, entered, release, control } = try holding(w.machines)
+      const host = try makeSandboxHost(w.store, held)
+      const started = try host.start("home", "start-home")
+      const running = try Effect.forkChild(host.command("home", "slow", "echo late", started.generation))
+      try Deferred.await(entered)
+      try host.start("away", "start-away")
+      control.held = false
+      const other = try makeSandboxHost(w.store, held)
+      const answer = try other.command("home", "slow", "echo late", started.generation)
+      try Deferred.succeed(release, undefined)
+      const output = try Fiber.join(running)
+      try Effect.try(() => { expect(output).toBe(answer); expect(answer).toBe("late") })
+    }
+  })
+})

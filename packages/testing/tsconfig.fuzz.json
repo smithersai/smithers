@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.test.json",
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": false
+  },
+  "include": [
+    "src/internal/fuzz.ts",
+    "src/internal/FuzzRegistration.ts",
+    "src/Vitest.ts",
+    "test/fuzz*.test.ts"
+  ],
+  "exclude": []
+}

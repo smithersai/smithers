@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 6
+bias 2
+null-prototype false
+key 1406717971
+tape j_s29bfdYNseRExSzJ31rGQHalg8OuCgidrPZ4-P_fUcPfp6NxAowHKFdCDshIcMngz4rGqEqxbjnmWfqL_NqDDAHkaTg6q2AjQ9eBnl1KV730L5gHoyZfokiPoZhu_Tefux86VGI-ddDocbr-nqlJyKn5i73sGySe_dpOq6b7OHxWidiGw8C3AtWq1De2so4npAJfpCbK6Q8HAXLcuO0t-SEtWLyPBzktA3-UHQpxSD5A1XI6vevMDw0mLRmqEwRNT5ssusAMykUmktiOPsW5WwMCypmvkAjB4VpMe6cSX1MGnxWkw_Pyb69gmLjxXRvd5vVY69J2gZvAscxLTmrGEvSVS7GbpMZ00jW4fDEAU3gOTdwxwY0ctoizKPRqo1eq-IRokd0k7NnDQbFiBvQuyre0FB5NxpMIcSGeOvCKU1uuDgWAdUvT0iL2SrClvi7LvI6j1mDo-bS5afNTcYgWOIsjkNX2wI2XPz3ICz041S0Imux64vVhVxcxsGgH7zLkJW4FXpDWkl5vn5VekNaSXm-fnk-AePjJ4AbOppV6HXbrmbuxd9PzqAATEMlyltUpSgX5zc7oUFn-BkOZ-X7jSVmtgz8VdN23YdlPbdpwAIQpVdfDhC2x0GA4Nvw6qsY5Wn8CTL5uwslXI6KpgWO598AWU5Q5RUPth1EKYBvjLaqru4h781KwX8Nyid8AozUtYXeAYIGkVK0LJ42BcZDoKSawjvAd5tWeFGKSneWFoGeCi8wM3tK3f9J9rBYbm4XolqtPl_Mpngo65tSOuH_VussDx-kZr1f4SHkJ5Jsy218p_IJr9l0y1hUso5xEZanaYBkz3hrjzXKZFYlZ7fHhiSLmOOPPWObUr5jTEr_SKnGeRV3_s6Sr_4DsKDWL8_RkNx7xf0hiRXjU5rIc9EL-nhtBnhMkJbh1AR7EdwU0kKhzAf4m2vxDqwc08YUjrwMpUq-PTIWGEHRXLZB7m6IwHAddu_h9W_Gaca0uMKL3AciS7B81vfU5UROFmVNcaapoPdnHHsGV0l4lg5jTyTa-Ra1rkVo-pYOJPeraQ6hqQ-4YHTg5Ji9Mp9nOEBP2WxeMZtLVgtK0hf01vp4izHOwQjobIrsih6FXLeZg9ui3-a2wQ5RzmyO3G0kOL5zzV-wq_tGNtrgzfyLUqT7XtIQpv9OZlluX-hDM-I5hZQ8uHiIKN9RN8wRxFuYcHNDQ4MuRQKb4ApRx00Al-Bj07vIldWdfjqfTTqxgJnWLz6e5pP8M5IVV-tYuMmTANrCQ2E-EWH5FZO-EzA3PfWdB8LTFG-pVKUDCRdiOLuolA45ZbUb0-n6wrIeZNKWknxrR6p7Ir8wUFQD035_aH3I3J4zWvc_YcgkPC5srDISylTR3uOaHRKQvDlvudnDVI2Ljzr-uvZTs3nocFrBQoojomFyIE23zDEq5OxR8T_h3CsHvz_Dn49tlmnrwrSbuvxmt1DQCf-KdeyWA2AXwx-GS0xO_QZb_SsqwImatxTzi7viEv15m7qkUdz9vaTKpf-nW8Hz-QRDmXc5A5DuSHWpcb5s0Mm45fZZNe4KiertrL1etCq7NNtMB6Gh_0RS8HkttORj3hTljRbtj9jMwW8z1dZFWTLThrZwercWvOG7vbEPpMxWLTTnFKKBVm5jY5pP2t1jV9nMO27tBIcnfUv1eljT75HbHB-uOJq9tU3jfbvvHY
+schedule-key 1039041555
+schedule 
+signature "ReturnedFalse"
+path 0.0.0.0.0.0.0.0.0.0.0.1.1.1.1.1.1.1.1.1.1.1.1.1.1.0.0.0.0.0.0
+codec "json"
+value "{\"flags\":{\"session\":\"\",\"mode\":\"live\",\"name\":\"\"},\"ui\":{\"keyPrefix\":\"\",\"open\":false,\"screen\":\"list\",\"kind\":\"Tasks\",\"state\":\"open\",\"query\":\"\",\"selected\":0,\"dialog\":\"link\",\"role\":\"viewer\",\"status\":\"ready\",\"busy\":false,\"data\":{\"seq\":0,\"items\":[{\"number\":0,\"githubId\":0,\"title\":\"\",\"body\":\"\",\"author\":\"\",\"age\":\"\",\"state\":\"open\",\"labels\":[],\"parent\":0,\"task\":\"Queued\",\"assignee\":\"\",\"vip\":\"In review\",\"review\":\"\",\"path\":\"\",\"comments\":0,\"notes\":[]}]},\"title\":\"\",\"summary\":\"\",\"example\":\"\",\"prior\":\"\",\"comment\":\"\",\"parent\":\"\",\"assignee\":\"\",\"step\":0,\"error\":\"\",\"serial\":0}}"
+# ReturnedFalse
+# {"flags":{"session":"","mode":"live","name":""},"ui":{"keyPrefix":"","open":false,"screen":"list","kind":"Tasks","state":"open","query":"","selected":0,"dialog":"link","role":"viewer","status":"ready","busy":false,"data":{"seq":0,"items":[{"number":0,"githubId":0,"title":"","body":"","author":"","age":"","state":"open","labels":[],"parent":0,"task":"Queued","assignee":"","vip":"In review","review":"","path":"","comments":0,"notes":[]}]},"title":"","summary":"","example":"","prior":"","comment":"","parent":"","assignee":"","step":0,"error":"","serial":0}}

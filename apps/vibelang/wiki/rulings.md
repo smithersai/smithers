@@ -103,6 +103,62 @@ All of the following are from Will's message of 2026-11-07, about 00:30 PST, unl
 - **VL-25. Sandboxes with minute allowances.** "Users should be able to spin up sandboxes and get different amoutns of
   minutes."
 
+- **VL-27. Dark only, for now.** On 2026-11-07, Will said the splash's videos and pictures looked bad in light
+  mode: "they should be light mode in light mode and dark mode in dark mode for all the pictures and stuff". Then:
+  "Do the opposite for now and just make vibelang dark mode only and leave a note in wiki why". See decision 0013.
+
+- **VL-28. Learn more is the primary action and starts a tour the agent drives; Ask the agent and Contribute are
+  secondary; Escape ends the tour.** Will, 2026-11-07: "It should say ask the agent as a secondary button the primary
+  button should just be learn more and another secondary button should be contribute. Learn more should take us to
+  docs and start a tutorial where we have a glow around the entire screen to signify the agent is controlling escape
+  escapes it or clicking the thing that says escape escapes it and the agent talks about vibelang and what it is and
+  what this open source coding factory is". See decision 0014.
+
+- **VL-29. Finish everything asked for, held to 100% coverage by every suite, fuzzing from our Effect fork as a
+  package, formal proofs of all functionality, the mythical history, and a designer's design for every feature that
+  has no UI yet.** Will, 2026-11-07 about 21:15: "can you keep going getting everything I asked for first includin
+  g100% test coverage benchmark test coverage fuzz test coverage (you can copy the code we wrote in a fork of smithers
+  for this copy it into this repo as a package) and make sure all functionality is formally verified. Get everything
+  including the mythical history. Any features without UI have a high quality designer agent design it". The fork is
+  `github.com/smithersai/effect`, whose `effect/Fuzz`, `effect/testing/FuzzSimulation` and `it.effect.fuzz` are the
+  code to copy.
+
+- **VL-30. A visible switch into Mock mode, where every feature works.** Will, 2026-11-08 (relayed 19:20Z): "I don't
+  see any in app button to switch into mocked mode to use the entire app and every feature I asked for. There should be
+  nothing blocking that and that allows me to verify we are at least building the correct thing earlier." The top bar's
+  Live/Mock switch and ⌘K's `/mock` and `/live` do it; see decision 0004.
+
+- **VL-31. Learn more is a live tutorial in a theatre mode: the agent drives the real app, and it works with the sound
+  off.** Will, 2026-11-08 about 11:35 PST (relayed): "The learn more is not very good it should work with sound off. We
+  have old specs maybe in ~/smithers/.specs or maybe they are gone but it switched to like a theatre mode and worked
+  really well as a like a live tutorial of how to use vibelang. This should be exactly that. A live tutorial of an agent
+  controlling the app (which it has because we treat all state transitions as "smithers workflows" and smithers
+  workflows attatched to ui elements can also be triggered by the agent itself". Then: don't look for the old spec; a
+  designer's onboarding design (subtitles, optional sound, the agent driving the app through its real flows) comes
+  first. Replaces VL-28's narrated tour where they differ.
+- **VL-32. Both acceptance gates of the coding factory are built here (PROC-28).** A proposal (a VIP) is accepted only
+  when a maintainer, a person, approves it; an agent review never accepts one. The specification written from accepted
+  proposals is accepted only when Codex Astra, Codex Sol, Claude Fable and Claude Opus all answer LGTM with A- or better;
+  after that it stays self-consistent while it is built optimistically and fuzz tested. Will, 2026-11-08 11:20 PST: "I
+  believe acceptance involved writing a spec and a review of 4 agents astra sol fable and opus all saying lgtm A grade";
+  11:22: "Not for the VIP for the spec we reached acceptance in past. The VIP are personally approved by me and then the
+  spec needs to be self consistent and optimistically built fuzz tested etc."; about 11:23: "This is important because
+  this is the general core of hwo our coding factory works btw". Relayed the same day: it gets built in
+  vibelang.smithers.sh.
+  **2026-11-09 addenda:** Will, 04:25 PST: "Yes a- counts" (PROC-28, Smithers main `080d48c6`). A+, A and A-
+  pass when all four answer LGTM on the same revision. The confirmed passing panel is `v6` (2026-10-29 UTC;
+  `~/vibe/review-spec/v6` on nyc-01), as corrected in Smithers main `c27bfe7f`; the earlier `r6` did not pass.
+  The lang lead, under Will's delegation (`factory/open`,
+  question 3), decided: "after acceptance, a specification change does not reset the four reviewers; automated
+  checks keep it self-consistent, and a full panel runs again for a release." The project's revision policy is
+  `"keep"`; both policies remain proved. See [0027](decisions/0027-acceptance-gates.md#vl-32-addenda-2026-11-09-lane-vl-gates2).
+
+- **VL-33. Sign-in reuses smithers.sh's GitHub callback; no new redirect URLs.** Will, 2026-11-09 11:19Z (Telegram,
+  answering the request to add vibelang.smithers.sh's callback to the GitHub App): "Smithers.sh should support this
+  without needing to add new redirect urls. Just keep reusing Smithers.sh somehow". Any hosted site (a subdomain or a
+  custom domain) signs in through smithers.sh's existing callback, which hands the session back to the requesting site.
+  A general Smithers capability, in the shared auth code. Replaces 0019's per-site callback.
+
 ## Process
 
 - **VL-26. Go fast and in parallel; dogfood at once: the agent through the MCP server, skill or CLI, Will through the

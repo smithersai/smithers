@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 74
+bias 2
+null-prototype false
+key 2002222333
+tape ygrucpTJYi09y6N17dK23LzKfvgg8qa1SybZT-Z5B5vndXlj
+schedule-key 3700105898
+schedule 
+signature "ReturnedFalse"
+path 2
+codec "json"
+value "{\"kind\":2,\"text\":\"\\ud800\",\"id\":0,\"fault\":false,\"length\":\"-1\"}"
+# ReturnedFalse
+# {"kind":2,"text":"\ud800","id":0,"fault":false,"length":"-1"}

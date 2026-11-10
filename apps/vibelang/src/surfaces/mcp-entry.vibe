@@ -2,7 +2,10 @@
 // The Factory MCP server's process: `--mock`, `VIBELANG_FACTORY`, and stdio for the protocol (0009-surfaces.md).
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
 import * as NodeServices from "@effect/platform-node/NodeServices"
-import { mcp } from "./mcp.vibe"
+import "vibelang/register"
+
+// Install the source loader before importing workspace packages containing .vibe modules.
+const { mcp } = await import("./mcp.vibe")
 
 export effect function main() {
   const args = try (try Stdio.Stdio).args

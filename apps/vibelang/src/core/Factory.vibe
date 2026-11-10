@@ -1,27 +1,66 @@
 // The factory's API: one Effect service every surface calls, the web app, the CLI, the MCP server and the skill
-// (wiki/decisions/0002-core-is-an-effect-api.md). Two layers provide it: `MockFactory` (no backend, no model) and the
-// live one that talks to vibelang.smithers.sh.
+// (wiki/decisions/0002-core-is-an-effect-api.md). Its backends are `MockFactory` (no backend, no model) and the live
+// one that talks to vibelang.smithers.sh. The browser wrapper selects one after rendering.
+import type { Accounts, Policy } from "./roles.vibe"
+import type { IssuesApi } from "./issueSchemas.vibe"
+import type { WikiApi } from "./wikiSchemas.vibe"
 import type { Event } from "./conversation.vibe"
-import { ReadSnapshot } from "./schemas.vibe"
+import { Seq, ReadSnapshot } from "./schemas.vibe"
 export { Entry as EntrySchema, EventSchema, ReadSnapshot } from "./schemas.vibe"
 
 /** Which backend a `Factory` talks to. */
 export type Mode = "mock" | "live"
 
-/** vibelang.smithers.sh couldn't be reached, or answered with something that isn't the protocol. */
-export error Unavailable { reason: string }
+/** The sandbox visible in a conversation. Minutes are per role and UTC month; terminal output is user content. */
+export schema SandboxSnapshot {
+  readonly id: string
+  readonly generation: Seq
+  readonly sequence: Seq
+  readonly status: "stopped" | "starting" | "running" | "failed"
+  readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"
+  readonly allowance: number
+  readonly used: number
+  readonly remaining: number
+  readonly resetAt: number
+  readonly output: string
+}
 
-/** The sequencer refused a post: `empty`, `too-long`, `duplicate`, `busy` or `not-replying`. */
-export error Refused { refusal: string }
+/** vibelang.smithers.sh couldn't be reached, or answered with something that isn't the protocol. */
+export schema error Unavailable { reason: string }
+
+/** The sequencer refused a post: `empty`, `too-long`, `duplicate`, `busy`, `not-replying` or `full`. */
+export schema error Refused { refusal: string }
 
 /**
  * The factory. `post` asks the sequencer to record a person's message; the agent answers on its own, and every
- * client sees the answer through `events`. `events(conversation, after)` replays the conversation's events numbered
+ * client sees the answer through `events`. `tour` asks the agent to tour VibeLang's docs, and `endTour` stops it. `events(conversation, after)` replays the conversation's events numbered
  * above `after`, then follows new ones until the stream is closed.
  */
 export service Factory {
-  readonly mode: Mode
+  readonly issues?: IssuesApi
+  readonly wiki?: WikiApi
+
+  /** The browser resolves its backend after rendering; operations wait while mode is pending. */
+  readonly mode: Mode | "pending"
+  readonly accounts?: Accounts.Shape
+  /** The product mock exposes its actual policy; live authorization stays on the host. */
+  readonly policy?: Policy.Shape
   post(conversation: string, clientId: string, name: string, text: string): void!(Unavailable | Refused)
   read(conversation: string, after: number): ReadSnapshot!Unavailable
   events(conversation: string, after: number): Stream.Stream<Event, Unavailable>
+  /** Starts the agent's tour in `conversation` (Learn more); `busy` while the agent works there. */
+  tour(conversation: string): void!(Unavailable | Refused)
+  /** Ends the tour that runs in `conversation`; `not-replying` when none runs. */
+  openWiki(conversation: string, page: string): void!(Unavailable | Refused)
+  controlTour?(conversation: string, action: "pause" | "resume" | "seek", step: number): void!(Unavailable | Refused)
+  endTour(conversation: string): void!(Unavailable | Refused)
+  /** The one sandbox attached to a conversation, or a stopped empty snapshot. */
+  sandbox(conversation: string): SandboxSnapshot!(Unavailable | Refused)
+  /** Starts or resumes that sandbox through its durable flow. */
+  startSandbox(conversation: string, operationId: string): SandboxSnapshot!(Unavailable | Refused)
+  /** Stops its container while retaining its files. */
+  stopSandbox(conversation: string, operationId: string, generation: number): SandboxSnapshot!(Unavailable | Refused)
+  /** Sends one terminal command and returns output; production connects through the container terminal protocol. */
+  sandboxCommand(conversation: string, operationId: string, command: string, generation: number): string!(Unavailable | Refused)
 }
+

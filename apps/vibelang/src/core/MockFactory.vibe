@@ -1,14 +1,44 @@
+import { requestedSpecificationReview } from "./specification.vibe"
+import { MockJournal } from "./MockJournal.vibe"
+import { firstUndispatched } from "./flowDecision.vibe"
+import * as MockAccounts from "./MockAccounts.vibe"
+import { postName, type Identity } from "./roles.vibe"
+import type { IssuesApi } from "./issueSchemas.vibe"
+import { makeIssueFactory, makeIssueStore } from "./IssuesFactory.vibe"
+import { makeWikiFactory, makeWikiStore } from "./WikiFactory.vibe"
+import type { WikiApi } from "./wikiSchemas.vibe"
 // The factory with no backend and no model (wiki/decisions/0004-mock-mode.md). It runs the live factory's flows
 // (flows.vibe, 0011) on `@smthrs/engine`'s engine in memory, one engine per conversation as the live one has one per
 // conversation object: a post is a `vibelang/Post` execution whose steps record it and dispatch its reply, and each
-// reply is a `vibelang/Reply` execution, the scripted agent's (mockReplies.vibe), started oldest post first.
+// reply is a `vibelang/Reply` execution, the scripted agent's (mockReplies.vibe), started oldest post first. A tour is
+// a `vibelang/Tour` execution whose scripted agent opens the same stops and says the script's words (0014).
 import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
-import { Action, FlowRuntime } from "@smthrs/flow"
-import { apply, decide, empty, type Conversation, type Decision, type Event, type Intent } from "./conversation.vibe"
+import { Digest, SecureRandom } from "effect/crypto"
+import { Action, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { apply, empty, isTouring, type Conversation, type Event } from "./conversation.vibe"
+import { decide, type Decision, type Intent } from "./decide.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
-import { Post, postRegistration, Posts, Reply, replyIdOf, unanswered } from "./flows.vibe"
-import { chunks, mockReply } from "./mockReplies.vibe"
+import { TourControlBody } from "./wire.vibe"
+import {
+  PauseTour, ResumeTour, SeekTour, OpenWiki, openWiki, wikiRegistration, EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, ReplyStep, replyIdOf, StartTour, Tour, touring, tourRegistration,
+  Tours, unanswered, walkRegistration,
+} from "./flows.vibe"
+import { pages, requestedWiki } from "./wiki.vibe"
+import { ActionFailure } from "../actions/Actions.vibe"
+import { AgentActions } from "../actions/agent.vibe"
+import { Mythical } from "../history/MythicalHistory.vibe"
+import type { Principal } from "../history/roles.vibe"
+import { type HistoryPages, show } from "../history/tools.vibe"
+import type { Outline } from "../history/pages.vibe"
+import { matches } from "./mockDecision.vibe"
+import { makeMockSandboxes } from "./sandboxMock.vibe"
+import type { Role } from "./sandboxDecision.vibe"
+import { SandboxPolicy } from "./sandboxPolicy.vibe"
+import { chunks, HISTORY_WORDS, historyReply, mockReply } from "./mockReplies.vibe"
+
+/** Who the scripted agent reads the mythical history as: the agent for a person who has not signed in. */
+const MOCK_AGENT: Principal = { role: "viewer", name: "Guest", agent: true }
 
 /** One conversation's sequencer state and every event it numbered. */
 interface State {
@@ -31,17 +61,94 @@ interface Published {
 /** How long the scripted agent waits between the pieces of its reply. */
 export const MOCK_DELTA_DELAY = "25 millis"
 
+/** Reply starts that yield to a concurrently accepted tour; no conversation or text labels. */
+const replyStarts = Metric.counter("vibelang_mock_reply_starts", { incremental: true })
+
+/** A tour won the acceptance race; the same durable reply waits for it. */
+schema error ReplyBusy {}
+
 /** The scripted agent's reply to `post`, `vibelang/Reply`'s mock body: every record is a step. */
-effect function scripted(state: Ref.Ref<State>, record: (intent: Intent) => Decision!!, post: string) {
+effect function scripted(
+  handTour: (tour: string) => void!!,
+  state: Ref.Ref<State>,
+  record: (intent: Intent) => Decision!!,
+  post: string,
+  issues: IssuesApi,
+  wiki: Pick<WikiApi, "act">,
+  history: HistoryPages!!,
+  conversation: string,
+  sandboxTools: Pick<Factory.Shape, "startSandbox">,
+  ownsReply: () => boolean!!,
+) {
   const id = replyIdOf(post)
-  const started = try Action.make({
+  // The answer loop dispatches each unanswered post once, while no reply runs, so a tour accepted after dispatch is
+  // the only reason `StartReply` is refused (`busy`): `duplicate` and `not-replying` need a second dispatch of the
+  // post, and `full` needs 2^53 events, which journal replay renumbers.
+  try Action.make({
     name: "vibelang/reply/start",
-    success: Schema.Boolean,
-    execute: Effect.map(record({ type: "StartReply", id, inReplyTo: post }), (decision) => decision.ok),
+    error: ReplyBusy,
+    retryPolicy: patient,
+    execute: effect {
+      const decision = try record({ type: "StartReply", id, inReplyTo: post })
+      if (!decision.ok) {
+        try Metric.update(Metric.withAttributes(replyStarts, { outcome: "contended" }), 1)
+        try Effect.logInfo("vibelang.reply.start").pipe(Effect.annotateLogs({ outcome: "contended" }))
+        // The accepted tour's run belongs to the room's tour sequencer: hand it over and wait for that run to end. The
+        // engine then retries this same start action, preserving the post's reply execution and ordering.
+        try handTour(touring((try Ref.get(state)).conversation))
+        throw new ReplyBusy()
+      }
+    },
   })
-  if (!started) return null
-  const prompt = (try Ref.get(state)).conversation.entries.find((entry) => entry.id === post)?.text ?? ""
-  const pieces = chunks(mockReply(prompt))
+  // The answer loop dispatches only posts it read from this conversation, and entries are never removed.
+  const prompt = (try Ref.get(state)).conversation.entries.find((entry) => entry.id === post)!.text
+  const page = requestedWiki(prompt)
+  if (page !== undefined) try Action.make({ name: "vibelang/wiki/record", success: Schema.Boolean, execute: openWiki(id, page) })
+  // An explicit wiki request wins over action words inside its page title.
+  // Asked about the mythical history, the scripted agent reads it through the live agent's tool, as a step.
+  const specificationReview = page !== undefined ? undefined : try requestedSpecificationReview(issues, prompt, `${conversation}-${post}-specification`)
+  let text = specificationReview !== undefined ? specificationReview : page !== undefined ? `Opened ${page}.` : prompt.startsWith("File an issue:") || prompt === "Split #38 into three children, linked under it." ? "" : /\b(start|run|use|spin up)\b.*\bsandbox\b/i.test(prompt) ? (effect {
+    const snapshot = try sandboxTools.startSandbox(conversation, `agent-${id}`)
+    return `Started ${snapshot.id}.`
+  } catch () => "Couldn't start a sandbox") : matches(prompt.toLowerCase(), HISTORY_WORDS)
+    ? try Action.make({
+      name: "vibelang/history/show",
+      success: Schema.String,
+      // The mock history is in memory: reading it can't fail, and an outline request answers an outline.
+      execute: effect { return historyReply(try Effect.orDie(show(try history, { what: "outline" })) as Outline) },
+    })
+    : mockReply(prompt)
+  const { actions } = try AgentActions
+  const requested = /^run\s+(\/[a-z]+(?:\s+[\s\S]*)?)$/i.exec(prompt.trim())?.[1]
+  if (actions !== undefined && requested !== undefined) {
+    text = (effect {
+      if (!(try ownsReply())) throw new ActionFailure({ code: "forbidden" })
+      const runId = try Action.make({ name: "vibelang/actions/request", success: Schema.String, error: ActionFailure, execute: actions.command(requested, "agent") })
+      const run = try actions.read(runId)
+      try record({ type: "RequestAction", id: run.id, flow: run.flow, door: "agent", actor: "agent", at: run.started })
+      return `${run.flow.split("/").at(-1)!} requested.`
+    }) catch () => "Action unavailable."
+  }
+  let answer = text
+  const request = { number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "" }
+  if (prompt.startsWith("File an issue:")) {
+    const title = prompt.slice("File an issue:".length).trim()
+    const result = try Effect.result(issues.act({ ...request, op: "new", title, text: title, key: `${conversation}-${post}-file` }))
+    answer = result._tag === "Failure" ? "No issue filed." : `Filed #${result.success.selected}.\n\n[Open issue](#issue-${result.success.selected})`
+  } else if (prompt === "Split #38 into three children, linked under it.") {
+    let completed = 0
+    for (const [index, title] of ["Resolve module exports", "Check module cycles", "Document module imports"].entries()) {
+      const result = try Effect.result(issues.act({ ...request, op: "split", number: 38, title, text: title, key: `${conversation}-${post}-split-${index}` }))
+      if (result._tag === "Failure") break
+      completed += 1
+    }
+    answer = completed === 3 ? "Split #38 into three children, linked under it.\n\n[Open #38](#issue-38)" : `Filed ${completed} children.\n\n[Open #38](#issue-38)`
+  }
+  if (page !== undefined && /\bdraft\b/i.test(prompt)) {
+    const result = try Effect.result(wiki.act({ op: "draft", page, base: "", text: prompt, key: `${conversation}-${post}-wiki-draft` }))
+    answer = result._tag === "Failure" ? result.failure.reason === "forbidden" ? "Only contributors can draft wiki edits." : "Couldn't draft that edit." : `Drafted an edit to ${pages.find(entry => entry.id === page)!.label}. [Review it](#wiki-draft-${page})`
+  }
+  const pieces = chunks(answer)
   for (let index = 0; index < pieces.length; index++) {
     try sleep(MOCK_DELTA_DELAY)
     try Action.make({ name: `vibelang/reply/append/${index}`, execute: Effect.asVoid(record({ type: "AppendReply", id, text: pieces[index]! })) })
@@ -50,21 +157,64 @@ effect function scripted(state: Ref.Ref<State>, record: (intent: Intent) => Deci
   return null
 }
 
-effect function digestOf() {
+effect function cryptoOf() {
+  // A host or test may supply its own Digest; the mock otherwise uses the platform's.
+  const given = try Effect.serviceOption(Digest.Digest)
   provide WebCrypto.layer {
-    return try Digest.Digest
+    return { digest: Option.isSome(given) ? given.value : try Digest.Digest, random: try SecureRandom.SecureRandom }
   }
 }
 
+/** What a reply interrupted by a page reload reads, as a failed live reply does (worker/Reply.vibe `REASONS.failed`). */
+const INTERRUPTED = "The agent failed. Try again."
+const restoredReplies = Metric.counter("vibelang_mock_restored_replies", { description: "Mock replies a reload interrupted, failed on restore", incremental: true })
+
+/** A tour run the room's tour sequencer owes, and the signal its waiters read when the run ends. */
+interface TourRun {
+  readonly tour: string
+  readonly done: Deferred.Deferred<void>
+}
+
 /** The mock factory. Each layer build is its own world; closing that layer ends all work and subscriptions. */
-export const MockFactory = Layer.effect(Factory, effect {
+export function mockFactoryFor(role?: Role) {
+return Layer.effect(Factory, effect {
+  const journal = try MockJournal
   const scope = try Effect.scope
+  const accounts = try MockAccounts.make()
+  if (role !== undefined) try Effect.orDie(accounts.choose(role))
   const rooms = try Ref.make(new Map<string, Room>())
   const published = try acquireRelease(PubSub.unbounded<Published>(), PubSub.shutdown)
   const ids = try Ref.make(0)
   const executions = try Ref.make(0)
+  const sandboxAccounts = new Map<string, Pick<Factory.Shape, "sandbox" | "startSandbox" | "stopSandbox" | "sandboxCommand">>()
+  const sandboxLock = try Semaphore.make(1)
+  const sandboxForOwner = (owner: string) => Semaphore.withPermits(sandboxLock, 1)(effect {
+    let service = sandboxAccounts.get(owner)
+    if (service === undefined) {
+      const policy = Layer.succeed(SandboxPolicy, { current: effect () => ({ owner, role: try accounts.role(owner) }) })
+      service = try Effect.provideService(makeMockSandboxes(try accounts.role(owner), policy), Scope.Scope, scope)
+      sandboxAccounts.set(owner, service)
+    }
+    return service
+  })
+  const sandboxFor = effect {
+    const person = try Effect.orDie(accounts.current())
+    return try sandboxForOwner(person.id)
+  }
+  const sandboxes: Pick<Factory.Shape, "sandbox" | "startSandbox" | "stopSandbox" | "sandboxCommand"> = {
+    sandbox: effect (conversation) => try (try sandboxFor).sandbox(conversation),
+    startSandbox: effect (conversation, operationId) => try (try sandboxFor).startSandbox(conversation, operationId),
+    stopSandbox: effect (conversation, operationId, generation) => try (try sandboxFor).stopSandbox(conversation, operationId, generation),
+    sandboxCommand: effect (conversation, operationId, command, generation) => try (try sandboxFor).sandboxCommand(conversation, operationId, command, generation),
+  }
   // The engine digests what it journals, with the platform's Web Crypto.
-  const digest = try digestOf()
+  const crypto = try cryptoOf()
+  // The mythical history the scripted agent reads, built (and its snapshot downloaded) only when first asked about.
+  const history = try Effect.cached(effect {
+    const { MockMythical } = try promise(() => import("../history/MockMythical.vibe"))
+    const reader: HistoryPages = Context.get(try Layer.buildWithScope(MockMythical(MOCK_AGENT), scope), Mythical)
+    return reader
+  })
   // This lock only creates rooms. Acceptance and replies use each room's own lock and engine.
   const registry = try Semaphore.make(1)
   try Scope.addFinalizer(scope, Semaphore.withPermits(registry, 1)(Effect.void))
@@ -82,19 +232,44 @@ export const MockFactory = Layer.effect(Factory, effect {
         if (!decided.ok) return [decided, current]
         return [decided, { conversation: apply(current.conversation, decided.event), log: [...current.log, decided.event] }]
       })
+      if (decision.ok) try journal.write(conversation, (try Ref.get(state)).log)
       if (decision.ok) try PubSub.publish(published, { conversation, event: decision.event })
       return decision
     }))
   }
 
-  /** Answers every unanswered post, oldest first, each in its own `vibelang/Reply` execution, at most once. */
-  effect function answer(state: Ref.Ref<State>, engine: FlowRuntime.FlowRuntime["Service"], wake: Queue.Queue<void>) {
+  /**
+   * The room's tour sequencer, the one driver of every `vibelang/Tour` execution: it runs each handed-over tour in
+   * turn, marks it as the tour `Tours.wake` resumes, and completes the run's signal however the run ends.
+   */
+  effect function sequenceTours(engine: FlowRuntime.FlowRuntime["Service"], runs: Queue.Queue<TourRun>, activeTour: Ref.Ref<string>) {
+    while (true) {
+      const { tour, done } = try Queue.take(runs)
+      try Ref.set(activeTour, tour)
+      const exit = try Effect.exit(ensuring(Effect.orDie(Effect.asVoid(engine.execute(Tour, { executionId: `tour/${tour}`, payload: { tour } }))), Ref.set(activeTour, "")))
+      try Deferred.done(done, exit)
+    }
+  }
+
+  /**
+   * Runs the conversation's tour through the tour sequencer, then answers every unanswered post, oldest first, each in
+   * its own `vibelang/Reply` execution; each at most once.
+   */
+  effect function answer(state: Ref.Ref<State>, engine: FlowRuntime.FlowRuntime["Service"], wake: Queue.Queue<void>, handTour: (tour: string) => void!!) {
     const dispatched = new Set<string>()
     while (true) {
       try Queue.take(wake)
       while (true) {
-        const post = unanswered((try Ref.get(state)).conversation).find((id) => !dispatched.has(id))
-        if (post === undefined) break
+        const tour = touring((try Ref.get(state)).conversation)
+        if (tour !== "" && !dispatched.has(`tour/${tour}`)) {
+          dispatched.add(`tour/${tour}`)
+          try handTour(tour)
+          continue
+        }
+        const posts = unanswered((try Ref.get(state)).conversation)
+        const index = firstUndispatched(posts, dispatched)
+        if (index === posts.length) break
+        const post = posts[index]!
         dispatched.add(post)
         try Effect.orDie(engine.execute(Reply, { executionId: `reply/${post}`, payload: { post } }))
       }
@@ -107,44 +282,199 @@ export const MockFactory = Layer.effect(Factory, effect {
       const all = try Ref.get(rooms)
       const existing = all.get(conversation)
       if (existing !== undefined) return existing
-      const state = try Ref.make<State>({ conversation: empty, log: [] })
+      const retained = try journal.read(conversation)
+      const restored = retained.reduce(apply, empty)
+      try Ref.update(ids, value => Math.max(value, restored.seq))
+      const state = try Ref.make<State>({ conversation: restored, log: retained })
       const gate = try Semaphore.make(1)
       const wake = try Scope.provide(scope)(acquireRelease(Queue.sliding<void>(1), Queue.shutdown))
       const record = recorder(state, gate, conversation)
+      // Recorded with the accepted post; delayed replies never borrow the currently selected identity.
+      const postOwners = new Map<string, string>()
+      const postPeople = new Map<string, { readonly id: string; readonly login: string }>()
       const posts: Posts.Shape = {
-        record: effect (clientId: string, name: string, text: string) => {
+        // MockFactory.post always records its signed-in owner, "" when signed out.
+        record: effect (clientId: string, name: string, text: string, owner = "") => {
           const id = try nextId("m")
           const decision = try record({ type: "Post", id, clientId, name, text })
+          if (decision.ok) { postOwners.set(id, owner); postPeople.set(id, { id: owner, login: name }) }
           return decision.ok ? null : decision.refusal
         },
         dispatch: () => Effect.asVoid(Queue.offer(wake, undefined)),
       }
+      const cryptoLayer = Layer.mergeAll(Layer.succeed(Digest.Digest, crypto.digest), Layer.succeed(SecureRandom.SecureRandom, crypto.random))
+      const engine = Context.get(try Layer.buildWithScope(FlowEngine.layerMemory.pipe(Layer.provide(cryptoLayer)), scope), FlowRuntime.FlowRuntime)
+      const activeTour = try Ref.make("")
+      const tourRuns = try Scope.provide(scope)(acquireRelease(Queue.unbounded<TourRun>(), Queue.shutdown))
+      // Hands `tour`'s run to the tour sequencer and waits for that run to end. The run's execution id is the tour's, so
+      // a tour handed twice runs once: the second hand reads the recorded result.
+      const handTour = (tour: string) => effect {
+        const done = try Deferred.make<void>()
+        try Queue.offer(tourRuns, { tour, done })
+        try Effect.logInfo("vibelang.mock.tour").pipe(Effect.annotateLogs({ outcome: "handed" }))
+        try Deferred.await(done)
+      }
+      const accepted = (intent: Intent) => Effect.map(record(intent), (decision) => decision.ok)
+      const tours: Tours.Shape = {
+        start: effect () => {
+          const decision = try record({ type: "StartTour", id: try nextId("t") })
+          return decision.ok ? null : decision.refusal
+        },
+        dispatch: () => Effect.asVoid(Queue.offer(wake, undefined)),
+        end: effect () => {
+          const decision = try record({ type: "EndTour", id: touring((try Ref.get(state)).conversation) })
+          return decision.ok ? null : decision.refusal
+        },
+        wake: effect () => {
+          const tour = try Ref.get(activeTour)
+          if (tour !== "") try engine.resume(Tour, `tour/${tour}`)
+        },
+        current: () => Effect.map(Ref.get(state), state => state.conversation.walkthrough ?? null),
+        drive: effect (tour, step, target, duration) => {
+          try accepted({ type: "DriveWalkthrough", id: tour, step, target, duration, at: try Clock.currentTimeMillis })
+          return (try Ref.get(state)).conversation.walkthrough!
+        },
+        control: effect (action, step) => {
+          const current = (try Ref.get(state)).conversation
+          const tour = touring(current)
+          const at = try Clock.currentTimeMillis
+          const decision = try record(action === "seek" ? { type: "SeekTour", id: tour, step, at } : { type: action === "pause" ? "PauseTour" : "ResumeTour", id: tour, at })
+          return { tour, previous: current.walkthrough?.revision ?? 0, state: (try Ref.get(state)).conversation.walkthrough ?? null, refusal: decision.ok ? null : decision.refusal }
+        },
+        running: (tour: string) => Effect.map(Ref.get(state), (current) => isTouring(current.conversation, tour)),
+        open: (tour: string, url: string) => accepted({ type: "OpenPane", id: tour, url }),
+        say: effect (tour: string, text: string) => {
+          const entry = (try Ref.get(state)).conversation.entries.find((entry) => entry.id === tour)
+          return try accepted({ type: "AppendReply", id: tour, text: entry?.text ? `\n\n${text}` : text })
+        },
+        finish: (tour: string) => Effect.asVoid(record({ type: "FinishReply", id: tour })),
+        // Subscribe before reading the state, so the event that ends the tour can't fall between.
+        ended: (tour: string) => scoped(effect {
+          const live = try PubSub.subscribe(published)
+          if (!isTouring((try Ref.get(state)).conversation, tour)) return
+          try Stream.runDrain(Stream.fromSubscription(live).pipe(
+            Stream.takeUntil((item) => item.conversation === conversation && endsTour(item.event, tour)),
+          ))
+        }),
+      }
       const flows = Layer.mergeAll(
         postRegistration,
-        Layer.effectDiscard(effect {
-          const engine = try FlowRuntime.FlowRuntime
-          try engine.register(Reply, (payload) => scripted(state, record, payload.post))
-        }),
-      ).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(Posts, posts)), Layer.provide(Layer.succeed(Digest.Digest, digest)))
-      const engine = Context.get(try Layer.buildWithScope(flows, scope), FlowRuntime.FlowRuntime)
+        tourRegistration,
+        wikiRegistration,
+        walkRegistration,
+        Interpreter.layerWithImplementations(Reply, ReplyStep.toLayer(effect (payload: { readonly post: string }) => {
+          const person = postPeople.get(payload.post) ?? { id: "", login: "Guest" }
+          const forPoster: IssuesApi = {
+            read: effect () => try (try issuesForPerson(person)).read(),
+            act: effect (request) => try (try issuesForPerson(person)).act(request),
+          }
+          const wikiForPoster: Pick<WikiApi, "act"> = {
+            act: effect (request) => try (try wikiForPerson(person)).act(request),
+          }
+          return try Effect.orDie(withSpan(scripted(handTour, state, record, payload.post, forPoster, wikiForPoster, history, conversation, {
+            startSandbox: effect (room, operationId) => try (try sandboxForOwner(postOwners.get(payload.post) ?? "")).startSandbox(room, operationId),
+          }, effect () => (try Effect.orDie(accounts.current())).id === (postOwners.get(payload.post) ?? "")), "vibelang.reply"))
+        })),
+      ).pipe(
+        Layer.provide(Layer.succeed(FlowRuntime.FlowRuntime, engine)),
+        Layer.provide(Layer.mergeAll(Layer.succeed(Posts, posts), Layer.succeed(Tours, tours))),
+        Layer.provide(Layer.mergeAll(Layer.succeed(Digest.Digest, crypto.digest), Layer.succeed(SecureRandom.SecureRandom, crypto.random))),
+      )
+      try Layer.buildWithScope(flows, scope)
+      // A journal retained mid-reply has no execution left to finish that reply: fail it, so later posts are answered.
+      // A retained tour is different: the answer loop runs it again below.
+      if (restored.agent === "working" && !isTouring(restored, restored.replying)) {
+        try record({ type: "FailReply", id: restored.replying, reason: INTERRUPTED })
+        try Metric.update(restoredReplies, 1)
+        try Effect.logInfo("vibelang.mock.restore").pipe(Effect.annotateLogs({ outcome: "reply-failed" }))
+      }
       const room: Room = { state, engine }
       try Ref.set(rooms, new Map(all).set(conversation, room))
-      try Effect.forkIn(answer(state, engine, wake), scope)
+      try Effect.forkIn(sequenceTours(engine, tourRuns, activeTour), scope)
+      try Effect.forkIn(answer(state, engine, wake, handTour), scope)
+      if (retained.length > 0) try Queue.offer(wake, undefined)
       // Wait for any already-accepted commit/publish before disposal completes. New calls see Closed.
       try Scope.addFinalizer(scope, Semaphore.withPermits(gate, 1)(Effect.void))
       return room
     }))
   }
 
+  // Each actor has its own journal and fresh policy, while every actor reads the same project and atomic writer.
+  const issueStore = try cached(makeIssueStore())
+  const issueActors = new Map<string, IssuesApi>()
+  const issueLock = try Semaphore.make(1)
+  const issuesForPerson = (person: Pick<Identity, "id" | "login" | "agent">) => Semaphore.withPermits(issueLock, 1)(effect {
+    const actorKey = person.id + (person.agent === true ? "/agent" : "/person")
+    let api = issueActors.get(actorKey)
+    if (api === undefined) {
+      api = try Effect.provideService(makeIssueFactory(effect () => ({ ...person, kind: person.agent === true ? "agent" as const : "person" as const, role: try accounts.role(person.id) }), id => Effect.orDie(accounts.participated(id)), try issueStore), Scope.Scope, scope)
+      issueActors.set(actorKey, api)
+    }
+    return api
+  })
+  const issues: IssuesApi = {
+    read: effect () => try (try issuesForPerson(try Effect.orDie(accounts.current()))).read(),
+    act: effect (request) => try (try issuesForPerson(try Effect.orDie(accounts.current()))).act(request),
+  }
+  // One shared fixture repository; each actor's own journal and fresh policy, exactly like issues.
+  const wikiStore = try cached(makeWikiStore())
+  const wikiActors = new Map<string, WikiApi>()
+  const wikiLock = try Semaphore.make(1)
+  const wikiForPerson = (person: Pick<Identity, "id" | "login" | "agent">) => Semaphore.withPermits(wikiLock, 1)(effect {
+    const actorKey = person.id + (person.agent === true ? "/agent" : "/person")
+    let api = wikiActors.get(actorKey)
+    if (api === undefined) {
+      api = try Effect.provideService(makeWikiFactory(effect () => ({ ...person, kind: person.agent === true ? "agent" as const : "person" as const, role: try accounts.role(person.id) }), try wikiStore), Scope.Scope, scope)
+      wikiActors.set(actorKey, api)
+    }
+    return api
+  })
+  const wiki: WikiApi = {
+    read: effect (page) => try (try wikiForPerson(try Effect.orDie(accounts.current()))).read(page),
+    act: effect (request) => try (try wikiForPerson(try Effect.orDie(accounts.current()))).act(request),
+  }
   const mode: Mode = "mock"
   return {
     mode,
+    accounts,
+    issues,
+    policy: accounts.policy,
+    wiki,
     post: effect (conversation: string, clientId: string, name: string, text: string) => {
+      const identity = try Effect.orDie(accounts.current())
       const room = try openRoom(conversation)
       const executionId = `post/${try Ref.updateAndGet(executions, (value) => value + 1)}`
-      const refusal = try Effect.orDie(room.engine.execute(Post, { executionId, payload: { clientId, name, text } }))
+      const refusal = try Effect.orDie(room.engine.execute(Post, { executionId, payload: { clientId, name: postName(identity, name), text, owner: identity.id } }))
+      if (refusal !== null) throw new Refused({ refusal })
+      try Effect.orDie(accounts.participated(identity.id))
+    },
+    openWiki: effect (conversation: string, page: string) => {
+      const room = try openRoom(conversation)
+      const executionId = `wiki/${try Ref.updateAndGet(executions, value => value + 1)}`
+      const opened = try Effect.orDie(room.engine.execute(OpenWiki, { executionId, payload: { page } }))
+      if (!opened) throw new Refused({ refusal: "empty" })
+    },
+    tour: effect (conversation: string) => {
+      const room = try openRoom(conversation)
+      const executionId = `start-tour/${try Ref.updateAndGet(executions, (value) => value + 1)}`
+      const refusal = try Effect.orDie(room.engine.execute(StartTour, { executionId, payload: {} }))
       if (refusal !== null) throw new Refused({ refusal })
     },
+    controlTour: effect (conversation, action, step) => {
+      // The Worker answers a body outside the protocol with 400, which the live Factory reads as Unavailable.
+      if (!Schema.is(TourControlBody)({ action, step }) || step > 11) throw new Unavailable({ reason: "tour control answered 400" })
+      const room = try openRoom(conversation)
+      const executionId = `control-tour/${try Ref.updateAndGet(executions, value => value + 1)}`
+      const refusal = try Effect.orDie(action === "pause" ? room.engine.execute(PauseTour, { executionId, payload: {} }) : action === "resume" ? room.engine.execute(ResumeTour, { executionId, payload: {} }) : room.engine.execute(SeekTour, { executionId, payload: { step } }))
+      if (refusal !== null) throw new Refused({ refusal })
+    },
+    endTour: effect (conversation: string) => {
+      const room = try openRoom(conversation)
+      const executionId = `end-tour/${try Ref.updateAndGet(executions, (value) => value + 1)}`
+      const refusal = try Effect.orDie(room.engine.execute(EndTour, { executionId, payload: {} }))
+      if (refusal !== null) throw new Refused({ refusal })
+    },
+    ...sandboxes,
     read: effect (conversation: string, after: number) => {
       // Reading never opens a room: a conversation nobody posted to or followed is empty.
       const room = (try Ref.get(rooms)).get(conversation)
@@ -171,3 +501,6 @@ export const MockFactory = Layer.effect(Factory, effect {
       }),
   }
 })
+
+}
+export const MockFactory = mockFactoryFor()

@@ -208,6 +208,7 @@ export const buildPrivateEffectAdapters = async (packageRoot, { distRoot = join(
       throw new Error(`Private adapter changed during build: ${input.name}/${input.path}`)
     }
   }
+  let needsWebSocketTypes = false
   for (const [name, adapter] of adapters) {
     for (const file of adapter.sources.filter((file) => file.endsWith(".d.ts"))) {
       for (const branch of [vendor, join(vendor, "cjs")]) {
@@ -217,6 +218,13 @@ export const buildPrivateEffectAdapters = async (packageRoot, { distRoot = join(
         }
         for (const target of targets) {
           const text = rewrite(ts, await readFile(file, "utf8"), (value, node) => {
+            // ws has separate import/require type entries. Its require entry uses export=,
+            // so preserve a star re-export through an ESM declaration bridge instead.
+            if (branch !== vendor && value === "ws" && ts.isExportDeclaration(node) && !node.exportClause) {
+              needsWebSocketTypes = true
+              return { statement: (node.isTypeOnly ? "export type * from " : "export * from ") +
+                JSON.stringify(specifier(target, join(vendor, "ws.mjs"))) + ";" }
+            }
             // CJS declarations cannot namespace-re-export an export= dependency.
             // Preserve the same namespace binding without changing its runtime.
             if (
@@ -244,6 +252,7 @@ export const buildPrivateEffectAdapters = async (packageRoot, { distRoot = join(
       }
     }
   }
+  if (needsWebSocketTypes) await writeFile(join(vendor, "ws.d.mts"), 'export * from "ws";\n')
   await mkdir(join(vendor, "cjs"), { recursive: true })
   await writeFile(join(vendor, "cjs/package.json"), "{\"type\":\"commonjs\"}\n")
   for (const entry of Object.keys(entryPoints)) {

@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": ".",
+    "outDir": "dist-script-tests",
+    "types": [
+      "node"
+    ],
+    "sourceMap": true,
+    "inlineSources": true
+  },
+  "include": [
+    "scripts/**/*.vibe"
+  ]
+}

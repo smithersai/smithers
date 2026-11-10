@@ -39,7 +39,13 @@ browser / CLI / MCP ── LiveFactory (HttpClient) ──▶ site Worker ──
 - **`LiveFactory`** (`src/core/LiveFactory.vibe`) is the `Factory` layer over this protocol (`src/core/wire.vibe`)
   with Effect's `HttpClient`. The browser uses it when its origin's `/api/health` says `agent: "live"`, else the mock;
   `?agent=mock` or the `vibelang.agent` storage key set to `mock` forces the mock, which the deployed browser suites
-  use (VL-13). The CLI and MCP server use it unless `--mock` or `VIBELANG_FACTORY=mock`, at `VIBELANG_FACTORY_URL`
+  use (VL-13). Startup never waits on that request: `src/web/startup.vibe` renders and starts keyboard subscriptions
+  with an immediately available Factory and mode `pending`. `src/web/backend.vibe` owns one scoped selection fiber;
+  `post`, `read` and `events` wait on its shared result. A health failure, invalid response or three-second timeout
+  selects the mock permanently for that page; forced mock skips health entirely. Only a chosen mock downloads its
+  module. A `ResolvedMode` message updates the mode and Mock pill independently of conversation traffic. Disposing
+  the runtime cancels the probe and releases the chosen backend. This uses Effect's existing Layer, Scope and Fiber
+  primitives (0001), retaining the real Factory API for every surface. The CLI and MCP server use it unless `--mock` or `VIBELANG_FACTORY=mock`, at `VIBELANG_FACTORY_URL`
   (default `https://vibelang.smithers.sh`); a deployment whose health says `mock`, or that can't be reached, fails
   with `LiveBackendNotDeployed`.
 

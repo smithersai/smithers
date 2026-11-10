@@ -1,0 +1,70 @@
+// The mythical history's commands (src/surfaces/commands.vibe; wiki/decisions/0020-mythical-history.md), the agent's
+// way in through the CLI and the MCP server: the same flows a person runs in the view, as the agent for its person.
+import { describe, expect, it } from "@effect/vitest"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+import { SURFACE_PRINCIPAL } from "../src/surfaces/backend.vibe"
+import { AddNote, PlanWork, ShowHistory, StartWork } from "../src/surfaces/commands.vibe"
+
+/** A small bootstrapped history: The compiler (m1, m2) and Docs (m3), all landed. */
+const small = () => {
+  const commits = ["fix(compiler): one", "docs: two", "fix(compiler): three"].map((description, index) => ({
+    sha: `${index + 1}`.padStart(12, "0"), change: "", description, parents: index === 0 ? [] : [`${index}`.padStart(12, "0")],
+  }))
+  return Effect.succeed(replay(intentsOf(seedOf("o/r", commits, []))).history)
+}
+
+const mock = MockMythical(SURFACE_PRINCIPAL, small)
+
+describe("the history commands", () => {
+  it.effect("read the epics, the open work and one commit in full", () => effect {
+    provide mock {
+      const summary = try ShowHistory.run({})
+      const detail = try ShowHistory.run({ commit: "m2" })
+      const text = try ShowHistory.render({ commit: "m1" }, false)
+      try Effect.try(() => {
+        expect(summary).toMatchObject({ main: "000000000003", open: [], commit: null })
+        expect(summary.epics).toEqual([{ id: "e1", title: "The compiler", commits: 2 }, { id: "e2", title: "Docs, guides and the site", commits: 1 }])
+        expect(detail.commit).toMatchObject({ id: "m2", title: "fix(compiler): three", state: "landed", real: ["000000000003"] })
+        expect(text).toContain("m1  landed  fix(compiler): one")
+      })
+    }
+  })
+
+  it.effect("plan, start and note as the agent, signed as it", () => effect {
+    provide mock {
+      const planned = try PlanWork.run({ title: "fix(compiler): four", epic: "e1", task: "t1" })
+      try StartWork.run({ id: planned.id, lane: "lane-a" })
+      try AddNote.run({ id: planned.id, section: "tried", text: "A cache; it went stale." })
+      const after = try ShowHistory.run({ commit: planned.id })
+      try Effect.try(() => {
+        expect(planned).toEqual({ id: "m4" })
+        expect(after.open).toEqual([{ id: "m4", state: "working", title: "fix(compiler): four" }])
+        expect(after.commit).toMatchObject({ lane: "lane-a", task: "t1" })
+        expect(after.commit!.notes).toEqual(["tried: A cache; it went stale. (Factory CLI (agent))"])
+      })
+    }
+  })
+
+  it.effect("insert and amend for the agent's maintainer, and report refusals and bad input as errors", () => effect {
+    provide mock {
+      const inserted = try PlanWork.run({ title: "fix(compiler): first", before: "m1" })
+      try PlanWork.run({ title: "", amend: "m2", task: "t9" })
+      const amended = try ShowHistory.run({ commit: "m2" })
+      const errors = [
+        PlanWork.run({ title: "x", epic: "e9" }) catch (error) => error.message,
+        StartWork.run({ id: "m1", lane: "a" }) catch (error) => error.message,
+        AddNote.run({ id: "m1", section: "lies", text: "x" }) catch (error) => error.message,
+        ShowHistory.run({ commit: "m99" }) catch (error) => error.message,
+      ]
+      try Effect.try(() => {
+        expect(inserted).toEqual({ id: "m4" })
+        expect(amended.commit).toMatchObject({ state: "planned", task: "t9" })
+        expect(errors[0]).toBe("The history refused it: unknown")
+        expect(errors[1]).toBe("The history refused it: state")
+        expect(errors[2]).toContain("section")
+        expect(errors[3]).toBe("No mythical commit m99.")
+      })
+    }
+  })
+})

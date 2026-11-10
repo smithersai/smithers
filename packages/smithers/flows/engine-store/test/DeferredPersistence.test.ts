@@ -18,6 +18,12 @@ import * as DeferredPersistence from "../src/internal/DeferredPersistence.ts"
 import * as Migrations from "../src/Migrations.ts"
 import { withCrypto } from "./Sha256.ts"
 
+/** The stored row of a completion for a run the store has. */
+const storedRow = (outcome: DurableEngineState.CompleteDeferredOutcome): DurableEngineState.DeferredRow => {
+  if (outcome._tag === "NotFound") throw new Error("completion refused: no such run")
+  return outcome.row
+}
+
 const owner = {
   hostId: "deferred-test",
   pid: 1,
@@ -143,7 +149,7 @@ describe("DeferredPersistence", () => {
           exit,
           completedAtMs: 0
         })
-        expect(completed.row.exit).toEqual(exit)
+        expect(storedRow(completed).exit).toEqual(exit)
       }
 
       for (const field of ["failures", "reasons"]) {
@@ -154,7 +160,7 @@ describe("DeferredPersistence", () => {
           exit: { _id: "Exit", _tag: "Failure", cause: { [field]: [{ _tag: "Fail", error: "stored" }] } },
           completedAtMs: 0
         })
-        expect(completed.row.exit).toEqual(Exit.fail("stored"))
+        expect(storedRow(completed).exit).toEqual(Exit.fail("stored"))
       }
 
       const interrupted = yield* state.completeDeferred({
@@ -168,8 +174,8 @@ describe("DeferredPersistence", () => {
         },
         completedAtMs: 0
       })
-      expect(Exit.isFailure(interrupted.row.exit as Exit.Exit<unknown, unknown>)).toBe(true)
-      expect((interrupted.row.exit as Exit.Failure<unknown, unknown>).cause.reasons[0]).toMatchObject({
+      expect(Exit.isFailure(storedRow(interrupted).exit as Exit.Exit<unknown, unknown>)).toBe(true)
+      expect((storedRow(interrupted).exit as Exit.Failure<unknown, unknown>).cause.reasons[0]).toMatchObject({
         _tag: "Interrupt",
         fiberId: 7
       })
@@ -304,6 +310,23 @@ describe("DeferredPersistence", () => {
       expect(Option.getOrThrow(yield* withCrypto(state.deferred(address))).metadata).toEqual({
         correlationId: "opaque"
       })
+    }))
+
+  it.effect("completes nothing, journals nothing and resumes nothing for a run that does not exist", () =>
+    Effect.gen(function*() {
+      const state = DurableEngineState.makeMemory({ runs: () => Option.none() })
+      const events: Array<string> = []
+      const resumes: Array<string> = []
+      const address = { flowName: TestFlow._tag, executionId: "never-started", deferredName: "answer" }
+
+      yield* withCrypto(Effect.scoped(Effect.gen(function*() {
+        const service = yield* build(state, makeJournal(events), resumes)
+        yield* service.deferredDone({ ...address, exit: Exit.succeed("early") })
+      })))
+
+      expect(events).toEqual([])
+      expect(resumes).toEqual([])
+      expect(Option.isNone(yield* withCrypto(state.deferred(address)))).toBe(true)
     }))
 
   it.effect("reads a completion from a fresh persistence instance", () =>

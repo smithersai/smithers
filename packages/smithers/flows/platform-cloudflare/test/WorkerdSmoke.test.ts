@@ -1,3 +1,4 @@
+import vibelang from "vibelang-unplugin/esbuild"
 /**
  * The workerd smoke, run when a host opts in with `FLOWS_WORKERD_SMOKE=1`.
  *
@@ -32,6 +33,7 @@ const entry = fileURLToPath(new URL("./workerd/worker.ts", import.meta.url))
 /** The Worker as one ES module, with the runtime's own modules left for workerd. */
 const bundle = async () => {
   const result = await build({
+    plugins: [vibelang()],
     entryPoints: [entry],
     bundle: true,
     write: false,

@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 19
+bias 5
+null-prototype false
+key 3148088909
+tape 6xEis9SvrfmTZZqJClGaDALWeDFV0nugqiIBAkNZdKIO0nTdfuWEle9MQnT7MFWM37qOTnsy-hLe0WaZXNOBXiFF6zJkxT9YVoIjaKnipb4LCfsg9XMT1Q_PxsB-g90JGhgO261HaK6PZn0Lyh6W1jURWpvOLxmKQW8AiYFYNVinbQNgfBifrA
+schedule-key 3985817621
+schedule 
+signature "ReturnedFalse"
+path 0.0.0.1
+codec "json"
+value "{\"person\":\"2\",\"grant\":\"maintainer\",\"target\":\"2\",\"resume\":false,\"badOrigin\":false,\"badMethod\":false,\"resumeGarbage\":false,\"badGithubId\":false,\"connectSignedOut\":false,\"grantGarbage\":false,\"grantOversized\":false,\"crossOrigin\":true,\"text\":\"\"}"
+# ReturnedFalse
+# {"person":"2","grant":"maintainer","target":"2","resume":false,"badOrigin":false,"badMethod":false,"resumeGarbage":false,"badGithubId":false,"connectSignedOut":false,"grantGarbage":false,"grantOversized":false,"crossOrigin":true,"text":""}

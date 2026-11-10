@@ -1,0 +1,57 @@
+// The chat reads its sandbox every second only while one runs or its pane is open. Otherwise it reads once per change
+// to the conversation, so an idle page sends no request each second (live) and runs no meter flow each second (mock),
+// and a sandbox the agent starts still opens its pane.
+import { expect, it } from "@effect/vitest"
+import { vi } from "vitest"
+import { Runtime } from "foldkit"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { Ask } from "../src/surfaces/commands.vibe"
+import { init } from "../src/web/main.vibe"
+import { application } from "./support/application.vibe"
+import { activeId, commandK, container, hasAsk, remove, send } from "./support/browser.ts"
+
+it.live("an idle chat does not read its sandbox every second; a running one does", () => scoped(effect {
+  provide mockFactoryFor("contributor") {
+    const factory = try Factory
+    let reads = 0
+    // The real Factory, observed: each read the page asks for is counted.
+    const observed = Layer.succeed(Factory, {
+      get mode() { return factory.mode },
+      post: (conversation, clientId, name, text) => factory.post(conversation, clientId, name, text),
+      read: (conversation, after) => factory.read(conversation, after),
+      openWiki: (conversation, page) => factory.openWiki(conversation, page),
+      events: (conversation, after) => factory.events(conversation, after),
+      tour: (conversation) => factory.tour(conversation),
+      endTour: (conversation) => factory.endTour(conversation),
+      sandbox: (conversation) => { reads++; return factory.sandbox(conversation) },
+      startSandbox: (conversation, operationId) => factory.startSandbox(conversation, operationId),
+      stopSandbox: (conversation, operationId, generation) => factory.stopSandbox(conversation, operationId, generation),
+      sandboxCommand: (conversation, operationId, command, generation) => factory.sandboxCommand(conversation, operationId, command, generation),
+    })
+    let latest = init({ session: "will", name: "Will", mode: "mock" }).model
+    const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+    const program = try Effect.try(() => application(node, observed, (model) => { latest = model }))
+    try acquireRelease(
+      sync(() => Runtime.embed(program, { flags: succeed({ session: "will", name: "Will", mode: "mock" as const }) })),
+      (handle) => sync(() => handle.dispose()),
+    )
+    try promise(() => vi.waitFor(() => expect(hasAsk()).toBe(true)))
+    try sync(commandK)
+    try promise(() => vi.waitFor(() => expect(activeId()).toBe("vl-palette-prompt")))
+    try sync(() => send("How do I install it?"))
+    try promise(() => vi.waitFor(() => expect(latest.client.conversation.entries.map((entry) => entry.done)).toEqual([true, true]), { timeout: 4000 }))
+    try Effect.try(() => expect(latest.surface).toBe("chat"))
+    try promise(() => vi.waitFor(() => expect(latest.sandbox).toBeDefined()))
+    const idle = reads
+    try sleep("3500 millis")
+    try Effect.try(() => expect(reads - idle).toBe(0))
+    // The agent starts a sandbox from the chat; the page sees it run and opens its pane.
+    try Ask.run({ text: "start a sandbox" })
+    try promise(() => vi.waitFor(() => expect(latest.sandbox?.status).toBe("running"), { timeout: 4000 }))
+    try Effect.try(() => expect(latest.sandboxPane).toBe("pane"))
+    const running = reads
+    try sleep("2500 millis")
+    try Effect.try(() => expect(reads - running).toBeGreaterThanOrEqual(2))
+  }
+}))

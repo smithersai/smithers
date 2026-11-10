@@ -13,16 +13,32 @@ brick                                   state         proof
 1c  dogfooding surfaces                 done (mock)   CLI, MCP server and skill over Factory; 21 surface tests plus the existing
                                                       25 tests; emitted CLI + stdio McpClient + exact schema parity (0009).
                                                       Live mode uses LiveFactory at VIBELANG_FACTORY_URL (0010).
-1d  formal proofs                      done (local)  `pnpm verify`: 28 contracts on conversation.vibe; `pnpm verify:broken`: 48/48
-                                                      mutations rejected. Running them in CI comes with the app's PACKAGE.ts.
-1e  wiki in the app                     next          /wiki renders these pages as a maximizable pane (VL-17, VL-23)
-2   sign-in and roles                   later         GitHub sign-in; viewer, new, community, contributor, maintainer (VL-21)
-3   issues as a tree, tasks, VIPs       later         VL-20
-4   actions and slash commands          later         VL-24
-5   mythical history                    later         VL-22
-6   sandboxes with minutes              later         VL-25
-7   Electrobun desktop app              later         VL-6
+1d  formal proof gates                 done (local)  0018: seventeen marked production modules, 962/962 current mutations rejected;
+                                                      proof, mutation and inventory gates run in PACKAGE.ts. Whole-app work is 1g.
+1f  Learn more: live app tutorial        done (local)  0014/VL-31: ten theatre steps, exact subtitles, optional sound, pause and seek;
+                                                      Mock/live share one durable flow; scene, flow, workerd and browser checks
+1g  every suite covers the whole app    started       VL-29: unit, fuzz and benchmark coverage at 100% each; proofs of
+                                                      all logic; fuzzing from the Effect fork as @smthrs/fuzz
+1e  wiki in the app                     done (local)  0021: current Markdown at /wiki/<page> in the shared maximizable pane;
+                                                      people and the agent open through vibelang/wiki/open and PaneOpened;
+                                                      source writes require 0019's explicit credential connection; lead deploys
+2   sign-in and roles                   done (local)  0019: shared GitHub auth, five mock identities, numbered grants; live callback setup/deploy remain (VL-21)
+3   issues as a tree, tasks, VIPs       in progress   0022: browser/CLI/MCP, GitHub sub-issues, commitments and repository VIP reviews; live chat held by issues-nested-effect
+4   actions and slash commands          done (local)   0023: registered actions, memory/workerd hosts, real traces, slash and agent calls;
+                                                      published 0.0.12; signed sessions/current grants, recovery/cancel regression checks; lead deploy remains
+5   mythical history                    done (local)  0020: the History machine proved (linearity, no loss, exactly one), the
+                                                      bootstrap of 6,737 real commits, the flows, the live object and /history;
+                                                      read by page (lane vl-mythical2); live writes wait for 0019's policy
+6   sandboxes with minutes              in progress   0024: mock UI and shared flows; durable allowance/Container hosts; live policy and binding gated
+7   Electrobun desktop app              done (local)  0025: shared Foldkit UI, native folder picker and local model; Linux native e2e; macOS build is the lead's
 ```
+
+- **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 2,508 executable items. Seventeen modules carry contracts and 962 current mutant copies match actual Dafny rejections; unproved logic and tool boundaries remain explicit.
+- **Proofs outside the web app (0018, lane vl-proveall3): in progress.** Sequencer, follow and command argument decisions proved; one title-cut defect fixed.
+
+- **CLI and MCP sign-in (VL-26): implemented; lead deploys.** 0028: `login`/`logout` run GitHub's device flow through the shared
+  integrations auth; the server names the agent's posts `<login> (agent)`, carries the person's role and refuses it
+  approve, fold and merge. Journaled native flows, private shared settings and a persistent MCP host are covered. Live sign-in waits on device flow enabled on the GitHub OAuth app (the lane report).
 
 ## Open work outside this app
 
@@ -40,3 +56,54 @@ brick                                   state         proof
   store at v7. This stack uses its own store, `smithers-vibelang-state` (infra/Stack.vibe). Moving apps/mvp to beta.85
   migrates the default store, so that deploy and the migration happen together.
 - **`@smthrs/ui-css`** holds `@smthrs/ui`'s framework-free CSS so React and Foldkit share one stylesheet.
+
+- Brick 2 policy and shared authentication: decision [0019](decisions/0019-sign-in-and-roles.md); lane vl-roles.
+- **vl-fuzzpkg, in progress:** `@smthrs/fuzz` landed at 100%. Fuzz-only coverage is 83.7% of lines and 76.9% of branches on a grown denominator, below the 100% goal; screen-building targets reach `main.vibe`'s Escape, walkthrough, role, event and Command branches, and found the wiki editor storing ill-formed text (fixed). Open: Alchemy's `.make` bodies need Alchemy's runtime; `pnpm fuzz:coverage` is bounded by time, so load lowers it (decision 0015).
+- **vl-fuzz2 (0015), scope partly met:** the five view files, the history host and the sequencer are at 100% fuzz-only lines and branches; Objects 111/112 and 47/49, Wiki 137/172 and 196/234, Issues 256/290 and 429/460, action runs 114/117 and 152/168, each gap listed in 0015 (most need the 0165 delegate or a failing engine store). Steered targets run every scenario per execution, so coverage no longer falls with host load. The fuzz gate's Node and Chromium reports merge by source position, as the benchmark gate's do. Fixed: unnamed blank chat links and issue-card buttons, a lost wiki edit text, a tour-behind-a-waiting-reply deadlock, and a seek after a second tour failing in the engine store.
+
+- **Tour production fixes (vl-tourfix, 0014):** docs and the current paragraph share the maximized pane; live and mock use durable word-count reading holds; Escape retains keyboard control, maximization isolates chat, status announces control, and later replies exclude tour history.
+
+- **vl-actions (0023):** third-run actions implementation targets published 0.0.12. The service-spread compiler bug is
+  authorized and fixed upstream with strict negative controls; publication needs Will. Actions do not need to wait
+  for that release. The report retains exact browser/workerd/flow/scene/proof/fuzz/benchmark checks and live-auth boundaries.
+
+- **Source coverage (0016, lane vl-coverage): in progress.** Per-file tables now record independent unit, Chromium
+  and Node-client workerd snapshots. Startup has 57 boundary cases at all-four 100%; native/HTTP history recovery and
+  amendment focus are tested. The Sol resume adds client-path, durable action admission/replay/cancellation, optional
+  Container graph and emitted wiki-command tests. Whole-app strict gates remain red. Bundled attribution has both VibeLang and plain-JS
+  reproductions; the installed workerd inspector cannot enable precise collection. No runtime source is excluded.
+
+- **Unit coverage, second lane (0016, lane vl-coverage2): partial.** `worker/Http.vibe`, `src/web/backend.vibe`,
+  `src/actions/MockActions.vibe`, `src/actions/execution.vibe`, `src/core/conversation.vibe` and `src/core/LiveWiki.vibe`
+  reach 100% unit coverage on all four metrics; `src/core/MockFactory.vibe` keeps three race-only or invariant-guarded paths. A mock
+  reply interrupted by a reload no longer blocks its conversation. Other files below 100% remain.
+
+- Brick 6: [0024](decisions/0024-sandboxes.md), sandbox UI and shared lifecycle flows; real Container activation awaits trusted 0019 identity and deployment receipts.
+
+- **Rulings audit (vl-audit):** [rulings status](rulings-status.md) holds each ruling's state, evidence and owner.
+  Fixed: the page follows its conversation from the start (VL-12, VL-26); view transitions tested (VL-17). The
+  VL-19 media gap is closed by 0026 (vl-media), below.
+
+- **Review (vl-review2):** [review of 2026-11-08](review-2026-11-08.md). Fixed: idle sandbox metering and reads in
+  the chat. Open, with owners: Durable Object engine retention, idempotent history tool writes.
+
+- **Marketing media (vl-media, 0026):** splash and empty-chat assets remain; VL-31 supersedes the former per-stop Tour placements; designer source preserved in `designs/media/`; browser loading, reduced motion, native failure and phone checks. Lead deploys.
+
+- **Benchmarks (0017, vl-bench): not done.** Hosted-broker main `ca292c70`: 54 files / 128 behavior checks pass; independent source-profile coverage is 5,827/7,036 src/worker lines (82.82%), with 95 files below strict thresholds. Twenty added groups, explicit sync/async runner controls and validated local/live observations are retained. No unit/fuzz counters, src/worker exclusions or tolerance changes. Exact future Container/GitHub/OAuth/deployed-API cases remain in 0017.
+
+- **Both acceptance gates (0027, lane vl-gates): implemented locally.** Maintainer-person VIP approval; Astra, Sol, Fable and Opus same-revision LGTM/A- or better specification acceptance; keep acceptance on edits and retain prior reset history, real flows, proofs/mutations, scenes, browser and workerd routes. Lead deploys.
+
+- **vl-learnmore (0014, VL-31):** ten-step theatre tutorial, exact subtitles and optional sound, numbered app drives,
+  durable pause/seek and private Mock reload recovery; designer source preserved in `designs/onboarding/`.
+
+- **Wiki editing (0021, vl-wikiedit):** designed Edit/Propose pane, person-owned fork/commit/review through shared integrations; agent drafts for explicit person submission; fixture, HTTP, SQLite, CLI/MCP and browser checks. People merge; lead deploys.
+
+- **Gate 2 addenda (0027, lane vl-gates2): implemented locally.** A+, A and A- pass; B+ refuses. The accepted mock
+  starts with A, A, A-, A-; edits keep acceptance and receipts. Both explicit revision policies retain proofs and
+  negative controls; memory/workerd, CLI/MCP, scene, fuzz, benchmark and browser cases track keep. Lead deploys.
+
+- **Hosted sign-in broker (0029, lane vl-authbroker): implemented locally.** Shared signed-origin/PKCE handoff through
+  smithers.sh's existing callback; no new redirect URL. Both apps' local checks precede the lead's coordinated deploy.
+
+- Hosted sign-in cleanup (0029): revoke temporary GitHub tokens in a retried flow action; count exhausted revokes
+  without failing sign-in. Failed MVP callbacks hand unkept pairs to its existing sealed cleanup flow.

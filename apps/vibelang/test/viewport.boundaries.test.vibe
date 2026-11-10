@@ -1,0 +1,26 @@
+// Public input interpretation also supports a host without a Document (scenes and non-layout hosts).
+import { expect, it } from "@effect/vitest"
+import { transcriptViewport } from "../src/web/viewport.vibe"
+
+it("tracks upward intent, unrelated fingers, cancellation and editor keys without a layout host", () => {
+  const viewport = transcriptViewport()
+  const touch = (points: ReadonlyArray<{ identifier: number; clientY: number }>) => ({ touches: points }) as unknown as TouchEvent
+  expect(viewport.scrolled()).toEqual({ bottom: true, intent: 0 })
+  expect(viewport.key({ key: "Home", defaultPrevented: true } as KeyboardEvent)).toBeUndefined()
+  expect(viewport.key({ key: "a", defaultPrevented: false } as KeyboardEvent)).toBeUndefined()
+  expect(viewport.wheel({ deltaY: -1, ctrlKey: true } as WheelEvent)).toBeUndefined()
+  expect(viewport.touchMove(touch([{ identifier: 1, clientY: 10 }]))).toBeUndefined()
+  viewport.touchStart(touch([]))
+  expect(viewport.touchMove(touch([{ identifier: 1, clientY: 10 }]))).toBeUndefined()
+  viewport.touchStart(touch([{ identifier: 1, clientY: 100 }]))
+  expect(viewport.touchMove(touch([{ identifier: 2, clientY: 110 }]))).toBeUndefined()
+  expect(viewport.touchMove(touch([{ identifier: 1, clientY: 90 }]))).toBeUndefined()
+  expect(viewport.touchMove(touch([{ identifier: 1, clientY: 120 }]))).toEqual({ bottom: false, intent: 1 })
+  expect(viewport.scrolled()).toEqual({ bottom: false, intent: 1 })
+  viewport.touchEnd()
+  expect(viewport.touchMove(touch([{ identifier: 1, clientY: 130 }]))).toBeUndefined()
+  expect(viewport.key({ key: "Home", defaultPrevented: false, target: null } as unknown as KeyboardEvent)).toEqual({ bottom: false, intent: 2 })
+  viewport.follow(1)
+  viewport.follow(2)
+  expect(viewport.scrolled()).toEqual({ bottom: false, intent: 2 })
+})

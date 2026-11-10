@@ -1,0 +1,25 @@
+import { it, expect as assert } from "@effect/vitest"
+import { mediaEvents, observeMedia } from "../src/web/media.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+it("media outcomes expose only bounded dimensions", async ({ bench }) => {
+  const result = await workload(bench, "media-observe", "async", async () => {
+    await runPromise(effect {
+      const lines: Array<string> = []
+      const logger = Logger.layer([Logger.make((options) => { lines.push(JSON.stringify(options.message)) })])
+      for (const [outcome, kind] of [["loaded", "image"], ["failed", "image"], ["loaded", "video"], ["failed", "video"]] as const) {
+        const metric = Metric.withAttributes(mediaEvents, { outcome, kind })
+        const before = try Metric.value(metric)
+        provide logger { try observeMedia(outcome, kind) }
+        const after = try Metric.value(metric)
+        try Effect.try(() => assert(after.count).toBe(before.count + 1))
+      }
+      try Effect.try(() => assert(lines).toEqual([
+        '["vibelang.media",{"outcome":"loaded","kind":"image"}]', '["vibelang.media",{"outcome":"failed","kind":"image"}]',
+        '["vibelang.media",{"outcome":"loaded","kind":"video"}]', '["vibelang.media",{"outcome":"failed","kind":"video"}]',
+      ]))
+    })
+  }).run(quick)
+  await runPromise(artifact("media-observe", "Vitest built-in bench; actual media observation service for all image/video loaded/failed outcomes. Each counter dimension increases exactly one; capture and compare complete bounded log messages. Assertions and logger lifecycle included.", ["Effect telemetry boundary only; does not measure image download or video decode."], result))
+})
+

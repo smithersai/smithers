@@ -1,46 +1,85 @@
 ---
 name: vibelang-factory
-description: Talk to the VibeLang factory agent and read conversations through its Factory CLI.
+description: Use the Factory CLI or MCP for chat, history, issues, wiki, actions and sandboxes.
 ---
 
-Use `vibelang-factory` to work with vibelang.smithers.sh's Factory service. Run
-`vibelang-factory --llms` first for the current command names and exact input/output schemas.
-Use `--help` or `ask --help` for CLI syntax. From this app checkout, `pnpm cli ...`
-builds and runs the CLI; the package bin points to its emitted executable.
+`vibelang-factory --llms` gives exact schemas; `--help`, syntax.
+`pnpm cli ...` builds/runs; `pnpm mcp --mock` starts the same tools.
+Use `--json` for data.
 
-Commands use the live Factory at `VIBELANG_FACTORY_URL` (default
-https://vibelang.smithers.sh): a real agent answers, and everyone in a conversation
-sees its posts. If that deployment runs only the mock agent or can't be reached,
-commands fail with `LiveBackendNotDeployed`. Pass `--mock` or set
-`VIBELANG_FACTORY=mock` for the mock: the real conversation state machine and
-scripted replies, with no server or model. Mock data lasts for one process:
-separate CLI calls start empty. To share a mock conversation
-across calls, use the MCP server (`pnpm mcp --mock`); its tools have the same schemas.
+Live: `VIBELANG_FACTORY_URL` (default https://vibelang.smithers.sh).
+`--mock` or `VIBELANG_FACTORY=mock` runs real machines/flows with fixtures,
+without server/model. CLI fixtures last one process; MCP retains them across calls.
 
-Post a message and wait for its entire reply:
-
-```sh
-vibelang-factory --mock ask "How do I install it?"
-vibelang-factory --mock --json ask "How do services work?" --conversation docs
-```
-
-`ask` returns `conversation`, completed reply `text`, and the numbered `events` for
-that post and reply. Overlapping asks are matched to their replies in post order.
-
-Read a finite snapshot:
+`login` starts GitHub device sign-in: authorize the displayed code. CLI waits;
+`--wait false` returns immediately. MCP returns the code: authorize, then call
+`login` again. `wait: true` waits durably. `logout` revokes the session.
+Both share private settings at `$XDG_CONFIG_HOME/vibelang-factory` (default
+`~/.config/vibelang-factory`); running MCP sees changes immediately. Signed posts
+read `<login> (agent)`, with the person's current role. Agents never approve or
+merge. Mock login uses a separate fixture file, without network or live-session
+changes. `VIBELANG_SESSION` optionally overrides: JSON with exact `origin` and
+signed app `cookie`. Never pass a GitHub token. Repository writes retain 0019's
+explicit credential-connection requirements.
 
 ```sh
-vibelang-factory --mock --json read --after 0
-vibelang-factory --mock read --conversation docs --after 12
+vibelang-factory --mock ask "How do services work?" --conversation docs
+vibelang-factory --mock --json read --conversation docs --after 0
 ```
 
-`read` returns `conversation`, the current event cursor `seq`, and current copies of
-`entries` touched by events strictly after `after`. A streaming reply can appear again
-with updated text; merge entries by `id`, then advance the cursor. An empty result
-returns immediately. Read from 0 to obtain the whole conversation. Conversations
-default to `home`; `after` defaults to 0 and must be a nonnegative integer.
+`ask` returns conversation, text and events after its reply completes. Overlapping
+asks match replies in post order. `read` immediately returns entries touched
+after its cursor: merge by entry ID, advance `seq`. Cursor 0 reads everything;
+default conversation: `home`. Cursors are nonnegative integers.
 
-Use `--json` when consuming results as data. Successful commands exit 0; invalid
-arguments, refused messages and unavailable backends exit nonzero with a plain error
-on stderr. Do not interpret an unavailable live backend as a successful post. A
-failed reply's reason (no model, a spent daily budget) is the agent's, not yours.
+Plan work onto mythical history: epics of commits with notes.
+
+```sh
+vibelang-factory history --json
+vibelang-factory history --commit m4
+vibelang-factory history --epic e4 --from 50
+vibelang-factory history --search "computed-key"
+vibelang-factory plan "fix(compiler): ..." --epic e4 --task "issue 412"
+vibelang-factory plan "docs: ..." --before m12
+vibelang-factory start m5704 --lane my-lane
+vibelang-factory note m5704 --section tried "A cache; it went stale."
+```
+
+`plan --amend m12` reopens landed work. Notes: tried, evidence or superseded.
+Enqueued commits include `Mythical: <id>`. People approve; main folds in.
+Agents never approve or fold.
+
+`issues --json` reads issues, tasks and VIPs. `issue` uses the UI's least-role flows:
+
+```sh
+vibelang-factory --mock issue new --title "Tuple narrowing" --text "Nested tuples"
+vibelang-factory --mock issue split --number 42 --title "Narrow elements"
+vibelang-factory --mock issue commit --number 42 --assignee "VibeLang agent"
+vibelang-factory --mock issue draft --title "One feature"
+```
+
+Keep `--key` for identical writes; `--recovery <new-id>` retries a settled failure.
+Proposals open person-owned review changes; people submit and merge.
+
+`sandboxes` reads status/minutes. `sandbox-start --operation-id <id>` starts one.
+Pass its generation to `sandbox-run --generation <n> --operation-id <id> <command>`
+or `sandbox-stop --generation <n>`. Reuse IDs only for identical operations.
+Mock supports pwd, ls, echo, redirection and cat. Live requires Contributor and
+configured compute. Never pass credentials.
+
+Actions: `actions` lists; `run <flow> --input '<json>' [--wait]` starts;
+`trace <id>` reads; `cancel <id>` stops; `rerun <id>` repeats saved input.
+Internal flows cannot run.
+
+Specification: `issue spec-revise --revision <current> --text '<spec>' --key <id>`
+clears reviews. `issue spec-review --revision <current> --reviewer
+astra|sol|fable|opus --key <id>` requests one. Four current LGTM/A answers accept
+it. VIP Accept/Decline are human-only.
+
+Wiki: `wiki read|draft --page <id>` uses shared flows. Link
+`[Review it](#wiki-draft-PAGE)` for review. Only Contributors/Maintainers edit;
+the person chooses Propose/Save. Agents never submit or merge. Person submissions
+retain `--key`, `--base`, `--text`; `--recovery <new-id>` retries failure.
+
+Success exits 0; invalid input, refusals and unavailable services exit nonzero,
+with errors on stderr. Requested or failed is not successful.

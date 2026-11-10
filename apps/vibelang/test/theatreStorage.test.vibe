@@ -1,0 +1,52 @@
+import { expect, it } from "@effect/vitest"
+import { ExperimentalBrowserDocument, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
+import { presentationFromHost, TourPresentation } from "../src/web/theatre.vibe"
+
+// The real browser host and speech implementation remain in use. Only the injected storage read is faulty.
+const malformed = ["null", "false", "17", '"text"', "[]", "{}", '{"step":1,"sound":"yes","active":true,"paused":false}', '{"step":1.5,"sound":true,"active":true,"paused":false}']
+for (const raw of malformed) {
+  for (const sound of [false, true]) {
+    it.effect(`ignores malformed audio state ${raw} with sound ${sound}`, () => scoped(effect {
+      const native = try Effect.provide(Experimental.Window.Window, ExperimentalBrowserWindow.layer)
+      const window = try native.current
+      const keys = ["vibelang:tour-sound", "vibelang:toured"]
+      const sessionKeys = ["vibelang:tour-active", "vibelang:tour-audio"]
+      const before = try Effect.try(() => ({ local: keys.map(key => window.localStorage.getItem(key)), session: sessionKeys.map(key => window.sessionStorage.getItem(key)) }))
+      try addFinalizer(() => sync(() => {
+        keys.forEach((key, index) => { const value = before.local[index]; if (value === null || value === undefined) window.localStorage.removeItem(key); else window.localStorage.setItem(key, value) })
+        sessionKeys.forEach((key, index) => { const value = before.session[index]; if (value === null || value === undefined) window.sessionStorage.removeItem(key); else window.sessionStorage.setItem(key, value) })
+      }))
+      const storage = try Effect.try(() => new Proxy(window.sessionStorage, {
+        get(target, property) {
+          if (property === "getItem") return (key: string) => key === "vibelang:tour-audio" ? raw : target.getItem(key)
+          if (property === "setItem") return target.setItem.bind(target)
+          if (property === "removeItem") return target.removeItem.bind(target)
+          if (property === "clear") return target.clear.bind(target)
+          if (property === "key") return target.key.bind(target)
+          return target.length
+        },
+      }))
+      let constructorReads = 0
+      const faultyWindow = try Effect.try(() => new Proxy(window, {
+        get(target, property) {
+          if (property === "SpeechSynthesisUtterance") constructorReads++
+          return property === "sessionStorage" ? storage : target[property as keyof Window]
+        },
+      }))
+      const style = try Effect.try(() => window.getComputedStyle.bind(window))
+      const host = Layer.merge(Layer.succeed(Experimental.Window.Window, Experimental.Window.make({ window: () => faultyWindow, computedStyle: style })), ExperimentalBrowserDocument.layer)
+      const result = try Effect.exit(Effect.provide(effect {
+        const presenter = try TourPresentation
+        try presenter.present({ step: 1, sound, active: true, paused: false })
+        try presenter.present({ step: 1, sound, active: false, paused: false })
+      }, presentationFromHost.pipe(Layer.provide(host))))
+      const stored = try Effect.try(() => window.sessionStorage.getItem("vibelang:tour-audio"))
+      try Effect.try(() => {
+        expect(Exit.isSuccess(result)).toBe(true)
+        expect(constructorReads).toBe(sound ? 1 : 0)
+        expect(stored).toContain('"step":1')
+        expect(stored).toContain('"active":false')
+      })
+    }))
+  }
+}

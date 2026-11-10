@@ -1,0 +1,157 @@
+// The real view/update: opening is a command; only its numbered event reveals the wiki.
+import { Command, click, expect, given, role, scene, Subscription } from "foldkit/scene"
+import { describe, expect as assert, it } from "@effect/vitest"
+import { init, Message, update, OpenWikiCommand, WikiLocation, ClosePalette, SandboxAction, RevealWiki, accountOf, signedOut } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+
+const home = init({ session: "wiki", mode: "mock", name: "Guest" }).model
+
+describe("wiki pane", () => {
+  it("has a keyboard reachable Wiki entry on the splash", () => {
+    scene({ update, view }, given(home), expect(role("button", { name: "Wiki" })).toExist())
+  })
+  it("opens from the numbered pane event, then maximizes and returns with Escape", () => {
+    scene({ update, view }, given({ ...home, surface: "chat" }),
+      Subscription.emit(Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/index" } })),
+      Command.resolve(WikiLocation, Message.FocusedPrompt()),
+      expect(role("region", { name: "Wiki" })).toExist(),
+      expect(role("link", { name: "Home" })).toExist(),
+      click(role("button", { name: "Maximize the wiki" })),
+      expect(role("region", { name: "Wiki" })).toHaveAttr("data-maximized", "true"),
+      Subscription.emit(Message.PressedEscape()),
+      Command.expectExact(RevealWiki({})),
+      Command.resolve(RevealWiki, Message.FocusedPrompt()),
+      expect(role("region", { name: "Wiki" })).toHaveAttr("data-maximized", "false"))
+  })
+  it("clicking Wiki shows loading until the flow answers, and failure leaves chat available with Retry", () => {
+    scene({ update, view }, given(home),
+      click(role("button", { name: "Wiki" })),
+      Command.expectExact(OpenWikiCommand({ conversation: "home", page: "index", request: 1 })),
+      expect(role("button", { name: "Maximize the wiki" })).toBeDisabled(),
+      expect(role("textbox", { name: "Message" })).toExist(),
+      Command.resolve(OpenWikiCommand, Message.FailedWiki({ request: 1 })),
+      expect(role("button", { name: "Retry" })).toExist(),
+      click(role("button", { name: "Retry" })),
+      Command.expectExact(OpenWikiCommand({ conversation: "home", page: "index", request: 2 })),
+      Command.resolve(OpenWikiCommand, Message.SucceededWiki()))
+  })
+})
+
+it("only its numbered event finishes loading; a stale failed request cannot replace a newer opening", () => {
+  const first = update(home, Message.ClickedWiki({ page: "index" })).model
+  const acknowledged = update(first, Message.SucceededWiki()).model
+  const next = update(acknowledged, Message.ClickedWiki({ page: "rulings" })).model
+  const stale = update(next, Message.FailedWiki({ request: 1 })).model
+  assert(acknowledged.wikiStatus).toBe("loading")
+  assert(stale.wikiStatus).toBe("loading")
+  assert(stale.wikiRequested).toBe("rulings")
+})
+
+it("an agent-opened wiki in another conversation cannot hide a later person opening", () => {
+  const old = { ...home, surface: "chat" as const, wikiAfter: "r-old" }
+  const toured = { ...update(old, Message.ClickedLearnMore()).model, surface: "chat" as const }
+  const opened = update(toured, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/index" } })).model
+  assert(opened.wikiAfter).toBe("")
+  scene({ update, view }, given(opened), expect(role("region", { name: "Wiki" })).toExist())
+})
+
+it("page links request the opening flow and mark the page current only after its numbered event", () => {
+  const opened = update({ ...home, surface: "chat" }, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/index" } })).model
+  scene({ update, view }, given(opened),
+    click(role("link", { name: "Rulings" })),
+    Command.expectExact(OpenWikiCommand({ conversation: "home", page: "rulings", request: 1 })),
+    Command.resolve(OpenWikiCommand, Message.SucceededWiki()),
+    Subscription.emit(Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 2, id: "", url: "/wiki/rulings" } })),
+    Command.resolve(WikiLocation, Message.FocusedPrompt()),
+    expect(role("link", { name: "Rulings" })).toHaveAttr("aria-current", "page"))
+})
+
+it("Home can return to an opened wiki before any message is posted", () => {
+  const opened = update({ ...home, surface: "chat" }, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/index" } })).model
+  const splash = update(opened, Message.ClickedSplash()).model
+  const restored = update(splash, Message.ClickedChat()).model
+  assert(restored.surface).toBe("chat")
+  scene({ update, view }, given(restored), expect(role("region", { name: "Wiki" })).toExist())
+})
+
+it("a failed first opening can maximize and still offers Retry and minimize", () => {
+  const requested = update(home, Message.ClickedWiki({ page: "index" })).model
+  const failed = update(requested, Message.FailedWiki({ request: 1 })).model
+  const maximized = update(failed, Message.ClickedDocs()).model
+  scene({ update, view }, given(maximized),
+    expect(role("region", { name: "Wiki" })).toHaveAttr("data-maximized", "true"),
+    expect(role("button", { name: "Retry" })).toExist(),
+    expect(role("button", { name: "Minimize the wiki" })).toExist())
+})
+
+it("a numbered docs opening supersedes a wiki error and its later failed acknowledgement", () => {
+  const requested = update(home, Message.ClickedWiki({ page: "index" })).model
+  const failed = update(requested, Message.FailedWiki({ request: 1 })).model
+  const opened = update(failed, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "https://vibelang.sh/setup" } })).model
+  const late = update(opened, Message.FailedWiki({ request: 1 })).model
+  scene({ update, view }, given(late), expect(role("region", { name: "Docs" })).toExist())
+})
+
+it("the tour owns wiki maximizing until Escape returns control", () => {
+  const opened = update({ ...home, surface: "chat", tour: true, docs: "max" }, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/index" } })).model
+  scene({ update, view }, given(opened), expect(role("region", { name: "Wiki" })).toHaveAttr("data-maximized", "true"), expect(role("button", { name: "Minimize the wiki" })).toBeAbsent(), expect(role("button", { name: "Maximize the wiki" })).toBeAbsent())
+  const ended = update(opened, Message.PressedEscape()).model
+  scene({ update, view }, given(ended), expect(role("region", { name: "Wiki" })).toHaveAttr("data-maximized", "false"), expect(role("button", { name: "Maximize the wiki" })).toExist())
+})
+
+it("a wiki request takes the foreground from a maximized sandbox without stopping it", () => {
+  const maximized = { ...home, surface: "chat" as const, sandboxPane: "max" as const }
+  const requestResult = update(maximized, Message.ClickedWiki({ page: "index" }))
+  const requested = requestResult.model
+  assert(requested.sandboxPane).toBe("pane")
+  scene({ update, view }, given(maximized),
+    click(role("button", { name: "Wiki" })),
+    Command.expectExact(OpenWikiCommand({ conversation: "home", page: "index", request: 1 })),
+    Command.resolve(OpenWikiCommand, Message.SucceededWiki()))
+  const agentOpened = update(maximized, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/index" } })).model
+  assert(agentOpened.sandboxPane).toBe("pane")
+})
+
+it("an explicit sandbox action takes the maximized foreground from Wiki", () => {
+  const opened = update({ ...home, surface: "chat" }, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/index" } })).model
+  const maximized = update(opened, Message.ClickedDocs()).model
+  const command = update({ ...maximized, draft: "/sandbox" }, Message.SubmittedDraft())
+  assert(command.model.docs).toBe("pane")
+  assert(command.model.sandboxPane).toBe("max")
+  scene({ update, view }, given(command.model), expect(role("region", { name: "Sandboxes" })).toHaveAttr("data-maximized", "true"))
+})
+
+it("a sandbox command closes Ask even when starting fails", () => {
+  scene({ update, view }, given({ ...home, surface: "chat", palette: true, draft: "/sandbox" }),
+    Subscription.emit(Message.SubmittedDraft()),
+    Command.expectExact(SandboxAction({ conversation: "home", operationId: "wiki/sandbox/1", request: 1, kind: "start", generation: 0, command: "" }), ClosePalette({ dock: true })),
+    Command.resolve(ClosePalette, Message.FocusedPrompt()),
+    Command.resolve(SandboxAction, Message.FailedSandbox({ conversation: "home", request: 1, reason: "Unavailable" })),
+    expect(role("dialog", { name: "Ask the agent" })).toHaveAttr("data-state", "closed"),
+    expect(role("region", { name: "Sandboxes" })).toExist())
+})
+
+it("an opened wiki is content rather than an empty chat with compiler artwork", () => {
+  const opened = update({ ...home, surface: "chat" }, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/index" } })).model
+  scene({ update, view }, given(opened),
+    expect(role("region", { name: "Wiki" })).toExist(),
+    expect(role("img", { name: "The compiler says what to write instead: VibeLang diagnostics with the fix to write" })).toBeAbsent())
+})
+
+it("opening Wiki brings it forward from maximized People", () => {
+  const account = { ...signedOut, identity: { id: "1", login: "Will", role: "maintainer" as const }, people: "max" as const }
+  const maximized = { ...home, surface: "chat" as const, account }
+  const requested = update(maximized, Message.ClickedWiki({ page: "index" })).model
+  assert(accountOf(requested).people).toBe("pane")
+  const opened = update(maximized, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/index" } })).model
+  assert(accountOf(opened).people).toBe("pane")
+})
+
+it("People can take the foreground from maximized Wiki", () => {
+  const account = { ...signedOut, identity: { id: "1", login: "Will", role: "maintainer" as const } }
+  const opened = update({ ...home, surface: "chat", account }, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/index" } })).model
+  const maximized = update(opened, Message.ClickedDocs()).model
+  const people = update(maximized, Message.ClickedPeople()).model
+  assert(people.docs).toBe("pane")
+  assert(accountOf(people).people).toBe("max")
+})

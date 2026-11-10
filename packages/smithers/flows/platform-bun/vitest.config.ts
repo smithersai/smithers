@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
+import { nativeSetupFile } from "./test/native/config.ts"
 
 // Each Node runner owns a private report directory. Keep it until reporting has
 // finished, including failed runs, then remove it when the runner exits.
@@ -16,11 +17,16 @@ const reportsDirectory = process.versions.bun ? undefined : (() => {
 })()
 
 export default defineConfig({
-  plugins: [vibelang({ register: true, project: "tsconfig.test.json" })],
+  plugins: [vibelang({ project: "tsconfig.test.json", register: true })],
   test: {
-    globalSetup: [fileURLToPath(new URL("../../../repo-targets/test-utils/test-schemas.ts", import.meta.url))],
+    globalSetup: [
+      fileURLToPath(new URL("../../../repo-targets/test-utils/test-schemas.ts", import.meta.url)),
+      ...process.versions.bun ? [] : [nativeSetupFile]
+    ],
     include: [...configDefaults.include, "**/*.{test,spec}.vibe"],
     environment: "node",
+    // The V8 native transport is collected by Node; Bun compatibility workers do not own another native fixture.
+    exclude: [...configDefaults.exclude, ...(process.versions.bun ? ["test/native.test.vibe"] : [])],
     setupFiles: ["./test/BunRuntime.setup.ts"],
     // Like platform-node, these contracts exercise real filesystem operations,
     // child processes, jj, and loopback HTTP. The macOS runner exceeded

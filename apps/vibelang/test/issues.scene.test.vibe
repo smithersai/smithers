@@ -1,0 +1,124 @@
+import { Command, click, expect, given, role, scene, type, within, Subscription, text } from "foldkit/scene"
+import { describe, it } from "@effect/vitest"
+import { init, Message, update, ShowIssueDialog, ActOnIssue, CloseIssueDialog, LoadIssueDetails, LoadActions, signedOut } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
+import { initialIssues } from "../src/web/issues.vibe"
+const home = init({ session: "scene", mode: "mock", name: "Will" }).model
+const data = { seq: 0, items: fixtureIssues }
+const base = { ...home, account: { ...signedOut, identity: { id: "1", login: "will", role: "maintainer" as const } }, issues: { ...initialIssues, status: "ready" as const, data, role: "maintainer" as const } }
+
+describe("issues scene", () => {
+  it("opens the same issue, shows its parent and children, and commits with an explicit assignee", () => {
+    scene({ update, view }, given(base),
+      click(role("link", { name: "Case branches on tuples" })),
+      expect(role("link", { name: "#49 Parse tuple patterns" })).toExist(),
+      click(role("button", { name: "Commit" })),
+      Command.expectExact(ShowIssueDialog({})),
+      Command.resolve(ShowIssueDialog, Message.IssueDialogFocused()),
+      expect(role("dialog", { name: "Commit #42 as a task" })).toExist(),
+      click(within(role("dialog", { name: "Commit #42 as a task" }), role("button", { name: "Commit" }))),
+      Command.expectExact(ActOnIssue({ request: { op: "commit", number: 42, parent: 0, title: "", text: "", assignee: "VibeLang agent", example: "", prior: "", key: "scene-1" } })),
+      Command.resolve(ActOnIssue, Message.IssuesLoaded({ data: { seq: 1, items: fixtureIssues.map((i) => i.number === 42 ? { ...i, task: "Queued", assignee: "VibeLang agent" } : i) }, created: false, op: "commit", key: "scene-1", role: "maintainer" })),
+      Command.expectExact(CloseIssueDialog({})),
+      Command.resolve(CloseIssueDialog, Message.IssueDialogFocused()),
+      expect(role("button", { name: "Uncommit" })).toExist(),
+    )
+  })
+  for (const level of ["viewer", "new", "community", "contributor"] as const) {
+    it(`hides commitment and VIP review from ${level}`, () => {
+      scene({ update, view }, given({ ...base, account: { ...base.account, identity: { ...base.account.identity, role: level } }, issues: { ...base.issues, role: level } }),
+        click(role("link", { name: "Case branches on tuples" })),
+        expect(role("button", { name: "Commit" })).toBeAbsent(),
+        expect(role("button", { name: "Uncommit" })).toBeAbsent(),
+        expect(role("button", { name: "Accept" })).toBeAbsent(),
+        expect(role("button", { name: "Decline" })).toBeAbsent(),
+      )
+    })
+  }
+  it("keeps VIP submission out of New and lets Community draft the feature", () => {
+    scene({ update, view }, given({ ...base, account: { ...base.account, identity: { ...base.account.identity, role: "new" } }, issues: { ...base.issues, kind: "VIPs", role: "new" } }),
+      expect(role("button", { name: "Propose a VIP" })).toBeAbsent(),
+    )
+    scene({ update, view }, given({ ...base, account: { ...base.account, identity: { ...base.account.identity, role: "community" } }, issues: { ...base.issues, kind: "VIPs", role: "community" } }),
+      click(role("button", { name: "Propose a VIP" })),
+      type(role("textbox", { name: "Title" }), "Tuple patterns"),
+      type(role("textbox", { name: "Summary" }), "One tuple feature."),
+      click(role("button", { name: "Continue" })),
+      expect(role("textbox", { name: "Example" })).toExist(),
+      click(role("button", { name: "Back" })),
+      expect(role("textbox", { name: "Title" })).toHaveValue("Tuple patterns"),
+    )
+  })
+})
+
+it("opens the issue returned by the write when a newer issue appears concurrently", () => {
+  const own = { ...fixtureIssues[0]!, number: 52, title: "My proposal" }
+  const concurrent = { ...fixtureIssues[0]!, number: 53, title: "Another person's issue" }
+  scene({ update, view }, given({ ...base, issues: { ...base.issues, screen: "new", busy: true } }),
+    Subscription.emit(Message.IssuesLoaded({ data: { seq: 1, items: [concurrent, own, ...fixtureIssues], selected: 52 }, created: true, role: "maintainer" })),
+    expect(role("heading", { name: "My proposal #52" })).toExist(),
+  )
+})
+
+it("loads GitHub comments for the selected live issue and ignores a late reply for another issue", () => {
+  scene({ update, view }, given({ ...base, mode: "live" }),
+    click(role("link", { name: "Case branches on tuples" })),
+    Command.expectExact(LoadIssueDetails({ number: 42, key: "scene-detail-1" })),
+    Command.resolve(LoadIssueDetails, Message.IssueDetailsLoaded({ number: 42, data: { seq: 2, items: fixtureIssues.map((i) => i.number === 42 ? { ...i, notes: [{ age: "2026-11-08", author: "jun", text: "A comment from GitHub.", event: false }] } : i) } })),
+    expect(role("region", { name: "Issues pane" })).toExist(),
+    Subscription.emit(Message.IssueDetailsLoaded({ number: 38, data: { seq: 3, items: [] } })),
+    expect(role("heading", { name: "Case branches on tuples #42" })).toExist(),
+  )
+})
+
+it("an incoming demotion closes an open commitment dialog immediately", () => {
+  scene({ update, view }, given({ ...base, issues: { ...base.issues, screen: "detail", selected: 42, dialog: "commit" } }),
+    Subscription.emit(Message.ReceivedRole({ event: { type: "RoleGranted", seq: 1, id: "1", by: "5", role: "new", mode: "person" } })),
+    Command.expectExact(CloseIssueDialog({}), LoadActions({ flow: "", epoch: 1 })),
+    Command.resolve(CloseIssueDialog, Message.IssueDialogFocused()),
+    Command.resolve(LoadActions, Message.LoadedActions({ entries: [], commands: [], runs: [], epoch: 1 })),
+    expect(role("button", { name: "Commit" })).toBeAbsent(),
+    expect(role("dialog", { name: "Commit #42 as a task" })).toBeAbsent(),
+  )
+})
+
+it("offers connection before a person can enter a GitHub write", () => {
+  scene({ update, view }, given({ ...base, mode: "live", issues: { ...base.issues, data: { ...data, connected: false } } }),
+    expect(role("button", { name: "Connect GitHub" })).toExist(),
+    expect(role("button", { name: "New issue" })).toBeAbsent(),
+    click(role("link", { name: "Case branches on tuples" })),
+    Command.resolve(LoadIssueDetails, Message.IssueDetailsLoaded({ number: 42, data: { ...data, seq: 1, connected: false } })),
+    expect(role("button", { name: "Connect GitHub" })).toExist(),
+    expect(role("button", { name: "Commit" })).toBeAbsent(),
+    expect(role("textbox", { name: "Comment" })).toBeAbsent(),
+  )
+})
+
+
+it("shows observed GitHub reviewers and calendar dates without inventing relative ages", () => {
+  const observed = { ...data, absoluteDates: true, reviewers: ["rira"], items: fixtureIssues.map(i => ({ ...i, age: "2026-11-07" })) }
+  scene({ update, view }, given({ ...base, issues: { ...base.issues, screen: "detail", selected: 45, data: observed } }),
+    expect(text("rira")).toExist(),
+    expect(text("jun opened 2026-11-07 · 3 comments")).toExist(),
+    expect(text("2026-11-07 ago")).toBeAbsent(),
+  )
+})
+
+it("renders a newly observed issue as just now without adding ago", () => {
+  const fresh = { ...fixtureIssues[0]!, number: 99, title: "Fresh issue", age: "just now" }
+  scene({ update, view }, given({ ...base, issues: { ...base.issues, screen: "detail", selected: 99, data: { seq: 1, items: [fresh] } } }),
+    expect(text("just now")).toExist(),
+    expect(text("just now ago")).toBeAbsent(),
+  )
+})
+
+it("opens the designed public role matrix and returns to chat", () => {
+  scene({ update, view }, given(base),
+    click(role("button", { name: "Roles" })),
+    expect(role("heading", { name: "Roles" })).toExist(),
+    expect(role("table")).toExist(),
+    click(role("link", { name: "‹ Chat" })),
+    expect(role("region", { name: "Issues pane" })).toBeAbsent(),
+  )
+})

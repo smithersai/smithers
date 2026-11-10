@@ -494,7 +494,7 @@ protected execution snapshot reader, independently of its redacted event view.
 | `WaitingRunsFilter`       | `{ reason?, dueBeforeMs?, cancelRequested? }`                                                        |
 | `RunParentEdge`           | `{ childId, parentId, seq }`, where `seq` is ordering only                                           |
 | `AttemptSurvivors`        | `{ earliestAttempt, earliestStartedAtMs, latest }`                                                   |
-| `CompleteDeferredOutcome` | `Completed` or `Existing`                                                                            |
+| `CompleteDeferredOutcome` | `Completed`, `Existing`, or `NotFound` (no such run: nothing stored)                                 |
 | `ScheduleClockOutcome`    | `Scheduled` or `Existing`                                                                            |
 | `CompleteClockOutcome`    | `Completed`, `AlreadyCompleted`, or `NotFound`                                                       |
 | `ParkOutcome`             | `Parked` or `NotFound`                                                                               |
@@ -1691,7 +1691,11 @@ colliding.
 
 [src/RunState.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/RunState.ts)
 
-The versioned state envelope stored in each run row.
+The versioned state envelope stored in each run row. `payload` is the flow's
+identity snapshot (`Flow.payloadSnapshot`: every `Set` and `Map` sorted, then
+the flow's JSON codec). Admission compares it with an existing row's, so equal
+sets in any insertion order join one run, and a handoff's next round is stored
+the same way.
 
 | Export         | Shape                                                                                                                                  |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1731,6 +1735,7 @@ version.
 | `AttemptEvidenceQuarantined`              | `attempt_evidence_quarantined`                                       | `keyDigest`, `attempt`, `path`, `recordedDigest`, `measuredDigest` |
 | `CacheConflictDetected`                   | `cache_conflict_detected`                                            | `keyDigest`, `recordedRunId`                                       |
 | `CacheCorruptionDetected`                 | `cache_corruption_detected`                                          | `keyDigest`, `path`, `recordedDigest`, `measuredDigest`            |
+| `UnstorableSerialization`                 | `unstorable_serialization`                                           | `contentType`                                                      |
 | `RetentionError`, `RetentionErrorCode`    | `scan_failed`, `delete_failed`                                       |                                                                    |
 | `RunCatalogError`, `RunCatalogErrorCode`  | `invalid_options`, `invalid_cursor`, `source_changed`, `list_failed` | `cause` when a decode or store operation failed.                   |
 | `IrreversibleRetryRequiresIdempotencyKey` | re-exported from [`@smthrs/flow`](/api/flow)'s `Action`              |                                                                    |

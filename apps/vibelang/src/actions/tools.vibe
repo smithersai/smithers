@@ -1,0 +1,24 @@
+// Agent bindings use the same Actions service as buttons and slash commands. These schemas describe tool calls;
+// the handlers invoke the registered durable flows through Actions, so there are no unregistered placeholder bodies.
+import { FlowBinding } from "@smthrs/harness"
+import { Actions, Registered, Run } from "./Actions.vibe"
+
+schema NoInput {}
+const RegisteredList = Schema.Array(Registered)
+schema StartInput { readonly flow: string; readonly input: Schema.Json }
+schema RunInput { readonly id: string }
+function declared<I extends Schema.Top, O extends Schema.Top>(name: string, description: string, input: I, output: O) {
+  return { name, description, input, output, capabilities: [], effects: undefined, modelInvocable: true }
+}
+export function actionTools(actions: Actions.Shape, announce: (run: Run) => void!! = () => Effect.void): FlowBinding.Source {
+  return FlowBinding.source("vibelang-actions", [
+    FlowBinding.make({ flow: declared("vibelang/actions/List", "Lists registered actions and their commands.", NoInput, RegisteredList), handler: () => actions.list() }),
+    FlowBinding.make({ flow: declared("vibelang/actions/Start", "Requests a registered action. Returns its run id immediately; read it to follow progress.", StartInput, RunInput), handler: effect (input: StartInput) => {
+      const id = try actions.start(input.flow, input.input, "agent")
+      try announce(try actions.read(id))
+      return { id }
+    } }),
+    FlowBinding.make({ flow: declared("vibelang/actions/Read", "Reads a run's steps, status and result.", RunInput, Run), handler: (input: RunInput) => actions.read(input.id) }),
+    FlowBinding.make({ flow: declared("vibelang/actions/Cancel", "Cancels a run through its durable engine.", RunInput, RunInput), handler: effect (input: RunInput) => { try actions.cancel(input.id); return { id: input.id } } }),
+  ])
+}

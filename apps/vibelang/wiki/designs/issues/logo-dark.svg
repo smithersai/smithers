@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 186 36" role="img" aria-label="VibeLang">
+  <defs><linearGradient id="g" x1="1" y1="1" x2="34" y2="35"><stop stop-color="#41d1ff"/><stop offset=".55" stop-color="#747bff"/><stop offset="1" stop-color="#bd34fe"/></linearGradient></defs>
+  <path d="M2 3h8l7 25L24 3h9L22 34H12L2 3Z" fill="url(#g)"/>
+  <text x="42" y="27" fill="#f1f1f1" font-family="Inter,Arial,sans-serif" font-size="24" font-weight="650">VibeLang</text>
+</svg>

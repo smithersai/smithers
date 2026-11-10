@@ -1,0 +1,190 @@
+// @vitest-environment node
+// LiveMythical over a real loopback server, the real product mock-mode flows, and faulty Effect transports.
+import { expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServer, HttpServerResponse } from "effect/http"
+import { LiveMythical } from "../src/history/LiveMythical.vibe"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { empty } from "../src/history/mythical.vibe"
+import { MAX_WRITE_BYTES } from "../src/history/wire.vibe"
+import type { Principal } from "../src/history/roles.vibe"
+import { serveHistory, unavailableConversations } from "./support/historyHttpHost.vibe"
+import { handle, type Histories } from "../worker/Http.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+const plan = { how: "append" as const, epic: "", newEpic: "Coverage", target: "", title: "docs: boundary", task: "t" }
+const maintainer: Principal = { name: "Ada", role: "maintainer", agent: false }
+
+
+it.live("reads, follows, plans, works, notes, approves and folds through the shared HTTP protocol", () => scoped(effect {
+  provide NodeHttpServer.layerTest, MockMythical(maintainer, () => succeed(empty)) {
+    try serveHistory()
+    provide LiveMythical("") {
+      const client = try Mythical
+      const initial = try client.outline()
+      const event = fork Stream.runCollect(client.events(initial.seq).pipe(Stream.take(1)))
+      const id = try client.plan(plan)
+      try client.start(id, "coverage")
+      try client.note(id, "evidence", "The public HTTP lifecycle passed.")
+      try client.approve(id)
+      const folded = try client.fold()
+      const snapshot = try client.commit(id)
+      const events = join event
+      const refusal = client.start("m999", "coverage") catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+      const follow = fork Stream.runDrain(client.events(snapshot.seq))
+      try Effect.yieldNow
+      try Fiber.interrupt(follow)
+      const again = try client.commit(id)
+      const epic = try client.epic("e1", 0)
+      const found = try client.search("boundary & more?")
+      const matched = try client.search("boundary")
+      try Effect.try(() => {
+        expect(client.mode).toBe("live")
+        expect(folded).toBe(1)
+        expect(snapshot.commit).toMatchObject({ id, title: plan.title, state: "landed", task: "", lane: "" })
+        expect(epic.commits).toMatchObject([{ id, title: plan.title, state: "landed" }])
+        expect(found.commits).toEqual([])
+        expect(matched.commits.map((entry) => entry.id)).toEqual([id])
+        expect(snapshot.commit!.notes).toContainEqual({ section: "evidence", text: "The public HTTP lifecycle passed.", by: "Ada" })
+        expect(Array.from(events)[0]).toMatchObject({ type: "EpicOpened", seq: initial.seq + 1 })
+        expect(refusal).toBe("unknown")
+        expect(again).toEqual(snapshot)
+      })
+    }
+  }
+}), 30_000)
+
+it.live("refuses viewer writes without changing history, and validates each write schema and size first", () => scoped(effect {
+  provide NodeHttpServer.layerTest, MockMythical({ ...maintainer, role: "viewer" }, () => succeed(empty)) {
+    try serveHistory()
+    const http = try HttpClient.HttpClient
+    const before = try (try Mythical).outline()
+    const forbidden = try http.execute(HttpClientRequest.post("/api/history/plan").pipe(HttpClientRequest.bodyJsonUnsafe(plan)))
+    const missing = try http.post("/api/history/fold")
+    for (const write of ["plan", "start", "note", "approve"]) {
+      const invalid = try http.execute(HttpClientRequest.post(`/api/history/${write}`).pipe(HttpClientRequest.bodyText("{}")))
+      try Effect.try(() => expect(invalid.status).toBe(400))
+    }
+    const malformed = try http.execute(HttpClientRequest.post("/api/history/fold").pipe(HttpClientRequest.bodyText("{")))
+    const large = try http.execute(HttpClientRequest.post("/api/history/note").pipe(HttpClientRequest.bodyText("x".repeat(MAX_WRITE_BYTES + 1))))
+    const cursor = try http.get("/api/history/events?after=01")
+    const method = try http.get("/api/history/plan")
+    const after = try (try Mythical).outline()
+    try Effect.try(() => {
+      expect([forbidden.status, missing.status, malformed.status, large.status, cursor.status, method.status]).toEqual([403, 403, 400, 413, 400, 404])
+      expect(after).toEqual(before)
+    })
+  }
+}), 30_000)
+
+/** A body sent in pieces, with no Content-Length: Transfer-Encoding chunked. */
+function chunked(text: string, pieces: number) {
+  const bytes = new TextEncoder().encode(text)
+  return HttpClientRequest.bodyStream(Stream.fromIterable(Array.from({ length: pieces }, () => bytes)), { contentType: "application/json" })
+}
+
+it.live("bounds a chunked history write: over the limit is refused unread, under it is decoded", () => scoped(effect {
+  provide NodeHttpServer.layerTest, MockMythical(maintainer, () => succeed(empty)) {
+    try serveHistory()
+    const http = try HttpClient.HttpClient
+    const before = try (try Mythical).outline()
+    // 64 KiB pieces, 4 MiB in all: far past MAX_WRITE_BYTES, and no Content-Length to refuse it by.
+    const large = try http.execute(HttpClientRequest.post("/api/history/note").pipe(chunked("x".repeat(65536), 64)))
+    const unchanged = try (try Mythical).outline()
+    const small = try http.execute(HttpClientRequest.post("/api/history/plan").pipe(chunked(JSON.stringify(plan), 1)))
+    try Effect.try(() => {
+      expect(large.status).toBe(413)
+      expect(unchanged).toEqual(before)
+      expect(small.status).toBe(200)
+    })
+  }
+}), 30_000)
+
+function operation(client: Mythical.Shape, name: string) {
+  switch (name) {
+    case "outline": return Effect.asVoid(client.outline())
+    case "epic": return Effect.asVoid(client.epic("e1", 0))
+    case "commit": return Effect.asVoid(client.commit("m1"))
+    case "search": return Effect.asVoid(client.search("boundary"))
+    case "events": return Stream.runDrain(client.events(0))
+    case "plan": return Effect.asVoid(client.plan(plan))
+    case "start": return client.start("m1", "coverage")
+    case "note": return client.note("m1", "tried", "Boundary")
+    case "approve": return client.approve("m1")
+    default: return Effect.asVoid(client.fold())
+  }
+}
+
+for (const name of ["outline", "epic", "commit", "search", "events", "plan", "start", "note", "approve", "fold"]) {
+  it.effect(`${name} reports unavailable transport without returning its contents`, () => effect {
+    const broken = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "private transport contents" }) })))
+    provide HttpClient.HttpClient = broken {
+      provide LiveMythical("http://offline.invalid") {
+        const result = operation(try Mythical, name) catch (error) => error._tag === "Unavailable" ? error.reason : error.refusal
+        try Effect.try(() => expect(result).toBe(`${["outline", "epic", "commit", "search", "events"].includes(name) ? `history ${name}` : name} unreachable`))
+      }
+    }
+  })
+}
+
+for (const [status, body, reason] of [[500, "{}", "answered 500"], [200, "{", "is not JSON"], [200, "{}", "is not the protocol"]] as const) {
+  for (const name of ["outline", "epic", "commit", "search", "plan"]) {
+    it.effect(`${name} rejects a faulty ${status} response (${reason})`, () => effect {
+      const broken = HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(body, { status })))))
+      provide HttpClient.HttpClient = broken {
+        provide LiveMythical("http://broken.invalid") {
+          const result = operation(try Mythical, name) catch (error) => error._tag === "Unavailable" ? error.reason : error.refusal
+          try Effect.try(() => expect(result).toBe(`${["outline", "epic", "commit", "search"].includes(name) ? `history ${name}` : name} ${reason}`))
+        }
+      }
+    })
+  }
+}
+
+for (const [status, body, expected] of [[403, '{"refusal":"forbidden"}', "forbidden"], [409, '{"refusal":"state"}', "state"], [503, '{"refusal":"unavailable"}', "unavailable"], [409, "{}", "plan refusal is not the protocol"]] as const) {
+  it.effect(`a plan preserves its typed ${status} refusal or reports a broken refusal`, () => effect {
+    const broken = HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(body, { status })))))
+    provide HttpClient.HttpClient = broken {
+      provide LiveMythical("http://broken.invalid") {
+        const result = operation(try Mythical, "plan") catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+        try Effect.try(() => expect(result).toBe(expected))
+      }
+    }
+  })
+}
+
+for (const [status, body, reason] of [[503, "", "history events answered 503"], [200, "data: {}\n\n", "history events interrupted"], [200, "data: {\n\n", "history events interrupted"]] as const) {
+  it.effect(`a history subscription reports its faulty ${status} stream`, () => effect {
+    const broken = HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(body, { status })))))
+    provide HttpClient.HttpClient = broken {
+      provide LiveMythical("http://broken.invalid") {
+        const result = operation(try Mythical, "events") catch (error) => error._tag === "Unavailable" ? error.reason : error.refusal
+        try Effect.try(() => expect(result).toBe(reason))
+      }
+    }
+  })
+}
+
+it.live("reports failed history storage as 503 and preserves a main-unavailable refusal through the client", () => scoped(effect {
+  const broken: Histories = {
+    page: () => fail(new Unreachable({ what: "history" })),
+    events: () => fail(new Unreachable({ what: "history" })),
+    write: () => succeed({ id: "", folded: 0, refusal: "unavailable" }),
+  }
+  provide NodeHttpServer.layerTest {
+    try HttpServer.serveEffect(handle(unavailableConversations, broken))
+    const http = try HttpClient.HttpClient
+    for (const path of ["/api/history", "/api/history/events?after=0"]) {
+      const response = try http.get(path)
+      const body = try response.json
+      try Effect.try(() => {
+        expect(response.status).toBe(503)
+        expect(body).toEqual({ error: "history" })
+      })
+    }
+    provide LiveMythical("") {
+      const failure = (try Mythical).fold() catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+      try Effect.try(() => expect(failure).toBe("unavailable"))
+    }
+  }
+}), 30_000)

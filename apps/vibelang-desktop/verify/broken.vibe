@@ -1,0 +1,35 @@
+// Executable negative controls: keep production contracts byte-identical and require a genuine proof failure.
+import { BunHost } from "@smthrs/platform-bun"
+import { ChildProcess } from "effect/process"
+
+await runPromise(scoped(effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = path.resolve(".")
+  const source = try fs.readFileString("src/policy.vibe")
+  try fs.makeDirectory("verify/.checks", { recursive: true })
+  const directory = try fs.makeTempDirectory({ directory: "verify/.checks", prefix: "mutations-" })
+  const cases = [
+    { name: "stale-original", from: 'return current === expected && current !== replacement', to: 'return true' },
+    { name: "stale-model", from: 'return selected !== "" && selected === original', to: 'return true' },
+    { name: "remote-origin", from: '(host === "localhost" || host === "127.0.0.1" || host === "[::1]") &&', to: 'true &&' },
+    { name: "missing-model", from: 'return mock || (model !== "" && state === "ready")', to: 'return true' },
+    { name: "parent-path", from: 'name !== ".." && !name.startsWith("../") && !name.includes("/../") && !name.endsWith("/..") &&', to: 'true &&' },
+  ]
+  for (const item of cases) {
+    if (source.split(item.from).length !== 2) throw new Error(`Mutation does not match once: ${item.name}`)
+    const mutated = source.replace(item.from, item.to)
+    const originalContracts = source.split("\n").filter((line) => line.startsWith("//@"))
+    const newContracts = mutated.split("\n").filter((line) => line.startsWith("//@"))
+    if (JSON.stringify(originalContracts) !== JSON.stringify(newContracts)) throw new Error("Mutation changed contracts")
+    const filename = path.join(directory, `${item.name}.vibe`)
+    try fs.writeFileString(filename, mutated)
+    const process = try ChildProcess.make("bash", ["../vibelang/verify/check.sh", filename], { env: { VIBELANG_VERIFY_ROOT: root }, extendEnv: true })
+    const [output, errors, status] = try.all [Stream.mkString(Stream.decodeText(process.stdout)), Stream.mkString(Stream.decodeText(process.stderr)), process.exitCode]
+    const log = output + errors
+    try fs.writeFileString(path.join(directory, `${item.name}.log`), log)
+    if (Number(status) !== 1 || !/postcondition.*could not be proved|assertion.*might not hold/.test(log)) throw new Error(`Mutation did not fail a proof obligation: ${item.name}`)
+    try Console.log(`Rejected ${item.name}`)
+  }
+  try Console.log(`${cases.length}/${cases.length} mutations rejected with unchanged contracts`)
+}).pipe(Effect.provide(BunHost.layer)))

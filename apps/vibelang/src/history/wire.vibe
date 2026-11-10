@@ -1,0 +1,94 @@
+// The mythical history's HTTP protocol (wiki/decisions/0020-mythical-history.md), between `LiveMythical` and the API
+// Worker's History object. Both sides import these schemas.
+//
+//   GET  /api/history                       the outline: epics with counts, work not landed (pages.vibe)
+//   GET  /api/history/epics/<e>?from=<n>    one page of an epic's commits
+//   GET  /api/history/commits/<m>           one commit in full, with the real commits it folds
+//   GET  /api/history/search?q=<text>       commits whose title has the text
+//   GET  /api/history/events?after=<seq>    text/event-stream: `id: <seq>`, `data: <HistoryEvent JSON>`
+//   POST /api/history/<action>            a flow: plan, start, note, approve or fold
+//                                         → 200 Written | 409 Refusal (the sequencer's) | 403 Refusal (forbidden)
+import { Seq } from "../core/schemas.vibe"
+import { historyStatus } from "./flowMachine.vibe"
+import { DurableText } from "../core/wire.vibe"
+import { MAX_NOTE, MAX_TITLE } from "./mythical.vibe"
+import type { PageRequest } from "./pages.vibe"
+
+export const HISTORY_PATH = "/api/history"
+
+/** The writes a request may ask for, each one flow. */
+export const WRITES = ["plan", "start", "note", "approve", "fold"] as const
+export type Write = (typeof WRITES)[number]
+
+/** A route of the history API. A read's kind names its page, so each is counted on its own. */
+export type HistoryRoute =
+  | { readonly kind: "history-outline" | "history-epic" | "history-commit" | "history-search"; readonly page: PageRequest }
+  | { readonly kind: "history-events" }
+  | { readonly kind: "history-write"; readonly write: Write }
+
+const EPIC = /^\/epics\/(e\d{1,9})$/
+const COMMIT = /^\/commits\/(m\d{1,9})$/
+const FROM = /^\d{1,9}$/
+
+/** The page a read asks for, from what follows `HISTORY_PATH` and the query: `undefined` when it names none. */
+export function pageRequestOf(rest: string, params: URLSearchParams): PageRequest | undefined {
+  if (rest === "") return { what: "outline" }
+  if (rest === "/search") return { what: "search", query: params.get("q") ?? "" }
+  const commit = COMMIT.exec(rest)
+  if (commit !== null) return { what: "commit", id: commit[1]! }
+  const epic = EPIC.exec(rest)
+  const from = params.get("from") ?? "0"
+  if (epic !== null && FROM.test(from)) return { what: "epic", id: epic[1]!, from: Number(from) }
+  return undefined
+}
+
+/** The path and query that ask for `request`. */
+export function pathOf(request: PageRequest): string | undefined {
+  try {
+    switch (request.what) {
+    case "outline": return HISTORY_PATH
+    case "epic": return `${HISTORY_PATH}/epics/${encodeURIComponent(request.id)}?from=${request.from}`
+    case "commit": return `${HISTORY_PATH}/commits/${encodeURIComponent(request.id)}`
+    case "search": return `${HISTORY_PATH}/search?q=${encodeURIComponent(request.query)}`
+  }
+  } catch {
+    return undefined
+  }
+}
+
+/** The history route `method`, `pathname` and the query name, or `undefined`. */
+export function historyRouteOf(method: string, pathname: string, params: URLSearchParams = new URLSearchParams()): HistoryRoute | undefined {
+  if (pathname === `${HISTORY_PATH}/events` && method === "GET") return { kind: "history-events" }
+  const write = WRITES.find((each) => pathname === `${HISTORY_PATH}/${each}`)
+  if (write !== undefined) return method === "POST" ? { kind: "history-write", write } : undefined
+  if (method !== "GET" || !(pathname === HISTORY_PATH || pathname.startsWith(`${HISTORY_PATH}/`))) return undefined
+  const page = pageRequestOf(pathname.slice(HISTORY_PATH.length), params)
+  return page === undefined ? undefined : { kind: `history-${page.what}`, page }
+}
+
+export schema PlanBody {
+  readonly how: "append" | "insert" | "amend"
+  readonly epic: DurableText
+  readonly newEpic: DurableText
+  readonly target: DurableText
+  readonly title: DurableText
+  readonly task: DurableText
+}
+export schema StartBody { readonly id: DurableText; readonly lane: DurableText }
+export schema NoteBody { readonly id: DurableText; readonly section: "tried" | "evidence" | "superseded"; readonly text: DurableText }
+export schema ApproveBody { readonly id: DurableText }
+export schema FoldBody {}
+
+/** What a recorded write answers: the commit it wrote (plan), or how many commits of main it folded (fold). */
+export schema Written { readonly id: string; readonly folded: Seq }
+
+/** Why a write was refused: the sequencer's refusal (409), `forbidden` (403), or `unavailable` main (503). */
+export schema HistoryRefusal { readonly refusal: string }
+
+/** The largest write body the API reads: a note's longest text and a plan's fields, as UTF-8, with room for JSON. */
+export const MAX_WRITE_BYTES = (MAX_NOTE + MAX_TITLE * 4) * 4 + 4096
+
+/** The HTTP status a write's refusal answers with. */
+export function statusOf(refusal: string): number {
+  return historyStatus(refusal)
+}

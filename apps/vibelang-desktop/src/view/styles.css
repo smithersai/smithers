@@ -1,0 +1,84 @@
+  .dt-titlebar { position: relative; display: flex; align-items: center; gap: 12px; min-height: 38px; padding: 0 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .dt-lights { display: flex; gap: 8px; }
+  .dt-light { width: 12px; height: 12px; border-radius: 999px; }
+  .dt-light[data-c="close"] { background: #ff5f57; }
+  .dt-light[data-c="min"] { background: #febc2e; }
+  .dt-light[data-c="max"] { background: #28c840; }
+  .dt-title { position: absolute; left: 50%; transform: translateX(-50%); max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 13px; font-weight: 650; }
+  .dt-title code { font-family: var(--font-mono); font-size: 12px; color: var(--text-faint); }
+  .dt-side { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+  /* Composer: the folder chip and the model picker are the desktop additions */
+  .dt-chip { min-height: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; cursor: pointer; }
+  .dt-chip:hover { background: var(--hover); color: var(--text); }
+  .dt-chip:focus-visible { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent); }
+  .dt-chip code { font-family: var(--font-mono); }
+  .dt-chip-x { display: inline-flex; color: var(--text-faint); font-size: 12px; }
+  .dt-modelsel { position: relative; display: inline-flex; }
+  .dt-modelsel-pop { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 50; min-width: 260px; }
+
+  /* Models pane */
+  .dt-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .dt-pane-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  .dt-model-row td { vertical-align: middle; }
+  .dt-model-name { font-family: var(--font-mono); font-size: 13px; font-weight: 650; }
+  .dt-progress-cell { min-width: 140px; }
+
+  @media (max-width: 600px) {
+    .dt-title code, .dt-title .dt-dot { display: none; }
+    .dt-side .sui-model-badge { display: none; }
+  }
+
+.dt-host .vl-top { top: 38px; }
+.dt-host .vl-pane { display: none; }
+.dt-host .sui-chat-messages { padding-top: 118px; }
+.dt-titlebar { position: fixed; inset: 0 0 auto; z-index: 80; padding-left: 84px; -webkit-app-region: drag; }
+.dt-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dt-side { flex-shrink: 0; display: flex; gap: 8px; }
+.dt-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.dt-controls .dt-chip code { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.dt-top-actions { position: fixed; top: 50px; right: 170px; z-index: 81; }
+.dt-top-actions button { border: 0; background: transparent; cursor: pointer; }
+.dt-pane { position: fixed; inset: 106px 24px 160px auto; width: min(640px,calc(100vw - 48px)); z-index: 60; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-3); }
+.dt-pane[data-maximized="true"] { inset: 106px 12px 12px; width: auto; }
+.dt-pane-body { padding: 24px; display: grid; align-content: start; gap: 20px; }
+.dt-pane-actions { display: flex; gap: 12px; margin-left: auto; }
+.dt-connect { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.dt-connect label { grid-column: 1 / -1; font-size: 12px; color: var(--text-muted); }
+.dt-connect input { min-width: 0; padding: 8px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
+.dt-empty { padding: 64px 0; justify-items: center; display: grid; gap: 12px; }
+.dt-modelsel-pop button { width: 100%; text-align: left; display: block; padding: 8px 12px; background: transparent; border: 0; color: var(--text); cursor: pointer; }
+.dt-modelsel-pop [data-highlighted="true"] { background: var(--hover); }
+.dt-modelsel-pop { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-3); }
+.dt-host .sui-toolcall { border: 1px solid var(--border); padding: 12px; border-radius: 8px; }
+.dt-host .sui-diff { overflow: auto; }
+@media(max-width:620px) { .dt-titlebar { padding-left: 14px; } .dt-side { display: none; } .dt-pane { inset: 106px 12px 160px; width: auto; } .dt-pane-body { padding: 16px; } .dt-top-actions { right: 136px; } .dt-controls .dt-chip code { max-width: 180px; } }
+
+.dt-host button.vl-nav-link { border: 0; background: transparent; font: inherit; cursor: pointer; }
+.dt-chip-x { padding: 0; border: 0; background: transparent; cursor: pointer; }
+.dt-host .sui-toolcall { margin: 0 0 8px; padding: 0; }
+.dt-host .sui-toolcall-body { padding: 0; }
+.dt-host .sui-toolcall .sui-diff { border: 0; border-radius: 0; }
+.dt-host .sui-commit-files { margin-top: 8px; }
+.dt-host .sui-commit-file { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+
+/* The shared History link joins Models on small screens. Keep every control reachable. */
+@media(max-width:600px) {
+  .dt-host .vl-top { gap: 8px; padding: 12px; }
+  .dt-host .vl-nav { min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
+  .dt-host .vl-nav-link, .dt-host button.vl-nav-link { padding: 6px 3px; font-size: 12px; }
+}
+.dt-host .mh-pane { top: 106px; }
+@media(max-width:600px) { .dt-host .mh-pane { top: 94px; } .dt-host .dt-pane { top: 122px; } }
+
+.dt-browser-error { position: fixed; bottom: 16px; left: 16px; right: 16px; z-index: 90; }
+
+.dt-local-output { display: grid; gap: 8px; width: min(438px,100%); max-width: 100%; }
+.dt-host .dt-local-output .sui-toolcall { margin: 0; width: 100%; }
+.dt-local-output .sui-toolcall-trigger { list-style: none; }
+.dt-local-output .sui-toolcall-trigger::-webkit-details-marker { display: none; }
+.dt-local-output details[open] > summary .sui-toolcall-chevron { transform: rotate(90deg); }
+.dt-local-output .sui-toolcall-duration { flex-shrink: 0; color: var(--text-muted); font-size: 11px; }
+.dt-host .dt-local-output .sui-toolcall-body { padding: 10px 12px 12px; }
+
+.dt-composer-left { min-width: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }

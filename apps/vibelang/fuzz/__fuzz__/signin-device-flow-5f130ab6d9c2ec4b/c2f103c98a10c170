@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 3
+bias 4
+null-prototype false
+key 985659722
+tape 3TJistb-FJUtCj5Se1C0EQjejmSmQFiIfkEVVE8mQ6OjsmLABfJO3B4QaToAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+schedule-key 4198252580
+schedule 
+signature "ReturnedFalse"
+path 0.1
+codec "json"
+value "{\"route\":\"garbage\",\"device\":\"refused\",\"exchange\":\"refused\",\"session\":\"ok\",\"revoke\":\"ok\",\"grants\":[],\"stored\":true,\"pending\":\"elsewhere\",\"origin\":\"server\",\"wait\":false,\"actions\":[\"login\"]}"
+# ReturnedFalse
+# {"route":"garbage","device":"refused","exchange":"refused","session":"ok","revoke":"ok","grants":[],"stored":true,"pending":"elsewhere","origin":"server","wait":false,"actions":["login"]}

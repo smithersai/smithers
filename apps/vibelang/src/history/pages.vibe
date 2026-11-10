@@ -1,0 +1,156 @@
+// The mythical history read by page (wiki/decisions/0020-mythical-history.md): the page and the agent read only what
+// they show. Pure functions of the whole history, computed where the history lives (the History object, or the mock's
+// sequencer), so a reader never downloads the whole of it.
+//
+//   outline                  the epics with their counts, the work not landed, and how far main is folded
+//   epic <id> from <n>       one page of an epic's commits in stack order, `PAGE` at a time
+//   commit <id>              one commit in full: its notes and the real commits it folds
+//   search <text>            commits whose title has the text (or whose id it is), at most `MATCHES`
+import type { Commit, CommitState, History, Real } from "./mythical.vibe"
+
+/** A mythical commit as a list shows it: no notes, only how many it has and how many real commits it folds. */
+export interface Head {
+  readonly id: string
+  readonly epic: string
+  readonly rank: number
+  readonly title: string
+  readonly state: CommitState
+  readonly task: string
+  readonly lane: string
+  readonly notes: number
+  readonly folds: number
+}
+
+/** An epic as the outline shows it: how many commits it has and how many real commits they fold. */
+export interface EpicCount {
+  readonly id: string
+  readonly title: string
+  readonly commits: number
+  readonly folds: number
+}
+
+/** The history's first view: its epics, the work not landed in stack order, and the last real commit folded. */
+export interface Outline {
+  readonly seq: number
+  readonly main: string
+  readonly epics: ReadonlyArray<EpicCount>
+  readonly open: ReadonlyArray<Head>
+}
+
+/** Commits `from` to `from + commits.length` of an epic's `total`, in stack order. */
+export interface EpicPage {
+  readonly seq: number
+  readonly epic: string
+  readonly from: number
+  readonly total: number
+  readonly commits: ReadonlyArray<Head>
+}
+
+/** One commit in full, `null` when there is none with the id, and the real commits it folds in main's order. */
+export interface CommitPage {
+  readonly seq: number
+  readonly commit: Commit | null
+  readonly real: ReadonlyArray<Real>
+}
+
+/** The commits a search found, in stack order. */
+export interface Matches {
+  readonly seq: number
+  readonly query: string
+  readonly commits: ReadonlyArray<Head>
+}
+
+/** What a reader asks for. */
+export type PageRequest =
+  | { readonly what: "outline" }
+  | { readonly what: "epic"; readonly id: string; readonly from: number }
+  | { readonly what: "commit"; readonly id: string }
+  | { readonly what: "search"; readonly query: string }
+
+/** How many commits one page of an epic holds. */
+export const PAGE = 50
+
+/** The most commits a search answers. */
+export const MATCHES = 100
+
+/** The longest search the history reads; a longer one reads as its first `MAX_QUERY` characters. */
+export const MAX_QUERY = 200
+
+/** How many real commits fold into each mythical commit. */
+function foldCounts(history: History): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const real of history.real) counts.set(real.mythical, (counts.get(real.mythical) ?? 0) + 1)
+  return counts
+}
+
+function headOf(commit: Commit, folds: Map<string, number>): Head {
+  return {
+    id: commit.id,
+    epic: commit.epic,
+    rank: commit.rank,
+    title: commit.title,
+    state: commit.state,
+    task: commit.task,
+    lane: commit.lane,
+    notes: commit.notes.length,
+    folds: folds.get(commit.id) ?? 0,
+  }
+}
+
+/** Every commit in stack order: epics in order, ranks inside each. */
+function stacked(history: History): ReadonlyArray<Commit> {
+  const order = new Map(history.epics.map((epic, index) => [epic.id, index]))
+  return [...history.commits].sort((a, b) => (order.get(a.epic) ?? 0) - (order.get(b.epic) ?? 0) || a.rank - b.rank)
+}
+
+export function outlineOf(history: History): Outline {
+  const folds = foldCounts(history)
+  const commits = new Map<string, number>()
+  const folded = new Map<string, number>()
+  for (const commit of history.commits) {
+    commits.set(commit.epic, (commits.get(commit.epic) ?? 0) + 1)
+    folded.set(commit.epic, (folded.get(commit.epic) ?? 0) + (folds.get(commit.id) ?? 0))
+  }
+  return {
+    seq: history.seq,
+    main: history.main,
+    epics: history.epics.map((epic) => ({ id: epic.id, title: epic.title, commits: commits.get(epic.id) ?? 0, folds: folded.get(epic.id) ?? 0 })),
+    open: stacked(history).filter((commit) => commit.state !== "landed").map((commit) => headOf(commit, folds)),
+  }
+}
+
+/** Commits `from` to `from + PAGE` of `epic` in stack order; past the end, none. */
+export function epicPageOf(history: History, epic: string, from: number): EpicPage {
+  const folds = foldCounts(history)
+  const all = history.commits.filter((commit) => commit.epic === epic).sort((a, b) => a.rank - b.rank)
+  const start = Math.max(0, Math.floor(from))
+  return { seq: history.seq, epic, from: start, total: all.length, commits: all.slice(start, start + PAGE).map((commit) => headOf(commit, folds)) }
+}
+
+export function commitPageOf(history: History, id: string): CommitPage {
+  return {
+    seq: history.seq,
+    commit: history.commits.find((commit) => commit.id === id) ?? null,
+    real: history.real.filter((real) => real.mythical === id),
+  }
+}
+
+/** Commits whose title has `query` (any case) or whose id it is, at most `MATCHES`, in stack order; `""` finds none. */
+export function matchesOf(history: History, query: string): Matches {
+  const clipped = query.slice(0, MAX_QUERY)
+  const needle = clipped.trim().toLowerCase()
+  if (needle === "") return { seq: history.seq, query: clipped, commits: [] }
+  const folds = foldCounts(history)
+  const found = stacked(history).filter((commit) => commit.id === needle || commit.title.toLowerCase().includes(needle))
+  return { seq: history.seq, query: clipped, commits: found.slice(0, MATCHES).map((commit) => headOf(commit, folds)) }
+}
+
+/** What answers `request`. */
+export function pageOf(history: History, request: PageRequest): Outline | EpicPage | CommitPage | Matches {
+  switch (request.what) {
+    case "outline": return outlineOf(history)
+    case "epic": return epicPageOf(history, request.id, request.from)
+    case "commit": return commitPageOf(history, request.id)
+    case "search": return matchesOf(history, request.query)
+  }
+}

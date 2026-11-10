@@ -1,0 +1,28 @@
+import { expect, it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine, StepTrace } from "@smthrs/engine"
+import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+const Work = Flow.make("trace/Work", { payload: {}, success: Schema.Null, body: () => Node.succeed(null) })
+it.live("the engine observes real step identity and outcome without payloads", () => effect {
+  const events = try Ref.make<ReadonlyArray<StepTrace.Event>>([])
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    try engine.register(Work, effect () => {
+      try Action.make({ name: "trace/read", execute: sleep("10 millis") })
+      return null
+    })
+  }).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer))
+  provide registration {
+    const engine = try FlowRuntime.FlowRuntime
+    try engine.execute(Work, { payload: {}, executionId: "one" }).pipe(Effect.provideService(StepTrace.Sink, { emit: (event) => Ref.update(events, (all) => [...all, event]) }))
+  }
+  const recorded = try Ref.get(events)
+  try Effect.try(() => {
+    expect(recorded.map((event) => event.state)).toEqual(["running", "passed"])
+    expect(recorded[0]).toMatchObject({ run: "one", name: "trace/read", attempt: 1 })
+    expect(recorded[0]!.key).toBe(recorded[1]!.key)
+    expect(recorded[1]!.at).toBeGreaterThanOrEqual(recorded[0]!.at)
+    expect(Object.keys(recorded[0]!)).not.toContain("payload")
+  })
+})

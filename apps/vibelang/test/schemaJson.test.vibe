@@ -1,0 +1,77 @@
+// @vitest-environment node
+// Compile public schema declarations; the real compiler must retain strict field checks.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, layer } from "@effect/vitest"
+import { run } from "./support/processes.vibe"
+
+service Scratch { readonly directory: string }
+const ScratchLive = Layer.effect(Scratch, effect {
+  const fs = try FileSystem.FileSystem
+  const directory = (try Path.Path).resolve("node_modules/.cache")
+  try fs.makeDirectory(directory, { recursive: true })
+  return { directory: try fs.makeTempDirectoryScoped({ directory, prefix: "schema-json-" }) }
+}).pipe(Layer.provideMerge(NodeServices.layer))
+
+effect function compile(name: string, source: string) {
+  const { directory } = try Scratch
+  const path = try Path.Path
+  const file = path.join(directory, name + ".vibe")
+  try (try FileSystem.FileSystem).writeFileString(file, source)
+  const compiler = try path.fromFileUrl(new URL("../node_modules/vibelang/bin/vibelang", import.meta.url))
+  return try run(compiler, ["--ignoreConfig", "--strict", "--noEmit", "--skipLibCheck", "--target", "es2022", "--module", "esnext", "--moduleResolution", "bundler", file])
+}
+
+layer(ScratchLive)("Schema.Json public key metadata", (it) => {
+  it.effect("accepts required readonly JSON, aliases, rebuilds, nested values and errors", () => effect {
+    const checked = try compile("positive", `
+const Alias = Schema.Json
+const Annotated = Alias.annotate({ description: "JSON" })
+const Checked = Schema.Json.check(Schema.makeFilter(() => true))
+const Rebuilt = Schema.Json.rebuild(Schema.Json.ast)
+export schema Input { readonly input: Schema.Json }
+export schema Nested { readonly nested: Input; readonly alias: Alias; readonly annotated: Annotated; readonly checked: Checked; readonly rebuilt: Rebuilt }
+export schema error JsonFailure { input: Schema.Json }
+export schema Tuple { readonly values: readonly [Schema.Json, Schema.String] }
+export schema Records { readonly values: Readonly<Record<string, Schema.Json>> }
+const codec: Schema.Codec<Schema.Json> = Schema.Json
+const typeView: Schema.Json = null
+const encodedView: typeof Schema.Json.Encoded = typeView
+const serviceFree: typeof Schema.Json.DecodingServices extends never ? true : false = true
+`)
+    try Effect.try(() => {
+      expect(checked.stdout + checked.stderr).toBe("")
+      expect(checked.status).toBe(0)
+    })
+  }, 60_000)
+
+  for (const [name, source] of [
+    ["optional", 'const Modified = Schema.optionalKey(Schema.Json); export schema Bad { readonly input: Modified }'],
+    ["mutable", 'const Modified = Schema.mutableKey(Schema.Json); export schema Bad { readonly input: Modified }'],
+    ["widened", 'const Modified: Schema.Top = Schema.mutableKey(Schema.Json); export schema Bad { readonly input: Modified }'],
+    ["tuple", 'const Modified = Schema.optionalKey(Schema.Json); export schema Bad { readonly input: readonly [Modified] }'],
+    ["record", 'const Modified = Schema.mutableKey(Schema.Json); export schema Bad { readonly input: Readonly<Record<string, Modified>> }'],
+  ] as const) {
+    it.effect(`rejects conflicting ${name} flags`, () => effect {
+      const checked = try compile(name, source)
+      try Effect.try(() => {
+        expect(checked.status).not.toBe(0)
+        expect(checked.stdout + checked.stderr).toContain("EK2109")
+      })
+    }, 60_000)
+  }
+  it.effect("requires the input key in decoded and encoded values", () => effect {
+    const Input = Schema.Struct({ input: Schema.Json })
+    try Effect.try(() => {
+      expect(Schema.is(Input)({ input: null })).toBe(true)
+      expect(Schema.is(Input)({ input: { list: [1, true] } })).toBe(true)
+      expect(Schema.is(Input)({})).toBe(false)
+      expect(Schema.is(Input)({ input: undefined })).toBe(false)
+      expect(Schema.encodeUnknownOption(Input)({})).toEqual(Option.none())
+    })
+    const checked = try compile("missing", 'export schema Input { readonly input: Schema.Json }; const value: Input = {}')
+    try Effect.try(() => {
+      expect(checked.status).not.toBe(0)
+      expect(checked.stdout + checked.stderr).toContain("TS2741")
+    })
+  }, 60_000)
+})

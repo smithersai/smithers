@@ -1,0 +1,122 @@
+import { SpecificationReviewers } from "../../src/core/specification.vibe"
+import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
+// The product fixture host on workerd's real persistent flow engine; there is no HTTP interception.
+import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { fixtureHost, fixtureIssues } from "../../src/core/IssuesFactory.vibe"
+import { IssueHost, issueFlows, issueRegistration } from "../../src/core/issueFlows.vibe"
+import { IssueFailure, IssueRequest, IssuesState } from "../../src/core/issueSchemas.vibe"
+import { Budget } from "@smthrs/agent"
+import { Node } from "@smthrs/plan"
+import { DraftAgent, writer } from "../../worker/VipDraft.vibe"
+import { VipWriter } from "../../src/core/VipWriter.vibe"
+import { Spend } from "../../worker/Reply.vibe"
+import * as DailyBudget from "../../worker/Budget.vibe"
+import { ledgerOver } from "../../worker/ObjectStorage.vibe"
+import { serveIssues, executeIssues, IssueAuthority, issueWriteKey, repository } from "../../worker/Issues.vibe"
+import type { Storage } from "../../worker/Objects.vibe"
+const meterFlow = Flow.make("test/vip/meter", { payload: {}, success: Schema.Number, body: () => Node.succeed(0) })
+export class IssuesObject {
+  constructor(readonly state: { readonly storage: Storage; readonly id: { toString(): string } }) {}
+  async fetch(request: Request): Promise<Response> {
+    const state = this.state
+    const hostId = state.id.toString()
+    if (new URL(request.url).pathname === "/api/issues") return HttpServerResponse.toWeb(await runPromise(scoped(effect {
+      const kind = request.headers.get("x-test-principal") === "agent" ? "agent" as const : "person" as const
+      const identity = { id: "fixture-maintainer", login: "will", role: "maintainer" as const, kind }
+      const authority: IssueAuthority.Shape = { current: () => Effect.succeed({ ...identity, connection: { person: 1, delegation: "fixture-delegation" } }) }
+      const stored = try promise(() => state.storage.get("gates/fixture"))
+      const current = try Ref.make(stored === undefined ? { seq: 0, items: fixtureIssues } : try Schema.decodeUnknownEffect(IssuesState)(stored))
+      const fixture = try fixtureHost(effect () => identity, current, try Semaphore.make(1))
+      const host: IssueHost.Shape = { perform: effect (payload) => {
+        const result = try fixture.perform(payload)
+        try promise(() => state.storage.put("gates/fixture", result))
+        return result
+      } }
+      // Product scripted reviewer service at a native model boundary; HTTP and SQLite engine stay real.
+      const reviewers: SpecificationReviewers.Shape = { review: (reviewer, spec) => Effect.succeed({ revision: spec.revision, verdict: "LGTM", grade: reviewer === "opus" && spec.opus.verdict === "" ? "B+" : reviewer === "opus" ? "A-" : "A", link: "#review", review: "Scripted workerd review" }) }
+      return try serveIssues(hostId, state.storage).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(IssueHost, host), Effect.provideService(SpecificationReviewers, reviewers), Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)), Effect.provide(FetchHttpClient.layer))
+    })))
+    if (new URL(request.url).pathname === "/recovery") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(await runPromise(effect {
+      const resumed = try Ref.make(false)
+      const child = try Ref.make<{ key: string; linked: boolean } | undefined>(undefined)
+      const writes = try Ref.make(0)
+      const authority: IssueAuthority.Shape = { current: () => Effect.succeed({ id: "fixture-maintainer", login: "will", role: "maintainer", connection: { person: 1, delegation: "fixture-delegation" } }) }
+      const faulty: IssueHost.Shape = { perform: effect (payload) => {
+        if (payload.op === "read") return { seq: 1, items: fixtureIssues }
+        const key = try issueWriteKey(repository, "fixture-maintainer", payload, "issue")
+        const made = try Action.once("issue", {
+          find: (writeKey) => Ref.get(child).pipe(Effect.map((value) => value?.key === writeKey ? Option.some(value) : Option.none())),
+          perform: effect (writeKey) => { try Ref.update(writes, n => n + 1); const value = { key: writeKey, linked: false }; try Ref.set(child, value); return value },
+        }, { key })
+        if (!(try Ref.get(resumed))) throw new IssueFailure({ reason: "connect" })
+        try Ref.set(child, { ...made, linked: true })
+        return { seq: 1, items: fixtureIssues }
+      } }
+      const payload = { op: "split" as const, key: "partial-child", number: 42, parent: 0, title: "One child", text: "A summary", example: "", prior: "", assignee: "" }
+      const run = (request: IssueRequest) => executeIssues(hostId, state.storage, request).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(IssueHost, faulty), Effect.provide(FetchHttpClient.layer))
+      const first = try Effect.result(run(payload))
+      const failedReplay = try Effect.result(run(payload))
+      const saved = try run({ ...payload, op: "read", key: "restore", resumeOp: "split", resumeKey: payload.key })
+      const other = executeIssues(hostId, state.storage, { ...payload, op: "read", key: "other-person-read", resumeOp: "split", resumeKey: payload.key }).pipe(Effect.provideService(IssueAuthority, { current: () => Effect.succeed({ id: "other-person", login: "other", role: "maintainer", connection: { person: 1, delegation: "fixture-delegation" } }) }), Effect.provideService(IssueHost, faulty), Effect.provide(FetchHttpClient.layer))
+      const differentPerson = try Effect.result(other)
+      try Ref.set(resumed, true)
+      const edited = try Effect.result(run({ ...payload, title: "Different request", recovery: "edited" }))
+      const recovered = try run({ ...payload, recovery: "first" })
+      const replay = try run({ ...payload, recovery: "first" })
+      const completed = try run({ ...payload, op: "read", key: "restore-completed", resumeOp: "split", resumeKey: payload.key, resumeRecovery: "first" })
+      return { completedStatus: completed.saved?.status, savedKey: saved.saved?.request.key, savedStatus: saved.saved?.status, ownerBound: differentPerson._tag === "Failure", first: first._tag, failedReplay: failedReplay._tag, edited: edited._tag, recovered: recovered.seq, replay: replay.seq, writes: try Ref.get(writes), linked: (try Ref.get(child))?.linked }
+    })))
+    if (new URL(request.url).pathname === "/meter") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(await runPromise(effect {
+      const daily = try DailyBudget.make(ledgerOver(this.state.storage), 1000)
+      const payload = { op: "draft" as const, key: "meter", number: 0, parent: 0, title: "One feature", text: "A summary", example: "const x = 1", prior: "ML", assignee: "" }
+      // A faulty agent records paid usage then fails. The writer, ledger, SQLite and replay stay real.
+      const faulty: DraftAgent.Shape = { available: true, run: effect (_request, meter) => {
+        try meter.record("paid-before-failure", { inputTokens: 11, outputTokens: 7 }).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" })))
+        throw new IssueFailure({ reason: "draft" })
+      } }
+      const spending: Spend.Shape = { admit: () => daily.admit(), spend: (_day, reply, tokens) => daily.spend(reply, tokens) }
+      const writerLayer = writer.pipe(Layer.provide(Layer.succeed(DraftAgent, faulty)), Layer.provide(Layer.succeed(Spend, spending)))
+      const registration = Layer.effectDiscard(effect {
+        const engine = try FlowRuntime.FlowRuntime
+        const draft = try VipWriter
+        try engine.register(meterFlow, () => effect {
+          const result = try Effect.result(draft.draft(payload))
+          if (result._tag === "Success") return 0
+          const instance = try FlowRuntime.FlowInstance
+          const freshMeter = try Budget.make({}).pipe(Effect.orDie)
+          return (try freshMeter.usageOf(instance.executionId).pipe(Effect.orDie)).tokens
+        })
+      }).pipe(Layer.provide(writerLayer))
+      effect function execute(key: string) {
+        const executionId = "test/vip/" + key
+        const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: meterFlow._tag }, registration).pipe(Layer.provide(ObjectDatabase.layer(state.storage)))
+        return try scoped(Effect.provide(effect { return try (try FlowRuntime.FlowRuntime).execute(meterFlow, { executionId, payload: {} }) }, runtime))
+      }
+      const first = try execute("first")
+      const replay = try execute("first")
+      const recovered = try execute("second")
+      const spent = try promise(() => this.state.storage.get(DailyBudget.SPENT))
+      return { first, replay, spent, recovered }
+    })))
+    if (new URL(request.url).pathname === "/runs") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(this.state.storage.sql.exec("SELECT run_id, status FROM flows_runs ORDER BY run_id").toArray()))
+    const payload = Schema.decodeUnknownSync(IssueRequest)(await request.json())
+    const storage = this.state.storage
+    const persisted = await storage.get("projection")
+    const initial = persisted === undefined ? { seq: 0, items: fixtureIssues } : Schema.decodeUnknownSync(IssuesState)(persisted)
+    const result = await runPromise(scoped(effect {
+      const current = try Ref.make(initial)
+      const host = try fixtureHost("maintainer", current, try Semaphore.make(1))
+      const flow = issueFlows.find((f) => f._tag === `vibelang/issues/${payload.op}`)!
+      const executionId = `issues/fixture-maintainer/${payload.op}/${payload.key}`
+      const runtime = CloudflareRuntime.layer({ hostId: this.state.id.toString(), executionId, flow: flow._tag }, issueRegistration).pipe(Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(IssueHost, host)))
+      provide runtime {
+        return try (try FlowRuntime.FlowRuntime).execute(flow, { executionId, payload })
+      }
+    }))
+    await storage.put("projection", result)
+    return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(result))
+  }
+}
+interface Namespace { idFromName(name: string): unknown; get(id: unknown): { fetch(request: Request): Promise<Response> } }
+export default { fetch(request: Request, env: { readonly ISSUES: Namespace }) { return env.ISSUES.get(env.ISSUES.idFromName("issues")).fetch(request) } }

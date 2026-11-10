@@ -1,0 +1,69 @@
+import type * as Electrobun from "#electrobun"
+
+// Electrobun native operations stay in the Bun host. Importing the package never loads native FFI.
+/** Failure to open a native window or dialog, without OS messages or paths in diagnostics. */
+export schema error DesktopUnavailable {}
+
+/** The native desktop seam; dialogs are selected by the person, never by web content. */
+export service DesktopWindow {
+  readonly resources: string
+  openExternal(url: string): void!DesktopUnavailable
+  open(url: string): void!DesktopUnavailable
+  chooseDirectory(): (string | null)!DesktopUnavailable
+}
+
+function observed<A, E, R>(operation: string, body: A!E!R) {
+  return withSpan(effect {
+    const result = try exit(body)
+    const outcome = Exit.isSuccess(result) ? "done" : "failed"
+    try Effect.logInfo("desktop.native").pipe(Effect.annotateLogs({ operation, outcome }))
+    try Metric.update(Metric.withAttributes(Metric.counter("desktop_native_operations", { incremental: true }), { operation, outcome }), 1)
+    return try result
+  }, `desktop.native.${operation}`)
+}
+
+/** The foreign native dependency, injectable as a real host port or a faulty Effect service. */
+export service NativeLoader { readonly load: typeof Electrobun!DesktopUnavailable }
+
+/** Electrobun 1.x's Bun API. Loaded only in an Electrobun process, including Linux under Xvfb. */
+const implementation = Layer.effect(DesktopWindow, effect {
+  const scope = try Effect.scope
+  const native = try (try NativeLoader).load
+  // An upstream peer without the distributed patch fails before any native window opens.
+  if (native.SMITHERS_BUN14_COMPAT !== 3) throw new DesktopUnavailable()
+  return {
+    resources: native.PATHS.RESOURCES_FOLDER,
+    open: (url: string) => observed("open", effect {
+      const window = try Effect.try({
+        try: () => new native.BrowserWindow({
+          title: "VibeLang", url, frame: { x: 80, y: 80, width: 1280, height: 800 },
+          titleBarStyle: "hiddenInset", renderer: "cef", sandbox: true,
+          navigationRules: JSON.stringify(["^*", `${new URL(url).origin}/*`]),
+        }),
+        catch: () => new DesktopUnavailable(),
+      })
+      try Scope.addFinalizer(scope, observed("close", Effect.try({ try: () => window.close(), catch: () => new DesktopUnavailable() })).pipe(Effect.orDie))
+      // Electrobun 1.x stores constructor rules in JS but applies native rules through this public setter.
+      try Effect.try({ try: () => window.webview.setNavigationRules(["^*", `${new URL(url).origin}/*`]), catch: () => new DesktopUnavailable() })
+    }),
+    openExternal: (url: string) => observed("external", effect {
+      const parsed = try Effect.try({ try: () => new URL(url), catch: () => new DesktopUnavailable() })
+      if (parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "") throw new DesktopUnavailable()
+      const opened = try Effect.try({ try: () => native.Utils.openExternal(url), catch: () => new DesktopUnavailable() })
+      if (!opened) throw new DesktopUnavailable()
+    }),
+    chooseDirectory: () => observed("choose", effect {
+      const paths = try tryPromise({
+        try: () => native.Utils.openFileDialog({ canChooseFiles: false, canChooseDirectory: true, allowsMultipleSelection: false }),
+        catch: () => new DesktopUnavailable(),
+      })
+      return paths.find((path) => path !== "") ?? null
+    }),
+  }
+})
+
+/** Compose the native seam with an explicit external binding service. */
+export const layerWith = (loader: NativeLoader.Shape) => implementation.pipe(Layer.provide(Layer.succeed(NativeLoader, loader)))
+
+/** Load the supported Electrobun peer lazily at the host boundary. */
+export const layer = layerWith({ load: observed("load", tryPromise({ try: () => import("#electrobun"), catch: () => new DesktopUnavailable() })) })

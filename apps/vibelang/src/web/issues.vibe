@@ -1,0 +1,83 @@
+// Screen state only. Issue data arrives through Factory and the shared machine's numbered observations.
+import { IssueRequest, IssuesState } from "../core/issueSchemas.vibe"
+import { issuePermission, type Role } from "../core/conversation.vibe"
+import * as IssueDecision from "./issueDecision.vibe"
+
+export schema IssuesUi {
+  readonly keyPrefix: string
+  readonly connection: string
+  readonly open: boolean
+  readonly screen: "list" | "detail" | "new" | "vip" | "roles" | "specification"
+  readonly kind: "All" | "Issues" | "Tasks" | "VIPs"
+  readonly state: "open" | "closed"
+  readonly query: string
+  readonly selected: number
+  readonly dialog: "" | "commit" | "split" | "link"
+  readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"
+  readonly status: "loading" | "ready" | "error"
+  readonly busy: boolean
+  readonly data: IssuesState
+  readonly title: string
+  readonly summary: string
+  readonly example: string
+  readonly prior: string
+  readonly comment: string
+  readonly parent: string
+  readonly assignee: string
+  readonly step: number
+  readonly error: string
+  readonly serial: number
+  readonly retry?: IssueRequest | undefined
+}
+export const initialIssues: IssuesUi = {
+  keyPrefix: "", connection: "/api/auth/connect", open: true, screen: "list", kind: "All", state: "open", query: "", selected: 0, dialog: "", role: "viewer",
+  status: "loading", busy: false, data: { seq: 0, items: [] }, title: "", summary: "", example: "", prior: "",
+  comment: "", parent: "", assignee: "VibeLang agent", step: 1, error: "", serial: 0,
+}
+/** Typed text that is not a whole issue number names no parent; the server's tree check refuses it as a typed reason. */
+function parentNumber(text: string): number {
+  const parent = Number(text.trim())
+  return IssueDecision.issueParent(Number.isSafeInteger(parent), parent)
+}
+export function issueRequest(ui: IssuesUi, op: IssueRequest["op"]): IssueRequest {
+  return { op, number: ui.selected, parent: parentNumber(ui.parent), title: ui.title, text: IssueDecision.issueRequestText(op === "comment", ui.comment, ui.summary), example: ui.example, prior: ui.prior, assignee: ui.assignee, key: ui.keyPrefix === "" ? String(ui.serial + 1) : `${ui.keyPrefix}-${ui.serial + 1}` }
+}
+/** The plain state the proved decisions in `issueDecision.vibe` read and return. */
+export function issueScreen(ui: IssuesUi): IssueDecision.IssueScreen {
+  const { open, screen, kind, state, query, selected, dialog, status, busy, title, summary, example, prior, comment, parent, assignee, step, error, serial } = ui
+  return { open, screen, kind, state, query, selected, dialog, status, busy, title, summary, example, prior, comment, parent, assignee, step, error, serial }
+}
+function issueFacts(ui: IssuesUi, action: string, value: string): IssueDecision.IssueFacts {
+  const op = IssueDecision.issueGateOp(action)
+  return {
+    retryOp: ui.retry?.op ?? "",
+    retryReviewer: ui.retry?.reviewer ?? "",
+    retryAllowed: ui.retry !== undefined && issuePermission(ui.role, ui.retry.op),
+    allowed: op !== "" && issuePermission(ui.role, op as IssueRequest["op"]),
+    specText: ui.data.specification?.text ?? "",
+    number: Number(value),
+    kind: value as IssuesUi["kind"],
+    listState: value as IssuesUi["state"],
+    blankTitle: ui.title.trim() === "",
+    blankSummary: ui.summary.trim() === "",
+    blankExample: ui.example.trim() === "",
+    blankPrior: ui.prior.trim() === "",
+  }
+}
+function issueRequestFor(ui: IssuesUi, action: string, value: string, serial: number): IssueRequest {
+  if (action === "retry" && ui.retry !== undefined) return { ...ui.retry, recovery: `${ui.keyPrefix}-${serial}` }
+  if (action === "spec-review") return { ...issueRequest(ui, "spec-review"), revision: ui.data.specification?.revision ?? 0, reviewer: value as "astra" | "sol" | "fable" | "opus" }
+  const op = action as IssueRequest["op"]
+  return { ...issueRequest(ui, op), ...(op === "spec-revise" ? { revision: ui.data.specification?.revision ?? 0 } : {}) }
+}
+export interface UiResult { readonly ui: IssuesUi; readonly request?: IssueRequest; readonly focusCommit?: boolean }
+export function issuesUpdate(ui: IssuesUi, action: string, value: string): UiResult {
+  const step = IssueDecision.issueAction(issueScreen(ui), action, value, issueFacts(ui, action, value))
+  if (step.request === "idle") return { ui }
+  const next: IssuesUi = { ...ui, ...step.state }
+  const focus = step.focusCommit ? { focusCommit: true } : {}
+  if (step.request === "none") return { ui: next, ...focus }
+  if (step.request === "saved" && ui.retry !== undefined) return { ui: next, request: ui.retry, ...focus }
+  const request = issueRequestFor(ui, action, value, step.state.serial)
+  return { ui: step.request === "transient" ? next : { ...next, retry: request }, request, ...focus }
+}

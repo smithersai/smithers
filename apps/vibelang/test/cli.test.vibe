@@ -13,9 +13,9 @@ const CLOSED = "http://127.0.0.1:9"
 /** Each process gets up to this long; a hung one fails its case. */
 const LIMIT = 30_000
 
-/** The emitted CLI, run as its own executable, with `backend` as `VIBELANG_FACTORY`. */
-effect function cli(args: ReadonlyArray<string>, backend = "") {
-  return try run(try cliPath(), args, { VIBELANG_FACTORY: backend, VIBELANG_FACTORY_URL: CLOSED, NO_COLOR: "1" })
+/** The emitted CLI, run as its own executable, with `backend` as `VIBELANG_FACTORY` and `extra` added to its environment. */
+effect function cli(args: ReadonlyArray<string>, backend = "", extra: Readonly<Record<string, string>> = {}) {
+  return try run(try cliPath(), args, { VIBELANG_FACTORY: backend, VIBELANG_FACTORY_URL: CLOSED, NO_COLOR: "1", ...extra })
 }
 
 /** The JSON a command printed. */
@@ -26,6 +26,22 @@ effect function json(text: string) {
 const platform = Layer.mergeAll(NodeServices.layer, ExperimentalNodeServices.layer)
 
 layer(platform)("built CLI process", (it) => {
+  it.effect("reads and revises a specification through the shared flow and refuses VIP acceptance", () => effect {
+    const read = try cli(["--mock", "--json", "issue", "read"])
+    const revised = try cli(["--mock", "--json", "issue", "spec-revise", "--revision", "2", "--text", "CLI revision", "--key", "cli-spec"])
+    const refused = try cli(["--mock", "--json", "issue", "accept", "--number", "45"])
+    const initial = try json(read.stdout)
+    const next = try json(revised.stdout)
+    try Effect.try(() => {
+      expect(read.status).toBe(0)
+      expect(revised.status).toBe(0)
+      expect(JSON.parse(initial.detail).specification.revision).toBe(2)
+      expect(JSON.parse(next.detail).specification).toMatchObject({ astra: { verdict: "LGTM", revision: 2 }, fable: { grade: "A-" }, opus: { grade: "A-" } })
+      expect(JSON.parse(next.detail).specification.revision).toBe(3)
+      expect(refused.status).not.toBe(0)
+    })
+  }, LIMIT)
+
   it.effect("prints the complete reply and event numbers", () => effect {
     const result = try cli(["--mock", "ask", "How do I install it?"])
     try Effect.try(() => {
@@ -58,6 +74,7 @@ layer(platform)("built CLI process", (it) => {
   }, LIMIT)
   it.effect.each([
     [["read"], "can't be reached"],
+    [["login"], "can't be reached"],
     [["--mock", "ask", " "], "message was refused: empty"],
     [["--mock", "read", "--after", "-1"], "after"],
     [["--mock", "ask"], "text"],
@@ -67,6 +84,39 @@ layer(platform)("built CLI process", (it) => {
     try Effect.try(() => {
       expect(result.status, result.stderr).toBe(1)
       expect(result.stderr).toContain(message)
+    })
+  }, LIMIT)
+  it.effect("mock sign-in is the fixture person's agent until logout, with nothing written to a log", () => effect {
+    const settings = try (try FileSystem.FileSystem).makeTempDirectory()
+    const home: Readonly<Record<string, string>> = { XDG_CONFIG_HOME: settings }
+    const login = try cli(["--mock", "login"], "", home)
+    const out = try cli(["--mock", "logout"], "", home)
+    const again = try cli(["--mock", "logout"], "", home)
+    const stored = try (try FileSystem.FileSystem).exists((try Path.Path).join(settings, "vibelang-factory", "mock-session.json"))
+    try Effect.try(() => {
+      expect(login.status).toBe(0)
+      expect(login.stdout).toBe("Signed in as will.\n")
+      expect(login.stderr).toBe("")
+      expect(out.stdout).toBe("Signed out.\n")
+      expect(again.stdout).toBe("Not signed in.\n")
+      expect(stored).toBe(false)
+    })
+  }, LIMIT)
+  it.effect("logout clears local credentials while reporting an unreachable revocation, without printing the cookie", () => effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const settings = try fs.makeTempDirectory()
+    const directory = path.join(settings, "vibelang-factory")
+    try fs.makeDirectory(directory, { recursive: true, mode: 0o700 })
+    const cookie = "__Host-vibelang-session=private-unreachable-session"
+    try fs.writeFileString(path.join(directory, "session.json"), JSON.stringify({ origin: CLOSED, cookie, login: "fixture" }), { mode: 0o600 })
+    const result = try cli(["logout"], "", { XDG_CONFIG_HOME: settings })
+    const exists = try fs.exists(path.join(directory, "session.json"))
+    try Effect.try(() => {
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain("Sign-out couldn't reach")
+      expect(result.stdout + result.stderr).not.toContain(cookie)
+      expect(exists).toBe(false)
     })
   }, LIMIT)
   it.effect.each([["--help"], ["ask", "--help"], ["--llms"]])("discovers %j without a backend", (args) => effect {
@@ -95,4 +145,20 @@ layer(platform)("built CLI process", (it) => {
       for (const phrase of [" ask ", " read ", "--llms", "--json", "--mock", "one process"]) expect(skill).toContain(phrase)
     })
   })
+})
+
+layer(platform)("wiki CLI", (it) => {
+  it.effect("reads real fixture Markdown and drafts without writing it", () => effect {
+    const read = try cli(["--mock", "--json", "wiki", "read", "--page", "roadmap"])
+    const draft = try cli(["--mock", "--json", "wiki", "draft", "--page", "roadmap", "--text", "CLI reviewed wiki edit", "--key", "cli-wiki-draft"])
+    const page = try json(read.stdout)
+    const drafted = try json(draft.stdout)
+    try Effect.try(() => {
+      expect(read.status).toBe(0)
+      expect(draft.status).toBe(0)
+      expect(page.pages.find((entry: { id: string }) => entry.id === "roadmap").source).toContain("# Roadmap")
+      expect(drafted.draft.text).toContain("CLI reviewed wiki edit")
+      expect(drafted.review).toBeUndefined()
+    })
+  }, LIMIT)
 })

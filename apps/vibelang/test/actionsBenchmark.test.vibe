@@ -1,0 +1,26 @@
+// Correctness-checked local memory-engine benchmark; timings exclude model completion and make no live latency claim.
+import { expect, it } from "@effect/vitest"
+import { Actions } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+it.live("benchmarks 50 real request, trace and cancel cycles", () => effect {
+  provide MockActions({ role: "viewer", actor: "person" }).pipe(Layer.provide(MockFactory)) {
+    const actions = try Actions
+    const begin = try Clock.currentTimeMillis
+    for (let index = 0; index < 50; index++) {
+      const id = try actions.command("/tour")
+      const started = try actions.read(id)
+      try actions.cancel(id)
+      const ended = try actions.read(id)
+      try Effect.try(() => {
+        expect(["queued", "running"]).toContain(started.state)
+        expect(ended.state).toBe("cancelled")
+        expect(ended.steps.every(step => step.state !== "running" && step.state !== "waiting")).toBe(true)
+      })
+    }
+    const rows = try actions.runs("vibelang/Tour")
+    const elapsedMs = (try Clock.currentTimeMillis) - begin
+    try Effect.try(() => expect(rows).toHaveLength(50))
+    try Console.log(JSON.stringify({ benchmark: "actions-memory-request-trace-cancel", cycles: 50, elapsedMs, millisecondsPerCycle: elapsedMs / 50 }))
+  }
+}, 60_000)

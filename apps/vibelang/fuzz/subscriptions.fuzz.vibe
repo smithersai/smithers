@@ -1,0 +1,85 @@
+// Runs every subscription the web app declares, over arbitrary Models and native DOM events; what they emit goes through `update`.
+import { it } from "@effect/vitest"
+import { ExperimentalBrowserWindow, ExperimentalBrowserDocument } from "vibelang-runtime/experimental/platform-browser"
+import { Model, Message, subscriptions, update } from "../src/web/main.vibe"
+import { backend, Backend, Role } from "./web-backends.vibe"
+import { run, Finding } from "./run.vibe"
+
+const WINDOW = "40 millis"
+const ATTACH = "5 millis"
+
+const DomEvent = Schema.Struct({
+  kind: Schema.Literals(["keydown", "wheel", "touchstart", "touchmove", "touchend", "touchcancel", "scroll", "click-wiki", "click-draft", "click-outside", "popstate", "resize", "orientationchange"]),
+  key: Schema.Literals(["k", "K", "Escape", " ", "Tab", "ArrowLeft", "ArrowRight", "PageUp", "Home", "ArrowUp", "a"]),
+  meta: Schema.Boolean,
+  control: Schema.Boolean,
+  shift: Schema.Boolean,
+  button: Schema.Literals([0, 1]),
+})
+type DomEvent = typeof DomEvent.Type
+
+interface Entry {
+  readonly modelToDependencies: (model: Model) => unknown
+  readonly dependenciesToStream: (dependencies: unknown, read: () => unknown) => Stream.Stream<Message, never, never>
+}
+
+type DomEventInstance = Parameters<EventTarget["dispatchEvent"]>[0]
+type Constructors = Record<"Event" | "KeyboardEvent" | "WheelEvent" | "MouseEvent" | "TouchEvent", new (type: string, init?: object) => DomEventInstance>
+
+/** A real happy-dom page holding the links the click subscriptions look for. */
+function page(document: Document) {
+  const wiki = document.createElement("div")
+  wiki.className = "vl-wiki-content"
+  wiki.innerHTML = `<a href="/wiki/index">w</a>`
+  const bubble = document.createElement("div")
+  bubble.className = "sui-chat-bubble"
+  bubble.innerHTML = `<a href="#wiki-draft-index">d</a>`
+  document.body.append(wiki, bubble)
+  return { wiki: wiki.querySelector("a")!, draft: bubble.querySelector("a")!, dispose: () => { wiki.remove(); bubble.remove() } }
+}
+
+function fire(document: Document, window: Window, links: ReturnType<typeof page>, event: DomEvent): void {
+  const dom = window as unknown as Constructors
+  const keys = { key: event.key, metaKey: event.meta, ctrlKey: event.control, shiftKey: event.shift, bubbles: true, cancelable: true }
+  switch (event.kind) {
+    case "keydown": document.dispatchEvent(new dom.KeyboardEvent("keydown", keys)); return
+    case "wheel": document.dispatchEvent(new dom.WheelEvent("wheel", { deltaY: event.button === 0 ? -8 : 8, bubbles: true, cancelable: true })); return
+    case "touchstart":
+    case "touchmove":
+    case "touchend":
+    case "touchcancel": document.dispatchEvent(new dom.TouchEvent(event.kind, { touches: event.button === 0 ? [{ identifier: 1, clientY: event.shift ? 40 : 10 }] : [], bubbles: true, cancelable: true })); return
+    case "scroll": document.dispatchEvent(new dom.Event("scroll", { bubbles: true })); return
+    case "click-wiki": links.wiki.dispatchEvent(new dom.MouseEvent("click", { ...keys, button: event.button })); return
+    case "click-draft": links.draft.dispatchEvent(new dom.MouseEvent("click", { ...keys, button: event.button })); return
+    case "click-outside": document.dispatchEvent(new dom.MouseEvent("click", { ...keys, button: event.button })); return
+    case "popstate":
+    case "resize":
+    case "orientationchange": window.dispatchEvent(new dom.Event(event.kind)); return
+  }
+}
+
+const Input = Schema.Struct({ model: Model, backend: Backend, role: Role, events: Schema.Array(DomEvent).check(Schema.isMaxLength(12)) })
+
+it.live("web/subscriptions", () => run("web/subscriptions", Input, ({ model, backend: kind, role, events }) => Effect.provide(effect {
+  const document = try (try Experimental.Document.Document).current
+  const window = try (try Experimental.Window.Window).current
+  const links = try acquireRelease(Effect.orDie(Effect.try(() => page(document))), (links) => sync(links.dispose))
+  const entries = Object.entries(subscriptions(document, document)) as ReadonlyArray<[string, Entry]>
+  const running = try Effect.forEach(entries, ([name, entry]) => effect {
+    const dependencies = entry.modelToDependencies(model)
+    const stream = entry.dependenciesToStream(dependencies, () => dependencies)
+    const fiber = fork Stream.runCollect(stream.pipe(Stream.interruptWhen(Effect.sleep(WINDOW))))
+    return { name, fiber }
+  })
+  try sleep(ATTACH)
+  try Effect.try(() => { for (const event of events) fire(document, window, links, event) })
+  for (const { name, fiber } of running) {
+    const result = try exit(Fiber.join(fiber))
+    if (result._tag === "Failure") throw new Finding({ report: `${name}: ${Cause.pretty(result.cause)}` })
+    for (const message of result.value) {
+      if (!Schema.is(Message)(message)) throw new Finding({ report: `${name}: emitted an undeclared Message` })
+      if (!Schema.is(Model)(update(model, message).model)) throw new Finding({ report: `${name}: ${message._tag} left an invalid Model` })
+    }
+  }
+  return true
+}, Layer.mergeAll(backend(kind, role), ExperimentalBrowserDocument.layer, ExperimentalBrowserWindow.layer))))

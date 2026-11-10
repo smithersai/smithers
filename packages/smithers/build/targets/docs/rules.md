@@ -139,3 +139,8 @@ or pull-request operations. Use an implemented publication tool or CI job.
 `PnpmWorkspace` declares `packages`, `allowBuilds`, and `linkWorkspacePackages`
 directly. Its `settings` field refuses those names so the generated YAML has
 one value for each key.
+
+`Skills.Install` dispatches the durable `Skills.InstallAction` with
+`Skills.InstallPayload`: the library, the agents and the selection. Its `deps`
+order the graph and never cross the durable boundary, because a durable payload
+must have a JSON codec and a target reference has none (VIP-44).

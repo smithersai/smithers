@@ -1,17 +1,46 @@
-// The API Worker's HTTP surface (src/core/wire.vibe; wiki/decisions/0010-live-agent.md): health, posts, finite reads
-// and the event stream, each answered by the conversation's Durable Object. It logs, traces and counts every request
+import { sandboxRequest, signedOutGateway, type Gateway } from "./SandboxHttp.vibe"
+import { validBodyLength } from "../src/core/protocolDecision.vibe"
+
+import * as ActionsHttp from "./ActionsHttp.vibe"
+// The API Worker's HTTP surface (src/core/wire.vibe; wiki/decisions/0010-live-agent.md): health, posts, finite reads,
+// the event stream and the tour (0014), each answered by the conversation's Durable Object. It logs, traces and counts every request
 // by route and status, never a body: posts are people's words.
+import * as Sse from "effect/encoding/Sse"
+import { HttpIncomingMessage, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Event } from "../src/core/conversation.vibe"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
-import { HEALTH_PATH, MAX_NAME, MAX_POST_BYTES, PostBody, routeOf, type Route } from "../src/core/wire.vibe"
+import { HEALTH_PATH, MAX_NAME, MAX_POST_BYTES, PostBody, WikiBody, TourControlBody, routeOf, type Route } from "../src/core/wire.vibe"
+import { HistoryEvent as HistoryEventSchema } from "../src/history/schemas.vibe"
+import type { Event as HistoryEvent } from "../src/history/mythical.vibe"
+import type { PageRequest } from "../src/history/pages.vibe"
+import {
+  ApproveBody, FoldBody, historyRouteOf, MAX_WRITE_BYTES, NoteBody, PlanBody, StartBody, statusOf, type HistoryRoute, type Write,
+} from "../src/history/wire.vibe"
 import type { Unreachable } from "./Unreachable.vibe"
 
 /** Each conversation's sequencer, as the API reaches its Durable Object. */
 export interface Conversations {
   post(conversation: string, body: PostBody): (string | null)!Unreachable
   read(conversation: string, after: number): ReadSnapshot!Unreachable
+  /** Opens a wiki page through its durable flow: `null` once recorded, else the refusal. */
+  openWiki(conversation: string, page: string): (string | null)!Unreachable
+  /** Starts the agent's tour: `null` once recorded, else the refusal. */
+  controlTour?(conversation: string, action: "pause" | "resume" | "seek", step: number): (string | null)!Unreachable
+  tour(conversation: string): (string | null)!Unreachable
+  /** Ends the running tour: `null` once ended, else the refusal. */
+  endTour(conversation: string): (string | null)!Unreachable
   /** The object's event stream, answering the current request. */
   events(conversation: string): HttpServerResponse.HttpServerResponse!Unreachable!HttpServerRequest.HttpServerRequest
+}
+
+/** VibeLang's mythical history, as the API reaches its History object (wiki/decisions/0020-mythical-history.md). */
+export interface Histories {
+  /** One page of the history (pages.vibe), as its schema encodes it. */
+  page(request: PageRequest): unknown!Unreachable
+  /** Runs the write's flow with its decoded body: what it wrote, or why it was refused. */
+  write(write: Write, body: unknown): { readonly id: string; readonly folded: number; readonly refusal: string | null }!Unreachable!HttpServerRequest.HttpServerRequest
+  /** The object's event stream, answering the current request. */
+  events(): HttpServerResponse.HttpServerResponse!Unreachable!HttpServerRequest.HttpServerRequest
 }
 
 /** How often an idle event stream sends a comment, so proxies keep it open (Cloudflare closes idle ones at 100 s). */
@@ -26,7 +55,7 @@ const encoder = new TextEncoder()
 const decodePost = Schema.decodeUnknownEffect(Schema.fromJsonString(PostBody))
 
 /** `events` as Server-Sent Events: `id` is each event's seq and `data` the event as JSON, with keep-alive comments. */
-export function eventStream(events: Stream.Stream<Event>) {
+export function eventStream(events: Stream.Stream<Event | HistoryEvent>) {
   const messages = events.pipe(Stream.map((event) =>
     Sse.encoder.write({ _tag: "Event", event: "message", id: String(event.seq), data: JSON.stringify(event) })
   ))
@@ -51,13 +80,34 @@ function json(body: unknown, status = 200) {
 
 effect function answer(route: Route, url: URL, conversations: Conversations) {
   const request = try HttpServerRequest.HttpServerRequest
+  if (route.kind === "wiki") {
+    const length = Number(request.headers["content-length"] ?? "0")
+    if (!(length > 0 && length <= 1024)) return json({ error: "body size" }, 413)
+    const text = request.text catch () => ""
+    const body = Schema.decodeUnknownEffect(Schema.fromJsonString(WikiBody))(text) catch () => undefined
+    if (body === undefined) return json({ error: "body" }, 400)
+    const refusal = try conversations.openWiki(route.conversation, body.page)
+    return refusal === null ? json({}) : json({ refusal }, 409)
+  }
   if (route.kind === "post") {
     const length = Number(request.headers["content-length"] ?? "0")
-    if (!(length > 0 && length <= MAX_POST_BYTES)) return json({ error: "body size" }, 413)
+    if (!validBodyLength(length, MAX_POST_BYTES)) return json({ error: "body size" }, 413)
     const text = request.text catch () => ""
     const body = decodePost(text) catch () => undefined
     if (body === undefined || body.name.length > MAX_NAME) return json({ error: "body" }, 400)
     const refusal = try conversations.post(route.conversation, body)
+    return refusal === null ? json({}) : json({ refusal }, 409)
+  }
+  if (route.kind === "tour-control") {
+    const text = request.text catch () => ""
+    if (text.length > 1024) return json({ error: "body size" }, 413)
+    const body = Schema.decodeUnknownEffect(Schema.fromJsonString(TourControlBody))(text) catch () => undefined
+    if (body === undefined || body.step > 11) return json({ error: "body" }, 400)
+    const refusal = conversations.controlTour === undefined ? "not-replying" : try conversations.controlTour(route.conversation, body.action, body.step)
+    return refusal === null ? json({}) : json({ refusal }, 409)
+  }
+  if (route.kind === "tour" || route.kind === "end-tour") {
+    const refusal = try (route.kind === "tour" ? conversations.tour(route.conversation) : conversations.endTour(route.conversation))
     return refusal === null ? json({}) : json({ refusal }, 409)
   }
   const after = afterOf(url)
@@ -66,8 +116,64 @@ effect function answer(route: Route, url: URL, conversations: Conversations) {
   return try conversations.events(route.conversation)
 }
 
-/** Answers the current request; every route but health reaches `conversations`. */
-export effect function handle(conversations: Conversations) {
+/** A write's body, decoded by its write's schema. */
+function decodeWrite(write: Write, text: string): unknown!Schema.SchemaError {
+  switch (write) {
+    case "plan": return Schema.decodeUnknownEffect(Schema.fromJsonString(PlanBody))(text)
+    case "start": return Schema.decodeUnknownEffect(Schema.fromJsonString(StartBody))(text)
+    case "note": return Schema.decodeUnknownEffect(Schema.fromJsonString(NoteBody))(text)
+    case "approve": return Schema.decodeUnknownEffect(Schema.fromJsonString(ApproveBody))(text)
+    case "fold": return Schema.decodeUnknownEffect(Schema.fromJsonString(FoldBody))(text)
+  }
+}
+
+/** Answers a history request: a page, the event stream, or a write's flow, its body decoded by the write's schema. */
+effect function answerHistory(route: HistoryRoute, url: URL, histories: Histories) {
+  const request = try HttpServerRequest.HttpServerRequest
+  if (route.kind === "history-events") {
+    if (afterOf(url) === undefined) return json({ error: "after" }, 400)
+    return try histories.events()
+  }
+  if (route.kind !== "history-write") return json(try histories.page(route.page))
+  const length = Number(request.headers["content-length"] ?? "0")
+  if (!(length >= 0 && length <= MAX_WRITE_BYTES)) return json({ error: "body size" }, 413)
+  // A chunked body has no Content-Length: Effect counts its bytes and stops reading at the limit.
+  const text = Effect.provideService(request.text, HttpIncomingMessage.MaxBodySize, ByteSize.bytes(MAX_WRITE_BYTES)) catch (error) =>
+    error.reason._tag === "RequestParseError" && error.reason.reason === "BodyTooLarge" ? undefined : ""
+  if (text === undefined) return json({ error: "body size" }, 413)
+  const body = decodeWrite(route.write, text === "" ? "{}" : text) catch () => undefined
+  if (body === undefined) return json({ error: "body" }, 400)
+  const written = try histories.write(route.write, body)
+  return written.refusal === null ? json({ id: written.id, folded: written.folded }) : json({ refusal: written.refusal }, statusOf(written.refusal))
+}
+
+/** Answers the current request; health answers itself, history routes reach `histories`, the rest `conversations`. */
+export effect function handle<R = never>(conversations: Conversations, histories: Histories, sandboxes: Gateway<R> = signedOutGateway, actions?: ActionsHttp.ActionsApi, commit?: string) {
+  const request = try HttpServerRequest.HttpServerRequest
+  const url = new URL(request.url, "http://api.invalid")
+  if (url.pathname.startsWith("/api/sandboxes/")) return try sandboxRequest(sandboxes)
+  if (url.pathname === "/api/actions" || url.pathname.startsWith("/api/actions/")) {
+    if (actions === undefined) return json({ code: "unavailable" }, 503)
+    const answered = try withSpan(effect { return ActionsHttp.handle(actions, url) catch () => json({ code: "unavailable" }, 503) }, "vibelang.api.actions")
+    try Metric.update(Metric.withAttributes(requests, { route: "actions", status: String(answered.status) }), 1)
+    try Effect.logInfo("vibelang.api").pipe(Effect.annotateLogs({ route: "actions", status: answered.status }))
+    return answered
+  }
+  if (url.pathname === HEALTH_PATH) return json({ ok: true, agent: "live", ...(commit === undefined ? {} : { commit }) })
+  const history = historyRouteOf(request.method, url.pathname, url.searchParams)
+  if (history !== undefined) {
+    const answered = try withSpan(effect {
+      return answerHistory(history, url, histories) catch (error) => json({ error: error.what }, 503)
+    }, `vibelang.api.${history.kind}`)
+    try Metric.update(Metric.withAttributes(requests, { route: history.kind, status: String(answered.status) }), 1)
+    try Effect.logInfo("vibelang.api").pipe(Effect.annotateLogs({ route: history.kind, status: answered.status }))
+    return answered
+  }
+  return try handleConversations(conversations)
+}
+
+/** The conversation transport shared by hosts that supply Factory but no project-history backend. */
+export effect function handleConversations(conversations: Conversations) {
   const request = try HttpServerRequest.HttpServerRequest
   const url = new URL(request.url, "http://api.invalid")
   if (url.pathname === HEALTH_PATH) return json({ ok: true, agent: "live" })

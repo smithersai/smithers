@@ -1,11 +1,13 @@
+import { nonnegativeCursor } from "./protocolDecision.vibe"
+
 // Schemas for the conversation machine's state (`conversation.vibe`), so a Foldkit Model, the wire and the tests can
 // decode and encode it. Each one matches the TypeScript type of the same name in `conversation.vibe`.
 
 /** A safe, nonnegative event cursor, shared by every wire/state/surface schema. */
-export const Seq = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+export const Seq = Schema.Int.check(Schema.makeFilter(nonnegativeCursor, Schema.isGreaterThanOrEqualTo(0).annotations))
 
 /** Why the sequencer refused an intent (`Refusal` in conversation.vibe). */
-export const RefusalReason = Schema.Literals(["empty", "too-long", "duplicate", "busy", "not-replying"])
+export const RefusalReason = Schema.Literals(["empty", "too-long", "duplicate", "busy", "not-replying", "forbidden", "full"])
 
 export schema Entry {
   readonly id: string
@@ -19,11 +21,22 @@ export schema Entry {
   readonly error: string
 }
 
+export schema RoleGrant { readonly id: string; readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"; readonly blocked: boolean }
+
+export schema StoredStep { readonly key: string; readonly name: string; readonly attempt: Seq; readonly state: string; readonly started: Seq; readonly at: Seq }
+export schema StoredRun { readonly id: string; readonly flow: string; readonly door: string; readonly actor: string; readonly state: string; readonly started: Seq; readonly at: Seq; readonly result: string; readonly steps: ReadonlyArray<StoredStep> }
+
+export schema Walkthrough { readonly step: Seq; readonly target: string; readonly paused: boolean; readonly revision: Seq; readonly remaining: Seq; readonly at: Seq }
+
 export schema Conversation {
+  readonly walkthrough?: Walkthrough
   readonly seq: Seq
   readonly entries: ReadonlyArray<Entry>
   readonly agent: "idle" | "working" | "failed"
   readonly replying: string
+  readonly pane: string
+  readonly roles: ReadonlyArray<RoleGrant>
+  readonly runs?: ReadonlyArray<StoredRun>
 }
 
 export schema Pending {
@@ -52,9 +65,26 @@ export schema ReplyDelta { readonly type: "ReplyDelta"; readonly seq: Seq; reado
 export schema ReplyRestarted { readonly type: "ReplyRestarted"; readonly seq: Seq; readonly id: string }
 export schema ReplyFinished { readonly type: "ReplyFinished"; readonly seq: Seq; readonly id: string }
 export schema ReplyFailed { readonly type: "ReplyFailed"; readonly seq: Seq; readonly id: string; readonly reason: string }
+export schema TourStarted { readonly type: "TourStarted"; readonly seq: Seq; readonly id: string }
+export schema TourEnded { readonly type: "TourEnded"; readonly seq: Seq; readonly id: string }
+export schema PaneOpened { readonly type: "PaneOpened"; readonly seq: Seq; readonly id: string; readonly url: string }
+
+export schema RoleGranted { readonly type: "RoleGranted"; readonly seq: Seq; readonly id: string; readonly by: string; readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"; readonly mode: "person" | "participation" | "bootstrap" }
+export schema ActionAuthorized { readonly type: "ActionAuthorized"; readonly seq: Seq; readonly id: string; readonly by: string; readonly action: "read" | "ask" | "tour" | "people" | "issue" | "comment" | "vip" | "action" | "sandbox" | "triage" | "merge" | "settings" | "roles" | "wiki" }
+
+export schema ActionRequested { readonly type: "ActionRequested"; readonly seq: Seq; readonly id: string; readonly flow: string; readonly door: string; readonly actor: string; readonly at: Seq }
+export schema ActionStep { readonly type: "ActionStep"; readonly seq: Seq; readonly id: string; readonly key: string; readonly name: string; readonly attempt: Seq; readonly state: string; readonly at: Seq }
+export schema ActionSettled { readonly type: "ActionSettled"; readonly seq: Seq; readonly id: string; readonly state: string; readonly result: string; readonly at: Seq }
+
+export schema WalkthroughDriven { readonly type: "WalkthroughDriven"; readonly seq: Seq; readonly id: string; readonly step: Seq; readonly target: string; readonly at: Seq; readonly duration: Seq }
+export schema TourPaused { readonly type: "TourPaused"; readonly seq: Seq; readonly id: string; readonly at: Seq }
+export schema TourResumed { readonly type: "TourResumed"; readonly seq: Seq; readonly id: string; readonly at: Seq }
+export schema TourSought { readonly type: "TourSought"; readonly seq: Seq; readonly id: string; readonly at: Seq; readonly step: Seq }
 
 /** Decodes one event off the wire. */
-export const EventSchema = Schema.Union([Posted, ReplyStarted, ReplyDelta, ReplyRestarted, ReplyFinished, ReplyFailed])
+export const EventSchema = Schema.Union([
+  WalkthroughDriven, TourPaused, TourResumed, TourSought, RoleGranted, ActionAuthorized, Posted, ReplyStarted, ReplyDelta, ReplyRestarted, ReplyFinished, ReplyFailed, TourStarted, TourEnded, PaneOpened, ActionRequested, ActionStep, ActionSettled,
+])
 
 /** A finite read: current copies of entries touched after `after`, and the event cursor. */
 export schema ReadSnapshot { readonly seq: Seq; readonly entries: ReadonlyArray<Entry> }

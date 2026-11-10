@@ -1,0 +1,234 @@
+// @vitest-environment node
+// Production HTTP/SQLite adapters over the shipped product fixture hosts; independent of unit/fuzz workloads.
+import { it, expect } from "@effect/vitest"
+import { FetchHttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { fixtureHost, makeIssueStore, fixtureIssues, type FixturePerson } from "../src/core/IssuesFactory.vibe"
+import { fixtureWikiHost, makeWikiStore } from "../src/core/WikiFactory.vibe"
+import { IssueHost } from "../src/core/issueFlows.vibe"
+import { WikiHost } from "../src/core/wikiFlows.vibe"
+import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
+import { WikiFailure, WikiState, type WikiRequest } from "../src/core/wikiSchemas.vibe"
+import { specificationAccepted } from "../src/core/conversation.vibe"
+import * as Issues from "../worker/Issues.vibe"
+import * as Wiki from "../worker/Wiki.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const issue: IssueRequest = { op: "read", key: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "" }
+const wiki: WikiRequest = { op: "read", key: "read", page: "roadmap", base: "", text: "" }
+const person: FixturePerson = { id: "bench-person", login: "ada", role: "maintainer" }
+
+effect function incoming(path: string, method = "GET", body?: unknown) {
+  let wire = HttpClientRequest.make(method as "GET" | "POST" | "DELETE")("https://bench.invalid" + path)
+  if (body !== undefined) wire = HttpClientRequest.bodyJsonUnsafe(wire, body)
+  return HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(wire))
+}
+effect function decoded(response: HttpServerResponse.HttpServerResponse) {
+  return { status: response.status, body: try promise(() => HttpServerResponse.toWeb(response).json()) as any }
+}
+
+effect function issueWorld() {
+  const kv = try Effect.try(() => objectStorage())
+  const storage = kv as unknown as Storage
+  const identity = try Ref.make<FixturePerson>(person)
+  const store = try makeIssueStore()
+  const real = try fixtureHost(() => Ref.get(identity), store.state, store.lock)
+  const fault = try Ref.make("")
+  const host: IssueHost.Shape = { perform: effect request => {
+    const reason = try Ref.get(fault)
+    if (reason !== "") throw new IssueFailure({ reason, unwritten: true })
+    return try real.perform(request)
+  } }
+  const authority: Issues.IssueAuthority.Shape = { current: () => Ref.get(identity).pipe(Effect.map(actor => ({ ...actor }))) }
+  const serve = effect (path: string, method = "GET", body?: unknown) => {
+    const request = try incoming(path, method, body)
+    return try Issues.serveIssues("bench-issues", storage).pipe(
+      Effect.provideService(HttpServerRequest.HttpServerRequest, request),
+      Effect.provideService(Issues.IssueAuthority, authority), Effect.provideService(IssueHost, host), Effect.provide(FetchHttpClient.layer),
+    )
+  }
+  const trace = try Config.withDefault(Config.Boolean("BENCH_TRACE_RECOVERY"), false)
+  let ordinal = 0
+  const call = effect (body: IssueRequest) => {
+    const step = ++ordinal
+    if (trace) try Console.error("vibelang.bench.issue-request", { step, phase: "start" })
+    const answer = try decoded(try serve("/api/issues", "POST", body))
+    if (trace) try Console.error("vibelang.bench.issue-request", { step, phase: "end", status: answer.status })
+    return answer
+  }
+  return { kv, storage, identity, store, fault, call, serve }
+}
+
+it("issue HTTP/SQLite journeys preserve real receipts, replay and role boundaries", async ({ bench }) => {
+  const result = await workload(bench, "issues-host-journey", "async", () => runPromise(scoped(effect {
+    const world = try issueWorld()
+    const before = try world.call(issue)
+    const created = try world.call({ ...issue, op: "new", title: "Measured", text: "Retained body", key: "new" })
+    const replay = try world.call({ ...issue, op: "new", title: "Measured", text: "Retained body", key: "new" })
+    const changed = try world.call({ ...issue, op: "new", title: "Changed", key: "new" })
+    const accepted = try world.call({ ...issue, op: "accept", number: 45, key: "accept" })
+    const saved = try world.call({ ...issue, key: "resume", resumeOp: "new", resumeKey: "new" })
+    try Ref.set(world.identity, { ...person, role: "viewer" as const })
+    const revoked = try world.call({ ...issue, op: "accept", number: 45, key: "accept" })
+    try Ref.set(world.identity, { ...person, kind: "agent" as const })
+    const agent = try world.call({ ...issue, op: "decline", number: 45, key: "agent" })
+    try Ref.set(world.identity, person)
+    const revised = try world.call({ ...issue, op: "spec-revise", revision: 0, text: "# Measured specification", key: "spec" })
+    const noReviewer = try world.call({ ...issue, op: "spec-review", revision: 1, reviewer: "astra", key: "review" })
+    const after = try world.call({ ...issue, key: "after" })
+    try Effect.try(() => {
+      expect([before.status, created.status, replay.status, changed.status, accepted.status, saved.status, revoked.status, agent.status, revised.status, noReviewer.status, after.status]).toEqual([200, 200, 200, 400, 200, 200, 403, 403, 200, 503, 200])
+      expect(before.body.items.find((item: any) => item.number === 44)).toMatchObject({ vip: "In review" })
+      expect(before.body.items.find((item: any) => item.number === 44)).not.toHaveProperty("approvedBy")
+      expect(created.body.items[0]).toMatchObject({ number: 51, title: "Measured", body: "Retained body", author: "ada" })
+      expect(replay.body).toEqual(created.body)
+      expect(changed.body).toEqual({ reason: "invalid" })
+      expect(accepted.body.items.find((item: any) => item.number === 45)).toMatchObject({ vip: "Accepted", approvedBy: "ada", approvedAt: expect.any(String) })
+      expect(saved.body.saved).toMatchObject({ request: { op: "new", key: "new", title: "Measured" }, status: "completed", selected: 51, unwritten: false })
+      expect(revised.body.specification).toMatchObject({ revision: 1, text: "# Measured specification" })
+      expect(noReviewer.body).toEqual({ reason: "no-model", unwritten: true })
+      expect(specificationAccepted(after.body.specification)).toBe(false)
+      expect(after.body.items).toEqual(accepted.body.items)
+      expect(after.body.items).toHaveLength(fixtureIssues.length + 1)
+      expect(after.body.specificationHistory).toEqual([{ revision: 1, event: "revision", reviewer: "", verdict: "", grade: "", link: "", at: expect.any(String) }])
+      const runs = world.kv.sql.exec("SELECT status FROM flows_runs").toArray()
+      expect(runs.length).toBeGreaterThan(5)
+      expect(runs.every(run => run.status === "completed" || run.status === "failed")).toBe(true)
+    })
+  }))).run(slow)
+  await runPromise(artifact("issues-host-journey", "Vitest built-in bench; real serveIssues/executeIssues with SQLite, actual fixtureHost and changing Effect identity. Fresh world per sample; public projection strips untrusted approval, new/replay/changed request, human approval, saved receipt, revoked/agent writes, specification revision and missing reviewer checked. Exact HTTP statuses, retained body, once-only creation, approval and revision history asserted. Setup/assertions included.", ["Node HTTP values and real in-memory SQLite; no TCP, workerd scheduling, GitHub/OAuth or model. Product fixture host is explicitly injected. Whole journey is not per-command latency."], result))
+})
+
+it("issue failure statuses and explicit retry keep the original request and state", async ({ bench }) => {
+  const result = await workload(bench, "issues-host-recovery", "async", () => runPromise(scoped(effect {
+    const world = try issueWorld()
+    const before = try Ref.get(world.store.state)
+    for (const [reason, status] of [["forbidden", 403], ["sign-in", 401], ["connect", 401], ["missing", 404], ["unknown", 409], ["title", 400], ["incomplete", 400], ["assignee", 400], ["empty", 400], ["tree", 400], ["invalid", 400], ["review", 400], ["closed", 400], ["unavailable", 503], ["rate-limited", 503]] as const) {
+      try Ref.set(world.fault, reason)
+      const answer = try world.call({ ...issue, op: "new", key: "failure-" + reason, title: "Measured" })
+      try Effect.try(() => { expect(answer.status).toBe(status); expect(answer.body).toEqual({ reason, unwritten: true }) })
+    }
+    const request: IssueRequest = { ...issue, op: "new", key: "retry", title: "After outage", text: "Keep me" }
+    try Ref.set(world.fault, "unavailable")
+    const first = try world.call(request)
+    try Ref.set(world.fault, "")
+    const stillFailed = try world.call(request)
+    const edited = try world.call({ ...request, title: "Different", recovery: "changed" })
+    const recovered = try world.call({ ...request, recovery: "one" })
+    const replay = try world.call({ ...request, recovery: "one" })
+    const receipt = try world.call({ ...issue, key: "resume", resumeOp: "new", resumeKey: "retry", resumeRecovery: "one" })
+    const missing = try world.call({ ...issue, key: "missing", resumeOp: "new", resumeKey: "absent" })
+    const invalid = try world.call({ ...request, recovery: "has space" })
+    const after = try Ref.get(world.store.state)
+    try Effect.try(() => {
+      expect([first.status, stillFailed.status, edited.status, recovered.status, replay.status, receipt.status, missing.status, invalid.status]).toEqual([503, 503, 400, 200, 200, 200, 404, 400])
+      expect(stillFailed.body).toEqual(first.body)
+      expect(recovered.body.items[0]).toMatchObject({ number: 51, title: "After outage", body: "Keep me" })
+      expect(replay.body).toEqual(recovered.body)
+      expect(receipt.body.saved).toMatchObject({ request: { title: "After outage", key: "retry" }, status: "completed", selected: 51 })
+      expect(after.items.slice(1)).toEqual(before.items)
+      expect(after.items).toHaveLength(before.items.length + 1)
+    })
+    const other = try world.serve("/elsewhere")
+    const method = try world.serve("/api/issues", "DELETE")
+    const malformed = try world.serve("/api/issues", "POST", { ...issue, key: "has space" })
+    try Effect.try(() => expect([other.status, method.status, malformed.status]).toEqual([404, 405, 400]))
+  }))).run(slow)
+  await runPromise(artifact("issues-host-recovery", "Vitest built-in bench; production HTTP/SQLite issue adapter, fifteen injected typed Effect host failures, then a real fixture creation after explicit native retryFrom. Cached failure cannot retry implicitly; changed payload refused; exact matching recovery, replay, saved operation and missing receipt checked against unchanged fixture rows. Three fresh worlds; all assertions included. " + (runSync(Config.withDefault(Config.Boolean("BENCH_TRACE_RECOVERY"), false)) ? "Phase-only diagnostic logs enabled; their IO is included." : "Phase-only diagnostic logs disabled."), ["Fault injection fails before the shipped fixture host; no own-code request interception, GitHub mutation or OAuth. Node SQLite in memory, no network/model. This is a complete fault/recovery corpus cost."], result))
+})
+
+effect function wikiWorld() {
+  const kv = try Effect.try(() => objectStorage())
+  const storage = kv as unknown as Storage
+  const identity = try Ref.make<FixturePerson>(person)
+  const store = try makeWikiStore()
+  const real = try fixtureWikiHost(() => Ref.get(identity), store)
+  const fault = try Ref.make("")
+  const host: WikiHost.Shape = { perform: effect request => {
+    const reason = try Ref.get(fault)
+    if (reason !== "") throw new WikiFailure({ reason, unwritten: true })
+    return try real.perform(request)
+  } }
+  const authority: Wiki.WikiAuthority.Shape = { current: () => Ref.get(identity).pipe(Effect.map(actor => ({ ...actor }))) }
+  const serve = effect (path: string, method = "GET", body?: unknown) => {
+    const request = try incoming(path, method, body)
+    return try Wiki.serveWiki("bench-wiki", storage).pipe(
+      Effect.provideService(HttpServerRequest.HttpServerRequest, request),
+      Effect.provideService(Wiki.WikiAuthority, authority), Effect.provideService(WikiHost, host), Effect.provide(FetchHttpClient.layer),
+    )
+  }
+  const call = effect (body: WikiRequest) => try decoded(try serve("/api/wiki", "POST", body))
+  return { kv, storage, identity, store, fault, call, serve }
+}
+
+it("wiki HTTP/SQLite reviews retain source, private drafts and exact replay identities", async ({ bench }) => {
+  const result = await workload(bench, "wiki-host-journey", "async", () => runPromise(scoped(effect {
+    const world = try wikiWorld()
+    const before = try decoded(try world.serve("/api/wiki?page=roadmap"))
+    const original = Schema.decodeUnknownSync(WikiState)(before.body).pages.find(page => page.id === "roadmap")!
+    const drafted = try world.call({ ...wiki, op: "draft", text: "Measured change", key: "draft" })
+    const draft = Schema.decodeUnknownSync(WikiState)(drafted.body).draft!
+    const readDraft = try world.call({ ...wiki, key: "read-draft" })
+    const request: WikiRequest = { ...wiki, op: "save", base: original.source, text: draft.text, key: "save" }
+    const saved = try world.call(request)
+    const repeated = try world.call(request)
+    const changed = try world.call({ ...request, text: "Wrong" })
+    const after = try world.call({ ...wiki, key: "after" })
+    try Ref.set(world.identity, { ...person, role: "contributor" as const })
+    const denied = try world.call(request)
+    const proposed = try world.call({ ...request, op: "propose", key: "proposal" })
+    try Ref.set(world.identity, { ...person, kind: "agent" as const })
+    const agent = try world.call({ ...request, key: "agent" })
+    const proposals = try Ref.get(world.store.proposals)
+    try Effect.try(() => {
+      expect([before.status, drafted.status, readDraft.status, saved.status, repeated.status, changed.status, after.status, denied.status, proposed.status, agent.status]).toEqual([200, 200, 200, 200, 200, 400, 200, 403, 200, 403])
+      expect(draft).toEqual({ page: "roadmap", text: original.source.trimEnd() + "\n\nMeasured change\n" })
+      expect(readDraft.body.draft).toEqual(draft)
+      expect(saved.body.review).toBe("https://github.com/smithersai/vibelang/pull/1001")
+      expect(repeated.body).toEqual(saved.body)
+      expect(after.body.pages).toEqual([original])
+      expect(after.body.draft).toBeUndefined()
+      expect(proposed.body.review).toBe("https://github.com/smithersai/vibelang/pull/1002")
+      expect(proposals.map(entry => [entry.op, entry.base, entry.text, entry.person])).toEqual([["save", original.source, draft.text, person.id], ["propose", original.source, draft.text, person.id]])
+    })
+  }))).run(slow)
+  await runPromise(artifact("wiki-host-journey", "Vitest built-in bench; production serveWiki/executeWiki and SQLite runtime over real fixtureWikiHost. GET/read, private draft/readback, maintainer Save, exact replay and changed-payload refusal, contributor gate/Propose and agent refusal. Original source, literal draft, two distinct review receipts and exact retained proposals checked; three fresh worlds, setup/assertions included.", ["Product fixture repository, no GitHub/OAuth/network/model. Node HTTP objects and in-memory SQLite; no claim of actual provider review creation or workerd scheduling. Whole-journey cost."], result))
+})
+
+it("wiki failure statuses and native retry cannot edit an uncertain request", async ({ bench }) => {
+  const result = await workload(bench, "wiki-host-recovery", "async", () => runPromise(scoped(effect {
+    const world = try wikiWorld()
+    const before = try world.call(wiki)
+    const base = before.body.pages[0].source as string
+    const request: WikiRequest = { ...wiki, op: "save", base, text: base + "\nMeasured\n", key: "retry" }
+    for (const [reason, status] of [["forbidden", 403], ["sign-in", 401], ["connect", 401], ["missing", 404], ["unknown", 409], ["conflict", 409], ["empty", 400], ["invalid", 400], ["unavailable", 503]] as const) {
+      try Ref.set(world.fault, reason)
+      const answer = try world.call({ ...request, key: "failure-" + reason })
+      try Effect.try(() => { expect(answer.status).toBe(status); expect(answer.body).toEqual({ reason, unwritten: true }) })
+    }
+    try Ref.set(world.fault, "unavailable")
+    const failed = try world.call(request)
+    try Ref.set(world.fault, "")
+    const stillFailed = try world.call(request)
+    const edited = try world.call({ ...request, text: "Changed", recovery: "wrong" })
+    const recovered = try world.call({ ...request, recovery: "one" })
+    const replay = try world.call({ ...request, recovery: "one" })
+    const invalid = try world.call({ ...request, recovery: "has space" })
+    const after = try world.call({ ...wiki, key: "after" })
+    const proposals = try Ref.get(world.store.proposals)
+    const other = try world.serve("/elsewhere")
+    const method = try world.serve("/api/wiki", "DELETE")
+    const badKey = try world.serve("/api/wiki", "POST", { ...wiki, key: "has space" })
+    try Effect.try(() => {
+      expect([failed.status, stillFailed.status, edited.status, recovered.status, replay.status, invalid.status, other.status, method.status, badKey.status]).toEqual([503, 503, 400, 200, 200, 400, 404, 405, 400])
+      expect(stillFailed.body).toEqual(failed.body)
+      expect(recovered.body.review).toBe("https://github.com/smithersai/vibelang/pull/1001")
+      expect(replay.body).toEqual(recovered.body)
+      expect(after.body.pages).toEqual(before.body.pages)
+      expect(proposals).toHaveLength(1)
+      expect(proposals[0]).toMatchObject({ key: "retry", text: request.text, base })
+    })
+  }))).run(slow)
+  await runPromise(artifact("wiki-host-recovery", "Vitest built-in bench; nine typed faulty Effect host outcomes through production HTTP/SQLite, failure receipt replay, changed request rejection and native retryFrom into shipped fixtureWikiHost. Exact statuses, original request, once-only review and unchanged Markdown checked; three fresh worlds, assertions included.", ["Fault service fails before host writes; no HTTP interception. Local SQLite, no provider/real credentials/model/network. No successful GitHub or OAuth coverage claimed."], result))
+})

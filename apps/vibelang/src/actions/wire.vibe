@@ -1,0 +1,20 @@
+export const ACTIONS_PATH = "/api/actions"
+export schema StartBody {
+  readonly id: string
+  readonly flow: string
+  readonly input: Schema.Json
+  readonly door: "button" | "slash" | "agent"
+}
+export schema RunRequest {
+  readonly owner?: string
+  readonly name?: string
+  readonly id: string
+  readonly flow: string
+  readonly input: Schema.Json
+  readonly door: "button" | "slash" | "agent"
+  readonly actor: "person" | "agent"
+}
+export schema Started { readonly id: string }
+export schema Failure { readonly code: string }
+
+export schema RerunBody { readonly id: string }

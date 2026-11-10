@@ -1,0 +1,204 @@
+// @vitest-environment node
+// One run's host on real SQLite: its refusals, a retry that races its own acceptance, a failing history flow, and
+// cancellation. A faulty history host stands in only where the durable host itself must fail.
+import { describe, expect, it } from "@effect/vitest"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import * as HistoryActions from "../worker/HistoryActions.vibe"
+import * as Objects from "../worker/Objects.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import { world, request, history } from "./support/actionObjects.vibe"
+
+const POST = "vibelang/Post"
+const TOUR = "vibelang/Tour"
+const PLAN = "vibelang/history/Plan"
+const START = "vibelang/history/Start"
+const REPLY = "vibelang/Reply"
+const planInput = { how: "append", epic: "", newEpic: "Coverage", target: "", title: "Runs", task: "t" }
+
+const CANCEL_FAILED = { code: "cancel_request_failed" as const, executionId: "stuck", reason: "journal unavailable" }
+const queued = (id: string, flow: string) => ({ type: "RequestAction" as const, id, flow, door: "button", actor: "person", at: 1 })
+
+describe("starting a run", () => {
+  it.live("refuses a signed-out person, invalid input and a different request under the same id", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("refused")
+    const start = (body: Parameters<typeof open.host.start>[0]) => open.host.start(body, "maintainer")
+    const signedOut = try Runs.start("refused", open.storage, open.sequencer, request("refused", POST, { text: "hi" }, w.person.id), "maintainer")
+    const wrongType = try start(request("refused", POST, { text: 7 }, w.person.id))
+    const badPlan = try start(request("refused", PLAN, {}, w.person.id))
+    const accepted = try start(request("refused", POST, { text: "hi" }, w.person.id))
+    const conflict = try start(request("refused", POST, { text: "changed" }, w.person.id))
+    const repeated = try start(request("refused", POST, { text: "hi" }, w.person.id))
+    const snapshot = try open.sequencer.read(0)
+    try Effect.try(() => {
+      expect([signedOut, wrongType, badPlan]).toEqual(["forbidden", "input", "input"])
+      expect([accepted, conflict, repeated]).toEqual([null, "conflict", null])
+      expect(snapshot.entries.filter((entry) => entry.author === "person")).toHaveLength(1)
+    })
+  }), 60_000)
+
+  it.live("fails a post that has no text, and records why", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("blank")
+    const answer = try open.host.start(request("blank", POST, {}, w.person.id), "maintainer")
+    const rows = try Runs.read(open.sequencer)
+    try Effect.try(() => {
+      expect(answer).toBe("input")
+      expect(rows).toMatchObject([{ id: "blank", state: "failed", result: "Action failed" }])
+    })
+  }), 60_000)
+
+  it.live("starts a tour requested with non-object input and no owner", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("anon-tour")
+    const answer = try open.host.start({ id: "anon-tour", flow: TOUR, input: [], door: "button", actor: "person" }, "viewer")
+    const rows = try Runs.read(open.sequencer)
+    try Effect.try(() => {
+      expect(answer).toBeNull()
+      expect(rows.map((run) => run.id)).toEqual(["anon-tour"])
+    })
+  }), 60_000)
+
+  it.live("settles a retried post whose message was accepted before the host stopped, without posting twice", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("raced")
+    try Objects.post("raced", open.storage, open.sequencer, "raced", "will", "hello", w.person.id)
+    try open.sequencer.action(queued("raced", POST))
+    const clock = open.storage as unknown as { alarmAt: number | undefined }
+    clock.alarmAt = undefined
+    const answer = try open.host.start(request("raced", POST, { text: "hello" }, w.person.id), "maintainer")
+    const snapshot = try open.sequencer.read(0)
+    const rows = try Runs.read(open.sequencer)
+    try Effect.try(() => {
+      expect(answer).toBeNull()
+      expect(snapshot.entries.filter((entry) => entry.author === "person")).toHaveLength(1)
+      expect(rows).toMatchObject([{ id: "raced", state: "passed", result: "null" }])
+      expect(clock.alarmAt).toBeDefined()
+    })
+  }), 60_000)
+
+  it.live("keeps a retried tour queued for its alarm once its reply exists", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("raced-tour")
+    try Objects.tour("raced-tour", open.storage, open.sequencer)
+    try open.sequencer.action(queued("raced-tour", TOUR))
+    const answer = try open.host.start(request("raced-tour", TOUR, {}, w.person.id), "maintainer")
+    const rows = try Runs.read(open.sequencer)
+    try Effect.try(() => {
+      expect(answer).toBeNull()
+      expect(rows).toMatchObject([{ id: "raced-tour", state: "queued" }])
+    })
+  }), 60_000)
+
+  it.live("posts a queued run whose message never arrived", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("lost")
+    try open.sequencer.action(queued("lost", POST))
+    const answer = try open.host.start(request("lost", POST, { text: "again" }, w.person.id), "maintainer")
+    const snapshot = try open.sequencer.read(0)
+    try Effect.try(() => {
+      expect(answer).toBeNull()
+      expect(snapshot.entries.filter((entry) => entry.author === "person").map((entry) => entry.text)).toEqual(["again"])
+    })
+  }), 60_000)
+
+  it.live("marks a history run failed when its durable host is busy", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("busy")
+    const real = HistoryActions.make("busy", open.storage)
+    const busy = { ...real, start: () => Effect.succeed("busy") }
+    const answer = try Runs.start("busy", open.storage, open.sequencer, request("busy", PLAN, planInput, w.person.id), "maintainer", busy, w.authority)
+    const rows = try Runs.read(open.sequencer)
+    try Effect.try(() => {
+      expect(answer).toBe("busy")
+      expect(rows).toMatchObject([{ id: "busy", state: "failed", result: "Action failed" }])
+    })
+  }), 60_000)
+})
+
+describe("the run's alarm", () => {
+  it.live("fails a refused history write and carries the refusal in the result", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("nothing")
+    try open.host.start(request("nothing", START, { id: "m99", lane: "lane" }, w.person.id), "maintainer")
+    provide history {
+      try open.host.alarm(w.spend, w.model, try Mythical)
+    }
+    const rows = try Runs.read(open.sequencer)
+    try Effect.try(() => {
+      expect(rows).toMatchObject([{ id: "nothing", state: "failed" }])
+      expect(JSON.parse(rows[0]!.result).refusal).toBe("unknown")
+    })
+  }), 60_000)
+
+  it.live("records a history flow that fails as a failed run", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("broken")
+    const real = HistoryActions.make("broken", open.storage)
+    const body = request("broken", PLAN, planInput, w.person.id)
+    try open.host.start(body, "maintainer")
+    const broken = {
+      ...real,
+      alarm: () => Effect.succeed({ _tag: "Settled" as const, forgetAtMs: 0 }),
+      receipt: () => Effect.succeed(Option.some(new Flow.Complete({ exit: Exit.die("broken") }))),
+    }
+    provide history {
+      try Runs.alarm("broken", open.storage, open.sequencer, w.spend, w.model, try Mythical, broken)
+    }
+    const rows = try Runs.read(open.sequencer)
+    try Effect.try(() => expect(rows).toMatchObject([{ id: "broken", state: "failed", result: "Action failed" }]))
+  }), 60_000)
+
+  it.live("runs the conversation's own alarm when no action was requested", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("idle")
+    provide history {
+      try open.host.alarm(w.spend, w.model, try Mythical)
+    }
+    const rows = try Runs.read(open.sequencer)
+    try Effect.try(() => expect(rows).toEqual([]))
+  }), 60_000)
+})
+
+describe("cancelling a run", () => {
+  it.live("answers not-found for an unknown run and forbidden for a signed-out person", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("kept")
+    try open.host.start(request("kept", PLAN, planInput, w.person.id), "maintainer")
+    const unknown = try open.host.cancel("other", "maintainer", w.person.id)
+    const signedOut = try Runs.cancel("kept", open.storage, open.sequencer, "kept", "maintainer")
+    const rows = try Runs.read(open.sequencer)
+    try Effect.try(() => {
+      expect([unknown, signedOut]).toEqual(["not-found", "forbidden"])
+      expect(rows[0]?.state).toBe("queued")
+    })
+  }), 60_000)
+
+  it.live("cancels a post's reply under the post's permission and fails the reply in progress", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("spoken")
+    try open.host.start(request("spoken", POST, { text: "hello" }, w.person.id), "maintainer")
+    try open.sequencer.action({ type: "RequestAction", id: "spoken-reply", flow: REPLY, door: "agent", actor: "agent", at: 2 })
+    const answer = try open.host.cancel("spoken-reply", "maintainer", w.person.id)
+    const rows = try Runs.read(open.sequencer)
+    try Effect.try(() => {
+      expect(answer).toBeNull()
+      expect(rows.find((run) => run.id === "spoken-reply")).toMatchObject({ state: "cancelled", result: "Cancelled" })
+    })
+  }), 60_000)
+
+  it.live("reports a history cancellation that fails and leaves the run open", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("stuck")
+    const real = HistoryActions.make("stuck", open.storage)
+    try open.host.start(request("stuck", PLAN, planInput, w.person.id), "maintainer")
+    const stuck = { ...real, cancel: () => Effect.fail(new FlowRuntime.CancelRequestFailed(CANCEL_FAILED)) }
+    const answer = try Runs.cancel("stuck", open.storage, open.sequencer, "stuck", "maintainer", stuck, w.authority, w.person.id)
+    const rows = try Runs.read(open.sequencer)
+    try Effect.try(() => {
+      expect(answer).toBe("cancel-failed")
+      expect(rows[0]?.state).toBe("queued")
+    })
+  }), 60_000)
+})

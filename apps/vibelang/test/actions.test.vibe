@@ -1,0 +1,126 @@
+import { describe, expect, it } from "@effect/vitest"
+import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { Factory, Unavailable } from "../src/core/Factory.vibe"
+import { faultyFactory, trace } from "./support/FaultyFactory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+
+const world = MockActions({ role: "contributor", actor: "person" }).pipe(Layer.provide(MockFactory))
+
+effect function finished(id: string) {
+  const actions = try Actions
+  return try Stream.runLast(actions.follow(id).pipe(Stream.takeUntil((run) => run.state !== "running" && run.state !== "queued")))
+}
+
+describe("registered actions", () => {
+  it.live("lists actual flows; starts by button and slash; shares live steps and the final result", () => effect {
+    provide world {
+      const actions = try Actions
+      const all = try actions.list()
+      const id = try actions.start("vibelang/Post", { text: "What is Effect?" }, "button")
+      const settled = try finished(id)
+      const slash = try actions.command("/post How do I install it?")
+      const second = try finished(slash)
+      const runs = try actions.runs("vibelang/Post")
+      try Effect.try(() => {
+        expect(all.map((flow) => flow.name)).toEqual(expect.arrayContaining(["vibelang/Post", "vibelang/Reply", "vibelang/Tour", "vibelang/docs/open"]))
+        expect(Option.isSome(settled) && settled.value.state).toBe("passed")
+        expect(Option.isSome(second) && second.value.state).toBe("passed")
+        expect(runs).toHaveLength(2)
+        expect(runs[0]!.door).toBe("slash")
+        expect(runs[1]!.steps.length).toBeGreaterThan(0)
+        expect(runs[1]!.steps.every((step) => step.state === "passed")).toBe(true)
+      })
+    }
+  })
+  it.live("settles a refused history write as failed with its reason, and an accepted one as passed", () => effect {
+    provide world {
+      const actions = try Actions
+      const refused = try finished(try actions.start("vibelang/history/Start", { id: "m999999", lane: "lane" }, "button"))
+      const accepted = try finished(try actions.start("vibelang/history/Plan", { how: "append", epic: "", newEpic: "Runs", target: "", title: "Settles", task: "t" }, "button"))
+      try Effect.try(() => {
+        expect(Option.isSome(refused) && refused.value.state).toBe("failed")
+        expect(Option.isSome(refused) && JSON.parse(refused.value.result).refusal).toBe("unknown")
+        expect(Option.isSome(accepted) && accepted.value.state).toBe("passed")
+      })
+    }
+  })
+  it.effect("filters every role at the service boundary, including direct calls", () => effect {
+    for (const role of ["viewer", "new", "community", "contributor", "maintainer"] as const) {
+      provide MockActions({ role, actor: "person" }).pipe(Layer.provide(MockFactory)) {
+        const actions = try Actions
+        const commands = try actions.commands()
+        const start = actions.start("vibelang/Post", { text: "hello" }, "button") catch (error) => error.code
+        try Effect.try(() => {
+          expect(commands.some((command) => command.command === "/tour")).toBe(true)
+          expect(commands.some((command) => command.command === "/post")).toBe(role === "contributor" || role === "maintainer")
+          if (role !== "contributor" && role !== "maintainer") expect(start).toBe("forbidden")
+        })
+      }
+    }
+  })
+  it.live("keeps a failed run visible when a faulty Effect service fails; logs exclude its message", () => effect {
+    const broken = faultyFactory("tour-unavailable", trace())
+    provide MockActions({ role: "contributor", actor: "person" }).pipe(Layer.provide(broken)) {
+      const actions = try Actions
+      const id = try actions.start("vibelang/Tour", {}, "button")
+      const run = try finished(id)
+      try Effect.try(() => {
+        expect(Option.isSome(run) && run.value.state).toBe("failed")
+        expect(Option.isSome(run) && run.value.steps.some((step) => step.state === "failed")).toBe(true)
+        expect(JSON.stringify(run)).not.toContain("Factory closed")
+      })
+    }
+  })
+  it.live("acknowledges an unresolved action, then cancels through the engine while other actions stay usable", () => effect {
+    const hold = MockFactory
+    provide MockActions({ role: "contributor", actor: "agent" }).pipe(Layer.provide(hold)) {
+      const actions = try Actions
+      const id = try actions.start("vibelang/Tour", {}, "agent")
+      const before = try actions.read(id)
+      try actions.cancel(id)
+      const after = try finished(id)
+      try Effect.try(() => {
+        expect(before.actor).toBe("agent")
+        expect(["queued", "running"]).toContain(before.state)
+        expect(Option.isSome(after) && after.value.state).toBe("cancelled")
+      })
+    }
+  })
+  it.live("re-runs a slash invocation with its stored input and a new run identity", () => effect {
+    provide world {
+      const actions = try Actions
+      const first = try actions.command("/post How do services work?")
+      try finished(first)
+      const next = try actions.rerun(first)
+      const answer = try finished(next)
+      const rows = try actions.runs("vibelang/Post")
+      try Effect.try(() => {
+        expect(next).not.toBe(first)
+        expect(rows).toHaveLength(2)
+        expect(Option.isSome(answer) && answer.value.state).toBe("passed")
+        expect(rows[0]!.door).toBe("button")
+      })
+    }
+  })
+
+  it.live("the agent runs the real history flows with their schemas and returned results", () => effect {
+    provide MockActions({ role: "contributor", actor: "agent" }).pipe(Layer.provide(MockFactory)) {
+      const actions = try Actions
+      const id = try actions.start("vibelang/history/Plan", { how: "append", epic: "", newEpic: "Actions", target: "", title: "Action flow", task: "VL-24" }, "agent")
+      const result = try finished(id)
+      const run = try actions.read(id)
+      const answer = try Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ id: Schema.String, refusal: Schema.NullOr(Schema.String) })))(run.result)
+      const next = try actions.command(`/start ${JSON.stringify({ id: answer.id, lane: "actions" })}`)
+      try finished(next)
+      try Effect.try(() => {
+        expect(Option.isSome(result) && result.value.state).toBe("passed")
+        expect(run.actor).toBe("agent")
+        expect(answer.refusal).toBe(null)
+        expect(answer.id).toMatch(/^m[0-9]+$/)
+        expect(run.steps.some(step => step.name === "vibelang/history/Plan/call" && step.state === "passed")).toBe(true)
+      })
+    }
+  }, 60_000)
+
+})

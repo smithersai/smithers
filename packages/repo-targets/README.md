@@ -53,6 +53,13 @@ Native hosts pass `commonJsPlatform: "node"` to retain `import.meta.url`,
 CommonJS compiler uses that same shim. Other libraries keep the neutral build
 and can bundle their CommonJS output for browsers without Node imports.
 
+The private Effect adapter builder keeps Effect external and emits one shared ESM
+adapter closure with CommonJS forwarding modules. WebSocket declarations preserve
+the pinned `ws` import entry through an ESM declaration bridge when CommonJS
+cannot star-re-export its `export =` entry. The bridge is recorded in the adapter
+output hashes, and the contract checks real sockets and consumers in both
+`Node20` and `NodeNext` resolution modes.
+
 ## Circular imports
 
 `CircularImports({ cwd, sources })` declares the `test`-kind `NodeTest` target that `BuildAndCheckTypeScriptPackage` emits as `circular`; a package that declares its targets by hand calls it directly. Every package runs the one guard, `scripts/circular.mjs` in this package, and its `circular` package script runs the same file, for example `node ../repo-targets/scripts/circular.mjs` from `packages/errors`.
@@ -92,6 +99,8 @@ export const Package = Smithers.Package({ targets: { importRules: ImportRules({ 
 Run it with `pnpm exec smithers-build test '//apps/mvp:importRules'`; `ci` plans it too. It is not cached.
 
 `forbidHostModules` uses the AST import analysis and Node’s builtin registry, including bare names such as `stream/web`, plus every `node:` and `bun:` specifier and `bun`. `SdkRules` applies it to library and app-library sources; host and component roles are exempt. See [host boundaries](docs/host-boundaries.md).
+
+Generated VibeLang declarations (`*.d.vibe.ts`) are excluded from ImportRules source discovery. Their compiler-added imports do not describe authored dependencies; `.vibe` sources and authored `.d.ts` declarations remain checked.
 
 Every rule takes:
 
@@ -223,6 +232,29 @@ Packages that must NOT declare this, and why:
   `not_installed`.
 - `platform-node`: the Node host contract suite asserts Node-host behavior
   and is not expected to pass on Bun.
+
+## Tests that read source
+
+A test that lists `*.ts` files skips a module converted to VibeLang and
+passes without checking it; one that reads `x.ts` by name fails once the
+module is `x.vibe`. Such tests import `test-utils/source-readers.mjs`:
+
+- `sourcesUnder(directory, skip)` lists every `.ts`, `.tsx`, `.vibe` and
+  `.vibex` source, without declaration files or `node_modules`.
+- `modulePath(path)` resolves a module by its `.ts` name to the file that
+  holds it (`vibelang/source`'s `resolveSource`).
+- `sourceText(path)` is the module as written, for a test that looks for
+  text: a string literal or a call it names.
+- `typeScriptOf(path)` is the module in TypeScript, for a test that walks a
+  TypeScript syntax tree: a `.vibe` module reads as VibeLang's TypeScript
+  projection (`vibelang --ts-projection`), where `try e` is
+  `(yield* $run(e))` and `export effect function f` is a function.
+
+Give each such test a case that reads a `.vibe` module and its `.ts` twin
+and finds the same facts; `apps/mvp/tests/fixtures/source-readers` holds a
+pair. A test that needs types inside a `.vibe` body has no VibeLang API yet:
+the projection imports `vibelang-ts-mapper/prelude`, which VibeLang does not
+ship, so a local in a body types as `any`.
 
 ## Hosted CI shards
 

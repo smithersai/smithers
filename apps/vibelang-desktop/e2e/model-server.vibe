@@ -1,0 +1,61 @@
+// A real OpenAI-compatible local test server, implemented as a scoped Effect service. No requests are intercepted.
+import { BunServer } from "@smthrs/platform-bun"
+import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+
+export service TestModel {
+  readonly calls: Ref.Ref<number>
+  handle: HttpServerResponse.HttpServerResponse!!HttpServerRequest.HttpServerRequest
+}
+const encode = new TextEncoder()
+export const testModel = Layer.effect(TestModel, effect {
+  const calls = try Ref.make(0)
+  const discoveries = try Ref.make(0)
+  const stalledDiscovery = try Ref.make(false)
+  const failed = try Ref.make(false)
+  const stale = try Ref.make(false)
+  const held = try Ref.make<Deferred.Deferred<void> | null>(null)
+  return {
+    calls,
+    handle: effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      const pathname = new URL(request.url, "http://local.invalid").pathname
+      if (pathname === "/stats") return HttpServerResponse.jsonUnsafe({ calls: try Ref.get(calls), discoveries: try Ref.get(discoveries) })
+      if (pathname === "/hold") { try Ref.set(held, try Deferred.make<void>()); return HttpServerResponse.jsonUnsafe({}) }
+      if (pathname === "/release") { const gate = try Ref.get(held); if (gate !== null) try Deferred.succeed(gate, undefined); try Ref.set(held, null); return HttpServerResponse.jsonUnsafe({}) }
+      if (pathname === "/stale") { try Ref.set(failed, false); try Ref.set(stale, true); return HttpServerResponse.jsonUnsafe({}) }
+      if (pathname === "/fail") { try Ref.set(failed, true); return HttpServerResponse.jsonUnsafe({}) }
+      if (pathname === "/stall-discovery") { try Ref.set(stalledDiscovery, true); return HttpServerResponse.jsonUnsafe({}) }
+      if (pathname === "/release-discovery") { try Ref.set(stalledDiscovery, false); return HttpServerResponse.jsonUnsafe({}) }
+      if (pathname === "/v1/models") {
+        try Ref.update(discoveries, (value) => value + 1)
+        if (try Ref.get(stalledDiscovery)) return try Effect.never
+        return HttpServerResponse.jsonUnsafe({ data: [{ id: "local-test" }] })
+      }
+      if (pathname !== "/v1/chat/completions" || request.method !== "POST") return HttpServerResponse.empty({ status: 404 })
+      const call = try Ref.updateAndGet(calls, (value) => value + 1)
+      const gate = try Ref.get(held)
+      if (gate !== null) try Deferred.await(gate)
+      if (try Ref.get(failed)) return HttpServerResponse.jsonUnsafe({ error: { message: "unavailable", type: "invalid_request_error" } }, { status: 400 })
+      const body = request.json catch () => undefined
+      if (body === undefined || typeof body !== "object" || body === null || !("model" in body) || body.model !== "local-test") return HttpServerResponse.empty({ status: 400 })
+      const denied = JSON.stringify(body).includes("Handler failed") || JSON.stringify(body).includes("handler_failed")
+      const staleInput = JSON.stringify({ path: "hello.vibe", before: 'const value = "before"\n', text: 'const value = "after"\n' })
+      const edit = (try Ref.get(stale)) ? `const edited = await ctx.call("fs.edit", ${staleInput});` : 'const edited = await ctx.call("fs.edit", {path: "hello.vibe", before, text: before.replace("before", "after")});'
+
+      const cell = denied ? '```cell\nawait ctx.done("Folder changed. Edit refused.")\n```' : ['```cell', 'const matches = await ctx.call("fs.search", {query: "before"});', 'const names = await ctx.call("fs.list", {});', 'const before = await ctx.call("fs.read", {path: "hello.vibe"});', edit, 'await ctx.done(edited ? "Edited hello.vibe." : "Edit refused.")', '```'].join("\n")
+
+      const frames = [
+        { id: "local-test", choices: [{ index: 0, delta: { role: "assistant", content: cell }, finish_reason: null }] },
+        { id: "local-test", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 20, completion_tokens: 30, total_tokens: 50 } },
+      ].map((frame) => `data: ${JSON.stringify(frame)}\n\n`).concat("data: [DONE]\n\n")
+      return HttpServerResponse.stream(Stream.fromIterable(frames.map((frame) => encode.encode(frame))), { contentType: "text/event-stream" })
+    },
+  }
+})
+
+await runPromise(scoped(effect {
+  const model = try TestModel
+  const server = try HttpServer.HttpServer
+  try server.serve(model.handle)
+  try Effect.never
+}).pipe(Effect.provide(Layer.merge(testModel, BunServer.layer(24509)))))

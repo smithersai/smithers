@@ -1,0 +1,14 @@
+// Numeric clock encoding, signatures, encryption and SQL atomicity are host boundaries; these predicates are pure.
+//@ verify
+//@ ensures \result <==> (expires > now && expires <= now + ttl)
+//@ ensures expires <= now ==> !\result
+export function validDeadline(expires: number, now: number, ttl: number): boolean {
+  return expires > now && expires <= now + ttl
+}
+
+//@ verify
+//@ ensures \result <==> (stored === requested && expires > now)
+//@ ensures stored !== requested || expires <= now ==> !\result
+export function liveRecord(stored: string, requested: string, expires: number, now: number): boolean {
+  return stored === requested && expires > now
+}

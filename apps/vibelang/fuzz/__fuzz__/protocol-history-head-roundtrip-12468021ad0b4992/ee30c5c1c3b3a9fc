@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 29
+bias 3
+null-prototype true
+key 2479690122
+tape 9lE8uXB8uD84qsDMGUw5pNARoV_5hG7b01bUUmxxJNUYfYVXj3y0BRDS89fuPnSe1SkZAs_WUz63t8trEtzajDY91gD4dMIwkVHgILrCSDJCuBjFYBMptkBgBBSmMOMmQVLGSONROw3Gj774xBvqPSrQ27NlYQDZXVDsMAYlMlz5WR_50xBJh2aPhlNH74olUsUpqr2qi529qIqWp4mD2O-ZdkhkM-NWgbGogOtqczMkf_gw5FX8M4by0ve6hNBhTZRIkVsiJZLZ3FauwTvPlbZ3VDgpz6q04fG5sI6jXzwHcR9-8h35-edlNWVY4mVEpxZabbHQdCRL-S1EkpQt9ub7Sjb8SsAcYAKyie-Jd9H7Y08ObrgjRqQs4rjQLNt2tnfFDC6B_wIJEkffNFflxBbOVLSAV-OUg6oDprKPzXwzTzig5V99gLsIbMhIHZrP858Ia1BHnmtAB5lV-nvPyvC14tGM2BPiO_QNiXci9ojAClQ4PTXeceFqyYnjrf3f4qrU6Q8gmU8Frkdm-vSobneqqGrcU5k1kiqrzoc7V9hf6GeV
+schedule-key 1103872505
+schedule 
+signature "PropertyError:SchemaError"
+path 0.0.0.0.0.0
+codec "json"
+value "{\"id\":\"\",\"epic\":\"\",\"rank\":0,\"title\":\"\",\"state\":\"working\",\"task\":\"\",\"lane\":\"\",\"notes\":0,\"folds\":\"Infinity\"}"
+# PropertyError:SchemaError
+# {"id":"","epic":"","rank":0,"title":"","state":"working","task":"","lane":"","notes":0,"folds":"Infinity"}

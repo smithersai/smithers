@@ -437,7 +437,6 @@ interface Bundler {
 }
 
 const bundlerSpecifier = "esbuild"
-
 const loadBundler = (): Promise<Bundler> => import(bundlerSpecifier) as Promise<Bundler>
 
 /** `vibelang-unplugin`'s esbuild plugin, given the project root its options name. */

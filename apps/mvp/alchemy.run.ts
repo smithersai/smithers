@@ -45,6 +45,7 @@ import * as Alchemy from "alchemy"
 import * as Output from "alchemy/Output"
 import type { State } from "alchemy/State"
 import { Effect, Layer, Option } from "effect"
+import { BrowserAnalytics } from "./infra/BrowserAnalytics.ts"
 import { Databases } from "./infra/ChatDatabase.ts"
 import { DocsSite } from "./infra/DocsSite.ts"
 import { aliasesBinding, AppDomain, type AppHost, workerDomain } from "./infra/Domain.ts"
@@ -81,6 +82,7 @@ export default Alchemy.Stack(
     // Production's hostname, read first: a production deploy without APP_DOMAIN stops before it changes anything
     // (infra/Domain.ts).
     const domain = (yield* Alchemy.ALCHEMY_DEV) ? Option.none<AppHost>() : yield* AppDomain.pipe(Effect.orDie)
+    yield* BrowserAnalytics(domain)
     // Declared before ChatApi, so ChatApi's `ChatDatabase` and `EngineDatabase` are these: Neon's in production,
     // compose's in dev.
     const databases = yield* Databases

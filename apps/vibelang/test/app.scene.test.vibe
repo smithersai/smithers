@@ -1,8 +1,11 @@
 // The web app's real view and update, driven the way a person drives them, with Foldkit scenes (no browser).
-import { Command, click, expect, given, placeholder, role, scene, Subscription, text, type } from "foldkit/scene"
-import { describe, it } from "@effect/vitest"
+import { Command, click, expect, given, placeholder, role, scene, Subscription, text, title, type } from "foldkit/scene"
+import { describe, expect as assert, it } from "@effect/vitest"
 import { newClient } from "../src/core/conversation.vibe"
-import { ShowPalette, ClosePalette, FocusComposer, HOME_CONVERSATION, Message, type Model, PostMessage, update } from "../src/web/main.vibe"
+import {
+  ClosePalette, CONTRIBUTE_URL, EndTourCommand, FocusComposer, HOME_CONVERSATION, Message, type Model, PostMessage, ShowPalette,
+  StartTourCommand, update,
+} from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
 
 const home: Model = {
@@ -16,7 +19,7 @@ const home: Model = {
   conversation: HOME_CONVERSATION,
   client: newClient,
   mode: "mock",
-  stream: "closed",
+  stream: "open",
   epoch: 0,
   from: 0,
   following: true,
@@ -24,18 +27,28 @@ const home: Model = {
   answer: "",
   announced: 0,
   connection: "",
+  theatre: { step: 1, paused: false, sound: false, target: "splash" },
+  tour: false,
+  tourError: "",
+  docs: "pane",
 }
 
 describe("the splash", () => {
-  it("is VibeLang's home page with one action and routes to the docs and the source", () => {
+  it("is VibeLang's home page: Learn more first, then Ask the agent and Contribute, and routes to the docs and GitHub", () => {
     scene(
       { update, view },
       given(home),
       expect(role("heading", { name: "VibeLang" })).toExist(),
-      expect(role("button", { name: "Ask the agent" })).toExist(),
+      expect(role("button", { name: "Learn more" })).toHaveClass("vl-primary"),
+      expect(role("button", { name: "Ask the agent" })).toHaveClass("vl-ask"),
+      expect(role("button", { name: "Ask the agent" })).toHaveAttr("aria-keyshortcuts", "Meta+K"),
+      expect(role("link", { name: "Contribute" })).toHaveClass("vl-ask"),
+      expect(role("link", { name: "Contribute" })).toHaveAttr("href", CONTRIBUTE_URL),
+      expect(role("button", { name: "Esc" })).toBeAbsent(),
       expect(role("link", { name: "Docs" })).toExist(),
-      expect(role("link", { name: "Source" })).toExist(),
+      expect(role("link", { name: "GitHub" })).toExist(),
       expect(text("Mock")).toExist(),
+      expect(role("button", { name: "Minimize the VibeLang home page" })).toBeAbsent(),
     )
   })
 
@@ -73,6 +86,15 @@ describe("the splash", () => {
 
 describe("the chat", () => {
   const chatting: Model = { ...home, surface: "chat", stream: "open", sent: 1 }
+
+  it("the empty chat shows the compiler card, then removes it on a post", () => {
+    scene(
+      { update, view }, given(chatting),
+      expect(role("img", { name: "The compiler says what to write instead: VibeLang diagnostics with the fix to write" })).toHaveAttr("src", "/media/card-06-compiler.png"),
+      Subscription.emit(Message.ReceivedEvent({ event: { type: "Posted", seq: 1, id: "m1", clientId: "other", name: "Grace", text: "hi" } })),
+      expect(role("img", { name: "The compiler says what to write instead: VibeLang diagnostics with the fix to write" })).toBeAbsent(),
+    )
+  })
 
   it("shows the agent's streamed reply as it arrives and confirms the pending post", () => {
     scene(
@@ -172,14 +194,41 @@ describe("the chat", () => {
     )
   })
 
-  it("the pane maximizes the splash again, and Chat returns to the conversation", () => {
+  it("the pane maximizes the splash again, and its minimize button returns to the conversation", () => {
     scene(
       { update, view },
       given({ ...chatting, client: { ...newClient, pending: [{ clientId: "s1-1", text: "hi", error: "" }] } }),
       click(role("button", { name: "Expand the VibeLang home page" })),
       expect(role("heading", { name: "VibeLang" })).toExist(),
-      click(role("button", { name: "Chat" })),
+      expect(role("button", { name: "Chat" })).toBeAbsent(),
+      click(role("button", { name: "Minimize the VibeLang home page" })),
+      Command.expectExact(FocusComposer({})),
+      Command.resolve(FocusComposer, Message.FocusedPrompt()),
       expect(text("hi")).toExist(),
+    )
+  })
+
+  it("Escape minimizes the maximized splash, and does nothing more in the chat", () => {
+    scene(
+      { update, view },
+      given({ ...chatting, surface: "splash", client: { ...newClient, pending: [{ clientId: "s1-1", text: "hi", error: "" }] } }),
+      Subscription.emit(Message.PressedEscape()),
+      Command.expectExact(FocusComposer({})),
+      Command.resolve(FocusComposer, Message.FocusedPrompt()),
+      expect(text("hi")).toExist(),
+      Subscription.emit(Message.PressedEscape()),
+      Command.expectNone(),
+      expect(text("hi")).toExist(),
+    )
+  })
+
+  it("Escape keeps the splash when there is no conversation to return to", () => {
+    scene(
+      { update, view },
+      given(home),
+      Subscription.emit(Message.PressedEscape()),
+      Command.expectNone(),
+      expect(role("heading", { name: "VibeLang" })).toExist(),
     )
   })
 })
@@ -191,7 +240,7 @@ describe("product language and authors", () => {
       Subscription.emit(Message.ReceivedEvent({ event: { type: "Posted", seq: 2, id: "m2", clientId: "other-1", name: "Guest", text: "theirs" } })),
       expect(text("You")).toExist(), expect(text("Guest")).toExist())
   })
-  for (const [reason, label] of [["empty", "Empty message"], ["duplicate", "Already sent"], ["busy", "Agent busy"], ["not-replying", "Answer unavailable"], ["Factory closed", "Send failed"]]) {
+  for (const [reason, label] of [["empty", "Empty message"], ["duplicate", "Already sent"], ["busy", "Agent busy"], ["not-replying", "Answer unavailable"], ["full", "Conversation full"], ["Factory closed", "Send failed"]]) {
     it(`a refused post uses product words for ${reason}`, () => {
       scene({ update, view }, given({ ...home, surface: "chat", client: { ...newClient, pending: [{ clientId: "s1-1", text: "hi", error: reason! }] } }),
         expect(text(label!)).toExist(), expect(role("button", { name: "Retry" })).toExist())
@@ -202,4 +251,50 @@ describe("product language and authors", () => {
       expect(text("Mock")).not.toHaveAttr("title", "No backend or model: answers are scripted"),
       expect(text("The last answer failed")).toBeAbsent())
   })
+})
+
+describe("the theatre walkthrough", () => {
+  it("starts a private controller and demo conversation, displays muted subtitles and controls", () => {
+    const started = update(home, Message.ClickedLearnMore())
+    assert(started.model).toMatchObject({ tour: true, conversation: "demo-s1", theatre: { step: 1, sound: false } })
+    assert(started.commands?.map(command => command.name)).toContain("StartTour")
+    scene({ update, view }, given(started.model), expect(role("region", { name: "Walkthrough" })).toHaveAttr("data-step", "1"), expect(role("button", { name: "Sound on" })).toExist())
+    const repeated = update(started.model, Message.ClickedLearnMore())
+    assert(repeated.model).toBe(started.model)
+  })
+  it("a numbered drive uses the same issue detail Message and keeps the subtitle", () => {
+    let model = update(home, Message.ClickedLearnMore()).model
+    model = update(model, Message.ReceivedTourEvent({ event: { type: "TourStarted", id: "t1", seq: 1 } })).model
+    model = update(model, Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", id: "t1", seq: 2, step: 4, target: "issue:48", at: 0, duration: 12000 } })).model
+    assert(model.issues).toMatchObject({ open: true, screen: "detail", selected: 48 })
+    scene({ update, view }, given(model), expect(role("region", { name: "Walkthrough" })).toHaveAttr("data-step", "4"))
+    const ended = update(model, Message.PressedEscape())
+    assert(ended.model.tour).toBe(false)
+    assert(ended.commands?.map(command => command.name)).toContain("FocusComposer")
+    const replayed = update(ended.model, Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", id: "t1", seq: 3, step: 5, target: "issues:vips", at: 0, duration: 14000 } }))
+    assert(replayed.model.tour).toBe(false)
+  })
+})
+
+it("first-visit entry leaves an opened issue screen or command palette in control", () => {
+  const issues = update(home, Message.ClickedIssues()).model
+  assert(update(issues, Message.AutoTour()).model.tour).toBe(false)
+  const palette = update(home, Message.PressedCommandK()).model
+  assert(update(palette, Message.AutoTour()).model.tour).toBe(false)
+})
+
+it("an unavailable end restores the numbered destination and accepts later drives", () => {
+  let model = update(home, Message.ClickedLearnMore()).model
+  model = update(model, Message.ReceivedTourEvent({ event: { type: "TourStarted", id: "t1", seq: 1 } })).model
+  model = update(model, Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", id: "t1", seq: 2, step: 4, target: "issue:48", at: 0, duration: 12000 } })).model
+  const ended = update(model, Message.PressedEscape()).model
+  const failed = update(ended, Message.FailedEndTour()).model
+  assert(failed).toMatchObject({ tour: true, tourDismissed: false, issues: { open: true, selected: 48 } })
+  const next = update(failed, Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", id: "t1", seq: 3, step: 5, target: "issues:vips", at: 0, duration: 14000 } })).model
+  assert(next.theatre?.step).toBe(5)
+})
+
+it("Exit minimizes a driven sandbox so the focused composer is available", () => {
+  const model = update({ ...home, surface: "chat", tour: true, sandboxPane: "max" }, Message.PressedEscape()).model
+  assert(model.sandboxPane).toBe("pane")
 })

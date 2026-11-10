@@ -1,0 +1,48 @@
+// The history page's `Mythical`, available at once: backend operations wait for one scoped selection, as the chat's
+// Factory does (src/web/backend.vibe, wiki/decisions/0010-live-agent.md). Live when the origin's `/api/health` says
+// `live`; else the mock, whose module (and the bootstrapped history it carries) downloads only when chosen.
+import { HttpClient } from "effect/http"
+import type { Mode } from "../core/Factory.vibe"
+import { health } from "../core/LiveFactory.vibe"
+import { LiveMythical } from "../history/LiveMythical.vibe"
+import { Mythical } from "../history/MythicalHistory.vibe"
+import type { Principal } from "../history/roles.vibe"
+
+/** The chosen mode becomes a Foldkit message, independently of any read. */
+export service HistoryBackend {
+  readonly ready: Mode!!
+}
+
+/** `Mythical` for this page; the mock acts as `principal`, the person the page lets you be in mock mode. */
+export function BrowserMythical(origin: string, forceMock: boolean, principal: Principal) {
+  return Layer.effectContext(effect {
+    const scope = try Scope.Scope
+    const client = try HttpClient.HttpClient
+    let current: Mode | "pending" = "pending"
+    const selected = try forkIn(Effect.interruptible(effect {
+      const answer = forceMock ? undefined : ((health(origin) |> timeout(%, "3 seconds")) catch () => undefined)
+      const mode: Mode = answer?.agent === "live" ? "live" : "mock"
+      const layer = mode === "live"
+        ? LiveMythical(origin)
+        : (try promise(() => import("../history/MockMythical.vibe"))).MockMythical(principal)
+      const context = try Layer.buildWithScope(layer.pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client))), scope)
+      current = mode
+      return { mode, mythical: Context.get(context, Mythical) }
+    }), scope)
+    const ready = Fiber.join(selected)
+    const mythical: Mythical.Shape = {
+      get mode() { return current },
+      outline: effect () => (try (try ready).mythical.outline()),
+      epic: effect (id, from) => (try (try ready).mythical.epic(id, from)),
+      commit: effect (id) => (try (try ready).mythical.commit(id)),
+      search: effect (query) => (try (try ready).mythical.search(query)),
+      events: (after) => Stream.unwrap(Effect.map(ready, ({ mythical }) => mythical.events(after))),
+      plan: effect (request) => (try (try ready).mythical.plan(request)),
+      start: effect (id, lane) => { try (try ready).mythical.start(id, lane) },
+      note: effect (id, section, text) => { try (try ready).mythical.note(id, section, text) },
+      approve: effect (id) => { try (try ready).mythical.approve(id) },
+      fold: effect () => (try (try ready).mythical.fold()),
+    }
+    return Context.make(Mythical, mythical).pipe(Context.add(HistoryBackend, { ready: map(ready, (choice) => choice.mode) }))
+  })
+}

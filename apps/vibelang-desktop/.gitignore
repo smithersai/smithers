@@ -1,0 +1,9 @@
+node_modules/
+dist-view/
+dist-host/
+build/
+artifacts/
+test-results/
+playwright-report/
+*.d.vibe.ts
+verify/.checks/

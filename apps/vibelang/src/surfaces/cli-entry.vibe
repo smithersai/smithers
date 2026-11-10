@@ -2,7 +2,10 @@
 // The Factory CLI's process: its arguments, `VIBELANG_FACTORY` and its exit status (wiki/decisions/0009-surfaces.md).
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
 import * as NodeServices from "@effect/platform-node/NodeServices"
-import { cli } from "./cli.vibe"
+import "vibelang/register"
+
+// Install the source loader before importing workspace packages containing .vibe modules.
+const { cli } = await import("./cli.vibe")
 
 /** The command failed and has already said why, so the runtime only sets exit status 1. */
 error CommandFailed {

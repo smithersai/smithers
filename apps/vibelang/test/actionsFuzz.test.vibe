@@ -1,0 +1,30 @@
+import { Fuzz } from "@smthrs/fuzz"
+import { expect, it } from "@effect/vitest"
+import { Actions } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+
+const Input = Schema.Struct({ role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]), door: Schema.Literals(["button", "slash", "agent"]), text: Schema.String.check(Schema.isMaxLength(80)) })
+it.live("feedback fuzz: roles and invocation doors reach real workflows, traces, reruns and cancellation", () => effect {
+  const report = try Fuzz.run(Arbitrary.schema(Input), ({ role, door, text }) => scoped(effect {
+    provide MockActions({ role, actor: door === "agent" ? "agent" : "person" }).pipe(Layer.provide(mockFactoryFor(role))) {
+      const actions = try Actions
+      const commands = try actions.commands()
+      const eligible = role === "contributor" || role === "maintainer"
+      const request = try Effect.result(actions.start("vibelang/Post", { text: text.trim() || "Hello" }, door))
+      try Fuzz.observe(`${role}/${door}/${request._tag}`)
+      if (commands.some(entry => entry.command === "/post") !== eligible) return false
+      if (!eligible) return request._tag === "Failure" && request.failure.code === "forbidden"
+      if (request._tag === "Failure") return false
+      const first = try Stream.runLast(actions.follow(request.success).pipe(Stream.takeUntil(run => run.state === "passed" || run.state === "failed")))
+      if (Option.isNone(first) || first.value.state !== "passed" || first.value.steps.length === 0) return false
+      const rerun = try actions.rerun(request.success)
+      const second = try Stream.runLast(actions.follow(rerun).pipe(Stream.takeUntil(run => run.state === "passed" || run.state === "failed")))
+      const tour = try actions.command("/tour")
+      try actions.cancel(tour)
+      const cancelled = try actions.read(tour)
+      return rerun !== request.success && Option.isSome(second) && second.value.state === "passed" && cancelled.state === "cancelled" && !cancelled.steps.some(step => step.state === "running" || step.state === "waiting")
+    }
+  }), { executions: 40, seed: 2403 })
+  try Effect.try(() => expect(report._tag, Fuzz.formatReport(report)).toBe("Passed"))
+}, 60_000)

@@ -1,0 +1,33 @@
+// Runs the Commands `update` returns, in a closed loop: each Command's Message goes back through `update`, as the Foldkit runtime does.
+import { it } from "@effect/vitest"
+import { Model, Message, update } from "../src/web/main.vibe"
+import { backend, Backend, Role } from "./web-backends.vibe"
+import { run, Finding, Int } from "./run.vibe"
+import { gesture, pump, Step, tab } from "./web-tab.vibe"
+
+it.live("web/commands-from-any-model", () => run("web/commands-from-any-model", Schema.Struct({ model: Model, message: Message, backend: Backend, role: Role, repeat: Int }), ({ model, message, backend: kind, role }) => Effect.provide(effect {
+  const answer = update(model, message)
+  for (const command of answer.commands ?? []) {
+    const result = try exit(timeout(command.effect, "5 seconds"))
+    if (result._tag === "Failure") throw new Finding({ report: `${command.name}: ${Cause.pretty(result.cause)}` })
+    if (!Schema.is(Model)(update(answer.model, result.value).model)) throw new Finding({ report: `${command.name}: left an invalid Model` })
+  }
+  return true
+}, backend(kind, role))))
+
+// Arbitrary Messages arrive between the gestures a screen offers, as a stale or malformed event would.
+const Guided = Schema.Struct({ session: Int, resumeTour: Schema.Boolean, backend: Backend, role: Role, steps: Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(24)), noise: Schema.optionalKey(Schema.Array(Message).check(Schema.isMaxLength(6))) })
+
+it.live("web/guided-commands", () => run("web/guided-commands", Guided, ({ session: id, resumeTour, backend: kind, role, steps, noise }) => Effect.provide(effect {
+  let noiseAt = 0
+  const session = tab({ session: `s${id}`, mode: "mock", name: "Guest", ...(resumeTour ? { resumeTour: true } : {}) })
+  try session.settle
+  try session.send(try Effect.try(() => Message.ResolvedMode({ mode: "mock" })))
+  try session.send(try Effect.try(() => Message.ChoseIdentity({ role })))
+  for (const step of steps) {
+    for (const message of gesture(session.model(), step)) try session.send(message)
+    if (step.op === "noise" && noise !== undefined && noiseAt < noise.length) try session.send(noise[noiseAt++]!)
+    if (step.op === "pump" || step.op === "tour") try pump(session)
+  }
+  return true
+}, backend(kind, role))))

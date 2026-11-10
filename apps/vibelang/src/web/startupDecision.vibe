@@ -1,0 +1,59 @@
+// Startup choices after the host reads query parameters/storage. Native parsing, storage and rendering stay at the edge.
+
+/** An explicit query wins, including Live overriding a previously saved Mock preference. */
+//@ verify
+//@ ensures \result == (query == "mock" || (query != "live" && stored == "mock"))
+export function wantsMock(query: string | null, stored: string | null): boolean {
+  return query === "mock" || (query !== "live" && stored === "mock")
+}
+
+/** Query persistence changes only the one backend preference key. */
+//@ verify
+//@ ensures query == "mock" ==> \result == "set"
+//@ ensures query == "live" ==> \result == "clear"
+//@ ensures query != "mock" && query != "live" ==> \result == "keep"
+export function preferenceWrite(query: string | null): "set" | "clear" | "keep" {
+  if (query === "mock") return "set"
+  if (query === "live") return "clear"
+  return "keep"
+}
+
+/** The authoritative project role list selects known input; unknown input retains the host's established default. */
+//@ verify
+//@ ensures \result == (requested != null && roles.includes(requested) ? requested : fallback)
+export function startupRole(requested: string | null, fallback: string, roles: ReadonlyArray<string>): string {
+  if (requested !== null && roles.includes(requested)) return requested
+  return fallback
+}
+
+/** Preserve a saved session, including its empty value; only absence chooses the new UUID. */
+//@ verify
+//@ ensures \result == (saved == null ? fresh : saved)
+export function startupSession(saved: string | null, fresh: string): string {
+  return saved === null ? fresh : saved
+}
+
+export interface TutorialStartup {
+  readonly tutorialSession: string
+  readonly tourSound: boolean
+  readonly resumeTour: boolean
+  readonly autoTour: boolean
+}
+
+/** The persisted tutorial session and controls; ordinary navigation never auto-starts a tutorial. */
+//@ verify
+//@ ensures \result.tutorialSession == (session == null ? fresh : session)
+//@ ensures \result.tourSound == (sound == "on")
+//@ ensures \result.resumeTour == (active == "yes")
+//@ ensures \result.autoTour == ((toured == null || toured == "") && pathname == "/")
+export function tutorialStartup(session: string | null, fresh: string, sound: string | null, active: string | null, toured: string | null, pathname: string): TutorialStartup {
+  return { tutorialSession: startupSession(session, fresh), tourSound: sound === "on", resumeTour: active === "yes", autoTour: (toured === null || toured === "") && pathname === "/" }
+}
+
+/** A mode switch always points to the other mode. */
+//@ verify
+//@ ensures mode == "mock" ==> \result == "live"
+//@ ensures mode == "live" ==> \result == "mock"
+export function otherMode(mode: "mock" | "live"): "mock" | "live" {
+  return mode === "mock" ? "live" : "mock"
+}

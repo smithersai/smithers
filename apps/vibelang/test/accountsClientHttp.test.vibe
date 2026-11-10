@@ -1,0 +1,56 @@
+// @vitest-environment node
+// LiveAccounts over real loopback HTTP, signed stored sessions, SQLite grants and the production account handler.
+// Session setup is host fixture state; no successful OAuth exchange or external account mutation is simulated.
+import { expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServer, HttpServerRequest } from "effect/http"
+import { Core, GitHub } from "@smthrs/integrations"
+import * as Accounts from "../worker/Accounts.vibe"
+import * as LiveAccounts from "../src/core/LiveAccounts.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+import type { Storage } from "../worker/Objects.vibe"
+
+it.live("reads a real signed session, grants and follows a role, then signs out and loses private access", () => scoped(effect {
+  provide NodeHttpServer.layerTest {
+    const address = (try HttpServer.HttpServer).address
+    const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+    const signingSecret = Redacted.make("fixture-only-signing-secret-32-chars")
+    const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Storage
+    const github = Context.get(try Layer.build(GitHub.Auth.layer({ clientId: "fixture", clientSecret: Redacted.make("fixture-only") })), GitHub.Auth.GitHubAuth)
+    const keys = try Core.CookieKeys.make({ primary: signingSecret }, "primary")
+    const token = try keys.token
+    const signed = try keys.sign("session", token)
+    const expires = (try Clock.currentTimeMillis) + 60_000
+    try promise(() => storage.put("session/" + token, { id: "1", login: "will", expires }))
+    try promise(() => storage.put("person/1", { id: "1", login: "will" }))
+    try promise(() => storage.put("person/7", { id: "7", login: "ada" }))
+    const product = try Accounts.make("live-accounts-client", storage, {
+      origin, signingSecret, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), initialMaintainer: "1", clientId: "fixture-client-id", github,
+    })
+    try HttpServer.serveEffect(product.fetch)
+    const native = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
+    const authenticated = HttpClient.mapRequest(native, request => HttpClientRequest.setHeader(request, "cookie", Accounts.SESSION + "=" + signed))
+    provide HttpClient.HttpClient = authenticated {
+      const client = try LiveAccounts.make(origin)
+      const me = try client.current()
+      const before = try client.members()
+      try client.grant("7", "contributor")
+      const events = try Stream.runCollect(client.events(me.ledger?.seq ?? 0).pipe(Stream.take(1)))
+      const after = try client.members()
+      try client.participated()
+      const refusedChoice = try Effect.flip(client.choose("new"))
+      try client.signOut()
+      const signedOut = try client.current()
+      const privateRead = try Effect.flip(client.members())
+      try Effect.try(() => {
+        expect(me).toMatchObject({ id: "1", role: "maintainer" })
+        expect(before.find(person => person.id === "7")?.role).toBe("new")
+        expect(after.find(person => person.id === "7")?.role).toBe("contributor")
+        expect(events).toMatchObject([{ type: "RoleGranted", id: "7", role: "contributor" }])
+        expect(refusedChoice._tag).toBe("AccountUnavailable")
+        expect(signedOut).toMatchObject({ id: "", role: "viewer" })
+        expect(privateRead).toMatchObject({ _tag: "Denied", action: "people", least: "new" })
+      })
+    }
+  }
+}), 60_000)

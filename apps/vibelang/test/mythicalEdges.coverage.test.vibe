@@ -1,0 +1,66 @@
+// The mythical history's machine at its edges: a stored log replayed with events the machine never decides (each is
+// counted and changes nothing), a log at capacity, tasks and lanes past the length limit, and lookups of ids that
+// are not there.
+import { describe, expect, it } from "@effect/vitest"
+import { decide, hasCommit, MAX_TITLE, rankOf, replayHistory, taskOf, type Event, type History } from "../src/history/mythical.vibe"
+import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+
+/** The compiler (m1, m2) and Docs (m3), all landed, with no task. */
+const small: History = replay(intentsOf(seedOf("o/r", ["fix(compiler): one", "docs: two", "fix(compiler): three"].map((description, index) => ({
+  sha: `${index + 1}`.padStart(12, "0"), change: "", description, parents: index === 0 ? [] : [`${index}`.padStart(12, "0")],
+})), []))).history
+
+/** Numbers `events` after `history`'s last event. */
+const numbered = (history: History, events: ReadonlyArray<Record<string, unknown>>): ReadonlyArray<Event> =>
+  events.map((event, index) => ({ ...event, seq: history.seq + index + 1 }) as unknown as Event)
+
+describe("replaying a stored history log", () => {
+  it("counts events the machine never decides and changes nothing for them", () => {
+    const ignored = numbered(small, [
+      { type: "Amended", id: "m1", task: "" },
+      { type: "Amended", id: "m9", task: "t9" },
+      { type: "Started", id: "m1", lane: "" },
+      { type: "Started", id: "m1", lane: "lane-a" },
+      { type: "Approved", id: "m1", by: "" },
+      { type: "Approved", id: "m1", by: "will" },
+      { type: "Noted", id: "m1", section: "tried", text: "", by: "will" },
+      { type: "Noted", id: "m1", section: "tried", text: "x", by: "" },
+      { type: "Noted", id: "m9", section: "tried", text: "x", by: "will" },
+    ])
+    const after = replayHistory(small, ignored)
+    expect(after).toEqual({ ...small, seq: small.seq + ignored.length })
+  })
+
+  it("applies an amendment once; a second for the same commit changes nothing", () => {
+    const events = numbered(small, [{ type: "Amended", id: "m1", task: "t1" }, { type: "Amended", id: "m1", task: "t2" }])
+    const after = replayHistory(small, events)
+    expect(taskOf(after.commits, "m1")).toBe("t1")
+    expect(after.seq).toBe(small.seq + 2)
+  })
+
+  it("a log at capacity takes no further event", () => {
+    const full: History = { ...small, seq: Number.MAX_SAFE_INTEGER }
+    expect(replayHistory(full, [{ type: "Amended", seq: Number.MAX_SAFE_INTEGER, id: "m1", task: "t1" }])).toBe(full)
+  })
+})
+
+describe("deciding", () => {
+  it.each([
+    ["a task", { type: "Amend" as const, id: "m1", task: "t".repeat(MAX_TITLE + 1) }],
+    ["a lane", { type: "Start" as const, id: "m1", lane: "l".repeat(MAX_TITLE + 1) }],
+  ])("refuses %s past the length limit", (_name, intent) => {
+    expect(decide(small, intent)).toMatchObject({ ok: false, refusal: "too-long" })
+  })
+  it("accepts a task at the length limit", () => {
+    expect(decide(small, { type: "Amend", id: "m1", task: "t".repeat(MAX_TITLE) })).toMatchObject({ ok: true })
+  })
+})
+
+describe("lookups of an id that is not there", () => {
+  it("answers no task, no rank, and treats the empty id as taken", () => {
+    expect(taskOf(small.commits, "m9")).toBe("")
+    expect(rankOf(small.commits, "m9")).toBe(-1)
+    expect(hasCommit(small.commits, "")).toBe(true)
+    expect(hasCommit(small.commits, "m9")).toBe(false)
+  })
+})

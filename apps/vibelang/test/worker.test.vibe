@@ -1,6 +1,7 @@
 // The site Worker (worker/index.vibe) over a stand-in asset service, with and without the API Worker bound.
 // Typechecked with the Worker project (worker/tsconfig.json), which has Cloudflare's types.
 import { expect, it } from "@effect/vitest"
+import { HttpClientRequest, HttpServerResponse } from "effect/http"
 import worker from "../worker/index.vibe"
 
 /** The asset service: the dark logo, and the splash for any other path, as its SPA fallback answers. */
@@ -40,10 +41,14 @@ it.effect("never serves the splash for unknown routes or production fault pages"
 
 it.effect("serves the home, health and known assets", () => effect {
   const home = try text(try get("/"))
+  const history = try text(try get("/history"))
+  const historySlash = try text(try get("/history/"))
   const health = try text(try get("/api/health"))
   const logo = try text(try get("/media/logo-dark.svg"))
   try Effect.try(() => {
     expect(home).toContain("splash")
+    expect(history).toBe(home)
+    expect(historySlash).toBe(home)
     expect(JSON.parse(health)).toEqual({ ok: true, agent: "mock" })
     expect(logo).toBe("<svg/>")
   })

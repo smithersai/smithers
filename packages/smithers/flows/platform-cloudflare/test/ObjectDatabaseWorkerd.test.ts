@@ -1,3 +1,4 @@
+import vibelang from "vibelang-unplugin/esbuild"
 /**
  * `ObjectDatabase` in local workerd, run when a host opts in with
  * `FLOWS_WORKERD_SMOKE=1`, as the other workerd smoke is. It needs no
@@ -23,6 +24,7 @@ const entry = fileURLToPath(new URL("./workerd/object-database-worker.ts", impor
 
 const bundle = async () => {
   const result = await build({
+    plugins: [vibelang()],
     entryPoints: [entry],
     bundle: true,
     write: false,

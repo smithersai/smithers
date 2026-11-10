@@ -15,3 +15,55 @@ diff --git a/dist/index.js b/dist/index.js
  				result.push(entry);
  			}
  		}
+diff --git a/dist/provider.js b/dist/provider.js
+--- a/dist/provider.js
++++ b/dist/provider.js
+@@ -158,7 +158,7 @@
+ 			this.ctx.logger.error(`Failed to parse ${filename}. Excluding it from coverage.\n`, error);
+ 			return {};
+ 		}
+-		return await astV8ToIstanbul({
++		const coverage = await astV8ToIstanbul({
+ 			code: result.code,
+ 			sourceMap: result.map,
+ 			ast,
+@@ -215,6 +215,39 @@
+ 				}
+ 			}
+ 		});
++		// Source maps use Infinity for an open-ended original line. Normalize that sentinel before
++		// Istanbul merges native subprocess and transformed coverage of the same source span.
++		// Otherwise an executed finite span and its zero-count open-ended copy become two counters.
++		const sourceText = new Map();
++		for (const [index, source] of (result.map?.sources || []).entries()) {
++			try {
++				sourceText.set(fileURLToPath(new URL(source, filename)), result.map.sourcesContent?.[index]);
++			} catch {}
++		}
++		let normalized = 0;
++		for (const [file, data] of Object.entries(coverage)) {
++			let path;
++			try { path = file.startsWith(FILE_PROTOCOL) ? fileURLToPath(file) : file; }
++			catch { continue; }
++			const source = sourceText.get(path) ?? await promises.readFile(path, "utf8").catch(() => undefined);
++			if (typeof source !== "string") continue;
++			const lines = source.split(/\r?\n/);
++			const normalizeRange = (range) => {
++				const position = range?.end;
++				if (position?.column === Infinity && lines[position.line - 1] !== undefined) {
++					position.column = lines[position.line - 1].length;
++					normalized++;
++				}
++			};
++			for (const range of Object.values(data.statementMap)) normalizeRange(range);
++			for (const fn of Object.values(data.fnMap)) { normalizeRange(fn.decl); normalizeRange(fn.loc); }
++			for (const branch of Object.values(data.branchMap)) {
++				normalizeRange(branch.loc);
++				for (const range of branch.locations) normalizeRange(range);
++			}
++		}
++		if (normalized) debug("Normalized %d open-ended source positions", normalized);
++		return coverage;
+ 	}
+ 	async getSources(url, onTransform, functions = [], isExtendedContext = false) {
+ 		// TODO: need to standardize file urls before this call somehow, this is messy

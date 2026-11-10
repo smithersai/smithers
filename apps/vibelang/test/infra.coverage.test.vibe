@@ -1,0 +1,39 @@
+// @vitest-environment node
+// Compile the real Alchemy resource graph. No plan, deploy or provider lifecycle method runs.
+import { expect, it } from "@effect/vitest"
+import * as Alchemy from "alchemy"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { FetchHttpClient } from "effect/http"
+import { WebCrypto } from "@smthrs/crypto"
+import { CredentialsStoreLive } from "alchemy/Auth/Credentials"
+import { ProfileStoreLive } from "alchemy/Auth/Profile"
+import { State } from "alchemy/State"
+import stack, { STATE_STORE } from "../infra/Stack.vibe"
+
+const IMAGE = "registry.example.test/vibelang@sha256:" + "0".repeat(64)
+for (const [dev, domain, image] of [[true, undefined, undefined], [false, undefined, undefined], [false, "factory.example.test", undefined], [false, undefined, IMAGE]] as const) {
+it.live(`declares the bound resource graph: ${dev ? "dev" : image ? "offline container" : domain ?? "production"}`, () => scoped(effect {
+  provide NodeServices.layer, FetchHttpClient.layer, WebCrypto.layer, Layer.provide(CredentialsStoreLive, NodeServices.layer), Layer.provide(ProfileStoreLive, NodeServices.layer) {
+    const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({ ALCHEMY_DEV: dev, ...(domain ? { VIBELANG_DOMAIN: domain } : {}), ...(image ? { VIBELANG_SANDBOX_IMAGE: image } : {}) })), Alchemy.AlchemyContext = { dev, adopt: false, dotAlchemy: directory }, Alchemy.Stage = "coverage" {
+      const compiled = try stack
+      // Resolve the selected state adapter without initializing it or running provider lifecycle methods.
+      const stateContext = try Effect.provideContext(Layer.buildWithScope(stack.state, try Effect.scope), compiled.services)
+      const store = Context.get(stateContext, State)
+      try Effect.try(() => {
+        expect(Effect.isEffect(store)).toBe(true)
+        expect(compiled.name).toBe("smithers-vibelang")
+        expect(STATE_STORE).toBe("smithers-vibelang-state")
+        expect(compiled.resources.VibelangApi!.Props).toMatchObject({ main: "worker/Api.vibe", limits: { cpuMs: 300_000 }, build: { input: { plugins: expect.any(Array) } } })
+        expect(compiled.resources["vibelang-site"]!.Props).toMatchObject({ vite: { main: "worker/index.vibe" }, assets: { notFoundHandling: "single-page-application" }, observability: { enabled: true } })
+        expect(compiled.resources["vibelang-site"]!.Props.domain).toBe(domain)
+        expect(compiled.resources["vibelang-site"]!.Props.env.API).toBeDefined()
+        expect(compiled.bindings.VibelangApi!.flatMap((binding) => binding.data.bindings ?? []).filter((binding: { type: string }) => binding.type === "durable_object_namespace").map((binding: { className: string }) => binding.className).sort()).toEqual(["ActionIndex", "Budget", "Conversation", "History", "ProjectAccounts", ...(image ? ["VibelangSandboxAccount", "VibelangSandboxMachine"] : [])].sort())
+        expect(Object.keys(compiled.resources).sort()).toEqual(["VibelangApi", "vibelang-site", ...(image ? ["VibelangSandboxImage", "VibelangApi/VibelangSandboxMachine-Containers"] : [])].sort())
+        if (image) expect(compiled.resources.VibelangSandboxImage!.Props).toMatchObject({ image: IMAGE, schedulingPolicy: "durable_object" })
+      })
+    }
+  }
+}))
+
+}

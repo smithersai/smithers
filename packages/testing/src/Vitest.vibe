@@ -18,6 +18,7 @@ import type * as Scope from "effect/Scope"
 import { assert, describe, expect, it as vitestIt, type TestOptions } from "vitest"
 import { type Body, runEffectTest } from "./internal/TestEffectRunner.vibe"
 
+import { type EffectFuzz, makeMethods, type SyncFuzz } from "./internal/FuzzRegistration.ts"
 /** @since 0.0.0 @category testing */
 export { assert, describe, expect }
 
@@ -34,16 +35,28 @@ export { assert, describe, expect }
  * @category testing
  * @since 0.0.0
  */
-export const it: typeof EffectVitest.it & { readonly scoped: typeof EffectVitest.it.effect } = new Proxy(
-  EffectVitest.it,
-  {
-    // A proxy rather than a copy: vitest defines the chainable members of `it`
-    // as accessors, so `Object.assign` would silently drop `effect`, `live`,
-    // `each`, and the rest. Reads are forwarded with the original as the
-    // receiver, so those accessors still see the `this` they expect.
-    get: (target, property) => property === "scoped" ? target.effect : Reflect.get(target, property)
-  }
-) as typeof EffectVitest.it & { readonly scoped: typeof EffectVitest.it.effect }
+type FuzzIt = typeof EffectVitest.it & {
+  readonly scoped: typeof EffectVitest.it.effect
+  readonly effect: typeof EffectVitest.it.effect & { readonly fuzz: EffectFuzz }
+  readonly fuzz: SyncFuzz
+}
+const fuzzMethods = makeMethods()
+const effectIt = new Proxy(EffectVitest.it.effect, {
+  get: (target, property) => property === "fuzz" ? fuzzMethods.effect.fuzz : Reflect.get(target, property)
+})
+/**
+ * The peer runner with scoped tests and corpus-backed fuzz registration.
+ * @since 0.1.0
+ * @category testing
+ */
+export const it: FuzzIt = new Proxy(EffectVitest.it, {
+  get: (target, property) =>
+    property === "scoped" ? target.effect : property === "effect"
+      ? effectIt :
+      property === "fuzz"
+      ? fuzzMethods.fuzz
+      : Reflect.get(target, property)
+}) as FuzzIt
 
 interface TestRegistration<R> {
   <A, E>(

@@ -1,0 +1,47 @@
+import { Telemetry } from "alchemy"
+import { make } from "./AuthBrokerHost.vibe"
+import { GitHubConnection, connectionsOf, decodeSites } from "./GitHubConnection.vibe"
+import { RuntimeContext } from "alchemy"
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import { GitHub } from "@smthrs/integrations"
+import { FetchHttpClient, HttpServerResponse } from "effect/http"
+
+const Broker = GitHub.Auth.Broker
+export const requestTelemetry = Telemetry.layer(Broker.httpPolicy)
+/** Separate storage and browser cookie from smithers.sh's own sign-in; no session or role is imported. */
+export effect function configured() {
+  const sites = try Config.option(Config.Redacted("HOSTED_AUTH_SITES"))
+  const origin = try Config.option(Config.String("AUTH_BROKER_ORIGIN"))
+  const domain = try Config.option(Config.String("APP_DOMAIN"))
+  const secret = try Config.option(Config.Redacted("SESSION_SECRET"))
+  const encryptionKey = try Config.option(Config.Redacted("AUTH_BROKER_ENCRYPTION_KEY"))
+  if (Option.isNone(sites) || Option.isNone(secret) || Option.isNone(encryptionKey)) return undefined
+  const home = Option.getOrElse(origin, () => Option.isSome(domain) ? "https://" + domain.value : "")
+  const decoded = decodeSites(Redacted.value(sites.value)) catch () => undefined
+  if (decoded === undefined || !Broker.canonicalOrigin(home) || Redacted.value(secret.value).length < 32) return undefined
+  return { origin: home, sites: decoded.map(site => ({ origin: site.origin, secret: Redacted.make(site.secret) })), secret: secret.value, encryptionKey: encryptionKey.value }
+}
+
+export class HostedAuthBroker extends Cloudflare.DurableObject<HostedAuthBroker, {}>()("HostedAuthBroker") {}
+export const live = HostedAuthBroker.make(effect {
+  try Layer.build(requestTelemetry)
+  const state = try Cloudflare.DurableObjectState
+  const setup = try Effect.orDie(configured())
+  const connectionObjects = try GitHubConnection
+  const keys = try Effect.orDie(Config.option(Config.Redacted("GITHUB_CONNECTION_KEYS")))
+  // Alchemy must see these reads while planning, including when the broker is disabled.
+  const clientId = try Effect.orDie(Config.option(Config.String("GITHUB_APP_CLIENT_ID")))
+  const clientSecret = try Effect.orDie(Config.option(Config.Redacted("GITHUB_APP_CLIENT_SECRET")))
+  return effect {
+    if (setup === undefined || Option.isNone(clientId) || Option.isNone(clientSecret)) return { fetch: succeed(HttpServerResponse.empty({ status: 503, headers: Broker.HEADERS })) }
+    const github = try GitHub.Auth.GitHubAuth.pipe(Effect.provide(GitHub.Auth.layer({
+      clientId: clientId.value, clientSecret: clientSecret.value,
+    }).pipe(Layer.provide(FetchHttpClient.layer))))
+    const runtime = try Effect.context<RuntimeContext>()
+    return try make(try Effect.orDie(Effect.try(() => state.id.toString())), state.raw.storage, { ...setup, ...(Option.isNone(keys) ? {} : { connections: connectionsOf(connectionObjects, runtime) }) }, github)
+
+  }
+})
+
+/** The shared classifier keeps ordinary GitHub callbacks with the existing SignIn handler. */
+export const handles = Broker.handles

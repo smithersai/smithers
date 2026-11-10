@@ -1,0 +1,38 @@
+// Pure transition for the live dispatcher's storage scan. Storage receipt truth and engine execution remain host boundaries.
+export interface DispatchScan {
+  readonly index: number
+  readonly phase: "scan" | "attempt" | "done"
+  readonly post: string
+  readonly started: boolean
+}
+
+//@ verify
+//@ ensures \result.index == 0 && \result.phase == "scan" && \result.post == "" && !\result.started
+export function initialDispatch(): DispatchScan {
+  return { index: 0, phase: "scan", post: "", started: false }
+}
+
+/** Read exactly the current mark; never pass an unmarked post to try a later one. */
+//@ verify
+//@ requires 0 <= scan.index && scan.index <= posts.length
+//@ ensures 0 <= \result.index && \result.index <= posts.length
+//@ ensures scan.phase != "scan" ==> \result == scan
+//@ ensures scan.phase == "scan" && scan.index == posts.length ==> \result.phase == "done" && \result.index == scan.index && \result.post == scan.post && \result.started == scan.started
+//@ ensures scan.phase == "scan" && scan.index < posts.length && marked ==> \result.index == scan.index + 1 && \result.phase == "scan" && \result.post == "" && !\result.started
+//@ ensures scan.phase == "scan" && scan.index < posts.length && !marked ==> \result.index == scan.index && \result.phase == "attempt" && \result.post == posts[scan.index] && !\result.started
+export function probeDispatch(scan: DispatchScan, posts: ReadonlyArray<string>, marked: boolean): DispatchScan {
+  if (scan.phase !== "scan") return scan
+  if (scan.index === posts.length) return { ...scan, phase: "done" }
+  if (marked) return { index: scan.index + 1, phase: "scan", post: "", started: false }
+  return { index: scan.index, phase: "attempt", post: posts[scan.index]!, started: false }
+}
+
+/** Exactly one engine start is attempted per dispatch call, including a refusal while a prior execution is held. */
+//@ verify
+//@ ensures scan.phase != "attempt" ==> \result == scan
+//@ ensures scan.phase == "attempt" ==> \result.phase == "done" && \result.started == started
+//@ ensures \result.index == scan.index && \result.post == scan.post
+export function finishDispatch(scan: DispatchScan, started: boolean): DispatchScan {
+  if (scan.phase !== "attempt") return scan
+  return { ...scan, phase: "done", started }
+}

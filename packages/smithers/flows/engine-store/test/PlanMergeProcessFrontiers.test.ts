@@ -22,10 +22,14 @@ for (const frontier of ["intent", "completion"] as const) {
     }
     await mkdir(join(root, ".flows"))
     await writeFile(join(root, "shared.txt"), "initial")
-    const child = ChildProcesses.spawn(process.execPath, [fixture, root, "crash", frontier], {
-      env,
-      stdio: ["pipe", "pipe", "pipe"]
-    })
+    const child = ChildProcesses.spawn(
+      process.execPath,
+      [ChildProcesses.vibeImport, fixture, root, "crash", frontier],
+      {
+        env,
+        stdio: ["pipe", "pipe", "pipe"]
+      }
+    )
     const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
       child.once("exit", (code, signal) => resolve({ code, signal }))
     })
@@ -52,7 +56,13 @@ for (const frontier of ["intent", "completion"] as const) {
       expect(await readFile(join(root, "shared.txt"), "utf8")).toBe(frontier === "intent" ? "initial" : "winner")
       expect(ChildProcesses.killGroup(child)).toBe(true)
       expect((await exited).signal).toBe("SIGKILL")
-      const resumed = await promisify(execFile)(process.execPath, [fixture, root, "resume", frontier], {
+      const resumed = await promisify(execFile)(process.execPath, [
+        ChildProcesses.vibeImport,
+        fixture,
+        root,
+        "resume",
+        frontier
+      ], {
         env,
         timeout: 60_000,
         killSignal: "SIGKILL",

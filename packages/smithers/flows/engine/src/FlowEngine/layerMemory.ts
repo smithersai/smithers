@@ -4,8 +4,9 @@
  * @since 0.1.0
  */
 
+import { sortCollections } from "@smthrs/canonical"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
-import { type DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, type DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import { ExecutionIdentityConflict } from "@smthrs/flow/FlowRuntime"
 import * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
@@ -15,6 +16,7 @@ import * as Fiber from "effect/Fiber"
 import * as FiberMap from "effect/FiberMap"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
+import * as RpcSerialization from "effect/rpc/RpcSerialization"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
@@ -101,6 +103,8 @@ interface Memory {
   readonly scope: Scope.Scope
   /** The port this engine answers as, which every body it drives is given. */
   readonly engine: () => Port
+  /** The serializer action results are stored with, read once when the layer is built. */
+  readonly serialization: RpcSerialization.RpcSerialization["Service"]
   /**
    * Registrations by tag. They stack: the last still-open one serves, and a
    * closed inner registration is spliced back out so the outer one serves
@@ -147,9 +151,15 @@ interface Memory {
   readonly missedWakes: Set<string>
 }
 
-const makeMemory = (scope: Scope.Scope, clocks: FiberMap.FiberMap<string>, engine: () => Port): Memory => ({
+const makeMemory = (
+  scope: Scope.Scope,
+  clocks: FiberMap.FiberMap<string>,
+  engine: () => Port,
+  serialization: RpcSerialization.RpcSerialization["Service"]
+): Memory => ({
   scope,
   engine,
+  serialization,
   flows: new Map(),
   executions: new Map(),
   executionLocks: new Map(),
@@ -336,13 +346,18 @@ const requestCancellation = (memory: Memory, executionId: string): ReadonlyArray
  * opaque, such as a `Schema.declare` reference to a live object. Copying
  * through `Schema.toCodecJson` instead, as this did until 2026-09-01,
  * demanded a JSON representation of every member and so refused any
- * payload holding a declared reference, including every `smithers-build`
- * target that names a dependency. The constructor also belongs to the
- * schema object itself, so a flow authored against a second `effect`
- * instance is rebuilt by the instance that owns it.
+ * payload holding a declared reference. No `smithers-build` payload holds one
+ * since VIP-44 (its skills installation passes data, not target references),
+ * but a memory engine still runs payloads that do. The constructor also
+ * belongs to the schema object itself, so a flow authored against a second
+ * `effect` instance is rebuilt by the instance that owns it.
+ *
+ * The copy is made from the value with every `Set` and `Map` sorted
+ * (`sortCollections`), the order `Flow.payloadSnapshot` hashes and stores, so
+ * a body sees exactly what its identity covers (VIP-44).
  */
 const snapshot = (flow: Flow.Any, value: unknown): Effect.Effect<unknown> =>
-  Effect.orDie(flow.payloadSchema.makeEffect(value as never))
+  Effect.orDie(flow.payloadSchema.makeEffect(sortCollections(value) as never))
 
 const isPlainObject = (value: object): boolean => {
   const prototype = Object.getPrototypeOf(value)
@@ -387,13 +402,12 @@ const samePayload = (flow: Flow.Any, left: unknown, right: unknown): Effect.Effe
   Effect.gen(function*() {
     // A declared live reference need not have a JSON codec. Codec
     // construction itself can throw, so include it in the fallback.
-    const encoded = yield* Effect.exit(Effect.suspend(() => {
-      const encode = Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))
-      return Effect.zip(encode(left as never), encode(right as never)) as Effect.Effect<
-        [Schema.Json, Schema.Json],
-        Schema.SchemaError
-      >
-    }))
+    const encoded = yield* Effect.exit(Effect.suspend(() =>
+      Effect.zip(
+        Flow.payloadSnapshot(flow.payloadSchema, left),
+        Flow.payloadSnapshot(flow.payloadSchema, right)
+      ) as Effect.Effect<[Schema.Json, Schema.Json], Schema.SchemaError>
+    ))
     return Exit.isSuccess(encoded)
       ? sameShape(encoded.value[0], encoded.value[1], 64)
       : sameShape(left, right, 64)
@@ -836,7 +850,8 @@ const runAction = (
   actionInstance.waiting = waitingBefore
   return restore(action.executeEncoded.pipe(
     Flow.intoResult,
-    Effect.provideService(FlowRuntime.FlowInstance, actionInstance)
+    Effect.provideService(FlowRuntime.FlowInstance, actionInstance),
+    Effect.provideService(Action.StoredSerialization, memory.serialization)
   )).pipe(
     Effect.onExit((exit) => recordSettlement(memory, owner, actionId, exit)),
     Effect.ensuring(Effect.sync(() => {
@@ -978,6 +993,7 @@ const scheduleClock = (memory: Memory, flow: Flow.Any, options: Parameters<Encod
 
 /** The driver `makeUnsafe` adapts: every member answers from `memory`. */
 const adapter = (memory: Memory): Encoded => ({
+  serialization: memory.serialization,
   register: (flow, execute) => register(memory, flow, execute),
   execute: (flow, options) => execute(memory, flow, options),
   interrupt: (flow, executionId) => interrupt(memory, flow, executionId),
@@ -1019,7 +1035,12 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
     // The ceiling this engine is built under bounds every admission, join,
     // poll, and resume it answers, whatever context later calls it.
     const host = yield* CapabilitySet.current
-    const memory = makeMemory(scope, yield* FiberMap.make<string>(), () => engine)
+    // Results never leave memory, so any serializer can store them (VIP-44).
+    const serialization = Option.getOrElse(
+      yield* Effect.serviceOption(RpcSerialization.RpcSerialization),
+      () => RpcSerialization.json
+    )
+    const memory = makeMemory(scope, yield* FiberMap.make<string>(), () => engine, serialization)
     const engine: Port = bindHostCeiling(host, makeUnsafe(adapter(memory)))
     return engine
   })

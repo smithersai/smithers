@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 42
+bias 5
+null-prototype true
+key 3292352743
+tape RAefKJTJYi09y6N1XquKbZs1jNlHqfZwCsHaN-AVycHha9t7cbRqP5X4svX6gbD_2IE4VCV3afXNYANuveVIeubuTWJdA65DXovumGcE5Q81HWIUWZ_gSCXWOLYQyf4I
+schedule-key 1888189485
+schedule 
+signature "ReturnedFalse"
+path 0.0
+codec "json"
+value "{\"route\":\"tour-control\",\"body\":\"valid\",\"length\":\"zero\",\"after\":\"three\",\"answer\":\"fault\",\"refusal\":\"forbidden\",\"text\":\"\",\"step\":0,\"controls\":false}"
+# ReturnedFalse
+# {"route":"tour-control","body":"valid","length":"zero","after":"three","answer":"fault","refusal":"forbidden","text":"","step":0,"controls":false}

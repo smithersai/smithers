@@ -41,8 +41,12 @@ describe("built artifacts", () => {
     () => {
       const build = spawnSync(process.execPath, ["scripts/build.mjs"], { cwd: packageRoot, encoding: "utf8" })
       expect(build.status, `${build.error?.message ?? ""}\n${build.stdout ?? ""}\n${build.stderr ?? ""}`).toBe(0)
-      execFileSync(process.execPath, ["test/fixtures/artifact-esm.mjs"], { cwd: packageRoot })
-      execFileSync(process.execPath, ["test/fixtures/artifact-cjs.cjs"], { cwd: packageRoot })
+      execFileSync(process.execPath, ["--import=vibelang/register", "test/fixtures/artifact-esm.mjs"], {
+        cwd: packageRoot
+      })
+      execFileSync(process.execPath, ["--import=vibelang/register", "test/fixtures/artifact-cjs.cjs"], {
+        cwd: packageRoot
+      })
     },
     // This case runs a real build and two cold Node processes: 11.2 s even on
     // an idle machine. The old 30 s left barely 3x headroom and blew past it

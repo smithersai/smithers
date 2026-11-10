@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs"
 import { Effect, Layer, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
@@ -6,6 +5,7 @@ import * as Store from "./SessionStore.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { testFile } from "./test/harness.ts"
 import { configured, signInHarness } from "./test/signIn.ts"
+import { sourceText } from "../../../packages/repo-targets/test-utils/source-readers.mjs"
 
 const runtime = testFile("session_prior")
 const query = <A extends object>(f: (sql: SqlClient.SqlClient) => Effect.Effect<ReadonlyArray<A>, unknown>) =>
@@ -69,7 +69,7 @@ test("a failed primary query answers failed, never absent, with no cookie", asyn
 })
 
 test("the confirming statement never shares the authority predicate", () => {
-  const source = readFileSync(new URL("./SessionPrior.ts", import.meta.url), "utf8")
+  const source = sourceText(new URL("./SessionPrior.ts", import.meta.url))
   expect(source).not.toContain("sessionLive")
   expect(source).toContain("FOR UPDATE")
   expect(source).toContain("clock_timestamp()")

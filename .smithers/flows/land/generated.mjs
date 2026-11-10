@@ -2,7 +2,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import { sourcePath, writeSource } from "./files.mjs"
-import { eachLaneCommit, jj, laneCommits, migrations } from "./numbering.mjs"
+import { eachLaneCommit, jj, laneCommits, migrationFile, migrations } from "./numbering.mjs"
 
 export const databasePath = "apps/mvp/db/Database.ts"
 export const manifestPath = "apps/mvp/db/MigrationManifest.ts"
@@ -112,17 +112,16 @@ export function repairLane(root, captured) {
 
 /** Static imports work in Workers and preserve Effect SQL's existing numeric ledger keys. */
 export function migrationManifest(names) {
-  const sorted = names.filter((name) => /^\d{4}_[a-zA-Z0-9_]+\.ts$/.test(name)).sort()
+  const sorted = names.map(migrationFile).filter(Boolean).sort((a, b) => a.id - b.id)
   const seen = new Set()
-  for (const name of sorted) {
-    const id = Number(name.slice(0, 4))
+  for (const { id } of sorted) {
     if (seen.has(id)) throw new Error(`Duplicate migration number: ${id}`)
     seen.add(id)
   }
   return '/** Generated from db/migrations by the parallel workspace landing tool. */\n' +
-    sorted.map((name) => `import m${name.slice(0, 4)} from "./migrations/${name}"\n`).join("") +
+    sorted.map(({ digits, name }) => `import m${digits} from "./migrations/${name}"\n`).join("") +
     '\n/** Every published migration identity, in ascending apply order. */\nexport const migrations = {\n' +
-    sorted.map((name) => `  "${name.slice(0, -3)}": m${name.slice(0, 4)},\n`).join("") + '}\n'
+    sorted.map(({ digits, stem }) => `  "${stem}": m${digits},\n`).join("") + '}\n'
 }
 
 /** Repair only known generated data. Hand-authored service changes remain real conflicts. */

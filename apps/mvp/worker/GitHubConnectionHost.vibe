@@ -1,0 +1,65 @@
+// One person's GitHub connection on smithers.sh (decision 0165): one Durable Object per person, the single writer that
+// GitHub's single-use refresh tokens need. Tokens stay sealed here. Journals hold fixed step names and ciphertext.
+import { GitHub } from "@smthrs/integrations"
+import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { SecureRandom } from "effect/crypto"
+import { FetchHttpClient } from "effect/http"
+
+const Delegation = GitHub.Delegation
+const Step = Flow.make("auth/GitHubConnection", {
+  description: "One change to a person's GitHub connection. Tokens never enter the journal.", modelInvocable: false,
+  payload: { step: Schema.String }, success: Schema.String, body: () => Node.succeed(""),
+})
+const Refused = Delegation.DelegationRefused
+
+export interface Setup {
+  readonly origin: string
+  readonly sites: ReadonlyArray<GitHub.Delegation.Site>
+  readonly keyring: GitHub.Delegation.Keyring
+}
+export const realAct = (apiBase: string): GitHub.Delegation.Act => (token) => (program) =>
+  program.pipe(GitHub.Calls.withToken(token, apiBase), Effect.provide(FetchHttpClient.layer)) as never
+
+export effect function make(person: number, hostId: string, storage: ObjectDatabase.Storage, setup: Setup, github: GitHub.Auth.GitHubAuth["Service"], act: GitHub.Delegation.Act = realAct("https://api.github.com")) {
+  const store = try Delegation.sqliteStore(storage.sql)
+  const lock = try Semaphore.make(1)
+  const serial = Semaphore.withPermits(lock, 1)
+  const run = (executionId: string, step: string, execute: string!!) => {
+    const registration = Layer.effectDiscard(effect {
+      const runtime = try FlowRuntime.FlowRuntime
+      try runtime.register(Step, () => Action.make({ name: "auth/connection/" + step, success: Schema.String, execute }))
+    })
+    return Effect.orDie(scoped(Effect.provide(effect {
+      return try Effect.orDie((try FlowRuntime.FlowRuntime).execute(Step, { executionId, payload: { step } }))
+    }, CloudflareRuntime.layer({ hostId, executionId, flow: Step._tag }, registration).pipe(Layer.provide(ObjectDatabase.layer(storage))))))
+  }
+  /** Records success only: a refused attempt moves to a fresh execution, so a transient failure can be retried. */
+  const journal: GitHub.Delegation.Journal = (name, body) => effect {
+    const counter = "journal-attempt/" + name
+    const attempt = Number(try store.get(counter) ?? 0)
+    const encoded = try run(`auth-connection/journal/${name}/${attempt}`, "journal", Effect.map(Effect.exit(body), (exit) => JSON.stringify(
+      exit._tag === "Success" ? { answer: exit.value } : { reason: Option.match(Cause.findErrorOption(exit.cause), { onNone: () => "unavailable" as const, onSome: (error) => error.reason }) },
+    )))
+    const outcome = try Effect.orDie(Effect.try(() => JSON.parse(encoded) as { readonly answer?: string; readonly reason?: GitHub.Delegation.Reason }))
+    if (outcome.answer !== undefined) return outcome.answer
+    try store.put(counter, attempt + 1)
+    throw new Refused({ reason: outcome.reason ?? "unavailable" })
+  }
+  /** A fresh execution per call; its answer may carry a delegation handle, so it stays out of the journal. */
+  const once = <A>(step: string, body: A!GitHub.Delegation.DelegationRefused) => effect {
+    let outcome: Exit.Exit<A, GitHub.Delegation.DelegationRefused> | undefined
+    const id = try effect { return try (try SecureRandom.SecureRandom).uuidV4() }.pipe(Effect.provide(SecureRandom.layerWebCrypto), Effect.orDie)
+    try run("auth-connection/" + step + "/" + id, step, Effect.map(Effect.exit(body), (exit) => { outcome = exit; return "" }))
+    return try outcome!
+  }
+  const server = try Delegation.make({ origin: setup.origin, person, sites: setup.sites, keyring: setup.keyring, store, journal, github, act })
+  return {
+    fetch: serial(Delegation.serve(server)),
+    install: (input: Parameters<typeof server.install>[0]) => serial(once("install", server.install(input))),
+    revoke: (origin: string) => serial(once("revoke", server.revoke(origin))),
+    connections: () => serial(server.connections()),
+    revokedAtGitHub: () => serial(once("webhook", server.revokedAtGitHub())),
+  }
+}

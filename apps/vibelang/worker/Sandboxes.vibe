@@ -1,0 +1,47 @@
+// A per-person DO is the sole allowance writer. Its SQLite journals the same flows that the product mock executes.
+import { FlowRuntime } from "@smthrs/flow"
+import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { SandboxHost, SandboxStart, SandboxStop, SandboxCommand, SandboxMeter, sandboxRegistration } from "../src/core/flows.vibe"
+import { makeSandboxHost, type Machines, type SandboxState, type Receipt } from "../src/core/sandboxHost.vibe"
+import { EXECUTION_RETENTION, postExecutionId, type Storage } from "./Objects.vibe"
+
+export interface SandboxStorage extends Storage { transactionSync<A>(body: () => A): A }
+export effect function open(storage: SandboxStorage, machines: Machines) {
+  try Effect.orDie(Effect.try(() => storage.sql.exec("CREATE TABLE IF NOT EXISTS vibelang_sandbox_state (id INTEGER PRIMARY KEY, body TEXT NOT NULL)")))
+  try Effect.orDie(Effect.try(() => storage.sql.exec("CREATE TABLE IF NOT EXISTS vibelang_sandbox_receipts (id TEXT PRIMARY KEY, body TEXT NOT NULL)")))
+  return try makeSandboxHost({
+    read: effect () => {
+      const rows = try Effect.orDie(Effect.try(() => storage.sql.exec<{ body: string }>("SELECT body FROM vibelang_sandbox_state WHERE id = 1").toArray()))
+      if (!rows[0]) return undefined
+      return try Effect.orDie(Effect.try(() => JSON.parse(rows[0]!.body) as SandboxState))
+    },
+    receipt: effect (id) => {
+      const rows = try Effect.orDie(Effect.try(() => storage.sql.exec<{ body: string }>("SELECT body FROM vibelang_sandbox_receipts WHERE id = ?", id).toArray()))
+      if (!rows[0]) return undefined
+      return try Effect.orDie(Effect.try(() => JSON.parse(rows[0]!.body) as Receipt))
+    },
+    write: (next, receipt) => Effect.orDie(Effect.try(() => storage.transactionSync(() => {
+      storage.sql.exec("INSERT OR REPLACE INTO vibelang_sandbox_state (id, body) VALUES (1, ?)", JSON.stringify(next))
+      if (receipt) storage.sql.exec("INSERT OR REPLACE INTO vibelang_sandbox_receipts (id, body) VALUES (?, ?)", receipt.request.operationId, JSON.stringify(receipt))
+    }))),
+    alarm: (at) => at === null ? promise(() => storage.deleteAlarm()) : promise(() => storage.setAlarm(at)),
+  }, machines)
+}
+
+export function runtime(hostId: string, executionId: string, flow: string, storage: Storage, host: SandboxHost.Shape, retention: CloudflareRuntime.Retention = EXECUTION_RETENTION) {
+  return CloudflareRuntime.layer({ hostId, executionId, flow, retention }, sandboxRegistration).pipe(
+    Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(SandboxHost, host)),
+  )
+}
+export effect function execute(hostId: string, storage: Storage, host: SandboxHost.Shape, kind: "start" | "stop" | "command" | "meter", conversation: string, operationId: string, generation: number, command: string, retention?: CloudflareRuntime.Retention) {
+  const flow = kind === "start" ? SandboxStart : kind === "stop" ? SandboxStop : kind === "command" ? SandboxCommand : SandboxMeter
+  // Random execution ids retry a failed engine action; host receipts provide durable A/B/A idempotency across runs.
+  const executionId = try postExecutionId(`sandbox-${kind}`)
+  provide runtime(hostId, executionId, flow._tag, storage, host, retention) {
+    const engine = try FlowRuntime.FlowRuntime
+    if (kind === "start") return try engine.execute(SandboxStart, { executionId, payload: { conversation, operationId } })
+    if (kind === "stop") return try engine.execute(SandboxStop, { executionId, payload: { conversation, operationId, generation } })
+    if (kind === "command") return try engine.execute(SandboxCommand, { executionId, payload: { conversation, operationId, generation, command } })
+    return try engine.execute(SandboxMeter, { executionId, payload: {} })
+  }
+}

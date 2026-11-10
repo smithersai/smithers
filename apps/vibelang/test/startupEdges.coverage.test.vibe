@@ -1,0 +1,67 @@
+// Browser startup's reading of the page: the address's flags, the saved mock or live choice, a finished tour, and
+// storage the browser refuses. The page's window is the real one; the refusing one is an injected faulty Window.
+import { expect, it } from "@effect/vitest"
+import { ExperimentalBrowserDocument, ExperimentalBrowserMediaQuery } from "vibelang-runtime/experimental/platform-browser"
+import { SecureRandom } from "effect/crypto"
+import { main, page } from "../src/web/startup.vibe"
+import { heldHealth } from "./support/heldHealth.vibe"
+import { container, fullLocation, refusingStorage, remove, setLocation } from "./support/browser.ts"
+
+const KEYS = ["vibelang.agent", "vibelang:toured", "vibelang:tour-sound"]
+
+/** Runs `main` at `address` on the real page, restoring the address and the stored keys after. */
+effect function startedAt(address: string, host: typeof page = page) {
+  const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+  const before = try sync(() => ({ address: fullLocation(), stored: KEYS.map((key) => window.localStorage.getItem(key)) }))
+  try addFinalizer(() => sync(() => {
+    setLocation(before.address)
+    KEYS.forEach((key, index) => { const value = before.stored[index]; if (value === null || value === undefined) window.localStorage.removeItem(key); else window.localStorage.setItem(key, value) })
+  }))
+  try Effect.try(() => { const root = node.ownerDocument.createElement("div"); root.id = "root"; node.append(root); setLocation(address) })
+  const health = try heldHealth()
+  return try Effect.provide(main(), Layer.mergeAll(host, health.layer, Layer.succeed(Clock.Clock, health.deadlineClock)))
+}
+
+it.live("reads recovery, issues, sign-in and the wiki page from the address", () => scoped(effect {
+  const { flags } = try startedAt("/wiki/index?resume-recovery=r1&resume-op=read&resume-key=k1&issues=1&sign-in=failed#usage")
+  try Effect.try(() => expect(flags).toMatchObject({ resumeRecovery: "r1", resumeOp: "read", resumeKey: "k1", openIssues: true, signInFailed: true, wiki: "/wiki/index#usage" }))
+}))
+
+it.live("an address without them starts plain", () => scoped(effect {
+  const { flags } = try startedAt("/")
+  try Effect.try(() => {
+    expect(flags).toMatchObject({ openIssues: false, signInFailed: false })
+    expect(flags).not.toHaveProperty("resumeRecovery")
+    expect(flags).not.toHaveProperty("wiki")
+  })
+}))
+
+it.live("?agent=mock saves the choice, a later plain load keeps it, and ?agent=live clears it", () => scoped(effect {
+  try startedAt("/?agent=mock")
+  const saved = try sync(() => window.localStorage.getItem("vibelang.agent"))
+  try startedAt("/")
+  const kept = try sync(() => window.localStorage.getItem("vibelang.agent"))
+  try startedAt("/?agent=live")
+  const cleared = try sync(() => window.localStorage.getItem("vibelang.agent"))
+  try Effect.try(() => { expect(saved).toBe("mock"); expect(kept).toBe("mock"); expect(cleared).toBeNull() })
+}))
+
+it.live("a person who finished the tour once is not toured again on load", () => scoped(effect {
+  try sync(() => window.localStorage.setItem("vibelang:toured", "1"))
+  const { flags } = try startedAt("/")
+  try Effect.try(() => expect(flags.autoTour).toBe(false))
+}))
+
+it.live("storage the browser refuses starts a fresh tour session and the page still loads", () => scoped(effect {
+  const refusing = try Effect.try(refusingStorage)
+  const style = try Effect.try(() => window.getComputedStyle.bind(window))
+  const host = Layer.mergeAll(
+    Layer.succeed(Experimental.Window.Window, Experimental.Window.make({ window: () => refusing, computedStyle: style })),
+    ExperimentalBrowserDocument.layer, ExperimentalBrowserMediaQuery.layer, SecureRandom.layerWebCrypto,
+  )
+  const chosen = try startedAt("/?agent=mock", host)
+  const plain = try startedAt("/", host)
+  try Effect.try(() => {
+    for (const { flags } of [chosen, plain]) expect(flags).toMatchObject({ tutorialSession: flags.session, tourSound: false, resumeTour: false, autoTour: true })
+  })
+}))

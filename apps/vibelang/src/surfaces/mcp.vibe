@@ -1,4 +1,7 @@
+import { McpProtocol, McpServer, Toolkit } from "effect/ai"
+import { Actions } from "../actions/Actions.vibe"
 import { Factory } from "../core/Factory.vibe"
+import { Mythical } from "../history/MythicalHistory.vibe"
 import { commands, type CommandError } from "./commands.vibe"
 import { backend } from "./backend.vibe"
 
@@ -7,8 +10,12 @@ type Handlers = { [C in (typeof commands)[number] as C["name"]]: (input: unknown
 export const registrations = McpServer.toolkit(toolkit).pipe(Layer.provide(toolkit.toLayer(effect {
   // Capture the backend once when the host builds the registrations, rather than marking it a per-request dependency.
   const factory = try Factory
+  const mythical = try Mythical
+  const actions = try Actions
+  const files = try FileSystem.FileSystem
+  const path = try Path.Path
   return Object.fromEntries(commands.map((command) => [command.name, effect (input: unknown) => {
-    provide Factory = factory {
+    provide Factory = factory, Mythical = mythical, Actions = actions, FileSystem.FileSystem = files, Path.Path = path {
       return try command.run(input)
     }
   }])) as Handlers

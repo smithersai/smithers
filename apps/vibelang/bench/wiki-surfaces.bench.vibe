@@ -1,0 +1,80 @@
+// @vitest-environment node
+// Real emitted CLI and persistent stdio MCP over the product fixture wiki flows.
+import { it, expect } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { McpClient, McpProtocol } from "effect/ai"
+import { ChildProcess } from "effect/process"
+import { WikiState } from "../src/core/wikiSchemas.vibe"
+import { pages } from "../src/core/wiki.vibe"
+import { node, run } from "../test/support/processes.vibe"
+import { cliPath, serverPath } from "../test/surface-host.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const platform = Layer.mergeAll(NodeServices.layer, ExperimentalNodeServices.layer)
+const source = pages.find(page => page.id === "index")!.source
+const note = "Benchmark wiki proposal."
+const changed = source.trimEnd() + "\n\n" + note + "\n"
+
+effect function isolatedCli(args: ReadonlyArray<string>) {
+  return try scoped(effect {
+    const settings = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    return try run(try node(), [try cliPath(), ...args], { XDG_CONFIG_HOME: settings })
+  })
+}
+
+it("emitted wiki CLI read, draft, save and propose", async ({ bench }) => {
+  const results = []
+  for (const op of ["read", "draft", "save", "propose"] as const) {
+    results.push(await workload(bench, `cli-wiki-${op}`, "async", async () => {
+      const args = ["--mock", "wiki", op, "--page", "index", "--key", `bench-${op}`, "--json"]
+      if (op !== "read") args.push("--text", op === "draft" ? note : changed)
+      if (op === "save" || op === "propose") args.push("--base", source)
+      const result = await runPromise(Effect.provide(isolatedCli(args), platform))
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stderr).toBe("")
+      const state = Schema.decodeUnknownSync(WikiState)(JSON.parse(result.stdout))
+      expect(state.role).toBe("maintainer")
+      if (op === "read") expect(state.pages.find(page => page.id === "index")).toMatchObject({ source, revision: "fixture" })
+      else if (op === "draft") expect(state.draft).toEqual({ page: "index", text: changed })
+      else {
+        expect(state.review).toBe("https://github.com/smithersai/vibelang/pull/1001")
+        expect(state.pages).toEqual([])
+      }
+    }).run(slow))
+  }
+  await runPromise(artifact("wiki-cli", "Vitest built-in bench; three unwarmed samples for each wiki operation, spawning the actual emitted CLI to exit. Validated schema, fixture role, full read/draft bytes and exact first review identity. Build excluded; process startup and assertions included.", ["Product mock backend and maintainer principal, fresh engine each call. Save and Propose open fixture reviews; no GitHub mutation, OAuth or model. Command-line source arguments remain in memory and never enter artifacts."], results))
+})
+
+it("persistent wiki MCP operations preserve source and replay their reviews", async ({ bench }) => {
+  const clientLayer = Layer.unwrap(effect {
+    const settings = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    return McpClient.layerStdio({ name: "Wiki benchmarks", version: "1", protocol: McpProtocol.v2025_11_25, timeout: "10 seconds", command: ChildProcess.make(try node(), [try serverPath(), "--mock"], { env: { XDG_CONFIG_HOME: settings }, extendEnv: true }) })
+  }).pipe(Layer.provide(platform))
+  const results = await runPromise(Effect.provide(effect {
+    const client = try McpClient.McpClient
+    const tools = try client.listTools()
+    const tool = tools.find(tool => tool.name === "wiki")!
+    const results = []
+    let ordinal = 0
+    for (const op of ["read", "draft", "save", "propose"] as const) {
+      const measured = try Effect.try(() => workload(bench, `mcp-wiki-${op}-readback`, "async", async () => {
+        const args = { op, page: "index", base: source, text: op === "draft" ? note : changed, key: `wiki-${++ordinal}` }
+        const first = await runPromise(client.callTool({ tool, schema: WikiState, arguments: args }))
+        expect(first.role).toBe("maintainer")
+        if (op === "draft") expect(first.draft).toEqual({ page: "index", text: changed })
+        if (op === "save" || op === "propose") {
+          expect(first.review).toMatch(/^https:\/\/github.com\/smithersai\/vibelang\/pull\/[0-9]+$/)
+          const replay = await runPromise(client.callTool({ tool, schema: WikiState, arguments: args }))
+          expect(replay).toEqual(first)
+        }
+        const after = await runPromise(client.callTool({ tool, schema: WikiState, arguments: { op: "read", page: "index" } }))
+        expect(after.pages.find(page => page.id === "index")).toMatchObject({ source, revision: "fixture" })
+        if (op === "save" || op === "propose") expect(after.draft).toBeUndefined()
+      }))
+      results.push(try tryPromise(() => measured.run(slow)))
+    }
+    return results
+  }, clientLayer))
+  await runPromise(artifact("wiki-mcp", "Vitest built-in bench; one real persistent stdio process, initialization/discovery excluded. Three samples per operation. Each measured callback includes the command plus a source-readback call; Save/Propose also include an identical-request replay and compare the complete result. Full original source, role, draft bytes and cleared submitted draft checked; schema/IPC/assertions included.", ["Product fixture wiki; no GitHub mutation, OAuth or model. The persistent engine grows its review history; command-plus-validation roundtrips are not single-call wire latency. No percentile claim."], results))
+})

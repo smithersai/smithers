@@ -13,6 +13,12 @@ import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as Migrations from "../src/Migrations.ts"
 import { withCrypto } from "./Sha256.ts"
 
+/** The stored row of a completion for a run the store has. */
+const storedRow = (outcome: DurableEngineState.CompleteDeferredOutcome): DurableEngineState.DeferredRow => {
+  if (outcome._tag === "NotFound") throw new Error("completion refused: no such run")
+  return outcome.row
+}
+
 const owner: Ownership.OwnerId = {
   hostId: "durable-state",
   pid: 1,
@@ -149,7 +155,7 @@ describe("SQL DurableEngineState", () => {
         "Completed",
         "Existing"
       ])
-      expect(result.outcomes[0]!.row).toEqual(result.outcomes[1]!.row)
+      expect(storedRow(result.outcomes[0]!)).toEqual(storedRow(result.outcomes[1]!))
       const exit = result.row.exit as Exit.Exit<string>
       expect(Exit.isSuccess(exit) && ["left", "right"].includes(exit.value)).toBe(true)
       expect(result.completed).toEqual([{

@@ -9,8 +9,9 @@
  * and nothing decodes them on the way out.
  *
  * - `actionExecute` and `deferredResult` return ENCODED values, which
- *   `makeUnsafe` decodes through the action's `exitSchemaPartial` and the
- *   deferred's `exitSchema`.
+ *   `makeUnsafe` decodes through the action's exit schemas under the
+ *   driver's `serialization` (`Action.exitSchemasFor`) and the deferred's
+ *   `exitSchema`.
  * - `deferredDone` and `deferredDoneIfWaiting` receive ENCODED exits, which
  *   `makeUnsafe` encodes before the call.
  * - `execute` and `poll` return DECODED results. The implementation decodes
@@ -30,6 +31,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
 import type * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
 import type * as Option from "effect/Option"
+import type * as RpcSerialization from "effect/rpc/RpcSerialization"
 import type * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import type * as Round from "./Round.vibe"
@@ -224,6 +226,13 @@ export interface Encoded {
    * failures remain subject to the action's declared error schema.
    */
   readonly encodeEngineError?: ((error: unknown) => Option.Option<unknown>) | undefined
+  /**
+   * The serializer this driver stores action results with (VIP-44): an
+   * action's `executeEncoded` runs under it, and dispatch decodes a recorded
+   * outcome through `Action.exitSchemasFor(serialization, action)`. Absent,
+   * `RpcSerialization.json`, the codec every action's `exitSchemaPartial` uses.
+   */
+  readonly serialization?: RpcSerialization.RpcSerialization["Service"] | undefined
   readonly actionExecute: (
     options: ActionExecuteOptions
   ) => Flow.Result<unknown, unknown>!never!(FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom))

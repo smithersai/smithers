@@ -32,7 +32,7 @@ export const RevokeReplacedGitHubToken = Flow.make("auth/RevokeReplacedGitHubTok
   body: Node.capture({}, request => Revoke.call(request)),
 })
 
-/** GitHub's adapter treats 404 and 422 as successful revocations, including a replay after tombstone retention. */
+/** GitHub's adapter treats 404 as already revoked; validation/spam failures (422) retry. */
 export const revoke = (id: string, services: Services) => Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
   const [row] = yield* sql<{ sessionId: string; access: unknown; finished: boolean }>`

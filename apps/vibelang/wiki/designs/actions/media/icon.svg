@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="VibeLang">
+  <defs>
+    <linearGradient id="g" x1="8" y1="4" x2="55" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#41d1ff"/>
+      <stop offset="0.55" stop-color="#747bff"/>
+      <stop offset="1" stop-color="#bd34fe"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="#161618"/>
+  <path d="M13 15h11l8 29 8-29h11L38 51H26L13 15Z" fill="url(#g)"/>
+</svg>

@@ -1,0 +1,44 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { HttpClient, HttpClientError, HttpClientResponse, HttpServerResponse } from "effect/http"
+import { githubMain } from "../worker/MainLog.vibe"
+import * as Issues from "../worker/Issues.vibe"
+import { VipWriter } from "../src/core/VipWriter.vibe"
+import type { IssueRequest } from "../src/core/issueSchemas.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+const answering = (status: number, body: string) => HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(body, { status })))))
+const offline = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) })))
+const refusal = async (client: HttpClient.HttpClient, cursor: string, token?: string) => {
+  const result = await runPromise(Effect.result(githubMain("smithersai/vibelang", client, token).since(cursor)))
+  return result._tag === "Failure" ? result.failure.reason : result.success
+}
+const draft: IssueRequest = { op: "draft", number: 0, parent: 0, title: "Tuple", text: "Summary", assignee: "", example: "", prior: "", key: "draft-1" }
+const person: Issues.Principal = { id: "1", login: "will", role: "maintainer" }
+
+it("GitHub-bound modules refuse faulty answers, and a VIP draft never reaches GitHub", async ({ bench }) => {
+  const main = workload(bench, "main-log-refusals", "async", async () => {
+    expect(await refusal(offline, "abc")).toBe("GitHub unreachable")
+    expect(await refusal(answering(500, "{}"), "abc", "token")).toBe("GitHub answered 500")
+    expect(await refusal(answering(200, "not json"), "abc")).toBe("GitHub's answer is not JSON")
+    expect(await refusal(answering(200, "{}"), "abc")).toBe("GitHub's answer is not a commit list")
+    expect(await refusal(answering(200, "[]"), "abc")).toBe("main's last folded commit is not within reach")
+    expect(await refusal(answering(200, "[]"), "")).toEqual([])
+  }).run(quick)
+  const drafted = workload(bench, "issues-draft-without-github", "async", async () => {
+    const expected = { title: "Tuple", summary: "Summary", example: "", prior: "" }
+    // The stub writer needs no flow runtime; the service type names what the production writer uses.
+    const answer: unknown = await runPromise(effect {
+      provide HttpClient.HttpClient = offline {
+        provide Issues.IssueAuthority = { current: () => succeed(person) } {
+          provide VipWriter = { draft: (request) => succeed({ ...expected, title: request.title }) } {
+            const host = try Issues.githubHost()
+            return try host.perform(draft)
+          }
+        }
+      }
+    } as never)
+    expect(answer).toEqual({ seq: 0, items: [], draft: expected })
+  }).run(quick)
+  await runPromise(artifact("github-faults", "Vitest built-in bench; worker/MainLog.vibe and worker/Issues.vibe with an injected faulty HttpClient. No request leaves the process.", ["Measures refusal paths only. GitHub-bound success paths wait for a GitHub test credential (0017)."], await Promise.all([main, drafted])))
+})

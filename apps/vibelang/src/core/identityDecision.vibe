@@ -1,0 +1,9 @@
+// Server-derived presentation of a session. The transport supplies these fields after signature/expiry checks.
+//@ verify
+//@ ensures id === "" ==> \result === guest
+//@ ensures id !== "" && agent ==> \result === login + " (agent)"
+//@ ensures id !== "" && !agent ==> \result === login
+export function postLabel(id: string, login: string, agent: boolean, guest: string): string {
+  if (id === "") return guest
+  return agent ? login + " (agent)" : login
+}

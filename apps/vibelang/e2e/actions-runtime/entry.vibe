@@ -1,0 +1,40 @@
+// E2E-only host: the real app and memory engine, with a selected identity and optional faulty Effect service.
+import { Runtime } from "foldkit"
+import { ExperimentalBrowserDocument, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
+import { faultyFactory, trace } from "../../test/support/FaultyFactory.vibe"
+import { Factory } from "../../src/core/Factory.vibe"
+import { mockFactoryFor } from "../../src/core/MockFactory.vibe"
+import { MockActions } from "../../src/actions/MockActions.vibe"
+import type { Role } from "../../src/actions/Actions.vibe"
+import { application } from "../../test/support/application.vibe"
+import { stylesheet } from "../../src/web/styles.vibe"
+
+const page = Layer.merge(ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer)
+const program = await runPromise(effect {
+  provide page {
+    const window = try (try Experimental.Window.Window).current
+    const document = try (try Experimental.Document.Document).current
+    const params = new URLSearchParams(window.location.search)
+    const requested = params.get("role")
+    const role: Role = requested === "maintainer" || requested === "contributor" || requested === "community" || requested === "new" ? requested : "viewer"
+    const fault = params.get("fault")
+    const css = try stylesheet()
+    const root = try Effect.try(() => {
+      const style = document.createElement("style")
+      style.textContent = css
+      document.head.append(style)
+      return document.getElementById("root")!
+    })
+    const base = fault === "fail" ? faultyFactory("tour-unavailable", trace()) : mockFactoryFor(role)
+    // A fixture agent's real Post flow, observed by a signed-out browser through the unchanged label component.
+    const factory = params.get("agent") === "yes" ? Layer.effect(Factory, effect {
+      const product = Context.get(try Layer.build(base), Factory)
+      try Effect.orDie(product.accounts!.signInAgent())
+      try Effect.orDie(product.post("home", "fixture-agent-post", "forged", "From the signed-in agent"))
+      try Effect.orDie(product.accounts!.signOut())
+      return product
+    }) : base
+    return application(root, factory, () => {}, undefined, MockActions({ role, actor: "person" }))
+  }
+})
+Runtime.run(program, { flags: succeed({ session: "actions-e2e", mode: "mock" as const, name: "Guest" }) })

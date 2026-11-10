@@ -1,0 +1,23 @@
+import { Actions, type Run } from "./Actions.vibe"
+
+/** Optional when embedding Factory alone; the app supplies the same Actions service used by its controls. */
+export service AgentActions {
+  static readonly defaultValue = () => ({})
+  readonly actions?: Actions.Shape
+  readonly announce?: (run: Run) => void!!
+}
+
+/** A selection proxy breaks service construction cycles without starting work or another runtime. */
+export effect function deferredActions() {
+  const selected = try Deferred.make<Actions.Shape>()
+  const ready = Deferred.await(selected)
+  const actions: Actions.Shape = {
+    list: effect () => try (try ready).list(), commands: effect () => try (try ready).commands(),
+    runs: effect (flow) => try (try ready).runs(flow), read: effect (id) => try (try ready).read(id),
+    start: effect (flow, input, door) => try (try ready).start(flow, input, door),
+    command: effect (text, door) => try (try ready).command(text, door),
+    rerun: effect (id) => try (try ready).rerun(id), cancel: effect (id) => try (try ready).cancel(id),
+    follow: (id) => Stream.unwrap(effect { return (try ready).follow(id) }),
+  }
+  return { actions, resolve: (value: Actions.Shape) => Deferred.succeed(selected, value) }
+}

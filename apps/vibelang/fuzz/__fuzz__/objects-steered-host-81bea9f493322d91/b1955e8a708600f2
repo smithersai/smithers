@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 6
+bias 5
+null-prototype false
+key 2656176351
+tape DpXPHjffttQ8VYpGHeRgDsZTTuCAqrbUSfaRl0NfEhbUFU418C46fQZbWKy-sWJ_
+schedule-key 338887680
+schedule 
+signature "PropertyError:Finding"
+path 0.0
+codec "json"
+value "{\"scenario\":\"post-behind-tour\",\"pick\":0,\"text\":\"\",\"admit\":false}"
+# PropertyError:Finding
+# {"scenario":"post-behind-tour","pick":0,"text":"","admit":false}

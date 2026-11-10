@@ -1,0 +1,18 @@
+import { expect, it } from "@effect/vitest"
+import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import * as Bundled from "../src/Bundled.vibe"
+const One = Flow.make("example/One", { description: "One", payload: {}, success: Schema.Null, body: () => Node.succeed(null) })
+it.effect("lists imported declarations without a filesystem and refuses conflicting tags", () => effect {
+  const catalog = try Bundled.make([One])
+  const list = try catalog.list()
+  const found = try catalog.get("example/One")
+  const missing = catalog.get("absent") catch (error) => error.code
+  const conflict = Bundled.make([One, One]) catch (error) => error.code
+  try Effect.try(() => {
+    expect(list).toEqual([One])
+    expect(found).toBe(One)
+    expect(missing).toBe("not_found")
+    expect(conflict).toBe("duplicate_name")
+  })
+})

@@ -1,0 +1,82 @@
+// Opt-in integration against the explicitly authorized test repository. Credentials never enter flow payloads.
+import { describe, expect, it } from "@effect/vitest"
+import { Base64 } from "effect/encoding"
+import { FetchHttpClient } from "effect/http"
+import { GitHub } from "@smthrs/integrations"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { IssueAuthority, githubHost } from "../worker/Issues.vibe"
+import { IssueHost, issueFlows, issueRegistration } from "../src/core/issueFlows.vibe"
+import type { IssueRequest } from "../src/core/issueSchemas.vibe"
+const token = runSync(Config.option(Config.Redacted("GITHUB_TEST_TOKEN")))
+const testCase = it.live.skipIf(Option.isNone(token))
+
+describe("real GitHub: roninjin10/smithers-github-tests", () => {
+  testCase(Option.isNone(token) ? "SKIP: GITHUB_TEST_TOKEN is absent; real GitHub writes were not run" : "the person's issue, sub-issue and task stay GitHub's truth", () => scoped(effect {
+    if (Option.isNone(token)) return
+    provide FetchHttpClient.layer, WebCrypto.layer {
+      const client = try GitHub.GitHubClient.make({ token: Redacted.value(token.value) }, {})
+      const identity = try client.request("GET", "/user", undefined, { schema: Schema.Struct({ id: Schema.Number, login: Schema.String }) })
+      const authority = Layer.succeed(IssueAuthority, { current: () => Effect.succeed({ id: String(identity.id), login: identity.login, role: "maintainer" as const, token: token.value }) })
+      const host = try Effect.provide(githubHost({ owner: "roninjin10", name: "smithers-github-tests", api: "https://api.github.com", agent: identity.login }), authority)
+      const context = try Layer.build(issueRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(IssueHost, host))))
+      const engine = Context.get(context, FlowRuntime.FlowRuntime)
+      const prefix = `vl-issues-${try Clock.currentTimeMillis}`
+      const made: Array<number> = []
+      const reviews: Array<{ number: number; owner: string; branch: string }> = []
+      const act = effect (op: IssueRequest["op"], extra: Partial<IssueRequest> = {}) => {
+        const request: IssueRequest = { op, key: `${prefix}-${op}`, number: 0, parent: 0, title: `${prefix} tree regression`, text: "VibeLang issues integration test.", assignee: identity.login, example: "const tuple = [1, 2]", prior: "Rust", ...extra }
+        const flow = issueFlows.find((flow) => flow._tag === `vibelang/issues/${op}`)!
+        return try engine.execute(flow, { executionId: `issues/${identity.id}/${op}/${request.key}`, payload: request })
+      }
+      try ensuring(effect {
+        const parent = try act("new", { key: `${prefix}-shared` })
+        const first = parent.items.find((i) => i.title === `${prefix} tree regression`)!
+        made.push(first.number)
+        const split = try act("split", { number: first.number, title: `${prefix} child`, key: `${prefix}-shared` })
+        const child = split.items.find((i) => i.title === `${prefix} child`)!
+        made.push(child.number)
+        const committed = try act("commit", { number: child.number })
+        const task = committed.items.find((i) => i.number === child.number)!
+        try Effect.try(() => {
+          expect(first.author).toBe(identity.login)
+          expect(child.author).toBe(identity.login)
+          expect(child.parent).toBe(first.number)
+          expect(task.task).toBe("Queued")
+          expect(task.assignee).toBe(identity.login)
+        })
+        const uncommitted = try act("uncommit", { number: child.number })
+        try Effect.try(() => expect(uncommitted.items.find((i) => i.number === child.number)?.task).toBe(""))
+        const vipRequest = { title: `${prefix} one feature`, text: "One feature with an example.", example: "const tuple = [1, 2]", prior: "Rust tuple patterns" }
+        const proposed = try act("propose", vipRequest)
+        const vip = proposed.items.find(i => i.number === proposed.selected)!
+        made.push(vip.number)
+        const pullNumber = Number(vip.review.split("/").at(-1))
+        const pull = try client.request("GET", `/repos/roninjin10/smithers-github-tests/pulls/${pullNumber}`, undefined, { schema: Schema.Struct({ user: Schema.Struct({ login: Schema.String }), head: Schema.Struct({ ref: Schema.String, repo: Schema.Struct({ owner: Schema.Struct({ login: Schema.String }) }) }) }) })
+        reviews.push({ number: pullNumber, owner: pull.head.repo.owner.login, branch: pull.head.ref })
+        const document = try client.request("GET", `/repos/${pull.head.repo.owner.login}/smithers-github-tests/contents/${vip.path}?ref=${encodeURIComponent(pull.head.ref)}`, undefined, { schema: Schema.Struct({ content: Schema.String, encoding: Schema.String }) })
+        try Effect.try(() => {
+          expect(vip.author).toBe(identity.login)
+          expect(pull.user.login).toBe(identity.login)
+          expect(vip.path).toMatch(/^docs\/design\/vips\/proposal-[0-9a-f]{64}\.md$/)
+          expect(document.encoding).toBe("base64")
+          const decoded = Base64.decodeString(document.content.replace(/\s/g, ""))
+          expect(decoded._tag).toBe("Success")
+          if (decoded._tag === "Success") {
+            expect(decoded.success).toContain("## Example\n\n```vibe\nconst tuple = [1, 2]")
+            expect(decoded.success).toContain("## Prior art\n\nRust tuple patterns")
+          }
+          expect(vip.task).toBe("")
+          expect(vip.vip).toBe("In review")
+        })
+      }, Effect.all([
+        Effect.forEach(made, (number) => GitHub.IssueChanges.update("roninjin10", "smithers-github-tests", number, { state: "closed" }).pipe(Effect.provideService(GitHub.GitHubClient.GitHubClient, client), Effect.ignore), { discard: true }),
+        Effect.forEach(reviews, (review) => effect {
+          try client.request("PATCH", `/repos/roninjin10/smithers-github-tests/pulls/${review.number}`, { state: "closed" })
+          if (review.branch.startsWith("vibelang/vip-")) try client.request("DELETE", `/repos/${review.owner}/smithers-github-tests/git/refs/heads/${review.branch}`)
+        } |> ignore(%), { discard: true }),
+      ], { discard: true }))
+    }
+  }))
+})

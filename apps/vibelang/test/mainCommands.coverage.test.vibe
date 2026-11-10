@@ -1,0 +1,426 @@
+// Each browser Command against the product's real MockFactory and MockActions. Unhappy paths inject a faulty service.
+import { describe, expect, it } from "@effect/vitest"
+import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { Factory, Refused, Unavailable } from "../src/core/Factory.vibe"
+import { overlaid } from "./support/overlaid.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
+import { AccountUnavailable } from "../src/core/roles.vibe"
+import {
+  ActOnIssue, CancelAction, ChooseIdentity, ClosePalette, ControlTourCommand, EndTourCommand, FocusComposer, GrantRole,
+  LoadAccount, LoadActions, LoadIssueDetails, LoadIssues, LoadPeople, ObserveMedia, OpenWikiCommand, OpenWikiEditor,
+  PostMessage, ReadAction, RefreshIssueProjection, RunAction, SandboxAction, ShowPalette, SignInAccount, SignOutAccount,
+  StartTourCommand, SubmitWikiEdit, PALETTE_ID, PROMPT_ID, SwitchMode,
+} from "../src/web/main.vibe"
+import { fullLocation, setLocation } from "./support/browser.ts"
+
+const unavailable = () => Effect.fail(new Unavailable({ reason: "closed" }))
+const refused = (refusal: string) => () => Effect.fail(new Refused({ refusal }))
+
+/** Runs a Command built from validated arguments; a bad argument fails the test. */
+effect function run<A, E, R>(make: () => { readonly effect: A!E!R }) {
+  const command = try Effect.try(make)
+  return try command.effect
+}
+
+const person = { actor: "person" as const }
+const withActions = MockActions(person).pipe(Layer.provideMerge(MockFactory))
+
+function faultyActions(code: string): Actions.Shape {
+  const fail = () => Effect.fail(new ActionFailure({ code }))
+  return { list: fail, commands: fail, runs: fail, read: fail, follow: () => Stream.fail(new ActionFailure({ code })), start: fail, command: fail, rerun: fail, cancel: fail }
+}
+
+for (const [label, conversation] of [["a new conversation", "commands-post"]] as const) {
+  it.effect(`PostMessage answers success for ${label}, the refusal when refused and the reason when unavailable`, () => effect {
+    provide MockFactory {
+      const ok = try run(() => PostMessage({ conversation, clientId: "c1", name: "Ada", text: "install" }))
+      const blank = try run(() => PostMessage({ conversation, clientId: "c2", name: "Ada", text: "   " }))
+      const factory = try Factory
+      const down = try Effect.provideService(run(() => PostMessage({ conversation, clientId: "c3", name: "Ada", text: "x" })), Factory, overlaid(factory, { post: unavailable }))
+      try Effect.try(() => {
+        expect(ok).toEqual({ _tag: "SucceededPost", clientId: "c1" })
+        expect(blank).toEqual({ _tag: "FailedPost", clientId: "c2", reason: "empty" })
+        expect(down).toEqual({ _tag: "FailedPost", clientId: "c3", reason: "closed" })
+      })
+    }
+  })
+}
+
+it.effect("StartTour reports success, and each kind of failure by name", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    const ok = try run(() => StartTourCommand({ conversation: "commands-tour" }))
+    const busy = try Effect.provideService(run(() => StartTourCommand({ conversation: "x" })), Factory, overlaid(factory, { tour: refused("busy") }))
+    const down = try Effect.provideService(run(() => StartTourCommand({ conversation: "x" })), Factory, overlaid(factory, { tour: unavailable }))
+    try Effect.try(() => {
+      expect(ok).toEqual({ _tag: "SucceededTour" })
+      expect(busy).toEqual({ _tag: "FailedTour", reason: "busy" })
+      expect(down).toEqual({ _tag: "FailedTour", reason: "closed" })
+    })
+  }
+})
+
+it.effect("EndTour counts a refusal as reached and gives Esc back only when the agent was unreachable", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    const none = try run(() => EndTourCommand({ conversation: "commands-end" }))
+    const down = try Effect.provideService(run(() => EndTourCommand({ conversation: "x" })), Factory, overlaid(factory, { endTour: unavailable }))
+    try Effect.try(() => {
+      expect(none).toEqual({ _tag: "FocusedPrompt" })
+      expect(down).toEqual({ _tag: "FailedEndTour" })
+    })
+  }
+})
+
+it.effect("ControlTour fails on an unreachable agent and on a backend with no tour controls", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    const args = { conversation: "x", action: "pause" as const, step: 2 }
+    const seen: Array<string> = []
+    const ok = try Effect.provideService(run(() => ControlTourCommand(args)), Factory, overlaid(factory, { controlTour: effect (conversation, action, step) => { seen.push(`${conversation}/${action}/${step}`) } }))
+    const down = try Effect.provideService(run(() => ControlTourCommand(args)), Factory, overlaid(factory, { controlTour: unavailable }))
+    const absent = try Effect.provideService(run(() => ControlTourCommand(args)), Factory, overlaid(factory, { controlTour: undefined }))
+    try Effect.try(() => {
+      expect(seen).toEqual(["x/pause/2"])
+      expect(ok).toEqual({ _tag: "FocusedPrompt" })
+      expect(down).toEqual({ _tag: "FailedTourEvents" })
+      expect(absent).toEqual({ _tag: "FailedTourEvents" })
+    })
+  }
+})
+
+it.effect("OpenWiki carries the request number of a failed open", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    const ok = try run(() => OpenWikiCommand({ conversation: "commands-wiki", page: "/wiki/index", request: 4 }))
+    const down = try Effect.provideService(run(() => OpenWikiCommand({ conversation: "x", page: "/wiki/index", request: 7 })), Factory, overlaid(factory, { openWiki: unavailable }))
+    try Effect.try(() => {
+      expect(ok).toEqual({ _tag: "SucceededWiki" })
+      expect(down).toEqual({ _tag: "FailedWiki", request: 7 })
+    })
+  }
+})
+
+it.effect("the wiki editor opens on repository source, restores only that page's draft, and names every failure", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    try factory.accounts!.choose("contributor")
+    const opened = try run(() => OpenWikiEditor({ page: "index", request: 1 }))
+    if (opened._tag !== "BeganWikiEdit") return try Effect.die(new Error(`unexpected ${opened._tag}`))
+    try factory.wiki!.act({ op: "draft", page: "index", base: "", text: "Add a heading", key: "commands-draft" })
+    const drafted = try run(() => OpenWikiEditor({ page: "index", request: 2 }))
+    const missing = try run(() => OpenWikiEditor({ page: "no-such-page", request: 3 }))
+    const none = try Effect.provideService(run(() => OpenWikiEditor({ page: "index", request: 4 })), Factory, overlaid(factory, { wiki: undefined }))
+    const denied = try Effect.provideService(run(() => OpenWikiEditor({ page: "index", request: 5 })), Factory, overlaid(factory, { wiki: { read: () => Effect.fail(new WikiFailure({ reason: "forbidden" })), act: factory.wiki!.act } }))
+    try Effect.try(() => {
+      expect(opened.draft).toBe("")
+      expect(opened.source.length).toBeGreaterThan(0)
+      expect(drafted).toMatchObject({ _tag: "BeganWikiEdit", request: 2, page: "index", source: opened.source })
+      expect(drafted._tag === "BeganWikiEdit" && drafted.draft.length).toBeGreaterThan(0)
+      expect(missing).toEqual({ _tag: "FailedWikiEdit", request: 3, reason: "missing" })
+      expect(none).toEqual({ _tag: "FailedWikiEdit", request: 4, reason: "unavailable" })
+      expect(denied).toEqual({ _tag: "FailedWikiEdit", request: 5, reason: "forbidden" })
+    })
+  }
+})
+
+it.effect("a wiki save opens a review and leaves the page as it was; a failed one keeps its unwritten marker", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    try factory.accounts!.choose("maintainer")
+    const state = try factory.wiki!.read("index")
+    const page = state.pages.find(entry => entry.id === "index")!
+    const request = { op: "save" as const, page: "index", base: page.source, text: `${page.source}\nMore.`, key: "commands-save" }
+    const saved = try run(() => SubmitWikiEdit({ request, serial: 9 }))
+    const after = try factory.wiki!.read("index")
+    const none = try Effect.provideService(run(() => SubmitWikiEdit({ request, serial: 10 })), Factory, overlaid(factory, { wiki: undefined }))
+    const lost = try Effect.provideService(run(() => SubmitWikiEdit({ request, serial: 11 })), Factory, overlaid(factory, { wiki: { read: factory.wiki!.read, act: () => Effect.fail(new WikiFailure({ reason: "conflict", unwritten: true })) } }))
+    const absent = try Effect.provideService(run(() => SubmitWikiEdit({ request: { ...request, page: "other" }, serial: 12 })), Factory, overlaid(factory, { wiki: { read: factory.wiki!.read, act: () => succeed({ seq: 1, pages: [] }) } }))
+    try Effect.try(() => {
+      expect(saved).toMatchObject({ _tag: "CompletedWikiEdit", request: 9, page: "index", source: page.source })
+      expect(saved._tag === "CompletedWikiEdit" && saved.review).toMatch(/\/pull\/[0-9]+$/)
+      expect(saved._tag === "CompletedWikiEdit" && saved.revision).toBe(page.revision)
+      expect(after.pages.find(entry => entry.id === "index")?.source).toBe(page.source)
+      expect(none).toEqual({ _tag: "FailedWikiEdit", request: 10, reason: "unavailable" })
+      expect(lost).toEqual({ _tag: "FailedWikiEdit", request: 11, reason: "conflict", unwritten: true })
+      expect(absent).toEqual({ _tag: "CompletedWikiEdit", request: 12, page: "other", source: page.source, revision: "", review: "" })
+    })
+  }
+})
+
+it.effect("LoadActions lists the catalog and carries the epoch on success and failure", () => effect {
+  provide withActions {
+    const withEpoch = try run(() => LoadActions({ flow: "", epoch: 3 }))
+    const plain = try run(() => LoadActions({ flow: "" }))
+    const failed = try Effect.provideService(run(() => LoadActions({ flow: "", epoch: 3 })), Actions, faultyActions("unavailable"))
+    const failedPlain = try Effect.provideService(run(() => LoadActions({ flow: "" })), Actions, faultyActions("forbidden"))
+    try Effect.try(() => {
+      expect(withEpoch._tag).toBe("LoadedActions")
+      expect(withEpoch._tag === "LoadedActions" && withEpoch.entries.length).toBeGreaterThan(0)
+      expect(withEpoch).toMatchObject({ epoch: 3 })
+      expect(plain).not.toHaveProperty("epoch")
+      expect(failed).toEqual({ _tag: "FailedActions", code: "unavailable", epoch: 3 })
+      expect(failedPlain).toEqual({ _tag: "FailedActions", code: "forbidden" })
+    })
+  }
+})
+
+it.effect("RunAction starts, re-runs, parses JSON input and refuses malformed JSON before reaching the service", () => effect {
+  provide withActions {
+    const factory = try Factory
+    try factory.accounts!.choose("maintainer")
+    const flow = "vibelang/Tour"
+    const started = try run(() => RunAction({ name: flow, text: "", door: "button" }))
+    if (started._tag !== "StartedAction") return try Effect.die(new Error(`unexpected ${started._tag}: ${JSON.stringify(started)}`))
+    const again = try run(() => RunAction({ name: flow, text: "", door: "button", retry: started.run.id, epoch: 2 }))
+    const blankJson = try run(() => RunAction({ name: flow, text: "  ", door: "slash", format: "json" }))
+    const objectJson = try run(() => RunAction({ name: flow, text: "{\"a\":1}", door: "slash", format: "json" }))
+    const bad = try run(() => RunAction({ name: flow, text: "{nope", door: "slash", format: "json", epoch: 8 }))
+    const badPlain = try run(() => RunAction({ name: flow, text: "{nope", door: "slash", format: "json" }))
+    try Effect.try(() => {
+      expect(started.run.flow).toBe(flow)
+      expect(started).not.toHaveProperty("epoch")
+      expect(again).toMatchObject({ _tag: "StartedAction", epoch: 2 })
+      expect(again._tag === "StartedAction" && again.run.id).not.toBe(started.run.id)
+      expect(blankJson._tag).toBe("StartedAction")
+      expect(objectJson._tag).toBe("StartedAction")
+      expect(bad).toEqual({ _tag: "FailedActions", code: "input", epoch: 8 })
+      expect(badPlain).toEqual({ _tag: "FailedActions", code: "input" })
+    })
+  }
+})
+
+it.effect("ReadAction and CancelAction return the run, or the failure code", () => effect {
+  provide withActions {
+    try (try Factory).accounts!.choose("maintainer")
+    const started = try run(() => RunAction({ name: "vibelang/Tour", text: "", door: "button" }))
+    if (started._tag !== "StartedAction") return try Effect.die(new Error(`unexpected ${started._tag}`))
+    const read = try run(() => ReadAction({ id: started.run.id }))
+    const cancelled = try run(() => CancelAction({ id: started.run.id }))
+    const readDown = try Effect.provideService(run(() => ReadAction({ id: "x" })), Actions, faultyActions("unavailable"))
+    const cancelDown = try Effect.provideService(run(() => CancelAction({ id: "x" })), Actions, faultyActions("forbidden"))
+    try Effect.try(() => {
+      expect(read).toMatchObject({ _tag: "ChangedAction", run: { id: started.run.id } })
+      expect(cancelled._tag).toBe("ChangedAction")
+      expect(readDown).toEqual({ _tag: "FailedActions", code: "unavailable" })
+      expect(cancelDown).toEqual({ _tag: "FailedActions", code: "forbidden" })
+    })
+  }
+})
+
+for (const kind of ["start", "stop", "command"] as const) {
+  it.effect(`SandboxAction ${kind} loads a snapshot, or names the refusal and the outage`, () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      try factory.accounts!.choose("maintainer")
+      const conversation = `commands-sandbox-${kind}`
+      const args = { conversation, operationId: `${kind}-1`, request: 5, kind, generation: 0, command: "pwd" }
+      if (kind !== "start") try factory.startSandbox(conversation, "boot")
+      const generation = kind === "start" ? 0 : (try factory.sandbox(conversation)).generation
+      const ok = try run(() => SandboxAction({ ...args, generation }))
+      const no = refused("not-allowed")
+      const refusing = overlaid(factory, { startSandbox: no, stopSandbox: no, sandboxCommand: no })
+      const denied = try Effect.provideService(run(() => SandboxAction(args)), Factory, refusing)
+      const offline = overlaid(factory, { startSandbox: unavailable, stopSandbox: unavailable, sandboxCommand: unavailable })
+      const down = try Effect.provideService(run(() => SandboxAction(args)), Factory, offline)
+      try Effect.try(() => {
+        expect(ok).toMatchObject({ _tag: "LoadedSandbox", conversation, request: 5 })
+        expect(denied).toEqual({ _tag: "FailedSandbox", conversation, request: 5, reason: "not-allowed" })
+        expect(down).toEqual({ _tag: "FailedSandbox", conversation, request: 5, reason: "closed" })
+      })
+    }
+  })
+}
+
+it.effect("account commands load, choose, sign out, list and grant, and fail safely", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    const accounts = factory.accounts!
+    const never = () => Effect.fail(new AccountUnavailable({ reason: "closed" }))
+    const broken = overlaid(factory, { accounts: { current: never, choose: never, signOut: never, members: never, grant: never, participated: accounts.participated, events: accounts.events, signInAgent: accounts.signInAgent } })
+    const missing = overlaid(factory, { accounts: undefined })
+    const chosen = try run(() => ChooseIdentity({ role: "maintainer" }))
+    const loaded = try run(() => LoadAccount({}))
+    const people = try run(() => LoadPeople({}))
+    const granted = try run(() => GrantRole({ id: "4", role: "maintainer" }))
+    const signedIn = try run(() => SignInAccount({ mock: true }))
+    const signedOut = try run(() => SignOutAccount({}))
+    const failures = try all([
+      Effect.provideService(run(() => LoadAccount({})), Factory, broken),
+      Effect.provideService(run(() => ChooseIdentity({ role: "new" })), Factory, broken),
+      Effect.provideService(run(() => SignInAccount({ mock: true })), Factory, broken),
+      Effect.provideService(run(() => SignOutAccount({})), Factory, broken),
+      Effect.provideService(run(() => LoadPeople({})), Factory, broken),
+      Effect.provideService(run(() => GrantRole({ id: "4", role: "new" })), Factory, broken),
+      Effect.provideService(run(() => GrantRole({ id: "4", role: "new" })), Factory, missing),
+    ])
+    const signedOutViewer = { _tag: "AccountLoaded", identity: { id: "", login: "", role: "viewer" } }
+    const absent = try all([
+      Effect.provideService(run(() => LoadAccount({})), Factory, missing),
+      Effect.provideService(run(() => ChooseIdentity({ role: "new" })), Factory, missing),
+      Effect.provideService(run(() => SignInAccount({ mock: true })), Factory, missing),
+      Effect.provideService(run(() => SignOutAccount({})), Factory, missing),
+    ])
+    const noPeople = try Effect.provideService(run(() => LoadPeople({})), Factory, missing)
+    try Effect.try(() => {
+      expect(chosen).toMatchObject({ _tag: "AccountLoaded", identity: { role: "maintainer" } })
+      expect(loaded).toEqual(chosen)
+      expect(people._tag === "LoadedPeople" && people.members.length).toBeGreaterThan(0)
+      expect(granted).toEqual({ _tag: "GrantedRole" })
+      expect(signedIn).toMatchObject({ _tag: "AccountLoaded", identity: { role: "new" } })
+      expect(signedOut).toMatchObject({ _tag: "AccountLoaded", identity: { role: "viewer" } })
+      for (const failure of failures) expect(failure).toEqual({ _tag: "AccountFailed" })
+      for (const answer of absent) expect(answer).toMatchObject({ _tag: signedOutViewer._tag, identity: { role: "viewer" } })
+      expect(noPeople).toEqual({ _tag: "LoadedPeople", members: [] })
+    })
+  }
+})
+
+it.effect("issue commands load the projection, act, and report outages without a role leak", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    try factory.accounts!.choose("maintainer")
+    const read = { op: "read" as const, number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "commands-issue-read" }
+    const failing = { read: () => Effect.fail(new IssueFailure({ reason: "unavailable" })), act: () => Effect.fail(new IssueFailure({ reason: "unavailable" })) }
+    const loaded = try run(() => LoadIssues({}))
+    const resumed = try run(() => LoadIssues({ resumeOp: "new", resumeKey: "k1", resumeRecovery: "r1" }))
+    const acted = try run(() => ActOnIssue({ request: { ...read, op: "new", title: "A new issue", text: "body", key: "commands-issue-new" } }))
+    const details = try run(() => LoadIssueDetails({ number: 1, key: "commands-details" }))
+    const refreshed = try run(() => RefreshIssueProjection({}))
+    const broken = overlaid(factory, { issues: failing })
+    const missing = overlaid(factory, { issues: undefined })
+    const failures = try all([
+      Effect.provideService(run(() => LoadIssues({})), Factory, broken),
+      Effect.provideService(run(() => LoadIssues({})), Factory, missing),
+      Effect.provideService(run(() => ActOnIssue({ request: read })), Factory, missing),
+    ])
+    const roleless = { read: () => succeed({ seq: 0, items: [] }), act: () => succeed({ seq: 0, items: [] }) }
+    const mockDefault = try Effect.provideService(run(() => LoadIssues({})), Factory, overlaid(factory, { issues: roleless }))
+    const mockActDefault = try Effect.provideService(run(() => ActOnIssue({ request: read })), Factory, overlaid(factory, { issues: roleless }))
+    const noDetails = try Effect.provideService(run(() => LoadIssueDetails({ number: 2, key: "x" })), Factory, broken)
+    const noDetailsApi = try Effect.provideService(run(() => LoadIssueDetails({ number: 3, key: "x" })), Factory, missing)
+    const refreshDown = try Effect.provideService(run(() => RefreshIssueProjection({})), Factory, broken)
+    const refreshAbsent = try Effect.provideService(run(() => RefreshIssueProjection({})), Factory, missing)
+    try Effect.try(() => {
+      expect(loaded).toMatchObject({ _tag: "IssuesLoaded", created: false, role: "maintainer" })
+      expect(resumed._tag).toBe("IssuesLoaded")
+      expect(acted).toMatchObject({ _tag: "IssuesLoaded", created: true, op: "new", key: "commands-issue-new" })
+      expect(details._tag).toBe("IssueDetailsLoaded")
+      expect(refreshed._tag).toBe("IssueProjectionLoaded")
+      for (const failure of failures) expect(failure).toMatchObject({ _tag: "IssuesFailed", reason: "unavailable" })
+      expect(mockDefault).toMatchObject({ _tag: "IssuesLoaded", role: "maintainer" })
+      expect(mockActDefault).toMatchObject({ _tag: "IssuesLoaded", role: "maintainer", created: false })
+      expect(noDetails).toEqual({ _tag: "IssueDetailsFailed", number: 2 })
+      expect(noDetailsApi).toEqual({ _tag: "IssueDetailsFailed", number: 3 })
+      expect(refreshDown).toEqual({ _tag: "IssueDialogFocused" })
+      expect(refreshAbsent).toEqual({ _tag: "IssueDialogFocused" })
+    })
+  }
+})
+
+it.effect("media observation answers without touching the conversation", () => effect {
+  const loaded = try run(() => ObserveMedia({ kind: "image", outcome: "loaded" }))
+  const failed = try run(() => ObserveMedia({ kind: "video", outcome: "failed" }))
+  try Effect.try(() => { expect(loaded).toEqual({ _tag: "ObservedMedia" }); expect(failed).toEqual({ _tag: "ObservedMedia" }) })
+})
+
+it.live("the palette opens and closes a real dialog, docks focus on the composer, and tolerates a page without one", () => effect {
+  const without = try run(() => ShowPalette({}))
+  const closedNone = try run(() => ClosePalette({ dock: true }))
+  const focusNone = try run(() => FocusComposer({}))
+  const page = try sync(() => {
+    const dialog = document.createElement("dialog")
+    dialog.id = PALETTE_ID
+    const input = document.createElement("input")
+    input.id = `${PALETTE_ID}-prompt`
+    dialog.append(input)
+    const composer = document.createElement("textarea")
+    composer.id = PROMPT_ID
+    document.body.append(dialog, composer)
+    return { dialog, composer }
+  })
+  const shown = try run(() => ShowPalette({}))
+  const open = try sync(() => page.dialog.open)
+  const closed = try run(() => ClosePalette({ dock: true }))
+  const after = try sync(() => ({ open: page.dialog.open, active: document.activeElement?.id }))
+  try sync(() => { page.dialog.remove(); page.composer.remove() })
+  try Effect.try(() => {
+    for (const answer of [without, closedNone, focusNone, shown, closed]) expect(answer).toEqual({ _tag: "FocusedPrompt" })
+    expect(open).toBe(true)
+    expect(after).toEqual({ open: false, active: PROMPT_ID })
+  })
+})
+
+describe("live issue writes keep their way back in the address", () => {
+  const write: IssueRequest = { op: "new", number: 0, parent: 0, title: "t", text: "b", assignee: "", example: "", prior: "", key: "k1" }
+  const resume = "/?issues=1&resume-op=new&resume-key=k1"
+  const state = { seq: 1, items: [] }
+  /** The address while the write runs and after it answers. */
+  effect function addresses(request: IssueRequest, answer: typeof state!IssueFailure) {
+    const factory = try Factory
+    let during = ""
+    const api = { read: () => succeed(state), act: effect () => { during = try sync(fullLocation); return try answer } }
+    try sync(() => setLocation("/?issues=1"))
+    const message = try Effect.provideService(run(() => ActOnIssue({ request })), Factory, overlaid(factory, { mode: "live", issues: api }))
+    return { during, after: try sync(fullLocation), message }
+  }
+  it.effect("a finished write clears its resume address and opens as a viewer without a role", () => effect {
+    provide MockFactory {
+      const { during, after, message } = try addresses(write, succeed(state))
+      try Effect.try(() => {
+        expect(during).toBe(resume)
+        expect(after).toBe("/?issues=1")
+        expect(message).toMatchObject({ _tag: "IssuesLoaded", role: "viewer", created: true })
+      })
+    }
+  })
+  it.effect("a write that may have landed keeps its address; an unwritten one drops it", () => effect {
+    provide MockFactory {
+      const uncertain = try addresses({ ...write, recovery: "r1" }, Effect.fail(new IssueFailure({ reason: "unavailable" })))
+      const unwritten = try addresses(write, Effect.fail(new IssueFailure({ reason: "unavailable", unwritten: true })))
+      try Effect.try(() => {
+        expect(uncertain.during).toBe(`${resume}&resume-recovery=r1`)
+        expect(uncertain.after).toBe(`${resume}&resume-recovery=r1`)
+        expect(unwritten.after).toBe("/?issues=1")
+      })
+    }
+  })
+  it.effect("reads and drafts never touch the address", () => effect {
+    provide MockFactory {
+      for (const op of ["read", "draft"] as const) {
+        const { during, after } = try addresses({ ...write, op }, succeed(state))
+        try Effect.try(() => { expect(during).toBe("/?issues=1"); expect(after).toBe("/?issues=1") })
+      }
+    }
+  })
+  it.effect("loading a finished resume cleans the address; an unfinished one keeps it", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      const load = (saved: { readonly status: "running" | "completed" }, recovered: boolean) => effect {
+        const data = { seq: 1, items: [], saved: { request: write, status: saved.status, unwritten: false, selected: 1 } }
+        const api = { read: () => succeed(data), act: () => succeed(data) }
+        try sync(() => setLocation(resume))
+        const message = try Effect.provideService(run(() => recovered ? LoadIssues({ resumeOp: "new", resumeKey: "k1", resumeRecovery: "r" }) : LoadIssues({ resumeOp: "new", resumeKey: "k1" })), Factory, overlaid(factory, { mode: "live", issues: api }))
+        return { message, after: try sync(fullLocation) }
+      }
+      const finished = try load({ status: "completed" }, false)
+      const running = try load({ status: "running" }, true)
+      try Effect.try(() => {
+        expect(finished.after).toBe("/?issues=1")
+        expect(finished.message).toMatchObject({ _tag: "IssuesLoaded", role: "viewer" })
+        expect(running.after).toBe(resume)
+      })
+    }
+  })
+  it.effect("a wiki read that doesn't include the page names it missing", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      const wiki = factory.wiki!
+      const answer = try Effect.provideService(run(() => OpenWikiEditor({ page: "no-such-page", request: 3 })), Factory, overlaid(factory, { wiki }))
+      try Effect.try(() => expect(answer).toMatchObject({ _tag: "FailedWikiEdit", request: 3, reason: "missing" }))
+    }
+  })
+})

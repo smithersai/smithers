@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { chmod, cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
+import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve, sep } from "node:path"
 import test from "node:test"
@@ -176,7 +177,7 @@ test("workspaces covers every non-private engine and agent package under package
   )
   assert.deepEqual(
     tooling.filter(([, manifest]) => manifest.private === true).map(([, manifest]) => manifest.name).sort(),
-    ["@smthrs/build-infra", "@smthrs/eval-agent", "@smthrs/repo-targets", "@smthrs/rpc"]
+    ["@smthrs/build-infra", "@smthrs/eval-agent", "@smthrs/lemmascript", "@smthrs/repo-targets", "@smthrs/rpc"]
   )
 })
 
@@ -212,14 +213,14 @@ test("importing the release scripts reads no workspace tree", async () => {
   }
 })
 
-test("the packed set is exactly the 51 names the RC contract publishes", () => {
+test("the packed set is exactly the 52 names the RC contract publishes", () => {
   // `publishedPackages` is the release decision; group membership is
   // only how it is enforced. Restating the roster here means a package that
   // joins or leaves the release has to change both files in one diff.
   const manifests = readWorkspaceManifests()
   const packed = packedWorkspaces.map((directory) => manifests.get(directory).name)
 
-  assert.equal(publishedPackages.length, 51)
+  assert.equal(publishedPackages.length, 52)
   assert.deepEqual([...packed].sort(), [...publishedPackages].sort())
   assert.ok(publishedPackages.includes("smthrs"), "the unscoped deprecation notice publishes with the RC")
 })
@@ -812,6 +813,13 @@ test("defaultBindings reports the default import and export sites and nothing sp
     { line: 18, kind: "export", text: "export default named" }
   ])
   assert.deepEqual(defaultBindings("export const set = {}\n"), [])
+  // Declaration modules describe a loader binding and never emit CommonJS.
+  for (const filename of ["quickjsWasm.d.ts", "module.d.vibe.ts", "module.d.css.ts"]) {
+    assert.deepEqual(defaultBindings("export default wasmModule\n", filename), [])
+  }
+  for (const filename of ["module.ts", "module.vibe"]) {
+    assert.equal(defaultBindings("export default wasmModule\n", filename).length, 1)
+  }
   // A JSON module's only binding is its default, and esbuild's CommonJS
   // `__toESM(require("./x.json"), 1).default` is that same parsed value.
   assert.deepEqual(defaultBindings("import catalog from \"./catalog.mvp.json\" with { type: \"json\" }\n"), [])
@@ -846,7 +854,7 @@ test("no published source module default-imports a sibling or exports a default"
       if (!statSync(path).isFile()) continue
       modules += 1
       if (relative.endsWith(".vibe")) vibe += 1
-      for (const site of defaultBindings(readFileSync(path, "utf8"))) {
+      for (const site of defaultBindings(readFileSync(path, "utf8"), relative)) {
         sites.push(`${directory}/${relative}:${site.line}  ${site.text}`)
       }
     }
@@ -1153,6 +1161,36 @@ const staleBuildFixture = async (body) => {
     await rm(directory, { recursive: true, force: true })
   }
 }
+
+// VibeLang writes `x.d.vibe.ts` beside `x.vibe` when it compiles, and that declaration emits no JavaScript of its own.
+test("the built-output check accepts the layout the real VibeLang compiler emits", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "smithers-pack-vibe-layout-"))
+  try {
+    const manifest = {
+      name: "smithers-pack-vibe-fixture", version: "1.0.0", type: "module",
+      publishConfig: { exports: { ".": { types: "./dist/esm/Greeting.d.ts", import: "./dist/esm/Greeting.js" } } }
+    }
+    await mkdir(join(directory, "src"))
+    await writeFile(join(directory, "package.json"), JSON.stringify(manifest))
+    await writeFile(join(directory, "src/Greeting.vibe"), "export const greeting = \"hi\"\n")
+    await writeFile(join(directory, "tsconfig.json"), JSON.stringify({
+      compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", rootDir: "src", outDir: "dist/esm", declaration: true, skipLibCheck: true, types: [] },
+      include: ["src/**/*"]
+    }))
+    const require = createRequire(join(repoRoot, "packages/errors/package.json"))
+    const compiler = join(dirname(require.resolve("vibelang/package.json")), "bin/vibelang")
+    execFileSync(process.execPath, [compiler, "-p", "tsconfig.json"], { cwd: directory, stdio: "pipe" })
+
+    assert.equal(existsSync(join(directory, "src/Greeting.d.vibe.ts")), true)
+    assert.equal(existsSync(join(directory, "dist/esm/Greeting.d.vibe.js")), false)
+    await assertBuilt(directory, manifest, { rebuild: false })
+
+    await rm(join(directory, "dist/esm/Greeting.js"))
+    await assert.rejects(assertBuilt(directory, manifest, { rebuild: false }), /Greeting\.js/)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
 
 test("packing refuses unrecognized modes before writing any artifacts", () => {
   for (const args of [[], [""], ["--built"], ["unused", "--unknown"], ["unused", "--built", "extra"]]) {

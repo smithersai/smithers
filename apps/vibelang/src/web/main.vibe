@@ -1,43 +1,108 @@
+import * as ModelDecision from "./modelDecision.vibe"
+import * as IssueDecision from "./issueDecision.vibe"
+import * as TourDecision from "./tourDecision.vibe"
+import { WALKTHROUGH, DEMO_QUESTION } from "../core/walkthroughSteps.vibe"
+import { TourPresentation, presentation } from "./theatre.vibe"
+import { surfaceTransition, toggleSandbox, maximizeSandbox, currentSandbox, canSandboxAction } from "./viewDecision.vibe"
+import { IssuesUi, initialIssues, issueScreen, issuesUpdate } from "./issues.vibe"
+import { IssueFailure, IssueRequest, IssuesState, IssueOperation } from "../core/issueSchemas.vibe"
 // The web app's Foldkit program: Model, Messages, update, Commands and Subscriptions. The view is `view.vibe`. Every
 // change to the conversation goes through the shared machine (`../core/conversation.vibe`); this file only adds what a
 // screen needs on top of it (wiki/decisions/0003-one-state-machine.md).
 //
 //   splash (maximized) ──⌘K──▶ palette ──⏎──▶ chat (the splash shrinks into the first pane) ──pane──▶ splash
+//   splash ──Learn more──▶ chat with the agent in control (glow, Esc) ──Escape / Esc / tour ends──▶ chat
+//
+// Learn more starts the agent's tour in this tab's own conversation (wiki/decisions/0014-agent-tour.md): the agent
+// narrates and opens VibeLang's docs in a pane through the conversation's events, never through this file.
+import { ExperimentalBrowserWindow, ExperimentalBrowserDocument } from "vibelang-runtime/experimental/platform-browser"
 import { Command, Dom, Render, Subscription, type Runtime, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Machine from "../core/conversation.vibe"
-import { EventSchema, Factory } from "../core/Factory.vibe"
+import { SandboxSnapshot, EventSchema, Factory } from "../core/Factory.vibe"
 import { Client } from "../core/schemas.vibe"
+import { escapeAction, canMinimize, hasContent, scrollFollow, follows, paletteChange, completedEvent, answerAnnouncement, screenKey, showSplash, setScreenPalette, minimizeScreen, failScreenTour, failedScreenEnd, completeScreenTour, latestScreen, toggleScreenDocs } from "./screenDecision.vibe"
+import { MediaSources, observeMedia } from "./media.vibe"
+import { Identity, viewer } from "../core/roles.vibe"
+import { WikiFailure, WikiRequest } from "../core/wikiSchemas.vibe"
+import * as PaneDecision from "./paneDecision.vibe"
+import * as UpdateDecision from "./updateDecision.vibe"
+import { pages, wikiEditable, wikiPage } from "../core/wiki.vibe"
+import { Navigation } from "foldkit"
+import { Actions, ActionFailure, Registered, Run } from "../actions/Actions.vibe"
+import { ActionView, actionsOf, completions, mergeRuns, initial as initialActions } from "./actionModel.vibe"
 import { transcriptViewport } from "./viewport.vibe"
 
 // FLAGS
 
-/** What the page knows when it starts: a random id for this tab's posts, the backend, and the name posts carry. */
+/** What the page knows when it starts: a random id for this tab's posts, the backend (pending until selected), and the name posts carry. */
 export schema Flags {
+  readonly tutorialSession?: string
   readonly session: string
-  readonly mode: "mock" | "live"
+  readonly mode: "mock" | "live" | "pending"
   readonly name: string
+  readonly mediaSources?: MediaSources
+  readonly wiki?: string
   readonly reducedMotion?: boolean
+  readonly signInFailed?: boolean
+  readonly openIssues?: boolean
+  readonly tourSound?: boolean
+  readonly resumeTour?: boolean
+  readonly autoTour?: boolean
+  readonly resumeRecovery?: string
+  readonly resumeOp?: string
+  readonly resumeKey?: string
+}
+
+export schema AccountState {
+  readonly identity: Identity
+  readonly menu: boolean
+  readonly people: "closed" | "pane" | "max"
+  readonly members: ReadonlyArray<Identity>
+  readonly target: string
+  readonly targetRole: "new" | "community" | "contributor" | "maintainer"
+  readonly pending: boolean
+  readonly error: string
+  readonly retry: "sign-in" | "people" | "grant" | "sign-out" | "roles"
+  readonly notice: string
+  readonly ledger: Client
+  readonly epoch: number
+  readonly from: number
+}
+export const signedOut: AccountState = { identity: viewer, menu: false, people: "closed", members: [], target: "", targetRole: "community", pending: false, error: "", retry: "sign-in", notice: "", ledger: Machine.newClient, epoch: 0, from: 0 }
+export function accountOf(model: Model): AccountState { return model.account ?? signedOut }
+export function issueStateOf(model: Model): IssuesUi {
+  const ui = model.issues ?? initialIssues
+  return { ...ui, keyPrefix: model.session, role: accountOf(model).identity.role, connection: initialIssues.connection + (ui.retry === undefined ? "" : `?resume-op=${ui.retry.op}&resume-key=${ui.retry.key}` + (ui.retry.recovery === undefined ? "" : `&resume-recovery=${ui.retry.recovery}`)) }
 }
 
 // MODEL
 
 export schema Model {
+  readonly account?: AccountState
+  readonly issues?: IssuesUi
+
   /** `splash`: the home page fills the window. `chat`: the conversation, with the home page as its first pane. */
   readonly surface: "splash" | "chat"
   /** Whether the ⌘K prompt is open. */
   readonly palette: boolean
   readonly draft: string
+  readonly tutorialSession?: string
   readonly session: string
   readonly name: string
+  readonly mediaSources?: MediaSources
+  readonly failedMedia?: ReadonlyArray<string>
   readonly reducedMotion: boolean
   /** How many posts this tab has sent; the next one's client id is `<session>-<sent + 1>`. */
   readonly sent: number
   readonly conversation: string
   readonly client: Client
-  readonly mode: "mock" | "live"
-  /** The event stream: `closed` before the first post, `open` while it follows, `failed` after it broke. */
-  readonly stream: "closed" | "open" | "failed"
+  readonly mode: "mock" | "live" | "pending"
+  /**
+   * The event stream: `open` while it follows, `failed` after it broke. The page follows its conversation from the
+   * start, so a person sees everyone's posts, the agent's through the CLI or MCP server included, before posting (0007).
+   */
+  readonly stream: "open" | "failed"
   /** Bumped to start the event stream again from `from`. */
   readonly epoch: number
   readonly from: number
@@ -49,14 +114,89 @@ export schema Model {
   readonly answer: string
   readonly announced: number
   readonly connection: string
+  /** Whether the agent is in control: the tour runs, the screen glows and Escape ends it. */
+  readonly theatre: { readonly step: number; readonly paused: boolean; readonly sound: boolean; readonly target: string }
+  readonly tourClient?: Client
+  readonly recoverTour?: boolean
+  readonly tourDismissed?: boolean
+  readonly toured?: boolean
+  readonly autoTour?: boolean
+  readonly theatreBox?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+  readonly tour: boolean
+  /** Why the last Learn more didn't start a tour; `""` when it did. */
+  readonly tourError: string
+  /** Shared docs/wiki pane size: in the conversation, or maximized over it. */
+  readonly docs: "pane" | "max"
+  readonly sandboxPane?: "closed" | "pane" | "max"
+  readonly sandbox?: SandboxSnapshot
+  readonly sandboxOperation?: "start" | "stop" | "command" | ""
+  readonly sandboxBusy?: boolean
+  readonly sandboxRequest?: number
+  readonly sandboxError?: string
+  readonly terminalDraft?: string
+  readonly minuteNotice?: string
+  readonly warnedMonth?: number
+  readonly wikiQuery?: string
+  readonly wikiRequested?: string
+  readonly wikiStatus?: "loading" | "ready" | "error"
+  readonly wikiAfter?: string
+  readonly wikiRequest?: number
+  /** The pane's editor: the page, the repository source it started from, and the person's text. */
+  readonly wikiEdit?: { readonly page: string; readonly base: string; readonly text: string; readonly busy: boolean; readonly error: string; readonly submission?: WikiRequest | undefined } | undefined
+  /** The repository-observed sources overlaying the build's embedded pages. */
+  readonly wikiPages?: ReadonlyArray<{ readonly id: string; readonly source: string; readonly revision: string }>
+  /** The person's open review change for a page, linked until they navigate away. */
+  readonly wikiReview?: { readonly page: string; readonly url: string } | undefined
+  readonly wikiSerial?: number
+  readonly wikiEditRequest?: number
+  readonly actions?: ActionView
 }
 
 /** The conversation every visitor of the home page joins until conversations have their own pages. */
 export const HOME_CONVERSATION = "home"
 
+/** This tab's own conversation for the agent's tour, so a tour never takes the shared home conversation's agent. */
+export function tourConversation(session: string): string {
+  return `tour-${session}`
+}
+
+/** Where Contribute goes until the factory's own contribution features exist (roadmap bricks 2 to 4). */
+export const CONTRIBUTE_URL = "https://github.com/smithersai/vibelang/blob/main/CONTRIBUTING.md"
+
 // MESSAGE
 
 export const Message = defineMessageUnion({
+  ObservedMedia: {},
+  LoadedMedia: { kind: Schema.Literals(["image", "video"]) },
+  FailedMedia: { src: Schema.String, kind: Schema.Literals(["image", "video"]) },
+  AccountLoaded: { identity: Identity },
+  AccountFailed: {},
+  ClickedAccount: {},
+  ClickedSignIn: {},
+  ClickedSignOut: {},
+  ClickedPeople: {},
+  LoadedPeople: { members: Schema.Array(Identity) },
+  ClosedPeople: {},
+  ToggledPeople: {},
+  ChoseIdentity: { role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]) },
+  SelectedRole: { id: Schema.String, role: Schema.Literals(["new", "community", "contributor", "maintainer"]) },
+  CancelledRole: {},
+  ConfirmedRole: {},
+  GrantedRole: {},
+  ReceivedRole: { event: EventSchema },
+  FailedRoles: {},
+  DismissedAccountError: {},
+  RetriedAccount: {},
+  ClickedIssues: {},
+  IssueUi: { action: Schema.String, value: Schema.String },
+  IssuesLoaded: { data: IssuesState, created: Schema.Boolean, op: Schema.optionalKey(IssueOperation), key: Schema.optionalKey(Schema.String), role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]) },
+  IssuesFailed: { unwritten: Schema.optionalKey(Schema.Boolean), reason: Schema.String, op: Schema.optionalKey(IssueOperation), key: Schema.optionalKey(Schema.String) },
+  IssueDialogFocused: {},
+  OpenIssueCard: { number: Schema.Number },
+  IssueProjectionLoaded: { data: IssuesState },
+  IssueDetailsLoaded: { data: IssuesState, number: Schema.Number },
+  IssueDetailsFailed: { number: Schema.Number },
+  ResolvedMode: { mode: Schema.Literals(["mock", "live"]) },
   PressedCommandK: {},
   PressedEscape: {},
   ClickedAsk: {},
@@ -73,25 +213,82 @@ export const Message = defineMessageUnion({
   FocusedPrompt: {},
   ScrolledTranscript: { bottom: Schema.Boolean, intent: Schema.optionalKey(Schema.Number) },
   ClickedLatest: {},
+  ClickedLearnMore: {},
+  ClickedEndTour: {},
+  AutoTour: {},
+  ClickedPauseTour: {},
+  ClickedBackStop: {},
+  ClickedSkipStop: {},
+  ToggledTourSound: {},
+  ReceivedTourEvent: { event: EventSchema },
+  FailedTourEvents: {},
+  MeasuredTheatre: { x: Schema.Number, y: Schema.Number, width: Schema.Number, height: Schema.Number },
+  RemeasureTheatre: {},
+  MovedTourFocus: { backward: Schema.Boolean },
+  SucceededTour: {},
+  FailedTour: { reason: Schema.String },
+  FailedEndTour: {},
+  ClickedDocs: {},
+  ClickedSandboxes: {},
+  MaximizedSandboxes: {},
+  StartedSandbox: {},
+  StoppedSandbox: {},
+  UpdatedTerminal: { value: Schema.String },
+  SubmittedTerminal: {},
+  LoadedSandbox: { conversation: Schema.String, request: Schema.Number, snapshot: SandboxSnapshot },
+  FailedSandbox: { conversation: Schema.String, request: Schema.Number, reason: Schema.String },
+  ClickedActions: {},
+  MaximizedActions: {},
+  SelectedAction: { name: Schema.String },
+  SelectedActionStep: { key: Schema.String },
+  SelectedRun: { id: Schema.String },
+  LoadedActions: { epoch: Schema.optionalKey(Schema.Number), entries: Schema.Array(Registered), commands: Schema.Array(Registered), runs: Schema.Array(Run) },
+  FailedActions: { code: Schema.String, epoch: Schema.optionalKey(Schema.Number) },
+  UpdatedActionInput: { value: Schema.String },
+  ClickedRunAction: {},
+  StartedAction: { run: Run, epoch: Schema.optionalKey(Schema.Number) },
+  ChangedAction: { run: Run },
+  ClickedCancelAction: {},
+  TickedActions: { at: Schema.Number },
+  RetriedActions: {},
+  MovedSlash: { delta: Schema.Number },
+  PickedSlash: { name: Schema.String },
+  ClickedWiki: { page: Schema.String },
+  FilteredWiki: { value: Schema.String },
+  WikiLocationChanged: { page: Schema.String },
+  FailedWiki: { request: Schema.Number },
+  SucceededWiki: {},
+  ClickedEditWiki: {},
+  ClickedWikiDraft: { page: Schema.String },
+  UpdatedWikiEdit: { value: Schema.String },
+  CanceledWikiEdit: {},
+  SubmittedWikiEdit: {},
+  BeganWikiEdit: { request: Schema.Number, page: Schema.String, source: Schema.String, draft: Schema.String },
+  CompletedWikiEdit: { request: Schema.Number, page: Schema.String, source: Schema.String, revision: Schema.String, review: Schema.String },
+  FailedWikiEdit: { request: Schema.Number, reason: Schema.String, unwritten: Schema.optionalKey(Schema.Boolean) },
 })
 export type Message = typeof Message.Type
 
 // INIT
 
-export function init(flags: Flags): Update.Return<Model, Message, Factory> {
-  return {
+export function init(flags: Flags): Update.Return<Model, Message, Factory | Actions> {
+  const initialized: Update.Return<Model, Message, Factory | Actions> = {
     model: {
+      account: flags.signInFailed ? { ...signedOut, error: "Sign-in failed. GitHub didn’t answer." } : signedOut,
       surface: "splash",
       palette: false,
       draft: "",
       session: flags.session,
+      tutorialSession: flags.tutorialSession ?? flags.session,
       name: flags.name,
       reducedMotion: flags.reducedMotion ?? false,
+      mediaSources: flags.mediaSources ?? {},
+      failedMedia: [],
       sent: 0,
       conversation: HOME_CONVERSATION,
       client: Machine.newClient,
       mode: flags.mode,
-      stream: "closed",
+      stream: "open",
       epoch: 0,
       from: 0,
       following: true,
@@ -99,20 +296,223 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory> {
       answer: "",
       announced: 0,
       connection: "",
+      tour: false,
+      theatre: { step: 1, paused: false, sound: flags.tourSound ?? false, target: "splash" },
+      autoTour: flags.autoTour ?? false,
+      recoverTour: flags.resumeTour ?? false,
+      tourError: "",
+      docs: "pane",
+      ...(flags.openIssues ? { issues: initialIssues } : {}),
+      actions: initialActions,
     },
+    ...(flags.openIssues ? { commands: [LoadIssues({ ...(flags.resumeRecovery === undefined ? {} : { resumeRecovery: flags.resumeRecovery }), ...(flags.resumeOp === undefined ? {} : { resumeOp: flags.resumeOp }), ...(flags.resumeKey === undefined ? {} : { resumeKey: flags.resumeKey }) })] } : {}),
   }
+  if (flags.resumeTour) return learnMore(initialized.model)
+  return flags.wiki ? visitWiki(initialized.model, flags.wiki) : initialized
 }
 
 // UPDATE
 
-export function update(model: Model, message: Message): Update.Return<Model, Message, Factory> {
-  return Message.match<Update.Return<Model, Message, Factory>>(message, {
+export function update(model: Model, message: Message): WithCommands<Update.Return<Model, Message, Factory | Actions>> {
+  const next = withCommands(Message.match<Update.Return<Model, Message, Factory | Actions>>(message, {
+    ObservedMedia: () => ({ model }),
+    LoadedMedia: ({ kind }) => ({ model, commands: [ObserveMedia({ kind, outcome: "loaded" })] }),
+    FailedMedia: ({ src, kind }) => ({ model: { ...model, failedMedia: [...(model.failedMedia ?? []), src] }, commands: [ObserveMedia({ kind, outcome: "failed" })] }),
+
+    ResolvedMode: ({ mode }) => ({ model: { ...model, mode }, commands: [LoadAccount({})] }),
+    AccountLoaded: ({ identity }) => {
+      const { ledger: snapshot, ...person } = identity
+      const { sandbox: previousSandbox, ...withoutSandbox } = model
+      const ledger = { conversation: snapshot ?? Machine.empty, pending: [], gap: false }
+      const account = accountOf(model)
+      const step = ModelDecision.accountLoaded({ id: account.identity.id, role: account.identity.role, target: account.target, error: account.error, people: account.people, epoch: account.epoch, actionsEpoch: actionsOf(model).epoch ?? 0, wikiEditRequest: model.wikiEditRequest ?? 0, sandboxRequest: model.sandboxRequest ?? 0 }, person.id, person.login, person.role, ledger.conversation.seq)
+      const nextActions = step.changedAccount ? { ...actionsOf(model), epoch: step.actionsEpoch, commands: [], slash: false, starting: false } : actionsOf(model)
+      const commands = [...(step.closeDialog ? [CloseRoleDialog({})] : []), ...(step.changedAccount ? [LoadActions({ flow: nextActions.selected, epoch: step.actionsEpoch })] : [])]
+      return {
+        model: { ...(step.changedAccount ? withoutSandbox : model), actions: nextActions, ...(step.changedAccount ? { wikiEdit: undefined, wikiReview: undefined, wikiEditRequest: step.wikiEditRequest, sandboxBusy: false, sandboxRequest: step.sandboxRequest } : {}), ...(step.changedPerson ? { terminalDraft: "", sandboxPane: "closed" as const } : {}), name: step.name, account: {
+          ...account, identity: person, pending: false,
+          error: step.error, menu: false, target: "",
+          people: step.people,
+          ledger, epoch: step.epoch, from: step.from,
+          notice: step.notice,
+        } },
+        ...(commands.length > 0 ? { commands } : {}),
+      }
+    },
+    AccountFailed: () => runAccount(model, ModelDecision.accountFailed(accountScreen(model))),
+    ClickedAccount: () => runAccount(model, ModelDecision.clickedAccount(accountScreen(model))),
+    ClickedSignIn: () => runAccount(model, ModelDecision.clickedSignIn(accountScreen(model), model.mode === "live", accountOf(model).identity.available === false, model.mode === "mock")),
+    ClickedSignOut: () => runAccount(model, ModelDecision.clickedSignOut(accountScreen(model))),
+    ChoseIdentity: ({ role }) => ({ model, commands: [ChooseIdentity({ role })] }),
+    ClickedPeople: () => runAccount(model, ModelDecision.clickedPeople(accountScreen(model))),
+    LoadedPeople: ({ members }) => ({ model: { ...model, account: { ...accountOf(model), members, pending: false } } }),
+    ClosedPeople: () => runAccount(model, ModelDecision.closedPeople(accountScreen(model))),
+    ToggledPeople: () => runAccount(model, ModelDecision.toggledPeople(accountScreen(model))),
+    SelectedRole: ({ id, role }) => !ModelDecision.canSelectRole(accountOf(model).identity.role) ? { model } : runAccount(model, ModelDecision.selectedRole(accountScreen(model), id, role)),
+    CancelledRole: () => runAccount(model, ModelDecision.cancelledRole(accountScreen(model))),
+    ConfirmedRole: () => runAccount(model, ModelDecision.confirmedRole(accountScreen(model))),
+    GrantedRole: () => runAccount(model, ModelDecision.grantedRole(accountScreen(model))),
+    ReceivedRole: ({ event }) => {
+      const account = accountOf(model)
+      const ledger = Machine.receive(account.ledger, event)
+      const grant = event.type === "RoleGranted" ? event : undefined
+      const step = ModelDecision.roleReceived(
+        { role: account.identity.role, target: account.target, pending: account.pending, notice: account.notice, epoch: account.epoch, from: account.from, actionsEpoch: actionsOf(model).epoch ?? 0, wikiEditRequest: model.wikiEditRequest ?? 0, sandboxRequest: model.sandboxRequest ?? 0 },
+        { gap: ledger.gap, granted: grant !== undefined, seq: ledger.conversation.seq, previousSeq: account.ledger.conversation.seq, roles: ledger.conversation.roles.length, previousRoles: account.ledger.conversation.roles.length, mine: event.id === account.identity.id, participation: grant?.mode === "participation", person: grant?.mode === "person", peopleOpen: account.people !== "closed", ledgerRole: Machine.roleOf(ledger.conversation.roles, account.identity.id), roleName: grant === undefined ? "" : roleLabel(grant.role), name: account.members.find(person => person.id === event.id)?.login ?? event.id },
+      )
+      if (step.replay) return { model: { ...model, account: { ...account, ledger: Machine.resume(ledger), epoch: step.state.epoch, from: step.state.from } } }
+      const identity = step.state.role === account.identity.role ? account.identity : { ...account.identity, role: step.state.role }
+      const { sandbox: previousSandbox, ...withoutSandbox } = model
+      const nextActions = step.changedRole ? { ...actionsOf(model), epoch: step.state.actionsEpoch, commands: [], slash: false, starting: false } : actionsOf(model)
+      const commands = [...(step.closeDialog ? [CloseRoleDialog({})] : []), ...(step.loadPeople ? [LoadPeople({})] : []), ...(step.changedRole ? [LoadActions({ flow: nextActions.selected, epoch: step.state.actionsEpoch })] : [])]
+      return { model: { ...(step.changedRole ? withoutSandbox : model), actions: nextActions, ...(step.changedRole ? { wikiEdit: undefined, wikiReview: undefined, wikiEditRequest: step.state.wikiEditRequest, sandboxBusy: false, sandboxRequest: step.state.sandboxRequest } : {}), account: { ...account, ledger, identity, notice: step.state.notice, target: step.state.target, pending: step.state.pending } }, ...(commands.length > 0 ? { commands } : {}) }
+    },
+    FailedRoles: () => runAccount(model, ModelDecision.failedRoles(accountScreen(model))),
+    RetriedAccount: () => ModelDecision.accountRetryPlan(accountOf(model).retry) === "sign-in" ? update(model, Message.ClickedSignIn()) : runAccount(model, ModelDecision.retriedAccount(accountScreen(model), accountOf(model).ledger.conversation.seq)),
+    DismissedAccountError: () => runAccount(model, ModelDecision.dismissedAccountError(accountScreen(model))),
+    OpenIssueCard: ({ number }) => ({ model: { ...model, issues: { ...(model.issues ?? initialIssues), ...IssueDecision.openedIssueCard(issueScreen(model.issues ?? initialIssues), number) } }, commands: [LoadIssues({}), ...(IssueDecision.issueCardLoadsDetails(model.mode) ? [LoadIssueDetails({ number, key: `${model.session}-card-${number}-${(model.issues?.serial ?? 0) + 1}` })] : [])] }),
+    IssueProjectionLoaded: ({ data }) => !IssueDecision.issueProjectionApplies(data.seq, model.issues?.data.seq ?? 0) ? { model } : { model: { ...model, issues: { ...(model.issues ?? { ...initialIssues, open: false }), data, status: "ready", role: data.role ?? IssueDecision.issueDefaultRole(model.mode) } } },
+    ClickedIssues: () => ({ model: { ...model, issues: { ...(model.issues ?? initialIssues), open: true } }, commands: IssueDecision.clickedIssuesLoads(model.issues?.busy === true) ? [LoadIssues({})] : [] }),
+    IssueUi: ({ action, value }) => {
+      const before = issueStateOf(model)
+      const result = issuesUpdate(before, action, value)
+      const effects = IssueDecision.issueUiEffects(action, value, model.mode === "live", before.dialog, result.ui.dialog)
+      return { model: { ...model, issues: effects.bumpSerial ? { ...result.ui, serial: before.serial + 1 } : result.ui, ...(effects.toChat ? { surface: "chat" } : {}) }, commands: [
+        ...(effects.details ? [LoadIssueDetails({ number: Number(value), key: `${model.session}-detail-${before.serial + 1}` })] : []),
+        ...(result.request === undefined ? [] : [ActOnIssue({ request: result.request })]),
+        ...(effects.focus === "" ? [] : [FocusIssueControl({ id: effects.focus })]),
+        ...(effects.showDialog ? [ShowIssueDialog({})] : []),
+        ...(effects.closeDialog ? [CloseIssueDialog({})] : []),
+      ] }
+    },
+    IssuesLoaded: ({ data, created, role, op, key }) => {
+      const ui = model.issues ?? initialIssues
+      if (data.saved !== undefined) {
+        const { request, status, unwritten, selected } = data.saved
+        const step = IssueDecision.issueRecovered(issueScreen(ui), request.op, status === "completed", unwritten, selected, request.title, request.text, request.example, request.prior, String(request.parent), request.assignee)
+        return { model: { ...model, issues: { ...ui, ...step.state, keyPrefix: model.session, data, role, retry: step.clearRetry ? undefined : request } } }
+      }
+      const settled = ModelDecision.issueResponseSettles(ui.retry?.op ?? null, ui.retry?.key ?? null, op ?? null, key ?? null)
+      const assignee = data.assignees === undefined ? ui.assignee : IssueDecision.issueAssigneeAfter(data.assignees.some((a) => a.login === ui.assignee), ui.assignee, data.assignees.find((a) => a.label === "VibeLang agent")?.login ?? "")
+      const step = IssueDecision.issueLoaded(issueScreen(ui), settled, created, data.draft !== undefined, data.draft?.title ?? "", data.draft?.summary ?? "", data.draft?.example ?? "", data.draft?.prior ?? "", assignee, data.selected ?? Math.max(...data.items.map((i) => i.number)))
+      return { model: { ...model, issues: { ...ui, ...step.state, data: IssueDecision.issueDataApplies(data.draft !== undefined, data.seq, ui.data.seq) ? data : ui.data, role, retry: step.clearRetry ? undefined : ui.retry } }, commands: step.closeDialog ? [CloseIssueDialog({})] : [] }
+    },
+    IssuesFailed: ({ reason, op, key, unwritten }) => {
+      const ui = model.issues ?? initialIssues
+      const relevant = ModelDecision.issueResponseSettles(ui.retry?.op ?? null, ui.retry?.key ?? null, op ?? null, key ?? null)
+      const step = IssueDecision.issueFailed(issueScreen(ui), ui.data.items.length === 0, relevant, unwritten === true, reason === "connect" ? "Connect GitHub." : reason === "fork" ? "Fork on GitHub." : reason === "install" ? "Install Smithers on your fork." : IssueDecision.issueFailureText(reason))
+      return { model: { ...model, issues: { ...ui, ...step.state, retry: step.clearRetry ? undefined : ui.retry } } }
+    },
+    IssueDetailsLoaded: ({ data, number }) => model.issues === undefined || !ModelDecision.issueDetailsApply(model.issues.selected, number, data.seq, model.issues.data.seq) ? { model } : { model: { ...model, issues: { ...model.issues, data } } },
+    IssueDetailsFailed: ({ number }) => model.issues === undefined || !ModelDecision.issueDetailsFailureShows(model.issues.selected, number, model.issues.retry !== undefined) ? { model } : { model: { ...model, issues: { ...model.issues, ...IssueDecision.issueDetailsFailed(issueScreen(model.issues)) } } },
+    IssueDialogFocused: () => ({ model }),
     PressedCommandK: () => openPalette(model, !model.palette),
     ClickedAsk: () => openPalette(model, true),
-    PressedEscape: () => model.palette ? openPalette(model, false) : { model },
-    ClickedSplash: () => ({ model: { ...model, surface: "splash", palette: false } }),
-    ClickedChat: () => hasConversation(model) ? { model: { ...model, surface: "chat" } } : { model },
-    UpdatedDraft: ({ value }) => ({ model: { ...model, draft: value } }),
+    // Escape first takes control back from the agent, then closes what is open, innermost first.
+    PressedEscape: () => runEscape(model, UpdateDecision.pressedEscape(escapeScreen(model), escapeAction(model.tour, touringHere(model), model.palette, model.surface, model.docs), model.client.conversation.pane.startsWith("/wiki/"))),
+    MovedTourFocus: ({ backward }) => ({ model, commands: [FocusTourControl({ backward })] }),
+    AutoTour: () => TourDecision.autoTourStarts(model.surface, model.palette, model.tour, model.issues?.open === true, hasConversation(model)) ? learnMore(model) : { model },
+    MeasuredTheatre: (box) => ({ model: { ...model, theatreBox: box } }),
+    RemeasureTheatre: () => ({ model, commands: TourDecision.remeasures(model.tour) ? [MeasureTheatre({ target: model.theatre.target })] : [] }),
+    ClickedPauseTour: () => runTourControl(model, TourDecision.pauseTour(model.tour, model.theatre.paused)),
+    ClickedBackStop: () => runTourControl(model, TourDecision.backTour(model.tour, model.theatre.step)),
+    ClickedSkipStop: () => runTourControl(model, TourDecision.skipTour(model.tour, model.theatre.step)),
+    ToggledTourSound: () => {
+      const present = TourDecision.toggledSound({ step: model.theatre.step, sound: model.theatre.sound, active: model.tour, paused: model.theatre.paused })
+      return { model: { ...model, theatre: { ...model.theatre, sound: present.sound } }, commands: [PresentTour(present)] }
+    },
+    ReceivedTourEvent: ({ event }) => receiveTour(model, event),
+    FailedTourEvents: () => ({ model: { ...model, tourError: "Connection lost" } }),
+    ClickedLearnMore: () => learnMore(model),
+    ClickedEndTour: () => endTour(model),
+    // Ended before the tour was even recorded: end it now that it is.
+    SucceededTour: () => TourDecision.endsLateTour(model.tour) ? { model, commands: [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) })] } : { model },
+    // Busy while this tab's own tour runs (a Learn more racing an Escape): that tour keeps control.
+    FailedTour: ({ reason }) => TourDecision.failedTourKeeps(touringHere(model), model.recoverTour === true, reason) ? { model: { ...model, ...TourDecision.keptTour() } } : {
+      model: { ...model, ...failScreenTour(model, reason, false), surface: "chat", recoverTour: false },
+      commands: [PresentTour({ step: model.theatre.step, sound: model.theatre.sound, active: false, paused: false }), FocusComposer({})],
+    },
+    // The end never reached the agent: it still drives, so Esc comes back.
+    FailedEndTour: () => recoverEndTour(model),
+    ClickedSandboxes: () => ({ model: { ...model, sandboxPane: toggleSandbox(model.sandboxPane ?? "closed") } }),
+    MaximizedSandboxes: () => ({ model: { ...model, sandboxPane: maximizeSandbox(model.sandboxPane ?? "closed") } }),
+    StartedSandbox: () => sandboxAction(model, "start"),
+    StoppedSandbox: () => sandboxAction(model, "stop"),
+    UpdatedTerminal: ({ value }) => ({ model: { ...model, terminalDraft: value } }),
+    SubmittedTerminal: () => sandboxAction(model, "command"),
+    LoadedSandbox: ({ conversation, request, snapshot }) => {
+      if (!currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0)) return { model }
+      const zero = ModelDecision.sandboxOutOfMinutes(snapshot.remaining, snapshot.id, snapshot.status)
+      const low = ModelDecision.sandboxLowMinutes(snapshot.remaining, model.warnedMonth ?? null, snapshot.resetAt)
+      const result = PaneDecision.loadedSandbox(sandboxResult(model), ModelDecision.sandboxPaneOpens(snapshot.status, model.sandbox?.status ?? null))
+      const notice = PaneDecision.sandboxNotice(zero, low, model.sandbox?.resetAt !== snapshot.resetAt)
+      return { model: { ...model, sandbox: snapshot, sandboxPane: result.pane, sandboxBusy: result.busy, sandboxOperation: result.operation, sandboxError: result.error, minuteNotice: minuteNotice(notice, snapshot.id, snapshot.remaining, model.minuteNotice ?? ""), warnedMonth: PaneDecision.warnedMonthAfter(low, snapshot.resetAt, model.warnedMonth ?? 0) } }
+    },
+    FailedSandbox: ({ conversation, request, reason }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0) ? { model } : (() => { const result = PaneDecision.failedSandbox(sandboxResult(model), reason); return { model: { ...model, sandboxBusy: result.busy, sandboxError: result.error } } })(),
+    ClickedEditWiki: () => beginWikiEdit(model),
+    ClickedWikiDraft: ({ page }) => beginWikiEdit(model, page),
+    // The store keeps only well-formed text (DurableText): an unpaired surrogate becomes U+FFFD as it is typed, never at save.
+    UpdatedWikiEdit: ({ value }) => model.wikiEdit === undefined || !PaneDecision.wikiEditTypes(model.wikiEdit.busy, model.wikiEdit.submission !== undefined) ? { model } : { model: { ...model, wikiEdit: { ...model.wikiEdit, ...PaneDecision.updatedWikiEdit(wikiEditScreen(model.wikiEdit), value.toWellFormed()) } } },
+    CanceledWikiEdit: () => model.wikiEdit === undefined || model.wikiEdit.submission !== undefined ? { model } : { model: { ...model, wikiEdit: undefined } },
+    SubmittedWikiEdit: () => {
+      const editing = model.wikiEdit
+      if (editing === undefined) return { model }
+      const role = accountOf(model).identity.role
+      const op = PaneDecision.wikiSubmitPlan(editing.busy, editing.text, editing.base, Machine.wikiPermission(role, "save"), Machine.wikiPermission(role, "propose"))
+      if (op === "ignore" || op === "refuse") return { model }
+      if (op === "no-changes") return { model: { ...model, wikiEdit: { ...editing, ...PaneDecision.noWikiChanges(wikiEditScreen(editing)) } } }
+      const serial = (model.wikiSerial ?? 0) + 1
+      const request: WikiRequest = editing.submission === undefined ? { op, page: editing.page, base: editing.base, text: editing.text, key: `${model.session}-wiki-${serial}` } : { ...editing.submission, recovery: `${model.session}-wiki-retry-${serial}` }
+      return { model: { ...model, wikiSerial: serial, wikiEdit: { ...editing, ...PaneDecision.submittingWikiEdit(wikiEditScreen(editing)), submission: request } }, commands: [SubmitWikiEdit({ request, serial: model.wikiEditRequest ?? 0 })] }
+    },
+    BeganWikiEdit: ({ request, page, source, draft }) => {
+      const editing = model.wikiEdit
+      if (editing === undefined || !PaneDecision.wikiBeginApplies(editing.busy, Machine.currentWikiEditor(page, request, editing.page, model.wikiEditRequest ?? 0))) return { model }
+      return { model: { ...model, wikiEdit: { ...editing, ...PaneDecision.beganWikiEdit(wikiEditScreen(editing), source, draft) } }, commands: [FocusWikiEditor({})] }
+    },
+    CompletedWikiEdit: ({ request, page, source, revision, review }) => model.wikiEdit === undefined || !Machine.currentWikiEditor(page, request, model.wikiEdit.page, model.wikiEditRequest ?? 0) ? { model } : ({ model: { ...model, wikiEdit: undefined, wikiPages: [...(model.wikiPages ?? []).filter((observed) => observed.id !== page), { id: page, source, revision }], ...(review === "" ? {} : { wikiReview: { page, url: review } }) } }),
+    FailedWikiEdit: ({ request, reason, unwritten }) => {
+      if (model.wikiEdit === undefined || !PaneDecision.wikiEditFailureApplies(request, model.wikiEditRequest ?? null)) return { model }
+      const step = PaneDecision.failedWikiEdit(wikiEditScreen(model.wikiEdit), PaneDecision.wikiEditErrorText(reason), unwritten === true)
+      return { model: { ...model, wikiEdit: { ...model.wikiEdit, ...step.state, ...(step.submission === "clear" ? { submission: undefined } : {}) } } }
+    },
+    ClickedWiki: ({ page }) => visitWiki(model, page),
+    WikiLocationChanged: ({ page }) => page === "/" ? { model: { ...model, surface: "splash", docs: "pane", ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } } : visitWiki(model, page),
+    FilteredWiki: ({ value }) => ({ model: { ...model, wikiQuery: value } }),
+    FailedWiki: ({ request }) => ({ model: model.wikiRequest !== undefined && ModelDecision.wikiFailureApplies(request, model.wikiRequest, model.wikiStatus === "loading") ? { ...model, wikiStatus: "error" } : model }),
+    SucceededWiki: () => ({ model }),
+    ClickedDocs: () => ({ model: { ...model, ...toggleScreenDocs(model) }, ...(model.docs === "max" && model.client.conversation.pane.startsWith("/wiki/") ? { commands: [RevealWiki({})] } : {}) }),
+    ClickedSplash: () => ({ model: { ...model, ...showSplash(model), ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } }),
+    ClickedChat: () => minimizeSplash(model),
+    UpdatedDraft: ({ value }) => {
+      const menu = TourDecision.updatedDraftMenu(value, actionsOf(model).entries.length === 0)
+      return {
+        model: { ...model, draft: value, actions: { ...actionsOf(model), slash: menu.slash, highlight: 0 } },
+        ...(menu.load ? { commands: [LoadActions({ flow: "", ...(actionsOf(model).epoch === undefined ? {} : { epoch: actionsOf(model).epoch }) })] } : {}),
+      }
+    },
+    ClickedActions: () => runActions(model, ModelDecision.clickedActions(actionScreen(model), actionsOf(model).entries.length !== 0, actionsOf(model).epoch ?? null)),
+    MaximizedActions: () => runActions(model, ModelDecision.maximizedActions(actionScreen(model))),
+    SelectedAction: ({ name }) => runActions(model, ModelDecision.selectedAction(actionScreen(model), name, actionsOf(model).epoch ?? null)),
+    SelectedActionStep: ({ key }) => ({ model: { ...model, actions: { ...actionsOf(model), step: key } } }),
+    SelectedRun: ({ id }) => {
+      const flow = actionsOf(model).runs.find((run) => run.id === id)?.flow
+      return { model: { ...model, actions: { ...actionsOf(model), ...ModelDecision.selectedRun(runSelection(model), id, flow !== undefined, flow ?? "") } } }
+    },
+    LoadedActions: ({ entries, commands, runs, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: { ...model, actions: { ...actionsOf(model), entries, commands, runs: mergeRuns(actionsOf(model).runs, runs), loading: false, error: "" } } }),
+    FailedActions: ({ code, epoch }) => !ModelDecision.actionsFailureApplies(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : runActions(model, ModelDecision.failedActions(actionScreen(model), code)),
+    UpdatedActionInput: ({ value }) => runActions(model, ModelDecision.updatedActionInput(actionScreen(model), value)),
+    ClickedRunAction: () => launchAction(model, actionsOf(model).selected, "button"),
+    StartedAction: ({ run, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: { ...model, surface: "chat", stream: "open", palette: false, actions: { ...actionsOf(model), ...ModelDecision.followedRun(runSelection(model), run.id, run.flow), starting: false, runs: mergeRuns(actionsOf(model).runs, [run]), error: "" } }, commands: [ClosePalette({ dock: true })] }),
+    ChangedAction: ({ run }) => ({ model: { ...model, actions: { ...actionsOf(model), runs: mergeRuns(actionsOf(model).runs, [run]) } } }),
+    TickedActions: ({ at }) => ({ model: { ...model, actions: { ...actionsOf(model), now: ModelDecision.actionsClock(actionsOf(model).now ?? 0, at) } } }),
+    ClickedCancelAction: () => ({ model, commands: [CancelAction({ id: actionsOf(model).run })] }),
+    RetriedActions: () => runActions(model, ModelDecision.retriedActions(actionScreen(model), actionsOf(model).epoch ?? null)),
+    MovedSlash: ({ delta }) => {
+      const menu = completions(model)
+      return { model: { ...model, actions: { ...actionsOf(model), highlight: ModelDecision.slashHighlight(actionsOf(model).highlight, delta, menu.length) } } }
+    },
+    PickedSlash: ({ name }) => name.startsWith("mode/") ? switchMode(model, name.slice("mode/".length)) : launchAction(model, name, "slash"),
     SubmittedDraft: () => submit(model),
     SucceededPost: () => ({ model }),
     ClickedRetry: ({ clientId }) => {
@@ -126,68 +526,315 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     FailedPost: ({ clientId, reason }) => ({ model: { ...model, client: Machine.failPost(model.client, clientId, reason) } }),
     ReceivedEvent: ({ event }) => {
       const client = Machine.receive(model.client, event)
+      const completed = completedEvent(model.client.conversation.seq, client.conversation.seq, event.type)
+      const paneUrl = event.type === "PaneOpened" ? event.url : ""
+      const announcedAnswer = completed ? client.conversation.entries.find((entry) => entry.id === event.id) : undefined
+      const plan = UpdateDecision.eventReceived({
+        gap: client.gap, previousSeq: model.client.conversation.seq, seq: client.conversation.seq, type: event.type,
+        wikiUrl: paneUrl.startsWith("/wiki/"), completed, linksIssue: /\]\(#issue-[1-9][0-9]*\)/.test(announcedAnswer?.text ?? ""),
+        editing: model.wikiEdit !== undefined && model.wikiEdit.submission === undefined, samePage: paneUrl === `/wiki/${model.wikiEdit?.page ?? ""}`,
+        peopleMax: accountOf(model).people === "max", streamOpen: model.stream === "open", connection: model.connection,
+        epoch: model.epoch, from: model.from, announced: model.announced,
+      })
       // A missed event: replay from the last one this copy applied.
-      if (client.gap) return { model: { ...model, client: Machine.resume(client), epoch: model.epoch + 1, from: client.conversation.seq } }
-      const advanced = client.conversation.seq > model.client.conversation.seq
-      const completed = advanced && (event.type === "ReplyFinished" || event.type === "ReplyFailed")
-      const answer = completed ? client.conversation.entries.find((entry) => entry.id === event.id) : undefined
+      if (plan.replay) return { model: { ...model, client: Machine.resume(client), epoch: plan.epoch, from: plan.from } }
+      // The tour finished, failed or was ended: the agent no longer has control.
+      const toured = completed && Machine.isTour(client.conversation.entries, event.id)
+      const answer = announcedAnswer
       return {
         model: {
           ...model,
+          ...completeScreenTour(model, toured, event.type),
           client,
-          connection: model.stream === "open" ? "Connected" : model.connection,
-          answer: answer ? answer.error === "" ? answer.text : "Answer failed" : model.answer,
-          announced: completed ? model.announced + 1 : model.announced,
+          connection: plan.connection,
+          answer: answerAnnouncement(answer !== undefined, answer?.error ?? "", answer?.text ?? "", model.answer),
+          announced: plan.announced,
+          ...(plan.pane ? { sandboxPane: TourDecision.minimizedSandbox(model.sandboxPane ?? "closed") } : {}),
+          ...(plan.plainPane ? { wikiStatus: "ready" as const, wikiAfter: "" } : {}),
+          ...(plan.wikiPane ? {
+            following: false, wikiStatus: "ready" as const, wikiAfter: UpdateDecision.wikiAfterEvent(event.id, model.wikiAfter !== undefined && client.conversation.entries.some(entry => entry.id === model.wikiAfter), model.wikiAfter ?? ""),
+          } : {}),
+          ...(plan.closeEditor ? { wikiEdit: undefined } : {}),
+          ...(plan.peoplePane ? { account: { ...accountOf(model), people: "pane" as const } } : {}),
         },
+        commands: [
+          ...(plan.refreshIssues ? [RefreshIssueProjection({})] : []),
+          ...(plan.wikiPane ? [WikiLocation({ url: paneUrl })] : []),
+          ...(plan.readAction ? [ReadAction({ id: event.id })] : []),
+        ],
       }
     },
-    FailedEvents: () => ({ model: { ...model, stream: "failed", connection: "Disconnected" } }),
-    ClickedReconnect: () => ({ model: { ...model, stream: "open", connection: "Reconnecting", epoch: model.epoch + 1, from: model.client.conversation.seq }, commands: [FocusComposer({})] }),
+    FailedEvents: () => ({ model: { ...model, ...TourDecision.failedEvents(streamScreen(model)) } }),
+    ClickedReconnect: () => ({ model: { ...model, ...TourDecision.reconnected(streamScreen(model), model.client.conversation.seq) }, commands: [FocusComposer({})] }),
     FocusedPrompt: () => ({ model }),
     ScrolledTranscript: ({ bottom, intent = model.followIntent }) => {
-      if (intent < model.followIntent) return { model }
-      // The native handler can see the old chat DOM while a surface transition awaits its render. Acknowledge
-      // its revision even when that surface ignores the position, or future follows would keep an obsolete token.
-      if (model.surface !== "chat" || model.palette) return { model: { ...model, followIntent: intent } }
-      return {
-        model: { ...model, following: bottom, followIntent: intent },
-      }
+      const next = scrollFollow(model.surface, model.palette, model.following, model.followIntent, bottom, intent)
+      if (next.stale) return { model }
+      return { model: { ...model, following: next.following, followIntent: next.followIntent } }
     },
-    ClickedLatest: () => ({ model: { ...model, following: true }, commands: [FocusComposer({})] }),
-  })
+    ClickedLatest: () => ({ model: { ...model, ...latestScreen(model) }, commands: [FocusComposer({})] }),
+  }))
+  const before = accountOf(model).identity
+  const after = accountOf(next.model).identity
+  const issues = next.model.issues
+  const after2 = UpdateDecision.afterUpdate(issues !== undefined, before.role !== after.role, before.id !== after.id, issues !== undefined && issues.dialog !== "", issues === undefined || issues.dialog === "" || Machine.issuePermission(after.role, issues.dialog), next.model.tour, message._tag)
+  if (after2.kind === "issues" && issues !== undefined) {
+    return { ...next, model: { ...next.model, issues: { ...issues, role: after.role, dialog: after2.closeDialog ? "" : issues.dialog, ...(after2.clearRetry ? { retry: undefined, busy: false } : {}) } }, commands: [...next.commands, ...(after2.closeDialog ? [CloseIssueDialog({})] : [])] }
+  }
+  if (after2.kind === "measure") {
+    return { ...next, commands: [...next.commands, MeasureTheatre({ target: next.model.theatre.target })] }
+  }
+  return next
 }
 
-function openPalette(model: Model, open: boolean): Update.Return<Model, Message, Factory> {
-  return { model: { ...model, palette: open }, commands: [open ? ShowPalette({}) : ClosePalette({ dock: false })] }
+/** The plain account state the proved arms in `modelDecision.vibe` read and return. */
+function accountScreen(model: Model): ModelDecision.AccountScreen {
+  const { menu, people, pending, error, retry, target, targetRole, epoch, from } = accountOf(model)
+  return { surface: model.surface, docs: model.docs, menu, people, pending, error, retry, target, targetRole, epoch, from }
+}
+
+function escapeScreen(model: Model): UpdateDecision.EscapeScreen {
+  const account = accountOf(model)
+  const actions = actionsOf(model)
+  return { target: account.target, error: account.error, menu: account.menu, dialog: model.issues?.dialog ?? "", issuesOpen: model.issues?.open === true, slash: actions.slash, actionsMax: actions.maximized, editing: model.wikiEdit !== undefined, submitting: model.wikiEdit?.submission !== undefined, sandboxMax: model.sandboxPane === "max", docs: model.docs }
+}
+
+/** Applies Escape's one proved change. */
+function runEscape(model: Model, step: UpdateDecision.EscapeStep): Update.Return<Model, Message, Factory | Actions> {
+  const { state } = step
+  const account = accountOf(model)
+  switch (step.kind) {
+    case "tour": return endTour(model)
+    case "palette": return openPalette(model, false)
+    case "splash": return minimizeSplash(model)
+    case "none": return { model }
+    case "role": return { model: { ...model, account: { ...account, target: state.target, error: state.error } }, commands: [CloseRoleDialog({})] }
+    case "issue-dialog": return { model: { ...model, issues: { ...model.issues!, dialog: state.dialog } }, commands: [CloseIssueDialog({})] }
+    case "slash": return { model: { ...model, actions: { ...actionsOf(model), slash: state.slash } } }
+    case "menu": return { model: { ...model, account: { ...account, menu: state.menu } }, commands: [FocusAccountMenu({ open: false })] }
+    case "issues": return { model: { ...model, issues: { ...model.issues!, open: state.issuesOpen } } }
+    case "actions": return { model: { ...model, actions: { ...actionsOf(model), maximized: state.actionsMax } } }
+    case "wiki": return { model: { ...model, wikiEdit: undefined } }
+    case "sandbox": return { model: { ...model, sandboxPane: "pane" } }
+    case "docs": return { model: { ...model, docs: state.docs }, ...(step.reveal ? { commands: [RevealWiki({})] } : {}) }
+  }
+}
+
+function accountCommand(command: ModelDecision.AccountCommand) {
+  switch (command.type) {
+    case "FocusAccountMenu": return FocusAccountMenu({ open: command.open })
+    case "SignIn": return SignInAccount({ mock: command.mock })
+    case "SignOut": return SignOutAccount({})
+    case "LoadPeople": return LoadPeople({})
+    case "ShowRoleDialog": return ShowRoleDialog({})
+    case "CloseRoleDialog": return CloseRoleDialog({})
+    case "GrantRole": return GrantRole({ id: command.id, role: command.role })
+  }
+}
+
+/** Applies a proved account step: its state over the model, its commands as Foldkit Commands. */
+function runAccount(model: Model, step: ModelDecision.AccountStep): Update.Return<Model, Message, Factory | Actions> {
+  const { surface, docs, ...account } = step.state
+  const next: Model = { ...model, surface, docs, account: { ...accountOf(model), ...account } }
+  return step.commands.length === 0 ? { model: next } : { model: next, commands: step.commands.map(accountCommand) }
+}
+
+function actionScreen(model: Model): ModelDecision.ActionScreen {
+  const { open, maximized, selected, run, loading, starting, error, input, highlight } = actionsOf(model)
+  return { open, maximized, selected, run, loading, starting, error, input, highlight }
+}
+
+function runSelection(model: Model): ModelDecision.RunSelection {
+  const { step, run, selected, open, maximized } = actionsOf(model)
+  return { step: step ?? "", run, selected, open, maximized }
+}
+
+function actionCommand(command: ModelDecision.ActionCommand) {
+  switch (command.type) {
+    case "FocusComposer": return FocusComposer({})
+    case "LoadActions": return LoadActions({ flow: command.flow, ...(command.epoch === null ? {} : { epoch: command.epoch }) })
+  }
+}
+
+/** Applies a proved actions step: its state over the panel, its commands as Foldkit Commands. */
+function runActions(model: Model, step: ModelDecision.ActionStep): Update.Return<Model, Message, Factory | Actions> {
+  const next: Model = { ...model, actions: { ...actionsOf(model), ...step.state } }
+  return step.commands.length === 0 ? { model: next } : { model: next, commands: step.commands.map(actionCommand) }
+}
+
+/** An update the function always gives commands, so its callers need no empty default. */
+type WithCommands<R extends { readonly commands?: unknown }> = R & { readonly commands: NonNullable<R["commands"]> }
+/** Every message answers with its commands, an empty list when it has none. */
+function withCommands(result: Update.Return<Model, Message, Factory | Actions>): WithCommands<Update.Return<Model, Message, Factory | Actions>> {
+  return { ...result, commands: result.commands ?? [] }
+}
+/** A click and a browser deep link request the same durable wiki flow; the event alone moves the pane. */
+function visitWiki(model: Model, page: string): WithCommands<Update.Return<Model, Message, Factory>> {
+  const opening = model.stream !== "open"
+  const request = (model.wikiRequest ?? 0) + 1
+  return { model: { ...model, wikiEdit: model.wikiEdit?.submission === undefined ? undefined : model.wikiEdit, wikiRequest: request, sandboxPane: model.sandboxPane === "max" ? "pane" : model.sandboxPane ?? "closed", ...(accountOf(model).people === "max" ? { account: { ...accountOf(model), people: "pane" as const } } : {}), surface: "chat", palette: false, wikiQuery: "", wikiRequested: page, wikiStatus: "loading", following: false,
+    stream: "open", epoch: opening ? model.epoch + 1 : model.epoch, from: opening ? model.client.conversation.seq : model.from,
+  }, commands: [OpenWikiCommand({ conversation: model.conversation, page, request })] }
+
+}
+
+/**
+ * Learn more: the page becomes this tab's tour conversation and the agent takes control. A second Learn more while the
+ * tour runs does nothing new.
+ */
+export function walkthroughSession(model: Model) { return model.tutorialSession ?? model.session }
+function learnMore(model: Model): Update.Return<Model, Message, Factory | Actions> {
+  const conversation = `demo-${walkthroughSession(model)}`
+  const step = TourDecision.startedTour({ tour: model.tour, toured: model.toured === true, tourDismissed: model.tourDismissed === true, autoTour: model.autoTour === true, surface: model.surface, palette: model.palette, docs: model.docs, tourError: model.tourError, conversation: model.conversation, wikiAfter: model.wikiAfter ?? "", wikiStatus: model.wikiStatus ?? "ready", step: model.theatre.step, paused: model.theatre.paused, target: model.theatre.target, epoch: model.epoch, from: model.from, stream: model.stream }, conversation)
+  if (!step.started) return { model }
+  const started = step.state
+  return {
+    model: { ...model, tour: started.tour, toured: started.toured, tourDismissed: started.tourDismissed, autoTour: started.autoTour, surface: started.surface, palette: started.palette, docs: started.docs, tourError: started.tourError, conversation: started.conversation,
+      client: step.resetClient ? Machine.newClient : model.client, wikiAfter: started.wikiAfter, wikiStatus: started.wikiStatus,
+      tourClient: Machine.newClient, theatre: { ...model.theatre, step: started.step, paused: started.paused, target: started.target },
+      epoch: started.epoch, from: started.from, stream: started.stream,
+    },
+    commands: [...(model.palette ? [ClosePalette({ dock: false })] : []), StartTourCommand({ conversation: tourConversation(walkthroughSession(model)) }), PresentTour({ step: 1, sound: model.theatre.sound, active: true, paused: false })],
+  }
+}
+function runTourControl(model: Model, control: TourDecision.TourControl): Update.Return<Model, Message, Factory | Actions> {
+  return control.action === "none" ? { model } : { model, commands: [ControlTourCommand({ conversation: tourConversation(walkthroughSession(model)), action: control.action, step: control.step })] }
+}
+function streamScreen(model: Model): TourDecision.StreamScreen {
+  return { stream: model.stream, connection: model.connection, epoch: model.epoch, from: model.from }
+}
+function touringHere(model: Model): boolean {
+  const conversation = (model.tourClient ?? model.client).conversation
+  return Machine.isTouring(conversation, conversation.replying)
+}
+function endTour(model: Model): Update.Return<Model, Message, Factory | Actions> {
+  const ended = TourDecision.endedTour({ tour: model.tour, tourDismissed: model.tourDismissed === true, surface: model.surface, palette: model.palette, draft: model.draft, docs: model.docs, sandboxPane: model.sandboxPane ?? "closed", issuesOpen: issueStateOf(model).open, slash: actionsOf(model).slash, maximized: actionsOf(model).maximized })
+  return { model: { ...model, tour: ended.tour, tourDismissed: ended.tourDismissed, surface: ended.surface, palette: ended.palette, draft: ended.draft, docs: ended.docs, sandboxPane: ended.sandboxPane, issues: { ...issueStateOf(model), open: ended.issuesOpen }, actions: { ...actionsOf(model), slash: ended.slash, maximized: ended.maximized } }, commands: [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) }), ClosePalette({ dock: true }), PresentTour({ step: model.theatre.step, sound: model.theatre.sound, active: false, paused: false }), FocusComposer({})] }
+}
+function receiveTour(model: Model, event: Machine.Event): Update.Return<Model, Message, Factory | Actions> {
+  const previous = model.tourClient ?? Machine.newClient
+  const tourClient = Machine.receive(previous, event)
+  const state = tourClient.conversation.walkthrough
+  const receipt = TourDecision.tourReceived(tourClient.gap, tourClient.conversation.seq === previous.conversation.seq, model.tourDismissed === true, state !== undefined, Machine.isTour(tourClient.conversation.entries, event.id), event.type)
+  if (receipt.kind === "replay") return { model: { ...model, tourClient: Machine.newClient, epoch: model.epoch + 1 } }
+  if (receipt.kind === "ignore") return { model }
+  let next: Update.Return<Model, Message, Factory | Actions> = { model: { ...model, tourClient } }
+  if (receipt.present && state !== undefined) {
+    const presented: WithCommands<Update.Return<Model, Message, Factory | Actions>> = { model: { ...next.model, tour: true, theatre: { step: state.step, target: TourDecision.tourTarget(state.target, model.theatre.target), paused: state.paused, sound: model.theatre.sound } }, commands: [PresentTour({ step: state.step, sound: model.theatre.sound, active: true, paused: TourDecision.presentedPaused(state.paused, event.type) })] }
+    next = receipt.drive ? driveWalkthrough(presented, state) : presented
+  }
+  if (receipt.end) return endTour(next.model)
+  return next
+}
+
+/** Reapplying the numbered destination is shared by replay and recovery of an unavailable end. */
+function driveWalkthrough(next: WithCommands<Update.Return<Model, Message, Factory | Actions>>, state: Machine.Walkthrough): Update.Return<Model, Message, Factory | Actions> {
+  const model = next.model
+  // Replay invokes exactly the messages attached to the person's controls. No parsed narration directives.
+  const plan = TourDecision.walkthroughPlan(state.step, model.client.conversation.entries.some(entry => entry.clientId === `${walkthroughSession(model)}-walkthrough`))
+  let driven: Model = { ...next.model, palette: false, docs: "pane", surface: plan.surface, issues: { ...issueStateOf(model), open: false }, sandboxPane: "closed", actions: { ...actionsOf(model), slash: false, open: false, maximized: false } }
+  const commands = plan.keepsCommands ? [...next.commands] : []
+  const send = (message: Message) => { const result = update(driven, message); driven = result.model; commands.push(...result.commands) }
+  if (plan.ask) {
+    driven = update(driven, Message.PressedCommandK()).model
+    send(Message.UpdatedDraft({ value: DEMO_QUESTION }))
+    // SubmittedDraft keeps the stable tutorial post identity through the normal Post flow.
+    send(Message.SubmittedDraft())
+  }
+  if (plan.clickIssues) send(Message.ClickedIssues())
+  if (plan.list) driven = { ...driven, issues: { ...issueStateOf(driven), screen: "list", kind: "All" } }
+  if (plan.vips) send(Message.IssueUi({ action: "kind", value: "VIPs" }))
+  if (plan.card !== 0) send(Message.OpenIssueCard({ number: plan.card }))
+  if (plan.wiki) { send(Message.ClickedWiki({ page: "index" })); driven = { ...driven, docs: "max" } }
+  if (plan.slash) { send(Message.UpdatedDraft({ value: "/" })); commands.push(FocusComposer({})) }
+  if (plan.sandbox) { send(Message.ClickedSandboxes()); send(Message.MaximizedSandboxes()) }
+  if (plan.finish) { driven = { ...driven, tour: false, draft: "" }; commands.push(PresentTour({ step: 10, sound: model.theatre.sound, active: false, paused: false, finish: true }), FocusComposer({})) }
+  return { model: driven, commands }
+}
+function recoverEndTour(model: Model): Update.Return<Model, Message, Factory | Actions> {
+  const active = touringHere(model)
+  const state = model.tourClient?.conversation.walkthrough
+  const next: Update.Return<Model, Message, Factory | Actions> = { model: { ...model, ...failedScreenEnd(model, active), tourDismissed: !active } }
+  if (!active || state === undefined || state.step > WALKTHROUGH.length) return next
+  const theatre = { ...model.theatre, step: state.step, target: state.target || WALKTHROUGH[state.step - 1]!.target, paused: state.paused }
+  return driveWalkthrough({ model: { ...next.model, theatre }, commands: [PresentTour({ step: state.step, sound: theatre.sound, active: true, paused: state.paused })] }, state)
+}
+
+function openPalette(model: Model, open: boolean): Update.Return<Model, Message, Factory | Actions> {
+  const next = paletteChange(open)
+  return { model: { ...model, ...setScreenPalette(model, next.palette) }, commands: [next.focus === "palette" ? ShowPalette({}) : ClosePalette({ dock: false })] }
+}
+
+/** Shrink the maximized splash back into the chat's first pane and focus the composer; otherwise nothing changes. */
+function minimizeSplash(model: Model): Update.Return<Model, Message, Factory | Actions> {
+  if (!canMinimize(model.surface, model.client.conversation.entries.length, model.client.pending.length, model.client.conversation.pane)) return { model }
+  return { model: { ...model, ...minimizeScreen(model, model.client.conversation.entries.length, model.client.pending.length, model.client.conversation.pane) }, commands: [FocusComposer({})] }
 }
 
 /** Whether there is a conversation to go back to. */
 export function hasConversation(model: Model): boolean {
-  return model.client.conversation.entries.length > 0 || model.client.pending.length > 0
+  return hasContent(model.client.conversation.entries.length, model.client.pending.length, model.client.conversation.pane)
 }
 
-function submit(model: Model): Update.Return<Model, Message, Factory> {
+/** ⌘K's /mock and /live load the page in that mode, the way the nav's switch does (startup.vibe saves it). */
+function switchMode(model: Model, to: string): Update.Return<Model, Message, Factory | Actions> {
+  if (!UpdateDecision.switchesMode(to)) return { model }
+  return { model: { ...model, draft: "", palette: false, actions: { ...actionsOf(model), slash: false } }, commands: [SwitchMode({ to })] }
+}
+
+function submit(model: Model): Update.Return<Model, Message, Factory | Actions> {
   const text = model.draft.trim()
-  if (text === "") return { model }
-  const clientId = `${model.session}-${model.sent + 1}`
+  const selected = completions(model)[actionsOf(model).highlight]
+  const kind = UpdateDecision.submitKind({ mode: text === "/mock" || text === "/live", sandbox: text === "/sandbox", slashed: text.startsWith("/"), selected: selected !== undefined, empty: text === "" })
+  if (kind === "mode") return switchMode(model, text.slice(1))
+  if (kind === "sandbox") {
+    const next = sandboxAction({ ...model, surface: "chat", palette: false, draft: "", sandboxPane: "pane" }, "start")
+    return { ...next, commands: [...(next.commands ?? []), ClosePalette({ dock: true })] }
+  }
+  if (kind === "ignore") return { model }
+  if (kind === "slash") return launchAction(model, selected!.name, "slash")
+  const demonstration = UpdateDecision.demonstrates(model.tour, model.theatre.step, text === DEMO_QUESTION)
+  const clientId = demonstration ? `${walkthroughSession(model)}-walkthrough` : `${model.session}-${model.sent + 1}`
   return {
     model: {
       ...model,
       surface: "chat",
+      ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }),
       palette: false,
       draft: "",
-      sent: model.sent + 1,
+      sent: UpdateDecision.sentAfter(demonstration, model.sent),
       client: Machine.post(model.client, clientId, text),
       // Sending shows the new post and its answer, wherever the reader had scrolled.
       following: true,
-      stream: model.stream === "closed" ? "open" : model.stream,
-      connection: model.stream === "closed" ? "Connecting" : model.connection,
     },
     commands: [PostMessage({ conversation: model.conversation, clientId, name: model.name, text }), ClosePalette({ dock: true })],
   }
 }
 
+/** Dispatch never awaits the job. Follow subscriptions settle the shared run card and trace. */
+function launchAction(model: Model, name: string, door: "button" | "slash"): Update.Return<Model, Message, Factory | Actions> {
+  const actions = actionsOf(model)
+  const launch = UpdateDecision.launchKind(actions.starting, actions.commands.some((entry) => entry.name === name), name === "vibelang/Tour", door === "slash")
+  if (launch === "ignore") return { model }
+  if (launch === "tour") return learnMore(model)
+  const text = door === "slash" ? model.draft.trim().split(/\s+/).slice(1).join(" ") : actions.input
+  return {
+    model: { ...model, draft: "", actions: { ...actions, slash: false, starting: true, error: "" } },
+    commands: [RunAction({ name, text, door, ...(actions.epoch === undefined ? {} : { epoch: actions.epoch }), format: actions.commands.find((entry) => entry.name === name)!.input, ...(UpdateDecision.launchRetries(door === "button", actions.run) ? { retry: actions.run } : {}) })],
+  }
+}
+
 // COMMAND
+
+/** A native media observation is presentation state, independent of the durable conversation. */
+export const ObserveMedia = Command.define("ObserveMedia", {
+  args: { kind: Schema.Literals(["image", "video"]), outcome: Schema.Literals(["loaded", "failed"]) },
+  messages: [Message.ObservedMedia],
+  execute: effect ({ kind, outcome }) => {
+    try observeMedia(outcome, kind)
+    return try message(() => Message.ObservedMedia())
+  },
+})
 
 /** A Message from its constructor, in a Command. Constructors validate with Schema, so a bad payload is a defect. */
 effect function message<A>(make: () => A) {
@@ -215,6 +862,8 @@ export const FocusComposer = Command.define("FocusComposer", {
   args: {},
   messages: [Message.FocusedPrompt],
   execute: effect () => {
+    // After the render: minimizing the splash creates the composer this focuses.
+    try Render.afterCommit
     Dom.focus(`#${PROMPT_ID}`, { preventScroll: true }) catch () => undefined
     return try message(() => Message.FocusedPrompt())
   },
@@ -246,12 +895,200 @@ export const PostMessage = Command.define("PostMessage", {
   },
 })
 
+/** Learn more: ask the agent for its tour. */
+export const StartTourCommand = Command.define("StartTour", {
+  args: { conversation: Schema.String },
+  messages: [Message.SucceededTour, Message.FailedTour],
+  execute: effect ({ conversation }) => {
+    const factory = try Factory
+    const started = effect {
+      try factory.tour(conversation)
+      return ""
+    } catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+    return try message(() => started === "" ? Message.SucceededTour() : Message.FailedTour({ reason: started }))
+  },
+})
+
+/**
+ * Escape: end the tour. The page already took control back, so a refusal (it had ended) changes nothing; an end that
+ * never reached the agent gives Esc back.
+ */
+export const EndTourCommand = Command.define("EndTour", {
+  args: { conversation: Schema.String },
+  messages: [Message.FocusedPrompt, Message.FailedEndTour],
+  execute: effect ({ conversation }) => {
+    const factory = try Factory
+    const reached = effect {
+      try factory.endTour(conversation)
+      return true
+    } catch (error) => error._tag === "Refused"
+    return try message(() => reached ? Message.FocusedPrompt() : Message.FailedEndTour())
+  },
+})
+
+/** The editor's starting source: the repository-observed overlay, else the build's embedded copy. */
+function knownWikiSource(model: Model, page: string): string {
+  return model.wikiPages?.find((observed) => observed.id === page)?.source ?? pages.find((entry) => entry.id === page)!.source
+}
+
+/** Minimal failure text; the request and its flow carry the detail. */
+/** Edit by role (0019, 0021): the editor opens on the shown page; a chat draft review opens its page first. */
+function beginWikiEdit(model: Model, draft?: string): Update.Return<Model, Message, Factory> {
+  if (model.wikiEdit?.submission !== undefined) return visitWiki(model, model.wikiEdit.page)
+  const role = accountOf(model).identity.role
+  const page = draft ?? wikiPage(model.client.conversation.pane)?.id
+  if (page === undefined) return { model }
+  if (draft === undefined ? !Machine.wikiPermission(role, "save") && !Machine.wikiPermission(role, "propose") : !Machine.wikiPermission(role, "draft")) return { model }
+  if (!wikiEditable(page)) return { model }
+  const source = knownWikiSource(model, page)
+  const request = (model.wikiEditRequest ?? 0) + 1
+  const editing = { page, base: source, text: source, busy: false, error: "" }
+  if (draft === undefined) return { model: { ...model, wikiEdit: editing, wikiEditRequest: request }, commands: [OpenWikiEditor({ page, request })] }
+  const visit = visitWiki(model, page)
+  return { model: { ...visit.model, wikiEdit: editing, wikiEditRequest: request }, commands: [...visit.commands, OpenWikiEditor({ page, request })] }
+}
+
+/** The editor's fresh read: the repository's current source for the page and the person's stored draft. */
+export const OpenWikiEditor = Command.define("OpenWikiEditor", {
+  args: { page: Schema.String, request: Schema.Number },
+  messages: [Message.BeganWikiEdit, Message.FailedWikiEdit],
+  execute: effect ({ page, request }) => {
+    const factory = try Factory
+    const result = try Effect.result(factory.wiki === undefined ? Effect.fail(new WikiFailure({ reason: "unavailable" })) : factory.wiki.read(page))
+    return try message(() => {
+      if (result._tag === "Failure") return Message.FailedWikiEdit({ request, reason: result.failure.reason })
+      const observed = result.success.pages.find((entry) => entry.id === page)
+      const draft = result.success.draft !== undefined && result.success.draft.page === page ? result.success.draft.text : ""
+      return observed === undefined ? Message.FailedWikiEdit({ request, reason: "missing" }) : Message.BeganWikiEdit({ request, page, source: observed.source, draft })
+    })
+  },
+})
+
+/** The person's own write: a maintainer's save or a contributor's proposal, through the durable flow. */
+export const SubmitWikiEdit = Command.define("SubmitWikiEdit", {
+  args: { request: WikiRequest, serial: Schema.Number }, messages: [Message.CompletedWikiEdit, Message.FailedWikiEdit],
+  execute: effect ({ request, serial }) => {
+    const factory = try Factory
+    const result = try Effect.result(factory.wiki === undefined ? Effect.fail(new WikiFailure({ reason: "unavailable" })) : factory.wiki.act(request))
+    return try message(() => result._tag === "Success"
+      ? Message.CompletedWikiEdit({ request: serial, page: request.page, source: request.base, revision: result.success.pages.find((entry) => entry.id === request.page)?.revision ?? "", review: result.success.review ?? "" })
+      : Message.FailedWikiEdit({ request: serial, reason: result.failure.reason, ...(result.failure.unwritten === undefined ? {} : { unwritten: result.failure.unwritten }) }))
+  },
+})
+
+/** The freshly opened editor takes focus. */
+export const FocusWikiEditor = Command.define("FocusWikiEditor", {
+  args: {}, messages: [Message.FocusedPrompt],
+  execute: effect () => {
+    try Render.afterCommit
+    Dom.focus("#vl-wiki-editor", { preventScroll: true }) catch () => undefined
+    return try message(() => Message.FocusedPrompt())
+  },
+})
+
+export const LoadActions = Command.define("LoadActions", {
+  args: { flow: Schema.String, epoch: Schema.optionalKey(Schema.Number) }, messages: [Message.LoadedActions, Message.FailedActions],
+  execute: effect ({ flow, epoch }) => {
+    const actions = try Actions
+    return (effect {
+      const entries = try actions.list()
+      const commands = try actions.commands()
+      const runs = try actions.runs(flow)
+      return try message(() => Message.LoadedActions({ entries, commands, runs, ...(epoch === undefined ? {} : { epoch }) }))
+    }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code, ...(epoch === undefined ? {} : { epoch }) }))
+  },
+})
+export const RunAction = Command.define("RunAction", {
+  args: { name: Schema.String, text: Schema.String, epoch: Schema.optionalKey(Schema.Number), door: Schema.Literals(["button", "slash"]), retry: Schema.optionalKey(Schema.String), format: Schema.optionalKey(Schema.Literals(["none", "text", "path", "json"])) }, messages: [Message.StartedAction, Message.FailedActions],
+  execute: effect ({ name, text, door, retry, format, epoch }) => {
+    const actions = try Actions
+    return (effect {
+      const input = format === "json" ? (text.trim() === "" ? {} : try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(text), () => new ActionFailure({ code: "input" }))) : { text }
+      const id = try (retry === undefined ? actions.start(name, input, door) : actions.rerun(retry))
+      const run = try actions.read(id)
+      return try message(() => Message.StartedAction({ run, ...(epoch === undefined ? {} : { epoch }) }))
+    }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code, ...(epoch === undefined ? {} : { epoch }) }))
+  },
+})
+export const ReadAction = Command.define("ReadAction", {
+  args: { id: Schema.String }, messages: [Message.ChangedAction, Message.FailedActions],
+  execute: effect ({ id }) => {
+    const actions = try Actions
+    return (effect { const run = try actions.read(id); return try message(() => Message.ChangedAction({ run })) }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code }))
+  },
+})
+export const CancelAction = Command.define("CancelAction", {
+  args: { id: Schema.String }, messages: [Message.ChangedAction, Message.FailedActions],
+  execute: effect ({ id }) => {
+    const actions = try Actions
+    return (effect {
+      try actions.cancel(id)
+      const run = try actions.read(id)
+      return try message(() => Message.ChangedAction({ run }))
+    }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code }))
+  },
+})
+
+export const OpenWikiCommand = Command.define("OpenWiki", {
+  args: { conversation: Schema.String, page: Schema.String, request: Schema.Number },
+  messages: [Message.SucceededWiki, Message.FailedWiki],
+  execute: effect ({ conversation, page, request }) => {
+    const factory = try Factory
+    const opened = effect { try factory.openWiki(conversation, page); return true } catch () => false
+    return try message(() => opened ? Message.SucceededWiki() : Message.FailedWiki({ request }))
+  },
+})
+
+/** Resizing puts the inline pane back above the composer without changing its address or explicitly resetting content scroll. */
+export const RevealWiki = Command.define("RevealWiki", {
+  args: {}, messages: [Message.FocusedPrompt],
+  execute: effect () => {
+    provide ExperimentalBrowserDocument.layer {
+      try Render.afterCommit
+      const document = try (try Experimental.Document.Document).current
+      try orDie(Effect.try(() => {
+        const pane = document.getElementById("vl-wiki")
+        if (pane?.getAttribute("data-maximized") === "false") pane.scrollIntoView({ block: "end" })
+      }))
+      return try message(() => Message.FocusedPrompt())
+    }
+  },
+})
+
+/** Keep shareable links and back/forward on the same flow, then reveal the heading or ruling within the pane. */
+export const WikiLocation = Command.define("WikiLocation", {
+  args: { url: Schema.String }, messages: [Message.FocusedPrompt],
+  execute: effect ({ url }) => {
+    provide ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer {
+      const window = try (try Experimental.Window.Window).current
+      const document = try (try Experimental.Document.Document).current
+      try orDie(Effect.try(() => {
+        if (window.location.pathname + window.location.hash !== url) {
+          const [pathname, hash] = url.split("#")
+          window.history.pushState(null, "", `${pathname}${window.location.search}${hash ? `#${hash}` : ""}`)
+        }
+      }))
+      try Render.afterCommit
+      const hash = url.split("#")[1]
+      try orDie(Effect.try(() => {
+        const content = document.querySelector<HTMLElement>(".vl-wiki-content")
+        if (hash) document.getElementById(hash)?.scrollIntoView({ block: "start" })
+        else if (content) content.scrollTop = 0
+        const pane = document.getElementById("vl-wiki")
+        if (pane?.getAttribute("data-maximized") === "false") pane.scrollIntoView({ block: "end" })
+      }))
+      return try message(() => Message.FocusedPrompt())
+    }
+  },
+})
+
 // SUBSCRIPTION
 
 /** The key a keydown means to the app, if any: ⌘K or Ctrl+K toggles the prompt, Escape closes it. */
 export function keyMessage(key: string, meta: boolean, control: boolean): Option.Option<Message> {
-  if ((meta || control) && key.toLowerCase() === "k") return Option.some(Message.PressedCommandK())
-  if (key === "Escape") return Option.some(Message.PressedEscape())
+  const action = screenKey(key.toLowerCase(), key === "Escape", meta, control)
+  if (action === "palette") return Option.some(Message.PressedCommandK())
+  if (action === "escape") return Option.some(Message.PressedEscape())
   return Option.none()
 }
 
@@ -260,14 +1097,54 @@ export function subscriptions(keys: EventTarget, page?: Document) {
   const viewport = transcriptViewport(page)
   const scrolled = (value: { bottom: boolean; intent: number } | undefined) =>
     value ? Option.some(Message.ScrolledTranscript(value)) : Option.none()
-  return Subscription.make<Model, Message, Factory>()((entry) => ({
+  return Subscription.make<Model, Message, Factory | Actions>()((entry) => ({
+    actionTime: entry({ active: Schema.Boolean }, {
+      modelToDependencies: (model: Model) => ({ active: actionsOf(model).runs.some((run) => run.state === "queued" || run.state === "running") }),
+      dependenciesToStream: ({ active }) => active ? Stream.tick("1 second").pipe(Stream.mapEffect(effect () => { const at = try Clock.currentTimeMillis; return try message(() => Message.TickedActions({ at })) })) : Stream.empty,
+    }),
+    actionRuns: entry({ ids: Schema.Array(Schema.String) }, {
+      modelToDependencies: (model: Model) => ({ ids: actionsOf(model).runs.filter((run) => run.state === "queued" || run.state === "running").map((run) => run.id) }),
+      dependenciesToStream: ({ ids }) => ids.length === 0 ? Stream.empty : Stream.unwrap(effect {
+        const actions = try Actions
+        return Stream.mergeAll(ids.map((id) => actions.follow(id).pipe(Stream.map((run) => Message.ChangedAction({ run })), Stream.catch(() => Stream.empty))), { concurrency: "unbounded" })
+      }),
+    }),
+    wikiLinks: Subscription.persistentEntry(Dom.streamFromEventFilterMapPreventDefault({
+      target: keys, type: "click",
+      filterMapEvent: (event: Event) => {
+        const mouse = event as MouseEvent
+        if (mouse.button !== 0 || mouse.metaKey || mouse.ctrlKey || mouse.shiftKey || mouse.altKey) return Option.none()
+        const element = event.target as Element | null
+        const link = element?.closest?.(".vl-wiki-content a")
+        const href = link?.getAttribute("href")
+        return href?.startsWith("/wiki/") ? Option.some(Message.ClickedWiki({ page: href })) : Option.none()
+      },
+    })),
+    wikiDraftLinks: Subscription.persistentEntry(Dom.streamFromEventFilterMapPreventDefault({
+      target: keys, type: "click",
+      filterMapEvent: (event: Event) => {
+        const mouse = event as MouseEvent
+        if (mouse.button !== 0 || mouse.metaKey || mouse.ctrlKey || mouse.shiftKey || mouse.altKey) return Option.none()
+        const link = (event.target as Element | null)?.closest?.(".sui-chat-bubble a")
+        const href = link?.getAttribute("href")
+        const page = href?.startsWith("#wiki-draft-") ? href.slice("#wiki-draft-".length) : undefined
+        return page !== undefined && wikiPage(`/wiki/${page}`) !== undefined ? Option.some(Message.ClickedWikiDraft({ page })) : Option.none()
+      },
+    })),
+    wikiHistory: Subscription.persistentEntry(Dom.streamFromEventFilterMap({
+      target: page?.defaultView ?? keys, type: "popstate",
+      filterMapEvent: () => {
+        const location = page?.defaultView?.location
+        return location && (location.pathname.startsWith("/wiki/") || location.pathname === "/") ? Option.some(Message.WikiLocationChanged({ page: location.pathname + location.hash })) : Option.none()
+      },
+    })),
     keyboard: Subscription.persistentEntry(
       Dom.streamFromEventFilterMapPreventDefault({
         target: keys,
         type: "keydown",
         filterMapEvent: (event: Event) => {
           const keyboard = event as KeyboardEvent
-          return keyMessage(keyboard.key, keyboard.metaKey, keyboard.ctrlKey)
+          return keyboard.defaultPrevented ? Option.none() : keyMessage(keyboard.key, keyboard.metaKey, keyboard.ctrlKey)
         },
       }),
     ),
@@ -316,7 +1193,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
       { active: Schema.Boolean, intent: Schema.Number, seq: Schema.Number, sent: Schema.Number, stream: Schema.String },
       {
         modelToDependencies: (model: Model) => ({
-          active: model.surface === "chat" && model.following && !model.palette,
+          active: follows(model.surface, model.following, model.palette),
           intent: model.followIntent,
           seq: model.client.conversation.seq,
           sent: model.sent,
@@ -331,6 +1208,80 @@ export function subscriptions(keys: EventTarget, page?: Document) {
         ),
       },
     ),
+    // Read every second only while a sandbox runs or its pane is open; otherwise once per finished post or reply, so an
+    // idle chat sends no request each second and a sandbox the agent starts is still seen.
+    sandbox: entry(
+      { conversation: Schema.String, request: Schema.Number, active: Schema.Boolean, live: Schema.Boolean, finished: Schema.Number },
+      {
+        modelToDependencies: (model: Model) => ({
+          conversation: model.conversation,
+          request: model.sandboxRequest ?? 0,
+          active: model.surface === "chat" && !model.sandboxBusy,
+          live: model.sandbox?.status === "running" || (model.sandboxPane !== undefined && model.sandboxPane !== "closed"),
+          finished: model.client.conversation.entries.filter((entry) => entry.done).length,
+        }),
+        dependenciesToStream: ({ conversation, request, active, live }) => {
+          const read = Stream.fromEffect(effect {
+            const factory = try Factory
+            return effect {
+              const snapshot = try factory.sandbox(conversation)
+              return try message(() => Message.LoadedSandbox({ conversation, request, snapshot }))
+            } catch effect (e) => { return try message(() => Message.FailedSandbox({ conversation, request, reason: e._tag === "Refused" ? e.refusal : e.reason })) }
+          })
+          return Stream.when(live ? read.pipe(Stream.repeat(Schedule.spaced("1 second"))) : read, sync(() => active))
+        },
+      },
+    ),
+    issueCount: entry(
+      { active: Schema.Boolean },
+      {
+        modelToDependencies: (model: Model) => ({ active: model.mode !== "pending" && model.surface === "chat" && model.issues === undefined }),
+        dependenciesToStream: ({ active }) => active ? Stream.fromEffect(effect {
+          const api = (try Factory).issues
+          const result = try Effect.result(api === undefined ? Effect.fail(new IssueFailure({ reason: "unavailable" })) : api.read())
+          return try message(() => result._tag === "Success" ? Message.IssueProjectionLoaded({ data: result.success }) : Message.IssueDialogFocused())
+        }) : Stream.empty,
+      },
+    ),
+    roles: entry(
+      { person: Schema.String, epoch: Schema.Number, from: Schema.Number },
+      {
+        modelToDependencies: (model: Model) => ({ person: accountOf(model).identity.id, epoch: accountOf(model).epoch, from: accountOf(model).from }),
+        dependenciesToStream: ({ person, from }) => person === "" ? Stream.empty : Stream.unwrap(effect {
+          const factory = try Factory
+          if (factory.accounts === undefined) return Stream.empty
+          return factory.accounts.events(from).pipe(
+            Stream.map(event => Message.ReceivedRole({ event })),
+            Stream.concat(Stream.fromEffect(message(() => Message.FailedRoles()))),
+            Stream.catch(() => Stream.succeed(Message.FailedRoles())),
+          )
+        }),
+      },
+    ),
+    autoTour: entry({ active: Schema.Boolean }, {
+      modelToDependencies: (model: Model) => ({ active: model.autoTour === true }),
+      dependenciesToStream: ({ active }) => active ? Stream.fromEffect(effect { try sleep("1200 millis"); return try message(() => Message.AutoTour()) }) : Stream.empty,
+    }),
+    tourEvents: entry({ active: Schema.Boolean, session: Schema.String, epoch: Schema.Number }, {
+      modelToDependencies: (model: Model) => ({ active: model.tourClient !== undefined, session: walkthroughSession(model), epoch: model.epoch }),
+      dependenciesToStream: ({ active, session }) => !active ? Stream.empty : Stream.unwrap(effect {
+        const factory = try Factory
+        return factory.events(tourConversation(session), 0).pipe(Stream.map(event => Message.ReceivedTourEvent({ event })), Stream.catch(() => Stream.succeed(Message.FailedTourEvents())))
+      }),
+    }),
+    theatreKeys: entry({ active: Schema.Boolean }, {
+      modelToDependencies: (model: Model) => ({ active: model.tour }),
+      dependenciesToStream: ({ active }) => !active ? Stream.empty : Dom.streamFromEventFilterMapPreventDefault({ target: keys, type: "keydown", options: { capture: true }, filterMapEvent: event => {
+        const key = (event as KeyboardEvent).key
+        if ((event as KeyboardEvent).metaKey || (event as KeyboardEvent).ctrlKey) return key.toLowerCase() === "k" ? Option.some(Message.FocusedPrompt()) : Option.none()
+        return key === "Tab" ? Option.some(Message.MovedTourFocus({ backward: (event as KeyboardEvent).shiftKey })) : key === " " ? Option.some(Message.ClickedPauseTour()) : key === "ArrowLeft" ? Option.some(Message.ClickedBackStop()) : key === "ArrowRight" ? Option.some(Message.ClickedSkipStop()) : Option.none()
+      } }),
+    }),
+    theatreWindow: Subscription.persistentEntry(Stream.merge(
+      Dom.streamFromEventFilterMap({ target: page?.defaultView ?? keys, type: "resize", filterMapEvent: () => Option.some(Message.RemeasureTheatre()) }),
+      Dom.streamFromEventFilterMap({ target: page?.defaultView ?? keys, type: "orientationchange", filterMapEvent: () => Option.some(Message.RemeasureTheatre()) }),
+    )),
+    theatreResize: Subscription.persistentEntry(Dom.streamFromEventFilterMap({ target: keys, type: "scroll", options: { capture: true }, filterMapEvent: () => Option.some(Message.RemeasureTheatre()) })),
     events: entry(
       { conversation: Schema.String, epoch: Schema.Number, from: Schema.Number, open: Schema.Boolean },
       {
@@ -348,9 +1299,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
               return factory.events(conversation, from).pipe(
                 Stream.map((event) => Message.ReceivedEvent({ event })),
                 Stream.concat(Stream.make(ended)),
-                Stream.catchTag("Unavailable", (error) =>
-                  Stream.fromEffect(message(() => Message.FailedEvents({ reason: error.reason })))
-                ),
+                Stream.catchTag("Unavailable", (error) => Stream.make(Message.FailedEvents({ reason: error.reason }))),
               )
             }),
             sync(() => open),
@@ -366,5 +1315,220 @@ export function subscriptions(keys: EventTarget, page?: Document) {
  * Moving between the splash and the chat morphs the splash into its pane and the prompt into the composer. Nothing
  * else animates: the ⌘K prompt opens at once, and a view transition would swallow clicks while it runs.
  */
-export const viewTransition: Runtime.ViewTransitionConfig<Model, Message> = ({ previousModel, model }) =>
-  previousModel.surface === model.surface ? false : { types: [model.surface === "chat" ? "to-chat" : "to-splash"] }
+export const viewTransition: Runtime.ViewTransitionConfig<Model, Message> = ({ previousModel, model }) => {
+  if (!!previousModel.issues?.open !== !!model.issues?.open) return { types: [model.issues?.open ? "to-issues" : "from-issues"] }
+  const transition = surfaceTransition(previousModel.surface, model.surface)
+  return transition === "none" ? false : { types: [transition] }
+}
+
+function sandboxAction(model: Model, kind: "start" | "stop" | "command"): Update.Return<Model, Message, Factory> {
+  if (!canSandboxAction(model.sandboxBusy ?? false, kind, model.terminalDraft ?? "")) return { model }
+  const step = PaneDecision.startSandboxAction(sandboxScreen(model), kind, model.sandbox?.generation ?? 0)
+  const { pane, operation, busy, error, request, draft, ...screen } = step.state
+  return { model: { ...model, ...screen, sandboxPane: pane, sandboxOperation: operation, sandboxBusy: busy, sandboxError: error, sandboxRequest: request, terminalDraft: draft }, commands: step.commands.map((command) => SandboxAction({ conversation: model.conversation, operationId: `${model.session}/sandbox/${command.request}`, request: command.request, kind: command.kind, generation: command.generation, command: command.command })) }
+}
+
+function sandboxScreen(model: Model): PaneDecision.SandboxScreen {
+  return { surface: model.surface, palette: model.palette, docs: model.docs, pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "", request: model.sandboxRequest ?? 0, draft: model.terminalDraft ?? "" }
+}
+
+function sandboxResult(model: Model): PaneDecision.SandboxResult {
+  return { pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "" }
+}
+
+function wikiEditScreen(editing: NonNullable<Model["wikiEdit"]>): PaneDecision.WikiEditScreen {
+  const { page, base, text, busy, error } = editing
+  return { page, base, text, busy, error }
+}
+
+function minuteNotice(notice: PaneDecision.SandboxNotice, id: string, remaining: number, kept: string): string {
+  switch (notice) {
+    case "out": return `Out of minutes — ${id} stopped`
+    case "low": return `${remaining} minutes left`
+    case "clear": return ""
+    case "keep": return kept
+  }
+}
+export const SandboxAction = Command.define("SandboxAction", {
+  args: { conversation: Schema.String, operationId: Schema.String, request: Schema.Number, kind: Schema.Literals(["start", "stop", "command"]), generation: Schema.Number, command: Schema.String },
+  messages: [Message.LoadedSandbox, Message.FailedSandbox],
+  execute: effect ({ conversation, operationId, request, kind, generation, command }) => {
+    const factory = try Factory
+    return effect {
+      if (kind === "start") { const snapshot = try factory.startSandbox(conversation, operationId); return try message(() => Message.LoadedSandbox({ conversation, request, snapshot })) }
+      if (kind === "stop") { const snapshot = try factory.stopSandbox(conversation, operationId, generation); return try message(() => Message.LoadedSandbox({ conversation, request, snapshot })) }
+      try factory.sandboxCommand(conversation, operationId, command, generation)
+      const snapshot = try factory.sandbox(conversation)
+      return try message(() => Message.LoadedSandbox({ conversation, request, snapshot }))
+    } catch effect (e) => { return try message(() => Message.FailedSandbox({ conversation, request, reason: e._tag === "Refused" ? e.refusal : e.reason })) }
+  },
+})
+
+export function roleLabel(role: Machine.Role): string { return role.slice(0, 1).toUpperCase() + role.slice(1) }
+
+export const LoadAccount = Command.define("LoadAccount", { args: {}, messages: [Message.AccountLoaded, Message.AccountFailed], execute: effect () => {
+  const factory = try Factory
+  const identity = factory.accounts === undefined ? viewer : (factory.accounts.current() catch () => undefined)
+  return try message(() => identity === undefined ? Message.AccountFailed() : Message.AccountLoaded({ identity }))
+} })
+export const ChooseIdentity = Command.define("ChooseIdentity", {
+  args: { role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]) },
+  messages: [Message.AccountLoaded, Message.AccountFailed], execute: effect ({ role }) => {
+    const factory = try Factory
+    const identity = factory.accounts === undefined ? viewer : (factory.accounts.choose(role) catch () => undefined)
+    return try message(() => identity === undefined ? Message.AccountFailed() : Message.AccountLoaded({ identity }))
+  },
+})
+export const SwitchMode = Command.define("SwitchMode", {
+  args: { to: Schema.Literals(["mock", "live"]) }, messages: [Message.FocusedPrompt], execute: effect ({ to }) => {
+    try Navigation.load(`?agent=${to}`)
+    return try message(() => Message.FocusedPrompt())
+  },
+})
+export const SignInAccount = Command.define("SignInAccount", {
+  args: { mock: Schema.Boolean }, messages: [Message.AccountLoaded, Message.AccountFailed, Message.FocusedPrompt], execute: effect ({ mock }) => {
+    if (!mock) { try Navigation.load("/api/auth/sign-in"); return try message(() => Message.FocusedPrompt()) }
+    const factory = try Factory
+    const identity = factory.accounts === undefined ? viewer : (factory.accounts.choose("new") catch () => undefined)
+    return try message(() => identity === undefined ? Message.AccountFailed() : Message.AccountLoaded({ identity }))
+  },
+})
+export const SignOutAccount = Command.define("SignOutAccount", { args: {}, messages: [Message.AccountLoaded, Message.AccountFailed], execute: effect () => {
+  const factory = try Factory
+  if (factory.accounts !== undefined) {
+    const failed = factory.accounts.signOut().pipe(Effect.as(false)) catch () => true
+    if (failed) return try message(() => Message.AccountFailed())
+  }
+  return try message(() => Message.AccountLoaded({ identity: viewer }))
+} })
+export const LoadPeople = Command.define("LoadPeople", { args: {}, messages: [Message.LoadedPeople, Message.AccountFailed], execute: effect () => {
+  const factory = try Factory
+  const members = factory.accounts === undefined ? [] : (factory.accounts.members() catch () => undefined)
+  return try message(() => members === undefined ? Message.AccountFailed() : Message.LoadedPeople({ members: Array.from(members) }))
+} })
+export const GrantRole = Command.define("GrantRole", {
+  args: { id: Schema.String, role: Schema.Literals(["new", "community", "contributor", "maintainer"]) },
+  messages: [Message.GrantedRole, Message.AccountFailed], execute: effect ({ id, role }) => {
+    const factory = try Factory
+    const failed = factory.accounts === undefined ? true : (factory.accounts.grant(id, role).pipe(Effect.as(false)) catch () => true)
+    return try message(() => failed ? Message.AccountFailed() : Message.GrantedRole())
+  },
+})
+export const ShowRoleDialog = Command.define("ShowRoleDialog", { args: {}, messages: [Message.FocusedPrompt], execute: effect () => {
+  try Render.afterCommit
+  Dom.showDialog("#vl-role-dialog", { isModal: true, focusSelector: "#vl-role-cancel" }) catch () => false
+  return try message(() => Message.FocusedPrompt())
+} })
+export const CloseRoleDialog = Command.define("CloseRoleDialog", { args: {}, messages: [Message.FocusedPrompt], execute: effect () => {
+  try Render.afterCommit
+  Dom.closeDialog("#vl-role-dialog") catch () => false
+  return try message(() => Message.FocusedPrompt())
+} })
+
+export const FocusAccountMenu = Command.define("FocusAccountMenu", { args: { open: Schema.Boolean }, messages: [Message.FocusedPrompt], execute: effect ({ open }) => {
+  try Render.afterCommit
+  Dom.focus(open ? "#vl-account-people" : "#vl-account", { preventScroll: true }) catch () => undefined
+  return try message(() => Message.FocusedPrompt())
+} })
+
+
+export const LoadIssues = Command.define("LoadIssues", {
+  args: { resumeRecovery: Schema.optionalKey(Schema.String), resumeOp: Schema.optionalKey(Schema.String), resumeKey: Schema.optionalKey(Schema.String) }, messages: [Message.IssuesLoaded, Message.IssuesFailed],
+  execute: effect ({ resumeRecovery, resumeOp, resumeKey }) => {
+    const factory = try Factory
+    const result = try Effect.result(effect {
+      if (factory.issues === undefined) throw new IssueFailure({ reason: "unavailable" })
+      return resumeOp === undefined || resumeKey === undefined ? try factory.issues.read() : try factory.issues.act({ op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: `resume-${try Clock.currentTimeMillis}`, resumeOp, resumeKey, ...(resumeRecovery === undefined ? {} : { resumeRecovery }) })
+    })
+    if (factory.mode === "live" && result._tag === "Success" && result.success.saved?.status === "completed") try Navigation.replaceUrl("/?issues=1")
+    return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: false, role: result._tag === "Success" && result.success.role !== undefined ? result.success.role : factory.mode === "mock" ? "maintainer" : "viewer" }) : Message.IssuesFailed({ reason: result.failure.reason }))
+  },
+})
+export const ActOnIssue = Command.define("ActOnIssue", {
+  args: { request: IssueRequest }, messages: [Message.IssuesLoaded, Message.IssuesFailed],
+  execute: effect ({ request }) => {
+    const factory = try Factory
+    if (factory.mode === "live" && request.op !== "read" && request.op !== "draft") try Navigation.replaceUrl(`/?issues=1&resume-op=${request.op}&resume-key=${request.key}` + (request.recovery === undefined ? "" : `&resume-recovery=${request.recovery}`))
+    const result = try Effect.result(effect {
+      if (factory.issues === undefined) throw new IssueFailure({ reason: "unavailable" })
+      return try factory.issues.act(request)
+    })
+    if (factory.mode === "live" && request.op !== "read" && request.op !== "draft" && (result._tag === "Success" || result.failure.unwritten === true)) try Navigation.replaceUrl("/?issues=1")
+    return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: ["new", "split", "propose"].includes(request.op), op: request.op, key: request.key, role: result._tag === "Success" && result.success.role !== undefined ? result.success.role : factory.mode === "mock" ? "maintainer" : "viewer" }) : Message.IssuesFailed({ reason: result.failure.reason, op: request.op, key: request.key, ...(result.failure.unwritten === undefined ? {} : { unwritten: result.failure.unwritten }) }))
+  },
+})
+export const ShowIssueDialog = Command.define("ShowIssueDialog", {
+  args: {}, messages: [Message.IssueDialogFocused],
+  execute: effect () => {
+    try Render.afterCommit
+    Dom.showDialog("#ix-dialog", { isModal: true }) catch () => false
+    return try message(() => Message.IssueDialogFocused())
+  },
+})
+export const CloseIssueDialog = Command.define("CloseIssueDialog", {
+  args: {}, messages: [Message.IssueDialogFocused],
+  execute: effect () => {
+    Dom.closeDialog("#ix-dialog") catch () => false
+    Dom.focus("#ix-commit") catch () => undefined
+    return try message(() => Message.IssueDialogFocused())
+  },
+})
+
+export const FocusIssueControl = Command.define("FocusIssueControl", {
+  args: { id: Schema.String }, messages: [Message.IssueDialogFocused],
+  execute: effect ({ id }) => {
+    try Render.afterCommit
+    try Dom.focus("#" + id).pipe(Effect.ignore)
+    return try message(() => Message.IssueDialogFocused())
+  },
+})
+
+export const LoadIssueDetails = Command.define("LoadIssueDetails", {
+  args: { number: Schema.Number, key: Schema.String }, messages: [Message.IssueDetailsLoaded, Message.IssueDetailsFailed],
+  execute: effect ({ number, key }) => {
+    const api = (try Factory).issues
+    const result = try Effect.result(api === undefined ? Effect.fail(new IssueFailure({ reason: "unavailable" })) : api.act({ op: "read", number, key, parent: 0, title: "", text: "", assignee: "", example: "", prior: "" }))
+    return try message(() => result._tag === "Success" ? Message.IssueDetailsLoaded({ number, data: result.success }) : Message.IssueDetailsFailed({ number }))
+  },
+})
+
+export const RefreshIssueProjection = Command.define("RefreshIssueProjection", {
+  args: {}, messages: [Message.IssueProjectionLoaded, Message.IssueDialogFocused],
+  execute: effect () => {
+    const api = (try Factory).issues
+    if (api === undefined) return try message(() => Message.IssueDialogFocused())
+    const result = try Effect.result(api.read())
+    return try message(() => result._tag === "Success" ? Message.IssueProjectionLoaded({ data: result.success }) : Message.IssueDialogFocused())
+  },
+})
+
+export const ControlTourCommand = Command.define("ControlTour", {
+  args: { conversation: Schema.String, action: Schema.Literals(["pause", "resume", "seek"]), step: Schema.Number }, messages: [Message.FocusedPrompt, Message.FailedTourEvents],
+  execute: effect ({ conversation, action, step }) => {
+    const factory = try Factory
+    const ok = effect { if (factory.controlTour) try factory.controlTour(conversation, action, step); return factory.controlTour !== undefined } catch () => false
+    return try message(() => ok ? Message.FocusedPrompt() : Message.FailedTourEvents())
+  },
+})
+export const PresentTour = Command.define("PresentTour", {
+  args: { step: Schema.Number, sound: Schema.Boolean, active: Schema.Boolean, paused: Schema.Boolean, finish: Schema.optionalKey(Schema.Boolean) }, messages: [Message.FocusedPrompt],
+  execute: effect (args) => {
+    provide presentation { try (try TourPresentation).present(args) }
+    return try message(() => Message.FocusedPrompt())
+  },
+})
+export const MeasureTheatre = Command.define("MeasureTheatre", {
+  args: { target: Schema.String }, messages: [Message.MeasuredTheatre],
+  execute: effect ({ target }) => {
+    try Render.afterCommit
+    provide presentation { const box = try (try TourPresentation).measure(target); return try message(() => Message.MeasuredTheatre(box)) }
+  },
+})
+
+export const FocusTourControl = Command.define("FocusTourControl", {
+  args: { backward: Schema.Boolean }, messages: [Message.FocusedPrompt],
+  execute: effect ({ backward }) => {
+    provide presentation { try (try TourPresentation).focus(backward) }
+    return try message(() => Message.FocusedPrompt())
+  },
+})

@@ -53,7 +53,7 @@ const Uninspectable = Symbol("@smthrs/database/internal/WriteRetry/Uninspectable
 // Driver errors sometimes inherit their fields, so reads stay inheritance-aware
 // rather than requiring own data properties. Each read is isolated so a hostile
 // accessor or Proxy is treated as uninspectable instead of escaping as a defect.
-const readProperty = (value: object, property: "cause" | "code" | "message" | "_tag"): unknown => {
+const readProperty = (value: object, property: "cause" | "code" | "message" | "_tag" | "errcode"): unknown => {
   try {
     return (value as Record<typeof property, unknown>)[property]
   } catch {
@@ -69,10 +69,18 @@ const sqlErrorOf = (value: unknown): SqlError.SqlError | undefined => {
   }
 }
 
-const causeCode = (cause: object): string | undefined | typeof Uninspectable =>
-  ((code) => code === Uninspectable || typeof code === "string" ? code : undefined)(
-    readProperty(cause, "code")
-  )
+const causeCode = (cause: object): string | undefined | typeof Uninspectable => {
+  const code = readProperty(cause, "code")
+  if (code === Uninspectable) return Uninspectable
+  if (code !== "ERR_SQLITE_ERROR") return typeof code === "string" ? code : undefined
+  // node:sqlite carries the primary SQLite result in the low byte of its numeric extended errcode.
+  const sqliteCode = readProperty(cause, "errcode")
+  if (sqliteCode === Uninspectable) return Uninspectable
+  return typeof sqliteCode === "number" && Number.isInteger(sqliteCode) && sqliteCode >= 0 && sqliteCode <= 0xffff &&
+      (sqliteCode & 0xff) === 19
+    ? "SQLITE_CONSTRAINT"
+    : code
+}
 
 /**
  * Postgres SQLSTATEs a write may legitimately be replayed on:
@@ -170,6 +178,13 @@ export const isSchemaCause = (cause: unknown): boolean =>
       message.includes("no such table") || message.includes("no such column")
   )
 
+// Cloudflare's SQLite storage supplies canonical diagnostics without an extended code.
+// Match the diagnostic prefix, never an arbitrary mention of a constraint in user/driver text.
+const isConstraintCause = (cause: unknown): boolean =>
+  hasCause(cause, (code, message) =>
+    code?.startsWith("SQLITE_CONSTRAINT") === true ||
+    (code === undefined && /^(?:unique|not null|check|foreign key) constraint failed(?::|$)/.test(message)))
+
 /**
  * The stable category a structured SQL failure normalizes to.
  *
@@ -200,7 +215,8 @@ export type SqlFailureCode = Exclude<DurableWriter.DatabaseErrorCode, "unsupport
 export const classifySqlError = (error: SqlError.SqlError): SqlFailureCode =>
   error.reason._tag === "LockTimeoutError"
     ? "busy"
-    : error.reason._tag === "ConstraintError" || error.reason._tag === "UniqueViolation"
+    : error.reason._tag === "ConstraintError" || error.reason._tag === "UniqueViolation" ||
+        isConstraintCause(error.reason.cause)
     ? "constraint"
     : isIoCause(error.reason.cause)
     ? "io"

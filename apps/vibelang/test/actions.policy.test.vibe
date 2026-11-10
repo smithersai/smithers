@@ -1,0 +1,29 @@
+import { expect, it } from "@effect/vitest"
+import { Actions } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+
+it.live("demotion removes commands and refuses start, rerun and cancellation before cached receipts", () => effect {
+  const resources = MockActions({ role: "contributor", actor: "person" }).pipe(Layer.provideMerge(mockFactoryFor("contributor")))
+  provide resources {
+    const actions = try Actions
+    const accounts = (try Factory).accounts!
+    const before = try accounts.current()
+    const id = try actions.start("vibelang/Post", { text: "Hello" }, "button")
+    try Stream.runLast(actions.follow(id).pipe(Stream.takeUntil(run => run.state === "passed" || run.state === "failed")))
+    try accounts.grant(before.id, "new")
+    const after = try accounts.current()
+    const commands = try actions.commands()
+    const start = actions.command("/post denied") catch error => error.code
+    const rerun = actions.rerun(id) catch error => error.code
+    const cancel = actions.cancel(id) catch error => error.code
+    try Effect.try(() => {
+      expect(after.role).toBe("new")
+      expect(commands.map(entry => entry.command)).toEqual(["/tour"])
+      expect(start).toBe("unknown-command")
+      expect(rerun).toBe("forbidden")
+      expect(cancel).toBe("forbidden")
+    })
+  }
+})

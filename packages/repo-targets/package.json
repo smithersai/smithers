@@ -18,11 +18,11 @@
     "@effect/sql-pg": "4.1.1",
     "@smthrs/targets": "workspace:*",
     "effect": "4.1.1",
+    "vibelang": "0.0.13",
     "vibelang-runtime": "0.0.13"
   },
   "devDependencies": {
     "typescript": "5.9.3",
-    "vibelang": "0.0.13",
     "vibelang-vite": "0.0.13",
     "vitest": "5.0.0",
     "@smthrs/plan": "workspace:*",

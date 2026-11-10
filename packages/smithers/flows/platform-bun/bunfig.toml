@@ -1,0 +1,5 @@
+# The native host and its Bun subprocess fixtures import VibeLang source.
+preload = ["vibelang/bun"]
+
+[test]
+preload = ["vibelang/bun"]

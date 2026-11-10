@@ -40,6 +40,12 @@ export interface Entry {
 
 /** The sequencer's numbered events. `seq` starts at 1 and counts up by one. */
 export type Event =
+  | { readonly type: "WalkthroughDriven"; readonly seq: number; readonly id: string; readonly step: number; readonly target: string; readonly at: number; readonly duration: number }
+  | { readonly type: "TourPaused"; readonly seq: number; readonly id: string; readonly at: number }
+  | { readonly type: "TourResumed"; readonly seq: number; readonly id: string; readonly at: number }
+  | { readonly type: "TourSought"; readonly seq: number; readonly id: string; readonly at: number; readonly step: number }
+  | { readonly type: "RoleGranted"; readonly seq: number; readonly id: string; readonly by: string; readonly role: Role; readonly mode: GrantMode }
+  | { readonly type: "ActionAuthorized"; readonly seq: number; readonly id: string; readonly by: string; readonly action: Action }
   | {
     readonly type: "Posted"
     readonly seq: number
@@ -53,20 +59,34 @@ export type Event =
   | { readonly type: "ReplyRestarted"; readonly seq: number; readonly id: string }
   | { readonly type: "ReplyFinished"; readonly seq: number; readonly id: string }
   | { readonly type: "ReplyFailed"; readonly seq: number; readonly id: string; readonly reason: string }
+  | { readonly type: "TourStarted"; readonly seq: number; readonly id: string }
+  | { readonly type: "TourEnded"; readonly seq: number; readonly id: string }
+  | { readonly type: "PaneOpened"; readonly seq: number; readonly id: string; readonly url: string }
+  | { readonly type: "ActionRequested"; readonly seq: number; readonly id: string; readonly flow: string; readonly door: string; readonly actor: string; readonly at: number }
+  | { readonly type: "ActionStep"; readonly seq: number; readonly id: string; readonly key: string; readonly name: string; readonly attempt: number; readonly state: string; readonly at: number }
+  | { readonly type: "ActionSettled"; readonly seq: number; readonly id: string; readonly state: string; readonly result: string; readonly at: number }
 
-/** A conversation as of event `seq`. `replying` is the id of the reply that streams, `""` when none does. */
+/**
+ * A conversation as of event `seq`. `replying` is the id of the reply that streams, `""` when none does. A tour is an
+ * agent entry that answers no post (`inReplyTo` is `""`): the agent speaks on its own. `pane` is the page the agent
+ * last opened in the conversation's docs pane, `""` before it opened one.
+ */
+export interface Walkthrough { readonly step: number; readonly target: string; readonly paused: boolean; readonly revision: number; readonly remaining: number; readonly at: number }
+
 export interface Conversation {
+  readonly walkthrough?: Walkthrough
   readonly seq: number
   readonly entries: ReadonlyArray<Entry>
   readonly agent: AgentPhase
   readonly replying: string
+  readonly pane: string
+  readonly roles: ReadonlyArray<RoleGrant>
+  readonly runs?: ReadonlyArray<ActionRun>
 }
 
 /** A conversation before its first event. */
-export const empty: Conversation = { seq: 0, entries: [], agent: "idle", replying: "" }
+export const empty: Conversation = { seq: 0, entries: [], agent: "idle", replying: "", pane: "", roles: [] }
 
-/** The most characters one message may hold. */
-export const MAX_TEXT = 8000
 
 /** The agent's name in a conversation. */
 export const AGENT_NAME = "VibeLang agent"
@@ -81,7 +101,13 @@ export const AGENT_NAME = "VibeLang agent"
 // Invariant preservation is stated as implication, so sequence checks cover arbitrary records.
 // A creation the sequencer would refuse (empty client id, empty or reused entry id) only advances seq.
 //@ verify
+//@ ensures \result.roles.length == conversation.roles.length + ((event.seq == conversation.seq + 1 && event.type == "RoleGranted" && event.id != "" && event.role != "viewer") ? 1 : 0)
+//@ ensures forall(i, 0 <= i && i < conversation.roles.length ==> \result.roles[i + ((event.seq == conversation.seq + 1 && event.type == "RoleGranted" && event.id != "" && event.role != "viewer") ? 1 : 0)] == conversation.roles[i])
+//@ ensures event.seq == conversation.seq + 1 && event.type == "RoleGranted" && event.id != "" && event.role != "viewer" ==> \result.roles[0].id == event.id && \result.roles[0].role == event.role && \result.roles[0].blocked == (event.mode == "person")
 //@ requires 0 <= conversation.seq && conversation.seq < 9007199254740991
+//@ ensures event.type == "Posted" && \result.entries.length > conversation.entries.length ==> \result.entries[conversation.entries.length].name == event.name
+//@ ensures event.type == "Posted" && \result.entries.length > conversation.entries.length ==> \result.entries[conversation.entries.length].text == event.text
+//@ ensures event.type == "Posted" && \result.entries.length > conversation.entries.length ==> \result.entries[conversation.entries.length].done == true
 //@ ensures \result.seq == conversation.seq || \result.seq == conversation.seq + 1
 //@ ensures event.seq != conversation.seq + 1 ==> \result == conversation
 //@ ensures event.seq == conversation.seq + 1 ==> \result.seq == event.seq
@@ -98,10 +124,49 @@ export const AGENT_NAME = "VibeLang agent"
 //@ ensures (forall(i, forall(j, 0 <= i && i < j && j < conversation.entries.length && conversation.entries[i].author == "person" && conversation.entries[j].author == "person" ==> conversation.entries[i].clientId != conversation.entries[j].clientId))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.entries.length && \result.entries[i].author == "person" && \result.entries[j].author == "person" ==> \result.entries[i].clientId != \result.entries[j].clientId)))
 //@ ensures (forall(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "person" ==> conversation.entries[i].clientId != "")) ==> (forall(i, 0 <= i && i < \result.entries.length && \result.entries[i].author == "person" ==> \result.entries[i].clientId != ""))
 //@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyRestarted" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" ==> \result.entries.length == conversation.entries.length && forall(i, 0 <= i && i < \result.entries.length && \result.entries[i].id == event.id ==> \result.entries[i].text == "")
+//@ ensures event.seq == conversation.seq + 1 && event.type == "TourStarted" && conversation.agent != "working" && event.id != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != event.id) ==> \result.entries.length == conversation.entries.length + 1 && \result.entries[conversation.entries.length].author == "agent" && \result.entries[conversation.entries.length].inReplyTo == "" && \result.entries[conversation.entries.length].name == AGENT_NAME && \result.agent == "working" && \result.replying == event.id
+//@ ensures event.seq == conversation.seq + 1 && event.type == "TourEnded" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == event.id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == "") ==> \result.agent == "idle" && \result.replying == "" && \result.entries.length == conversation.entries.length && forall(i, 0 <= i && i < \result.entries.length ==> \result.entries[i].text == conversation.entries[i].text && (\result.entries[i].id == event.id ==> \result.entries[i].done))
+//@ ensures event.seq == conversation.seq + 1 && event.type == "PaneOpened" && (event.id == "" || (conversation.agent == "working" && conversation.replying == event.id && event.id != "")) && event.url != "" ==> \result.pane == event.url && \result.entries == conversation.entries && \result.agent == conversation.agent
+//@ ensures \result.pane != conversation.pane ==> event.type == "PaneOpened" && (event.id == "" || (conversation.agent == "working" && conversation.replying == event.id)) && event.url != ""
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < conversation.entries.length && conversation.entries[i].author == "agent" && conversation.entries[j].author == "agent" && conversation.entries[i].inReplyTo != "" ==> conversation.entries[i].inReplyTo != conversation.entries[j].inReplyTo))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.entries.length && \result.entries[i].author == "agent" && \result.entries[j].author == "agent" && \result.entries[i].inReplyTo != "" ==> \result.entries[i].inReplyTo != \result.entries[j].inReplyTo)))
+//@ ensures event.seq == conversation.seq + 1 && (event.type == "ReplyDelta" || event.type == "ReplyRestarted" || event.type == "ReplyFinished" || event.type == "ReplyFailed") && (conversation.agent != "working" || conversation.replying != event.id || event.id == "") ==> \result.entries == conversation.entries && \result.agent == conversation.agent && \result.replying == conversation.replying
+//@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyDelta" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" ==> \result.entries.length == conversation.entries.length && forall(i, 0 <= i && i < \result.entries.length ==> (conversation.entries[i].id == event.id ? \result.entries[i].text == conversation.entries[i].text + event.text : \result.entries[i] == conversation.entries[i]))
+//@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyFinished" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" ==> \result.agent == "idle" && \result.replying == "" && \result.entries.length == conversation.entries.length && forall(i, 0 <= i && i < \result.entries.length ==> \result.entries[i].text == conversation.entries[i].text && (conversation.entries[i].id == event.id ==> \result.entries[i].done))
+//@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyFailed" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" ==> \result.agent == "failed" && \result.replying == "" && \result.entries.length == conversation.entries.length && forall(i, 0 <= i && i < \result.entries.length && conversation.entries[i].id == event.id ==> \result.entries[i].done && \result.entries[i].error == (event.reason == "" ? "failed" : event.reason))
+//@ ensures event.seq == conversation.seq + 1 && event.type == "RoleGranted" && event.id != "" && event.role != "viewer" ==> \result.roles.length == conversation.roles.length + 1 && \result.roles[0].id == event.id && \result.roles[0].role == event.role && \result.roles[0].blocked == (event.mode == "person")
+//@ ensures \result.entries.length == conversation.entries.length + ((event.seq == conversation.seq + 1 && ((event.type == "Posted" && event.text != "" && event.clientId != "" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].clientId != event.clientId)) || (event.type == "ReplyStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "person" && conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "agent" ==> conversation.entries[j].inReplyTo != event.inReplyTo)) || (event.type == "TourStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id)))) ? 1 : 0)
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].id == conversation.entries[i].id)
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].seq == conversation.entries[i].seq)
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].clientId == conversation.entries[i].clientId)
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].inReplyTo == conversation.entries[i].inReplyTo)
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].author == conversation.entries[i].author)
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].name == conversation.entries[i].name)
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].text == ((event.seq == conversation.seq + 1 && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && conversation.entries[i].id == event.id && event.type == "ReplyDelta") ? conversation.entries[i].text + event.text : (event.seq == conversation.seq + 1 && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && conversation.entries[i].id == event.id && event.type == "ReplyRestarted") ? "" : conversation.entries[i].text))
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].done == (conversation.entries[i].done || (event.seq == conversation.seq + 1 && conversation.entries[i].id == event.id && ((conversation.agent == "working" && conversation.replying == event.id && event.id != "" && (event.type == "ReplyFinished" || event.type == "ReplyFailed")) || (event.type == "TourEnded" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].id == event.id && conversation.entries[j].author == "agent" && conversation.entries[j].inReplyTo == ""))))))
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].error == ((event.seq == conversation.seq + 1 && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && conversation.entries[i].id == event.id && event.type == "ReplyFailed") ? (event.reason == "" ? "failed" : event.reason) : conversation.entries[i].error))
+//@ ensures \result.pane == ((event.seq == conversation.seq + 1 && event.type == "PaneOpened" && (event.id == "" || (conversation.agent == "working" && conversation.replying == event.id && event.id != "")) && event.url != "") ? event.url : conversation.pane)
+//@ ensures \result.agent == ((event.seq == conversation.seq + 1 && ((event.type == "ReplyStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "person" && conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "agent" ==> conversation.entries[j].inReplyTo != event.inReplyTo)) || (event.type == "TourStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id)))) ? "working" : (event.seq == conversation.seq + 1 && event.type == "ReplyFailed" && conversation.agent == "working" && conversation.replying == event.id && event.id != "") ? "failed" : (event.seq == conversation.seq + 1 && ((event.type == "ReplyFinished" && conversation.agent == "working" && conversation.replying == event.id && event.id != "") || (event.type == "TourEnded" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].id == event.id && conversation.entries[j].author == "agent" && conversation.entries[j].inReplyTo == "")))) ? "idle" : conversation.agent)
+//@ ensures \result.replying == ((event.seq == conversation.seq + 1 && ((event.type == "ReplyStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "person" && conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "agent" ==> conversation.entries[j].inReplyTo != event.inReplyTo)) || (event.type == "TourStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id)))) ? event.id : (event.seq == conversation.seq + 1 && ((conversation.agent == "working" && conversation.replying == event.id && event.id != "" && (event.type == "ReplyFinished" || event.type == "ReplyFailed")) || (event.type == "TourEnded" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].id == event.id && conversation.entries[j].author == "agent" && conversation.entries[j].inReplyTo == "")))) ? "" : conversation.replying)
+//@ ensures event.seq == conversation.seq + 1 && event.type == "Posted" && event.text != "" && event.clientId != "" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].clientId != event.clientId) ==> \result.entries[conversation.entries.length].id == event.id && \result.entries[conversation.entries.length].seq == event.seq && \result.entries[conversation.entries.length].clientId == event.clientId && \result.entries[conversation.entries.length].inReplyTo == "" && \result.entries[conversation.entries.length].author == "person" && \result.entries[conversation.entries.length].name == event.name && \result.entries[conversation.entries.length].text == event.text && \result.entries[conversation.entries.length].done == true && \result.entries[conversation.entries.length].error == ""
+//@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "person" && conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "agent" ==> conversation.entries[j].inReplyTo != event.inReplyTo) ==> \result.entries[conversation.entries.length].id == event.id && \result.entries[conversation.entries.length].seq == event.seq && \result.entries[conversation.entries.length].clientId == "" && \result.entries[conversation.entries.length].inReplyTo == event.inReplyTo && \result.entries[conversation.entries.length].author == "agent" && \result.entries[conversation.entries.length].name == AGENT_NAME && \result.entries[conversation.entries.length].text == "" && \result.entries[conversation.entries.length].done == false && \result.entries[conversation.entries.length].error == ""
+//@ ensures event.seq == conversation.seq + 1 && event.type == "TourStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) ==> \result.entries[conversation.entries.length].id == event.id && \result.entries[conversation.entries.length].seq == event.seq && \result.entries[conversation.entries.length].clientId == "" && \result.entries[conversation.entries.length].inReplyTo == "" && \result.entries[conversation.entries.length].author == "agent" && \result.entries[conversation.entries.length].name == AGENT_NAME && \result.entries[conversation.entries.length].text == "" && \result.entries[conversation.entries.length].done == false && \result.entries[conversation.entries.length].error == ""
+//@ ensures event.seq == conversation.seq + 1 && (event.type == "TourPaused" || event.type == "TourResumed" || event.type == "TourSought") ==> \result.entries == conversation.entries && \result.agent == conversation.agent && \result.replying == conversation.replying
 export function apply(conversation: Conversation, event: Event): Conversation {
   if (event.seq !== conversation.seq + 1) return conversation
   const next = { ...conversation, seq: event.seq }
   switch (event.type) {
+    case "RoleGranted":
+      if (event.id === "" || event.role === "viewer") return next
+      return { ...next, roles: [{ id: event.id, role: event.role, blocked: event.mode === "person" }, ...conversation.roles] }
+    case "ActionAuthorized":
+      return next
+    case "ActionRequested":
+      if (event.id === "" || (conversation.runs ?? []).some((run) => run.id === event.id)) return next
+      return { ...next, runs: [...(conversation.runs ?? []), { id: event.id, flow: event.flow, door: event.door, actor: event.actor, state: "queued", started: event.at, at: event.at, result: "", steps: [] }] }
+    case "ActionStep":
+      return { ...next, runs: (conversation.runs ?? []).map((run) => run.id === event.id ? stepRun(run, event.key, event.name, event.attempt, event.state, event.at) : run) }
+    case "ActionSettled":
+      return { ...next, runs: (conversation.runs ?? []).map((run) => run.id === event.id ? settleRun(run, event.state, event.result, event.at) : run) }
     case "Posted": {
       if (event.text === "" || event.clientId === "" || hasClientId(conversation.entries, event.clientId) || hasEntryId(conversation.entries, event.id)) return next
       const entry: Entry = {
@@ -169,7 +234,76 @@ export function apply(conversation: Conversation, event: Event): Conversation {
         replying: "",
       }
     }
+    case "TourStarted": {
+      // The agent speaks unprompted: an agent entry that answers no post, streaming like a reply.
+      if (conversation.agent === "working" || hasEntryId(conversation.entries, event.id)) return next
+      const toured = [...conversation.entries, tourEntry(event.id, event.seq)]
+      //@ assert !toured[conversation.entries.length].done
+      return { ...next, entries: toured, replying: event.id, agent: "working" }
+    }
+    case "TourEnded": {
+      // The person took control back: what the agent said stays, and the agent stops.
+      if (!isTouring(conversation, event.id)) return next
+      const ended = conversation.entries.map((entry) => entry.id === event.id ? { ...entry, done: true } : entry)
+      return { ...next, entries: ended, agent: "idle", replying: "" }
+    }
+    case "WalkthroughDriven": {
+      if (!isTouring(conversation, event.id) || event.step < 1 || event.step > 10 || event.step % 1 !== 0 || event.target === "" || event.duration < 0 || event.duration % 1 !== 0) return next
+      return { ...next, walkthrough: drivenWalkthrough(event.step, event.target, event.seq, event.duration, event.at) }
+    }
+    case "TourPaused":
+    case "TourResumed":
+    case "TourSought": {
+      const showing = conversation.walkthrough
+      if (!isTouring(conversation, event.id) || showing === undefined) return next
+      if (event.type === "TourSought") {
+        if (event.step < 1 || event.step > 11 || event.step % 1 !== 0) return next
+        return { ...next, walkthrough: soughtWalkthrough(showing, event.step, event.seq, event.at) }
+      }
+      return { ...next, walkthrough: controlledWalkthrough(showing, event.type === "TourPaused", event.seq, event.at) }
+    }
+    case "PaneOpened": {
+      // A person opens directly (empty id); an agent tool is bound to the entry that streams.
+      if ((event.id !== "" && !isReplying(conversation, event.id)) || event.url === "") return next
+      return { ...next, pane: event.url }
+    }
   }
+}
+
+/**
+ * A tour's entry as it starts: the agent's, answering no post, with nothing said yet.
+ */
+//@ verify
+//@ ensures \result.id == id && \result.seq == seq && \result.clientId == "" && \result.inReplyTo == "" && \result.author == "agent" && \result.name == AGENT_NAME && \result.text == "" && !\result.done && \result.error == ""
+export function tourEntry(id: string, seq: number): Entry {
+  return { id, seq, clientId: "", inReplyTo: "", author: "agent", name: AGENT_NAME, text: "", done: false, error: "" }
+}
+
+/**
+ * Whether the tour with this id runs now: the entry that streams is an agent entry answering no post.
+ */
+//@ verify
+//@ ensures \result == (conversation.agent == "working" && conversation.replying == id && id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == ""))
+export function isTouring(conversation: Conversation, id: string): boolean {
+  if (!isReplying(conversation, id)) return false
+  return isTour(conversation.entries, id)
+}
+
+/**
+ * Whether an agent entry with this id answers no post: a tour.
+ */
+//@ verify
+//@ ensures \result == exists(i, 0 <= i && i < entries.length && entries[i].id == id && entries[i].author == "agent" && entries[i].inReplyTo == "")
+export function isTour(entries: ReadonlyArray<Entry>, id: string): boolean {
+  let i = 0
+  while (i < entries.length) {
+    //@ invariant 0 <= i && i <= entries.length
+    //@ invariant forall(j, 0 <= j && j < i ==> !(entries[j].id == id && entries[j].author == "agent" && entries[j].inReplyTo == ""))
+    //@ decreases entries.length - i
+    if (entries[i]!.id === id && entries[i]!.author === "agent" && entries[i]!.inReplyTo === "") return true
+    i++
+  }
+  return false
 }
 
 /**
@@ -242,84 +376,97 @@ export function canReplyTo(entries: ReadonlyArray<Entry>, id: string): boolean {
 
 /**
  * What the sequencer is asked to record. A person posts; the agent's flow starts, extends, ends or fails a reply, and
- * restarts it when its model call retries, discarding what streamed so far.
+ * restarts it when its model call retries, discarding what streamed so far. A person starts a tour, which the agent
+ * narrates as it would a reply and in which it opens pages in the docs pane, and ends it to take control back.
  */
-export type Intent =
-  | { readonly type: "Post"; readonly id: string; readonly clientId: string; readonly name: string; readonly text: string }
-  | { readonly type: "StartReply"; readonly id: string; readonly inReplyTo: string }
-  | { readonly type: "AppendReply"; readonly id: string; readonly text: string }
-  | { readonly type: "RestartReply"; readonly id: string }
-  | { readonly type: "FinishReply"; readonly id: string }
-  | { readonly type: "FailReply"; readonly id: string; readonly reason: string }
+export interface RunStep {
+  readonly key: string
+  readonly name: string
+  readonly attempt: number
+  readonly state: string
+  readonly started: number
+  readonly at: number
+}
+export interface ActionRun {
+  readonly id: string
+  readonly flow: string
+  readonly door: string
+  readonly actor: string
+  readonly state: string
+  readonly started: number
+  readonly at: number
+  readonly result: string
+  readonly steps: ReadonlyArray<RunStep>
+}
 
-/** Why the sequencer refused an intent. */
-export type Refusal = "empty" | "too-long" | "duplicate" | "busy" | "not-replying"
-
-/** The sequencer's answer: the next event, or why there is none. */
-export type Decision =
-  | { readonly ok: true; readonly event: Event }
-  | { readonly ok: false; readonly refusal: Refusal }
-
-// Typed constructors keep nested union construction explicit for LemmaScript.
+// Ordering decisions shared by the sequencer's action projection and the web's snapshots.
 //@ verify
-//@ ensures \result.ok && \result.event == event
-function accepted(event: Event): Decision {
-  return { ok: true, event }
+//@ ensures \result == ((state == "queued" || state == "running") && nextAt >= at)
+export function acceptSnapshot(state: string, at: number, nextAt: number): boolean {
+  return (state === "queued" || state === "running") && nextAt >= at
 }
 
 //@ verify
-//@ ensures !\result.ok && \result.refusal == refusal
-function refused(refusal: Refusal): Decision {
-  return { ok: false, refusal }
+//@ ensures \result == (state != "passed" && state != "failed" && state != "cancelled" && nextAt >= at)
+export function acceptStep(state: string, at: number, nextAt: number): boolean {
+  return state !== "passed" && state !== "failed" && state !== "cancelled" && nextAt >= at
 }
 
-/**
- * The event that records `intent` as the next one, or a refusal. Every event it returns is one `apply` takes as is:
- * applying it changes the conversation the way its type says.
- */
 //@ verify
-//@ requires 0 <= conversation.seq && conversation.seq < 9007199254740991
-//@ ensures \result.ok ==> \result.event.seq == conversation.seq + 1
-//@ ensures \result.ok && \result.event.type == "ReplyStarted" ==> conversation.agent != "working" && \result.event.id != ""
-//@ ensures \result.ok && \result.event.type == "Posted" ==> \result.event.clientId != "" && \result.event.text != ""
-//@ ensures \result.ok && \result.event.type == "Posted" ==> \result.event.text.length <= MAX_TEXT
-//@ ensures \result.ok && (\result.event.type == "Posted" || \result.event.type == "ReplyStarted") ==> \result.event.id != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != \result.event.id)
-//@ ensures \result.ok && \result.event.type == "Posted" ==> forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].clientId != \result.event.clientId)
-//@ ensures \result.ok && \result.event.type == "ReplyStarted" ==> \result.event.inReplyTo != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "person" && conversation.entries[i].id == \result.event.inReplyTo) && forall(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "agent" ==> conversation.entries[i].inReplyTo != \result.event.inReplyTo)
-//@ ensures intent.type == "StartReply" && \result.ok ==> \result.event.type == "ReplyStarted" && \result.event.inReplyTo == intent.inReplyTo
-//@ ensures \result.ok && \result.event.type == "ReplyRestarted" ==> conversation.agent == "working" && conversation.replying == \result.event.id && \result.event.id != ""
-export function decide(conversation: Conversation, intent: Intent): Decision {
-  const seq = conversation.seq + 1
-  switch (intent.type) {
-    case "Post": {
-      const text = intent.text.trim()
-      if (text === "") return refused("empty")
-      if (text.length > MAX_TEXT) return refused("too-long")
-      if (hasEntryId(conversation.entries, intent.id)) return refused("duplicate")
-      if (intent.clientId === "" || hasClientId(conversation.entries, intent.clientId)) {
-        return refused("duplicate")
-      }
-      return accepted({ type: "Posted", seq, id: intent.id, clientId: intent.clientId, name: intent.name, text })
-    }
-    case "StartReply":
-      if (conversation.agent === "working") return refused("busy")
-      if (intent.id === "") return refused("not-replying")
-      if (hasEntryId(conversation.entries, intent.id)) return refused("duplicate")
-      if (!canReplyTo(conversation.entries, intent.inReplyTo)) return refused("not-replying")
-      return accepted({ type: "ReplyStarted", seq, id: intent.id, inReplyTo: intent.inReplyTo })
-    case "AppendReply":
-      if (!isReplying(conversation, intent.id)) return refused("not-replying")
-      return accepted({ type: "ReplyDelta", seq, id: intent.id, text: intent.text })
-    case "RestartReply":
-      if (!isReplying(conversation, intent.id)) return refused("not-replying")
-      return accepted({ type: "ReplyRestarted", seq, id: intent.id })
-    case "FinishReply":
-      if (!isReplying(conversation, intent.id)) return refused("not-replying")
-      return accepted({ type: "ReplyFinished", seq, id: intent.id })
-    case "FailReply":
-      if (!isReplying(conversation, intent.id)) return refused("not-replying")
-      return accepted({ type: "ReplyFailed", seq, id: intent.id, reason: intent.reason })
-  }
+//@ ensures \result >= oldAt && \result >= nextAt
+//@ ensures \result == oldAt || \result == nextAt
+export function latestAt(oldAt: number, nextAt: number): number {
+  return oldAt > nextAt ? oldAt : nextAt
+}
+
+//@ verify
+//@ ensures \result == (state == "queued" || state == "running")
+export function runOpen(state: string): boolean {
+  return state === "queued" || state === "running"
+}
+
+/** A terminal run cannot be changed by a late step or a competing settlement. */
+//@ verify
+//@ ensures \result.id == run.id && \result.flow == run.flow && \result.started == run.started
+//@ ensures !runOpen(run.state) ==> \result == run
+//@ ensures runOpen(run.state) && (state == "passed" || state == "failed" || state == "cancelled") ==> \result.state == state && \result.result == resultText && \result.at == at
+//@ ensures \result.steps.length == run.steps.length
+//@ ensures !runOpen(run.state) || state != "cancelled" ==> \result.steps == run.steps
+export function settleRun(run: ActionRun, state: string, resultText: string, at: number): ActionRun {
+  if (!runOpen(run.state) || (state !== "passed" && state !== "failed" && state !== "cancelled")) return run
+  const steps = state === "cancelled" ? run.steps.map((step) => cancelStep(step, at)) : run.steps
+  return { ...run, state, result: resultText, at, steps }
+}
+
+/** The engine acknowledged cancellation; completed steps remain their actual outcome. */
+//@ verify
+//@ ensures \result.key == step.key && \result.name == step.name && \result.attempt == step.attempt && \result.started == step.started
+//@ ensures step.state != "running" && step.state != "waiting" ==> \result == step
+//@ ensures step.state == "running" || step.state == "waiting" ==> \result.state == "cancelled" && \result.at == at
+export function cancelStep(step: RunStep, at: number): RunStep {
+  return step.state === "running" || step.state === "waiting" ? { ...step, state: "cancelled", at } : step
+}
+
+/** Engine keys and attempts upsert a step; replay never appends a duplicate step. */
+//@ verify
+//@ ensures \result.id == run.id && \result.flow == run.flow && \result.started == run.started
+//@ ensures !runOpen(run.state) ==> \result == run
+export function stepRun(run: ActionRun, key: string, name: string, attempt: number, state: string, at: number): ActionRun {
+  if (!runOpen(run.state) || key === "") return run
+  const prior = run.steps.find((step) => step.key === key && step.attempt === attempt)
+  if (prior !== undefined && !acceptStep(prior.state, prior.at, at)) return run
+  const present = prior !== undefined
+  const steps = present
+    ? run.steps.map((step) => step.key === key && step.attempt === attempt ? { ...step, state, at } : step)
+    : [...run.steps, { key, name, attempt, state, started: at, at }]
+  return { ...run, state: "running", steps, at: latestAt(run.at, at) }
+}
+
+/** The role gate is shared by buttons, slash commands and agent dispatch. Tour is the public exception (0019). */
+//@ verify
+//@ ensures \result == (!internal && (tour || (role == "maintainer" || role == "contributor") && (!maintainer || role == "maintainer")))
+export function mayRun(role: string, tour: boolean, maintainer: boolean, internal: boolean): boolean {
+  return !internal && (tour || (role === "maintainer" || role === "contributor") && (!maintainer || role === "maintainer"))
 }
 
 // ── receive: a client ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -400,17 +547,57 @@ export function retryPost(client: Client, clientId: string): Client {
  * nothing else; the next one is applied, and a post it confirms leaves `pending`.
  */
 //@ verify
+//@ ensures event.type == "Posted" && client.conversation.agent == "idle" && client.conversation.roles.length == 0 && client.conversation.entries.length == 0 && client.pending.length == 0 ==> \result.conversation.agent == "idle"
+//@ ensures event.type == "Posted" && client.conversation.agent == "idle" && client.conversation.roles.length == 0 && client.conversation.entries.length == 0 && client.pending.length == 0 ==> \result.conversation.replying == client.conversation.replying
+//@ ensures \result.conversation.roles.length == client.conversation.roles.length + ((event.seq == client.conversation.seq + 1 && event.type == "RoleGranted" && event.id != "" && event.role != "viewer") ? 1 : 0)
+//@ ensures forall(i, 0 <= i && i < client.conversation.roles.length ==> \result.conversation.roles[i + ((event.seq == client.conversation.seq + 1 && event.type == "RoleGranted" && event.id != "" && event.role != "viewer") ? 1 : 0)] == client.conversation.roles[i])
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "RoleGranted" && event.id != "" && event.role != "viewer" ==> \result.conversation.roles[0].id == event.id && \result.conversation.roles[0].role == event.role && \result.conversation.roles[0].blocked == (event.mode == "person")
 //@ requires 0 <= client.conversation.seq && client.conversation.seq < 9007199254740991
+//@ ensures \result.conversation.entries.length >= client.conversation.entries.length
+//@ ensures event.type == "Posted" ==> \result.conversation.agent == client.conversation.agent
+//@ ensures client.conversation.entries.length > 0 ==> \result.conversation.entries[0].id == client.conversation.entries[0].id
+//@ ensures client.conversation.entries.length > 0 ==> \result.conversation.entries[0].seq == client.conversation.entries[0].seq
+//@ ensures client.conversation.entries.length > 0 ==> \result.conversation.entries[0].clientId == client.conversation.entries[0].clientId
+//@ ensures client.conversation.entries.length > 0 ==> \result.conversation.entries[0].inReplyTo == client.conversation.entries[0].inReplyTo
+//@ ensures client.conversation.entries.length > 1 ==> \result.conversation.entries[1].author == client.conversation.entries[1].author
+//@ ensures client.conversation.entries.length > 0 ==> \result.conversation.entries[0].name == client.conversation.entries[0].name
+//@ ensures client.conversation.entries.length > 0 && event.type != "ReplyDelta" && event.type != "ReplyRestarted" ==> \result.conversation.entries[0].text == client.conversation.entries[0].text
+//@ ensures client.conversation.entries.length > 0 && event.type == "ReplyDelta" ==> \result.conversation.entries[0].done == client.conversation.entries[0].done
+//@ ensures client.conversation.entries.length > 0 && event.type != "ReplyFailed" ==> \result.conversation.entries[0].error == client.conversation.entries[0].error
 //@ ensures event.seq <= client.conversation.seq ==> \result == client
 //@ ensures event.seq > client.conversation.seq + 1 ==> \result.gap
+//@ ensures event.seq > client.conversation.seq + 1 ==> \result.conversation == client.conversation && \result.pending == client.pending
+//@ ensures event.seq == client.conversation.seq + 1 ==> \result.conversation.seq == event.seq && !\result.gap
+//@ ensures event.seq == client.conversation.seq + 1 && event.type != "Posted" ==> \result.pending == client.pending
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "Posted" ==> \result.pending.length <= client.pending.length && forall(i, 0 <= i && i < \result.pending.length ==> \result.pending[i].clientId != event.clientId && exists(j, 0 <= j && j < client.pending.length && \result.pending[i] == client.pending[j]))
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "Posted" ==> forall(i, 0 <= i && i < client.pending.length && client.pending[i].clientId != event.clientId ==> exists(j, 0 <= j && j < \result.pending.length && client.pending[i] == \result.pending[j]))
+//@ ensures \result.conversation.entries.length == client.conversation.entries.length + ((event.seq == client.conversation.seq + 1 && ((event.type == "Posted" && event.text != "" && event.clientId != "" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].clientId != event.clientId)) || (event.type == "ReplyStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "person" && client.conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "agent" ==> client.conversation.entries[j].inReplyTo != event.inReplyTo)) || (event.type == "TourStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id)))) ? 1 : 0)
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].id == client.conversation.entries[i].id)
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].seq == client.conversation.entries[i].seq)
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].clientId == client.conversation.entries[i].clientId)
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].inReplyTo == client.conversation.entries[i].inReplyTo)
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].author == client.conversation.entries[i].author)
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].name == client.conversation.entries[i].name)
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].text == ((event.seq == client.conversation.seq + 1 && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && client.conversation.entries[i].id == event.id && event.type == "ReplyDelta") ? client.conversation.entries[i].text + event.text : (event.seq == client.conversation.seq + 1 && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && client.conversation.entries[i].id == event.id && event.type == "ReplyRestarted") ? "" : client.conversation.entries[i].text))
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].done == (client.conversation.entries[i].done || (event.seq == client.conversation.seq + 1 && client.conversation.entries[i].id == event.id && ((client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && (event.type == "ReplyFinished" || event.type == "ReplyFailed")) || (event.type == "TourEnded" && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && exists(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].id == event.id && client.conversation.entries[j].author == "agent" && client.conversation.entries[j].inReplyTo == ""))))))
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].error == ((event.seq == client.conversation.seq + 1 && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && client.conversation.entries[i].id == event.id && event.type == "ReplyFailed") ? (event.reason == "" ? "failed" : event.reason) : client.conversation.entries[i].error))
+//@ ensures \result.conversation.pane == ((event.seq == client.conversation.seq + 1 && event.type == "PaneOpened" && (event.id == "" || (client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "")) && event.url != "") ? event.url : client.conversation.pane)
+//@ ensures \result.conversation.agent == ((event.seq == client.conversation.seq + 1 && ((event.type == "ReplyStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "person" && client.conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "agent" ==> client.conversation.entries[j].inReplyTo != event.inReplyTo)) || (event.type == "TourStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id)))) ? "working" : (event.seq == client.conversation.seq + 1 && event.type == "ReplyFailed" && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "") ? "failed" : (event.seq == client.conversation.seq + 1 && ((event.type == "ReplyFinished" && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "") || (event.type == "TourEnded" && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && exists(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].id == event.id && client.conversation.entries[j].author == "agent" && client.conversation.entries[j].inReplyTo == "")))) ? "idle" : client.conversation.agent)
+//@ ensures \result.conversation.replying == ((event.seq == client.conversation.seq + 1 && ((event.type == "ReplyStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "person" && client.conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "agent" ==> client.conversation.entries[j].inReplyTo != event.inReplyTo)) || (event.type == "TourStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id)))) ? event.id : (event.seq == client.conversation.seq + 1 && ((client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && (event.type == "ReplyFinished" || event.type == "ReplyFailed")) || (event.type == "TourEnded" && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && exists(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].id == event.id && client.conversation.entries[j].author == "agent" && client.conversation.entries[j].inReplyTo == "")))) ? "" : client.conversation.replying)
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "Posted" && event.text != "" && event.clientId != "" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].clientId != event.clientId) ==> \result.conversation.entries[client.conversation.entries.length].id == event.id && \result.conversation.entries[client.conversation.entries.length].seq == event.seq && \result.conversation.entries[client.conversation.entries.length].clientId == event.clientId && \result.conversation.entries[client.conversation.entries.length].inReplyTo == "" && \result.conversation.entries[client.conversation.entries.length].author == "person" && \result.conversation.entries[client.conversation.entries.length].name == event.name && \result.conversation.entries[client.conversation.entries.length].text == event.text && \result.conversation.entries[client.conversation.entries.length].done == true && \result.conversation.entries[client.conversation.entries.length].error == ""
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "ReplyStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "person" && client.conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "agent" ==> client.conversation.entries[j].inReplyTo != event.inReplyTo) ==> \result.conversation.entries[client.conversation.entries.length].id == event.id && \result.conversation.entries[client.conversation.entries.length].seq == event.seq && \result.conversation.entries[client.conversation.entries.length].clientId == "" && \result.conversation.entries[client.conversation.entries.length].inReplyTo == event.inReplyTo && \result.conversation.entries[client.conversation.entries.length].author == "agent" && \result.conversation.entries[client.conversation.entries.length].name == AGENT_NAME && \result.conversation.entries[client.conversation.entries.length].text == "" && \result.conversation.entries[client.conversation.entries.length].done == false && \result.conversation.entries[client.conversation.entries.length].error == ""
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "TourStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) ==> \result.conversation.entries[client.conversation.entries.length].id == event.id && \result.conversation.entries[client.conversation.entries.length].seq == event.seq && \result.conversation.entries[client.conversation.entries.length].clientId == "" && \result.conversation.entries[client.conversation.entries.length].inReplyTo == "" && \result.conversation.entries[client.conversation.entries.length].author == "agent" && \result.conversation.entries[client.conversation.entries.length].name == AGENT_NAME && \result.conversation.entries[client.conversation.entries.length].text == "" && \result.conversation.entries[client.conversation.entries.length].done == false && \result.conversation.entries[client.conversation.entries.length].error == ""
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "Posted" ==> \result.pending.length == pendingCount(client.pending, event.clientId, client.pending.length)
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "Posted" ==> forall(i, 0 <= i && i < client.pending.length && client.pending[i].clientId != event.clientId ==> 0 <= pendingCount(client.pending, event.clientId, i) && pendingCount(client.pending, event.clientId, i) < \result.pending.length && \result.pending[pendingCount(client.pending, event.clientId, i)] == client.pending[i])
 export function receive(client: Client, event: Event): Client {
   const seq = client.conversation.seq
   if (event.seq <= seq) return client
   if (event.seq > seq + 1) return client.gap ? client : { ...client, gap: true }
   const conversation = apply(client.conversation, event)
-  const pending = event.type === "Posted"
-    ? client.pending.filter((waiting) => waiting.clientId !== event.clientId)
-    : client.pending
+  let pending = client.pending
+  if (event.type === "Posted") pending = acknowledgedPending(client.pending, event.clientId)
+  //@ assert event.type != "Posted" || forall(i, 0 <= i && i < pending.length ==> client.pending.includes(pending[i]) && pending[i].clientId != event.clientId)
+  //@ assert event.type != "Posted" || forall(i, 0 <= i && i < client.pending.length && client.pending[i].clientId != event.clientId ==> pending.includes(client.pending[i]))
   return { conversation, pending, gap: false }
 }
 
@@ -422,4 +609,572 @@ export function receive(client: Client, event: Event): Client {
 //@ ensures \result.conversation == client.conversation && \result.pending == client.pending
 export function resume(client: Client): Client {
   return client.gap ? { ...client, gap: false } : client
+}
+
+// ── Policy: one action, one least role; replaceable by workflow policy later (0019). ───────────────────────────────
+export type Role = "viewer" | "new" | "community" | "contributor" | "maintainer"
+export type SignedRole = Exclude<Role, "viewer">
+export type GrantMode = "person" | "participation" | "bootstrap"
+export type Action = "read" | "ask" | "tour" | "people" | "issue" | "comment" | "vip" | "action" | "sandbox" | "triage" | "merge" | "settings" | "roles" | "wiki"
+export interface RoleGrant {
+  readonly id: string
+  readonly role: Role
+  readonly blocked: boolean
+}
+
+//@ verify
+//@ ensures role == "viewer" ==> \result == 0
+//@ ensures role == "new" ==> \result == 1
+//@ ensures role == "community" ==> \result == 2
+//@ ensures role == "contributor" ==> \result == 3
+//@ ensures role == "maintainer" ==> \result == 4
+export function rank(role: Role): number {
+  switch (role) {
+    case "viewer": return 0
+    case "new": return 1
+    case "community": return 2
+    case "contributor": return 3
+    case "maintainer": return 4
+  }
+}
+
+//@ verify
+//@ ensures (action == "read" || action == "ask" || action == "tour") ==> \result == "viewer"
+//@ ensures (action == "people" || action == "issue" || action == "comment") ==> \result == "new"
+//@ ensures action == "vip" ==> \result == "community"
+//@ ensures (action == "action" || action == "sandbox" || action == "triage") ==> \result == "contributor"
+//@ ensures action == "wiki" ==> \result == "contributor"
+//@ ensures (action == "merge" || action == "settings" || action == "roles") ==> \result == "maintainer"
+export function leastRole(action: Action): Role {
+  switch (action) {
+    case "read": case "ask": case "tour": return "viewer"
+    case "people": case "issue": case "comment": return "new"
+    case "vip": return "community"
+    case "action": case "sandbox": case "triage": case "wiki": return "contributor"
+    case "merge": case "settings": case "roles": return "maintainer"
+  }
+}
+
+//@ verify
+//@ ensures \result == ((action == "read" || action == "ask" || action == "tour") || ((action == "people" || action == "issue" || action == "comment") && role != "viewer") || (action == "vip" && (role == "community" || role == "contributor" || role == "maintainer")) || ((action == "action" || action == "sandbox" || action == "triage" || action == "wiki") && (role == "contributor" || role == "maintainer")) || ((action == "merge" || action == "settings" || action == "roles") && role == "maintainer"))
+export function may(role: Role, action: Action): boolean {
+  return rank(role) >= rank(leastRole(action))
+}
+
+/** The newest grant wins. No identity means viewer; a signed-in person without a grant is new. */
+//@ verify
+//@ ensures id == "" ==> \result == "viewer"
+//@ ensures id != "" && forall(i, 0 <= i && i < roles.length ==> roles[i].id != id) ==> \result == "new"
+//@ ensures forall(i, 0 <= i && i < roles.length && roles[i].id == id && forall(j, 0 <= j && j < i ==> roles[j].id != id) && id != "" ==> \result == roles[i].role)
+//@ ensures (\result == "maintainer") == (id != "" && exists(i, 0 <= i && i < roles.length && roles[i].id == id && roles[i].role == "maintainer" && forall(j, 0 <= j && j < i ==> roles[j].id != id)))
+export function roleOf(roles: ReadonlyArray<RoleGrant>, id: string): Role {
+  if (id === "") return "viewer"
+  let i = 0
+  while (i < roles.length) {
+    //@ invariant 0 <= i && i <= roles.length
+    //@ invariant forall(j, 0 <= j && j < i ==> roles[j].id != id)
+    //@ decreases roles.length - i
+    if (roles[i]!.id === id) return roles[i]!.role
+    i++
+  }
+  return "new"
+}
+
+/** Any explicit grant suppresses automatic promotion, including an explicit demotion to new. */
+//@ verify
+//@ ensures \result == forall(i, 0 <= i && i < roles.length ==> roles[i].id != id)
+export function ungranted(roles: ReadonlyArray<RoleGrant>, id: string): boolean {
+  let i = 0
+  while (i < roles.length) {
+    //@ invariant 0 <= i && i <= roles.length
+    //@ invariant forall(j, 0 <= j && j < i ==> roles[j].id != id)
+    //@ decreases roles.length - i
+    if (roles[i]!.id === id) return false
+    i++
+  }
+  return true
+}
+
+//@ verify
+//@ ensures \result == exists(i, 0 <= i && i < roles.length && roles[i].id != id && roles[i].id != "" && roles[i].role == "maintainer" && forall(j, 0 <= j && j < i ==> roles[j].id != roles[i].id))
+export function otherMaintainer(roles: ReadonlyArray<RoleGrant>, id: string): boolean {
+  let i = 0
+  while (i < roles.length) {
+    //@ invariant 0 <= i && i <= roles.length
+    //@ invariant forall(j, 0 <= j && j < i ==> !(roles[j].id != id && roles[j].id != "" && roles[j].role == "maintainer" && forall(k, 0 <= k && k < j ==> roles[k].id != roles[j].id)))
+    //@ decreases roles.length - i
+    if (roles[i]!.id !== id && roleOf(roles, roles[i]!.id) === "maintainer") return true
+    i++
+  }
+  return false
+}
+
+/** Inputs named by the host, never roles or grant modes supplied by an HTTP caller. */
+//@ verify
+//@ ensures (id == "" || role == "viewer") ==> !\result
+//@ ensures mode == "bootstrap" ==> (\result == (id != "" && by == "" && roles.length == 0 && role == "maintainer"))
+//@ ensures mode == "participation" ==> (\result == (id != "" && by == id && role == "community" && forall(i, 0 <= i && i < roles.length ==> roles[i].id != id)))
+//@ ensures mode == "person" && \result && by != id ==> by != "" && exists(i, 0 <= i && i < roles.length && roles[i].id == by && roles[i].role == "maintainer" && forall(j, 0 <= j && j < i ==> roles[j].id != by))
+export function canGrant(roles: ReadonlyArray<RoleGrant>, id: string, by: string, role: Role, mode: GrantMode): boolean {
+  return grantPolicy(id, by, roleOf(roles, id), roleOf(roles, by), role, mode, ungranted(roles, id), roles.length === 0, otherMaintainer(roles, id))
+}
+
+/** Scalar policy keeps each guard's proof independent of roster lookup and replay. */
+//@ verify
+//@ ensures \result == (id != "" && role != "viewer" && ((mode == "bootstrap" && by == "" && ledgerEmpty && role == "maintainer") || (mode == "participation" && by == id && role == "community" && fresh) || (mode == "person" && by != "" && current != role && ((by == id && (role == "new" && (current == "community" || current == "contributor" || current == "maintainer") || role == "community" && (current == "contributor" || current == "maintainer") || role == "contributor" && current == "maintainer")) || (by != id && actor == "maintainer")) && (current != "maintainer" || other))))
+export function grantPolicy(id: string, by: string, current: Role, actor: Role, role: Role, mode: GrantMode, fresh: boolean, ledgerEmpty: boolean, other: boolean): boolean {
+  if (id === "" || role === "viewer") return false
+  if (mode === "bootstrap") return by === "" && ledgerEmpty && role === "maintainer"
+  if (mode === "participation") return by === id && role === "community" && fresh
+  if (by === "" || current === role) return false
+  if (by === id && rank(role) >= rank(current)) return false
+  if (by !== id && actor !== "maintainer") return false
+  if (current === "maintainer" && !other) return false
+  return true
+}
+
+// ── GitHub's issue projection (0022). GitHub owns content and edges; these numbered observations drive every surface.
+export type IssueOperation = "read" | "new" | "comment" | "link" | "split" | "commit" | "uncommit" | "propose" | "accept" | "decline" | "draft" | "spec-revise" | "spec-review"
+export interface IssueNote { readonly age: string; readonly author: string; readonly text: string; readonly event: boolean }
+export interface IssueRecord {
+  readonly number: number
+  readonly githubId: number
+  readonly title: string
+  readonly body: string
+  readonly author: string
+  readonly age: string
+  readonly state: "open" | "closed"
+  readonly labels: ReadonlyArray<string>
+  readonly parent: number
+  readonly task: "" | "Queued" | "Running" | "Done"
+  readonly assignee: string
+  readonly approvedBy?: string
+  readonly approvedAt?: string
+  readonly vip: "" | "In review" | "Accepted" | "Declined"
+  readonly review: string
+  readonly path: string
+  readonly comments: number
+  readonly notes: ReadonlyArray<IssueNote>
+}
+export interface IssuesState { readonly seq: number; readonly items: ReadonlyArray<IssueRecord>; readonly specification?: Specification }
+export interface IssuesEvent { readonly type: "IssuesObserved"; readonly seq: number; readonly items: ReadonlyArray<IssueRecord> }
+export const emptyIssues: IssuesState = { seq: 0, items: [] }
+
+/** Ordered GitHub observations; a stale response cannot replace a newer projection. */
+//@ verify
+//@ requires 0 <= state.seq && state.seq < 9007199254740991
+//@ ensures event.seq != state.seq + 1 ==> \result == state
+//@ ensures event.seq == state.seq + 1 ==> \result.seq == event.seq && \result.items == event.items
+//@ ensures \result.seq == state.seq || \result.seq == state.seq + 1
+export function applyIssues(state: IssuesState, event: IssuesEvent): IssuesState {
+  if (event.seq !== state.seq + 1) return state
+  return { ...state, seq: event.seq, items: event.items }
+}
+
+/** Every issue gate delegates to 0019: shaping is triage; commitments and review are maintainer decisions. */
+//@ verify
+//@ ensures op == "read" ==> \result
+//@ ensures (op == "commit" || op == "uncommit" || op == "accept" || op == "decline") ==> (\result == (role == "maintainer"))
+//@ ensures role == "viewer" && op != "read" ==> !\result
+//@ ensures op == "spec-revise" ==> (\result == (role == "maintainer"))
+//@ ensures op == "spec-review" ==> (\result == (role == "contributor" || role == "maintainer"))
+//@ ensures (op == "propose" || op == "draft") ==> (\result == (role == "community" || role == "contributor" || role == "maintainer"))
+//@ ensures (op == "link" || op == "split") ==> (\result == (role == "contributor" || role == "maintainer"))
+//@ ensures (op == "new" || op == "comment") ==> (\result == (role != "viewer"))
+export function issuePermission(role: Role, op: IssueOperation): boolean {
+  return may(role, issuePolicyAction(op))
+}
+
+/** One policy name for UI affordances, live authorization and delegated flows. */
+//@ verify
+//@ ensures op == "read" ==> \result == "read"
+//@ ensures op == "new" ==> \result == "issue"
+//@ ensures op == "comment" ==> \result == "comment"
+//@ ensures op == "spec-review" ==> \result == "triage"
+//@ ensures op == "spec-revise" ==> \result == "merge"
+//@ ensures (op == "link" || op == "split") ==> \result == "triage"
+//@ ensures (op == "propose" || op == "draft") ==> \result == "vip"
+//@ ensures (op == "commit" || op == "uncommit" || op == "accept" || op == "decline") ==> \result == "merge"
+export function issuePolicyAction(op: IssueOperation): Action {
+  if (op === "read") return "read"
+  if (op === "spec-review") return "triage"
+  if (op === "spec-revise") return "merge"
+  if (op === "new") return "issue"
+  if (op === "comment") return "comment"
+  if (op === "link" || op === "split") return "triage"
+  if (op === "propose" || op === "draft") return "vip"
+  return "merge"
+}
+
+/** Specification measure only: the first-match parent reached after exactly steps links; missing nodes are -1. */
+//@ verify
+//@ requires steps >= 0
+//@ ensures steps == 0 ==> \result == start
+//@ ensures steps > 0 && issueAncestorAt(items, start, steps - 1) == 0 ==> \result == 0
+//@ ensures steps > 0 && issueAncestorAt(items, start, steps - 1) != 0 && forall(i, 0 <= i && i < items.length ==> items[i].number != issueAncestorAt(items, start, steps - 1)) ==> \result == -1
+//@ ensures steps > 0 && issueAncestorAt(items, start, steps - 1) != 0 ==> forall(i, 0 <= i && i < items.length && items[i].number == issueAncestorAt(items, start, steps - 1) && forall(j, 0 <= j && j < i ==> items[j].number != issueAncestorAt(items, start, steps - 1)) ==> \result == items[i].parent)
+//@ decreases steps
+export function issueAncestorAt(items: ReadonlyArray<IssueRecord>, start: number, steps: number): number {
+  if (steps <= 0) return start
+  const previous = issueAncestorAt(items, start, steps - 1)
+  if (previous === 0) return 0
+  const found = items.find((item) => item.number === previous)
+  if (found === undefined) return -1
+  return found.parent
+}
+
+/** Each issue has one parent. Reject self links, missing parents and any cycle, including malformed input trees. */
+//@ verify
+//@ ensures \result ==> child > 0 && parent > 0 && child != parent
+//@ ensures \result ==> exists(i, 0 <= i && i < items.length && items[i].number == child)
+//@ ensures \result ==> exists(k, 0 <= k && k <= items.length + 1 && issueAncestorAt(items, parent, k) == 0 && forall(t, 0 <= t && t < k ==> issueAncestorAt(items, parent, t) != child))
+export function canLinkIssues(items: ReadonlyArray<IssueRecord>, child: number, parent: number): boolean {
+  if (parent <= 0 || child <= 0 || child === parent || !items.some((i) => i.number === child)) return false
+  let next = parent
+  let steps = 0
+  while (next !== 0 && steps <= items.length) {
+    //@ invariant 0 <= steps && steps <= items.length + 1
+    //@ invariant next == issueAncestorAt(items, parent, steps)
+    //@ invariant forall(k, 0 <= k && k < steps ==> issueAncestorAt(items, parent, k) != child)
+    //@ decreases items.length + 1 - steps
+    if (next === child) return false
+    const found = items.find((i) => i.number === next)
+    if (found === undefined) return false
+    next = found.parent
+    steps += 1
+  }
+  return next === 0
+}
+/** Commitment changes neither the issue identity nor its tree or content. */
+//@ verify
+//@ requires !committed || assignee != ""
+//@ ensures \result.number == issue.number && \result.githubId == issue.githubId && \result.parent == issue.parent
+//@ ensures \result.title == issue.title && \result.body == issue.body && \result.state == issue.state && \result.vip == issue.vip && \result.notes == issue.notes
+//@ ensures \result.author == issue.author && \result.age == issue.age && \result.labels == issue.labels && \result.comments == issue.comments && \result.review == issue.review && \result.path == issue.path
+//@ ensures committed ==> \result.task == "Queued" && \result.assignee == assignee
+//@ ensures !committed ==> \result.task == "" && \result.assignee == ""
+export function setCommitment(issue: IssueRecord, assignee: string, committed: boolean): IssueRecord {
+  return { ...issue, task: committed ? "Queued" : "", assignee: committed ? assignee : "" }
+}
+
+/** Reconcile a human review after any prefix of its GitHub writes has completed. */
+//@ verify
+//@ ensures \result.allowed == (vip == "In review" || vip == (accepted ? "Accepted" : "Declined"))
+//@ ensures \result.label == (\result.allowed && vip == "In review")
+//@ ensures \result.close == (\result.allowed && !accepted && state == "open")
+export function reviewActions(vip: "" | "In review" | "Accepted" | "Declined", state: "open" | "closed", accepted: boolean): { readonly allowed: boolean; readonly label: boolean; readonly close: boolean } {
+  const allowed = vip === "In review" || vip === (accepted ? "Accepted" : "Declined")
+  return { allowed, label: allowed && vip === "In review", close: allowed && !accepted && state === "open" }
+}
+
+export interface UnansweredSelection { readonly indexes: ReadonlyArray<number>; readonly posts: ReadonlyArray<string> }
+/** Source positions make first-in-order selection and multiplicity explicit. */
+//@ verify
+//@ ensures conversation.agent == "working" ==> \result.length == 0
+//@ ensures \result.length <= conversation.entries.length
+//@ ensures forall(a, forall(b, 0 <= a && a < b && b < \result.length ==> \result[a] < \result[b]))
+//@ ensures forall(j, 0 <= j && j < \result.length ==> 0 <= \result[j] && \result[j] < conversation.entries.length && (conversation.entries[\result[j]].author == "person" && conversation.entries[\result[j]].id != "" && forall(k, 0 <= k && k < conversation.entries.length && conversation.entries[k].author == "agent" ==> conversation.entries[k].inReplyTo != conversation.entries[\result[j]].id)))
+//@ ensures conversation.agent != "working" ==> forall(j, 0 <= j && j < conversation.entries.length && (conversation.entries[j].author == "person" && conversation.entries[j].id != "" && forall(k, 0 <= k && k < conversation.entries.length && conversation.entries[k].author == "agent" ==> conversation.entries[k].inReplyTo != conversation.entries[j].id)) ==> \result.includes(j))
+export function unansweredIndexes(conversation: Conversation): ReadonlyArray<number> {
+  if (conversation.agent === "working") return []
+  const indexes: Array<number> = []
+  let i = 0
+  while (i < conversation.entries.length) {
+    //@ invariant 0 <= i && i <= conversation.entries.length
+    //@ invariant indexes.length <= i
+    //@ invariant forall(a, forall(b, 0 <= a && a < b && b < indexes.length ==> indexes[a] < indexes[b]))
+    //@ invariant forall(j, 0 <= j && j < indexes.length ==> 0 <= indexes[j] && indexes[j] < i && (conversation.entries[indexes[j]].author == "person" && conversation.entries[indexes[j]].id != "" && forall(k, 0 <= k && k < conversation.entries.length && conversation.entries[k].author == "agent" ==> conversation.entries[k].inReplyTo != conversation.entries[indexes[j]].id)))
+    //@ invariant forall(j, 0 <= j && j < i && (conversation.entries[j].author == "person" && conversation.entries[j].id != "" && forall(k, 0 <= k && k < conversation.entries.length && conversation.entries[k].author == "agent" ==> conversation.entries[k].inReplyTo != conversation.entries[j].id)) ==> indexes.includes(j))
+    //@ decreases conversation.entries.length - i
+    const entry = conversation.entries[i]!
+    if (entry.author === "person" && canReplyTo(conversation.entries, entry.id)) indexes.push(i)
+    i++
+  }
+  return indexes
+}
+
+//@ verify
+//@ ensures conversation.agent == "working" ==> \result.posts.length == 0
+//@ ensures \result.posts.length == \result.indexes.length && \result.indexes.length <= conversation.entries.length
+//@ ensures forall(a, forall(b, 0 <= a && a < b && b < \result.indexes.length ==> \result.indexes[a] < \result.indexes[b]))
+//@ ensures forall(j, 0 <= j && j < \result.indexes.length ==> 0 <= \result.indexes[j] && \result.indexes[j] < conversation.entries.length && (conversation.entries[\result.indexes[j]].author == "person" && conversation.entries[\result.indexes[j]].id != "" && forall(k, 0 <= k && k < conversation.entries.length && conversation.entries[k].author == "agent" ==> conversation.entries[k].inReplyTo != conversation.entries[\result.indexes[j]].id)))
+//@ ensures conversation.agent != "working" ==> forall(j, 0 <= j && j < conversation.entries.length && (conversation.entries[j].author == "person" && conversation.entries[j].id != "" && forall(k, 0 <= k && k < conversation.entries.length && conversation.entries[k].author == "agent" ==> conversation.entries[k].inReplyTo != conversation.entries[j].id)) ==> \result.indexes.includes(j))
+//@ ensures forall(j, 0 <= j && j < \result.posts.length ==> \result.posts[j] == conversation.entries[\result.indexes[j]].id)
+export function unansweredSelection(conversation: Conversation): UnansweredSelection {
+  const indexes = unansweredIndexes(conversation)
+  return { indexes, posts: indexes.map((i) => conversation.entries[i]!.id) }
+}
+
+/** Replay a retained JavaScript array from a zero cursor; each entry advances by at most one. */
+//@ verify
+//@ requires initial.seq == 0
+//@ requires events.length <= 4294967295
+//@ ensures 0 <= \result.seq && \result.seq <= events.length
+//@ ensures forall(j, 0 <= j && j < events.length ==> events[j].seq == j + 1) ==> \result.seq == events.length
+export function replayLog(initial: Conversation, events: ReadonlyArray<Event>): Conversation {
+  let current = initial
+  let i = 0
+  while (i < events.length) {
+    //@ invariant 0 <= i && i <= events.length
+    //@ invariant 0 <= current.seq && current.seq <= i
+    //@ invariant forall(j, 0 <= j && j < events.length ==> events[j].seq == j + 1) ==> current.seq == i
+    //@ decreases events.length - i
+    current = apply(current, events[i]!)
+    i++
+  }
+  return current
+}
+
+/** Specification-only prefix measure; executable removal never calls this recursion. */
+//@ verify
+//@ requires 0 <= end && end <= pending.length
+//@ ensures 0 <= \result && \result <= end
+//@ ensures end == 0 ==> \result == 0
+//@ ensures end > 0 ==> \result == pendingCount(pending, clientId, end - 1) + (pending[end - 1].clientId != clientId ? 1 : 0)
+//@ decreases end
+export function pendingCount(pending: ReadonlyArray<Pending>, clientId: string, end: number): number {
+  return end === 0 ? 0 : pendingCount(pending, clientId, end - 1) + (pending[end - 1]!.clientId !== clientId ? 1 : 0)
+}
+
+/** Stable removal preserves every retained occurrence's position, including repeated values. */
+//@ verify
+//@ ensures \result.length <= pending.length
+//@ ensures \result.length == pendingCount(pending, clientId, pending.length)
+//@ ensures forall(i, 0 <= i && i < pending.length && pending[i].clientId != clientId ==> 0 <= pendingCount(pending, clientId, i) && pendingCount(pending, clientId, i) < \result.length && \result[pendingCount(pending, clientId, i)] == pending[i])
+//@ ensures forall(i, 0 <= i && i < \result.length ==> \result[i].clientId != clientId && pending.includes(\result[i]))
+export function acknowledgedPending(pending: ReadonlyArray<Pending>, clientId: string): ReadonlyArray<Pending> {
+  const result: Array<Pending> = []
+  let i = 0
+  while (i < pending.length) {
+    //@ invariant 0 <= i && i <= pending.length
+    //@ invariant result.length <= i
+    //@ invariant result.length == pendingCount(pending, clientId, i)
+    //@ invariant forall(j, 0 <= j && j < i && pending[j].clientId != clientId ==> 0 <= pendingCount(pending, clientId, j) && pendingCount(pending, clientId, j) < result.length && result[pendingCount(pending, clientId, j)] == pending[j])
+    //@ invariant forall(j, 0 <= j && j < result.length ==> result[j].clientId != clientId && pending.includes(result[j]))
+    //@ decreases pending.length - i
+    if (pending[i]!.clientId !== clientId) result.push(pending[i]!)
+    i++
+  }
+  return result
+}
+
+
+export interface VipFile { readonly filename: string; readonly status: string }
+/** The host supplies complete native PR facts and a validated repository document path. */
+//@ verify
+//@ ensures \result ==> issueAuthor > 0 && issueAuthor == reviewAuthor && path != ""
+//@ ensures \result ==> exists(i, 0 <= i && i < files.length && files[i].filename == path && files[i].status != "removed")
+//@ ensures (issueAuthor <= 0 || issueAuthor != reviewAuthor || path == "") ==> !\result
+export function vipDocumentMatches(issueAuthor: number, reviewAuthor: number, path: string, files: ReadonlyArray<VipFile>): boolean {
+  if (issueAuthor <= 0 || issueAuthor !== reviewAuthor || path === "") return false
+  return files.some(file => file.filename === path && file.status !== "removed")
+}
+
+
+// ── The two acceptance gates (VL-32 / PROC-28). Authority comes from the host, never an intent payload.
+/** Gate 1 records only a maintainer person's approval, including attribution. */
+//@ verify
+//@ ensures (kind != "person" || role != "maintainer" || actor == "" || at == "" || issue.vip != "In review") ==> \result == issue
+//@ ensures kind == "person" && role == "maintainer" && actor != "" && at != "" && issue.vip == "In review" ==> \result.vip == "Accepted" && \result.approvedBy == actor && \result.approvedAt == at
+//@ ensures \result.task == issue.task && \result.state == issue.state && \result.number == issue.number
+export function approveVip(issue: IssueRecord, role: Role, kind: string, actor: string, at: string): IssueRecord {
+  if (kind !== "person" || role !== "maintainer" || actor === "" || at === "" || issue.vip !== "In review") return issue
+  return { ...issue, vip: "Accepted", approvedBy: actor, approvedAt: at }
+}
+//@ verify
+//@ ensures issue.vip != "In review" ==> \result == issue
+//@ ensures issue.vip == "In review" ==> \result.vip == "Declined" && \result.state == "closed"
+//@ ensures \result.task == issue.task && \result.number == issue.number
+export function declineVip(issue: IssueRecord): IssueRecord {
+  return issue.vip === "In review" ? { ...issue, vip: "Declined", state: "closed" } : issue
+}
+export type SpecificationReviewer = "astra" | "sol" | "fable" | "opus"
+export interface SpecificationReview { readonly verdict: "" | "LGTM" | "Changes requested"; readonly grade: string; readonly revision: number; readonly link: string }
+export interface Specification {
+  readonly revision: number
+  readonly text: string
+  readonly astra: SpecificationReview
+  readonly sol: SpecificationReview
+  readonly fable: SpecificationReview
+  readonly opus: SpecificationReview
+}
+/** Each answer must be an A- or better LGTM on this revision and retain its review receipt. */
+//@ verify
+//@ ensures \result == (revision > 0 && review.verdict == "LGTM" && (review.grade == "A+" || review.grade == "A" || review.grade == "A-") && review.revision == revision && review.link != "")
+export function specificationReviewPasses(review: SpecificationReview, revision: number): boolean {
+  return revision > 0 && review.verdict === "LGTM" && (review.grade === "A+" || review.grade === "A" || review.grade === "A-") && review.revision === revision && review.link !== ""
+}
+/**
+ * VL-32 addendum: the lang lead chose keep under Will's delegation (factory/open, question 3).
+ * Automated checks maintain self-consistency after acceptance; a release runs the full panel again.
+ * Reset remains an explicit, proved policy for callers testing that rule.
+ */
+export type SpecRevisionPolicy = "reset" | "keep"
+export const SPEC_REVISION_POLICY: SpecRevisionPolicy = "keep"
+/** All four named seats answered LGTM with A- or better on this one revision. */
+//@ verify
+//@ ensures \result == (specificationReviewPasses(spec.astra, revision) && specificationReviewPasses(spec.sol, revision) && specificationReviewPasses(spec.fable, revision) && specificationReviewPasses(spec.opus, revision))
+export function specificationAcceptedOn(spec: Specification, revision: number): boolean {
+  return specificationReviewPasses(spec.astra, revision) && specificationReviewPasses(spec.sol, revision) && specificationReviewPasses(spec.fable, revision) && specificationReviewPasses(spec.opus, revision)
+}
+/** Gate 2 has no writable accepted bit: "reset" needs the four on the current revision, "keep" on any one revision so far. */
+//@ verify
+//@ ensures policy == "reset" ==> \result == specificationAcceptedOn(spec, spec.revision)
+//@ ensures policy != "reset" ==> \result == (spec.astra.revision > 0 && spec.astra.revision <= spec.revision && specificationAcceptedOn(spec, spec.astra.revision))
+export function specificationAcceptedUnder(spec: Specification, policy: SpecRevisionPolicy): boolean {
+  if (policy === "reset") return specificationAcceptedOn(spec, spec.revision)
+  return spec.astra.revision > 0 && spec.astra.revision <= spec.revision && specificationAcceptedOn(spec, spec.astra.revision)
+}
+/** Gate 2 under the project's policy. */
+export function specificationAccepted(spec: Specification): boolean {
+  return specificationAcceptedUnder(spec, SPEC_REVISION_POLICY)
+}
+//@ verify
+//@ ensures \result.verdict == "" && \result.grade == "" && \result.revision == 0 && \result.link == ""
+export function unansweredSpecificationReview(): SpecificationReview {
+  return { verdict: "", grade: "", revision: 0, link: "" }
+}
+/** Content equality is a no-op; a new immutable revision clears every answer under "reset" and keeps them under "keep". */
+//@ verify
+//@ requires 0 <= spec.revision && spec.revision < 9007199254740991
+//@ ensures text == spec.text ==> \result == spec
+//@ ensures text != spec.text ==> \result.revision == spec.revision + 1 && \result.text == text
+//@ ensures text != spec.text && policy == "reset" ==> \result.astra.verdict == "" && \result.sol.verdict == "" && \result.fable.verdict == "" && \result.opus.verdict == ""
+//@ ensures text != spec.text && policy == "reset" ==> !specificationAcceptedUnder(\result, policy)
+//@ ensures text != spec.text && policy == "reset" ==> \result.astra == unansweredSpecificationReview() && \result.sol == unansweredSpecificationReview() && \result.fable == unansweredSpecificationReview() && \result.opus == unansweredSpecificationReview()
+//@ ensures text != spec.text && policy != "reset" ==> \result.astra == spec.astra && \result.sol == spec.sol && \result.fable == spec.fable && \result.opus == spec.opus
+//@ ensures text != spec.text && policy != "reset" && specificationAcceptedUnder(spec, policy) ==> specificationAcceptedUnder(\result, policy)
+export function reviseSpecificationUnder(spec: Specification, text: string, policy: SpecRevisionPolicy): Specification {
+  if (text === spec.text) return spec
+  if (policy !== "reset") return { revision: spec.revision + 1, text, astra: spec.astra, sol: spec.sol, fable: spec.fable, opus: spec.opus }
+  return { revision: spec.revision + 1, text, astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }
+}
+/** A new revision under the project's policy. */
+export function reviseSpecification(spec: Specification, text: string): Specification {
+  return reviseSpecificationUnder(spec, text, SPEC_REVISION_POLICY)
+}
+/** A flow's bound reviewer identity may record only its own current-revision answer. */
+//@ verify
+//@ ensures (principal != reviewer || review.revision != spec.revision || review.verdict == "" || review.link == "") ==> \result == spec
+//@ ensures principal == reviewer && review.revision == spec.revision && review.verdict != "" && review.link != "" && reviewer == "astra" ==> \result.astra == review
+//@ ensures principal == reviewer && review.revision == spec.revision && review.verdict != "" && review.link != "" && reviewer == "sol" ==> \result.sol == review
+//@ ensures principal == reviewer && review.revision == spec.revision && review.verdict != "" && review.link != "" && reviewer == "fable" ==> \result.fable == review
+//@ ensures principal == reviewer && review.revision == spec.revision && review.verdict != "" && review.link != "" && reviewer == "opus" ==> \result.opus == review
+//@ ensures \result.revision == spec.revision && \result.text == spec.text
+//@ ensures reviewer != "astra" ==> \result.astra == spec.astra
+//@ ensures reviewer != "sol" ==> \result.sol == spec.sol
+//@ ensures reviewer != "fable" ==> \result.fable == spec.fable
+//@ ensures reviewer != "opus" ==> \result.opus == spec.opus
+export function recordSpecificationReview(spec: Specification, reviewer: string, principal: string, review: SpecificationReview): Specification {
+  if (principal !== reviewer || review.revision !== spec.revision || review.verdict === "" || review.link === "") return spec
+  if (reviewer === "astra") return { ...spec, astra: review }
+  if (reviewer === "sol") return { ...spec, sol: review }
+  if (reviewer === "fable") return { ...spec, fable: review }
+  if (reviewer === "opus") return { ...spec, opus: review }
+  return spec
+}
+
+/** Elapsed reading time is clamped at zero and at the saved remainder; clock rollback adds no time. */
+//@ verify
+//@ ensures remaining < 0 ==> \result == 0
+//@ ensures remaining >= 0 ==> 0 <= \result && \result <= remaining
+//@ ensures remaining >= 0 && now <= started ==> \result == remaining
+//@ ensures remaining >= 0 && now > started && now - started >= remaining ==> \result == 0
+//@ ensures remaining >= 0 && now > started && now - started < remaining ==> \result == remaining - (now - started)
+export function holdRemaining(remaining: number, started: number, now: number): number {
+  if (remaining < 0) return 0
+  if (now <= started) return remaining
+  return now - started >= remaining ? 0 : remaining - (now - started)
+}
+
+/** Exact drive projection, returned as a required record for LemmaScript's optional-record boundary. */
+//@ verify
+//@ ensures \result.step == step && \result.target == target && !\result.paused
+//@ ensures \result.revision == revision && \result.remaining == duration && \result.at == at
+export function drivenWalkthrough(step: number, target: string, revision: number, duration: number, at: number): Walkthrough {
+  return { step, target, paused: false, revision, remaining: duration, at }
+}
+
+//@ verify
+//@ ensures \result.step == showing.step && \result.target == showing.target && \result.paused == paused
+//@ ensures \result.revision == revision && \result.at == at
+//@ ensures showing.paused ==> \result.remaining == showing.remaining
+//@ ensures !showing.paused && showing.remaining >= 0 && at <= showing.at ==> \result.remaining == showing.remaining
+//@ ensures !showing.paused && showing.remaining >= 0 && at > showing.at && at - showing.at < showing.remaining ==> \result.remaining == showing.remaining - (at - showing.at)
+//@ ensures !showing.paused && showing.remaining >= 0 && at > showing.at && at - showing.at >= showing.remaining ==> \result.remaining == 0
+export function controlledWalkthrough(showing: Walkthrough, paused: boolean, revision: number, at: number): Walkthrough {
+  return { ...showing, paused, revision, remaining: showing.paused ? showing.remaining : holdRemaining(showing.remaining, showing.at, at), at }
+}
+
+//@ verify
+//@ ensures \result.step == step && \result.target == "" && !\result.paused
+//@ ensures \result.revision == revision && \result.at == at && \result.remaining == showing.remaining
+export function soughtWalkthrough(showing: Walkthrough, step: number, revision: number, at: number): Walkthrough {
+  return { ...showing, step, target: "", paused: false, revision, at }
+}
+
+// ── Wiki editing (0021): the repository's Markdown is the wiki; the app holds its ordered observations. ───────────
+
+/** One wiki operation. Reading is public; a draft or proposal is at least a contributor's; Save is a maintainer's review change. */
+export type WikiOperation = "read" | "save" | "propose" | "draft"
+
+/** The repository-observed source of one wiki page; `revision` names the observed commit. */
+export interface WikiPageState {
+  readonly id: string
+  readonly source: string
+  readonly revision: string
+}
+
+/** Ordered observations of the repository's wiki pages, never an independent wiki (0022's shape for issues). */
+export interface WikiEdits {
+  readonly seq: number
+  readonly pages: ReadonlyArray<WikiPageState>
+}
+
+/** The host observed the repository's wiki pages at observation `seq`. */
+export interface WikiEditsEvent {
+  readonly type: "WikiEditsObserved"
+  readonly seq: number
+  readonly pages: ReadonlyArray<WikiPageState>
+}
+
+/** No page observed yet. */
+export const emptyWikiEdits: WikiEdits = { seq: 0, pages: [] }
+
+/** Ordered observations; a stale response cannot replace a newer projection. */
+//@ verify
+//@ requires 0 <= state.seq && state.seq < 9007199254740991
+//@ ensures event.seq != state.seq + 1 ==> \result == state
+//@ ensures event.seq == state.seq + 1 ==> \result.seq == event.seq && \result.pages == event.pages
+//@ ensures \result.seq == state.seq || \result.seq == state.seq + 1
+export function applyWikiEdits(state: WikiEdits, event: WikiEditsEvent): WikiEdits {
+  if (event.seq !== state.seq + 1) return state
+  return { seq: event.seq, pages: event.pages }
+}
+
+/** Every wiki gate delegates to 0019: reading is public, proposals are a contributor's, Save a maintainer's. */
+//@ verify
+//@ ensures op == "read" ==> \result
+//@ ensures op == "save" ==> (\result == (role == "maintainer"))
+//@ ensures (op == "propose" || op == "draft") ==> (\result == (role == "contributor" || role == "maintainer"))
+export function wikiPermission(role: Role, op: WikiOperation): boolean {
+  return may(role, wikiPolicyAction(op))
+}
+
+/** One policy name for UI affordances, live authorization and delegated flows. */
+//@ verify
+//@ ensures op == "read" ==> \result == "read"
+//@ ensures op == "save" ==> \result == "merge"
+//@ ensures (op == "propose" || op == "draft") ==> \result == "wiki"
+export function wikiPolicyAction(op: WikiOperation): Action {
+  if (op === "read") return "read"
+  if (op === "save") return "merge"
+  return "wiki"
+}
+
+/** An editor response belongs only to its still-open request. */
+//@ verify
+//@ ensures \result == (page != "" && page == activePage && request == activeRequest)
+export function currentWikiEditor(page: string, request: number, activePage: string, activeRequest: number): boolean {
+  return page !== "" && page === activePage && request === activeRequest
 }

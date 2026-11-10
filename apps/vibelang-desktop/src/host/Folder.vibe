@@ -1,0 +1,113 @@
+// Descriptor-relative folder capabilities. A captured selection never follows a later folder switch.
+import { BunFileSystem } from "@smthrs/platform-bun"
+import { Grep, PortableSearch } from "@smthrs/std"
+import { SecureRandom } from "effect/crypto"
+import { FileSystem as Confined } from "@smthrs/kernel"
+import { relativeFile } from "../policy.vibe"
+import { FolderInfo } from "../protocol.vibe"
+export { FolderInfo } from "../protocol.vibe"
+
+export schema error FolderFailure { code: "closed" | "path" | "unavailable" | "too-large" | "changed" }
+export interface BoundFolder {
+  search(query: string): Grep.Output!FolderFailure
+  list(): ReadonlyArray<string>!FolderFailure
+  read(name: string): string!FolderFailure
+  replace(name: string, before: string, after: string): void!FolderFailure
+}
+export service Folder {
+  open(root: string): FolderInfo!FolderFailure
+  restore(info: FolderInfo): FolderInfo!FolderFailure
+  bind(info: FolderInfo): BoundFolder!FolderFailure
+  close(): void!!
+  current(): (FolderInfo | null)!!
+  list(): ReadonlyArray<string>!FolderFailure
+  read(name: string): string!FolderFailure
+  write(name: string, text: string): void!FolderFailure
+}
+interface Selected { readonly info: FolderInfo; readonly fs: FileSystem.FileSystem }
+
+export const folderLayer = Layer.effect(Folder, effect {
+  const maxBytes = try Config.withDefault(Config.Int("VIBELANG_DESKTOP_FILE_BYTES"), 1024 * 1024)
+  const host = try FileSystem.FileSystem
+  const path = try Path.Path
+  const random = try SecureRandom.SecureRandom
+  const selected = try Ref.make<Selected | undefined>(undefined)
+  const gate = try Semaphore.make(1)
+  const count = Metric.counter("vibelang_desktop_files", { incremental: true })
+  function observed<A, E, R>(operation: string, body: A!E!R) {
+    return Semaphore.withPermits(gate, 1)(withSpan(effect {
+      const result = try exit(body)
+      const outcome = Exit.isSuccess(result) ? "done" : "failed"
+      try Metric.update(Metric.withAttributes(count, { operation, outcome }), 1)
+      try Effect.logInfo("vibelang.desktop.files").pipe(Effect.annotateLogs({ operation, outcome }))
+      return try result
+    }, `vibelang.desktop.files.${operation}`))
+  }
+  effect function use(expected?: FolderInfo) {
+    const value = try Ref.get(selected)
+    if (value === undefined) throw new FolderFailure({ code: "closed" })
+    if (expected !== undefined && (value.info.token !== expected.token || value.info.identity !== expected.identity)) throw new FolderFailure({ code: "changed" })
+    return value
+  }
+  effect function filename(name: string) {
+    if (!relativeFile(name)) throw new FolderFailure({ code: "path" })
+    return name
+  }
+  effect function names(fs: FileSystem.FileSystem) {
+    return try fs.readDirectory(".", { recursive: true }).pipe(Effect.mapError(() => new FolderFailure({ code: "unavailable" })))
+  }
+  effect function read(fs: FileSystem.FileSystem, name: string) {
+    const file = try filename(name)
+    const stat = try fs.stat(file).pipe(Effect.mapError(() => new FolderFailure({ code: "unavailable" })))
+    if (Number(stat.size) > maxBytes) throw new FolderFailure({ code: "too-large" })
+    return try fs.readFileString(file).pipe(Effect.mapError(() => new FolderFailure({ code: "unavailable" })))
+  }
+  effect function write(fs: FileSystem.FileSystem, name: string, text: string) {
+    const file = try filename(name)
+    if (new TextEncoder().encode(text).length > maxBytes) throw new FolderFailure({ code: "too-large" })
+    try fs.writeFileString(file, text).pipe(Effect.mapError(() => new FolderFailure({ code: "unavailable" })))
+  }
+  effect function open(root: string, previous?: FolderInfo) {
+    if (!path.isAbsolute(root) || root.includes("\u0000")) throw new FolderFailure({ code: "path" })
+    const fs = try Confined.confined(host, root).pipe(Effect.provideService(Path.Path, path), Effect.mapError(() => new FolderFailure({ code: "unavailable" })))
+    const stat = try fs.stat(".").pipe(Effect.mapError(() => new FolderFailure({ code: "unavailable" })))
+    if (Option.isNone(stat.ino)) throw new FolderFailure({ code: "unavailable" })
+    const identity = `${stat.dev}:${stat.ino.value}`
+    if (previous !== undefined && previous.identity !== identity) throw new FolderFailure({ code: "changed" })
+    const entries = try names(fs)
+    const info = { path: root, files: entries.length, identity, token: previous?.token ?? (try random.uuidV4()) }
+    try Ref.set(selected, { fs, info })
+    return info
+  }
+  return {
+    open: (root: string) => observed("open", open(root)),
+    restore: (info: FolderInfo) => observed("restore", open(info.path, info)),
+    bind: (info: FolderInfo) => observed("bind", effect {
+      try use(info)
+      const bound: BoundFolder = {
+        search: (query) => observed("search", effect {
+          const current = try use(info)
+          const search = PortableSearch.layer.pipe(Layer.provide(Layer.merge(Layer.succeed(FileSystem.FileSystem, current.fs), Layer.succeed(Path.Path, path))))
+          const found = try Grep.run({ pattern: query, root: info.path, fixedStrings: true, limit: 100 }).pipe(Effect.provide(search), Effect.mapError(() => new FolderFailure({ code: "unavailable" })))
+          return { ...found, matches: found.matches.map((match) => ({ ...match, file: path.relative(info.path, match.file) })), files: found.files.map((file) => path.relative(info.path, file)) }
+        }),
+        list: () => observed("list", effect { return try names((try use(info)).fs) }),
+        read: (name) => observed("read", effect { return try read((try use(info)).fs, name) }),
+        replace: (name, before, after) => observed("replace", effect {
+          const { fs } = try use(info)
+          const current = try read(fs, name)
+          if (current === after) return
+          if (current !== before) throw new FolderFailure({ code: "changed" })
+          if (new TextEncoder().encode(after).length > maxBytes) throw new FolderFailure({ code: "too-large" })
+          try BunFileSystem.replaceFileString(fs, name, before, after).pipe(Effect.provideService(SecureRandom.SecureRandom, random), Effect.provideService(Path.Path, path), Effect.mapError(() => new FolderFailure({ code: "changed" })))
+        }),
+      }
+      return bound
+    }),
+    close: () => observed("close", Ref.set(selected, undefined)),
+    current: () => map(Ref.get(selected), (value) => value?.info ?? null),
+    list: () => observed("list", effect { return try names((try use()).fs) }),
+    read: (name: string) => observed("read", effect { return try read((try use()).fs, name) }),
+    write: (name: string, text: string) => observed("write", effect { try write((try use()).fs, name, text) }),
+  }
+})

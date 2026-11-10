@@ -1,0 +1,63 @@
+// The Worker's public HTTP contract, served on a real loopback socket over product MockMythical flows.
+import { HttpServer, HttpServerRequest } from "effect/http"
+import { Mythical } from "../../src/history/MythicalHistory.vibe"
+import { ApproveBody, NoteBody, PlanBody, StartBody } from "../../src/history/wire.vibe"
+import { afterOf, eventStream, handle, type Conversations, type Histories } from "../../worker/Http.vibe"
+import { Unreachable } from "../../worker/Unreachable.vibe"
+
+export const unavailableConversations: Conversations = {
+  openWiki: () => fail(new Unreachable({ what: "conversation" })),
+  post: () => fail(new Unreachable({ what: "conversation" })),
+  read: () => fail(new Unreachable({ what: "conversation" })),
+  tour: () => fail(new Unreachable({ what: "conversation" })),
+  endTour: () => fail(new Unreachable({ what: "conversation" })),
+  events: () => fail(new Unreachable({ what: "conversation" })),
+}
+
+/** The same Histories host contract as the Worker, backed by actual product flows on their in-memory engine. */
+export effect function serveHistory() {
+  const product = try Mythical
+  const histories: Histories = {
+    page: effect (request) => {
+      switch (request.what) {
+        case "outline": return try Effect.orDie(product.outline())
+        case "epic": return try Effect.orDie(product.epic(request.id, request.from))
+        case "commit": return try Effect.orDie(product.commit(request.id))
+        case "search": return try Effect.orDie(product.search(request.query))
+      }
+    },
+    events: effect () => {
+      const request = try HttpServerRequest.HttpServerRequest
+      return eventStream(Stream.orDie(product.events(afterOf(new URL(request.url, "http://local")) ?? 0)))
+    },
+    write: effect (write, body) => {
+      const written = effect {
+        switch (write) {
+          case "plan": return { id: try product.plan(try Schema.decodeUnknownEffect(PlanBody)(body)), folded: 0, refusal: null }
+          case "start": {
+            const request = try Schema.decodeUnknownEffect(StartBody)(body)
+            try product.start(request.id, request.lane)
+            break
+          }
+          case "note": {
+            const request = try Schema.decodeUnknownEffect(NoteBody)(body)
+            try product.note(request.id, request.section, request.text)
+            break
+          }
+          case "approve": {
+            const request = try Schema.decodeUnknownEffect(ApproveBody)(body)
+            try product.approve(request.id)
+            break
+          }
+          case "fold": return { id: "", folded: try product.fold(), refusal: null }
+        }
+        return { id: "", folded: 0, refusal: null }
+      } catch effect (error) => {
+        if (error._tag === "Refused") return { id: "", folded: 0, refusal: error.refusal }
+        throw new Unreachable({ what: "history" })
+      }
+      return written
+    },
+  }
+  try HttpServer.serveEffect(handle(unavailableConversations, histories))
+}

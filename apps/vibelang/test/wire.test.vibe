@@ -1,7 +1,9 @@
 // The API's routes and cursors (src/core/wire.vibe, worker/Http.vibe) and the names the sequencer gives its replies
 // and the budget its days: plain functions the workerd suites reach only through HTTP.
 import { describe, expect, it } from "@effect/vitest"
-import { conversationPath, MAX_CONVERSATION, routeOf } from "../src/core/wire.vibe"
+import { Conversation, EventSchema } from "../src/core/schemas.vibe"
+import { conversationPath, MAX_CONVERSATION, routeOf, TourControlBody } from "../src/core/wire.vibe"
+import { Written } from "../src/history/wire.vibe"
 import { failureOf } from "../src/web/view.vibe"
 import { afterOf } from "../worker/Http.vibe"
 import { dayOf, REASONS } from "../worker/Reply.vibe"
@@ -10,9 +12,12 @@ import { replyIdOf } from "../src/core/flows.vibe"
 describe("the API's routes", () => {
   it("round-trips any conversation id as one path segment", () => {
     for (const id of ["home", "a b", "ü/ß?#%", "x".repeat(MAX_CONVERSATION)]) {
-      expect(routeOf("GET", conversationPath(id))).toEqual({ kind: "read", conversation: id })
-      expect(routeOf("POST", `${conversationPath(id)}/posts`)).toEqual({ kind: "post", conversation: id })
-      expect(routeOf("GET", `${conversationPath(id)}/events`)).toEqual({ kind: "events", conversation: id })
+      const path = conversationPath(id)
+      expect(path).toBeDefined()
+      if (path === undefined) continue
+      expect(routeOf("GET", path)).toEqual({ kind: "read", conversation: id })
+      expect(routeOf("POST", `${path}/posts`)).toEqual({ kind: "post", conversation: id })
+      expect(routeOf("GET", `${path}/events`)).toEqual({ kind: "events", conversation: id })
     }
   })
 
@@ -34,6 +39,24 @@ describe("the API's routes", () => {
   })
 })
 
+describe("wire schemas and non-finite numbers", () => {
+  it("refuses NaN and Infinity in timestamps, attempts, steps and counts, which JSON carries as null", () => {
+    // Fuzz finding: a generated ActionSettled with `at: -Infinity` encoded as null and then failed to decode.
+    const cases: ReadonlyArray<readonly [Schema.Codec<unknown, unknown>, unknown]> = [
+      [EventSchema, { type: "ActionRequested", seq: 1, id: "a", flow: "f", door: "d", actor: "g", at: NaN }],
+      [EventSchema, { type: "ActionStep", seq: 1, id: "a", key: "k", name: "n", attempt: Infinity, state: "s", at: 1 }],
+      [EventSchema, { type: "ActionSettled", seq: 1, id: "a", state: "succeeded", result: "", at: -Infinity }],
+      [Conversation, { seq: 1, entries: [], agent: "idle", replying: "", pane: "", roles: [], runs: [{ id: "r", flow: "f", door: "d", actor: "a", state: "s", started: 1, at: 1.5, result: "", steps: [{ key: "k", name: "n", attempt: 0.5, state: "s", started: -1, at: 2 }] }] }],
+      [TourControlBody, { action: "seek", step: 1.5 }],
+      [Written, { id: "m1", folded: Infinity }],
+    ]
+    for (const [schema, value] of cases) {
+      expect(Schema.is(schema)(value)).toBe(false)
+      expect(() => Schema.decodeUnknownSync(Schema.fromJsonString(schema))(JSON.stringify(value))).toThrow()
+    }
+  })
+})
+
 describe("names and words", () => {
   it("gives each post exactly one reply id and each UTC day its budget", () => {
     expect(replyIdOf("m7")).toBe("r7")
@@ -46,4 +69,65 @@ describe("names and words", () => {
     expect(failureOf("failed")).toBe("Answer failed")
     expect(failureOf("")).toBe("Answer failed")
   })
+})
+
+
+import { PostBody } from "../src/core/wire.vibe"
+import { PlanBody, StartBody, NoteBody, ApproveBody, pathOf as historyPath } from "../src/history/wire.vibe"
+it("refuses history paths whose URI encoding cannot represent the input", () => {
+  expect(historyPath({ what: "epic", id: "\ud800", from: 0 })).toBeUndefined()
+  expect(historyPath({ what: "commit", id: "\udfff" })).toBeUndefined()
+  expect(historyPath({ what: "search", query: "\ud800" })).toBeUndefined()
+  expect(historyPath({ what: "search", query: "a b" })).toBe("/api/history/search?q=a%20b")
+})
+
+
+it("refuses malformed Unicode before a post reaches durable storage", () => {
+  for (const field of ["clientId", "name", "text"]) {
+    expect(Schema.is(PostBody)({ clientId: "c1", name: "Guest", text: "hello", [field]: "\ud800" })).toBe(false)
+    expect(Schema.is(PostBody)({ clientId: "c1", name: "Guest", text: "hello", [field]: "\udfff" })).toBe(false)
+  }
+  expect(Schema.is(PostBody)({ clientId: "c1", name: "Guest", text: "hello 👋" })).toBe(true)
+})
+
+
+it("refuses malformed Unicode in every durable history write field", () => {
+  const cases: ReadonlyArray<readonly [Schema.Constraint, Readonly<Record<string, string>>]> = [
+    [PlanBody, { how: "append", epic: "e1", newEpic: "Epic", target: "m1", title: "Change", task: "Task" }],
+    [StartBody, { id: "m1", lane: "fuzz" }],
+    [NoteBody, { id: "m1", section: "tried", text: "Tried it." }],
+    [ApproveBody, { id: "m1" }],
+  ]
+  for (const [schema, body] of cases) {
+    expect(Schema.is(schema)(body)).toBe(true)
+    for (const field of Object.keys(body)) expect(Schema.is(schema)({ ...body, [field]: "\ud800" })).toBe(false)
+  }
+})
+
+
+import { HttpClient } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+it.effect("refuses invalid identifiers before every live Factory operation reaches HTTP", () => effect {
+  let requests = 0
+  const faulty = HttpClient.make(() => effect { requests++; return try Effect.die("unexpected invalid-id request") })
+  const live = LiveFactory("https://invalid.test").pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, faulty)))
+  provide live {
+    const factory = try Factory
+    for (const id of ["", "\ud800", "\udfff", "x".repeat(129)]) {
+      const operations: ReadonlyArray<unknown!unknown> = [
+        factory.post(id, "c", "Guest", "hello"), factory.read(id, 0), factory.tour(id), factory.endTour(id),
+        Stream.runDrain(factory.events(id, 0)), factory.sandbox(id), factory.startSandbox(id, "fuzz"),
+        factory.stopSandbox(id, "fuzz", 0), factory.sandboxCommand(id, "fuzz", "pwd", 0),
+      ]
+      for (const operation of operations) {
+        const result = try exit(operation)
+        try Effect.try(() => {
+          expect(result._tag).toBe("Failure")
+          if (result._tag === "Failure") expect(Cause.hasDies(result.cause)).toBe(false)
+        })
+      }
+    }
+    try Effect.try(() => expect(requests).toBe(0))
+  }
 })

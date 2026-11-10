@@ -352,9 +352,8 @@ describe("FlowEngine.layerMemory durable waits", () => {
       Effect.gen(function*() {
         const engine = yield* FlowRuntime.FlowRuntime
         // A declared member has no JSON form. Snapshotting the payload through
-        // `Schema.toCodecJson` refused every such payload until 2026-09-01,
-        // which took out every `smithers-build` target that names a
-        // dependency, so the reference reaching the body is pinned here.
+        // `Schema.toCodecJson` refused every such payload until 2026-09-01, so
+        // the reference reaching the body is pinned here for memory payloads.
         const reference = { open: () => "opened" }
         const Reference = Schema.declare<typeof reference>(
           (value): value is typeof reference =>

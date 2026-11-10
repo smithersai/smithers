@@ -1,0 +1,54 @@
+// @vitest-environment node
+// Real Vite config, native V8 execution and source remapping; the unvisited return must remain uncovered.
+import { it, expect } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { build, parseAstAsync } from "vite"
+import convert from "ast-v8-to-istanbul"
+import { normalizeEndColumns } from "./support/coverageUnion.ts"
+import { node, run } from "./support/processes.vibe"
+
+it.live("source-coverage builds never credit a skipped return after bundling", () => scoped(effect {
+  provide NodeServices.layer, ExperimentalNodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const root = try fs.makeTempDirectoryScoped({ prefix: "bench-coverage-bundle-" })
+    const config = try path.fromFileUrl(new URL("../vite.config.ts", import.meta.url))
+    const sourceFile = path.join(root, "source.mjs")
+    const source = "export function answer(which) {\n  if (which) return 7\n  return 9\n}\n"
+    try fs.writeFileString(sourceFile, source)
+    try fs.writeFileString(path.join(root, "entry.mjs"), 'import { answer } from "./source.mjs"; console.log(answer(process.argv[2] === "true"));\n')
+    const output = path.join(root, "dist")
+    try tryPromise(() => build({
+      root, configFile: config, mode: "bench-coverage", logLevel: "silent",
+      build: { outDir: output, sourcemap: true, rolldownOptions: { input: path.join(root, "entry.mjs"), output: { entryFileNames: "bundle.mjs" } } },
+    }))
+    const raw = path.join(root, "raw")
+    try fs.makeDirectory(raw)
+    const bundle = path.join(output, "bundle.mjs")
+    const executed = try run(try node(), [bundle, "true"], { NODE_V8_COVERAGE: raw })
+    const url = (try path.toFileUrl(bundle)).href
+    let native: { url: string; functions: unknown } | undefined
+    for (const name of try fs.readDirectory(raw)) {
+      const json = try fs.readFileString(path.join(raw, name))
+      const record = try Effect.try(() => JSON.parse(json) as { result: Array<{ url: string; functions: unknown }> })
+      native ??= record.result.find(script => script.url === url)
+    }
+    const code = try fs.readFileString(bundle)
+    const mapText = try fs.readFileString(bundle + ".map")
+    const map = try Effect.try(() => JSON.parse(mapText) as { sources: string[] })
+    for (let index = 0; index < map.sources.length; index++) map.sources[index] = (try path.toFileUrl(path.resolve(output, map.sources[index]!))).href
+    const ast = try tryPromise(() => parseAstAsync(code))
+    const converted = try tryPromise(() => convert({ code, ast, sourceMap: map, coverage: native!, wrapperLength: 0 } as never))
+    const coverage = try Effect.try(() => normalizeEndColumns(converted[sourceFile] as Parameters<typeof normalizeEndColumns>[0], source))
+    const returns = Object.entries(coverage.statementMap).filter(([, loc]) => loc.start.line === 3).map(([id]) => coverage.s[id])
+    try Effect.try(() => {
+      expect(executed.status, executed.stderr).toBe(0)
+      expect(executed.stdout.trim()).toBe("7")
+      expect(native).toBeDefined()
+      expect(returns).not.toHaveLength(0)
+      expect(returns.every(hits => hits === 0)).toBe(true)
+      expect(Object.entries(coverage.statementMap).some(([id, loc]) => loc.start.line === 2 && coverage.s[id]! > 0)).toBe(true)
+    })
+  }
+}), 60_000)

@@ -1,0 +1,26 @@
+import { expect, it } from "@effect/vitest"
+import { specificationModels, Verdict } from "../worker/SpecificationReviewers.vibe"
+import { DEFAULT_CHAT_MODEL } from "../worker/AgentModel.vibe"
+it.effect("binds each named review model and its credential before deployment or object startup", () => effect {
+  const values = { CEREBRAS_API_KEY: "configuration-test-value", SPEC_REVIEW_ASTRA: JSON.stringify(DEFAULT_CHAT_MODEL), SPEC_REVIEW_SOL: JSON.stringify(DEFAULT_CHAT_MODEL), SPEC_REVIEW_FABLE: JSON.stringify(DEFAULT_CHAT_MODEL), SPEC_REVIEW_OPUS: JSON.stringify(DEFAULT_CHAT_MODEL) }
+  provide ConfigProvider.layer(ConfigProvider.fromUnknown(values)) {
+    const models = try specificationModels()
+    try Effect.try(() => {
+      for (const name of ["astra", "sol", "fable", "opus"] as const) expect(models[name]?.modelId).toBe(DEFAULT_CHAT_MODEL.modelId)
+    })
+  }
+})
+it.effect("never substitutes the chat model for missing reviewer configuration", () => effect {
+  provide ConfigProvider.layer(ConfigProvider.fromUnknown({ CEREBRAS_API_KEY: "configuration-test-value" })) {
+    const models = try specificationModels()
+    try Effect.try(() => expect(Object.values(models).every(model => model === undefined)).toBe(true))
+  }
+})
+
+it("the live reviewer codec retains plus and minus grades for gate 2", () => {
+  for (const grade of ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"]) {
+    const answer = { verdict: "LGTM", grade, review: "Review receipt" }
+    expect(Schema.decodeUnknownOption(Verdict)(answer)).toEqual(Option.some(answer))
+  }
+  expect(Option.isNone(Schema.decodeUnknownOption(Verdict)({ verdict: "LGTM", grade: "A--", review: "Invalid grade" }))).toBe(true)
+})

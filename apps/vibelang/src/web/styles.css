@@ -1,18 +1,15 @@
 /* vibelang.smithers.sh's frame and splash. Colors come from the Smithers theme (@smthrs/ui-styleguide); chat parts use
-   @smthrs/ui-css's `sui-*` classes. VibeLang's brand adds its gradient and violet accent (launch kit brand/BRIEF.md). */
+   @smthrs/ui-css's `sui-*` classes. VibeLang's brand adds its gradient and violet accent (launch kit brand/BRIEF.md).
+   Dark only: index.html sets data-theme="dark" (wiki/decisions/0013-dark-only.md). */
 
 :root {
   --vl-cyan: #41d1ff;
   --vl-violet: #747bff;
   --vl-magenta: #bd34fe;
   --vl-gradient: linear-gradient(120deg, var(--vl-cyan) 8%, var(--vl-violet) 48%, var(--vl-magenta) 88%);
-  --brand: #5b61e8;
-  color-scheme: light dark;
+  --brand: var(--vl-violet);
+  color-scheme: dark;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --brand: var(--vl-violet); }
-}
-:root[data-theme="dark"] { --brand: var(--vl-violet); }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
@@ -27,27 +24,37 @@ button { font: inherit; }
 .vl-home:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .vl-logo { display: inline-flex; }
 .vl-logo img { height: 24px; width: auto; display: block; }
-.vl-logo-on-light { display: none !important; }
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) .vl-logo-on-dark { display: none !important; }
-  :root:not([data-theme="dark"]) .vl-logo-on-light { display: block !important; }
-}
-:root[data-theme="light"] .vl-logo-on-dark { display: none !important; }
-:root[data-theme="light"] .vl-logo-on-light { display: block !important; }
-.vl-nav { display: flex; align-items: center; gap: 18px; }
+.vl-nav { display: flex; align-items: center; gap: 4px; }
+.vl-nav-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--r-1, 6px); color: var(--text-muted); font-size: 14px; font-weight: 500; text-decoration: none; transition: color .15s ease, background .15s ease; }
+.vl-nav-link:hover { background: var(--hover, var(--surface-2)); color: var(--text); }
+.vl-nav-link:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.vl-mark { width: 16px; height: 16px; fill: currentColor; }
+.vl-away { color: var(--text-faint, var(--text-muted)); font-size: 12px; }
+.vl-icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .vl-link { padding: 0; border: 0; background: none; color: var(--brand); font-size: 14px; text-decoration: none; cursor: pointer; }
 .vl-link:hover { text-decoration: underline; }
+.vl-mode { text-decoration: none; cursor: pointer; white-space: nowrap; }
+.vl-mode::after { content: "⇄"; margin-left: 4px; opacity: .7; }
+.vl-mode[data-mode="live"] { color: var(--muted-foreground, inherit); background: transparent; border-color: var(--border); }
+.vl-mode:hover, .vl-mode:focus-visible { border-color: var(--brand); color: var(--brand); }
 .vl-pill { padding: 2px 8px; border: 1px solid var(--brand-border, var(--border)); border-radius: var(--r-full, 999px); background: var(--brand-soft, transparent); color: var(--brand); font-size: 11px; font-weight: 650; letter-spacing: .02em; }
 .vl-kbd { margin-left: 8px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text-muted); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; }
 
 /* ── splash ──────────────────────────────────────────────────────────────────── */
-.vl-splash { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: center; gap: 48px; width: min(100%, 1200px); margin: 0 auto; padding: 48px 32px 96px; }
+.vl-minimize { position: absolute; top: 8px; right: 32px; display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid var(--border); border-radius: var(--r-1, 6px); background: var(--surface); color: var(--text-muted); font-size: 16px; line-height: 1; cursor: pointer; transition: color .15s ease, border-color .15s ease; }
+.vl-minimize:hover { border-color: var(--border-strong, var(--brand)); color: var(--text); }
+.vl-minimize:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring, var(--brand)); }
+.vl-splash { position: relative; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: center; gap: 48px; width: min(100%, 1200px); margin: 0 auto; padding: 48px 32px 96px; }
 .vl-eyebrow { color: var(--text-muted); font-size: 13px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
 .vl-title { margin: 12px 0 0; font-size: clamp(56px, 9vw, 96px); font-weight: 750; letter-spacing: -.035em; line-height: .95; }
 .vl-gradient { background: var(--vl-gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .vl-tagline { max-width: 34ch; margin: 22px 0 0; color: var(--text-muted); font-size: 19px; line-height: 1.5; }
 .vl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 32px; }
-.vl-ask { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border: 1px solid var(--brand-border, var(--brand)); border-radius: var(--r-2, 10px); background: var(--brand-soft, transparent); color: var(--brand); font-size: 15px; font-weight: 650; cursor: pointer; transition: background .15s ease, box-shadow .15s ease; }
+.vl-primary { display: inline-flex; align-items: center; min-height: 44px; padding: 0 20px; border: 1px solid var(--brand); border-radius: var(--r-2, 10px); background: var(--brand); color: var(--inverse-text, #fff); font-size: 15px; font-weight: 650; cursor: pointer; transition: filter .15s ease, box-shadow .15s ease; }
+.vl-primary:hover { filter: brightness(1.12); }
+.vl-primary:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring, var(--brand)); }
+/* The secondary actions: Ask the agent and Contribute. */
+.vl-ask { text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border: 1px solid var(--brand-border, var(--brand)); border-radius: var(--r-2, 10px); background: var(--brand-soft, transparent); color: var(--brand); font-size: 15px; font-weight: 650; cursor: pointer; transition: background .15s ease, box-shadow .15s ease; }
 .vl-ask:hover { background: var(--brand-soft-strong, var(--hover)); }
 .vl-ask:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring, var(--brand)); }
 .vl-install { display: inline-block; margin: 24px 0 0; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--r-2, 10px); background: var(--code-bg, var(--surface-2)); color: var(--code-text, var(--text)); font-family: var(--font-mono, ui-monospace, monospace); font-size: 14px; }
@@ -56,6 +63,11 @@ button { font: inherit; }
 .vl-media video { display: block; width: 100%; height: auto; }
 @media (max-width: 900px) {
   .vl-splash { grid-template-columns: 1fr; gap: 36px; padding: 24px 16px 64px; }
+  .vl-minimize { top: 4px; right: 16px; }
+}
+@media (max-width: 600px) {
+  .vl-nav-link { padding: 6px 8px; }
+  .vl-away { display: none; }
 }
 
 /* ── chat ────────────────────────────────────────────────────────────────────── */
@@ -66,9 +78,11 @@ button { font: inherit; }
 .vl-pane .vl-logo img { height: 20px; }
 /* Docked, the composer spans the window less its margins, up to the transcript's width, on any screen. */
 .vl-chat .sui-chat-composer[data-docked="true"] { width: auto; max-width: 720px; margin: 0 auto; }
-@media (max-width: 600px) { .vl-chat .sui-chat-composer[data-docked="true"] { right: 12px; left: 12px; } .vl-top { padding: 12px 16px; } }
+@media (max-width: 600px) { .vl-chat .sui-chat-composer[data-docked="true"] { right: 12px; left: 12px; } .vl-top { padding: 12px; gap: 8px; } .vl-top .vl-logo img { height: 18px; } .vl-home { min-height: 32px; } }
+/* Four links and the Mock pill fit a phone: Home, History, Docs, GitHub (0020). */
+@media (max-width: 600px) { .vl-nav-link { padding: 6px 5px; } }
 .vl-pane-text { flex: 1; font-size: 13px; }
-.vl-pane-expand { color: var(--text-faint, var(--text-muted)); }
+.vl-pane-expand { display: inline-flex; color: var(--text-faint, var(--text-muted)); }
 .sui-chat-message[data-pending="true"] .sui-chat-bubble { opacity: .6; }
 .sui-chat-bubble p { margin: 0 0 10px; }
 .sui-chat-bubble p:last-child { margin-bottom: 0; }
@@ -89,7 +103,7 @@ button { font: inherit; }
 @keyframes vl-fade { from { opacity: 0; } }
 
 /* ── view transitions: the splash shrinks into its pane, the prompt docks into the composer ─────────────────────── */
-::view-transition-group(splash), ::view-transition-group(prompt) { animation-duration: .38s; animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
+::view-transition-group(splash), ::view-transition-group(prompt), ::view-transition-group(issues) { animation-duration: .38s; animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
 ::view-transition-old(splash), ::view-transition-new(splash) { height: 100%; object-fit: cover; overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .vl-dots, .vl-palette-scrim { animation: none !important; }
@@ -102,3 +116,370 @@ html { overflow-anchor: none; }
 .vl-latest { position: fixed; bottom: 150px; z-index: 31; }
 
 .vl-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* ── the agent in control: a glow around the whole screen, and Esc (wiki/decisions/0014-agent-tour.md) ─────────── */
+.vl-glow { position: fixed; inset: 0; z-index: 55; pointer-events: none; box-shadow: inset 0 0 0 2px var(--vl-violet), inset 0 0 56px 8px color-mix(in srgb, var(--vl-violet) 50%, transparent), inset 0 0 120px 24px color-mix(in srgb, var(--vl-magenta) 22%, transparent); animation: vl-glow 2.2s ease-in-out infinite alternate; }
+@keyframes vl-glow { from { opacity: .55; } to { opacity: 1; } }
+.vl-esc { position: fixed; top: 14px; left: 50%; z-index: 60; transform: translateX(-50%); display: inline-flex; align-items: center; padding: 4px 12px; border: 1px solid var(--vl-violet); border-radius: var(--r-full, 999px); background: var(--surface); color: var(--text); font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; font-weight: 650; cursor: pointer; box-shadow: 0 0 18px color-mix(in srgb, var(--vl-violet) 45%, transparent); }
+.vl-esc:hover { background: var(--surface-2); }
+.vl-esc:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring, var(--brand)); }
+.vl-esc kbd { font: inherit; }
+/* Narrow screens have no room between the logo and the nav: Esc sits just below the top bar. */
+@media (max-width: 600px) { .vl-esc { top: 64px; } }
+
+/* ── the docs pane: in the conversation, maximized over it ──────────────────────────────────────────────────── */
+.vl-docs { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-bubble, 18px); background: var(--surface); }
+.vl-docs-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 8px 6px 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 13px; }
+.vl-docs-page { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vl-docs-toggle { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: var(--r-1, 6px); background: transparent; color: var(--text-muted); cursor: pointer; }
+.vl-docs-toggle:hover { color: var(--text); border-color: var(--border-strong, var(--brand)); }
+.vl-docs-toggle:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring, var(--brand)); }
+.vl-docs-frame { display: block; width: 100%; height: min(56vh, 540px); border: 0; background: var(--bg); }
+.vl-docs[data-maximized="true"] { position: fixed; inset: 60px 0 0; z-index: 45; border-radius: 0; border-width: 1px 0 0; }
+.vl-docs[data-maximized="true"] .vl-docs-frame { flex: 1; height: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vl-glow { animation: none !important; opacity: 1; }
+}
+
+/* Tour layout from wiki/designs/media: docs left, media and current words right. */
+.vl-docs-content { flex: 1; min-height: 0; display: flex; }
+.vl-docs-content .vl-docs-frame { flex: 1; }
+.vl-docs-body { flex: 1 1 0%; min-height: 0; display: flex; gap: 20px; padding: 20px; }
+.vl-docs-body .vl-docs-frame { flex: 1.4 1 0%; min-width: 0; height: auto; border: 1px solid var(--border); border-radius: var(--r-2, 10px); }
+.vl-docs[data-driving="true"] .vl-docs-frame { min-height: 0; pointer-events: none; }
+.vl-empty-media { margin: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-2, 10px); background: #0e0e11; box-shadow: var(--shadow-2); }
+.vl-empty-media img { display: block; width: 100%; height: auto; }
+.vl-empty-media { width: min(100%, 480px); }
+.vl-chat .sui-chat-empty { padding-block: 24px; }
+@media (max-width: 720px) {
+  .vl-docs-body { flex-direction: column; gap: 12px; padding: 12px; }
+  .vl-docs-body .vl-docs-frame { flex: 1 1 0%; min-height: 0; }
+  .vl-docs[data-driving="true"] .vl-docs-bar { padding-top: 38px; }
+}
+
+/* ── sandboxes (new, vl-sb-*) ── */
+.vl-sb-body { display: grid; align-content: start; gap: 8px; padding: 12px; overflow-y: auto; max-height: min(56vh, 540px); min-height: 0; }
+.vl-docs[data-maximized="true"] .vl-sb-body { max-height: none; flex: 1; }
+.vl-sb-head { display: flex; align-items: stretch; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.vl-sb-kpi { flex: 1 1 220px; display: grid; gap: 8px; }
+.vl-sb-new { align-self: center; }
+.vl-sb { display: grid; grid-template-columns: 10px minmax(0,1fr) auto; align-items: center; gap: 10px; }
+.vl-sb-name { min-width: 0; color: var(--text); font-family: var(--font-mono); font-size: 12px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vl-sb-meta { color: var(--text-muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.vl-dot { width: 8px; height: 8px; border-radius: var(--r-full); background: var(--text-muted); }
+.vl-dot-run { background: var(--brand); animation: vl-pulse 1.2s ease-in-out infinite; }
+.vl-term { border-top: 1px solid var(--border); background: var(--code-bg); min-width: 0; }
+.vl-term-body { margin: 0; padding: 12px 14px; color: var(--code-text); font-family: var(--font-mono); font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 150px; max-height: min(50vh, 480px); overflow-y: auto; }
+.vl-docs[data-maximized="true"] .vl-term { flex: 1; display: flex; flex-direction: column; }
+.vl-docs[data-maximized="true"] .vl-term-body { flex: 1; max-height: none; }
+.vl-term-p { color: var(--brand); }
+.vl-term-ok { color: var(--success); }
+.vl-term-dim { color: var(--text-muted); }
+.vl-term-off { opacity: .55; }
+.vl-sb-starting { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-2); background: var(--surface); box-shadow: var(--shadow-1); }
+.vl-sb-starting-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.vl-ind { width: 40%; height: 100%; border-radius: inherit; background: var(--brand); animation: vl-ind 1.2s ease-in-out infinite; }
+@media (max-width: 700px) {
+  .vl-sb-meta { display: none; }
+}
+
+
+.vl-sb-controls { display: flex; align-items: center; gap: 8px; }
+.vl-term-prompt { display: flex; gap: 8px; padding: 0 14px 14px; font-family: var(--font-mono); font-size: 12px; }
+.vl-term-input { min-width: 0; flex: 1; border: 0; border-radius: var(--r-1); background: transparent; color: var(--code-text); font: inherit; }
+.vl-term-input:focus-visible, .vl-term-body:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.vl-sandboxes .sui-table-container { margin: 12px; width: auto; }
+@media (prefers-reduced-motion: reduce) { .vl-dot-run, .vl-ind { animation: none; } }
+
+/* Brick 2: the roles designer's account, badges and People pane. Native select popups escape pane clipping. */
+.vl-identity-tools { display:flex; align-items:center; gap:4px; flex:none; }
+.vl-visit { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted); }
+.vl-visit .sui-select-trigger { min-width:100px; max-width:125px; }
+.vl-account { position:relative; }
+.vl-account .sui-action-menu { position:absolute; right:0; top:calc(100% + 6px); z-index:60; min-width:190px; }
+.vl-account .sui-action-menu-item { display:flex; width:100%; border:0; background:transparent; text-align:left; font:inherit; font-size:13px; }
+.vl-account .sui-action-menu-head { display:grid; gap:6px; padding:8px; border-bottom:1px solid var(--border); font-size:12px; }
+.vl-account .sui-action-menu-head .sui-badge { justify-self:start; }
+.vl-people { display:flex; flex-direction:column; overflow:visible; border:1px solid var(--border); border-radius:var(--r-bubble); background:var(--surface); }
+.vl-people-bar { display:flex; align-items:center; gap:8px; padding:6px 8px 6px 16px; border-bottom:1px solid var(--border); color:var(--text-muted); font-size:13px; }
+.vl-people-bar strong { color:var(--text); font-weight:650; flex:1; }
+.vl-people-toggle { display:inline-grid; place-items:center; width:30px; height:30px; padding:0; border:1px solid var(--border); border-radius:var(--r-1); background:transparent; color:var(--text-muted); cursor:pointer; }
+.vl-people-list { display:grid; overflow:auto; border-radius:0 0 var(--r-bubble) var(--r-bubble); }
+.vl-person { display:flex; align-items:center; gap:10px; padding:8px 16px; border-bottom:1px solid var(--border); }
+.vl-person:last-child { border-bottom:0; }
+.vl-person .sui-avatar { width:28px; height:28px; font-size:12px; }
+.vl-person-who { min-width:0; flex:1; display:flex; align-items:baseline; gap:8px; }
+.vl-person-name { font-size:13px; font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.vl-person-handle { color:var(--text-faint); font-size:12px; }
+.vl-person .sui-select-trigger { min-height:26px; max-width:135px; font-size:12px; padding:0 8px; }
+.vl-people[data-maximized="true"] { position:fixed; inset:80px 24px 130px; z-index:45; }
+.vl-role-dialog { width:calc(100vw - 32px); max-width:400px; padding:16px; border:1px solid var(--border); border-radius:var(--r-2); background:var(--surface); color:var(--text); box-shadow:var(--shadow-3); }
+.vl-role-dialog::backdrop { background:rgb(0 0 0 / .45); backdrop-filter:blur(2px); }
+.vl-role-dialog h2 { margin:0; } .vl-role-dialog p { margin:8px 0 16px; }
+.vl-role-dialog[data-state="closed"] { display:none; }
+@media (max-width:600px) {
+  .vl-nav-role, .vl-visit-as { display:none; }
+  .vl-app:has(.vl-visit) { --vl-header-height:92px; }
+  .vl-top:has(.vl-visit) { min-height:var(--vl-header-height); }
+  .vl-nav:has(.vl-identity-tools) { max-width:calc(100vw - 64px); flex-wrap:wrap; justify-content:flex-end; row-gap:4px; }
+  .vl-top .vl-logo img { height:20px; }
+  .vl-docs[data-maximized="true"], .vl-docs[data-driving="true"] { inset-block-start:var(--vl-header-height, 60px); }
+  .vl-esc { top:calc(var(--vl-header-height, 60px) + 4px); }
+  .vl-top { gap:8px; padding:12px; }
+  .vl-top:has(.vl-identity-tools) .vl-home .vl-logo { width:24px; overflow:hidden; }
+  .vl-visit .sui-select-trigger { min-width:0; max-width:116px; }
+  .vl-people[data-maximized="true"] { inset:calc(var(--vl-header-height, 60px) + 10px) 12px 130px; }
+}
+
+
+/* VIP step indicator */
+.ix-steps { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.ix-steps li { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: var(--r-full, 999px); color: var(--text-muted); font-size: 12px; font-weight: 650; }
+.ix-steps .ix-n { display: inline-grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--border-strong); border-radius: var(--r-full, 999px); font-size: 10px; }
+.ix-steps li[data-done="true"] .ix-n { border-color: var(--brand); background: var(--brand); color: var(--inverse-text); }
+.ix-steps li[aria-current="step"] { background: var(--brand-soft); color: var(--brand); }
+.ix-steps li[aria-current="step"] .ix-n { border-color: var(--brand-border-strong); color: var(--brand); }
+
+/* Issue tree */
+.ix-tree { display: grid; gap: 6px; }
+.ix-tree-parent { color: var(--text-muted); font-size: 12px; }
+.ix-tree-parent a { color: var(--brand); text-decoration: none; }
+.ix-tree-parent a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.ix-tree-list { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.ix-tree-kids { margin-left: 10px; padding-left: 8px; border-left: 1px solid var(--border); }
+.ix-tree-row { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 6px; border-radius: var(--r-1, 6px); font-size: 13px; }
+.ix-tree-row:hover { background: var(--hover-subtle); }
+.ix-tree-row > a { min-width: 0; color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ix-tree-row > a:hover { color: var(--brand); }
+.ix-tree-meta { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; flex: 0 0 auto; color: var(--text-muted); font-size: 11px; }
+
+/* Avatar (initials) */
+.ix-avatar { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: 0 0 auto; border-radius: var(--r-full, 999px); background: var(--brand-soft); color: var(--brand); font-size: 10px; font-weight: 650; }
+.ix-avatar[data-agent="true"] { background: var(--warning-soft); color: var(--warning); }
+
+/* Assignee picker rows (commit dialog) */
+.ix-pick { display: grid; gap: 2px; }
+.ix-pick label { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--r-1, 6px); font-size: 13px; cursor: pointer; }
+.ix-pick label:hover { background: var(--hover-subtle); }
+.ix-pick input { accent-color: var(--brand); }
+
+/* Aside sections */
+.ix-aside-section { display: grid; gap: 6px; justify-items: start; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.ix-aside-section:last-child { border-bottom: 0; padding-bottom: 0; }
+.ix-aside-row { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-size: 12px; }
+.ix-aside-muted { color: var(--text-muted); font-size: 12px; }
+
+/* Chat issue cards sit left, bubble width */
+.ix-chat-card { justify-self: start; width: min(100%, 560px); }
+.ix-mini { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 0; font-size: 13px; }
+.ix-mini > a { min-width: 0; color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ix-mini > a:hover { color: var(--brand); }
+
+/* Roles table */
+.ix-roles td, .ix-roles th { text-align: center; }
+.ix-roles td:first-child, .ix-roles th:first-child { text-align: left; }
+.ix-yes { color: var(--brand); font-weight: 650; }
+.ix-no { color: var(--text-faint); }
+
+@media (max-width: 640px) {
+  .d-bar { gap: 6px; }
+}
+
+.ix-surface { position: fixed; inset: var(--vl-header-height, 56px) 0 0; overflow: auto; z-index: 10; background: var(--bg); }
+.ix-error { padding: 12px 14px; display: grid; gap: 10px; justify-items: start; }
+.ix-dialog:not([open]) { display: none; }
+.ix-dialog[open] { position: fixed; inset: 0; margin: auto; }
+.ix-dialog::backdrop { background: var(--dialog-overlay, #0009); }
+.vl-nav button.vl-nav-link { background: transparent; border: 0; cursor: pointer; }
+/* Keep navigation and the account menu inside a phone viewport. */
+@media (max-width: 600px) {
+  .vl-nav { min-width: 0; }
+  .vl-nav > * { flex-shrink: 0; }
+}
+
+.vl-nav-issue-icon { display:none; }
+@media (max-width:600px) {
+  .vl-nav-issue-label { display:none; }
+  .vl-nav-issue-icon { display:block; width:16px; height:16px; }
+}
+
+/* Scroll destinations independently; the account menu stays outside the clipping region. */
+.vl-nav-links { display:flex; align-items:center; gap:inherit; min-width:0; }
+@media (max-width:600px) {
+  .vl-nav > .vl-nav-links { flex:1 1 auto; min-width:0; overflow-x:auto; scrollbar-width:none; }
+  .vl-nav-links > * { flex-shrink:0; }
+}
+
+/* Wiki pane from wiki/designs/wiki/index.html. */
+.vl-wiki { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-bubble); background: var(--surface); }
+.vl-wiki-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 13px; }
+.vl-wiki-crumb { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; display: flex; align-items: baseline; gap: 6px; }
+.vl-wiki-crumb b { color: var(--text); font-weight: 650; }
+.vl-wiki-crumb button { padding: 0; border: 0; background: none; color: var(--text-muted); font: inherit; cursor: pointer; }
+.vl-wiki-crumb button:hover { color: var(--text); text-decoration: underline; }
+.vl-wiki-toggle { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: var(--r-1); background: transparent; color: var(--text-muted); cursor: pointer; flex: 0 0 auto; }
+.vl-wiki-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+.vl-wiki-toggle:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring); }
+.vl-wiki-body { display: grid; grid-template-columns: 188px minmax(0,1fr); min-height: 0; height: min(56vh, 540px); }
+.vl-wiki-pages { overflow-y: auto; border-right: 1px solid var(--border); padding: 10px 8px; display: grid; align-content: start; gap: 2px; }
+.vl-wiki-find { width: 100%; margin-bottom: 6px; }
+.vl-wiki-page-link { display: block; padding: 5px 8px; border: 0; border-radius: var(--r-1); background: none; color: var(--text-muted); font-size: 13px; text-align: left; text-decoration: none; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vl-wiki-page-link:hover { background: var(--hover); color: var(--text); }
+.vl-wiki-page-link[aria-current="page"] { background: var(--brand-soft); color: var(--brand); font-weight: 650; }
+.vl-wiki-page-link[data-kind="decision"] { font-family: var(--font-mono); font-size: 12px; }
+.vl-wiki-pages-head { padding: 8px 8px 2px; color: var(--text-faint); font-size: 10px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.vl-wiki-content { overflow-y: auto; padding: 16px 20px 24px; }
+.vl-wiki-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 10px; }
+.vl-wiki-meta time { color: var(--text-muted); font-size: 12px; }
+.vl-wiki-editing { color: var(--text-faint); }
+.vl-wiki-edit { padding: 0; border: 0; background: none; color: var(--text-muted); font: inherit; cursor: pointer; flex: 0 0 auto; }
+.vl-wiki-edit:hover { color: var(--text); text-decoration: underline; }
+.vl-wiki-note { display: flex; align-items: center; gap: 6px; padding: 6px 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 13px; }
+.vl-wiki-note a { color: var(--brand); text-decoration: none; }
+.vl-wiki-note a:hover { text-decoration: underline; }
+.vl-wiki-edit-body { display: flex; flex-direction: column; min-height: 0; height: min(56vh, 540px); }
+.vl-wiki-edit-body .sui-textarea { flex: 1; min-height: 0; resize: none; border: 0; border-radius: 0; background: transparent; }
+.vl-wiki-edit-error { padding: 6px 16px 0; color: var(--danger, #e5484d); font-size: 12px; }
+.vl-wiki-edit-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border); }
+.vl-wiki[data-maximized="true"] .vl-wiki-edit-body { flex: 1; height: auto; }
+/* maximized over the chat, as the docs pane does */
+.vl-wiki[data-maximized="true"] { position: fixed; inset: 60px 0 0; z-index: 45; border-radius: 0; border-width: 1px 0 0; }
+.vl-wiki[data-maximized="true"] .vl-wiki-body { flex: 1; height: auto; }
+@media (max-width: 720px) {
+  .vl-wiki-body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0,1fr); }
+  .vl-wiki-pages { grid-row: 1; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); padding: 6px 8px; }
+  .vl-wiki-find { width: 140px; margin: 0 6px 0 0; flex: 0 0 auto; }
+  .vl-wiki-pages-head { display: none; }
+  .vl-wiki-page-link { flex: 0 0 auto; }
+  .vl-wiki[data-maximized="true"] { inset: var(--vl-header-height, 56px) 0 0; }
+}
+
+.vl-nav button.vl-nav-link { border: 0; background: none; font: inherit; cursor: pointer; }
+.vl-wiki { flex: 0 0 auto; min-width: 0; scroll-margin-bottom: 156px; }
+.vl-wiki-content { overscroll-behavior: contain; }
+.vl-wiki .sui-md table { width: 100%; table-layout: auto; }
+.vl-wiki .sui-md th, .vl-wiki .sui-md td { min-width: 0; max-width: none; overflow-wrap: anywhere; }
+.vl-wiki .sui-md th { position: static; }
+.vl-wiki .sui-md td:first-child { white-space: normal; }
+.vl-wiki .sui-md pre { white-space: pre; overflow: auto; font-size: 12px; }
+.vl-wiki .sui-md h1 { font-size: 1.5em; line-height: 1.3; margin: 0 0 12px; }
+.vl-wiki .sui-md h2 { font-size: 1.3em; }
+.vl-wiki .sui-md a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
+.vl-wiki .sui-md li { scroll-margin-top: 10px; }
+.vl-wiki .sui-md code { background: var(--code-bg); padding: 2px 5px; border-radius: 4px; font-size: .9em; }
+.vl-wiki .sui-md pre code { padding: 0; font-size: inherit; }
+.vl-wiki .sui-skeleton { height: 20px; background: var(--surface-2); border-radius: 6px; }
+.vl-nav button.vl-nav-link { font-size: 14px; font-weight: 500; }
+@media (max-width: 720px) {
+  .vl-top { gap: 8px; }
+  .vl-nav { gap: 2px; }
+  .vl-nav-link { padding-inline: 6px; }
+}
+.vl-wiki .sui-md { min-width: 0; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; }
+/* Current wiki has more pages than the prototype; keep rows readable while its list scrolls. */
+.vl-wiki-pages { grid-auto-rows: max-content; }
+.vl-nav .vl-nav-link[aria-current="page"] { background: var(--brand-soft); color: var(--brand); font-weight: 650; }
+
+/* All landed feature links stay reachable on a phone; the header scrolls within the viewport. */
+@media (max-width: 720px) {
+  .vl-home { flex-shrink: 0; }
+  .vl-nav { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .vl-nav > * { flex-shrink: 0; }
+}
+/* Wiki adds a fifth control: keep every landed header control visible at the design's phone width. */
+@media (max-width: 720px) {
+  .vl-top .vl-nav .vl-nav-link { font-size: 13px; padding-inline: 4px; gap: 4px; }
+}
+
+/* Decision 0023: designer actions frame. Shared components are @smthrs/ui-css. */
+.vl-act-body { display: grid; align-content: start; gap: 8px; padding: 12px; overflow-y: auto; max-height: min(56vh, 540px); min-height: 0; }
+.vl-docs[data-maximized="true"] .vl-act-body { max-height: none; flex: 1; }
+.vl-act-grid { display: grid; grid-template-columns: 240px minmax(0,1fr); gap: 14px; align-content: start; }
+.vl-act-side { display: grid; align-content: start; gap: 6px; }
+.vl-act-main { display: grid; align-content: start; gap: 8px; min-width: 0; }
+.vl-act-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 2px 6px; }
+.vl-act-title { color: var(--text); font-size: 13px; font-weight: 650; }
+.vl-wf { display: grid; grid-template-columns: 10px minmax(0,1fr) auto; align-items: center; gap: 10px; }
+.vl-wf-name { min-width: 0; color: var(--text); font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vl-wf-meta { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.vl-dot { width: 8px; height: 8px; border-radius: var(--r-full); background: var(--text-muted); }
+.vl-dot-ok { background: var(--success); }
+.vl-dot-bad { background: var(--danger); }
+.vl-dot-run { background: var(--brand); animation: vl-pulse 1.2s ease-in-out infinite; }
+.vl-dot-warn { background: var(--warning); }
+.vl-run { display: grid; grid-template-columns: 10px minmax(0,1fr) auto; align-items: center; gap: 10px; }
+.vl-run-main { min-width: 0; display: grid; gap: 1px; }
+.vl-run-title { min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vl-run-meta { min-width: 0; color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vl-run-meta code { font-family: var(--font-mono); font-size: 11px; }
+.vl-run-dur { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vl-trace { display: grid; grid-template-columns: 250px minmax(0,1fr); gap: 14px; align-content: start; min-height: 0; }
+.vl-trace-steps { border: 1px solid var(--border); border-radius: var(--r-2); background: var(--surface); padding: 4px 12px; align-self: start; }
+.vl-term { border: 1px solid var(--border); border-radius: var(--r-2); background: var(--code-bg); overflow: hidden; min-width: 0; }
+.vl-term-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); color: color-mix(in srgb, var(--code-text) 70%, transparent); font-family: var(--font-mono); font-size: 11px; }
+.vl-term-body { margin: 0; padding: 10px 12px; color: var(--code-text); font-family: var(--font-mono); font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 120px; }
+.vl-term-p { color: var(--brand); }
+.vl-term-ok { color: var(--success); }
+.vl-term-bad { color: var(--danger); }
+.vl-term-dim { color: var(--text-muted); }
+.vl-runcard { display: grid; gap: 8px; width: min(100%, 520px); padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-2); background: var(--surface); cursor: pointer; transition: border-color .15s; }
+.vl-runcard:hover { border-color: var(--border-strong); }
+.vl-runcard:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring); }
+.vl-runcard-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.vl-runcard-name { color: var(--text); font-family: var(--font-mono); font-size: 12px; font-weight: 650; }
+.vl-runcard-meta { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.vl-runcard-meta code { font-family: var(--font-mono); }
+@media (max-width: 700px) {
+  .vl-act-grid, .vl-trace { grid-template-columns: 1fr; }
+  .vl-act-side { grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; }
+  .vl-act-side .sui-row-button { width: auto; }
+  .vl-act-side .vl-wf { grid-template-columns: 10px auto auto; }
+  .vl-run { grid-template-columns: 10px minmax(0,1fr); }
+  .vl-run-dur { display: none; }
+}
+
+
+.vl-actions-pane .vl-docs-page { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.vl-actions-pane .vl-docs-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.vl-actions-pane { min-width: 0; }
+
+/* The specification keeps all four answers and their action in view on phones. */
+.ix-spec-reviews { width: 100%; }
+@media (max-width: 600px) {
+  .ix-spec-reviews th, .ix-spec-reviews td { padding: 10px 4px; }
+  .ix-spec-reviews th { font-size: 10px; }
+  .ix-spec-reviews td { font-size: 12px; }
+  .ix-spec-reviews td:first-child { min-width: 70px; }
+  .ix-spec-reviews .sui-button { min-width: 0; padding-inline: 8px; font-size: 11px; white-space: nowrap; }
+}
+
+/* VL-31: the real app is the stage. Only theatre controls accept input. */
+.vl-theatre-block{position:fixed;inset:0;z-index:90;touch-action:none}
+.vl-theatre-spotlight{position:fixed;z-index:91;border:2px solid var(--vl-violet);border-radius:10px;box-shadow:0 0 0 9999px rgba(6,10,9,.55),0 0 24px var(--vl-violet);pointer-events:none}
+.vl-theatre-progress{position:fixed;top:6px;left:10px;right:10px;height:3px;display:flex;gap:4px;z-index:101;pointer-events:none}
+.vl-theatre-progress span{flex:1;background:var(--surface-2)}
+.vl-theatre-progress .done{background:var(--brand)}
+.vl-theatre-progress .current{background:var(--vl-violet);animation:vl-theatre-pulse 1.8s ease-in-out infinite}
+.vl-theatre-bar{position:fixed;z-index:102;bottom:24px;left:50%;transform:translateX(-50%);width:min(calc(100% - 32px),640px);padding:16px 20px 12px;border:1px solid var(--border);border-radius:18px;background:var(--surface);box-shadow:0 12px 40px #0008}
+.vl-theatre-meta{font-size:12px;color:var(--text-muted)}
+.vl-theatre-subtitle{font-size:16px;line-height:1.55;min-height:3.1em;margin:8px 0;overflow-wrap:break-word}
+.vl-theatre-controls{display:flex;align-items:center;justify-content:center;gap:8px}
+.vl-theatre-controls button{min-width:44px;min-height:44px;border:0;background:transparent;border-radius:8px;color:var(--text);font:inherit;cursor:pointer}
+.vl-theatre-controls button:hover{background:var(--surface-2)}
+.vl-theatre-controls button:disabled{opacity:.3;cursor:default}
+.vl-theatre-controls button:focus-visible{outline:2px solid var(--ring,var(--brand));outline-offset:2px}
+.vl-app[data-tour=on] .vl-esc{z-index:103}
+/* While the agent drives, Esc sits under the top bar on every width, so it never covers a nav control (the top bar
+   fills its centre once the Mock switch, Visit as and Sign in are there). */
+.vl-app[data-tour=on] .vl-esc{top:calc(var(--vl-header-height, 60px) + 8px)}
+.vl-app[data-tour=on] .vl-wiki[data-maximized=true],.vl-app[data-tour=on] .vl-sandboxes[data-maximized=true]{bottom:220px}
+.vl-app[data-tour=on] .ix-surface{max-height:calc(100dvh - 270px);overflow:auto}
+.vl-app[data-tour=on] .sui-chat-composer[data-docked="true"]{bottom:230px}
+@keyframes vl-theatre-pulse{50%{opacity:.5}}
+@media(max-width:640px){
+ .vl-theatre-bar{bottom:0;left:0;transform:none;width:100%;border-radius:18px 18px 0 0;padding:14px 16px max(10px,env(safe-area-inset-bottom));}
+ .vl-theatre-subtitle{font-size:15px;line-height:1.55}
+ .vl-theatre-controls{justify-content:space-between}
+}
+@media(prefers-reduced-motion:reduce){.vl-theatre-progress .current{animation:none}.vl-theatre-spotlight,.vl-theatre-bar{transition:none}}

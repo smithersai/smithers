@@ -1,0 +1,23 @@
+import { expect, it } from "@effect/vitest"
+import { decideSandbox, distinctFrom, validSandboxes, type SandboxLedger } from "../src/core/sandboxDecision.vibe"
+
+const entries = Array.from({ length: 20000 }, (_, index) => ({ id: `box-${index}`, conversation: `room-${index}`, running: false }))
+const initial: SandboxLedger = { owner: "u", role: "contributor", allowanceMilliseconds: 60000, month: 1, lastMeteredAt: 0, usedMilliseconds: 0, sequence: 0, sandboxes: entries, lastOperationId: "", lastRefusal: "" }
+
+it("starts an existing sandbox beyond the native call-stack depth without changing other entries", () => {
+  const result = decideSandbox(initial, { type: "start", owner: "u", role: "contributor", allowanceMilliseconds: 60000, month: 1, now: 0, conversation: "room-19999", sandboxId: "ignored", operationId: "start-last" })
+  expect(result.ok).toBe(true)
+  if (result.ok) {
+    expect(result.event.state.sandboxes.length).toBe(entries.length)
+    expect(result.event.state.sandboxes.slice(0, -1)).toEqual(entries.slice(0, -1))
+    expect(result.event.state.sandboxes[19999]).toEqual({ ...entries[19999], running: true })
+    expect(result.event.state.usedMilliseconds).toBe(0)
+  }
+})
+
+it("checks a new identity and the full replay ledger without a recursive runtime traversal", () => {
+  expect(distinctFrom(entries, "new-box", "new-room", entries.length)).toBe(true)
+  expect(distinctFrom(entries, "box-0", "new-room", entries.length)).toBe(false)
+  expect(validSandboxes(entries)).toBe(true)
+  expect(validSandboxes([...entries, { id: "box-0", conversation: "other", running: false }])).toBe(false)
+}, 60000)

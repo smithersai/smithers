@@ -1,0 +1,152 @@
+// The mythical history as the agent's tools in the chat (src/history/tools.vibe, worker/HistoryTools.vibe;
+// wiki/decisions/0020-mythical-history.md): reads by page, writes through the history's own flows as the agent for its
+// person, refusals and an unreachable history as answers, no tool to approve or fold, and the scripted agent of the
+// mock chat answering from the same tool.
+import { describe, expect, it } from "@effect/vitest"
+import { apply, empty } from "../src/core/conversation.vibe"
+import { Factory, Unavailable } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { commitPageOf, epicPageOf, matchesOf, outlineOf } from "../src/history/pages.vibe"
+import type { Principal } from "../src/history/roles.vibe"
+import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+import { type HistoryReader, note, plan, requestOf, Show, show, start } from "../src/history/tools.vibe"
+import { historyTools, REPLY_CALLS } from "../worker/HistoryTools.vibe"
+import { CHAT_AGENT } from "../worker/HistoryObject.vibe"
+
+/** The compiler (m1 "one", m2 "three"), then Docs (m3 "two"), all landed. */
+const small = () => replay(intentsOf(seedOf("o/r", ["fix(compiler): one", "docs: two", "fix(compiler): three"].map((description, index) => ({
+  sha: `${index + 1}`.padStart(12, "0"), change: "", description, parents: index === 0 ? [] : [`${index}`.padStart(12, "0")],
+})), []))).history
+
+/** The tools' history: the mock's, for `principal`. */
+function reading<A, E>(principal: Principal, body: (history: HistoryReader) => A!E) {
+  return effect {
+    provide MockMythical(principal, () => Effect.succeed(small())) {
+      return try body(try Mythical)
+    }
+  }
+}
+
+/** A history that can't be reached: every call fails `Unavailable`, as an unreachable History object does. */
+const unreachable: HistoryReader = {
+  outline: () => Effect.fail(new Unavailable({ reason: "history unreachable" })),
+  epic: () => Effect.fail(new Unavailable({ reason: "history unreachable" })),
+  commit: () => Effect.fail(new Unavailable({ reason: "history unreachable" })),
+  search: () => Effect.fail(new Unavailable({ reason: "history unreachable" })),
+  plan: () => Effect.fail(new Unavailable({ reason: "history unreachable" })),
+  start: () => Effect.fail(new Unavailable({ reason: "history unreachable" })),
+  note: () => Effect.fail(new Unavailable({ reason: "history unreachable" })),
+}
+
+describe("the history's tools", () => {
+  it.effect("are show, Plan, Start and Note: never Approve or Fold", () => effect {
+    const bindings = try historyTools(unreachable).bindings()
+    try Effect.try(() => {
+      expect(bindings.map((binding) => binding.descriptor.name)).toEqual([
+        "vibelang/history/show", "vibelang/history/Plan", "vibelang/history/Start", "vibelang/history/Note",
+      ])
+      expect(bindings.every((binding) => binding.descriptor.modelInvocable)).toBe(true)
+      expect(bindings.every((binding) => binding.descriptor.description.length > 0)).toBe(true)
+      expect(REPLY_CALLS).toBeGreaterThan(0)
+    })
+  })
+
+  it.effect("read one page at a time, each what the history computes", () => reading(CHAT_AGENT, effect (history) => {
+    const pages = [
+      try show(history, { what: "outline" }),
+      try show(history, { what: "epic", id: "e1", from: 1 }),
+      try show(history, { what: "commit", id: "m2" }),
+      try show(history, { what: "search", query: "THREE" }),
+    ]
+    const h = small()
+    try Effect.try(() => expect(pages).toEqual([outlineOf(h), epicPageOf(h, "e1", 1), commitPageOf(h, "m2"), matchesOf(h, "THREE")]))
+  }))
+
+  it("take only what each page needs, the rest defaulted", () => {
+    const decode = Schema.decodeUnknownSync(Schema.Struct(Show.payloadSchema.fields))
+    expect(requestOf(decode({ what: "epic", id: "e2" }))).toEqual({ what: "epic", id: "e2", from: 0 })
+    expect(requestOf(decode({ what: "search" }))).toEqual({ what: "search", query: "" })
+    expect(() => decode({ what: "epic", id: "e2", from: -1 })).toThrow()
+    expect(() => decode({ what: "everything" })).toThrow()
+  })
+
+  it.effect("write through the history's flows as the agent for its person, signed as the agent", () => reading({ role: "contributor", name: "Ada", agent: true }, effect (history) => {
+    const planned = try plan(history, { how: "append", epic: "e1", newEpic: "", target: "", title: "fix(compiler): four", task: "t" }, "op-1")
+    const started = try start(history, planned.id, "lane-a", "op-2")
+    const noted = try note(history, planned.id, "tried", "A cache; it went stale.", "op-3")
+    const retold = try plan(history, { how: "insert", epic: "", newEpic: "", target: "m1", title: "fix(compiler): zero", task: "t" }, "op-4")
+    const page = try history.commit(planned.id)
+    try Effect.try(() => {
+      expect([planned, started, noted]).toEqual([{ id: "m4", refusal: null }, { id: "m4", refusal: null }, { id: "m4", refusal: null }])
+      // Inserting retells others' work: a maintainer's, so a contributor's agent is refused.
+      expect(retold).toEqual({ id: "", refusal: "forbidden" })
+      expect(page.commit).toMatchObject({ state: "working", lane: "lane-a" })
+      expect(page.commit!.notes).toEqual([{ section: "tried", text: "A cache; it went stale.", by: "Ada (agent)" }])
+    })
+  }))
+
+  it.effect("answer the chat agent's writes `forbidden` while its person is a viewer, changing nothing", () => reading(CHAT_AGENT, effect (history) => {
+    const before = try history.outline()
+    const answers = [
+      try plan(history, { how: "append", epic: "e1", newEpic: "", target: "", title: "fix(compiler): four", task: "" }, "op-5"),
+      try start(history, "m1", "lane", "op-6"),
+      try note(history, "m1", "tried", "x.", "op-7"),
+    ]
+    const after = try history.outline()
+    try Effect.try(() => {
+      expect(CHAT_AGENT).toEqual({ role: "viewer", name: "Guest", agent: true })
+      expect(answers).toEqual(Array(3).fill({ id: "", refusal: "forbidden" }))
+      expect(after).toEqual(before)
+    })
+  }))
+
+  it.effect("answer a sequencer's refusal, and `unavailable` when the history can't be reached", () => effect {
+    const refused = try reading({ role: "maintainer", name: "Ada", agent: true }, (history) => note(history, "m99", "tried", "x.", "op-refused"))
+    const writes = [
+      try plan(unreachable, { how: "append", epic: "e1", newEpic: "", target: "", title: "x", task: "" }, "op-8"),
+      try start(unreachable, "m1", "lane", "op-9"),
+      try note(unreachable, "m1", "tried", "x.", "op-10"),
+    ]
+    const read = show(unreachable, { what: "outline" }) catch (error) => error._tag
+    try Effect.try(() => {
+      expect(refused).toEqual({ id: "", refusal: "unknown" })
+      expect(writes).toEqual(Array(3).fill({ id: "", refusal: "unavailable" }))
+      expect(read).toBe("Unavailable")
+    })
+  })
+})
+
+describe("the mock chat's agent", () => {
+  // Live clock: the scripted agent waits between the pieces of its reply.
+  it.live("answers about the mythical history from the outline its tool read", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      try factory.post("history-tool", "a", "Ada", "What is in the mythical history?")
+      const events = try Stream.runCollect(factory.events("history-tool", 0) |> Stream.takeUntil(%, (event) => event.type === "ReplyFinished"))
+      const reply = Array.from(events).reduce(apply, empty).entries[1]!
+      try Effect.try(() => {
+        expect(reply.text).toMatch(/^VibeLang's mythical history, folded through `[0-9a-f]{12}`\./)
+        expect(reply.text).toMatch(/The compiler \d+ · /)
+        expect(reply.text).toMatch(/No open work\.$/)
+      })
+    }
+  }, 30_000)
+})
+
+it.effect("the product mock records a replayed agent plan and note only once", () => reading({ role: "maintainer", name: "Ada", agent: true }, effect (history) => {
+  const request = { how: "append" as const, epic: "e1", newEpic: "", target: "", title: "One planned change", task: "" }
+  const planned = try plan(history, request, "same-plan")
+  const before = try history.outline()
+  const replayed = try plan(history, request, "same-plan")
+  const after = try history.outline()
+  try note(history, planned.id, "tried", "One attempt.", "same-note")
+  try note(history, planned.id, "tried", "One attempt.", "same-note")
+  const page = try history.commit(planned.id)
+  try Effect.try(() => {
+    expect(replayed).toEqual(planned)
+    expect(after.seq).toBe(before.seq)
+    expect(page.commit?.notes.filter((entry) => entry.text === "One attempt.")).toHaveLength(1)
+  })
+}))

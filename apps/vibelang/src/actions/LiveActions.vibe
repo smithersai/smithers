@@ -1,0 +1,76 @@
+// The registered actions service over the Worker protocol; no local execution or model on a live page.
+import * as Sse from "effect/encoding/Sse"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { SecureRandom } from "effect/crypto"
+import { WebCrypto } from "@smthrs/crypto"
+import { apply, empty } from "../core/conversation.vibe"
+import { EventSchema } from "../core/schemas.vibe"
+import { Actions, ActionFailure, type Door, Run, Registered } from "./Actions.vibe"
+import { ACTIONS_PATH, Failure, Started } from "./wire.vibe"
+const failed = () => new ActionFailure({ code: "unavailable" })
+const decodeEvent = Schema.decodeUnknownEffect(Schema.fromJsonString(EventSchema))
+
+/** URI encoding failures are typed input failures, before transport or random-id allocation. */
+effect function segmentOf(value: string) {
+  return try Effect.try({ try: () => encodeURIComponent(value), catch: () => new ActionFailure({ code: "input" }) })
+}
+
+export function LiveActions(origin: string) {
+  return Layer.effect(Actions, effect {
+    const client = try HttpClient.HttpClient
+    const random = try Effect.provide(SecureRandom.SecureRandom, WebCrypto.layer)
+    effect function request<A, I>(schema: Schema.Codec<A, I>, method: "GET" | "POST" | "DELETE", path: string, body?: object) {
+      const base = method === "GET" ? HttpClientRequest.get(origin + ACTIONS_PATH + path) : method === "POST" ? HttpClientRequest.post(origin + ACTIONS_PATH + path) : HttpClientRequest.delete(origin + ACTIONS_PATH + path)
+      const response = try Effect.mapError(client.execute(body === undefined ? base : HttpClientRequest.bodyJsonUnsafe(base, body)), failed)
+      const value = try Effect.mapError(response.json, failed)
+      if (response.status < 200 || response.status > 299) {
+        const failure = Schema.decodeUnknownEffect(Failure)(value) catch () => ({ code: "unavailable" })
+        throw new ActionFailure({ code: failure.code })
+      }
+      return try Effect.mapError(Schema.decodeUnknownEffect(schema)(value), failed)
+    }
+    const commands = () => request(Schema.Array(Registered), "GET", "/commands")
+    effect function start(flow: string, input: Schema.Json, door: Door) {
+      const id = `a${try random.uuidV4()}`
+      return (try request(Started, "POST", "/runs", { id, flow, input, door })).id
+    }
+    const service: Actions.Shape = {
+      list: () => request(Schema.Array(Registered), "GET", ""),
+      commands,
+      runs: effect (flow) => try request(Schema.Array(Run), "GET", `/runs?flow=${try segmentOf(flow)}`),
+      read: effect (id) => try request(Run, "GET", `/runs/${try segmentOf(id)}`),
+      start,
+      rerun: effect (previous) => {
+        const previousId = try segmentOf(previous)
+        const id = `a${try random.uuidV4()}`
+        return (try request(Started, "POST", `/runs/${previousId}/rerun`, { id })).id
+      },
+      command: effect (text, door = "slash") => {
+        const [command, ...words] = text.trim().split(/\s+/)
+        const entry = (try commands()).find((entry) => entry.command === command)
+        if (entry === undefined) throw new ActionFailure({ code: "unknown-command" })
+        const rest = words.join(" ")
+        const input = entry.input === "json" ? (rest === "" ? {} : try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(rest), () => new ActionFailure({ code: "input" }))) : { text: rest }
+        return try start(entry.name, input, door)
+      },
+      cancel: effect (id) => { try request(Schema.Struct({}), "DELETE", `/runs/${try segmentOf(id)}`) },
+      follow: (id) => Stream.unwrap(effect {
+        const response = try Effect.mapError(client.get(`${origin}${ACTIONS_PATH}/runs/${try segmentOf(id)}/events`), failed)
+        if (response.status !== 200) throw new ActionFailure({ code: "unavailable" })
+        return response.stream.pipe(
+          Stream.decodeText(), Stream.pipeThroughChannel(Sse.decode()),
+          Stream.mapEffect((message) => decodeEvent(message.data)),
+          Stream.mapAccum(() => empty, (conversation, event) => {
+            const next = apply(conversation, event)
+            const run = next.runs?.find((run) => run.id === id)
+            return [next, run === undefined ? [] : [run]] as const
+          }),
+          Stream.filter((run) => run !== undefined),
+          Stream.mapEffect((run) => Schema.decodeUnknownEffect(Run)(run)),
+          Stream.mapError(failed),
+        )
+      }),
+    }
+    return service
+  })
+}

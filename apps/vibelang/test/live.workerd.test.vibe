@@ -1,3 +1,4 @@
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 // The live Factory end to end in local workerd (wiki/decisions/0010-live-agent.md, 0008-testing.md): Miniflare runs
 // the API Worker's Durable Objects over the real sequencer, the real `vibelang/Reply` flow on the engine in each
 // conversation's own SQLite, and the real HTTP protocol (test/workerd/worker.vibe), and `LiveFactory` talks to it over
@@ -5,11 +6,13 @@
 // configuration has no model, so every reply fails saying so, and a spent budget refuses before any model call. The
 // opt-in case asks the real model when `CEREBRAS_API_KEY` is set. Run with `pnpm test:workerd`.
 import { describe, expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http"
 import { afterAll, beforeAll } from "vitest"
 import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
-import { REASONS } from "../worker/Reply.vibe"
+import { AgentBackend, BrowserFactory } from "../src/web/backend.vibe"
+import { dayOf, REASONS } from "../worker/Reply.vibe"
 import { modelKey, room, serveApi, type Served } from "./support/workerd.vibe"
 
 /** The live Factory at `origin`, over this process's fetch. */
@@ -63,11 +66,29 @@ describe("the live Factory in local workerd, with no model key", () => {
         expect(answer).toEqual({ ok: true, agent: "live" })
         expect(factory.mode).toBe("live")
         expect(events).toEqual([
-          { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "How do services work?" },
+          { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Guest", text: "How do services work?" },
           { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" },
           { type: "ReplyFailed", seq: 3, id: "r1", reason: REASONS.unconfigured },
         ])
         expect(snapshot).toEqual({ seq: 3, entries: events.reduce(apply, empty).entries })
+      })
+    }
+  })
+
+  it.live("the browser selects the real live backend and delegates post, read and events to it", () => effect {
+    provide BrowserFactory(api!.origin, false).pipe(Layer.provide(FetchHttpClient.layer)) {
+      const factory = try Factory
+      const backend = try AgentBackend
+      const mode = try backend.ready
+      const conversation = try room("browser-startup")
+      try factory.post(conversation, "startup", "Guest", "How do services work?")
+      const events = try untilSettled(conversation, 1)
+      const snapshot = try factory.read(conversation, 0)
+      try Effect.try(() => {
+        expect(mode).toBe("live")
+        expect(factory.mode).toBe("live")
+        expect(events.at(-1)).toMatchObject({ type: "ReplyFailed", reason: REASONS.unconfigured })
+        expect(snapshot.entries).toEqual(events.reduce(apply, empty).entries)
       })
     }
   })
@@ -115,6 +136,53 @@ describe("the live Factory in local workerd, with no model key", () => {
       })
     }
   })
+
+  it.live("runs the exact walkthrough without a model, finishes by seek and then answers a post", () => effect {
+    provide live(api!.origin) {
+      const factory = try Factory
+      const conversation = try room("tour-unconfigured")
+      try factory.tour(conversation)
+      const driven = Array.from(try Stream.runCollect(factory.events(conversation, 0).pipe(Stream.takeUntil(event => event.type === "ReplyDelta"))))
+      try factory.controlTour!(conversation, "seek", 11)
+      const toured = try untilSettled(conversation, 1)
+      try factory.post(conversation, "a", "Ada", "hi")
+      const events = try untilSettled(conversation, 2)
+      try Effect.try(() => {
+        expect(driven.some(event => event.type === "WalkthroughDriven" && event.target === "splash")).toBe(true)
+        expect(toured.at(-1)?.type).toBe("ReplyFinished")
+        expect(events.at(-1)).toMatchObject({ type: "ReplyFailed", reason: REASONS.unconfigured })
+      })
+    }
+  })
+
+  it.live("Escape during a reading timer's suspension transition wakes the parked tour immediately", () => effect {
+    const origin = api!.origin
+    const conversation = try room("tour-park-boundary")
+    provide live(origin), FetchHttpClient.layer {
+      const call = effect (path: string) => {
+        const response = try HttpClient.get(`${origin}/${path}/${encodeURIComponent(conversation)}`)
+        return try HttpClientResponse.schemaBodyJson(Schema.Unknown)(response)
+      }
+      try call("reading-tour")
+      try Effect.repeat(call("parked"), { until: (value) => value === true, schedule: Schedule.spaced("10 millis") })
+      const factory = try Factory
+      // The flow body has requested suspension, but its held finalizer keeps the run row Running.
+      const before = try runsOf(origin, conversation)
+      try Effect.try(() => expect(before.find((run) => run.run_id === "tour/t1")?.status).toBe("running"))
+      try factory.endTour(conversation)
+      try call("release-park")
+      const completed = runsOf(origin, conversation).pipe(
+        Effect.repeat({ until: (runs) => runs.find((run) => run.run_id === "tour/t1")?.status === "completed", schedule: Schedule.spaced("10 millis") }),
+        timeout("2 seconds"),
+      )
+      try completed
+      const snapshot = try factory.read(conversation, 0)
+      try Effect.try(() => {
+        expect(snapshot.entries[0]).toMatchObject({ done: true })
+        expect(snapshot.entries[0]!.text).toBe(WALKTHROUGH[0]!.subtitle)
+      })
+    }
+  }, 30_000)
 
   it.live("refuses blank, repeated and oversized posts with the sequencer's reasons", () => effect {
     provide live(api!.origin) {
@@ -181,6 +249,68 @@ describe("the live Factory in local workerd, with a model nobody answers", () =>
       })
     }
   }, 300_000)
+
+  it.live("ending the tour while its agent waits on the model stops the agent's flow, and the next post is answered", () => effect {
+    const origin = api!.origin
+    provide live(origin) {
+      const factory = try Factory
+      const conversation = try room("tour-ended")
+      try factory.tour(conversation)
+      const started = try Stream.runCollect(factory.events(conversation, 0) |> Stream.take(%, 1))
+      try factory.endTour(conversation)
+      try factory.post(conversation, "a", "Ada", "hi")
+      // The ended tour's execution settles, so the post's reply flow can start in the same object.
+      const events = Array.from(try Stream.runCollect(
+        factory.events(conversation, 0) |> Stream.takeUntil(%, (event: Event) => event.type === "ReplyStarted"),
+      ))
+      const runs = try runsOf(origin, conversation)
+      try Effect.try(() => {
+        expect(Array.from(started)).toEqual([{ type: "TourStarted", seq: 1, id: "t1" }])
+        const end = events.find((event) => event.type === "TourEnded")!
+        const post = events.find((event) => event.type === "Posted")!
+        expect(end.id).toBe("t1")
+        expect(post).toMatchObject({ clientId: "a", name: "Guest", text: "hi" })
+        expect(post.seq).toBeGreaterThan(end.seq)
+        expect(events.at(-1)).toMatchObject({ type: "ReplyStarted", inReplyTo: post.id })
+        expect(events.at(-1)!.seq).toBeGreaterThan(post.seq)
+        expect(events.filter((event) => event.type === "PaneOpened" && event.seq > end.seq)).toEqual([])
+        expect(runs.find((run) => run.run_id === "tour/t1")?.status).toBe("completed")
+      })
+    }
+  }, 300_000)
+})
+
+/** The day's charge keys in the shared budget object, from the test host's window. */
+effect function chargeKeys(origin: string, day: string) {
+  provide FetchHttpClient.layer {
+    const response = try HttpClient.get(`${origin}/budget/${encodeURIComponent(day)}/ledger`)
+    return try HttpClientResponse.schemaBodyJson(Schema.Array(Schema.String))(response)
+  }
+}
+
+describe("the live Factory in local workerd, two conversations in one day", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveApi({ CHAT_MODEL: UNREACHABLE_MODEL, ...UNANSWERED })) }, 120_000)
+  afterAll(async () => { await api?.dispose() })
+
+  it.live("charges each conversation's first reply under its own key, though both replies are r1", () => effect {
+    const origin = api!.origin
+    provide live(origin) {
+      const factory = try Factory
+      const first = try room("budget-one")
+      const second = try room("budget-two")
+      try factory.post(first, "a", "Ada", "one")
+      try factory.post(second, "a", "Ada", "two")
+      const settled = try Effect.all([untilSettled(first, 1), untilSettled(second, 1)], { concurrency: "unbounded" })
+      const keys = try chargeKeys(origin, dayOf(Date.now()))
+      try Effect.try(() => {
+        expect(settled[0]!.at(-1)).toMatchObject({ type: "ReplyFailed", id: "r1", reason: REASONS.unavailable })
+        expect(settled[1]!.at(-1)).toMatchObject({ type: "ReplyFailed", id: "r1", reason: REASONS.unavailable })
+        expect(keys).toHaveLength(2)
+        expect(keys).not.toContain("reply/r1")
+      })
+    }
+  }, 300_000)
 })
 
 describe.skipIf(modelKey === undefined)("the live Factory with the real model (opt in: CEREBRAS_API_KEY)", () => {
@@ -202,4 +332,21 @@ describe.skipIf(modelKey === undefined)("the live Factory with the real model (o
       })
     }
   }, 180_000)
+
+  it.live("answers about the mythical history from its tool, vibelang/history/show", () => effect {
+    provide live(api!.origin) {
+      const factory = try Factory
+      const conversation = try room("model-history")
+      try factory.post(conversation, "a", "Ada", "Which epics does VibeLang's mythical history have? Read it with your tool.")
+      const events = try untilSettled(conversation, 1)
+      const reply = events.reduce(apply, empty).entries[1]!
+      try Effect.try(() => {
+        expect(events.at(-1)!.type).toBe("ReplyFinished")
+        // Only the history's outline names its epics; VibeLang's reference doesn't.
+        expect(reply.text).toContain("The compiler")
+      })
+    }
+  }, 180_000)
+
+
 })

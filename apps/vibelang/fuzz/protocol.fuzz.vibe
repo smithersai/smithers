@@ -1,0 +1,66 @@
+import { it } from "@effect/vitest"
+import { Fuzz } from "@smthrs/fuzz"
+import { EventSchema, Client, Conversation, ReadSnapshot } from "../src/core/schemas.vibe"
+import { Head, EpicCount, Outline, EpicPage, CommitPage, Matches } from "../src/history/schemas.vibe"
+import * as Wire from "../src/core/wire.vibe"
+import { run, same, TextOrBoundary, Int } from "./run.vibe"
+
+// Preserve the original broad number domain for saved inputs; valid pages round-trip,
+// while impossible counts/ranks must now be refused by the production decoder.
+const RawHead = Schema.Struct({ ...Head.fields, rank: Schema.Number, notes: Schema.Number, folds: Schema.Number })
+const RawEpicCount = Schema.Struct({ ...EpicCount.fields, commits: Schema.Number, folds: Schema.Number })
+const rawPages: Readonly<Record<string, Schema.Constraint>> = {
+  "history-head": RawHead,
+  "history-epic-count": RawEpicCount,
+  "history-outline": Schema.Struct({ ...Outline.fields, epics: Schema.Array(RawEpicCount), open: Schema.Array(RawHead) }),
+  "history-epic-page": Schema.Struct({ ...EpicPage.fields, from: Schema.Number, total: Schema.Number, commits: Schema.Array(RawHead) }),
+  "history-matches": Schema.Struct({ ...Matches.fields, commits: Schema.Array(RawHead) }),
+}
+
+for (const [name, schema] of [
+  ["event", EventSchema], ["client", Client], ["conversation", Conversation], ["snapshot", ReadSnapshot],
+  ["post", Wire.PostBody], ["health", Wire.Health], ["refusal", Wire.Refusal],
+  ["history-head", Head], ["history-epic-count", EpicCount], ["history-outline", Outline], ["history-epic-page", EpicPage], ["history-commit-page", CommitPage], ["history-matches", Matches],
+] as const) {
+  it.live(`protocol/${name}-roundtrip`, () => run(`protocol/${name}-roundtrip`, rawPages[name] ?? schema, (value) => effect {
+    const codec = Schema.fromJsonString(schema)
+    if (!Schema.is(schema)(value)) {
+      const refused = try exit(Schema.decodeUnknownEffect(codec)(JSON.stringify(value)))
+      return refused._tag === "Failure" && !Cause.hasDies(refused.cause)
+    }
+    const encoded = try Schema.encodeEffect(codec)(value)
+    const decoded = try Schema.decodeUnknownEffect(codec)(encoded)
+    return same(decoded, value)
+  }))
+}
+
+it.live("protocol/garbage", () => run("protocol/garbage", Schema.Union([Schema.Unknown, Schema.String]), (value) => effect {
+  const decoded = try exit(Schema.decodeUnknownEffect(Schema.fromJsonString(EventSchema))(value))
+  try Fuzz.observe(decoded._tag)
+  return decoded._tag === "Success" ? Schema.is(EventSchema)(decoded.value) : !Cause.hasDies(decoded.cause)
+}))
+
+it.live("protocol/conversation-path", () => run("protocol/conversation-path", TextOrBoundary, (id) => {
+  const path = Wire.conversationPath(id)
+  const malformed = Array.from(id).some((character) => {
+    const point = character.codePointAt(0)!
+    return point >= 0xd800 && point <= 0xdfff
+  })
+  if (id.length === 0 || id.length > Wire.MAX_CONVERSATION || malformed) return path === undefined
+  if (path === undefined) return false
+  const route = Wire.routeOf("GET", path)
+  return route?.kind === "read" && route.conversation === id
+}))
+
+it.live("protocol/routes", () => run("protocol/routes", Schema.Struct({ text: TextOrBoundary, kind: Int }), ({ text, kind }) => effect {
+  const methods = ["GET", "POST", "DELETE", "PATCH", "HEAD"]
+  const suffixes = ["", "/posts", "/events", "/tour", "/extra/more", "/"]
+  const pathname = (kind % 3 === 0 ? "/not-api/" : "/api/conversations/") + text + suffixes[kind % suffixes.length]!
+  const method = methods[kind % methods.length]!
+  const route = Wire.routeOf(method, pathname)
+  try Fuzz.observe(route?.kind ?? "refused")
+  if (route === undefined) return true
+  if (route.conversation.length === 0 || route.conversation.length > Wire.MAX_CONVERSATION) return false
+  return route.kind === "read" || route.kind === "events" ? method === "GET"
+    : route.kind === "end-tour" ? method === "DELETE" : method === "POST"
+}))

@@ -1,0 +1,176 @@
+// The CLI and MCP wait for the reply correlated to their own post.
+export interface AskProgress {
+  readonly post: string
+  readonly reply: string
+  readonly numbers: ReadonlyArray<number>
+  readonly text: string
+  readonly failed: boolean
+  readonly failure: string
+  readonly finished: boolean
+  readonly listening: boolean
+}
+
+//@ verify
+//@ ensures \result == (kind == "Posted" && actual == expected)
+export function isOwnPost(kind: string, actual: string, expected: string): boolean {
+  return kind === "Posted" && actual === expected
+}
+
+//@ verify
+//@ ensures \result == (kind == "ReplyStarted" && post != "" && target == post)
+export function isOwnReply(kind: string, post: string, target: string): boolean {
+  return kind === "ReplyStarted" && post !== "" && target === post
+}
+
+//@ verify
+//@ ensures \result.post == (isOwnPost(kind, actual, expected) ? id : state.post)
+//@ ensures \result.reply == (isOwnReply(kind, state.post, target) ? id : state.reply)
+//@ ensures id != \result.reply ==> \result.text == state.text && \result.failed == state.failed && \result.failure == state.failure && \result.finished == state.finished && \result.listening
+//@ ensures id == \result.reply ==> \result.text == (kind == "ReplyDelta" ? state.text + piece : kind == "ReplyRestarted" ? "" : state.text)
+//@ ensures id == \result.reply ==> \result.failed == (state.failed || kind == "ReplyFailed") && \result.failure == (kind == "ReplyFailed" ? reason : state.failure) && \result.finished == (state.finished || kind == "ReplyFinished")
+//@ ensures \result.listening == (id != \result.reply || (kind != "ReplyFinished" && kind != "ReplyFailed"))
+//@ ensures \result.numbers.length == state.numbers.length + (isOwnPost(kind, actual, expected) ? 1 : 0) + (id == \result.reply ? 1 : 0)
+//@ ensures forall(i, 0 <= i && i < state.numbers.length ==> \result.numbers[i] == state.numbers[i])
+//@ ensures forall(i, state.numbers.length <= i && i < \result.numbers.length ==> \result.numbers[i] == seq)
+export function collectAnswer(state: AskProgress, kind: string, id: string, seq: number, actual: string, expected: string, target: string, piece: string, reason: string): AskProgress {
+  const post = isOwnPost(kind, actual, expected) ? id : state.post
+  const reply = isOwnReply(kind, state.post, target) ? id : state.reply
+  const numbers = isOwnPost(kind, actual, expected) ? [...state.numbers, seq] : state.numbers
+  if (id !== reply) return { ...state, post, reply, numbers, listening: true }
+  return {
+    post, reply, numbers: [...numbers, seq],
+    text: kind === "ReplyDelta" ? state.text + piece : kind === "ReplyRestarted" ? "" : state.text,
+    failed: state.failed || kind === "ReplyFailed",
+    failure: kind === "ReplyFailed" ? reason : state.failure,
+    finished: state.finished || kind === "ReplyFinished",
+    listening: kind !== "ReplyFinished" && kind !== "ReplyFailed",
+  }
+}
+
+//@ verify
+//@ ensures failed ==> \result == "failed"
+//@ ensures !failed && !finished ==> \result == "ended"
+//@ ensures !failed && finished ==> \result == "done"
+export function answerOutcome(failed: boolean, finished: boolean): "failed" | "ended" | "done" {
+  return failed ? "failed" : !finished ? "ended" : "done"
+}
+
+//@ verify
+//@ ensures tag == "Unavailable" ==> \result == reason
+//@ ensures tag != "Unavailable" && tag == "Refused" ==> \result == refused + ": " + refusal
+//@ ensures tag != "Unavailable" && tag != "Refused" ==> \result == message
+export function commandError(tag: string, reason: string, refused: string, refusal: string, message: string): string {
+  return tag === "Unavailable" ? reason : tag === "Refused" ? refused + ": " + refusal : message
+}
+
+// ── Argument decisions of the commands (0009, 0018 "Command argument decisions") ───────────────────────────────────
+
+/** A plan's kind from its flags: `--amend` before `--before`, else an append. */
+//@ verify
+//@ ensures amend != "" ==> \result == "amend"
+//@ ensures amend == "" && before != "" ==> \result == "insert"
+//@ ensures amend == "" && before == "" ==> \result == "append"
+export function planHow(amend: string, before: string): "amend" | "insert" | "append" {
+  return amend !== "" ? "amend" : before !== "" ? "insert" : "append"
+}
+
+/** The commit a plan names: the one it amends, else the one it inserts before (`""` for an append). */
+//@ verify
+//@ ensures how == "amend" ==> \result == amend
+//@ ensures how != "amend" ==> \result == before
+export function planTarget(how: "amend" | "insert" | "append", amend: string, before: string): string {
+  return how === "amend" ? amend : before
+}
+
+/** Which reads `history` makes: an epic's page, or else a search; and one commit. */
+export interface HistoryReads {
+  readonly epic: boolean
+  readonly search: boolean
+  readonly commit: boolean
+}
+
+/** `--epic` reads its page, `--search` only without `--epic`, `--commit` its commit; never a page and a search. */
+//@ verify
+//@ ensures \result.epic == (epic != "")
+//@ ensures \result.search == (epic == "" && search != "")
+//@ ensures \result.commit == (commit != "")
+//@ ensures !(\result.epic && \result.search)
+export function historyReads(epic: string, search: string, commit: string): HistoryReads {
+  return { epic: epic !== "", search: epic === "" && search !== "", commit: commit !== "" }
+}
+
+/** Whether `--epic` names an epic of the outline; no `--epic` names none and is never refused. */
+//@ verify
+//@ ensures \result == (epic == "" || ids.includes(epic))
+export function knownEpic(ids: ReadonlyArray<string>, epic: string): boolean {
+  return epic === "" || ids.includes(epic)
+}
+
+/** How many commits a history page has in all: the epic's total for a page, else how many a search matched. */
+//@ verify
+//@ ensures \result == (listed ? total : matched)
+export function historyTotal(listed: boolean, total: number, matched: number): number {
+  return listed ? total : matched
+}
+
+/** What `issue` details: the specification for a `spec-` operation or a bare `read`, else one issue. */
+//@ verify
+//@ ensures \result == ((op.startsWith("spec-") || (op == "read" && number == 0)) ? "specification" : "issue")
+export function issueDetail(op: string, number: number): "specification" | "issue" {
+  return op.startsWith("spec-") || (op === "read" && number === 0) ? "specification" : "issue"
+}
+
+/** Which recovery fields an `issue` request carries. */
+export interface IssueResume {
+  readonly resume: boolean
+  readonly resumeRecovery: boolean
+  readonly recovery: boolean
+}
+
+/** A resume needs both its operation and key; its recovery rides only with a resume; a recovery only when given. */
+//@ verify
+//@ ensures \result.resume == (resumeOp != "" && resumeKey != "")
+//@ ensures \result.resumeRecovery == (resumeOp != "" && resumeKey != "" && resumeRecovery != "")
+//@ ensures \result.recovery == (recovery != "")
+export function issueResume(resumeOp: string, resumeKey: string, resumeRecovery: string, recovery: string): IssueResume {
+  const resume = resumeOp !== "" && resumeKey !== ""
+  return { resume, resumeRecovery: resume && resumeRecovery !== "", recovery: recovery !== "" }
+}
+
+/** What a refused issue or wiki write says: a role refusal, else the command's own failure. */
+//@ verify
+//@ ensures reason == "forbidden" ==> \result == "Not allowed."
+//@ ensures reason != "forbidden" ==> \result == failed
+export function writeFailure(reason: string, failed: string): string {
+  return reason === "forbidden" ? "Not allowed." : failed
+}
+
+/** The wiki page `wiki read` reads: the one named, else the index. */
+//@ verify
+//@ ensures page == "" ==> \result == "index"
+//@ ensures page != "" ==> \result == page
+export function wikiPage(page: string): string {
+  return page === "" ? "index" : page
+}
+
+/** Whether a run has settled: anything but queued or running. */
+//@ verify
+//@ ensures \result == (state != "queued" && state != "running")
+export function runSettled(state: string): boolean {
+  return state !== "queued" && state !== "running"
+}
+
+/** Whether `run --wait` fails: no settled run was seen, or it did not pass. */
+//@ verify
+//@ ensures \result == (!seen || state != "passed")
+export function runWaitFails(seen: boolean, state: string): boolean {
+  return !seen || state !== "passed"
+}
+
+/** What a failed command says: an action's code, else the Factory failure's text (`commandError`). */
+//@ verify
+//@ ensures tag == "ActionFailure" ==> \result == "Action: " + code
+//@ ensures tag != "ActionFailure" ==> \result == commandError(tag, reason, refused, refusal, message)
+export function failureMessage(tag: string, code: string, reason: string, refused: string, refusal: string, message: string): string {
+  return tag === "ActionFailure" ? "Action: " + code : commandError(tag, reason, refused, refusal, message)
+}

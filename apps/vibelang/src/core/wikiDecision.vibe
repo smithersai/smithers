@@ -1,0 +1,6 @@
+// The agent drafts; a person submits the review change. Roles are checked separately by 0019's policy.
+//@ verify
+//@ ensures \result == (operation == "read" || operation == "draft" || kind == "person")
+export function wikiSubmissionAllowed(operation: string, kind: string): boolean {
+  return operation === "read" || operation === "draft" || kind === "person"
+}

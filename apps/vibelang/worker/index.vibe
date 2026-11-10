@@ -2,6 +2,8 @@
 // binding, as apps/mvp's site does. Without the binding the site runs the mock agent in the browser, and `/api/health`
 // says so; with it, the API answers health itself, `agent: "live"` (wiki/decisions/0006-hosting.md, 0010-live-agent.md).
 // Its own answers are Effect's HTTP responses, converted to the platform's at this boundary.
+import { wikiPath } from "../src/core/wiki.vibe"
+import { HttpServerResponse } from "effect/http"
 
 interface Env {
   readonly ASSETS: Fetcher
@@ -22,10 +24,11 @@ export default {
       if (url.pathname === "/api/health") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({ ok: true, agent: "mock" }))
       return notFound()
     }
-    // Only home and built assets exist. Reject before the asset service's SPA fallback can turn a miss into 200.
-    const home = url.pathname === "/" || url.pathname === "/index.html"
+    // App pages keep their incoming deep-link request; the native asset binding supplies SPA fallback.
+    const wiki = wikiPath(url.pathname) === url.pathname
+    const page = wiki || url.pathname === "/" || url.pathname === "/index.html" || url.pathname === "/history" || url.pathname.startsWith("/history/")
     const asset = /^\/(?:assets|media)\/[^?]+\.[^/]+$/.test(url.pathname)
-    if (!home && !asset) return notFound()
+    if (!page && !asset) return notFound()
     const response = await env.ASSETS.fetch(request)
     if (asset && response.headers.get("Content-Type")?.includes("text/html")) return notFound()
     return response

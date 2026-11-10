@@ -1,0 +1,65 @@
+// The wiki edit flows on workerd's real persistent engine: journaled once, replayed identically, role-gated (0021).
+import { describe, expect, it } from "@effect/vitest"
+import { afterAll, beforeAll } from "vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { WikiState } from "../src/core/wikiSchemas.vibe"
+import { serveWikiHost, type Served } from "./support/workerd.vibe"
+let server: Served
+beforeAll(async () => { server = await runPromise(serveWikiHost()) })
+afterAll(async () => { await server?.dispose() })
+
+effect function call(request: { readonly method: string; readonly path: string; readonly body?: unknown; readonly role?: string }) {
+  const client = try HttpClient.HttpClient
+  const wire = (request.method === "GET" ? HttpClientRequest.get(server.origin + request.path) : HttpClientRequest.post(server.origin + request.path).pipe(HttpClientRequest.bodyJsonUnsafe(request.body))).pipe(
+    HttpClientRequest.setHeader("x-fixture-role", request.role ?? "maintainer"),
+  )
+  const response = try client.execute(wire)
+  return { status: response.status, body: try response.json }
+}
+
+describe("wiki editing in workerd", () => {
+  it.live("a maintainer's save journals once in real SQLite and replays identically; a second role's gate holds", () => effect {
+    provide FetchHttpClient.layer {
+      const before = try call({ method: "GET", path: "/api/wiki?page=roadmap" })
+      const base = (before.body as typeof WikiState.Type).pages.find((p) => p.id === "roadmap")!.source
+      const edited = base.trimEnd() + "\n\nworkerd save\n"
+      const save = { op: "save", page: "roadmap", base, text: edited, key: "workerd-save-1" }
+      const first = try call({ method: "POST", path: "/api/wiki", body: save })
+      const replay = try call({ method: "POST", path: "/api/wiki", body: save })
+      const denied = try call({ method: "POST", path: "/api/wiki", body: { ...save, key: "workerd-save-2" }, role: "contributor" })
+      const after = try call({ method: "GET", path: "/api/wiki?page=roadmap", role: "viewer" })
+      try Effect.try(() => {
+        expect(first.status).toBe(200)
+        expect((first.body as typeof WikiState.Type).pages.find((p) => p.id === "roadmap")?.source).toBe(base)
+        expect(replay.status).toBe(200)
+        expect(replay.body).toEqual(first.body)
+        expect(denied.status).toBe(403)
+        expect((after.body as typeof WikiState.Type).pages.find((p) => p.id === "roadmap")?.source).toBe(base)
+      })
+      const runsResponse = try (try HttpClient.HttpClient).get(server.origin + "/runs")
+      const runs = try Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ run_id: Schema.String, status: Schema.String })))(try runsResponse.json)
+      try Effect.try(() => {
+        expect(runs.filter((run) => run.run_id.includes("save")).every((run) => run.status === "completed")).toBe(true)
+        expect(new Set(runs.map((run) => run.run_id)).size).toBe(runs.length)
+      })
+    }
+  })
+  it.live("a contributor's proposal opens a review change without touching the page; the draft persists across requests", () => effect {
+    provide FetchHttpClient.layer {
+      const before = try call({ method: "GET", path: "/api/wiki?page=rulings", role: "contributor" })
+      const base = (before.body as typeof WikiState.Type).pages.find((p) => p.id === "rulings")!.source
+      const drafted = try call({ method: "POST", path: "/api/wiki", body: { op: "draft", page: "rulings", base: "", text: "Add a wiki-edit ruling.", key: "workerd-draft-1" }, role: "contributor" })
+      const reread = try call({ method: "GET", path: "/api/wiki?page=rulings", role: "contributor" })
+      const proposed = try call({ method: "POST", path: "/api/wiki", body: { op: "propose", page: "rulings", base, text: base + "\nProposed.\n", key: "workerd-prop-1" }, role: "contributor" })
+      const after = try call({ method: "GET", path: "/api/wiki?page=rulings" })
+      try Effect.try(() => {
+        expect(drafted.status).toBe(200)
+        expect((drafted.body as typeof WikiState.Type).draft?.text).toContain("Add a wiki-edit ruling.")
+        expect((reread.body as typeof WikiState.Type).draft?.text).toContain("Add a wiki-edit ruling.")
+        expect(proposed.status).toBe(200)
+        expect((proposed.body as typeof WikiState.Type).review).toMatch(/\/pull\/[0-9]+$/)
+        expect((after.body as typeof WikiState.Type).pages.find((p) => p.id === "rulings")?.source).toBe(base)
+      })
+    }
+  })
+})

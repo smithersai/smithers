@@ -1,0 +1,122 @@
+import { PostBody } from "../src/core/wire.vibe"
+import { Unavailable } from "../src/core/Factory.vibe"
+import type { HistoryReader } from "../src/history/tools.vibe"
+import { it } from "@effect/vitest"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import * as Objects from "../worker/Objects.vibe"
+import { ledgerOver, logOver, eventKey } from "../worker/ObjectStorage.vibe"
+import * as HistoryObject from "../worker/HistoryObject.vibe"
+import { empty as emptyHistory } from "../src/history/mythical.vibe"
+import { REASONS } from "../worker/Reply.vibe"
+import { run, Int, Text } from "./run.vibe"
+
+// The unconfigured reply must finish before reaching a history or a model.
+const unavailable = () => fail(new Unavailable({ reason: "injected history failure" }))
+const history: HistoryReader = { outline: unavailable, epic: unavailable, commit: unavailable, search: unavailable, plan: unavailable, start: unavailable, note: unavailable }
+
+/** The real Node SQLite adapter, with the host protocol's wider type at this boundary. */
+effect function storage() {
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  return { raw, object: raw as unknown as Objects.Storage }
+}
+
+it.live("storage/log-ledger-and-execution", () => run("storage/log-ledger-and-execution", Schema.Struct({ id: Int, text: Text }), ({ id, text }) => effect {
+  const { raw, object } = try storage()
+  const log = logOver(object)
+  const event = { type: "Posted" as const, seq: id + 1, id: `m${id}`, clientId: `c${id}`, name: "Guest", text }
+  try log.write(event)
+  const events = try log.read()
+  if (events.length !== 1 || events[0]?.seq !== id + 1 || eventKey(id).length !== eventKey(0).length) return false
+  const ledger = ledgerOver(object)
+  if ((try ledger.read("spent")) !== undefined) return false
+  try ledger.write({ spent: id, [`reply/r${id}`]: id })
+  if ((try ledger.read("spent")) !== id) return false
+  const executions = Objects.executionStorage(object)
+  try executions.put("execution", { id })
+  const saved = try executions.get<{ id: number }>("execution")
+  try executions.setAlarm(123 + id)
+  if ((try promise(() => raw.alarm())) !== 123 + id || saved?.id !== id) return false
+  try executions.deleteAlarm()
+  try executions.delete("execution")
+  return (try promise(() => raw.alarm())) === undefined && (try executions.get("execution")) === undefined && Objects.executionIdOf(`m${id}`) === `reply/m${id}` && Objects.tourExecutionIdOf(`t${id}`) === `tour/t${id}`
+}))
+
+it.live("storage/conversation-flows", () => run("storage/conversation-flows", Schema.Struct({ id: Int, text: Text }), ({ id, text }) => effect {
+  const { object } = try storage()
+  const sequencer = try Objects.conversation(object)
+  const outcome = try exit(Objects.post("fuzz", object, sequencer, `c${id}`, "Guest", "Question " + text))
+  if (!Schema.is(PostBody)({ clientId: `c${id}`, name: "Guest", text: "Question " + text })) return outcome._tag === "Success" && outcome.value === "invalid" && (try sequencer.read(0)).seq === 0
+  if (outcome._tag === "Failure") return false
+  const posted = outcome.value
+  if (posted !== null) return false
+  const duplicate = try Objects.post("fuzz", object, sequencer, `c${id}`, "Guest", "Question " + text)
+  if (duplicate !== "duplicate") return false
+  const budget = try Objects.budget(object, 100)
+  try budget.spend(`r${id}`, id)
+  const spend = { admit: () => succeed(false), spend: () => Effect.void }
+  const model = { model: undefined, unusable: "unset" }
+  try Objects.alarm("fuzz", object, sequencer, spend, model, history)
+  try Objects.alarm("fuzz", object, sequencer, spend, model, history)
+  const snapshot = try sequencer.read(0)
+  if (snapshot.entries[0]?.text !== ("Question " + text).trim() || snapshot.entries[1]?.error !== REASONS.budget || !(try budget.admit())) return false
+  if ((try Objects.tour("fuzz", object, sequencer)) !== null || (try Objects.tour("fuzz", object, sequencer)) !== "busy") return false
+  try Objects.alarm("fuzz", object, sequencer, { admit: () => succeed(true), spend: () => Effect.void }, model, history)
+  try Objects.alarm("fuzz", object, sequencer, spend, model, history)
+  const ended = try Objects.endTour("fuzz", object, sequencer)
+  if (ended !== null && ended !== "not-replying") return false
+  return (try Objects.endTour("fuzz", object, sequencer)) === "not-replying"
+}))
+
+it.live("storage/history-snapshot", () => run("storage/history-snapshot", Schema.Struct({ id: Int, text: Text }), ({ id, text }) => effect {
+  const { object } = try storage()
+  const store = HistoryObject.storeOver(object)
+  const before = try store.load()
+  if (before.base !== undefined || before.events.length !== 0) return false
+  const base = { ...emptyHistory, seq: 1, epics: [{ id: "e1", title: "Epic " + text }] }
+  try store.seed(base)
+  const event = { type: "EpicOpened" as const, seq: 2, id: `e${id + 2}`, title: "Next" }
+  try store.append(event)
+  const after = try store.load()
+  const sequencer = try HistoryObject.history(object)
+  const state = try sequencer.read()
+  return after.base?.epics[0]?.title === "Epic " + text && after.events.length === 1 && state.seq === 2 && state.epics.length === 2 && HistoryObject.principalOf(undefined).role === "viewer"
+}))
+
+import { MainUnavailable } from "../src/history/flows.vibe"
+import { pageOf } from "../src/history/pages.vibe"
+import { Outline } from "../src/history/schemas.vibe"
+import { WebCrypto } from "@smthrs/crypto"
+
+/** History's real SQLite flow host, including operation replay and the trusted reader adapter. */
+it.live("storage/history-write-flows", () => run("storage/history-write-flows", Schema.Struct({ text: Schema.String.check(Schema.isPattern(/^[^\uD800-\uDFFF]*$/u), Schema.isMaxLength(120)), agent: Schema.Boolean, permitted: Schema.Boolean }), ({ text, agent, permitted }) => effect {
+  provide WebCrypto.layer {
+    const { object } = try storage()
+    const sequencer = try HistoryObject.history(object)
+    const main = { since: () => fail(new MainUnavailable({ reason: "injected unavailable main" })) }
+    const principal = { role: permitted ? "maintainer" as const : "viewer" as const, name: "Fuzz", agent }
+    const reader = HistoryObject.readerOver(
+      effect (request) => pageOf(try sequencer.read(), request),
+      (name, body, caller, operation) => HistoryObject.write("fuzz-history", object, sequencer, main, caller, name, body, operation),
+      principal,
+    )
+    const before = try reader.outline()
+    if (!Schema.is(Outline)(before)) return false
+    const input = { how: "append" as const, epic: "", newEpic: "Fuzz epic", target: "", title: "Change " + text, task: "" }
+    const planned = try exit(reader.plan(input, "plan"))
+    if (!permitted) return planned._tag === "Failure" && !Cause.hasDies(planned.cause) && (try reader.outline()).seq === before.seq
+    if (planned._tag === "Failure") return false
+    const id = planned.value
+    const after = try reader.outline()
+    if ((try reader.plan(input, "plan")) !== id || (try reader.outline()).seq !== after.seq) return false
+    try reader.start(id, "fuzz", "start")
+    try reader.start(id, "fuzz", "start")
+    try reader.note(id, "tried", "Tried " + text, "note")
+    try reader.note(id, "tried", "Tried " + text, "note")
+    const commit = try reader.commit(id)
+    const epic = try reader.epic(commit.commit!.epic, 0)
+    const search = try reader.search(id)
+    const approved = try HistoryObject.write("fuzz-history", object, sequencer, main, principal, "approve", { id }, "approve")
+    const folded = try HistoryObject.write("fuzz-history", object, sequencer, main, principal, "fold", {}, "fold")
+    return commit.commit?.state === "working" && commit.commit.notes.length === 1 && epic.commits.some((head) => head.id === id) && search.commits.some((head) => head.id === id) && approved.refusal === (agent ? "forbidden" : null) && folded.refusal === (agent ? "forbidden" : "unavailable")
+  }
+}))

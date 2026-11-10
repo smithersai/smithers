@@ -207,6 +207,16 @@ describe("POST /api/github/webhook", () => {
     expect(h.count(Metrics.webhooks, { event: "issues", outcome: "too_large" })).toBe(0)
   })
 
+  test("a github_app_authorization revocation ends that person's connection; a ghost sender ends none", async () => {
+    const h = await githubHarness(runtime, {})
+    const revoked = { action: "revoked", sender: { id: 4242, login: "ada" } }
+    expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("github_app_authorization", revoked, { id: crypto.randomUUID() }))).status).toBe(200)
+    expect(h.endedConnections).toEqual([4242])
+    expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("github_app_authorization", { action: "revoked", sender: { id: 5, login: "ghost" } }, { id: crypto.randomUUID() }))).status).toBe(200)
+    expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("github_app_authorization", { action: "created", sender: { id: 6, login: "ada" } }, { id: crypto.randomUUID() }))).status).toBe(200)
+    expect(h.endedConnections).toEqual([4242])
+  })
+
   test("with REPO_FLOWS on, a push or a pull request of any installed repository starts its triggers/Dispatch; off, none", async () => {
     const sha = "d".repeat(40)
     const pushEvent = { ref: "refs/heads/feature/x", after: sha, repository: { full_name: "octo/other", default_branch: "trunk" } }

@@ -1,0 +1,78 @@
+// The state machine's replay guards and pure policy at their public functions: events a journal or the wire can
+// carry that no current decision emits, and the helper functions the proofs name (0005).
+import { describe, expect, it } from "@effect/vitest"
+import {
+  acknowledgedPending, apply, declineVip, empty, grantPolicy, holdRemaining, issueAncestorAt, pendingCount,
+  type Conversation, type Event, type IssueRecord, type Pending,
+} from "../src/core/conversation.vibe"
+
+const replay = (events: ReadonlyArray<Event>, from: Conversation = empty) => events.reduce(apply, from)
+const requested: Event = { type: "ActionRequested", seq: 1, id: "a1", flow: "vibelang/Post", door: "button", actor: "person", at: 5 }
+const touring = replay([
+  { type: "TourStarted", seq: 1, id: "t1" },
+  { type: "WalkthroughDriven", seq: 2, id: "t1", step: 1, target: "splash", at: 10, duration: 1000 },
+])
+
+function issue(number: number, parent: number, vip: IssueRecord["vip"] = ""): IssueRecord {
+  return { number, githubId: number, title: `#${number}`, body: "", author: "ada", age: "", state: "open", labels: [], parent, task: "", assignee: "", vip, review: "", path: "", comments: 0, notes: [] }
+}
+
+describe("replay guards", () => {
+  it("advances only the cursor for an empty or viewer grant, an authorization, an empty or repeated run request, and steps of no known run", () => {
+    const authorized = apply(empty, { type: "ActionAuthorized", seq: 1, id: "p", by: "4", action: "action" })
+    const one = apply(empty, requested)
+    const repeated = apply(one, { ...requested, seq: 2 })
+    const blank = apply(empty, { ...requested, id: "" })
+    const step = apply(empty, { type: "ActionStep", seq: 1, id: "a1", key: "k", name: "n", attempt: 1, state: "running", at: 6 })
+    const settled = apply(empty, { type: "ActionSettled", seq: 1, id: "a1", state: "passed", result: "null", at: 7 })
+    for (const grant of [{ id: "", role: "community" }, { id: "4", role: "viewer" }] as const) {
+      expect(apply(empty, { type: "RoleGranted", seq: 1, by: "1", mode: "person", ...grant })).toEqual({ ...empty, seq: 1 })
+    }
+    expect(authorized).toEqual({ ...empty, seq: 1 })
+    expect(one.runs).toHaveLength(1)
+    expect(repeated).toEqual({ ...one, seq: 2 })
+    expect(blank).toEqual({ ...empty, seq: 1 })
+    expect([step.runs, settled.runs]).toEqual([[], []])
+  })
+
+  it("ignores tour control for another tour and seeks outside the ten steps", () => {
+    for (const type of ["TourPaused", "TourResumed"] as const) {
+      expect(apply(touring, { type, seq: 3, id: "t9", at: 20 })).toEqual({ ...touring, seq: 3 })
+    }
+    for (const step of [0, 12, 1.5]) {
+      expect(apply(touring, { type: "TourSought", seq: 3, id: "t1", at: 20, step })).toEqual({ ...touring, seq: 3 })
+    }
+    expect(apply(touring, { type: "TourSought", seq: 3, id: "t1", at: 20, step: 2 }).walkthrough?.step).toBe(2)
+  })
+})
+
+describe("pure policy", () => {
+  it("refuses a person grant without a granter or to the current role, and a non-maintainer granting another", () => {
+    expect(grantPolicy("4", "", "new", "viewer", "community", "person", false, false, false)).toBe(false)
+    expect(grantPolicy("4", "1", "contributor", "maintainer", "contributor", "person", false, false, false)).toBe(false)
+    expect(grantPolicy("4", "2", "new", "contributor", "community", "person", false, false, false)).toBe(false)
+    expect(grantPolicy("4", "1", "new", "maintainer", "community", "person", false, false, false)).toBe(true)
+  })
+
+  it("walks an issue's ancestry: itself at zero steps, the root as 0, a missing parent as -1", () => {
+    const items = [issue(1, 0), issue(2, 1), issue(3, 2), issue(4, 9)]
+    expect([0, 1, 2, 3, 4].map((steps) => issueAncestorAt(items, 3, steps))).toEqual([3, 2, 1, 0, 0])
+    expect(issueAncestorAt(items, 4, 2)).toBe(-1)
+  })
+
+  it("counts and keeps the pending posts of other clients, in order", () => {
+    const pending: ReadonlyArray<Pending> = [{ clientId: "a", text: "1", error: "" }, { clientId: "b", text: "2", error: "" }, { clientId: "a", text: "3", error: "" }]
+    expect([0, 1, 2, 3].map((end) => pendingCount(pending, "a", end))).toEqual([0, 0, 1, 1])
+    expect(acknowledgedPending(pending, "a")).toEqual([pending[1]])
+  })
+
+  it("declines only a VIP in review", () => {
+    expect(declineVip(issue(5, 0, "In review"))).toMatchObject({ vip: "Declined", state: "closed" })
+    const accepted = issue(6, 0, "Accepted")
+    expect(declineVip(accepted)).toBe(accepted)
+  })
+
+  it("holds no negative time, and nothing once the hold has elapsed", () => {
+    expect([holdRemaining(-1, 0, 5), holdRemaining(100, 10, 5), holdRemaining(100, 10, 60), holdRemaining(100, 10, 110), holdRemaining(100, 10, 500)]).toEqual([0, 100, 50, 0, 0])
+  })
+})

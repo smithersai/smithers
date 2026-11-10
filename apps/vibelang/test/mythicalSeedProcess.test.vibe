@@ -1,0 +1,88 @@
+// @vitest-environment node
+// The seed command reads a real jj main and queue, writes only in the compiler-emitted fixture tree, and keeps the
+// previous seed when input cannot be read. No repository, process or filesystem is mocked.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { expect, it } from "@effect/vitest"
+import type { History } from "../src/history/mythical.vibe"
+import { node, run } from "./support/processes.vibe"
+
+/** Run an actual jj command, retaining its diagnostics when fixture setup fails. */
+effect function jj(args: ReadonlyArray<string>) {
+  const result = try run("jj", args)
+  try Effect.try(() => expect(result.status, result.stderr).toBe(0))
+  return result.stdout.trim()
+}
+
+it.live("bootstraps real commits and queue attempts deterministically, and preserves output on failed reads", () => scoped(effect {
+  provide NodeServices.layer, ExperimentalNodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const directory = try fs.makeTempDirectoryScoped({ prefix: "vibelang-seed-" })
+    const remote = path.join(directory, "remote")
+    const repository = path.join(directory, "repository")
+    try jj(["git", "init", "--colocate", remote])
+    try jj(["-R", remote, "config", "set", "--repo", "user.name", "Coverage fixture"])
+    try jj(["-R", remote, "config", "set", "--repo", "user.email", "coverage@example.invalid"])
+    try jj(["-R", remote, "commit", "-m", "fix(compiler): preserve a return\n\nValidation: checked both arms."])
+    const first = try jj(["-R", remote, "log", "-r", "@-", "--no-graph", "-T", "commit_id"])
+    try jj(["-R", remote, "commit", "-m", "docs: explain the return"])
+    const second = try jj(["-R", remote, "log", "-r", "@-", "--no-graph", "-T", "commit_id"])
+    try jj(["-R", remote, "bookmark", "set", "main", "-r", "@-"])
+    try jj(["git", "init", "--colocate", repository])
+    try jj(["-R", repository, "git", "remote", "add", "github", remote])
+    try jj(["-R", repository, "git", "fetch", "--remote", "github"])
+    const queue = path.join(directory, "queue.jsonl")
+    const entries = [
+      // Both known commits fall in the second revset batch. Dropping it would split the landed stack into two.
+      ...Array.from({ length: 1501 }, (_, at) => ({ id: `missing-${at}`, lane: "absent", state: "rejected", rev: `f${at.toString(16).padStart(11, "0")}${"0".repeat(28)}` })),
+      { id: "landed", lane: "compiler", state: "landed", rev: first, gate: "unit", stack_receipt: { commits: [{ commit: first }, { commit: second }] } },
+      { id: "retry", lane: "compiler", state: "rejected", rev: first },
+      { id: "absent", lane: "absent", state: "landed", rev: "f".repeat(40), stack_receipt: { commits: [] } },
+    ]
+    try fs.writeFileString(queue, `\nnot json\n{}\n${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`)
+    const emitted = try path.fromFileUrl(new URL("../dist-script-tests/", import.meta.url))
+    const script = path.join(emitted, "scripts/mythical-seed.js")
+    const target = path.join(emitted, "src/history/seed/vibelang.vibe")
+    try fs.makeDirectory(path.join(emitted, "src/history/seed"), { recursive: true })
+    try fs.remove(target, { force: true })
+    try Effect.addFinalizer(() => fs.remove(target, { force: true }).pipe(Effect.orDie))
+    const executable = try node()
+    const env = { VIBELANG_REPO: repository, VIBELANG_QUEUE: queue, VIBELANG_LANES: remote }
+    const written = try run(executable, [script], env)
+    const source = try fs.readFileString(target)
+    const again = try run(executable, [script], env)
+    const repeated = try fs.readFileString(target)
+    const history = try Effect.try(() => {
+      const literal = /^export const HISTORY_JSON = (.+)$/m.exec(source)![1]!
+      return JSON.parse(JSON.parse(literal)) as History
+    })
+    const badRepository = try run(executable, [script], { ...env, VIBELANG_REPO: path.join(directory, "missing") })
+    const afterRepository = try fs.readFileString(target)
+    const badQueue = try run(executable, [script], { ...env, VIBELANG_QUEUE: path.join(directory, "missing.jsonl") })
+    const afterQueue = try fs.readFileString(target)
+    try Effect.try(() => {
+      expect(written.status, written.stderr).toBe(0)
+      expect(again.status, again.stderr).toBe(0)
+      expect(written.stdout).toContain("2 real commits, 1 mythical commits, 1 epics")
+      expect(repeated).toBe(source)
+      expect(history.main).toBe(second.slice(0, 12))
+      expect(history.real.map((commit) => commit.sha)).toEqual([first, second].map((sha) => sha.slice(0, 12)))
+      expect(history.commits).toHaveLength(1)
+      expect(history.commits[0]!.title).toBe("fix(compiler): preserve a return")
+      expect(history.commits[0]!.state).toBe("landed")
+      expect(history.commits[0]!.notes.map((note) => note.text)).toEqual([
+        "Rejected in the merge queue (compiler).",
+        "Landed by the merge queue from lane compiler through unit (matched by title).",
+        "Validation: checked both arms.",
+      ])
+      for (const failed of [badRepository, badQueue]) {
+        expect(failed.status).toBe(1)
+        expect(failed.stderr + failed.stdout).not.toBe("")
+        expect(failed.stdout).not.toContain("real commits")
+      }
+      expect(afterRepository).toBe(source)
+      expect(afterQueue).toBe(source)
+    })
+  }
+}), 60_000)

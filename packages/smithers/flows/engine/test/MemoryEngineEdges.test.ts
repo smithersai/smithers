@@ -316,3 +316,47 @@ describe("an opaque payload join", () => {
       }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory))
   )
 })
+
+describe("collection payloads (VIP-44)", () => {
+  const Tagged = Flow.make("memory-edges/tagged", {
+    payload: { tags: Schema.ReadonlySet(Schema.String), owners: Schema.ReadonlyMap(Schema.String, Schema.Number) },
+    success: Schema.Array(Schema.String),
+    body: () => Node.succeed([])
+  })
+
+  effect("hands the body the sorted order its identity hashes", () =>
+    Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      yield* engine.register(
+        Tagged,
+        (payload) => Effect.succeed([...payload.tags, ...[...payload.owners.keys()].map((key) => `owner:${key}`)])
+      )
+      const seen = yield* engine.execute(Tagged, {
+        executionId: "tagged-order",
+        payload: { tags: new Set(["c", "a", "b"]), owners: new Map([["y", 2], ["x", 1]]) }
+      })
+      expect(seen).toEqual(["a", "b", "c", "owner:x", "owner:y"])
+    }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory)))
+
+  effect("joins equal sets and maps in any insertion order as one execution", () =>
+    Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      let runs = 0
+      yield* engine.register(Tagged, () => Effect.sync(() => (runs++, [])))
+      yield* engine.execute(Tagged, {
+        executionId: "tagged-join",
+        payload: { tags: new Set(["b", "a"]), owners: new Map([["y", 2], ["x", 1]]) }
+      })
+      const joined = yield* engine.execute(Tagged, {
+        executionId: "tagged-join",
+        payload: { tags: new Set(["a", "b"]), owners: new Map([["x", 1], ["y", 2]]) }
+      }).pipe(Effect.exit)
+      expect(Exit.isSuccess(joined)).toBe(true)
+      expect(runs).toBe(1)
+      const other = yield* engine.execute(Tagged, {
+        executionId: "tagged-join",
+        payload: { tags: new Set(["a"]), owners: new Map() }
+      }).pipe(Effect.exit)
+      expect(Exit.isFailure(other) && Cause.hasDies(other.cause)).toBe(true)
+    }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory)))
+})

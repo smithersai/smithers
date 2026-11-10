@@ -8,7 +8,14 @@ import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 
 const fixture = fileURLToPath(new URL("./fixtures/cache-permit-process.mjs", import.meta.url))
 const launch = (filename: string, counter: string, runId: string, mode = "hold") => {
-  const child = ChildProcesses.spawn(process.execPath, [fixture, filename, counter, runId, mode], {
+  const child = ChildProcesses.spawn(process.execPath, [
+    ChildProcesses.vibeImport,
+    fixture,
+    filename,
+    counter,
+    runId,
+    mode
+  ], {
     stdio: ["pipe", "pipe", "pipe"]
   })
   let stdout = ""

@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 30
+bias 5
+null-prototype true
+key 3292352743
+tape RAefKJTJYi09y6N1XquKbZs1jNlHqfZwCsHaN-AVycHha9t7cbRqP5X4svX6gbD_2IE4VCV3afXNYANuveVIeubuTWJdA65DXovumGcE5Q81HWIUWZ_gSCXWOLYQyf4IuZGFVEBGycFN7xep7Ju29s7LMOoPUy1sIHUsXJiVRZhiHdbrWkf3zipcAMhdpxEQ0Vhl3AyGv85eniRteHBGdbSmby283hDOJ3tX4N6eKIHEpqyGpaFz6fnY4R_g0dEOQBXlYLaQY7WWxQMFo1n7ZtwEvjVOXyiLX32fmYoCFYiClagNFqeleeSXP_lBN1-bkY7R7yeCY9vExsNiBzSDQjXDFsTeQZAxoIttjo2uKcem3HYN6bB_WjGCMfN7joxiYclkiM9qo1aRKsXfpiKr70d57_3FPSGb9-4bqpV3rKLGjzUihjt1X05jm5yGNu48UBC4pt1-rqVy1EJeG42z-5SaLaieNHqXcKbKQ3eUwzFi1nBtunarSmNpzw8kEMm07DZaAQV96APhpx0VG0ausfCt5MkooaFmqftj0mIRxx6NAv4lk3bQgvsa7weaiSXslO4l9qIN3DfBgAff6-_5a0oynJx0c0FeDRo5u51bPn-4xF8rcxU_3AP-XBbsR_GPlCWAsIS1CvzZ8Z_64z8QcIrnYLPba3XELB5dA0G1MqD6z37r7vdynjhaogjGTo3lfhJ0Z6Rl3_k3sN-EjVXuP3KlweiJpb42N31DXGnHSLnk65FXvtG5xoS5jHd_rNWVVCnB3eCHljZ-LFFQe1K66cStkBvvqTrjcYhNRiGoMWKD1vlrNz-7wJPBuMRb_rLfsu8ceJ_MnYcf5jF50t2SHvj_roRMAXBlor8iGtesSr3vc_tBz9rcHuIgETMYlY6uTRnwlurKHb5k4XIMKXGs2n6w0zKSZ8V6YuA3uoMhD27oSb5AHUixdC7Sr5OoT5Iey1nZMrOSEsihAt_hTU-eHvodVdf4xvjecFLpfrF7Y_Lhg-H7s8AFPu8numO5JYVCL6Bx7PqZQD1PDV2I4sicRlSjG_M4889J2AezFZI9IoEOyJxAngCzaHw5t7ew8-E-0xMoX2gBhC796qgr3nh5hwY7ibDkzFhqs8oIbPk9ffuIRqqlvA2csKNUj7VBCNnaq6do7drbV3o6TonN1X-pbAhJ39s8M3ZyqzMMSOlZD9jQm51oF2BGzBXtUoMCn0dtIp1_bZrEC6AQK2MdEMpXoDchNCTb676RauZsc1zzCJBRSPfL-fqc4E7WszgC9B5KAxIwIUugZeF_V1xlmD7K5RDl2pI44fER16co69efOZR2X0Adm0wWdnNk4QpmHR0JkO1AHDKTCUkswtwDaKihSFQ5GpX6s-YlnMFASnST-ev1m5SsWz8D8iYxI-Sgp4UQwzQBYvaHafp9fUlEFmmF7lXSa2NomCXl_hBomho_mPFaI6z2mwclChVusJeL3ye2F-2pLPaZfRoS9-hm6dUeuXqNXdrNJSvfEJBU6HKap0McoKT_zVFCD10xvoLqUBYqVoz2R0Grw7MkaG7ed255x83DRp8cOyuEA6OSspJ0OSIFofd6
+schedule-key 1888189485
+schedule 
+signature "ReturnedFalse"
+path 1.4.6.6.7.9.8.9
+codec "json"
+value "[{\"kind\":\"sign-in\",\"person\":\"2\",\"role\":\"contributor\",\"target\":\"2\",\"tamper\":false,\"exchangeFails\":false,\"text\":\"\"},{\"kind\":\"callback\",\"person\":\"1\",\"role\":\"contributor\",\"target\":\"1\",\"tamper\":false,\"exchangeFails\":false,\"text\":\"\"},{\"kind\":\"sign-out\",\"person\":\"3\",\"role\":\"contributor\",\"target\":\"1\",\"tamper\":true,\"exchangeFails\":false,\"text\":\"\"},{\"kind\":\"members\",\"person\":\"3\",\"role\":\"maintainer\",\"target\":\"2\",\"tamper\":false,\"exchangeFails\":true,\"text\":\"4294967295\"}]"
+# ReturnedFalse
+# [{"kind":"sign-in","person":"2","role":"contributor","target":"2","tamper":false,"exchangeFails":false,"text":""},{"kind":"callback","person":"1","role":"contributor","target":"1","tamper":false,"exchangeFails":false,"text":""},{"kind":"sign-out","person":"3","role":"contributor","target":"1","tamper":true,"exchangeFails":false,"text":""},{"kind":"members","person":"3","role":"maintainer","target":"2","tamper":false,"exchangeFails":true,"text":"4294967295"}]

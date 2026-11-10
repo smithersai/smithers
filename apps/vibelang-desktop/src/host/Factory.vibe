@@ -1,0 +1,272 @@
+import { signedOutGateway } from "../../../vibelang/worker/SandboxHttp.vibe"
+// The desktop composition: the shared sequencer and Factory API on the Bun SQLite flow runtime.
+import { SecureRandom } from "effect/crypto"
+import { Agent, AgentAction, Budget, EventSink, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
+import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { FlowBinding, type Cell } from "@smthrs/harness"
+import { Evaluator, ModelRequest } from "@smthrs/model"
+import { replyIdOf } from "../../../vibelang/src/core/flows.vibe"
+import { Node } from "@smthrs/plan"
+import { Grep } from "@smthrs/std"
+import { Registry } from "@smthrs/registry"
+import { Factory, Refused, Unavailable } from "../../../vibelang/src/core/Factory.vibe"
+import { EventSchema } from "../../../vibelang/src/core/schemas.vibe"
+import type { Event } from "../../../vibelang/src/core/conversation.vibe"
+import { mockReply } from "../../../vibelang/src/core/mockReplies.vibe"
+import { AGENT_CONTEXT } from "../../../vibelang/worker/agentContext.vibe"
+import * as Sequencer from "../../../vibelang/worker/Sequencer.vibe"
+import { Folder, FolderInfo, FolderFailure } from "./Folder.vibe"
+import { LocalModels, ModelInfo, ModelUnavailable } from "./LocalModel.vibe"
+
+import { choiceCurrent, editAllowed } from "../policy.vibe"
+import { Snapshot, ToolReceipt } from "../protocol.vibe"
+export { Snapshot } from "../protocol.vibe"
+export service Desktop {
+  external(url: string): void!Unavailable
+  snapshot(): Snapshot!!
+  change(operation: "open" | "close" | "model" | "mock", endpoint?: string, model?: string): Snapshot!Unavailable
+  models(endpoint: string): ReadonlyArray<string>!Unavailable
+}
+export service Preferences { readonly directory: string; chooseDirectory(): (string | null)!Unavailable; openExternal(url: string): void!Unavailable }
+
+schema EditIntent { readonly key: string; readonly folder: FolderInfo; readonly receipt: ToolReceipt; readonly done: boolean }
+schema Stored { readonly snapshot: Snapshot; readonly edits: ReadonlyArray<EditIntent> }
+schema ReplyConfig { readonly mock: boolean; readonly folder: FolderInfo | null; readonly model: ModelInfo | null }
+
+const Post = Flow.make("vibelang/desktop/Post", { payload: { conversation: Schema.String, clientId: Schema.String, name: Schema.String, text: Schema.String }, success: Schema.NullOr(Schema.String), body: () => Node.succeed(null) })
+const Reply = Flow.make("vibelang/desktop/Reply", { payload: { conversation: Schema.String, post: Schema.String }, success: Schema.Null, body: () => Node.succeed(null) })
+const Change = Flow.make("vibelang/desktop/Change", { payload: { operation: Schema.String, endpoint: Schema.String, model: Schema.String }, success: Snapshot, body: () => Node.succeed({ mock: true, folder: null, model: null, tools: [] }) })
+const External = Flow.make("vibelang/desktop/External", { payload: { url: Schema.String }, success: Schema.Void, body: () => Node.succeed(undefined) })
+const Models = Flow.make("vibelang/desktop/Models", { payload: { endpoint: Schema.String }, success: Schema.Array(Schema.String), body: () => Node.succeed([]) })
+const Search = Flow.make("fs.search", { description: "Search the selected folder for literal text with the standard search service. At most 100 matching lines are returned.", payload: { query: Schema.String }, success: Grep.Output, body: () => Node.succeed({ matches: [], files: [], filesSearched: 0, skippedBinary: 0, truncated: false }) })
+const Read = Flow.make("fs.read", { description: "Read one relative file in the person's open folder.", payload: { path: Schema.String }, success: Schema.String, body: () => Node.succeed("") })
+const Write = Flow.make("fs.edit", { description: "Replace a relative file only if before still matches its exact content. Read it first and pass the original as before. False means no edit was applied.", payload: { path: Schema.String, before: Schema.String, text: Schema.String }, success: Schema.Boolean, body: () => Node.succeed(false) })
+const List = Flow.make("fs.list", { description: "List files in the person's open folder.", payload: {}, success: Schema.Array(Schema.String), body: () => Node.succeed([]) })
+const Respond = AgentAction.make("vibelang/desktop/agent", {
+  payload: { text: Schema.String }, output: Schema.String, seat: "agent", profile: "conversation", maxFrames: 8,
+  system: [AGENT_CONTEXT, "Work only in the folder the person opened. Use fs.search, fs.list, fs.read and fs.edit for local files. Read before editing. Pass the exact original from fs.read as fs.edit before. Never claim an edit unless fs.edit returned true."],
+  prompt: (payload) => payload.text,
+  modelParams: ModelRequest.GenerationParams.make({ maxTokens: 2048 }),
+})
+
+function declared<I extends Schema.Top, O extends Schema.Top>(flow: { readonly _tag: string; readonly description?: string | undefined; readonly payloadSchema: I; readonly successSchema: O }) {
+  return { name: flow._tag, description: flow.description ?? flow._tag, input: flow.payloadSchema, output: flow.successSchema, capabilities: [], effects: undefined, modelInvocable: true }
+}
+
+/** Built during BunRuntime's registration phase, before its recovery starts. */
+export const registration = Layer.effectContext(effect {
+  const engine = try FlowRuntime.FlowRuntime
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const folder = try Folder
+  const models = try LocalModels
+  const preferences = try Preferences
+  const random = try SecureRandom.SecureRandom
+  const state = try Ref.make<Snapshot>({ mock: true, folder: null, model: null, tools: [] })
+  const edits = try Ref.make<ReadonlyArray<EditIntent>>([])
+  const rooms = new Map<string, Sequencer.Sequencer>()
+  const roomGate = try Semaphore.make(1)
+  const settingsGate = try Semaphore.make(1)
+  const settingsFile = path.join(preferences.directory, "settings.json")
+  try fs.makeDirectory(preferences.directory, { recursive: true }).pipe(Effect.orDie)
+  if (try fs.exists(settingsFile).pipe(Effect.orDie)) {
+    const stored = try fs.readFileString(settingsFile).pipe(Effect.orDie)
+    const storedState = try Schema.decodeUnknownEffect(Schema.fromJsonString(Stored))(stored).pipe(Effect.orDie)
+    const saved = storedState.snapshot
+    const opened = saved.folder === null ? null : (folder.restore(saved.folder) catch () => null)
+    // Failed providers stay failed until the person explicitly chooses again.
+    const selected = saved.mock || saved.model === null || saved.model.state !== "ready" ? saved.model : (models.restore(saved.model) catch () => ({ ...saved.model!, state: "failed" as const }))
+    try Ref.set(state, { ...saved, folder: opened, model: selected })
+    try Ref.set(edits, storedState.edits)
+  }
+  effect function save() {
+    const snapshot = try Ref.get(state)
+    const intents = try Ref.get(edits)
+    try fs.writeFileString(`${settingsFile}.new`, JSON.stringify({ snapshot, edits: intents }), { mode: 0o600 }).pipe(Effect.orDie)
+    try fs.rename(`${settingsFile}.new`, settingsFile).pipe(Effect.orDie)
+    return snapshot
+  }
+  effect function room(conversation: string): Sequencer.Sequencer!! {
+    return try Semaphore.withPermits(roomGate, 1)(effect {
+      const previous = rooms.get(conversation)
+      if (previous !== undefined) return previous
+      const filename = path.join(preferences.directory, `conversation-${encodeURIComponent(conversation)}.json`)
+      const seq = try Sequencer.make({
+        read: effect () => {
+          if (!(try fs.exists(filename).pipe(Effect.orDie))) return []
+          const text = try fs.readFileString(filename).pipe(Effect.orDie)
+          return try Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(EventSchema)))(text).pipe(Effect.orDie)
+        },
+        write: effect (event: Event) => {
+          const previous = (try fs.exists(filename).pipe(Effect.orDie)) ? try fs.readFileString(filename).pipe(Effect.orDie) : "[]"
+          const log = try Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(EventSchema)))(previous).pipe(Effect.orDie)
+          try fs.writeFileString(`${filename}.new`, JSON.stringify([...log, event]), { mode: 0o600 }).pipe(Effect.orDie)
+          try fs.rename(`${filename}.new`, filename).pipe(Effect.orDie)
+        },
+      }, {
+        start: effect (posts) => {
+          const post = posts[0]
+          if (post !== undefined) try engine.execute(Reply, { executionId: `desktop/reply/${conversation}/${post}`, payload: { conversation, post }, discard: true }).pipe(Effect.orDie)
+        },
+        tour: () => Effect.void,
+      })
+      rooms.set(conversation, seq)
+      return seq
+    })
+  }
+  effect function toolsOf(conversation: string, reply: string, captured: FolderInfo | null, model: string) {
+    effect function bound() {
+      if (captured === null) throw new FolderFailure({ code: "closed" })
+      return try folder.bind(captured)
+    }
+    const searchHandler = effect (input: { query: string }, call: Cell.Call) => {
+      const result = try (try bound()).search(input.query)
+      const key = JSON.stringify(call.identity)
+      const files = new Set(result.matches.map((match) => match.file)).size
+      const summary = `${result.matches.length} ${result.matches.length === 1 ? "match" : "matches"} · ${files} ${files === 1 ? "file" : "files"}${result.truncated ? " · limited" : ""}`
+      try Semaphore.withPermits(settingsGate, 1)(effect {
+        const receipt = { id: key, conversation, reply, operation: "fs.search", model, path: input.query, before: summary, after: result.matches.map((match) => `${match.file}:${match.line}: ${match.text}`).join("\n") + (result.notice === undefined ? "" : `\n${result.notice}`) }
+        try Ref.update(state, (value) => ({ ...value, tools: [...value.tools.filter((tool) => tool.id !== key), receipt] }))
+        try save()
+      })
+      return result
+    }
+    const listHandler = effect () => { return try (try bound()).list() }
+    const readHandler = effect (input: { path: string }) => { return try (try bound()).read(input.path) }
+    const writeHandler = (input: { path: string; before: string; text: string }, call: Cell.Call) => Semaphore.withPermits(settingsGate, 1)(effect {
+      const key = JSON.stringify(call.identity)
+      let intent = (try Ref.get(edits)).find((item) => item.key === key)
+      if (intent !== undefined && (intent.folder.token !== captured?.token || intent.receipt.path !== input.path || intent.receipt.before !== input.before || intent.receipt.after !== input.text)) throw new FolderFailure({ code: "changed" })
+      if (intent?.done === true) return true
+      const access = try bound()
+      if (intent === undefined) {
+        // A failed read is a refusal, never permission to overwrite an unknown original.
+        const before = try access.read(input.path)
+        if (!editAllowed(input.before, before, input.text)) {
+          const reason = before === input.text ? "unchanged" : "stale-original"
+          try Effect.logInfo("vibelang.desktop.edit").pipe(Effect.annotateLogs({ outcome: "refused", reason }))
+          try Metric.update(Metric.withAttributes(Metric.counter("vibelang_desktop_edits_refused", { incremental: true }), { reason }), 1)
+          return false
+        }
+        intent = { key, folder: captured!, done: false, receipt: { id: key, conversation, reply, operation: "fs.edit", model, path: input.path, before, after: input.text } }
+        try Ref.update(edits, (values) => [...values, intent!])
+        // Write-ahead receipt: after a crash an applied edit retains its original diff.
+        try save()
+      }
+      if (intent.folder.token !== captured?.token || intent.receipt.path !== input.path || intent.receipt.after !== input.text) throw new FolderFailure({ code: "changed" })
+      try access.replace(input.path, intent.receipt.before, intent.receipt.after)
+      const completed = intent
+      try Ref.update(state, (value) => ({ ...value, tools: [...value.tools, completed.receipt] }))
+      try Ref.update(edits, (values) => values.map((item) => item.key === key ? { ...item, done: true } : item))
+      try save()
+      return true
+    })
+    return try orDie(Effect.try(() => FlowBinding.source("local", [
+      FlowBinding.make({ flow: declared(Search), handler: searchHandler }),
+      FlowBinding.make({ flow: declared(List), handler: listHandler }),
+      FlowBinding.make({ flow: declared(Read), handler: readHandler }),
+      FlowBinding.make({ flow: declared(Write), handler: writeHandler }),
+    ])))
+  }
+  effect function respond(text: string, conversation: string, reply: string, config: ReplyConfig) {
+    const tools = try toolsOf(conversation, reply, config.folder, config.model?.model ?? "")
+    if (config.model === null) throw new ModelUnavailable({ code: "model" })
+    const selected = try models.resolve(config.model)
+    const seat = try orDie(Effect.try(() => Seat.make({ id: "agent", modelId: selected.modelId, model: selected.model, route: selected.route, contextWindowTokens: 32768 })))
+    const layer = Respond.layer.pipe(
+      Layer.provide(Layer.mergeAll(
+        AgentAction.layerHost({ registry: try orDie(Effect.try(() => Registry.makeNoop())), flows: [tools], limits: { calls: 24, memoryBytes: 32 * 1024 * 1024, timeMs: 5000 }, capabilityEnvelope: [], maxFrames: 8 }),
+        SeatResolver.layer({ resolve: () => Effect.succeed(seat) }), Agent.layer, EventSink.layer({ emit: () => Effect.void }),
+      )),
+      Layer.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded(), Agent.layerDefaults, Evaluator.layerUnavailable())),
+    )
+    provide layer {
+      return try (try Respond.requirement).action({ text })
+    }
+  }
+  try engine.register(Reply, (payload) => effect {
+    const seq = try room(payload.conversation)
+    const reply = replyIdOf(payload.post)
+    const started = try Action.make({ name: "vibelang/desktop/reply/start", success: Schema.String, execute: seq.start(payload.post) })
+    if (started !== "done") return null
+    const history = try Action.make({ name: "vibelang/desktop/reply/history", success: Schema.Array(Sequencer.Turn), execute: seq.history(payload.post) })
+    const config = try Action.make({ name: "vibelang/desktop/reply/selection", success: ReplyConfig, execute: map(Ref.get(state), (value) => ({ mock: value.mock, folder: value.folder, model: value.model })) })
+    const question = history.map((turn) => `${turn.author}: ${turn.text}`).join("\n")
+    const answer = config.mock ? succeed(mockReply(history.at(-1)?.text ?? "")) : respond(question, payload.conversation, reply, config)
+    const outcome = try exit(answer)
+    if (Exit.isFailure(outcome) && Cause.hasInterrupts(outcome.cause)) return try Effect.failCause(outcome.cause).pipe(Effect.orDie)
+    try Action.make({ name: "vibelang/desktop/reply/settle", execute: effect {
+      if (Exit.isSuccess(outcome)) try seq.finish(reply, typeof outcome.value === "string" ? outcome.value : "")
+      else {
+        const reason = try Semaphore.withPermits(settingsGate, 1)(effect {
+          const current = try Ref.get(state)
+          if ((current.folder?.token ?? "") !== (config.folder?.token ?? "")) return "Folder changed. Send again."
+          if (!choiceCurrent(current.model?.selection ?? "", config.model?.selection ?? "")) return "Model changed. Send again."
+          try Ref.update(state, (value) => ({ ...value, model: value.model === null ? null : { ...value.model, state: "failed" as const } }))
+          try save()
+          return "Model unavailable. Choose a model."
+        })
+        try seq.fail(reply, reason)
+      }
+      try Effect.logInfo("vibelang.desktop.reply").pipe(Effect.annotateLogs({ outcome: Exit.isSuccess(outcome) ? "done" : "failed" }))
+      try Metric.update(Metric.counter("vibelang_desktop_replies", { incremental: true }), 1)
+    } })
+    return null
+  })
+  try engine.register(Post, (payload) => effect {
+    const seq = try room(payload.conversation)
+    const refusal = try Action.make({ name: "vibelang/desktop/post/record", success: Schema.NullOr(Schema.String), execute: seq.post(payload.clientId, payload.name, payload.text) })
+    if (refusal === null) try Action.make({ name: "vibelang/desktop/post/dispatch", execute: seq.ensureDispatched() })
+    return refusal
+  })
+  try engine.register(External, (payload) => Action.make({ name: "vibelang/desktop/external/open", execute: preferences.openExternal(payload.url).pipe(Effect.orDie) }))
+  try engine.register(Models, (payload) => Action.make({ name: "vibelang/desktop/models", success: Schema.Array(Schema.String), execute: models.models(payload.endpoint).pipe(Effect.orDie) }))
+  try engine.register(Change, (payload) => effect {
+    // Every cached action includes persistence. Recovery restores capabilities from this
+    // same record before the engine replays it; a cached result never mutates a Ref.
+    if (payload.operation === "open") {
+      const root = try Action.make({ name: "vibelang/desktop/folder/pick", success: Schema.NullOr(Schema.String), execute: preferences.chooseDirectory().pipe(Effect.orDie) })
+      if (root !== null) try Action.make({ name: "vibelang/desktop/folder/open", success: Snapshot, execute: Semaphore.withPermits(settingsGate, 1)(effect {
+        const info = try folder.open(root).pipe(Effect.orDie)
+        try Ref.update(state, (value) => ({ ...value, folder: info }))
+        return try save()
+      }) })
+    } else if (payload.operation === "close") {
+      try Action.make({ name: "vibelang/desktop/folder/close", success: Snapshot, execute: Semaphore.withPermits(settingsGate, 1)(effect {
+        try folder.close()
+        try Ref.update(state, (value) => ({ ...value, folder: null }))
+        return try save()
+      }) })
+    } else if (payload.operation === "model") {
+      try Action.make({ name: "vibelang/desktop/model/select", success: Snapshot, execute: Semaphore.withPermits(settingsGate, 1)(effect {
+        const model = try models.select(payload.endpoint, payload.model).pipe(Effect.orDie)
+        try Ref.update(state, (value) => ({ ...value, model, mock: false }))
+        return try save()
+      }) })
+    } else if (payload.operation === "mock") try Action.make({ name: "vibelang/desktop/model/mock", success: Snapshot, execute: Semaphore.withPermits(settingsGate, 1)(effect {
+      try Ref.update(state, (value) => ({ ...value, mock: true }))
+      return try save()
+    }) })
+    return try Ref.get(state)
+  })
+  effect function id() { return `desktop/${try Clock.currentTimeMillis}/${try random.uuidV4()}` }
+  const desktop: Desktop.Shape = {
+    external: effect (url) => { try engine.execute(External, { executionId: try id(), payload: { url } }).pipe(Effect.orDie) },
+    snapshot: () => Ref.get(state),
+    change: effect (operation, endpoint = "", model = "") => { try engine.execute(Change, { executionId: try id(), payload: { operation, endpoint, model } }).pipe(Effect.orDie); return try Ref.get(state) },
+    models: (endpoint) => effect { return try engine.execute(Models, { executionId: try id(), payload: { endpoint } }).pipe(Effect.orDie) },
+  }
+  const factory: Factory.Shape = {
+    ...signedOutGateway,
+    mode: "live",
+    post: effect (conversation, clientId, name, text) => {
+      const refusal = try engine.execute(Post, { executionId: `desktop/post/${conversation}/${clientId}`, payload: { conversation, clientId, name, text } }).pipe(Effect.orDie)
+      if (refusal !== null) throw new Refused({ refusal })
+    },
+    read: effect (conversation, after) => { return try (try room(conversation)).read(after) },
+    events: (conversation, after) => Stream.unwrap(effect { const seq = try room(conversation); try seq.ensureDispatched(); return seq.follow(after) }),
+    tour: () => Effect.fail(new Refused({ refusal: "not-replying" })),
+    endTour: () => Effect.fail(new Refused({ refusal: "not-replying" })),
+  }
+  return Context.make(Factory, factory).pipe(Context.add(Desktop, desktop))
+})

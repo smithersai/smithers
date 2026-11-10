@@ -14,6 +14,7 @@
  */
 
 import ts from "typescript"
+import { parseESTree } from "vibelang/eslint"
 
 /**
  * How a source names a module.
@@ -117,15 +118,12 @@ export interface Analysis {
 }
 
 /**
- * The parser's script kind for a file name. A `.vibe` file parses as
- * TypeScript: VibeLang's import and export declarations, type arguments and
- * `import()` types are TypeScript's, and the parser recovers from its other
- * syntax.
+ * The parser's script kind for a TypeScript or JavaScript file name.
  */
 const scriptKind = (file: string): ts.ScriptKind => {
   if (file.endsWith(".tsx")) return ts.ScriptKind.TSX
   if (file.endsWith(".jsx")) return ts.ScriptKind.JSX
-  if (/\.(?:[mc]?ts|vibe)$/.test(file)) return ts.ScriptKind.TS
+  if (/\.[mc]?ts$/.test(file)) return ts.ScriptKind.TS
   return ts.ScriptKind.JS
 }
 
@@ -181,10 +179,12 @@ const calleeText = (expression: ts.Expression): string | undefined => {
 /**
  * Reads one source's module references and calls.
  *
- * `file` names the source for its script kind: `.tsx` and `.jsx` parse with
- * JSX, `.ts`, `.mts`, `.cts` and VibeLang's `.vibe` as TypeScript, anything
- * else as JavaScript.
- * A syntax error does not throw; the parser recovers and the rest is read.
+ * `file` names the source for its language: `.tsx` and `.jsx` parse with
+ * JSX, `.ts`, `.mts` and `.cts` as TypeScript, VibeLang's `.vibe` with
+ * VibeLang's own parser, anything else as JavaScript.
+ *
+ * A TypeScript syntax error does not throw; the parser recovers and the rest
+ * is read. A `.vibe` syntax error throws, because no parser can read past it.
  *
  * A member is recorded only through a binding a top-level import declares,
  * and shadowing is not tracked: a local variable with the binding's name
@@ -193,7 +193,10 @@ const calleeText = (expression: ts.Expression): string | undefined => {
  * @category analysis
  * @since 0.1.0
  */
-export const analyze = (file: string, text: string): Analysis => {
+export const analyze = (file: string, text: string): Analysis =>
+  file.endsWith(".vibe") ? analyzeVibe(file, text) : analyzeTypeScript(file, text)
+
+const analyzeTypeScript = (file: string, text: string): Analysis => {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKind(file))
   const lineOf = (node: ts.Node): number => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
   const entries: Array<Entry> = []
@@ -323,6 +326,167 @@ export const analyze = (file: string, text: string): Analysis => {
     ts.forEachChild(node, visit)
   }
   visit(source)
+
+  return {
+    references: entries.sort((a, b) => a.position - b.position).map((entry) => entry.reference),
+    calls
+  }
+}
+
+/** The parts of VibeLang's ESTree nodes {@link analyzeVibe} reads. */
+interface EsNode {
+  readonly type: string
+  readonly range: readonly [number, number]
+  readonly [key: string]: any
+}
+
+const isEsNode = (value: unknown): value is EsNode =>
+  typeof value === "object" && value !== null && typeof (value as EsNode).type === "string" && Array.isArray((value as EsNode).range)
+
+/** A node's children, in source order, so a walk reads calls outermost first as the TypeScript walk does. */
+const esChildren = (node: EsNode): ReadonlyArray<EsNode> =>
+  Object.entries(node)
+    .filter(([key]) => key !== "parent")
+    .flatMap(([, value]) => (Array.isArray(value) ? value : [value]))
+    .filter(isEsNode)
+    .sort((a, b) => a.range[0] - b.range[0] || b.range[1] - a.range[1])
+
+/** The string a literal or a template with no substitutions holds. */
+const esString = (node: EsNode | null | undefined): string | undefined => {
+  if (node?.type === "Literal" && typeof node.value === "string") return node.value
+  if (node?.type === "TemplateLiteral" && node.expressions.length === 0) return node.quasis[0].value.cooked
+  return undefined
+}
+
+const esUnwrap = (node: EsNode): EsNode =>
+  ["ChainExpression", "TSNonNullExpression", "TSAsExpression", "TSSatisfiesExpression", "TSTypeAssertion"].includes(node.type)
+    ? esUnwrap(node.expression)
+    : node
+
+/** `try x`, and the other forms the compiler writes as calls, are no call the author wrote. */
+const isSynthesized = (node: EsNode): boolean =>
+  node.type === "CallExpression" && node.callee.type === "Identifier" && node.callee.synthesized === true
+
+const esReceiver = (node: EsNode): string => {
+  const receiver = esUnwrap(node)
+  if (isSynthesized(receiver)) return "(…)"
+  if (receiver.type === "CallExpression") return `${esReceiver(receiver.callee)}()`
+  return esCallee(receiver) ?? "(…)"
+}
+
+const esCallee = (node: EsNode): string | undefined => {
+  const callee = esUnwrap(node)
+  if (callee.type === "Identifier") return callee.name
+  if (callee.type === "ThisExpression") return "this"
+  if (callee.type === "Super") return "super"
+  if (callee.type !== "MemberExpression") return undefined
+  if (!callee.computed) {
+    return `${esReceiver(callee.object)}.${callee.property.type === "PrivateIdentifier" ? "#" : ""}${callee.property.name}`
+  }
+  const key = esString(callee.property)
+  if (key === undefined) return undefined
+  return `${esReceiver(callee.object)}${/^[A-Za-z_$][\w$]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`}`
+}
+
+/** {@link analyze} for a `.vibe` module, from VibeLang's parser. It records what the TypeScript walk records. */
+const analyzeVibe = (file: string, text: string): Analysis => {
+  const program: EsNode = parseESTree(text, file)
+  const lineOf = (node: EsNode): number => text.slice(0, node.range[0]).split("\n").length
+  const entries: Array<Entry> = []
+  const calls: Array<Call> = []
+  const bindings = new Map<string, Entry["reference"]>()
+  const declared = new Set<EsNode>()
+
+  const add = (
+    node: EsNode,
+    specifier: string,
+    form: ReferenceForm,
+    typeOnly: boolean,
+    names: Array<ReferencedName> = []
+  ): Entry["reference"] => {
+    const reference = { specifier, form, line: lineOf(node), typeOnly, names, members: [] }
+    entries.push({ position: node.range[0], reference })
+    return reference
+  }
+
+  const addImport = (node: EsNode): void => {
+    const typeOnly = node.importKind === "type"
+    const names: Array<ReferencedName> = []
+    for (const specifier of node.specifiers) {
+      if (specifier.type === "ImportDefaultSpecifier") names.push({ name: "default", typeOnly, line: lineOf(specifier) })
+      if (specifier.type === "ImportSpecifier") {
+        names.push({
+          name: specifier.imported.name ?? specifier.imported.value,
+          typeOnly: typeOnly || specifier.importKind === "type",
+          line: lineOf(specifier)
+        })
+      }
+    }
+    const reference = add(node, node.source.value, "import", typeOnly, names)
+    for (const specifier of node.specifiers) {
+      if (specifier.type !== "ImportSpecifier") bindings.set(specifier.local.name, reference)
+    }
+  }
+
+  const addImportEquals = (node: EsNode): void => {
+    const reference = add(node, esString(node.moduleReference.expression)!, "import-equals", node.importKind === "type")
+    bindings.set(node.id.name, reference)
+  }
+
+  const isRequireImport = (node: EsNode): boolean =>
+    node.type === "TSImportEqualsDeclaration" &&
+    node.moduleReference.type === "TSExternalModuleReference" &&
+    esString(node.moduleReference.expression) !== undefined
+
+  // Top-level imports first, so a member read above its import still binds.
+  for (const statement of program.body as ReadonlyArray<EsNode>) {
+    if (statement.type === "ImportDeclaration") addImport(statement)
+    else if (isRequireImport(statement)) addImportEquals(statement)
+    else continue
+    declared.add(statement)
+  }
+
+  const member = (node: EsNode, binding: string, name: string, typeOnly: boolean): void => {
+    bindings.get(binding)?.members.push({ name, binding, typeOnly, line: lineOf(node) })
+  }
+
+  const visit = (node: EsNode): void => {
+    if (declared.has(node)) return
+    if (node.type === "ImportDeclaration") {
+      addImport(node)
+    } else if (isRequireImport(node)) {
+      addImportEquals(node)
+    } else if (node.type === "ExportNamedDeclaration" && node.source !== null && node.source !== undefined) {
+      const typeOnly = node.exportKind === "type"
+      const names = node.specifiers.map((specifier: EsNode) => ({
+        name: specifier.local.name ?? specifier.local.value,
+        typeOnly: typeOnly || specifier.exportKind === "type",
+        line: lineOf(specifier)
+      }))
+      add(node, node.source.value, "export", typeOnly, names)
+    } else if (node.type === "ExportAllDeclaration") {
+      add(node, node.source.value, "export", node.exportKind === "type")
+    } else if (node.type === "TSImportType") {
+      let qualifier = node.qualifier
+      while (qualifier?.type === "TSQualifiedName") qualifier = qualifier.left
+      add(node, node.source.value, "import-type", true, qualifier ? [{ name: qualifier.name, typeOnly: true, line: lineOf(node) }] : [])
+    } else if (node.type === "ImportExpression") {
+      const specifier = esString(node.source)
+      if (specifier !== undefined && (node.options ?? null) === null) add(node, specifier, "dynamic-import", false)
+    } else if (node.type === "CallExpression" && !isSynthesized(node)) {
+      const callee = esUnwrap(node.callee)
+      const literal = node.arguments.length === 1 ? esString(node.arguments[0]) : undefined
+      if (literal !== undefined && callee.type === "Identifier" && callee.name === "require") add(node, literal, "require", false)
+      const name = esCallee(node.callee)
+      if (name !== undefined) calls.push({ callee: name, line: lineOf(node) })
+    } else if (node.type === "MemberExpression" && !node.computed && node.object.type === "Identifier") {
+      member(node, node.object.name, node.property.name, false)
+    } else if (node.type === "TSQualifiedName" && node.left.type === "Identifier") {
+      member(node, node.left.name, node.right.name, true)
+    }
+    esChildren(node).forEach(visit)
+  }
+  ;(program.body as ReadonlyArray<EsNode>).forEach(visit)
 
   return {
     references: entries.sort((a, b) => a.position - b.position).map((entry) => entry.reference),

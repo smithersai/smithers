@@ -1,0 +1,43 @@
+import { expect, it } from "@effect/vitest"
+import { GitHub, Core } from "@smthrs/integrations"
+import { vipDocumentMatches } from "../src/core/conversation.vibe"
+import { verifiedVip, repository } from "../worker/Issues.vibe"
+const path = "docs/design/vips/proposal-123.md"
+const body = (url: string) => `One feature.\n<!-- vibelang:vip path=${path} review=${url} -->`
+
+it.effect("a forged foreign or malformed review marker remains an ordinary issue without a provider call", () => effect {
+  const faulty: GitHub.GitHubClient.GitHubClient = { request: () => Effect.die("Unexpected request"), paginate: () => Effect.die("Unexpected pagination"), count: () => Effect.die("Unexpected count") }
+  provide GitHub.GitHubClient.GitHubClient = faulty {
+    for (const url of ["https://github.com/other/project/pull/1", "https://github.com/smithersai/vibelang/pull/1?other=2", "https://github.com/smithersai/vibelang/pull/0"]) {
+      const vip = try verifiedVip(repository, body(url), 42)
+      try Effect.try(() => expect(vip).toBeUndefined())
+    }
+  }
+})
+
+it.effect("a nonexistent review cannot turn a plain issue into a repository-backed VIP", () => effect {
+  const faulty: GitHub.GitHubClient.GitHubClient = { request: () => Effect.fail(new Core.IntegrationError.IntegrationError("poll-failed", "Injected missing review", { status: 404 })), paginate: () => Effect.die("Unexpected pagination"), count: () => Effect.die("Unexpected count") }
+  provide GitHub.GitHubClient.GitHubClient = faulty {
+    const vip = try verifiedVip(repository, body("https://github.com/smithersai/vibelang/pull/1"), 42)
+    try Effect.try(() => expect(vip).toBeUndefined())
+  }
+})
+
+it.effect("a provider outage remains an error rather than a claimed VIP or ordinary issue", () => effect {
+  const faulty: GitHub.GitHubClient.GitHubClient = { request: () => Effect.fail(new Core.IntegrationError.IntegrationError("poll-failed", "Injected outage", { status: 503 })), paginate: () => Effect.die("Unexpected pagination"), count: () => Effect.die("Unexpected count") }
+  provide GitHub.GitHubClient.GitHubClient = faulty {
+    const vip = try Effect.result(verifiedVip(repository, body("https://github.com/smithersai/vibelang/pull/1"), 42))
+    try Effect.try(() => expect(vip._tag).toBe("Failure"))
+  }
+})
+
+
+it("requires the same immutable author and a present document, independent of a marker's claim", () => {
+  const files = [{ filename: path, status: "added" }]
+  expect(vipDocumentMatches(42, 42, path, files)).toBe(true)
+  expect(vipDocumentMatches(42, 43, path, files)).toBe(false)
+  expect(vipDocumentMatches(0, 0, path, files)).toBe(false)
+  expect(vipDocumentMatches(42, 42, path, [{ filename: path, status: "removed" }])).toBe(false)
+  expect(vipDocumentMatches(42, 42, path, [{ filename: "unrelated.md", status: "added" }])).toBe(false)
+  expect(vipDocumentMatches(42, 42, "", [])).toBe(false)
+})

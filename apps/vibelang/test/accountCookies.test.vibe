@@ -1,0 +1,21 @@
+import { expect, it } from "@effect/vitest"
+import { sessionCookieName, validSessionCookie } from "../src/core/accountCookies.vibe"
+it.effect("uses Secure host cookies in production and confined local cookies for loopback device and browser sessions", () => effect {
+  const hosted = "https://factory.example"
+  const local = "http://127.0.0.1:4525"
+  const hostCookie = "__Host-vibelang-session=signed-cookie"
+  const localCookie = "vibelang-session=signed-cookie"
+  try Effect.try(() => {
+    expect([sessionCookieName(hosted), sessionCookieName(local)]).toEqual(["__Host-vibelang-session", "vibelang-session"])
+    expect(validSessionCookie(hosted, hostCookie)).toBe(true)
+    expect(validSessionCookie(hosted, localCookie)).toBe(false)
+    expect(validSessionCookie(local, localCookie)).toBe(true)
+    expect(validSessionCookie(local, hostCookie)).toBe(true)
+    expect(validSessionCookie("http://factory.example", localCookie)).toBe(false)
+    expect(validSessionCookie("not-an-origin", hostCookie)).toBe(false)
+    expect(validSessionCookie(hosted + "/", hostCookie)).toBe(false)
+    expect(validSessionCookie(local, localCookie + "\r\nx-admin: true")).toBe(false)
+    expect(validSessionCookie(local, "vibelang-session=")).toBe(false)
+    expect(validSessionCookie(local, "vibelang-session=" + "x".repeat(4097))).toBe(false)
+  })
+})

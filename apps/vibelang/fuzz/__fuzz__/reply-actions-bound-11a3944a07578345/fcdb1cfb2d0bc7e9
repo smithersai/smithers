@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 45
+bias 2
+null-prototype false
+key 3140525816
+tape k1a-br19zlhiNE3M
+schedule-key 2098450339
+schedule 
+signature "ReturnedFalse"
+path 
+codec "json"
+value "{\"start\":true,\"text\":\"\\ud800\"}"
+# ReturnedFalse
+# {"start":true,"text":"\ud800"}

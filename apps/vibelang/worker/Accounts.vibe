@@ -1,0 +1,460 @@
+import { SESSION as HOST_SESSION, sessionCookieName } from "../src/core/accountCookies.vibe"
+export { SESSION, sessionCookieName } from "../src/core/accountCookies.vibe"
+import { GitHubDelegate, type Connection, type Delegate } from "./GitHubDelegate.vibe"
+import type { Principal } from "./Issues.vibe"
+import { IssueAuthority, serveIssues, repository } from "./Issues.vibe"
+import { WikiAuthority, serveWiki, executeWiki, wikiFilePath } from "./Wiki.vibe"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
+import { IssueFailure } from "../src/core/issueSchemas.vibe"
+import { HttpClient } from "effect/http"
+import { Core, GitHub } from "@smthrs/integrations"
+import { WebCryptoCipher } from "@smthrs/control"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { leastRole, roleOf, issuePolicyAction, wikiPolicyAction, type Action as PolicyAction } from "../src/core/conversation.vibe"
+import { Identity, viewer, Denied, type Policy } from "../src/core/roles.vibe"
+import { type Storage, postExecutionId } from "./Objects.vibe"
+import * as Sequencer from "./Sequencer.vibe"
+import { afterOf, eventStream } from "./Http.vibe"
+import { logOver } from "./ObjectStorage.vibe"
+
+export const CALLBACK = "/api/auth/callback"
+/** Alchemy preserves the original origin; loopback hosts use an unprefixed cookie over HTTP. */
+export function cookieOf(request: HttpServerRequest.HttpServerRequest): string | undefined {
+  const origin = new URL(request.originalUrl).origin
+  const name = sessionCookieName(origin)
+  return request.cookies[name] ?? (name === HOST_SESSION ? undefined : request.cookies[HOST_SESSION])
+}
+const AGE = 30 * 24 * 60 * 60 * 1000
+const noStore = { "cache-control": "no-store" }
+
+export interface Setup {
+  readonly origin: string
+  readonly initialMaintainer: string
+  readonly signingSecret: Redacted.Redacted<string>
+  readonly encryptionKey: Redacted.Redacted<string>
+  readonly clientId: string
+  /** The GitHub App's public slug, for the Install action on a fork. */
+  readonly appSlug?: string
+  readonly broker?: { readonly origin: string; readonly secret?: Redacted.Redacted<string>; readonly localDevelopment?: boolean }
+  /** Test seam: a real delegation server in-process. Production derives it from `broker`. */
+  readonly delegate?: Delegate
+  readonly github: GitHub.Auth.GitHubAuth["Service"]
+}
+
+const MutationStep = Schema.Literals(["start", "connect", "disconnect", "migrate", "callback", "sign-out", "grant", "participation", "device"])
+const ApplyMutation = Action.make("vibelang/account/step", { payload: { step: MutationStep }, success: Schema.Null })
+const Mutation = Flow.make("vibelang/Account", {
+  description: "Changes a sign-in session or a project role through one journaled account step.",
+  modelInvocable: false,
+  payload: { step: MutationStep },
+  success: Schema.Null,
+  body: Node.capture({}, ({ step }) => ApplyMutation.call({ step })),
+})
+
+/** Host-only configuration: absent credentials disable sign-in without affecting the public factory. */
+effect function readSetup() {
+  const id = try Config.option(Config.String("GITHUB_CLIENT_ID"))
+  const secret = try Config.option(Config.Redacted("GITHUB_CLIENT_SECRET"))
+  const signing = try Config.option(Config.Redacted("SESSION_SECRET"))
+  const encryption = try Config.option(Config.Redacted("SESSION_ENCRYPTION_KEY"))
+  const origin = try Config.option(Config.String("VIBELANG_ORIGIN"))
+  const initial = try Config.option(Config.String("VIBELANG_INITIAL_MAINTAINER_ID"))
+  if (Option.isNone(id) || Option.isNone(secret) || Option.isNone(signing) || Option.isNone(encryption) || Option.isNone(origin) || Option.isNone(initial)) return undefined
+  if (Redacted.value(signing.value).length < 32) return undefined
+  if (!/^[1-9][0-9]{0,19}$/.test(initial.value)) return undefined
+  const parsed = try Effect.try(() => new URL(origin.value))
+  // A local development deployment is a loopback http origin (alchemy dev); every other deployment is https.
+  const loopback = parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)
+  if ((parsed.protocol !== "https:" && !loopback) || parsed.origin !== origin.value) return undefined
+  const validated = WebCryptoCipher.make({ key: encryption.value }) catch () => undefined
+  if (validated === undefined) return undefined
+  // The device flow needs only the client id; the API base is injectable for the integration fixture.
+  const apiBase = try Config.option(Config.String("GITHUB_API_URL"))
+  const github = try Layer.build(GitHub.Auth.layer({
+    clientId: id.value, clientSecret: secret.value,
+    ...(Option.isNone(apiBase) ? {} : { apiBaseUrl: apiBase.value }),
+  }))
+  const brokerOrigin = try Config.withDefault(Config.String("AUTH_BROKER_ORIGIN"), "https://smithers.sh")
+  const brokerSecret = try Config.option(Config.Redacted("AUTH_BROKER_SITE_SECRET"))
+  const appSlug = try Config.option(Config.String("GITHUB_APP_SLUG"))
+  const setup: Setup = {
+    broker: { origin: brokerOrigin, ...(Option.isNone(brokerSecret) ? {} : { secret: brokerSecret.value }) },
+    origin: origin.value, initialMaintainer: initial.value,
+    signingSecret: signing.value, encryptionKey: encryption.value,
+    clientId: id.value,
+    ...(Option.isNone(appSlug) ? {} : { appSlug: appSlug.value }),
+    github: Context.get(github, GitHub.Auth.GitHubAuth),
+  }
+  return setup
+}
+
+export function configured() {
+  return readSetup().pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+}
+
+/** One project ledger and session store, owned by the Accounts Durable Object. */
+export effect function disabled() {
+  const request = try HttpServerRequest.HttpServerRequest
+  const path = new URL(request.url, "http://accounts.invalid").pathname
+  return path === "/api/auth/session" && request.method === "GET"
+    ? HttpServerResponse.jsonUnsafe({ ...viewer, available: false }, { headers: noStore })
+    : HttpServerResponse.jsonUnsafe({ error: "sign-in unavailable" }, { status: 503, headers: noStore })
+}
+
+export effect function make(hostId: string, storage: Storage, setup: Setup) {
+  const SESSION = sessionCookieName(setup.origin)
+  const presented = (request: HttpServerRequest.HttpServerRequest) => request.cookies[SESSION] ?? (SESSION === HOST_SESSION ? undefined : request.cookies[HOST_SESSION])
+  const STATE = setup.origin.startsWith("https:") ? "__Host-vibelang-sign-in" : "vibelang-sign-in"
+  const http = try HttpClient.HttpClient
+  const keys = try Core.CookieKeys.make({ primary: setup.signingSecret }, "primary")
+  const broker = setup.broker?.secret === undefined ? undefined : (GitHub.Auth.Broker.site({ origin: setup.origin, brokerOrigin: setup.broker.origin, secret: setup.broker.secret, ...(setup.broker.localDevelopment === undefined ? {} : { localDevelopment: setup.broker.localDevelopment }) }) catch () => undefined)
+  const cipher = try Effect.orDie(WebCryptoCipher.make({ key: setup.encryptionKey }))
+  const delegate = setup.delegate ?? (setup.broker?.secret === undefined ? undefined : (GitHub.Delegation.site({ origin: setup.origin, brokerOrigin: setup.broker.origin, secret: setup.broker.secret }) catch () => undefined))
+  const delegated = <A, E, R>(program: A!E!R) => delegate === undefined ? program : Effect.provideService(program, GitHubDelegate, delegate)
+  const sequencer = try Sequencer.make(logOver(storage))
+  const lock = try Semaphore.make(1)
+  const issueLock = try Semaphore.make(1)
+  const policy: Policy.Shape = {
+    authorize: effect (actor, action) => {
+      if (!(try sequencer.allows(actor, action))) throw new Denied({ action, least: leastRole(action) })
+    },
+  }
+  const contextOf = (id: string, name: string) => ({ id, name, version: 1 })
+  const get = (key: string) => promise(() => storage.get(key))
+  const put = (key: string, value: unknown) => promise(() => storage.put(key, value))
+  const remove = (key: string) => promise(() => storage.delete(key))
+  const cookie = (response: HttpServerResponse.HttpServerResponse, name: string, value: string, age: number) =>
+    HttpServerResponse.setCookieUnsafe(response, name, value, { httpOnly: true, secure: setup.origin.startsWith("https:"), sameSite: "lax", path: "/", maxAge: Duration.millis(age) })
+  const json = (value: unknown, status = 200) => HttpServerResponse.jsonUnsafe(value, { status, headers: noStore })
+  const redirect = (url: string) => HttpServerResponse.empty({ status: 302, headers: { ...noStore, location: url } })
+
+  schema StoredSession { readonly id: string; readonly login: string; readonly expires: number; readonly agent?: boolean }
+  schema SignIn { readonly expires: number; readonly verifier: { readonly nonce: string; readonly ciphertext: string } }
+  const sessionDecoder = Schema.decodeUnknownEffect(StoredSession)
+  const signInDecoder = Schema.decodeUnknownEffect(SignIn)
+  const decodeGrant = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({
+    id: Schema.String.check(Schema.isPattern(/^[1-9][0-9]*$/)),
+    role: Schema.Literals(["new", "community", "contributor", "maintainer"]),
+  })))
+  const decodeDeviceToken = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({
+    token: Schema.String.check(Schema.isMinLength(1)).check(Schema.isMaxLength(4096)),
+  })))
+
+  effect function session(signed: string | undefined) {
+    const verified = try keys.verify("session", signed)
+    if (Option.isNone(verified)) return undefined
+    const value = sessionDecoder(try get("session/" + verified.value.value)) catch () => undefined
+    if (value === undefined || value.expires <= (try Clock.currentTimeMillis)) return undefined
+    return { key: verified.value.value, value }
+  }
+  effect function current(signed: string | undefined) {
+    const live = try session(signed)
+    const outcome = live === undefined ? "viewer" : "signed-in"
+    try Metric.update(Metric.withAttributes(Metric.counter("vibelang_account_resolutions", { incremental: true }), { outcome }), 1)
+    try Effect.logInfo("vibelang.account.resolve").pipe(Effect.annotateLogs({ outcome }))
+    if (live === undefined) return viewer
+    const ledger = try sequencer.snapshot()
+    return { id: live.value.id, login: live.value.login, role: roleOf(ledger.roles, live.value.id), ...(live.value.agent === true ? { agent: true } : {}), ledger } satisfies Identity
+  }
+
+  schema StoredConnection { readonly person: number; readonly delegation: string; readonly expires: number }
+  const connectionKey = (id: string) => "delegation/" + id
+  /** Device sign-ins hold no delegation path: an agent acting for a connected person stays unconnected. */
+  const connections = {
+    forget: (id: string) => remove(connectionKey(id)).pipe(Effect.asVoid),
+    current: effect (signed: string | undefined) => {
+      const live = try session(signed)
+      if (live === undefined) return undefined
+      const raw = live.value.agent === true ? undefined : try get(connectionKey(live.value.id))
+      const stored = Schema.decodeUnknownOption(StoredConnection)(raw)
+      const connection: Connection | undefined = Option.isSome(stored) && stored.value.expires > (try Clock.currentTimeMillis) ? { person: stored.value.person, delegation: stored.value.delegation } : undefined
+      const principal: Principal = { id: live.value.id, login: live.value.login, role: try sequencer.role(live.value.id), ...(connection === undefined ? {} : { connection }), ...(live.value.agent === true ? { kind: "agent" as const } : {}) }
+      return principal
+    },
+  }
+
+  /** The journal stores only the step name and null; credentials stay in this host's encrypted records. */
+  effect function mutation<A>(step: typeof Mutation.payloadSchema.Type.step, body: A!!) {
+    const executionId = try postExecutionId("account")
+    let result: A | undefined
+    const registration = Interpreter.layerWithImplementations(Mutation, ApplyMutation.toLayer(() => withSpan(effect {
+      result = try body
+      const status = result !== null && typeof result === "object" && "status" in result ? Number(result.status) : 200
+      const outcome = status >= 400 ? "refused" : "accepted"
+      try Metric.update(Metric.withAttributes(Metric.counter("vibelang_account_steps", { incremental: true }), { step, outcome }), 1)
+      try Effect.logInfo("vibelang.account").pipe(Effect.annotateLogs({ step, outcome }))
+      return null
+    }, "vibelang.account." + step)))
+    const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Mutation._tag }, registration).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+    provide runtime {
+      try Effect.orDie((try FlowRuntime.FlowRuntime).execute(Mutation, { executionId, payload: { step } }))
+    }
+    return result as A
+  }
+
+  effect function handle(bodyText: string) {
+    const request = try HttpServerRequest.HttpServerRequest
+    const url = new URL(request.url, setup.origin)
+    if (url.origin !== setup.origin) return json({ error: "origin" }, 403)
+    const path = url.pathname
+    if (request.method !== "GET" && !(request.headers.origin === setup.origin || (path === CALLBACK && request.headers.origin === "null" && request.headers["sec-fetch-site"] === "same-origin"))) return json({ error: "origin" }, 403)
+    if (path === "/api/auth/session" && request.method === "GET") return json({ ...(try current(presented(request))), available: setup.broker === undefined || broker !== undefined })
+    // The device flow's public client id: a CLI or MCP server reads it to start GitHub's device flow itself.
+    if (path === "/api/auth/device" && request.method === "GET") return json({ clientId: setup.clientId })
+    // A device flow's access token becomes a session marked as the person's agent (decision 0028). The token is
+    // used for this one identity lookup and discarded, as the browser callback's is.
+    if (path === "/api/auth/device" && request.method === "POST") return try mutation("device", effect {
+      const body = decodeDeviceToken(bodyText) catch () => undefined
+      if (body === undefined) return json({ error: "body" }, 400)
+      // Any GitHub failure closes the sign-in; the journal and logs carry only the outcome.
+      const person = setup.github.user(Redacted.make(body.token)) catch () => null
+      try Effect.logInfo("vibelang.account.device").pipe(Effect.annotateLogs({ outcome: person === null ? "refused" : "issued" }))
+      if (person === null || !Number.isSafeInteger(person.id) || person.id <= 0) return json({ error: "sign-in" }, 401)
+      const id = String(person.id)
+      const sessionId = try keys.token
+      try put("session/" + sessionId, { id, login: person.login, expires: (try Clock.currentTimeMillis) + AGE, agent: true })
+      try put("person/" + id, { id, login: person.login })
+      return json({ cookie: SESSION + "=" + (try keys.sign("session", sessionId)), id, login: person.login })
+    })
+    if (path === "/api/auth/install" && request.method === "GET") return setup.appSlug === undefined ? json({ error: "install unavailable" }, 503) : redirect(`https://github.com/apps/${encodeURIComponent(setup.appSlug)}/installations/new`)
+    if (path === "/api/auth/connect" && request.method === "POST") return try mutation("connect", effect {
+      const live = try session(presented(request))
+      if (live === undefined) return json({ error: "sign-in" }, 401)
+      // Device sessions remain agents through every role/credential check.
+      if (live.value.agent === true) return json({ error: "agent" }, 403)
+      const wikiPage = url.searchParams.get("wiki-page")
+      if (wikiPage !== null && wikiFilePath(wikiPage) === undefined) return json({ error: "request" }, 400)
+      const resumeOp = url.searchParams.get("resume-op")
+      const resumeKey = url.searchParams.get("resume-key")
+      const resumeRecovery = url.searchParams.get("resume-recovery")
+      if ((resumeOp !== null || resumeKey !== null) && (resumeOp === null || resumeKey === null || !["new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline"].includes(resumeOp) || !/^[A-Za-z0-9-]{1,100}$/.test(resumeKey))) return json({ error: "request" }, 400)
+      if (resumeRecovery !== null && (resumeKey === null || !/^[A-Za-z0-9-]{1,100}$/.test(resumeRecovery))) return json({ error: "request" }, 400)
+      if (broker === undefined) return json({ error: "sign-in unavailable" }, 503)
+      const returnTo = wikiPage !== null ? `/wiki/${wikiPage}` : "/?issues=1" + (resumeOp === null || resumeKey === null ? "" : `&resume-op=${resumeOp}&resume-key=${resumeKey}` + (resumeRecovery === null ? "" : `&resume-recovery=${resumeRecovery}`))
+      const pending = try Effect.orDie(broker.begin({ connect: { person: Number(live.value.id) } }))
+      const verifier = try Effect.orDie(cipher.seal(Redacted.make(pending.verifier), contextOf(pending.claims.nonce, "pkce")))
+      try put("broker/" + pending.claims.nonce, { claims: pending.claims, verifier, session: live.key, returnTo })
+      return cookie(HttpServerResponse.empty({ status: 303, headers: { ...noStore, location: pending.location } }), STATE, try keys.sign("broker_site", pending.claims.nonce), GitHub.Auth.Broker.REQUEST_TTL)
+    })
+    if (path === "/api/auth/disconnect" && request.method === "POST") return try mutation("disconnect", effect {
+      const live = try session(presented(request))
+      if (live === undefined) return json({ error: "sign-in" }, 401)
+      const principal = try connections.current(presented(request))
+      // The site's row goes even if smithers.sh is unreachable; the person can still Disconnect there.
+      if (principal?.connection !== undefined && delegate !== undefined) {
+        try Effect.ignore(Effect.provideService(delegate.revoke(principal.connection.person, principal.connection.delegation), HttpClient.HttpClient, http))
+      }
+      try connections.forget(live.value.id)
+      return HttpServerResponse.empty({ status: 303, headers: { ...noStore, location: "/?issues=1" } })
+    })
+    if (path === "/api/auth/sign-in" && request.method === "GET") return try mutation("start", effect {
+      if (setup.broker !== undefined && broker === undefined) return json({ error: "sign-in unavailable" }, 503)
+      if (broker !== undefined) {
+        const pending = try Effect.orDie(broker.begin())
+        const verifier = try Effect.orDie(cipher.seal(Redacted.make(pending.verifier), contextOf(pending.claims.nonce, "pkce")))
+        try put("broker/" + pending.claims.nonce, { claims: pending.claims, verifier })
+        return cookie(redirect(pending.location), STATE, try keys.sign("broker_site", pending.claims.nonce), GitHub.Auth.Broker.REQUEST_TTL)
+      }
+      const id = try keys.token
+      const pair = try Effect.orDie(Core.Pkce.createPkcePair())
+      const verifier = try Effect.orDie(cipher.seal(Redacted.make(pair.codeVerifier), contextOf(id, "pkce")))
+      try put("sign-in/" + id, { expires: (try Clock.currentTimeMillis) + 600_000, verifier })
+      return cookie(redirect(setup.github.authorizeUrl({ state: id, codeChallenge: pair.codeChallenge, redirectUri: setup.origin + CALLBACK })), STATE, try keys.sign("sign_in", id), 600_000)
+    })
+    if (path === CALLBACK && request.method === "GET" && !url.searchParams.has("code") && !url.searchParams.has("state")) {
+      return HttpServerResponse.text(GitHub.Auth.Broker.HANDOFF_PAGE, { contentType: "text/html; charset=utf-8", headers: { ...GitHub.Auth.Broker.HEADERS, "content-security-policy": GitHub.Auth.Broker.HANDOFF_CSP } })
+    }
+    if (path === CALLBACK && request.method === "POST") return try mutation("callback", effect {
+      if (broker === undefined) return json({ error: "sign-in" }, 503)
+      const body = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ code: Schema.String, state: Schema.String })))(bodyText) catch () => undefined
+      const verified = try keys.verify("broker_site", request.cookies[STATE])
+      if (body === undefined || Option.isNone(verified) || body.state !== verified.value.value || !/^[A-Za-z0-9_-]{43}$/.test(body.state)) return json({ error: "sign-in" }, 400)
+      const pending = Schema.decodeUnknownEffect(Schema.Struct({ claims: Schema.Struct({ origin: Schema.String, nonce: Schema.String, challenge: Schema.String, expires: Schema.Number, connect: Schema.optionalKey(Schema.Struct({ person: Schema.Number })) }), verifier: Schema.Struct({ nonce: Schema.String, ciphertext: Schema.String }), session: Schema.optionalKey(Schema.String), returnTo: Schema.optionalKey(Schema.String) }))(try get("broker/" + body.state)) catch () => undefined
+      if (pending === undefined || pending.claims.origin !== setup.origin || pending.claims.nonce !== body.state || pending.claims.expires <= (try Clock.currentTimeMillis)) return json({ error: "sign-in" }, 400)
+      try remove("broker/" + body.state)
+      const verifier = Redacted.value(try Effect.orDie(cipher.open(pending.verifier, contextOf(body.state, "pkce"))))
+      const signed = try broker.redemption({ claims: pending.claims, verifier }, body.code)
+      const person = try Effect.orDie(broker.exchange(signed).pipe(Effect.provideService(HttpClient.HttpClient, http)))
+      const id = String(person.id)
+      if (pending.session !== undefined) {
+        // Connect: the browser must still hold the session that pressed it, and the broker confirmed the same person.
+        const live = try session(presented(request))
+        if (live === undefined || live.key !== pending.session || live.value.id !== id || person.delegation === undefined || person.expires === undefined) return cookie(json({ error: "identity" }, 403), STATE, "", 0)
+        try put(connectionKey(id), { person: person.id, delegation: person.delegation, expires: person.expires })
+        return cookie(json({ location: pending.returnTo ?? "/?issues=1" }), STATE, "", 0)
+      }
+      const sessionId = try keys.token
+      try put("session/" + sessionId, { id, login: person.login, expires: (try Clock.currentTimeMillis) + AGE })
+      try put("person/" + id, { id, login: person.login })
+      return cookie(cookie(json({}), SESSION, try keys.sign("session", sessionId), AGE), STATE, "", 0)
+    })
+    if (path === CALLBACK && request.method === "GET") return try mutation("callback", effect {
+      const verified = try keys.verify("sign_in", request.cookies[STATE])
+      const state = url.searchParams.get("state")
+      const code = url.searchParams.get("code")
+      if (Option.isNone(verified) || state !== verified.value.value || code === null || code.length > 4096) return json({ error: "sign-in" }, 400)
+      const pending = signInDecoder(try get("sign-in/" + state)) catch () => undefined
+      if (pending === undefined || pending.expires <= (try Clock.currentTimeMillis)) return json({ error: "sign-in" }, 400)
+      try remove("sign-in/" + state)
+      const verifier = try Effect.orDie(cipher.open(pending.verifier, contextOf(state, "pkce")))
+      const tokens = try Effect.orDie(setup.github.exchange({ code: Redacted.make(code), codeVerifier: verifier, redirectUri: setup.origin + CALLBACK }))
+      const person = try Effect.orDie(setup.github.user(tokens.accessToken))
+      if (!Number.isSafeInteger(person.id) || person.id <= 0) return json({ error: "sign-in" }, 400)
+      const id = String(person.id)
+      const sessionId = try keys.token
+      try put("session/" + sessionId, { id, login: person.login, expires: (try Clock.currentTimeMillis) + AGE })
+      try put("person/" + id, { id, login: person.login })
+      return cookie(cookie(redirect(setup.origin + "/"), SESSION, try keys.sign("session", sessionId), AGE), STATE, "", 0)
+    })
+    if (path === "/api/auth/sign-out" && request.method === "POST") return try mutation("sign-out", effect {
+      const live = try session(presented(request))
+      if (live !== undefined) try remove("session/" + live.key)
+      return cookie(HttpServerResponse.empty({ status: 204, headers: noStore }), SESSION, "", 0)
+    })
+    if (path === "/api/roles/events" && request.method === "GET") {
+      const permitted = policy.authorize((try current(presented(request))).id, "people").pipe(Effect.as(true)) catch () => false
+      if (!permitted) return json({ refusal: "forbidden" }, 403)
+      const after = afterOf(url)
+      return after === undefined ? json({ error: "after" }, 400) : eventStream(sequencer.follow(after))
+    }
+    if (path === "/api/roles" && request.method === "POST") return try mutation("grant", effect {
+      const actor = try current(presented(request))
+      const body = decodeGrant(bodyText) catch () => undefined
+      if (body === undefined) return json({ error: "body" }, 400)
+      if (actor.id !== body.id) {
+        const permitted = policy.authorize(actor.id, "roles").pipe(Effect.as(true)) catch () => false
+        if (!permitted) return json({ refusal: "forbidden" }, 403)
+      }
+      if ((try sequencer.role(body.id)) === body.role) return json({})
+      const refusal = try sequencer.grant(body.id, actor.id, body.role, "person")
+      return refusal === null ? json({}) : json({ refusal }, 403)
+    })
+    if (path === "/api/roles" && request.method === "GET") {
+      const actor = try current(presented(request))
+      const permitted = policy.authorize(actor.id, "people").pipe(Effect.as(true)) catch () => false
+      if (!permitted) return json({ refusal: "forbidden" }, 403)
+      const rows = try promise(() => storage.list({ prefix: "person/" }))
+      const members: Array<Identity> = []
+      for (const row of rows.values()) {
+        const person = row as { readonly id: string; readonly login: string }
+        members.push({ ...person, role: try sequencer.role(person.id) })
+      }
+      return json(members)
+    }
+    return json({ error: "not found" }, 404)
+  }
+  // Tokens from the per-site connect path (decision 0165 migration): deleted once, not revoked; they lack refresh tokens and die within 8 hours.
+  if ((try get("migrated/connect-v1")) === undefined) try mutation("migrate", effect {
+    for (const name of (try promise(() => storage.list({ prefix: "github/" }))).keys()) try remove(name)
+    try put("migrated/connect-v1", true)
+  })
+  if (/^[1-9][0-9]*$/.test(setup.initialMaintainer)) {
+    try mutation("grant", effect { try sequencer.grant(setup.initialMaintainer, "", "maintainer", "bootstrap") })
+  }
+  return {
+    current,
+    role: (owner: string) => sequencer.role(owner),
+    // Server-only RPC: the conversation host captured this owner from the accepted post, never model input.
+    draftWiki: effect (owner: string, page: string, ask: string, key: string) => {
+      const authority: WikiAuthority.Shape = {
+        current: effect () => ({ id: owner, login: "", role: try sequencer.role(owner) }),
+        authorize: (op) => policy.authorize(owner, wikiPolicyAction(op)).pipe(Effect.mapError(() => new WikiFailure({ reason: "forbidden" }))),
+      }
+      const result = try Effect.result(Semaphore.withPermits(issueLock, 1)(executeWiki(hostId, storage, { op: "draft", page, base: "", text: ask, key }).pipe(Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, http))))
+      return result._tag === "Failure" ? result.failure._tag === "WikiFailure" ? result.failure.reason : "unavailable" : null
+    },
+    allowed: (actor: string, action: PolicyAction) => policy.authorize(actor, action).pipe(Effect.as(true), Effect.catch(() => succeed(false))),
+    fetch: effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      const url = new URL(request.url, setup.origin)
+      let body: string | undefined
+      if (url.pathname === "/api/issues") {
+        if (url.origin !== setup.origin || (request.method !== "GET" && request.headers.origin !== setup.origin)) return json({ error: "origin" }, 403)
+        const authority: IssueAuthority.Shape = {
+          current: () => connections.current(presented(request)),
+          lost: effect () => {
+            const live = try session(presented(request))
+            if (live !== undefined) try connections.forget(live.value.id)
+          },
+          authorize: effect (op) => {
+            if (op === "read") return
+            const actor = try connections.current(presented(request))
+            if (actor === undefined) throw new IssueFailure({ reason: "sign-in" })
+            try policy.authorize(actor.id, issuePolicyAction(op)).pipe(Effect.mapError(() => new IssueFailure({ reason: "forbidden" })))
+          },
+        }
+        const agent = try Config.option(Config.String("VIBELANG_AGENT_ASSIGNEE"))
+        return try Semaphore.withPermits(issueLock, 1)(serveIssues(hostId, storage, { ...repository, agent: Option.getOrElse(agent, () => "") }, (person) => Effect.orDie(Semaphore.withPermits(lock, 1)(mutation("participation", effect { try sequencer.grant(person.id, person.id, "community", "participation") })))).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, http), delegated))
+      }
+      if (url.pathname === "/api/wiki") {
+        if (url.origin !== setup.origin || (request.method !== "GET" && request.headers.origin !== setup.origin)) return json({ error: "origin" }, 403)
+        const wikiAuthority: WikiAuthority.Shape = {
+          current: () => connections.current(presented(request)),
+          lost: effect () => {
+            const live = try session(presented(request))
+            if (live !== undefined) try connections.forget(live.value.id)
+          },
+          authorize: effect (op) => {
+            if (op === "read") return
+            const actor = try connections.current(presented(request))
+            if (actor === undefined) throw new WikiFailure({ reason: "sign-in" })
+            try policy.authorize(actor.id, wikiPolicyAction(op)).pipe(Effect.mapError(() => new WikiFailure({ reason: "forbidden" })))
+          },
+        }
+        return try Semaphore.withPermits(issueLock, 1)(serveWiki(hostId, storage).pipe(Effect.provideService(WikiAuthority, wikiAuthority), Effect.provideService(HttpClient.HttpClient, http), delegated))
+      }
+      if ((url.pathname === "/api/auth/device" || url.pathname === CALLBACK) && request.method === "POST") {
+        if (url.origin !== setup.origin || !(request.headers.origin === setup.origin || (url.pathname === CALLBACK && request.headers.origin === "null" && request.headers["sec-fetch-site"] === "same-origin"))) return json({ error: "origin" }, 403)
+        if (Number(request.headers["content-length"]) > 2048) return json({ error: "body size" }, 413)
+        const bounded = request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(2048)), Effect.timeoutOption("3 seconds"))
+        const read = bounded catch () => undefined
+        if (read === undefined) return json({ error: "body size" }, 413)
+        if (Option.isNone(read)) return json({ error: "body timeout" }, 408)
+        body = read.value
+      }
+      if (url.pathname === "/api/roles" && request.method === "POST") {
+        if (url.origin !== setup.origin || request.headers.origin !== setup.origin) return json({ error: "origin" }, 403)
+        const actor = try Semaphore.withPermits(lock, 1)(current(presented(request)))
+        if (actor.id === "") return json({ refusal: "forbidden" }, 403)
+        if (Number(request.headers["content-length"]) > 2048) return json({ error: "body size" }, 413)
+        const bounded = request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(2048)), Effect.timeoutOption("3 seconds"))
+        const read = bounded catch () => undefined
+        if (read === undefined) return json({ error: "body size" }, 413)
+        if (Option.isNone(read)) return json({ error: "body timeout" }, 408)
+        body = read.value
+      }
+      return try Semaphore.withPermits(lock, 1)(handle(body ?? "")).pipe(Effect.catchCause(() => effect {
+        try Metric.update(Metric.withAttributes(Metric.counter("vibelang_account_steps", { incremental: true }), { step: "request", outcome: "failed" }), 1)
+        try Effect.logWarning("vibelang.account").pipe(Effect.annotateLogs({ outcome: "failed" }))
+        if (url.pathname === CALLBACK && request.method === "POST") return cookie(json({ error: "sign-in" }, 503), STATE, "", 0)
+        return url.pathname === CALLBACK || url.pathname === "/api/auth/sign-in"
+        ? cookie(redirect(setup.origin + "/?sign-in=failed"), STATE, "", 0)
+        : json({ error: "account unavailable" }, 503)
+      }))
+    },
+    participation: (signed: string | undefined) => Effect.orDie(Semaphore.withPermits(lock, 1)(mutation("participation", effect {
+      const actor = try current(signed)
+      if (actor.id !== "") try sequencer.grant(actor.id, actor.id, "community", "participation")
+    }))),
+  }
+}
+
+/** Trusted sandbox authority: only a verified session supplies an owner; writes also bind the browser Origin. */
+export function sameOrigin(request: HttpServerRequest.HttpServerRequest): boolean {
+  // Effect's routed `url` omits the host; the original platform URL retains its trusted origin.
+  return request.headers.origin === new URL(request.originalUrl).origin
+}
+
+export effect function sandboxPrincipal(
+  current: (signed: string | undefined) => import("../src/core/roles.vibe").Identity!!,
+  allowed: (actor: string, action: PolicyAction) => boolean!!,
+) {
+  const request = try HttpServerRequest.HttpServerRequest
+  if (request.method !== "GET" && !sameOrigin(request)) return { owner: "", role: "viewer" as const }
+  const person = try current(cookieOf(request))
+  const admitted = try allowed(person.id, "sandbox")
+  return { owner: person.id, role: admitted ? person.role : "viewer" as const }
+}

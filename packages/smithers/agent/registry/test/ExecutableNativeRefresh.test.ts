@@ -39,9 +39,27 @@ export default Flow.make("entry", {
 `
 
 /** Runs the driver over a fresh project whose files are `files`, editing `edited`. */
-const refreshAfterEditing = async (files: Record<string, string>, edited: string) => {
+const refreshAfterEditing = async (files: Record<string, string>, edited: string, vibelang = false) => {
   const root = await mkdtemp(join(modulesRoot, ".native-refresh-"))
   try {
+    if (vibelang) {
+      await mkdir(join(root, ".smithers/flows"), { recursive: true })
+      await writeFile(
+        join(root, ".smithers/flows/tsconfig.json"),
+        JSON.stringify({
+          compilerOptions: {
+            target: "ES2022",
+            module: "NodeNext",
+            moduleResolution: "NodeNext",
+            noEmit: true,
+            strict: true,
+            skipLibCheck: true,
+            allowImportingTsExtensions: true
+          },
+          include: ["**/*.ts"]
+        })
+      )
+    }
     for (const [name, text] of Object.entries(files)) {
       await mkdir(join(root, ".smithers/flows/entry", name, ".."), { recursive: true })
       await writeFile(join(root, ".smithers/flows/entry", name), text)
@@ -49,7 +67,12 @@ const refreshAfterEditing = async (files: Record<string, string>, edited: string
     const stdout = await new Promise<string>((resolve, reject) =>
       execFile(
         process.execPath,
-        [driver, root, join(root, ".smithers/flows/entry", edited)],
+        [
+          ...(vibelang ? ["--import=vibelang/register"] : []),
+          driver,
+          root,
+          join(root, ".smithers/flows/entry", edited)
+        ],
         { timeout: 60_000 },
         (error, out, stderr) => error === null ? resolve(out) : reject(new Error(`${error.message}\n${stderr}`))
       )
@@ -61,6 +84,20 @@ const refreshAfterEditing = async (files: Record<string, string>, edited: string
 }
 
 describe("refreshing after editing only a helper, under real Node", () => {
+  it("loads and refreshes an idiomatic VibeLang helper under the real project loader", async () => {
+    const { after, before } = await refreshAfterEditing(
+      {
+        "flow.ts": entry.replace("./helper.ts", "./helper.vibe"),
+        "helper.vibe": "export const priority: number = 7\nexport effect function read() { return priority }\n"
+      },
+      "helper.vibe",
+      true
+    )
+    expect(before.priority).toBe(7)
+    expect(after.digest).not.toBe(before.digest)
+    expect(after.priority).toBe(9)
+  }, 90_000)
+
   it("loads a direct helper's new exports", async () => {
     const { after, before } = await refreshAfterEditing({
       "flow.ts": entry,

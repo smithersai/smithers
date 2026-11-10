@@ -1,5 +1,8 @@
 // Stays .ts: Playwright collects test files by JS/TS extension only (upstream-bugs/playwright-vibe-specs).
-import { expect, test } from "@playwright/test"
+import { execFile } from "node:child_process"
+import { fileURLToPath } from "node:url"
+import { promisify } from "node:util"
+import { expect, test } from "./coverage"
 
 // The live agent in a real browser (wiki/decisions/0010-live-agent.md), opt in: `E2E_LIVE_URL` names a deployment or
 // a local `alchemy dev` (http://localhost:1337) whose API Worker is bound. The page must choose the live Factory, and
@@ -27,5 +30,35 @@ test.describe("the live agent", () => {
     }
     await page.waitForFunction(() => !document.documentElement.matches(":active-view-transition"))
     await page.screenshot({ path: testInfo.outputPath("live.png") })
+  })
+
+  // Dogfooding (VL-26, 0007): the agent works through the emitted Factory CLI while a person has the page open, in the
+  // one home conversation. Run `pnpm build:surfaces` first. The CLI exits nonzero when the reply fails (no model key).
+  test("the CLI's post reaches an open page, and the page's post reaches the CLI", async ({ page }, testInfo) => {
+    // Every project posts into the one home conversation, whose agent answers one post at a time (0007), so a reply
+    // can wait behind the other projects' replies: the test needs the same patience as its reply assertion.
+    test.setTimeout(180_000)
+    const cli = fileURLToPath(new URL("../dist-factory/surfaces/cli-entry.js", import.meta.url))
+    const env = { ...process.env, VIBELANG_FACTORY: "", VIBELANG_FACTORY_URL: live!, NO_COLOR: "1", XDG_CONFIG_HOME: testInfo.outputPath("cli-settings") }
+    const run = (args: ReadonlyArray<string>) => promisify(execFile)(process.execPath, [cli, ...args], { env }).catch((failed: { stdout: string }) => failed)
+    const token = crypto.randomUUID().slice(0, 8)
+    await page.goto(new URL("/", live).toString())
+    await expect(page.getByRole("heading", { name: "VibeLang" })).toBeVisible()
+    await run(["ask", `From the CLI ${token}`])
+    await page.getByRole("button", { name: "Minimize the VibeLang home page" }).click()
+    const fromCli = page.locator(".sui-chat-message[data-role='user']").filter({ hasText: `From the CLI ${token}` })
+    // The server names a post from its session, never from the caller (0019, 0028). With VIBELANG_SESSION configured
+    // (a `login` agent session) the CLI's post carries the person's agent label; without it, the guest's.
+    const session = process.env.VIBELANG_SESSION || undefined
+    await expect(fromCli.locator(".sui-chat-message-label")).toHaveText(session === undefined ? "Guest" : /\(agent\)$/, { timeout: 60_000 })
+    await page.keyboard.press("ControlOrMeta+k")
+    await page.getByRole("textbox", { name: "Message" }).pressSequentially(`From the page ${token}`)
+    await page.keyboard.press("Enter")
+    await expect(page.locator(".sui-chat-message[data-role='assistant']").last()).toHaveAttribute("data-done", "true", { timeout: 120_000 })
+    const read = await run(["--json", "read"])
+    const entries = (JSON.parse(read.stdout) as { entries: ReadonlyArray<{ name: string; text: string }> }).entries
+    expect(entries.filter((entry) => entry.text.endsWith(token)).map((entry) => entry.name)).toEqual(
+      session === undefined ? ["Guest", "Guest"] : [expect.stringMatching(/\(agent\)$/), "Guest"],
+    )
   })
 })

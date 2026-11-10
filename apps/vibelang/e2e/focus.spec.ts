@@ -1,5 +1,6 @@
 // Stays .ts: Playwright collects test files by JS/TS extension only (upstream-bugs/playwright-vibe-specs).
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test } from "./coverage"
+import type { Page } from "./coverage"
 
 const input = (page: Page) => page.getByRole("textbox", { name: "Message" })
 
@@ -36,7 +37,11 @@ test("6: Enter focuses the docked composer; Escape and a second shortcut restore
 test("6: Escape returns to the actual keyboard opener on the splash", async ({ page }) => {
   await page.goto("/")
   const ask = page.getByRole("button", { name: "Ask the agent" })
-  for (let i = 0; i < 4; i++) await page.keyboard.press("Tab")
+  // Traverse the rendered nav (including account controls) using only the keyboard.
+  for (let i = 0; i < 12; i++) {
+    await page.keyboard.press("Tab")
+    if (await ask.evaluate(node => node === document.activeElement)) break
+  }
   await expect(ask).toBeFocused()
   await ask.press("Enter")
   await expect(input(page)).toBeFocused()
@@ -44,7 +49,9 @@ test("6: Escape returns to the actual keyboard opener on the splash", async ({ p
   await input(page).press("Escape")
   await expect(ask).toBeFocused()
   await page.keyboard.press("Shift+Tab")
-  const source = page.getByRole("link", { name: "Source" })
+  await expect(page.getByRole("button", { name: "Learn more" })).toBeFocused()
+  await page.keyboard.press("Shift+Tab")
+  const source = page.getByRole("button", { name: "Sign in", exact: true })
   await expect(source).toBeFocused()
   await open(page)
   await input(page).press("Escape")

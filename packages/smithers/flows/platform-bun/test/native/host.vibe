@@ -1,0 +1,43 @@
+// Real Electrobun APIs behind a loopback test transport. No production service is replaced here.
+import * as Native from "#electrobun"
+import { BunServer } from "../../src/index.ts"
+import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { ExperimentalBunServices } from "vibelang-runtime/experimental/platform-bun"
+
+const port = await runPromise(Config.withDefault(Config.Int("SMITHERS_NATIVE_PORT"), 0))
+await runPromise(scoped(effect {
+  const server = try HttpServer.HttpServer
+  const windows = new Map<number, InstanceType<typeof Native.BrowserWindow>>()
+  let sequence = 0
+  let loaded = 0
+  const origin = try orDie(Effect.try(() => HttpServer.formatAddress(server.address)))
+  const stopped = try Deferred.make<void>()
+  try server.serve(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const pathname = new URL(request.url, origin).pathname
+    if (pathname === "/meta") return HttpServerResponse.jsonUnsafe({ resources: Native.PATHS.RESOURCES_FOLDER, compatibility: Native.SMITHERS_BUN14_COMPAT, windows: windows.size, loaded })
+    if (pathname === "/fixture") return HttpServerResponse.text("SDK native fixture")
+    if (pathname === "/window") { loaded++; return HttpServerResponse.text("Native SDK integration") }
+    if (pathname === "/shutdown") { try Deferred.succeed(stopped, undefined); return HttpServerResponse.empty() }
+    const input = try request.json.pipe(Effect.orDie)
+    const data = input as { id: number; options: ConstructorParameters<typeof Native.BrowserWindow>[0]; rules: Array<string>; url: string; dialogOptions: Parameters<typeof Native.Utils.openFileDialog>[0] }
+    if (pathname === "/create") {
+      const window = try orDie(Effect.try(() => new Native.BrowserWindow(data.options)))
+      const id = ++sequence
+      windows.set(id, window)
+      return HttpServerResponse.jsonUnsafe({ id })
+    }
+    if (pathname === "/choose") return HttpServerResponse.jsonUnsafe(try tryPromise(() => Native.Utils.openFileDialog(data.dialogOptions)).pipe(Effect.tapError((error) => Console.error(error))))
+    if (pathname === "/external") return HttpServerResponse.jsonUnsafe(try orDie(Effect.try(() => Native.Utils.openExternal(data.url))))
+    const window = windows.get(data.id)
+    if (window === undefined) return HttpServerResponse.empty({ status: 404 })
+    if (pathname === "/rules") try orDie(Effect.try(() => window.webview.setNavigationRules(data.rules)))
+    if (pathname === "/close") { try Effect.sync(() => window.close()); windows.delete(data.id) }
+    return HttpServerResponse.jsonUnsafe({})
+  })
+  const fixtureWindow = try Effect.try(() => new Native.BrowserWindow({ title: "SDK fixture", url: origin + "/fixture", frame: { x: 0, y: 0, width: 400, height: 300 }, titleBarStyle: "hiddenInset", renderer: "cef", sandbox: true, navigationRules: "[]" }))
+  try Scope.addFinalizer(try Effect.scope, Effect.sync(() => fixtureWindow.close()))
+  try Console.log(`SDK_NATIVE_READY ${origin}`)
+  try Deferred.await(stopped)
+  for (const window of windows.values()) try Effect.sync(() => window.close())
+}).pipe(Effect.provide(Layer.merge(BunServer.layer(port), ExperimentalBunServices.layer))))

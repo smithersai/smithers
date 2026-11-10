@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { Deferred, Effect, Fiber, Layer, References } from "effect"
 import ts from "typescript"
@@ -7,6 +6,7 @@ import { ConversationOwners } from "../conversations/owners"
 import { SHOWING } from "./schema"
 import { ViewsStore } from "./store"
 import { show } from "./views"
+import { typeScriptOf } from "../../../../../packages/repo-targets/test-utils/source-readers.mjs"
 
 // Every conversation's rows show: what concerns these tests is opening, never the data gate (owners.ts).
 const everyConversation = Layer.succeed(ConversationOwners, ConversationOwners.of({
@@ -58,7 +58,7 @@ test("a delayed earlier navigation cannot replace a later home navigation", asyn
 })
 
 test("the app-opening helper owns its documentation", () => {
-  const source = ts.createSourceFile("views.test.ts", readFileSync(new URL("./views.test.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true)
+  const source = ts.createSourceFile("views.test.ts", typeScriptOf(new URL("./views.test.ts", import.meta.url)), ts.ScriptTarget.Latest, true)
   const declaration = source.statements.find((statement) => ts.isVariableStatement(statement) &&
     statement.declarationList.declarations.some((declaration) => declaration.name.getText(source) === "open"))!
   expect(ts.getJSDocCommentsAndTags(declaration).map((doc) => doc.getText(source)).join("\n"))

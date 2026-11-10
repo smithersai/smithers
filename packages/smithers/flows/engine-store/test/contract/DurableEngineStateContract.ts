@@ -207,6 +207,24 @@ export const describeContract = (harness: Harness): void => {
         expect(result.unparked).toEqual({ _tag: "NotWaiting" })
       }))
 
+    it.effect("records no completion for a run that does not exist", () =>
+      Effect.gen(function*() {
+        const result = yield* harness.run((context) =>
+          Effect.gen(function*() {
+            const address = { flowName: "missing-flow", executionId: "missing-run", deferredName: "answer" }
+            const completion = yield* context.state.completeDeferred({
+              ...address,
+              exit: { _tag: "Success", value: null },
+              completedAtMs: 0
+            })
+            return { completion, stored: yield* context.state.deferred(address) }
+          })
+        )
+
+        expect(result.completion).toEqual({ _tag: "NotFound" })
+        expect(Option.isNone(result.stored)).toBe(true)
+      }))
+
     it.effect("overwrites the waiting payload when a parked run parks again", () =>
       Effect.gen(function*() {
         const result = yield* harness.run((context) =>

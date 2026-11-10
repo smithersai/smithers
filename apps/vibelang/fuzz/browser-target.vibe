@@ -1,0 +1,234 @@
+import { expect, type Page } from "@playwright/test"
+import { run, Int, Text } from "./run.vibe"
+
+const Step = Schema.Struct({ op: Int, text: Text })
+const Input = Schema.Struct({ steps: Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(10)), phone: Schema.Boolean, reducedMotion: Schema.Boolean })
+
+const RETURNING = "localStorage.setItem('vibelang:toured', 'yes')"
+const AUTO_TOUR_HOLD_MS = 2_000
+
+/**
+ * A first visit to `/` starts the tour 1200 ms after boot, and the running tour consumes Ctrl+K (decision 0014).
+ * Targets that drive the palette and the account menu are returning visitors, so host load cannot move them into the tour.
+ */
+effect function returningVisitor(page: Page) {
+  try tryPromise(() => page.addInitScript(RETURNING))
+}
+
+/** The palette opens for a returning visitor whenever the key arrives, including after the first-visit tour's timer. */
+export effect function heldStartupTarget(page: Page) {
+  try returningVisitor(page)
+  try tryPromise(() => page.goto("/?agent=mock"))
+  try tryPromise(() => expect(page.getByRole("heading", { name: "VibeLang", exact: true })).toBeVisible())
+  try tryPromise(() => page.waitForTimeout(AUTO_TOUR_HOLD_MS))
+  try tryPromise(() => page.keyboard.press("ControlOrMeta+k"))
+  try tryPromise(() => expect(page.getByRole("dialog", { name: "Ask the agent" })).toBeVisible())
+}
+
+const FirstVisit = Schema.Struct({ phone: Schema.Boolean, reducedMotion: Schema.Boolean, pause: Schema.Boolean })
+
+/** A first visit starts the tour by itself; the tour keeps Ctrl+K from opening the palette, and Escape ends it. */
+export effect function firstVisitTarget(page: Page) {
+  return try run("browser/first-visit-tour", FirstVisit, ({ phone, reducedMotion, pause }) => effect {
+    try tryPromise(() => page.setViewportSize(phone ? { width: 392, height: 800 } : { width: 1280, height: 800 }))
+    try tryPromise(() => page.emulateMedia({ reducedMotion: reducedMotion ? "reduce" : "no-preference", colorScheme: "dark" }))
+    try tryPromise(() => page.goto("/?agent=mock"))
+    try tryPromise(() => page.evaluate("localStorage.clear(); sessionStorage.clear()"))
+    try tryPromise(() => page.goto("/?agent=mock"))
+    const bar = try Effect.try(() => page.locator(".vl-theatre-bar"))
+    try tryPromise(() => expect(bar).toBeVisible({ timeout: 20_000 }))
+    try tryPromise(() => page.keyboard.press("ControlOrMeta+k"))
+    try tryPromise(() => expect(page.getByRole("dialog", { name: "Ask the agent" })).toBeHidden())
+    if (pause) try tryPromise(() => page.keyboard.press(" "))
+    try tryPromise(() => page.keyboard.press("ArrowRight"))
+    try tryPromise(() => page.keyboard.press("ArrowLeft"))
+    try tryPromise(() => page.keyboard.press("Tab"))
+    try tryPromise(() => expect(bar).toBeVisible())
+    try tryPromise(() => page.keyboard.press("Escape"))
+    try tryPromise(() => expect(bar).toBeHidden())
+    return true
+  })
+}
+
+/** The actual built app, its real mock Factory, and native browser input. No request or DOM interception. */
+export effect function browserTarget(page: Page) {
+  try returningVisitor(page)
+  return try run("browser/random-interactions", Input, ({ steps, phone, reducedMotion }) => effect {
+    const errors: Array<string> = []
+    const failed = (error: Error) => errors.push(error.name)
+    try Effect.try(() => page.on("pageerror", failed))
+    try tryPromise(() => page.setViewportSize(phone ? { width: 392, height: 800 } : { width: 1280, height: 800 }))
+    try tryPromise(() => page.emulateMedia({ reducedMotion: reducedMotion ? "reduce" : "no-preference", colorScheme: "dark" }))
+    try tryPromise(() => page.goto("/?agent=mock"))
+    try tryPromise(() => expect(page.getByRole("heading", { name: "VibeLang", exact: true })).toBeVisible())
+    let answers = 0
+    for (const step of steps) {
+      const prompt = try Effect.try(() => page.getByRole("textbox", { name: "Message", exact: true }))
+      const dialog = try Effect.try(() => page.getByRole("dialog", { name: "Ask the agent" }))
+      switch (step.op % 6) {
+        case 0:
+          try tryPromise(() => page.keyboard.press("ControlOrMeta+k"))
+          try tryPromise(() => expect(dialog).toBeVisible())
+          try tryPromise(() => prompt.fill(step.text))
+          // A leading slash opens the command menu; the first Escape dismisses only that menu (decision 0023).
+          if (step.text.startsWith("/")) {
+            try tryPromise(() => page.keyboard.press("Escape"))
+            try tryPromise(() => expect(dialog).toBeVisible())
+          }
+          try tryPromise(() => page.keyboard.press("Escape"))
+          try tryPromise(() => expect(dialog).toBeHidden())
+          break
+        case 1:
+          try tryPromise(() => page.keyboard.press("ControlOrMeta+k"))
+          try tryPromise(() => prompt.fill("install " + step.text))
+          try tryPromise(() => prompt.press("Enter"))
+          answers++
+          try tryPromise(() => expect(page.locator(".sui-chat-message[data-role='assistant'][data-done='true']")).toHaveCount(answers, { timeout: 20_000 }))
+          break
+        case 2: {
+          const expand = try Effect.try(() => page.getByRole("button", { name: "Expand the VibeLang home page" }))
+          if (try tryPromise(() => expand.isVisible())) {
+            try tryPromise(() => expand.click())
+            try tryPromise(() => expect(page.getByRole("heading", { name: "VibeLang", exact: true })).toBeVisible())
+            try tryPromise(() => page.keyboard.press("Escape"))
+          }
+          break
+        }
+        case 3:
+          try tryPromise(() => page.keyboard.press("ControlOrMeta+k"))
+          try tryPromise(() => prompt.fill(" \n\t"))
+          try tryPromise(() => expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled())
+          try tryPromise(() => page.keyboard.press("Escape"))
+          break
+        case 4:
+          try tryPromise(() => page.mouse.wheel(0, step.op % 2 ? 1000 : -1000))
+          try tryPromise(() => page.keyboard.press("PageUp"))
+          break
+        default:
+          try tryPromise(() => page.keyboard.press("ControlOrMeta+k"))
+          try tryPromise(() => prompt.press("Shift+Enter"))
+          try tryPromise(() => expect(prompt).toBeFocused())
+          try tryPromise(() => page.keyboard.press("Escape"))
+      }
+      // Escape schedules the real update; wait for native dialog closure before enumerating stable controls.
+      try tryPromise(() => expect(dialog).toBeHidden())
+      const controls = try Effect.try(() => page.locator("button:visible, input:visible, textarea:visible, select:visible, a[href]:visible, iframe:visible"))
+      const count = try tryPromise(() => controls.count())
+      for (let at = 0; at < count; at++) try tryPromise(() => expect(controls.nth(at)).toHaveAccessibleName(/\S/))
+      if (errors.length > 0) return false
+    }
+    try Effect.try(() => page.off("pageerror", failed))
+    return errors.length === 0
+  })
+}
+
+const HistoryInput = Schema.Struct({ text: Text, role: Schema.Literals(["viewer", "contributor", "maintainer"]), more: Schema.Boolean, cancel: Schema.Boolean })
+
+/** Native history navigation and writes through the page's own mock-mode durable flows. */
+export effect function historyBrowserTarget(page: Page) {
+  return try run("browser/history-navigation-and-work", HistoryInput, ({ text, role, more, cancel }) => effect {
+    try tryPromise(() => page.goto(`/history?agent=mock&role=${role}`))
+    const compiler = try Effect.try(() => page.getByRole("button", { name: /The compiler/ }))
+    try tryPromise(() => expect(compiler).toBeVisible({ timeout: 20_000 }))
+    try tryPromise(() => compiler.click())
+    const commits = try Effect.try(() => page.getByRole("list", { name: "The compiler" }).getByRole("link"))
+    try tryPromise(() => expect(commits).toHaveCount(50))
+    if (more) {
+      try tryPromise(() => page.getByRole("button", { name: "Show more" }).click())
+      try tryPromise(() => expect(commits).toHaveCount(100))
+    }
+    try tryPromise(() => commits.first().click())
+    try tryPromise(() => expect(page.locator(".mh-note-sections")).toBeVisible())
+    if (role === "viewer") {
+      try tryPromise(() => expect(page.getByRole("button", { name: "Add note" })).toHaveCount(0))
+      try tryPromise(() => expect(page.getByRole("button", { name: "Amend…" })).toHaveCount(0))
+    }
+    try tryPromise(() => page.getByRole("link", { name: "History", exact: true }).click())
+    const search = try Effect.try(() => page.getByRole("searchbox", { name: "Filter commits" }))
+    try tryPromise(() => search.fill("computed-key match witness"))
+    try tryPromise(() => expect(page.getByRole("list", { name: "Matching commits" }).getByRole("link").first()).toBeVisible())
+    try tryPromise(() => search.fill(""))
+    if (role !== "viewer") {
+      try tryPromise(() => page.getByRole("button", { name: "Plan work" }).click())
+      const dialog = try Effect.try(() => page.getByRole("dialog", { name: "Plan work" }))
+      try tryPromise(() => expect(dialog.getByLabel("Commit")).toBeFocused())
+      if (cancel) {
+        try tryPromise(() => page.keyboard.press("Escape"))
+        try tryPromise(() => expect(dialog).toBeHidden())
+        try tryPromise(() => page.getByRole("button", { name: "Plan work" }).click())
+      }
+      const title = "Fuzz change " + text.replaceAll(/\s/g, " ")
+      try tryPromise(() => dialog.getByLabel("Commit").fill(title))
+      try tryPromise(() => dialog.getByLabel("Epic").selectOption({ label: "The compiler" }))
+      try tryPromise(() => dialog.getByLabel("Task").fill("fuzz"))
+      try tryPromise(() => dialog.getByRole("button", { name: "Plan work" }).click())
+      try tryPromise(() => expect(page).toHaveURL(/#m\d+$/))
+      try tryPromise(() => page.getByLabel("Lane").fill("fuzz-lane"))
+      try tryPromise(() => page.getByRole("button", { name: "Start", exact: true }).click())
+      try tryPromise(() => expect(page.locator(".mh-meta .sui-badge").first()).toHaveText("working"))
+      try tryPromise(() => page.getByLabel("Section").selectOption("tried"))
+      try tryPromise(() => page.getByLabel("Note", { exact: true }).fill("Fuzz attempted this change."))
+      try tryPromise(() => page.getByRole("button", { name: "Add note" }).click())
+      try tryPromise(() => expect(page.getByText("Fuzz attempted this change.")).toBeVisible())
+      if (role === "maintainer") {
+        try tryPromise(() => page.getByRole("button", { name: "Approve", exact: true }).click())
+        try tryPromise(() => expect(page.locator(".mh-meta .sui-badge").first()).toHaveText("approved"))
+        try tryPromise(() => page.getByRole("link", { name: "History", exact: true }).click())
+        try tryPromise(() => page.getByRole("button", { name: "Fold", exact: true }).click())
+        try tryPromise(() => expect(page.getByRole("list", { name: "Planned" })).toHaveCount(0))
+      }
+    }
+    const controls = try Effect.try(() => page.locator("button:visible, input:visible, textarea:visible, select:visible, a[href]:visible, iframe:visible"))
+    for (let at = 0, size = try tryPromise(() => controls.count()); at < size; at++) try tryPromise(() => expect(controls.nth(at)).toHaveAccessibleName(/\S/))
+    return true
+  })
+}
+
+const RoleInput = Schema.Struct({ role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]), grant: Schema.Literals(["community", "contributor", "maintainer"]), cancel: Schema.Boolean, maximize: Schema.Boolean })
+
+/** Native mock identity and grants UI: real accounts, flows, focus, role changes and accessible controls. */
+export effect function roleBrowserTarget(page: Page) {
+  try returningVisitor(page)
+  return try run("browser/accounts-and-authority", RoleInput, ({ role, grant, cancel, maximize }) => effect {
+    try tryPromise(() => page.goto("/?agent=mock"))
+    const picker = try Effect.try(() => page.getByRole("combobox", { name: "Visit as" }))
+    try tryPromise(() => picker.selectOption(role))
+    try tryPromise(() => expect(picker).toHaveValue(role))
+    if (role === "viewer") try tryPromise(() => expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible())
+    else {
+      const account = try Effect.try(() => page.getByRole("button", { name: "Account", exact: true }))
+      try tryPromise(() => account.press("Enter"))
+      try tryPromise(() => expect(page.getByRole("menuitem", { name: "People" })).toBeFocused())
+      try tryPromise(() => page.keyboard.press("ArrowDown"))
+      try tryPromise(() => expect(page.getByRole("menuitem", { name: "Sign out" })).toBeFocused())
+      try tryPromise(() => page.keyboard.press("ArrowUp"))
+      try tryPromise(() => page.getByRole("menuitem", { name: "People" }).press("Enter"))
+      try tryPromise(() => expect(page.getByRole("region", { name: "People" })).toBeVisible())
+      if (maximize) {
+        try tryPromise(() => page.getByRole("button", { name: "Maximize People" }).click())
+        try tryPromise(() => page.getByRole("button", { name: "Minimize People" }).click())
+      }
+      if (role !== "maintainer") try tryPromise(() => expect(page.getByRole("combobox", { name: /^Role for/ })).toHaveCount(0))
+      else {
+        const member = try Effect.try(() => page.getByRole("combobox", { name: "Role for rira" }))
+        if (grant !== "contributor") {
+          try tryPromise(() => member.selectOption(grant))
+          const dialog = try Effect.try(() => page.getByRole("dialog", { name: new RegExp("rira to " + grant[0]!.toUpperCase() + grant.slice(1)) }))
+          try tryPromise(() => expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeFocused())
+          if (cancel) try tryPromise(() => page.keyboard.press("Escape"))
+          else try tryPromise(() => dialog.getByRole("button", { name: /^(Promote|Demote)$/ }).click())
+          try tryPromise(() => expect(dialog).toBeHidden())
+          try tryPromise(() => expect(member).toHaveValue(cancel ? "contributor" : grant))
+        }
+      }
+      try tryPromise(() => page.getByRole("button", { name: "Close People" }).click())
+      try tryPromise(() => expect(page.getByRole("region", { name: "People" })).toBeHidden())
+      try tryPromise(() => account.click())
+      try tryPromise(() => page.getByRole("menuitem", { name: "Sign out" }).click())
+      try tryPromise(() => expect(picker).toHaveValue("viewer"))
+    }
+    const controls = try Effect.try(() => page.locator("button:visible, input:visible, textarea:visible, select:visible, a[href]:visible, iframe:visible"))
+    for (let at = 0, count = try tryPromise(() => controls.count()); at < count; at++) try tryPromise(() => expect(controls.nth(at)).toHaveAccessibleName(/\S/))
+    return true
+  })
+}

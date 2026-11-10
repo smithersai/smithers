@@ -1,0 +1,30 @@
+import { describe, expect, it } from "@effect/vitest"
+import { canLinkIssues } from "../src/core/conversation.vibe"
+import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
+const Choice = Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 0, maximum: 100 }))
+const cases = Arbitrary.schema(Schema.Struct({ parents: Schema.Array(Choice).check(Schema.isMaxLength(12)), child: Choice, parent: Choice }))
+
+describe("issue trees", () => {
+  it.effect("accepted links preserve a rooted acyclic tree for every issue", () => effect {
+    const result = try Arbitrary.checkEffect(cases, ({ parents, child, parent }) => {
+      const items = parents.map((seed, index) => ({ ...fixtureIssues[0]!, number: index + 1, parent: seed % (index + 1) }))
+      const target = child % (items.length + 2)
+      const proposed = parent % (items.length + 2)
+      if (!canLinkIssues(items, target, proposed)) return true
+      const next = items.map((item) => item.number === target ? { ...item, parent: proposed } : item)
+      for (const item of next) {
+        const visited = new Set<number>()
+        let current = item.number
+        while (current !== 0) {
+          if (visited.has(current)) return false
+          visited.add(current)
+          const record = next.find((record) => record.number === current)
+          if (record === undefined) return false
+          current = record.parent
+        }
+      }
+      return next.every((item) => item.number === target || item.parent === items.find((old) => old.number === item.number)!.parent)
+    }, { runs: 500 })
+    try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+  })
+})

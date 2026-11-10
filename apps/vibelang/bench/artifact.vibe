@@ -1,0 +1,48 @@
+// Each suite writes its own artifact through the host services. Timings always retain their method and limits.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { run } from "../test/support/processes.vibe"
+
+error MetadataUnavailable { reason: string }
+
+export const quick = { time: 100, warmupTime: 30, iterations: 5, warmupIterations: 2 }
+export const slow = { time: 0, warmup: false, iterations: 3 }
+
+export effect function artifact(name: string, method: string, limitations: ReadonlyArray<string>, measurements: unknown) {
+  provide NodeServices.layer {
+    const instrumented = try Config.withDefault(Config.Boolean("BENCH_COVERAGE"), false)
+    const fs = try FileSystem.FileSystem
+    const now = try Clock.currentTimeMillis
+    const stamp = new Date(now).toISOString()
+    const machine = try run("uname", ["-srmn"])
+    const runtime = try run("node", ["-p", "JSON.stringify({node:process.version,versions:process.versions,arch:process.arch,cpu:require('node:os').cpus()[0]?.model,logicalCpus:require('node:os').cpus().length})"])
+    const versions: Record<string, string> = {}
+    for (const dependency of ["vitest", "vite", "vibelang", "effect", "@playwright/test", "miniflare"]) {
+      const pkg = try fs.readFileString(`node_modules/${dependency}/package.json`)
+      versions[dependency] = (try Effect.try(() => JSON.parse(pkg))).version
+    }
+    const revision = try run("jj", ["log", "--no-graph", "-r", "@", "-T", "commit_id"])
+    if (machine.status !== 0 || machine.stdout.trim() === "") throw new MetadataUnavailable({ reason: "machine" })
+    if (runtime.status !== 0) throw new MetadataUnavailable({ reason: "runtime" })
+    if (revision.status !== 0 || !/^[0-9a-f]{40}$/.test(revision.stdout.trim())) throw new MetadataUnavailable({ reason: "revision" })
+    try fs.makeDirectory("bench/results", { recursive: true })
+    const record = {
+      schema: 1, instrumented, name, timestamp: stamp, timezone: "UTC", machine: machine.stdout.trim(),
+      runtime: try Effect.try(() => JSON.parse(runtime.stdout)), versions, revision: revision.stdout.trim(),
+      method, limitations, measurements,
+    }
+    try fs.writeFileString(`bench/results/${stamp.replaceAll(":", "-")}-${name}.json`, JSON.stringify(record, null, 2) + "\n", { flag: "wx" })
+    try withSpan(logInfo("vibelang.bench.artifact").pipe(Effect.annotateLogs({ suite: name })), "vibelang.bench.artifact")
+    try Metric.update(Metric.counter("vibelang_benchmark_artifacts"), 1)
+  }
+}
+
+/** Vitest isolates timing projects from coverage. Coverage executes the identical validated workload once. Explicit mode prevents an unmeasured runner probe. */
+export function workload(bench: import("vitest").Bench, name: string, mode: "sync" | "async", body: () => unknown) {
+  return { run: async (options: import("vitest").BenchRunOptions) => {
+    if (runSync(Config.withDefault(Config.Boolean("BENCH_COVERAGE"), false))) {
+      await body()
+      return { name, instrumented: true, executions: 1 }
+    }
+    return await bench(name, { async: mode === "async" }, body).run(options)
+  } }
+}

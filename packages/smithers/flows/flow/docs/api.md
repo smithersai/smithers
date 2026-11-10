@@ -72,7 +72,20 @@ Identity has three sources, consulted in this order:
 2. the `idempotencyKey` the flow declared, hashed together with the flow tag;
 3. the ambient `CurrentExecutionIds` source, whose default `fresh` mints a new cryptographic UUID.
 
-`layerExecutionIds(source)` replaces the third. Install `derived` when equal payloads deliberately name one piece of work; callers that name an `executionId` and flows that declare an `idempotencyKey` are unaffected, because both are decided before the source is consulted.
+`layerExecutionIds(source)` replaces the third. Install `derived` when equal payloads deliberately name one piece of work; it sorts every `Set` and `Map` in the payload before encoding, so equal collections derive one id; callers that name an `executionId` and flows that declare an `idempotencyKey` are unaffected, because both are decided before the source is consulted.
+
+### Payload identity
+
+Every durable site that hashes or compares a flow payload goes through one of two functions, so none can skip the collection sort (VIP-44, durable values):
+
+| Function                         | Returns                                                                                                                                               | Used by                                                                                                 |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `payloadSnapshot(schema, value)` | `sortCollections(value)` encoded with `Schema.toCodecJson(schema)`, as `Schema.Json`                                                                  | `derived` execution ids, a handoff's next-round payload, engine-store run admission, Cloudflare intents |
+| `payloadPreimage(schema, value)` | `value` itself when it holds no `Set` or `Map`, else `["snapshot", payloadSnapshot]`; flow payloads are structs, so the tag keeps the two forms apart | child execution ids, the recorded plan's root input                                                     |
+
+Both fail with the schema's `SchemaError`, including one an injected encoding service raises. A payload that holds no set or map hashes and stores exactly as before, so released ids and rows are unchanged. Decoding a snapshot gives the value a body sees, so the hash covers what the body runs on.
+
+An authored node payload (`.call`, `.child`, `.to`, an action call) is still JSON-mirrored by `@smthrs/plan` and refuses a `Set` or `Map` before any hash; collections reach a flow only through its own payload.
 
 `ExecutionIdRequired` is a defect, not a typed failure. The opt-in derived source raises it when the payload has no canonical form, for example a non-finite number, a lone surrogate, or a cycle. `Flow.executionId(payload)` likewise dies when the payload fails the flow's own payload schema, where `Flow.execute` fails with a typed `Schema.SchemaError` instead. Precompute an id with `executionId` only for a payload you have already validated.
 
@@ -97,6 +110,17 @@ Scope helpers are `scope`, `provideScope`, `addFinalizer`, `withRollback`, and `
 `Action.make(options)` defines a named effect with success and error schemas, a `tier`, idempotency identity, metadata, annotations, an optional `retryPolicy`, and an optional `interruptRetryPolicy`. `Action.make(tag, options)` is the declared form: pure data whose implementation attaches later through `toLayer`. `Action.makeSystem` is the declared form that mints no requirement, which is how `Sleep`, `WaitFor`, `HumanTask`, and `Poll` ship implementations with the engine instead of pushing a layer obligation onto their callers.
 
 The declared form takes the same two literals `Flow.make` does, lowered into the annotation bag by the same code: `capabilities`, the capability ceiling the dispatch runs under, and `effects`, the effect envelope from [`@smthrs/plan`](/api/plan#effects). They are literals so a catalog can project a declaration's authority from source text without importing the module. An action is a leaf, so its envelope encloses nothing: `Graph.build` checks it against the envelope the calling flow granted, and records `capability_outside_grant` for every capability the caller does not hold.
+
+### Stored results
+
+An action's results are stored in the representation Effect's `RpcSerialization` injects (VIP-44). `executeEncoded` encodes a success and each typed failure with `codecFor` of `StoredSerialization`, a context reference whose default is `RpcSerialization.json` (`codecFor` is `Schema.toCodecJson`). An engine provides `StoredSerialization` around every dispatch; it is separate from the `RpcSerialization` service, so an action body that builds an Rpc client sees the caller's serializer, never the store's. `exitSchemasFor(serialization, action)` returns the `{ exitSchema, exitSchemaPartial }` that decode them; under `RpcSerialization.json` they are the action's own `exitSchema` and `exitSchemaPartial`, so the default stores exactly what it always has.
+
+| Host                     | Serializers it stores with                                                                                                                                                                                                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `FlowEngine.layerMemory` | any `RpcSerialization` in context when the layer is built                                                                                                                                                                                                                            |
+| `EngineStore.layer`      | those whose `codecFor` is the JSON codec: `json`, `ndjson`, `jsonRpc`, `ndJsonRpc`. Any other is refused when the store is built with `UnstorableSerialization`. Accepting `jsonRpc` and `ndJsonRpc` is temporary: VIP-44's stored frames refuse them, so provide `json` or `ndjson` |
+
+Identity never goes through the serializer: run ids and keys hash `Flow.payloadSnapshot`, so changing serializers never changes an id. A caller-owned `idempotencyKey` object is not a payload and is hashed as written, so RFC 8785 refuses a `Set` or `Map` in it; pass the payload's sorted form yourself.
 
 Omitting `capabilities` inherits the caller's authority. Declaring `capabilities: []`
 denies every guarded host operation. Each declaration intersects with every

@@ -1,0 +1,35 @@
+import { describe, expect, it } from "@effect/vitest"
+import { stepRun, type ActionRun } from "../src/core/conversation.vibe"
+import { init, Message, update } from "../src/web/main.vibe"
+import { initial } from "../src/web/actionModel.vibe"
+import type { Run } from "../src/actions/Actions.vibe"
+const passed: Run = { id: "a1", flow: "vibelang/Post", door: "button", actor: "person", state: "passed", started: 1, at: 4, result: "null", steps: [] }
+describe("action delivery ordering", () => {
+  it("keeps a completed card when an older list request finishes after its live update", () => {
+    const home = init({ session: "ordering", mode: "mock", name: "Guest" }).model
+    const model = { ...home, actions: { ...initial, runs: [passed] } }
+    const next = update(model, Message.LoadedActions({ entries: [], commands: [], runs: [{ ...passed, state: "running", result: "", at: 3 }] })).model
+    expect(next.actions?.runs).toEqual([passed])
+  })
+  it("keeps an ended attempt when older or duplicate running telemetry arrives", () => {
+    const running: ActionRun = { ...passed, state: "running", steps: [{ key: "record", name: "Record", attempt: 1, state: "passed", started: 1, at: 4 }] }
+    const late = stepRun(running, "record", "Record", 1, "running", 3)
+    const duplicate = stepRun(running, "record", "Record", 1, "running", 5)
+    expect(late).toEqual(running)
+    expect(duplicate.steps).toEqual(running.steps)
+    const retry = stepRun(running, "record", "Record", 2, "running", 6)
+    expect(retry.steps).toHaveLength(2)
+    expect(retry.steps[1]).toMatchObject({ attempt: 2, state: "running" })
+  })
+})
+
+it("identity changes remove old controls immediately and refuse an older command-list response", () => {
+  const home = init({ session: "authority-order", mode: "mock", name: "Guest" }).model
+  const entry = { name: "vibelang/Post", title: "Post", command: "/post", detail: "Ask the agent", input: "text" as const, least: "contributor" as const, runnable: true }
+  const first = update(home, Message.AccountLoaded({ identity: { id: "4", login: "rira", role: "contributor" } })).model
+  const ready = { ...first, actions: { ...initial, entries: [entry], commands: [entry] } }
+  const changed = update(ready, Message.AccountLoaded({ identity: { id: "", login: "", role: "viewer" } })).model
+  expect(changed.actions?.commands).toEqual([])
+  const late = update(changed, Message.LoadedActions({ entries: [entry], commands: [entry], runs: [] })).model
+  expect(late.actions?.commands).toEqual([])
+})

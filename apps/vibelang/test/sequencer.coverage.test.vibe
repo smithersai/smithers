@@ -1,0 +1,159 @@
+// The persistent sequencer's client boundary: ordered delivery, retries, recovery and completed answers.
+import { describe, expect, it } from "@effect/vitest"
+import type { Event } from "../src/core/conversation.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+
+effect function world(events: ReadonlyArray<Event> = []) {
+  const log = try Ref.make(events)
+  const calls = try Ref.make<ReadonlyArray<ReadonlyArray<string>>>([])
+  const tours = try Ref.make<ReadonlyArray<string>>([])
+  const storage = { read: () => Ref.get(log), write: (event: Event) => Ref.update(log, (events) => [...events, event]) }
+  const dispatch = {
+    start: (posts: ReadonlyArray<string>) => Ref.update(calls, (calls) => [...calls, posts]),
+    tour: (tour: string) => Ref.update(tours, (tours) => [...tours, tour]),
+  }
+  return { sequencer: try Sequencer.make(storage, dispatch), storage, dispatch, log, calls, tours }
+}
+
+describe("persistent conversation replies", () => {
+  it.effect("records a post and starts no flow when the log has no dispatcher", () => effect {
+    const events = try Ref.make<ReadonlyArray<Event>>([])
+    const s = try Sequencer.make({ read: () => Ref.get(events), write: (event: Event) => Ref.update(events, (all) => [...all, event]) })
+    try s.post("a", "Ada", "first")
+    try s.ensureDispatched()
+    const written = try Ref.get(events)
+    try Effect.try(() => expect(written.map((event) => event.type)).toContain("Posted"))
+  })
+
+  it.effect("admits replies in order, reports busy and refuses unknown posts, with idempotent starts", () => effect {
+    const w = try world()
+    const s = w.sequencer
+    const unknown = try s.start("m99")
+    try s.post("a", "Ada", "first")
+    try s.post("b", "Grace", "second")
+    try s.ensureDispatched()
+    const started = try s.start("m1")
+    const repeated = try s.start("m1")
+    const busy = try s.start("m2")
+    const alreadyAbsent = try s.finish("r99", "missing")
+    try s.finish("r1", "complete")
+    const settled = try s.start("m1")
+    const next = try s.start("m2")
+    try Effect.try(() => {
+      expect([unknown, started, repeated, busy, alreadyAbsent, settled, next]).toEqual(["refused", "done", "done", "busy", "refused", "done", "done"])
+    })
+    const dispatched = try Ref.get(w.calls)
+    try Effect.try(() => expect(dispatched).toEqual([["m1", "m2"], ["m2"]]))
+  })
+
+  it.effect("ignores duplicate, out of order, stale and empty pieces; skips attempts and resumes from persisted events", () => effect {
+    const w = try world()
+    const s = w.sequencer
+    try s.post("a", "Ada", "question")
+    try s.start("m1")
+    try s.append("missing", 1, 0, "ignored")
+    try s.append("r1", 1, 1, "out of order")
+    try s.append("r1", 1, 0, "")
+    try s.append("r1", 1, 0, "old")
+    try s.append("r1", 1, 0, "duplicate")
+    try s.restart("missing", 2)
+    try s.restart("r1", 3)
+    try s.restart("r1", 3)
+    try s.append("r1", 1, 0, "stale")
+    try s.append("r1", 3, 0, "new")
+    const restored = try Sequencer.make(w.storage, w.dispatch)
+    try restored.append("r1", 2, 3, "stale after restart")
+    try restored.append("r1", 3, 3, " answer")
+    const finished = try restored.finish("r1", "new answer!")
+    const duplicate = try restored.finish("r1", "changes nothing")
+    const snapshot = try restored.read(0)
+    const log = try Ref.get(w.log)
+    try Effect.try(() => {
+      expect([finished, duplicate]).toEqual(["done", "done"])
+      expect(snapshot.entries[1]).toMatchObject({ text: "new answer!", done: true, error: "" })
+      expect(log.filter((event) => event.type === "ReplyRestarted")).toHaveLength(2)
+      expect(log.map((event) => event.seq)).toEqual(log.map((_, i) => i + 1))
+    })
+    try restored.append("r1", 3, 11, "late")
+    const after = try restored.read(0)
+    try Effect.try(() => expect(after).toEqual(snapshot))
+  })
+
+  it.effect("replaces a partial answer at settlement and keeps only successful answers in model history", () => effect {
+    const { sequencer: s } = try world()
+    try s.post("a", "Ada", "one")
+    try s.start("m1")
+    try s.append("r1", 1, 0, "discarded")
+    try s.finish("r1", "replacement")
+    try s.post("b", "Ada", "two")
+    try s.start("m7")
+    const open = try s.history("missing")
+    try s.fail("r7", "offline")
+    const failed = try s.fail("r7", "different")
+    const wrong = try s.fail("missing", "no entry")
+    try s.post("c", "Ada", "three")
+    const history = try s.history("missing")
+    const prefix = try s.history("m1")
+    const entries = (try s.read(0)).entries
+    try Effect.try(() => {
+      expect([failed, wrong]).toEqual(["done", "refused"])
+      expect(open).toEqual([{ author: "person", text: "one" }, { author: "agent", text: "replacement" }, { author: "person", text: "two" }])
+      expect(history).toEqual([...open, { author: "person", text: "three" }])
+      expect(prefix).toEqual([{ author: "person", text: "one" }])
+      expect(entries[1]).toMatchObject({ text: "replacement", done: true })
+      expect(entries[3]).toMatchObject({ error: "offline", done: true })
+    })
+  })
+
+  it.effect("replays after a cursor and keeps its follower live through finishing, failing and ending tours", () => scoped(effect {
+    const w = try world()
+    const s = w.sequencer
+    const none = try s.endTour()
+    try s.startTour()
+    try s.ensureDispatched()
+    const received = try Ref.make<ReadonlyArray<Event>>([])
+    const follower = fork Stream.runForEach(s.follow(1), (event) => Ref.update(received, (events) => [...events, event]))
+    try Effect.yieldNow
+    try s.open("t1", "https://vibelang.sh/docs")
+    try s.say("t1", "A tour.")
+    try s.finishTour("t1", "")
+    try s.startTour()
+    try s.finishTour("t5", "failed")
+    try s.startTour()
+    const ended = fork s.ended("t7")
+    try Effect.yieldNow
+    try s.endTour()
+    join ended
+    try Effect.yieldNow
+    try Fiber.interrupt(follower)
+    const events = try Ref.get(received)
+    const dispatched = try Ref.get(w.tours)
+    const snapshot = try s.read(1)
+    try Effect.try(() => {
+      expect(none).toBe("not-replying")
+      expect(dispatched).toEqual(["t1"])
+      expect(events.map((event) => event.seq)).toEqual([2, 3, 4, 5, 6, 7, 8])
+      expect(snapshot.seq).toBe(8)
+      expect(snapshot.entries.map((entry) => [entry.id, entry.done, entry.error])).toEqual([["t1", true, ""], ["t5", true, "failed"], ["t7", true, ""]])
+    })
+  }))
+})
+
+it.effect("model context omits completed tours and stops at the requested post", () => effect {
+  const { sequencer: s } = try world()
+  try s.startTour()
+  try s.say("t1", "Tour narration must never be an answer turn.")
+  try s.finishTour("t1", "")
+  try s.post("first", "Ada", "First question")
+  const snapshot = try s.read(0)
+  const post = snapshot.entries.find((entry) => entry.clientId === "first")!
+  try s.start(post.id)
+  try s.finish(`r${post.id.slice(1)}`, "Actual answer")
+  try s.post("later", "Ada", "Later question")
+  const prefix = try s.history(post.id)
+  const all = try s.history("missing")
+  try Effect.try(() => {
+    expect(prefix).toEqual([{ author: "person", text: "First question" }])
+    expect(all).toEqual([{ author: "person", text: "First question" }, { author: "agent", text: "Actual answer" }, { author: "person", text: "Later question" }])
+  })
+})

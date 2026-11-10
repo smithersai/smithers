@@ -34,6 +34,19 @@ budget. If the run never resumes, check that the process registers the flow;
 a wake for an unregistered flow logs a once-per-run warning and leaves the row
 parked for a process that does register it.
 
+## UnstorableSerialization
+
+**What happened.** The `RpcSerialization` provided to `EngineStore.layer` encodes
+action results with a codec other than the JSON codec, for example
+`RpcSerialization.layerSchemaBinary()`. The store keeps every result as a JSON
+value, so it refused to build rather than store values it cannot read back. The
+defect names the serializer's `contentType`.
+
+**What to change.** Provide `RpcSerialization.layerJson` (the default when none
+is provided), `layerNdjson`, `layerJsonRpc()` or `layerNdJsonRpc()`; all four
+store the same bytes. Keep a binary serializer on the wire only, or run on
+`FlowEngine.layerMemory`, which stores any serializer's results in memory.
+
 ## AttemptEvidenceQuarantined
 
 **What happened.** A succeeded attempt row's recorded boundary evidence no

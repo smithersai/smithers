@@ -1,0 +1,81 @@
+// Public run index: requests are durable steps; each registered workflow runs in its own Conversation object.
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { type Role, type Run } from "../src/actions/Actions.vibe"
+import { allowed, registration } from "../src/actions/catalog.vibe"
+import { RunRequest } from "../src/actions/wire.vibe"
+import { signedOut, type ActionIdentity } from "./ActionIdentity.vibe"
+import { Unreachable } from "./Unreachable.vibe"
+import type { Storage } from "./Objects.vibe"
+
+export interface Runs {
+  start(request: RunRequest, role: Role): (string | null)!Unreachable
+  request(id: string): (RunRequest | undefined)!Unreachable
+  read(id: string): ReadonlyArray<Run>!Unreachable
+  cancel(id: string, role: Role, owner: string): (string | null)!Unreachable
+}
+
+/** Indexes the request's run id, so the directory lists it. */
+export const IndexRequest = Action.make("vibelang/actions/index", { payload: { request: RunRequest }, success: Schema.Null })
+/** Starts the request's run in its conversation: `null` once started, else the refusal. */
+export const StartRequest = Action.make("vibelang/actions/start", { payload: { request: RunRequest }, success: Schema.NullOr(Schema.String), error: Unreachable })
+/** Cancels the run through its own engine: `null` once cancelled, else the refusal. */
+export const CancelRun = Action.make("vibelang/actions/cancel", { payload: { id: Schema.String }, success: Schema.NullOr(Schema.String), error: Unreachable })
+export const RequestAction = Flow.make("vibelang/actions/Request", {
+  description: "Records a registered action request and dispatches its durable run.",
+  modelInvocable: false,
+  error: Unreachable, payload: { request: RunRequest }, success: Schema.NullOr(Schema.String),
+  body: Node.capture({}, (payload) => IndexRequest.call(payload).pipe(Node.andThen(StartRequest.call(payload)))),
+})
+export const CancelAction = Flow.make("vibelang/actions/Cancel", {
+  description: "Cancels a registered action through its run's durable engine.",
+  modelInvocable: false,
+  error: Unreachable, payload: { id: Schema.String }, success: Schema.NullOr(Schema.String),
+  body: Node.capture({}, (payload) => CancelRun.call(payload)),
+})
+
+export function directory(hostId: string, storage: Storage, runs: Runs, authority: Pick<ActionIdentity.Shape, "role"> = signedOut) {
+  effect function list(flow: string) {
+    const stored = try promise(() => storage.list({ prefix: "action-index/" }))
+    const ids = [...stored.values()] as ReadonlyArray<string>
+    const rows = try Effect.orDie(all(ids.map((id) => runs.read(id)), { concurrency: 4 }))
+    return rows.flat().filter((run) => flow === "" || run.flow === flow).sort((a, b) => b.started - a.started)
+  }
+  effect function start(request: RunRequest, role: Role) {
+    const currentRole = try authority.role(request.owner ?? "")
+    if (!allowed(currentRole, registration(request.flow))) return "forbidden"
+    const original = try runs.request(request.id)
+    if (original !== undefined && JSON.stringify(original) !== JSON.stringify(request)) return "conflict"
+    // The steps act on the request admitted above, with the role decided above. The journaled payload is that request
+    // decoded, whose keys follow the schema's order; storing the admitted object keeps a replay's conflict check (a
+    // JSON comparison with the caller's request) byte-identical.
+    const runtime = CloudflareRuntime.layer({ hostId, executionId: `request/${request.id}`, flow: RequestAction._tag }, Interpreter.layerWithImplementations(RequestAction, Layer.mergeAll(
+      IndexRequest.toLayer(() => Effect.as(promise(() => storage.put(`action-index/${request.id}`, request.id)), null)),
+      StartRequest.toLayer(() => runs.start(request, currentRole)),
+    ))).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+    return try Effect.orDie(Effect.provide(effect {
+      return try (try FlowRuntime.FlowRuntime).execute(RequestAction, { executionId: `request/${request.id}`, payload: { request } })
+    }, runtime))
+  }
+  effect function cancel(id: string, role: Role, owner = "") {
+    const currentRole = try authority.role(owner)
+    const run = (try runs.read(id)).find(run => run.id === id)
+    if (run === undefined) return "not-found"
+    const request = try runs.request(id)
+    const parent = run.flow === "vibelang/Reply" && request?.flow === "vibelang/Post" && id === `${request.id}-reply` ? request.flow : run.flow
+    if (!allowed(currentRole, registration(parent))) return "forbidden"
+    const runtime = CloudflareRuntime.layer({ hostId, executionId: `cancel/${id}`, flow: CancelAction._tag }, Interpreter.layerWithImplementations(CancelAction,
+      CancelRun.toLayer((p) => runs.cancel(p.id, currentRole, owner)),
+    )).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+    return try Effect.orDie(Effect.provide(effect {
+      return try (try FlowRuntime.FlowRuntime).execute(CancelAction, { executionId: `cancel/${id}`, payload: { id } })
+    }, runtime))
+  }
+  effect function rerun(id: string, next: string, role: Role, owner = "", caller?: { readonly name: string; readonly actor: "person" | "agent" }) {
+    const original = try Effect.orDie(runs.request(id))
+    if (original === undefined) return "not-found"
+    return try start({ ...original, ...caller, owner, id: next, door: "button" }, role)
+  }
+  return { list, start, cancel, rerun }
+}

@@ -362,7 +362,8 @@ const markedWith = (item: unknown, writeId: string): boolean => {
 // copied into an item of theirs is never the match.
 const byAuthor = (item: unknown, author: string | undefined): boolean => {
   if (author === undefined) return true
-  const user = typeof item === "object" && item !== null ? (item as { readonly user?: unknown }).user : undefined
+  // Only called behind markedWith, which established an object with a body.
+  const user = (item as { readonly user?: unknown }).user
   return typeof user === "object" && user !== null && (user as { readonly login?: unknown }).login === author
 }
 

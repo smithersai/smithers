@@ -1,0 +1,190 @@
+// Every API route against a status table written from the protocol's rules (src/core/wire.vibe, src/history/wire.vibe).
+// The conversation, history and actions services are the injected faults: one that answers, refuses, or is unreachable.
+import { it } from "@effect/vitest"
+import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { handle, handleConversations, type Conversations, type Histories } from "../worker/Http.vibe"
+import type { ActionsApi } from "../worker/ActionsHttp.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { MAX_POST_BYTES, PostBody } from "../src/core/wire.vibe"
+import { validBodyLength } from "../src/core/protocolDecision.vibe"
+import { ApproveBody, FoldBody, MAX_WRITE_BYTES, NoteBody, PlanBody, StartBody, statusOf, type Write } from "../src/history/wire.vibe"
+import { run, Int, TextOrBoundary } from "./run.vibe"
+
+const Input = Schema.Struct({
+  route: Schema.Literals(["wiki", "post", "tour-control", "tour", "end-tour", "read", "events", "plan", "start", "note", "approve", "fold", "history-events", "outline", "epic", "commit", "search"]),
+  body: Schema.Literals(["valid", "garbage", "empty", "unreadable", "oversize"]),
+  length: Schema.Literals(["absent", "exact", "zero", "negative", "not-a-number", "huge"]),
+  after: Schema.Literals(["absent", "zero", "three", "padded", "negative"]),
+  answer: Schema.Literals(["ok", "refused", "fault"]),
+  refusal: Schema.Literals(["busy", "forbidden", "unavailable", "full"]),
+  text: TextOrBoundary,
+  step: Int,
+  controls: Schema.Boolean,
+})
+type Case = typeof Input.Type
+
+const encoder = new TextEncoder()
+const failed = new Unreachable({ what: "route" })
+const WRITE_SCHEMAS = { plan: PlanBody, start: StartBody, note: NoteBody, approve: ApproveBody, fold: FoldBody } as const
+
+function bodyOf(input: Case): { readonly text: string; readonly valid: boolean } {
+  // HTTP's declared length of zero means no body arrives, so none is attached.
+  if (input.length === "zero") return { text: "", valid: false }
+  if (input.body === "garbage") return { text: "{", valid: false }
+  if (input.body === "empty" || input.body === "unreadable") return { text: "", valid: false }
+  if (input.body === "oversize") return { text: "x".repeat(MAX_WRITE_BYTES + 1), valid: false }
+  switch (input.route) {
+    case "wiki": return { text: JSON.stringify({ page: input.text }), valid: true }
+    case "post": { const value = { clientId: "c", name: "Guest", text: input.text }; return { text: JSON.stringify(value), valid: Schema.is(PostBody)(value) } }
+    case "tour-control": return { text: JSON.stringify({ action: "seek", step: input.step }), valid: input.step <= 11 }
+    case "plan": case "start": case "note": case "approve": case "fold": {
+      const value = input.route === "plan" ? { how: "append", epic: input.text, newEpic: "", target: "", title: "t", task: "t" }
+        : input.route === "start" ? { id: input.text, lane: "l" }
+        : input.route === "note" ? { id: "m1", section: "tried", text: input.text }
+        : input.route === "approve" ? { id: input.text }
+        : {}
+      return { text: JSON.stringify(value), valid: Schema.is(WRITE_SCHEMAS[input.route] as Schema.Top)(value) }
+    }
+    default: return { text: "", valid: false }
+  }
+}
+
+function declared(input: Case, text: string): string | undefined {
+  switch (input.length) {
+    case "absent": return undefined
+    case "exact": return String(encoder.encode(text).length)
+    case "zero": return "0"
+    case "negative": return "-1"
+    case "not-a-number": return "NaN"
+    case "huge": return "999999999"
+  }
+}
+
+function afterQuery(input: Case): string {
+  return input.after === "absent" ? "" : `?after=${input.after === "zero" ? "0" : input.after === "three" ? "3" : input.after === "padded" ? "01" : "-1"}`
+}
+
+const answered = (input: Case) => input.answer === "fault" ? 503 : input.answer === "refused" ? 409 : 200
+
+/** The status the protocol's rules give this request. */
+function expectedStatus(input: Case, text: string, valid: boolean): number {
+  const raw = declared(input, text) ?? "0"
+  const length = Number(raw)
+  const badAfter = input.after === "padded" || input.after === "negative"
+  switch (input.route) {
+    case "wiki":
+      if (!(length > 0 && length <= 1024)) return 413
+      return valid ? answered(input) : 400
+    case "post":
+      if (!validBodyLength(length, MAX_POST_BYTES)) return 413
+      return valid ? answered(input) : 400
+    case "tour-control":
+      if (text.length > 1024) return 413
+      if (!valid) return 400
+      if (!input.controls) return 409
+      return answered(input)
+    case "tour": case "end-tour": return answered(input)
+    case "read": case "events": return badAfter ? 400 : input.answer === "fault" ? 503 : 200
+    case "history-events": return badAfter ? 400 : input.answer === "fault" ? 503 : 200
+    case "outline": case "epic": case "commit": case "search": return input.answer === "fault" ? 503 : 200
+    default: {
+      if (!(length >= 0 && length <= MAX_WRITE_BYTES)) return 413
+      if (text.length > MAX_WRITE_BYTES) return 413
+      // A body the Worker could not read, or an empty one, is the empty object: only `fold` accepts it.
+      const usable = valid || (text === "" && input.route === "fold")
+      if (!usable) return 400
+      return input.answer === "fault" ? 503 : input.answer === "refused" ? statusOf(input.refusal) : 200
+    }
+  }
+}
+
+function pathOf(input: Case): { readonly method: "GET" | "POST" | "DELETE"; readonly path: string } {
+  const room = "/api/conversations/room"
+  switch (input.route) {
+    case "wiki": return { method: "POST", path: `${room}/wiki` }
+    case "post": return { method: "POST", path: `${room}/posts` }
+    case "tour-control": return { method: "POST", path: `${room}/tour-control` }
+    case "tour": return { method: "POST", path: `${room}/tour` }
+    case "end-tour": return { method: "DELETE", path: `${room}/tour` }
+    case "read": return { method: "GET", path: room + afterQuery(input) }
+    case "events": return { method: "GET", path: `${room}/events${afterQuery(input)}` }
+    case "history-events": return { method: "GET", path: `/api/history/events${afterQuery(input)}` }
+    case "outline": return { method: "GET", path: "/api/history" }
+    case "epic": return { method: "GET", path: "/api/history/epics/e1?from=2" }
+    case "commit": return { method: "GET", path: "/api/history/commits/m1" }
+    case "search": return { method: "GET", path: "/api/history/search?q=a" }
+    default: return { method: "POST", path: `/api/history/${input.route satisfies Write}` }
+  }
+}
+
+effect function requestOf(method: "GET" | "POST" | "DELETE", path: string, text: string, input: Case) {
+  const length = declared(input, text)
+  let request = HttpClientRequest.make(method)(`http://fuzz.test${path}`)
+  // A stream is a chunked body with no declared length; `bodyText` declares its own.
+  if (method === "POST" && input.length !== "zero") request = input.body === "unreadable" ? HttpClientRequest.bodyStream(request, Stream.die("unreadable"))
+    : input.length === "absent" ? HttpClientRequest.bodyStream(request, Stream.make(encoder.encode(text)))
+    : HttpClientRequest.bodyText(request, text)
+  if (length !== undefined) request = HttpClientRequest.setHeader(request, "content-length", length)
+  return HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(request))
+}
+
+function servicesOf(input: Case) {
+  const refused = <A>(ok: A, no: A): A!Unreachable => input.answer === "fault" ? Effect.fail(failed) : succeed(input.answer === "refused" ? no : ok)
+  const stream = () => input.answer === "fault" ? Effect.fail(failed) : succeed(HttpServerResponse.empty({ status: 200 }))
+  const conversations: Conversations = {
+    post: () => refused<string | null>(null, input.refusal),
+    read: () => refused({ events: [], hasMore: false } as never, { events: [], hasMore: false } as never),
+    openWiki: () => refused<string | null>(null, input.refusal),
+    tour: () => refused<string | null>(null, input.refusal),
+    endTour: () => refused<string | null>(null, input.refusal),
+    events: stream,
+    ...(input.controls ? { controlTour: () => refused<string | null>(null, input.refusal) } : {}),
+  }
+  const histories: Histories = {
+    page: () => input.answer === "fault" ? Effect.fail(failed) : succeed({ page: true }),
+    write: () => input.answer === "fault" ? Effect.fail(failed) : succeed({ id: "m1", folded: 0, refusal: input.answer === "refused" ? input.refusal : null }),
+    events: stream,
+  }
+  return { conversations, histories }
+}
+
+it.live("http/every-route", () => run("http/every-route", Input, (input) => effect {
+  const { text, valid } = bodyOf(input)
+  const { method, path } = pathOf(input)
+  const request = try requestOf(method, path, text, input)
+  const { conversations, histories } = servicesOf(input)
+  const conversational = !["plan", "start", "note", "approve", "fold", "history-events", "outline", "epic", "commit", "search"].includes(input.route)
+  // Conversation routes answer the same through either door.
+  const response = try Effect.provideService(input.step % 2 === 0 && conversational ? handleConversations(conversations) : handle(conversations, histories), HttpServerRequest.HttpServerRequest, request)
+  return response.status === expectedStatus(input, text, valid)
+}))
+
+const Door = Schema.Struct({ path: Schema.Literals(["list", "commands", "runs", "bad-run", "health", "sandbox", "missing"]), actions: Schema.Boolean, fault: Schema.Boolean, commit: Schema.UndefinedOr(Schema.Literals(["abc123", ""])), bare: Schema.Boolean })
+
+/** Actions answer only where the deployment bound them; health names the deployed commit exactly when it has one. */
+it.live("http/doors", () => run("http/doors", Door, (input) => effect {
+  const none = () => input.fault ? Effect.fail(failed) : succeed([] as never[])
+  const api: ActionsApi = {
+    list: none, read: none,
+    start: () => succeed(null), rerun: () => succeed(null), cancel: () => succeed(null),
+    events: () => succeed(HttpServerResponse.empty({ status: 200 })),
+  }
+  const unused: Conversations = { post: () => Effect.fail(failed), read: () => Effect.fail(failed), openWiki: () => Effect.fail(failed), tour: () => Effect.fail(failed), endTour: () => Effect.fail(failed), events: () => Effect.fail(failed) }
+  const histories: Histories = { page: () => Effect.fail(failed), write: () => Effect.fail(failed), events: () => Effect.fail(failed) }
+  const paths = { list: "/api/actions", commands: "/api/actions/commands", runs: "/api/actions/runs?flow=x", "bad-run": "/api/actions/runs/!", health: "/api/health", sandbox: "/api/sandboxes/room", missing: "/api/nowhere" } as const
+  const web = try HttpClientRequest.toWeb(HttpClientRequest.get(`http://fuzz.test${paths[input.path]}`))
+  const provided = Effect.provideService(input.bare ? handleConversations(unused) : handle(unused, histories, undefined, input.actions ? api : undefined, input.commit), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
+  const response = try provided
+  const health = input.path === "health"
+  if (health) {
+    const body = (try promise(() => HttpServerResponse.toWeb(response).json())) as { readonly commit?: string }
+    return response.status === 200 && (input.bare || input.commit === undefined ? body.commit === undefined : body.commit === input.commit)
+  }
+  if (input.path === "missing") return response.status === 404
+  if (input.bare) return response.status === 404
+  if (input.path === "sandbox") return response.status < 500
+  if (!input.actions) return response.status === 503
+  if (input.path === "bad-run") return response.status === 404
+  if (input.path === "runs") return response.status === (input.fault ? 503 : 200)
+  return response.status === 200
+}))

@@ -1,0 +1,26 @@
+import { it } from "@effect/vitest"
+import { emptySandboxLedger, leaseMilliseconds } from "../src/core/sandboxDecision.vibe"
+import { meter, millisecondOf, monthOf, snapshotOf } from "../src/core/sandboxMeter.vibe"
+import { run, Int } from "./run.vibe"
+
+const NumberCase = Schema.Literals(["NaN", "Infinity", "-Infinity", "-1", "0", "0.5", "1", "1000", "8640000000000000", "9007199254740991"])
+it.live("sandbox/date-and-numeric-domains", () => run("sandbox/date-and-numeric-domains", Schema.Struct({ value: NumberCase, count: Int }), ({ value, count }) => effect {
+  const numeric = Number(value)
+  const normalized = try exit(millisecondOf(numeric))
+  if (normalized._tag === "Failure" && Cause.hasDies(normalized.cause)) return false
+  const start = Date.UTC(2026, 10, 1)
+  const ledger = { ...emptySandboxLedger("u", "contributor", 60000, monthOf(start), start), sandboxes: Array.from({ length: count % 3 }, (_, at) => ({ id: `s${at}`, conversation: `c${at}`, running: at % 2 === 0 })) }
+  for (const variant of [
+    { ledger, now: numeric, allowance: 60000 },
+    { ledger: { ...ledger, lastMeteredAt: numeric }, now: start, allowance: 60000 },
+    { ledger: { ...ledger, usedMilliseconds: numeric }, now: start + 1, allowance: 60000 },
+    { ledger, now: start, allowance: numeric },
+  ]) {
+    const result = try exit(meter(variant.ledger, {}, variant.now, variant.allowance))
+    if (result._tag === "Failure" && Cause.hasDies(result.cause)) return false
+    if (result._tag === "Success" && (!Number.isSafeInteger(result.value.ledger.usedMilliseconds) || result.value.ledger.usedMilliseconds < 0)) return false
+  }
+  const snapshot = snapshotOf(ledger, count % 2 === 0 ? "c0" : "missing", count, "output")
+  const lease = leaseMilliseconds(count * 1000000)
+  return snapshot.remaining >= 0 && snapshot.resetAt === Date.UTC(2026, 11, 1) && lease >= 1000 && lease <= 21600000
+}))

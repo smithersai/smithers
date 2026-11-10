@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, type Exit, Layer, Result } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
+import * as SqlError from "effect/sql/SqlError"
 import { existsSync, lstatSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
+import { fromSqlError } from "../src/DurableWriter.ts"
 import * as ReleasePolicy from "../src/internal/ReleasePolicy.ts"
 import * as NodeDatabase from "../src/node/NodeDatabase.ts"
 import { holdWriteLock } from "./harness/holdWriteLock.ts"
@@ -450,4 +452,52 @@ describe("NodeDatabase guard: Bun (X-18)", () => {
       if (!NodeDatabase.isUnsupportedDatabase(defect)) return
       expect(defect.code).toBe("unsupported_runtime")
     }))
+})
+
+// Actual node:sqlite errors carry ERR_SQLITE_ERROR plus a numeric extended code.
+describe("Node SQLite constraint provenance", () => {
+  for (
+    const [definition, insert] of [
+      ["CREATE TABLE t (n INTEGER UNIQUE)", "INSERT INTO t VALUES (1), (1)"],
+      ["CREATE TABLE t (n INTEGER NOT NULL)", "INSERT INTO t VALUES (NULL)"],
+      ["CREATE TABLE t (n INTEGER CHECK(n > 0))", "INSERT INTO t VALUES (0)"],
+      ["CREATE TABLE p(n INTEGER PRIMARY KEY); CREATE TABLE t(n INTEGER REFERENCES p(n))", "INSERT INTO t VALUES(1)"]
+    ] as const
+  ) {
+    it(`classifies ${insert} as a terminal constraint`, () => {
+      const db = new DatabaseSync(":memory:")
+      try {
+        db.exec("PRAGMA foreign_keys = ON; " + definition)
+        let failed: unknown
+        try {
+          db.exec(insert)
+        } catch (cause) {
+          failed = cause
+        }
+        expect(failed).toBeInstanceOf(Error)
+        const classified = fromSqlError(new SqlError.SqlError({ reason: new SqlError.UnknownError({ cause: failed }) }))
+        expect(classified.code).toBe("constraint")
+      } finally {
+        db.close()
+      }
+    })
+  }
+})
+
+it.each([undefined, "19", NaN, Infinity, 19.5, -237, 65555, 1])(
+  "does not infer a constraint from invalid Node errcode %s",
+  (errcode) => {
+    const cause = { code: "ERR_SQLITE_ERROR", errcode, message: "UNIQUE constraint failed: t.n" }
+    expect(fromSqlError(new SqlError.SqlError({ reason: new SqlError.UnknownError({ cause }) })).code).toBe("unknown")
+  }
+)
+
+it("refuses a hostile Node errcode accessor without a defect", () => {
+  const cause = {
+    code: "ERR_SQLITE_ERROR",
+    get errcode(): never {
+      throw new Error("injected inaccessible driver code")
+    }
+  }
+  expect(fromSqlError(new SqlError.SqlError({ reason: new SqlError.UnknownError({ cause }) })).code).toBe("unknown")
 })

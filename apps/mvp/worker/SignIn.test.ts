@@ -12,6 +12,7 @@ import * as Database from "../db/Database.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA, type SessionState } from "../src/features/auth/contract.ts"
 import * as Flows from "./Flows.vibe"
+import * as ReplacedTokens from "./flows/RevokeReplacedGitHubToken.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
 import * as ShapeAccess from "./ShapeAccess.vibe"
@@ -39,7 +40,7 @@ const runtime = testFile("sign_in")
 
 beforeEach(() =>
   runtime.runPromise(
-    Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE sessions, sign_in_attempts, people CASCADE`),
+    Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE sessions, sign_in_attempts, people, github_token_cleanups CASCADE`),
   )
 )
 
@@ -453,6 +454,31 @@ describe("the callback", () => {
       expect(h.count({ route: "callback", reason: `${step}_${reason}` })).toBe(1)
     }
     expect(await sessionRows()).toEqual([])
+  })
+
+
+  test("a failed identity lookup durably cleans up its unkept token pair", async () => {
+    const github = scriptedGitHub()
+    github.faults.user = "unavailable"
+    const h = await signInHarness(runtime, { github })
+    const { response } = await h.signInAs()
+    expect(response.headers.get("location")).toBe("/app?sign_in=failed")
+    expect(h.cleanupStarts).toHaveLength(1)
+    const rows = await query(sql => sql<{ id: string; sessionId: string; access: unknown }>`
+      SELECT id, session_id AS "sessionId", sealed_access AS access FROM github_token_cleanups WHERE id = ${h.cleanupStarts[0]!}`)
+    expect(rows).toHaveLength(1)
+    expect(JSON.stringify(rows)).not.toContain(Redacted.value(github.issued[0]!.accessToken))
+    const keys = await Effect.runPromise(SessionKeys.make(Redacted.make(SECRET)))
+    await runtime.runPromise(ReplacedTokens.revoke(rows[0]!.id, { keys, github: github.service }))
+    expect(github.accepts(github.issued[0]!.accessToken)).toBe(false)
+    expect(await sessionRows()).toEqual([])
+  })
+
+  test("successful ordinary sign-in keeps its token and schedules no discarded-pair cleanup", async () => {
+    const h = await signInHarness(runtime)
+    await h.signInAs()
+    expect(h.cleanupStarts).toEqual([])
+    expect(h.github.accepts(h.github.issued[0]!.accessToken)).toBe(true)
   })
 
   test("a verifier that no longer opens (SESSION_SECRET changed mid sign-in) signs nobody in", async () => {

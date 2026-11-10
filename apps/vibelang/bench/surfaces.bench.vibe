@@ -1,0 +1,201 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { McpClient, McpProtocol } from "effect/ai"
+import { ChildProcess } from "effect/process"
+import { Ask, AskOutput, Read, ReadOutput, HistoryOutput, WrittenOutput, TerminalOutput } from "../src/surfaces/commands.vibe"
+import { SandboxSnapshot } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { seeded } from "../src/history/MockMythical.vibe"
+import { mockReply } from "../src/core/mockReplies.vibe"
+import { node, run } from "../test/support/processes.vibe"
+import { cliPath, serverPath } from "../test/surface-host.vibe"
+import { artifact, workload, quick, slow } from "./artifact.vibe"
+
+const platform = Layer.mergeAll(NodeServices.layer, ExperimentalNodeServices.layer)
+
+it("mock agent and command registry", async ({ bench }) => {
+  const results = []
+  results.push(await workload(bench, "mock-agent-ask", "async", async () => {
+    const answer = await runPromise(Effect.provide(Ask.run({ text: "install" }), MockFactory))
+    expect(answer.text).toBe(mockReply("install"))
+    expect(answer.events[0]).toBe(1)
+    expect(answer.events.at(-1)).toBe(answer.events.length)
+  }).run(slow))
+  results.push(await workload(bench, "read-command", "async", async () => {
+    const answer = await runPromise(Effect.provide(Read.run({}), MockFactory))
+    expect(answer).toEqual({ conversation: "home", seq: 0, entries: [] })
+  }).run(quick))
+  await runPromise(artifact("commands", "Vitest built-in bench; new scoped MockFactory/engine per call. Ask includes real scripted delays and settled answer; Read includes schema validation and layer lifecycle.", ["Product mock mode; no backend/model. Ask timing includes intentional 25ms per scripted chunk."], results))
+})
+
+it("emitted CLI commands", async ({ bench }) => {
+  const results = []
+  for (const args of [["--mock", "read", "--json"], ["--mock", "ask", "install", "--json"], ["--llms"], ["--help"]]) {
+    results.push(await workload(bench, args.join(" "), "async", async () => {
+      const result = await runPromise(Effect.provide(effect { return try run(try node(), [try cliPath(), ...args]) }, platform))
+      expect(result.status).toBe(0)
+      expect(result.stderr).toBe("")
+      if (args.includes("ask")) expect(JSON.parse(result.stdout).text).toBe(mockReply("install"))
+      else if (args.includes("read")) expect(JSON.parse(result.stdout)).toEqual({ conversation: "home", seq: 0, entries: [] })
+      else expect(result.stdout).toContain("ask")
+    }).run(slow))
+  }
+  await runPromise(artifact("cli", "Vitest built-in bench; spawn emitted CLI to exit with stdout/stderr capture; three samples per command, no warmup. Build excluded; loader/process startup included.", ["Mock backend for ask/read; no network/model. Source package loading contributes to startup."], results))
+})
+
+it("stdio MCP handshake and calls", async ({ bench }) => {
+  const clientLayer = Layer.unwrap(effect {
+    return McpClient.layerStdio({ name: "Factory benchmarks", version: "1", protocol: McpProtocol.v2025_11_25, timeout: "10 seconds", command: ChildProcess.make(try node(), [try serverPath(), "--mock"]) })
+  }).pipe(Layer.provide(platform))
+  const results = []
+  for (const command of ["read", "ask"] as const) {
+    results.push(await workload(bench, `mcp-${command}`, "async", async () => {
+      await runPromise(Effect.provide(effect {
+        const client = try McpClient.McpClient
+        const tools = try client.listTools()
+        const tool = tools.find((tool) => tool.name === command)!
+        if (command === "read") {
+          const output = try client.callTool({ tool, schema: ReadOutput, arguments: {} })
+          try Effect.try(() => expect(output).toEqual({ conversation: "home", seq: 0, entries: [] }))
+        } else {
+          const output = try client.callTool({ tool, schema: AskOutput, arguments: { text: "install" } })
+          try Effect.try(() => expect(output.text).toBe(mockReply("install")))
+        }
+      }, clientLayer))
+    }).run(slow))
+  }
+  await runPromise(artifact("mcp", "Vitest built-in bench; new emitted stdio server, real MCP initialize/discovery/call, validated schema and result; three samples, no warmup.", ["Includes process startup, handshake and teardown; mock backend; warm persistent-session call latency is measured separately."], results))
+})
+
+it("CLI and MCP failures at the process boundary", async ({ bench }) => {
+  const results = []
+  for (const [args, message] of [
+    [["--mock", "ask", " "], "message was refused: empty"],
+    [["--mock", "read", "--after", "-1"], "after"],
+    [["--wat"], "wat"],
+    [["read"], "can't be reached"],
+  ] as const) {
+    results.push(await workload(bench, `cli-failure-${args.join(" ")}`, "async", async () => {
+      const result = await runPromise(Effect.provide(effect { return try run(try node(), [try cliPath(), ...args], { VIBELANG_FACTORY: "", VIBELANG_FACTORY_URL: "http://127.0.0.1:9" }) }, platform))
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain(message)
+    }).run(slow))
+  }
+  results.push(await workload(bench, "mcp-unreachable", "async", async () => {
+    const result = await runPromise(Effect.provide(effect { return try run(try node(), [try serverPath()], { VIBELANG_FACTORY: "", VIBELANG_FACTORY_URL: "http://127.0.0.1:9" }) }, platform))
+    expect(result.status).toBe(1)
+    expect(result.stdout).toBe("")
+    expect(result.stderr).toContain("can't be reached")
+  }).run(slow))
+  await runPromise(artifact("surface-failures", "Vitest built-in bench; emitted processes reject blank/invalid input, unknown flags and an actually closed loopback endpoint. Exact exit/status stream and public error checked; three samples each.", ["Unreachable loopback, no request interception; process startup and error rendering included."], results))
+})
+
+it("persistent MCP command latency", async ({ bench }) => {
+  const clientLayer = Layer.unwrap(effect {
+    return McpClient.layerStdio({ name: "Factory warm benchmarks", version: "1", protocol: McpProtocol.v2025_11_25, timeout: "10 seconds", command: ChildProcess.make(try node(), [try serverPath(), "--mock"]) })
+  }).pipe(Layer.provide(platform))
+  const result = await runPromise(Effect.provide(effect {
+    const client = try McpClient.McpClient
+    const tools = try client.listTools()
+    const tool = tools.find((tool) => tool.name === "read")!
+    const registration = try Effect.try(() => workload(bench, "mcp-warm-read", "async", async () => {
+      const output = await runPromise(client.callTool({ tool, schema: ReadOutput, arguments: {} }))
+      expect(output).toEqual({ conversation: "home", seq: 0, entries: [] })
+    }))
+    return try tryPromise(() => registration.run(quick))
+  }, clientLayer))
+  await runPromise(artifact("mcp-warm", "Vitest built-in bench; initialize and discover once outside timing; measure read calls on the same real stdio process, asserting the complete empty snapshot.", ["Product mock backend; schema/protocol/IPC included, startup/teardown excluded."], result))
+})
+
+
+it("history CLI and persistent MCP actions", async ({ bench }) => {
+  const original = await runPromise(seeded())
+  const next = `m${original.commits.length + 1}`
+  const results = []
+  for (const args of [
+    ["--mock", "history", "--commit", "m1", "--json"],
+    ["--mock", "plan", "Measure history", "--epic", "e1", "--json"],
+  ]) {
+    results.push(await workload(bench, `cli-${args[1]}`, "async", async () => {
+      const result = await runPromise(Effect.provide(effect { return try run(try node(), [try cliPath(), ...args]) }, platform))
+      expect(result.status).toBe(0)
+      expect(result.stderr).toBe("")
+      if (args[1] === "plan") expect(JSON.parse(result.stdout)).toEqual({ id: next })
+      else {
+        const output = Schema.decodeUnknownSync(HistoryOutput)(JSON.parse(result.stdout))
+        expect(output.main).toBe(original.main)
+        expect(output.epics.reduce((sum, epic) => sum + epic.commits, 0)).toBe(original.commits.length)
+        expect(output.commit?.id).toBe("m1")
+        expect(output.commit?.title).toBe(original.commits[0]!.title)
+      }
+    }).run(slow))
+  }
+  const clientLayer = Layer.unwrap(effect {
+    return McpClient.layerStdio({ name: "History benchmarks", version: "1", protocol: McpProtocol.v2025_11_25, timeout: "10 seconds", command: ChildProcess.make(try node(), [try serverPath(), "--mock"]) })
+  }).pipe(Layer.provide(platform))
+  const mcpResult = await runPromise(Effect.provide(effect {
+    const client = try McpClient.McpClient
+    const tools = try client.listTools()
+    const tool = (name: string) => tools.find((tool) => tool.name === name)!
+    const registration = try Effect.try(() => workload(bench, "mcp-history-plan-start-note", "async", async () => {
+      const planned = await runPromise(client.callTool({ tool: tool("plan"), schema: WrittenOutput, arguments: { title: "Measure history", epic: "e1" } }))
+      const started = await runPromise(client.callTool({ tool: tool("start"), schema: WrittenOutput, arguments: { id: planned.id, lane: "bench" } }))
+      const noted = await runPromise(client.callTool({ tool: tool("note"), schema: WrittenOutput, arguments: { id: planned.id, section: "evidence", text: "Measured." } }))
+      const read = await runPromise(client.callTool({ tool: tool("history"), schema: HistoryOutput, arguments: { commit: planned.id } }))
+      expect(started).toEqual(planned)
+      expect(noted).toEqual(planned)
+      expect(read.commit).toMatchObject({ id: planned.id, title: "Measure history", state: "working", lane: "bench", notes: ["evidence: Measured. (Factory CLI (agent))"] })
+      expect(read.open.some((commit) => commit.id === planned.id)).toBe(true)
+      expect(read.main).toBe(original.main)
+    }))
+    return try tryPromise(() => registration.run(slow))
+  }, clientLayer))
+  results.push(mcpResult)
+  await runPromise(artifact("history-surfaces", "Vitest built-in bench; emitted CLI history/plan include startup and full committed bootstrap; persistent real MCP plan/start/note/history includes schema/IPC and four flows/calls. Three samples each, no warmup; exact detail, note author and unchanged main checked.", ["Product mock history, no repository mutation or model. MCP history grows by one planned commit per sample; handshake/bootstrap excluded from its timing."], results))
+})
+
+
+it("sandbox CLI and persistent MCP lifecycle latency", async ({ bench }) => {
+  const results = []
+  for (const command of ["sandboxes", "sandbox-start"]) {
+    results.push(await workload(bench, `cli-${command}`, "async", async () => {
+      const result = await runPromise(Effect.provide(effect { return try run(try node(), [try cliPath(), "--mock", command, "--json"]) }, platform))
+      expect(result.status).toBe(0)
+      expect(result.stderr).toBe("")
+      const snapshot = Schema.decodeUnknownSync(SandboxSnapshot)(JSON.parse(result.stdout))
+      expect(snapshot).toMatchObject({ role: "maintainer", allowance: 2000, remaining: 2000, status: command === "sandboxes" ? "stopped" : "running", generation: command === "sandboxes" ? 0 : 1 })
+      expect(snapshot.id.length > 0).toBe(command === "sandbox-start")
+    }).run(slow))
+  }
+  const clientLayer = Layer.unwrap(effect {
+    return McpClient.layerStdio({ name: "Sandbox benchmarks", version: "1", protocol: McpProtocol.v2025_11_25, timeout: "10 seconds", command: ChildProcess.make(try node(), [try serverPath(), "--mock"]) })
+  }).pipe(Layer.provide(platform))
+  const lifecycle = await runPromise(Effect.provide(effect {
+    const client = try McpClient.McpClient
+    const tools = try client.listTools()
+    try Effect.try(() => expect(tools.map((tool) => tool.name).sort()).toEqual(["ask", "read", "history", "plan", "start", "note", "sandboxes", "sandbox-start", "sandbox-stop", "sandbox-run", "issues", "issue", "actions", "run", "trace", "cancel", "rerun", "wiki", "login", "logout"].sort()))
+    const tool = (name: string) => tools.find((tool) => tool.name === name)!
+    let sample = 0
+    const measured = try Effect.try(() => workload(bench, "mcp-sandbox-file-restart", "async", async () => {
+      const id = `bench-${++sample}`
+      const first = await runPromise(client.callTool({ tool: tool("sandbox-start"), schema: SandboxSnapshot, arguments: { operationId: `${id}-start-a` } }))
+      const written = await runPromise(client.callTool({ tool: tool("sandbox-run"), schema: TerminalOutput, arguments: { operationId: `${id}-write`, generation: first.generation, command: "echo saved > keep" } }))
+      const stopped = await runPromise(client.callTool({ tool: tool("sandbox-stop"), schema: SandboxSnapshot, arguments: { operationId: `${id}-stop-a`, generation: first.generation } }))
+      const second = await runPromise(client.callTool({ tool: tool("sandbox-start"), schema: SandboxSnapshot, arguments: { operationId: `${id}-start-b` } }))
+      const bytes = await runPromise(client.callTool({ tool: tool("sandbox-run"), schema: TerminalOutput, arguments: { operationId: `${id}-read`, generation: second.generation, command: "cat keep" } }))
+      await runPromise(client.callTool({ tool: tool("sandbox-stop"), schema: SandboxSnapshot, arguments: { operationId: `${id}-stop-b`, generation: second.generation } }))
+      const final = await runPromise(client.callTool({ tool: tool("sandboxes"), schema: SandboxSnapshot, arguments: {} }))
+      expect(written).toEqual({ output: "" })
+      expect(stopped.status).toBe("stopped")
+      expect([first.generation, second.generation]).toEqual([sample * 2 - 1, sample * 2])
+      expect(bytes).toEqual({ output: "saved\n" })
+      expect(final).toMatchObject({ status: "stopped", generation: second.generation, role: "maintainer", allowance: 2000 })
+      expect(final.used).toBeGreaterThanOrEqual(0)
+    }))
+    return try tryPromise(() => measured.run(slow))
+  }, clientLayer))
+  results.push(lifecycle)
+  await runPromise(artifact("sandbox-surfaces", "Vitest built-in bench; emitted CLI read/start includes cold process/layer setup. Persistent real stdio MCP starts, writes, stops, restarts, reads retained bytes, stops and verifies snapshot through seven calls; full twenty-command catalog and exact generations/output checked. Three samples; MCP handshake excluded.", ["Product mock backend and maintainer surface principal, no real Container, model or repository write. MCP keeps one engine across samples and grows its receipt history; CLI gets a fresh engine each time. Assertions and IPC included."], results))
+})

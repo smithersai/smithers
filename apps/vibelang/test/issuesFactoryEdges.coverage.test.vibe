@@ -1,0 +1,74 @@
+// The mock issues factory's refusals and remaining writes, through the same durable flows the view and CLI use:
+// each refusal reason, a declined VIP, a draft that keeps what the person wrote, a reused key, a malformed request.
+import { describe, expect, it } from "@effect/vitest"
+import { makeIssueFactory } from "../src/core/IssuesFactory.vibe"
+import type { IssueRequest } from "../src/core/issueSchemas.vibe"
+
+const request = (op: IssueRequest["op"], key: string, over: Partial<IssueRequest> = {}): IssueRequest => ({ op, key, number: 45, parent: 0, title: "", text: "", example: "", prior: "", assignee: "", ...over })
+
+describe("the mock issues factory", () => {
+  it.effect.each([
+    ["a proposal without prior art", request("propose", "p1", { title: "Tuples", text: "Why", example: "x" }), "incomplete"],
+    ["a split of an issue that does not exist", request("split", "s1", { number: 999, title: "Part" }), "missing"],
+    ["a commitment without an assignee", request("commit", "c1", { number: 46 }), "assignee"],
+    ["a commitment of a closed issue", request("commit", "c2", { number: 47, assignee: "Will" }), "assignee"],
+    ["accepting an issue that is not a VIP in review", request("accept", "a1", { number: 46 }), "review"],
+  ] as const)("refuses %s, writing nothing", ([_name, refused, reason]) => scoped(effect {
+    const api = try makeIssueFactory("maintainer")
+    const before = try api.read()
+    const result = try Effect.result(api.act(refused))
+    const after = try api.read()
+    try Effect.try(() => {
+      expect(result).toMatchObject({ _tag: "Failure", failure: { reason, unwritten: true } })
+      expect(after.items).toEqual(before.items)
+    })
+  }))
+
+  it.effect("declining a VIP in review records it as declined", () => scoped(effect {
+    const api = try makeIssueFactory("maintainer")
+    const after = try api.act(request("decline", "d1"))
+    const vip = after.items.find((i) => i.number === 45)!
+    try Effect.try(() => {
+      expect(vip.vip).toBe("Declined")
+      expect(vip.notes.at(-1)).toMatchObject({ text: "declined this VIP", event: true })
+    })
+  }))
+
+  it.effect("a draft keeps what the person wrote", () => scoped(effect {
+    const api = try makeIssueFactory("maintainer")
+    const drafted = try api.act(request("draft", "dr1", { title: "Records in case", text: "Match records.", example: "case r", prior: "Rust" }))
+    try Effect.try(() => expect(drafted.draft).toEqual({ title: "Records in case", summary: "Match records.", example: "case r", prior: "Rust" }))
+  }))
+
+  it.effect("a key reused for a different request is a conflict, and the first answer stands", () => scoped(effect {
+    const api = try makeIssueFactory("maintainer")
+    const first = try api.act(request("comment", "same", { number: 46, text: "First." }))
+    const second = try Effect.result(api.act(request("comment", "same", { number: 46, text: "Second." })))
+    const after = try api.read()
+    const comments = after.items.find((i) => i.number === 46)!.notes.filter((note) => !note.event).map((note) => note.text)
+    try Effect.try(() => {
+      expect(second).toMatchObject({ _tag: "Failure", failure: { reason: "conflict", unwritten: true } })
+      expect(comments.filter((text) => text === "First." || text === "Second.")).toEqual(["First."])
+      expect(first.items.find((i) => i.number === 46)!.comments).toBe(after.items.find((i) => i.number === 46)!.comments)
+    })
+  }))
+
+  it.effect.each([
+    ["an unknown operation", { ...request("comment", "u1"), op: "erase" }],
+  ] as const)("answers %s as invalid without running a flow", ([_name, malformed]) => scoped(effect {
+    const api = try makeIssueFactory("maintainer")
+    const result = try Effect.result(api.act(malformed as unknown as IssueRequest))
+    try Effect.try(() => expect(result).toMatchObject({ _tag: "Failure", failure: { reason: "invalid", unwritten: true } }))
+  }))
+
+  it.effect("a write without a key is invalid and writes nothing", () => scoped(effect {
+    const api = try makeIssueFactory("maintainer")
+    const before = try api.read()
+    const result = try Effect.result(api.act(request("comment", "", { number: 46, text: "x" })))
+    const after = try api.read()
+    try Effect.try(() => {
+      expect(result).toMatchObject({ _tag: "Failure", failure: { reason: "invalid", unwritten: true } })
+      expect(after.items).toEqual(before.items)
+    })
+  }))
+})

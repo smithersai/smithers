@@ -1,16 +1,68 @@
+import { accountRoute } from "../../src/core/protocolDecision.vibe"
+export { ProjectAccounts } from "./accounts.vibe"
 // The workerd test's API Worker (test/live.workerd.test.vibe): plain Durable Objects over the same code the Alchemy ones
 // in worker/Api.vibe run (worker/Objects.vibe, worker/Http.vibe), so local workerd runs the real sequencer, the real
 // reply flow on the engine in each object's SQLite, and the real HTTP protocol. Alchemy's own bundle can't be loaded
 // here (its entry is Node deploy code), so this file is the host: it reaches objects by `fetch` where Alchemy uses RPC,
 // and runs each Effect at this boundary. Configuration is the Worker's env, as Alchemy's WorkerConfigProvider reads it.
 // Its own answers are Effect's HTTP responses, converted to the platform's here.
+import { Cell } from "@smthrs/harness"
+import { Plan } from "../../src/history/flows.vibe"
+import { historyTools } from "../../worker/HistoryTools.vibe"
+import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { Tour, Tours } from "../../src/core/flows.vibe"
+import { tourAgentRegistration } from "../../worker/Tour.vibe"
+import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { Sequencer as HistorySequencer } from "../../src/history/Sequencer.vibe"
+import { type PageRequest, pageOf } from "../../src/history/pages.vibe"
+import type { Principal } from "../../src/history/roles.vibe"
+import { note, show, type ShowInput } from "../../src/history/tools.vibe"
+import type { Write } from "../../src/history/wire.vibe"
+import * as HistoryObject from "../../worker/HistoryObject.vibe"
+import { githubMain } from "../../worker/MainLog.vibe"
 import type { ReadSnapshot } from "../../src/core/schemas.vibe"
+import { postName } from "../../src/core/roles.vibe"
 import { chatModel, dailyTokens } from "../../worker/AgentModel.vibe"
-import { afterOf, eventStream, handle, type Conversations } from "../../worker/Http.vibe"
+import { afterOf, eventStream, handle, type Conversations, type Histories } from "../../worker/Http.vibe"
+import { chargeKeyOf } from "../../worker/budgetDecision.vibe"
 import * as Objects from "../../worker/Objects.vibe"
 import type { Spend } from "../../worker/Reply.vibe"
 import type { Sequencer } from "../../worker/Sequencer.vibe"
 import { Unreachable } from "../../worker/Unreachable.vibe"
+
+import * as Sandboxes from "../../worker/Sandboxes.vibe"
+import { memoryMachines } from "../../src/core/sandboxMock.vibe"
+import { mockPolicy } from "../../src/core/sandboxPolicy.vibe"
+import type { SandboxHost } from "../../src/core/flows.vibe"
+
+/** The real per-person SQL writer and flow engine, hosted against VL-13's explicit product device. Not a container. */
+export class SandboxLedger {
+  readonly host: Promise<SandboxHost.Shape>
+  constructor(readonly state: { readonly id: { toString(): string }; readonly storage: Sandboxes.SandboxStorage }) {
+    this.host = Effect.runPromise(Effect.provide(Sandboxes.open(state.storage, memoryMachines()), mockPolicy("contributor")))
+  }
+  async fetch(request: Request): Promise<Response> {
+    const host = await this.host
+    const path = new URL(request.url).pathname
+    if (path === "/runs") return json(this.state.storage.sql.exec("SELECT run_id, status FROM flows_runs ORDER BY created_at_ms").toArray())
+    if (path === "/receipts") return json(this.state.storage.sql.exec("SELECT id FROM vibelang_sandbox_receipts ORDER BY id").toArray())
+    // The suite's retention pass: one meter execution that forgets every run settled before it.
+    if (path === "/prune") return json(await Effect.runPromise(Effect.result(Sandboxes.execute(this.state.id.toString(), this.state.storage, host, "meter", "home", `prune/${Date.now()}`, 0, "", { olderThanMs: 0 }))))
+    const body = await request.json() as { readonly kind: "start" | "stop" | "command"; readonly conversation: string; readonly operationId: string; readonly generation: number; readonly command: string }
+    const result = await Effect.runPromise(Effect.result(Sandboxes.execute(this.state.id.toString(), this.state.storage, host, body.kind, body.conversation, body.operationId, body.generation, body.command)))
+    return json(result)
+  }
+  async alarm(): Promise<void> { /* The suite advances the real meter explicitly through its flows. */ }
+}
+
+import * as ActionDirectory from "../../worker/ActionDirectory.vibe"
+import { ActionIdentity, fromAccounts } from "../../worker/ActionIdentity.vibe"
+import type { Identity } from "../../src/core/roles.vibe"
+import * as HistoryActions from "../../worker/HistoryActions.vibe"
+import * as ActionRuns from "../../worker/ActionRuns.vibe"
+import type { ActionsApi } from "../../worker/ActionsHttp.vibe"
+import type { Role, Run } from "../../src/actions/Actions.vibe"
+import type { RunRequest } from "../../src/actions/wire.vibe"
 
 interface Namespace {
   idFromName(name: string): unknown
@@ -20,6 +72,10 @@ interface Namespace {
 interface Env {
   readonly CONVERSATION: Namespace
   readonly BUDGET: Namespace
+  readonly SANDBOX_LEDGER: Namespace
+  readonly ACCOUNTS: Namespace
+  readonly HISTORY: Namespace
+  readonly ACTION_INDEX: Namespace
   readonly [name: string]: unknown
 }
 
@@ -47,11 +103,23 @@ const call = async (namespace: Namespace, name: string, path: string, body: unkn
 const reach = <A>(what: string, promise: () => Promise<A>) =>
   Effect.tryPromise({ try: promise, catch: () => new Unreachable({ what }) })
 
+/** The same session/current-grant adapter as Api.vibe, over this test host's ordinary object calls. */
+function actionIdentity(env: Env) {
+  return fromAccounts({
+    current: cookie => reach("accounts", () => call(env.ACCOUNTS, "project", "__fixture/current", { cookie }) as Promise<Identity>),
+    role: owner => reach("accounts", () => call(env.ACCOUNTS, "project", "__fixture/role", { owner }) as Promise<Role>),
+    allowed: (owner, action) => reach("accounts", () => call(env.ACCOUNTS, "project", "__fixture/allowed", { owner, action }) as Promise<boolean>),
+  })
+}
+
 export class Conversation {
   readonly sequencer: Promise<Sequencer>
+  readonly releasePark = Deferred.makeUnsafe<void>()
+  readonly actions: Promise<ReturnType<typeof ActionRuns.make>>
 
   constructor(readonly state: State, readonly env: Env) {
     this.sequencer = Effect.runPromise(Objects.conversation(state.storage))
+    this.actions = this.sequencer.then(sequencer => ActionRuns.make(state.id.toString(), state.storage, sequencer, actionIdentity(env)))
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -61,14 +129,53 @@ export class Conversation {
       await Effect.runPromise(sequencer.ensureDispatched())
       return HttpServerResponse.toWeb(eventStream(sequencer.follow(afterOf(url) ?? 0)))
     }
-    const args = await request.json() as { readonly clientId: string; readonly name: string; readonly text: string; readonly after: number }
+    const args = await request.json() as { readonly clientId: string; readonly name: string; readonly text: string; readonly after: number; readonly page: string; readonly action: "pause" | "resume" | "seek"; readonly step: number }
+    const action = args as unknown as { readonly request: RunRequest; readonly role: Role; readonly id: string; readonly owner: string }
+    if (url.pathname === "/action/crash") {
+      const healthy = HistoryActions.make(this.state.id.toString(), this.state.storage)
+      // Fail after the request and queued event are durable, before the SDK arms execution.
+      const failed = await Effect.runPromise(Effect.exit(ActionRuns.start(this.state.id.toString(), this.state.storage, sequencer, action.request, action.role, { ...healthy, start: () => Effect.interrupt }, actionIdentity(this.env))))
+      return json({ interrupted: Exit.isFailure(failed) })
+    }
+    if (url.pathname === "/action/start") return json(await Effect.runPromise((await this.actions).start(action.request, action.role)))
+    if (url.pathname === "/action/request") return json(await this.state.storage.get("action/request") ?? null)
+    if (url.pathname === "/action/runs") return json(await Effect.runPromise(ActionRuns.read(sequencer)))
+    if (url.pathname === "/action/cancel") return json(await Effect.runPromise((await this.actions).cancel(action.id, action.role, action.owner)))
+    if (url.pathname === "/reading-tour") {
+      await this.state.storage.put("test/reading-tour", true)
+      return json({ refusal: await Effect.runPromise(Objects.tour(this.state.id.toString(), this.state.storage, sequencer)) })
+    }
+    if (url.pathname === "/parked") return json((await this.state.storage.get("test/parked")) === true)
+    if (url.pathname === "/release-park") {
+      await Effect.runPromise(Deferred.succeed(this.releasePark, undefined))
+      return json(null)
+    }
     if (url.pathname === "/post") {
       const refusal = await Effect.runPromise(
         Objects.post(this.state.id.toString(), this.state.storage, sequencer, args.clientId, args.name, args.text),
       )
       return json({ refusal })
     }
+    if (url.pathname === "/wiki") return json({ refusal: await Effect.runPromise(Objects.openWiki(this.state.id.toString(), this.state.storage, sequencer, args.page)) })
     if (url.pathname === "/read") return json(await Effect.runPromise(sequencer.read(args.after)))
+    // The agent's history tools as a reply's cell calls them, from this conversation's object.
+    if (url.pathname === "/history-tool") {
+      const input = args as unknown as { readonly tool: string; readonly show: ShowInput; readonly id: string; readonly text: string; readonly input: Schema.Json; readonly ordinal: number }
+      // The agent's real Plan binding as a cell calls it, for a person who may plan: the call's identity is the cell's.
+      if (input.tool === "bound") {
+        const maintainer: Principal = { role: "maintainer", name: "Ada", agent: true }
+        const bindings = await Effect.runPromise(historyTools(historyOf(this.env, maintainer)).bindings())
+        const call = new Cell.Call({ flowName: Plan._tag, input: input.input, capabilities: [], effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }, placement: Option.none(), identity: new Cell.CallIdentity({ session: "reply", frame: 0, cell: "cell", ordinal: input.ordinal, declaration: "flow", layers: [] }) })
+        const result = await Effect.runPromise(bindings.find((binding) => binding.descriptor.name === Plan._tag)!.run(call))
+        return json({ outcome: result.outcome, value: result.value })
+      }
+      const history = historyOf(this.env)
+      if (input.tool === "show") return json(await Effect.runPromise(show(history, input.show)))
+      return json(await Effect.runPromise(note(history, input.id, "tried", input.text, "test/note")))
+    }
+    if (url.pathname === "/tour") return json({ refusal: await Effect.runPromise(Objects.tour(this.state.id.toString(), this.state.storage, sequencer)) })
+    if (url.pathname === "/tour-control") return json({ refusal: await Effect.runPromise(Objects.controlTour(this.state.id.toString(), this.state.storage, sequencer, args.action, args.step)) })
+    if (url.pathname === "/end-tour") return json({ refusal: await Effect.runPromise(Objects.endTour(this.state.id.toString(), this.state.storage, sequencer)) })
     // The engine's runs in this object's SQLite, so the suite sees every post and reply ran as a flow (0011).
     if (url.pathname === "/runs") {
       return json(this.state.storage.sql.exec("SELECT run_id, status FROM flows_runs ORDER BY created_at_ms, run_id").toArray())
@@ -78,14 +185,54 @@ export class Conversation {
 
   async alarm(): Promise<void> {
     const sequencer = await this.sequencer
+    if (await this.state.storage.get("test/reading-tour")) {
+      await Effect.runPromise(readingAlarm(this.state.id.toString(), this.state.storage, sequencer, this.releasePark))
+      return
+    }
     const env = this.env
+    const hostId = this.state.id.toString()
     const spend: Spend.Shape = {
-      admit: (day) => reach("budget", () => call(env.BUDGET, day, "admit", {}) as Promise<boolean>),
-      spend: (day, reply, tokens) => reach("budget", () => call(env.BUDGET, day, "spend", { reply, tokens }).then(() => undefined)),
+      admit: (day) => env.ACTION_FAULT === "fail" ? Effect.die("injected budget service failure") : env.ACTION_FAULT === "hold" ? Effect.never : reach("budget", () => call(env.BUDGET, day, "admit", {}) as Promise<boolean>),
+      spend: (day, reply, tokens) => reach("budget", () => call(env.BUDGET, day, "spend", { reply: chargeKeyOf(hostId, reply), tokens }).then(() => undefined)),
     }
     const model = await Effect.runPromise(Effect.orDie(configured(env, chatModel())))
-    await Effect.runPromise(Objects.alarm(this.state.id.toString(), this.state.storage, sequencer, spend, model))
+    const active = await this.state.storage.get<RunRequest>("action/request")
+    const owner = active?.owner ?? ""
+    const principal: Principal = { role: active === undefined ? "viewer" : await Effect.runPromise(actionIdentity(env).role(owner)), name: active?.name ?? "Guest", agent: active?.actor !== "person" }
+    await Effect.runPromise((await this.actions).alarm(spend, model, historyOf(env, principal, owner)))
   }
+}
+
+/** VibeLang's History object as a conversation's agent reaches it, as worker/Api.vibe's objects do. */
+function historyOf(env: Env, principal?: Principal, owner?: string) {
+  return HistoryObject.readerOver(
+    (request) => reach("history", () => call(env.HISTORY, "vibelang", "page", request)),
+    (name, body, caller, operation) => effect {
+      // Match Api.vibe: each delegated write resolves the originating owner's current grant.
+      const fresh = owner === undefined ? caller : { ...caller, role: try actionIdentity(env).role(owner) }
+      return try reach("history", () => call(env.HISTORY, "vibelang", "act", { name, body, principal: fresh, operation }) as Promise<HistoryObject.Answered>)
+    },
+    principal,
+  )
+}
+
+/** The product's shared controller in the real SQLite engine, with a faulty wait service holding its park boundary. */
+effect function readingAlarm(hostId: string, storage: Objects.Storage, sequencer: Sequencer, release: Deferred.Deferred<void>) {
+  const tours: Tours.Shape = Objects.toursOf(sequencer)
+  const ended = tours.ended
+  tours.ended = (tour) => ensuring(ended(tour), effect {
+    if ((try promise(() => storage.get("test/parked"))) !== undefined) return
+    try promise(() => storage.put("test/parked", true))
+    try Deferred.await(release)
+  })
+  try ExecutionObject.alarm(Objects.executionStorage(storage), {
+    flows: [Tour],
+    runtime: (intent) => CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: Tour._tag }, tourAgentRegistration).pipe(
+      Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(Tours, tours)),
+    ),
+    router: Objects.unrouted,
+    settledRetentionMs: 10000,
+  })
 }
 
 export class Budget {
@@ -103,21 +250,134 @@ export class Budget {
     const url = new URL(request.url)
     const args = await request.json() as { readonly reply: string; readonly tokens: number }
     if (url.pathname === "/admit") return json(await Effect.runPromise(budget.admit()))
+    // The suite's window into the day's charge keys, so a cross-conversation collision is visible.
+    if (url.pathname === "/ledger") return json([...(await this.state.storage.list({ prefix: "reply/" })).keys()])
     await Effect.runPromise(budget.spend(args.reply, args.tokens))
     return json(null)
   }
 }
 
+export class History {
+  readonly sequencer: Promise<HistorySequencer>
+  readonly main = githubMain("smithersai/vibelang", Effect.runSync(Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)), undefined)
+
+  constructor(readonly state: State, readonly env: Env) {
+    const main = this.main
+    this.sequencer = Effect.runPromise(Effect.flatMap(HistoryObject.history(state.storage), (sequencer) =>
+      Effect.flatMap(sequencer.read(), (history) =>
+        history.seq === 0
+          ? Effect.as(HistoryObject.bootstrap(state.id.toString(), state.storage, sequencer, main), sequencer)
+          : Effect.succeed(sequencer))))
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const sequencer = await this.sequencer
+    const url = new URL(request.url)
+    if (url.pathname.endsWith("/events")) return HttpServerResponse.toWeb(eventStream(sequencer.follow(afterOf(url) ?? 0)))
+    if (url.pathname === "/page") {
+      const page = await request.json() as PageRequest
+      return json(pageOf(await Effect.runPromise(sequencer.read()), page))
+    }
+    // The engine's runs in this object's SQLite, so the suite sees each write ran as a flow.
+    if (url.pathname === "/runs") {
+      return json(this.state.storage.sql.exec("SELECT run_id, status FROM flows_runs ORDER BY created_at_ms, run_id").toArray())
+    }
+    const args = await request.json() as { readonly name: Write; readonly body: unknown; readonly principal?: Principal; readonly operation?: string; readonly cookie?: string; readonly origin?: string }
+    // `act` is the objects' own write as a principal; `write` is the API's, deriving its principal from the
+    // request's session exactly as worker/Api.vibe does: a visitor is a viewer, an agent session carries the
+    // person's role with the agent mark, and the history machine refuses agents approve and fold. The caller's
+    // cookie and origin travel in the call's body, as the object's fetch carries none of the original's headers.
+    if (url.pathname !== "/act") {
+      const account = this.env.ACCOUNTS.get(this.env.ACCOUNTS.idFromName("project"))
+      const session = await account.fetch("https://object/api/auth/session", { headers: { cookie: args.cookie ?? "" } })
+      const identity = await session.json() as { readonly id: string; readonly login: string; readonly role: Principal["role"]; readonly agent?: boolean }
+      if (identity.id !== "" && args.origin !== this.env.VIBELANG_ORIGIN) {
+        return json({ id: "", folded: 0, refusal: "forbidden" })
+      }
+      const principal: Principal = identity.id === ""
+        ? { role: "viewer", name: "Guest", agent: false }
+        : { role: identity.role, name: identity.login, agent: identity.agent === true }
+      return json(await Effect.runPromise(HistoryObject.write(
+        this.state.id.toString(), this.state.storage, sequencer, this.main, principal, args.name, args.body, args.operation,
+      )))
+    }
+    const principal = args.principal!
+    return json(await Effect.runPromise(HistoryObject.write(
+      this.state.id.toString(), this.state.storage, sequencer, this.main, principal, args.name, args.body, args.operation,
+    )))
+  }
+}
+
+/** Plain workerd host of the same production directory and SQLite engine. */
+export class ActionIndex {
+  constructor(readonly state: State, readonly env: Env) {}
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url)
+    const args = await request.json() as { readonly flow: string; readonly id: string; readonly request: RunRequest; readonly role: Role; readonly next: string; readonly owner: string; readonly caller?: { readonly name: string; readonly actor: "person" | "agent" } }
+    const env = this.env
+    const root = (id: string) => id.endsWith("-reply") ? id.slice(0, -6) : id
+    const runs: ActionDirectory.Runs = {
+      request: (id) => reach("action", async () => (await call(env.CONVERSATION, `action-${root(id)}`, "action/request", {}) ?? undefined) as RunRequest | undefined),
+      start: (request, role) => reach("action", () => call(env.CONVERSATION, `action-${request.id}`, "action/start", { request, role }) as Promise<string | null>),
+      read: (id) => reach("action", () => call(env.CONVERSATION, `action-${root(id)}`, "action/runs", {}) as Promise<ReadonlyArray<Run>>),
+      cancel: (id, role, owner) => reach("action", () => call(env.CONVERSATION, `action-${root(id)}`, "action/cancel", { id, role, owner }) as Promise<string | null>),
+    }
+    const directory = ActionDirectory.directory(this.state.id.toString(), this.state.storage, runs, actionIdentity(env))
+    if (url.pathname === "/list") return json(await Effect.runPromise(directory.list(args.flow)))
+    if (url.pathname === "/start") return json(await Effect.runPromise(directory.start(args.request, args.role)))
+    if (url.pathname === "/rerun") return json(await Effect.runPromise(directory.rerun(args.id, args.next, args.role, args.owner, args.caller)))
+    return json(await Effect.runPromise(directory.cancel(args.id, args.role, args.owner)))
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const sandbox = new URL(request.url).pathname.match(/^\/sandbox-ledger\/(runs|receipts|run|prune)$/)
+    if (sandbox !== null) {
+      const object = env.SANDBOX_LEDGER.get(env.SANDBOX_LEDGER.idFromName("sandbox-test"))
+      return await object.fetch(`https://object/${sandbox[1]}`, { method: request.method, ...(request.method === "POST" ? { body: await request.text() } : {}) })
+    }
     // The suite's window into a conversation object's engine: /runs/<conversation>.
+    const boundary = new URL(request.url).pathname.match(/^\/(reading-tour|parked|release-park)\/(.+)$/)
+    if (boundary !== null) return json(await call(env.CONVERSATION, decodeURIComponent(boundary[2]!), boundary[1]!, {}))
+    // The day's budget charge keys: /budget/<day>/ledger.
+    const ledger = new URL(request.url).pathname.match(/^\/budget\/(.+)\/ledger$/)
+    if (ledger !== null) return json(await call(env.BUDGET, decodeURIComponent(ledger[1]!), "ledger", {}))
     const runs = new URL(request.url).pathname.match(/^\/runs\/(.+)$/)
-    if (runs !== null) return json(await call(env.CONVERSATION, decodeURIComponent(runs[1]!), "runs", {}))
+    if (runs !== null) {
+      // /runs/history is the History object's (it is named by its repository); any other name is a conversation's.
+      if (runs[1] === "history") return json(await call(env.HISTORY, "vibelang", "runs", {}))
+      return json(await call(env.CONVERSATION, decodeURIComponent(runs[1]!), "runs", {}))
+    }
+    // The suite's way to call the agent's history tools from a conversation's object: /history-tool/<conversation>.
+    const tool = new URL(request.url).pathname.match(/^\/history-tool\/(.+)$/)
+    if (tool !== null) return json(await call(env.CONVERSATION, decodeURIComponent(tool[1]!), "history-tool", await request.json()))
+    const path = new URL(request.url).pathname
+    const crash = path.match(/^\/action-crash\/(.+)$/)
+    if (crash !== null) return json(await call(env.CONVERSATION, `action-${crash[1]}`, "action/crash", await request.json()))
+    if (accountRoute(path) || path.startsWith("/__fixture/")) {
+      return await env.ACCOUNTS.get(env.ACCOUNTS.idFromName("project")).fetch(request)
+    }
     const conversations: Conversations = {
       post: (conversation, body) =>
-        reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "post", body)) as { refusal: string | null }).refusal),
+        reach("conversation", async () => {
+          const account = env.ACCOUNTS.get(env.ACCOUNTS.idFromName("project"))
+          const headers = { cookie: request.headers.get("cookie") ?? "" }
+          const identity = await (await account.fetch("https://object/api/auth/session", { headers })).json() as { readonly id: string; readonly login: string; readonly agent?: boolean }
+          if (identity.id !== "" && request.headers.get("origin") !== env.VIBELANG_ORIGIN) return "forbidden"
+          const result = await call(env.CONVERSATION, conversation, "post", { ...body, name: postName(identity) }) as { readonly refusal: string | null }
+          if (result.refusal === null && identity.id !== "") await account.fetch("https://object/__fixture/participation", { headers })
+          return result.refusal
+        }),
       read: (conversation, after) =>
         reach("conversation", () => call(env.CONVERSATION, conversation, "read", { after }) as Promise<ReadSnapshot>),
+      openWiki: (conversation, page) =>
+        reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "wiki", { page })) as { refusal: string | null }).refusal),
+      tour: (conversation) =>
+        reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "tour", {})) as { refusal: string | null }).refusal),
+      controlTour: (conversation, action, step) => reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "tour-control", { action, step })) as { refusal: string | null }).refusal),
+      endTour: (conversation) =>
+        reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "end-tour", {})) as { refusal: string | null }).refusal),
       events: (conversation) =>
         Effect.flatMap(HttpServerRequest.HttpServerRequest, (incoming) =>
           reach("conversation", async () => {
@@ -126,8 +386,35 @@ export default {
             return HttpServerResponse.raw(await object.fetch(`https://object/events${url.search}`, { signal: request.signal }))
           })),
     }
+    const histories: Histories = {
+      page: (request) => reach("history", () => call(env.HISTORY, "vibelang", "page", request)),
+      write: (name, body) =>
+        Effect.flatMap(HttpServerRequest.HttpServerRequest, (incoming) =>
+          reach("history", () => call(env.HISTORY, "vibelang", "write", {
+            name, body, cookie: incoming.headers.cookie ?? "", origin: incoming.headers.origin ?? "",
+          }) as Promise<HistoryObject.Answered>)),
+      events: () =>
+        Effect.flatMap(HttpServerRequest.HttpServerRequest, (incoming) =>
+          reach("history", async () => {
+            const object = env.HISTORY.get(env.HISTORY.idFromName("vibelang"))
+            const url = new URL(incoming.url, "https://object")
+            return HttpServerResponse.raw(await object.fetch(`https://object/events${url.search}`, { signal: request.signal }))
+          })),
+    }
+    const root = (id: string) => id.endsWith("-reply") ? id.slice(0, -6) : id
+    const actions: ActionsApi = {
+      rerun: (id, next, role, owner, caller) => reach("actions", () => call(env.ACTION_INDEX, "vibelang", "rerun", { id, next, role, owner, caller }) as Promise<string | null>),
+      list: (flow) => reach("actions", () => call(env.ACTION_INDEX, "vibelang", "list", { flow }) as Promise<ReadonlyArray<Run>>),
+      start: (request, role) => reach("actions", () => call(env.ACTION_INDEX, "vibelang", "start", { request, role }) as Promise<string | null>),
+      cancel: (id, role, owner) => reach("actions", () => call(env.ACTION_INDEX, "vibelang", "cancel", { id, role, owner }) as Promise<string | null>),
+      read: (id) => reach("action", () => call(env.CONVERSATION, `action-${root(id)}`, "action/runs", {}) as Promise<ReadonlyArray<Run>>),
+      events: (id) => Effect.flatMap(HttpServerRequest.HttpServerRequest, (incoming) => reach("action", async () => {
+        const object = env.CONVERSATION.get(env.CONVERSATION.idFromName(`action-${root(id)}`))
+        return HttpServerResponse.raw(await object.fetch("https://object/events", { signal: request.signal }))
+      })),
+    }
     const response = await Effect.runPromise(
-      handle(conversations) |> Effect.provideService(%, HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
+      handle(conversations, histories, undefined, actions).pipe(Effect.provideService(ActionIdentity, actionIdentity(env)), Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request))),
     )
     return HttpServerResponse.toWeb(response)
   },

@@ -59,6 +59,18 @@ const EncodedTarget = Flow.make("trampoline/encoded-target", {
   body: () => Node.succeed(0)
 })
 
+const TaggedTarget = Flow.make("trampoline/tagged-target", {
+  payload: { tags: Schema.ReadonlySet(Schema.String) },
+  success: Schema.Number,
+  body: () => Node.succeed(0)
+})
+
+const TaggedSource = Flow.make("trampoline/tagged-source", {
+  payload: {},
+  success: Schema.Number,
+  body: () => TaggedTarget.to({ tags: new Set(["c", "a", "b"]) })
+})
+
 const EncodedSource = Flow.make("trampoline/encoded-source", {
   payload: {},
   success: Schema.Number,
@@ -337,6 +349,24 @@ describe("the interpreter settles a body's root outcome", () => {
       expect(
         Flow.isResult(settled) && settled._tag === "Handoff" ? settled.payload : undefined
       ).toEqual({ count: "2" })
+    }))
+
+  // Known broken (TEST-5): `@smthrs/plan` JSON-mirrors every authored node payload and refuses a Set
+  // before the handoff encodes it. VIP-44 routes handoffs through `Flow.payloadSnapshot`; plan ASTs
+  // carrying collections need the callee schema and wait for the task and workflow VIPs.
+  it.effect.fails("hands off a set in sorted order, so the next round's payload is its identity snapshot", () =>
+    Effect.gen(function*() {
+      const settled = yield* withCrypto(
+        (TaggedSource.execute({}, { executionId: "settle-tagged-to" }) as Effect.Effect<
+          unknown,
+          never,
+          FlowRuntime.FlowRuntime
+        >).pipe(Effect.provide(wired(Interpreter.layer(TaggedSource))))
+      )
+
+      expect(
+        Flow.isResult(settled) && settled._tag === "Handoff" ? settled.payload : undefined
+      ).toEqual({ tags: ["a", "b", "c"] })
     }))
 
   // Real elapsed time: `it.effect`'s TestClock would stall this.

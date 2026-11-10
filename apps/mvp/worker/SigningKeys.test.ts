@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs"
 import { ConfigProvider, Effect, Exit, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -11,6 +10,7 @@ import * as Rotation from "./SessionSigningKeys.ts"
 import * as SignIn from "./SignIn.ts"
 import { testFile } from "./test/harness.ts"
 import { configured, cookie, SECRET, setCookies, signInHarness } from "./test/signIn.ts"
+import { sourceText } from "../../../packages/repo-targets/test-utils/source-readers.mjs"
 
 const runtime = testFile("signing_keys")
 const query = <A extends object>(f: (sql: SqlClient.SqlClient) => Effect.Effect<ReadonlyArray<A>, unknown>) =>
@@ -143,14 +143,14 @@ test("promotion and cessation are separate, idempotent commits, and two rotation
 })
 
 test("Alchemy's publication depends on the database key gate and binds the key map and pinned seal", () => {
-  const stack = readFileSync(new URL("../alchemy.run.ts", import.meta.url), "utf8")
+  const stack = sourceText(new URL("../alchemy.run.ts", import.meta.url))
   expect(stack).toContain("SessionSigningKeyGate")
-  const binding = readFileSync(new URL("../infra/SignIn.vibe", import.meta.url), "utf8")
+  const binding = sourceText(new URL("../infra/SignIn.ts", import.meta.url))
   expect(binding).toContain('"SESSION_SECRETS"')
   expect(binding).toContain('"SESSION_SEAL_SECRET"')
   expect(stack).toContain("sealSecret: configuredSealSecret")
   expect(binding).toContain("signing.value.seal")
-  const gate = readFileSync(new URL("../infra/SessionSigningKeyGate.ts", import.meta.url), "utf8")
+  const gate = sourceText(new URL("../infra/SessionSigningKeyGate.ts", import.meta.url))
   expect(gate).toContain("SigningKeys.gate(keys.value, input.sealSecret)")
 })
 

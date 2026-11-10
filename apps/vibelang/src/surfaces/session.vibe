@@ -1,0 +1,137 @@
+import { validSessionCookie } from "../core/accountCookies.vibe"
+// Where the CLI and MCP server keep their settings: the app session `login` stores and a pending device flow
+// (decision 0028). The directory is `$XDG_CONFIG_HOME/vibelang-factory` (or `~/.config/vibelang-factory`), mode 0700,
+// and files in it are mode 0600. Nothing here or in its callers logs a cookie or a device code.
+
+/** The session `login` stored: the factory origin it belongs to, its signed cookie, and who it is. */
+export schema StoredSession {
+  readonly origin: string
+  readonly cookie: string
+  readonly login: string
+}
+
+/** A device flow in progress, so a later call (or process) can finish it. */
+export schema PendingDevice {
+  readonly origin: string
+  readonly clientId: string
+  readonly nextPollAt: number
+  readonly deviceCode: string
+  readonly userCode: string
+  readonly verificationUri: string
+  readonly intervalSeconds: number
+  readonly expiresAt: number
+}
+
+/** The settings couldn't be read or written. */
+export schema error SessionFailed { readonly reason: string }
+
+const DIRECTORY = "vibelang-factory"
+const SESSION_FILE = "session.json"
+const MOCK_SESSION_FILE = "mock-session.json"
+const DEVICE_FILE = "device.json"
+
+export effect function settingsDir() {
+  const path = try Path.Path
+  const xdg = try Config.option(Config.String("XDG_CONFIG_HOME"))
+  if (Option.isSome(xdg) && xdg.value !== "") return path.join(xdg.value, DIRECTORY)
+  const home = try Config.option(Config.String("HOME"))
+  if (Option.isNone(home) || home.value === "") throw new SessionFailed({ reason: "no home directory" })
+  return path.join(home.value, ".config", DIRECTORY)
+}
+
+effect function readJson<S extends Schema.ConstraintDecoder<unknown>>(file: string, schema: S) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const text = fs.readFileString(path.join(try settingsDir(), file)) catch () => undefined
+  if (text === undefined) return undefined
+  const parsed = Effect.try(() => JSON.parse(text) as unknown) catch () => undefined
+  if (parsed === undefined) return undefined
+  const decoded = Schema.decodeUnknownOption(schema)(parsed)
+  return Option.isNone(decoded) ? undefined : decoded.value
+}
+
+/** The stored session, or undefined when there is none or it can't be read. */
+export effect function readSession() {
+  return try readJson(SESSION_FILE, StoredSession)
+}
+
+effect function writeJson(file: string, value: unknown) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const dir = try settingsDir()
+  try Effect.mapError(effect {
+    try fs.makeDirectory(dir, { recursive: true, mode: 0o700 })
+    try fs.chmod(dir, 0o700)
+    // Publish a complete private file: readers never see half-written JSON, and the credential is never world-readable.
+    try scoped(effect {
+      const temporary = try fs.makeTempDirectoryScoped({ directory: dir })
+      const staged = path.join(temporary, file)
+      try fs.writeFileString(staged, JSON.stringify(value), { mode: 0o600 })
+      try fs.rename(staged, path.join(dir, file))
+    })
+  }, () => new SessionFailed({ reason: "settings file" }))
+}
+
+/** Stores the session, replacing any other. */
+export effect function writeSession(session: StoredSession) {
+  try writeJson(SESSION_FILE, session)
+}
+
+/** Ends the stored session; there is none afterwards, whether there was one or not. */
+export effect function removeSession() {
+  try removeFile(SESSION_FILE)
+}
+
+/** The pending device flow, or undefined. An expired one is removed and counts as none. */
+export effect function readPending() {
+  const pending = try readJson(DEVICE_FILE, PendingDevice)
+  if (pending === undefined) return undefined
+  if (pending.expiresAt <= (try Clock.currentTimeMillis)) {
+    try removePending()
+    return undefined
+  }
+  return pending
+}
+
+/** Records a started device flow. */
+export effect function writePending(pending: PendingDevice) {
+  try writeJson(DEVICE_FILE, pending)
+}
+
+/** Forgets a pending device flow. */
+export effect function removePending() {
+  try removeFile(DEVICE_FILE)
+}
+
+effect function removeFile(file: string) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  try Effect.mapError(fs.remove(path.join(try settingsDir(), file), { force: true }), () => new SessionFailed({ reason: "settings removal" }))
+}
+
+/** Mock identity persistence never reads, overwrites or revokes a live session (VL-13). */
+export effect function readMockSession() { return try readJson(MOCK_SESSION_FILE, StoredSession) }
+export effect function writeMockSession(login: string) { try writeJson(MOCK_SESSION_FILE, { origin: "mock", cookie: "", login }) }
+export effect function removeMockSession() { try removeFile(MOCK_SESSION_FILE) }
+
+/** Create the private settings directory before acquiring the journal or writing a credential. */
+export effect function privateSettings() {
+  const fs = try FileSystem.FileSystem
+  const dir = try settingsDir()
+  try Effect.mapError(effect {
+    try fs.makeDirectory(dir, { recursive: true, mode: 0o700 })
+    try fs.chmod(dir, 0o700)
+  }, () => new SessionFailed({ reason: "settings directory" }))
+  return dir
+}
+
+/** The explicit test/automation session overrides the private stored one, including when signing out. */
+export effect function activeSession() {
+  const configured = try Config.option(Config.Redacted("VIBELANG_SESSION"))
+  if (Option.isSome(configured) && Redacted.value(configured.value) !== "") {
+    const decoded = try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ origin: Schema.String, cookie: Schema.String })))(Redacted.value(configured.value)), () => new SessionFailed({ reason: "invalid session" }))
+    if (!validSessionCookie(decoded.origin, decoded.cookie)) throw new SessionFailed({ reason: "invalid session" })
+    return { ...decoded, login: "" }
+  }
+  return try readSession()
+}

@@ -12,3 +12,15 @@ verify/.checks/
 verify/run-*.config.json
 verify/__pycache__/
 .verify-run-*.config.json
+
+dist-scripts/
+coverage/
+dist-script-tests/
+
+# Generated benchmark observations are retained with the lane report.
+bench/results/*
+!bench/results/.gitkeep
+
+fuzz-results/
+
+src/assets/wiki.generated.vibe

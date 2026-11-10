@@ -1,0 +1,15 @@
+import { describe, expect, it } from "@effect/vitest"
+import { accountRoute } from "../src/core/protocolDecision.vibe"
+describe("wiki authority routing", () => {
+  it("wiki requests reach the same account host as the person's proposal credentials", () => {
+    expect(accountRoute("/api/wiki")).toBe(true)
+    expect(accountRoute("/api/wiki-other")).toBe(false)
+  })
+})
+
+import { wikiFilePath } from "../worker/Wiki.vibe"
+it("edits the wiki embedded by this app, in its actual Smithers repository path", () => {
+  expect(wikiFilePath("roadmap")).toBe("apps/vibelang/wiki/roadmap.md")
+  expect(wikiFilePath("decisions")).toBeUndefined()
+  expect(wikiFilePath("../secrets")).toBeUndefined()
+})

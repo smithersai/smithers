@@ -60,6 +60,7 @@ export const publishedPackages = [
   "@smthrs/evals",
   "@smthrs/flow",
   "@smthrs/flows",
+  "@smthrs/fuzz",
   "@smthrs/gateway",
   "@smthrs/harness",
   "@smthrs/integrations",
@@ -277,13 +278,20 @@ export const publicationManifest = (manifest) => {
   }
 }
 
+/**
+ * TypeScript's rule for a declaration file: `x.d.ts` or `x.d.<extension>.ts`.
+ * A declaration emits no JavaScript, whether authored or written beside its
+ * module by a compiler (VibeLang writes `x.d.vibe.ts` for `x.vibe`).
+ */
+const isDeclarationFile = (name) => /\.d(?:\.[^.]+)?\.ts$/.test(name)
+
 const sourceFiles = async (directory) => {
   const entries = await readdir(directory, { withFileTypes: true })
   const nested = await Promise.all(entries.map((entry) => {
     const path = join(directory, entry.name)
     return entry.isDirectory()
       ? sourceFiles(path)
-      : entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts") || entry.name.endsWith(".js") || entry.name.endsWith(".vibe") ? [path]
+      : entry.name.endsWith(".ts") && !isDeclarationFile(entry.name) || entry.name.endsWith(".js") || entry.name.endsWith(".vibe") ? [path]
       : []
   }))
   return nested.flat()
@@ -441,6 +449,7 @@ const defaultExportPattern = /^[ \t]*export\s+default\b/gm
  * namespace bindings beside it) and every `export default` declaration. Each
  * site carries the one-based `line`, its `kind`, and the original line `text`.
  *
+ * Declaration files describe bindings without emitting JavaScript and have no sites.
  * Both are forbidden in a published package's `src`. `scripts/build.mjs`
  * converts every source file to CommonJS with esbuild (`bundle: false`) inside
  * a `"type": "module"` package, and for a default import of a sibling esbuild
@@ -461,7 +470,8 @@ const defaultExportPattern = /^[ \t]*export\s+default\b/gm
  * Comments and template literals are blanked before matching, so a flow
  * skeleton spelled inside a template string is not a site.
  */
-export const defaultBindings = (source) => {
+export const defaultBindings = (source, filename = "module.ts") => {
+  if (isDeclarationFile(filename)) return []
   const text = declarationText(source)
   const lines = source.split("\n")
   const lineAt = (index) => text.slice(0, index).split("\n").length

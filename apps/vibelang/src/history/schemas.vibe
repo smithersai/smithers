@@ -1,0 +1,123 @@
+import { validRank, validRanks } from "./mythical.vibe"
+// Schemas for the mythical history's state, events and seed (mythical.vibe, seed.vibe), so the wire, the store, the
+// Foldkit Model and the tests decode and encode them. Each one matches the TypeScript type of the same name.
+
+/** A safe, nonnegative event cursor. */
+export const Seq = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+
+export const CommitState = Schema.Literals(["planned", "working", "approved", "landed"])
+export const Section = Schema.Literals(["tried", "evidence", "superseded"])
+
+/** Why the history's sequencer refused an intent (`Refusal` in mythical.vibe). */
+export const RefusalReason = Schema.Literals(["empty", "too-long", "duplicate", "unknown", "state", "full"])
+
+export schema Note { readonly section: "tried" | "evidence" | "superseded"; readonly text: string; readonly by: string }
+export schema Epic { readonly id: string; readonly title: string }
+
+export schema Commit {
+  readonly id: string
+  readonly epic: string
+  readonly rank: Seq
+  readonly title: string
+  readonly state: "planned" | "working" | "approved" | "landed"
+  readonly task: string
+  readonly lane: string
+  readonly notes: ReadonlyArray<Note>
+}
+
+export schema Real { readonly sha: string; readonly change: string; readonly title: string; readonly mythical: string }
+
+schema HistoryFields {
+  readonly seq: Seq
+  readonly epics: ReadonlyArray<Epic>
+  readonly commits: ReadonlyArray<Commit>
+  readonly real: ReadonlyArray<Real>
+  readonly main: string
+}
+
+/** Validated snapshots keep every rank below the cursor, leaving room for the next increment. */
+export const History = HistoryFields.check(Schema.makeFilter(validRanks))
+
+export schema EpicOpened { readonly type: "EpicOpened"; readonly seq: Seq; readonly id: string; readonly title: string }
+schema PlannedFields {
+  readonly type: "Planned"
+  readonly seq: Seq
+  readonly id: string
+  readonly epic: string
+  readonly rank: Seq
+  readonly title: string
+  readonly task: string
+}
+export const Planned = PlannedFields.check(Schema.makeFilter((event) => validRank(event.rank, event.seq)))
+
+export schema Amended { readonly type: "Amended"; readonly seq: Seq; readonly id: string; readonly task: string }
+export schema Started { readonly type: "Started"; readonly seq: Seq; readonly id: string; readonly lane: string }
+export schema Approved { readonly type: "Approved"; readonly seq: Seq; readonly id: string; readonly by: string }
+export schema Folded {
+  readonly type: "Folded"
+  readonly seq: Seq
+  readonly sha: string
+  readonly change: string
+  readonly title: string
+  readonly into: string
+}
+export schema Noted {
+  readonly type: "Noted"
+  readonly seq: Seq
+  readonly id: string
+  readonly section: "tried" | "evidence" | "superseded"
+  readonly text: string
+  readonly by: string
+}
+
+/** Decodes one history event off the wire or out of the store. */
+export const HistoryEvent = Schema.Union([EpicOpened, Planned, Amended, Started, Approved, Folded, Noted])
+
+export schema SeedNote { readonly section: "tried" | "evidence" | "superseded"; readonly text: string }
+export schema SeedCommit { readonly id: string; readonly title: string; readonly notes: ReadonlyArray<SeedNote> }
+export schema SeedEpic { readonly id: string; readonly title: string; readonly commits: ReadonlyArray<SeedCommit> }
+export schema SeedReal { readonly sha: string; readonly change: string; readonly title: string; readonly into: string }
+export schema Seed {
+  readonly repository: string
+  readonly main: string
+  readonly epics: ReadonlyArray<SeedEpic>
+  readonly real: ReadonlyArray<SeedReal>
+}
+
+/** A seed as the generator writes it: JSON text. */
+export const SeedJson = Schema.fromJsonString(Seed)
+
+/** Decode the stored JSON snapshot at the storage boundary. */
+export function decodeStoredHistory(json: string) {
+  return Effect.orDie(Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(History))(json), () => new Error("Invalid history state")))
+}
+
+// ── pages (pages.vibe): what a reader asks for and gets ─────────────────────────────────────────────────────────────
+
+export schema Head {
+  readonly id: string
+  readonly epic: string
+  readonly rank: Seq
+  readonly title: string
+  readonly state: "planned" | "working" | "approved" | "landed"
+  readonly task: string
+  readonly lane: string
+  readonly notes: Seq
+  readonly folds: Seq
+}
+export schema EpicCount { readonly id: string; readonly title: string; readonly commits: Seq; readonly folds: Seq }
+export schema Outline {
+  readonly seq: Seq
+  readonly main: string
+  readonly epics: ReadonlyArray<EpicCount>
+  readonly open: ReadonlyArray<Head>
+}
+export schema EpicPage {
+  readonly seq: Seq
+  readonly epic: string
+  readonly from: Seq
+  readonly total: Seq
+  readonly commits: ReadonlyArray<Head>
+}
+export schema CommitPage { readonly seq: Seq; readonly commit: Commit | null; readonly real: ReadonlyArray<Real> }
+export schema Matches { readonly seq: Seq; readonly query: string; readonly commits: ReadonlyArray<Head> }

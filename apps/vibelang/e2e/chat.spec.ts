@@ -1,5 +1,6 @@
 // Stays .ts: Playwright collects test files by JS/TS extension only (upstream-bugs/playwright-vibe-specs).
-import { expect, type Page, test } from "@playwright/test"
+import { expect, test } from "./coverage"
+import type { Page } from "./coverage"
 
 /** Waits until no view transition runs, so a screenshot shows the page and not a transition's snapshot. */
 async function settled(page: Page) {
@@ -11,10 +12,12 @@ test.describe("splash and chat", () => {
   test("a visitor asks the agent from the splash and reads its answer", async ({ page }, testInfo) => {
     await page.goto("/")
     await expect(page.getByRole("heading", { name: "VibeLang" })).toBeVisible()
-    // The wordmark whose text suits the theme, and a poster before the video plays (2026-11-07).
-    const light = testInfo.project.name === "light"
-    await expect(page.locator(".vl-top .vl-logo-on-light")).toBeVisible({ visible: light })
-    await expect(page.locator(".vl-top .vl-logo-on-dark")).toBeVisible({ visible: !light })
+    // Dark only, whatever the visitor's system prefers: the marketing media are dark (wiki/decisions/0013-dark-only.md).
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
+    const background = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
+    const [r = 255, g = 255, b = 255] = background.match(/\d+/g)?.map(Number) ?? []
+    expect(0.2126 * r + 0.7152 * g + 0.0722 * b, background).toBeLessThan(64)
+    await expect(page.locator(".vl-top .vl-logo img")).toHaveAttribute("src", "/media/logo-dark.svg")
     await expect(page.locator(".vl-media video")).toHaveAttribute("poster", "/media/contract-poster.jpg")
     await page.screenshot({ path: testInfo.outputPath("1-splash.png") })
 
@@ -44,8 +47,16 @@ test.describe("splash and chat", () => {
 
     await page.getByRole("button", { name: "Expand the VibeLang home page" }).click()
     await expect(page.getByRole("heading", { name: "VibeLang" })).toBeVisible()
-    await page.getByRole("button", { name: "Chat" }).click()
+    await page.getByRole("button", { name: "Minimize the VibeLang home page" }).click()
     await expect(answer).toContainText("npm create vibelang@latest my-app")
+    await expect(page.getByRole("textbox", { name: "Message" })).toBeFocused()
+
+    // Escape minimizes the maximized home page too (Will, 2026-11-07: "there is no way to minimize the full screen view").
+    await page.getByRole("button", { name: "Expand the VibeLang home page" }).click()
+    await expect(page.getByRole("heading", { name: "VibeLang" })).toBeVisible()
+    await page.keyboard.press("Escape")
+    await expect(answer).toContainText("npm create vibelang@latest my-app")
+    await expect(page.getByRole("textbox", { name: "Message" })).toBeFocused()
   })
 
   test("the docked composer sends a follow-up, and Shift+Enter makes a new line", async ({ page }) => {
@@ -89,6 +100,6 @@ test.describe("splash and chat", () => {
   test("the deployment says which agent it runs", async ({ request }) => {
     test.skip(process.env.E2E_BASE_URL === undefined, "vite preview has no Worker; this runs against a deployment")
     const health = await request.get("/api/health")
-    expect(await health.json()).toEqual({ ok: true, agent: "live" })
+    expect(await health.json()).toMatchObject({ ok: true, agent: "live", commit: expect.stringMatching(/^[0-9a-f]{7,40}$/) })
   })
 })

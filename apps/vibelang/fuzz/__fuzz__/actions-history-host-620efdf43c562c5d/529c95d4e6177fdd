@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 35
+bias 5
+null-prototype false
+key 2883004307
+tape RXYUyH3usUZusAU7OdPQGe0R9PoQ9gfKRWGC0A
+schedule-key 1193462528
+schedule 
+signature "PropertyError:ActionFailure"
+path 0.0.0.0
+codec "json"
+value "{\"flow\":\"vibelang/EndTour\",\"variant\":0,\"admit\":false,\"alarms\":0,\"cancel\":false}"
+# PropertyError:ActionFailure
+# {"flow":"vibelang/EndTour","variant":0,"admit":false,"alarms":0,"cancel":false}

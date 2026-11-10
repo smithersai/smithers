@@ -1,0 +1,25 @@
+// Which events a sequencer's follower is sent (wiki/decisions/0003-one-state-machine.md, 0018 "Sequencer decisions").
+// Both sequencers, the conversation's (worker/Sequencer.vibe) and the mythical history's (src/history/Sequencer.vibe),
+// subscribe first, then replay what is stored after the follower's cursor, then pass on live events after the replay's
+// end. These two decisions make that composition send each event once and in order.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005).
+
+/**
+ * The last event number a follower's replay reached: what it asked to follow from, or the last number it replayed
+ * when that is later. Live events at or below it were in the replay.
+ */
+//@ verify
+//@ ensures \result >= after && \result >= reached
+//@ ensures \result == after || \result == reached
+export function followCut(after: number, reached: number): number {
+  return reached > after ? reached : after
+}
+
+/** Whether event `seq` goes to a follower whose stream has reached `cut`: only a later one, so none arrives twice. */
+//@ verify
+//@ ensures \result == (seq > cut)
+export function fresh(seq: number, cut: number): boolean {
+  return seq > cut
+}

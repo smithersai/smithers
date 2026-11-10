@@ -1,0 +1,87 @@
+import { it, expect as assert } from "@effect/vitest"
+import { scene, given, expect, role, text, inside, expectAll, all } from "foldkit/scene"
+import * as P from "../src/history/pages.vibe"
+import { HistoryMessage, init, update, merged } from "../src/web/historyApp.vibe"
+import { view } from "../src/web/historyView.vibe"
+import { plannedHistory } from "./fixtures.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+for (const length of [10, 1000, 100000]) {
+  it(`history web at ${length} commits`, async ({ bench }) => {
+    const history = plannedHistory(length), outline = P.outlineOf(history), page = P.epicPageOf(history, "e1", 0)
+    const model = { ...init({ mode: "mock", role: "maintainer", hash: "" }).model, status: "ready" as const, outline, pages: [page], open: ["e1"] }
+    const results = []
+    results.push(await workload(bench, "history-filter-keystroke", "sync", () => {
+      const updated = update(model, HistoryMessage.UpdatedFilter({ value: `Commit ${length - 1}` }))
+      assert(updated.model.filter).toBe(`Commit ${length - 1}`)
+      assert(updated.model.outline).toBe(outline)
+      assert(updated.commands).toHaveLength(1)
+    }).run(quick))
+    results.push(await workload(bench, "history-open-epic-view", "sync", () => {
+      scene({ update, view }, given(model), inside(role("list", { name: "Performance" }), expectAll(all.role("link")).toHaveCount(Math.min(length, 50)), expect(text(`Commit ${Math.min(length, 50) - 1}`)).toExist()))
+    }).run({ time: 0, iterations: 3, warmup: false }))
+    if (length > 50) {
+      const next = P.epicPageOf(history, "e1", 50)
+      results.push(await workload(bench, "history-next-page-update", "sync", () => {
+        const updated = update(model, HistoryMessage.GotEpic({ page: next })).model
+        assert(updated.outline).toBe(outline)
+        assert(updated.pages[0]?.commits.map((commit) => commit.id)).toEqual(Array.from({ length: 100 }, (_, i) => `m${i + 1}`))
+        assert(updated.pages[0]?.total).toBe(length)
+      }).run(quick))
+    }
+    await runPromise(artifact(`history-web-${length}`, `Vitest built-in bench; ${length} internal planned commits projected outside timing. Filter keystroke constructs one read command without copying outline; exact scoped 50-row count/tail in open-epic scene; second-page update preserves outline and all 100 IDs. Three unwarmed view samples; assertions/query cost included.`, ["No layout/paint or service execution. Outline includes every planned commit in this worst case, so the separate Planned list still scales with the full fixture. Normal committed-history browser workload pages 50 at a time."], results))
+  })
+}
+
+it("history reducer actions and read recovery", async ({ bench }) => {
+  const history = plannedHistory(2), outline = P.outlineOf(history), page = P.epicPageOf(history, "e1", 0)
+  const result = await workload(bench, "history-actions", "sync", () => {
+    const model = init({ mode: "pending", role: "maintainer", hash: "" }).model
+    assert(update(model, HistoryMessage.ResolvedMode({ mode: "live" })).model.role).toBe("viewer")
+    let next = update(model, HistoryMessage.GotOutline({ outline })).model
+    assert(next.status).toBe("ready")
+    next = update(next, HistoryMessage.GotEpic({ page })).model
+    assert(next.pages[0]?.commits.map((commit) => commit.id)).toEqual(["m1", "m2"])
+    next = update(next, HistoryMessage.ToggledEpic({ id: "e1" })).model
+    assert(next.open).toEqual(["e1"])
+    assert(update(next, HistoryMessage.ToggledEpic({ id: "e1" })).model.open).toEqual([])
+    assert(update(next, HistoryMessage.ClickedMore({ id: "e1" })).commands).toHaveLength(1)
+    next = update(next, HistoryMessage.OpenedPlan({ how: "append", target: "" })).model
+    assert(next.dialog).toBe(true)
+    assert(next.form.epic).toBe("e1")
+    for (const [field, value] of [["title", "Measured"], ["epic", "new"], ["newEpic", "Bench"], ["task", "Task"], ["target", "m1"], ["how", "insert"]] as const) next = update(next, HistoryMessage.UpdatedForm({ field, value })).model
+    assert(next.form).toEqual({ how: "insert", epic: "new", newEpic: "Bench", title: "Measured", task: "Task", target: "m1" })
+    assert(update(next, HistoryMessage.SubmittedPlan()).model.busy).toBe(true)
+    assert(update(next, HistoryMessage.PressedEscape()).model.dialog).toBe(false)
+    assert(update(next, HistoryMessage.ClosedPlan()).model.dialog).toBe(false)
+    next = update(next, HistoryMessage.UpdatedLane({ value: "bench" })).model
+    assert(next.lane).toBe("bench")
+    for (const command of [HistoryMessage.ClickedStart({ id: "m1" }), HistoryMessage.ClickedApprove({ id: "m1" }), HistoryMessage.ClickedFold()]) assert(update(next, command).model.busy).toBe(true)
+    next = update(next, HistoryMessage.UpdatedNoteSection({ value: "tried" })).model
+    next = update(next, HistoryMessage.UpdatedNote({ value: "Measured" })).model
+    assert([next.noteSection, next.noteText]).toEqual(["tried", "Measured"])
+    assert(update(next, HistoryMessage.SubmittedNote({ id: "m1" })).model.busy).toBe(true)
+    next = update(next, HistoryMessage.Wrote({ hash: "m1" })).model
+    assert(next).toMatchObject({ busy: false, dialog: false, lane: "", noteText: "", hash: "m1" })
+    assert(update(next, HistoryMessage.Wrote({ hash: "" })).model.hash).toBe("m1")
+    assert(update(next, HistoryMessage.Navigated({ hash: "e1" })).model.hash).toBe("e1")
+    assert(update(next, HistoryMessage.FailedWrite({ reason: "forbidden" })).model.error).toBe("forbidden")
+    assert(update(next, HistoryMessage.FailedLoad({ reason: "unavailable" })).model.status).toBe("failed")
+    assert(update(next, HistoryMessage.FailedRead({ reason: "unavailable" })).model.error).toBe("unavailable")
+    assert(update(next, HistoryMessage.ClickedRetry()).model.epoch).toBe(2)
+    assert(update(next, HistoryMessage.ReceivedEvent({ event: { type: "EpicOpened", seq: 4, id: "e2", title: "Other" } })).model.latest).toBe(4)
+    assert(update(next, HistoryMessage.FailedEvents()).model).toBe(next)
+    assert(update(next, HistoryMessage.Settled()).model).toBe(next)
+    assert(update(next, HistoryMessage.PressedEscape()).model).toBe(next)
+    assert(merged([page], { ...page, seq: 0 })).toEqual([page])
+    assert(merged([], { ...page, from: 50 })).toEqual([])
+    const matches = P.matchesOf(history, "Commit 1")
+    const filtering = update(next, HistoryMessage.UpdatedFilter({ value: "Commit 1" })).model
+    assert(update(filtering, HistoryMessage.GotMatches({ matches })).model.matches.commits.map((commit) => commit.id)).toEqual(["m2"])
+    assert(update(next, HistoryMessage.GotMatches({ matches })).model).toBe(next)
+    const detail = P.commitPageOf(history, "m1")
+    assert(update(next, HistoryMessage.GotCommit({ id: "m1", page: detail })).model.commit.commit?.id).toBe("m1")
+    assert(update(next, HistoryMessage.GotCommit({ id: "m2", page: detail })).model).toBe(next)
+  }).run(quick)
+  await runPromise(artifact("history-actions", "Vitest built-in bench; history reducer corpus for page/read responses, forms, navigation/write intents, success/refusal, retries, late/detached data and events. Independent field, command-count and identity assertions; real commands execute in Chromium separately.", ["Reducer/command construction cost, no network or durable execution. Pages are actual projections of a two-commit fixture."], result))
+})

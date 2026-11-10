@@ -1,0 +1,77 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { serveSandboxObjects } from "../test/support/workerd.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+async function post(client: HttpClient.HttpClient, url: string, body: unknown, headers: Readonly<Record<string, string>> = {}) {
+  const response = await runPromise(client.execute(HttpClientRequest.post(url).pipe(HttpClientRequest.setHeaders(headers), HttpClientRequest.bodyJsonUnsafe(body))))
+  const text = await runPromise(response.text)
+  expect([response.status, text]).toEqual([200, expect.any(String)])
+  return runSync(Effect.try(() => JSON.parse(text) as unknown))
+}
+it("sandbox account and machine objects fence, checkpoint and refuse on an in-memory Container", { timeout: 240_000 }, async ({ bench }) => {
+  const api = await runPromise(serveSandboxObjects())
+  const client = await runPromise(Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
+  type Answer = { readonly _tag: string; readonly value?: unknown; readonly refusal?: string }
+  const send = async (owner: string, kind: string, conversation: string, operationId = "", generation = 0, command = "") =>
+    await post(client, `${api.origin}/gateway`, { kind, conversation, operationId, generation, command }, owner === "" ? {} : { "x-owner": owner }) as Answer
+  const machine = async (id: string, path: string, body: unknown = {}) => await post(client, `${api.origin}/machine/${id}/${path}`, body) as Record<string, unknown>
+  let run = 0
+  try {
+    const lifecycle = workload(bench, "sandbox-objects-lifecycle", "async", async () => {
+      const owner = `person-${++run}`
+      const read = await send(owner, "read", "home")
+      expect(read).toMatchObject({ _tag: "Success", value: { status: "stopped", generation: 0 } })
+      const started = await send(owner, "start", "home", "start-1")
+      expect(started).toMatchObject({ _tag: "Success", value: { status: "running", generation: 1 } })
+      expect(await send(owner, "command", "home", "write-1", 1, "echo saved > keep")).toMatchObject({ _tag: "Success", value: "" })
+      expect(await send(owner, "command", "home", "write-1", 1, "echo saved > keep")).toMatchObject({ _tag: "Success", value: "" })
+      expect(await send(owner, "command", "home", "fail-1", 1, "exit 3")).toMatchObject({ _tag: "Success", value: "\nExit 3" })
+      expect(await post(client, `${api.origin}/alarm/${owner}`, {})).toEqual({ armed: expect.any(Number) })
+      expect(await send(owner, "stop", "home", "stop-1", 1)).toMatchObject({ _tag: "Success", value: { status: "stopped" } })
+      expect(await send(owner, "start", "home", "start-2")).toMatchObject({ _tag: "Success", value: { status: "running", generation: 2 } })
+      expect(await send(owner, "command", "home", "read-2", 2, "cat keep")).toMatchObject({ _tag: "Success", value: "saved\n" })
+      expect(await send(owner, "command", "home", "stale", 1, "cat keep")).toMatchObject({ _tag: "Failure" })
+      expect(await send(owner, "stop", "home", "stop-2", 2)).toMatchObject({ _tag: "Success", value: { status: "stopped" } })
+    })
+    const refusals = workload(bench, "sandbox-objects-refusals", "async", async () => {
+      const suffix = ++run
+      expect(await send("", "start", "home", "op")).toMatchObject({ _tag: "Failure", refusal: "forbidden" })
+      expect(await send(`viewer-${suffix}`, "start", "home", "op")).toMatchObject({ _tag: "Failure", refusal: "forbidden" })
+      expect(await send(`viewer-${suffix}`, "read", "home")).toMatchObject({ _tag: "Success", value: { status: "stopped" } })
+      expect(await send(`revoked-${suffix}`, "start", "home", "op")).toMatchObject({ _tag: "Failure", refusal: "forbidden" })
+      expect(await send(`unbound-${suffix}`, "start", "home", "op")).toMatchObject({ _tag: "Failure", refusal: "sandbox-binding" })
+    })
+    const faults = workload(bench, "sandbox-machine-faults", "async", async () => {
+      const id = `machine-${++run}`
+      const apply = (kind: string, generation: number, operationId = "", command = "") => machine(id, "apply", { kind, generation, operationId, command })
+      await machine(id, "fault", { fault: "no-start" })
+      expect(await apply("start", 1)).toEqual({ ok: false, output: "" })
+      await machine(id, "fault", { fault: "setup" })
+      expect(await apply("start", 1)).toEqual({ ok: false, output: "" })
+      await machine(id, "fault", { fault: "" })
+      expect(await apply("start", 1)).toEqual({ ok: true, output: "" })
+      expect(await apply("start", 1)).toEqual({ ok: true, output: "" })
+      expect(await apply("command", 1, "early", "cat keep")).toEqual({ ok: false, output: "" })
+      expect(await apply("lease", 1, "", "60000")).toEqual({ ok: true, output: "running" })
+      expect(await apply("lease", 1, "", "1")).toEqual({ ok: false, output: "" })
+      expect(await apply("command", 0, "old", "cat keep")).toEqual({ ok: false, output: "" })
+      expect(await apply("command", 1, "a", "echo one > keep")).toEqual({ ok: true, output: "" })
+      expect(await apply("command", 1, "a", "echo two > keep")).toEqual({ ok: false, output: "" })
+      expect(await apply("command", 1, "big", "big 2000000")).toMatchObject({ ok: true, output: expect.stringContaining("[truncated]") })
+      expect(await machine(id, "observed")).toMatchObject({ started: 2, executed: 2, up: true })
+      await machine(id, "fault", { fault: "checkpoint" })
+      expect(await apply("stop", 1)).toEqual({ ok: true, output: "checkpoint-failed" })
+      expect(await apply("stop", 1)).toEqual({ ok: true, output: "" })
+      expect(await apply("lease", 1, "", "60000")).toEqual({ ok: true, output: "stopped" })
+      await machine(id, "fault", { fault: "" })
+      expect(await apply("start", 2)).toEqual({ ok: true, output: "" })
+      expect(await apply("command", 2, "b", "cat keep")).toEqual({ ok: true, output: "one\n" })
+      await machine(id, "fault", { fault: "stuck" })
+      expect(await apply("stop", 2)).toEqual({ ok: false, output: "" })
+      expect(await machine(id, "observed")).toMatchObject({ up: true })
+    })
+    await runPromise(artifact("sandbox-objects", "Vitest built-in bench; the production SandboxAccount and SandboxMachine object bodies and gateway in real workerd SQLite, through the identity policy adapter: read, start, write, replay, nonzero exit, stop with checkpoint, restart restoring the checkpoint, stale generation, then role, binding and Container faults.", ["An in-memory Container answers the run tool's fence protocol: no Cloudflare Container, image, checkpoint or shell latency is measured. Commands are a four-form test language. Three samples per journey on one served Worker."], [await lifecycle.run(slow), await refusals.run(slow), await faults.run(slow)]))
+  } finally { await api.dispose() }
+})

@@ -1,0 +1,62 @@
+// The agent drafts one wiki edit through its journaled AgentAction, using the existing model host and budget.
+import { AgentAction, EventSink, Budget } from "@smthrs/agent"
+import { Action, FlowRuntime } from "@smthrs/flow"
+import { Digest, SecureRandom } from "effect/crypto"
+import { ModelRequest } from "@smthrs/model"
+import { WikiDraft, WikiWriter } from "../src/core/WikiWriter.vibe"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
+import { AGENT_CONTEXT } from "./agentContext.vibe"
+import { agentOf, ChatModel, dayOf, Spend, patient } from "./Reply.vibe"
+export const DraftWiki = AgentAction.make("vibelang/wiki/draft-agent", {
+  payload: { page: Schema.String, source: Schema.String, ask: Schema.String },
+  output: WikiDraft, seat: "agent", profile: "conversation", maxFrames: 8,
+  system: [AGENT_CONTEXT, "Draft one edit to the given project wiki page. Return the complete edited Markdown page with ctx.done({page, text}): the source given, changed exactly where the person's ask needs, nothing else rewritten. Keep the page's structure and voice. Never submit, approve or merge anything."],
+  prompt: (request) => JSON.stringify(request), modelParams: ModelRequest.GenerationParams.make({ maxTokens: 8192 }),
+})
+export service WikiDraftAgent {
+  readonly available: boolean
+  run(request: { readonly page: string; readonly source: string; readonly ask: string }, meter: Budget.Service): WikiDraft!WikiFailure!(FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom)
+}
+export const wikiAgentLayer = Layer.effect(WikiDraftAgent, effect {
+  const chat = try ChatModel
+  return {
+    available: chat.model !== undefined,
+    run: effect (request, meter) => {
+      const model = chat.model
+      if (model === undefined) throw new WikiFailure({ reason: "no-model" })
+      const sink: EventSink.Service = { emit: (event) => Metric.update(Metric.withAttributes(Metric.counter("vibelang_wiki_agent_events", { incremental: true }), { event: event._tag }), 1) }
+      const result = try Effect.result(effect {
+        provide agentOf(DraftWiki.layer, model, sink, [], 0, meter), EventSink.EventSink = sink {
+          return try (try DraftWiki.requirement).action({ page: request.page, source: request.source, ask: request.ask })
+        }
+      })
+      if (result._tag === "Failure") throw new WikiFailure({ reason: "draft" })
+      const decoded = try Schema.decodeUnknownEffect(WikiDraft)(result.success).pipe(Effect.mapError(() => new WikiFailure({ reason: "draft" })))
+      if (decoded.page !== request.page || decoded.text.trim() === "") throw new WikiFailure({ reason: "draft" })
+      return decoded
+    },
+  }
+})
+/** Public service seam: faults replace the agent, while metering and the real durable engine remain unchanged. */
+export const wikiWriter = Layer.effect(WikiWriter, effect {
+  const agent = try WikiDraftAgent
+  const spend = try Spend
+  return {
+    draft: effect (request) => {
+      if (!agent.available) throw new WikiFailure({ reason: "no-model" })
+      const instance = try FlowRuntime.FlowInstance
+      const admission = try Action.make({ name: "vibelang/wiki/admit", success: Schema.Struct({ day: Schema.String, admitted: Schema.Boolean }), error: WikiFailure, execute: effect {
+        const day = dayOf(try Clock.currentTimeMillis)
+        return { day, admitted: try spend.admit(day).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" }))) }
+      } })
+      if (!admission.admitted) throw new WikiFailure({ reason: "budget" })
+      const meter = try Budget.make({}).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" })))
+      const result = try Effect.result(agent.run(request, meter))
+      const usage = try meter.usageOf(instance.executionId).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" })))
+      try Action.make({ name: "vibelang/wiki/draft-spend", error: WikiFailure, retryPolicy: patient, execute: spend.spend(admission.day, `wiki-draft/${instance.executionId}`, usage.tokens).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" }))) })
+      if (result._tag === "Failure") throw result.failure
+      return result.success
+    },
+  }
+})
+export const wikiWriterLayer = wikiWriter.pipe(Layer.provide(wikiAgentLayer))

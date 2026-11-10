@@ -5,8 +5,11 @@ next. Every decision lands here in the same change as the code it shapes.
 
 | Page | What it holds |
 | --- | --- |
-| [Rulings](rulings.md) | Will's words, VL-1 to VL-26. The source of truth. |
+| [Rulings](rulings.md) | Will's words, VL-1 to VL-33. The source of truth. |
+| [Designs](designs/index.md) | Designer handoffs and implementation notes. |
 | [Roadmap](roadmap.md) | The bricks: done, in progress, next. |
+| [Rulings status](rulings-status.md) | Each ruling's state, evidence and owner (lane vl-audit). |
+| [Review of 2026-11-08](review-2026-11-08.md) | Findings in the night's changes: fixed, and open with owners (lane vl-review2). |
 | [Decisions](decisions/) | One record per consequential choice, numbered. |
 
 ## Decisions
@@ -25,6 +28,30 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0010](decisions/0010-live-agent.md) | The live agent: a Durable Object per conversation runs the sequencer and its reply's durable flow; LiveFactory over HTTP and SSE |
 | [0011](decisions/0011-post-flow.md) | A person's post is a durable `vibelang/Post` flow: record, then dispatch the reply; the mock runs the same flows in memory |
 | [0012](decisions/0012-smithers-agent.md) | The reply is smithers.sh's agent: `@smthrs/agent`'s `AgentAction` on a workerd QuickJS sandbox, VibeLang's skill as context |
+| [0013](decisions/0013-dark-only.md) | Dark only, for now: the marketing media are dark and have no light versions (VL-27) |
+| [0014](decisions/0014-agent-tour.md) | Learn more is a ten-step theatre tutorial: numbered app drives, sound-off subtitles and durable controls (VL-31) |
+| [0014 theatre walkthrough](decisions/0014-agent-tour.md#vl-31-theatre-walkthrough-2026-11-08-lane-vl-learnmore) | Ten app-driving steps, sound-off subtitles, durable pause/seek and reload (VL-31) |
+| [0014 production fixes](decisions/0014-agent-tour.md#other-choices) | Tour docs and current narration stay in view; durable reading holds, paragraphs, keyboard control, inert background and control announcements |
+| [0015](decisions/0015-fuzzing.md) | Effect fork as `@smthrs/fuzz`, corpus, budgets, whole-app fuzz targets and independent coverage |
+| [0015 worker and view branches](decisions/0015-fuzzing.md#lane-vl-fuzz2-worker-and-view-branches-2026-11-09) | Lane vl-fuzz2: steered targets for the view, viewport, sequencer, action runs, conversation object, issues and wiki hosts |
+| [0016](decisions/0016-coverage.md) | Boundary tests, prepared source coverage gates and recorded measurement limitations |
+| [0016 vl-coverage2](decisions/0016-coverage.md#lane-vl-coverage2-2026-11-09) | HTTP, browser factory, mock actions, mock factory, state machine and live wiki at their boundaries; the reload-mid-reply fix (lane vl-coverage2) |
+| [0017](decisions/0017-benchmarks.md) | Local/live methods, current-main measurements, content/session recovery benchmarks and unfinished strict source coverage |
+| [0018](decisions/0018-proofs.md) | Inventory and Dafny proofs of production decisions, executable mutations and explicit tool boundaries; three proofs lanes, the third on sequencers, commands and the worker |
+| [0019](decisions/0019-sign-in-and-roles.md) | GitHub identity; five project roles, first participation, explicit grants and demotions |
+| [0020](decisions/0020-mythical-history.md) | The mythical history: one linear stack of epics and mythical commits in a History object, bootstrapped from VibeLang's real history; plan, start, note, approve and fold are flows people and the agent share (VL-22) |
+| [0021](decisions/0021-wiki.md) | The working-memory wiki: shared pane, role-gated Markdown editing and person-owned review changes; agent drafts through the same flows |
+| [0021 editing](decisions/0021-wiki.md#editing-by-role-lane-vl-wikiedit-2026-11-09) | Edit/Propose by role, person-owned review changes and chat drafts (lane vl-wikiedit) |
+| [0022](decisions/0022-issues-and-vips.md) | GitHub issues and sub-issues, committed tasks, and agent-drafted VIP review changes |
+| [0023](decisions/0023-actions.md) | Registered actions, slash commands, real run traces, agent/CLI/MCP surfaces and role gates |
+| [0024](decisions/0024-sandboxes.md) | Sandboxes, shared flows, a single durable minute writer and opt-in offline Cloudflare Containers |
+| [0025](decisions/0025-desktop.md) | Electrobun hosts the shared Foldkit app; local models, confined folders and flows run on Bun |
+| [0026](decisions/0026-marketing-media.md) | Splash and empty-chat media; native posters and failure removal; former tour placements superseded by VL-31 |
+| [0027](decisions/0027-acceptance-gates.md) | Human proposal approval and four same-revision LGTM/A- or better specification reviews; shared flows, reset history and suite state (lane vl-gates) |
+| [0027 addenda](decisions/0027-acceptance-gates.md#vl-32-addenda-2026-11-09-lane-vl-gates2) | A- or better passes; new specification revisions keep acceptance, with both revision policies proved (lane vl-gates2) |
+| [0028](decisions/0028-cli-and-mcp-sign-in.md) | CLI and MCP sign-in: GitHub device flow; the server names the agent's posts `<login> (agent)`, carries the person's role, and refuses it approve, fold and merge (VL-26) |
+
+| [0029](decisions/0029-hosted-sign-in-broker.md) | Hosted sign-in through smithers.sh's registered callback, exact-origin registry, single-use PKCE-bound codes and retried temporary-token revocation (VL-33) |
 
 ## Layout
 
@@ -34,9 +61,15 @@ apps/vibelang/
                   and the HTTP protocol (wire.vibe)
   src/surfaces/   the shared command registry, CLI, MCP server and discovery manifest
   skills/         agent instructions for the Factory CLI
+  src/history/    the mythical history: its state machine (mythical.vibe), sequencer, flows, API (MythicalHistory.vibe), mock
+                  and the bootstrapped snapshot (seed/)
   src/web/        the Foldkit program (main.vibe), its view (view.vibe) and styles
   worker/         the site Worker (index.vibe) and the API Worker (Api.vibe): sequencer, reply flow, budget
   infra/          the Alchemy stack (Stack.vibe; alchemy.run.ts re-exports it)
   test/ e2e/      unit, property and scene tests; browser tests
   wiki/           this wiki
 ```
+
+
+[Benchmark methods and measurements](benchmarks.md).
+

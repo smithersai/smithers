@@ -12,6 +12,12 @@ import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as Migrations from "../src/Migrations.ts"
 import { withCrypto } from "./Sha256.ts"
 
+/** The stored row of a completion for a run the store has. */
+const storedRow = (outcome: DurableEngineState.CompleteDeferredOutcome): DurableEngineState.DeferredRow => {
+  if (outcome._tag === "NotFound") throw new Error("completion refused: no such run")
+  return outcome.row
+}
+
 const owner: Ownership.OwnerId = {
   hostId: "ordering",
   pid: 1,
@@ -124,8 +130,8 @@ describe("in-memory durable state ordering", () => {
       })
       exit.nested.value = "caller mutation"
       metadata.labels.push("caller mutation")
-      ;(completed.row.exit as typeof exit).nested.value = "result mutation"
-      ;(completed.row.metadata as typeof metadata).labels.push("result mutation")
+      ;(storedRow(completed).exit as typeof exit).nested.value = "result mutation"
+      ;(storedRow(completed).metadata as typeof metadata).labels.push("result mutation")
 
       const firstRead = Option.getOrThrow(yield* state.deferred(address))
       expect(firstRead.exit).toEqual({ nested: { value: "original" } })

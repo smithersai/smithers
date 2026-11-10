@@ -718,7 +718,8 @@ describe("native host read confinement", () => {
           return spawnSync(wrapped.argv[0]!, wrapped.argv.slice(1), {
             encoding: "utf8",
             timeout: 10_000,
-            env: { ...process.env, ...wrapped.env }
+            // This guest runs plain JavaScript; its declared reads exclude the host source loader.
+            env: { ...process.env, NODE_OPTIONS: "", ...wrapped.env }
           })
         }
         const runtime = run([], false, [process.execPath, "-e", "process.stdout.write(\"runtime-ok\")"])
@@ -1678,7 +1679,7 @@ describe("bubblewrap launcher (#3140)", () => {
         return spawnSync(wrapped.argv[0]!, wrapped.argv.slice(1), {
           encoding: "utf8",
           timeout: 20_000,
-          env: { ...process.env, PATH: path, ...wrapped.env }
+          env: { ...process.env, NODE_OPTIONS: "", PATH: path, ...wrapped.env }
         })
       }
       // The same package behind a cmd-shim script, as `pnpm self-update` installs pnpm under

@@ -1,0 +1,104 @@
+import { make, type Setup } from "./GitHubConnectionHost.vibe"
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import { RuntimeContext } from "alchemy"
+import { GitHub } from "@smthrs/integrations"
+import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
+
+const Delegation = GitHub.Delegation
+export type Outcome<A> = { readonly ok: A } | { readonly reason: GitHub.Delegation.Reason }
+/** Durable Object RPC carries data, so a refusal crosses as a value and tokens as plain strings. */
+export interface InstallInput { readonly person: number; readonly origin: string; readonly login: string; readonly access: string; readonly refresh: string | null; readonly expires: number | null }
+export interface GitHubConnectionShape {
+  readonly install: (input: InstallInput) => Outcome<{ readonly delegation: string; readonly expires: number }>!!RuntimeContext
+  readonly revoke: (person: number, origin: string) => Outcome<null>!!RuntimeContext
+  readonly connections: (person: number) => Outcome<ReadonlyArray<{ readonly origin: string; readonly expires: number }>>!!RuntimeContext
+  readonly revokedAtGitHub: (person: number) => Outcome<null>!!RuntimeContext
+}
+export class GitHubConnection extends Cloudflare.DurableObject<GitHubConnection, GitHubConnectionShape>()("GitHubConnection") {}
+export const nameOf = (person: number) => "person:" + person
+
+const Grant = Schema.Struct({
+  repository: Schema.String, repositoryId: Schema.Number, scopes: Schema.Array(Schema.Literals(["issues", "proposals"])),
+  paths: Schema.Array(Schema.String), branchPrefix: Schema.String, labelPrefix: Schema.String,
+})
+const Sites = Schema.Array(Schema.Struct({ origin: Schema.String, secret: Schema.String.check(Schema.isMinLength(32)), grants: Schema.optional(Schema.Array(Grant)) }))
+/** `grants` is optional so a site with none signs in and holds no delegation scope. */
+export const decodeSites = Schema.decodeUnknownEffect(Schema.fromJsonString(Sites))
+
+export effect function configured() {
+  const sites = try Config.option(Config.Redacted("HOSTED_AUTH_SITES"))
+  const origin = try Config.option(Config.String("AUTH_BROKER_ORIGIN"))
+  const domain = try Config.option(Config.String("APP_DOMAIN"))
+  const keys = try Config.option(Config.Redacted("GITHUB_CONNECTION_KEYS"))
+  const active = try Config.option(Config.String("GITHUB_CONNECTION_KEY_ACTIVE"))
+  if (Option.isNone(sites) || Option.isNone(keys) || Option.isNone(active)) return undefined
+  const home = Option.getOrElse(origin, () => Option.isSome(domain) ? "https://" + domain.value : "")
+  const decodedSites = decodeSites(Redacted.value(sites.value)) catch () => undefined
+  const decodedKeys = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)))(Redacted.value(keys.value)) catch () => undefined
+  if (decodedSites === undefined || decodedKeys === undefined || decodedKeys[active.value] === undefined || !GitHub.Auth.Broker.canonicalOrigin(home)) return undefined
+  const setup: Setup = {
+    origin: home,
+    sites: decodedSites.map((site) => ({ origin: site.origin, secret: Redacted.make(site.secret), grants: site.grants ?? [] })),
+    keyring: { active: active.value, keys: Object.fromEntries(Object.entries(decodedKeys).map(([id, key]) => [id, Redacted.make(key)])) },
+  }
+  return setup
+}
+
+const unavailable = { reason: "unavailable" as const }
+const outcome = <A>(body: A!GitHub.Delegation.DelegationRefused): Outcome<A>!! => Effect.map(Effect.result(body), (result) => result._tag === "Success" ? { ok: result.success } : { reason: result.failure.reason })
+
+export const live = GitHubConnection.make(effect {
+  const state = try Cloudflare.DurableObjectState
+  const setup = try Effect.orDie(configured())
+  // Alchemy must see these reads while planning, including when connections are disabled.
+  const clientId = try Effect.orDie(Config.option(Config.String("GITHUB_APP_CLIENT_ID")))
+  const clientSecret = try Effect.orDie(Config.option(Config.Redacted("GITHUB_APP_CLIENT_SECRET")))
+  return effect {
+    if (setup === undefined || Option.isNone(clientId) || Option.isNone(clientSecret)) {
+      return {
+        fetch: succeed(HttpServerResponse.empty({ status: 503, headers: GitHub.Auth.Broker.HEADERS })),
+        install: () => succeed(unavailable), revoke: () => succeed(unavailable), connections: () => succeed(unavailable), revokedAtGitHub: () => succeed(unavailable),
+      }
+    }
+    const github = try GitHub.Auth.GitHubAuth.pipe(Effect.provide(GitHub.Auth.layer({ clientId: clientId.value, clientSecret: clientSecret.value }).pipe(Layer.provide(FetchHttpClient.layer))))
+    const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
+    const hosts = new Map<number, Effect.Success<ReturnType<typeof make>>>()
+    /** The router names this object by the same person, so one object only ever builds one host. */
+    const host = effect (person: number) => {
+      const known = hosts.get(person)
+      if (known !== undefined) return known
+      const made = try make(person, hostId, state.raw.storage, setup, github)
+      hosts.set(person, made)
+      return made
+    }
+    return {
+      fetch: effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        const person = Delegation.personOf(request.originalUrl)
+        if (person === undefined) return HttpServerResponse.empty({ status: 400, headers: GitHub.Auth.Broker.HEADERS })
+        const opened = try Effect.result(host(person))
+        return opened._tag === "Failure"
+          ? HttpServerResponse.jsonUnsafe({ reason: "unavailable" }, { status: 503, headers: GitHub.Auth.Broker.HEADERS })
+          : try opened.success.fetch
+      },
+      install: (input: InstallInput) => outcome(effect {
+        return try (try host(input.person)).install({ origin: input.origin, login: input.login, tokens: { accessToken: Redacted.make(input.access), refreshToken: input.refresh === null ? null : Redacted.make(input.refresh), expiresAt: input.expires } })
+      }),
+      revoke: (person: number, origin: string) => outcome(effect { try (try host(person)).revoke(origin); return null }),
+      connections: (person: number) => outcome(effect { return try (try host(person)).connections() }),
+      revokedAtGitHub: (person: number) => outcome(effect { try (try host(person)).revokedAtGitHub(); return null }),
+    }
+  }
+})
+
+/** The broker's custodian: the token crosses to the person's object once and answers a handle. */
+export function connectionsOf(objects: Effect.Success<typeof GitHubConnection>, runtime: Context.Context<RuntimeContext>): GitHub.Auth.Broker.Connections {
+  return {
+    install: (input) => effect {
+      const object = try Effect.orDie(Effect.try(() => objects.getByName(nameOf(input.person))))
+      const answer = try object.install({ person: input.person, origin: input.origin, login: input.login, access: Redacted.value(input.tokens.accessToken), refresh: input.tokens.refreshToken === null ? null : Redacted.value(input.tokens.refreshToken), expires: input.tokens.expiresAt }).pipe(Effect.provideContext(runtime), Effect.mapError(() => new GitHub.Auth.Broker.BrokerRefused()))
+      if ("reason" in answer) throw new GitHub.Auth.Broker.BrokerRefused()
+      return answer.ok
+    },
+  }
+}

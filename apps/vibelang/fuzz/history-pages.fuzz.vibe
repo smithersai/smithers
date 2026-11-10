@@ -1,0 +1,34 @@
+import { it } from "@effect/vitest"
+import { History } from "../src/history/schemas.vibe"
+import { outlineOf, epicPageOf, commitPageOf, matchesOf, pageOf, PAGE, MATCHES, MAX_QUERY } from "../src/history/pages.vibe"
+import { pathOf, historyRouteOf } from "../src/history/wire.vibe"
+import { run, Int, TextOrBoundary, same } from "./run.vibe"
+
+export const Request = Schema.Union([
+  Schema.Struct({ what: Schema.Literal("outline") }),
+  Schema.Struct({ what: Schema.Literal("epic"), id: TextOrBoundary, from: Int }),
+  Schema.Struct({ what: Schema.Literal("commit"), id: TextOrBoundary }),
+  Schema.Struct({ what: Schema.Literal("search"), query: TextOrBoundary }),
+])
+
+it.live("history/page-paths", () => run("history/page-paths", Request, (request) => {
+  const path = pathOf(request)
+  return path === undefined || (typeof path === "string" && path.startsWith("/api/history"))
+}))
+
+it.live("history/pages", () => run("history/pages", Schema.Struct({ history: History, cursor: Int, query: TextOrBoundary, request: Request }), ({ history, cursor, query, request }) => {
+  const outline = outlineOf(history)
+  if (outline.seq !== history.seq || outline.main !== history.main || outline.open.some((c) => c.state === "landed")) return false
+  if (!outline.epics.every((e) => e.commits === history.commits.filter((c) => c.epic === e.id).length)) return false
+  const epic = history.epics[cursor % Math.max(1, history.epics.length)]?.id ?? "missing"
+  const page = epicPageOf(history, epic, cursor)
+  if (page.seq !== history.seq || page.from !== cursor || page.commits.length > PAGE || page.total !== history.commits.filter((c) => c.epic === epic).length || !page.commits.every((c, at) => c.epic === epic && (at === 0 || page.commits[at - 1]!.rank <= c.rank))) return false
+  const id = history.commits[cursor % Math.max(1, history.commits.length)]?.id ?? "missing"
+  const commit = commitPageOf(history, id)
+  if (!same(commit.commit, history.commits.find((c) => c.id === id) ?? null) || !commit.real.every((r) => r.mythical === id)) return false
+  const matches = matchesOf(history, query)
+  const needle = query.slice(0, MAX_QUERY).trim().toLowerCase()
+  if (matches.commits.length > MATCHES || (needle === "" && matches.commits.length > 0) || !matches.commits.every((c) => c.id === needle || c.title.toLowerCase().includes(needle))) return false
+  const expected = request.what === "outline" ? outline : request.what === "epic" ? epicPageOf(history, request.id, request.from) : request.what === "commit" ? commitPageOf(history, request.id) : matchesOf(history, request.query)
+  return same(pageOf(history, request), expected)
+}))

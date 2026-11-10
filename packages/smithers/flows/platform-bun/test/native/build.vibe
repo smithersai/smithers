@@ -1,0 +1,4 @@
+// Native integration fixture: the same VibeLang and Electrobun bundlers as the production desktop host.
+import { build } from "esbuild"
+import vibelang from "vibelang-unplugin/esbuild"
+await build({ entryPoints: ["host.vibe"], outfile: "dist-host/index.js", bundle: true, platform: "node", format: "esm", target: "es2022", external: ["electrobun", "bun:*"], plugins: [{ name: "native-boundary", setup(builder) { builder.onResolve({ filter: /^#electrobun$/ }, () => ({ path: "electrobun/bun", external: true })) } }, vibelang({ project: "../../tsconfig.test.json" })] })

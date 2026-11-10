@@ -111,3 +111,21 @@ export * as Statuses from "./github/Statuses.vibe"
  * @since 1.0.0
  */
 export * as Sync from "./github/Sync.vibe"
+
+/** GitHub user sign-in, PKCE, refresh and revocation. @since 1.0.0 @category services */
+export * as Auth from "./github/Auth.vibe"
+
+/**
+ * @category delegation
+ * @since 1.0.0
+ */
+export * as Delegation from "./github/Delegation.vibe"
+
+/**
+ * @category delegation
+ * @since 1.0.0
+ */
+export * as DelegationPolicy from "./github/DelegationPolicy.vibe"
+export * as Calls from "./github/Calls.vibe"
+export * as IssueChanges from "./github/IssueChanges.vibe"
+export * as Proposals from "./github/Proposals.vibe"

@@ -1,0 +1,14 @@
+import { expect, it } from "@effect/vitest"
+import { chunks } from "../src/core/mockReplies.vibe"
+
+it("emits no empty pieces and preserves text at the stream's 24-character boundary", () => {
+  expect(chunks("")).toEqual([])
+  expect(chunks("x")).toEqual(["x"])
+  expect(chunks("a".repeat(24))).toEqual(["a".repeat(24)])
+  expect(chunks("a".repeat(25))).toEqual(["a".repeat(24), "a"])
+  expect(chunks("a".repeat(48))).toEqual(["a".repeat(24), "a".repeat(24)])
+  const text = "This answer has Unicode: 💬 — λ.\nAnd another line."
+  const pieces = chunks(text)
+  expect(pieces.join("")).toBe(text)
+  expect(pieces.every((piece) => piece.length > 0 && piece.length <= 24)).toBe(true)
+})

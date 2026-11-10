@@ -1,0 +1,88 @@
+import { reviewActions } from "../src/core/conversation.vibe"
+import { expect, it } from "@effect/vitest"
+import { issueRequest, issuesUpdate, initialIssues } from "../src/web/issues.vibe"
+import { init, update, Message } from "../src/web/main.vibe"
+import { IssueInput } from "../src/surfaces/commands.vibe"
+
+it("an explicit retry preserves the logical write and names a native recovery attempt", () => {
+  const form = { ...initialIssues, keyPrefix: "recovery", role: "maintainer" as const, screen: "new" as const, title: "Tuple patterns", summary: "One feature." }
+  const first = issuesUpdate(form, "new", "")
+  const model = { ...init({ session: "recovery", mode: "mock", name: "Will" }).model, issues: first.ui }
+  const failed = update(model, Message.IssuesFailed({ reason: "unavailable", op: "new", key: "recovery-1" })).model
+  const retry = issuesUpdate(failed.issues!, "retry", "")
+  expect(retry.request).toEqual({ ...first.request, recovery: "recovery-2" })
+  expect(retry.ui.serial).toBe(first.ui.serial + 1)
+})
+it("human VIP review operations are absent from the agent command schema", () => {
+  expect(Schema.decodeUnknownOption(IssueInput)({ op: "accept" })).toEqual(Option.none())
+  expect(Schema.decodeUnknownOption(IssueInput)({ op: "decline" })).toEqual(Option.none())
+  expect(Option.isSome(Schema.decodeUnknownOption(IssueInput)({ op: "propose" }))).toBe(true)
+})
+
+it("resumes a decline after the label was written and treats completed reviews as settled", () => {
+  expect(reviewActions("Declined", "open", false)).toEqual({ allowed: true, label: false, close: true })
+  expect(reviewActions("Declined", "closed", false)).toEqual({ allowed: true, label: false, close: false })
+  expect(reviewActions("Accepted", "open", true)).toEqual({ allowed: true, label: false, close: false })
+  expect(reviewActions("Accepted", "open", false).allowed).toBe(false)
+  expect(reviewActions("", "open", true).allowed).toBe(false)
+})
+it("an unrelated read after reopening keeps the failed write available for reconciliation", () => {
+  const form = { ...initialIssues, keyPrefix: "recovery", role: "maintainer" as const, screen: "new" as const, title: "One issue", summary: "One write." }
+  const first = issuesUpdate(form, "new", "")
+  const model = { ...init({ session: "recovery", mode: "mock", name: "Will" }).model, issues: first.ui }
+  const failed = update(model, Message.IssuesFailed({ reason: "unavailable", op: "new", key: "recovery-1" })).model
+  const read = update(failed, Message.IssuesLoaded({ data: { seq: 1, items: [] }, created: false, role: "maintainer" })).model
+  expect(read.issues?.retry).toEqual(first.request)
+})
+
+
+for (const reason of ["connect", "forbidden", "sign-in", "rate-limited", "unknown"]) {
+  it(`keeps a partial write identity after ${reason}`, () => {
+    const first = issuesUpdate({ ...initialIssues, keyPrefix: "recovery", role: "maintainer", screen: "new", title: "One child" }, "new", "")
+    const model = { ...init({ session: "recovery", mode: "mock", name: "Will" }).model, issues: first.ui }
+    const failed = update(model, Message.IssuesFailed({ reason, op: "new", key: "recovery-1" })).model
+    expect(failed.issues?.retry).toEqual(first.request)
+    expect(failed.issues?.busy).toBe(false)
+    const unrelated = update(model, Message.IssuesFailed({ reason, op: "read", key: "other-read" })).model
+    expect(unrelated.issues?.retry).toEqual(first.request)
+    expect(unrelated.issues?.busy).toBe(true)
+  })
+}
+
+it("releases a saved request only when the host proves that validation made no writes", () => {
+  const first = issuesUpdate({ ...initialIssues, keyPrefix: "recovery", role: "maintainer", selected: 42, parent: "42" }, "link", "")
+  const model = { ...init({ session: "recovery", mode: "mock", name: "Will" }).model, issues: first.ui }
+  const failed = update(model, Message.IssuesFailed({ reason: "tree", op: "link", key: "recovery-1", unwritten: true })).model
+  expect(failed.issues?.retry).toBeUndefined()
+  const edited = issuesUpdate({ ...failed.issues!, parent: "38" }, "link", "")
+  expect(edited.request?.parent).toBe(38)
+})
+
+
+it("restores a journaled request after reconnect without changing its previous write identity", () => {
+  const request = { op: "new" as const, key: "old-tab-1", number: 0, parent: 0, title: "One issue", text: "One request", assignee: "", example: "", prior: "" }
+  const model = init({ session: "new-tab", mode: "live", name: "Will", openIssues: true, resumeOp: "new", resumeKey: request.key }).model
+  const restored = update(model, Message.IssuesLoaded({ data: { seq: 1, items: [], saved: { request, status: "failed", unwritten: false, selected: 0 } }, role: "maintainer", created: false })).model
+  expect(restored.issues?.title).toBe("One issue")
+  expect(restored.issues?.retry?.key).toBe("old-tab-1")
+  const retry = issuesUpdate(restored.issues!, "retry", "")
+  expect(retry.request).toEqual({ ...request, recovery: "new-tab-1" })
+})
+
+it("keeps the saved action when a review is requested, and replays the same reviewer under its key", () => {
+  const saved = issuesUpdate({ ...initialIssues, keyPrefix: "recovery", role: "maintainer", selected: 42, parent: "42" }, "link", "").ui
+  const blocked = issuesUpdate({ ...saved, busy: false }, "spec-review", "astra")
+  expect(blocked.request).toBeUndefined()
+  expect(blocked.ui.retry).toEqual(saved.retry)
+  expect(blocked.ui.error).toBe("Retry the saved action.")
+
+  const first = issuesUpdate({ ...initialIssues, keyPrefix: "recovery", role: "maintainer" }, "spec-review", "astra")
+  const again = issuesUpdate({ ...first.ui, busy: false }, "spec-review", "astra")
+  expect(again.request?.key).toBe(first.request?.key)
+  expect(issuesUpdate({ ...first.ui, busy: false }, "spec-review", "opus").request).toBeUndefined()
+})
+
+it("sends no number for a parent that is not a whole issue number", () => {
+  for (const parent of ["NaN", "x", "1.5", "-1"]) expect(issueRequest({ ...initialIssues, parent }, "link").parent).toBe(0)
+  expect(issueRequest({ ...initialIssues, parent: " 7 " }, "link").parent).toBe(7)
+})

@@ -1,0 +1,44 @@
+// The Factory core's registered workflows API. Person, slash and agent calls share this service and authorization.
+export type Role = "viewer" | "new" | "community" | "contributor" | "maintainer"
+export type Door = "button" | "slash" | "agent"
+export type Actor = "person" | "agent"
+export schema Step {
+  readonly key: string
+  readonly name: string
+  readonly attempt: number
+  readonly state: "running" | "passed" | "failed" | "cancelled" | "waiting"
+  readonly started: number
+  readonly at: number
+}
+export schema Run {
+  readonly id: string
+  readonly flow: string
+  readonly door: "button" | "slash" | "agent"
+  readonly actor: "person" | "agent"
+  readonly state: "queued" | "running" | "passed" | "failed" | "cancelled"
+  readonly started: number
+  readonly at: number
+  readonly result: string
+  readonly steps: ReadonlyArray<Step>
+}
+export schema Registered {
+  readonly name: string
+  readonly title: string
+  readonly detail: string
+  readonly command: string
+  readonly runnable: boolean
+  readonly least: "viewer" | "new" | "community" | "contributor" | "maintainer"
+  readonly input: "none" | "text" | "path" | "json"
+}
+export schema error ActionFailure { code: string }
+export service Actions {
+  list(): ReadonlyArray<Registered>!ActionFailure
+  commands(): ReadonlyArray<Registered>!ActionFailure
+  runs(flow: string): ReadonlyArray<Run>!ActionFailure
+  read(id: string): Run!ActionFailure
+  follow(id: string): Stream.Stream<Run, ActionFailure>
+  start(flow: string, input: Schema.Json, door: Door): string!ActionFailure
+  command(text: string, door?: Door): string!ActionFailure
+  rerun(id: string): string!ActionFailure
+  cancel(id: string): void!ActionFailure
+}

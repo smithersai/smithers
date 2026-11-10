@@ -1,0 +1,49 @@
+// The public sandbox protocol. Authority comes from the gateway's trusted session resolver, never body/header roles.
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Factory, Refused, Unavailable, type SandboxSnapshot } from "../src/core/Factory.vibe"
+import { monthOf, nextMonth, millisecondOf } from "../src/core/sandboxMeter.vibe"
+import { observed } from "../src/core/sandboxHost.vibe"
+
+export interface Gateway<R = never> {
+  sandbox(conversation: string): SandboxSnapshot!(Unavailable | Refused)!(HttpServerRequest.HttpServerRequest | R)
+  startSandbox(conversation: string, operationId: string): SandboxSnapshot!(Unavailable | Refused)!(HttpServerRequest.HttpServerRequest | R)
+  stopSandbox(conversation: string, operationId: string, generation: number): SandboxSnapshot!(Unavailable | Refused)!(HttpServerRequest.HttpServerRequest | R)
+  sandboxCommand(conversation: string, operationId: string, command: string, generation: number): string!(Unavailable | Refused)!(HttpServerRequest.HttpServerRequest | R)
+}
+export effect function emptySnapshot() {
+  const now = try millisecondOf(try Clock.currentTimeMillis)
+  return { id: "", generation: 0, sequence: 0, role: "viewer" as const, status: "stopped" as const, allowance: 0, used: 0, remaining: 0, resetAt: nextMonth(monthOf(now)), output: "" }
+}
+/** Safe until decision 0019 supplies a verified principal. No HTTP request can choose its role. */
+export const signedOutGateway = {
+  sandbox: (_conversation: string) => emptySnapshot(),
+  startSandbox: (_conversation: string, _operationId: string) => fail(new Refused({ refusal: "forbidden" })),
+  stopSandbox: (_conversation: string, _operationId: string, _generation: number) => fail(new Refused({ refusal: "forbidden" })),
+  sandboxCommand: (_conversation: string, _operationId: string, _command: string, _generation: number) => fail(new Refused({ refusal: "forbidden" })),
+} satisfies Gateway
+const Body = Schema.Struct({ operationId: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9._/-]{1,160}$/)), generation: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))), command: Schema.optional(Schema.String.check(Schema.isMaxLength(16384))) })
+const decode = Schema.decodeUnknownEffect(Schema.fromJsonString(Body))
+const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status, headers: { "cache-control": "no-store" } })
+
+export effect function sandboxRequest<R>(gateway: Gateway<R>) {
+  const request = try HttpServerRequest.HttpServerRequest
+  const url = new URL(request.url, "http://api.invalid")
+  const match = /^\/api\/sandboxes\/([a-zA-Z0-9._-]{1,120})(?:\/(start|stop|command))?$/.exec(url.pathname)
+  if (!match) return json({ error: "not found" }, 404)
+  const conversation = match[1]!
+  const action = match[2]
+  return observed(`http-${action ?? "read"}`, effect {
+    if (action === undefined && request.method === "GET") return json(try gateway.sandbox(conversation))
+    if (request.method !== "POST" || action === undefined) return json({ error: "not found" }, 404)
+    const length = Number(request.headers["content-length"] ?? "0")
+    if (!Number.isSafeInteger(length) || length < 1 || length > 20000) return json({ error: "body size" }, 413)
+    const text = request.text catch () => ""
+    const body = decode(text) catch () => undefined
+    if (body === undefined) return json({ error: "body" }, 400)
+    if (action === "start") return json(try gateway.startSandbox(conversation, body.operationId))
+    if (body.generation === undefined) return json({ error: "generation" }, 400)
+    if (action === "stop") return json(try gateway.stopSandbox(conversation, body.operationId, body.generation))
+    if (body.command === undefined) return json({ error: "command" }, 400)
+    return json({ output: try gateway.sandboxCommand(conversation, body.operationId, body.command, body.generation) })
+  }) catch (error) => error._tag === "Refused" ? json({ refusal: error.refusal }, error.refusal === "forbidden" ? 403 : 409) : json({ error: "sandbox unavailable" }, 503)
+}

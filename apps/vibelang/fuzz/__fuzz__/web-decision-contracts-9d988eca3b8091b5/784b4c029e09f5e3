@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 68
+bias 3
+null-prototype false
+key 3386300443
+tape 5G6PwF7e8T_eefWV_YQIvqNstXsb9KviA3cdHKk6-xCHww8zWDE4RhpYfPTcisjArv3AOuL3Xu7ir8RziQPvintfMq-PzMIQpegNOJkHDaLLWQesLkoV4kslCZQektCGorNOMxc-n-KWFyFqgDJPGzbdzNFokTsoHP13xsf9hA7xsrBd5VK_2lUSF-YYu2mtG3UTqLyyKYkApVJXKy_Vm_k8G_Uc6W2JSxPdJXXE_yjJoFBu0sr0_uhKlAJnrm9FjI6LrfYUQuzTOehVfzR0RUPCqsdob_4Fn1iXThwq2KXel3VxS2MF8sT7j4a9TSX3exrmbMQt0V3s51Zgjw60x-O5KbRjX5eRiBcifcN3jrKzpA0aZygYKSWydagPDxHvVwsM3im-J4dSOQk9YiuIKGXdHeOiEB47UfwY8K4phmHOsG3tKBGi8chwvgLUhcKcZu-rn3PZ9wp_CeTRCKB9sNH8VosbPvHhzjIzlHFnNV8FwaQ9PxStdcTXxgpk-SDCyCrHck6NGlrZZoRktT1Zfz4NKNfYSLgF9x85YVcDTKpDFT_QELj3xQZ-qpo
+schedule-key 1077983766
+schedule 
+signature "ReturnedFalse"
+path 0.0.0.0.0
+codec "json"
+value "{\"a\":null,\"b\":\"\",\"c\":null,\"d\":\"full\",\"e\":\"\",\"f\":\"yes\",\"g\":\"\",\"shift\":false,\"roles\":[],\"n\":0,\"m\":0}"
+# ReturnedFalse
+# {"a":null,"b":"","c":null,"d":"full","e":"","f":"yes","g":"","shift":false,"roles":[],"n":0,"m":0}

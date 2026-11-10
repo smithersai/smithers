@@ -1,0 +1,52 @@
+// The browser's factory forwards every call to the backend it selected. These run on the forced mock, the real
+// no-backend product mode (VL-13), and observe each forwarded call's effect through a later read.
+import "../src/core/MockFactory.vibe"
+import { expect, it } from "@effect/vitest"
+import { Actions } from "../src/actions/Actions.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { AgentBackend, BrowserFactory } from "../src/web/backend.vibe"
+import { heldHealth } from "./support/heldHealth.vibe"
+
+const asking = { number: 0, parent: 0, title: "A task", text: "do it", assignee: "", example: "", prior: "" }
+
+it.live("accounts, issues and the wiki all reach the selected mock", () => scoped(effect {
+  const health = try heldHealth()
+  provide BrowserFactory("http://startup.test", true, "maintainer").pipe(Layer.provide(health.layer)) {
+    const factory = try Factory
+    const mode = try (try AgentBackend).ready
+    const accounts = factory.accounts!
+    const issues = factory.issues!
+    const wiki = factory.wiki!
+    const agent = try accounts.signInAgent()
+    const members = try accounts.members()
+    const chosen = try accounts.choose("contributor")
+    const made = try issues.act({ ...asking, op: "new", key: "delegate-1" })
+    const read = try issues.read()
+    const page = try wiki.read("benchmarks")
+    try accounts.signOut()
+    try Effect.try(() => {
+      expect(mode).toBe("mock")
+      expect(factory.mode).toBe("mock")
+      expect(agent.login).not.toBe("")
+      expect(members.length).toBeGreaterThan(0)
+      expect(chosen.role).toBe("contributor")
+      expect(made.selected).toBeGreaterThan(0)
+      expect(read.items.some((item) => item.title === "A task")).toBe(true)
+      expect(page.pages.map((one) => one.id)).toContain("benchmarks")
+      expect(health.snapshot().calls).toBe(0)
+    })
+  }
+}), 60_000)
+
+it.live("workflows reach the selected mock: list and commands", () => scoped(effect {
+  const health = try heldHealth()
+  provide BrowserFactory("http://startup.test", true, "maintainer").pipe(Layer.provide(health.layer)) {
+    const actions = try Actions
+    const registered = try actions.list()
+    const commands = try actions.commands()
+    try Effect.try(() => {
+      expect(registered.length).toBeGreaterThan(0)
+      expect(commands.length).toBeGreaterThan(0)
+    })
+  }
+}), 60_000)

@@ -1,76 +1,18 @@
-// The browser boundary: picks the backend, injects the stylesheet and starts the Foldkit runtime, once.
-// The live Factory when this origin's `/api/health` says `agent: "live"` (wiki/decisions/0010-live-agent.md); the mock
-// otherwise, with no backend and no model (0004): on `pnpm dev` and `vite preview`, on a deployment without the API
-// Worker, and whenever the page asks for it with `?agent=mock` or the `vibelang.agent` storage key set to `mock`.
-// The page's window, document and media queries come from VibeLang's browser services, its randomness from Web
-// Crypto through Effect's SecureRandom. The mock loads only when chosen: it carries the flow engine (0011), which a
-// live page never runs.
+// Browser boundary. The startup program is shared with the runtime and injected-fault browser tests. /history is the
+// mythical history's page (wiki/decisions/0020-mythical-history.md); every other path is the chat.
+import { FetchHttpClient } from "effect/http"
 import { Runtime } from "foldkit"
-import { ExperimentalBrowserDocument, ExperimentalBrowserMediaQuery, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
-import { health, LiveFactory } from "../core/LiveFactory.vibe"
-import { Flags, init, Message, Model, subscriptions, update, viewTransition } from "./main.vibe"
-import { stylesheet } from "./styles.vibe"
-import { view } from "./view.vibe"
+import { historyMain } from "./historyStartup.vibe"
+import { main, page } from "./startup.vibe"
 
-/** Whether this page asked for the mock agent. Storage can be unavailable; that asks for nothing. */
-function askedForMock(window: Window): boolean {
-  if (new URLSearchParams(window.location.search).get("agent") === "mock") return true
-  try {
-    return window.localStorage.getItem("vibelang.agent") === "mock"
-  } catch {
-    return false
-  }
+const services = Layer.merge(page, FetchHttpClient.layer)
+const path = await runPromise(Effect.provide(effect {
+  return (try (try Experimental.Window.Window).current).location.pathname
+}, page))
+if (path === "/history" || path.startsWith("/history/")) {
+  const { application, flags } = await runPromise(Effect.provide(historyMain(), services) |> Effect.orDie(%))
+  Runtime.run(application, { flags: succeed(flags) })
+} else {
+  const { application, flags } = await runPromise(Effect.provide(main(), services) |> Effect.orDie(%))
+  Runtime.run(application, { flags: succeed(flags) })
 }
-
-/** Whether `origin`'s API runs the live agent; anything else within three seconds, or no answer, means the mock. */
-effect function isLive(origin: string) {
-  provide FetchHttpClient.layer {
-    const answer = (health(origin) |> timeout(%, "3 seconds")) catch () => undefined
-    return answer?.agent === "live"
-  }
-}
-
-/** The mock Factory's module, fetched only for a page that runs the mock. */
-effect function mockFactory() {
-  return (try promise(() => import("../core/MockFactory.vibe"))).MockFactory
-}
-
-/** The Foldkit application for this page, and the flags it starts with. */
-export effect function main() {
-  const window = try (try Experimental.Window.Window).current
-  const document = try (try Experimental.Document.Document).current
-  const origin = window.location.origin
-  const live = !askedForMock(window) && try isLive(origin)
-  const css = try stylesheet()
-  const root = try Effect.try(() => {
-    const style = document.createElement("style")
-    style.textContent = css
-    document.head.append(style)
-    return document.getElementById("root")!
-  })
-  const resources = live ? LiveFactory(origin).pipe(Layer.provide(FetchHttpClient.layer)) : try mockFactory()
-  const reducedMotion = try (try Experimental.MediaQuery.MediaQuery).matches("(prefers-reduced-motion: reduce)")
-  const session = (try (try SecureRandom.SecureRandom).uuidV4()).slice(0, 8)
-  const flags: Flags = { session, mode: live ? "live" : "mock", name: "Guest", reducedMotion }
-  const application = try Effect.try(() => Runtime.makeApplication({
-    Model,
-    Flags,
-    init,
-    update,
-    view,
-    subscriptions: subscriptions(document, document),
-    viewTransition,
-    resources,
-    container: root,
-    devTools: { Message },
-  }))
-  return { application, flags }
-}
-
-/** What `main` reads from the page: its window, document and media queries, and Web Crypto. */
-const page = Layer.mergeAll(
-  ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer, ExperimentalBrowserMediaQuery.layer, SecureRandom.layerWebCrypto,
-)
-
-const { application, flags } = await runPromise(Effect.provide(main(), page) |> Effect.orDie(%))
-Runtime.run(application, { flags: succeed(flags) })

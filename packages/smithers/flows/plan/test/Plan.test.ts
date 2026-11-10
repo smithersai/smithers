@@ -38,6 +38,18 @@ const draftSpec = FastCheck.tuple(
 )
 
 describe("Plan.compile", () => {
+  it.effect("retains an undefined literal and its key through persisted plan JSON", () =>
+    Effect.gen(function*() {
+      const before = yield* withCrypto(compile([
+        draft("void", { inputs: [{ _tag: "Literal", value: undefined }] })
+      ]))
+      const json = JSON.stringify(before)
+      const after = Schema.decodeUnknownSync(Schema.fromJsonString(Plan.Plan))(json)
+      expect(after).toEqual(before)
+      expect(Object.hasOwn(after.nodes[0]!.material.inputs[0]!, "value")).toBe(true)
+      expect(yield* withCrypto(Plan.verify(after))).toEqual(before)
+    }))
+
   it("yields during dense writer inference so interruption can stop the pass", async () => {
     const controller = new AbortController()
     const original = FileSet.overlaps

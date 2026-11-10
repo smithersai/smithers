@@ -1,0 +1,7 @@
+import { expect, it } from "@effect/vitest"
+import { answer } from "./fixture.vibe"
+
+it.effect("executes one of the two real branches", () => effect {
+  const result = try answer(true)
+  try Effect.try(() => expect(result).toBe(7))
+})

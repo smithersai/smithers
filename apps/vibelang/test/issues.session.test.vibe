@@ -1,0 +1,37 @@
+import { expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientError, HttpClientRequest } from "effect/http"
+import { personClient } from "../src/surfaces/backend.vibe"
+
+effect function failingTransport() {
+  const seen = try Ref.make<ReadonlyArray<{ attached: boolean; origin: string | undefined }>>([])
+  const client = HttpClient.make(effect (request) => {
+    try Ref.update(seen, rows => [...rows, { attached: request.headers.cookie === "__Host-vibelang-session=opaque-signed-session", origin: request.headers.origin }])
+    throw new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "injected transport fault" }) })
+  })
+  return { seen, layer: Layer.succeed(HttpClient.HttpClient, client) }
+}
+it.effect("binds the person's CLI/MCP session to one origin even on transport failure", () => effect {
+  const transport = try failingTransport()
+  provide transport.layer {
+    const client = try personClient("https://factory.example", Redacted.make(JSON.stringify({ origin: "https://factory.example", cookie: "__Host-vibelang-session=opaque-signed-session" })))
+    try Effect.result(client.execute(HttpClientRequest.post("https://factory.example/api/issues")))
+    try Effect.result(client.get("https://factory.example.attacker.invalid/api/issues"))
+    try Effect.result(client.get("https://elsewhere.example/api/issues"))
+    const seen = try Ref.get(transport.seen)
+    try Effect.try(() => expect(seen).toEqual([{ attached: true, origin: "https://factory.example" }, { attached: false, origin: undefined }, { attached: false, origin: undefined }]))
+  }
+})
+it.effect("refuses malformed or differently bound sessions before a request", () => effect {
+  const transport = try failingTransport()
+  provide transport.layer {
+    for (const value of ["not-json", JSON.stringify({ origin: "https://elsewhere.example", cookie: "__Host-vibelang-session=opaque-signed-session" }), JSON.stringify({ origin: "https://factory.example", cookie: "other=cookie" })]) {
+      const result = try Effect.result(personClient("https://factory.example", Redacted.make(value)))
+      try Effect.try(() => {
+        expect(result._tag).toBe("Failure")
+        if (result._tag === "Failure") expect(result.failure.message).toBe("Invalid VIBELANG_SESSION.")
+      })
+    }
+    const seen = try Ref.get(transport.seen)
+    try Effect.try(() => expect(seen).toHaveLength(0))
+  }
+})

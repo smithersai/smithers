@@ -1316,3 +1316,15 @@ A launcher mounts its named package root so scripts can load sibling modules.
 Module-format-only manifests under `bin/` do not narrow that root. Custom host
 probes can implement `Host.packageDirectory`; omitted, manifest existence is
 used. The search stays bounded and never grants the host home or filesystem root.
+
+### `TestNodeRuntime.sqliteObjectStorage(filename?)`
+
+Creates real SQLite storage for exercising host-independent object code on Node. It exposes synchronous SQL cursors (`columnNames`, `raw()`, `toArray()`), structured key/value reads and writes, sorted prefix listing with an inclusive optional `start` cursor, nested transactions, and persisted alarm deadlines. Values use Node's structured serializer, preserving Maps, typed arrays, BigInts and `undefined`.
+
+The caller closes it with `close()`, normally from an Effect scope finalizer. Alarm deadlines are data; the test's durable host drives the alarm entry point explicitly. Transaction SQL goes through `transaction()`, matching the object driver's API. This is a Node host adapter, with workerd tests still required for the native Durable Object boundary.
+
+`SandboxedFlow` bundles `.vibe` project helpers with the public
+`vibelang-unplugin/esbuild` adapter. Both `.vibe` entries and TypeScript entries
+importing VibeLang SDK source keep their measured declaration and run in the
+ordinary guest runtime. The host needs the project's pinned VibeLang compiler;
+a compiler refusal remains `SandboxedFlowError` with code `bundle_failed`.

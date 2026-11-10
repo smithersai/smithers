@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 23
+bias 5
+null-prototype true
+key 3292352743
+tape RAefKJTJYi09y6N1XquKbZs1jNlHqfZwCsHaN-AVycHha9t7cbRqP5X4svX6gbD_2IE4VCV3afXNYANuveVIeubuTWJdA65DXovumGcE5Q81HWIUWZ_gSCXWOLYQyf4IuZGFVEBGycFN7xep7Ju29nE0C-sPUy1sIHUsXJiVRZhiHdbrWkf3zipcAMhdpxEQ0Vhl3AyGv85eniRteHBGdbSmby283hDOJ3tX4N6eKIHEpqyGpaFz6fnY4R9AFeVgtpBjtZbFAwWjWftm3AS-NU5fKItffZ-ZigIViIKVqA0Wp6V51V4tJHMsbiAgZ1Re7aUAqVj6QPfTYcsmW9BuvX5y0YbuoQDhOP0MJga9omWccc4axtNZaA3K45f22C6J5Jc_-UE3X5uRjtHvJ4Jj28TGw2IHNINCNcMWxN5BkDGgi22Oja4px6bcdg3psH9aMYIx83uOjGJhyWSIz2qjVpEqxd-mIqvvR3nv_cU9IZv37huqlXesosaPNSKGO3VfTmObnIY27jxQELim3X6upXLUQl4bjbP7lJotqJ40epdwpspDd5TDMWLWcG26dqtKY2nPDyQQybTsNloBBX3oA-GnHRUbRq6x8K3kySihoWap-2PSYhHHHo0C_iWTdtCC-xrvB5qJJeyU7iX2og3cN8GAB9_r7_lrSjKcnHRzQV4NGjm7nVs-f7jEXytzFT_cA_5cFuxH8Y-UJYCwhLUK_Nnxn_rjPxBwiudgs9trdcQsHl0DQbUyoPrPfuvu93KeOFqiCA
+schedule-key 1888189485
+schedule 
+signature "ReturnedFalse"
+path 2.4.5.5.16.17.7
+codec "json"
+value "[{\"op\":0,\"role\":\"maintainer\",\"grant\":\"maintainer\",\"target\":0},{\"op\":3,\"role\":\"maintainer\",\"grant\":\"new\",\"target\":0},{\"op\":4,\"role\":\"new\",\"grant\":\"new\",\"target\":18},{\"op\":31,\"role\":\"contributor\",\"grant\":\"maintainer\",\"target\":12},{\"op\":24,\"role\":\"viewer\",\"grant\":\"contributor\",\"target\":1},{\"op\":30,\"role\":\"new\",\"grant\":\"contributor\",\"target\":27},{\"op\":31,\"role\":\"contributor\",\"grant\":\"contributor\",\"target\":4},{\"op\":19,\"role\":\"new\",\"grant\":\"contributor\",\"target\":11},{\"op\":21,\"role\":\"community\",\"grant\":\"community\",\"target\":1},{\"op\":27,\"role\":\"viewer\",\"grant\":\"new\",\"target\":25},{\"op\":26,\"role\":\"viewer\",\"grant\":\"new\",\"target\":0},{\"op\":30,\"role\":\"new\",\"grant\":\"maintainer\",\"target\":19},{\"op\":23,\"role\":\"community\",\"grant\":\"new\",\"target\":2},{\"op\":22,\"role\":\"maintainer\",\"grant\":\"maintainer\",\"target\":22},{\"op\":0,\"role\":\"contributor\",\"grant\":\"maintainer\",\"target\":1}]"
+# ReturnedFalse
+# [{"op":0,"role":"maintainer","grant":"maintainer","target":0},{"op":3,"role":"maintainer","grant":"new","target":0},{"op":4,"role":"new","grant":"new","target":18},{"op":31,"role":"contributor","grant":"maintainer","target":12},{"op":24,"role":"viewer","grant":"contributor","target":1},{"op":30,"role":"new","grant":"contributor","target":27},{"op":31,"role":"contributor","grant":"contributor","target":4},{"op":19,"role":"new","grant":"contributor","target":11},{"op":21,"role":"community","grant":"community","target":1},{"op":27,"role":"viewer","grant":"new","target":25},{"op":26,"role":"viewer","grant":"new","target":0},{"op":30,"role":"new","grant":"maintainer","target":19},{"op":23,"role":"community","grant":"new","target":2},{"op":22,"role":"maintainer","grant":"maintainer","target":22},{"op":0,"role":"contributor","grant":"maintainer","target":1}]

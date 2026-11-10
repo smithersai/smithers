@@ -3000,9 +3000,10 @@ The members and the value each one carries across the seam:
 | `interruptUnsafe`       | no       | None.                                                                                                                                      |
 | `resume`                | no       | None.                                                                                                                                      |
 | `resumeSignal`          | yes      | None.                                                                                                                                      |
-| `actionExecute`         | no       | Encoded. `makeUnsafe` decodes it through the action's `exitSchemaPartial`.                                                                 |
+| `actionExecute`         | no       | Encoded. `makeUnsafe` decodes it through `Action.exitSchemasFor(serialization, action).exitSchemaPartial`.                                 |
 | `actionReplayKey`       | yes      | None.                                                                                                                                      |
 | `encodeEngineError`     | yes      | None.                                                                                                                                      |
+| `serialization`         | yes      | None. The `RpcSerialization` the driver stores action results with; absent means `RpcSerialization.json` (VIP-44).                         |
 | `actionRetryOrigin`     | yes      | None.                                                                                                                                      |
 | `actionLatestAttempt`   | yes      | None.                                                                                                                                      |
 | `actionSnapshot`        | yes      | None.                                                                                                                                      |
@@ -3103,7 +3104,7 @@ Creates the initial `FlowInstance` state for one flow execution. A runtime calls
 - **Since:** `0.1.0`
 - **Related:** `FlowEngine.makeUnsafe`
 
-The volatile in-memory implementation of the `FlowRuntime` port, for tests and local development where durability is not needed. It retains completed executions, action settlements, deferred results, and clocks until the layer scope closes, and it has no eviction option. It rebuilds a submitted payload through the flow's own payload schema constructor at admission and again on every re-drive: structs, arrays, and records the schema declares are copied, and values the schema declares opaque are shared by reference. Same-key in-flight actions share one settlement, so a concurrent duplicate dispatch waits instead of executing twice. Registrations of one flow tag stack, and the last still-open one serves.
+The volatile in-memory implementation of the `FlowRuntime` port, for tests and local development where durability is not needed. It retains completed executions, action settlements, deferred results, and clocks until the layer scope closes, and it has no eviction option. It rebuilds a submitted payload through the flow's own payload schema constructor at admission and again on every re-drive: structs, arrays, and records the schema declares are copied, and values the schema declares opaque are shared by reference. Every `Set` and `Map` is sorted first, so the body sees the order its identity hashes. Same-key in-flight actions share one settlement, so a concurrent duplicate dispatch waits instead of executing twice. Registrations of one flow tag stack, and the last still-open one serves.
 
 ### `FlowEngine.Lineage`
 
@@ -10295,10 +10296,10 @@ https://smithers.sh/docs/reference/api/canonical/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs)
 
-The package provides canonical serialization, its schema and errors, bounded JSON admission, and an array-excluding record guard.
+The package provides canonical serialization, its schema and errors, collection sorting for durable identity, bounded JSON admission, and an array-excluding record guard.
 
 ```ts
-import { Canonical, CanonicalError, canonicalize } from "@smthrs/canonical"
+import { Canonical, CanonicalError, canonicalize, sortCollections } from "@smthrs/canonical"
 import type { CanonicalErrorCode } from "@smthrs/canonical"
 ```
 
@@ -10478,6 +10479,48 @@ shape or a host's runtime.
 
 Each code, with its cause and its fix, is in
 [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/docs/troubleshooting.md).
+
+## sortCollections
+
+```ts
+const sortCollections: <A>(value: A) => A
+```
+
+Copies a value with every `Set`'s entries and every `Map`'s entries in sorted
+order, at every depth. `Schema.ReadonlySet` and `Schema.ReadonlyMap` encode in
+insertion order and `Canonical` keeps array order, so equal sets would
+otherwise hash differently. Durable identity (VIP-44) runs it before the
+payload codec: sort, `Schema.toCodecJson`, `Canonical`, SHA-256.
+
+- Entries are ordered by a stable text rank of their sorted value, compared in
+  UTF-16 code units. A `Map` orders by key, then by value.
+- Arrays keep their order. Object keys are left to `Canonical`.
+- It walks the value, not a Schema. It visits every own data property,
+  enumerable or not, and a copy keeps its prototype, descriptors, and frozen,
+  sealed or non-extensible state. Private `#fields` and internal slots are
+  unreachable: a class that keeps a collection there orders it in its own
+  encoder.
+- It copies only objects that reach a collection; everything else keeps its
+  reference. Cycles and shared references survive. Accessors are never
+  invoked. The input is never mutated.
+- It never throws. An object it cannot inspect, such as a revoked proxy, is a
+  leaf and ranks after every value it can inspect.
+- Ranks read own data properties only. Elements that differ only behind
+  accessors or private fields rank equal and keep their insertion order, and
+  a copied class instance has its prototype and own properties but not its
+  private fields. Keep the data a payload is identified by in own data
+  properties.
+- Ranks read every own data property, including ones a codec drops, such as
+  a struct's excess properties. Two sets whose elements encode equal but carry
+  different dropped properties can order differently; strip excess
+  properties before hashing.
+
+```ts
+import { sortCollections } from "@smthrs/canonical"
+
+const order = sortCollections({ tags: new Set(["b", "a"]), steps: ["b", "a"] })
+const tags = [...order.tags] // ["a", "b"]; order.steps stays ["b", "a"]
+```
 
 ## isRecord
 
@@ -16266,7 +16309,7 @@ protected execution snapshot reader, independently of its redacted event view.
 | `WaitingRunsFilter`       | `{ reason?, dueBeforeMs?, cancelRequested? }`                                                        |
 | `RunParentEdge`           | `{ childId, parentId, seq }`, where `seq` is ordering only                                           |
 | `AttemptSurvivors`        | `{ earliestAttempt, earliestStartedAtMs, latest }`                                                   |
-| `CompleteDeferredOutcome` | `Completed` or `Existing`                                                                            |
+| `CompleteDeferredOutcome` | `Completed`, `Existing`, or `NotFound` (no such run: nothing stored)                                 |
 | `ScheduleClockOutcome`    | `Scheduled` or `Existing`                                                                            |
 | `CompleteClockOutcome`    | `Completed`, `AlreadyCompleted`, or `NotFound`                                                       |
 | `ParkOutcome`             | `Parked` or `NotFound`                                                                               |
@@ -17463,7 +17506,11 @@ colliding.
 
 [src/RunState.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/RunState.ts)
 
-The versioned state envelope stored in each run row.
+The versioned state envelope stored in each run row. `payload` is the flow's
+identity snapshot (`Flow.payloadSnapshot`: every `Set` and `Map` sorted, then
+the flow's JSON codec). Admission compares it with an existing row's, so equal
+sets in any insertion order join one run, and a handoff's next round is stored
+the same way.
 
 | Export         | Shape                                                                                                                                  |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -17503,6 +17550,7 @@ version.
 | `AttemptEvidenceQuarantined`              | `attempt_evidence_quarantined`                                       | `keyDigest`, `attempt`, `path`, `recordedDigest`, `measuredDigest` |
 | `CacheConflictDetected`                   | `cache_conflict_detected`                                            | `keyDigest`, `recordedRunId`                                       |
 | `CacheCorruptionDetected`                 | `cache_corruption_detected`                                          | `keyDigest`, `path`, `recordedDigest`, `measuredDigest`            |
+| `UnstorableSerialization`                 | `unstorable_serialization`                                           | `contentType`                                                      |
 | `RetentionError`, `RetentionErrorCode`    | `scan_failed`, `delete_failed`                                       |                                                                    |
 | `RunCatalogError`, `RunCatalogErrorCode`  | `invalid_options`, `invalid_cursor`, `source_changed`, `list_failed` | `cause` when a decode or store operation failed.                   |
 | `IrreversibleRetryRequiresIdempotencyKey` | re-exported from [`@smthrs/flow`](/docs/reference/api/flow/)'s `Action`              |                                                                    |
@@ -22796,7 +22844,7 @@ idempotent.
 | Export                                                       | Signature                                                                                                                | Notes                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `getPull`                                                    | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>`                                           | `GET /repos/{owner}/{repo}/pulls/{number}`, with merge state and size.                                                                                                                                                                                                                                                                                                                                        |
-| `listPulls`                                                  | `(owner, repo, options?: { state?, head?, maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`  | Most recently updated first; `state` defaults to `all`; `head` is a branch of the repository itself.                                                                                                                                                                                                                                                                                                          |
+| `listPulls`                                                  | `(owner, repo, options?: { state?, head?, maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`  | Most recently updated first; `state` defaults to `all`; `head` is a branch of the repository itself, or a fork's `owner:branch`.                                                                                                                                                                                                                                                                                                          |
 | `findPullByHead`                                             | `(owner, repo, { head, writeId? }) => Effect<Option<PullRequest>, IntegrationError, GitHubClient>`                       | The earliest-opened pull request from `head`, carrying `writeId`'s marker when given. A listing that runs out of pages without a match fails `poll-failed` with `incomplete: true`.                                                                                                                                                                                                                           |
 | `createPull`                                                 | `(owner, repo, { head, base, title, body, draft? }) => Effect<PullRequest, IntegrationError, GitHubClient>`              | `POST /repos/{owner}/{repo}/pulls`. 422 for no commits, a duplicate or a refused draft. A lost answer fails `outcomeUnknown`.                                                                                                                                                                                                                                                                                 |
 | `closePull`                                                  | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>`                                           | `PATCH` with `state: closed`; a lost answer fails `retryable`.                                                                                                                                                                                                                                                                                                                                                |
@@ -34362,6 +34410,57 @@ the two runtimes are interchangeable, and
 [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/docs/troubleshooting.md) lists the failures these exports
 produce.
 
+## Native windows and loopback HTTP
+
+`BunDesktop.layer` provides `BunDesktop.DesktopWindow`, with `resources`, `open(url)` and `chooseDirectory()`.
+The optional peer `electrobun` 1.18.1 is loaded only when this layer is built. Native window operations require an initialized Electrobun process. `open` uses
+CEF, restricts navigation to the supplied origin and disables view RPC. The caller owns the Effect scope, which
+closes its windows. A cancelled directory chooser returns `null`; native failures return `DesktopUnavailable`,
+without copying OS messages into diagnostics. The private `#electrobun` import separates the native declaration
+port from Electrobun's source-only TypeScript distribution.
+
+`BunServer.layer(port?)` provides the Effect HTTP server and its Bun support services on `127.0.0.1`. The default
+port, zero, asks the OS to choose one. The server closes with the layer's scope. Its Bun adapter is loaded only when
+the layer is built; ordinary package imports do not start a socket or load native FFI.
+
+The VibeLang desktop app is a composition example in `apps/vibelang-desktop`. Its native Linux acceptance test
+runs both exports under Xvfb and drives the real native folder chooser and the real OpenAI-compatible HTTP/SSE path.
+
+### Crash-safe local edits
+
+`BunFileSystem.replaceFileString(fs, path, before, after)` writes a private sibling file, syncs it through the
+host, preserves the original mode, rechecks the expected original, then uses same-directory atomic rename.
+An interrupted temporary write leaves the original intact. An already applied edit is an idempotent success;
+a changed original fails with `FileChanged`. This is optimistic conflict detection, not a lock against another
+process writing between the final comparison and rename. Supply the kernel's confined filesystem to retain
+its descriptor-relative root identity and no-follow boundary. The function requires Path and SecureRandom.
+
+### Electrobun compatibility boundary
+
+`BunDesktop.layer` supports Bun 1.4 with the compatibility-marked Electrobun 1.18.1 API. Upstream 1.18.1 assumes
+cstring callback arguments are pointers; Bun 1.4 supplies strings. This package ships the correction in
+`patches/electrobun@1.18.1.patch`, including redacted callback diagnostics. Compatibility version 2 also replaces the native Linux opener's shell
+fallback with an OS argument vector, a bounded wait and private child diagnostics. The workspace already applies it.
+External applications apply the shipped patch before using this optional native layer:
+
+```sh
+pnpm patch electrobun@1.18.1 --edit-dir .electrobun-compat
+patch --directory=.electrobun-compat --strip=1 < node_modules/@smthrs/platform-bun/patches/electrobun@1.18.1.patch
+pnpm patch-commit .electrobun-compat
+```
+
+The layer checks the patch's exported compatibility marker and fails with `DesktopUnavailable` before creating
+any window if it is absent. Installing the unmodified optional peer does not silently enable an unsupported
+native capability. Other Bun host services do not load Electrobun. Remove this patch and marker requirement when
+a tested upstream release provides equivalent callback decoding and private diagnostics.
+
+The native test collector runs the wrapper under Node/V8 against real Electrobun APIs hosted in a separate process.
+Linux needs Xvfb, GTK 3, WebKitGTK 4.1, Ayatana appindicator, curl, Python 3 and X11/XTest; the system opener uses the
+repository's Playwright Chromium as a real headless browser. The Bun compatibility worker does not start another
+native fixture. `BunDesktop.layerWith` injects the foreign `NativeLoader` port; successful tests use actual windows,
+GTK selection/cancellation and the OS browser opener. Faulty native dependencies cover typed failures. This measures
+the Effect wrapper, not C++/CEF. The helper prerequisite for filesystem tests remains unchanged.
+
 ---
 
 # @smthrs/platform-cloudflare
@@ -34455,12 +34554,56 @@ drives the execution.
 interface Options {
   readonly hostId: string
   readonly executionId: string
+  readonly flow?: string
+  readonly retention?: CloudflareRuntime.Retention
 }
 ```
 
 - `hostId`: the Durable Object, the same for every incarnation of it. Pass
   `ctx.id.toString()`.
 - `executionId`: the one execution this runtime drives.
+- `flow`: the persisted intent's flow tag; recovery skips unrelated
+  registrations.
+- `retention`: delete this store's settled history as the runtime is built.
+  Unset, nothing is deleted.
+
+### `CloudflareRuntime.Retention`
+
+```ts
+interface Retention {
+  readonly olderThanMs: number
+  readonly limit?: number // CloudflareRuntime.defaultRetentionLimit, 100
+}
+```
+
+Nothing else deletes from a Durable Object's own engine store: `smithers gc`
+runs on a host's files. An object that runs one execution per invocation, such
+as one object per person that meters usage or answers writes, grows by one run
+each time. With `retention`, the runtime runs one pass of `@smthrs/engine-store`'s
+`Retention.collect` over the object's SQLite before the engine's migrations and
+recovery, in the same invocation:
+
+- only a `completed`, `failed` or `cancelled` run that finished at least
+  `olderThanMs` ago is deleted, never one a live run stands above or below;
+- the execution this runtime drives is pinned, so driving an aged settled
+  execution again still answers its recorded result;
+- each run goes with its journal, attempts, timers and completions, at most
+  `limit` runs a pass, in one `storage.transaction()`.
+
+A deleted execution id no longer deduplicates, so choose `olderThanMs` longer
+than any caller retries an id. A failed pass deletes nothing and never fails
+the execution. Each pass writes a `smithers.cloudflare.retention` line and span
+with its `outcome` (`deleted`, `none` or `failed`), the `runs` it deleted,
+`durationMs` and, on failure, `error.type`; never a run id. It counts
+`smithers_cloudflare_retention_passes` by outcome and
+`smithers_cloudflare_retention_runs_deleted`.
+
+```ts
+CloudflareRuntime.layer(
+  { hostId: ctx.id.toString(), executionId, flow: Meter._tag, retention: { olderThanMs: 86_400_000 } },
+  registration
+).pipe(Layer.provide(ObjectDatabase.layer(ctx.storage)))
+```
 
 ## ExecutionObject
 
@@ -34565,8 +34708,10 @@ const intent: <F extends Flow.Any>(
 ) => Effect.Effect<ExecutionObject.Intent, Schema.SchemaError, Flow.PayloadSchema<F>["EncodingServices"]>
 ```
 
-Builds an intent, encoding the payload with the flow's own JSON codec, the one
-`alarm` decodes it with. Fails with `SchemaError` for a payload the schema
+Builds an intent, encoding the payload as its identity snapshot
+(`Flow.payloadSnapshot`: every `Set` and `Map` sorted, then the flow's own JSON
+codec, the one `alarm` decodes it with), so equal payloads store equal intents
+and the same intent again is recognized whatever a set's insertion order. Fails with `SchemaError` for a payload the schema
 refuses or an empty execution id.
 
 ### `ExecutionObject.Intent`
@@ -36451,6 +36596,18 @@ A launcher mounts its named package root so scripts can load sibling modules.
 Module-format-only manifests under `bin/` do not narrow that root. Custom host
 probes can implement `Host.packageDirectory`; omitted, manifest existence is
 used. The search stays bounded and never grants the host home or filesystem root.
+
+### `TestNodeRuntime.sqliteObjectStorage(filename?)`
+
+Creates real SQLite storage for exercising host-independent object code on Node. It exposes synchronous SQL cursors (`columnNames`, `raw()`, `toArray()`), structured key/value reads and writes, sorted prefix listing with an inclusive optional `start` cursor, nested transactions, and persisted alarm deadlines. Values use Node's structured serializer, preserving Maps, typed arrays, BigInts and `undefined`.
+
+The caller closes it with `close()`, normally from an Effect scope finalizer. Alarm deadlines are data; the test's durable host drives the alarm entry point explicitly. Transaction SQL goes through `transaction()`, matching the object driver's API. This is a Node host adapter, with workerd tests still required for the native Durable Object boundary.
+
+`SandboxedFlow` bundles `.vibe` project helpers with the public
+`vibelang-unplugin/esbuild` adapter. Both `.vibe` entries and TypeScript entries
+importing VibeLang SDK source keep their measured declaration and run in the
+ordinary guest runtime. The host needs the project's pinned VibeLang compiler;
+a compiler refusal remains `SandboxedFlowError` with code `bundle_failed`.
 
 ---
 
@@ -45054,6 +45211,10 @@ production TUI in a real PTY for session commands and keyboard navigation.
 `SMITHERS_TERMINAL_ARTIFACTS` selects the parent evidence directory; each run
 creates a fresh child. The CLI additionally accepts `SMITHERS_TERMINAL_PATH`
 for a native executable PATH when a host shim depends on its original HOME.
+
+## Feedback-guided fuzzing
+
+`it.effect.fuzz`, `it.fuzz`, and root `FuzzCorpus` provide corpus-backed regression tests and bounded search. See [fuzzing](https://github.com/smithersai/smithers/blob/main/packages/testing/docs/guides/fuzzing.md) for inputs, budgets, revisions and simulation.
 
 ---
 

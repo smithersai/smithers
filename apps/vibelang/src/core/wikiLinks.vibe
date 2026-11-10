@@ -1,0 +1,20 @@
+// Shared by the cold wiki generator and the pane; independent of generated assets.
+/** One Markdown link rule for the build and the pane's edited pages: relative links resolve against their page. */
+export function wikiLink(fromId: string, href: string, ids: ReadonlyArray<string>): string {
+  if (/^(?:https?:|#|\/)/.test(href)) return href
+  const [relative, hash] = href.split("#")
+  const base = fromId.includes("/") ? fromId.slice(0, fromId.lastIndexOf("/")) : ""
+  const parts = [...(base === "" ? [] : base.split("/")), ...(relative ?? "").split("/")]
+  const out: Array<string> = []
+  for (const part of parts) {
+    if (part === "" || part === ".") continue
+    if (part === "..") {
+      if (out.length > 0 && out.at(-1) !== "..") out.pop()
+      else out.push("..")
+    }
+    else out.push(part)
+  }
+  const target = out.join("/").replace(/\.md$/, "").replace(/\/$/, "")
+  const page = ids.includes(target) ? target : ids.includes(`${target}/index`) ? `${target}/index` : target
+  return ids.includes(page) || page === "decisions" || page === "designs" ? `/wiki/${page}${hash ? `#${hash}` : ""}` : `https://github.com/smithersai/smithers/blob/main/apps/vibelang/wiki/${out.join("/")}${hash ? `#${hash}` : ""}`
+}

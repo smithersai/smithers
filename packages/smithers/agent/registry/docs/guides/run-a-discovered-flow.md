@@ -81,6 +81,14 @@ host module cache cannot guarantee fresh measured bytes, and deferred loads
 can outlive temporary module cleanup. Installed packages without project
 mappings and Node/Bun builtins remain host dependencies.
 
+A TypeScript entry can statically import `.vibe` helpers when its native host
+loads `vibelang/register`. Verified copies use visible, exclusively reserved
+`smithers-<digest>-<sequence>-<time>.<extension>` siblings: compiler project globs
+include the entry and follow its helper imports. The loader removes them when
+loading settles, and also sweeps stale siblings left by an interrupted load.
+It still checks the original closure before importing and rewrites every static
+project import to that load's measured copy. A helper edit requires refresh.
+
 ## Register everything runnable
 
 `Executable.layer(options)` is the layer a host passes as its registration

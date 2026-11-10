@@ -60,7 +60,10 @@ export default tseslint.config(
       "unicorn/prefer-array-flat-map": "error"
     }
   },
-  ...jsdocConvention,
+  ...jsdocConvention.map((config) => ({
+    ...config,
+    ignores: [...(config.ignores ?? []), ...["src/internal/fuzz.ts"]]
+  })),
   // `uninstalledSafety` is deliberately off here: an uninstalled service is what a
   // double is for, and this package's `src` is that product.
   ...invariants(swallowedCause, ambientAuthority)

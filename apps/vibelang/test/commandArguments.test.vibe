@@ -1,0 +1,64 @@
+// The commands' argument decisions (src/surfaces/commandDecision.vibe, proved; 0018 "Command argument decisions").
+import { describe, expect, it } from "@effect/vitest"
+import { failureMessage, historyReads, historyTotal, issueDetail, issueResume, knownEpic, planHow, planTarget, runSettled, runWaitFails, wikiPage, writeFailure } from "../src/surfaces/commandDecision.vibe"
+
+describe("plan's flags", () => {
+  it("amend before insert before append, and name the commit each acts on", () => {
+    expect(planHow("m2", "m1")).toBe("amend")
+    expect(planHow("", "m1")).toBe("insert")
+    expect(planHow("", "")).toBe("append")
+    expect(planTarget("amend", "m2", "m1")).toBe("m2")
+    expect(planTarget("insert", "m2", "m1")).toBe("m1")
+    expect(planTarget("append", "", "")).toBe("")
+  })
+})
+
+describe("history's flags", () => {
+  it("read an epic's page or else a search, never both, and a commit when named", () => {
+    expect(historyReads("e1", "parser", "m3")).toEqual({ epic: true, search: false, commit: true })
+    expect(historyReads("", "parser", "")).toEqual({ epic: false, search: true, commit: false })
+    expect(historyReads("", "", "")).toEqual({ epic: false, search: false, commit: false })
+  })
+
+  it("refuse an unknown epic only, and total a page by its epic", () => {
+    expect(knownEpic(["e1", "e2"], "e2")).toBe(true)
+    expect(knownEpic(["e1"], "e9")).toBe(false)
+    expect(knownEpic([], "")).toBe(true)
+    expect(historyTotal(true, 40, 20)).toBe(40)
+    expect(historyTotal(false, 0, 3)).toBe(3)
+  })
+})
+
+describe("issue's flags", () => {
+  it("detail the specification for spec- operations and a bare read", () => {
+    expect(issueDetail("spec-review", 7)).toBe("specification")
+    expect(issueDetail("read", 0)).toBe("specification")
+    expect(issueDetail("read", 7)).toBe("issue")
+    expect(issueDetail("comment", 0)).toBe("issue")
+  })
+
+  it("send a resume only with its operation and key, and its recovery only with it", () => {
+    expect(issueResume("new", "k", "r", "")).toEqual({ resume: true, resumeRecovery: true, recovery: false })
+    expect(issueResume("new", "", "r", "x")).toEqual({ resume: false, resumeRecovery: false, recovery: true })
+    expect(issueResume("", "k", "", "")).toEqual({ resume: false, resumeRecovery: false, recovery: false })
+  })
+})
+
+describe("failures and defaults", () => {
+  it("say a role refusal, an action's code, or the command's own failure", () => {
+    expect(writeFailure("forbidden", "Wiki change failed.")).toBe("Not allowed.")
+    expect(writeFailure("conflict", "Wiki change failed.")).toBe("Wiki change failed.")
+    expect(failureMessage("ActionFailure", "denied", "", "", "", "")).toBe("Action: denied")
+    expect(failureMessage("Refused", "", "", "The message was refused", "busy", "")).toBe("The message was refused: busy")
+    expect(failureMessage("Unavailable", "", "offline", "", "", "")).toBe("offline")
+  })
+
+  it("read the wiki index by default, and wait for a run until it settles and passes", () => {
+    expect(wikiPage("")).toBe("index")
+    expect(wikiPage("faq")).toBe("faq")
+    expect(["queued", "running", "passed", "failed"].map(runSettled)).toEqual([false, false, true, true])
+    expect(runWaitFails(true, "passed")).toBe(false)
+    expect(runWaitFails(true, "failed")).toBe(true)
+    expect(runWaitFails(false, "")).toBe(true)
+  })
+})

@@ -1,12 +1,20 @@
+import { collectAnswer, answerOutcome, failureMessage, historyReads, historyTotal, issueDetail, issueResume, knownEpic, planHow, planTarget, runSettled, runWaitFails, wikiPage, writeFailure, type AskProgress } from "./commandDecision.vibe"
+import { commandConversation } from "../core/protocolDecision.vibe"
+import { IssueRequest, IssuesState, SpecificationReviewer } from "../core/issueSchemas.vibe"
+import { WikiState } from "../core/wikiSchemas.vibe"
 // One command registry; CLI parameters, MCP tools and discovery all derive from it (decision 0009).
 import { Argument, Flag, type Command } from "effect/cli"
-import { Tool } from "effect/ai"
-import { Factory } from "../core/Factory.vibe"
+import { IdGenerator, Tool } from "effect/ai"
+import { Factory, SandboxSnapshot } from "../core/Factory.vibe"
 import { Entry, Seq } from "../core/schemas.vibe"
+import { Actions, ActionFailure, Registered, Run } from "../actions/Actions.vibe"
+import { Mythical } from "../history/MythicalHistory.vibe"
+import type { CommitPage, Head, Outline } from "../history/pages.vibe"
+import { LoginInput, LoginOutput, LogoutOutput, SignInFailed, signIn, signOutSurface } from "./signin.vibe"
 
 export schema error CommandError { readonly message: string }
 
-const Conversation = Schema.String.check(Schema.isMinLength(1))
+const Conversation = Schema.String.check(Schema.makeFilter(commandConversation, Schema.isMinLength(1).annotations))
 const conversation = Conversation.pipe(Schema.withDecodingDefaultKey(succeed("home")))
 const after = Seq.pipe(Schema.withDecodingDefaultKey(succeed(0)))
 export schema AskInput { readonly text: string; readonly conversation: conversation }
@@ -27,29 +35,18 @@ effect function ask(input: AskInput) {
   const clientId = try IdGenerator.defaultIdGenerator.generateId()
   try factory.post(input.conversation, clientId, "Factory CLI", input.text)
   // Correlate by post identity even when an agent skips or reorders prompts.
-  let postId = ""
-  const numbers: Array<number> = []
-  let replyId = ""
-  let text = ""
-  let failure: string | undefined
-  let finished = false
-  try Stream.runForEachWhile(factory.events(input.conversation, 0), effect (event) => {
-    if (event.type === "Posted") {
-      if (event.clientId === clientId) { postId = event.id; numbers.push(event.seq) }
-    } else if (event.type === "ReplyStarted") {
-      if (postId !== "" && event.inReplyTo === postId) replyId = event.id
-    }
-    if (event.id !== replyId) return true
-    numbers.push(event.seq)
-    if (event.type === "ReplyDelta") text += event.text
-    if (event.type === "ReplyRestarted") text = ""
-    if (event.type === "ReplyFailed") failure = event.reason
-    if (event.type === "ReplyFinished") finished = true
-    return event.type !== "ReplyFinished" && event.type !== "ReplyFailed"
+  let progress: AskProgress = { post: "", reply: "", numbers: [], text: "", failed: false, failure: "", finished: false, listening: true }
+  try Stream.runForEachWhile(factory.events(input.conversation, 0), (event) => {
+    progress = collectAnswer(progress, event.type, event.id, event.seq,
+      event.type === "Posted" ? event.clientId : "", clientId,
+      event.type === "ReplyStarted" ? event.inReplyTo : "",
+      event.type === "ReplyDelta" ? event.text : "", event.type === "ReplyFailed" ? event.reason : "")
+    return succeed(progress.listening)
   })
-  if (failure !== undefined) throw new CommandError({ message: `The agent's reply failed: ${failure}` })
-  if (!finished) throw new CommandError({ message: "The conversation ended before the agent's reply finished." })
-  return { conversation: input.conversation, text, events: numbers }
+  const outcome = answerOutcome(progress.failed, progress.finished)
+  if (outcome === "failed") throw new CommandError({ message: `The agent's reply failed: ${progress.failure}` })
+  if (outcome === "ended") throw new CommandError({ message: "The conversation ended before the agent's reply finished." })
+  return { conversation: input.conversation, text: progress.text, events: progress.numbers }
 }
 
 effect function read(input: ReadInput) {
@@ -58,14 +55,15 @@ effect function read(input: ReadInput) {
   return { conversation: input.conversation, ...snapshot }
 }
 
-function define<const Name extends string, I extends Schema.ConstraintCodec<unknown>, O extends Schema.ConstraintCodec<unknown>, P extends Command.Command.Config>(
+function define<const Name extends string, I extends Schema.ConstraintCodec<unknown>, O extends Schema.ConstraintCodec<unknown>, P extends Command.Command.Config, R extends Factory | Mythical | Actions | FileSystem.FileSystem | Path.Path>(
   name: Name,
   description: string,
   input: I,
   output: O,
   parameters: P,
-  handler: (input: I["Type"]) => O["Type"]!(CommandError | import("../core/Factory.vibe").Unavailable | import("../core/Factory.vibe").Refused)!Factory,
+  handler: (input: I["Type"]) => O["Type"]!(CommandError | ActionFailure | import("../core/Factory.vibe").Unavailable | import("../core/Factory.vibe").Refused)!R,
   format: (output: O["Type"]) => string,
+  refused = "The message was refused",
 ) {
   const invoke = effect (value: unknown) => {
     const decoded = try Schema.decodeUnknownEffect(input)(value)
@@ -75,8 +73,8 @@ function define<const Name extends string, I extends Schema.ConstraintCodec<unkn
   const run = effect (value: unknown) => {
     return invoke(value) catch effect (error) => {
       if (error._tag === "CommandError") throw error
-      const message = error._tag === "Unavailable" ? error.reason
-        : error._tag === "Refused" ? `The message was refused: ${error.refusal}` : error.message
+      const message = failureMessage(error._tag, error._tag === "ActionFailure" ? error.code : "", error._tag === "Unavailable" ? error.reason : "",
+        refused, error._tag === "Refused" ? error.refusal : "", error._tag === "Unavailable" || error._tag === "Refused" || error._tag === "ActionFailure" ? "" : error.message)
       throw new CommandError({ message })
     }
   }
@@ -99,4 +97,299 @@ export const Read = define("read", "Read current entries changed after an event 
 }, read, (output) => output.entries.length === 0 ? `No entries. Event: ${output.seq}`
   : `${output.entries.map((entry) => `${entry.name}: ${entry.text}`).join("\n\n")}\n\nEvent: ${output.seq}`)
 
-export const commands = [Ask, Read] as const
+// ── the mythical history (wiki/decisions/0020-mythical-history.md) ─────────────────────────────────────────────────
+
+/** How a history command reports the sequencer's refusal, or `forbidden`. */
+export const HISTORY_REFUSED = "The history refused it"
+
+const Id = Schema.String.check(Schema.isMinLength(1))
+const optional = Schema.String.pipe(Schema.withDecodingDefaultKey(succeed("")))
+
+export schema HistoryInput {
+  readonly commit: optional
+  readonly epic: optional
+  readonly from: after
+  readonly search: optional
+}
+export schema HistoryEpic { readonly id: string; readonly title: string; readonly commits: number }
+export schema HistoryCommit { readonly id: string; readonly state: string; readonly title: string }
+export schema HistoryDetail {
+  readonly id: string
+  readonly state: string
+  readonly title: string
+  readonly task: string
+  readonly lane: string
+  readonly notes: ReadonlyArray<string>
+  readonly real: ReadonlyArray<string>
+}
+export schema HistoryOutput {
+  readonly seq: Seq
+  readonly main: string
+  readonly epics: ReadonlyArray<HistoryEpic>
+  readonly open: ReadonlyArray<HistoryCommit>
+  /** An epic's page (`--epic`, `--from`) or a search's matches (`--search`); `total` is how many there are in all. */
+  readonly commits: ReadonlyArray<HistoryCommit>
+  readonly total: number
+  readonly commit: HistoryDetail | null
+}
+export schema PlanInput {
+  readonly title: string
+  readonly epic: optional
+  readonly newEpic: optional
+  readonly before: optional
+  readonly amend: optional
+  readonly task: optional
+}
+export schema StartInput { readonly id: Id; readonly lane: Id }
+export schema NoteInput { readonly id: Id; readonly section: "tried" | "evidence" | "superseded"; readonly text: string }
+export schema WrittenOutput { readonly id: string }
+
+function brief(commit: Head) {
+  return { id: commit.id, state: commit.state, title: commit.title }
+}
+
+/** The history as an agent reads it: the outline, an epic's page or a search's matches, and one commit in full. */
+function summaryOf(outline: Outline, commits: ReadonlyArray<Head>, total: number, page: CommitPage | undefined) {
+  const found = page?.commit ?? null
+  return {
+    seq: outline.seq,
+    main: outline.main,
+    epics: outline.epics.map((epic) => ({ id: epic.id, title: epic.title, commits: epic.commits })),
+    open: outline.open.map(brief),
+    commits: commits.map(brief),
+    total,
+    commit: found === null ? null : {
+      id: found.id,
+      state: found.state,
+      title: found.title,
+      task: found.task,
+      lane: found.lane,
+      notes: found.notes.map((each) => `${each.section}: ${each.text} (${each.by})`),
+      real: page!.real.map((real) => real.sha),
+    },
+  }
+}
+
+/** Reads only what was asked: the outline, then an epic's page or a search, and a commit. */
+effect function showHistory(input: HistoryInput) {
+  const mythical = try Mythical
+  const outline = try mythical.outline()
+  if (!knownEpic(outline.epics.map((each) => each.id), input.epic)) throw new CommandError({ message: `No epic ${input.epic}.` })
+  const reads = historyReads(input.epic, input.search, input.commit)
+  const listed = reads.epic ? try mythical.epic(input.epic, input.from) : undefined
+  const matched = reads.search ? try mythical.search(input.search) : undefined
+  const page = reads.commit ? try mythical.commit(input.commit) : undefined
+  if (page !== undefined && page.commit === null) throw new CommandError({ message: `No mythical commit ${input.commit}.` })
+  const commits = listed?.commits ?? matched?.commits ?? []
+  return summaryOf(outline, commits, historyTotal(listed !== undefined, listed?.total ?? 0, commits.length), page)
+}
+
+effect function plan(input: PlanInput) {
+  const mythical = try Mythical
+  const how = planHow(input.amend, input.before)
+  const id = try mythical.plan({
+    how,
+    epic: input.epic,
+    newEpic: input.newEpic,
+    target: planTarget(how, input.amend, input.before),
+    title: input.title,
+    task: input.task,
+  })
+  return { id }
+}
+
+effect function start(input: StartInput) {
+  try (try Mythical).start(input.id, input.lane)
+  return { id: input.id }
+}
+
+effect function note(input: NoteInput) {
+  try (try Mythical).note(input.id, input.section, input.text)
+  return { id: input.id }
+}
+
+export const ShowHistory = define("history", "Read VibeLang's mythical history: epics, work not landed, an --epic's commits by page (--from), a --search, one --commit in full.", HistoryInput, HistoryOutput, {
+  commit: Flag.String("commit").pipe(Flag.withDefault("")),
+  epic: Flag.String("epic").pipe(Flag.withDefault("")),
+  from: Flag.Int("from").pipe(Flag.withDefault(0), Flag.withSchema(Seq)),
+  search: Flag.String("search").pipe(Flag.withDefault("")),
+}, showHistory, (output) => [
+  `Folded through ${output.main} (event ${output.seq}).`,
+  ...output.epics.map((epic) => `${epic.id}  ${epic.title}  ${epic.commits}`),
+  ...output.open.map((commit) => `${commit.id}  ${commit.state}  ${commit.title}`),
+  ...(output.commits.length === 0 ? [] : ["", ...output.commits.map((commit) => `${commit.id}  ${commit.state}  ${commit.title}`), `${output.commits.length} of ${output.total}`]),
+  ...(output.commit === null ? [] : [
+    "", `${output.commit.id}  ${output.commit.state}  ${output.commit.title}`,
+    ...output.commit.notes,
+    ...output.commit.real.map((sha) => `real ${sha}`),
+  ]),
+].join("\n"))
+
+export const PlanWork = define("plan", "Plan a task onto the mythical history: append to --epic (or a --new-epic), insert --before a commit, or --amend a landed one.", PlanInput, WrittenOutput, {
+  title: Argument.String("title"),
+  epic: Flag.String("epic").pipe(Flag.withDefault("")),
+  newEpic: Flag.String("new-epic").pipe(Flag.withDefault("")),
+  before: Flag.String("before").pipe(Flag.withDefault("")),
+  amend: Flag.String("amend").pipe(Flag.withDefault("")),
+  task: Flag.String("task").pipe(Flag.withDefault("")),
+}, plan, (output) => `Planned ${output.id}.`, HISTORY_REFUSED)
+
+export const StartWork = define("start", "Start work on a planned mythical commit in a lane.", StartInput, WrittenOutput, {
+  id: Argument.String("id").pipe(Argument.withSchema(Id)),
+  lane: Flag.String("lane").pipe(Flag.withSchema(Id)),
+}, start, (output) => `Started ${output.id}.`, HISTORY_REFUSED)
+
+export const AddNote = define("note", "Add a note to a mythical commit: tried, evidence or superseded.", NoteInput, WrittenOutput, {
+  id: Argument.String("id").pipe(Argument.withSchema(Id)),
+  section: Flag.ChoiceWithValue("section", [["tried", "tried"], ["evidence", "evidence"], ["superseded", "superseded"]] as const),
+  text: Argument.String("text"),
+}, note, (output) => `Noted ${output.id}.`, HISTORY_REFUSED)
+
+const operationId = Schema.String.pipe(Schema.withDecodingDefaultKey(succeed("")))
+export schema SandboxInput { readonly conversation: conversation; readonly operationId: operationId }
+export schema SandboxGenerationInput { readonly conversation: conversation; readonly operationId: operationId; readonly generation: Seq }
+export schema SandboxRunInput { readonly conversation: conversation; readonly operationId: operationId; readonly generation: Seq; readonly command: string }
+export schema TerminalOutput { readonly output: string }
+const sandboxFlags = { conversation: Flag.String("conversation").pipe(Flag.withDefault("home")), operationId: Flag.String("operation-id").pipe(Flag.withDefault("")) }
+export const Sandboxes = define("sandboxes", "Read the sandbox and minutes in a conversation.", ReadInput, SandboxSnapshot, { conversation: sandboxFlags.conversation, after: Flag.Int("after").pipe(Flag.withSchema(Seq)).pipe(Flag.withDefault(0)) }, effect (input) => (try (try Factory).sandbox(input.conversation)), (s) => `${s.id || "Sandboxes"}  ${s.status}  ${s.remaining} min`)
+export const StartSandbox = define("sandbox-start", "Start a sandbox through the shared allowance flow.", SandboxInput, SandboxSnapshot, sandboxFlags, effect (input) => {
+  const id = input.operationId || (try IdGenerator.defaultIdGenerator.generateId())
+  return try (try Factory).startSandbox(input.conversation, id)
+}, (s) => `${s.id}  ${s.status}  ${s.remaining} min`)
+export const StopSandbox = define("sandbox-stop", "Stop a sandbox generation and retain its files.", SandboxGenerationInput, SandboxSnapshot, { ...sandboxFlags, generation: Flag.Int("generation").pipe(Flag.withSchema(Seq)) }, effect (input) => {
+  const id = input.operationId || (try IdGenerator.defaultIdGenerator.generateId())
+  return try (try Factory).stopSandbox(input.conversation, id, input.generation)
+}, (s) => `${s.id}  ${s.status}`)
+export const RunSandbox = define("sandbox-run", "Run a terminal command in a sandbox generation.", SandboxRunInput, TerminalOutput, { ...sandboxFlags, generation: Flag.Int("generation").pipe(Flag.withSchema(Seq)), command: Argument.String("command") }, effect (input) => {
+  const id = input.operationId || (try IdGenerator.defaultIdGenerator.generateId())
+  return { output: try (try Factory).sandboxCommand(input.conversation, id, input.command, input.generation) }
+}, (s) => s.output)
+
+export schema IssueBrief {
+  readonly number: number
+  readonly title: string
+  readonly state: "open" | "closed"
+  readonly parent: number
+  readonly task: "" | "Queued" | "Running" | "Done"
+  readonly vip: "" | "In review" | "Accepted" | "Declined"
+  readonly assignee: string
+}
+export schema IssuesOutput { readonly seq: number; readonly items: ReadonlyArray<IssueBrief> }
+export const Issues = define("issues", "List GitHub issues, tasks and VIPs.", Tool.EmptyParams, IssuesOutput, {}, effect () => {
+  const api = (try Factory).issues
+  if (api === undefined) throw new CommandError({ message: "Issues unavailable." })
+  const state = api.read() catch effect () => { throw new CommandError({ message: "Issues unavailable." }) }
+  return { seq: state.seq, items: state.items.map((i) => ({ number: i.number, title: i.title, state: i.state, parent: i.parent, task: i.task, vip: i.vip, assignee: i.assignee })) }
+}, (output) => output.items.map((i) => `#${i.number} ${i.title}${i.task === "" ? "" : ` · Task · ${i.task}`}${i.vip === "" ? "" : ` · VIP · ${i.vip}`}`).join("\n"))
+
+const defaultText = Schema.String.pipe(Schema.withDecodingDefaultKey(succeed("")))
+const defaultReviewer = SpecificationReviewer.pipe(Schema.withDecodingDefaultKey(succeed("astra" as const)))
+const defaultNumber = Schema.Number.pipe(Schema.withDecodingDefaultKey(succeed(0)))
+const AgentIssueOperation = Schema.Literals(["read", "new", "comment", "link", "split", "commit", "uncommit", "draft", "propose", "spec-revise", "spec-review"])
+export schema IssueInput {
+  readonly revision: defaultNumber
+  readonly reviewer: defaultReviewer
+  readonly resumeRecovery: defaultText
+  readonly resumeOp: defaultText
+  readonly resumeKey: defaultText
+  readonly recovery: defaultText
+  readonly op: AgentIssueOperation
+  readonly number: defaultNumber
+  readonly parent: defaultNumber
+  readonly title: defaultText
+  readonly text: defaultText
+  readonly assignee: defaultText
+  readonly example: defaultText
+  readonly prior: defaultText
+  readonly key: defaultText
+}
+const IssueOutput = Schema.Struct({ seq: Schema.Number, items: Schema.Array(IssueBrief), detail: Schema.String, draft: IssuesState.fields.draft })
+export const Issue = define("issue", "Run an issue flow.", IssueInput, IssueOutput, {
+  revision: Flag.Int("revision").pipe(Flag.withDefault(0)),
+  reviewer: Flag.ChoiceWithValue("reviewer", [["astra", "astra"], ["sol", "sol"], ["fable", "fable"], ["opus", "opus"]] as const).pipe(Flag.withDefault("astra")),
+  resumeRecovery: Flag.String("resume-recovery").pipe(Flag.withDefault("")),
+  resumeOp: Flag.String("resume-op").pipe(Flag.withDefault("")),
+  resumeKey: Flag.String("resume-key").pipe(Flag.withDefault("")),
+  recovery: Flag.String("recovery").pipe(Flag.withDefault("")),
+  op: Argument.Literals("op", ["read", "new", "comment", "link", "split", "commit", "uncommit", "draft", "propose", "spec-revise", "spec-review"]),
+  number: Flag.Int("number").pipe(Flag.withDefault(0)),
+  parent: Flag.Int("parent").pipe(Flag.withDefault(0)),
+  title: Flag.String("title").pipe(Flag.withDefault("")),
+  text: Flag.String("text").pipe(Flag.withDefault("")),
+  assignee: Flag.String("assignee").pipe(Flag.withDefault("")),
+  example: Flag.String("example").pipe(Flag.withDefault("")),
+  prior: Flag.String("prior").pipe(Flag.withDefault("")),
+  key: Flag.String("key").pipe(Flag.withDefault("")),
+}, effect (input) => {
+  const api = (try Factory).issues
+  if (api === undefined) throw new CommandError({ message: "Issues unavailable." })
+  const key = input.key || (try IdGenerator.defaultIdGenerator.generateId()).replace(/[^a-z0-9-]/gi, "-")
+  const { recovery, resumeOp, resumeKey, resumeRecovery, ...payload } = input
+  const carries = issueResume(resumeOp, resumeKey, resumeRecovery, recovery)
+  const result = api.act({ ...payload, key, ...(carries.resume ? { resumeOp, resumeKey, ...(carries.resumeRecovery ? { resumeRecovery } : {}) } : {}), ...(carries.recovery ? { recovery } : {}) }) catch effect (error) => { throw new CommandError({ message: writeFailure(error.reason, "Issue change failed.") }) }
+  const selected = result.selected ?? input.number
+  return { seq: result.seq, items: result.items, ...(result.draft === undefined ? {} : { draft: result.draft }), detail: JSON.stringify(issueDetail(input.op, input.number) === "specification" ? { specification: result.specification, history: result.specificationHistory } : result.saved ?? result.items.find(i => i.number === selected) ?? null) }
+}, (output) => JSON.stringify(output))
+
+const ActionJson = Schema.String.pipe(Schema.withDecodingDefaultKey(succeed("{}")))
+const Wait = Schema.Boolean.pipe(Schema.withDecodingDefaultKey(succeed(false)))
+export schema ActionInput { readonly flow: string; readonly input: ActionJson; readonly wait: Wait }
+export schema RunId { readonly id: string }
+export schema ActionList { readonly actions: ReadonlyArray<Registered> }
+export const ListActions = define("actions", "List registered workflows and their declared commands.", Tool.EmptyParams, ActionList, {},
+  effect () => ({ actions: try (try Actions).list() }), result => result.actions.map(entry => `${entry.name}  ${entry.command}`).join("\n"))
+export const RunWorkflow = define("run", "Request a registered workflow; --input is JSON. --wait follows its actual settlement.", ActionInput, RunId, {
+  flow: Argument.String("flow"), input: Flag.String("input").pipe(Flag.withDefault("{}")), wait: Flag.Boolean("wait").pipe(Flag.withDefault(false)),
+}, effect (input) => {
+  const actions = try Actions
+  const value = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(input.input) catch effect () => { throw new CommandError({ message: "Invalid action input." }) }
+  const id = try actions.start(input.flow, value, "agent")
+  if (input.wait) {
+    const final = try Stream.runLast(actions.follow(id).pipe(Stream.takeUntil(run => runSettled(run.state))))
+    if (runWaitFails(Option.isSome(final), Option.isSome(final) ? final.value.state : "")) throw new CommandError({ message: "Action failed." })
+  }
+  return { id }
+}, output => `Requested ${output.id}.`)
+export const ReadRun = define("trace", "Read a run's current steps, status and result.", RunId, Run, { id: Argument.String("id") },
+  effect ({ id }) => try (try Actions).read(id), run => [run.state, ...run.steps.map(step => `${step.name}  ${step.state}`), run.result].join("\n"))
+export const CancelRun = define("cancel", "Cancel a run through its durable engine.", RunId, RunId, { id: Argument.String("id") },
+  effect ({ id }) => { try (try Actions).cancel(id); return { id } }, output => `Cancellation requested ${output.id}.`)
+export const Rerun = define("rerun", "Request another run with the original input and current permissions.", RunId, RunId, { id: Argument.String("id") },
+  effect ({ id }) => ({ id: try (try Actions).rerun(id) }), output => `Requested ${output.id}.`)
+
+const WikiOperationInput = Schema.Literals(["read", "save", "propose", "draft"])
+export schema WikiInput {
+  readonly op: WikiOperationInput
+  readonly page: defaultText
+  readonly base: defaultText
+  readonly text: defaultText
+  readonly key: defaultText
+  readonly recovery: defaultText
+}
+export const Wiki = define("wiki", "Read, draft, save or propose a project wiki page.", WikiInput, WikiState, {
+  op: Argument.Literals("op", ["read", "save", "propose", "draft"]),
+  page: Flag.String("page").pipe(Flag.withDefault("")),
+  base: Flag.String("base").pipe(Flag.withDefault("")),
+  text: Flag.String("text").pipe(Flag.withDefault("")),
+  key: Flag.String("key").pipe(Flag.withDefault("")),
+  recovery: Flag.String("recovery").pipe(Flag.withDefault("")),
+}, effect (input) => {
+  const api = (try Factory).wiki
+  if (api === undefined) throw new CommandError({ message: "Wiki unavailable." })
+  const result = (input.op === "read" ? api.read(wikiPage(input.page)) : api.act({ op: input.op, page: input.page, base: input.base, text: input.text, ...(input.recovery === "" ? {} : { recovery: input.recovery }), key: input.key || (try IdGenerator.defaultIdGenerator.generateId()).replace(/[^a-z0-9-]/gi, "-") })) catch effect (error) => { throw new CommandError({ message: writeFailure(error.reason, "Wiki change failed.") }) }
+  return result
+}, (output) => JSON.stringify({ seq: output.seq, pages: output.pages.map((page) => page.id), ...(output.review === undefined ? {} : { review: output.review }), ...(output.draft === undefined ? {} : { draft: output.draft.page }) }))
+
+const signInError = (error: unknown) => new CommandError({ message: error instanceof SignInFailed ? error.message : "Sign-in failed." })
+
+export const Login = define("login", "Sign in with GitHub's device flow; posts carry your agent identity. With wait=false, returns the person's code and finishes on a later call.", LoginInput, LoginOutput, {
+  wait: Flag.Boolean("wait").pipe(Flag.withDefault(true)),
+}, effect (input) => {
+  return signIn(input) catch effect (error) => { throw signInError(error) }
+}, (output) => output.status === "signed-in" ? `Signed in as ${output.login}.` : `Open ${output.verificationUri} and enter ${output.userCode}.`)
+
+export const Logout = define("logout", "End the stored sign-in session.", Tool.EmptyParams, LogoutOutput, {}, effect () => {
+  return signOutSurface() catch effect (error) => { throw signInError(error) }
+}, (output) => output.signedOut ? "Signed out." : "Not signed in.")
+
+export const commands = [Ask, Read, ShowHistory, PlanWork, StartWork, AddNote, Sandboxes, StartSandbox, StopSandbox, RunSandbox, Issues, Issue, ListActions, RunWorkflow, ReadRun, CancelRun, Rerun, Wiki, Login, Logout] as const

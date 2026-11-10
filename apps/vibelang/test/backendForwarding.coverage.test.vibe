@@ -1,0 +1,94 @@
+// The browser's factory forwards each call to the backend it selected. These run on the forced mock, the real
+// no-backend product mode (VL-13), and observe every forwarded call through a later read or event.
+import "../src/core/MockFactory.vibe"
+import { expect, it } from "@effect/vitest"
+import { Actions } from "../src/actions/Actions.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import type { Event } from "../src/core/conversation.vibe"
+import { BrowserFactory } from "../src/web/backend.vibe"
+import { heldHealth } from "./support/heldHealth.vibe"
+
+const settled = (state: string) => state !== "queued" && state !== "running"
+
+it.live("accounts, the wiki, a tour and a sandbox reach the selected mock", () => scoped(effect {
+  const health = try heldHealth()
+  provide BrowserFactory("http://startup.test", true, "maintainer").pipe(Layer.provide(health.layer)) {
+    const factory = try Factory
+    const accounts = factory.accounts!
+    try accounts.grant("4", "contributor")
+    const granted = (try accounts.members()).find((person) => person.id === "4")?.role
+    const joined = try accounts.choose("new")
+    try accounts.participated(joined.id)
+    const promoted = try accounts.current()
+    try accounts.choose("maintainer")
+    const events = try Stream.runCollect(accounts.events(0).pipe(Stream.take(2)))
+    const drafted = try factory.wiki!.act({ op: "draft", page: "index", base: "", text: "Add a heading", key: "forward-draft" })
+    try factory.openWiki("forward", "rulings")
+    try factory.tour("forward")
+    try Stream.runDrain(factory.events("forward", 0).pipe(Stream.takeUntil((event) => event.type === "WalkthroughDriven")))
+    try factory.controlTour!("forward", "pause", 0)
+    try factory.endTour("forward")
+    const recorded = try Stream.runCollect(factory.events("forward", 0).pipe(Stream.takeUntil((event) => event.type === "TourEnded")))
+    const started = try factory.startSandbox("forward", "start")
+    const output = try factory.sandboxCommand("forward", "echo", "echo forwarded", started.generation)
+    const stopped = try factory.stopSandbox("forward", "stop", started.generation)
+    const snapshot = try factory.sandbox("forward")
+    try Effect.try(() => {
+      expect(granted).toBe("contributor")
+      expect([joined.role, promoted.role]).toEqual(["new", "community"])
+      expect(Array.from(events).map((event) => event.seq)).toEqual([1, 2])
+      expect(drafted.draft?.page).toBe("index")
+      expect(drafted.draft?.text.startsWith("# VibeLang factory wiki")).toBe(true)
+      expect(Array.from(recorded).map((event) => event.type)).toEqual(expect.arrayContaining(["PaneOpened", "TourStarted", "TourPaused", "TourEnded"]))
+      expect(output).toBe("forwarded")
+      expect(snapshot.status).toBe("stopped")
+      expect(stopped.status).toBe("stopped")
+      expect(health.snapshot().calls).toBe(0)
+    })
+  }
+}), 60_000)
+
+it.live("every workflow call reaches the selected mock: start, follow, read, runs, rerun, slash and cancel", () => scoped(effect {
+  const health = try heldHealth()
+  provide BrowserFactory("http://startup.test", true, "maintainer").pipe(Layer.provide(health.layer)) {
+    const actions = try Actions
+    const id = try actions.start("vibelang/Post", { text: "What is Effect?" }, "button")
+    const last = try Stream.runLast(actions.follow(id).pipe(Stream.takeUntil((run) => settled(run.state))))
+    const read = try actions.read(id)
+    const again = try actions.rerun(id)
+    const slash = try actions.command("/post How do I install it?", "slash")
+    const tour = try actions.start("vibelang/Tour", {}, "button")
+    try actions.cancel(tour)
+    const cancelled = try actions.read(tour)
+    const runs = try actions.runs("vibelang/Post")
+    try Effect.try(() => {
+      expect(Option.isSome(last) && last.value.state).toBe("passed")
+      expect(read).toMatchObject({ id, flow: "vibelang/Post", door: "button", state: "passed" })
+      expect(runs.map((run) => run.id)).toEqual(expect.arrayContaining([id, again, slash]))
+      expect(runs.find((run) => run.id === slash)?.door).toBe("slash")
+      expect(cancelled.state).toBe("cancelled")
+    })
+  }
+}), 60_000)
+
+it.live("a forced mock restores and retains its conversations through the page's journal", () => scoped(effect {
+  const health = try heldHealth()
+  const kept = new Map<string, ReadonlyArray<Event>>()
+  const journal = {
+    read: (conversation: string) => sync(() => kept.get(conversation) ?? []),
+    write: (conversation: string, events: ReadonlyArray<Event>) => sync(() => { kept.set(conversation, events) }),
+  }
+  const world = () => BrowserFactory("http://startup.test", true, "maintainer", journal).pipe(Layer.provide(health.layer))
+  try scoped(effect {
+    provide world() { try (try Factory).openWiki("kept", "rulings") }
+  })
+  try scoped(effect {
+    provide world() {
+      const restored = try Stream.runCollect((try Factory).events("kept", 0).pipe(Stream.take(1)))
+      try Effect.try(() => {
+        expect(kept.get("kept")).toMatchObject([{ type: "PaneOpened", url: "/wiki/rulings" }])
+        expect(Array.from(restored)).toMatchObject([{ type: "PaneOpened", seq: 1, url: "/wiki/rulings" }])
+      })
+    }
+  })
+}), 60_000)

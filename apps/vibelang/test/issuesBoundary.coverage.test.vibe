@@ -1,0 +1,301 @@
+// @vitest-environment node
+// worker/Issues.vibe at its service boundaries, with no GitHub success scripted: refusals answered before any request,
+// faulty transports (refused, malformed, endless), and the durable execution over real SQLite with an injected IssueHost.
+import { describe, expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { GitHub } from "@smthrs/integrations"
+import { IssueHost } from "../src/core/issueFlows.vibe"
+import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
+import { VipWriter } from "../src/core/VipWriter.vibe"
+import type { IssueRecord } from "../src/core/conversation.vibe"
+import * as Issues from "../worker/Issues.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+
+const repo: Issues.Repository = { owner: "o", name: "r", api: "https://github.test", agent: "agent-bot" }
+const person = (over: Partial<Issues.Principal> = {}): Issues.Principal => ({ id: "7", login: "ada", role: "maintainer", connection: { person: 1, delegation: "fixture-delegation" }, ...over })
+const unconnected: Issues.Principal = { id: "7", login: "ada", role: "maintainer" }
+const asking = (over: Partial<IssueRequest> = {}): IssueRequest => ({ op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k1", ...over })
+/** The typed failure of a program expected to refuse; any other failure fails the assertion on its `reason`. */
+const refusal = <A, E, R>(program: A!E!R) => Effect.flip(program).pipe(Effect.map((error) => error as unknown as IssueFailure))
+const newStorage = () => objectStorage() as unknown as Storage
+
+/** A transport that answers every request the same faulty way and counts how many it saw. */
+function transport(status: number, data: unknown, headers: Record<string, string> = {}) {
+  const seen = { requests: 0 }
+  const client = HttpClient.make((request) => {
+    seen.requests += 1
+    return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(data, { status, headers }))))
+  })
+  return { client, seen }
+}
+
+const authorityOf = (actor: Issues.Principal | undefined, authorize?: Issues.IssueAuthority["Service"]["authorize"]): Issues.IssueAuthority["Service"] =>
+  ({ current: () => succeed(actor), ...(authorize === undefined ? {} : { authorize }) })
+
+/** Answers `actors[0]`, then `actors[1]`, and so on, keeping the last: a role that changes during one operation. */
+function changing(...actors: ReadonlyArray<Issues.Principal | undefined>): Issues.IssueAuthority["Service"] {
+  let at = 0
+  return { current: () => sync(() => actors[Math.min(at++, actors.length - 1)]) }
+}
+
+effect function performed(authority: Issues.IssueAuthority["Service"], client: HttpClient.HttpClient, request: IssueRequest) {
+  const host = try Issues.githubHost(repo).pipe(Effect.provideService(Issues.IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, client))
+  // These paths end before the durable runtime the type names is read; a draft reaches it through executeIssues below.
+  const perform = host.perform as unknown as (request: IssueRequest) => unknown!IssueFailure
+  return try refusal(perform(request))
+}
+
+const record = (over: Partial<IssueRecord> = {}): IssueRecord => ({ number: 7, githubId: 701, title: "feature", body: "", author: "ada", age: "2026-01-02", state: "open", labels: [], parent: 0, task: "", assignee: "", vip: "In review", review: "https://github.com/o/r/pull/9", path: "docs/design/vips/a.md", comments: 0, notes: [], ...over })
+
+describe("failures crossing the GitHub boundary", () => {
+  it.each([
+    [{ outcomeUnknown: true }, "unknown", "unknown"],
+    [{ incomplete: true }, "partial", undefined],
+    [{ rateLimited: true }, "rate-limited", "rate-limited"],
+    [{ status: 401 }, "sign-in", undefined],
+    [{ status: 403 }, "forbidden", undefined],
+    [{ status: 404 }, "missing", undefined],
+    [{ status: 500 }, "unavailable", "unavailable"],
+    [undefined, "unavailable", "unavailable"],
+  ] as const)("names %j as %s without carrying the provider error", (details, reason, code) => {
+    const failure = Issues.issueFailureOf({ details, message: "secret provider text" })
+    expect(failure.reason).toBe(reason)
+    expect(failure.code).toBe(code)
+    expect(JSON.stringify(failure)).not.toContain("secret provider text")
+  })
+  it("keeps a numeric retry delay and drops any other", () => {
+    expect(Issues.issueFailureOf({ details: { rateLimited: true, retryAfterMillis: 1200 } }).retryAfterMillis).toBe(1200)
+    expect(Issues.issueFailureOf({ details: { rateLimited: true, retryAfterMillis: "soon" } }).retryAfterMillis).toBeUndefined()
+    expect(Issues.issueFailureOf(null).reason).toBe("unavailable")
+  })
+})
+
+describe("a VIP marker is only a claim", () => {
+  const marker = (review: string) => `text <!-- vibelang:vip path=docs/design/vips/a.md review=${review} -->`
+  it.live.each([
+    ["no marker", "plain body", 7],
+    ["an author that is not a person", marker("https://github.com/o/r/pull/9"), 0],
+    ["an unsafe author", marker("https://github.com/o/r/pull/9"), Number.MAX_SAFE_INTEGER + 1],
+    ["another repository's review", marker("https://github.com/o/other/pull/9"), 7],
+    ["a review that is not a number", marker("https://github.com/o/r/pull/9x"), 7],
+    ["a zero-padded review", marker("https://github.com/o/r/pull/09"), 7],
+    ["a review number past the safe range", marker("https://github.com/o/r/pull/9007199254740993"), 7],
+  ] as const)("rejects %s before asking GitHub", ([_name, body, author]) => effect {
+    const { client, seen } = transport(500, {})
+    const verified = try Issues.verifiedVip(repo, body, author).pipe(GitHub.Calls.withToken(Redacted.make("t"), repo.api), Effect.provideService(HttpClient.HttpClient, client))
+    try Effect.try(() => {
+      expect(verified).toBeUndefined()
+      expect(seen.requests).toBe(0)
+    })
+  })
+})
+
+describe("the GitHub host's refusals", () => {
+  const cases: ReadonlyArray<readonly [string, Issues.Principal | undefined, Partial<IssueRequest>, string]> = [
+    ["nobody signed in may not write", undefined, { op: "new", title: "t" }, "forbidden"],
+    ["a community member may not merge", person({ role: "community" }), { op: "accept", number: 7 }, "forbidden"],
+    ["an agent never accepts", person({ kind: "agent" }), { op: "accept", number: 7 }, "forbidden"],
+    ["an agent never declines", person({ kind: "agent" }), { op: "decline", number: 7 }, "forbidden"],
+    ["a write needs a key", person(), { op: "new", title: "t", key: "" }, "sign-in"],
+    ["a write needs a connected account", unconnected, { op: "new", title: "t" }, "connect"],
+    ["drafting is unavailable with no writer, even unconnected", unconnected, { op: "draft", title: "t" }, "unavailable"],
+  ]
+  it.live.each(cases)("%s", ([_name, actor, over, reason]) => effect {
+    const { client, seen } = transport(500, {})
+    const failure = try performed(authorityOf(actor), client, asking(over))
+    try Effect.try(() => {
+      expect(failure.reason).toBe(reason)
+      expect(seen.requests).toBe(0)
+    })
+  })
+  it.live("runs the deployment's own gate first", () => effect {
+    const { client, seen } = transport(500, {})
+    const failure = try performed(authorityOf(person(), () => fail(new IssueFailure({ reason: "blocked" }))), client, asking({ op: "new", title: "t" }))
+    try Effect.try(() => {
+      expect(failure.reason).toBe("blocked")
+      expect(seen.requests).toBe(0)
+    })
+  })
+  it.live.each([[401, "sign-in"], [403, "forbidden"], [404, "missing"]] as const)("reports GitHub's %i on a read as %s", ([status, reason]) => effect {
+    const { client } = transport(status, { message: "provider detail" })
+    const failure = try performed(authorityOf(undefined), client, asking())
+    try Effect.try(() => {
+      expect(failure.reason).toBe(reason)
+      expect(JSON.stringify(failure)).not.toContain("provider detail")
+    })
+  })
+  it.live("refuses an issue page it cannot decode", () => effect {
+    const { client } = transport(200, [{ not: "an issue" }])
+    const failure = try performed(authorityOf(undefined), client, asking())
+    try Effect.try(() => expect(failure.reason).toBe("protocol"))
+  })
+  it.live("stops at 50 pages of an endless listing and reports it as partial", () => effect {
+    const { client, seen } = transport(200, [], { link: `<https://github.test/repos/o/r/issues?page=2&state=all>; rel="next"` })
+    const failure = try performed(authorityOf(undefined), client, asking())
+    try Effect.try(() => {
+      expect(failure.reason).toBe("partial")
+      expect(seen.requests).toBe(50)
+    })
+  })
+})
+
+describe("the durable issues execution", () => {
+  /** Runs `executeIssues` against one storage with the injected host answering `items`. */
+  function world(authority: Issues.IssueAuthority["Service"], items: () => ReadonlyArray<IssueRecord> = () => [record()]) {
+    const storage = newStorage()
+    const seen = { performed: 0 }
+    const host: IssueHost.Shape = { perform: () => sync(() => { seen.performed += 1; return { seq: 1, items: items(), selected: 7 } }) }
+    const run = (request: IssueRequest) => Issues.executeIssues("h", storage, request, repo).pipe(Effect.provideService(Issues.IssueAuthority, authority), Effect.provideService(IssueHost, host), Effect.provideService(HttpClient.HttpClient, transport(500, {}).client))
+    return { storage, seen, run }
+  }
+
+  it.live("refuses a malformed key and a malformed recovery before running", () => effect {
+    const { run, seen } = world(authorityOf(person()))
+    const key = try refusal(run(asking({ key: "has space" })))
+    const recovery = try refusal(run(asking({ recovery: "has space" })))
+    try Effect.try(() => {
+      expect([key.reason, recovery.reason]).toEqual(["invalid", "invalid"])
+      expect(seen.performed).toBe(0)
+    })
+  }, 60_000)
+
+  it.live.each(["accept", "decline"] as const)("refuses an agent's %s, including one whose session turns into an agent mid-operation", (op) => effect {
+    const direct = world(authorityOf(person({ kind: "agent" })))
+    const refused = try refusal(direct.run(asking({ op, number: 7 })))
+    const flipped = world(changing(person(), person({ kind: "agent" })))
+    const raced = try refusal(flipped.run(asking({ op, number: 7 })))
+    try Effect.try(() => {
+      expect([refused.reason, raced.reason]).toEqual(["forbidden", "forbidden"])
+      expect(direct.seen.performed + flipped.seen.performed).toBe(0)
+    })
+  }, 60_000)
+
+  it.live("refuses saved gates it cannot decode", () => effect {
+    const { run, storage } = world(authorityOf(person()))
+    try promise(() => storage.put("gates/state", { seq: "not a number" }))
+    const failure = try refusal(run(asking()))
+    try Effect.try(() => expect(failure.reason).toBe("protocol"))
+  }, 60_000)
+
+  it.live("revises the specification durably, joins a repeat, and refuses a stale or unanswerable review", () => effect {
+    const { run, storage, seen } = world(authorityOf(person()))
+    const revise = asking({ op: "spec-revise", key: "rev-1", text: "# Spec", revision: 0 })
+    const first = try run(revise)
+    const repeat = try run(revise)
+    const stale = try refusal(run(asking({ op: "spec-revise", key: "rev-2", text: "# Later", revision: 0 })))
+    const unbound = try refusal(run(asking({ op: "spec-review", key: "rev-3", reviewer: "opus", revision: 1 })))
+    const saved = try promise(() => storage.get("gates/state"))
+    try Effect.try(() => {
+      expect(first.specification).toMatchObject({ revision: 1, text: "# Spec" })
+      expect(first.role).toBe("maintainer")
+      expect(repeat).toEqual(first)
+      expect(stale).toMatchObject({ reason: "review", unwritten: true })
+      expect(unbound).toMatchObject({ reason: "no-model", unwritten: true })
+      expect(saved).toMatchObject({ specification: { revision: 1 } })
+      expect(seen.performed).toBe(0)
+    })
+  }, 60_000)
+
+  it.live("refuses a specification write from someone demoted mid-operation", () => effect {
+    const { run } = world(changing(person(), person({ role: "community" })))
+    const failure = try refusal(run(asking({ op: "spec-revise", key: "rev-d", text: "x", revision: 0 })))
+    try Effect.try(() => expect(failure.reason).toBe("forbidden"))
+  }, 60_000)
+
+  it.live("a public accepted label is no approval; a maintainer's accept writes the receipt that later reads keep", () => effect {
+    let vip: IssueRecord["vip"] = "Accepted"
+    const { run } = world(authorityOf(person()), () => [record({ vip })])
+    const forged = try run(asking({ key: "read-forged" }))
+    vip = "In review"
+    const accepted = try run(asking({ op: "accept", number: 7, key: "accept-1" }))
+    vip = "Accepted"
+    const kept = try run(asking({ key: "read-kept" }))
+    try Effect.try(() => {
+      expect(forged.items[0]).toMatchObject({ vip: "In review" })
+      expect(forged.items[0]?.approvedBy).toBeUndefined()
+      expect(accepted.items[0]).toMatchObject({ vip: "Accepted", approvedBy: "ada" })
+      expect(kept.items[0]).toMatchObject({ vip: "Accepted", approvedBy: "ada", approvedAt: accepted.items[0]?.approvedAt })
+    })
+  }, 60_000)
+
+  it.live("accepting leaves every other issue as it was, and reports an unconnected session", () => effect {
+    const { run } = world(authorityOf(unconnected), () => [record(), record({ number: 8, githubId: 801 })])
+    const result = try run(asking({ op: "accept", number: 7, key: "accept-2" }))
+    try Effect.try(() => {
+      expect(result.items.map((item) => item.vip)).toEqual(["Accepted", "In review"])
+      expect(result.connected).toBe(false)
+    })
+  }, 60_000)
+
+  it.live("a reused key joins only the exact request it first named", () => effect {
+    const { run, seen } = world(authorityOf(person()))
+    const original = asking({ op: "new", title: "first", key: "same" })
+    const first = try run(original)
+    const edited = try refusal(run({ ...original, title: "edited" }))
+    const joined = try run(original)
+    try Effect.try(() => {
+      expect(edited.reason).toBe("invalid")
+      expect(joined).toEqual(first)
+      expect(seen.performed).toBe(1)
+    })
+  }, 60_000)
+
+  describe("resuming a saved operation", () => {
+    const resume = (key: string, over: Partial<IssueRequest>) => asking({ key, resumeOp: "new", resumeKey: "op-1", ...over })
+    function flaky() {
+      const storage = newStorage()
+      const state = { failing: true }
+      const host: IssueHost.Shape = { perform: (request) => effect {
+        if (state.failing && request.op !== "read") throw new IssueFailure({ reason: "title", unwritten: true })
+        return { seq: 1, items: [], selected: 12 }
+      } }
+      const run = (request: IssueRequest) => Issues.executeIssues("h", storage, request, repo).pipe(Effect.provideService(Issues.IssueAuthority, authorityOf(person())), Effect.provideService(IssueHost, host), Effect.provideService(HttpClient.HttpClient, transport(500, {}).client))
+      return { run, state }
+    }
+    const original = asking({ op: "new", title: "t", key: "op-1", number: 4 })
+
+    it.live("reports a failed attempt, then the recovery by name, and falls back to the root for an unknown recovery", () => effect {
+      const { run, state } = flaky()
+      try refusal(run(original))
+      const failed = try run(resume("r1", {}))
+      state.failing = false
+      const recovered = try run({ ...original, recovery: "rec-1" })
+      const named = try run(resume("r2", { resumeRecovery: "rec-1" }))
+      const unknown = try run(resume("r3", { resumeRecovery: "rec-absent" }))
+      try Effect.try(() => {
+        expect(failed.saved).toMatchObject({ status: "failed", unwritten: true, selected: 4 })
+        expect(recovered.selected).toBe(12)
+        expect(named.saved).toMatchObject({ status: "completed", unwritten: false, selected: 12 })
+        expect(unknown.saved).toMatchObject({ status: "failed", selected: 4 })
+      })
+    }, 60_000)
+
+    it.live("refuses a malformed saved recovery, and a person who never ran it", () => effect {
+      const { run } = flaky()
+      try refusal(run(original))
+      const malformed = try refusal(run(resume("r4", { resumeRecovery: "has space" })))
+      const absent = try refusal(run(resume("r5", { resumeKey: "never-ran" })))
+      try Effect.try(() => expect([malformed.reason, absent.reason]).toEqual(["invalid", "missing"]))
+    }, 60_000)
+  })
+
+  it.live("a draft reaches the writer through the real GitHub host, whose faults stay typed", () => effect {
+    const storage = newStorage()
+    const { client, seen } = transport(500, {})
+    const writer: VipWriter.Shape = { draft: () => fail(new IssueFailure({ reason: "budget" })) }
+    const run = (request: IssueRequest) => Issues.executeIssues("h", storage, request, repo).pipe(Effect.provideService(Issues.IssueAuthority, authorityOf(person())), Effect.provideService(HttpClient.HttpClient, client))
+    const faulted = try refusal(run(asking({ op: "draft", key: "d-1", title: "t" })).pipe(Effect.provideService(VipWriter, writer)))
+    const absent = try refusal(run(asking({ op: "draft", key: "d-2", title: "t" })))
+    try Effect.try(() => {
+      expect([faulted.reason, absent.reason]).toEqual(["budget", "unavailable"])
+      expect(seen.requests).toBe(0)
+    })
+  }, 60_000)
+
+  it.live("serves only its own path to the public", () => effect {
+    const outside = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(HttpClientRequest.get("https://factory.example/api/other")))
+    const response = try Issues.publicIssues("h", newStorage()).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, outside))
+    try Effect.try(() => expect(response.status).toBe(404))
+  })
+})

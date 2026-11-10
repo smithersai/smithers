@@ -3,6 +3,8 @@
 // adds what its model call used, once per reply however often its step runs. Live for everyone until sign-in
 // (roadmap brick 2), so the budget is the only bound on spend. Nothing here records what anyone asked.
 
+import { admits, charge, canCharge } from "./budgetDecision.vibe"
+
 /** The ledger's storage: numbers under keys, several written at once. */
 export interface Ledger {
   read(key: string): (number | undefined)!!
@@ -25,19 +27,28 @@ export effect function make(ledger: Ledger, limit: number) {
     /** Whether the day has budget left: some spent below `limit`. */
     admit: effect () => {
       const spent = (try ledger.read(SPENT)) ?? 0
-      const admitted = spent < limit
+      if (!Number.isSafeInteger(spent) || !canCharge(spent, 0)) {
+        try Effect.die(new Error("Invalid budget accounting"))
+      }
+      const admitted = admits(spent, limit)
       try Effect.logInfo("vibelang.budget.admit").pipe(Effect.annotateLogs({ admitted, spent, limit }))
       return admitted
     },
     /** Adds `used` tokens for `reply`, once: the same reply again adds nothing. */
     spend: effect (reply: string, used: number) => {
       try Semaphore.withPermits(lock, 1)(effect {
-        if ((try ledger.read(replyKey(reply))) !== undefined) return
+        const recorded = (try ledger.read(replyKey(reply))) !== undefined
         const spent = (try ledger.read(SPENT)) ?? 0
-        const added = Math.max(0, Math.round(used))
-        try ledger.write({ [SPENT]: spent + added, [replyKey(reply)]: added })
+        // Invalid provider telemetry must not turn the entire day into NaN or Infinity.
+        const normalized = recorded ? 0 : Number.isFinite(used) ? Math.max(0, Math.round(used)) : 0
+        if (!Number.isSafeInteger(spent) || !Number.isSafeInteger(normalized) || !canCharge(spent, normalized)) {
+          try Effect.die(new Error("Invalid budget accounting"))
+        }
+        const { added, spent: total, write } = charge(spent, normalized, recorded)
+        if (!write) return
+        try ledger.write({ [SPENT]: total, [replyKey(reply)]: added })
         try Metric.update(tokens, added)
-        try Effect.logInfo("vibelang.budget.spend").pipe(Effect.annotateLogs({ tokens: added, spent: spent + added, limit }))
+        try Effect.logInfo("vibelang.budget.spend").pipe(Effect.annotateLogs({ tokens: added, spent: total, limit }))
       })
     },
   }

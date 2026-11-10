@@ -1,0 +1,95 @@
+import { it, expect } from "@effect/vitest"
+import { HttpClient, HttpClientError, HttpClientResponse, HttpServerResponse } from "effect/http"
+import * as MockAccounts from "../src/core/MockAccounts.vibe"
+import * as LiveAccounts from "../src/core/LiveAccounts.vibe"
+import { Identity, viewer } from "../src/core/roles.vibe"
+import { artifact, workload, slow, quick } from "./artifact.vibe"
+
+it("mock account identity, grants, participation, events and sign-out", async ({ bench }) => {
+  const result = await workload(bench, "accounts-lifecycle", "async", async () => {
+    await runPromise(scoped(effect {
+      const accounts = try MockAccounts.make()
+      const initial = try accounts.current()
+      const deniedMembers = try Effect.result(accounts.members())
+      const newcomer = try accounts.choose("new")
+      const before = try accounts.members()
+      try accounts.participated()
+      try accounts.participated()
+      const community = try accounts.current()
+      const maintainer = try accounts.choose("maintainer")
+      try accounts.grant("2", "contributor")
+      try accounts.grant("2", "contributor")
+      try accounts.grant("2", "maintainer")
+      try accounts.grant("5", "new")
+      try accounts.grant("2", "new")
+      const finalMaintainer = try Effect.result(accounts.grant("1", "new"))
+      const demoted = try accounts.choose("new")
+      const selfPromotion = try Effect.result(accounts.grant("2", "maintainer"))
+      try accounts.participated("2")
+      const after = try accounts.members()
+      const events = Array.from(try Stream.runCollect(accounts.events(4).pipe(Stream.take(5))))
+      try accounts.signOut()
+      const signedOut = try accounts.current()
+      try Effect.try(() => {
+        expect(initial).toEqual(viewer)
+        expect(deniedMembers._tag).toBe("Failure")
+        if (deniedMembers._tag === "Failure") expect(deniedMembers.failure).toMatchObject({ _tag: "Denied", action: "people", least: "new" })
+        expect(newcomer).toMatchObject({ id: "2", login: "joss", role: "new" })
+        expect(community).toMatchObject({ id: "2", role: "community" })
+        expect(maintainer).toMatchObject({ id: "1", login: "will", role: "maintainer" })
+        expect(demoted).toMatchObject({ id: "2", role: "new" })
+        expect(before.map(({ id, role }) => [id, role])).toEqual([["1", "maintainer"], ["2", "new"], ["3", "community"], ["4", "contributor"], ["5", "maintainer"]])
+        expect(after.map(({ id, role }) => [id, role])).toEqual([["1", "maintainer"], ["2", "new"], ["3", "community"], ["4", "contributor"], ["5", "new"]])
+        for (const denied of [finalMaintainer, selfPromotion]) {
+          expect(denied._tag).toBe("Failure")
+          if (denied._tag === "Failure") expect(denied.failure).toMatchObject({ _tag: "Denied", action: "roles", least: "maintainer" })
+        }
+        expect(events).toEqual([
+          { type: "RoleGranted", seq: 5, id: "2", by: "2", role: "community", mode: "participation" },
+          { type: "RoleGranted", seq: 6, id: "2", by: "1", role: "contributor", mode: "person" },
+          { type: "RoleGranted", seq: 7, id: "2", by: "1", role: "maintainer", mode: "person" },
+          { type: "RoleGranted", seq: 8, id: "5", by: "1", role: "new", mode: "person" },
+          { type: "RoleGranted", seq: 9, id: "2", by: "1", role: "new", mode: "person" },
+        ])
+        expect(Schema.decodeUnknownSync(Schema.fromJsonString(Identity))(JSON.stringify(community))).toEqual(community)
+        expect(signedOut).toEqual(viewer)
+      })
+    }))
+  }).run(slow)
+  await runPromise(artifact("accounts-lifecycle", "Vitest built-in bench; actual product MockAccounts, policy and durable role-grant engine. Verify literal five-person fixture, once-only participation, duplicate no-op grant, promotions/demotions, final-maintainer/self-promotion refusals, complete five-event replay, identity schema round trip and sign-out. Three new scoped engines; initialization/assertions included.", ["Product fixture identity, not GitHub OAuth, production session cryptography or remote storage. One callback is the complete lifecycle, not a per-command latency."], result))
+})
+
+it("live account adapter failures through a faulty Effect transport", async ({ bench }) => {
+  const result = await workload(bench, "accounts-transport-faults", "async", async () => {
+    for (const [status, body] of [[0, ""], [403, ""], [503, ""], [200, "{"], [200, "{}"], [200, "data: {}\n\n"], [204, ""]] as const) {
+      const faulty = HttpClient.make((request) => status === 0
+        ? fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+        : succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(status === 204 ? HttpServerResponse.empty({ status }) : HttpServerResponse.text(body, { status })))))
+      await runPromise(effect {
+        provide HttpClient.HttpClient = faulty {
+          const accounts = try LiveAccounts.make("http://fault.invalid")
+          const calls = [
+            ["current", () => Effect.asVoid(accounts.current())], ["members", () => Effect.asVoid(accounts.members())],
+            ["grant", () => accounts.grant("2", "community")], ["sign-out", () => accounts.signOut()],
+            ["choose", () => Effect.asVoid(accounts.choose("new"))], ["participated", () => accounts.participated()],
+            ["events", () => Stream.runDrain(accounts.events(0))],
+          ] as const
+          for (const [name, call] of calls) {
+            const outcome = try Effect.result(call())
+            const success = name === "participated" || (["grant", "sign-out"].includes(name) && (status === 200 || status === 204)) || (name === "events" && status === 200 && !body.startsWith("data:"))
+            try Effect.try(() => {
+              expect(outcome._tag).toBe(success ? "Success" : "Failure")
+              if (outcome._tag === "Failure") {
+                const denied = status === 403 && (name === "members" || name === "grant")
+                expect(outcome.failure._tag).toBe(denied ? "Denied" : "AccountUnavailable")
+                if (outcome.failure._tag === "AccountUnavailable") expect(outcome.failure.reason).toBe("account unavailable")
+                else expect(outcome.failure).toMatchObject({ action: name === "members" ? "people" : "roles", least: name === "members" ? "new" : "maintainer" })
+              }
+            })
+          }
+        }
+      })
+    }
+  }).run(quick)
+  await runPromise(artifact("accounts-transport", "Vitest built-in bench; actual LiveAccounts adapter with an injected faulty Effect HttpClient. Seven operations across transport loss, forbidden/unavailable statuses, malformed JSON/protocol/SSE and bodyless 204; exact success/failure tags and bounded typed errors checked.", ["No request interception or real network. Invalid upstream answers measure failure handling, not GitHub sign-in success or WAN latency."], result))
+})

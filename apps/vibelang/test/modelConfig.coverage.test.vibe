@@ -1,0 +1,45 @@
+import { describe, expect, it } from "@effect/vitest"
+import { chatModel, chatModelRecord, dailyTokens, DEFAULT_CHAT_MODEL, DEFAULT_DAILY_TOKENS } from "../worker/AgentModel.vibe"
+
+describe("deployment model configuration", () => {
+  it.effect("uses the documented defaults and reports a missing credential without exposing it", () => effect {
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({})) {
+      const record = try chatModelRecord
+      const tokens = try dailyTokens
+      const model = try chatModel()
+      try Effect.try(() => {
+        expect(record).toEqual(DEFAULT_CHAT_MODEL)
+        expect(tokens).toBe(DEFAULT_DAILY_TOKENS)
+        expect(model.model).toBeUndefined()
+        expect(model.unusable).toBe("credential_missing")
+      })
+    }
+  })
+  it.effect("builds the configured host with the real model-host API, without making a model call", () => effect {
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({ CEREBRAS_API_KEY: "configuration-test-value", CHAT_DAILY_TOKENS: "7" })) {
+      const model = try chatModel()
+      const tokens = try dailyTokens
+      try Effect.try(() => {
+        expect(model.unusable).toBe("")
+        expect(model.model?.modelId).toBe(DEFAULT_CHAT_MODEL.modelId)
+        expect(tokens).toBe(7)
+      })
+    }
+  })
+  for (const value of ["{", "{}", '{"modelId":7}']) {
+    it.effect(`refuses a malformed model record ${value}`, () => effect {
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ CHAT_MODEL: value })) {
+        const result = try exit(chatModel())
+        try Effect.try(() => expect(Exit.isFailure(result)).toBe(true))
+      }
+    })
+  }
+  for (const value of ["x", "1.5", "9007199254740992"]) {
+    it.effect(`refuses an invalid daily token count ${value}`, () => effect {
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ CHAT_DAILY_TOKENS: value })) {
+        const result = try exit(dailyTokens)
+        try Effect.try(() => expect(Exit.isFailure(result)).toBe(true))
+      }
+    })
+  }
+})

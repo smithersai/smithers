@@ -1,0 +1,108 @@
+import { MockJournal } from "../core/MockJournal.vibe"
+import { liveHealth } from "../core/protocolDecision.vibe"
+
+// The browser's Factory is available immediately. Only backend operations wait for the one scoped selection.
+import { HttpClient } from "effect/http"
+import { Factory, type Mode } from "../core/Factory.vibe"
+import { AgentActions, deferredActions } from "../actions/agent.vibe"
+import { Actions } from "../actions/Actions.vibe"
+import { LiveActions } from "../actions/LiveActions.vibe"
+import { health, LiveFactory } from "../core/LiveFactory.vibe"
+
+/** The chosen mode becomes a Foldkit message, independently of any post or event subscription. */
+export service AgentBackend {
+  readonly ready: Mode!!
+}
+
+export function BrowserFactory(origin: string, forceMock: boolean, role: import("../core/sandboxDecision.vibe").Role = "viewer", journal?: MockJournal.Shape) {
+  return Layer.effectContext(effect {
+    const scope = try Scope.Scope
+    const client = try HttpClient.HttpClient
+    const proxy = try deferredActions()
+    let current: Mode | "pending" = "pending"
+    const selected = try forkIn(Effect.interruptible(effect {
+      const answer = forceMock ? undefined : ((health(origin) |> timeout(%, "3 seconds")) catch () => undefined)
+      const mode: Mode = liveHealth(answer?.agent ?? "") ? "live" : "mock"
+      // The mock carries the flow engine (0011). Live pages never load that module.
+      const layer = mode === "live"
+        ? LiveFactory(origin)
+        : (try promise(() => import("../core/MockFactory.vibe"))).mockFactoryFor(forceMock ? role : "viewer").pipe(Layer.provide(journal === undefined ? Layer.empty : Layer.succeed(MockJournal, journal)))
+      const context = try Layer.buildWithScope(layer.pipe(Layer.provide(Layer.merge(Layer.succeed(HttpClient.HttpClient, client), Layer.succeed(AgentActions, { actions: proxy.actions })))), scope)
+      const factory = Context.get(context, Factory)
+      const actionLayer = mode === "live" ? LiveActions(origin).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client)))
+        : (try promise(() => import("../actions/MockActions.vibe"))).MockActions({ actor: "person" }).pipe(Layer.provide(Layer.succeed(Factory, factory)))
+      const actionContext = try Layer.buildWithScope(actionLayer, scope)
+      const actions = Context.get(actionContext, Actions)
+      try proxy.resolve(actions)
+      current = mode
+      return { mode, factory, actions }
+    }), scope)
+    const ready = Fiber.join(selected)
+    const factory: Factory.Shape = {
+      get mode() { return current },
+      accounts: {
+        current: effect () => { return try (try ready).factory.accounts!.current() },
+        members: effect () => { return try (try ready).factory.accounts!.members() },
+        grant: effect (id, role) => { try (try ready).factory.accounts!.grant(id, role) },
+        signOut: effect () => { try (try ready).factory.accounts!.signOut() },
+        signInAgent: effect () => { return try (try ready).factory.accounts!.signInAgent() },
+        choose: effect (role) => { return try (try ready).factory.accounts!.choose(role) },
+        participated: effect (id) => { try (try ready).factory.accounts!.participated(id) },
+        events: (after) => Stream.unwrap(effect { return (try ready).factory.accounts!.events(after) }),
+      },
+      // Both selectable factories, LiveFactory and mockFactoryFor, always supply accounts, issues, wiki and controlTour.
+      issues: {
+        read: effect () => { return try (try ready).factory.issues!.read() },
+        act: effect (request) => { return try (try ready).factory.issues!.act(request) },
+      },
+      wiki: {
+        read: effect (page) => { return try (try ready).factory.wiki!.read(page) },
+        act: effect (request) => { return try (try ready).factory.wiki!.act(request) },
+      },
+      post: effect (conversation, clientId, name, text) => {
+        const { factory } = try ready
+        return try factory.post(conversation, clientId, name, text)
+      },
+      read: effect (conversation, after) => {
+        const { factory } = try ready
+        return try factory.read(conversation, after)
+      },
+      events: (conversation, after) => Stream.unwrap(effect {
+        const { factory } = try ready
+        return factory.events(conversation, after)
+      }),
+      openWiki: effect (conversation, page) => {
+        const { factory } = try ready
+        return try factory.openWiki(conversation, page)
+      },
+      controlTour: effect (conversation, action, step) => {
+        const { factory } = try ready
+        return try factory.controlTour!(conversation, action, step)
+      },
+      tour: effect (conversation) => {
+        const { factory } = try ready
+        return try factory.tour(conversation)
+      },
+      endTour: effect (conversation) => {
+        const { factory } = try ready
+        return try factory.endTour(conversation)
+      },
+      sandbox: effect (conversation) => { const { factory } = try ready; return try factory.sandbox(conversation) },
+      startSandbox: effect (conversation, operationId) => { const { factory } = try ready; return try factory.startSandbox(conversation, operationId) },
+      stopSandbox: effect (conversation, operationId, generation) => { const { factory } = try ready; return try factory.stopSandbox(conversation, operationId, generation) },
+      sandboxCommand: effect (conversation, operationId, command, generation) => { const { factory } = try ready; return try factory.sandboxCommand(conversation, operationId, command, generation) },
+    }
+    const actions: Actions.Shape = {
+      list: effect () => try (try ready).actions.list(),
+      commands: effect () => try (try ready).actions.commands(),
+      runs: effect (flow) => try (try ready).actions.runs(flow),
+      read: effect (id) => try (try ready).actions.read(id),
+      start: effect (flow, input, door) => try (try ready).actions.start(flow, input, door),
+      command: effect (text, door) => try (try ready).actions.command(text, door),
+      rerun: effect (id) => try (try ready).actions.rerun(id),
+      cancel: effect (id) => try (try ready).actions.cancel(id),
+      follow: (id) => Stream.unwrap(effect { return (try ready).actions.follow(id) }),
+    }
+    return Context.make(Factory, factory).pipe(Context.add(AgentActions, { actions: proxy.actions }), Context.add(Actions, actions), Context.add(AgentBackend, { ready: map(ready, (choice) => choice.mode) }))
+  })
+}

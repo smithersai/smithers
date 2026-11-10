@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 0
+bias 3
+null-prototype false
+key 2394790482
+tape vnNL9Eu6d8EMIubW
+schedule-key 951120712
+schedule 
+signature "ReturnedFalse"
+path 0
+codec "json"
+value "{\"id\":0,\"text\":\"\"}"
+# ReturnedFalse
+# {"id":0,"text":""}

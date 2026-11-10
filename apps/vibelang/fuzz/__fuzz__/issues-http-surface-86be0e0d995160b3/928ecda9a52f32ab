@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 45
+bias 2
+null-prototype false
+key 3140525816
+tape k1a-br19zlhiNE3Ms8UFuXJveaN05jH6HkI-DQ
+schedule-key 2098450339
+schedule 
+signature "ReturnedFalse"
+path 0
+codec "json"
+value "{\"method\":\"POST\",\"path\":\"/api/issues/more\",\"body\":\"oversized\",\"role\":\"contributor\",\"signedOut\":false,\"key\":0}"
+# ReturnedFalse
+# {"method":"POST","path":"/api/issues/more","body":"oversized","role":"contributor","signedOut":false,"key":0}

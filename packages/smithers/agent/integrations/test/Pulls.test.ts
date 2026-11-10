@@ -305,7 +305,7 @@ const startGitHub = async (): Promise<FakeGitHub> => {
         return write(response, 201, pull)
       }
       const head = url.searchParams.get("head")
-      const matching = state.pulls.filter((pull) => head === null || `o:${(pull["head"] as Raw)["ref"]}` === head)
+      const matching = state.pulls.filter((pull) => { const ref = (pull["head"] as Raw)["ref"] as string; return head === null || `o:${ref}` === head || ref === head })
       return json(response, 200, [...state.junk, ...matching.map(listed)])
     }
     const pullOf = /^\/repos\/o\/r\/pulls\/(\d+)(\/[a-z]+)?$/.exec(path)
@@ -794,6 +794,21 @@ describe("Pulls", () => {
     const open = await run(Pulls.listPulls("o", "r", { state: "open", maxPages: 1 }))
     expect(open.items).toHaveLength(1)
   })
+
+  it("opens and finds a pull request from a fork's owner:branch head, and rejects malformed heads", async () => {
+    await startGitHub()
+    const sha = await branchWithCommit("t1-fork")
+    github!.refs.set("forker:t1-fork", sha)
+    const opened = await run(Pulls.createPull("o", "r", { head: "forker:t1-fork", base: "main", title: "T2", body: "" }))
+    expect(opened.number).toBe(1)
+    expect(JSON.parse(github!.fixture.requests.at(-1)!.body).head).toBe("forker:t1-fork")
+    expect(Option.getOrThrow(await run(Pulls.findPullByHead("o", "r", { head: "forker:t1-fork" }))).number).toBe(1)
+    expect(github!.fixture.requests.at(-1)!.url).toContain("head=forker%3At1-fork")
+    await expect(run(Pulls.createPull("o", "r", { head: "a:b:c", base: "main", title: "T", body: "" }))).rejects.toThrow("owner:branch")
+    await expect(run(Pulls.createPull("o", "r", { head: "-bad:t1", base: "main", title: "T", body: "" }))).rejects.toThrow("owner:branch")
+    await expect(run(Pulls.createPull("o", "r", { head: "forker/bad..branch", base: "main", title: "T", body: "" }))).rejects.toThrow("ref rules")
+  })
+
 
   it("reads the base repository's default branch, and none when GitHub leaves the repository out", () => {
     const pull = {

@@ -1,0 +1,115 @@
+// @vitest-environment node
+// src/core/LiveAccounts.vibe, LiveIssues.vibe and LiveFactory.vibe against faulty Effect transports:
+// malformed/denied/unavailable replies only. Happy clients run against real HTTP in the boundary suites.
+import { describe, expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientError, HttpClientResponse, HttpServerResponse } from "effect/http"
+import * as LiveAccounts from "../src/core/LiveAccounts.vibe"
+import { liveIssues } from "../src/core/LiveIssues.vibe"
+import { health } from "../src/core/LiveFactory.vibe"
+import type { IssueRequest } from "../src/core/issueSchemas.vibe"
+
+interface FaultReply { readonly status: number; readonly body: string }
+
+/** A faulty Effect transport answering only denial, malformed-protocol or unavailable responses; otherwise offline. */
+function faulty(routes: Record<string, FaultReply>) {
+  const client = HttpClient.make((request) => {
+    const url = new URL(request.url)
+    const key = `${request.method} ${url.pathname}${url.search}`
+    return routes[key] === undefined
+      ? fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+      : succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(routes[key]!.body, { status: routes[key]!.status }))))
+  })
+  return { client }
+}
+
+describe("LiveAccounts", () => {
+  it.effect("maps denials, unavailability and bad bodies, and never chooses", () => effect {
+    const { client } = faulty({
+      "GET /api/auth/session": { status: 200, body: "not json" },
+      "GET /api/roles": { status: 403, body: "" },
+      "POST /api/roles": { status: 403, body: "" },
+      "POST /api/auth/sign-out": { status: 500, body: "" },
+      "GET /api/roles/events?after=0": { status: 503, body: "" },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      const accounts = try LiveAccounts.make("https://a.test")
+      const badBody = try Effect.flip(accounts.current())
+      const deniedMembers = try Effect.flip(accounts.members())
+      const deniedGrant = try Effect.flip(accounts.grant("7", "contributor"))
+      const outFailed = try Effect.flip(accounts.signOut())
+      const chose = try Effect.flip(accounts.choose("new"))
+      const eventsFailed = try Effect.exit(Stream.runCollect(accounts.events(0)))
+      try Effect.try(() => {
+        expect(badBody._tag).toBe("AccountUnavailable")
+        expect(deniedMembers).toMatchObject({ action: "people", least: "new" })
+        expect(deniedGrant).toMatchObject({ action: "roles", least: "maintainer" })
+        expect(outFailed._tag).toBe("AccountUnavailable")
+        expect(chose._tag).toBe("AccountUnavailable")
+        expect(eventsFailed._tag).toBe("Failure")
+      })
+    }
+  })
+})
+
+describe("liveIssues", () => {
+  const request: IssueRequest = { op: "new", number: 0, parent: 0, title: "a task", text: "do it", assignee: "", example: "", prior: "", key: "k1" }
+
+  it.effect("reads the failure's reason and unwritten flag, else unavailable or protocol", () => effect {
+    const { client } = faulty({
+      "POST /api/issues": { status: 400, body: JSON.stringify({ reason: "title", unwritten: true }) },
+      "GET /api/issues": { status: 503, body: "not json" },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      const issues = try liveIssues("https://a.test")
+      const failedAct = try Effect.flip(issues.act(request))
+      const failedRead = try Effect.flip(issues.read())
+      try Effect.try(() => {
+        expect(failedAct).toMatchObject({ reason: "title", unwritten: true })
+        expect(failedRead.reason).toBe("unavailable")
+      })
+    }
+  })
+
+  it.effect("answers protocol when a success body is not the state, and unavailable when unreachable", () => effect {
+    const { client } = faulty({
+      "POST /api/issues": { status: 200, body: JSON.stringify({ nope: true }) },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      const issues = try liveIssues("https://a.test")
+      const wrongShape = try Effect.flip(issues.act(request))
+      const offline = try Effect.flip(issues.read())
+      try Effect.try(() => {
+        expect(wrongShape.reason).toBe("protocol")
+        expect(offline.reason).toBe("unavailable")
+      })
+    }
+  })
+})
+
+describe("LiveFactory", () => {
+  it.effect("maps health's bad status, body and shape, and its transport failure", () => effect {
+    const { client } = faulty({
+      "GET /api/health": { status: 503, body: "" },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      const status = try Effect.flip(health("https://a.test"))
+      try Effect.try(() => expect(status.reason).toBe("health answered 503"))
+    }
+    const badJson = faulty({ "GET /api/health": { status: 200, body: "not json" } })
+    provide Layer.succeed(HttpClient.HttpClient, badJson.client) {
+      const failedHealth = try Effect.flip(health("https://a.test"))
+      try Effect.try(() => expect(failedHealth.reason).toBe("health is not JSON"))
+    }
+    const wrongShape = faulty({ "GET /api/health": { status: 200, body: "{}" } })
+    provide Layer.succeed(HttpClient.HttpClient, wrongShape.client) {
+      const failedShape = try Effect.flip(health("https://a.test"))
+      try Effect.try(() => expect(failedShape.reason).toBe("health is not the protocol"))
+    }
+    const offline = faulty({})
+    provide Layer.succeed(HttpClient.HttpClient, offline.client) {
+      const unreachable = try Effect.flip(health("https://a.test"))
+      try Effect.try(() => expect(unreachable.reason).toBe("health unreachable"))
+    }
+  })
+
+})

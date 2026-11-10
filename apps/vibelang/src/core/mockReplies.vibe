@@ -1,3 +1,6 @@
+import type { Outline } from "../history/pages.vibe"
+import { scriptIndex } from "./mockDecision.vibe"
+
 // The mock agent's answers (wiki/decisions/0004-mock-mode.md): a script chosen by the prompt's words, so the app runs
 // with no backend and no model. Every code sample is current VibeLang 0.0.12 syntax, from the language's skill and the
 // launch kit's verified snippets.
@@ -118,18 +121,33 @@ const SCRIPTS: ReadonlyArray<Script> = [
 /** Every answer the scripted agent can choose, including the fallback; each fenced example is compiler checked. */
 export const scriptedReplies: ReadonlyArray<string> = [...SCRIPTS.map((script) => script.reply), DEFAULT]
 
-/** The mock agent's whole answer to `prompt`. */
-export function mockReply(prompt: string): string {
-  const words = prompt.toLowerCase()
-  for (const script of SCRIPTS) {
-    for (const word of script.words) if (words.includes(word)) return script.reply
-  }
-  return DEFAULT
+/** Words that ask about the mythical history: the mock agent reads its outline to answer (0020). */
+export const HISTORY_WORDS: ReadonlyArray<string> = ["mythical", "history", "epic"]
+
+/** How much open work the mock agent lists. */
+const OPEN_SHOWN = 5
+
+/** The mock agent's answer about the mythical history, from the outline `vibelang/history/show` read. */
+export function historyReply(outline: Outline): string {
+  const open = outline.open.slice(0, OPEN_SHOWN).map((head) => `\`${head.id}\` ${head.title} (${head.state})`)
+  return [
+    `VibeLang's mythical history, folded through \`${outline.main}\`.`,
+    outline.epics.map((epic) => `${epic.title} ${epic.commits}`).join(" · "),
+    open.length === 0 ? "No open work." : `Open work: ${open.join(" · ")}`,
+  ].join("\n\n")
 }
 
+/** The mock agent's whole answer to `prompt`. */
+export function mockReply(prompt: string): string {
+  const index = scriptIndex(prompt.toLowerCase(), SCRIPTS)
+  return index < 0 ? DEFAULT : SCRIPTS[index]!.reply
+}
+
+const CHUNK_SIZE = 24
+
 /** `text` in the pieces the mock agent streams, a few words at a time; joined, they are `text`. */
-export function chunks(text: string, size = 24): ReadonlyArray<string> {
+export function chunks(text: string): ReadonlyArray<string> {
   const pieces: Array<string> = []
-  for (let start = 0; start < text.length; start += size) pieces.push(text.slice(start, start + size))
+  for (let start = 0; start < text.length; start += CHUNK_SIZE) pieces.push(text.slice(start, start + CHUNK_SIZE))
   return pieces
 }

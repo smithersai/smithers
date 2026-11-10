@@ -1,0 +1,233 @@
+// The browser program's update for what mainUpdate.coverage leaves: issue responses, stale answers and a first message
+// that arrives before the optional part of the model exists.
+import { describe, expect, it } from "@effect/vitest"
+import { newClient } from "../src/core/conversation.vibe"
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
+import type { IssueRecord as IssueRecordSchema, IssueRequest } from "../src/core/issueSchemas.vibe"
+import { initial as initialActions } from "../src/web/actionModel.vibe"
+import { initialIssues } from "../src/web/issues.vibe"
+import { accountOf, init, Message, type Model, update } from "../src/web/main.vibe"
+
+const home = init({ session: "u", mode: "mock", name: "Guest" }).model
+const chat: Model = { ...home, surface: "chat" }
+const names = (result: { readonly commands?: ReadonlyArray<{ readonly name: string }> }) => (result.commands ?? []).map(command => command.name)
+const asked = (over: Partial<IssueRequest> = {}): IssueRequest => ({ op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k1", ...over })
+const issue = (number: number): typeof IssueRecordSchema.Type => ({ number, githubId: number, title: "t", body: "", author: "ada", age: "2026-01-02", state: "open", labels: [], parent: 0, task: "", assignee: "", vip: "", review: "", path: "", comments: 0, notes: [] })
+/** The model as it is before `key` was ever set. */
+function without<K extends keyof Model>(model: Model, key: K): Model {
+  const { [key]: _absent, ...rest } = model
+  return rest as Model
+}
+const open = (over: Partial<typeof initialIssues> = {}): Model => ({ ...chat, issues: { ...initialIssues, keyPrefix: "u", status: "ready", role: "maintainer", ...over } })
+const loaded = (data: Parameters<typeof Message.IssuesLoaded>[0]["data"], over: Partial<Parameters<typeof Message.IssuesLoaded>[0]> = {}) => Message.IssuesLoaded({ data, created: false, role: "maintainer", ...over })
+
+describe("the issues control", () => {
+  it("returns focus to the tab a person moved to by key, and to the named control", () => {
+    expect(update(open(), Message.IssueUi({ action: "kind-key", value: "VIPs" })).commands?.[0]).toMatchObject({ name: "FocusIssueControl", args: { id: "ix-kind-VIPs" } })
+    expect(update(open(), Message.IssueUi({ action: "focus", value: "ix-new" })).commands?.[0]).toMatchObject({ name: "FocusIssueControl", args: { id: "ix-new" } })
+  })
+  it("closes the dialog element when the screen closes its dialog", () => {
+    expect(names(update(open({ dialog: "split" }), Message.IssueUi({ action: "cancel", value: "" })))).toEqual(["CloseIssueDialog"])
+  })
+})
+
+describe("a resumed write's answer", () => {
+  const saved = (request: IssueRequest, status: "running" | "failed" | "completed", unwritten = false) => ({ seq: 3, items: [], saved: { request, status, unwritten, selected: 7 } })
+  it.each([
+    ["a specification write stays on the specification", asked({ op: "spec-revise" }), "running", "specification"],
+    ["a finished write shows its issue", asked({ op: "new" }), "completed", "detail"],
+    ["an unfinished new issue returns to its form", asked({ op: "new" }), "running", "new"],
+    ["an unfinished proposal returns to its form", asked({ op: "propose" }), "failed", "vip"],
+    ["an unfinished comment returns to its issue", asked({ op: "comment", text: "hi" }), "running", "detail"],
+  ] as const)("%s", (_label, request, status, screen) => {
+    const { issues } = update(chat, loaded(saved(request, status))).model
+    expect(issues).toMatchObject({ screen, selected: 7, busy: false, step: 4 })
+    expect(issues?.comment).toBe(request.op === "comment" ? "hi" : "")
+    expect(issues?.retry).toEqual(status === "completed" ? undefined : request)
+    expect(issues?.error).toBe(status === "completed" ? "" : "Couldn't save. Retry.")
+  })
+  it("offers no retry for a write that never reached the store", () => {
+    const { issues } = update(chat, loaded(saved(asked({ op: "comment" }), "failed", true))).model
+    expect(issues).toMatchObject({ error: "" })
+    expect(issues?.retry).toBeUndefined()
+  })
+})
+
+describe("an issues answer", () => {
+  it("fills the form from a generated draft and keeps the list on screen", () => {
+    const shown = { seq: 2, items: [issue(1)] }
+    const draft = { title: "T", summary: "S", example: "E", prior: "P" }
+    const result = update(open({ data: shown }), loaded({ seq: 9, items: [], draft })).model.issues
+    expect(result).toMatchObject({ title: "T", summary: "S", example: "E", prior: "P" })
+    expect(result?.data).toBe(shown)
+  })
+  it("keeps a newer list than the answer", () => {
+    const shown = { seq: 8, items: [issue(1)] }
+    expect(update(open({ data: shown }), loaded({ seq: 2, items: [] })).model.issues?.data).toBe(shown)
+  })
+  it.each([
+    ["keeps an assignee still offered", "ada", [{ login: "ada", label: "Ada" }], "ada"],
+    ["falls back to the agent", "gone", [{ login: "bot", label: "VibeLang agent" }], "bot"],
+    ["clears it with no agent offered", "gone", [{ login: "ada", label: "Ada" }], ""],
+  ] as const)("%s", (_label, assignee, assignees, expected) => {
+    expect(update(open({ assignee }), loaded({ seq: 1, items: [], assignees })).model.issues?.assignee).toBe(expected)
+  })
+  const retrying = asked({ op: "new", key: "k9" })
+  const settling = { op: "new", key: "k9" } as const
+  it("opens the created issue the answer names, or the newest", () => {
+    const named = update(open({ retry: retrying, busy: true }), loaded({ seq: 1, items: [issue(2)], selected: 2 }, { created: true, ...settling })).model.issues
+    const newest = update(open({ retry: retrying, busy: true }), loaded({ seq: 1, items: [issue(2), issue(5)] }, { created: true, ...settling })).model.issues
+    expect(named).toMatchObject({ screen: "detail", selected: 2, busy: false })
+    expect(newest).toMatchObject({ screen: "detail", selected: 5 })
+  })
+  it("an answer to another write changes nothing it owns", () => {
+    const dialog = open({ retry: retrying, busy: true, error: "e", comment: "c", dialog: "split" })
+    const result = update(dialog, loaded({ seq: 1, items: [] }, { op: "new", key: "other" }))
+    expect(result.model.issues).toMatchObject({ busy: true, retry: retrying, error: "e", comment: "c", dialog: "split" })
+    expect(result.commands).toEqual([])
+  })
+  it("the answer to the open write closes its dialog", () => {
+    const result = update(open({ retry: retrying, busy: true, dialog: "split" }), loaded({ seq: 1, items: [] }, settling))
+    expect(result.model.issues).toMatchObject({ busy: false, dialog: "" })
+    expect(names(result)).toEqual(["CloseIssueDialog"])
+  })
+  it("a failure before any issues exist shows the error state", () => {
+    expect(update(chat, Message.IssuesFailed({ reason: "unavailable" })).model.issues?.status).toBe("error")
+  })
+})
+
+describe("a role change", () => {
+  const person = (id: string, role: "new" | "maintainer") => ({ id, login: id, role })
+  const held = (dialog: "" | "split"): Model => ({ ...open({ dialog, retry: asked(), busy: true }), account: { ...accountOf(chat), identity: person("1", "maintainer") } })
+  it("a different person drops the write in flight", () => {
+    const issues = update(held(""), Message.AccountLoaded({ identity: person("2", "maintainer") })).model.issues
+    expect(issues).toMatchObject({ busy: false })
+    expect(issues?.retry).toBeUndefined()
+  })
+  it("the same person keeps it when a permitted dialog stays open", () => {
+    const issues = update(held("split"), Message.AccountLoaded({ identity: person("1", "maintainer") })).model.issues
+    expect(issues).toMatchObject({ busy: true, dialog: "split" })
+  })
+})
+
+describe("a message before its part of the model exists", () => {
+  it("a sandbox pane that was never opened stays closed", () => {
+    expect(update(without(chat, "sandboxPane"), Message.MaximizedSandboxes()).model.sandboxPane).toBe(update({ ...chat, sandboxPane: "closed" }, Message.MaximizedSandboxes()).model.sandboxPane)
+  })
+  it("a sandbox answer needs a request of its own", () => {
+    const fresh: Model = { ...without(chat, "sandboxRequest"), sandboxBusy: true }
+    expect(update(fresh, Message.FailedSandbox({ conversation: fresh.conversation, request: 0, reason: "x" })).model).toMatchObject({ sandboxError: "x", sandboxBusy: false })
+  })
+  it("wiki answers with no edit open are ignored", () => {
+    const noEdit: Model = { ...chat, wikiEdit: undefined }
+    expect(update(noEdit, Message.CompletedWikiEdit({ request: 1, page: "index", source: "", revision: "", review: "" })).model).toBe(noEdit)
+    expect(update(noEdit, Message.BeganWikiEdit({ request: 1, page: "index", source: "", draft: "" })).model).toBe(noEdit)
+  })
+  it("an editor whose request was never numbered ignores any answer", () => {
+    const editing: Model = { ...without(chat, "wikiEditRequest"), wikiEdit: { page: "index", base: "a", text: "a", busy: false, error: "" } }
+    expect(update(editing, Message.CompletedWikiEdit({ request: 1, page: "index", source: "", revision: "", review: "" })).model).toBe(editing)
+    expect(update(editing, Message.BeganWikiEdit({ request: 1, page: "index", source: "", draft: "" })).model).toBe(editing)
+  })
+})
+
+describe("docs and the wiki pane", () => {
+  const wiki = { ...newClient, conversation: { ...newClient.conversation, pane: "/wiki/index" } }
+  it("Escape from a maximized page outside the wiki reveals nothing", () => {
+    expect(update({ ...chat, docs: "max" }, Message.PressedEscape()).commands).toEqual([])
+  })
+  it("the Docs button re-reveals a wiki page only when leaving maximized", () => {
+    expect(names(update({ ...chat, docs: "max", client: wiki }, Message.ClickedDocs()))).toEqual(["RevealWiki"])
+    expect(names(update({ ...chat, docs: "pane", client: wiki }, Message.ClickedDocs()))).toEqual([])
+    expect(names(update({ ...chat, docs: "max" }, Message.ClickedDocs()))).toEqual([])
+  })
+  it("visiting a page on a closed stream reopens it from where it stopped", () => {
+    const closed: Model = { ...chat, stream: "failed", client: { ...newClient, conversation: { ...newClient.conversation, seq: 4 } } }
+    expect(update(closed, Message.ClickedWiki({ page: "/wiki/index" })).model).toMatchObject({ stream: "open", epoch: closed.epoch + 1, from: 4 })
+  })
+  it("a repeated page event keeps the last read position only if its entry exists", () => {
+    const entry = { type: "PaneOpened" as const, seq: 1, id: "", url: "/wiki/index" }
+    expect(update({ ...chat, wikiAfter: "gone" }, Message.ReceivedEvent({ event: entry })).model.wikiAfter).toBe("")
+  })
+})
+
+describe("stale and repeated answers", () => {
+  it("an action list with no epoch of its own applies to a panel with none", () => {
+    const { epoch: _epoch, ...plain } = { ...initialActions, epoch: 1 }
+    const panel: Model = { ...chat, actions: plain }
+    expect(update(panel, Message.FailedActions({ code: "unavailable" })).model.actions?.error).not.toBe("")
+  })
+  it("the slash catalog already loaded isn't loaded again, and a stale highlight starts nothing", () => {
+    const loadedPanel: Model = { ...chat, actions: { ...initialActions, entries: [{ name: "x" } as never] } }
+    expect(update(loadedPanel, Message.UpdatedDraft({ value: "/" })).commands).toEqual([])
+    const stale: Model = { ...chat, draft: "/x", actions: { ...initialActions, highlight: 5 } }
+    expect(update(stale, Message.SubmittedDraft()).model).toBe(stale)
+  })
+})
+
+describe("the remaining branches a person can reach", () => {
+  const person = (role: "new" | "maintainer", id = "1") => ({ id, login: id, role })
+  it("a role that may not use the open dialog closes it", () => {
+    const held: Model = { ...open({ dialog: "split" }), account: { ...accountOf(chat), identity: person("maintainer") } }
+    const result = update(held, Message.AccountLoaded({ identity: person("new") }))
+    expect(result.model.issues?.dialog).toBe("")
+    expect(names(result)).toContain("CloseIssueDialog")
+  })
+  it("the end-tour button ends this tab's tour", () => {
+    const touring: Model = { ...chat, tour: true }
+    expect(names(update(touring, Message.ClickedEndTour()))).toContain("EndTour")
+  })
+  it("an event while reconnecting doesn't claim the connection is back", () => {
+    const reconnecting: Model = { ...chat, stream: "failed", connection: "Reconnecting" }
+    const event = { type: "Posted" as const, seq: 1, id: "p", clientId: "p", name: "Ada", text: "q", at: 0 }
+    expect(update(reconnecting, Message.ReceivedEvent({ event })).model.connection).toBe("Reconnecting")
+  })
+  it("a page event without its own entry keeps the last position while that entry exists", () => {
+    const posted = update(chat, Message.ReceivedEvent({ event: { type: "Posted", seq: 1, id: "p", clientId: "p", name: "Ada", text: "q" } })).model
+    const result = update({ ...posted, wikiAfter: "p" }, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 2, id: "", url: "/wiki/index" } }))
+    expect(result.model.wikiAfter).toBe("p")
+  })
+  it("Learn more from an open palette closes it; on its own conversation it keeps the transcript", () => {
+    const conversation = "demo-u"
+    const client = { ...newClient, conversation: { ...newClient.conversation, seq: 9 } }
+    const result = update({ ...chat, palette: true, conversation, client }, Message.ClickedLearnMore())
+    expect(names(result)[0]).toBe("ClosePalette")
+    expect(result.model.client).toBe(client)
+  })
+  it("an end that couldn't reach the agent gives the chat back when no tour is held here", () => {
+    const away: Model = { ...chat, tour: false, tourClient: newClient }
+    expect(update(away, Message.FailedEndTour()).model.tourDismissed).toBe(true)
+  })
+  it("resumes the tour's numbered stop after an end that couldn't reach the agent", () => {
+    const touring = update(home, Message.ClickedLearnMore()).model
+    const opened = update(touring, Message.ReceivedTourEvent({ event: { type: "TourStarted", id: "t1", seq: 1 } })).model
+    const held = update(opened, Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", id: "t1", seq: 2, step: 3, target: "stop", at: 0, duration: 1000 } })).model
+    const result = update(held, Message.FailedEndTour())
+    expect(result.model.theatre?.step).toBe(3)
+    expect(result.model.theatre?.target).not.toBe("")
+    expect(names(result)).toContain("PresentTour")
+  })
+  it("names the sought stop's own target after an end that couldn't reach the agent", () => {
+    const touring = update(home, Message.ClickedLearnMore()).model
+    const opened = update(touring, Message.ReceivedTourEvent({ event: { type: "TourStarted", id: "t1", seq: 1 } })).model
+    const driven = update(opened, Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", id: "t1", seq: 2, step: 3, target: "stop", at: 0, duration: 1000 } })).model
+    const sought = update(driven, Message.ReceivedTourEvent({ event: { type: "TourSought", id: "t1", seq: 3, at: 1, step: 4 } })).model
+    expect(update(sought, Message.FailedEndTour()).model.theatre).toMatchObject({ step: 4, target: WALKTHROUGH[3]!.target })
+  })
+  it("/sandbox while a sandbox operation runs closes the palette and starts nothing", () => {
+    const result = update({ ...chat, palette: true, sandboxBusy: true, draft: "/sandbox" }, Message.SubmittedDraft())
+    expect(names(result)).toEqual(["ClosePalette"])
+    expect(result.model).toMatchObject({ palette: false, draft: "", sandboxPane: "pane", sandboxBusy: true })
+  })
+  it("a slash command picks the highlighted action and passes no epoch before one exists", () => {
+    const entry = { name: "vibelang/Run", title: "Run", command: "/run", runnable: true, detail: "Run", least: "viewer" as const, input: "text" as const }
+    const { epoch: _epoch, ...rest } = { ...initialActions, epoch: 1 }
+    const result = update({ ...chat, draft: "/run now", actions: { ...rest, slash: true, entries: [entry], commands: [entry] } }, Message.SubmittedDraft())
+    expect(result.commands?.[0]).toMatchObject({ name: "RunAction", args: { name: "vibelang/Run", text: "now", door: "slash" } })
+    expect(result.commands?.[0]).not.toHaveProperty("args.epoch")
+  })
+  it("a role reply can carry no actions epoch", () => {
+    const { epoch: _epoch, ...rest } = { ...initialActions, epoch: 1 }
+    const panel: Model = { ...chat, draft: "", actions: rest }
+    expect(names(update(panel, Message.UpdatedDraft({ value: "/" })))).toEqual(["LoadActions"])
+  })
+})

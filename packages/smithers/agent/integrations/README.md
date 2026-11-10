@@ -77,3 +77,56 @@ PKCE helpers return lazy Effects and fail validation during execution. Authoriza
 URLs require HTTPS, except on loopback. `Core.Source.runWithCursor` requires a flow
 execution: poll, handler and commit receipts are journaled and spacing uses the
 durable clock. See [the API](docs/api.md) for its turn budget and recovery contract.
+
+## Hosted-site sign-in
+
+`GitHub.Auth.Broker` lets independently hosted apps reuse one registered GitHub callback. The broker authenticates
+`return_to` requests with a distinct key for each exact origin in the deployment's hosted-site registry. A request
+contains origin, nonce, S256 challenge and a ten-minute deadline. `site().begin()` creates it; `make().start()`
+starts GitHub PKCE using the broker's existing callback. `callback()` revokes the temporary provider access token after identity
+lookup and returns an opaque sixty-second code in the site's fixed callback fragment. `site().redemption()` signs
+the code, nonce and saved verifier; `site().exchange()` posts it server-to-server and returns only numeric ID/login.
+The site sets its own session and owns authorization.
+
+The alternative is an audience-bound identity assertion, verified with a distinct per-site HMAC key or the
+broker's public key. Each site would consume its pending nonce to prevent replay and enforce issuer/key rotation;
+a single global verification secret would let one site forge identities for others. It saves an exchange, but
+issued assertions cannot be centrally revoked before expiry and front-channel delivery carries identity. The
+opaque-code design has one central consumption and final allowlist check, and keeps identity out of URLs. `sqliteStore()` uses conditional `DELETE RETURNING` to enforce
+origin, nonce, PKCE and TTL, including concurrent redemption. Hosts must journal operations through their flow
+runtime, with credentials outside payloads and results. Audience, nonce, challenge and expiry are authenticated inside each encrypted code record and rechecked after
+consumption, so corrupt database metadata cannot retarget or extend a grant. Broker records are encrypted with a separate 32-byte
+base64 key and context bound to each digest. `memoryStore()` is ephemeral, for in-memory hosts and protocol tests.
+
+`serve()` supplies `/api/auth/broker/start`, `/api/auth/broker/exchange` and the existing `/api/auth/callback`.
+`handles()` admits only callback state with exactly `broker_` plus a 43-character nonce. The ordinary host sign-in remains separate. The registry
+must list only origins the deployment serves: subdomains and custom domains, never wildcard suffix matching.
+All origins must be canonical HTTPS origins; `localDevelopment` explicitly permits loopback HTTP for local hosts.
+No path, userinfo, query or fragment is accepted as an origin. Use a distinct secret per origin.
+
+Serve `HANDOFF_PAGE` on the site's callback GET with no-store, no-referrer and a CSP that pins its inline script.
+Its first action removes the fragment; it then posts to the same callback. Verify the local browser's signed nonce
+cookie, check expiry and exact Origin, then redeem. A no-referrer browser may post `Origin: null`: accept that only
+with `Sec-Fetch-Site: same-origin`. No token ever appears in a URL. Broker metrics/spans/logs contain only step and
+outcome; exchange transport tracing is disabled. A lost response requires a fresh sign-in rather than replay.
+
+Install `Broker.httpPolicy` in the outer HTTP request context before server tracing. Alchemy hosts register it with `Telemetry.layer(Broker.httpPolicy)` during each Worker and auth Durable Object initialization; an ordinary init-only reference layer does not reach request fibers. It redacts every query value, including signed return_to, state and GitHub codes. Proxy/native access logs must independently omit OAuth query values and callback/exchange bodies.
+
+Identity-only callbacks revoke their temporary GitHub access token immediately after the identity read, including a
+failed read. The host must execute callbacks inside a flow: `auth/broker/revoke` is an independent action with three
+engine-managed attempts (100 ms, then 200 ms), returning only `null`. Its token remains inside the enclosing
+callback step; no token or refresh token enters a payload, result, journal, log or span. Exhaustion is swallowed so
+identity handoff succeeds. Fixed counters `smithers_auth_broker_revocations` and
+`smithers_auth_broker_revocation_failures` count completed revocations and exhausted cleanup respectively.
+`auth.broker.revoke` logs only `outcome: revoked|failed`. A 422 from GitHub is a revocation failure, not evidence
+that the token is gone; 404 remains idempotent success.
+
+GitHub documents a [ten-token limit per user/application/scope, with unused/least-recently-used eviction](https://docs.github.com/en/apps/oauth-apps/using-oauth-apps/authorizing-oauth-apps#oauth-app-access).
+Its [single-token DELETE endpoint](https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-token)
+supports OAuth authorizations of GitHub Apps and uses the App client id/secret as HTTP Basic credentials. Never
+use the grant-deletion endpoint for this cleanup: it revokes the person's other tokens too. The current endpoint
+documentation does not explicitly specify the effect on the paired refresh token. GitHub explicitly documents
+refresh-token invalidation for [authorization revocation](https://docs.github.com/en/organizations/managing-programmatic-access-to-your-organization/github-credential-types#github-app-refresh-tokens)
+and for [refresh-token rotation](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens#about-user-access-tokens-that-expire);
+these are different operations. The injected ten-token service models pair deletion; it is not live evidence of
+GitHub's unspecified single-token refresh cascade.

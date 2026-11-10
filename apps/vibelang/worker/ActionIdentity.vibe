@@ -1,0 +1,42 @@
+// The only live action authority adapter: sessions and current grants come from 0019, never the request body.
+import { HttpServerRequest } from "effect/http"
+import type { Action, Role } from "../src/core/conversation.vibe"
+import { postName, type Identity } from "../src/core/roles.vibe"
+import { cookieOf } from "./Accounts.vibe"
+import type { Unreachable } from "./Unreachable.vibe"
+export interface Principal { readonly owner: string; readonly role: Role; readonly name?: string; readonly agent?: boolean }
+export const signedOut = { request: () => succeed({ owner: "", role: "viewer" as const }), role: (_owner: string) => succeed("viewer" as const) }
+export service ActionIdentity {
+  static readonly defaultValue = () => signedOut
+  request(): Principal!Unreachable!HttpServerRequest.HttpServerRequest
+  role(owner: string): Role!Unreachable
+}
+export interface Authority {
+  current(cookie: string | undefined): Identity!Unreachable
+  role(owner: string): Role!Unreachable
+  allowed(actor: string, action: Action): boolean!Unreachable
+}
+export function fromAccounts(accounts: Authority, trusted?: { readonly owner: string; readonly name?: string }): ActionIdentity.Shape {
+  return {
+    request: effect () => {
+      if (trusted !== undefined) {
+        const admitted = try accounts.allowed(trusted.owner, "action")
+        return { owner: trusted.owner, name: trusted.name ?? "Guest", agent: true, role: admitted ? try accounts.role(trusted.owner) : "viewer" as const }
+      }
+      const request = try HttpServerRequest.HttpServerRequest
+      const person = try accounts.current(cookieOf(request))
+      const admitted = person.id !== "" && (try accounts.allowed(person.id, "action"))
+      return { owner: person.id, name: postName(person), ...(person.agent === true ? { agent: true } : {}), role: admitted ? person.role : "viewer" as const }
+    },
+    role: effect (owner) => {
+      if (owner === "" || !(try accounts.allowed(owner, "action"))) return "viewer" as const
+      return try accounts.role(owner)
+    },
+  }
+}
+
+/** Only ctx.props carries this value. Public HTTP headers and bodies cannot mint entrypoint props. */
+export function trustedOf(props: Record<string, unknown>) {
+  const owner = props.actionOwner
+  return typeof owner === "string" ? { owner, name: typeof props.actionName === "string" ? props.actionName : "Guest" } : undefined
+}

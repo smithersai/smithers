@@ -1,0 +1,45 @@
+import { postLabel } from "./identityDecision.vibe"
+import { Conversation } from "./schemas.vibe"
+import type { Action, Role, SignedRole, Event } from "./conversation.vibe"
+
+/** Session identity is separate from its current project grant. */
+export schema Identity {
+  readonly id: string
+  readonly login: string
+  readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"
+  /** True when the session is the person's agent (a CLI or MCP device sign-in), never the person at a browser. */
+  readonly agent?: boolean
+  readonly available?: boolean
+  readonly ledger?: Conversation
+}
+export const viewer: Identity = { id: "", login: "", role: "viewer" }
+
+/**
+ * The name a post carries, decided by the server from the session, never from the caller (decisions 0019, 0028):
+ * a guest, the person, or the person's agent acting for them.
+ */
+export function postName(identity: { readonly id: string; readonly login: string; readonly agent?: boolean }, guest = "Guest"): string {
+  return postLabel(identity.id, identity.login, identity.agent === true, guest)
+}
+
+/** The authorization seam future workflows can implement; hosts supply the authenticated actor. */
+export service Policy {
+  authorize(actor: string, action: Action): void!Denied
+}
+
+/** A role check failed; transport errors are never permission grants. */
+export error Denied { action: string; least: Role }
+
+/** The identity and grants surface of the Factory core. Mock selection is a product-only method. */
+export service Accounts {
+  current(): Identity!AccountUnavailable
+  members(): ReadonlyArray<Identity>!(AccountUnavailable | Denied)
+  grant(id: string, role: SignedRole): void!(AccountUnavailable | Denied)
+  signOut(): void!AccountUnavailable
+  choose(role: Role): Identity!AccountUnavailable
+  /** Product mock mode: sign in as the fixture person, as their agent. Live sign-in is the device flow, not this. */
+  signInAgent(): Identity!AccountUnavailable
+  participated(personId?: string): void!AccountUnavailable
+  events(after: number): Stream.Stream<Event, AccountUnavailable>
+}
+export error AccountUnavailable { reason: string }

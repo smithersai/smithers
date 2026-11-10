@@ -18,6 +18,7 @@ browser ── site Worker ── service binding ── ChatApi Worker ── H
 | Remote flows | the `FlowExecution` Durable Object in local workerd, its engine in the schema `smithers_flows` of the compose Postgres | the `FlowExecution` Durable Object, hosted by ChatApi, its engine in the schema `smithers_flows` of the Neon project through `ChatDatabase` ([remote-flows.md](features/remote-flows.md)) |
 | Branch sandboxes | the `BranchSandbox` image, run by local workerd through Docker | one Cloudflare Container per branch from the `BranchSandbox` image (`infra/BranchSandbox.ts`), started by that branch's `SandboxObject` Durable Object ([sandbox-tools.md](features/sandbox-tools.md)) |
 | Branch rooms | the `RoomObject` Durable Object in local workerd | one hibernating `RoomObject` per branch, hosted by ChatApi ([branch-workspace.md](features/branch-workspace.md)) |
+| GitHub connections | the `GitHubConnection` Durable Object in local workerd | one `GitHubConnection` Durable Object per person, hosted by ChatApi, with its own SQLite ([sign-in.md](features/sign-in.md)) |
 | Agent transcripts | the `RunContent` Durable Object in local workerd | the `RunContent` Durable Object, hosted by ChatApi, one per run with its own SQLite, kept 30 days after its last event ([agent-transcripts.md](features/agent-transcripts.md)) |
 
 ## Local
@@ -214,6 +215,10 @@ A migration runs while older Workers still serve, and a rollback brings them bac
 
 ### Domain
 
+Set `MANAGE_WEB_ANALYTICS=true` to declare the `BrowserAnalytics` Alchemy Web Analytics resource and disable automatic beacon injection on the app domain. It defaults to `false`, so tokens without Web Analytics access can deploy. Enabling it requires a Cloudflare token with account Web Analytics edit permission (or the Account Settings permission required by the Web Analytics API). The first deployment adopts the existing site with `--adopt`. The app owns its browser telemetry and does not depend on the beacon. With management off, Cloudflare can still inject it and call the edge-owned `/cdn-cgi/rum` endpoint. Development and `workers.dev` deployments declare no analytics resource. Deploy smoke continues to record every browser console error without filtering the beacon. Until injection is disabled, WebKit first-paint tests are marked broken under `TEST-5`, naming the beacon endpoint and missing permission. Remove that broken marker after enabling management and verifying injection is disabled; an unexpected pass remains a failing test until it is removed.
+
+If a stage already records `BrowserAnalytics`, omitting it plans a provider deletion, which still needs Web Analytics permission. Before switching management off, inspect and privately back up `alchemy state read smithers-mvp/<stage>/BrowserAnalytics`, then use `alchemy state delete smithers-mvp/<stage>/BrowserAnalytics` to forget that one ownership record without deleting or changing the Cloudflare site. Run the plan again and confirm it has no analytics operation. Re-enabling management adopts the existing site.
+
 `APP_DOMAIN` names the hostname the app serves at, such as `example.com`. A production deploy refuses to run without it (`infra/Domain.ts`), so a deployer who leaves it out can't detach the domain or drop the docs site by accident. `APP_DOMAIN=workers.dev` deploys with no custom domain and no docs site: the app answers only at the site Worker's `workers.dev` URL. Under `alchemy dev` it is ignored.
 
 A repository's own domains, such as vibelang.sh, are Cloudflare for SaaS custom hostnames on `APP_DOMAIN`'s zone, added by its Maintainers in Settings ([domains.md](features/domains.md), decision 0039).
@@ -259,6 +264,8 @@ A local `.env` that raises a limit for development, such as `MODEL_DAILY_TOKEN_B
 | `SUMMARY_MODEL` | no | ChatApi | the timeline summaries' model when no admin set one ([model-endpoint.md](features/model-endpoint.md#configuration)) |
 | `MODEL_DAILY_TOKEN_BUDGET`, `MODEL_MAX_OUTPUT_TOKENS`, `MODEL_MAX_MESSAGES`, `MODEL_MAX_REQUEST_BYTES`, `MODEL_RESERVATION_EXPIRY` | no | ChatApi | [model-endpoint.md](features/model-endpoint.md#configuration) |
 | `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | for sign-in | ChatApi | the Smithers GitHub App's client; without them nobody can sign in, so nobody can ask ([sign-in.md](features/sign-in.md#configuration)) |
+| `HOSTED_AUTH_SITES`, `AUTH_BROKER_ENCRYPTION_KEY` | for hosted-site sign-in | ChatApi, HostedAuthBroker | redacted exact-origin/per-site-key registry and base64 32-byte record-encryption key ([sign-in.md](features/sign-in.md#independently-hosted-sites)) |
+| `AUTH_BROKER_ORIGIN` | no | ChatApi, HostedAuthBroker | existing registered callback origin; defaults to HTTPS `APP_DOMAIN` |
 | `GITHUB_REPOSITORY`, `SESSION_MAX_AGE_DAYS`, `ROLE_RECHECK_MINUTES` | no | ChatApi | [sign-in.md](features/sign-in.md#configuration) |
 | `GITHUB_ALLOWED_REPOSITORIES` | no | ChatApi | [issues.md](features/issues.md#configuration) |
 | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY` | for issues | ChatApi, FlowExecution | the Smithers GitHub App's ID and private key; without them nothing syncs or writes to GitHub ([issues.md](features/issues.md#configuration)) |
@@ -640,6 +647,7 @@ The size rollout caused many handle resets, so its first row is not steady-state
 At [Cloudflare's published rates](https://developers.cloudflare.com/containers/platform/pricing/), `standard-1` supplies half a vCPU, 4 GiB RAM and 8 GB disk. Thirty days continuously provisioned cost about $27.37 for RAM and disk versus $7.21 for `basic` (roughly $20 more), before allowances. CPU costs $0.000020 per active vCPU-second; continuous full allocation would add $25.92 versus $12.96 per month. These are estimates excluding Workers, Durable Objects and egress. No sizing change is retained.
 
 Each trial restored the then-current main revision through Alchemy under the production lock. The final restoration used `cc6dee07`; afterward, initial reads of `items`, `pulls`, `github-sync` and `comments` each returned HTTP 200. Cache activation and the larger instance remain experimental. Abort and deliberate mid-load restart runs were not executed after the failed load gates. The two-person, twenty-tabs-each isolation run additionally needs a second real production test account: the saved production sessions identify the same person. No isolation, restart, abort or launch-capacity pass is claimed. Decision [0114](decisions/0114-electric-cache-trial.md) records the boundary and the remaining gates.
+
 
 ## Electric deployment isolation
 

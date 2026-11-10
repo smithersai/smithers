@@ -1,0 +1,322 @@
+// Native DOM input drives the real history application and its product mock-mode durable flows.
+import { expect, it } from "@effect/vitest"
+import { vi } from "vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
+import { HttpClient, HttpClientError, HttpServer } from "effect/http"
+import { LiveMythical } from "../src/history/LiveMythical.vibe"
+import { serveHistory } from "./support/historyHttpHost.vibe"
+import { Runtime } from "foldkit"
+import { ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+import type { Role } from "../src/history/roles.vibe"
+import { HistoryFlags, HistoryModel, init, subscriptions, update } from "../src/web/historyApp.vibe"
+import { view } from "../src/web/historyView.vibe"
+import { page } from "../src/web/startup.vibe"
+import { container, remove } from "./support/browser.ts"
+
+const seed = () => succeed(replay(intentsOf(seedOf("o/r", ["fix(compiler): one", "docs: two"].map((description, index) => ({
+  sha: `${index + 1}`.padStart(12, "0"), change: "", description, parents: index === 0 ? [] : ["000000000001"],
+})), []))).history)
+
+/** Mount without changing its update/view/subscriptions or the history service; retain the outer host across patches. */
+effect function mount(role: Role, hash = "") {
+  const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+  const window = try (try Experimental.Window.Window).current
+  const document = node.ownerDocument
+  const before = try Effect.try(() => ({ url: window.location.href, state: window.history.state, title: document.title }))
+  try Effect.addFinalizer(() => sync(() => { window.history.replaceState(before.state, "", before.url); document.title = before.title }))
+  const root = try Effect.try(() => {
+    window.history.replaceState(null, "", `/history${hash === "" ? "" : `#${hash}`}`)
+    const root = document.createElement("div")
+    root.id = "history-runtime-root"
+    node.append(root)
+    return root
+  })
+  const mythical = try Mythical
+  const application = try Effect.try(() => Runtime.makeApplication({
+    Model: HistoryModel, Flags: HistoryFlags, init, update, view, subscriptions: subscriptions(window),
+    resources: Layer.merge(Layer.succeed(Mythical, mythical), ExperimentalBrowserWindow.layer), container: root,
+  }))
+  try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed({ role, mode: "mock", hash }) })), (handle) => sync(() => handle.dispose()))
+  try promise(() => vi.waitFor(() => { expect(node.querySelector("[data-surface=history]")).not.toBeNull() }, { timeout: 5000 }))
+  return { node, window, mythical }
+}
+
+effect function input(node: HTMLElement, selector: string, value: string, type = "input") {
+  try Effect.try(() => {
+    const field = node.querySelector<HTMLInputElement | HTMLSelectElement>(selector)
+    expect(field).not.toBeNull()
+    field!.value = value
+    const event = node.ownerDocument.createEvent("Event")
+    event.initEvent(type, true, true)
+    field!.dispatchEvent(event)
+  })
+}
+
+effect function click(node: HTMLElement, text: string) {
+  // A native input event is queued; wait for the enabled control rendered from that input, not its assigned DOM value.
+  try promise(() => vi.waitFor(() => {
+    const button = Array.from(node.querySelectorAll("button")).find((button) => button.textContent === text && button.closest("dialog:not([open])") === null)
+    expect(button, `button ${text}`).toBeDefined()
+    expect(button!.disabled, `enabled ${text}`).toBe(false)
+  }))
+  try Effect.try(() => Array.from(node.querySelectorAll("button")).find((button) => button.textContent === text && button.closest("dialog:not([open])") === null)!.click())
+}
+
+effect function planDialog(node: HTMLElement) {
+  try promise(() => vi.waitFor(() => {
+    expect(node.querySelector("#mh-plan")?.getAttribute("data-state")).toBe("open")
+    expect(node.querySelector<HTMLDialogElement>("#mh-plan")?.open).toBe(true)
+  }))
+  return try Effect.try(() => node.querySelector<HTMLDialogElement>("#mh-plan")!)
+}
+
+effect function heading(node: HTMLElement, title: string) {
+  try promise(() => vi.waitFor(() => expect(node.querySelector("h1")?.textContent).toBe(title), { timeout: 5000 }))
+}
+
+it.live("a contributor recovers from a refused blank plan, creates an epic, starts work and records every note section", () => scoped(effect {
+  provide Layer.merge(page, MockMythical({ role: "contributor", name: "Ada", agent: false }, seed)) {
+    const { node, window, mythical } = try mount("contributor")
+    const before = try mythical.outline()
+    try click(node, "Plan work")
+    const dialog = try planDialog(node)
+    try input(dialog, "#mh-plan-epic", "new", "change")
+    try promise(() => vi.waitFor(() => expect(dialog.querySelector("#mh-plan-new-epic")).not.toBeNull()))
+    try input(dialog, "#mh-plan-new-epic", "A new epic")
+    try input(dialog, "#mh-plan-task", "t3")
+    try click(dialog, "Plan work")
+    try promise(() => vi.waitFor(() => expect(dialog.querySelector("[role='alert']")?.textContent).toContain("Needs a title.")))
+    const refused = try mythical.outline()
+    try Effect.try(() => {
+      expect(refused).toEqual(before)
+      expect(dialog.open).toBe(true)
+    })
+    try input(dialog, "#mh-plan-title", "feat(sandbox): three")
+    try click(dialog, "Plan work")
+    try heading(node, "feat(sandbox): three")
+    const planned = try mythical.commit("m3")
+    const outline = try mythical.outline()
+    try Effect.try(() => {
+      expect(window.location.hash).toBe("#m3")
+      expect(dialog.open).toBe(false)
+      expect(planned.commit).toMatchObject({ id: "m3", epic: "e3", state: "planned", task: "t3", title: "feat(sandbox): three" })
+      expect(outline.epics.map((epic) => [epic.title, epic.commits])).toEqual([["The compiler", 1], ["Docs, guides and the site", 1], ["A new epic", 1]])
+      expect(Array.from(node.querySelectorAll("button"), (button) => button.textContent)).not.toContain("Approve")
+    })
+    try input(node, "#mh-lane", "coverage-lane")
+    try promise(() => vi.waitFor(() => expect(node.querySelector<HTMLInputElement>("#mh-lane")?.value).toBe("coverage-lane")))
+    try click(node, "Start")
+    try promise(() => vi.waitFor(() => expect(node.querySelector("#mh-lane")).toBeNull()))
+    for (const [section, label] of [["tried", "Tried"], ["evidence", "Evidence"], ["superseded", "Superseded"]] as const) {
+      try input(node, "select[aria-label='Section']", section, "change")
+      try input(node, "#mh-note", `${label} through the real form`)
+      try click(node, "Add note")
+      try promise(() => vi.waitFor(() => {
+        expect(node.textContent).toContain(`${label} through the real form`)
+        expect(node.querySelector<HTMLInputElement>("#mh-note")?.value).toBe("")
+      }))
+    }
+    const worked = try mythical.commit("m3")
+    try Effect.try(() => {
+      expect(worked.commit).toMatchObject({ state: "working", lane: "coverage-lane" })
+      expect(worked.commit!.notes.map((note) => [note.section, note.text, note.by])).toEqual([
+        ["tried", "Tried through the real form", "Ada"], ["evidence", "Evidence through the real form", "Ada"], ["superseded", "Superseded through the real form", "Ada"],
+      ])
+      expect(Array.from(node.querySelectorAll("button"), (button) => button.textContent)).not.toContain("Approve")
+    })
+  }
+}), 30_000)
+
+it.live("a maintainer plans into an existing epic, approves working code, and folds the queue's real commit", () => scoped(effect {
+  provide Layer.merge(page, MockMythical({ role: "maintainer", name: "Ada", agent: false }, seed)) {
+    const { node, window, mythical } = try mount("maintainer")
+    try click(node, "Plan work")
+    const dialog = try planDialog(node)
+    try input(dialog, "#mh-plan-title", "fix(compiler): three")
+    try input(dialog, "#mh-plan-task", "t3")
+    try click(dialog, "Plan work")
+    try heading(node, "fix(compiler): three")
+    try input(node, "#mh-lane", "coverage-lane")
+    try click(node, "Start")
+    try promise(() => vi.waitFor(() => expect(Array.from(node.querySelectorAll("button"), (button) => button.textContent)).toContain("Approve")))
+    try click(node, "Approve")
+    try promise(() => vi.waitFor(() => expect(Array.from(node.querySelectorAll("button"), (button) => button.textContent)).not.toContain("Approve")))
+    const approved = try mythical.commit("m3")
+    try Effect.try(() => expect(approved.commit).toMatchObject({ state: "approved", epic: "e1", lane: "coverage-lane", task: "t3" }))
+    try Effect.try(() => node.querySelector<HTMLAnchorElement>("a[href='#']")!.click())
+    try promise(() => vi.waitFor(() => expect(window.location.hash).toBe("")))
+    try click(node, "Fold")
+    try promise(() => vi.waitFor(() => expect(node.textContent).toContain("f01d00000003")))
+    const landed = try mythical.commit("m3")
+    try Effect.try(() => {
+      expect(landed.commit).toMatchObject({ state: "landed", task: "", lane: "" })
+      expect(landed.real).toEqual([expect.objectContaining({ sha: "f01d00000003", mythical: "m3" })])
+      expect((node.querySelector("[role='alert']"))).toBeNull()
+    })
+  }
+}), 30_000)
+
+it.live("a maintainer cancels an amendment, inserts before a landed commit, then reopens that commit without duplicating it", () => scoped(effect {
+  provide Layer.merge(page, MockMythical({ role: "maintainer", name: "Ada", agent: false }, seed)) {
+    const { node, window, mythical } = try mount("maintainer", "m1")
+    try heading(node, "fix(compiler): one")
+    const before = try mythical.outline()
+    try click(node, "Amend…")
+    let dialog = try planDialog(node)
+    try Effect.try(() => {
+      expect(dialog.querySelector("#mh-plan-title")).toBeNull()
+      expect(node.ownerDocument.activeElement?.id).toBe("mh-plan-task")
+    })
+    try input(dialog, "#mh-plan-task", "discarded")
+    try click(dialog, "Cancel")
+    try promise(() => vi.waitFor(() => expect(dialog.open).toBe(false)))
+    const unchanged = try mythical.outline()
+    try Effect.try(() => expect(unchanged).toEqual(before))
+    try click(node, "Insert before…")
+    dialog = try planDialog(node)
+    try input(dialog, "#mh-plan-title", "fix(compiler): first")
+    try input(dialog, "#mh-plan-task", "t3")
+    try click(dialog, "Plan work")
+    try heading(node, "fix(compiler): first")
+    const epicPage = try mythical.epic("e1", 0)
+    try Effect.try(() => {
+      expect(epicPage.commits.map((commit) => commit.id)).toEqual(["m3", "m1"])
+      expect(window.location.hash).toBe("#m3")
+      node.querySelector<HTMLAnchorElement>("a[href='#e1']")!.click()
+    })
+    try heading(node, "The compiler")
+    try Effect.try(() => node.querySelector<HTMLAnchorElement>("a[href='#m1']")!.click())
+    try heading(node, "fix(compiler): one")
+    try click(node, "Amend…")
+    dialog = try planDialog(node)
+    try input(dialog, "#mh-plan-task", "t9")
+    try click(dialog, "Amend")
+    try promise(() => vi.waitFor(() => {
+      expect(dialog.open).toBe(false)
+      expect(node.textContent).toContain("t9")
+    }))
+    const amended = try mythical.commit("m1")
+    const after = try mythical.outline()
+    try Effect.try(() => {
+      expect(window.location.hash).toBe("#m1")
+      expect(amended.commit).toMatchObject({ id: "m1", title: "fix(compiler): one", state: "planned", task: "t9" })
+      expect(after.epics.reduce((count, epic) => count + epic.commits, 0)).toBe(3)
+      expect((node.querySelector("[role='alert']"))).toBeNull()
+    })
+  }
+}), 30_000)
+
+/** An explicitly faulty Effect transport. Every healthy operation still uses the real loopback client. */
+effect function transportFault() {
+  const native = Context.get(try Layer.build(NodeHttpClient.layerNodeHttp), HttpClient.HttpClient)
+  const healthy = try Effect.provideService(HttpServer.makeTestClient, HttpClient.HttpClient, native)
+  let unavailable = ""
+  let failures = 0
+  const client = HttpClient.transform(healthy, (response, request) => {
+    if (unavailable !== "" && (unavailable === "outline" ? request.url.split("?")[0]?.endsWith("/api/history") === true : request.url.includes(`/api/history/${unavailable}`))) {
+      failures++
+      return fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+    }
+    return response
+  })
+  return { layer: Layer.succeed(HttpClient.HttpClient, client), fail: (path: string) => { unavailable = path }, failures: () => failures }
+}
+
+it.live("an unavailable first read offers Retry and a healthy retry loads real history", () => scoped(effect {
+  provide NodeHttpServer.layerTest, page, MockMythical({ role: "maintainer", name: "Ada", agent: false }, seed) {
+    try scoped(effect {
+    try serveHistory()
+    const fault = try transportFault()
+    try sync(() => fault.fail("outline"))
+    provide Layer.provide(LiveMythical(""), fault.layer) {
+      const { node } = try mount("maintainer")
+      try promise(() => vi.waitFor(() => expect(node.querySelector("[role=alert]")?.textContent).toContain("Couldn't load the history.")))
+      try Effect.try(() => expect(fault.failures()).toBe(1))
+      try sync(() => fault.fail(""))
+      try click(node, "Retry")
+      try promise(() => vi.waitFor(() => {
+        expect(node.querySelector(".mh-epics [role=button]")).not.toBeNull()
+        expect(node.querySelector("[role=alert]")).toBeNull()
+      }))
+    }
+    })
+  }
+}), 30_000)
+
+it.live("every unavailable write keeps its input and history unchanged, then recovers through the same form", () => scoped(effect {
+  provide NodeHttpServer.layerTest, page, MockMythical({ role: "maintainer", name: "Ada", agent: false }, seed) {
+    try scoped(effect {
+    const product = try Mythical
+    try serveHistory()
+    const fault = try transportFault()
+    provide Layer.provide(LiveMythical(""), fault.layer) {
+      const { node, window } = try mount("maintainer")
+      const original = try product.outline()
+      try click(node, "Plan work")
+      const dialog = try planDialog(node)
+      try input(dialog, "#mh-plan-title", "fix(compiler): three")
+      try input(dialog, "#mh-plan-task", "t3")
+      try sync(() => fault.fail("plan"))
+      try click(dialog, "Plan work")
+      try promise(() => vi.waitFor(() => expect(dialog.querySelector("[role=alert]")?.textContent).toContain("The history can't be reached.")))
+      const refused = try product.outline()
+      try Effect.try(() => {
+        expect(refused).toEqual(original)
+        expect(dialog.querySelector<HTMLInputElement>("#mh-plan-title")?.value).toBe("fix(compiler): three")
+        expect(dialog.querySelector<HTMLInputElement>("#mh-plan-task")?.value).toBe("t3")
+      })
+      try sync(() => fault.fail(""))
+      try click(dialog, "Plan work")
+      try heading(node, "fix(compiler): three")
+      try input(node, "#mh-lane", "lane-a")
+      try sync(() => fault.fail("start"))
+      try click(node, "Start")
+      try promise(() => vi.waitFor(() => expect(node.querySelector("[role=alert]")?.textContent).toContain("The history can't be reached.")))
+      const planned = try product.commit("m3")
+      try Effect.try(() => { expect(planned.commit?.state).toBe("planned"); expect(node.querySelector<HTMLInputElement>("#mh-lane")?.value).toBe("lane-a") })
+      try sync(() => fault.fail(""))
+      try click(node, "Start")
+      try promise(() => vi.waitFor(() => expect(node.querySelector("#mh-lane")).toBeNull()))
+      try input(node, "#mh-note", "A retained note")
+      try sync(() => fault.fail("note"))
+      try click(node, "Add note")
+      try promise(() => vi.waitFor(() => expect(node.querySelector("[role=alert]")?.textContent).toContain("The history can't be reached.")))
+      const unnoted = try product.commit("m3")
+      try Effect.try(() => { expect(unnoted.commit?.notes).toEqual([]); expect(node.querySelector<HTMLInputElement>("#mh-note")?.value).toBe("A retained note") })
+      try sync(() => fault.fail(""))
+      try click(node, "Add note")
+      try promise(() => vi.waitFor(() => expect(node.querySelector<HTMLInputElement>("#mh-note")?.value).toBe("")))
+      try sync(() => fault.fail("approve"))
+      try click(node, "Approve")
+      try promise(() => vi.waitFor(() => expect(node.querySelector("[role=alert]")?.textContent).toContain("The history can't be reached.")))
+      const working = try product.commit("m3")
+      try Effect.try(() => expect(working.commit?.state).toBe("working"))
+      try sync(() => fault.fail(""))
+      try click(node, "Approve")
+      try promise(() => vi.waitFor(() => expect(node.querySelector(".mh-meta .sui-badge")?.textContent).toBe("approved")))
+      try Effect.try(() => node.querySelector<HTMLAnchorElement>("a[href='#']")!.click())
+      try promise(() => vi.waitFor(() => expect(window.location.hash).toBe("")))
+      try sync(() => fault.fail("fold"))
+      try click(node, "Fold")
+      try promise(() => vi.waitFor(() => expect(node.querySelector("[role=alert]")?.textContent).toContain("The history can't be reached.")))
+      const approved = try product.commit("m3")
+      try Effect.try(() => expect(approved.commit?.state).toBe("approved"))
+      try sync(() => fault.fail(""))
+      try click(node, "Fold")
+      try promise(() => vi.waitFor(() => expect(node.textContent).toContain("f01d00000003")))
+      const landed = try product.commit("m3")
+      try Effect.try(() => {
+        expect(landed.commit?.state).toBe("landed")
+        expect(landed.commit?.notes.filter((note) => note.text === "A retained note")).toHaveLength(1)
+        expect(landed.real).toHaveLength(1)
+        expect(fault.failures()).toBe(5)
+        expect(node.querySelector("[role=alert]")).toBeNull()
+      })
+    }
+    })
+  }
+}), 30_000)

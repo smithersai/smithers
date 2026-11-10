@@ -1,0 +1,116 @@
+import { describe, expect, it } from "@effect/vitest"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor, MockFactory } from "../src/core/MockFactory.vibe"
+
+describe("sandbox flows through Factory", () => {
+  it.effect("writes bytes, stops, restarts and reads saved bytes through the same terminal flow", () => effect {
+    provide mockFactoryFor("contributor") {
+      const factory = try Factory
+      const initial = try factory.sandbox("home")
+      const started = try factory.startSandbox("home", "start-1")
+      try factory.sandboxCommand("home", "write-1", "echo saved > keep.txt", started.generation)
+      const stopped = try factory.stopSandbox("home", "stop-1", started.generation)
+      const restarted = try factory.startSandbox("home", "start-2")
+      const output = try factory.sandboxCommand("home", "read-1", "cat keep.txt", restarted.generation)
+      try Effect.try(() => {
+        expect(initial.status).toBe("stopped")
+        expect(initial.remaining).toBe(600)
+        expect(started.status).toBe("running")
+        expect(stopped.status).toBe("stopped")
+        expect(restarted.generation).toBe(started.generation + 1)
+        expect(output).toBe("saved\n")
+      })
+    }
+  })
+  it.effect("never fabricates test output and keeps conversations isolated", () => effect {
+    provide mockFactoryFor("contributor") {
+      const factory = try Factory
+      const a = try factory.startSandbox("a", "a1")
+      const b = try factory.startSandbox("b", "b1")
+      try factory.sandboxCommand("a", "write", "echo private > a.txt", a.generation)
+      const output = try factory.sandboxCommand("b", "read", "cat a.txt", b.generation)
+      const tests = try factory.sandboxCommand("b", "tests", "pnpm test", b.generation)
+      try Effect.try(() => { expect(output).toBe("cat: No such file"); expect(tests).toBe("Command unavailable in mock mode") })
+    }
+  })
+  it.effect("starts signed out, with no compute authority", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      const initial = try factory.sandbox("home")
+      const outcome = try Effect.result(factory.startSandbox("home", "denied"))
+      try Effect.try(() => { expect(initial.role).toBe("viewer"); expect(initial.remaining).toBe(0); expect(outcome._tag).toBe("Failure") })
+    }
+  })
+  it.effect("replays A/B/A without stopping a restarted generation", () => effect {
+    provide mockFactoryFor("maintainer") {
+      const factory = try Factory
+      const first = try factory.startSandbox("home", "start-a")
+      try factory.stopSandbox("home", "stop-a", first.generation)
+      const second = try factory.startSandbox("home", "start-b")
+      try factory.stopSandbox("home", "stop-a", first.generation)
+      const current = try factory.sandbox("home")
+      const stale = try Effect.result(factory.stopSandbox("home", "old-unseen-stop", first.generation))
+      try Effect.try(() => { expect(current.status).toBe("running"); expect(current.generation).toBe(second.generation); expect(stale._tag).toBe("Failure") })
+    }
+  })
+})
+
+it.live("the chat agent starts the same metered sandbox through its Factory flow", () => effect {
+  provide mockFactoryFor("contributor") {
+    const factory = try Factory
+    try factory.post("agent", "ask-sandbox", "Ada", "start a sandbox")
+    try Stream.runDrain(factory.events("agent", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished")))
+    const sandbox = try factory.sandbox("agent")
+    const chat = try factory.read("agent", 0)
+    try Effect.try(() => { expect(sandbox.status).toBe("running"); expect(chat.entries.at(-1)!.text).toBe(`Started ${sandbox.id}.`) })
+  }
+})
+
+it.live("treats prototype-named conversations as ordinary isolated sandbox identities", () => effect {
+  provide mockFactoryFor("contributor") {
+    const factory = try Factory
+    for (const conversation of ["__proto__", "constructor", "toString"]) {
+      const started = try factory.startSandbox(conversation, `start-${conversation}`)
+      const output = try factory.sandboxCommand(conversation, `write-${conversation}`, "echo saved > keep", started.generation)
+      const read = try factory.sandboxCommand(conversation, `read-${conversation}`, "cat keep", started.generation)
+      try Effect.try(() => { expect(started.generation).toBe(1); expect(output).toBe(""); expect(read).toBe("saved\n") })
+    }
+  }
+})
+
+it.live("a queued Viewer prompt cannot borrow a subsequently selected Contributor's sandbox", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    try factory.tour("queued-viewer")
+    try factory.post("queued-viewer", "viewer-sandbox", "Guest", "start a sandbox")
+    try factory.accounts!.choose("contributor")
+    try factory.endTour("queued-viewer")
+    try Stream.runDrain(factory.events("queued-viewer", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished")))
+    const sandbox = try factory.sandbox("queued-viewer")
+    const chat = try factory.read("queued-viewer", 0)
+    try Effect.try(() => {
+      expect(sandbox.status).toBe("stopped")
+      expect(chat.entries.at(-1)!.text).toBe("Couldn't start a sandbox")
+    })
+  }
+})
+
+it.live("a queued Contributor prompt starts only its originating owner's sandbox after identity switching", () => effect {
+  provide mockFactoryFor("contributor") {
+    const factory = try Factory
+    try factory.tour("queued-contributor")
+    try factory.post("queued-contributor", "contributor-sandbox", "rira", "start a sandbox")
+    try factory.accounts!.choose("maintainer")
+    try factory.endTour("queued-contributor")
+    try Stream.runDrain(factory.events("queued-contributor", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished")))
+    const other = try factory.sandbox("queued-contributor")
+    try factory.accounts!.choose("contributor")
+    const own = try factory.sandbox("queued-contributor")
+    const chat = try factory.read("queued-contributor", 0)
+    try Effect.try(() => {
+      expect(other.status).toBe("stopped")
+      expect(own.status).toBe("running")
+      expect(chat.entries.at(-1)!.text).toBe(`Started ${own.id}.`)
+    })
+  }
+})

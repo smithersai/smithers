@@ -1,11 +1,15 @@
 import { describe, expect, it } from "@effect/vitest"
-import { blocks, inline } from "../src/web/markdown.vibe"
+import { blocks, compile, inline } from "../src/web/markdown.vibe"
 
 describe("reply Markdown", () => {
   it("accepts an info string and keeps prose after its closing fence", () => {
     expect(blocks("Before\n\n```vibe title\nconst x = 1\n```\n\nAfter")).toEqual([
       { kind: "prose", text: "Before" }, { kind: "code", language: "vibe", text: "const x = 1" }, { kind: "prose", text: "After" },
     ])
+  })
+  it("names a link whose label is blank with its target (fuzz web/view-branches)", () => {
+    expect(compile("See [\t](#issue-4) and [** **](/wiki/x).")).toEqual([{ tag: "p", children: ["See ", { tag: "a", href: "#issue-4", children: ["#issue-4"] }, " and ", { tag: "a", href: "/wiki/x", children: ["/wiki/x"] }, "."] }])
+    expect(compile("[ok](#a)")).toEqual([{ tag: "p", children: [{ tag: "a", href: "#a", children: ["ok"] }] }])
   })
   it("keeps an unclosed streamed fence and a bare fence", () => {
     expect(blocks("```vibe\nline\nnext")).toEqual([{ kind: "code", language: "vibe", text: "line\nnext" }])

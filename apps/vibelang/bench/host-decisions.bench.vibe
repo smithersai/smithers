@@ -1,0 +1,97 @@
+import { it, expect } from "@effect/vitest"
+import { initialDispatch, probeDispatch, finishDispatch } from "../worker/liveDispatchDecision.vibe"
+import { initialProgress, advanceProgress, completion, type ProgressEvent } from "../worker/replyProgressDecision.vibe"
+import { theatreSelector, speechAction, audioIdentity, theatreOutcome, theatreFocusIndex } from "../src/web/theatreDecision.vibe"
+import { wantsMock, preferenceWrite, startupRole, startupSession, tutorialStartup, otherMode } from "../src/web/startupDecision.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+it("dispatch scans stop at the first unmarked post and attempt once", async ({ bench }) => {
+  const result = await workload(bench, "dispatcher-decisions", "sync", () => {
+    const posts = ["m1", "m2", "m3"]
+    for (let marks = 0; marks < 8; marks++) {
+      let scan = initialDispatch()
+      while (scan.phase === "scan") scan = probeDispatch(scan, posts, (marks & (1 << scan.index)) !== 0)
+      const expected = [[0, "m1"], [1, "m2"], [0, "m1"], [2, "m3"], [0, "m1"], [1, "m2"], [0, "m1"], [3, ""]][marks]!
+      expect([scan.index, scan.post]).toEqual(expected)
+      expect(probeDispatch(scan, posts, false)).toBe(scan)
+      for (const accepted of [false, true]) {
+        const finished = finishDispatch(scan, accepted)
+        expect(finished.phase).toBe("done")
+        expect(finished.started).toBe(marks === 7 ? false : accepted)
+        expect(finishDispatch(finished, !accepted)).toBe(finished)
+      }
+    }
+    expect(probeDispatch(initialDispatch(), [], false)).toEqual({ index: 0, phase: "done", post: "", started: false })
+  }).run(quick)
+  await runPromise(artifact("dispatcher-decisions", "Vitest built-in bench; all eight storage-mark combinations for three ordered posts, exact independently listed first candidate, single attempted start/refusal and terminal no-op, plus empty queue. Assertions included.", ["Pure dispatcher decisions only; storage probes and durable starts are measured in object-host/workerd workloads."], result))
+})
+
+it("model progress preserves projected output and accounts exact safe usage", async ({ bench }) => {
+  const result = await workload(bench, "reply-progress-decisions", "sync", () => {
+    const event: ProgressEvent = { kind: "model-delta", textDelta: true, piece: "cell", projected: "answer", input: 2, output: 3, code: "offline", safeTotal: true, safeInput: true, safeOutput: true }
+    const initial = initialProgress()
+    const projected = advanceProgress(initial, event)
+    expect(projected).toEqual({ reply: "cell", text: "answer", tokens: 0, failed: undefined, usageValid: true })
+    const partial = advanceProgress(projected, { ...event, piece: "tail", projected: undefined })
+    expect(partial).toEqual({ ...projected, reply: "celltail" })
+    expect(advanceProgress(partial, { ...event, textDelta: false })).toBe(partial)
+    expect(advanceProgress(partial, { ...event, kind: "other" })).toBe(partial)
+    const paid = advanceProgress(partial, { ...event, kind: "model-settled" })
+    expect(paid).toEqual({ ...partial, tokens: 5 })
+    for (const kind of ["model-requested", "model-retried"]) expect(advanceProgress(paid, { ...event, kind })).toEqual({ ...paid, reply: "" })
+    for (const change of [
+      { safeTotal: false }, { safeInput: false }, { safeOutput: false }, { input: -1 }, { output: -1 },
+      { input: Number.MAX_SAFE_INTEGER, output: 1 },
+    ]) {
+      const invalid = advanceProgress(paid, { ...event, ...change, kind: "model-settled" })
+      expect(invalid).toEqual({ ...paid, usageValid: false })
+      expect(advanceProgress(invalid, { ...event, kind: "model-settled" })).toEqual({ ...paid, tokens: 10, usageValid: false })
+    }
+    expect(advanceProgress(initial, { ...event, kind: "model-settled", input: Number.MAX_SAFE_INTEGER, output: 0 }).tokens).toBe(Number.MAX_SAFE_INTEGER)
+    const failed = advanceProgress(paid, { ...event, kind: "model-failed" })
+    expect(failed).toEqual({ ...paid, failed: "offline" })
+    for (const [failure, valid, text, expected] of [
+      [true, true, true, "failed"], [true, false, false, "failed"], [false, false, true, "failed"],
+      [false, true, false, "empty"], [false, true, true, "answered"],
+    ] as const) expect(completion(failure, valid, text)).toBe(expected)
+  }).run(quick)
+  await runPromise(artifact("reply-progress-decisions", "Vitest built-in bench; projected/partial/non-text/unknown deltas, retry reset retaining output and usage, exact safe-integer boundary, negative/unsafe/overflow usage latching invalidity, provider failure and completion precedence. Complete state comparisons inside timing.", ["SDK event projection policy, no provider decoding or inference. Actual agent/durable execution is separate."], result))
+})
+
+it("startup preferences and theatre controls preserve their public choices", async ({ bench }) => {
+  const result = await workload(bench, "startup-theatre-decisions", "sync", () => {
+    for (const [query, stored, mock, write] of [
+      ["mock", "live", true, "set"], ["live", "mock", false, "clear"], [null, "mock", true, "keep"],
+      [null, null, false, "keep"], ["unknown", "mock", true, "keep"], ["unknown", "unknown", false, "keep"],
+    ] as const) { expect(wantsMock(query, stored)).toBe(mock); expect(preferenceWrite(query)).toBe(write) }
+    expect(startupRole("new", "viewer", ["new", "viewer"])).toBe("new")
+    expect(startupRole("forged", "viewer", ["new", "viewer"])).toBe("viewer")
+    expect(startupRole(null, "viewer", ["new", "viewer"])).toBe("viewer")
+    expect(startupSession("", "fresh")).toBe("")
+    expect(startupSession(null, "fresh")).toBe("fresh")
+    expect(tutorialStartup(null, "fresh", "on", "yes", null, "/")).toEqual({ tutorialSession: "fresh", tourSound: true, resumeTour: true, autoTour: true })
+    expect(tutorialStartup("saved", "fresh", "off", "no", "yes", "/history")).toEqual({ tutorialSession: "saved", tourSound: false, resumeTour: false, autoTour: false })
+    expect(otherMode("mock")).toBe("live"); expect(otherMode("live")).toBe("mock")
+    for (const [target, selector] of [
+      ["splash", ".vl-primary"], ["palette", ".sui-chat-messages"], ["issues", ".ix-surface"], ["issue:48", ".sui-item-conv"],
+      ["issues:vips", ".sui-item-conv"], ["wiki:index", ".vl-wiki"], ["history-nav", 'a[href="/history"]'],
+      ["composer", 'form.sui-chat-composer[data-docked="true"]'], ["sandbox-pane", ".vl-sandboxes"], ["finish", ".vl-chat"],
+    ]) expect(theatreSelector(target!)).toBe(selector)
+    expect(speechAction(1, false, true, false, false, 1, true, true, false)).toBe("cancel")
+    expect(speechAction(1, true, false, false, false, 1, true, true, false)).toBe("cancel")
+    expect(speechAction(2, true, true, true, false, 1, true, true, false)).toBe("cancel")
+    expect(speechAction(1, true, true, true, false, 1, true, true, false)).toBe("pause")
+    expect(speechAction(1, true, true, false, false, 1, true, true, true)).toBe("resume")
+    expect(speechAction(1, true, true, false, false, 1, true, true, false)).toBe("keep")
+    expect(speechAction(2, true, true, false, false, 1, true, true, false)).toBe("speak")
+    expect(speechAction(1, true, true, false, false, 1, false, true, false)).toBe("speak")
+    expect(speechAction(1, true, false, false, true, 1, true, false, false)).toBe("speak")
+    expect(audioIdentity(2, true, 1, true, true)).toBe(0)
+    expect(audioIdentity(1, true, 1, true, true)).toBe(1)
+    for (const [active, paused, sound, expected] of [[false, true, true, "ended"], [true, true, true, "paused"], [true, false, true, "sound"], [true, false, false, "muted"]] as const) expect(theatreOutcome(active, paused, sound)).toBe(expected)
+    expect(theatreFocusIndex(3, -1, false)).toBe(0); expect(theatreFocusIndex(3, -1, true)).toBe(2)
+    expect(theatreFocusIndex(3, 2, false)).toBe(0); expect(theatreFocusIndex(3, 0, true)).toBe(2)
+    expect(theatreFocusIndex(3, 0, false)).toBe(1); expect(theatreFocusIndex(3, 2, true)).toBe(1)
+  }).run(quick)
+  await runPromise(artifact("startup-theatre-decisions", "Vitest built-in bench; explicit query/storage precedence and persistence, role/session admission, tutorial resume and auto-start choices, every theatre target, speech state transitions, bounded telemetry labels and keyboard wrap. Literal expected choices asserted inside timing.", ["Pure policy decisions; browser DOM, storage, layout and native speech execution are separate runtime boundaries."], result))
+})

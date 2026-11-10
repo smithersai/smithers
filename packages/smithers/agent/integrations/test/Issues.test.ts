@@ -29,6 +29,8 @@ interface FakeGitHub {
   pageSize: number
   /** Raw items every listing starts with: things GitHub's schema does not promise. */
   junk: Array<unknown>
+  /** Each parent issue number's sub-issues. */
+  subIssues: Map<number, Array<Raw>>
   /** The next write applies, then answers 502. */
   lose: boolean
   readonly writes: () => ReadonlyArray<string>
@@ -107,6 +109,7 @@ const startGitHub = async (): Promise<FakeGitHub> => {
     comments: new Map<number, Array<Raw>>(),
     pageSize: 100,
     junk: [],
+    subIssues: new Map<number, Array<Raw>>(),
     lose: false
   }
   const write = (response: Parameters<typeof json>[0], status: number, body: unknown) => {
@@ -184,6 +187,11 @@ const startGitHub = async (): Promise<FakeGitHub> => {
       const label = rawLabel(body.name, { color: body.color, description: body.description ?? null })
       state.labels.push(label)
       return write(response, 201, label)
+    }
+    const subs = /^\/repos\/o\/r\/issues\/(\d+)\/sub_issues$/.exec(path)
+    if (subs !== null && request.method === "GET") {
+      const { headers, slice } = listing(url, fixture.origin, state.subIssues.get(Number(subs[1])) ?? [])
+      return json(response, 200, slice, headers)
     }
     const one = /^\/repos\/o\/r\/issues\/(\d+)$/.exec(path)
     const issue = one === null ? undefined : state.issues.find((candidate) => candidate["number"] === Number(one[1]))
@@ -484,7 +492,8 @@ describe("findIssueByWrite", () => {
     github = await startGitHub()
     github.issues.push(
       rawIssue(1, Issues.withWriteMarker("copied in", "w-1"), { user: { id: 9, login: "mallory" } }),
-      rawIssue(2, Issues.withWriteMarker("original", "w-1"), { user: { id: 7, login: "app[bot]" } })
+      rawIssue(2, Issues.withWriteMarker("original", "w-1"), { user: { id: 7, login: "app[bot]" } }),
+      rawIssue(3, Issues.withWriteMarker("author deleted", "w-1"), { user: null })
     )
     const found = await run(Issues.findIssueByWrite("o", "r", { writeId: "w-1", since: SINCE, author: "app[bot]" }))
     expect(Option.getOrThrow(found).number).toBe(2)
@@ -832,5 +841,28 @@ describe("a write whose answer was lost", () => {
     const found = await run(Issues.findCommentByWrite("o", "r", 7, { writeId: "w-c", since: SINCE }))
     expect(Issues.withoutWriteMarker(Option.getOrThrow(found).body ?? "")).toBe("Done")
     expect(github.comments.get(7)).toHaveLength(1)
+  })
+})
+
+describe("the oldest-first history listing and an issue's sub-issues", () => {
+  it("walks the listing by GitHub's own next query, never a page number it invented", async () => {
+    github = await startGitHub()
+    github.pageSize = 1
+    github.issues.push(rawIssue(1, "first"), rawIssue(2, "second"))
+    const first = await run(Issues.listAllIssuesPage("o", "r"))
+    expect(first.items).toHaveLength(1)
+    expect(first.next).not.toBeNull()
+    const last = await run(Issues.listAllIssuesPage("o", "r", { cursor: first.next }))
+    expect(last.items).toHaveLength(1)
+    expect(last.next).toBeNull()
+    expect(github.fixture.requests.map((request) => request.url).every((url) => url.includes("state=all"))).toBe(true)
+  })
+
+  it("reads an issue's sub-issues as GitHub sent them", async () => {
+    github = await startGitHub()
+    github.issues.push(rawIssue(1, "parent"))
+    github.subIssues.set(1, [rawIssue(2, "child"), rawIssue(3, "child")])
+    const subs = await run(Issues.listSubIssues("o", "r", 1)) as Array<Raw>
+    expect(subs.map((item) => item["number"])).toEqual([2, 3])
   })
 })

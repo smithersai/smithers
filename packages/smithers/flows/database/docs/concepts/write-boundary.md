@@ -170,3 +170,15 @@ into a reported no-op.
 
 For the failure-handling recipes, see
 [Handle a failed write](../guides/handle-a-failed-write.md).
+
+Cloudflare SQLite constraint errors may carry no extended error code. Their canonical
+`UNIQUE`, `NOT NULL`, `CHECK` and `FOREIGN KEY constraint failed` diagnostic prefixes
+normalize to `constraint` only without an explicit code, so a durable execution can adopt its persisted run after restart.
+An unrelated message merely mentioning a constraint stays `unknown`; an explicit conflicting code retains its classification. Diagnostics are never logged.
+
+Node's native `node:sqlite` driver uses `ERR_SQLITE_ERROR` with a numeric extended
+`errcode`. The low byte `SQLITE_CONSTRAINT` (19) is recognized only for a finite integer
+in the SQLite result-code range. This lets a replay adopt its existing run instead
+of failing with an unknown persistence error. Invalid values and hostile accessors
+remain unknown; no SQL diagnostics or bound values are logged. Tests use real native
+UNIQUE, NOT NULL, CHECK and FOREIGN KEY violations, plus malformed driver errors.

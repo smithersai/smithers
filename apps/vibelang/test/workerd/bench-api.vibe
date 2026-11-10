@@ -1,0 +1,123 @@
+// Unshipped benchmark host: the production bodies of worker/Api.vibe (worker/apiObjects.vibe) in real workerd SQLite.
+// Objects reach each other by `fetch` where Alchemy uses RPC. GitHub is an injected faulty client; sign-in is unconfigured (0017).
+import { RuntimeContext } from "alchemy/RuntimeContext"
+import { HttpClient, HttpClientError, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { FetchHttpClient } from "effect/http"
+import { accountsObject, actionIndexObject, apiFetch, budgetObject, conversationObject, historyObject, sandboxIdentityOf } from "../../worker/apiObjects.vibe"
+import * as Accounts from "../../worker/Accounts.vibe"
+import { chatModel, dailyTokens } from "../../worker/AgentModel.vibe"
+import { signedOutGateway } from "../../worker/SandboxHttp.vibe"
+import { refuseBinding } from "../support/refuseBinding.ts"
+import { webRequest } from "../support/webRequest.ts"
+
+interface Namespace { idFromName(name: string): unknown; get(id: unknown): { fetch(input: string | Request, init?: RequestInit): Promise<Response> } }
+interface Env { readonly CONVERSATION: Namespace; readonly BUDGET: Namespace; readonly HISTORY: Namespace; readonly ACCOUNTS: Namespace; readonly ACTION_INDEX: Namespace; readonly [name: string]: unknown }
+interface State { readonly id: { toString(): string }; readonly storage: unknown }
+type Api = { readonly fetch: unknown; readonly [method: string]: unknown }
+
+const json = (body: unknown) => HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(body))
+const noRuntime = Layer.succeed(RuntimeContext, {} as never)
+const configured = <A, E, R>(env: Env, program: A!E!R) => Effect.provide(program, ConfigProvider.layer(ConfigProvider.fromUnknown(env)))
+const faultyGitHub = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "GitHub is not part of this benchmark" }) })))
+
+/** The Alchemy RPC stub's shape over this host's plain objects. A name starting `unbound` has no binding. */
+function named(namespace: Namespace) {
+  return {
+    getByName: (name: string) => {
+      if (name.startsWith("unbound")) refuseBinding()
+      const object = namespace.get(namespace.idFromName(name))
+      return new Proxy({}, { get: (_target, method: string) => (...args: Array<unknown>) => method === "fetch"
+        ? promise(async () => HttpServerResponse.raw(await object.fetch((args[0] as { readonly source: Request }).source)))
+        : promise(async () => {
+          const response = await object.fetch("https://object/__rpc", { method: "POST", body: JSON.stringify({ method, args }) })
+          if (!response.ok) throw new Error(`${method} answered ${response.status}`)
+          return ((await response.json()) as { readonly value: unknown }).value
+        }) })
+    },
+  } as never
+}
+const namespaces = (env: Env) => ({ conversations: named(env.CONVERSATION), accounts: named(env.ACCOUNTS), actions: named(env.ACTION_INDEX), histories: named(env.HISTORY) })
+
+async function entry(request: Request, env: Env, props: Record<string, unknown>) {
+  const program = apiFetch(namespaces(env), signedOutGateway as never, "bench-commit", succeed(props))
+  return HttpServerResponse.toWeb(await runPromise(program.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)), Effect.provide(noRuntime)) as never))
+}
+
+/** The entrypoint a conversation's alarm calls back into, as `Cloudflare.toHttpClient` adapts it. */
+function selfClient(env: Env) {
+  return (self: { readonly props: Record<string, unknown> }) => HttpClient.make((request, url) => promise(async () => {
+    const body = request.body._tag === "Uint8Array" ? request.body.body : undefined
+    return HttpClientResponse.fromWeb(request, await entry(webRequest(url.href, { method: request.method, headers: request.headers, body }), env, self.props))
+  }))
+}
+
+const stateOf = (state: State) => ({ id: state.id, raw: state, exports: { default: (options: unknown) => succeed(options) } }) as never
+
+class ObjectHost {
+  readonly api: Promise<Api>
+  constructor(body: unknown) { this.api = runPromise((body as Effect.Effect<Api>).pipe(Effect.provide(noRuntime)) as never) }
+  async fetch(request: Request): Promise<Response> {
+    const api = await this.api
+    if (new URL(request.url).pathname === "/__rpc") {
+      const { method, args } = await request.json() as { readonly method: string; readonly args: ReadonlyArray<unknown> }
+      const value = await runPromise(Effect.provide((api[method] as (...args: ReadonlyArray<unknown>) => Effect.Effect<unknown>)(...args), noRuntime) as never)
+      return json({ value })
+    }
+    return HttpServerResponse.toWeb(await runPromise((api.fetch as Effect.Effect<HttpServerResponse.HttpServerResponse>).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)), Effect.provide(noRuntime)) as never))
+  }
+  async alarm(): Promise<void> {
+    const api = await this.api
+    if (api.alarm !== undefined) await runPromise(Effect.provide((api.alarm as () => Effect.Effect<void>)(), noRuntime) as never)
+  }
+}
+
+export class Budget extends ObjectHost {
+  constructor(state: State, env: Env) { super(Effect.flatMap(configured(env, Effect.orDie(dailyTokens)), limit => budgetObject(stateOf(state), limit))) }
+}
+export class History extends ObjectHost {
+  constructor(state: State) { super(historyObject(stateOf(state), undefined, faultyGitHub)) }
+}
+export class ProjectAccounts extends ObjectHost {
+  constructor(state: State, env: Env) {
+    super(effect {
+      const model = try Effect.orDie(configured(env, chatModel()))
+      // readSetup builds the GitHub layer, which needs a Scope; without one configured() answers undefined (sign-in off).
+      const setup = try Effect.orDie(scoped(configured(env, Accounts.configured()).pipe(Effect.provide(FetchHttpClient.layer))))
+      return try accountsObject(stateOf(state), named(env.BUDGET), model, setup)
+    })
+  }
+}
+export class Conversation extends ObjectHost {
+  constructor(state: State, env: Env) {
+    super(effect {
+      const model = try Effect.orDie(configured(env, chatModel()))
+      return try conversationObject(stateOf(state), named(env.BUDGET), named(env.HISTORY), named(env.ACCOUNTS), model, selfClient(env) as never)
+    })
+  }
+}
+export class ActionIndex extends ObjectHost {
+  constructor(state: State, env: Env) { super(actionIndexObject(stateOf(state), named(env.ACCOUNTS), named(env.CONVERSATION))) }
+}
+
+export default {
+  async fetch(request: Request, env: Env) {
+    const url = new URL(request.url)
+    if (url.pathname === "/__identity") {
+      const identity = sandboxIdentityOf(named(env.ACCOUNTS), succeed(JSON.parse(url.searchParams.get("props") ?? "{}") as Record<string, unknown>))
+      const answer = effect {
+        const principal = try identity.request()
+        const role = try identity.role(principal.owner)
+        return { principal, role }
+      }
+      return json(await runPromise(answer.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)), Effect.provide(noRuntime)) as never))
+    }
+    if (url.pathname.startsWith("/__object/")) {
+      const [, , kind, name, method] = url.pathname.split("/")
+      const namespace = { budget: env.BUDGET, actions: env.ACTION_INDEX, conversation: env.CONVERSATION, accounts: env.ACCOUNTS }[kind!]!
+      return namespace.get(namespace.idFromName(name!)).fetch("https://object/__rpc", { method: "POST", body: JSON.stringify({ method, args: await request.json() }) })
+    }
+    // A service binding's caller sets the entrypoint's props (`ctx.props`) in production. This host takes them from a
+    // header only so a benchmark can act as such a caller; the shipped Worker never reads it.
+    return entry(request, env, JSON.parse(request.headers.get("x-bench-props") ?? "{}") as Record<string, unknown>)
+  },
+}

@@ -1,0 +1,15 @@
+// Bundle VibeLang through the same esbuild plugin the monorepo's other native programs use.
+import { BunHost } from "@smthrs/platform-bun"
+import { build } from "esbuild"
+import vibelang from "vibelang-unplugin/esbuild"
+await build({ entryPoints: ["src/host/main.vibe"], outfile: "dist-host/index.js", bundle: true, platform: "node", format: "esm", target: "es2022", external: ["electrobun", "bun:*"], plugins: [{ name: "native-boundary", setup(builder) { builder.onResolve({ filter: /^#electrobun$/ }, () => ({ path: "electrobun/bun", external: true })) } }, vibelang({ project: "tsconfig.json" })] })
+
+// Package the SDK's native confinement helper beside the application, outside any folder an agent opens.
+await runPromise(effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const helper = try Config.withDefault(Config.String("SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"), path.resolve("../../target/release/smithers-jj-export"))
+  try fs.makeDirectory("dist-host/native", { recursive: true })
+  try fs.copyFile(helper, "dist-host/native/smithers-jj-export")
+  try fs.chmod("dist-host/native/smithers-jj-export", 0o755)
+}.pipe(Effect.provide(BunHost.layer)))

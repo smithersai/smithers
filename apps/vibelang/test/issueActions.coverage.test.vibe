@@ -1,0 +1,35 @@
+// Every control the issues pane renders sends an action the pane has behavior for: a control wired to an unknown
+// action would do nothing (issueDecision.vibe proves unknown actions change nothing). The pane is rendered in each
+// screen and dialog with a recording sender.
+import { expect, given, scene, selector } from "foldkit/scene"
+import { it } from "@effect/vitest"
+import { expect as assert } from "vitest"
+import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
+import { issueKnownAction } from "../src/web/issueDecision.vibe"
+import { initialIssues, type IssuesUi } from "../src/web/issues.vibe"
+import { issuesView } from "../src/web/issuesView.vibe"
+import { init, issueStateOf, Message, type Model, update } from "../src/web/main.vibe"
+
+const home = init({ session: "issues", mode: "mock", name: "Ada" }).model
+const ready: IssuesUi = { ...initialIssues, status: "ready", role: "maintainer", selected: 45, data: { seq: 1, items: fixtureIssues } }
+const screens: ReadonlyArray<Partial<IssuesUi>> = [
+  { screen: "list" }, { screen: "list", kind: "VIPs" }, { screen: "detail" }, { screen: "detail", selected: 48 },
+  { screen: "new" }, { screen: "vip" }, { screen: "roles" }, { screen: "specification" },
+  { screen: "detail", dialog: "commit" }, { screen: "detail", dialog: "split" }, { screen: "detail", dialog: "link" },
+  { status: "error", error: "Couldn't load issues" },
+]
+
+it("every action the issues pane wires has behavior; anything else has none", () => {
+  const sent = new Set<string>()
+  const record = (action: string, value = "") => { sent.add(action); return Message.IssueUi({ action, value }) }
+  for (const over of screens) {
+    const model: Model = { ...home, issues: { ...ready, ...over } }
+    scene({ update, view: (shown: Model, h) => issuesView(issueStateOf(shown), h, record) }, given(model),
+      expect(selector(".ix-surface")).toExist(),
+    )
+  }
+  assert(sent.size).toBeGreaterThan(5)
+  assert([...sent].filter((action) => !issueKnownAction(action))).toEqual([])
+  assert(issueKnownAction("drop-table")).toBe(false)
+  assert(issueKnownAction("")).toBe(false)
+})

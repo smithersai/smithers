@@ -1,0 +1,114 @@
+// @vitest-environment node
+// The real LiveActions client, public HTTP handler and SQLite action hosts, with product accounts/history.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpServer, HttpServerRequest } from "effect/http"
+import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
+import { LiveActions } from "../src/actions/LiveActions.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { handle, type ActionsApi } from "../worker/ActionsHttp.vibe"
+import { ActionIdentity } from "../worker/ActionIdentity.vibe"
+import { eventStream } from "../worker/Http.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import { world, history } from "./support/actionObjects.vibe"
+
+effect function serving(w: Effect.Success<ReturnType<typeof world>>) {
+  const api: ActionsApi = {
+    list: w.directory.list,
+    start: w.directory.start,
+    rerun: w.directory.rerun,
+    cancel: w.directory.cancel,
+    read: effect id => try Runs.read((try w.object(id)).sequencer),
+    events: effect id => eventStream((try w.object(id)).sequencer.follow(0)),
+  }
+  try HttpServer.serveEffect(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    return try Effect.provideService(handle(api, new URL(request.originalUrl, `http://${request.headers.host ?? "local"}`)), ActionIdentity, w.authority)
+  })
+}
+effect function code(work: unknown!ActionFailure) { return work.pipe(Effect.as("ok")) catch error => error.code }
+
+describe("LiveActions over real HTTP", () => {
+  it.live("lists, starts, follows real steps, reads, filters and reruns a history action", () => scoped(effect {
+    const w = try world()
+    provide NodeHttpServer.layerTest, history {
+      try serving(w)
+      const product = try Mythical
+      provide LiveActions("") {
+        const client = try Actions
+        const catalog = try client.list()
+        const commands = try client.commands()
+        const id = try client.start("vibelang/history/show", {}, "button")
+        const object = try w.object(id)
+        try object.host.alarm(w.spend, w.model, product)
+        const events = try Stream.runCollect(client.follow(id).pipe(Stream.takeUntil(run => run.state === "passed")))
+        const found = try client.read(id)
+        const runs = try client.runs("vibelang/history/show")
+        const unicode = try client.runs("unknown/😀?filter#part")
+        const again = try client.rerun(id)
+        try (try w.object(again)).host.alarm(w.spend, w.model, product)
+        const reran = try client.read(again)
+        try client.cancel(id)
+        try Effect.try(() => {
+          expect(catalog.map(entry => entry.name)).toContain("vibelang/history/show")
+          expect(commands.map(entry => entry.command)).toContain("/plan")
+          expect(events[0]?.state).toBe("queued")
+          expect(events[events.length - 1]?.state).toBe("passed")
+          expect(found.steps.some(step => step.name === "vibelang/history/show/read" && step.state === "passed")).toBe(true)
+          expect(runs.map(run => run.id)).toEqual([id])
+          expect(unicode).toEqual([])
+          expect(again).not.toBe(id)
+          expect(reran).toMatchObject({ state: "passed", flow: found.flow, result: found.result })
+        })
+      }
+    }
+  }), 60_000)
+
+  it.live("parses actual slash commands, refusing missing/malformed JSON and unknown commands", () => scoped(effect {
+    const w = try world()
+    provide NodeHttpServer.layerTest, history {
+      try serving(w)
+      const product = try Mythical
+      provide LiveActions("") {
+        const client = try Actions
+        const id = try client.command('/plan {"how":"append","epic":"","newEpic":"Coverage","target":"","title":"HTTP plan","task":"Real flow"}')
+        try (try w.object(id)).host.alarm(w.spend, w.model, product)
+        const page = try product.commit("m1")
+        const empty = try code(client.command("/plan"))
+        const malformed = try code(client.command("/plan {oops"))
+        const unknown = try code(client.command("/nope"))
+        try Effect.try(() => {
+          expect(page.commit?.title).toBe("HTTP plan")
+          expect([empty, malformed, unknown]).toEqual(["input", "input", "unknown-command"])
+        })
+      }
+    }
+  }), 60_000)
+
+  it.live("cancels an actual parked tutorial and reflects current role permissions and missing runs", () => scoped(effect {
+    const w = try world()
+    provide NodeHttpServer.layerTest, history {
+      try serving(w)
+      const product = try Mythical
+      provide LiveActions("") {
+        const client = try Actions
+        const id = try client.command("/tour")
+        try (try w.object(id)).host.alarm(w.spend, w.model, product)
+        try client.cancel(id)
+        const cancelled = try client.read(id)
+        try w.accounts.choose("viewer")
+        const visible = try client.commands()
+        const denied = try code(client.start("vibelang/Post", { text: "denied" }, "button"))
+        const missing = try code(client.read("amissing"))
+        const noCancel = try code(client.cancel("amissing"))
+        const noRerun = try code(client.rerun("amissing"))
+        try Effect.try(() => {
+          expect(cancelled).toMatchObject({ state: "cancelled", door: "slash" })
+          expect(cancelled.steps.length).toBeGreaterThan(0)
+          expect(visible.map(entry => entry.command)).toEqual(["/tour"])
+          expect([denied, missing, noCancel, noRerun]).toEqual(["forbidden", "not-found", "not-found", "not-found"])
+        })
+      }
+    }
+  }), 60_000)
+})

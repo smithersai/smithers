@@ -1,0 +1,34 @@
+// main as a live fold reads it from GitHub's commit list (worker/MainLog.vibe): the first-parent walk back to the
+// history's last folded commit, each merge's side commits before it, oldest first.
+import { describe, expect, it } from "@effect/vitest"
+import { type GitHubCommit, newCommits } from "../worker/MainLog.vibe"
+
+function commit(sha: string, parents: ReadonlyArray<string>, message = `fix(compiler): ${sha}`): GitHubCommit {
+  return { sha: sha.padEnd(40, "0"), commit: { message }, parents: parents.map((parent) => ({ sha: parent.padEnd(40, "0") })) }
+}
+
+// GitHub lists newest first: c (head) ← m (merge of b and s2) ← b ← a (folded); s2 ← s1 ← a on the side.
+const listed = [
+  commit("c", ["m"], "docs: c\n\nMythical: m7\n"),
+  commit("m", ["b", "s2"], "chore(release): green cut"),
+  commit("s2", ["s1"]),
+  commit("b", ["a"]),
+  commit("s1", ["a"]),
+  commit("a", []),
+]
+
+describe("main's new commits", () => {
+  it("walks first parents back to the cursor, each merge after its side commits, oldest first", () => {
+    const found = newCommits(listed, "a".padEnd(12, "0"))!
+    expect(found.map((each) => each.sha[0])).toEqual(["b", "s", "s", "m", "c"])
+    expect(found.map((each) => each.sha)).toEqual(["b", "s1", "s2", "m", "c"].map((sha) => sha.padEnd(12, "0")))
+    expect(found[4]).toMatchObject({ title: "docs: c", message: "docs: c\n\nMythical: m7\n", change: "" })
+  })
+
+  it("answers nothing new at the head, and undefined when the pages don't reach the cursor", () => {
+    expect(newCommits(listed, "c".padEnd(12, "0"))).toEqual([])
+    expect(newCommits(listed.slice(0, 3), "a".padEnd(12, "0"))).toBeUndefined()
+    expect(newCommits([], "a")).toBeUndefined()
+    expect(newCommits([], "")).toEqual([])
+  })
+})

@@ -1,0 +1,65 @@
+// The GitHub issue host's unjournaled writes (link, commit, uncommit, accept, decline) and reads over a stateful
+// GitHub on the real client protocol, by permitted people and by agents. Each success is checked against GitHub.
+import { it } from "@effect/vitest"
+import { HttpClient } from "effect/http"
+import { WebCrypto } from "@smthrs/crypto"
+import { issuePermission } from "../src/core/conversation.vibe"
+import { IssueFailure, IssuesState, type IssueRequest } from "../src/core/issueSchemas.vibe"
+import { githubHost, IssueAuthority, TASK_LABEL } from "../worker/Issues.vibe"
+import { fakeClient, repo, seed } from "./issues-node-fake.vibe"
+import { run, Finding } from "./run.vibe"
+
+const REASONS = ["forbidden", "missing", "tree", "assignee", "closed", "review", "unavailable", "partial", "protocol", "connect", "sign-in"]
+const Step = Schema.Struct({
+  op: Schema.Literals(["link", "commit", "uncommit", "accept", "decline", "read"]),
+  number: Schema.Literals([1, 2, 3, 4, 9999]),
+  parent: Schema.Literals([0, 1, 2, 3, 4]),
+  assignee: Schema.Literals(["fuzz", "vibe-agent", "VibeLang agent", "ghost", "", "FUZZ"]),
+  role: Schema.Literals(["community", "contributor", "maintainer"]),
+  agent: Schema.Boolean,
+  dropAssignees: Schema.Boolean,
+})
+const Steps = Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(8))
+
+it.live("issues/host-writes", () => run("issues/host-writes", Steps, (steps) => effect {
+  const fake = seed()
+  const actor = try Ref.make<{ id: string; login: string; role: typeof Step.Type["role"]; token: Redacted.Redacted<string>; kind: "person" | "agent" } | undefined>(undefined)
+  const authority: IssueAuthority.Shape = { current: () => Ref.get(actor) }
+  const client = fakeClient(fake)
+  const host = try githubHost(repo).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, client))
+  const call = host.perform as (request: IssueRequest) => typeof IssuesState.Type!IssueFailure
+  for (const [index, step] of steps.entries()) {
+    fake.dropAssignees = step.dropAssignees && step.op === "commit"
+    const kind = step.agent ? "agent" as const : "person" as const
+    try Ref.set(actor, { id: "7", login: "fuzz", role: step.role, token: Redacted.make("token"), kind })
+    const request: IssueRequest = { op: step.op, number: step.number, parent: step.parent, title: "", text: "", example: "", prior: "", assignee: step.assignee, key: `w${index}` }
+    const before = fake.issues.find((issue) => issue.number === step.number)
+    const wasVip = before !== undefined && /vibelang:vip/.test(before.body ?? "")
+    const result = try Effect.result(call(request).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, client), Effect.provide(WebCrypto.layer)))
+    const permitted = issuePermission(step.role, step.op) && !(step.agent && (step.op === "accept" || step.op === "decline"))
+    if (result._tag === "Failure") {
+      const failure = result.failure
+      if (failure._tag !== "IssueFailure" || !REASONS.includes(failure.reason)) throw new Finding({ report: `${step.op} failed outside its reasons` })
+      if (failure.reason === "forbidden" && permitted && !(step.op === "accept" && step.role !== "maintainer")) throw new Finding({ report: `a permitted ${step.op} was forbidden` })
+      continue
+    }
+    if (!permitted) throw new Finding({ report: `a ${step.agent ? "agent's" : step.role} ${step.op} was not forbidden` })
+    if (!Schema.is(IssuesState)(result.success)) throw new Finding({ report: `${step.op} answered an invalid state` })
+    const after = fake.issues.find((issue) => issue.number === step.number)
+    const labels = after?.labels.map((label) => label.name) ?? []
+    switch (step.op) {
+      case "commit": {
+        const login = step.assignee === "VibeLang agent" ? repo.agent : step.assignee
+        if (!labels.includes(TASK_LABEL) || !after!.assignees.some((a) => a?.login.toLowerCase() === login.toLowerCase())) throw new Finding({ report: "a committed issue lacks its task label or assignee" })
+        if (labels.includes("vibelang:running")) throw new Finding({ report: "a committed issue is still running" })
+        break
+      }
+      case "uncommit": if (labels.includes(TASK_LABEL)) throw new Finding({ report: "an uncommitted issue kept its task label" }); break
+      case "link": if (!(after?.parent_issue_url ?? "").endsWith(`/issues/${step.parent}`)) throw new Finding({ report: "a linked issue has another parent" }); break
+      case "accept": if (wasVip && !labels.includes("vibelang:accepted")) throw new Finding({ report: "an accepted proposal lacks its label" }); break
+      case "decline": if (wasVip && (after?.state !== "closed" || labels.includes("vibelang:accepted") && !labels.includes("vibelang:declined"))) throw new Finding({ report: "a declined proposal stayed open" }); break
+      default: if (!result.success.items.some((item) => item.number === step.number) && step.number !== 9999) throw new Finding({ report: "a read lost an issue" })
+    }
+  }
+  return true
+}))

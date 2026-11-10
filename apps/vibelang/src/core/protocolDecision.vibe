@@ -1,0 +1,81 @@
+// Pure decisions shared by the wire, HTTP handlers and command schemas. Parsing and encoding stay at the edge.
+
+/** The wire's conversation length contract. */
+//@ verify
+//@ ensures \result == (length > 0 && length <= maximum)
+export function validConversationLength(length: number, maximum: number): boolean {
+  return length > 0 && length <= maximum
+}
+
+/** The CLI/MCP registry accepts nonempty conversation identifiers. */
+//@ verify
+//@ ensures \result == (value.length >= 1)
+export function commandConversation(value: string): boolean {
+  return value.length >= 1
+}
+
+/** Cursor validation after the shared integer schema has rejected fractional/unsafe values. */
+//@ verify
+//@ ensures \result == (value >= 0)
+export function nonnegativeCursor(value: number): boolean {
+  return value >= 0
+}
+
+/** Routing after URI decoding: a method and remaining segment identify exactly one operation. */
+//@ verify
+//@ ensures rest == undefined && method == "GET" ==> \result == "read"
+//@ ensures rest == "tour-control" && method == "POST" ==> \result == "tour-control"
+//@ ensures rest == "wiki" && method == "POST" ==> \result == "wiki"
+//@ ensures rest == "posts" && method == "POST" ==> \result == "post"
+//@ ensures rest == "events" && method == "GET" ==> \result == "events"
+//@ ensures rest == "tour" && method == "POST" ==> \result == "tour"
+//@ ensures rest == "tour" && method == "DELETE" ==> \result == "end-tour"
+//@ ensures \result != "" ==> (rest == "tour-control" && method == "POST") || (rest == undefined && method == "GET") || (rest == "posts" && method == "POST") || (rest == "wiki" && method == "POST") || (rest == "events" && method == "GET") || (rest == "tour" && (method == "POST" || method == "DELETE"))
+export function routeKind(method: string, rest: string | undefined): "read" | "post" | "events" | "tour" | "end-tour" | "wiki" | "tour-control" | "" {
+  if (rest === undefined && method === "GET") return "read"
+  if (rest === "tour-control" && method === "POST") return "tour-control"
+  if (rest === "wiki" && method === "POST") return "wiki"
+  if (rest === "posts" && method === "POST") return "post"
+  if (rest === "events" && method === "GET") return "events"
+  if (rest === "tour" && method === "POST") return "tour"
+  if (rest === "tour" && method === "DELETE") return "end-tour"
+  return ""
+}
+
+/** Only a bounded positive body length is read. */
+//@ verify
+//@ ensures \result == (length > 0 && length <= maximum)
+export function validBodyLength(length: number, maximum: number): boolean {
+  return length > 0 && length <= maximum
+}
+
+/** A refusal has its own wire schema; all other non-2xx replies are unavailable. */
+//@ verify
+//@ ensures status == 409 ==> \result == "refused"
+//@ ensures status >= 200 && status <= 299 ==> \result == "accepted"
+//@ ensures status != 409 && (status < 200 || status > 299) ==> \result == "unavailable"
+export function responseKind(status: number): "refused" | "accepted" | "unavailable" {
+  if (status === 409) return "refused"
+  return status >= 200 && status <= 299 ? "accepted" : "unavailable"
+}
+
+/** A backend selects live only from a live health response; absent/failed health remains mock. */
+//@ verify
+//@ ensures \result == (agent == "live")
+export function liveHealth(agent: string): boolean {
+  return agent === "live"
+}
+
+/** Explicit mock choice wins over live lookup in every command host. */
+//@ verify
+//@ ensures \result == (flag || environment == "mock")
+export function prefersMock(flag: boolean, environment: string | undefined): boolean {
+  return flag || environment === "mock"
+}
+
+/** The account host owns sign-in, roles and person-authenticated issue operations. */
+//@ verify
+//@ ensures \result == (path == "/api/wiki" || path == "/api/issues" || path.startsWith("/api/auth/") || path.startsWith("/api/roles"))
+export function accountRoute(path: string): boolean {
+  return path === "/api/wiki" || path === "/api/issues" || path.startsWith("/api/auth/") || path.startsWith("/api/roles")
+}

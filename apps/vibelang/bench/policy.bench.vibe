@@ -1,0 +1,214 @@
+import type { TurnInput } from "../src/core/sequenceDecision.vibe"
+import type { AskProgress } from "../src/surfaces/commandDecision.vibe"
+import { it, expect } from "@effect/vitest"
+import { admits, charge } from "../worker/budgetDecision.vibe"
+import { appends, dispatches, endsTourEvent, startAnswer, readingHold } from "../src/core/flowDecision.vibe"
+import { failureCode, reasonCode } from "../worker/replyReasons.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+it("durable-flow and budget decisions", async ({ bench }) => {
+  const result = await workload(bench, "flow-and-budget-policies", "sync", () => {
+    expect(readingHold(0)).toBe(4000)
+    expect(readingHold(10)).toBe(4000)
+    expect(readingHold(11)).toBe(4300)
+    expect(readingHold(20)).toBe(7000)
+    expect(admits(0, 1)).toBe(true)
+    expect(admits(1, 1)).toBe(false)
+    expect(admits(2, 1)).toBe(false)
+    expect(charge(3, 2, false)).toEqual({ spent: 5, added: 2, write: true })
+    expect(charge(3, 2, true)).toEqual({ spent: 3, added: 0, write: false })
+    expect(dispatches(null)).toBe(true)
+    expect(dispatches("empty")).toBe(false)
+    expect(appends(2, 2, 3, 3, "x")).toBe(true)
+    expect(appends(2, 1, 3, 3, "x")).toBe(false)
+    expect(appends(2, 2, 3, 0, "x")).toBe(false)
+    expect(appends(2, 2, 3, 3, "")).toBe(false)
+    for (const kind of ["ReplyFinished", "ReplyFailed", "TourEnded"]) {
+      expect(endsTourEvent(kind, "t", "t")).toBe(true)
+      expect(endsTourEvent(kind, "other", "t")).toBe(false)
+    }
+    expect(endsTourEvent("ReplyDelta", "t", "t")).toBe(false)
+    expect(startAnswer(true, false, "")).toBe("done")
+    expect(startAnswer(false, true, "busy")).toBe("done")
+    expect(startAnswer(false, false, "busy")).toBe("busy")
+    expect(startAnswer(false, false, "not-replying")).toBe("refused")
+    for (const [code, expected] of [["content_policy", "refused"], ["out_of_credit", "credit"], ["quota_exceeded", "credit"], ["transport", "unavailable"]]) expect(reasonCode(code!)).toBe(expected)
+    expect(failureCode("@smthrs/agent/Seat/SeatUnresolved", "transport")).toBe("unconfigured")
+    expect(failureCode("/harness/StructuredOutputFailure", "transport")).toBe("empty")
+    expect(failureCode("other", "content_policy")).toBe("refused")
+    expect(failureCode("other", undefined)).toBe("failed")
+  }).run(quick)
+  await runPromise(artifact("policies", "Vitest built-in bench; strict admission, idempotent charging, accepted-only dispatch, reply attempt/offset/empty boundaries, tour terminal identity, retry classification and failure precedence; explicit behavioral truth tables.", ["Fixed in-process policy corpus; assertions dominate these small decisions, not an inference/model/storage measurement."], result))
+})
+
+it("screen, protocol and scripted-agent decisions", async ({ bench }) => {
+  const S = await import("../src/web/screenDecision.vibe")
+  const P = await import("../src/core/protocolDecision.vibe")
+  const M = await import("../src/core/mockDecision.vibe")
+  const result = await workload(bench, "screen-protocol-mock-policies", "sync", () => {
+    expect(S.escapeAction(true, false, false, "splash", "pane")).toBe("tour")
+    expect(S.escapeAction(false, true, true, "chat", "max")).toBe("tour")
+    expect(S.escapeAction(false, false, true, "chat", "max")).toBe("palette")
+    expect(S.escapeAction(false, false, false, "chat", "max")).toBe("docs")
+    expect(S.escapeAction(false, false, false, "splash", "max")).toBe("splash")
+    expect(S.canMinimize("splash", 0, 1, "")).toBe(true)
+    expect(S.canMinimize("chat", 1, 0, "")).toBe(false)
+    expect(S.hasContent(0, 0, "")).toBe(false)
+    expect(S.hasContent(1, 0, "")).toBe(true)
+    expect(S.toggleDocs("max")).toBe("pane")
+    expect(S.toggleDocs("pane")).toBe("max")
+    expect(S.scrollFollow("chat", false, false, 2, true, 1)).toEqual({ following: false, followIntent: 2, stale: true })
+    expect(S.scrollFollow("chat", false, false, 2, true, 3)).toEqual({ following: true, followIntent: 3, stale: false })
+    expect(S.scrollFollow("splash", false, false, 2, true, 3)).toEqual({ following: false, followIntent: 3, stale: false })
+    expect(S.scrollFollow("chat", true, false, 2, true, 3)).toEqual({ following: false, followIntent: 3, stale: false })
+    expect(S.follows("chat", true, false)).toBe(true)
+    expect(S.follows("chat", true, true)).toBe(false)
+    expect(S.nativeFollow(1, 2, true)).toBe(false)
+    expect(S.nativeFollow(2, 2, true)).toBe(true)
+    expect(S.nativeFollow(2, 2, false)).toBe(false)
+    expect(S.nativeScroll(true, true, 100, 100, 4)).toEqual({ bottom: false, paused: true, intent: 4 })
+    expect(S.nativeScroll(true, true, 101, 100, 4)).toEqual({ bottom: true, paused: false, intent: 4 })
+    expect(S.nativeScroll(false, false, 99, 100, 4)).toEqual({ bottom: false, paused: true, intent: 5 })
+    for (const [active, scrollable, allowed] of [[true, true, true], [true, false, false], [false, true, false], [false, false, false]] as const) expect(S.canPause(active, scrollable)).toBe(allowed)
+    expect(S.wheelPauses(-1, false)).toBe(true)
+    expect(S.wheelPauses(-1, true)).toBe(false)
+    expect(S.wheelPauses(0, false)).toBe(false)
+    for (const key of ["Home", "PageUp", "ArrowUp"]) {
+      expect(S.keyPauses(key, false, false)).toBe(true)
+      expect(S.keyPauses(key, true, false)).toBe(false)
+      expect(S.keyPauses(key, false, true)).toBe(false)
+    }
+    expect(S.keyPauses("Enter", false, false)).toBe(false)
+    expect(S.touchPauses(101, 100)).toBe(true)
+    expect(S.touchPauses(100, 100)).toBe(false)
+    expect(S.nearBottom(1000, 700, 252)).toBe(true)
+    expect(S.nearBottom(1000, 700, 251)).toBe(false)
+    expect(S.failedTourKeepsControl("busy", true)).toBe(true)
+    expect(S.failedTourKeepsControl("busy", false)).toBe(false)
+    expect(S.failedTourKeepsControl("offline", true)).toBe(false)
+    expect(S.paletteChange(true)).toEqual({ palette: true, focus: "palette" })
+    expect(S.paletteChange(false)).toEqual({ palette: false, focus: "previous" })
+    expect(S.tourStream(true, "open", 1, 9, 4)).toEqual({ opening: true, epoch: 2, from: 0 })
+    expect(S.tourStream(false, "closed", 1, 9, 4)).toEqual({ opening: true, epoch: 2, from: 9 })
+    expect(S.tourStream(false, "open", 1, 9, 4)).toEqual({ opening: false, epoch: 1, from: 4 })
+    for (const kind of ["ReplyFinished", "ReplyFailed", "TourEnded"]) expect(S.completedEvent(1, 2, kind)).toBe(true)
+    expect(S.completedEvent(2, 2, "ReplyFinished")).toBe(false)
+    expect(S.completedEvent(1, 2, "ReplyDelta")).toBe(false)
+    expect(S.answerAnnouncement(false, "", "text", "before")).toBe("before")
+    expect(S.answerAnnouncement(true, "error", "text", "before")).toBe("Answer failed")
+    expect(S.answerAnnouncement(true, "", "text", "before")).toBe("text")
+    expect(S.screenKey("k", true, true, false)).toBe("palette")
+    expect(S.screenKey("k", false, false, true)).toBe("palette")
+    expect(S.screenKey("x", true, false, false)).toBe("escape")
+    expect(S.screenKey("x", false, false, false)).toBe("")
+    for (const [size, accepted] of [[0, false], [1, true], [10, true], [11, false]] as const) {
+      expect(P.validConversationLength(size, 10)).toBe(accepted)
+      expect(P.validBodyLength(size, 10)).toBe(accepted)
+    }
+    expect(P.commandConversation("")).toBe(false)
+    expect(P.commandConversation("λ")).toBe(true)
+    expect(P.nonnegativeCursor(0)).toBe(true)
+    expect(P.nonnegativeCursor(-1)).toBe(false)
+    for (const [status, kind] of [[199, "unavailable"], [200, "accepted"], [299, "accepted"], [300, "unavailable"], [409, "refused"], [500, "unavailable"]] as const) expect(P.responseKind(status)).toBe(kind)
+    for (const [method, rest, kind] of [["GET", undefined, "read"], ["POST", "posts", "post"], ["GET", "events", "events"], ["POST", "tour", "tour"], ["DELETE", "tour", "end-tour"], ["GET", "other", ""]] as const) expect(P.routeKind(method, rest)).toBe(kind)
+    expect(P.liveHealth("live")).toBe(true)
+    expect(P.liveHealth("mock")).toBe(false)
+    expect(P.prefersMock(true, undefined)).toBe(true)
+    expect(P.prefersMock(false, "mock")).toBe(true)
+    expect(P.prefersMock(false, undefined)).toBe(false)
+    expect(M.matches("b", [])).toBe(false)
+    expect(M.matches("b", ["a", "b"])).toBe(true)
+    expect(M.scriptIndex("b a", [{ words: ["a"] }, { words: ["b"] }])).toBe(0)
+    expect(M.scriptIndex("none", [{ words: ["a"] }])).toBe(-1)
+    expect(M.scriptIndex("none", [])).toBe(-1)
+  }).run(quick)
+  await runPromise(artifact("screen-protocol-policies", "Vitest built-in bench; actual extracted screen/protocol/mock decisions, independent truth tables for shortcut priority, scroll revisions, input bounds, routing/status, backend choice and script priority. Module imports/setup excluded, correctness assertions included.", ["Fixed policy corpus; assertion overhead dominates. DOM, HTTP and actual agent flows are separate workloads."], result))
+})
+
+it("history authorization and journal ordering", async ({ bench }) => {
+  const F = await import("../src/history/flowMachine.vibe")
+  const roles = ["viewer", "new", "community", "contributor", "maintainer"] as const
+  const actions = ["show", "append", "retell", "start", "note", "approve", "fold"] as const
+  const minimum = [0, 3, 4, 3, 3, 4, 4]
+  const result = await workload(bench, "history-flow-ordering", "sync", () => {
+    for (const [rank, role] of roles.entries()) {
+      expect(F.standing(role)).toBe(rank)
+      for (const [index, action] of actions.entries()) for (const agent of [false, true]) {
+        const principal = { role, name: "Bench", agent }
+        const allowed = rank >= minimum[index]! && !(agent && (action === "approve" || action === "fold"))
+        expect(F.leastRole(action)).toBe(roles[minimum[index]!]!)
+        expect(F.peopleOnly(action)).toBe(action === "approve" || action === "fold")
+        expect(F.may(principal, action)).toBe(allowed)
+        const begun = F.begin(action, principal)
+        expect(begun).toEqual({ action, principal, phase: "begun", records: 0 })
+        expect(F.canRecord(begun)).toBe(false)
+        expect(F.record(begun)).toBe(begun)
+        const authorized = F.authorize(begun)
+        expect(authorized.phase).toBe(allowed ? "authorized" : "forbidden")
+        expect(F.authorize(authorized)).toBe(authorized)
+        expect(F.canRecord(authorized)).toBe(allowed)
+        const recorded = F.record(authorized), repeated = F.record(recorded)
+        expect(recorded.records).toBe(allowed ? 1 : 0)
+        expect(repeated.records).toBe(allowed ? action === "fold" ? 2 : 1 : 0)
+        expect([begun, authorized, recorded, repeated].every(F.lawful)).toBe(true)
+      }
+    }
+    const principal = { role: "maintainer" as const, name: "Bench", agent: false }
+    const begun = F.begin("note", principal)
+    expect(F.lawful({ ...begun, records: -1 })).toBe(false)
+    expect(F.lawful({ ...begun, records: 1 })).toBe(false)
+    expect(F.lawful({ ...begun, phase: "recorded", records: 2 })).toBe(false)
+    expect(F.lawful({ ...begun, phase: "authorized", principal: { ...principal, role: "viewer" } })).toBe(false)
+  }).run(quick)
+  await runPromise(artifact("history-flow-policies", "Vitest built-in bench; five roles × seven actions × human/agent; independent minimum-role matrix, authorization once, recording forbidden before authorization, single record except repeated fold, and illegal states checked.", ["Pure journal/policy decisions; actual durable flows and storage are separate workloads. Assertions included."], result))
+})
+
+it("ordered prompt selection and command reply collection", async ({ bench }) => {
+  const S = await import("../src/core/sequenceDecision.vibe")
+  const C = await import("../src/surfaces/commandDecision.vibe")
+  const entries: ReadonlyArray<TurnInput> = [
+    { id: "p", author: "person", text: "first", done: false, error: "", inReplyTo: "" },
+    { id: "r", author: "agent", text: "answer", done: true, error: "", inReplyTo: "p" },
+    { id: "stream", author: "agent", text: "partial", done: false, error: "", inReplyTo: "p" },
+    { id: "failed", author: "agent", text: "failed", done: true, error: "offline", inReplyTo: "p" },
+    { id: "tour", author: "agent", text: "tour", done: true, error: "", inReplyTo: "" },
+    { id: "p", author: "person", text: "last", done: true, error: "", inReplyTo: "" },
+  ]
+  const result = await workload(bench, "context-and-command-decisions", "sync", () => {
+    expect(entries.map(S.promptEligible)).toEqual([true, true, false, false, false, true])
+    expect(S.firstEntryIndex(entries, "p")).toBe(0)
+    expect(S.firstEntryIndex(entries, "missing")).toBe(6)
+    expect(S.firstEntryIndex([], "missing")).toBe(0)
+    expect(S.eligibleIndexes(entries, 0)).toEqual([])
+    expect(S.eligibleIndexes(entries, 6)).toEqual([0, 1, 5])
+    expect([S.prefixEnd(0, 0), S.prefixEnd(0, 1), S.prefixEnd(1, 1)]).toEqual([0, 1, 1])
+    expect(S.selectModelTurns(entries, "p")).toEqual({ end: 1, indexes: [0], turns: [{ author: "person", text: "first" }] })
+    const all = S.selectModelTurns(entries, "missing")
+    expect(all).toEqual({ end: 6, indexes: [0, 1, 5], turns: [{ author: "person", text: "first" }, { author: "agent", text: "answer" }, { author: "person", text: "last" }] })
+    expect(S.promptWindow(all.turns, 2)).toEqual([{ author: "agent", text: "answer" }, { author: "person", text: "last" }])
+    expect(S.promptWindow(all.turns, 0)).toEqual([])
+    expect(S.promptWindow(all.turns, 9)).toEqual(all.turns)
+    const empty: AskProgress = { post: "", reply: "", numbers: [], text: "", failed: false, failure: "", finished: false, listening: true }
+    expect(C.collectAnswer(empty, "Posted", "other", 1, "other", "mine", "", "", "")).toEqual(empty)
+    let state = C.collectAnswer(empty, "Posted", "p", 1, "mine", "mine", "", "", "")
+    state = C.collectAnswer(state, "ReplyStarted", "other", 2, "", "mine", "other", "", "")
+    state = C.collectAnswer(state, "ReplyStarted", "r", 3, "", "mine", "p", "", "")
+    state = C.collectAnswer(state, "ReplyDelta", "other", 4, "", "mine", "", "ignore", "")
+    state = C.collectAnswer(state, "ReplyDelta", "r", 5, "", "mine", "", "old", "")
+    state = C.collectAnswer(state, "ReplyRestarted", "r", 6, "", "mine", "", "", "")
+    expect(state.text).toBe("")
+    state = C.collectAnswer(state, "ReplyDelta", "r", 7, "", "mine", "", "new", "")
+    const finished = C.collectAnswer(state, "ReplyFinished", "r", 8, "", "mine", "", "", "")
+    const failed = C.collectAnswer(state, "ReplyFailed", "r", 8, "", "mine", "", "", "credit")
+    expect(finished).toEqual({ post: "p", reply: "r", numbers: [1, 3, 5, 6, 7, 8], text: "new", failed: false, failure: "", finished: true, listening: false })
+    expect(failed).toMatchObject({ text: "new", failed: true, failure: "credit", finished: false, listening: false })
+    expect(C.isOwnPost("ReplyDelta", "mine", "mine")).toBe(false)
+    expect(C.isOwnReply("ReplyStarted", "", "")).toBe(false)
+    expect(C.isOwnReply("ReplyDelta", "p", "p")).toBe(false)
+    expect([C.answerOutcome(false, false), C.answerOutcome(false, true), C.answerOutcome(true, false), C.answerOutcome(true, true)]).toEqual(["ended", "done", "failed", "failed"])
+    expect(C.commandError("Unavailable", "offline", "Refused", "forbidden", "other")).toBe("offline")
+    expect(C.commandError("Refused", "offline", "Refused", "forbidden", "other")).toBe("Refused: forbidden")
+    expect(C.commandError("Other", "offline", "Refused", "forbidden", "other")).toBe("other")
+  }).run(quick)
+  await runPromise(artifact("context-command-policies", "Vitest built-in bench; prompt eligibility, first duplicate identity, source-order indexes/windowing and correlated CLI/MCP collection through unrelated events, restart, finish/failure. Complete expected selections, answer fields/event numbers and outcome/error precedence checked.", ["Small in-process decision corpus, no model/IPC or service execution. Assertions included; large transcript cost is measured separately."], result))
+})

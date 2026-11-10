@@ -1,0 +1,161 @@
+// @vitest-environment node
+// Emitted maintenance scripts as real child processes: mythical seeding over a fixture jj repository and queue, and
+// the agent context generator's write, check and stale rejection (decision 0017, scripts in scope). Fixture
+// construction is setup and untimed; each timed callback is one script process to its exit with its output checked.
+// No repository, process or filesystem is replaced.
+import { it, expect } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { node, run } from "../test/support/processes.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const platform = Layer.mergeAll(NodeServices.layer, ExperimentalNodeServices.layer)
+
+/** jj failed during fixture setup; its message names the arguments and stderr. */
+error JjFailed { message: string }
+
+/** An actual jj command during fixture setup, retaining its diagnostics on failure. */
+effect function jj(args: ReadonlyArray<string>) {
+  const result = try run("jj", args)
+  if (result.status !== 0) throw new JjFailed({ message: `jj ${args.join(" ")}: ${result.stderr}` })
+  return result.stdout.trim()
+}
+
+interface Fixture {
+  readonly directory: string
+  readonly executable: string
+  readonly seed: string
+  readonly seedTarget: string
+  readonly context: string
+  readonly contextTarget: string
+  readonly env: Record<string, string>
+  readonly first: string
+  readonly second: string
+}
+
+effect function build() {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const directory = try fs.makeTempDirectory({ prefix: "vibelang-bench-scripts-" })
+  const remote = path.join(directory, "remote")
+  const repository = path.join(directory, "repository")
+  try jj(["git", "init", "--colocate", remote])
+  try jj(["-R", remote, "config", "set", "--repo", "user.name", "Benchmark fixture"])
+  try jj(["-R", remote, "config", "set", "--repo", "user.email", "bench@example.invalid"])
+  try jj(["-R", remote, "commit", "-m", "fix(compiler): preserve a return\n\nValidation: checked both arms."])
+  const first = try jj(["-R", remote, "log", "-r", "@-", "--no-graph", "-T", "commit_id"])
+  try jj(["-R", remote, "commit", "-m", "docs: explain the return"])
+  const second = try jj(["-R", remote, "log", "-r", "@-", "--no-graph", "-T", "commit_id"])
+  try jj(["-R", remote, "bookmark", "set", "main", "-r", "@-"])
+  try jj(["git", "init", "--colocate", repository])
+  try jj(["-R", repository, "git", "remote", "add", "github", remote])
+  try jj(["-R", repository, "git", "fetch", "--remote", "github"])
+  const queue = path.join(directory, "queue.jsonl")
+  const entries = [
+    ...Array.from({ length: 1501 }, (_, at) => ({ id: `missing-${at}`, lane: "absent", state: "rejected", rev: `f${at.toString(16).padStart(11, "0")}${"0".repeat(28)}` })),
+    { id: "landed", lane: "compiler", state: "landed", rev: first, gate: "unit", stack_receipt: { commits: [{ commit: first }, { commit: second }] } },
+    { id: "retry", lane: "compiler", state: "rejected", rev: first },
+    { id: "absent", lane: "absent", state: "landed", rev: "f".repeat(40), stack_receipt: { commits: [] } },
+  ]
+  try fs.writeFileString(queue, `\nnot json\n{}\n${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`)
+  const emitted = try path.fromFileUrl(new URL("../dist-script-tests/", import.meta.url))
+  try fs.makeDirectory(path.join(emitted, "src/history/seed"), { recursive: true })
+  try fs.makeDirectory(path.join(emitted, "worker"), { recursive: true })
+  const fixture: Fixture = {
+    directory,
+    executable: try node(),
+    seed: path.join(emitted, "scripts/mythical-seed.js"),
+    seedTarget: path.join(emitted, "src/history/seed/vibelang.vibe"),
+    context: path.join(emitted, "scripts/agent-context.js"),
+    contextTarget: path.join(emitted, "worker/agentContext.vibe"),
+    env: { VIBELANG_REPO: repository, VIBELANG_QUEUE: queue, VIBELANES: "", VIBELANG_LANES: remote },
+    first,
+    second,
+  }
+  return fixture
+}
+
+it("emitted maintenance scripts", async ({ bench }) => {
+  const fixture = await runPromise(Effect.provide(build(), platform))
+  const results = []
+  try {
+    const runSeed = () => runPromise(Effect.provide(run(fixture.executable, [fixture.seed], fixture.env), platform))
+    const readSeedTarget = () => runPromise(Effect.provide(effect { return try (try FileSystem.FileSystem).readFileString(fixture.seedTarget) }, platform))
+    results.push(await workload(bench, "mythical-seed-write", "async", async () => {
+      const written = await runSeed()
+      expect(written.status, written.stderr).toBe(0)
+      expect(written.stdout).toContain("2 real commits, 1 mythical commits, 1 epics")
+      const source = await readSeedTarget()
+      const literal = /^export const HISTORY_JSON = (.+)$/m.exec(source)![1]!
+      const history = JSON.parse(JSON.parse(literal))
+      expect(history.main).toBe(fixture.second.slice(0, 12))
+      expect(history.real.map((commit: { sha: string }) => commit.sha)).toEqual([fixture.first, fixture.second].map((sha) => sha.slice(0, 12)))
+      expect(history.commits).toHaveLength(1)
+      expect(history.commits[0].title).toBe("fix(compiler): preserve a return")
+      expect(history.commits[0].state).toBe("landed")
+      expect(history.commits[0].notes.map((note: { text: string }) => note.text)).toEqual([
+        "Rejected in the merge queue (compiler).",
+        "Landed by the merge queue from lane compiler through unit (matched by title).",
+        "Validation: checked both arms.",
+      ])
+    }).run(slow))
+    results.push(await workload(bench, "mythical-seed-deterministic", "async", async () => {
+      const before = await readSeedTarget()
+      const again = await runSeed()
+      expect(again.status, again.stderr).toBe(0)
+      expect(await readSeedTarget()).toBe(before)
+    }).run(slow))
+    results.push(await workload(bench, "mythical-seed-read-failures", "async", async () => {
+      const before = await readSeedTarget()
+      const missing = fixture.directory + "/missing"
+      for (const env of [{ ...fixture.env, VIBELANG_REPO: missing }, { ...fixture.env, VIBELANG_QUEUE: missing + ".jsonl" }]) {
+        const failed = await runPromise(Effect.provide(run(fixture.executable, [fixture.seed], env), platform))
+        expect(failed.status).toBe(1)
+        expect(failed.stderr + failed.stdout).not.toBe("")
+        expect(failed.stdout).not.toContain("real commits")
+      }
+      expect(await readSeedTarget()).toBe(before)
+    }).run(slow))
+    const runContext = (args: string[]) => runPromise(Effect.provide(run(fixture.executable, [fixture.context, ...args]), platform))
+    results.push(await workload(bench, "agent-context-write", "async", async () => {
+      await runPromise(Effect.provide(effect { return try (try FileSystem.FileSystem).remove(fixture.contextTarget, { force: true }) }, platform))
+      const missing = await runContext(["--check"])
+      expect(missing.status).toBe(1)
+      expect(missing.stderr).toContain("worker/agentContext.vibe is stale")
+      const written = await runContext([])
+      expect(written.status, written.stderr).toBe(0)
+      const generated = await runPromise(Effect.provide(effect { return try (try FileSystem.FileSystem).readFileString(fixture.contextTarget) }, platform))
+      expect(generated).toContain("You are the VibeLang agent on vibelang.smithers.sh")
+      expect(generated).toContain("# VibeLang ")
+    }).run(slow))
+    results.push(await workload(bench, "agent-context-check", "async", async () => {
+      const current = await runContext(["--check"])
+      expect(current.status, current.stderr).toBe(0)
+    }).run(slow))
+    results.push(await workload(bench, "agent-context-stale", "async", async () => {
+      const original = await runPromise(Effect.provide(effect {
+        const fs = try FileSystem.FileSystem
+        const current = try fs.readFileString(fixture.contextTarget)
+        try fs.writeFileString(fixture.contextTarget, current + "\n// changed\n")
+        return current
+      }, platform))
+      const stale = await runContext(["--check"])
+      expect(stale.status).toBe(1)
+      expect(stale.stderr).toContain("worker/agentContext.vibe is stale")
+      await runPromise(Effect.provide(effect { return try (try FileSystem.FileSystem).writeFileString(fixture.contextTarget, original) }, platform))
+    }).run(slow))
+    await runPromise(artifact(
+      "maintenance-scripts",
+      "Vitest built-in bench; spawn each emitted script to exit over a real fixture jj repository and merge queue (seed) or the real installed vibelang skill (agent context); three samples each, no warmup. Fixture repository/queue construction is untimed setup. Write determinism, failed-read preservation and stale rejection are checked inside timed callbacks; the seed's parsed history content is fully asserted.",
+      ["Fixture jj repositories, not VibeLang's real history; the full-history run's cost is dominated by its repository, not this fixture. Scripts write only inside the ignored dist-script-tests tree. Process/loader startup included; build excluded."],
+      results,
+    ))
+  } finally {
+    await runPromise(Effect.provide(effect {
+      const fs = try FileSystem.FileSystem
+      try fs.remove(fixture.seedTarget, { force: true })
+      try fs.remove(fixture.contextTarget, { force: true })
+      try fs.remove(fixture.directory, { recursive: true, force: true })
+    }, platform))
+  }
+})

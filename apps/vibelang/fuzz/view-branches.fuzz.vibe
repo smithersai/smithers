@@ -1,0 +1,256 @@
+import { it } from "@effect/vitest"
+import { ExperimentalBrowserWindow, ExperimentalBrowserDocument } from "vibelang-runtime/experimental/platform-browser"
+import { scene, given, keydown, type as typeInto, expectHandled, expectIgnored, getAllByRole, findAll, type SceneSimulation } from "foldkit/scene"
+import { Model, Flags, Message, init, PROMPT_ID, PALETTE_PROMPT_ID } from "../src/web/main.vibe"
+import { actionsOf, completions } from "../src/web/actionModel.vibe"
+import { IssueRecord } from "../src/core/issueSchemas.vibe"
+import { initialIssues } from "../src/web/issues.vibe"
+import type { Entry } from "../src/core/conversation.vibe"
+import { view } from "../src/web/view.vibe"
+import * as Startup from "../src/web/startupDecision.vibe"
+import * as Decide from "../src/web/viewDecision.vibe"
+import { transcriptViewport } from "../src/web/viewport.vibe"
+import { run, same, Int, Text, TextOrBoundary } from "./run.vibe"
+import { issuesCorpusCodec } from "./issues-corpus.vibe"
+
+const ROLES = ["button", "link", "textbox", "combobox", "checkbox", "radio", "switch", "slider", "searchbox", "spinbutton", "option", "tab", "menuitem", "treeitem"]
+
+/** Values chosen to reach every arm, mixed with arbitrary text. */
+const Word = Schema.Union([Schema.Literals(["", "mock", "live", "on", "off", "yes", "no", "/", "failed", "empty", "too-long", "duplicate", "busy", "not-replying", "full", "working", "idle", "chat", "splash", "Enter", "maintainer", "viewer"]), Text])
+const Maybe = Schema.NullOr(Word)
+
+/** Each pure presentation and startup decision agrees with its written contract. */
+it.live("web/decision-contracts", () => run("web/decision-contracts", Schema.Struct({ a: Maybe, b: Maybe, c: Maybe, d: Maybe, e: Word, f: Word, g: Word, shift: Schema.Boolean, roles: Schema.Array(Word).check(Schema.isMaxLength(6)), n: Int, m: Int }), (x) => {
+  const text = x.e
+  if (Startup.wantsMock(x.a, x.b) !== (x.a === "mock" || (x.a !== "live" && x.b === "mock"))) return false
+  if (Startup.preferenceWrite(x.a) !== (x.a === "mock" ? "set" : x.a === "live" ? "clear" : "keep")) return false
+  if (Startup.startupRole(x.a, text, x.roles) !== (x.a !== null && x.roles.includes(x.a) ? x.a : text)) return false
+  if (Startup.startupSession(x.b, text) !== (x.b === null ? text : x.b)) return false
+  const startup = Startup.tutorialStartup(x.a, text, x.b, x.c, x.d, x.f === "chat" ? "/" : x.f)
+  if (!same(startup, { tutorialSession: x.a ?? text, tourSound: x.b === "on", resumeTour: x.c === "yes", autoTour: (x.d === null || x.d === "") && (x.f === "chat" || x.f === "/") })) return false
+  if (Startup.otherMode(x.shift ? "mock" : "live") !== (x.shift ? "live" : "mock")) return false
+  const labels: Record<string, string> = { empty: "Empty message", "too-long": "Message too long", duplicate: "Already sent", busy: "Agent busy", "not-replying": "Answer unavailable", full: "Conversation full" }
+  if (Decide.postFailure(text) !== (Object.hasOwn(labels, text) ? labels[text] : "Send failed")) return false
+  const tourError = x.g === "idle" ? "" : x.g
+  const status = Decide.statusLabel(x.f === "failed" ? "failed" : "open", tourError, text)
+  if (status !== (x.f === "failed" ? "Disconnected" : tourError !== "" ? Decide.postFailure(tourError) : text === "working" ? "Answering" : "")) return false
+  if (Decide.sendKey(text, x.shift) !== (text === "Enter" && !x.shift)) return false
+  const pane = (["closed", "pane", "max"] as const)[x.n % 3]!
+  if (Decide.toggleSandbox(pane) !== (pane === "closed" ? "pane" : "closed")) return false
+  if (Decide.maximizeSandbox(pane) !== (pane === "max" ? "pane" : "max")) return false
+  if (Decide.currentSandbox(x.f, x.g, x.n, x.m) !== (x.f === x.g && x.n === x.m)) return false
+  return true
+}))
+
+const Shape = Schema.Struct({
+  model: Model,
+  // Optional so the values saved before these steering fields were added still replay.
+  surface: Schema.optionalKey(Schema.Literals(["chat", "splash"])),
+  issue: Schema.optionalKey(IssueRecord),
+  author: Schema.optionalKey(Schema.Literals(["agent", "person"])),
+  slash: Schema.optionalKey(Schema.Boolean),
+  failed: Schema.optionalKey(Schema.Boolean),
+  reduced: Schema.optionalKey(Schema.Boolean),
+  blank: Schema.optionalKey(Schema.Boolean),
+  pane: Schema.Literals(["", "/wiki/index", "https://vibelang.sh/docs"]),
+  wikiAfter: Int,
+  link: Int,
+  paused: Schema.Boolean,
+  palette: Schema.Boolean,
+  draft: Schema.Union([Schema.Literals(["/", "/sh", "/tour", "hello", "", " "]), TextOrBoundary]),
+  key: Schema.Literals(["ArrowDown", "ArrowUp", "Enter", "a", "Escape"]),
+  shift: Schema.Boolean,
+  typed: Text,
+})
+
+/** Rendering the chat over steered models names every control; the composer answers keys as its contract says. */
+it.live("web/view-branches", () => run("web/view-branches", Shape, (s) => {
+  const entries = s.blank === true ? [] : s.model.client.conversation.entries
+  // Only whole issue numbers form a chat link, so the linked issue gets one the entry can name.
+  const number = s.link + 1
+  const items = [...(s.issue === undefined ? [] : [{ ...s.issue, number }]), ...(s.model.issues?.data.items ?? []).filter((item) => item.number !== number)]
+  const at = s.link % Math.max(1, entries.length)
+  const linked = entries.map((entry, index) => index === at ? { ...entry, author: s.author ?? entry.author, text: `${entry.text} [${s.issue?.title || "issue"}](#issue-${number})` } : entry)
+  const model: Model = {
+    ...s.model, surface: s.surface ?? "chat", palette: s.palette, draft: s.slash === true ? "/" : s.draft, reducedMotion: s.reduced ?? s.model.reducedMotion, mode: s.slash ? "live" : s.model.mode,
+    ...(s.failed ? { failedMedia: ["/media/card-06-compiler.png", "/media/contract.mp4"] } : {}),
+    ...(s.slash ? { actions: { ...actionsOf(s.model), slash: true } } : {}),
+    ...(s.model.issues === undefined ? {} : { issues: { ...s.model.issues, open: false, data: { ...s.model.issues.data, items } } }),
+    client: { ...s.model.client, ...(s.blank === true ? { pending: [] } : {}), conversation: { ...s.model.client.conversation, pane: s.pane, entries: linked } },
+    ...(entries.length === 0 ? {} : { wikiAfter: entries[s.wikiAfter % entries.length]!.id }),
+    ...(s.model.theatre === undefined ? {} : { theatre: { ...s.model.theatre, paused: s.paused } }),
+  }
+  return answers(model, s.palette, s.key, s.shift, s.typed)
+}, undefined, { codec: issuesCorpusCodec(Shape) }))
+
+/** The view names every control, emits no script, and the composer answers a key exactly as its contract says. */
+function answers(model: Model, palette: boolean, key: string, shift: boolean, typed: string): boolean {
+  const target = `#${palette || model.surface === "splash" ? PALETTE_PROMPT_ID : PROMPT_ID}`
+  const slash = completions(model).length > 0
+  const handled = ((key === "ArrowDown" || key === "ArrowUp") && slash) || Decide.sendKey(key, shift)
+  const seen: Array<Message> = []
+  // Scene throws when an interaction's outcome differs from the acknowledgement, which is part of the property.
+  try {
+    let named = true
+    scene({ update: (current: Model, message: Message) => { seen.push(message); return { model: current } }, view }, given(model), (simulation: SceneSimulation<Model, Message>) => {
+      for (const role of ROLES) if (getAllByRole(role)(simulation.html).length !== getAllByRole(role, { name: /\S/ })(simulation.html).length) named = false
+      if (findAll(simulation.html, "script").length !== 0) named = false
+      return simulation
+    }, keydown(target, key, { shiftKey: shift }), handled ? expectHandled() : expectIgnored(), typeInto(target, typed))
+    const expected = !handled ? [] : key === "ArrowDown" && slash ? [Message.MovedSlash({ delta: 1 })] : key === "ArrowUp" && slash ? [Message.MovedSlash({ delta: -1 })] : [Message.SubmittedDraft()]
+    return named && same(seen, [...expected, Message.UpdatedDraft({ value: typed })])
+  } catch {
+    return false
+  }
+}
+
+const Said = Schema.Struct({ author: Schema.Literals(["agent", "person"]), text: TextOrBoundary, done: Schema.Boolean, error: Schema.Literals(["", "failed", "busy"]) })
+const Steered = Schema.Struct({
+  flags: Flags,
+  surface: Schema.Literals(["chat", "splash"]),
+  said: Schema.Array(Said).check(Schema.isMaxLength(4)),
+  issue: IssueRecord,
+  link: Int,
+  label: Schema.Literals(["Open issue", " ", "\t", "#7"]),
+  narration: Schema.Union([Said, Schema.Literal("none")]),
+  reduced: Schema.Boolean,
+  failed: Schema.Boolean,
+  slash: Schema.Boolean,
+  palette: Schema.Boolean,
+  key: Schema.Literals(["ArrowDown", "ArrowUp", "Enter", "a"]),
+  shift: Schema.Boolean,
+  typed: Text,
+})
+
+/** The same contract over small models built from the app's own start, so each run renders many of them. */
+it.live("web/chat-steered", () => run("web/chat-steered", Steered, (s) => {
+  const base = init(s.flags).model
+  const entry = (said: typeof Said.Type, index: number): Entry => ({ id: `e${index}`, seq: index + 1, clientId: said.author === "person" ? `${base.session}-${index + 1}` : "", inReplyTo: "", name: said.author === "person" ? "Ada" : "Agent", ...said })
+  const number = s.link + 1
+  const entries = s.said.map((said, index) => entry(index === s.link % Math.max(1, s.said.length) ? { ...said, text: `${said.text} [${s.label}](#issue-${number})` } : said, index))
+  const model: Model = {
+    ...base, surface: s.surface, palette: s.palette, reducedMotion: s.reduced, draft: s.slash ? "/" : "", mode: s.slash ? "live" : base.mode,
+    ...(s.failed ? { failedMedia: ["/media/card-06-compiler.png", "/media/contract.mp4"] } : {}),
+    ...(s.slash ? { actions: { ...actionsOf(base), slash: true } } : {}),
+    issues: { ...initialIssues, open: false, data: { seq: 1, items: [{ ...s.issue, number }] } },
+    client: { ...base.client, conversation: { ...base.client.conversation, entries } },
+    ...(s.narration === "none" ? {} : { tourClient: { ...base.client, conversation: { ...base.client.conversation, entries: [entry(s.narration, 9)] } } }),
+  }
+  return answers(model, s.palette, s.key, s.shift, s.typed)
+}))
+
+const Gesture = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("wheel"), delta: Schema.Int.check(Schema.isBetween({ minimum: -3, maximum: 3 })), ctrl: Schema.Boolean }),
+  Schema.Struct({ kind: Schema.Literal("key"), key: Schema.Literals(["Home", "End", "PageUp", "PageDown", "ArrowUp", "ArrowDown", " ", "a"]), alt: Schema.Boolean, ctrl: Schema.Boolean, meta: Schema.Boolean, prevented: Schema.Boolean, on: Schema.Literals(["page", "editor", "surface", "plain"]) }),
+  Schema.Struct({ kind: Schema.Literal("touchStart"), finger: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 2 })), y: Int, none: Schema.Boolean }),
+  Schema.Struct({ kind: Schema.Literal("touchMove"), finger: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 2 })), y: Int }),
+  Schema.Struct({ kind: Schema.Literal("touchEnd") }),
+  Schema.Struct({ kind: Schema.Literal("scroll"), y: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 400 })) }),
+  Schema.Struct({ kind: Schema.Literal("follow"), back: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 2 })) }),
+  Schema.Struct({ kind: Schema.Literal("layout"), chat: Schema.Boolean, palette: Schema.Boolean, newest: Schema.Boolean }),
+])
+const Gestures = Schema.Struct({ hostless: Schema.Boolean, detached: Schema.optionalKey(Schema.Boolean), height: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 800 })), gestures: Schema.Array(Gesture).check(Schema.isMaxLength(40)) })
+
+/**
+ * Reader gestures over a happy-dom page. Happy-dom has no layout engine, so the page's scroll height, viewport
+ * height and scroll position are defined on the document as a browser would report them.
+ */
+type Constructors = Record<"KeyboardEvent", new (type: string, init?: object) => Event>
+
+it.live("web/viewport-gestures", () => run("web/viewport-gestures", Gestures, ({ hostless, detached, height, gestures }) => Effect.provide(effect {
+  const current = try (try Experimental.Document.Document).current
+  // A document without a window (one built by the page, not shown) has no scroll position of its own.
+  const page = detached === true ? try Effect.try(() => current.implementation.createHTMLDocument("")) : current
+  const window = try (try Experimental.Window.Window).current
+  return try Effect.try(() => gesturesHold(page, window, hostless, detached === true, height, gestures))
+}, Layer.merge(ExperimentalBrowserDocument.layer, ExperimentalBrowserWindow.layer))))
+
+function gesturesHold(page: Document, window: Window, hostless: boolean, detached: boolean, height: number, gestures: typeof Gestures.Type["gestures"]): boolean {
+  const dom = window as unknown as Constructors
+  let y = 0
+  let follows = 0
+  let chat = true
+  let paletteOpen = false
+  page.body.innerHTML = `<div class="vl-app" data-surface="chat"><dialog id="vl-palette" data-state="closed"></dialog><div data-following="true"><div id="vl-newest"></div></div><textarea id="editor"></textarea><div data-scroll-surface><span id="surface"></span></div><p id="plain"></p></div>`
+  const layout = (nextChat: boolean, nextPalette: boolean, newest: boolean) => {
+    chat = nextChat
+    paletteOpen = nextPalette
+    page.querySelector(".vl-app")!.setAttribute("data-surface", chat ? "chat" : "splash")
+    page.querySelector("#vl-palette")!.setAttribute("data-state", paletteOpen ? "open" : "closed")
+    const holder = page.querySelector("[data-following]")!
+    holder.innerHTML = newest ? `<div id="vl-newest"></div>` : ""
+    const element = holder.querySelector<HTMLElement>("#vl-newest")
+    if (element !== null) element.scrollIntoView = () => { follows++ }
+  }
+  layout(true, false, true)
+  Object.defineProperty(page.documentElement, "scrollHeight", { configurable: true, get: () => height + 300 })
+  Object.defineProperty(page.documentElement, "clientHeight", { configurable: true, get: () => 300 })
+  Object.defineProperty(window, "scrollY", { configurable: true, get: () => y })
+  window.scrollTo = ((options: ScrollToOptions) => { y = options.top ?? y }) as typeof window.scrollTo
+  window.scrollBy = ((options: ScrollToOptions) => { y = Math.max(0, y + (options.top ?? 0)) }) as typeof window.scrollBy
+  const viewport = hostless ? transcriptViewport() : transcriptViewport(page)
+  if (detached) y = 0
+  const active = () => hostless || (chat && !paletteOpen)
+  let intent = 0
+  const accept = (result: { readonly bottom: boolean; readonly intent: number } | undefined, pause: boolean) => {
+    if (result === undefined) return true
+    if (!active() || !Number.isInteger(result.intent) || result.intent < intent) return false
+    if (pause && (result.bottom || result.intent !== intent + 1 || (!hostless && height <= 0))) return false
+    intent = result.intent
+    return true
+  }
+  const fingers: Array<{ identifier: number; clientY: number }> = []
+  for (const gesture of gestures) {
+    switch (gesture.kind) {
+      case "wheel": {
+        // happy-dom 20.13.2's WheelEvent drops ctrlKey from its init, so the wheel's two read fields are given directly.
+        const result = viewport.wheel({ deltaY: gesture.delta, ctrlKey: gesture.ctrl } as WheelEvent)
+        if (result !== undefined && (gesture.delta >= 0 || gesture.ctrl)) return false
+        if (!accept(result, true)) return false
+        break
+      }
+      case "key": {
+        const target = page.getElementById(gesture.on === "editor" ? "editor" : gesture.on === "surface" ? "surface" : "plain")!
+        const event = new dom.KeyboardEvent("keydown", { key: gesture.key, altKey: gesture.alt, ctrlKey: gesture.ctrl, metaKey: gesture.meta, cancelable: true, bubbles: true })
+        if (gesture.prevented) event.preventDefault()
+        let result: ReturnType<typeof viewport.key> = undefined
+        const listen = (value: Event) => { result = viewport.key(value as KeyboardEvent) }
+        if (gesture.on === "page") { page.addEventListener("keydown", listen); page.dispatchEvent(event); page.removeEventListener("keydown", listen) }
+        else { target.addEventListener("keydown", listen); target.dispatchEvent(event); target.removeEventListener("keydown", listen) }
+        if (result !== undefined && (gesture.on === "editor" || gesture.on === "surface" || gesture.prevented || gesture.alt)) return false
+        if (!hostless && result !== undefined && event.defaultPrevented === detached) return false
+        if (!accept(result, true)) return false
+        break
+      }
+      case "touchStart": {
+        fingers.length = 0
+        if (!gesture.none) fingers.push({ identifier: gesture.finger, clientY: gesture.y })
+        viewport.touchStart({ touches: [...fingers] } as unknown as TouchEvent)
+        break
+      }
+      case "touchMove": {
+        const result = viewport.touchMove({ touches: [{ identifier: gesture.finger, clientY: gesture.y }] } as unknown as TouchEvent)
+        if (!accept(result, true)) return false
+        break
+      }
+      case "touchEnd": viewport.touchEnd(); break
+      case "scroll": {
+        y = gesture.y
+        const result = viewport.scrolled()
+        if (!accept(result, false)) return false
+        break
+      }
+      case "follow": {
+        const before = follows
+        const newest = page.querySelector("[data-following='true'] #vl-newest") !== null
+        viewport.follow(intent - gesture.back)
+        const expected = gesture.back === 0 && active() && newest && !hostless
+        if ((follows === before + 1) !== expected || follows > before + 1) return false
+        break
+      }
+      default: layout(gesture.chat, gesture.palette, gesture.newest)
+    }
+  }
+  return true
+}
+

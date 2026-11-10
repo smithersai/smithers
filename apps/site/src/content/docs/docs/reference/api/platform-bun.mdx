@@ -320,3 +320,54 @@ buys, [Runtime parity with Node](https://github.com/smithersai/smithers/blob/mai
 the two runtimes are interchangeable, and
 [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/docs/troubleshooting.md) lists the failures these exports
 produce.
+
+## Native windows and loopback HTTP
+
+`BunDesktop.layer` provides `BunDesktop.DesktopWindow`, with `resources`, `open(url)` and `chooseDirectory()`.
+The optional peer `electrobun` 1.18.1 is loaded only when this layer is built. Native window operations require an initialized Electrobun process. `open` uses
+CEF, restricts navigation to the supplied origin and disables view RPC. The caller owns the Effect scope, which
+closes its windows. A cancelled directory chooser returns `null`; native failures return `DesktopUnavailable`,
+without copying OS messages into diagnostics. The private `#electrobun` import separates the native declaration
+port from Electrobun's source-only TypeScript distribution.
+
+`BunServer.layer(port?)` provides the Effect HTTP server and its Bun support services on `127.0.0.1`. The default
+port, zero, asks the OS to choose one. The server closes with the layer's scope. Its Bun adapter is loaded only when
+the layer is built; ordinary package imports do not start a socket or load native FFI.
+
+The VibeLang desktop app is a composition example in `apps/vibelang-desktop`. Its native Linux acceptance test
+runs both exports under Xvfb and drives the real native folder chooser and the real OpenAI-compatible HTTP/SSE path.
+
+### Crash-safe local edits
+
+`BunFileSystem.replaceFileString(fs, path, before, after)` writes a private sibling file, syncs it through the
+host, preserves the original mode, rechecks the expected original, then uses same-directory atomic rename.
+An interrupted temporary write leaves the original intact. An already applied edit is an idempotent success;
+a changed original fails with `FileChanged`. This is optimistic conflict detection, not a lock against another
+process writing between the final comparison and rename. Supply the kernel's confined filesystem to retain
+its descriptor-relative root identity and no-follow boundary. The function requires Path and SecureRandom.
+
+### Electrobun compatibility boundary
+
+`BunDesktop.layer` supports Bun 1.4 with the compatibility-marked Electrobun 1.18.1 API. Upstream 1.18.1 assumes
+cstring callback arguments are pointers; Bun 1.4 supplies strings. This package ships the correction in
+`patches/electrobun@1.18.1.patch`, including redacted callback diagnostics. Compatibility version 2 also replaces the native Linux opener's shell
+fallback with an OS argument vector, a bounded wait and private child diagnostics. The workspace already applies it.
+External applications apply the shipped patch before using this optional native layer:
+
+```sh
+pnpm patch electrobun@1.18.1 --edit-dir .electrobun-compat
+patch --directory=.electrobun-compat --strip=1 < node_modules/@smthrs/platform-bun/patches/electrobun@1.18.1.patch
+pnpm patch-commit .electrobun-compat
+```
+
+The layer checks the patch's exported compatibility marker and fails with `DesktopUnavailable` before creating
+any window if it is absent. Installing the unmodified optional peer does not silently enable an unsupported
+native capability. Other Bun host services do not load Electrobun. Remove this patch and marker requirement when
+a tested upstream release provides equivalent callback decoding and private diagnostics.
+
+The native test collector runs the wrapper under Node/V8 against real Electrobun APIs hosted in a separate process.
+Linux needs Xvfb, GTK 3, WebKitGTK 4.1, Ayatana appindicator, curl, Python 3 and X11/XTest; the system opener uses the
+repository's Playwright Chromium as a real headless browser. The Bun compatibility worker does not start another
+native fixture. `BunDesktop.layerWith` injects the foreign `NativeLoader` port; successful tests use actual windows,
+GTK selection/cancellation and the OS browser opener. Faulty native dependencies cover typed failures. This measures
+the Effect wrapper, not C++/CEF. The helper prerequisite for filesystem tests remains unchanged.

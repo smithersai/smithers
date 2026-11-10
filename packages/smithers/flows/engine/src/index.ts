@@ -45,3 +45,6 @@ export * as FlowProxy from "./FlowProxy.ts"
  * @since 0.1.0
  */
 export * as FlowProxyServer from "./FlowProxyServer.ts"
+
+/** Portable step observations for live run views. @since 1.0.0 */
+export * as StepTrace from "./StepTrace.vibe"

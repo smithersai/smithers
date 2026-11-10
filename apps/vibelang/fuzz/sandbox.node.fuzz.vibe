@@ -1,0 +1,135 @@
+// The sandbox protocol and the per-person allowance object, over real SQLite and the real durable engine. A Machines
+// service that fails on demand stands in for live Containers, which stay off here.
+import { it } from "@effect/vitest"
+import { HttpClientRequest, HttpServerRequest } from "effect/http"
+import { Refused, Unavailable, type SandboxSnapshot } from "../src/core/Factory.vibe"
+import { mockPolicy } from "../src/core/sandboxPolicy.vibe"
+import type { Machines } from "../src/core/sandboxHost.vibe"
+import * as Sandboxes from "../worker/Sandboxes.vibe"
+import { sandboxRequest, signedOutGateway, emptySnapshot, type Gateway } from "../worker/SandboxHttp.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { run, Int } from "./run.vibe"
+
+const ORIGIN = "https://sandbox.invalid"
+const HttpInput = Schema.Struct({
+  method: Schema.Literals(["GET", "POST", "DELETE"]),
+  route: Schema.Literals(["read", "start", "stop", "command", "other", "bad-id", "deep"]),
+  body: Schema.Literals(["none", "garbage", "valid", "bad-op", "no-generation", "negative-generation", "no-command", "long-command"]),
+  length: Schema.Literals(["true", "absent", "nan", "zero", "over"]),
+  gateway: Schema.Literals(["ok", "forbidden", "stale", "unavailable", "signed-out"]),
+})
+const Kinds = ["start", "stop", "command", "meter"] as const
+const Faults = ["start", "stop", "command", "lease"] as const
+const ObjectInput = Schema.Struct({
+  role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]),
+  prefix: Schema.Boolean,
+  steps: Schema.Array(Schema.Struct({
+    kind: Int, conversation: Int, operation: Int, generation: Int, current: Schema.Boolean, command: Int, fault: Int, faulty: Schema.Boolean, prune: Schema.Boolean,
+  })).check(Schema.isMaxLength(12)),
+})
+const COMMANDS = ["ls", "", "x".repeat(16_385), "echo 😀"]
+const CONVERSATIONS = ["c-1", "c-2", "bad id"]
+const OPERATIONS = ["op-0", "op-1", "op-2", "op-3", "op-4", "op-5", "bad id"]
+
+function bodyOf(kind: typeof HttpInput.Type["body"]): string | undefined {
+  if (kind === "none") return undefined
+  if (kind === "garbage") return "{"
+  const valid = { operationId: "op-1", generation: 1, command: "ls" }
+  if (kind === "bad-op") return JSON.stringify({ ...valid, operationId: "op id" })
+  if (kind === "no-generation") return JSON.stringify({ operationId: "op-1", command: "ls" })
+  if (kind === "negative-generation") return JSON.stringify({ ...valid, generation: -1 })
+  if (kind === "no-command") return JSON.stringify({ operationId: "op-1", generation: 1 })
+  if (kind === "long-command") return JSON.stringify({ ...valid, command: "x".repeat(16_385) })
+  return JSON.stringify(valid)
+}
+
+/** Written from the protocol's rules, not from its code: the status each request shape has to get. */
+function expected(input: typeof HttpInput.Type, text: string | undefined): number {
+  const failing = input.gateway === "forbidden" ? 403 : input.gateway === "stale" ? 409 : input.gateway === "unavailable" ? 503 : 200
+  if (input.route === "other" || input.route === "bad-id" || input.route === "deep") return 404
+  if (input.route === "read") return input.method === "GET" ? failing : 404
+  if (input.method !== "POST") return 404
+  const length = input.length === "true" ? (text ?? "").length : input.length === "zero" ? 0 : input.length === "over" ? 20_001 : input.length === "nan" ? Number.NaN : 0
+  if (!Number.isSafeInteger(length) || length < 1 || length > 20_000) return 413
+  if (input.body === "none" || input.body === "garbage" || input.body === "bad-op" || input.body === "negative-generation" || input.body === "long-command") return 400
+  const refused = input.gateway === "signed-out" ? 403 : failing
+  if (input.route === "start") return refused
+  if (input.body === "no-generation") return 400
+  if (input.route === "stop") return refused
+  return input.body === "no-command" ? 400 : refused
+}
+
+/** Every request shape gets the protocol's status, and a refused request never reaches the gateway. */
+it.live("sandbox/http-surface", () => run("sandbox/http-surface", HttpInput, (input) => effect {
+  const calls: Array<string> = []
+  const snapshot = try emptySnapshot()
+  effect function answer<A>(name: string, value: A) {
+    calls.push(name)
+    if (input.gateway === "unavailable") throw new Unavailable({ reason: "down" })
+    if (input.gateway === "forbidden" || input.gateway === "stale") throw new Refused({ refusal: input.gateway })
+    return value
+  }
+  const recording: Gateway = {
+    sandbox: () => answer("read", snapshot),
+    startSandbox: () => answer("start", snapshot),
+    stopSandbox: () => answer("stop", snapshot),
+    sandboxCommand: () => answer("command", "out"),
+  }
+  const path = input.route === "read" ? "/api/sandboxes/c-1"
+    : input.route === "other" ? "/api/other"
+    : input.route === "bad-id" ? "/api/sandboxes/a!b/start"
+    : input.route === "deep" ? "/api/sandboxes/c-1/start/more"
+    : `/api/sandboxes/c-1/${input.route}`
+  const text = bodyOf(input.body)
+  let request = HttpClientRequest.make(input.method)(`${ORIGIN}${path}`)
+  if (text !== undefined && input.method !== "GET") request = HttpClientRequest.bodyText(request, text)
+  const delivered = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(request))
+  const { "content-length": _, ...headers } = delivered.headers
+  // A Web Request forbids this header, so it goes on the server request a real proxy would deliver.
+  const length = input.length === "true" ? String((text ?? "").length) : input.length === "nan" ? "many" : input.length === "zero" ? "0" : input.length === "over" ? "20001" : undefined
+  const server = delivered.modify({ headers: { ...headers, ...(length === undefined ? {} : { "content-length": length }) } })
+  const response = try Effect.provideService(sandboxRequest(input.gateway === "signed-out" ? signedOutGateway : recording), HttpServerRequest.HttpServerRequest, server)
+  const body = text ?? ""
+  if (response.status !== expected(input, input.method === "GET" ? undefined : body === "" ? undefined : body)) return false
+  return response.status === 404 || response.status === 413 || response.status === 400 ? calls.length === 0 : true
+}))
+
+/** No sequence of requests and machine faults defects, double-runs a command, or moves a generation backward. */
+it.live("sandbox/object-lifecycle", () => run("sandbox/object-lifecycle", ObjectInput, (input) => effect {
+  const faults = new Set<string>()
+  const ran = new Map<string, number>()
+  const machines: Machines = {
+    start: () => faults.has("start") ? fail(new Unavailable({ reason: "no image" })) : Effect.void,
+    stop: () => faults.has("stop") ? fail(new Unavailable({ reason: "wedged" })) : Effect.void,
+    lease: () => faults.has("lease") ? fail(new Unavailable({ reason: "refused" })) : succeed(true),
+    command: (_id, _generation, operationId, command) => {
+      ran.set(operationId, (ran.get(operationId) ?? 0) + 1)
+      return faults.has("command") ? fail(new Unavailable({ reason: "lost" })) : succeed(`ran ${command.length}`)
+    },
+  }
+  const storage = (try Effect.try(() => objectStorage())) as unknown as Sandboxes.SandboxStorage
+  const host = try Effect.provide(Sandboxes.open(storage, machines), mockPolicy(input.role))
+  const lifecycle = input.prefix ? [
+    { kind: 0, conversation: 0, operation: 0, generation: 0, current: true, command: 0, fault: 0, faulty: false, prune: false },
+    { kind: 2, conversation: 0, operation: 1, generation: 0, current: true, command: 0, fault: 0, faulty: false, prune: false },
+    { kind: 3, conversation: 0, operation: 2, generation: 0, current: true, command: 0, fault: 0, faulty: false, prune: true },
+    { kind: 1, conversation: 0, operation: 3, generation: 0, current: true, command: 0, fault: 0, faulty: false, prune: false },
+  ] : []
+  let highest = 0
+  for (const step of [...lifecycle, ...input.steps]) {
+    faults.clear()
+    if (step.faulty) faults.add(Faults[step.fault % Faults.length]!)
+    const conversation = CONVERSATIONS[step.conversation % CONVERSATIONS.length]!
+    const generation = step.current ? (try host.snapshot(conversation)).generation : step.generation
+    const outcome = try Effect.result(Sandboxes.execute("h", storage, host, Kinds[step.kind % Kinds.length]!, conversation, OPERATIONS[step.operation % OPERATIONS.length]!, generation, COMMANDS[step.command % COMMANDS.length]!, step.prune ? { olderThanMs: 0 } : undefined))
+    if (outcome._tag === "Failure" && outcome.failure._tag !== "Refused" && outcome.failure._tag !== "Unavailable") return false
+    const snapshot: SandboxSnapshot = try host.snapshot(conversation)
+    if (snapshot.remaining < 0 || snapshot.generation < 0) return false
+    if (conversation === "c-1") {
+      if (snapshot.generation < highest) return false
+      highest = snapshot.generation
+    }
+    for (const count of ran.values()) if (count > 1) return false
+  }
+  return true
+}))

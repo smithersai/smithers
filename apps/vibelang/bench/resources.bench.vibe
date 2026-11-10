@@ -1,0 +1,37 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import * as Alchemy from "alchemy"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { FetchHttpClient } from "effect/http"
+import { WebCrypto } from "@smthrs/crypto"
+import { CredentialsStoreLive } from "alchemy/Auth/Credentials"
+import { ProfileStoreLive } from "alchemy/Auth/Profile"
+import stack from "../infra/Stack.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("compile the real API and site resource graph", async ({ bench }) => {
+  const results = []
+  for (const [dev, domain] of [[true, ""], [false, ""], [false, "factory.example.test"]] as const) {
+    results.push(await workload(bench, `resources-${dev ? "dev" : domain || "production"}`, "async", async () => {
+      await runPromise(scoped(effect {
+        provide NodeServices.layer, FetchHttpClient.layer, WebCrypto.layer, Layer.provide(CredentialsStoreLive, NodeServices.layer), Layer.provide(ProfileStoreLive, NodeServices.layer) {
+          const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+          provide ConfigProvider.layer(ConfigProvider.fromUnknown(domain ? { VIBELANG_DOMAIN: domain } : {})), Alchemy.AlchemyContext = { dev, adopt: false, dotAlchemy: directory }, Alchemy.Stage = "benchmark" {
+            const compiled = try stack
+            try Effect.try(() => {
+              expect(compiled.name).toBe("smithers-vibelang")
+              expect(Object.keys(compiled.resources).sort()).toEqual(["VibelangApi", "vibelang-site"])
+              expect(compiled.resources.VibelangApi!.Props).toMatchObject({ main: "worker/Api.vibe", limits: { cpuMs: 300000 }, observability: { enabled: true } })
+              expect(compiled.resources["vibelang-site"]!.Props).toMatchObject({ vite: { main: "worker/index.vibe" }, assets: { notFoundHandling: "single-page-application" } })
+              expect(compiled.resources["vibelang-site"]!.Props.domain).toBe(domain || undefined)
+              expect(compiled.resources["vibelang-site"]!.Props.env.API).toBeDefined()
+              const bindings = compiled.bindings.VibelangApi!.flatMap((binding) => binding.data.bindings ?? [])
+              expect(bindings.filter((binding: { type: string }) => binding.type === "durable_object_namespace").map((binding: { className: string }) => binding.className).sort()).toEqual(["ActionIndex", "Budget", "Conversation", "History", "ProjectAccounts"])
+            })
+          }
+        }
+      }))
+    }).run(slow))
+  }
+  await runPromise(artifact("resources", "Vitest built-in bench; actual Alchemy stack compilation in temporary local state, dev/default production/domain variants; exact resource names, bindings, routes and CPU/observability settings checked. Three samples each, including layer/state-directory lifecycle.", ["Resource declarations only; no plan, deploy, provider lifecycle or Cloudflare account operation. Runtime object paths run separately in workerd."], results))
+})

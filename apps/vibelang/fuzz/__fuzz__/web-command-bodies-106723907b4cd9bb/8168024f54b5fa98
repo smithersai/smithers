@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 25
+bias 4
+null-prototype false
+key 2057912268
+tape KVSoTFqDVzG5BR0X2hrE36vTUvtjTGEKi6AH4YeKBm8
+schedule-key 882117965
+schedule 
+signature "ReturnedFalse"
+path 0
+codec "json"
+value "{\"backend\":\"live\",\"wiki\":\"read-fails\",\"role\":\"viewer\",\"body\":{\"command\":\"OpenWikiEditor\",\"page\":\"rulings\",\"request\":0}}"
+# ReturnedFalse
+# {"backend":"live","wiki":"read-fails","role":"viewer","body":{"command":"OpenWikiEditor","page":"rulings","request":0}}

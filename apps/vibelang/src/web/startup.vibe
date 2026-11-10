@@ -1,0 +1,111 @@
+import { preferenceWrite, wantsMock, startupRole, tutorialStartup, startupSession } from "./startupDecision.vibe"
+import { MockJournal } from "../core/MockJournal.vibe"
+import { EventSchema } from "../core/schemas.vibe"
+// Browser startup: prepares styles and Foldkit without waiting for backend selection.
+// The live Factory when this origin's `/api/health` says `agent: "live"` (wiki/decisions/0010-live-agent.md); the mock
+// otherwise, with no backend and no model (0004): on `pnpm dev` and `vite preview`, on a deployment without the API
+// Worker, and whenever the page asks for it with `?agent=mock` or the `vibelang.agent` storage key set to `mock`.
+// The nav's Live/Mock switch and ⌘K's /mock and /live load `?agent=mock` or `?agent=live`; the choice is saved, so it
+// survives reloads, signed in or out (ruling VL-13).
+// The page's window, document and media queries come from VibeLang's browser services, its randomness from Web
+// Crypto through Effect's SecureRandom. The mock loads only when chosen: it carries the flow engine (0011), which a
+// live page never runs.
+import { SecureRandom } from "effect/crypto"
+import { HttpClient } from "effect/http"
+import { Runtime, Subscription } from "foldkit"
+import { ExperimentalBrowserDocument, ExperimentalBrowserMediaQuery, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
+import { ROLES } from "../history/roles.vibe"
+import { AgentBackend, BrowserFactory } from "./backend.vibe"
+import { Flags, init, Message, Model, subscriptions, update, viewTransition } from "./main.vibe"
+import { stylesheet } from "./styles.vibe"
+import { MediaAssets } from "./media.vibe"
+import { view } from "./view.vibe"
+
+/** Whether this page asked for the mock agent. Storage can be unavailable; that asks for nothing. */
+function askedForMock(window: Window): boolean {
+  const asked = new URLSearchParams(window.location.search).get("agent")
+  const write = preferenceWrite(asked)
+  try {
+    if (write === "set") window.localStorage.setItem("vibelang.agent", "mock")
+    if (write === "clear") window.localStorage.removeItem("vibelang.agent")
+  } catch {
+    // Storage can be unavailable (a private window): the query still chooses for this page.
+  }
+  if (write !== "keep") return wantsMock(asked, null)
+  try {
+    return wantsMock(asked, window.localStorage.getItem("vibelang.agent"))
+  } catch {
+    return wantsMock(asked, null)
+  }
+}
+
+/** One notification when backend selection finishes, even before the first post. */
+function backendMode() {
+  return Subscription.make<Model, Message, AgentBackend>()(() => ({
+    backend: Subscription.persistentEntry(Stream.fromEffect(effect {
+      const backend = try AgentBackend
+      const mode = try backend.ready
+      return try orDie(Effect.try(() => Message.ResolvedMode({ mode })))
+    })),
+  }))
+}
+
+/** The Foldkit application for this page, and the flags it starts with. */
+export effect function main() {
+  const window = try (try Experimental.Window.Window).current
+  const document = try (try Experimental.Document.Document).current
+  const client = try HttpClient.HttpClient
+  const clock = try Clock.Clock
+  const origin = window.location.origin
+  const css = try stylesheet()
+  const root = try Effect.try(() => {
+    const style = document.createElement("style")
+    style.textContent = css
+    document.head.append(style)
+    return document.getElementById("root")!
+  })
+  const selectedRole = new URLSearchParams(window.location.search).get("role")
+  const role = startupRole(selectedRole, "viewer", ROLES) as (typeof ROLES)[number]
+  const journal: MockJournal.Shape = {
+    read: conversation => effect {
+      if (!/^(tour|demo)-/.test(conversation)) return []
+      const text = try sync(() => { try { return window.localStorage.getItem(`vibelang:walkthrough:${conversation}`) } catch { return null } })
+      return text === null ? [] : (Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(EventSchema)))(text) catch () => [])
+    },
+    write: (conversation, events) => sync(() => { if (/^(tour|demo)-/.test(conversation)) { try { window.localStorage.setItem(`vibelang:walkthrough:${conversation}`, JSON.stringify(events)) } catch { /* Storage denial leaves the current tour usable. */ } } }),
+  }
+  const resources = BrowserFactory(origin, askedForMock(window), role, journal).pipe(Layer.provide(Layer.merge(Layer.succeed(HttpClient.HttpClient, client), Layer.succeed(Clock.Clock, clock))))
+  const reducedMotion = try (try Experimental.MediaQuery.MediaQuery).matches("(prefers-reduced-motion: reduce)")
+  const freshSession = try (try SecureRandom.SecureRandom).uuidV4()
+  const saved = try sync(() => {
+    try {
+      const session = startupSession(window.sessionStorage.getItem("vibelang:tour-session"), freshSession)
+      window.sessionStorage.setItem("vibelang:tour-session", session)
+      const sound = window.localStorage.getItem("vibelang:tour-sound")
+      const active = window.sessionStorage.getItem("vibelang:tour-active")
+      const toured = window.localStorage.getItem("vibelang:toured")
+      return tutorialStartup(session, freshSession, sound, active, toured, toured ? "" : window.location.pathname)
+    } catch { return { tutorialSession: freshSession, tourSound: false, resumeTour: false, autoTour: true } }
+  })
+  const session = freshSession
+  const mediaSources = try (try MediaAssets).sources
+  const flags: Flags = { ...saved, session, mode: "pending", name: "Guest", reducedMotion, mediaSources, ...(new URLSearchParams(window.location.search).has("resume-recovery") ? { resumeRecovery: new URLSearchParams(window.location.search).get("resume-recovery")! } : {}), ...(new URLSearchParams(window.location.search).has("resume-op") ? { resumeOp: new URLSearchParams(window.location.search).get("resume-op")! } : {}), ...(new URLSearchParams(window.location.search).has("resume-key") ? { resumeKey: new URLSearchParams(window.location.search).get("resume-key")! } : {}), openIssues: new URLSearchParams(window.location.search).get("issues") === "1", signInFailed: new URLSearchParams(window.location.search).get("sign-in") === "failed", ...(window.location.pathname.startsWith("/wiki") ? { wiki: window.location.pathname + window.location.hash } : {}) }
+  const application = try Effect.try(() => Runtime.makeApplication({
+    Model,
+    Flags,
+    init,
+    update,
+    view,
+    subscriptions: Subscription.aggregate(subscriptions(document, document), backendMode()),
+    viewTransition,
+    resources,
+    container: root,
+    devTools: { Message },
+  }))
+  return { application, flags }
+}
+
+/** What `main` reads from the page: its window, document and media queries, and Web Crypto. */
+export const page = Layer.mergeAll(
+  ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer, ExperimentalBrowserMediaQuery.layer, SecureRandom.layerWebCrypto,
+)

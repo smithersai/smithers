@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { test } from "node:test"
-import { jj, planNumbers, applyNumbers, prepareLane, checkNumbers, unique, decisions, migrations } from "./numbering.mjs"
+import { jj, planNumbers, applyNumbers, prepareLane, checkNumbers, unique, decisions, migrations, migrationFile } from "./numbering.mjs"
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "devx-numbers-"))
@@ -150,4 +150,54 @@ test("renumbering never follows a changed symlink outside its workspace", (t) =>
   assert.throws(() => applyNumbers(root, plan), /symlink/)
   assert.equal(readFileSync(outside, "utf8"), "See 0076_lane\n")
   assert.equal(existsSync(join(root, migrations, "0076_lane.ts")), true)
+})
+
+const published = 'import { Effect } from "effect"\nimport { SqlClient } from "effect/sql"\n\n// Adds the column.\nexport default Effect.gen(function* () {\n  const sql = yield* SqlClient.SqlClient\n  yield* sql`ALTER TABLE m ADD COLUMN a integer`\n})\n'
+const convertedText = 'import { SqlClient } from "effect/sql"\n\n// Adds the column.\nexport default effect {\n  const sql = try SqlClient.SqlClient\n  try sql`ALTER TABLE m ADD COLUMN a integer`\n}\n'
+
+function converting(t, text = convertedText) {
+  const root = fixture(t)
+  writeFileSync(join(root, migrations, "0075_base.ts"), published)
+  jj(root, ["commit", "-m", "real body"])
+  jj(root, ["bookmark", "set", "published", "-r", "@-"])
+  rmSync(join(root, migrations, "0075_base.ts"))
+  writeFileSync(join(root, migrations, "0075_base.vibe"), text)
+  return root
+}
+
+test("a published migration converted to VibeLang keeps its identity and takes no number", (t) => {
+  const root = converting(t)
+  assert.deepEqual(planNumbers(root, "published").renames, [])
+})
+
+test("a conversion that changes a statement is an edit, and refused", (t) => {
+  const root = converting(t, convertedText.replace("integer", "text"))
+  assert.throws(() => planNumbers(root, "published"), /Published migration is immutable/)
+})
+
+test("a conversion that keeps both files is a duplicate, and a renamed slug is an edit", (t) => {
+  const both = converting(t)
+  writeFileSync(join(both, migrations, "0075_base.ts"), published)
+  assert.throws(() => planNumbers(both, "published"), /immutable|Duplicate/)
+  const renamed = converting(t)
+  rmSync(join(renamed, migrations, "0075_base.vibe"))
+  writeFileSync(join(renamed, migrations, "0075_other.vibe"), convertedText)
+  assert.throws(() => planNumbers(renamed, "published"), /Published migration is immutable/)
+})
+
+test("a migration identity is the same in either format, and only source modules have one", () => {
+  assert.deepEqual(migrationFile("0076_native.vibe"), { name: "0076_native.vibe", id: 76, digits: "0076", slug: "native", stem: "0076_native", extension: ".vibe" })
+  assert.equal(migrationFile("0076_native.ts").stem, "0076_native")
+  for (const name of ["0076_native.d.vibe.ts", "0076_native.test.vibe", "0076_native.test.ts", "0076_a-b.ts", '0076_a"b.ts', "0076_a b.vibe"]) assert.equal(migrationFile(name), undefined)
+  assert.throws(() => unique([`${migrations}/0076_a.ts`, `${migrations}/0076_b.vibe`], migrations), /Duplicate/)
+  unique([`${migrations}/0076_a.ts`, `${migrations}/0077_b.vibe`], migrations)
+  for (const name of ["00117_x.ts", "0076_a-b.vibe", "12_short.ts"]) assert.throws(() => unique([`${migrations}/${name}`], migrations), /Invalid migration name/)
+})
+
+test("renumbering keeps a new migration's format", (t) => {
+  const root = parallel(t)
+  rmSync(join(root, migrations, "0076_lane.ts"))
+  writeFileSync(join(root, migrations, "0076_lane.vibe"), "export default 76\n")
+  const plan = planNumbers(root, "published")
+  assert.equal(plan.renames.find((entry) => entry.directory === migrations).to, `${migrations}/0077_lane.vibe`)
 })

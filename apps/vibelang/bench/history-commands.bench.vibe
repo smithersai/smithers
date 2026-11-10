@@ -1,0 +1,62 @@
+// The History browser's real Command effects and real memory flow host, independent of unit/fuzz suites.
+import { it, expect } from "@effect/vitest"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { Mythical, Unavailable, Refused } from "../src/history/MythicalHistory.vibe"
+import { empty } from "../src/history/mythical.vibe"
+import { ReadOutline, ReadEpic, ReadCommit, ReadMatches, PlanCommand, StartCommand, NoteCommand, ApproveCommand, FoldCommand } from "../src/web/historyApp.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+effect function execute<A, E, R>(make: () => { readonly effect: A!E!R }) { return try (try Effect.try(make)).effect }
+const plan = { how: "append" as const, epic: "", newEpic: "Measured epic", target: "", title: "Measured commit", task: "Kept task" }
+
+it("History browser commands plan, start, retain evidence, approve and fold the exact commit", async ({ bench }) => {
+  const result = await workload(bench, "history-browser-commands", "async", () => runPromise(scoped(effect {
+    provide MockMythical({ role: "maintainer", name: "Benchmark person", agent: false }, () => succeed(empty)) {
+      const api = try Mythical
+      const before = try execute(() => ReadOutline({}))
+      const planned = try execute(() => PlanCommand(plan))
+      const page = try execute(() => ReadEpic({ id: "e1", from: 0 }))
+      const matches = try execute(() => ReadMatches({ query: "Measured" }))
+      const started = try execute(() => StartCommand({ id: "m1", lane: "bench" }))
+      const noted = try execute(() => NoteCommand({ id: "m1", section: "evidence", text: "Retained evidence" }))
+      const approved = try execute(() => ApproveCommand({ id: "m1" }))
+      const beforeFold = try api.commit("m1")
+      const folded = try execute(() => FoldCommand({}))
+      const detailed = try execute(() => ReadCommit({ id: "m1" }))
+      const absent = try execute(() => ReadCommit({ id: "absent" }))
+      const after = try api.outline()
+      try Effect.try(() => {
+        expect(before).toEqual({ _tag: "GotOutline", outline: { seq: 0, main: "", epics: [], open: [] } })
+        expect(planned).toEqual({ _tag: "Wrote", hash: "m1" })
+        expect(page).toMatchObject({ _tag: "GotEpic", page: { epic: "e1", from: 0, total: 1, commits: [{ id: "m1", title: "Measured commit", task: "Kept task", state: "planned" }] } })
+        expect(matches).toMatchObject({ _tag: "GotMatches", matches: { query: "Measured", commits: [{ id: "m1" }] } })
+        expect([started, noted, approved, folded]).toEqual(Array(4).fill({ _tag: "Wrote", hash: "" }))
+        expect(beforeFold.commit).toMatchObject({ task: "Kept task", lane: "bench", state: "approved" })
+        expect(detailed).toMatchObject({ _tag: "GotCommit", id: "m1", page: { commit: { id: "m1", state: "landed", title: "Measured commit", task: "", lane: "", notes: [{ section: "evidence", text: "Retained evidence", by: "Benchmark person" }, { section: "evidence", text: "approved", by: "Benchmark person" }] }, real: [{ sha: "f01d00000001", mythical: "m1" }] } })
+        expect(absent).toMatchObject({ _tag: "GotCommit", id: "absent", page: { commit: null, real: [] } })
+        expect(after).toEqual({ seq: 6, main: "f01d00000001", epics: [{ id: "e1", title: "Measured epic", commits: 1, folds: 1 }], open: [] })
+      })
+    }
+  }))).run(slow)
+  await runPromise(artifact("history-browser-commands", "Vitest built-in bench; actual History Command effects over MockMythical's memory engine from empty history. Outline, Plan, epic/search, Start/Note/Approve/Fold and commit/missing detail; exact command messages, retained fields, notes, fold SHA and final six-event outline checked. Three fresh scoped engines, assertions included.", ["Shipped product mock main, no GitHub mutation, network, OAuth or actual repository fold. Command Effects without browser layout/DOM focus."], result))
+})
+
+it("History browser commands return safe read outages and exact write refusals", async ({ bench }) => {
+  const result = await workload(bench, "history-browser-command-faults", "async", () => runPromise(scoped(effect {
+    for (const reason of ["forbidden", "unavailable"] as const) {
+      const unavailable = () => fail(new Unavailable({ reason: "Synthetic transport detail" }))
+      const write = () => reason === "forbidden" ? fail(new Refused({ refusal: reason })) : unavailable()
+      const faulty: Mythical.Shape = { mode: "live", outline: unavailable, epic: unavailable, commit: unavailable, search: unavailable, events: () => Stream.fail(new Unavailable({ reason: "Synthetic transport detail" })), plan: write, start: write, note: write, approve: write, fold: write }
+      provide Mythical = faulty {
+        const reads = try all([execute(() => ReadOutline({})), execute(() => ReadEpic({ id: "e1", from: 0 })), execute(() => ReadCommit({ id: "m1" })), execute(() => ReadMatches({ query: "Measured" }))])
+        const writes = try all([execute(() => PlanCommand(plan)), execute(() => StartCommand({ id: "m1", lane: "bench" })), execute(() => NoteCommand({ id: "m1", section: "tried", text: "Evidence" })), execute(() => ApproveCommand({ id: "m1" })), execute(() => FoldCommand({}))])
+        try Effect.try(() => {
+          expect(reads).toEqual(Array(4).fill({ _tag: "FailedRead", reason: "unavailable" }))
+          expect(writes).toEqual(Array(5).fill({ _tag: "FailedWrite", reason }))
+          expect(JSON.stringify([reads, writes])).not.toContain("Synthetic")
+        })
+      }
+    }
+  }))).run(slow)
+  await runPromise(artifact("history-browser-command-faults", "Vitest built-in bench; typed faulty Effect Mythical service, four browser reads and five writes under both permission and transport failures. All exact message/reason projections and redaction checked. Three full corpora, setup/assertions included.", ["Deliberate service failures, no request interception or successful provider simulation; no network, repository writes or model."], result))
+})

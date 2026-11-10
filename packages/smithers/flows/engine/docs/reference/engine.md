@@ -81,9 +81,10 @@ The members and the value each one carries across the seam:
 | `interruptUnsafe`       | no       | None.                                                                                                                                      |
 | `resume`                | no       | None.                                                                                                                                      |
 | `resumeSignal`          | yes      | None.                                                                                                                                      |
-| `actionExecute`         | no       | Encoded. `makeUnsafe` decodes it through the action's `exitSchemaPartial`.                                                                 |
+| `actionExecute`         | no       | Encoded. `makeUnsafe` decodes it through `Action.exitSchemasFor(serialization, action).exitSchemaPartial`.                                 |
 | `actionReplayKey`       | yes      | None.                                                                                                                                      |
 | `encodeEngineError`     | yes      | None.                                                                                                                                      |
+| `serialization`         | yes      | None. The `RpcSerialization` the driver stores action results with; absent means `RpcSerialization.json` (VIP-44).                         |
 | `actionRetryOrigin`     | yes      | None.                                                                                                                                      |
 | `actionLatestAttempt`   | yes      | None.                                                                                                                                      |
 | `actionSnapshot`        | yes      | None.                                                                                                                                      |
@@ -184,7 +185,7 @@ Creates the initial `FlowInstance` state for one flow execution. A runtime calls
 - **Since:** `0.1.0`
 - **Related:** `FlowEngine.makeUnsafe`
 
-The volatile in-memory implementation of the `FlowRuntime` port, for tests and local development where durability is not needed. It retains completed executions, action settlements, deferred results, and clocks until the layer scope closes, and it has no eviction option. It rebuilds a submitted payload through the flow's own payload schema constructor at admission and again on every re-drive: structs, arrays, and records the schema declares are copied, and values the schema declares opaque are shared by reference. Same-key in-flight actions share one settlement, so a concurrent duplicate dispatch waits instead of executing twice. Registrations of one flow tag stack, and the last still-open one serves.
+The volatile in-memory implementation of the `FlowRuntime` port, for tests and local development where durability is not needed. It retains completed executions, action settlements, deferred results, and clocks until the layer scope closes, and it has no eviction option. It rebuilds a submitted payload through the flow's own payload schema constructor at admission and again on every re-drive: structs, arrays, and records the schema declares are copied, and values the schema declares opaque are shared by reference. Every `Set` and `Map` is sorted first, so the body sees the order its identity hashes. Same-key in-flight actions share one settlement, so a concurrent duplicate dispatch waits instead of executing twice. Registrations of one flow tag stack, and the last still-open one serves.
 
 ### `FlowEngine.Lineage`
 

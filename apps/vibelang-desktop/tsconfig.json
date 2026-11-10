@@ -1,0 +1,18 @@
+{
+  "extends": "../vibelang/tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "node",
+      "vite/client"
+    ],
+    "rootDir": "../.."
+  },
+  "include": [
+    "src",
+    "test",
+    "e2e",
+    "*.ts",
+    "verify/*.vibe"
+  ],
+  "exclude": []
+}

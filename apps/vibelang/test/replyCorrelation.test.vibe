@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { apply, decide, empty, type Conversation, type Intent, type Event } from "../src/core/conversation.vibe"
+import { apply, empty, type Conversation, type Event } from "../src/core/conversation.vibe"
+import { decide, type Intent } from "../src/core/decide.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { Ask } from "../src/surfaces/commands.vibe"
 
@@ -63,6 +64,13 @@ for (const earlier of ["skipped", "later"] as const) {
       },
       read: () => succeed({ seq: state.seq, entries: state.entries }),
       events: () => Stream.fromIterable(log),
+      tour: () => die(new Error("Ask never tours")),
+      openWiki: () => die(new Error("Ask opens pages only through its reply")),
+      endTour: () => die(new Error("Ask never tours")),
+      sandbox: () => die(new Error("Ask never reads a sandbox")),
+      startSandbox: () => die(new Error("Ask never starts a sandbox")),
+      stopSandbox: () => die(new Error("Ask never stops a sandbox")),
+      sandboxCommand: () => die(new Error("Ask never runs a sandbox command")),
     })
     const actual = try effect {
       provide layer {

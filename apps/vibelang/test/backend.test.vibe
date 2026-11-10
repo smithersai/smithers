@@ -1,0 +1,116 @@
+// Compile the real backend before the clocked behavior cases; cold compiler transformation is outside these API assertions.
+import "../src/core/MockFactory.vibe"
+import { expect, it } from "@effect/vitest"
+import { Factory } from "../src/core/Factory.vibe"
+import { AgentBackend, BrowserFactory } from "../src/web/backend.vibe"
+import { heldHealth } from "./support/heldHealth.vibe"
+
+it.effect("one health choice gates post, read and events; cancelling a caller does not cancel selection", () => effect {
+  const health = try heldHealth()
+  provide BrowserFactory("http://startup.test", false).pipe(Layer.provide(health.layer)) {
+    const factory = try Factory
+    const backend = try AgentBackend
+    const cancelled = fork factory.post("home", "cancelled", "Guest", "cancelled")
+    const posted = fork factory.post("home", "first", "Guest", "install")
+    const snapshot = fork factory.read("home", 0)
+    const event = fork Stream.runCollect(factory.events("home", 0).pipe(Stream.take(1)))
+    try TestClock.adjust("0 millis")
+    try Effect.try(() => {
+      expect(factory.mode).toBe("pending")
+      expect(health.snapshot()).toEqual({ calls: 1, settled: false, cancelled: false })
+      expect(posted.pollUnsafe()).toBeUndefined()
+      expect(snapshot.pollUnsafe()).toBeUndefined()
+      expect(event.pollUnsafe()).toBeUndefined()
+    })
+    try Fiber.interrupt(cancelled)
+    try health.release("mock")
+    const mode = try backend.ready
+    join posted
+    const read = join snapshot
+    const events = join event
+    const recorded = try factory.read("home", 0)
+    try Effect.try(() => {
+      expect(mode).toBe("mock")
+      expect(factory.mode).toBe("mock")
+      expect(read.seq).toBeGreaterThanOrEqual(0)
+      expect(Array.from(events)[0]).toMatchObject({ type: "Posted", clientId: "first" })
+      expect(recorded.entries.filter(entry => entry.author === "person").map(entry => entry.clientId)).toEqual(["first"])
+      expect(health.snapshot()).toEqual({ calls: 1, settled: true, cancelled: false })
+    })
+  }
+})
+
+it.effect("health timeout chooses the working mock and never switches after a late live answer", () => effect {
+  const health = try heldHealth()
+  provide BrowserFactory("http://startup.test", false).pipe(Layer.provide(health.layer)) {
+    const backend = try AgentBackend
+    const factory = try Factory
+    const selected = fork backend.ready
+    try TestClock.adjust("2999 millis")
+    try Effect.try(() => expect(factory.mode).toBe("pending"))
+    try TestClock.adjust("1 millis")
+    const mode = join selected
+    try health.release("live")
+    const snapshot = try factory.read("home", 0)
+    try Effect.try(() => {
+      expect(mode).toBe("mock")
+      expect(factory.mode).toBe("mock")
+      expect(snapshot).toEqual({ seq: 0, entries: [] })
+      expect(health.snapshot()).toMatchObject({ cancelled: true })
+      expect(health.snapshot()).toEqual({ calls: 1, settled: false, cancelled: true })
+    })
+  }
+})
+
+it.effect("forcing mock skips health and scope disposal interrupts an unresolved selection", () => effect {
+  const health = try heldHealth()
+  provide BrowserFactory("http://startup.test", true).pipe(Layer.provide(health.layer)) {
+    const backend = try AgentBackend
+    const factory = try Factory
+    try backend.ready
+    try factory.read("home", 0)
+    try Effect.try(() => expect(health.snapshot().calls).toBe(0))
+  }
+  try scoped(effect {
+    const context = try Layer.build(BrowserFactory("http://startup.test", false).pipe(Layer.provide(health.layer)))
+    const factory = Context.get(context, Factory)
+    try TestClock.adjust("0 millis")
+    try Effect.try(() => expect(factory.mode).toBe("pending"))
+  })
+  try health.release("mock")
+  try TestClock.adjust("5 seconds")
+  try Effect.try(() => expect(health.snapshot()).toEqual({ calls: 1, settled: false, cancelled: true }))
+})
+
+it.effect("the selected mock accepts a tour and its cancellation through the shared browser Factory", () => effect {
+  const health = try heldHealth()
+  provide BrowserFactory("http://startup.test", true).pipe(Layer.provide(health.layer)) {
+    const factory = try Factory
+    try factory.tour("tour-browser")
+    const started = try factory.read("tour-browser", 0)
+    try factory.endTour("tour-browser")
+    const ended = try factory.read("tour-browser", 0)
+    try Effect.try(() => {
+      expect(started.entries[0]).toMatchObject({ author: "agent", done: false })
+      expect(ended.entries[0]).toMatchObject({ author: "agent", done: true })
+      expect(health.snapshot().calls).toBe(0)
+    })
+  }
+})
+
+it.effect("selects live once when health says live; an invalid later protocol answer never switches the backend", () => effect {
+  const health = try heldHealth()
+  provide BrowserFactory("http://startup.test", false).pipe(Layer.provide(health.layer)) {
+    const backend = try AgentBackend
+    const factory = try Factory
+    try health.release("live")
+    const mode = try backend.ready
+    const failure = factory.read("home", 0) catch (error) => error.reason
+    try Effect.try(() => {
+      expect(mode).toBe("live")
+      expect(factory.mode).toBe("live")
+      expect(failure).toBe("read is not the protocol")
+      expect(health.snapshot()).toEqual({ calls: 2, settled: true, cancelled: false })
+    })
+  }
+})

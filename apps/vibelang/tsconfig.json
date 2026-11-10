@@ -22,15 +22,18 @@
   "include": [
     "src",
     "test",
+    "fuzz",
+    "fuzz.config.ts",
     "e2e",
     "infra",
     "scripts",
+    "bench",
     "alchemy.run.ts",
     "vite.config.ts",
     "playwright.config.ts"
   ],
   // The site Worker's test needs Cloudflare's types, so the Worker project checks it (worker/tsconfig.json).
   "exclude": [
-    "test/worker.test.vibe"
+    "test/worker.test.vibe", "bench/site.bench.vibe", "fuzz/site.node.fuzz.vibe"
   ]
 }

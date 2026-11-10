@@ -1,0 +1,5 @@
+/** A deliberate unvisited branch proves both remapping and the failing threshold. */
+export effect function answer(first: boolean) {
+  if (first) return 7
+  return 9
+}

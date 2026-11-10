@@ -1,0 +1,61 @@
+// The conversation sequencer's own decisions (src/core/sequencerDecision.vibe, proved; 0018 "Sequencer decisions").
+import { describe, expect, it } from "@effect/vitest"
+import type { Entry, Event } from "../src/core/conversation.vibe"
+import { attemptOf, entryIndex, finishPlan, restartCount, settleStep, spoken, tourSettles } from "../src/core/sequencerDecision.vibe"
+
+const restarted = (seq: number, id: string): Event => ({ type: "ReplyRestarted", seq, id })
+const entry = (id: string): Entry => ({ id, seq: 1, clientId: "", inReplyTo: "", author: "agent", name: "a", text: "", done: false, error: "" })
+
+describe("a reply's model attempt", () => {
+  it("counts only that reply's restarts", () => {
+    const log: ReadonlyArray<Event> = [restarted(1, "r1"), { type: "ReplyDelta", seq: 2, id: "r1", text: "x" }, restarted(3, "r2"), restarted(4, "r1")]
+    expect(attemptOf(log, "r1")).toBe(3)
+    expect(attemptOf(log, "r2")).toBe(2)
+    expect(attemptOf([], "r1")).toBe(1)
+  })
+
+  it("restarts once per attempt skipped, and never back to an earlier one", () => {
+    expect(restartCount(1, 4)).toBe(3)
+    expect(restartCount(3, 3)).toBe(0)
+    expect(restartCount(3, 1)).toBe(0)
+  })
+})
+
+describe("finishing a reply", () => {
+  const ends = (shown: string, text: string) => {
+    const plan = finishPlan(shown, text)
+    return (plan.restart ? "" : shown) + plan.append
+  }
+
+  it("keeps what streamed when the text starts with it, and restarts when a lost piece left it different", () => {
+    expect(finishPlan("Hel", "Hello")).toEqual({ restart: false, append: "lo" })
+    expect(finishPlan("Hello", "Hello")).toEqual({ restart: false, append: "" })
+    expect(finishPlan("Hxl", "Hello")).toEqual({ restart: true, append: "Hello" })
+    for (const [shown, text] of [["", "a"], ["ab", "a"], ["a", ""], ["😀", "😀!"]]) expect(ends(shown!, text!)).toBe(text)
+  })
+})
+
+describe("a settle step", () => {
+  it("records while the reply streams, repeats as done once settled the same way, and refuses otherwise", () => {
+    expect(settleStep(true, true, false)).toEqual({ records: true, answer: "done" })
+    expect(settleStep(true, false, true)).toEqual({ records: false, answer: "done" })
+    expect(settleStep(true, false, false)).toEqual({ records: false, answer: "refused" })
+    expect(settleStep(false, true, true)).toEqual({ records: false, answer: "refused" })
+  })
+})
+
+describe("a tour's speech and end", () => {
+  it("starts a new paragraph after the first, and fails only with a reason", () => {
+    expect(spoken("", "Hi")).toBe("Hi")
+    expect(spoken("Hi", "Next")).toBe("\n\nNext")
+    expect(tourSettles("")).toBe("finish")
+    expect(tourSettles("lost")).toBe("fail")
+  })
+})
+
+describe("an entry's place", () => {
+  it("is the first with that id, else -1", () => {
+    expect(entryIndex([entry("a"), entry("b"), entry("b")], "b")).toBe(1)
+    expect(entryIndex([entry("a")], "z")).toBe(-1)
+  })
+})

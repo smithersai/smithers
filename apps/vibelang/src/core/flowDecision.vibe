@@ -1,0 +1,314 @@
+// Decisions used by the durable Post, Reply and Tour steps. Execution and storage stay in their Effect shells.
+
+/** Only a recorded post or tour dispatches its continuation. */
+//@ verify
+//@ ensures \result == (answer == null)
+export function dispatches(answer: string | null): boolean {
+  return answer === null
+}
+
+/** Only the current attempt's next nonempty piece advances the reply. */
+//@ verify
+//@ ensures \result == (attempt == currentAttempt && offset == length && text != "")
+export function appends(currentAttempt: number, attempt: number, length: number, offset: number, text: string): boolean {
+  return attempt === currentAttempt && offset === length && text !== ""
+}
+
+/** Only the addressed tour's terminal event releases its running speaker. */
+//@ verify
+//@ ensures \result == (id == tour && (kind == "TourEnded" || kind == "ReplyFinished" || kind == "ReplyFailed"))
+export function endsTourEvent(kind: string, id: string, tour: string): boolean {
+  return id === tour && (kind === "TourEnded" || kind === "ReplyFinished" || kind === "ReplyFailed")
+}
+
+/** A durable start is done when newly accepted or already correlated to this post; busy remains retryable. */
+//@ verify
+//@ ensures (accepted || already) ==> \result == "done"
+//@ ensures !accepted && !already && refusal == "busy" ==> \result == "busy"
+//@ ensures !accepted && !already && refusal != "busy" ==> \result == "refused"
+export function startAnswer(accepted: boolean, already: boolean, refusal: string): "done" | "busy" | "refused" {
+  return accepted || already ? "done" : refusal === "busy" ? "busy" : "refused"
+}
+
+/** Reading time at 200 words/minute, plus one second to orient, with a four-second floor. */
+//@ verify
+//@ requires wordCount >= 0 && wordCount <= 4294967295
+//@ ensures \result >= 4000 && \result <= 1288490189500
+//@ ensures wordCount <= 10 ==> \result == 4000
+//@ ensures wordCount > 10 ==> \result == wordCount * 300 + 1000
+export function readingHold(wordCount: number): number {
+  const millis = wordCount * 300 + 1000
+  return millis < 4000 ? 4000 : millis
+}
+
+// The first source position whose reply flow has not already been dispatched.
+//@ verify
+//@ ensures 0 <= \result && \result <= posts.length
+//@ ensures \result < posts.length ==> !dispatched.has(posts[\result])
+//@ ensures forall(i, 0 <= i && i < \result ==> dispatched.has(posts[i]))
+export function firstUndispatched(posts: ReadonlyArray<string>, dispatched: Set<string>): number {
+  let i = 0
+  while (i < posts.length) {
+    //@ invariant 0 <= i && i <= posts.length
+    //@ invariant forall(j, 0 <= j && j < i ==> dispatched.has(posts[j]))
+    //@ decreases posts.length - i
+    if (!dispatched.has(posts[i]!)) return i
+    i++
+  }
+  return posts.length
+}
+
+// The actual two-step Post/StartTour continuation: journal a record, then dispatch at most once when accepted.
+export type Kind = "post" | "tour" | "end"
+export type Phase = "begun" | "recorded" | "refused" | "dispatched"
+export interface Run {
+  readonly kind: Kind
+  readonly phase: Phase
+  readonly records: number
+  readonly dispatches: number
+  readonly answer: string | null
+}
+
+//@ verify
+//@ ensures \result.kind == kind && \result.phase == "begun" && \result.records == 0 && \result.dispatches == 0 && \result.answer == null
+//@ ensures lawful(\result)
+export function begin(kind: Kind): Run {
+  return { kind, phase: "begun", records: 0, dispatches: 0, answer: null }
+}
+
+/** A refused record is final; replaying this transition never changes the first receipt. */
+//@ verify
+//@ ensures run.phase != "begun" ==> \result == run
+//@ ensures \result.kind == run.kind
+//@ ensures run.phase == "begun" ==> \result.records == 1 && \result.dispatches == 0 && \result.answer == answer
+//@ ensures run.phase == "begun" ==> (\result.phase == "recorded") == (answer == null)
+//@ ensures run.phase == "begun" && answer != null ==> \result.phase == "refused"
+//@ ensures lawful(run) ==> lawful(\result)
+export function record(run: Run, answer: string | null): Run {
+  if (run.phase !== "begun") return run
+  const phase: Phase = answer === null ? "recorded" : "refused"
+  return { kind: run.kind, phase, records: 1, dispatches: 0, answer }
+}
+
+//@ verify
+//@ ensures \result == (run.phase == "recorded" && run.answer == null && run.records == 1 && run.dispatches == 0)
+export function canDispatch(run: Run): boolean {
+  return run.phase === "recorded" && dispatches(run.answer) && run.records === 1 && run.dispatches === 0
+}
+
+/** The host calls this after the journaled dispatch succeeds. A second dispatch is never eligible. */
+//@ verify
+//@ ensures !canDispatch(run) ==> \result == run
+//@ ensures canDispatch(run) ==> \result.phase == "dispatched" && \result.dispatches == 1 && !canDispatch(\result)
+//@ ensures \result.kind == run.kind && \result.records == run.records && \result.answer == run.answer
+//@ ensures lawful(run) ==> lawful(\result)
+export function dispatch(run: Run): Run {
+  if (!canDispatch(run)) return run
+  return { ...run, phase: "dispatched", dispatches: 1 }
+}
+
+/** Every reachable run records once, dispatches at most once, and dispatches only an accepted receipt. */
+//@ verify
+//@ ensures \result == (0 <= run.records && run.records <= 1 && 0 <= run.dispatches && run.dispatches <= run.records && (run.phase == "begun" ? run.records == 0 && run.dispatches == 0 && run.answer == null : run.phase == "recorded" ? run.records == 1 && run.dispatches == 0 && run.answer == null : run.phase == "refused" ? run.records == 1 && run.dispatches == 0 && run.answer != null : run.records == 1 && run.dispatches == 1 && run.answer == null))
+//@ ensures \result && run.dispatches > 0 ==> run.records == 1 && run.answer == null
+export function lawful(run: Run): boolean {
+  if (run.phase === "begun") return run.records === 0 && run.dispatches === 0 && run.answer === null
+  if (run.phase === "recorded") return run.records === 1 && run.dispatches === 0 && run.answer === null
+  if (run.phase === "refused") return run.records === 1 && run.dispatches === 0 && run.answer !== null
+  return run.records === 1 && run.dispatches === 1 && run.answer === null
+}
+
+/** Reply body order per invocation. A receipt count of zero represents no observed answer; the raw string is retained once observed. Engine replay/idempotency remains the host contract. */
+export type ReplyPhase = "begun" | "started" | "refused" | "composing" | "ready" | "settled"
+export interface ReplyRun {
+  readonly phase: ReplyPhase
+  readonly starts: number
+  readonly compositions: number
+  readonly settlements: number
+  readonly answer: string
+}
+
+//@ verify
+//@ ensures replyLawful(\result)
+//@ ensures \result.phase == "begun" && \result.starts == 0 && \result.compositions == 0 && \result.settlements == 0 && \result.answer == ""
+export function beginReply(): ReplyRun {
+  const phase: ReplyPhase = "begun"
+  return { phase, starts: 0, compositions: 0, settlements: 0, answer: "" }
+}
+
+//@ verify
+//@ ensures replyLawful(run) ==> replyLawful(\result)
+//@ ensures run.phase != "begun" ==> \result == run
+//@ ensures run.phase == "begun" ==> \result.starts == 1 && \result.compositions == 0 && \result.settlements == 0 && \result.answer == answer
+//@ ensures run.phase == "begun" && answer == "done" ==> \result.phase == "started"
+//@ ensures run.phase == "begun" && answer != "done" ==> \result.phase == "refused"
+export function recordReplyStart(run: ReplyRun, answer: string): ReplyRun {
+  if (run.phase !== "begun") return run
+  const phase: ReplyPhase = answer === "done" ? "started" : "refused"
+  return { phase, starts: 1, compositions: 0, settlements: 0, answer }
+}
+
+//@ verify
+//@ ensures \result == (run.phase == "started" && run.starts == 1 && run.compositions == 0 && run.settlements == 0 && run.answer == "done")
+export function canComposeReply(run: ReplyRun): boolean {
+  return run.phase === "started" && run.starts === 1 && run.compositions === 0 && run.settlements === 0 && run.answer === "done"
+}
+
+//@ verify
+//@ ensures replyLawful(run) ==> replyLawful(\result)
+//@ ensures !canComposeReply(run) ==> \result == run
+//@ ensures canComposeReply(run) ==> \result.phase == "composing" && \result.compositions == 1
+//@ ensures \result.starts == run.starts && \result.settlements == run.settlements && \result.answer == run.answer
+export function beginReplyComposition(run: ReplyRun): ReplyRun {
+  if (!canComposeReply(run)) return run
+  const phase: ReplyPhase = "composing"
+  return { ...run, phase, compositions: 1 }
+}
+
+//@ verify
+//@ ensures replyLawful(run) ==> replyLawful(\result)
+//@ ensures run.phase != "composing" ==> \result == run
+//@ ensures run.phase == "composing" ==> \result.phase == "ready"
+//@ ensures \result.starts == run.starts && \result.compositions == run.compositions && \result.settlements == run.settlements && \result.answer == run.answer
+export function finishReplyComposition(run: ReplyRun): ReplyRun {
+  if (run.phase !== "composing") return run
+  const phase: ReplyPhase = "ready"
+  return { ...run, phase }
+}
+
+//@ verify
+//@ ensures \result == (run.phase == "ready" && run.starts == 1 && run.compositions == 1 && run.settlements == 0 && run.answer == "done")
+export function canSettleReply(run: ReplyRun): boolean {
+  return run.phase === "ready" && run.starts === 1 && run.compositions === 1 && run.settlements === 0 && run.answer === "done"
+}
+
+//@ verify
+//@ ensures replyLawful(run) ==> replyLawful(\result)
+//@ ensures !canSettleReply(run) ==> \result == run
+//@ ensures canSettleReply(run) ==> \result.phase == "settled" && \result.settlements == 1
+//@ ensures \result.starts == run.starts && \result.compositions == run.compositions && \result.answer == run.answer
+export function recordReplySettlement(run: ReplyRun): ReplyRun {
+  if (!canSettleReply(run)) return run
+  const phase: ReplyPhase = "settled"
+  return { ...run, phase, settlements: 1 }
+}
+
+//@ verify
+//@ ensures \result ==> 0 <= run.settlements && run.settlements <= run.compositions && run.compositions <= run.starts && run.starts <= 1
+//@ ensures \result == ((run.phase == "begun" && run.starts == 0 && run.compositions == 0 && run.settlements == 0 && run.answer == "") || (run.phase == "refused" && run.starts == 1 && run.compositions == 0 && run.settlements == 0 && run.answer != "done") || (run.phase == "started" && run.starts == 1 && run.compositions == 0 && run.settlements == 0 && run.answer == "done") || ((run.phase == "composing" || run.phase == "ready") && run.starts == 1 && run.compositions == 1 && run.settlements == 0 && run.answer == "done") || (run.phase == "settled" && run.starts == 1 && run.compositions == 1 && run.settlements == 1 && run.answer == "done"))
+export function replyLawful(run: ReplyRun): boolean {
+  if (run.phase === "begun") return run.starts === 0 && run.compositions === 0 && run.settlements === 0 && run.answer === ""
+  if (run.phase === "refused") return run.starts === 1 && run.compositions === 0 && run.settlements === 0 && run.answer !== "done"
+  if (run.phase === "started") return run.starts === 1 && run.compositions === 0 && run.settlements === 0 && run.answer === "done"
+  if (run.phase === "composing" || run.phase === "ready") return run.starts === 1 && run.compositions === 1 && run.settlements === 0 && run.answer === "done"
+  return run.starts === 1 && run.compositions === 1 && run.settlements === 1 && run.answer === "done"
+}
+
+/** One speaker invocation after a current active observation. Inactive and terminal runs admit no further speaker. */
+export type TourPhase = "begun" | "ready" | "inactive" | "speaking" | "finished" | "ended"
+export interface TourRun {
+  readonly phase: TourPhase
+  readonly speakers: number
+  readonly outcome: string
+}
+
+//@ verify
+//@ ensures tourLawful(\result)
+//@ ensures \result.phase == "begun" && \result.speakers == 0 && \result.outcome == ""
+export function beginTourBody(): TourRun {
+  const phase: TourPhase = "begun"
+  return { phase, speakers: 0, outcome: "" }
+}
+
+//@ verify
+//@ ensures tourLawful(run) ==> tourLawful(\result)
+//@ ensures run.phase != "begun" ==> \result == run
+//@ ensures run.phase == "begun" ==> \result.speakers == 0 && \result.outcome == ""
+//@ ensures run.phase == "begun" && active ==> \result.phase == "ready"
+//@ ensures run.phase == "begun" && !active ==> \result.phase == "inactive"
+export function observeTourActivity(run: TourRun, active: boolean): TourRun {
+  if (run.phase !== "begun") return run
+  const phase: TourPhase = active ? "ready" : "inactive"
+  return { phase, speakers: 0, outcome: "" }
+}
+
+//@ verify
+//@ ensures \result == (run.phase == "ready" && run.speakers == 0 && run.outcome == "")
+export function canSpeakTour(run: TourRun): boolean {
+  return run.phase === "ready" && run.speakers === 0 && run.outcome === ""
+}
+
+//@ verify
+//@ ensures tourLawful(run) ==> tourLawful(\result)
+//@ ensures !canSpeakTour(run) ==> \result == run
+//@ ensures canSpeakTour(run) ==> \result.phase == "speaking" && \result.speakers == 1
+//@ ensures \result.outcome == run.outcome
+export function startTourSpeech(run: TourRun): TourRun {
+  if (!canSpeakTour(run)) return run
+  const phase: TourPhase = "speaking"
+  return { ...run, phase, speakers: 1 }
+}
+
+//@ verify
+//@ ensures tourLawful(run) ==> tourLawful(\result)
+//@ ensures run.phase != "speaking" ==> \result == run
+//@ ensures run.phase == "speaking" && ended ==> \result.phase == "ended" && \result.outcome == "ended"
+//@ ensures run.phase == "speaking" && !ended ==> \result.phase == "finished" && \result.outcome == "finished"
+//@ ensures \result.speakers == run.speakers
+export function finishTourSpeech(run: TourRun, ended: boolean): TourRun {
+  if (run.phase !== "speaking") return run
+  const phase: TourPhase = ended ? "ended" : "finished"
+  return { phase, speakers: run.speakers, outcome: ended ? "ended" : "finished" }
+}
+
+//@ verify
+//@ ensures \result ==> 0 <= run.speakers && run.speakers <= 1
+//@ ensures \result == (((run.phase == "begun" || run.phase == "ready" || run.phase == "inactive") && run.speakers == 0 && run.outcome == "") || (run.phase == "speaking" && run.speakers == 1 && run.outcome == "") || (run.phase == "finished" && run.speakers == 1 && run.outcome == "finished") || (run.phase == "ended" && run.speakers == 1 && run.outcome == "ended"))
+export function tourLawful(run: TourRun): boolean {
+  if (run.phase === "begun" || run.phase === "ready" || run.phase === "inactive") return run.speakers === 0 && run.outcome === ""
+  if (run.phase === "speaking") return run.speakers === 1 && run.outcome === ""
+  if (run.phase === "finished") return run.speakers === 1 && run.outcome === "finished"
+  return run.speakers === 1 && run.outcome === "ended"
+}
+
+/** Private visit/turn identities use native exact integers; serialized step names remain decimal strings. */
+//@ verify
+//@ ensures \result == value + 1
+//@ ensures \result > value
+//@ ensures value >= 0 ==> \result >= 1
+export function nextTourCounter(value: bigint): bigint {
+  return value + 1n
+}
+
+//@ verify
+//@ ensures \result == (value == 0)
+export function firstTourVisit(value: bigint): boolean {
+  return value === 0n
+}
+
+//@ verify
+//@ ensures paused ==> \result == "control"
+//@ ensures !paused ==> \result == "race"
+export function tourWait(paused: boolean): "control" | "race" {
+  return paused ? "control" : "race"
+}
+
+export type TourControlAction = "seek" | "wait"
+export interface TourControlChoice { readonly action: TourControlAction; readonly step: number }
+
+/** A seek chooses the requested step. Pause/resume retain the existing cursor. */
+//@ verify
+//@ ensures target == "" ==> \result.action == "seek" && \result.step == requested
+//@ ensures target != "" ==> \result.action == "wait" && \result.step == current
+export function tourControlChoice(current: number, target: string, requested: number): TourControlChoice {
+  const action: TourControlAction = target === "" ? "seek" : "wait"
+  return { action, step: target === "" ? requested : current }
+}
+
+/** Only the reading clock advances to the next step; the caller bounds this cursor by its finite script. */
+//@ verify
+//@ requires 0 <= current && current < 9007199254740991
+//@ ensures \result == current + 1 && 1 <= \result && \result <= 9007199254740991
+export function nextTourStep(current: number): number {
+  return current + 1
+}

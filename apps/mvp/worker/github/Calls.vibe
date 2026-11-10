@@ -1,6 +1,4 @@
 import { Core, GitHub } from "@smthrs/integrations"
-import { Effect, Redacted } from "effect"
-import type { HttpClient } from "effect/http"
 
 // How the GitHub flows call GitHub (docs/features/issues.md#calls): one `@smthrs/integrations` client per token, and one
 // reading of what a failed call means. The client makes one request per call; the flow engine's retry policy around
@@ -53,11 +51,4 @@ export const statusOf = (error: unknown): number | undefined =>
  * Runs `effect` with a GitHub client for `token` on `apiBaseUrl`, over the `HttpClient` in context. The client never
  * reads the ambient environment, so no other token decides who calls.
  */
-export const withToken =
-  (token: Redacted.Redacted<string>, apiBaseUrl: string) =>
-  <A, E, R>(effect: A!E!R): A!E!(Exclude<R, GitHub.GitHubClient.GitHubClient> | HttpClient.HttpClient) =>
-    Effect.flatMap(
-      // A malformed base URL is a deployment's defect, caught when the deployment starts (`Config.ts`).
-      Effect.orDie(GitHub.GitHubClient.make({ token: Redacted.value(token), apiBaseUrl }, {})),
-      (client) => Effect.provideService(effect, GitHub.GitHubClient.GitHubClient, client),
-    )
+export const withToken = GitHub.Calls.withToken

@@ -1,0 +1,108 @@
+{
+  "name": "@smthrs/fuzz",
+  "type": "module",
+  "version": "1.0.0-rc.16",
+  "license": "MIT",
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "Feedback-guided fuzzing and deterministic fiber simulation over Effect Arbitrary",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/fuzz"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "effect",
+    "fuzzing",
+    "testing"
+  ],
+  "keywords": [
+    "effect",
+    "fuzzing",
+    "testing"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./src/index.ts"
+    },
+    "./package.json": "./package.json",
+    "./internal/*": null
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./package.json": "./package.json",
+      "./internal/*": null
+    }
+  },
+  "files": [
+    "src/**/*.ts",
+    "src/**/*.vibe",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "check": "vibelang -p tsconfig.json --noEmit && vibelang -p tsconfig.test.json --noEmit",
+    "build": "node scripts/build.mjs",
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "circular": "node ../repo-targets/scripts/circular.mjs",
+    "prepare": "node scripts/build.mjs"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "effect": "4.1.1"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/vitest": "4.1.1",
+    "@eslint/js": "9.39.5",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.1.1",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vibelang": "0.0.12",
+    "vibelang-vite": "0.0.12",
+    "vitest": "5.0.0",
+    "happy-dom": "20.13.2"
+  }
+}

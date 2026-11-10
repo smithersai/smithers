@@ -182,12 +182,12 @@
   },
   "dependencies": {
     "@smthrs/canonical": "1.0.0-rc.16",
+    "@smthrs/capability": "1.0.0-rc.16",
     "@smthrs/crypto": "1.0.0-rc.16",
     "@smthrs/flow": "1.0.0-rc.16",
     "@smthrs/journal": "1.0.0-rc.16",
     "@smthrs/keys": "1.0.0-rc.16",
     "@smthrs/plan": "1.0.0-rc.16",
-    "@smthrs/capability": "1.0.0-rc.16",
     "vibelang-runtime": "0.0.13"
   },
   "devDependencies": {

@@ -1,0 +1,323 @@
+// Pure integer kernel for sandbox policy. Hosts normalize finite clocks, UTC month ids, allowance configuration, and
+// container status before calling this file; the verified functions never depend on Date or IEEE-754 rounding.
+
+export interface SandboxEntry {
+  readonly id: string
+  readonly conversation: string
+  readonly running: boolean
+}
+
+
+/** The role literal accepted from the authoritative 0019 policy service. */
+export type Role = "viewer" | "new" | "community" | "contributor" | "maintainer"
+
+/** Single source of configurable role allowances, in whole minutes. */
+export const ALLOWANCES: Readonly<Record<Role, number>> = {
+  viewer: 0,
+  new: 60,
+  community: 240,
+  contributor: 600,
+  maintainer: 2000,
+}
+
+/** Decision 0019 keeps Viewer, New, and Community out of the start action until the policy changes. */
+//@ verify
+//@ ensures \result == (role == "contributor" || role == "maintainer")
+export function mayStart(role: Role): boolean {
+  return role === "contributor" || role === "maintainer"
+}
+
+/** Exact count of running entries in the first `end` sandboxes. */
+//@ verify
+//@ requires 0 <= end && end <= sandboxes.length
+//@ ensures 0 <= \result && \result <= end
+//@ ensures end == 0 ==> \result == 0
+//@ decreases end
+//@ ensures end > 0 ==> \result == runningCountPrefix(sandboxes, end - 1) + (sandboxes[end - 1].running ? 1 : 0)
+export function runningCountPrefix(sandboxes: ReadonlyArray<SandboxEntry>, end: number): number {
+  if (end <= 0) return 0
+  return runningCountPrefix(sandboxes, end - 1) + (sandboxes[end - 1]!.running ? 1 : 0)
+}
+
+/** Count all concurrently running containers. */
+//@ verify
+//@ ensures 0 <= \result && \result <= sandboxes.length
+//@ ensures \result == runningCountPrefix(sandboxes, sandboxes.length)
+export function runningCount(sandboxes: ReadonlyArray<SandboxEntry>): number {
+  let count = 0
+  for (let i = 0; i < sandboxes.length; i++) {
+    //@ invariant 0 <= i && i <= sandboxes.length
+    //@ invariant 0 <= count && count <= i
+    //@ invariant count == runningCountPrefix(sandboxes, i)
+    //@ decreases sandboxes.length - i
+    if (sandboxes[i]!.running) count++
+  }
+  return count
+}
+
+/** Metered milliseconds for all running containers during one normalized whole-millisecond interval. */
+//@ verify
+//@ requires 0 <= running
+//@ requires 0 <= elapsed && running * elapsed <= 9007199254740991
+//@ ensures \result == running * elapsed
+//@ ensures \result >= 0
+export function intervalUsageMilliseconds(running: number, elapsed: number): number {
+  return running * elapsed
+}
+
+/** Add the interval to the nonnegative monthly millisecond ledger without saturation or loss. */
+//@ verify
+//@ requires 0 <= previous && previous <= 9007199254740991
+//@ requires 0 <= added && added <= 9007199254740991 - previous
+//@ ensures \result == previous + added
+//@ ensures \result >= previous
+export function accumulateUsageMilliseconds(previous: number, added: number): number {
+  return previous + added
+}
+
+/** Remaining allowance in milliseconds, clamped at zero. */
+//@ verify
+//@ requires 0 <= allowance && allowance <= 9007199254740991
+//@ requires 0 <= spent && spent <= 9007199254740991
+//@ ensures 0 <= \result && \result <= allowance
+//@ ensures spent < allowance ==> \result == allowance - spent
+//@ ensures spent >= allowance ==> \result == 0
+export function remainingMilliseconds(allowance: number, spent: number): number {
+  return spent < allowance ? allowance - spent : 0
+}
+
+/** A host-normalized nonnegative elapsed whole-millisecond count; negative clock movement is clamped before this kernel. */
+//@ verify
+//@ requires 0 <= earlier && earlier <= 9007199254740991
+//@ requires 0 <= later && later <= 9007199254740991
+//@ ensures \result == (earlier < later ? later - earlier : 0)
+//@ ensures \result >= 0
+export function elapsedMilliseconds(earlier: number, later: number): number {
+  return earlier < later ? later - earlier : 0
+}
+
+/** Exact pairwise identity/conversation fence, including the empty-string identity. */
+//@ verify
+//@ requires 0 <= end && end <= entries.length
+//@ ensures \result == forall(i, 0 <= i && i < end ==> entries[i].id != id && entries[i].conversation != conversation)
+export function distinctFrom(entries: ReadonlyArray<SandboxEntry>, id: string, conversation: string, end: number): boolean {
+  for (let i = 0; i < end; i++) {
+    //@ invariant 0 <= i && i <= end
+    //@ invariant forall(j, 0 <= j && j < i ==> entries[j].id != id && entries[j].conversation != conversation)
+    //@ decreases end - i
+    if (entries[i]!.id === id || entries[i]!.conversation === conversation) return false
+  }
+  return true
+}
+/** Admit exactly lists with nonempty, distinct sandbox and conversation identities. */
+//@ verify
+//@ ensures \result == (forall(i, 0 <= i && i < entries.length ==> entries[i].id != "" && entries[i].conversation != "") && forall(i, 0 <= i && i < entries.length ==> forall(j, i < j && j < entries.length ==> entries[i].id != entries[j].id && entries[i].conversation != entries[j].conversation)))
+export function validSandboxes(entries: ReadonlyArray<SandboxEntry>): boolean {
+  for (let i = 0; i < entries.length; i++) {
+    //@ invariant 0 <= i && i <= entries.length
+    //@ invariant forall(k, 0 <= k && k < i ==> entries[k].id != "" && entries[k].conversation != "")
+    //@ invariant forall(k, 0 <= k && k < i ==> forall(j, k < j && j < i ==> entries[k].id != entries[j].id && entries[k].conversation != entries[j].conversation))
+    //@ decreases entries.length - i
+    if (entries[i]!.id === "" || entries[i]!.conversation === "") return false
+    for (let j = 0; j < i; j++) {
+      //@ invariant 0 <= j && j <= i
+      //@ invariant forall(k, 0 <= k && k < j ==> entries[k].id != entries[i].id && entries[k].conversation != entries[i].conversation)
+      //@ decreases i - j
+      if (entries[j]!.id === entries[i]!.id || entries[j]!.conversation === entries[i]!.conversation) return false
+    }
+  }
+  return true
+}
+
+export interface SandboxLedger {
+  readonly owner: string
+  readonly role: Role
+  readonly allowanceMilliseconds: number
+  readonly month: number
+  readonly lastMeteredAt: number
+  readonly usedMilliseconds: number
+  readonly sequence: number
+  readonly sandboxes: ReadonlyArray<SandboxEntry>
+  readonly lastOperationId: string
+  readonly lastRefusal: string
+}
+
+export interface SandboxIntent {
+  readonly type: "start" | "stop" | "meter"
+  readonly owner: string
+  readonly role: Role
+  readonly allowanceMilliseconds: number
+  readonly conversation: string
+  readonly sandboxId: string
+  readonly operationId: string
+  readonly now: number
+  readonly month: number
+}
+
+export interface SandboxEvent {
+  readonly sequence: number
+  readonly operationId: string
+  readonly state: SandboxLedger
+}
+
+export type SandboxDecision =
+  | { readonly ok: true; readonly event: SandboxEvent }
+  | { readonly ok: false; readonly refusal: string; readonly state: SandboxLedger }
+
+/** An empty one-writer ledger. `now`, `month` and allowance are normalized by its host. */
+//@ verify
+//@ ensures \result.owner == owner && \result.role == role
+//@ ensures \result.allowanceMilliseconds == allowanceMilliseconds && \result.month == month && \result.lastMeteredAt == now
+//@ ensures \result.usedMilliseconds == 0 && \result.sequence == 0 && \result.sandboxes.length == 0
+//@ ensures \result.lastOperationId == "" && \result.lastRefusal == ""
+export function emptySandboxLedger(owner: string, role: Role, allowanceMilliseconds: number, month: number, now: number): SandboxLedger {
+  return { owner, role, allowanceMilliseconds, month, lastMeteredAt: now, usedMilliseconds: 0, sequence: 0, sandboxes: [], lastOperationId: "", lastRefusal: "" }
+}
+
+//@ verify
+//@ requires -1 <= index && index < entries.length
+//@ ensures (index < 0) ==> \result.length == entries.length + 1
+//@ ensures (index >= 0) ==> \result.length == entries.length
+//@ ensures exists(i, 0 <= i && i < \result.length && \result[i] == replacement)
+//@ ensures forall(j, 0 <= j && j < entries.length && j != index ==> \result[j] == entries[j])
+//@ ensures index < 0 ==> \result[entries.length] == replacement
+//@ ensures index >= 0 ==> \result[index] == replacement
+function replaceSandbox(entries: ReadonlyArray<SandboxEntry>, index: number, replacement: SandboxEntry): ReadonlyArray<SandboxEntry> {
+  const next: Array<SandboxEntry> = []
+  for (let i = 0; i < entries.length; i++) {
+    //@ invariant 0 <= i && i <= entries.length
+    //@ invariant next.length == i
+    //@ invariant forall(j, 0 <= j && j < i && j != index ==> next[j] == entries[j])
+    //@ invariant (index < 0 || index >= i) ==> forall(j, 0 <= j && j < i ==> next[j] == entries[j])
+    //@ invariant (0 <= index && index < i) ==> next[index] == replacement
+    //@ decreases entries.length - i
+    next.push(i === index ? replacement : entries[i]!)
+  }
+  if (index < 0) {
+    next.push(replacement)
+    //@ assert next[next.length - 1] == replacement
+  } else {
+    //@ assert index < next.length
+    //@ assert next[index] == replacement
+  }
+  return next
+}
+
+//@ verify
+//@ ensures (exists(i, 0 <= i && i < entries.length && entries[i].conversation == conversation)) ==> \result >= 0
+//@ ensures \result >= -1
+//@ ensures \result < 0 ==> forall(i, 0 <= i && i < entries.length ==> entries[i].conversation != conversation)
+//@ ensures \result >= 0 ==> \result < entries.length
+//@ ensures \result >= 0 ==> entries[\result].conversation == conversation
+//@ ensures \result >= 0 ==> forall(i, 0 <= i && i < \result ==> entries[i].conversation != conversation)
+function sandboxIndex(entries: ReadonlyArray<SandboxEntry>, conversation: string): number {
+  for (let i = 0; i < entries.length; i++) {
+    //@ invariant 0 <= i && i <= entries.length
+    //@ invariant forall(j, 0 <= j && j < i ==> entries[j].conversation != conversation)
+    //@ decreases entries.length - i
+    if (entries[i]!.conversation === conversation) return i
+  }
+  return -1
+}
+
+/** The sole decision function for mock and Cloudflare sandbox ledger transitions. */
+//@ verify
+//@ requires 0 <= ledger.sequence && ledger.sequence < 9007199254740991
+//@ requires 0 <= ledger.usedMilliseconds && ledger.usedMilliseconds <= 9007199254740991
+//@ requires ledger.sandboxes.length <= 1000000
+//@ requires 0 <= ledger.lastMeteredAt && ledger.lastMeteredAt <= 9007199254740991
+//@ requires intent.month == ledger.month
+//@ requires 0 <= ledger.allowanceMilliseconds && ledger.allowanceMilliseconds <= 9007199254740991
+//@ requires 0 <= intent.now && intent.now <= 9007199254740991
+//@ requires runningCountPrefix(ledger.sandboxes, ledger.sandboxes.length) * elapsedMilliseconds(ledger.lastMeteredAt, intent.now) <= 9007199254740991 - ledger.usedMilliseconds
+//@ requires 0 <= intent.allowanceMilliseconds && intent.allowanceMilliseconds <= 9007199254740991
+//@ ensures \result.ok ==> \result.event.state.owner == ledger.owner
+//@ ensures \result.ok ==> \result.event.state.sequence == ledger.sequence + 1
+//@ ensures \result.ok ==> \result.event.state.usedMilliseconds == ledger.usedMilliseconds + runningCountPrefix(ledger.sandboxes, ledger.sandboxes.length) * elapsedMilliseconds(ledger.lastMeteredAt, intent.now)
+//@ ensures \result.ok ==> \result.event.state.usedMilliseconds >= 0
+//@ ensures \result.ok ==> \result.event.state.lastMeteredAt >= ledger.lastMeteredAt
+//@ ensures \result.ok && intent.type == "start" ==> mayStart(intent.role)
+//@ ensures \result.ok ==> \result.event.state.month == ledger.month
+//@ ensures !\result.ok ==> \result.state.owner == ledger.owner
+//@ ensures \result.ok == (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role)) && (intent.type == "meter" || (!(intent.type == "start" && intent.allowanceMilliseconds <= (ledger.usedMilliseconds + runningCountPrefix(ledger.sandboxes, ledger.sandboxes.length) * elapsedMilliseconds(ledger.lastMeteredAt, intent.now))) && !(intent.type == "stop" && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation) && ledger.sandboxes[i].running))) && !(!(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) && (intent.sandboxId == "" || exists(i, 0 <= i && i < ledger.sandboxes.length && (ledger.sandboxes[i].id == intent.sandboxId || ledger.sandboxes[i].conversation == intent.conversation)))))))
+//@ ensures (intent.type != "meter" && intent.conversation == "") ==> !\result.ok && \result.refusal == "invalid" && \result.state == ledger
+//@ ensures !(intent.type != "meter" && intent.conversation == "") && (intent.owner != ledger.owner || (intent.type == "start" && !mayStart(intent.role))) ==> !\result.ok && \result.refusal == "forbidden" && \result.state == ledger
+//@ ensures !(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role)) && intent.type != "meter" && (intent.type == "start" && intent.allowanceMilliseconds <= (ledger.usedMilliseconds + runningCountPrefix(ledger.sandboxes, ledger.sandboxes.length) * elapsedMilliseconds(ledger.lastMeteredAt, intent.now))) ==> !\result.ok && \result.refusal == "out-of-minutes"
+//@ ensures !(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role)) && intent.type != "meter" && !(intent.type == "start" && intent.allowanceMilliseconds <= (ledger.usedMilliseconds + runningCountPrefix(ledger.sandboxes, ledger.sandboxes.length) * elapsedMilliseconds(ledger.lastMeteredAt, intent.now))) && (intent.type == "stop" && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation) && ledger.sandboxes[i].running))) ==> !\result.ok && \result.refusal == "stopped"
+//@ ensures !(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role)) && intent.type != "meter" && !(intent.type == "start" && intent.allowanceMilliseconds <= (ledger.usedMilliseconds + runningCountPrefix(ledger.sandboxes, ledger.sandboxes.length) * elapsedMilliseconds(ledger.lastMeteredAt, intent.now))) && !(intent.type == "stop" && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation) && ledger.sandboxes[i].running))) && (!(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) && (intent.sandboxId == "" || exists(i, 0 <= i && i < ledger.sandboxes.length && (ledger.sandboxes[i].id == intent.sandboxId || ledger.sandboxes[i].conversation == intent.conversation)))) ==> !\result.ok && \result.refusal == "invalid"
+//@ ensures \result.ok ==> \result.event.sequence == ledger.sequence + 1 && \result.event.operationId == intent.operationId
+//@ ensures \result.ok ==> \result.event.state.role == intent.role && \result.event.state.allowanceMilliseconds == intent.allowanceMilliseconds
+//@ ensures \result.ok ==> \result.event.state.lastOperationId == intent.operationId && \result.event.state.lastRefusal == ""
+//@ ensures \result.ok ==> \result.event.state.lastMeteredAt == (intent.now > ledger.lastMeteredAt ? intent.now : ledger.lastMeteredAt)
+//@ ensures \result.ok && intent.type == "meter" ==> \result.event.state.sandboxes == ledger.sandboxes
+//@ ensures \result.ok && intent.type != "meter" && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) ==> \result.event.state.sandboxes.length == ledger.sandboxes.length + 1
+//@ ensures \result.ok && intent.type != "meter" && (exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) ==> \result.event.state.sandboxes.length == ledger.sandboxes.length
+//@ ensures \result.ok && intent.type != "meter" ==> forall(i, 0 <= i && i < ledger.sandboxes.length && !(0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation)) ==> \result.event.state.sandboxes[i] == ledger.sandboxes[i])
+//@ ensures \result.ok && intent.type != "meter" && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) ==> \result.event.state.sandboxes[ledger.sandboxes.length].conversation == intent.conversation && \result.event.state.sandboxes[ledger.sandboxes.length].running == (intent.type == "start")
+//@ ensures \result.ok && intent.type != "meter" && !(exists(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation)) ==> \result.event.state.sandboxes[ledger.sandboxes.length].id == intent.sandboxId
+//@ ensures \result.ok && intent.type != "meter" ==> forall(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation) ==> \result.event.state.sandboxes[i].conversation == intent.conversation && \result.event.state.sandboxes[i].running == (intent.type == "start"))
+//@ ensures \result.ok && intent.type != "meter" ==> forall(i, 0 <= i && i < ledger.sandboxes.length && ledger.sandboxes[i].conversation == intent.conversation && forall(j, 0 <= j && j < i ==> ledger.sandboxes[j].conversation != intent.conversation) ==> \result.event.state.sandboxes[i].id == ledger.sandboxes[i].id)
+//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.owner == ledger.owner
+//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.role == intent.role
+//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.allowanceMilliseconds == intent.allowanceMilliseconds
+//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.month == ledger.month
+//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.lastMeteredAt == (intent.now > ledger.lastMeteredAt ? intent.now : ledger.lastMeteredAt)
+//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.usedMilliseconds == (ledger.usedMilliseconds + runningCountPrefix(ledger.sandboxes, ledger.sandboxes.length) * elapsedMilliseconds(ledger.lastMeteredAt, intent.now))
+//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.sequence == ledger.sequence
+//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.sandboxes == ledger.sandboxes
+//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.lastOperationId == ledger.lastOperationId
+//@ ensures !\result.ok && (!(intent.type != "meter" && intent.conversation == "") && !(intent.owner != ledger.owner) && !(intent.type == "start" && !mayStart(intent.role))) ==> \result.state.lastRefusal == ledger.lastRefusal
+export function decideSandbox(ledger: SandboxLedger, intent: SandboxIntent): SandboxDecision {
+  if (intent.type !== "meter" && intent.conversation === "") return { ok: false, refusal: "invalid", state: ledger }
+  if (intent.owner !== ledger.owner) return { ok: false, refusal: "forbidden", state: ledger }
+  if (intent.type === "start" && !mayStart(intent.role)) return { ok: false, refusal: "forbidden", state: ledger }
+  const elapsed = elapsedMilliseconds(ledger.lastMeteredAt, intent.now)
+  const count = runningCount(ledger.sandboxes)
+  const added = intervalUsageMilliseconds(count, elapsed)
+  const used = accumulateUsageMilliseconds(ledger.usedMilliseconds, added)
+  const allowance = intent.allowanceMilliseconds
+  let sandboxes = ledger.sandboxes
+  const highWater = intent.now > ledger.lastMeteredAt ? intent.now : ledger.lastMeteredAt
+  let metered = { ...ledger, role: intent.role, allowanceMilliseconds: allowance, month: intent.month, lastMeteredAt: highWater, usedMilliseconds: used, sandboxes }
+  metered = { ...metered, sandboxes }
+  if (intent.type === "meter") return { ok: true, event: { sequence: ledger.sequence + 1, operationId: intent.operationId, state: { ...metered, sequence: ledger.sequence + 1, lastOperationId: intent.operationId, lastRefusal: "" } } }
+  if (intent.type === "start" && remainingMilliseconds(allowance, used) === 0) return { ok: false, refusal: "out-of-minutes", state: metered }
+  const currentIndex = sandboxIndex(sandboxes, intent.conversation)
+  if (intent.type === "stop" && (currentIndex < 0 || !sandboxes[currentIndex]!.running)) return { ok: false, refusal: "stopped", state: metered }
+  if (currentIndex < 0 && (intent.sandboxId === "" || !distinctFrom(sandboxes, intent.sandboxId, intent.conversation, sandboxes.length))) return { ok: false, refusal: "invalid", state: metered }
+  const replacement: SandboxEntry = {
+    id: currentIndex < 0 ? intent.sandboxId : sandboxes[currentIndex]!.id,
+    conversation: intent.conversation,
+    running: intent.type === "start",
+  }
+  const nextSandboxes = replaceSandbox(sandboxes, currentIndex, replacement)
+  const next = { ...metered, sequence: ledger.sequence + 1, sandboxes: nextSandboxes, lastOperationId: intent.operationId, lastRefusal: "" }
+  return { ok: true, event: { sequence: next.sequence, operationId: intent.operationId, state: next } }
+}
+
+/** Apply the next event only; duplicates and gaps are no-ops. The ledger is one-writer and event seq is monotone. */
+//@ verify
+//@ requires 0 <= ledger.sequence && ledger.sequence < 9007199254740991
+//@ requires ledger.usedMilliseconds >= 0
+//@ ensures event.sequence != ledger.sequence + 1 ==> \result == ledger
+//@ ensures event.sequence == ledger.sequence + 1 && event.state.owner == ledger.owner && event.state.sequence == event.sequence && 0 <= event.state.usedMilliseconds && event.state.usedMilliseconds <= 9007199254740991 && (forall(i, 0 <= i && i < event.state.sandboxes.length ==> event.state.sandboxes[i].id != "" && event.state.sandboxes[i].conversation != "")) && (forall(i, 0 <= i && i < event.state.sandboxes.length ==> forall(j, i < j && j < event.state.sandboxes.length ==> event.state.sandboxes[i].id != event.state.sandboxes[j].id && event.state.sandboxes[i].conversation != event.state.sandboxes[j].conversation))) ==> \result == event.state
+//@ ensures \result.owner == ledger.owner
+//@ ensures \result.usedMilliseconds >= 0
+//@ ensures !(event.sequence == ledger.sequence + 1 && event.state.owner == ledger.owner && event.state.sequence == event.sequence && 0 <= event.state.usedMilliseconds && event.state.usedMilliseconds <= 9007199254740991 && (forall(i, 0 <= i && i < event.state.sandboxes.length ==> event.state.sandboxes[i].id != "" && event.state.sandboxes[i].conversation != "") && forall(i, 0 <= i && i < event.state.sandboxes.length ==> forall(j, i < j && j < event.state.sandboxes.length ==> event.state.sandboxes[i].id != event.state.sandboxes[j].id && event.state.sandboxes[i].conversation != event.state.sandboxes[j].conversation)))) ==> \result == ledger
+//@ ensures (event.sequence == ledger.sequence + 1 && event.state.owner == ledger.owner && event.state.sequence == event.sequence && 0 <= event.state.usedMilliseconds && event.state.usedMilliseconds <= 9007199254740991 && (forall(i, 0 <= i && i < event.state.sandboxes.length ==> event.state.sandboxes[i].id != "" && event.state.sandboxes[i].conversation != "") && forall(i, 0 <= i && i < event.state.sandboxes.length ==> forall(j, i < j && j < event.state.sandboxes.length ==> event.state.sandboxes[i].id != event.state.sandboxes[j].id && event.state.sandboxes[i].conversation != event.state.sandboxes[j].conversation)))) ==> \result == event.state
+export function applySandbox(ledger: SandboxLedger, event: SandboxEvent): SandboxLedger {
+  if (event.sequence !== ledger.sequence + 1 || event.state.owner !== ledger.owner || event.state.sequence !== event.sequence || event.state.usedMilliseconds < 0 || event.state.usedMilliseconds > 9007199254740991 || !validSandboxes(event.state.sandboxes)) return ledger
+  return event.state
+}
+
+/** Cloudflare caps inactivity timeouts at six hours. This bounds only a safety lease, never accrued usage. */
+//@ verify
+//@ requires milliseconds >= 0
+//@ ensures 1000 <= \result && \result <= 21600000
+//@ ensures milliseconds <= 1000 ==> \result == 1000
+//@ ensures 1000 < milliseconds && milliseconds < 21600000 ==> \result == milliseconds
+//@ ensures milliseconds >= 21600000 ==> \result == 21600000
+export function leaseMilliseconds(milliseconds: number): number {
+  if (milliseconds <= 1000) return 1000
+  return milliseconds < 21600000 ? milliseconds : 21600000
+}

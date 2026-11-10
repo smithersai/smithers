@@ -1,0 +1,140 @@
+// Independent reducer corpora: person-facing state, exact emitted work and stale-response fences.
+import { it, expect } from "@effect/vitest"
+import { accountOf, init, Message, type Model, update } from "../src/web/main.vibe"
+import { initialIssues } from "../src/web/issues.vibe"
+import { newClient, type Role } from "../src/core/conversation.vibe"
+import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
+import type { IssueRequest } from "../src/core/issueSchemas.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+const initial = () => ({ ...init({ session: "bench", mode: "mock", name: "Guest" }).model, surface: "chat" as const })
+const commands = (result: ReturnType<typeof update>) => (result.commands ?? []).map(command => command.name)
+const signed = (model: Model, role: Role): Model => ({ ...model, account: { ...accountOf(model), identity: { id: "1", login: "will", role } } })
+
+it("account state preserves current roles and emits one explicit retry action", async ({ bench }) => {
+  const result = await workload(bench, "web-account-state", "sync", () => {
+    const chat = initial()
+    const maintainer = signed(chat, "maintainer")
+    const people = update({ ...maintainer, docs: "max" }, Message.ClickedPeople())
+    expect(accountOf(people.model).people).toBe("max")
+    expect(people.model.docs).toBe("pane")
+    expect(commands(people)).toEqual(["LoadPeople"])
+    const listed = update(people.model, Message.LoadedPeople({ members: [{ id: "7", login: "jun", role: "new" }] })).model
+    expect(accountOf(listed).members).toEqual([{ id: "7", login: "jun", role: "new" }])
+    const selected = update(listed, Message.SelectedRole({ id: "7", role: "community" }))
+    expect(commands(selected)).toEqual(["ShowRoleDialog"])
+    const confirmation = update(selected.model, Message.ConfirmedRole())
+    expect(confirmation.commands?.[0]).toMatchObject({ name: "GrantRole", args: { id: "7", role: "community" } })
+    const granted = update(confirmation.model, Message.GrantedRole())
+    expect(commands(granted)).toEqual(["CloseRoleDialog", "LoadPeople"])
+    expect(accountOf(granted.model)).toMatchObject({ target: "", pending: false })
+    expect(accountOf(update(selected.model, Message.CancelledRole()).model).target).toBe("")
+    expect(accountOf(update(listed, Message.ClosedPeople()).model).people).toBe("closed")
+    expect(accountOf(update(listed, Message.ToggledPeople()).model).people).toBe("pane")
+    expect(commands(update(chat, Message.ChoseIdentity({ role: "new" })))).toEqual(["ChooseIdentity"])
+    const menu = update(chat, Message.ClickedAccount())
+    expect(accountOf(menu.model).menu).toBe(true)
+    expect(commands(menu)).toEqual(["FocusAccountMenu"])
+    for (const role of ["viewer", "new", "community", "contributor"] as const) {
+      const model = signed(chat, role)
+      expect(update(model, Message.SelectedRole({ id: "7", role: "community" })).model).toBe(model)
+    }
+    for (const [retry, expected, failure] of [["grant", "GrantRole", "Role change failed."], ["people", "LoadPeople", "People couldn’t load."], ["sign-out", "SignOutAccount", "Sign out failed."]] as const) {
+      const model: Model = { ...maintainer, account: { ...accountOf(maintainer), retry, target: "7", targetRole: "community", error: "failure" } }
+      expect(accountOf(update(model, Message.AccountFailed()).model).error).toBe(failure)
+      const retried = update(model, Message.RetriedAccount())
+      expect(commands(retried)).toEqual([expected])
+      expect(accountOf(retried.model)).toMatchObject({ error: "", pending: true })
+      expect(accountOf(update(model, Message.DismissedAccountError()).model).error).toBe("")
+    }
+    const lost = update(maintainer, Message.FailedRoles()).model
+    const retry = update(lost, Message.RetriedAccount()).model
+    expect(accountOf(retry).epoch).toBe(accountOf(lost).epoch + 1)
+    expect(accountOf(retry).from).toBe(accountOf(lost).ledger.conversation.seq)
+    const unavailable: Model = { ...chat, mode: "live", account: { ...accountOf(chat), identity: { ...accountOf(chat).identity, available: false } } }
+    expect(accountOf(update(unavailable, Message.ClickedSignIn()).model).error).toBe("Sign-in unavailable.")
+    expect(update({ ...chat, mode: "live" }, Message.ClickedSignIn()).commands?.[0]).toMatchObject({ name: "SignInAccount", args: { mock: false } })
+    expect(commands(update(maintainer, Message.ClickedSignOut()))).toEqual(["SignOutAccount"])
+    const watching: Model = { ...listed, account: { ...accountOf(listed), target: "7" } }
+    const event = { type: "RoleGranted" as const, seq: 1, id: "1", by: "7", role: "new" as const, mode: "person" as const }
+    const downgraded = update(watching, Message.ReceivedRole({ event }))
+    expect(accountOf(downgraded.model).identity.role).toBe("new")
+    expect(accountOf(downgraded.model).target).toBe("")
+    expect(commands(downgraded)).toEqual(["CloseRoleDialog", "LoadPeople", "LoadActions"])
+    expect(update(downgraded.model, Message.ReceivedRole({ event })).model.account?.ledger).toEqual(downgraded.model.account?.ledger)
+    const gap = update(maintainer, Message.ReceivedRole({ event: { ...event, seq: 9 } })).model
+    expect(accountOf(gap).identity.role).toBe("maintainer")
+    expect(accountOf(gap).epoch).toBe(accountOf(maintainer).epoch + 1)
+  }).run(quick)
+  await runPromise(artifact("web-account-state", "Vitest built-in bench; account/People/menu/grant/cancel/sign-in/out reducer corpus with all five roles, exact emitted work, three command retries, role-stream recovery and duplicate/gap/demotion fences. Every callback asserts state and ordered command names.", ["Pure reducer policy cost, no native dialogs, OAuth, network or persistence; runtime services and browser journeys are separate benchmarks."], result))
+})
+
+it("issue state restores exact saved writes and rejects unrelated completions", async ({ bench }) => {
+  const result = await workload(bench, "web-issue-state", "sync", () => {
+    const chat = initial()
+    const request: IssueRequest = { op: "new", key: "save", number: 42, parent: 38, title: "Measured", text: "Keep text", assignee: "Will", example: "const n = 1", prior: "Effect" }
+    for (const op of ["new", "propose", "comment", "spec-revise"] as const) for (const status of ["completed", "failed", "running"] as const) {
+      const payload = { ...request, op }
+      const data = { seq: 1, items: fixtureIssues, saved: { request: payload, status, unwritten: false, selected: 42 } }
+      const restored = update(chat, Message.IssuesLoaded({ data, role: "maintainer", created: false })).model.issues!
+      expect(restored.data).toEqual(data)
+      expect(restored).toMatchObject({ title: "Measured", summary: "Keep text", selected: 42, example: "const n = 1", prior: "Effect", parent: "38", assignee: "Will" })
+      expect(restored.screen).toBe(op.startsWith("spec-") ? "specification" : status === "completed" ? "detail" : op === "new" ? "new" : op === "propose" ? "vip" : "detail")
+      expect(restored.retry).toEqual(status === "completed" ? undefined : payload)
+      expect(restored.comment).toBe(op === "comment" ? "Keep text" : "")
+    }
+    const busy: Model = { ...chat, issues: { ...initialIssues, busy: true, retry: request, data: { seq: 3, items: fixtureIssues } } }
+    expect(commands(update(busy, Message.ClickedIssues()))).toEqual([])
+    const stale = update(busy, Message.IssuesFailed({ op: "new", key: "other", reason: "unknown" })).model.issues!
+    expect(stale.busy).toBe(true)
+    expect(stale.retry).toEqual(request)
+    for (const [reason, label] of [["no-model", "Review unavailable"], ["connect", "Connect GitHub."], ["forbidden", "Not allowed"], ["tree", "Choose another parent."], ["assignee", "Choose an assignee."], ["closed", "Issue closed."], ["unknown", "Couldn't save. Retry."]] as const) {
+      const failed = update(busy, Message.IssuesFailed({ op: "new", key: "save", reason, unwritten: true })).model.issues!
+      expect(failed).toMatchObject({ busy: false, error: label, status: "ready" })
+      expect(failed.retry).toBeUndefined()
+      expect(failed.data).toEqual(busy.issues!.data)
+    }
+    const open: Model = { ...chat, issues: { ...initialIssues, selected: 42, data: { seq: 3, items: fixtureIssues } } }
+    expect(update(open, Message.IssueDetailsLoaded({ number: 7, data: { seq: 4, items: [] } })).model).toBe(open)
+    expect(update(open, Message.IssueDetailsLoaded({ number: 42, data: { seq: 2, items: [] } })).model).toBe(open)
+    expect(update(open, Message.IssueDetailsLoaded({ number: 42, data: { seq: 4, items: [] } })).model.issues?.data).toEqual({ seq: 4, items: [] })
+    expect(update(open, Message.IssueDetailsFailed({ number: 42 })).model.issues?.error).toBe("Couldn't load comments. Retry.")
+    expect(commands(update({ ...chat, mode: "live" }, Message.OpenIssueCard({ number: 42 })))).toEqual(["LoadIssues", "LoadIssueDetails"])
+    expect(update(chat, Message.IssueDialogFocused()).model).toBe(chat)
+  }).run(quick)
+  await runPromise(artifact("web-issue-state", "Vitest built-in bench; saved new/VIP/comment/specification requests across completed/failed/running receipts, unrelated error fence, seven exact failure labels, unwritten correction, selected-detail cursor fences and live detail dispatch. Literal text/identity/state and ordered emitted work checked each callback.", ["Reducer/restoration overhead only; no request/transport interception, network, provider write or model."], result))
+})
+
+it("wiki editing state fences late responses, cancellation and uncertain submissions", async ({ bench }) => {
+  const result = await workload(bench, "web-wiki-state", "sync", () => {
+    const chat = signed(initial(), "maintainer")
+    const model: Model = { ...chat, wikiEditRequest: 2, wikiEdit: { page: "index", base: "", text: "", busy: false, error: "" }, client: { ...newClient, conversation: { ...newClient.conversation, pane: "/wiki/index" } } }
+    const began = update(model, Message.BeganWikiEdit({ request: 2, page: "index", source: "before", draft: "" })).model
+    expect(began.wikiEdit).toMatchObject({ page: "index", base: "before", text: "before", busy: false, error: "" })
+    const edited = update(began, Message.UpdatedWikiEdit({ value: "after" })).model
+    expect(edited.wikiEdit?.text).toBe("after")
+    const sent = update(edited, Message.SubmittedWikiEdit()).model
+    expect(sent.wikiEdit?.submission).toMatchObject({ op: "save", page: "index", base: "before", text: "after" })
+    expect(update(sent, Message.CanceledWikiEdit()).model).toBe(sent)
+    expect(update(sent, Message.UpdatedWikiEdit({ value: "wrong" })).model).toBe(sent)
+    expect(update(sent, Message.CompletedWikiEdit({ request: 1, page: "index", source: "before", revision: "r", review: "" })).model).toBe(sent)
+    for (const [reason, label] of [["forbidden", "Not allowed."], ["conflict", "The page changed. Reload the editor."], ["connect", "Connect GitHub."], ["sign-in", "Connect GitHub."], ["other", "Couldn't save. Retry."]] as const) {
+      const failed = update(sent, Message.FailedWikiEdit({ request: 2, reason })).model
+      expect(failed.wikiEdit?.error).toBe(label)
+      expect(failed.wikiEdit?.submission).toEqual(sent.wikiEdit?.submission)
+      expect(update(sent, Message.FailedWikiEdit({ request: 2, reason, unwritten: true })).model.wikiEdit?.submission).toBeUndefined()
+    }
+    const completed = update(sent, Message.CompletedWikiEdit({ request: 2, page: "index", source: "before", revision: "r", review: "https://example.invalid/pull/1" })).model
+    expect(completed.wikiEdit).toBeUndefined()
+    expect(completed.wikiPages).toEqual([{ id: "index", source: "before", revision: "r" }])
+    expect(completed.wikiReview).toEqual({ page: "index", url: "https://example.invalid/pull/1" })
+    expect(update(edited, Message.CanceledWikiEdit()).model.wikiEdit).toBeUndefined()
+    expect(update(model, Message.FilteredWiki({ value: "rule" })).model.wikiQuery).toBe("rule")
+    expect(update(model, Message.WikiLocationChanged({ page: "/" })).model.surface).toBe("splash")
+    const waiting: Model = { ...model, wikiRequest: 2, wikiStatus: "loading" }
+    expect(update(waiting, Message.FailedWiki({ request: 1 })).model).toBe(waiting)
+    expect(update(waiting, Message.FailedWiki({ request: 2 })).model.wikiStatus).toBe("error")
+    expect(update(model, Message.SucceededWiki()).model).toBe(model)
+  }).run(quick)
+  await runPromise(artifact("web-wiki-state", "Vitest built-in bench; wiki editor begin/type/submit/cancel, immutable uncertain request, stale completion/failure fences, five exact failure labels and unwritten correction, unchanged observed source with review, filter/location and page-open failure identity. Exact model fields asserted each callback.", ["Pure update-state cost; does not execute emitted services or simulate browser dialogs/network. Native and SQLite wiki journeys run separately."], result))
+})

@@ -1,0 +1,304 @@
+import { Cell } from "@smthrs/harness"
+import { it, expect } from "@effect/vitest"
+import { Actions } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { actionTools } from "../src/actions/tools.vibe"
+import { flows, registration, allowed } from "../src/actions/catalog.vibe"
+import { prepare } from "../src/actions/execution.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import {
+  acceptSnapshot, acceptStep, latestAt, runOpen, settleRun, cancelStep, stepRun,
+  pendingCount, acknowledgedPending, vipDocumentMatches, type ActionRun, type RunStep, type Pending,
+} from "../src/core/conversation.vibe"
+import { taskOf, epicOf, rankOf, endOf, foldTarget, type Commit } from "../src/history/mythical.vibe"
+import { atLeast } from "../src/history/roles.vibe"
+import { vipDocument } from "../src/core/issueSchemas.vibe"
+import { signedOut as signedOutSandbox, mockPolicy, SandboxPolicy } from "../src/core/sandboxPolicy.vibe"
+import { toggleSandbox, maximizeSandbox, currentSandbox, canSandboxAction, showMedia } from "../src/web/viewDecision.vibe"
+import { inline, safeLink, anchor, toHtml } from "../src/web/markdown.vibe"
+import { wikiPath, wikiPage, requestedWiki } from "../src/core/wiki.vibe"
+import { artifact, workload, quick, slow } from "./artifact.vibe"
+
+it("action run ordering kernels and small decisions", async ({ bench }) => {
+  const result = await workload(bench, "action-kernels", "sync", () => {
+    expect(acceptSnapshot("queued", 1, 2)).toBe(true)
+    expect(acceptSnapshot("running", 2, 2)).toBe(true)
+    expect(acceptSnapshot("passed", 1, 2)).toBe(false)
+    expect(acceptSnapshot("queued", 3, 2)).toBe(false)
+    expect(acceptStep("waiting", 1, 2)).toBe(true)
+    expect(acceptStep("running", 1, 2)).toBe(true)
+    expect(acceptStep("passed", 1, 2)).toBe(false)
+    expect(acceptStep("failed", 1, 2)).toBe(false)
+    expect(acceptStep("cancelled", 1, 2)).toBe(false)
+    expect(latestAt(3, 2)).toBe(3)
+    expect(latestAt(2, 3)).toBe(3)
+    expect(runOpen("queued")).toBe(true)
+    expect(runOpen("running")).toBe(true)
+    for (const state of ["passed", "failed", "cancelled"]) expect(runOpen(state)).toBe(false)
+    const steps: ReadonlyArray<RunStep> = [
+      { key: "a", name: "A", attempt: 0, state: "passed", started: 1, at: 1 },
+      { key: "b", name: "B", attempt: 0, state: "running", started: 2, at: 2 },
+    ]
+    const run: ActionRun = { id: "r1", flow: "vibelang/Post", door: "button", actor: "person", state: "running", started: 1, at: 2, result: "", steps }
+    expect(settleRun(run, "passed", "done", 3)).toEqual({ ...run, state: "passed", result: "done", at: 3 })
+    expect(settleRun(run, "cancelled", "", 3).steps.map((step) => [step.state, step.at])).toEqual([["passed", 1], ["cancelled", 3]])
+    const settled = settleRun(run, "passed", "done", 3)
+    expect(settleRun(settled, "failed", "late", 4)).toBe(settled)
+    expect(settleRun(run, "queued", "", 3)).toBe(run)
+    expect(cancelStep(steps[1]!, 5)).toEqual({ ...steps[1]!, state: "cancelled", at: 5 })
+    expect(cancelStep(steps[0]!, 5)).toBe(steps[0]!)
+    expect(stepRun(run, "b", "B", 0, "passed", 4).steps[1]).toMatchObject({ state: "passed", at: 4 })
+    expect(stepRun(run, "c", "C", 0, "running", 3).steps.map((step) => step.key)).toEqual(["a", "b", "c"])
+    expect(stepRun(settled, "c", "C", 0, "running", 4)).toBe(settled)
+    expect(stepRun(run, "", "X", 0, "running", 3)).toBe(run)
+    const updated = stepRun(run, "b", "B", 0, "passed", 4)
+    expect(stepRun(updated, "b", "B", 0, "running", 5)).toBe(updated)
+    const pending: ReadonlyArray<Pending> = [
+      { clientId: "a", text: "1", error: "" }, { clientId: "b", text: "2", error: "" }, { clientId: "a", text: "3", error: "" },
+    ]
+    expect(pendingCount(pending, "a", pending.length)).toBe(1)
+    expect(pendingCount(pending, "a", 0)).toBe(0)
+    expect(acknowledgedPending(pending, "a")).toEqual([pending[1]])
+    expect(acknowledgedPending(pending, "z")).toEqual(pending)
+    expect(vipDocumentMatches(7, 7, "docs/design/vips/x.md", [{ filename: "docs/design/vips/x.md", status: "added" }])).toBe(true)
+    expect(vipDocumentMatches(7, 7, "docs/design/vips/x.md", [{ filename: "docs/design/vips/x.md", status: "removed" }])).toBe(false)
+    expect(vipDocumentMatches(0, 7, "docs/design/vips/x.md", [])).toBe(false)
+    expect(vipDocumentMatches(7, 8, "docs/design/vips/x.md", [])).toBe(false)
+    expect(vipDocumentMatches(7, 7, "", [])).toBe(false)
+  }).run(quick)
+  await runPromise(artifact("action-kernels", "Vitest built-in bench; run snapshot/step acceptance orderings, terminal settle and cancellation, engine upsert identity and replay, pending acknowledgement identity, and VIP document authorship/path truth tables. Assertions included.", ["Pure in-process decisions; the durable action surface runs in the workerd benchmark."], result))
+})
+
+it("action catalog registration and one role gate", async ({ bench }) => {
+  const result = await workload(bench, "action-catalog", "sync", () => {
+    const names = flows.map((flow) => flow._tag)
+    expect(names).toContain("vibelang/Post")
+    for (const name of names) {
+      const entry = registration(name)
+      expect(entry.name).toBe(name)
+      expect(entry.title).not.toBe("")
+      expect(["viewer", "contributor", "maintainer"]).toContain(entry.least)
+      expect(["none", "text", "json"]).toContain(entry.input)
+      expect(entry.runnable).toBe(entry.command !== "")
+      for (const role of ["viewer", "new", "community", "contributor", "maintainer"] as const) {
+        expect(allowed(role, entry)).toBe(entry.command !== "" && (entry.least === "viewer" || ((role === "contributor" || role === "maintainer") && (entry.least !== "maintainer" || role === "maintainer"))))
+      }
+    }
+    expect(registration("vibelang/docs/open").title).toBe("Docs")
+    expect(registration("vibelang/Post").command).toBe("/post")
+    expect(registration("vibelang/Post").detail).toBe("Ask the agent")
+    expect(registration("vibelang/Post").input).toBe("text")
+    expect(registration("vibelang/Tour").input).toBe("none")
+    expect(registration("vibelang/Tour").detail).toBe("Explore VibeLang")
+    expect(registration("vibelang/EndTour").detail).toBe("End the tour")
+    expect(registration("vibelang/EndTour").runnable).toBe(false)
+    expect(registration("vibelang/history/Approve").least).toBe("maintainer")
+    expect(allowed("viewer", registration("vibelang/Tour"))).toBe(true)
+    expect(allowed("viewer", registration("vibelang/Post"))).toBe(false)
+    expect(allowed("new", registration("vibelang/Post"))).toBe(false)
+    expect(allowed("contributor", registration("vibelang/Post"))).toBe(true)
+    expect(allowed("contributor", registration("vibelang/history/Approve"))).toBe(false)
+    expect(allowed("maintainer", registration("vibelang/history/Approve"))).toBe(false)
+    expect(allowed("viewer", registration("vibelang/EndTour"))).toBe(false)
+  }).run(quick)
+  await runPromise(artifact("action-catalog", "Vitest built-in bench; every bundled flow declaration's presentation, command, minimum role and input kind, with the shared mayRun gate evaluated for all five roles per entry.", ["Presentation/policy cost only; a run's durable execution is benchmarked through the mock and workerd action surfaces."], result))
+})
+
+it("action invocation preparation admits valid input and refuses the rest", async ({ bench }) => {
+  const result = await workload(bench, "action-prepare", "async", async () => {
+    await runPromise(effect {
+      const post = try prepare("vibelang/Post", { text: "Measured" }, "bench-1")
+      const tour = try prepare("vibelang/Tour", {}, "bench-2")
+      // EndTour is a person's Escape, not an invocable action (c0564dfd): preparing it is refused.
+      const end = try Effect.flip(prepare("vibelang/EndTour", null, "bench-3"))
+      const shown = try prepare("vibelang/history/show", null, "bench-4")
+      const planned = try prepare("vibelang/history/Plan", { how: "append", epic: "", newEpic: "Bench", target: "", title: "Measured", task: "Task" }, "bench-5")
+      const started = try prepare("vibelang/history/Start", { id: "m1", lane: "bench" }, "bench-6")
+      const noted = try prepare("vibelang/history/Note", { id: "m1", section: "tried", text: "Measured" }, "bench-7")
+      const opened = try prepare("vibelang/sandbox/start", {}, "bench-8")
+      const stopped = try prepare("vibelang/sandbox/stop", { conversation: "c1", generation: 2 }, "bench-9")
+      const commanded = try prepare("vibelang/sandbox/command", { conversation: "c1", generation: 2, command: "ls" }, "bench-10")
+      const missing = try Effect.flip(prepare("vibelang/nope", {}, "bench-11"))
+      const invalid = try Effect.flip(prepare("vibelang/Post", { text: 42 }, "bench-12"))
+      const invalidPlan = try Effect.flip(prepare("vibelang/history/Plan", { how: "sideways" }, "bench-13"))
+      try Effect.try(() => {
+        expect(post).toEqual({ kind: "post", payload: { clientId: "bench-1", name: "Guest", text: "Measured" } })
+        expect(tour).toEqual({ kind: "tour", payload: { tour: "bench-2" } })
+        expect(end).toMatchObject({ _tag: "ActionFailure", code: "not-found" })
+        expect(shown).toEqual({ kind: "show", payload: { what: "outline" } })
+        expect(planned.kind).toBe("plan")
+        expect(started.kind).toBe("start")
+        expect(noted.kind).toBe("note")
+        expect(opened).toEqual({ kind: "sandbox-start", payload: { conversation: "home", operationId: "bench-8" } })
+        expect(stopped).toEqual({ kind: "sandbox-stop", payload: { conversation: "c1", operationId: "bench-9", generation: 2 } })
+        expect(commanded).toEqual({ kind: "sandbox-command", payload: { conversation: "c1", operationId: "bench-10", generation: 2, command: "ls" } })
+        expect(missing.code).toBe("not-found")
+        expect(invalid.code).toBe("input")
+        expect(invalidPlan.code).toBe("input")
+      })
+    })
+  }).run(quick)
+  await runPromise(artifact("action-prepare", "Vitest built-in bench; every invocation kind's schema preparation with client/operation identity defaults, then not-found and invalid-input failures as typed ActionFailures.", ["In-process preparation; the dispatch into durable engines is benchmarked through the mock and workerd action surfaces."], result))
+})
+
+it("mock actions run real product flows and share live steps", async ({ bench }) => {
+  const world = MockActions({ role: "contributor", actor: "person" }).pipe(Layer.provide(MockFactory))
+  const result = await workload(bench, "mock-actions", "async", async () => {
+    await runPromise(scoped(effect {
+      provide world {
+        const actions = try Actions
+        const all = try actions.list()
+        const commands = try actions.commands()
+        const id = try actions.start("vibelang/Post", { text: "What is Effect?" }, "button")
+        const settled = try Stream.runLast(actions.follow(id).pipe(Stream.takeUntil((run) => run.state !== "running" && run.state !== "queued")))
+        const slash = try actions.command("/post How do I install it?")
+        const second = try Stream.runLast(actions.follow(slash).pipe(Stream.takeUntil((run) => run.state !== "running" && run.state !== "queued")))
+        const refusedId = try actions.start("vibelang/history/Start", { id: "m999999", lane: "bench" }, "button")
+        const refusedRun = try Stream.runLast(actions.follow(refusedId).pipe(Stream.takeUntil(run => run.state !== "running" && run.state !== "queued")))
+        const acceptedId = try actions.start("vibelang/history/Plan", { how: "append", epic: "", newEpic: "Benchmark acceptance", target: "", title: "Retained history", task: "Measured" }, "button")
+        const acceptedRun = try Stream.runLast(actions.follow(acceptedId).pipe(Stream.takeUntil(run => run.state !== "running" && run.state !== "queued")))
+        const runs = try actions.runs("vibelang/Post")
+        const read = try actions.read(id)
+        const unknownCommand = try Effect.flip(actions.command("/nope"))
+        const badInput = try Effect.flip(actions.command("/history {bad json"))
+        const missing = try Effect.flip(actions.read("a-nope"))
+        const touring = try actions.start("vibelang/Tour", {}, "slash")
+        try actions.cancel(touring)
+        const afterCancel = try Stream.runLast(actions.follow(touring).pipe(Stream.takeUntil((run) => run.state !== "running" && run.state !== "queued")))
+        const rerun = try actions.rerun(id)
+        const third = try Stream.runLast(actions.follow(rerun).pipe(Stream.takeUntil((run) => run.state !== "running" && run.state !== "queued")))
+        try Effect.try(() => {
+          expect(Option.isSome(refusedRun) && refusedRun.value.state).toBe("failed")
+          expect(Option.isSome(refusedRun) && JSON.parse(refusedRun.value.result).refusal).toBe("unknown")
+          expect(Option.isSome(acceptedRun) && acceptedRun.value.state).toBe("passed")
+          expect(Option.isSome(acceptedRun) && JSON.parse(acceptedRun.value.result).refusal).toBe(null)
+          expect(Option.isSome(acceptedRun) && JSON.parse(acceptedRun.value.result).id).toMatch(/^m[0-9]+$/)
+          expect(all.map((flow) => flow.name)).toEqual(expect.arrayContaining(["vibelang/Post", "vibelang/Reply", "vibelang/Tour", "vibelang/docs/open"]))
+          expect(commands.some((entry) => entry.command === "/post")).toBe(true)
+          expect(Option.isSome(settled) && settled.value.state).toBe("passed")
+          expect(Option.isSome(second) && second.value.state).toBe("passed")
+          expect(Option.isSome(second) && second.value.door).toBe("slash")
+          expect(runs.length).toBeGreaterThanOrEqual(2)
+          expect(read.id).toBe(id)
+          expect(unknownCommand.code).toBe("unknown-command")
+          expect(badInput.code).toBe("input")
+          expect(missing.code).toBe("not-found")
+          expect(Option.isSome(afterCancel) && afterCancel.value.state).toBe("cancelled")
+          expect(Option.isSome(third) && third.value.state).toBe("passed")
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("mock-actions", "Vitest built-in bench; product MockActions over MockFactory: catalog, command table, button and slash starts, follow to settlement, per-flow runs, direct read, unknown command, invalid JSON input, missing run, cancellation and rerun; real unknown-commit History refusal settles failed with its exact reason, while an accepted History Plan settles passed with its real id. Three unwarmed samples.", ["Product mock backend; no model, network or workerd isolation. The same protocol against the real Worker runs in the workerd actions benchmark."], result))
+})
+
+it("action agent bindings through the real harness boundary", async ({ bench }) => {
+  const result = await workload(bench, "action-tools", "async", async () => {
+    await runPromise(scoped(effect {
+      provide MockActions({ role: "contributor", actor: "agent" }).pipe(Layer.provide(MockFactory)) {
+        const actions = try Actions
+        const announced: Array<string> = []
+        const source = actionTools(actions, (run) => sync(() => { announced.push(`${run.id}:${run.state}`) }))
+        const bindings = try source.bindings()
+        const answers: Array<Cell.CallResult> = []
+        let started = ""
+        for (const [ordinal, binding] of bindings.entries()) {
+          const input = ordinal === 1 ? { flow: "vibelang/Post", input: { text: "Measured" } } : ordinal === 2 || ordinal === 3 ? { id: started } : {}
+          const call = try Effect.try(() => Cell.callOf(binding.descriptor, { input: input as typeof Schema.Json.Type, identity: new Cell.CallIdentity({
+            session: "benchmark", frame: 0, cell: "benchmark", ordinal, declaration: Cell.declarationDigest(binding.descriptor), layers: [],
+          }) }))
+          const answer = try binding.run(call)
+          answers.push(answer)
+          if (ordinal === 1) started = (answer.value as { id: string }).id
+        }
+        try Effect.try(() => {
+          expect(bindings.map((binding) => binding.descriptor.name)).toEqual(["vibelang/actions/List", "vibelang/actions/Start", "vibelang/actions/Read", "vibelang/actions/Cancel"])
+          expect(started).not.toBe("")
+          expect(announced).toHaveLength(1)
+          expect(announced[0]).toContain(started)
+          expect(answers.map((answer) => answer.outcome)).toEqual(Array(4).fill("success"))
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("action-tools", "Vitest built-in bench; all four actual action FlowBinding handlers invoked with real harness call identities and declaration digests over the product mock actions service; start announces its first run snapshot, read returns it and cancel acknowledges.", ["Binding/handler boundary without model selection or QuickJS; the same declarations serve CLI and MCP surfaces."], result))
+})
+
+it("markdown, wiki and small shared decisions", async ({ bench }) => {
+  const result = await workload(bench, "shared-decisions", "sync", () => {
+    expect(inline("a `b` c ``")).toEqual([{ code: false, text: "a " }, { code: true, text: "b" }, { code: false, text: " c " }])
+    expect(inline("plain")).toEqual([{ code: false, text: "plain" }])
+    expect(safeLink("https://vibelang.sh")).toBe(true)
+    expect(safeLink("http://example.com")).toBe(true)
+    expect(safeLink("docs/design/vips/0001.md")).toBe(true)
+    expect(safeLink("#anchor")).toBe(true)
+    expect(safeLink("javascript:alert(1)")).toBe(false)
+    expect(safeLink("//evil.example")).toBe(false)
+    expect(safeLink("bad\\path")).toBe(false)
+    expect(anchor("Hello, World! `code`")).toBe("hello-world-code")
+    const html = toHtml("# Title\n\nA **bold** [link](./other.md) and `code`.\n\n```vibe\nconst a = 1 < 2\n```", (href) => `/wiki/${href}`)
+    expect(html).toContain("<h1")
+    expect(html).toContain('id="title"')
+    expect(html).toContain(">bold</strong>")
+    expect(html).toContain('href="/wiki/./other.md"')
+    expect(html).toContain("const a = 1 &lt; 2")
+    expect(toHtml("plain")).toContain("<p")
+    expect(wikiPath("/wiki/rulings")).toBe("/wiki/rulings")
+    expect(wikiPath("")).toBe("/wiki/index")
+    expect(wikiPath("roadmap.md")).toBe("/wiki/roadmap")
+    expect(wikiPath("decisions/0001-app-and-stack.md#verify")).toBe("/wiki/decisions/0001-app-and-stack#verify")
+    expect(wikiPath("designs")).toBe("/wiki/designs/index")
+    expect(wikiPath("missing-page")).toBe(undefined)
+    expect(wikiPath("rulings#BAD HASH")).toBe(undefined)
+    expect(wikiPage("/wiki/rulings#vl-1")?.id).toBe("rulings")
+    expect(wikiPage("/wiki/nope")).toBe(undefined)
+    expect(requestedWiki("tell me about the rulings wiki")).toBe("rulings")
+    expect(requestedWiki("show the roadmap wiki")).toBe("roadmap")
+    expect(requestedWiki("wiki decision 0014")).toBe("decisions/0014-agent-tour")
+    expect(requestedWiki("no match here")).toBe(undefined)
+    expect(requestedWiki("wiki please")).toBe("index")
+    for (const [role, least, expected] of [
+      ["viewer", "viewer", true], ["new", "viewer", true], ["community", "new", true], ["contributor", "community", true],
+      ["maintainer", "contributor", true], ["maintainer", "maintainer", true], ["contributor", "maintainer", false], ["viewer", "new", false],
+    ] as const) expect(atLeast(role, least)).toBe(expected)
+    const proposal = vipDocument({ op: "propose", number: 0, parent: 0, title: " Tuples ", text: " Summary ", assignee: "", example: " const x = 1 ", prior: " Rust ", key: "k" })
+    expect(proposal).toBe("# Tuples\n\n## Summary\n\nSummary\n\n## Example\n\n```vibe\nconst x = 1\n```\n\n## Prior art\n\nRust\n")
+    expect(toggleSandbox("closed")).toBe("pane")
+    expect(toggleSandbox("max")).toBe("closed")
+    expect(maximizeSandbox("max")).toBe("pane")
+    expect(maximizeSandbox("pane")).toBe("max")
+    expect(currentSandbox("c", "c", 1, 1)).toBe(true)
+    expect(currentSandbox("c", "c", 1, 2)).toBe(false)
+    expect(canSandboxAction(true, "stop", "")).toBe(true)
+    expect(canSandboxAction(true, "start", "")).toBe(false)
+    expect(canSandboxAction(false, "command", " ls ")).toBe(true)
+    expect(canSandboxAction(false, "command", "  ")).toBe(false)
+    expect(showMedia([], "a.png")).toBe(true)
+    expect(showMedia(["a.png"], "a.png")).toBe(false)
+  }).run(quick)
+  const commits: ReadonlyArray<Commit> = [
+    { id: "m1", epic: "e1", rank: 0, title: "One", state: "planned", task: "T", lane: "", notes: [] },
+    { id: "m2", epic: "e1", rank: 1, title: "Two", state: "approved", task: "", lane: "", notes: [] },
+  ]
+  const lookups = await workload(bench, "mythical-lookups", "sync", () => {
+    expect(taskOf(commits, "m1")).toBe("T")
+    expect(taskOf(commits, "nope")).toBe("")
+    expect(epicOf(commits, "m2")).toBe("e1")
+    expect(epicOf(commits, "nope")).toBe("")
+    expect(rankOf(commits, "m2")).toBe(1)
+    expect(rankOf(commits, "nope")).toBe(-1)
+    expect(endOf(commits, "e1")).toBe(2)
+    expect(endOf(commits, "none")).toBe(0)
+    expect(foldTarget(commits, "")).toBe("")
+    expect(foldTarget(commits, "m1")).toBe("")
+    expect(foldTarget(commits, "m2")).toBe("m2")
+    expect(foldTarget(commits, "nope")).toBe("")
+  }).run(quick)
+  const policies = await workload(bench, "sandbox-policy-layers", "async", async () => {
+    const signedOutPrincipal = await runPromise(Effect.provide(Effect.flatMap(SandboxPolicy, (service) => service.current()), signedOutSandbox))
+    const contributor = await runPromise(Effect.provide(Effect.flatMap(SandboxPolicy, (service) => service.current()), mockPolicy("contributor")))
+    expect(signedOutPrincipal).toEqual({ owner: "", role: "viewer" })
+    expect(contributor).toEqual({ owner: "mock-person", role: "contributor" })
+  }).run(quick)
+  await runPromise(artifact("shared-decisions", "Vitest built-in bench; inline/rich Markdown and safe-link table, build-time HTML with anchors and escaping, wiki path normalization/lookup/request mapping, role standing, VIP document rendering, sandbox pane decisions, media failure memory, mythical miss-path lookups and both sandbox policy layers.", ["Pure functions and layer reads; the wiki's durable open flow and workerd surfaces are benchmarked separately."], [result, lookups, policies]))
+})

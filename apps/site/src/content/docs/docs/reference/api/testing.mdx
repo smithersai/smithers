@@ -2178,3 +2178,7 @@ production TUI in a real PTY for session commands and keyboard navigation.
 `SMITHERS_TERMINAL_ARTIFACTS` selects the parent evidence directory; each run
 creates a fresh child. The CLI additionally accepts `SMITHERS_TERMINAL_PATH`
 for a native executable PATH when a host shim depends on its original HOME.
+
+## Feedback-guided fuzzing
+
+`it.effect.fuzz`, `it.fuzz`, and root `FuzzCorpus` provide corpus-backed regression tests and bounded search. See [fuzzing](https://github.com/smithersai/smithers/blob/main/packages/testing/docs/guides/fuzzing.md) for inputs, budgets, revisions and simulation.

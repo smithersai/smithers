@@ -1,0 +1,83 @@
+import { it as test, expect } from "@effect/vitest"
+import { apply, empty, newClient, receive, type Event } from "../src/core/conversation.vibe"
+import { decide } from "../src/core/decide.vibe"
+import { EventSchema, ReadSnapshot } from "../src/core/schemas.vibe"
+import { conversationPath, routeOf } from "../src/core/wire.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+import { history, transcript } from "./fixtures.vibe"
+
+for (const length of [10, 1000, 100000]) {
+  test(`state machine at ${length} events/entries`, async ({ bench }) => {
+    const state = transcript(length)
+    const intent = { type: "Post" as const, id: "new", clientId: "new", name: "Ada", text: "next" }
+    const event: Event = { type: "Posted", seq: length + 1, id: "new", clientId: "new", name: "Ada", text: "next" }
+    const client = { ...newClient, conversation: state, pending: [{ clientId: "new", text: "next", error: "" }] }
+    const events = history(length)
+    const results = []
+    results.push(await workload(bench, "decide", "sync", () => {
+      expect(decide(state, intent)).toEqual({ ok: true, event })
+    }).run(quick))
+    results.push(await workload(bench, "apply", "sync", () => {
+      const updated = apply(state, event)
+      expect(updated.seq).toBe(length + 1)
+      expect(updated.entries.length).toBe(length + 1)
+      expect(updated.entries.at(-1)?.text).toBe("next")
+      expect(updated.entries[0]).toBe(state.entries[0])
+    }).run(quick))
+    results.push(await workload(bench, "receive", "sync", () => {
+      const updated = receive(client, event)
+      expect(updated.pending).toEqual([])
+      expect(updated.conversation.entries.length).toBe(length + 1)
+      expect(updated.gap).toBe(false)
+    }).run(quick))
+    results.push(await workload(bench, "replay-apply", "sync", () => {
+      const replayed = events.reduce(apply, empty)
+      expect(replayed.seq).toBe(length)
+      expect(replayed.entries.length).toBe(2)
+      expect(replayed.entries[1]?.text).toBe("x".repeat(length - 3))
+      expect(replayed.entries[1]?.done).toBe(true)
+      expect(replayed.agent).toBe("idle")
+    }).run(quick))
+    results.push(await workload(bench, "replay-receive", "sync", () => {
+      const replayed = events.reduce(receive, newClient)
+      expect(replayed.conversation.seq).toBe(length)
+      expect(replayed.conversation.entries[1]?.text).toBe("x".repeat(length - 3))
+      expect(replayed.conversation.entries[1]?.done).toBe(true)
+      expect(replayed.gap).toBe(false)
+    }).run(quick))
+    await runPromise(artifact(`core-${length}`,
+      `Vitest built-in bench; ${length} completed posts for single transitions; replay has exactly ${length} events (post/start/deltas/finish). Setup excluded; assertions included; ${JSON.stringify(quick)}.`,
+      ["Shared nyc-01 host; JIT/GC and assertion overhead included. Replay is a long streamed reply with two entries; it does not measure 100,000 distinct posts. Single-transition fixtures cover the growing entry scan separately."], results))
+  })
+}
+
+test("protocol encode, decode and URL routing", async ({ bench }) => {
+  const original = history(10)[0]!
+  const json = Schema.fromJsonString(EventSchema)
+  const encode = Schema.encodeSync(json)
+  const decode = Schema.decodeUnknownSync(json)
+  const encoded = encode(original)
+  const results = []
+  results.push(await workload(bench, "event-encode", "sync", () => {
+    const encoded = encode(original)
+    expect(encoded).toBe(JSON.stringify(original))
+    expect(decode(encoded)).toEqual(original)
+  }).run(quick))
+  results.push(await workload(bench, "event-decode", "sync", () => expect(decode(encoded)).toEqual(original)).run(quick))
+  for (const length of [10, 1000, 100000]) {
+    const snapshot = { seq: length, entries: transcript(length).entries }
+    const codec = Schema.fromJsonString(ReadSnapshot)
+    const text = Schema.encodeSync(codec)(snapshot)
+    results.push(await workload(bench, `snapshot-decode-${length}`, "sync", () => {
+      const decoded = Schema.decodeUnknownSync(codec)(text)
+      expect(decoded.entries.length).toBe(length)
+      expect(decoded.entries.at(-1)?.text).toBe(`post ${length}`)
+      expect(decoded).toEqual(snapshot)
+    }).run(quick))
+  }
+  results.push(await workload(bench, "route-roundtrip", "sync", () => {
+    expect(routeOf("POST", conversationPath("a b/λ") + "/posts")).toEqual({ kind: "post", conversation: "a b/λ" })
+    expect(routeOf("GET", "/api/conversations/%broken")).toBeUndefined()
+  }).run(quick))
+  await runPromise(artifact("protocol", "Vitest built-in bench, Schema JSON codec, validated complete event round trips and snapshot length/tail; URL encode/decode. Setup excluded, assertions included.", ["In-process codec cost; no HTTP or network."], results))
+})

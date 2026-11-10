@@ -209,3 +209,13 @@ The suite provisions its digest-pinned egress sidecar before startup; workerd
 requires that image locally and never pulls it. Startup diagnostics retain
 native lifecycle errors and report the failed stage, running state and error
 type without command arguments, output or the forge credential.
+
+The root entry also exports `RunInspection`, the engine's public read service. Compose
+`RunInspection.layerWith({ flows })` over the same injected `SqlClient` to read recorded
+node IDs before an explicit `FlowRuntime.retryFrom`. Configure `CloudflareRuntime` for
+the recovery execution ID. When an external write spans those executions, keep its
+original recorded logical identity with `Action.once`'s explicit bounded `key`.
+
+Worker fixture bundles load the existing VibeLang esbuild plugin. Native Node crash-test
+incarnations load `vibelang/register`, so a public dependency's `.vibe` source is compiled
+in that process too. These are compiler-host configurations, with no compiler behavior change.

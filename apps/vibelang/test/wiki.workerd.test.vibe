@@ -1,0 +1,60 @@
+// The real live HTTP layer, conversation Durable Object, durable wiki flow and its SQLite journal in workerd.
+import { describe, expect, it } from "@effect/vitest"
+import { beforeAll, afterAll } from "vitest"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { apply, empty } from "../src/core/conversation.vibe"
+import { serveApi, serveSite, type Served } from "./support/workerd.vibe"
+
+describe("wiki in live workerd", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveApi()) }, 120_000)
+  afterAll(async () => { await api?.dispose() })
+  it.live("replays numbered openings, refuses unknown pages and journals each request as a flow", () => effect {
+    provide LiveFactory(api!.origin).pipe(Layer.provide(FetchHttpClient.layer)), FetchHttpClient.layer {
+      const factory = try Factory
+      try factory.openWiki("wiki-live", "rulings")
+      try factory.openWiki("wiki-live", "decisions/0014-agent-tour")
+      const events = Array.from(try Stream.runCollect(factory.events("wiki-live", 0) |> Stream.take(%, 2)))
+      const invalid = try exit(factory.openWiki("wiki-live", "../../outside"))
+      const response = try HttpClient.get(api!.origin + "/runs/wiki-live")
+      const runs = try response.json
+      try Effect.try(() => {
+        expect(events).toEqual([{ type: "PaneOpened", seq: 1, id: "", url: "/wiki/rulings" }, { type: "PaneOpened", seq: 2, id: "", url: "/wiki/decisions/0014-agent-tour" }])
+        expect(events.reduce(apply, empty).pane).toBe("/wiki/decisions/0014-agent-tour")
+        expect(Exit.isFailure(invalid)).toBe(true)
+        expect(runs).toHaveLength(3)
+        expect(runs).toEqual(expect.arrayContaining([expect.objectContaining({ status: "completed" })]))
+      })
+    }
+  })
+})
+
+
+describe("wiki deployment routes with the real static asset service", () => {
+  let site: Served | undefined
+  beforeAll(async () => { site = await runPromise(serveSite(true)) }, 120_000)
+  afterAll(async () => { await site?.dispose() })
+  it.live("serves known wiki deep links and preserves the landed History entry", () => effect {
+    provide FetchHttpClient.layer {
+      for (const path of ["/history", "/history/", "/wiki/index", "/wiki/rulings", "/wiki/roadmap", "/wiki/decisions/0021-wiki", "/wiki/designs/index"]) {
+        const response = try HttpClient.get(site!.origin + path)
+        const html = try response.text
+        try Effect.try(() => {
+          expect(response.status, path).toBe(200)
+          expect(html).toContain('<div id="root">')
+          expect(response.headers["location"]).toBeUndefined()
+        })
+      }
+    }
+  })
+  it.live("refuses unknown pages and production fault paths before the SPA fallback", () => effect {
+    provide FetchHttpClient.layer {
+      for (const path of ["/wiki/missing", "/e2e/runtime/index.html", "/private"]) {
+        const response = try HttpClient.get(site!.origin + path)
+        try Effect.try(() => expect(response.status, path).toBe(404))
+      }
+    }
+  })
+})

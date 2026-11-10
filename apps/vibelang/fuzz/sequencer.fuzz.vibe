@@ -1,0 +1,138 @@
+import { it } from "@effect/vitest"
+import { Fuzz, FuzzSimulation } from "@smthrs/fuzz"
+import * as M from "../src/core/conversation.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+import * as Budget from "../worker/Budget.vibe"
+import { run, same, Steps, Int } from "./run.vibe"
+
+error DispatchFault
+
+/** A real Ref-backed log; dispatch failures are injected Effect services, never request interception. */
+effect function sequencer() {
+  const events = try Ref.make<ReadonlyArray<M.Event>>([])
+  const service = try Sequencer.make({
+    read: () => Ref.get(events),
+    write: (event) => Ref.update(events, (log) => [...log, event]),
+  }, {
+    start: () => Effect.die(new DispatchFault()),
+    tour: () => Effect.die(new DispatchFault()),
+  })
+  return { events, service }
+}
+
+/** A sequencer the host gave no dispatch: posts and tours are recorded, and nothing is ever started. */
+effect function undispatched() {
+  const events = try Ref.make<ReadonlyArray<M.Event>>([])
+  const service = try Sequencer.make({ read: () => Ref.get(events), write: (event) => Ref.update(events, (log) => [...log, event]) })
+  return { events, service }
+}
+
+it.live("sequencer/commands", () => run("sequencer/commands", Steps, (steps) => effect {
+  const { service, events } = try sequencer()
+  const bare = try undispatched()
+  for (const step of steps) {
+    const before = (try Ref.get(events)).reduce(M.apply, M.empty)
+    const post = before.entries.filter((entry) => entry.author === "person").at(-1)?.id ?? "missing"
+    const reply = step.flag ? "missing" : before.replying
+    const entry = before.entries.find((value) => value.id === reply)
+    const command = step.op % 12
+    const ran = try exit(effect {
+      switch (command) {
+        case 0: {
+          try service.post(`c${step.id}`, "Guest", step.text)
+          try exit(bare.service.post(`c${step.id}`, "Guest", step.text))
+          break
+        }
+        case 1: try service.start(step.flag ? "missing" : post); break
+        case 2: {
+          const attempt = 1 + (try Ref.get(events)).filter((event) => event.type === "ReplyRestarted" && event.id === reply).length
+          const offset = step.flag ? 999 : entry?.text.length ?? 0
+          try service.append(reply, attempt, offset, step.text)
+          const once = (try Ref.get(events)).length
+          try service.append(reply, attempt, offset, step.text)
+          if ((try Ref.get(events)).length !== once) return false
+          break
+        }
+        case 3: {
+          const attempt = step.id % 4
+          try service.restart(reply, attempt)
+          const once = (try Ref.get(events)).length
+          try service.restart(reply, attempt)
+          if ((try Ref.get(events)).length !== once) return false
+          break
+        }
+        case 4: try service.finish(reply, step.text); break
+        case 5: try service.fail(reply, step.text); break
+        case 6: {
+          try exit(bare.service.startTour())
+          try service.startTour()
+          break
+        }
+        case 7: try service.endTour(); break
+        case 8: try service.open(reply, step.text); break
+        case 9: try service.say(reply, step.text); break
+        case 10: {
+          const recorded = (try Ref.get(bare.events)).length
+          try bare.service.ensureDispatched()
+          if ((try Ref.get(bare.events)).length !== recorded) return false
+          try service.ensureDispatched()
+          break
+        }
+        default: {
+          const turns = try service.history(step.flag ? "missing" : post)
+          if (!turns.every((turn) => turn.author === "person" || turn.author === "agent")) return false
+        }
+      }
+      return true
+    })
+    if (ran._tag === "Failure") {
+      if (!ran.cause.reasons.every((reason) => reason._tag === "Die" && reason.defect instanceof DispatchFault)) return false
+    } else if (!ran.value) return false
+    const log = try Ref.get(events)
+    if (!log.every((event, index) => event.seq === index + 1)) return false
+    const current = log.reduce(M.apply, M.empty)
+    const snapshot = try service.read(0)
+    if (snapshot.seq !== log.length || !same(snapshot.entries, current.entries)) return false
+    const after = step.id % (snapshot.seq + 2)
+    const incremental = try service.read(after)
+    const touched = new Set(log.filter((event) => event.seq > after).map((event) => event.id))
+    if (incremental.seq !== snapshot.seq || !same(incremental.entries, snapshot.entries.filter((value) => touched.has(value.id)))) return false
+    if ((current.agent === "working") !== (current.replying !== "")) return false
+  }
+  return true
+}))
+
+it.live("sequencer/two-clients-converge", () => run("sequencer/two-clients-converge", Schema.Tuple([Int, Int]), ([a, b]) => effect {
+  const { service, events } = try sequencer()
+  const follower = fork Stream.runCollect(service.follow(0).pipe(Stream.take(2)))
+  const results = try.all [service.post(`left-${a}`, "Left", `left ${a}`), service.post(`right-${b}`, "Right", `right ${b}`)]
+  if (results.some((result) => result !== null)) return false
+  const followed = Array.from(join follower)
+  const log = try Ref.get(events)
+  if (!same(followed, log) || log.length !== 2 || !log.every((event, index) => event.seq === index + 1)) return false
+  const left = M.post(M.newClient, `left-${a}`, `left ${a}`)
+  const right = M.post(M.newClient, `right-${b}`, `right ${b}`)
+  const receivedLeft = log.reduce(M.receive, left)
+  const receivedRight = log.reduce(M.receive, right)
+  return same(receivedLeft, receivedRight) && receivedLeft.pending.length === 0 && (try service.read(0)).entries.length === 2
+}, FuzzSimulation.execution()))
+
+const Spend = Schema.Struct({ id: Int, tokens: Schema.Union([Schema.Int.check(Schema.isBetween({ minimum: -10, maximum: 100 })), Schema.Literals([-0.5, 0.5, "NaN", "Infinity", "-Infinity"])]) })
+it.live("budget/spend-once", () => run("budget/spend-once", Schema.Struct({ limit: Int, spend: Schema.Array(Spend).check(Schema.isMaxLength(30)) }), ({ limit, spend }) => effect {
+  const stored = try Ref.make<Readonly<Record<string, number>>>({})
+  const ledger = try Budget.make({ read: (key) => Effect.map(Ref.get(stored), (state) => state[key]), write: (entries) => Ref.update(stored, (state) => ({ ...state, ...entries })) }, limit)
+  const candidates = new Map<number, number[]>()
+  for (const item of spend) candidates.set(item.id, [...(candidates.get(item.id) ?? []), Number.isFinite(Number(item.tokens)) ? Math.max(0, Math.round(Number(item.tokens))) : 0])
+  for concurrent (const item of spend) { try ledger.spend(`r${item.id}`, Number(item.tokens)) }
+  const values = try Ref.get(stored)
+  let sum = 0
+  for (const [id, amounts] of candidates) {
+    const amount = values[`reply/r${id}`]
+    if (amount === undefined || !amounts.includes(amount)) return false
+    sum += amount
+  }
+  if ((values[Budget.SPENT] ?? 0) !== sum || (try ledger.admit()) !== (sum < limit)) return false
+  for (const item of spend) try ledger.spend(`r${item.id}`, Number(item.tokens))
+  if (!same(values, try Ref.get(stored))) return false
+  return true
+}, FuzzSimulation.execution()))

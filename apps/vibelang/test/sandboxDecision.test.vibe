@@ -1,0 +1,83 @@
+import { describe, expect, it } from "@effect/vitest"
+import { leaseMilliseconds, applySandbox, accumulateUsageMilliseconds, decideSandbox, elapsedMilliseconds, intervalUsageMilliseconds, mayStart, remainingMilliseconds, runningCount, type SandboxLedger } from "../src/core/sandboxDecision.vibe"
+
+describe("verified sandbox policy kernel", () => {
+  it("honors the single Contributor policy seam", () => {
+    expect(["viewer", "new", "community"].map((role) => mayStart(role as "viewer" | "new" | "community"))).toEqual([false, false, false])
+    expect(mayStart("contributor")).toBe(true)
+    expect(mayStart("maintainer")).toBe(true)
+  })
+
+  it("counts simultaneous running containers exactly", () => {
+    const boxes: ReadonlyArray<{ readonly running: boolean; readonly id: string; readonly conversation: string }> = [{ running: true, id: "a", conversation: "a" }, { running: false, id: "b", conversation: "b" }, { running: true, id: "c", conversation: "c" }, { running: true, id: "d", conversation: "d" }]
+    expect(runningCount(boxes)).toBe(3)
+    expect(runningCount([])).toBe(0)
+    expect(intervalUsageMilliseconds(runningCount(boxes), 17)).toBe(51)
+  })
+
+  it("conserves usage milliseconds across interval accumulation", () => {
+    const initial = 7
+    const first = intervalUsageMilliseconds(2, 19)
+    const second = intervalUsageMilliseconds(3, 11)
+    const accumulated = accumulateUsageMilliseconds(accumulateUsageMilliseconds(initial, first), second)
+    expect(accumulated).toBe(initial + first + second)
+    expect(accumulated).toBe(78)
+  })
+
+  it("clamps zero allowance without ever reporting negative time", () => {
+    expect(remainingMilliseconds(0, 0)).toBe(0)
+    expect(remainingMilliseconds(3600, 0)).toBe(3600)
+    expect(remainingMilliseconds(3600, 1)).toBe(3599)
+    expect(remainingMilliseconds(3600, 3600)).toBe(0)
+    expect(remainingMilliseconds(3600, 9999)).toBe(0)
+  })
+
+  it("treats rollback as zero elapsed and preserves large safe integer deltas", () => {
+    expect(elapsedMilliseconds(500, 400)).toBe(0)
+    expect(elapsedMilliseconds(500, 500)).toBe(0)
+    expect(elapsedMilliseconds(500, 501)).toBe(1)
+    expect(elapsedMilliseconds(0, 9007199254740991)).toBe(9007199254740991)
+  })
+
+  it("keeps the meter high-water mark across clock rollback", () => {
+    const initial: SandboxLedger = {
+      owner: "mock-user", role: "contributor", allowanceMilliseconds: 36000, month: 1,
+      lastMeteredAt: 100, usedMilliseconds: 0, sequence: 0,
+      sandboxes: [{ id: "box-1", conversation: "room-1", running: true }],
+      lastOperationId: "", lastRefusal: "",
+    }
+    const rolledBack = decideSandbox(initial, {
+      type: "meter", owner: "mock-user", role: "contributor", allowanceMilliseconds: 36000,
+      conversation: "room-1", sandboxId: "box-1", operationId: "meter-90", now: 90, month: 1,
+    })
+    expect(rolledBack.ok).toBe(true)
+    if (rolledBack.ok) {
+      expect(rolledBack.event.state.lastMeteredAt).toBe(100)
+      const advanced = decideSandbox(rolledBack.event.state, {
+        type: "meter", owner: "mock-user", role: "contributor", allowanceMilliseconds: 36000,
+        conversation: "room-1", sandboxId: "box-1", operationId: "meter-110", now: 110, month: 1,
+      })
+      expect(advanced.ok).toBe(true)
+      if (advanced.ok) {
+        expect(advanced.event.state.lastMeteredAt).toBe(110)
+        expect(advanced.event.state.usedMilliseconds).toBe(10)
+      }
+    }
+  })
+})
+
+it("rejects malformed negative-usage events", () => {
+  const initial: SandboxLedger = { owner: "u", role: "contributor", allowanceMilliseconds: 60, month: 1, lastMeteredAt: 100, usedMilliseconds: 0, sequence: 0, sandboxes: [], lastOperationId: "", lastRefusal: "" }
+  expect(applySandbox(initial, { sequence: 1, operationId: "x", state: { ...initial, sequence: 1, usedMilliseconds: -1 } })).toEqual(initial)
+})
+
+it("rejects empty or aliased sandbox identities in a replay event", () => {
+  const initial: SandboxLedger = { owner: "u", role: "contributor", allowanceMilliseconds: 60, month: 1, lastMeteredAt: 100, usedMilliseconds: 0, sequence: 0, sandboxes: [], lastOperationId: "", lastRefusal: "" }
+  for (const sandboxes of [[{ id: "", conversation: "a", running: true }], [{ id: "x", conversation: "a", running: true }, { id: "x", conversation: "b", running: false }], [{ id: "a", conversation: "same", running: true }, { id: "b", conversation: "same", running: false }]]) {
+    expect(applySandbox(initial, { sequence: 1, operationId: "x", state: { ...initial, sequence: 1, sandboxes } })).toEqual(initial)
+  }
+})
+
+it("bounds safety leases at Cloudflare's six-hour limit without capping usage", () => {
+  expect([0, 1, 999, 1000, 1001, 21600000, Number.MAX_SAFE_INTEGER].map(leaseMilliseconds)).toEqual([1000, 1000, 1000, 1000, 1001, 21600000, 21600000])
+})

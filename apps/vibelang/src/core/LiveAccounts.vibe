@@ -1,0 +1,45 @@
+import * as Sse from "effect/encoding/Sse"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { EventSchema } from "./schemas.vibe"
+import { AccountUnavailable, Denied, Identity, type Accounts } from "./roles.vibe"
+
+export effect function make(origin: string) {
+  const client = try HttpClient.HttpClient
+  const decodeIdentity = Schema.decodeUnknownEffect(Identity)
+  const decodeMembers = Schema.decodeUnknownEffect(Schema.Array(Identity))
+  const decodeEvent = Schema.decodeUnknownEffect(Schema.fromJsonString(EventSchema))
+  const failed = () => new AccountUnavailable({ reason: "account unavailable" })
+  effect function get<A>(path: string, decode: (value: unknown) => A!Schema.SchemaError) {
+    const response = try Effect.mapError(client.get(origin + path), failed)
+    if (response.status === 403) throw new Denied({ action: "people", least: "new" })
+    if (response.status !== 200) throw failed()
+    return try Effect.mapError(decode(try Effect.mapError(response.json, failed)), failed)
+  }
+  effect function post(path: string, body: unknown) {
+    const response = try Effect.mapError(client.execute(HttpClientRequest.post(origin + path).pipe(
+      HttpClientRequest.setHeader("origin", origin),
+      HttpClientRequest.bodyJsonUnsafe(body),
+    )), failed)
+    if (response.status === 403) throw new Denied({ action: "roles", least: "maintainer" })
+    if (response.status !== 200 && response.status !== 204) throw failed()
+  }
+  const accounts: Accounts.Shape = {
+    current: () => get("/api/auth/session", decodeIdentity).pipe(Effect.mapError(failed)),
+    members: () => get("/api/roles", decodeMembers),
+    grant: (id, role) => post("/api/roles", { id, role }),
+    signOut: () => post("/api/auth/sign-out", {}).pipe(Effect.mapError(failed)),
+    choose: () => Effect.fail(failed()),
+    signInAgent: () => Effect.fail(failed()),
+    participated: () => Effect.void,
+    events: (after) => Stream.unwrap(effect {
+      const response = try Effect.mapError(client.get(origin + "/api/roles/events?after=" + after), failed)
+      if (response.status !== 200) throw failed()
+      return response.stream.pipe(
+        Stream.decodeText(), Stream.pipeThroughChannel(Sse.decode()),
+        Stream.mapEffect(event => Effect.mapError(decodeEvent(event.data), failed)),
+        Stream.mapError(failed),
+      )
+    }),
+  }
+  return accounts
+}

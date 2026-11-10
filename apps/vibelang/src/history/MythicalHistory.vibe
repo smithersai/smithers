@@ -1,0 +1,38 @@
+// The mythical history's API (wiki/decisions/0020-mythical-history.md): one Effect service every surface calls, beside
+// `Factory` (0002): the web app's history view, the CLI, the MCP server and the agent. Its backends are `MockMythical`
+// (no backend, no model) and `LiveMythical`, which talks to the History object on vibelang.smithers.sh. Each write runs
+// one of the history's flows (flows.vibe); who asks is the host's to know, never the caller's to say.
+import { type Mode, Refused, Unavailable } from "../core/Factory.vibe"
+import type { Event, Section } from "./mythical.vibe"
+import type { CommitPage, EpicPage, Matches, Outline } from "./pages.vibe"
+import type { PlanRequest } from "./Sequencer.vibe"
+export { Refused, Unavailable } from "../core/Factory.vibe"
+
+/**
+ * The mythical history, read by page (pages.vibe): a reader asks only for what it shows. `outline` is the first view;
+ * `epic(id, from)` one page of an epic's commits; `commit(id)` one commit in full; `search(text)` the commits whose
+ * title has it. Each answers with the `seq` it reflects; `events(after)` replays the events numbered above `after`,
+ * then follows new ones. Each write answers once its flow settles: `Refused` carries the sequencer's refusal or
+ * `forbidden`.
+ */
+export service Mythical {
+  readonly mode: Mode | "pending"
+  outline(): Outline!Unavailable
+  epic(id: string, from: number): EpicPage!Unavailable
+  commit(id: string): CommitPage!Unavailable
+  search(query: string): Matches!Unavailable
+  events(after: number): Stream.Stream<Event, Unavailable>
+  /** Plans a task onto the stack; answers its id. Optional agent identities replay in mock mode; the public HTTP client refuses them. */
+  plan(request: PlanRequest, operation?: string): string!(Unavailable | Refused)
+  start(id: string, lane: string, operation?: string): void!(Unavailable | Refused)
+  note(id: string, section: Section, text: string, operation?: string): void!(Unavailable | Refused)
+  approve(id: string): void!(Unavailable | Refused)
+  /** Folds main's new commits; answers how many. */
+  fold(): number!(Unavailable | Refused)
+}
+
+/** A write's answer as a typed failure: the refusal, or nothing once it was recorded. */
+export effect function settled(answer: { readonly id: string; readonly refusal: string | null }) {
+  if (answer.refusal !== null) throw new Refused({ refusal: answer.refusal })
+  return answer.id
+}

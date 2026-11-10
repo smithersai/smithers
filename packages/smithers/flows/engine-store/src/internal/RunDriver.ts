@@ -803,6 +803,7 @@ const recordResume = (
  * another process whose suspended execution discovers it by polling.
  */
 const parentWakePrefix = "@smthrs/engine/parent-settled/"
+const controlWakePrefix = "@smthrs/engine/control-resume/"
 
 const recordParentResume = (driver: Driver, parentExecutionId: string, childExecutionId: string): Effect.Effect<void> =>
   Effect.gen(function*() {
@@ -825,7 +826,7 @@ const recordParentResume = (driver: Driver, parentExecutionId: string, childExec
         // A settlement announced again (`reannounce`) finds its wake
         // already recorded, and perhaps already consumed: it is not
         // scheduled twice.
-        if (completed._tag === "Existing") return false
+        if (completed._tag !== "Completed") return false
         yield* emitDecision(driver, parentExecutionId, { decision: "wake-scheduled", reason: "parent" })
         return true
       }),
@@ -2040,18 +2041,17 @@ const encodeResult = (
 ): Effect.Effect<ExitEncoding.EncodedResult> => ExitEncoding.encode(flow, result)
 
 /**
- * Re-encodes a handoff payload through the target flow's own codec, so the
- * bytes the next round's row holds are the bytes `ensureRun` would write
- * for the same invocation.
+ * Re-encodes a handoff payload as the target flow's identity snapshot
+ * (`Flow.payloadSnapshot`), so the bytes the next round's row holds are the
+ * bytes `ensureRun` would write for the same invocation.
  */
 const normalizePayload = (
   flow: Flow.Any,
   payload: unknown
 ): Effect.Effect<unknown> => {
-  const codec = Schema.toCodecJson(flow.payloadSchema)
-  return (Schema.decodeUnknownEffect(codec)(payload).pipe(
+  return (Schema.decodeUnknownEffect(Schema.toCodecJson(flow.payloadSchema))(payload).pipe(
     Effect.orDie,
-    Effect.flatMap((decoded) => Schema.encodeEffect(codec)(decoded)),
+    Effect.flatMap((decoded) => Flow.payloadSnapshot(flow.payloadSchema, decoded)),
     Effect.orDie
   ) as Effect.Effect<unknown>)
 }
@@ -2805,11 +2805,26 @@ const enterRunning = (
     return activeState
   })
 
-/** Activation consumes child and clock wakes; their durable results remain readable by later awaits. */
+/** Activation consumes control, child and clock wakes; durable results remain readable by later awaits. */
 const consumeActivationWakes = (driver: Driver, flowName: string, executionId: string): Effect.Effect<void> =>
   Effect.gen(function*() {
     for (const wake of yield* driver.engineState.completedDeferreds(flowName, executionId)) {
-      if (wake.deferredName.startsWith(parentWakePrefix) || wake.deferredName.startsWith("DurableClock/")) {
+      if (wake.deferredName.startsWith(controlWakePrefix)) {
+        // Keep the completion fold consistent with the row, even if this activation dies before its body starts.
+        yield* driver.transactState(
+          Effect.gen(function*() {
+            const consumedAtMs = yield* Clock.currentTimeMillis
+            if (!(yield* driver.engineState.consumeDeferred(wake, consumedAtMs))) return
+            yield* driver.journal.emitDurableUnfenced(JournalRecords.deferredConsumed({
+              runId: executionId,
+              lineageId: FlowEngine.Lineage.root(executionId),
+              sourceId: `${driver.dependencies.journalSource}:control-consumed:${wake.deferredName}`,
+              sourceSeq: 0
+            }, { ...wake, consumedAtMs })).pipe(Effect.orDie)
+          }),
+          { partition: executionId }
+        ).pipe(Effect.orDie)
+      } else if (wake.deferredName.startsWith(parentWakePrefix) || wake.deferredName.startsWith("DurableClock/")) {
         yield* driver.engineState.consumeDeferred(wake, yield* Clock.currentTimeMillis)
       }
     }
@@ -3651,11 +3666,12 @@ type Origin = NonNullable<RunState["origin"]>
  */
 const ensureRun = (driver: Driver, flow: Flow.Any, options: Admission): Effect.Effect<void, FlowCycleDetected> =>
   Effect.gen(function*() {
-    const payload = yield* (Schema.encodeEffect(
-      Schema.toCodecJson(flow.payloadSchema)
-    )(
-      options.payload
-    ).pipe(Effect.orDie) as Effect.Effect<unknown>)
+    // The identity snapshot (VIP-44): an existing row is the same invocation
+    // only when its stored payload equals this one, so sets and maps are sorted
+    // exactly as the derived execution id sorts them.
+    const payload = yield* (Flow.payloadSnapshot(flow.payloadSchema, options.payload).pipe(
+      Effect.orDie
+    ) as Effect.Effect<unknown>)
     // The caller's door and actor kind, kept with the run for its usage
     // metrics. A run this call creates is counted once its row commits.
     const requestedOrigin = yield* RunMetrics.CurrentOrigin
@@ -3967,12 +3983,17 @@ const carriedChild = (driver: Driver, flow: Flow.Any, options: Admission) =>
     if (options.parent === undefined || driver.engineState.copyAttempts === undefined) return undefined
     const retry = yield* retryOf(driver, options.parent)
     if (retry === undefined || (yield* findRun(driver, options.executionId)) !== undefined) return undefined
+    // The preimage `runChild` derived the id from (VIP-44), so a set payload matches.
+    const preimage =
+      yield* (Flow.payloadPreimage(flow.payloadSchema, options.payload).pipe(Effect.orDie) as Effect.Effect<
+        unknown
+      >)
     for (const node of retry.boundaries) {
-      const opened = yield* Interpreter.childExecutionId(options.parent.executionId, node, flow._tag, options.payload)
+      const opened = yield* Interpreter.childExecutionId(options.parent.executionId, node, flow._tag, preimage)
       if (opened !== options.executionId) continue
       // Derived from the source's id, the node and the callee, the id names the
       // source's own child of this flow, or nothing when retention removed it.
-      const source = yield* Interpreter.childExecutionId(retry.source, node, flow._tag, options.payload)
+      const source = yield* Interpreter.childExecutionId(retry.source, node, flow._tag, preimage)
       const row = yield* findRun(driver, source)
       if (row === undefined) return undefined
       const state = yield* decodeState(row.stateJson)
@@ -4507,10 +4528,38 @@ const recordWake = (
         // queued drive cannot consume quarantined evidence before consent.
         yield* driver.engineState.wake(executionId)
       }
-      yield* emitDecision(driver, executionId, {
+      const receipt = yield* driver.journal.emitDurableUnfenced(decisionRecord(driver, executionId, {
         decision: "wake-scheduled",
         reason
-      }, sourceId)
+      }, sourceId ?? driver.dependencies.journalSource)).pipe(Effect.orDie)
+      if (reason === "operator" || reason === "delegated") {
+        // A control runtime may not register this flow, and may leave before the running body finishes parking.
+        // Keep the wake in the existing durable completion table until the next activation consumes it. The
+        // committed decision sequence distinguishes later requests even at the same clock instant.
+        const completion = yield* driver.engineState.completeDeferred({
+          flowName,
+          executionId,
+          deferredName: controlWakePrefix + receipt.seq,
+          exit: { _tag: "Success", value: null },
+          completedAtMs: yield* Clock.currentTimeMillis
+        })
+        // The run was read in this transaction; a store without it schedules nothing.
+        if (completion._tag === "NotFound") return
+        const wake = completion.row
+        yield* driver.journal.emitDurableUnfenced(JournalRecords.deferredCompleted({
+          runId: executionId,
+          lineageId: FlowEngine.Lineage.root(executionId),
+          sourceId: `${driver.dependencies.journalSource}:control-completed:${wake.deferredName}`,
+          sourceSeq: 0
+        }, {
+          flowName: wake.flowName,
+          executionId: wake.executionId,
+          deferredName: wake.deferredName,
+          completedAtMs: wake.completedAtMs,
+          exitDigest: completion.digest.exit,
+          metadataDigest: completion.digest.metadata
+        })).pipe(Effect.orDie)
+      }
       return { parked: row.status === "suspended" }
     }),
     { partition: executionId }

@@ -14,6 +14,7 @@ import {
   privateEffectAdapters,
   relocatePrivateAdapterImports
 } from "../scripts/private-effect-adapters.mjs"
+import { workspacePackages } from "../scripts/workspace-packages.mjs"
 
 const root = resolve(import.meta.dirname, "../../..")
 const sourceRequire = createRequire(join(root, "packages/smithers/package.json"))
@@ -118,6 +119,16 @@ test("private adapter declarations reject incomplete, mutable, and consumer reso
   }
 })
 
+// Each owner pins its adapters' ordinary dependencies by hand, so one Effect bump must move all of them together.
+test("every workspace owner of private adapters builds them from its own installed manifest", () =>
+  fixture(async (directory) => {
+    const owners = workspacePackages(root).filter((entry) => entry.manifest.smthrs?.privateEffectAdapters !== undefined)
+    assert.ok(owners.length >= 2)
+    for (const entry of owners) {
+      await buildPrivateEffectAdapters(join(root, entry.dir), { distRoot: join(directory, entry.dir, "dist") })
+    }
+  }))
+
 test("owners without private adapters keep their existing build and import contract", () =>
   fixture(async (directory) => {
     await writeFile(join(directory, "package.json"), JSON.stringify({}))
@@ -173,16 +184,16 @@ test("real adapters share Effect across owners, CJS and ESM, and preserve typed 
       }).pipe(Effect.provide(two.layer))
     )
     assert.equal(contents, "cross-owner contents")
-    const esmSocket = await import(pathToFileURL(join(paths[0], "dist/vendor/node-shared/NodeSocket.js")))
-    const cjsSocket = fromOne(join(paths[0], "dist/vendor/cjs/node-shared/NodeSocket.js"))
-    assert.equal(cjsSocket.NodeWS, esmSocket.NodeWS)
-    assert.equal(cjsSocket.NodeWS.WebSocket, fromOne("ws").WebSocket)
-    const server = new esmSocket.NodeWS.WebSocketServer({ host: "127.0.0.1", port: 0 })
+    const esmSocket = await import(pathToFileURL(join(paths[0], "dist/vendor/node-shared/NodeWS.js")))
+    const cjsSocket = fromOne(join(paths[0], "dist/vendor/cjs/node-shared/NodeWS.js"))
+    assert.equal(cjsSocket, esmSocket)
+    assert.equal(cjsSocket.WebSocket, fromOne("ws").WebSocket)
+    const server = new esmSocket.WebSocketServer({ host: "127.0.0.1", port: 0 })
     let client
     try {
       await once(server, "listening")
       server.once("connection", (socket) => socket.send("actual private namespace connection"))
-      client = new cjsSocket.NodeWS.WebSocket(`ws://127.0.0.1:${server.address().port}`)
+      client = new cjsSocket.WebSocket(`ws://127.0.0.1:${server.address().port}`)
       const [message] = await once(client, "message")
       assert.equal(message.toString(), "actual private namespace connection")
     } finally {
@@ -201,7 +212,7 @@ test("real adapters share Effect across owners, CJS and ESM, and preserve typed 
         join(paths[0], "proof." + extension),
         [
           `import {layer,bunLayer,succeed} from './dist/${branch}/index.js';`,
-          `import {NodeWS} from './dist/vendor/${branch === "esm" ? "" : "cjs/"}node-shared/NodeSocket.js';`,
+          `import * as NodeWS from './dist/vendor/${branch === "esm" ? "" : "cjs/"}node-shared/NodeWS.js';`,
           `import type * as Other from './dist/${other}/index.js' with {"resolution-mode":"${mode}"};`,
           `import type {Effect} from 'effect/Effect' with {"resolution-mode":"import"};`,
           "const value: Effect<number> = succeed(1);void value;",
@@ -213,7 +224,13 @@ test("real adapters share Effect across owners, CJS and ESM, and preserve typed 
           "layer.missingConsumerField;",
           "// @ts-expect-error Bun API must retain its type",
           "bunLayer.missingConsumerField;",
-          "const socket: NodeWS.WebSocket = new NodeWS.WebSocket('ws://127.0.0.1');void socket;",
+          "const options: NodeWS.ClientOptions = { handshakeTimeout: 1 };",
+          "const socket: NodeWS.WebSocket = new NodeWS.WebSocket('ws://127.0.0.1', options);",
+          "const raw: NodeWS.RawData = Buffer.from('payload');",
+          "const stream = NodeWS.createWebSocketStream(socket);void raw;void stream;",
+          "declare const server: NodeWS.Server;const namedServer: NodeWS.WebSocketServer = server;void namedServer;",
+          "// @ts-expect-error WebSocket options retain their property types",
+          "const invalid: NodeWS.ClientOptions = { handshakeTimeout: 'slow' };void invalid;",
           "// @ts-expect-error WebSocket namespace must preserve actual constructor members",
           "NodeWS.WebSocket.missingConsumerField;"
         ].join("\n")
@@ -279,6 +296,7 @@ test("CJS namespace compatibility preserves aliases, other exports, comments, an
       "export * as SocketNamespace from \"ws\";",
       "export { WebSocket as NamedSocket } from \"ws\";",
       "export * from \"ws\";",
+      "export type * from \"ws\";",
       "export * as Layers from \"effect/Layer\";",
       "// export * as CommentOnly from \"ws\";",
       "export declare const opaque: \"export * as StringOnly from ws\";"
@@ -293,8 +311,12 @@ test("CJS namespace compatibility preserves aliases, other exports, comments, an
       source.replace(
         "export * as SocketNamespace from \"ws\";",
         "import * as SocketNamespace from \"ws\"; export { SocketNamespace };"
-      )
+      ).replace('export * from "ws";', 'export * from "../../ws.mjs";')
+        .replace('export type * from "ws";', 'export type * from "../../ws.mjs";')
     )
+    assert.equal(await readFile(join(path, "dist/vendor/ws.d.mts"), "utf8"), 'export * from "ws";\n')
+    const receipt = JSON.parse(await readFile(join(path, "dist/vendor/adapters.json"), "utf8"))
+    assert.ok(receipt.outputs.some((output) => output.path === "ws.d.mts"))
   }))
 
 test("private adapter capture refuses wrong versions, undeclared external dependencies, and escaped code/types", () =>

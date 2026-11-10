@@ -1,0 +1,128 @@
+// Reuse every web view and handler. Native chrome is rendered around its Foldkit tree; slots decorate its builders.
+import type { Document, Html, HtmlBuilder } from "foldkit/html"
+import { view as webView } from "../../../vibelang/src/web/view.vibe"
+import { modelReady } from "../policy.vibe"
+import { canSend, Message, type Model, type Message as Msg } from "./main.vibe"
+type H = HtmlBuilder<Msg>
+type Children = NonNullable<Parameters<H["div"]>[1]>
+
+function button(h: H, label: string, message: Msg, cls = "sui-button sui-button-sm"): Html {
+  return h.button([h.Type("button"), h.Class(cls), h.OnClick(message)], [label])
+}
+function chips(model: Model, h: H): Html {
+  const state = model.desktop
+  const selected = state.mock ? "Mock" : state.model?.model ?? "No model loaded"
+  return h.div([h.Class("dt-controls")], [
+    ...(state.folder === null ? [button(h, "Open folder", Message.OpenFolder(), "dt-chip")] : [
+      h.span([h.Class("dt-chip")], [h.code([], [state.folder.path]), h.button([h.Type("button"), h.Class("dt-chip-x"), h.AriaLabel("Close folder"), h.OnClick(Message.CloseFolder())], ["×"])]),
+    ]),
+    h.div([h.Class("dt-modelsel")], [
+      h.button([h.Type("button"), h.Class("dt-chip"), h.AriaLabel("Model"), h.AriaExpanded(model.picker), h.AriaControls("dt-model-options"), h.OnClick(Message.TogglePicker()), h.OnKeyDownPreventDefault((key) => model.picker && ["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(key) ? Option.some(Message.PickerKey({ key })) : Option.none())], [selected, ...(!state.mock ? [h.span([h.Class("sui-model-badge-provider")], ["local"])] : []), " ▾"]),
+      ...(model.picker ? [h.div([h.Id("dt-model-options"), h.Class("dt-modelsel-pop sui-select-content"), h.Role("listbox"), h.AriaLabel("Models"), h.Tabindex(0), h.OnKeyDownPreventDefault((key) => ["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(key) ? Option.some(Message.PickerKey({ key })) : Option.none())], [
+        h.div([h.Class("sui-select-label")], ["Local"]),
+        ...model.available.map((name, index) => h.button([h.Type("button"), h.Role("option"), h.AriaSelected(!state.mock && state.model?.model === name), h.Class("sui-select-item"), h.DataAttribute("highlighted", String(index === model.highlighted)), h.OnClick(Message.Select({ model: name }))], [name])),
+        h.button([h.Type("button"), h.Role("option"), h.AriaSelected(state.mock), h.DataAttribute("highlighted", String(model.highlighted === model.available.length)), h.Class("sui-select-item"), h.OnClick(Message.Mock())], ["Mock"]),
+        button(h, "Manage models…", Message.OpenModels(), "sui-select-item"),
+      ])] : []),
+    ]),
+    ...(model.offline ? [h.span([h.Class("sui-chat-composer-status")], ["Offline · local models only"])] : []),
+    ...(model.busy ? [h.span([h.Class("sui-chat-composer-status"), h.Role("status")], ["Loading…"])] : []),
+  ])
+}
+
+function models(model: Model, h: H): Html {
+  return h.section([h.Class("vl-docs dt-pane"), h.DataAttribute("maximized", String(model.maximized)), h.AriaLabel("Models")], [
+    h.div([h.Class("vl-docs-bar")], [h.strong([], ["Models"]), h.div([h.Class("dt-pane-actions")], [h.button([h.Type("button"), h.AriaLabel("Maximize Models"), h.AriaPressed(String(model.maximized)), h.OnClick(Message.MaximizeModels())], ["↗"]), h.button([h.Type("button"), h.AriaLabel("Minimize Models"), h.OnClick(Message.CloseModels())], ["−"])])]),
+    h.div([h.Class("dt-pane-body")], [
+      h.div([h.Class("sui-section-header")], [h.strong([], ["Local"])]),
+      h.form([h.Class("dt-connect"), h.OnSubmit(Message.Connect())], [
+        h.label([h.For("dt-endpoint")], ["Endpoint"]),
+        h.input([h.Id("dt-endpoint"), h.Class("sui-input"), h.Type("url"), h.Value(model.endpoint), h.Placeholder("http://localhost:11434"), h.OnInput((value) => Message.UpdatedEndpoint({ value }))]),
+        h.button([h.Type("submit"), h.Class("sui-button sui-button-default"), h.Disabled(model.busy)], ["Connect"]),
+      ]),
+      ...(model.available.length === 0 ? [h.div([h.Class("sui-empty")], ["No model loaded"])] : [h.div([h.Class("sui-table-container"), h.DataAttribute("variant", "card")], [
+        h.table([h.Class("sui-table")], [h.tbody([], model.available.map((name) => h.tr([h.Class("dt-model-row")], [
+          h.td([], [h.span([h.Class("dt-model-name")], [name])]), h.td([], [h.span([h.Class("sui-badge sui-badge-secondary")], ["Local"])]), h.td([], [button(h, model.desktop.model?.model === name && model.desktop.model.state === "ready" && !model.desktop.mock ? "Selected" : "Use model", Message.Select({ model: name }))]),
+        ])))])])]),
+      button(h, "Mock", Message.Mock()),
+      ...(model.error === "" ? [] : [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [model.error])]),
+    ]),
+  ])
+}
+
+function toolsOf(model: Model, reply: string) {
+  return model.desktop.tools.filter((tool) => tool.conversation === model.conversation && tool.reply === reply)
+}
+function receipts(model: Model, h: H, reply: string): ReadonlyArray<Html> {
+  return toolsOf(model, reply).map((tool) => h.details([h.Class("sui-toolcall"), h.Open(tool.operation === "fs.edit")], [
+    h.summary([h.Class("sui-toolcall-trigger")], [h.span([h.Class("sui-toolcall-chevron")], ["▸"]), h.span([h.Class("sui-toolcall-name")], [`${tool.operation} · ${tool.operation === "fs.search" ? JSON.stringify(tool.path) : tool.path}`]), ...(tool.operation === "fs.search" ? [h.span([h.Class("sui-toolcall-duration")], [tool.before || tool.after])] : [])]),
+    h.div([h.Class("sui-toolcall-body")], tool.operation === "fs.search" ? [h.pre([h.Class("sui-toolcall-pre"), h.Tabindex(0)], [tool.before === "" ? "" : tool.after])] : [h.div([h.Class("sui-diff")], [
+      ...tool.before.split("\n").filter((line, index, lines) => index < lines.length - 1 || line !== "").map((line, index) => h.div([h.Class("sui-diff-line sui-diff-del")], [h.span([h.Class("sui-diff-ln")], [String(index + 1)]), h.span([h.Class("sui-diff-sign")], ["−"]), h.span([h.Class("sui-diff-text")], [line])])),
+      ...tool.after.split("\n").filter((line, index, lines) => index < lines.length - 1 || line !== "").map((line, index) => h.div([h.Class("sui-diff-line sui-diff-add")], [h.span([h.Class("sui-diff-ln")], [String(index + 1)]), h.span([h.Class("sui-diff-sign")], ["+"]), h.span([h.Class("sui-diff-text")], [line])])),
+    ])]),
+  ]))
+}
+function changedFiles(model: Model, h: H, reply: string): Html {
+  const files = [...new Set(toolsOf(model, reply).filter((tool) => tool.operation === "fs.edit").map((tool) => tool.path))]
+  return h.div([h.Class("sui-commit-files")], files.map((file) => h.div([h.Class("sui-commit-file")], [h.span([h.Class("sui-badge sui-badge-warning")], ["M"]), h.code([], [file])])))
+}
+
+export function view(model: Model, h: H): Document {
+  // The guided conversation is Mock; project identity still follows the selected host.
+  const localTour = model.conversation.startsWith("tour-") && !model.desktop.mock
+  if (model.conversation.startsWith("tour-")) model = { ...model, desktop: { ...model.desktop, mock: true } }
+  const toolbars = new Map<Children[number], { attributes: Parameters<H["div"]>[0]; children: Children }>()
+  const decorated: H = {
+    ...h,
+    a: (attributes, children = []) => {
+      const href = attributes.find((attribute) => "_tag" in attribute && attribute._tag === "Href")
+      const url = href !== undefined && "value" in href && typeof href.value === "string" ? href.value : ""
+      return h.a([...attributes, ...(url.startsWith("https://") ? [h.OnClick(Message.OpenExternal({ url }), { defaultAction: "Prevent" })] : [])], children)
+    },
+    nav: (attributes, children = []) => h.nav(attributes, [button(h, "Models", Message.OpenModels(), "vl-nav-link"), ...children]),
+    article: (attributes, children = []) => {
+      const key = attributes.find((attribute) => "_tag" in attribute && attribute._tag === "Key")
+      const reply = key !== undefined && "value" in key && typeof key.value === "string" ? key.value : ""
+      const tools = receipts(model, h, reply)
+      const producer = toolsOf(model, reply)[0]?.model
+      return tools.length === 0 ? h.article(attributes, children) : h.article(attributes, [producer ? h.div([h.Class("sui-chat-message-label")], [`VibeLang agent · ${producer} · local`]) : children[0] ?? null, h.div([h.Class("sui-agent-output dt-local-output")], [...tools, ...children.slice(1), changedFiles(model, h, reply)])])
+    },
+    form: (attributes, children = []) => {
+      const palette = attributes.some((attribute) => "_tag" in attribute && attribute._tag === "Class" && attribute.value.split(" ").includes("vl-palette"))
+      if (palette !== model.palette) return h.form(attributes, children)
+      return h.form(attributes, children.map((child) => {
+        const toolbar = toolbars.get(child)
+        return toolbar === undefined ? child : h.div(toolbar.attributes, [h.div([h.Class("dt-composer-left")], [chips(model, h), toolbar.children[0] ?? null]), ...toolbar.children.slice(1)])
+      }))
+    },
+    textarea: (attributes) => h.textarea([...attributes.filter((attribute) => !("_tag" in attribute && attribute._tag === "Placeholder")), h.Placeholder(model.desktop.folder === null ? "Ask about VibeLang" : `Describe what to change in ${model.desktop.folder.path}`), h.Disabled(!modelReady(model.desktop.mock, model.desktop.model?.model ?? "", model.desktop.model?.state ?? "failed"))]),
+    button: (attributes, children) => h.button([...attributes, ...(attributes.some((attribute) => "_tag" in attribute && attribute._tag === "Type" && attribute.value === "submit") ? [h.Disabled(!canSend(model) || model.draft.trim() === "")] : [])], children),
+    div: (attributes, children = []) => {
+      if (attributes.some((attribute) => "_tag" in attribute && attribute._tag === "Class" && attribute.value === "sui-chat-composer-toolbar")) {
+        const node = h.div(attributes, children)
+        toolbars.set(node, { attributes, children })
+        return node
+      }
+      const transcript = attributes.some((attribute) => "_tag" in attribute && attribute._tag === "Class" && attribute.value === "sui-chat-messages")
+      return h.div(attributes, transcript ? [
+        ...(model.desktop.folder === null && model.client.conversation.entries.length === 0 ? [h.div([h.Class("sui-empty dt-empty")], [h.div([h.Class("sui-empty-title")], ["No folder open"]), button(h, "Open folder ⌘O", Message.OpenFolder(), "sui-button sui-button-default")])] : []),
+        ...(model.desktop.folder === null ? [] : [h.div(
+          [h.Class("sui-chat-message"), h.DataAttribute("role", "system")],
+          [h.div([h.Class("sui-chat-bubble")], [`Opened ${model.desktop.folder.path} · ${model.desktop.folder.files} ${model.desktop.folder.files === 1 ? "file" : "files"}`])],
+        )]),
+        ...children,
+        ...(model.error !== "" && !model.manager ? [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [model.error])] : []),
+        ...(!model.desktop.mock && model.desktop.model?.state === "failed" ? [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [h.div([h.Class("sui-alert-title")], [`${model.desktop.model.model} couldn't load.`]), button(h, "Choose a model", Message.OpenModels())])] : []),
+      ] : children)
+    },
+  }
+  // The root dispatch union contains every web message; the builder stays in this same root frame.
+  const web = webView(model, decorated as unknown as HtmlBuilder<import("../../../vibelang/src/web/main.vibe").Message>)
+  return { title: "VibeLang", body: h.div([h.Class("dt-host")], [
+    h.header([h.Class("dt-titlebar electrobun-webkit-app-region-drag")], [
+      h.span([h.Class("dt-title")], ["VibeLang", ...(model.desktop.folder === null ? [] : [h.span([h.Class("dt-dot")], [" · "]), h.code([], [model.desktop.folder.path])])]),
+      h.span([h.Class("dt-side")], [...(localTour ? [h.span([h.Class("sui-badge sui-badge-secondary")], ["Mock"])] : []), ...(model.offline ? [h.span([h.Class("sui-badge sui-badge-warning")], ["Offline"])] : []), ...(!model.desktop.mock && model.desktop.model !== null ? [h.span([h.Class("sui-model-badge")], [model.desktop.model.model, " local"])] : [])]),
+    ]), web.body,
+    ...(model.manager ? [models(model, h)] : []),
+  ]) }
+}

@@ -1,0 +1,28 @@
+// Imported flow declarations for hosts whose modules are bundled; no source discovery or filesystem is involved.
+import type { Flow } from "@smthrs/flow"
+
+export error BundledError { code: "duplicate_name" | "not_found"; name: string }
+
+/** The declarations themselves retain their schemas, capabilities and executable identity. */
+export interface Catalog<F extends Flow.Any = Flow.Any> {
+  readonly list: () => ReadonlyArray<F>!!
+  readonly get: (name: string) => F!BundledError
+}
+
+/** Make a catalog of host-imported flows. Registration implementations still belong to the host's engine. */
+export effect function make<F extends Flow.Any>(flows: ReadonlyArray<F>): Catalog<F>!BundledError {
+  const entries = [...flows]
+  const names = new Set<string>()
+  for (const flow of entries) {
+    if (names.has(flow._tag)) throw new BundledError({ code: "duplicate_name", name: flow._tag })
+    names.add(flow._tag)
+  }
+  return {
+    list: () => succeed([...entries]),
+    get: effect (name: string) => {
+      const found = entries.find((flow) => flow._tag === name)
+      if (found === undefined) throw new BundledError({ code: "not_found", name })
+      return found
+    },
+  }
+}

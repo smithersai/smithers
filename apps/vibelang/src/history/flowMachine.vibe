@@ -1,0 +1,276 @@
+// The mythical history's flows as a state machine (wiki/decisions/0020-mythical-history.md, "Proofs"): who may take
+// each action, and the order one run of a flow takes its journaled steps in. `flows.vibe` threads this machine's `Run`
+// through its steps, journaling what `authorize` answers and gating every record step on `canRecord`, so the proof
+// covers the steps that run, not a model beside them.
+//
+//   begun ──authorize──▶ authorized ──record──▶ recorded ──record (Fold only: one per commit of main)──▶ recorded
+//        └────────────▶ forbidden          (record changes nothing; authorize happens once)
+//
+// VibeLang in LemmaScript's verifiable subset, as mythical.vibe: TypeScript syntax with no Effect code, so `pnpm verify`
+// proves this file's own text (0005). Every function is total.
+
+/** The project's roles, least first (VL-21). */
+export type Role = "viewer" | "new" | "community" | "contributor" | "maintainer"
+
+/**
+ * What a person or the agent can do with the mythical history. The bootstrap is no one's: its host runs it once, on
+ * first start, and no request reaches it.
+ */
+export type Action = "show" | "append" | "retell" | "start" | "note" | "approve" | "fold"
+
+/** Who asks: their role, the name notes carry, and whether the agent acts for them. */
+export interface Principal {
+  readonly role: Role
+  readonly name: string
+  readonly agent: boolean
+}
+
+/** A role's place in the order, least first: `viewer` is 0, `maintainer` 4. */
+//@ verify
+//@ ensures 0 <= \result && \result <= 4
+//@ ensures role == "viewer" ==> \result == 0
+//@ ensures role == "new" ==> \result == 1
+//@ ensures role == "community" ==> \result == 2
+//@ ensures role == "contributor" ==> \result == 3
+//@ ensures role == "maintainer" ==> \result == 4
+export function standing(role: Role): number {
+  switch (role) {
+    case "viewer": return 0
+    case "new": return 1
+    case "community": return 2
+    case "contributor": return 3
+    case "maintainer": return 4
+  }
+}
+
+/**
+ * Each action's least role. Appending adds to the story; retelling (an insert or an amend) changes where others'
+ * work sits or what it says, so it is a maintainer's.
+ */
+//@ verify
+//@ ensures action == "approve" || action == "fold" || action == "retell" ==> \result == "maintainer"
+//@ ensures action == "show" ==> \result == "viewer"
+//@ ensures action == "append" || action == "start" || action == "note" ==> \result == "contributor"
+export function leastRole(action: Action): Role {
+  switch (action) {
+    case "show": return "viewer"
+    case "append": return "contributor"
+    case "retell": return "maintainer"
+    case "start": return "contributor"
+    case "note": return "contributor"
+    case "approve": return "maintainer"
+    case "fold": return "maintainer"
+  }
+}
+
+/** Actions only a person takes: people approve; the agent never does, and never folds what landed. */
+//@ verify
+//@ ensures \result == (action == "approve" || action == "fold")
+export function peopleOnly(action: Action): boolean {
+  return action === "approve" || action === "fold"
+}
+
+/** Whether `principal` may take `action`: never the agent for a person-only action, else at least its least role. */
+//@ verify
+//@ ensures \result == (!(principal.agent && peopleOnly(action)) && standing(principal.role) >= standing(leastRole(action)))
+//@ ensures principal.agent && (action == "approve" || action == "fold") ==> !\result
+//@ ensures \result && (action == "approve" || action == "fold") ==> principal.role == "maintainer"
+export function may(principal: Principal, action: Action): boolean {
+  if (principal.agent && peopleOnly(action)) return false
+  return standing(principal.role) >= standing(leastRole(action))
+}
+
+/** Where one run of a history flow is. */
+export type Phase = "begun" | "authorized" | "forbidden" | "recorded"
+
+/** One run of a history flow: its action, who runs it, where it is, and how many record steps it has taken. */
+export interface Run {
+  readonly action: Action
+  readonly principal: Principal
+  readonly phase: Phase
+  readonly records: number
+}
+
+/** A run as its flow begins: nothing authorized, nothing recorded. */
+//@ verify
+//@ ensures \result.action == action && \result.principal == principal && \result.phase == "begun" && \result.records == 0
+//@ ensures lawful(\result)
+export function begin(action: Action, principal: Principal): Run {
+  return { action, principal, phase: "begun", records: 0 }
+}
+
+/**
+ * The authorize step: a run that has begun becomes `authorized` when its principal may take its action, else
+ * `forbidden`. Any other run is unchanged, so a run is authorized at most once and a refusal is final.
+ */
+//@ verify
+//@ ensures run.phase != "begun" ==> \result == run
+//@ ensures \result.action == run.action && \result.principal == run.principal && \result.records == run.records
+//@ ensures run.phase == "begun" ==> (\result.phase == "authorized" || \result.phase == "forbidden")
+//@ ensures run.phase == "begun" ==> ((\result.phase == "authorized") == may(run.principal, run.action))
+//@ ensures lawful(run) ==> lawful(\result)
+export function authorize(run: Run): Run {
+  if (run.phase !== "begun") return run
+  const phase: Phase = may(run.principal, run.action) ? "authorized" : "forbidden"
+  return { ...run, phase }
+}
+
+/**
+ * Whether the run's record step may run now: once authorized, never before and never after a refusal, and once only,
+ * but for a fold, which records each new commit of main.
+ */
+//@ verify
+//@ ensures \result == (run.phase == "authorized" || (run.phase == "recorded" && run.action == "fold"))
+export function canRecord(run: Run): boolean {
+  return run.phase === "authorized" || (run.phase === "recorded" && run.action === "fold")
+}
+
+/** The record step: taken only when `canRecord`; otherwise the run is unchanged. */
+//@ verify
+//@ ensures !canRecord(run) ==> \result == run
+//@ ensures canRecord(run) ==> \result.phase == "recorded" && \result.records == run.records + 1
+//@ ensures \result.action == run.action && \result.principal == run.principal
+//@ ensures lawful(run) ==> lawful(\result)
+export function record(run: Run): Run {
+  if (!canRecord(run)) return run
+  return { ...run, phase: "recorded", records: run.records + 1 }
+}
+
+/**
+ * What every run reachable from `begin` through `authorize` and `record` keeps: it has recorded exactly when it is
+ * `recorded`; it is authorized or recorded only for a principal who may take its action; and only a fold records more
+ * than once. So a record step never runs before its authorization or after a refusal, and the agent never reaches
+ * Approve's or Fold's record.
+ */
+//@ verify
+//@ ensures \result == (run.records >= 0 && (run.phase == "recorded") == (run.records > 0) && ((run.phase == "authorized" || run.phase == "recorded") ==> may(run.principal, run.action)) && (run.action != "fold" ==> run.records <= 1))
+//@ ensures \result && run.records > 0 ==> may(run.principal, run.action)
+//@ ensures \result && run.principal.agent && (run.action == "approve" || run.action == "fold") ==> run.records == 0 && run.phase != "authorized"
+export function lawful(run: Run): boolean {
+  if (run.records < 0 || (run.phase === "recorded") !== (run.records > 0)) return false
+  if ((run.phase === "authorized" || run.phase === "recorded") && !may(run.principal, run.action)) return false
+  return run.action === "fold" || run.records <= 1
+}
+
+export interface PlanFields { readonly how: "append" | "insert" | "amend"; readonly epic: string; readonly newEpic: string }
+
+
+//@ verify
+//@ ensures \result == (standing(role) >= standing(least))
+export function atLeast(role: Role, least: Role): boolean {
+  return standing(role) >= standing(least)
+}
+
+
+//@ verify
+//@ ensures refusal == "forbidden" ==> \result == 403
+//@ ensures refusal == "unavailable" ==> \result == 503
+//@ ensures refusal != "forbidden" && refusal != "unavailable" ==> \result == 409
+export function historyStatus(refusal: string): number {
+  if (refusal === "forbidden") return 403
+  if (refusal === "unavailable") return 503
+  return 409
+}
+
+
+//@ verify
+//@ ensures how == "append" ==> \result == "append"
+//@ ensures how != "append" ==> \result == "retell"
+export function planAction(how: "append" | "insert" | "amend"): Action {
+  return how === "append" ? "append" : "retell"
+}
+
+
+//@ verify
+//@ ensures (\result == "accepted") == (status == 200)
+//@ ensures (\result == "refused") == (status == 403 || status == 409 || status == 503)
+//@ ensures (\result == "unavailable") == (status != 200 && status != 403 && status != 409 && status != 503)
+export function historyResponse(status: number): "accepted" | "refused" | "unavailable" {
+  if (status === 200) return "accepted"
+  if (status === 403 || status === 409 || status === 503) return "refused"
+  return "unavailable"
+}
+
+
+//@ verify
+//@ ensures agent ==> \result == name + " (agent)"
+//@ ensures !agent ==> \result == name
+export function historySignature(name: string, agent: boolean): string {
+  return agent ? `${name} (agent)` : name
+}
+
+
+//@ verify
+//@ ensures mode == "live" ==> \result == "viewer"
+//@ ensures mode != "live" ==> \result == current
+export function resolvedRole(mode: string, current: Role): Role {
+  return mode === "live" ? "viewer" : current
+}
+
+
+//@ verify
+//@ ensures \result.includes(id) == !ids.includes(id)
+//@ ensures forall(i, 0 <= i && i < ids.length && ids[i] != id ==> \result.includes(ids[i]))
+//@ ensures forall(i, 0 <= i && i < \result.length ==> \result[i] == id || ids.includes(\result[i]))
+//@ ensures !ids.includes(id) ==> \result.length == ids.length + 1 && forall(i, 0 <= i && i < ids.length ==> \result[i] == ids[i])
+export function toggleEpic(ids: ReadonlyArray<string>, id: string): ReadonlyArray<string> {
+  return ids.includes(id) ? ids.filter((each) => each !== id) : [...ids, id]
+}
+
+
+//@ verify
+//@ ensures \result.how == how
+//@ ensures \result.epic == (epic == "new" ? "" : epic)
+//@ ensures \result.newEpic == (how == "append" && epic == "new" ? newEpic : "")
+export function planFields(how: "append" | "insert" | "amend", epic: string, newEpic: string): PlanFields {
+  return { how, epic: epic === "new" ? "" : epic, newEpic: how === "append" && epic === "new" ? newEpic : "" }
+}
+
+
+//@ verify
+//@ ensures state == "planned" ==> \result == "sui-badge-warning"
+//@ ensures state == "working" ==> \result == "sui-badge-default"
+//@ ensures state == "approved" ==> \result == "sui-badge-success"
+//@ ensures state != "planned" && state != "working" && state != "approved" ==> \result == "sui-badge-secondary"
+export function historyBadge(state: string): string {
+  return state === "planned" ? "sui-badge-warning" : state === "working" ? "sui-badge-default" : state === "approved" ? "sui-badge-success" : "sui-badge-secondary"
+}
+
+
+//@ verify
+//@ ensures refusal == "forbidden" ==> \result == "Your role can't do that."
+//@ ensures refusal == "empty" ==> \result == "Needs a title."
+//@ ensures refusal == "too-long" ==> \result == "Too long."
+//@ ensures refusal == "duplicate" ==> \result == "Already there."
+//@ ensures refusal == "unknown" ==> \result == "No such epic or commit."
+//@ ensures refusal == "state" ==> \result == "Not in that state."
+//@ ensures refusal == "full" ==> \result == "History full."
+//@ ensures refusal == "unavailable" ==> \result == "The history can't be reached."
+//@ ensures refusal != "forbidden" && refusal != "empty" && refusal != "too-long" && refusal != "duplicate" && refusal != "unknown" && refusal != "state" && refusal != "full" && refusal != "unavailable" ==> \result == refusal
+export function historyRefusal(refusal: string): string {
+  if (refusal === "forbidden") return "Your role can't do that."
+  if (refusal === "empty") return "Needs a title."
+  if (refusal === "too-long") return "Too long."
+  if (refusal === "duplicate") return "Already there."
+  if (refusal === "unknown") return "No such epic or commit."
+  if (refusal === "state") return "Not in that state."
+  if (refusal === "full") return "History full."
+  if (refusal === "unavailable") return "The history can't be reached."
+  return refusal
+}
+
+
+/** Opening a Plan form selects the first epic only for an append. */
+//@ verify
+//@ ensures how == "append" ==> \result == (first == undefined ? "new" : first)
+//@ ensures how != "append" ==> \result == ""
+export function initialEpic(how: "append" | "insert" | "amend", first: string | undefined): string {
+  return how === "append" ? (first ?? "new") : ""
+}
+
+/** A free-form value never enters the discriminant unless it is one of the declared operations. */
+//@ verify
+//@ ensures \result == (field != "how" || value == "append" || value == "insert" || value == "amend")
+export function validPlanField(field: string, value: string): boolean {
+  return field !== "how" || value === "append" || value === "insert" || value === "amend"
+}

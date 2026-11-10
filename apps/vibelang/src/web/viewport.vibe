@@ -1,7 +1,9 @@
+import { nativeFollow, nativeScroll, canPause, wheelPauses, keyPauses, touchPauses, nearBottom } from "./screenDecision.vibe"
+
 /** A scroll event measures the reader's position, independently of later transcript growth. */
 export function atBottom(document: Document): boolean {
   const viewport = document.documentElement
-  return viewport.scrollHeight - viewport.clientHeight - (document.defaultView?.scrollY ?? 0) <= 48
+  return nearBottom(viewport.scrollHeight, viewport.clientHeight, document.defaultView?.scrollY ?? 0)
 }
 
 /** One subscription host owns this permission. Invalidate it on the native input stack, before queued messages,
@@ -19,20 +21,29 @@ export function transcriptViewport(page?: Document) {
   const scrollable = () => !page || page.documentElement.scrollHeight > page.documentElement.clientHeight
   const pause = () => {
     // An upward gesture on a page too short to scroll moves nothing, so it is no reason to stop following.
-    if (!active() || !scrollable()) return undefined
+    if (!canPause(active(), scrollable())) return undefined
     paused = true
     previousY = position()
     return { bottom: false, intent: ++intent }
   }
   return {
-    wheel: (event: WheelEvent) => event.deltaY < 0 && !event.ctrlKey ? pause() : undefined,
+    wheel: (event: WheelEvent) => wheelPauses(event.deltaY, event.ctrlKey) ? pause() : undefined,
     key: (event: KeyboardEvent) => {
-      if (event.defaultPrevented ||
-        !["PageUp", "Home", "ArrowUp"].includes(event.key)) return undefined
+      const pageTop = event.key === "Home" || event.key === "ArrowUp" && event.metaKey
+      if (event.altKey || (event.ctrlKey || event.metaKey) && !pageTop ||
+        !keyPauses(event.key, event.defaultPrevented, false)) return undefined
       const target = event.target as Element | null
-      // Cursor navigation and scrolling inside an editor belong to that control.
-      if (target?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox']")) return undefined
-      return pause()
+      // Cursor navigation and scrolling inside an editor or a nested scroll surface belong to that control.
+      if (target?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox'], [data-scroll-surface]")) return undefined
+      const position = pause()
+      // Own this page scroll once it has paused following. Native keyboard animations can otherwise continue after
+      // Latest and pull the reader away again. Editors and inactive surfaces keep their browser default behavior.
+      if (position !== undefined && page?.defaultView) {
+        event.preventDefault()
+        if (pageTop) page.defaultView.scrollTo({ top: 0, behavior: "instant" })
+        else page.defaultView.scrollBy({ top: event.key === "PageUp" ? -Math.max(40, Math.floor(page.documentElement.clientHeight * 0.875)) : -40, behavior: "instant" })
+      }
+      return position
     },
     touchStart: (event: TouchEvent) => {
       const first = event.touches[0]
@@ -41,7 +52,7 @@ export function transcriptViewport(page?: Document) {
     touchMove: (event: TouchEvent) => {
       const current = Array.from(event.touches).find(item => item.identifier === touch?.id)
       if (!touch || !current) return undefined
-      const upward = current.clientY > touch.y
+      const upward = touchPauses(current.clientY, touch.y)
       touch = { id: current.identifier, y: current.clientY }
       return upward ? pause() : undefined
     },
@@ -49,15 +60,18 @@ export function transcriptViewport(page?: Document) {
     scrolled: () => {
       if (!active()) return undefined
       const y = position()
-      const bottom = (!page || atBottom(page)) && (!paused || y > previousY)
-      if (!bottom && !paused) { paused = true; intent++ }
-      if (bottom) paused = false
+      const next = nativeScroll(!page || atBottom(page), paused, y, previousY, intent)
+      // Repeated position-only pauses cannot overwrite Latest while its follow is waiting to commit.
+      const repeatedPause = page !== undefined && paused && !next.bottom
+      const bottom = next.bottom
+      paused = next.paused
+      intent = next.intent
       previousY = y
-      return { bottom, intent }
+      return repeatedPause ? undefined : { bottom, intent }
     },
     follow: (authorizedIntent: number) => {
       // Check permission and perform the native write in one synchronous body: no fiber yield between them.
-      if (authorizedIntent !== intent || !active()) return
+      if (!nativeFollow(authorizedIntent, intent, active())) return
       const newest = page?.querySelector<HTMLElement>("[data-following='true'] #vl-newest")
       if (!newest) return
       paused = false

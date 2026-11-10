@@ -1,0 +1,170 @@
+// Desktop services, over the real Bun host filesystem and faulty Effect services on unhappy paths.
+import { describe, expect, it } from "@effect/vitest"
+import { BunHost } from "@smthrs/platform-bun"
+import { Folder, folderLayer } from "../src/host/Folder.vibe"
+import { endpointOf, modelReady, choiceCurrent, editAllowed } from "../src/policy.vibe"
+
+describe("local endpoint policy", () => {
+  it("accepts only explicit loopback OpenAI-compatible origins", () => {
+    expect(endpointOf("http://127.0.0.1:11434/v1")).toBe("http://127.0.0.1:11434")
+    expect(endpointOf("http://localhost:1234")).toBe("http://localhost:1234")
+    expect(endpointOf("http://[::1]:1234/v1/")).toBe("http://[::1]:1234")
+    for (const value of ["", "https://example.com", "http://127.0.0.1.evil", "http://a:b@localhost:1234", "http://localhost:1234/?key=secret", "file:///tmp", "http://localhost:1234/other"]) expect(endpointOf(value)).toBe("")
+  })
+  it("keeps mock usable with no model and blocks loading or failed local models", () => {
+    expect(modelReady(true, "", "failed")).toBe(true)
+    expect(modelReady(false, "qwen", "ready")).toBe(true)
+    expect(modelReady(false, "", "ready")).toBe(false)
+    expect(modelReady(false, "qwen", "loading")).toBe(false)
+    expect(modelReady(false, "qwen", "failed")).toBe(false)
+  })
+})
+
+it.effect("opens, reads, edits and closes a real folder; escapes and symlinks are refused", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try fs.makeTempDirectoryScoped()
+  const outside = try fs.makeTempDirectoryScoped()
+  try fs.writeFileString(path.join(root, "hello.vibe"), "before")
+  try fs.writeFileString(path.join(outside, "private"), "outside")
+  try fs.symlink(path.join(outside, "private"), path.join(root, "escape"))
+  provide folderLayer {
+    const folder = try Folder
+    const opened = try folder.open(root)
+    const before = try folder.read("hello.vibe")
+    try folder.write("hello.vibe", "after")
+    const after = try fs.readFileString(path.join(root, "hello.vibe"))
+    const traversal = try exit(folder.read("../private"))
+    const symlink = try exit(folder.read("escape"))
+    try folder.close()
+    const closed = try exit(folder.read("hello.vibe"))
+    try Effect.try(() => {
+      expect(opened.files).toBe(2)
+      expect(before).toBe("before")
+      expect(after).toBe("after")
+      expect(Exit.isFailure(traversal)).toBe(true)
+      expect(Exit.isFailure(symlink)).toBe(true)
+      expect(Exit.isFailure(closed)).toBe(true)
+    })
+  }
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("refuses invalid folders, missing files and oversized edits without losing the open folder", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try fs.makeTempDirectoryScoped()
+  try fs.writeFileString(path.join(root, "small"), "unchanged")
+  provide folderLayer {
+    const folder = try Folder
+    try folder.open(root)
+    const badRoot = try exit(folder.open("relative"))
+    const stillOpen = try folder.current()
+    const missing = try exit(folder.read("missing"))
+    const tooLarge = try exit(folder.write("small", "x".repeat(1024 * 1024 + 1)))
+    const badFile = try exit(folder.write("../escape", "no"))
+    const saved = try folder.read("small")
+    const listed = try folder.list()
+    try Effect.try(() => {
+      expect(Exit.isFailure(badRoot)).toBe(true)
+      expect(stillOpen?.path).toBe(root)
+      expect(Exit.isFailure(missing)).toBe(true)
+      expect(Exit.isFailure(tooLarge)).toBe(true)
+      expect(Exit.isFailure(badFile)).toBe(true)
+      expect(saved).toBe("unchanged")
+      expect(listed).toEqual(["small"])
+    })
+  }
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("revokes a captured folder when selection changes and preserves unreadable originals", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const a = try fs.makeTempDirectoryScoped()
+  const b = try fs.makeTempDirectoryScoped()
+  try fs.writeFileString(path.join(a, "small"), "original-a")
+  try fs.writeFileString(path.join(b, "small"), "original-b")
+  try fs.writeFileString(path.join(b, "large"), "x".repeat(1024 * 1024 + 1))
+  provide folderLayer {
+    const folder = try Folder
+    const first = try folder.open(a)
+    const bound = try folder.bind(first)
+    try folder.open(b)
+    const revoked = try exit(bound.replace("small", "original-a", "changed"))
+    const current = try folder.current()
+    const active = try folder.bind(current!)
+    const oversized = try exit(active.read("large"))
+    const conflict = try exit(active.replace("small", "different", "changed"))
+    const preserved = try fs.readFileString(path.join(b, "small"))
+    try Effect.try(() => {
+      expect(Exit.isFailure(revoked)).toBe(true)
+      expect(Exit.isFailure(oversized)).toBe(true)
+      expect(Exit.isFailure(conflict)).toBe(true)
+      expect(preserved).toBe("original-b")
+    })
+    try active.replace("small", "original-b", "changed")
+    try active.replace("small", "original-b", "changed")
+    try folder.close()
+    const closed = try exit(active.read("small"))
+    const changed = try fs.readFileString(path.join(b, "small"))
+    try Effect.try(() => { expect(Exit.isFailure(closed)).toBe(true); expect(changed).toBe("changed") })
+  }
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("restores the same folder authority after restart and refuses a replaced directory", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try fs.makeTempDirectoryScoped()
+  const a = path.join(root, "a")
+  try fs.makeDirectory(a)
+  try fs.writeFileString(path.join(a, "file"), "original")
+  const info = try folderLayer.pipe(Layer.build, Effect.flatMap((context) => Context.get(context, Folder).open(a)))
+  provide folderLayer {
+    const folder = try Folder
+    const restored = try folder.restore(info)
+    const bound = try folder.bind(info)
+    const text = try bound.read("file")
+    try fs.rename(a, path.join(root, "old"))
+    try fs.makeDirectory(a)
+    try fs.writeFileString(path.join(a, "file"), "replacement")
+    const replaced = try exit(folder.restore(info))
+    try Effect.try(() => { expect(restored).toEqual(info); expect(text).toBe("original"); expect(Exit.isFailure(replaced)).toBe(true) })
+  }
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("searches a real selected tree with the standard search service and refuses a revoked selection", () => (effect {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try fs.makeTempDirectoryScoped()
+  const outside = try fs.makeTempDirectoryScoped()
+  try fs.makeDirectory(path.join(root, "src"))
+  try fs.writeFileString(path.join(root, "src", "file.vibe"), "needle\nother\nneedle\n")
+  try fs.writeFileString(path.join(outside, "secret"), "needle private")
+  try fs.symlink(path.join(outside, "secret"), path.join(root, "escape"))
+  provide folderLayer {
+    const folder = try Folder
+    const access = try folder.bind(try folder.open(root))
+    const found = try access.search("needle")
+    const bytes = try access.read(found.matches[0]!.file)
+    try folder.close()
+    const revoked = try exit(access.search("needle"))
+    try Effect.try(() => {
+      expect(found.matches.map((match) => [match.file, match.line])).toEqual([["src/file.vibe", 1], ["src/file.vibe", 3]])
+      expect(bytes).toBe("needle\nother\nneedle\n")
+      expect(found.matches.map((match) => match.text).join(" ")).not.toContain("private")
+      expect(Exit.isFailure(revoked)).toBe(true)
+    })
+  }
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it("a stale or unknown model selection cannot disable the current choice", () => {
+  expect(choiceCurrent("new-choice", "old-choice")).toBe(false)
+  expect(choiceCurrent("", "")).toBe(false)
+  expect(choiceCurrent("choice", "choice")).toBe(true)
+})
+
+it("refuses stale originals and unchanged edits, admitting only a matching replacement", () => {
+  expect(editAllowed("before", "person edit", "after")).toBe(false)
+  expect(editAllowed("before", "before", "after")).toBe(true)
+  expect(editAllowed("before", "after", "after")).toBe(false)
+  expect(editAllowed("same", "same", "same")).toBe(false)
+})

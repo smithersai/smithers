@@ -319,6 +319,20 @@ describe("check: source coverage", () => {
 })
 
 describe("listSources", () => {
+  it("ignores generated VibeLang declarations while checking authored sources and ambient declarations", () => {
+    const directory = scratchPackage({
+      "src/Answer.vibe": 'import "forbidden"',
+      "src/Answer.d.vibe.ts": 'import "compiler-only"',
+      "src/ambient.d.ts": 'import "forbidden"',
+    })
+    expect(listSources(directory)).toEqual(["src/Answer.vibe", "src/ambient.d.ts"])
+    const outcome = run({ packageDirectory: "fixture", directory, rules: [{ kind: "forbid", modules: ["forbidden", "compiler-only"], because }] })
+    expect(outcome.exitCode).toBe(1)
+    expect(outcome.output).toContain("src/Answer.vibe")
+    expect(outcome.output).toContain("src/ambient.d.ts")
+    expect(outcome.output).not.toContain("compiler-only")
+  })
+
   it("lists source files, skipping dependencies, output, dot-directories, nested packages and links", () => {
     const directory = scratchPackage({
       "src/View.tsx": "",

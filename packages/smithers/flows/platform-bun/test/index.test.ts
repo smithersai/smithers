@@ -29,7 +29,14 @@ import * as Index from "../src/index.ts"
 
 describe("@smthrs/platform-bun barrel", () => {
   it("re-exports every module as a namespace", () => {
-    expect(Object.keys(Index).sort()).toEqual(["BunFileSystem", "BunGarbageCollector", "BunHost", "BunRuntime"])
+    expect(Object.keys(Index).sort()).toEqual([
+      "BunDesktop",
+      "BunFileSystem",
+      "BunGarbageCollector",
+      "BunHost",
+      "BunRuntime",
+      "BunServer"
+    ])
     expect(Index.BunGarbageCollector.layer).toBe(BunGarbageCollector.layer)
     expect(Index.BunRuntime.layerHost).toBe(BunRuntime.layerHost)
     expect(Index.BunFileSystem.layer).toBe(BunFileSystem.layer)
@@ -146,7 +153,7 @@ describe("@smthrs/platform-bun module graph", () => {
       bundle: true,
       entryPoints: [fileURLToPath(new URL("../src/index.ts", import.meta.url))],
       // Bun's own built-ins (the SQLite driver BunRuntime opens) resolve only on Bun.
-      external: ["effect", "effect/*", "@effect/*", "node:*", "bun:*"],
+      external: ["effect", "effect/*", "@effect/*", "node:*", "bun:*", "#electrobun"],
       format: "esm",
       logLevel: "silent",
       metafile: true,

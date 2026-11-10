@@ -1,0 +1,320 @@
+// @vitest-environment node
+// The wiki's refusals and recovery at its two boundaries: the GitHub host with a faulty HttpClient, and real loopback HTTP
+// with a faulty WikiHost. Happy GitHub writes live in the opt-in wikiEdit.github.test.vibe; nothing here fakes a success.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServer, HttpServerResponse } from "effect/http"
+import { WebCrypto } from "@smthrs/crypto"
+import { executeWiki, githubWikiHost, publicWiki, serveWiki, WikiAuthority, wikiFailureOf, wikiFilePath, wikiRepository, wikiWriteKey } from "../worker/Wiki.vibe"
+import { WikiHost, wikiEditFlows, wikiEditRegistration } from "../src/core/wikiFlows.vibe"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { WikiFailure, type WikiRequest } from "../src/core/wikiSchemas.vibe"
+import { WikiWriter } from "../src/core/WikiWriter.vibe"
+import { pages } from "../src/core/wiki.vibe"
+import type { Principal } from "../worker/Issues.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+
+const page = pages.find(entry => entry.id === "roadmap")!
+const will: Principal = { id: "m1", login: "will", role: "maintainer", connection: { person: 1, delegation: "fixture-delegation" } }
+const edit = (over: Partial<WikiRequest> = {}): WikiRequest => ({ op: "save", page: "roadmap", base: page.source, text: `${page.source}\nMore.\n`, key: "boundary-1", ...over })
+
+function authorityOf(principal: Principal | undefined, authorize?: WikiAuthority.Shape["authorize"]): WikiAuthority.Shape {
+  return { current: () => succeed(principal), ...(authorize === undefined ? {} : { authorize }) }
+}
+
+const noRepo = { ...wikiRepository, api: "https://github.invalid" }
+let execution = 0
+
+/** The host as production runs it: one step of the durable wiki flow. */
+effect function throughFlow(host: WikiHost.Shape, request: WikiRequest) {
+  const context = try Layer.build(wikiEditRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(WikiHost, host))))
+  const engine = Context.get(context, FlowRuntime.FlowRuntime)
+  execution += 1
+  const flow = wikiEditFlows.find(entry => entry._tag === `vibelang/wiki/${request.op}`)!
+  return try Effect.result(engine.execute(flow, { executionId: `wiki/boundary/${execution}`, payload: request }).pipe(Effect.provide(WebCrypto.layer)))
+}
+
+/** The host against a real loopback origin that refuses every request with `status`. */
+effect function hostOutcome(request: WikiRequest, authority: WikiAuthority.Shape, status = 403, storage?: Storage, fresh = false) {
+  return try scoped(effect {
+    provide NodeHttpServer.layerTest, FetchHttpClient.layer, WebCrypto.layer {
+      const server = try HttpServer.HttpServer
+      try HttpServer.serveEffect(succeed(HttpServerResponse.jsonUnsafe({ message: "refused" }, { status })))
+      const address = server.address
+      const api = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+      const host = try githubWikiHost({ ...noRepo, api }, storage, () => fresh).pipe(Effect.provideService(WikiAuthority, authority))
+      return try throughFlow(host, request)
+    }
+  })
+}
+
+describe("provider failures become minimal reasons", () => {
+  for (const [details, reason] of [
+    [{ outcomeUnknown: true }, "unknown"], [{ incomplete: true }, "partial"], [{ rateLimited: true }, "rate-limited"],
+    [{ status: 401 }, "sign-in"], [{ status: 403 }, "forbidden"], [{ status: 404 }, "missing"], [{ status: 500 }, "unavailable"], [{}, "unavailable"],
+  ] as const) {
+    it(`${JSON.stringify(details)} is ${reason}`, () => {
+      const failure = wikiFailureOf({ details, message: "token ghp_secret" })
+      expect(failure.reason).toBe(reason)
+      expect(JSON.stringify(failure)).not.toContain("ghp_secret")
+    })
+  }
+  it("codes only the retryable reasons and keeps a retry hint", () => {
+    expect(wikiFailureOf({ details: { rateLimited: true, retryAfterMillis: 1500 } })).toMatchObject({ reason: "rate-limited", code: "rate-limited", retryAfterMillis: 1500 })
+    expect(wikiFailureOf({ details: { status: 403 } }).code).toBeUndefined()
+    expect(wikiFailureOf(undefined).reason).toBe("unavailable")
+  })
+  it("maps only known pages to files", () => {
+    expect(wikiFilePath("roadmap")).toBe("apps/vibelang/wiki/roadmap.md")
+    expect(wikiFilePath("roadmap", "docs")).toBe("docs/roadmap.md")
+    expect(wikiFilePath("decisions")).toBeUndefined()
+    expect(wikiFilePath("no-such-page")).toBeUndefined()
+  })
+  it.effect("derives one write key per logical write", () => effect {
+    provide WebCrypto.layer {
+      const key = (request: WikiRequest, actor = "a", name = "branch") => wikiWriteKey(wikiRepository, actor, request, name)
+      const one = try key(edit())
+      const same = try key(edit({ text: "changed text keeps the key" }))
+      const others = try all([key(edit({ key: "other" })), key(edit({ op: "propose" })), key(edit(), "b"), key(edit(), "a", "commit")])
+      try Effect.try(() => {
+        expect(one).toMatch(/^[0-9a-f]{64}$/)
+        expect(same).toBe(one)
+        expect(new Set([one, ...others]).size).toBe(5)
+      })
+    }
+  })
+})
+
+describe("the GitHub host refuses before it writes", () => {
+  it.live("a viewer, an agent's submission and a failed authorization never reach GitHub", () => effect {
+    const viewer = try hostOutcome(edit(), authorityOf(undefined))
+    const agent = try hostOutcome(edit(), authorityOf({ ...will, kind: "agent" }))
+    const refused = try hostOutcome(edit(), authorityOf(will, () => Effect.fail(new WikiFailure({ reason: "rate-limited" }))))
+    try Effect.try(() => {
+      expect(viewer).toMatchObject({ _tag: "Failure", failure: { reason: "forbidden" } })
+      expect(agent).toMatchObject({ _tag: "Failure", failure: { reason: "forbidden" } })
+      expect(refused).toMatchObject({ _tag: "Failure", failure: { reason: "rate-limited" } })
+    })
+  })
+  it.live("a page without a file is missing, and unwritten only for a fresh execution", () => effect {
+    const settled = try hostOutcome(edit({ page: "decisions" }), authorityOf(will))
+    const fresh = try hostOutcome(edit({ page: "decisions" }), authorityOf(will), 403, undefined, true)
+    try Effect.try(() => {
+      expect(settled).toMatchObject({ _tag: "Failure", failure: { reason: "missing" } })
+      expect(settled).not.toHaveProperty("failure.unwritten")
+      expect(fresh).toMatchObject({ _tag: "Failure", failure: { reason: "missing", unwritten: true } })
+    })
+  })
+  for (const [status, reason] of [[401, "sign-in"], [403, "forbidden"]] as const) {
+    it.live(`a public read answered ${status} is ${reason}`, () => effect {
+      const outcome = try hostOutcome(edit({ op: "read" }), authorityOf(undefined), status)
+      try Effect.try(() => expect(outcome).toMatchObject({ _tag: "Failure", failure: { reason } }))
+    })
+  }
+  it.live("a write needs a key and an empty draft is refused", () => effect {
+    const keyless = try hostOutcome(edit({ key: "" }), authorityOf(will))
+    const blankDraft = try hostOutcome(edit({ op: "draft", text: "  " }), authorityOf(will))
+    const noWriter = try hostOutcome(edit({ op: "draft", text: "Add a section" }), authorityOf(will))
+    try Effect.try(() => {
+      expect(keyless).toMatchObject({ _tag: "Failure", failure: { reason: "sign-in" } })
+      expect(blankDraft).toMatchObject({ _tag: "Failure", failure: { reason: "empty" } })
+      expect(noWriter).toMatchObject({ _tag: "Failure", failure: { reason: "unavailable" } })
+    })
+  })
+  it.live("a draft whose source can't be read never asks the writer", () => effect {
+    let asked = 0
+    const writer: WikiWriter.Shape = { draft: effect (request) => { asked += 1; return { page: request.page, text: "drafted" } } }
+    const authority = authorityOf(will)
+    const outcome = try scoped(effect {
+      provide NodeHttpServer.layerTest, FetchHttpClient.layer, WebCrypto.layer {
+        const server = try HttpServer.HttpServer
+        try HttpServer.serveEffect(succeed(HttpServerResponse.jsonUnsafe({ message: "refused" }, { status: 403 })))
+        const address = server.address
+        const api = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+        const host = try githubWikiHost({ ...noRepo, api }).pipe(Effect.provideService(WikiAuthority, authority), Effect.provideService(WikiWriter, writer))
+        return try throughFlow(host, edit({ op: "draft", text: "Add a section" }))
+      }
+    })
+    try Effect.try(() => {
+      expect(outcome).toMatchObject({ _tag: "Failure", failure: { reason: "forbidden" } })
+      expect(asked).toBe(0)
+    })
+  })
+  it.live("without a credential the reviewed text is retained, with or without storage", () => effect {
+    const storage = try Effect.try(() => objectStorage()) as unknown as Storage
+    const { connection: _connection, ...blank } = will
+    const kept = try hostOutcome(edit(), authorityOf(blank), 403, storage, true)
+    const stored = try promise(() => storage.get(`wiki/draft/${will.id}/roadmap`))
+    const noStorage = try hostOutcome(edit(), authorityOf(blank))
+    try Effect.try(() => {
+      expect(kept).toMatchObject({ _tag: "Failure", failure: { reason: "connect", unwritten: true } })
+      expect(stored).toEqual({ page: "roadmap", text: edit().text })
+      expect(noStorage).toMatchObject({ _tag: "Failure", failure: { reason: "connect" } })
+      expect(noStorage).not.toHaveProperty("failure.unwritten")
+    })
+  })
+  it.live("every GitHub step re-checks the current session: a change mid-write is refused", () => effect {
+    const steps = [undefined, { ...will, id: "other" }, { ...will, role: "new" as const }, { ...will, kind: "agent" as const }]
+    for (const later of steps) {
+      let calls = 0
+      const authority: WikiAuthority.Shape = { current: effect () => { calls += 1; return calls === 1 ? will : later } }
+      const outcome = try hostOutcome(edit(), authority)
+      try Effect.try(() => expect(outcome).toMatchObject({ _tag: "Failure", failure: { reason: "forbidden" } }))
+    }
+  })
+  it.live("a token revoked before the first GitHub read still retains the reviewed text (fuzz wiki/host-calls)", () => effect {
+    const storage = try Effect.try(() => objectStorage()) as unknown as Storage
+    let calls = 0
+    const { connection: _connection, ...unconnected } = will
+    const revoking: WikiAuthority.Shape = { current: effect () => { calls += 1; return calls === 1 ? will : unconnected } }
+    const revoked = try hostOutcome(edit(), revoking, 403, storage, true)
+    const stored = try promise(() => storage.get(`wiki/draft/${will.id}/roadmap`))
+    try Effect.try(() => {
+      // Nothing was written, so a fresh request may be sent again unchanged once the person reconnects.
+      expect(revoked).toMatchObject({ _tag: "Failure", failure: { reason: "connect", unwritten: true } })
+      expect(stored).toEqual({ page: "roadmap", text: edit().text })
+    })
+  })
+  it.live("a token revoked mid-write asks the person to connect", () => effect {
+    let calls = 0
+    const revoking: WikiAuthority.Shape = { current: effect () => { calls += 1; if (calls === 1) return will; const { connection: _connection, ...rest } = will; return rest } }
+    const revoked = try hostOutcome(edit(), revoking)
+    try Effect.try(() => {
+      expect(revoked).toMatchObject({ _tag: "Failure", failure: { reason: "connect" } })
+    })
+  })
+})
+
+function failingHost(reason: string, unwritten?: boolean): WikiHost.Shape {
+  return { perform: () => Effect.fail(new WikiFailure({ reason, ...(unwritten === undefined ? {} : { unwritten }) })) }
+}
+
+effect function served(host: WikiHost.Shape, principal: Principal | undefined = will) {
+  const storage = try Effect.try(() => objectStorage()) as unknown as Storage
+  const server = try HttpServer.HttpServer
+  try HttpServer.serveEffect(effect {
+    return try serveWiki("wiki-boundary", storage).pipe(
+      Effect.provideService(WikiAuthority, authorityOf(principal)),
+      Effect.provideService(WikiHost, host),
+      Effect.provide(FetchHttpClient.layer),
+    )
+  })
+  const address = server.address
+  return address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+}
+
+effect function send(origin: string, method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: string) {
+  const client = try HttpClient.HttpClient
+  const base = method === "GET" ? HttpClientRequest.get(origin + path) : method === "PUT" ? HttpClientRequest.put(origin + path) : method === "DELETE" ? HttpClientRequest.delete(origin + path) : HttpClientRequest.post(origin + path)
+  const response = try client.execute(body === undefined ? base : base.pipe(HttpClientRequest.bodyText(body, "application/json")))
+  const json = (response.json catch () => undefined) as { readonly reason?: string; readonly unwritten?: boolean; readonly role?: string } | undefined
+  return { status: response.status, json, cache: response.headers["cache-control"] }
+}
+
+describe("the wiki HTTP boundary refuses malformed requests", () => {
+  it.live("answers only its own paths and methods", () => scoped(effect {
+    provide NodeHttpServer.layerTest, FetchHttpClient.layer {
+      const origin = try served(failingHost("unavailable"))
+      const other = try send(origin, "GET", "/api/other")
+      const put = try send(origin, "PUT", "/api/wiki", "{}")
+      const del = try send(origin, "DELETE", "/api/wiki")
+      try Effect.try(() => { expect(other.status).toBe(404); expect(put.status).toBe(405); expect(del.status).toBe(405) })
+    }
+  }))
+  it.live("bounds the body, and refuses bad JSON and bad write keys", () => scoped(effect {
+    provide NodeHttpServer.layerTest, FetchHttpClient.layer {
+      const origin = try served(failingHost("unavailable"))
+      const huge = try send(origin, "POST", "/api/wiki", JSON.stringify({ ...edit(), text: "x".repeat(4_194_400) }))
+      const malformed = try send(origin, "POST", "/api/wiki", "{nope")
+      const badKey = try send(origin, "POST", "/api/wiki", JSON.stringify(edit({ key: "bad key!" })))
+      try Effect.try(() => {
+        expect(huge.status).toBe(413)
+        expect(huge.json).toEqual({ reason: "invalid" })
+        expect(malformed.status).toBe(400)
+        expect(badKey.status).toBe(400)
+      })
+    }
+  }))
+  for (const [reason, status] of [["forbidden", 403], ["sign-in", 401], ["connect", 401], ["missing", 404], ["unknown", 409], ["conflict", 409], ["empty", 400], ["invalid", 400], ["partial", 503]] as const) {
+    it.live(`${reason} answers ${status} without caching`, () => scoped(effect {
+      provide NodeHttpServer.layerTest, FetchHttpClient.layer {
+        const origin = try served(failingHost(reason, true))
+        const answer = try send(origin, "POST", "/api/wiki", JSON.stringify(edit({ key: `status-${reason}` })))
+        try Effect.try(() => {
+          expect(answer.status).toBe(status)
+          expect(answer.json).toEqual({ reason, unwritten: true })
+          expect(answer.cache).toBe("no-store")
+        })
+      }
+    }))
+  }
+  it.live("a read defaults to the index, and a failure stays anonymous-safe", () => scoped(effect {
+    provide NodeHttpServer.layerTest, FetchHttpClient.layer {
+      const seen: Array<WikiRequest> = []
+      const origin = try served({ perform: effect (request) => { seen.push(request); throw new WikiFailure({ reason: "unavailable" }) } }, undefined)
+      const answer = try send(origin, "GET", "/api/wiki")
+      try Effect.try(() => {
+        expect(answer.status).toBe(503)
+        expect(answer.json).toEqual({ reason: "unavailable" })
+        expect(seen[0]).toMatchObject({ op: "read", page: "index" })
+      })
+    }
+  }))
+})
+
+describe("recovery of a failed execution", () => {
+  const authority = authorityOf(will)
+  const running = (storage: Storage, hostFor: WikiHost.Shape, request: WikiRequest) => Effect.result(executeWiki("wiki-recovery", storage, request).pipe(
+    Effect.provideService(WikiAuthority, authority), Effect.provideService(WikiHost, hostFor), Effect.provide(FetchHttpClient.layer),
+  ))
+  it.live("an explicit recovery retries a failed write once; a replay of it joins the receipt", () => scoped(effect {
+    const storage = try Effect.try(() => objectStorage()) as unknown as Storage
+    let attempts = 0
+    const flaky: WikiHost.Shape = { perform: effect () => { attempts += 1; if (attempts === 1) throw new WikiFailure({ reason: "unavailable" }); return { seq: 1, pages: [], review: "https://x/pull/1" } } }
+    const request = edit({ key: "recover-1" })
+    const failed = try running(storage, flaky, request)
+    const recovered = try running(storage, flaky, { ...request, recovery: "again-1" })
+    const replayed = try running(storage, flaky, { ...request, recovery: "again-1" })
+    try Effect.try(() => {
+      expect(failed).toMatchObject({ _tag: "Failure", failure: { reason: "unavailable" } })
+      expect(recovered).toMatchObject({ _tag: "Success", success: { review: "https://x/pull/1", role: "maintainer" } })
+      expect(replayed).toMatchObject({ _tag: "Success", success: { review: "https://x/pull/1" } })
+      expect(attempts).toBe(2)
+    })
+  }))
+  it.live("a recovery that changes the failed payload can't adopt its execution", () => scoped(effect {
+    const storage = try Effect.try(() => objectStorage()) as unknown as Storage
+    const failing = failingHost("unavailable")
+    const request = edit({ key: "recover-2" })
+    try running(storage, failing, request)
+    const changed = try running(storage, failing, { ...request, text: "changed", recovery: "again-2" })
+    try Effect.try(() => expect(changed).toMatchObject({ _tag: "Failure", failure: { reason: "invalid" } }))
+  }))
+  it.live("a malformed recovery token or key is refused before any execution", () => scoped(effect {
+    const storage = try Effect.try(() => objectStorage()) as unknown as Storage
+    const badRecovery = try running(storage, failingHost("x"), edit({ key: "recover-3", recovery: "bad token!" }))
+    const badKey = try running(storage, failingHost("x"), edit({ key: "bad key!" }))
+    const authorizing = try Effect.result(executeWiki("wiki-recovery", storage, edit({ key: "recover-4" })).pipe(
+      Effect.provideService(WikiAuthority, authorityOf(will, () => Effect.fail(new WikiFailure({ reason: "rate-limited" })))), Effect.provideService(WikiHost, failingHost("x")), Effect.provide(FetchHttpClient.layer),
+    ))
+    try Effect.try(() => {
+      expect(badRecovery).toMatchObject({ _tag: "Failure", failure: { reason: "invalid" } })
+      expect(badKey).toMatchObject({ _tag: "Failure", failure: { reason: "invalid" } })
+      expect(authorizing).toMatchObject({ _tag: "Failure", failure: { reason: "rate-limited" } })
+    })
+  }))
+})
+
+it.live("the public wiki works with sign-in unconfigured: it refuses a write as forbidden", () => scoped(effect {
+  provide NodeHttpServer.layerTest, FetchHttpClient.layer {
+    const storage = try Effect.try(() => objectStorage()) as unknown as Storage
+    const server = try HttpServer.HttpServer
+    try HttpServer.serveEffect(publicWiki("wiki-public", storage))
+    const address = server.address
+    const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+    const answer = try send(origin, "POST", "/api/wiki", JSON.stringify(edit({ key: "public-write" })))
+    try Effect.try(() => { expect(answer.status).toBe(403); expect(answer.json).toEqual({ reason: "forbidden" }) })
+  }
+}))

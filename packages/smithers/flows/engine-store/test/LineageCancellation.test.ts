@@ -53,6 +53,7 @@ const seedHandoff = (store: RunStore.Service, contents = state()) =>
 const cancelFromProcess = (filename: string, runId: string) =>
   Effect.promise(() =>
     promisify(execFile)(process.execPath, [
+      "--import=vibelang/register",
       fileURLToPath(new URL("./fixtures/cancel-lineage-process.mjs", import.meta.url)),
       filename,
       runId

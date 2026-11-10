@@ -1,0 +1,284 @@
+// The wiki draft writer and the specification reviewers on the real durable engine. Faults replace the agent or the
+// budget; a model bound to a refused local port walks the live path as far as the provider call.
+import { it } from "@effect/vitest"
+import { Digest, SecureRandom } from "effect/crypto"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { HostModel } from "@smthrs/model-host"
+import { Node } from "@smthrs/plan"
+import { WikiWriter } from "../src/core/WikiWriter.vibe"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
+import { SpecificationReviewers } from "../src/core/specification.vibe"
+import { unansweredSpecificationReview } from "../src/core/conversation.vibe"
+import { agentOf, answer as answerPost, ChatModel, Replies, REASONS, Spend, tagOf } from "../worker/Reply.vibe"
+import { AgentAction, EventSink } from "@smthrs/agent"
+import { HistoryTools } from "../worker/HistoryTools.vibe"
+import { Tours } from "../src/core/flows.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { WikiDraftAgent, wikiAgentLayer, wikiWriter } from "../worker/WikiDraft.vibe"
+import { liveSpecificationReviewers } from "../worker/SpecificationReviewers.vibe"
+import { run, Text } from "./run.vibe"
+import { cell, scriptedModel, type Scripted } from "./model-server.vibe"
+import { AgentActions } from "../src/actions/agent.vibe"
+import { Actions } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+
+type HostModelService = HostModel["Service"]
+
+/**
+ * A model that fails at once: the scripted server answers a provider's non-retryable 400. These targets test the
+ * writers' answers to a failed model, not the retry policy, which a refused port would wait out for seconds.
+ */
+const FAILING: ReadonlyArray<Scripted> = [{ kind: "status", status: 400, code: "invalid" }]
+const Admission = Schema.Literals(["admit", "refuse", "fault"])
+const WikiInput = Schema.Struct({ agent: Schema.Literals(["absent", "fails", "drafts", "refused-model", "no-model"]), admission: Admission, ask: Text, page: Text })
+const ReviewerInput = Schema.Struct({ reviewer: Schema.Literals(["astra", "sol", "fable", "opus"]), admission: Admission, bound: Schema.Literals(["none", "refused", "broken"]), text: Text, revision: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 9 })) })
+
+function ledger(admission: typeof Admission.Type) {
+  const log = { admitted: 0, spent: 0 }
+  const spend: Spend.Shape = {
+    admit: () => effect {
+      log.admitted += 1
+      if (admission === "fault") throw new Unreachable({ what: "budget" })
+      return admission === "admit"
+    },
+    spend: () => sync(() => { log.spent += 1 }),
+  }
+  return { log, spend }
+}
+
+const Outcome = Flow.make("test/model-writers/outcome", { payload: {}, success: Schema.String, body: () => Node.succeed("") })
+
+/** One durable execution of `program`, whose string answer says how it ended. */
+effect function execution<S>(layer: Layer.Layer<S>, program: Effect<string, never, S | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom>) {
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    const services = try Effect.context<S | Digest.Digest | SecureRandom.SecureRandom>()
+    try engine.register(Outcome, () => Effect.provide(program, services) as never)
+  })
+  const context = try Layer.build(registration.pipe(Layer.provide(layer), Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer)))
+  return try Context.get(context, FlowRuntime.FlowRuntime).execute(Outcome, { executionId: "test/model-writers/fuzz", payload: {} })
+}
+
+// The engine's generic requirements stay unresolved over S; every service is provided above, and Scope remains.
+const within = <S>(layer: Layer.Layer<S>, program: Effect<string, never, S | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom>) => execution(layer, program) as unknown as Effect<string, unknown, Scope.Scope>
+
+/** No admission means no agent and no charge; a charge follows exactly one admitted attempt. */
+it.live("wiki/writer", () => run("wiki/writer", WikiInput, (input) => scoped(effect {
+  const { log, spend } = ledger(input.admission)
+  let agents = 0
+  const agent = input.agent === "fails" || input.agent === "drafts" || input.agent === "absent" ? Layer.succeed(WikiDraftAgent, {
+    available: input.agent !== "absent",
+    run: effect (request) => {
+      agents += 1
+      if (input.agent === "fails") throw new WikiFailure({ reason: "draft" })
+      return { page: request.page, text: `${request.source}${request.ask}` }
+    },
+  }) : wikiAgentLayer.pipe(Layer.provide(Layer.succeed(ChatModel, input.agent === "no-model" ? { model: undefined, unusable: "unset" } : { model: (try scriptedModel(FAILING)).model, unusable: "" })))
+  const writer = wikiWriter.pipe(Layer.provide(agent), Layer.provide(Layer.succeed(Spend, spend)))
+  const answer = try within(writer, effect {
+    const result = try Effect.result((try WikiWriter).draft({ page: input.page, source: "# Page", ask: input.ask }))
+    return result._tag === "Success" ? "ok" : result.failure.reason as string
+  })
+  const unavailable = input.agent === "absent" || input.agent === "no-model"
+  if (unavailable) return answer === "no-model" && log.admitted === 0 && log.spent === 0
+  if (input.admission !== "admit") return answer === "budget" && agents === 0 && log.spent === 0
+  if (log.spent !== 1) return false
+  return input.agent === "drafts" ? answer === "ok" : answer === "draft"
+})))
+
+/** A reviewer with no configured model and a refused budget never asks a model; reasons stay within the known set. */
+it.live("specification/reviewers", () => run("specification/reviewers", ReviewerInput, (input) => scoped(effect {
+  const { log, spend } = ledger(input.admission)
+  const name = `SPEC_REVIEW_${input.reviewer.toUpperCase()}`
+  const failing = input.bound === "refused" ? try scriptedModel(FAILING) : undefined
+  const values = { ...failing?.values, ...(failing !== undefined ? { [name]: JSON.stringify(failing.record) } : input.bound === "broken" ? { [name]: "{not json" } : {}) }
+  const layer = liveSpecificationReviewers.pipe(Layer.provide(Layer.succeed(Spend, spend)), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values))))
+  const spec = { revision: input.revision, text: input.text, astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }
+  const outcome = try Effect.exit(within(layer, effect {
+    const result = try Effect.result((try SpecificationReviewers).review(input.reviewer, spec))
+    return result._tag === "Success" ? "ok" : result.failure.reason as string
+  }))
+  // Malformed reviewer configuration stops the object at startup, a deployment error.
+  if (input.bound === "broken") return true
+  if (outcome._tag === "Failure") return false
+  if (input.bound === "none") return outcome.value === "no-model" && log.admitted === 0
+  if (input.admission !== "admit") return outcome.value === "budget" && log.spent === 0
+  return outcome.value === "review" && log.spent === 1
+})))
+
+const WikiAnswer = Schema.Struct({ answer: Schema.Literals(["draft", "other-page", "blank", "not-a-draft", "no-cell", "unavailable"]), ask: Text })
+
+/** A real model answer on a real socket: only the asked page with a non-blank text becomes a draft, and it is charged once. */
+it.live("wiki/writer-answers", () => run("wiki/writer-answers", WikiAnswer, ({ answer, ask }) => scoped(effect {
+  const { log, spend } = ledger("admit")
+  const page = "roadmap"
+  const output = answer === "other-page" ? { page: "index", text: "# X" } : answer === "blank" ? { page, text: "   " } : answer === "not-a-draft" ? { nope: 1 } : { page, text: "# Edited" }
+  const script = answer === "unavailable" ? { kind: "status" as const, status: 400, code: "invalid" } : { kind: "stream" as const, pieces: [answer === "no-cell" ? "prose only" : cell(JSON.stringify(output))], prompt: 3, completion: 4 }
+  const scripted = try scriptedModel([script])
+  const agent = wikiAgentLayer.pipe(Layer.provide(Layer.succeed(ChatModel, { model: scripted.model, unusable: "" })))
+  const writer = wikiWriter.pipe(Layer.provide(agent), Layer.provide(Layer.succeed(Spend, spend)))
+  const outcome = try within(writer, effect {
+    const result = try Effect.result((try WikiWriter).draft({ page, source: "# Page", ask }))
+    return result._tag === "Success" ? "ok:" + result.success.text : result.failure.reason as string
+  })
+  if (log.spent !== 1) return false
+  return answer === "draft" ? outcome === "ok:# Edited" : outcome === "draft"
+})))
+
+const ReviewAnswer = Schema.Struct({ reviewer: Schema.Literals(["astra", "sol", "fable", "opus"]), verdict: Schema.Literals(["LGTM", "Changes requested", "Maybe"]), grade: Schema.Literals(["A", "C+", "Z"]), review: Text, revision: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 9 })) })
+
+/** Only a verdict the schema accepts becomes a review, it carries the asked revision, and it is charged once. */
+it.live("specification/reviewer-answers", () => run("specification/reviewer-answers", ReviewAnswer, (input) => scoped(effect {
+  const { log, spend } = ledger("admit")
+  const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify({ verdict: input.verdict, grade: input.grade, review: input.review }))], prompt: 2, completion: 2 }])
+  const values = { ...scripted.values, [`SPEC_REVIEW_${input.reviewer.toUpperCase()}`]: JSON.stringify(scripted.record) }
+  const layer = liveSpecificationReviewers.pipe(Layer.provide(Layer.succeed(Spend, spend)), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values))))
+  const spec = { revision: input.revision, text: "spec", astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }
+  const outcome = try within(layer, effect {
+    const result = try Effect.result((try SpecificationReviewers).review(input.reviewer, spec))
+    return result._tag === "Success" ? `ok:${result.success.revision}:${result.success.verdict}` : result.failure.reason as string
+  })
+  if (log.spent !== 1) return false
+  const accepted = input.verdict !== "Maybe" && input.grade !== "Z"
+  return accepted ? outcome === `ok:${input.revision}:${input.verdict}` : outcome === "review"
+})))
+
+const ANSWER_KINDS = ["answer", "chunked", "corrected", "empty", "blank", "prose", "refused", "credit", "rate-limited", "garbage", "bad-usage", "history-defect", "busy-once"] as const
+const ReplyInput = Schema.Struct({ kind: Schema.Literals(ANSWER_KINDS), text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(60)), start: Schema.Literals(["done", "refused"]), admission: Schema.Literals(["admit", "refuse"]), bound: Schema.Boolean })
+
+function scriptsOf(input: typeof ReplyInput.Type): ReadonlyArray<Scripted> {
+  const done = (output: string) => cell(JSON.stringify(output))
+  // A first cell that shows text and then throws, so the next frame's different answer starts the visible reply over.
+  if (input.kind === "corrected") return [{ kind: "stream", pieces: ["```cell\nctx.done(\"\\u0001draft\" + missing);\n```"], prompt: 3, completion: 4 }, { kind: "stream", pieces: [done(input.text)], prompt: 3, completion: 4 }]
+  return [scriptOf(input, done)]
+}
+
+function scriptOf(input: typeof ReplyInput.Type, done: (output: string) => string): Scripted {
+  switch (input.kind) {
+    case "corrected": case "history-defect": case "busy-once": return { kind: "stream", pieces: [done(input.text)], prompt: 3, completion: 4 }
+    case "answer": return { kind: "stream" as const, pieces: [done(input.text)], prompt: 3, completion: 4 }
+    case "chunked": { const whole = done(input.text); const middle = Math.floor(whole.length / 2); return { kind: "stream" as const, pieces: [whole.slice(0, middle), whole.slice(middle)], prompt: 3, completion: 4 } }
+    case "empty": return { kind: "stream" as const, pieces: [done("")], prompt: 3, completion: 4 }
+    case "blank": return { kind: "stream" as const, pieces: [done("  ")], prompt: 3, completion: 4 }
+    case "prose": return { kind: "stream" as const, pieces: ["no cell here"], prompt: 3, completion: 4 }
+    case "refused": return { kind: "status" as const, status: 400, code: "content_policy" }
+    case "credit": return { kind: "status" as const, status: 402, code: "out_of_credit" }
+    case "rate-limited": return { kind: "status" as const, status: 400, code: "invalid" }
+    case "garbage": return { kind: "garbage" as const }
+    case "bad-usage": return { kind: "stream" as const, pieces: [done(input.text)], prompt: -5, completion: 4 }
+  }
+}
+
+/**
+ * `Reply.answer` over a real model answer: an answer the agent completed is finished with exactly that text, its visible
+ * stream is a prefix of it, and everything else fails with one of the product's reasons.
+ */
+it.live("reply/answers", () => run("reply/answers", ReplyInput, (input) => scoped(effect {
+  const log = { finished: [] as Array<string>, failed: [] as Array<string>, appended: new Map<number, string>(), restarts: 0, starts: 0 }
+  const { log: charges, spend } = ledger(input.admission)
+  const replies: Replies.Shape = {
+    start: () => sync(() => { log.starts += 1; return input.kind === "busy-once" && log.starts === 1 ? "busy" as const : input.start }),
+    history: () => input.kind === "history-defect" ? Effect.die("history") : succeed([{ author: "person" as const, text: "question" }]),
+    append: (_reply, attempt, _offset, text) => sync(() => { log.appended.set(attempt, (log.appended.get(attempt) ?? "") + text) }),
+    restart: () => sync(() => { log.restarts += 1 }),
+    finish: (_reply, text) => sync(() => { log.finished.push(text); return "done" as const }),
+    fail: (_reply, reason) => sync(() => { log.failed.push(reason); return "done" as const }),
+  }
+  const scripted = try scriptedModel(scriptsOf(input))
+  const services = Layer.mergeAll(
+    Layer.succeed(Replies, replies), Layer.succeed(Spend, spend),
+    Layer.succeed(ChatModel, input.bound ? { model: scripted.model, unusable: "" } : { model: undefined, unusable: "unset" }),
+    Layer.succeed(Tours, {} as Tours.Shape), Layer.succeed(HistoryTools, { history: {} as HistoryTools.Shape["history"] }),
+  )
+  const exit = try Effect.exit(within(services, Effect.as(Effect.orDie(answerPost("m1")), "settled") as never))
+  if (exit._tag === "Failure") return false
+  if (log.starts !== (input.kind === "busy-once" ? 2 : 1)) return false
+  if (input.start === "refused") return log.finished.length === 0 && log.failed.length === 0 && charges.admitted === 0
+  if (log.finished.length + log.failed.length !== 1) return false
+  if (input.admission === "refuse") return log.failed[0] === REASONS.budget && charges.spent === 0
+  if (!input.bound) return log.failed[0] === REASONS.unconfigured && charges.spent === 0
+  if (input.kind === "history-defect") return log.failed[0] === REASONS.failed && charges.spent === 0
+  if (charges.spent !== 1) return false
+  const complete = input.kind === "answer" || input.kind === "chunked" || input.kind === "corrected" || input.kind === "busy-once"
+  if (complete && input.text.trim() !== "") {
+    if (log.finished[0] !== input.text) return false
+    const shown = log.appended.get(1 + log.restarts) ?? ""
+    return input.text.startsWith(shown)
+  }
+  return log.finished.length === 0 && Object.values(REASONS).includes(log.failed[0] as never)
+})))
+
+const OtherSeat = AgentAction.make("vibelang/fuzz/other-seat", { payload: {}, output: Schema.String, seat: "other", profile: "conversation", system: [], prompt: () => "", maxFrames: 1 })
+
+/** The agent has one seat: an action asking for another fails unresolved and calls no model. */
+it.live("reply/unknown-seat", () => run("reply/unknown-seat", Schema.Boolean, () => scoped(effect {
+  const scripted = try scriptedModel([{ kind: "garbage" }])
+  const sink: EventSink.Service = { emit: () => Effect.void }
+  const outcome = try within(Layer.empty, effect {
+    const exit = try Effect.exit(effect {
+      provide agentOf(OtherSeat.layer, scripted.model, sink), EventSink.EventSink = sink {
+        return try (try OtherSeat.requirement).action({})
+      }
+    })
+    return exit._tag === "Success" ? "answered" : tagOf(Cause.squash(exit.cause))
+  } as never)
+  return outcome.endsWith("SeatUnresolved") && (try scripted.calls) === 0
+})))
+
+const ActionsInput = Schema.Struct({ start: Schema.Boolean, text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(60)) })
+
+/** Answer services for one post; the agent's only tools are the ones under test. */
+function replyServices(model: HostModelService, log: { finished: Array<string>; failed: Array<string> }) {
+  const replies: Replies.Shape = {
+    start: () => succeed("done" as const),
+    history: () => succeed([{ author: "person" as const, text: "question" }]),
+    append: () => Effect.void,
+    restart: () => Effect.void,
+    finish: (_reply, text) => sync(() => { log.finished.push(text); return "done" as const }),
+    fail: (_reply, reason) => sync(() => { log.failed.push(reason); return "done" as const }),
+  }
+  return Layer.mergeAll(
+    Layer.succeed(Replies, replies), Layer.succeed(Spend, ledger("admit").spend),
+    Layer.succeed(ChatModel, { model, unusable: "" }),
+    Layer.succeed(Tours, {} as Tours.Shape), Layer.succeed(HistoryTools, { history: {} as HistoryTools.Shape["history"] }),
+  )
+}
+
+/**
+ * With the product's actions bound, the agent lists them and may start one: the answer reports the registered list,
+ * and a started run is announced exactly once with the id the agent got back.
+ */
+it.live("reply/actions-bound", () => run("reply/actions-bound", ActionsInput, (input) => scoped(effect {
+  const log = { finished: [] as Array<string>, failed: [] as Array<string> }
+  const announced: Array<string> = []
+  const actions = Context.get(try Layer.build(MockActions({ role: "contributor", actor: "agent" }).pipe(Layer.provide(MockFactory))), Actions)
+  const start = input.start ? `var started = await ctx.call("vibelang/actions/Start", { flow: "vibelang/Post", input: { text: ${JSON.stringify(input.text)} } });\n` : "var started = null;\n"
+  const code = "```cell\nvar listed = await ctx.call(\"vibelang/actions/List\", {});\n" + start + "ctx.done(JSON.stringify({ listed: listed, started: started }));\n```"
+  const scripted = try scriptedModel([{ kind: "stream", pieces: [code], prompt: 3, completion: 4 }])
+  const services = Layer.mergeAll(replyServices(scripted.model, log), Layer.succeed(AgentActions, { actions, announce: (run) => sync(() => { announced.push(run.id) }) }))
+  const exit = try Effect.exit(within(services, Effect.as(Effect.orDie(answerPost("m1")), "settled") as never))
+  if (exit._tag === "Failure") return false
+  // A cell call is keyed by a digest of its input; ill-formed UTF-16 has no UTF-8 bytes, so the run fails with the product reason.
+  if (input.start && !input.text.isWellFormed()) return log.finished.length === 0 && log.failed[0] === REASONS.failed && announced.length === 0
+  if (log.finished.length !== 1 || log.failed.length !== 0) return false
+  const answer = log.finished[0]!
+  if (!answer.includes("vibelang/Post")) return false
+  if (!input.start) return announced.length === 0
+  return announced.length === 1 && answer.includes(announced[0]!)
+})))
+
+/**
+ * A model call the runtime interrupts is the engine's, never a failed reply: the reply is neither finished nor failed,
+ * and the answer's interruption reaches the flow.
+ */
+it.live("reply/interrupted", () => run("reply/interrupted", Schema.Literals(["at-once", "after-text"]), (when) => scoped(effect {
+  const log = { finished: [] as Array<string>, failed: [] as Array<string> }
+  const scripted = try scriptedModel([{ kind: "garbage" }])
+  const interrupting: HostModelService = { ...scripted.model, model: { stream: () => when === "at-once" ? Stream.fromEffect(Effect.interrupt) : Stream.concat(Stream.make({ type: "text-delta", id: "fuzz", text: "par" } as never), Stream.fromEffect(Effect.interrupt)) } }
+  const exit = try Effect.exit(within(replyServices(interrupting, log), Effect.as(Effect.orDie(answerPost("m1")), "settled") as never))
+  const interrupted = exit._tag === "Failure" ? Cause.hasInterrupts(exit.cause) : exit.value !== "settled"
+  return interrupted && log.finished.length === 0 && log.failed.length === 0
+})))

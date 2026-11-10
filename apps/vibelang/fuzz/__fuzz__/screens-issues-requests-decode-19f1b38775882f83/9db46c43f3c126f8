@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 2
+bias 2
+null-prototype false
+key 1406717971
+tape j_s29bfdYNseRExSzJ31rE6OLxw
+schedule-key 1039041555
+schedule 
+signature "ReturnedFalse"
+path 0
+codec "json"
+value "{\"parent\":\"NaN\",\"title\":\"\",\"action\":\"new\"}"
+# ReturnedFalse
+# {"parent":"NaN","title":"","action":"new"}

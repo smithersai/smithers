@@ -1,0 +1,93 @@
+// The actual agent tool binding and person flow share the live sequencer. A log backed by Ref is the mock's storage.
+import { describe, expect, it } from "@effect/vitest"
+import { Cell } from "@smthrs/harness"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { OpenWiki, Tours, wikiRegistration } from "../src/core/flows.vibe"
+import type { Event } from "../src/core/conversation.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+import { toursOf } from "../worker/Objects.vibe"
+import { wikiTools } from "../worker/WikiTools.vibe"
+
+effect function world() {
+  const events = try Ref.make<ReadonlyArray<Event>>([])
+  const sequencer = try Sequencer.make({ read: () => Ref.get(events), write: event => Ref.update(events, log => [...log, event]) }, {
+    start: () => Effect.void, tour: () => Effect.void,
+  })
+  return { events, sequencer }
+}
+function call(page: string) {
+  return new Cell.Call({ flowName: "vibelang/wiki/open", input: { page, actor: "forged" }, capabilities: [],
+    effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" }, placement: Option.none(),
+    identity: new Cell.CallIdentity({ session: "wiki", frame: 0, cell: "wiki", ordinal: 0, declaration: "wiki", layers: [] }),
+  })
+}
+describe("the wiki tool", () => {
+  it.live("opens with its captured actor through the real binding, and refuses that actor after it finishes", () => scoped(effect {
+    const w = try world()
+    try w.sequencer.post("person", "Guest", "Open the wiki")
+    try w.sequencer.start("m1")
+    const [binding] = try wikiTools("r1", toursOf(w.sequencer)).bindings()
+    const opened = try binding!.run(call("rulings"))
+    try w.sequencer.finish("r1", "Opened Rulings.")
+    const ended = try binding!.run(call("roadmap"))
+    const events = try Ref.get(w.events)
+    try Effect.try(() => {
+      expect(opened.outcome).toBe("success")
+      expect(opened.value).toBe(true)
+      expect(ended.value).toBe(false)
+      expect(events.filter(event => event.type === "PaneOpened")).toEqual([{ type: "PaneOpened", seq: 3, id: "r1", url: "/wiki/rulings" }])
+    })
+  }))
+  it.live("reuses a completed opening execution without recording a second pane event", () => scoped(effect {
+    const w = try world()
+    const layer = wikiRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer), Layer.provide(Layer.succeed(Tours, toursOf(w.sequencer))))
+    provide layer {
+      const engine = try FlowRuntime.FlowRuntime
+      const first = try engine.execute(OpenWiki, { executionId: "wiki/once", payload: { page: "roadmap" } })
+      const replay = try engine.execute(OpenWiki, { executionId: "wiki/once", payload: { page: "roadmap" } })
+      const events = try Ref.get(w.events)
+      try Effect.try(() => { expect(first).toBe(true); expect(replay).toBe(true); expect(events).toHaveLength(1) })
+    }
+  }))
+})
+
+it.live("the reply's docs tool stays beside wiki and uses the same captured actor guard", () => scoped(effect {
+  const w = try world()
+  try w.sequencer.post("person", "Guest", "Open the docs")
+  try w.sequencer.start("m1")
+  const [, docs] = try wikiTools("r1", toursOf(w.sequencer)).bindings()
+  const request = new Cell.Call({ ...call(""), flowName: "vibelang/docs/open", input: { path: "/setup", actor: "forged" } })
+  const opened = try docs!.run(request)
+  try w.sequencer.finish("r1", "Opened setup.")
+  const stale = try docs!.run(request)
+  const events = try Ref.get(w.events)
+  try Effect.try(() => {
+    expect(opened.value).toBe(true)
+    expect(stale.value).toBe(false)
+    expect(events.filter(event => event.type === "PaneOpened")).toEqual([{ type: "PaneOpened", seq: 3, id: "r1", url: "https://vibelang.sh/setup" }])
+  })
+}))
+
+import { makeWikiFactory } from "../src/core/WikiFactory.vibe"
+it.live("the actual draft binding stores a contributor draft and opens its pane without submitting", () => scoped(effect {
+  const w = try world()
+  try w.sequencer.post("person", "jun", "Draft an edit")
+  try w.sequencer.start("m1")
+  const wiki = try makeWikiFactory("contributor")
+  const [, , draft] = try wikiTools("r1", toursOf(w.sequencer), { draft: effect (page, ask, key) => {
+    try wiki.act({ op: "draft", page, text: ask, key, base: "" })
+  } }).bindings()
+  const result = try draft!.run(new Cell.Call({ ...call(""), flowName: "vibelang/wiki/draft", input: { page: "roadmap", ask: "Add one reviewed brick." } }))
+  const stored = try wiki.read("roadmap")
+  const events = try Ref.get(w.events)
+  try Effect.try(() => {
+    expect(result.outcome).toBe("success")
+    expect(result.value).toEqual({ page: "roadmap", review: "#wiki-draft-roadmap" })
+    expect(stored.draft?.text).toContain("Add one reviewed brick.")
+    expect(stored.review).toBeUndefined()
+    expect(stored.pages.find(page => page.id === "roadmap")?.source).not.toContain("Add one reviewed brick.")
+    expect(events.at(-1)).toEqual({ type: "PaneOpened", seq: 3, id: "r1", url: "/wiki/roadmap" })
+  })
+}))

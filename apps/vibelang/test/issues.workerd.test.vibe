@@ -1,0 +1,53 @@
+import { describe, expect, it } from "@effect/vitest"
+import { afterAll, beforeAll } from "vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { IssuesState } from "../src/core/issueSchemas.vibe"
+import { serveIssuesHost, type Served } from "./support/workerd.vibe"
+let server: Served
+beforeAll(async () => { server = await runPromise(serveIssuesHost()) })
+afterAll(async () => { await server?.dispose() })
+const request = (op: string, key: string) => ({ op, key, number: 42, parent: 38, title: "Tuple pattern", text: "Regression on tuples.", assignee: "VibeLang agent", example: "const pair = [1, 2]", prior: "Rust" })
+effect function call(body: unknown) {
+  const response = try (try HttpClient.HttpClient).execute(HttpClientRequest.post(server.origin + "/issues").pipe(HttpClientRequest.bodyJsonUnsafe(body)))
+  try Effect.try(() => expect(response.status).toBe(200))
+  return try Schema.decodeUnknownEffect(IssuesState)(try response.json)
+}
+describe("issues in workerd", () => {
+  it.live("journals commitments once in SQLite and preserves the GitHub issue identity", () => effect {
+    provide FetchHttpClient.layer {
+      const first = try call(request("commit", "workerd-commit"))
+      const replay = try call(request("commit", "workerd-commit"))
+      try Effect.try(() => {
+        expect(first.items.find((i) => i.number === 42)?.task).toBe("Queued")
+        expect(replay).toEqual(first)
+      })
+      const notes = try call(request("comment", "workerd-comment"))
+      try Effect.try(() => expect(notes.items.find((i) => i.number === 42)?.comments).toBe(7))
+      const response = try HttpClient.get(server.origin + "/runs")
+      const runs = try Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ run_id: Schema.String, status: Schema.String })))(try response.json)
+      try Effect.try(() => {
+        expect(runs).toHaveLength(2)
+        expect(runs.every((run) => run.status === "completed")).toBe(true)
+      })
+    }
+  })
+})
+
+it.live("charges failed VIP drafts once per execution and recovers metering from SQLite", () => effect {
+  provide FetchHttpClient.layer {
+    const response = try HttpClient.get(server.origin + "/meter")
+    try Effect.try(() => expect(response.status).toBe(200))
+    const result = try response.json
+    try Effect.try(() => expect(result).toEqual({ first: 18, replay: 18, spent: 36, recovered: 18 }))
+  }
+})
+
+
+it.live("recovers a terminal partial write through native retryFrom and adopts the original child", () => effect {
+  provide FetchHttpClient.layer {
+    const response = try HttpClient.get(server.origin + "/recovery")
+    try Effect.try(() => expect(response.status).toBe(200))
+    const result = try response.json
+    try Effect.try(() => expect(result).toEqual({ completedStatus: "completed", savedKey: "partial-child", savedStatus: "failed", ownerBound: true, first: "Failure", failedReplay: "Failure", edited: "Failure", recovered: 3, replay: 3, writes: 1, linked: true }))
+  }
+})

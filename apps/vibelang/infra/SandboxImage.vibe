@@ -1,0 +1,6 @@
+// One offline Cloudflare Container per sandbox. The lead supplies an image digest at deployment; no credentials/env.
+import * as Cloudflare from "@alchemy.run/cloudflare"
+export class SandboxImage extends Cloudflare.Container<SandboxImage>()("VibelangSandboxImage", effect {
+  const image = try Effect.orDie(Config.String("VIBELANG_SANDBOX_IMAGE"))
+  return { schedulingPolicy: "durable_object" as const, image }
+}) {}

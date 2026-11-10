@@ -57,3 +57,6 @@ live suite requires an explicit test repository and credentials.
 
 [Quickstart](./quickstart.md) · [GitHub](./guides/github.md) ·
 [API](./api.md) · [Durable actions](./concepts/durable-actions.md)
+
+Hosted-site sign-in uses `GitHub.Auth.Broker`; see [the package guide](../README.md#hosted-site-sign-in) for the
+chosen opaque-code design, signed-assertion alternative, exact-origin registry, atomic store and host requirements.

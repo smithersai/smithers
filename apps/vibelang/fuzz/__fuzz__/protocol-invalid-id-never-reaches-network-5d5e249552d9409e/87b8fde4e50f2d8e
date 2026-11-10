@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 1
+bias 3
+null-prototype true
+key 2394790482
+tape vnNL9Eu6d8EMIubW
+schedule-key 951120712
+schedule 
+signature "ReturnedFalse"
+path 3
+codec "json"
+value "{\"id\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"operation\":23}"
+# ReturnedFalse
+# {"id":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","operation":23}

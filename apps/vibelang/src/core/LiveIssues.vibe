@@ -1,0 +1,17 @@
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { IssueFailure, type IssueRequest, IssuesState, type IssuesApi } from "./issueSchemas.vibe"
+export effect function liveIssues(origin: string): IssuesApi!!HttpClient.HttpClient {
+  const client = try HttpClient.HttpClient
+  const call = effect (request?: IssueRequest) => {
+    const wire = request === undefined ? HttpClientRequest.get(origin + "/api/issues") : HttpClientRequest.post(origin + "/api/issues").pipe(HttpClientRequest.bodyJsonUnsafe(request))
+    const response = try client.execute(wire).pipe(Effect.mapError(() => new IssueFailure({ reason: "unavailable" })))
+    if (response.status !== 200) {
+      const body = response.json catch () => undefined
+      const failure = Schema.decodeUnknownOption(Schema.Struct({ unwritten: Schema.optionalKey(Schema.Boolean), reason: Schema.Literals(["forbidden", "connect", "fork", "install", "sign-in", "missing", "unknown", "title", "incomplete", "assignee", "empty", "tree", "invalid", "review", "closed", "unavailable", "rate-limited", "no-model", "draft", "budget"]) }))(body)
+      throw new IssueFailure(Option.isSome(failure) ? failure.value : { reason: "unavailable" })
+    }
+    const body = try response.json.pipe(Effect.mapError(() => new IssueFailure({ reason: "protocol" })))
+    return try Schema.decodeUnknownEffect(IssuesState)(body).pipe(Effect.mapError(() => new IssueFailure({ reason: "protocol" })))
+  }
+  return { read: () => call(), act: call }
+}

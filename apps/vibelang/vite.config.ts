@@ -9,17 +9,34 @@ const WORKERD = "test/**/*.workerd.test.{ts,vibe}"
 
 export default defineConfig(({ mode }) => ({
   plugins: [vibelang()],
+  // pnpm may bind optional Vitest peers differently; every test must use the CLI's suite context.
+  resolve: { dedupe: ["vitest"] },
   build: {
     target: "es2022", sourcemap: true,
-    ...(mode === "e2e" ? { rolldownOptions: { input: ["index.html", "e2e/runtime/index.html"] } } : {}),
+    // Source coverage preserves branch statements before minifier folding (0017); timing uses the normal build.
+    ...(mode === "bench-coverage" ? { minify: false as const } : {}),
+    ...(mode === "e2e" ? { rolldownOptions: { input: ["index.html", "e2e/runtime/index.html", "e2e/actions-runtime/index.html", "e2e/coverage-fixtures/index.html"] } } : {}),
   },
   server: { port: 5178 },
   test: {
     environment: mode === "workerd" ? "node" : "happy-dom",
+    // Process discovery starts both MCP and CLI; match the workspace's finite budget.
+    testTimeout: 30_000,
+    // Bound per-lane compiler and real-engine load on the shared host, matching the browser pool.
+    maxWorkers: 2,
     include: mode === "workerd" ? [WORKERD] : ["test/**/*.test.{ts,vibe,mjs}"],
     exclude: mode === "workerd" ? configDefaults.exclude : [...configDefaults.exclude, WORKERD],
     ...(mode === "workerd" ? { testTimeout: 120_000, hookTimeout: 120_000 } : {}),
-    // Foldkit ships ESM that Vitest must transform with the app.
-    server: { deps: { inline: ["foldkit"] } },
+    coverage: {
+      provider: "v8",
+      autoAttachSubprocess: true,
+      include: ["src/**/*.vibe", "worker/**/*.vibe", "scripts/**/*.vibe", "infra/**/*.vibe", "dist-factory/**/*.js", "dist-scripts/**/*.js", "dist-script-tests/**/*.js"],
+      reporter: ["text", "json", "json-summary", "html", "lcov"],
+      reportsDirectory: mode === "workerd" ? "coverage/workerd" : "coverage/unit",
+      reportOnFailure: true,
+      thresholds: { perFile: true, lines: 100, branches: 100, functions: 100, statements: 100 },
+    },
+    // Transform the Effect adapter so Vite can deduplicate its Vitest peer with the running CLI.
+    server: { deps: { inline: ["foldkit", "@effect/vitest"] } },
   },
 }))

@@ -56,23 +56,24 @@ describe("native transcript scroll permission", () => {
     expect(nativeScroll).not.toHaveBeenCalled()
   })
 
-  for (const key of ["PageUp", "Home", "ArrowUp"]) {
-    test(`${key} pauses on the page while editor navigation keeps following`, () => {
+  for (const [key, modifiers] of [["PageUp", {}], ["Home", {}], ["ArrowUp", {}], ["Home", { ctrlKey: true }], ["ArrowUp", { metaKey: true }]] as const) {
+    test(`${key} ${JSON.stringify(modifiers)} pauses on the page while editor navigation keeps following`, () => {
       const viewport = transcriptViewport(document)
       const nativeScroll = vi.spyOn(Element.prototype, "scrollIntoView")
       const listener = (event: Event) => { viewport.key(event as KeyboardEvent) }
       document.addEventListener("keydown", listener)
       try {
         for (const selector of ["textarea", "[contenteditable] span"]) {
-          const editorKey = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })
+          const editorKey = new KeyboardEvent("keydown", { key, ...modifiers, bubbles: true, cancelable: true })
           document.querySelector(selector)!.dispatchEvent(editorKey)
           expect(editorKey.defaultPrevented).toBe(false)
           viewport.follow(0)
         }
         expect(nativeScroll).toHaveBeenCalledTimes(2)
-        const pageKey = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })
+        const pageKey = new KeyboardEvent("keydown", { key, ...modifiers, bubbles: true, cancelable: true })
         document.body.dispatchEvent(pageKey)
-        expect(pageKey.defaultPrevented).toBe(false)
+        // The page scroll is immediate, so a native key animation cannot outlive Latest.
+        expect(pageKey.defaultPrevented).toBe(true)
         viewport.follow(0)
         expect(nativeScroll).toHaveBeenCalledTimes(2)
       } finally { document.removeEventListener("keydown", listener) }

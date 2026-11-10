@@ -1,0 +1,35 @@
+import { describe, expect, it } from "@effect/vitest"
+import { FetchHttpClient } from "effect/http"
+import { configured } from "../worker/Accounts.vibe"
+
+const valid = {
+  VIBELANG_ORIGIN: "https://factory.example", VIBELANG_INITIAL_MAINTAINER_ID: "1",
+  GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
+  SESSION_SECRET: "fixture-only-signing-secret-32-chars",
+  SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+}
+describe("authentication configuration fails closed", () => {
+  it.effect("requires a canonical HTTPS origin, strong signing and encryption, and immutable bootstrap identity", () => effect {
+    for (const values of [
+      {}, { ...valid, VIBELANG_INITIAL_MAINTAINER_ID: "" },
+      { ...valid, VIBELANG_INITIAL_MAINTAINER_ID: "will" },
+      { ...valid, VIBELANG_ORIGIN: "not-a-url" },
+      { ...valid, VIBELANG_ORIGIN: "http://factory.example" },
+      { ...valid, VIBELANG_ORIGIN: "https://factory.example/path" },
+      { ...valid, SESSION_SECRET: "short" },
+      { ...valid, SESSION_ENCRYPTION_KEY: "invalid" },
+    ]) {
+      const setup = try scoped(configured().pipe(
+        Effect.provide(FetchHttpClient.layer), Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values))),
+      ))
+      try Effect.try(() => expect(setup).toBeUndefined())
+    }
+    const setup = try scoped(configured().pipe(
+      Effect.provide(FetchHttpClient.layer), Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(valid))),
+    ))
+    try Effect.try(() => {
+      expect(setup?.origin).toBe(valid.VIBELANG_ORIGIN)
+      expect(setup?.initialMaintainer).toBe("1")
+    })
+  })
+})

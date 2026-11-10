@@ -1,0 +1,65 @@
+// @vitest-environment node
+// Literal source ranges exercise the report merger, never contribute execution hits for production files.
+import { it, expect } from "@effect/vitest"
+import { metrics, unionEvidence, normalizeEndColumns } from "./support/coverageUnion.ts"
+
+const outer = { start: { line: 1, column: 0 }, end: { line: 5, column: 1 } }
+const inner = { start: { line: 3, column: 2 }, end: { line: 4, column: 10 } }
+const file = {
+  path: "/fixture.vibe", statementMap: { "0": outer, "1": inner },
+  fnMap: {}, branchMap: {}, s: { "0": 1, "1": 0 }, f: {}, b: {},
+}
+
+it("a called enclosing statement never credits an unexecuted nested statement's line", () => {
+  expect(metrics(file).total.lines).toBe(2)
+  expect(metrics(file).covered.lines).toBe(1)
+})
+
+it("an executed enclosing statement never credits an uncovered nested statement across runtimes", () => {
+  const evidence = { ...file, statementMap: { "0": outer }, s: { "0": 1 } }
+  expect(unionEvidence(file, evidence).s).toEqual({ "0": 1, "1": 0 })
+  const exact = { ...file, statementMap: { "1": inner }, s: { "1": 7 } }
+  expect(unionEvidence(file, exact).s).toEqual({ "0": 1, "1": 1 })
+  expect(file.s).toEqual({ "0": 1, "1": 0 })
+})
+
+it("same-line functions and different branch locations never borrow each other's hits", () => {
+  const a = { start: { line: 3, column: 0 }, end: { line: 3, column: 8 } }
+  const b = { start: { line: 3, column: 15 }, end: { line: 3, column: 25 } }
+  const base = { ...file, fnMap: { "0": { name: "unused", decl: a } }, f: { "0": 0 }, branchMap: { "0": { loc: a, type: "if", locations: [a, b] } }, b: { "0": [0, 0] } }
+  const evidence = { ...file, fnMap: { "0": { name: "called", decl: b } }, f: { "0": 1 }, branchMap: { "0": { loc: b, type: "if", locations: [b, a] } }, b: { "0": [1, 1] } }
+  expect(unionEvidence(base, evidence).f).toEqual({ "0": 0 })
+  expect(unionEvidence(base, evidence).b).toEqual({ "0": [0, 0] })
+  expect(unionEvidence(base, { ...base, f: { "0": 1 }, b: { "0": [1, 1] } }).f).toEqual({ "0": 1 })
+  expect(unionEvidence(base, { ...base, f: { "0": 1 }, b: { "0": [1, 1] } }).b).toEqual({ "0": [1, 1] })
+  expect(unionEvidence({ ...base, b: { "0": [1, 0] } }, { ...base, b: { "0": [0, 1] } }).b).toEqual({ "0": [1, 1] })
+})
+
+it("incomplete source columns cannot establish cross-runtime execution", () => {
+  const incomplete = { start: { line: 3, column: null }, end: { line: 4, column: null } }
+  const base = { ...file, statementMap: { "0": incomplete }, s: { "0": 0 } }
+  expect(unionEvidence(base, { ...base, s: { "0": 1 } }).s).toEqual({ "0": 0 })
+})
+
+it("an if without else credits its implicit arm across runtimes, but a partial arm location never does", () => {
+  const taken = { start: { line: 3, column: 2 }, end: { line: 3, column: 40 } }
+  const implicit = { start: {}, end: {} }
+  const base = { ...file, branchMap: { "0": { loc: taken, type: "if", locations: [taken, implicit] } }, b: { "0": [0, 0] } }
+  expect(unionEvidence(base, { ...base, b: { "0": [3, 1] } }).b).toEqual({ "0": [1, 1] })
+  const partial = { start: { line: 3, column: null }, end: {} }
+  const evidence = { ...base, branchMap: { "0": { loc: taken, type: "if", locations: [taken, partial] } }, b: { "0": [3, 1] } }
+  expect(unionEvidence(base, evidence as never).b).toEqual({ "0": [0, 0] })
+})
+
+it("normalizes only the source-map open-ended sentinel to the original UTF-16 line length", () => {
+  const open = { start: { line: 1, column: 0 }, end: { line: 1, column: Infinity } }
+  const finite = { start: { line: 1, column: 0 }, end: { line: 1, column: 2 } }
+  const missing = { start: { line: 1, column: 0 }, end: { line: 1, column: null } }
+  const input = { ...file, statementMap: { "0": open, "1": finite, "2": missing }, s: { "0": 7, "1": 0, "2": 0 } }
+  const normalized = normalizeEndColumns(input, "α🙂\n")
+  expect(normalized.statementMap["0"]?.end.column).toBe(3)
+  expect(normalized.statementMap["1"]?.end.column).toBe(2)
+  expect(normalized.statementMap["2"]?.end.column).toBeNull()
+  expect(normalized.s).toEqual(input.s)
+  expect(input.statementMap["0"].end.column).toBe(Infinity)
+})

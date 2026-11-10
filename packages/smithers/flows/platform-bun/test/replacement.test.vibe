@@ -1,0 +1,50 @@
+// A real confined filesystem; interrupted disk writes and concurrent edits are faulty external services.
+import { expect, it } from "@effect/vitest"
+import { FileSystem as Confined } from "@smthrs/kernel"
+import { BunFileSystem, BunHost } from "../src/index.ts"
+
+it.effect("atomically replaces existing content, preserves mode and accepts a completed replay", () => (effect {
+  const host = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try host.makeTempDirectoryScoped()
+  try host.writeFileString(path.join(root, "file"), "before", { mode: 0o640 })
+  const fs = try Confined.confined(host, root)
+  try BunFileSystem.replaceFileString(fs, "file", "before", "after")
+  try BunFileSystem.replaceFileString(fs, "file", "before", "after")
+  const content = try fs.readFileString("file")
+  const stat = try fs.stat("file")
+  const entries = try fs.readDirectory(".")
+  const longName = "x".repeat(255)
+  try fs.writeFileString(longName, "long-before")
+  try BunFileSystem.replaceFileString(fs, longName, "long-before", "long-after")
+  const longContent = try fs.readFileString(longName)
+  try Effect.try(() => { expect(longContent).toBe("long-after"); expect(content).toBe("after"); expect(stat.mode & 0o777).toBe(0o640); expect(entries).toEqual(["file"]) })
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("a partial temporary write cannot truncate the original; a concurrent edit is preserved", () => (effect {
+  const host = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try host.makeTempDirectoryScoped()
+  try host.writeFileString(path.join(root, "file"), "before")
+  const fs = try Confined.confined(host, root)
+  const interrupted = { ...fs, writeFileString: effect (name: string) => { try fs.writeFileString(name, "partial"); try Effect.interrupt } }
+  const failure = try exit(BunFileSystem.replaceFileString(interrupted, "file", "before", "after"))
+  const original = try fs.readFileString("file")
+  const concurrent = { ...fs, writeFileString: effect (name: string, text: string, options?: Parameters<FileSystem.FileSystem["writeFileString"]>[2]) => { try fs.writeFileString(name, text, options); try fs.writeFileString("file", "person's edit") } }
+  const conflict = try exit(BunFileSystem.replaceFileString(concurrent, "file", "before", "after"))
+  const changed = try fs.readFileString("file")
+  const entries = try fs.readDirectory(".")
+  try Effect.try(() => { expect(Exit.isFailure(failure)).toBe(true); expect(original).toBe("before"); expect(Exit.isFailure(conflict)).toBe(true); expect(changed).toBe("person's edit"); expect(entries).toEqual(["file"]) })
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
+
+it.effect("refuses a stale original before creating a temporary file", () => (effect {
+  const host = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try host.makeTempDirectoryScoped()
+  const fs = try Confined.confined(host, root)
+  try fs.writeFileString("file", "person's edit")
+  const result = try exit(BunFileSystem.replaceFileString(fs, "file", "before", "after"))
+  const current = try fs.readFileString("file")
+  const entries = try fs.readDirectory(".")
+  try Effect.try(() => { expect(Exit.isFailure(result)).toBe(true); expect(current).toBe("person's edit"); expect(entries).toEqual(["file"]) })
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))

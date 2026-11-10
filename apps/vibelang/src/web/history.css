@@ -1,0 +1,46 @@
+/* The mythical history's page (wiki/designs/mythical/, the designer's mh-* rules): a maximized pane over the frame. */
+.vl-app[data-surface="history"] { min-height: 100vh; }
+.vl-docs.mh-pane { display: flex; flex-direction: column; position: fixed; inset: 60px 0 0; border-radius: 0; border-width: 1px 0 0; }
+.vl-docs-bar a.vl-docs-toggle { text-decoration: none; }
+.mh-pane-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.mh-mono { font-family: var(--font-mono); }
+.mh-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mh-toolbar .sui-input { flex: 1 1 140px; max-width: 260px; }
+.mh-toolbar-end { margin-inline-start: auto; display: flex; align-items: center; gap: 8px; }
+.mh-toolbar .sui-badge a { color: inherit; text-decoration: none; }
+.mh-epics { display: grid; gap: 10px; }
+.mh-commits { margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); border-radius: var(--r-1, 6px); overflow: hidden; }
+.mh-commit { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 10px; color: var(--text); font-size: 13px; text-decoration: none; }
+.mh-commits li + li .mh-commit { border-top: 1px solid var(--border); }
+.mh-commit:hover { background: var(--hover-subtle); }
+.mh-commit:hover .mh-commit-msg { color: var(--brand); }
+.mh-commit:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--brand); }
+.mh-commit-msg { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mh-plane { flex: 0 0 auto; min-height: 18px; padding: 0 6px; font-family: var(--font-mono); font-size: 10px; }
+.mh-commit-meta { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.mh-note-dot { color: var(--info); font-size: 10px; }
+.mh-commit[data-planned="true"] { border-left: 2px dashed var(--warning); background: var(--warning-soft); }
+.mh-more { margin-top: 8px; }
+.mh-epic-link { display: inline-block; margin-top: 8px; font-size: 12px; }
+.mh-head { display: grid; gap: 8px; }
+.mh-title { margin: 0; font-size: 18px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+.mh-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--text-muted); font-size: 12px; }
+.mh-note-sections { display: grid; gap: 12px; }
+.mh-note-list { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+.mh-note-list a { color: var(--brand); font-family: var(--font-mono); font-size: 12px; text-decoration: none; }
+.mh-note-list a:hover { text-decoration: underline; }
+.mh-by { color: var(--text-muted); font-size: 12px; }
+.mh-none { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
+.mh-step-action { display: flex; margin-top: 6px; }
+.mh-real-link { display: block; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-1, 6px); font-size: 12px; }
+.mh-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.mh-inline .sui-input { flex: 1 1 160px; max-width: 420px; }
+.mh-inline .mh-section { flex: 0 0 auto; width: auto; }
+.mh-dialog { position: fixed; inset: 0; margin: auto; transform: none; height: fit-content; max-width: 480px; width: calc(100vw - 32px); }
+.mh-dialog::backdrop { background: rgb(0 0 0 / 0.6); }
+.mh-dialog[data-state="closed"] { display: none; }
+.mh-dialog form { display: grid; gap: 12px; }
+@media (max-width: 600px) {
+  .mh-commit-meta .mh-foldcount { display: none; }
+  .mh-pane-body .sui-page-body { padding: 14px 12px 40px; }
+}

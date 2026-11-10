@@ -1,0 +1,81 @@
+// The app view's remaining states: the tour's own controls paused and voiced, the docs pane while the agent drives
+// and maximized, the Actions pane maximized over the chat, a wiki page under the entry that opened it, the composer's
+// arrow keys over the slash menu, and an image that failed to load.
+import { expect, expectIgnored, given, keydown, role, scene, selector } from "foldkit/scene"
+import { it } from "@effect/vitest"
+import { registration } from "../src/actions/catalog.vibe"
+import { newClient, receive } from "../src/core/conversation.vibe"
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
+import { initial as initialActions } from "../src/web/actionModel.vibe"
+import { init, type Model, update } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+
+const home = init({ session: "view", mode: "mock", name: "Ada" }).model
+const chat: Model = { ...home, surface: "chat" }
+const DOCS = "https://vibelang.smithers.sh/docs/intro"
+/** The chat after one post, with `url` opened by the person. */
+function opened(url: string): Model {
+  const posted = receive(newClient, { type: "Posted", seq: 1, id: "m1", clientId: "c1", name: "Ada", text: "Hello" })
+  return { ...chat, client: receive(posted, { type: "PaneOpened", seq: 2, id: "", url }) }
+}
+const composer = role("textbox", { name: "Message" })
+
+it("the tour's controls show a paused, voiced step, and the status says which step", () => {
+  const words = WALKTHROUGH[2]!.subtitle.split(/\s+/).slice(0, 6).join(" ")
+  scene({ update, view }, given({ ...chat, tour: true, theatre: { step: 3, paused: true, sound: true, target: "splash" } }),
+    expect(role("button", { name: "Play" })).toExist(),
+    expect(role("button", { name: "Pause" })).toBeAbsent(),
+    expect(role("button", { name: "Sound off" })).toHaveAttr("aria-pressed", "true"),
+    expect(selector("section[data-paused=\"true\"]")).toExist(),
+    expect(role("status", { name: "Tour" })).toHaveText(`Agent controlling. Escape to stop. Step 3 of 10: ${words}`),
+  )
+})
+
+it("the docs the agent opened while driving cannot be maximized or focused", () => {
+  scene({ update, view }, given({ ...opened(DOCS), tour: true }),
+    expect(role("region", { name: "Docs" })).toHaveAttr("data-driving", "true"),
+    expect(role("button", { name: "Maximize the docs" })).toBeAbsent(),
+    expect(selector(".vl-docs-body")).toExist(),
+    expect(selector(".vl-docs-content")).toBeAbsent(),
+  )
+})
+
+it("maximized docs sit over the chat and offer to minimize", () => {
+  scene({ update, view }, given({ ...opened(DOCS), docs: "max" }),
+    expect(role("region", { name: "Docs" })).toHaveAttr("data-maximized", "true"),
+    expect(role("button", { name: "Minimize the docs" })).toExist(),
+  )
+})
+
+it("a maximized Actions pane sits over the chat once", () => {
+  scene({ update, view }, given({ ...chat, actions: { ...initialActions, open: true, maximized: true, entries: [registration("vibelang/Tour")] } }),
+    expect(role("region", { name: "Actions" })).toHaveAttr("data-maximized", "true"),
+    expect(role("button", { name: "Minimize Actions" })).toExist(),
+  )
+})
+
+it("a wiki page the agent opened shows under the entry that opened it", () => {
+  scene({ update, view }, given({ ...opened("/wiki/index"), wikiAfter: "m1", wikiStatus: "ready" }),
+    expect(selector(".vl-wiki")).toExist(),
+    expect(role("region", { name: "Docs" })).toBeAbsent(),
+  )
+})
+
+it("the arrow keys move through the slash menu while it shows, and do nothing otherwise", () => {
+  const actions = { ...initialActions, slash: true, commands: [registration("vibelang/Tour"), registration("vibelang/Post")] }
+  scene({ update, view }, given({ ...chat, draft: "/", actions }),
+    expect(role("option", { name: "/tour Explore VibeLang" })).toHaveAttr("aria-selected", "true"),
+    keydown(composer, "ArrowDown"),
+    expect(role("option", { name: "/post Ask the agent" })).toHaveAttr("aria-selected", "true"),
+    keydown(composer, "ArrowUp"),
+    expect(role("option", { name: "/tour Explore VibeLang" })).toHaveAttr("aria-selected", "true"),
+  )
+  scene({ update, view }, given({ ...chat, draft: "hello" }), keydown(composer, "ArrowDown"), expectIgnored())
+  scene({ update, view }, given({ ...chat, draft: "hello" }), keydown(composer, "ArrowUp"), expectIgnored())
+})
+
+it("an image that failed to load leaves the empty chat without its figure", () => {
+  const card = "/media/card-06-compiler.png"
+  scene({ update, view }, given(chat), expect(selector(`img[src="${card}"]`)).toExist())
+  scene({ update, view }, given({ ...chat, failedMedia: [card] }), expect(selector(`img[src="${card}"]`)).toBeAbsent())
+})

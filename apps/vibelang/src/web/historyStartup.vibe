@@ -1,0 +1,87 @@
+import { preferenceWrite, wantsMock, startupRole } from "./startupDecision.vibe"
+// The history page's startup (wiki/decisions/0020-mythical-history.md): renders at once with mode `pending`, then the
+// backend selection resolves. In mock mode the page lets you be any role, with `?role=<role>` or the `vibelang.role`
+// storage key (maintainer when neither says); live, the server decides who you are, a viewer until sign-in lands.
+import { HttpClient } from "effect/http"
+import { ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
+import { Runtime, Subscription } from "foldkit"
+import type { Role } from "../history/roles.vibe"
+import { ROLES } from "../history/roles.vibe"
+import { HistoryFlags, HistoryMessage, HistoryModel, init, subscriptions, update } from "./historyApp.vibe"
+import { BrowserMythical, HistoryBackend } from "./historyBackend.vibe"
+import { view } from "./historyView.vibe"
+import { stylesheet } from "./styles.vibe"
+
+/** The page asked for the mock agent, as the chat's startup reads it. Storage can be unavailable; that asks for nothing. */
+function askedForMock(window: Window): boolean {
+  const asked = new URLSearchParams(window.location.search).get("agent")
+  const write = preferenceWrite(asked)
+  try {
+    if (write === "set") window.localStorage.setItem("vibelang.agent", "mock")
+    if (write === "clear") window.localStorage.removeItem("vibelang.agent")
+  } catch {
+    // Storage can be unavailable (a private window): the query still chooses for this page.
+  }
+  if (write !== "keep") return wantsMock(asked, null)
+  try {
+    return wantsMock(asked, window.localStorage.getItem("vibelang.agent"))
+  } catch {
+    return wantsMock(asked, null)
+  }
+}
+
+/** The role this page plays in mock mode. */
+export function mockRole(window: Window): Role {
+  let asked = new URLSearchParams(window.location.search).get("role") ?? ""
+  if (asked === "") {
+    try {
+      asked = window.localStorage.getItem("vibelang.role") ?? ""
+    } catch {
+      asked = ""
+    }
+  }
+  return startupRole(asked, "maintainer", ROLES) as Role
+}
+
+function backendMode() {
+  return Subscription.make<HistoryModel, HistoryMessage, HistoryBackend>()(() => ({
+    backend: Subscription.persistentEntry(Stream.fromEffect(effect {
+      const mode = try (try HistoryBackend).ready
+      return try orDie(Effect.try(() => HistoryMessage.ResolvedMode({ mode })))
+    })),
+  }))
+}
+
+/** The Foldkit application for /history, and the flags it starts with. */
+export effect function historyMain() {
+  const window = try (try Experimental.Window.Window).current
+  const document = try (try Experimental.Document.Document).current
+  const client = try HttpClient.HttpClient
+  const css = try stylesheet()
+  const root = try Effect.try(() => {
+    const style = document.createElement("style")
+    style.textContent = css
+    document.head.append(style)
+    return document.getElementById("root")!
+  })
+  const role = mockRole(window)
+  const resources = Layer.merge(
+    BrowserMythical(window.location.origin, askedForMock(window), { role, name: "Guest", agent: false }).pipe(
+      Layer.provide(Layer.succeed(HttpClient.HttpClient, client)),
+    ),
+    ExperimentalBrowserWindow.layer,
+  )
+  const flags: HistoryFlags = { mode: "pending", role, hash: window.location.hash.slice(1) }
+  const application = try Effect.try(() => Runtime.makeApplication({
+    Model: HistoryModel,
+    Flags: HistoryFlags,
+    init,
+    update,
+    view,
+    subscriptions: Subscription.aggregate(subscriptions(window), backendMode()),
+    resources,
+    container: root,
+    devTools: { Message: HistoryMessage },
+  }))
+  return { application, flags }
+}

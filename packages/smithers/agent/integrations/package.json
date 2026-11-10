@@ -592,6 +592,7 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
+    "src/**/*.vibe",
     ".vibelang/js",
     "!.vibelang/js/.loader"
   ],
@@ -642,7 +643,6 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
     "vibelang": "0.0.13",
-    "vibelang-runtime": "0.0.13",
     "vibelang-unplugin": "0.0.13",
     "vibelang-vite": "0.0.13",
     "vitest": "5.0.0"

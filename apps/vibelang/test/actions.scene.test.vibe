@@ -1,0 +1,84 @@
+import { Command, click, expect, given, role, scene, Subscription, text, type } from "foldkit/scene"
+import { describe, it } from "@effect/vitest"
+import { init, LoadActions, Message, update } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+import { initial as initialActions } from "../src/web/actionModel.vibe"
+import { registration } from "../src/actions/catalog.vibe"
+const home = init({ session: "actions", mode: "mock", name: "Guest" }).model
+it("opens Actions inside the chat, shows real flows and an honest empty state", () => {
+  scene({ update, view }, given({ ...home, surface: "chat" }),
+    expect(role("button", { name: "Expand Actions" })).toExist(),
+    click(role("button", { name: "Expand Actions" })),
+    Command.expectExact(LoadActions({ flow: "" })),
+    Command.resolve(LoadActions, Message.LoadedActions({ entries: [registration("vibelang/Tour")], commands: [registration("vibelang/Tour")], runs: [] })),
+    expect(role("button", { name: "Tour" })).toExist(),
+  )
+})
+it("a viewer sees the tour command and can inspect internal flows without a Run button", () => {
+  scene({ update, view }, given({ ...home, surface: "chat", actions: {
+    open: true, maximized: false, selected: "vibelang/Reply", run: "", loading: false, error: "", starting: false, input: "", highlight: 0, slash: false,
+    entries: [registration("vibelang/Reply"), registration("vibelang/Tour")], commands: [registration("vibelang/Tour")], runs: [],
+  } }),
+    expect(text("No runs yet")).toExist(),
+    expect(role("button", { name: "Run" })).toBeAbsent(),
+    type(role("textbox", { name: "Message" }), "/"),
+    expect(role("option", { name: "/tour Explore VibeLang" })).toExist(),
+    expect(role("option", { name: "/post Ask the agent" })).toBeAbsent(),
+  )
+})
+
+it("elapsed time advances while the running flow is waiting, and freezes when settled", () => {
+  const run = { id: "a1", flow: "vibelang/Tour", door: "button" as const, actor: "person" as const, state: "running" as const, started: 1000, at: 1000, result: "", steps: [] }
+  const model = { ...home, surface: "chat" as const, actions: { ...initialActions, open: true, selected: run.flow, run: run.id, entries: [registration(run.flow)], commands: [registration(run.flow)], runs: [run] } }
+  scene({ update, view }, given(model),
+    Subscription.emit(Message.TickedActions({ at: 5000 })),
+    expect(text("person · 4s")).toExist(),
+  )
+})
+
+it("opens the failed step's log first and switches to the step a person selects", () => {
+  const run = { id: "a1", flow: "vibelang/Tour", door: "button" as const, actor: "person" as const, state: "failed" as const, started: 0, at: 3, result: "Action failed", steps: [
+    { key: "first", name: "vibelang/tour/start", attempt: 1, state: "passed" as const, started: 0, at: 1 },
+    { key: "second", name: "vibelang/tour/say", attempt: 1, state: "failed" as const, started: 1, at: 3 },
+  ] }
+  scene({ update, view }, given({ ...home, surface: "chat", actions: { ...initialActions, open: true, selected: run.flow, run: run.id, entries: [registration(run.flow)], commands: [registration(run.flow)], runs: [run] } }),
+    expect(text("say · failed")).toExist(),
+    click(role("button", { name: "start" })),
+    expect(text("start · passed")).toExist(),
+    expect(text("say · failed")).toBeAbsent(),
+  )
+})
+
+it("a Contributor can cancel a live Post Reply child while the internal declaration stays inspect-only", () => {
+  const run = { id: "a1-reply", flow: "vibelang/Reply", door: "agent" as const, actor: "agent" as const, state: "running" as const, started: 0, at: 1, result: "", steps: [] }
+  scene({ update, view }, given({ ...home, surface: "chat", actions: { ...initialActions, open: true, selected: run.flow, run: run.id, entries: [registration(run.flow)], commands: [registration("vibelang/Post")], runs: [run] } }),
+    expect(role("button", { name: "Cancel" })).toExist(),
+    expect(role("button", { name: "Re-run" })).toBeAbsent(),
+  )
+})
+
+describe("the run's result", () => {
+  const settled = (state: "passed" | "failed", result: string) => {
+    const run = { id: "a1", flow: "vibelang/history/Plan", door: "button" as const, actor: "person" as const, state, started: 0, at: 1, result, steps: [] }
+    return given({ ...home, surface: "chat", actions: { ...initialActions, open: true, selected: run.flow, run: run.id, entries: [registration(run.flow)], commands: [registration(run.flow)], runs: [run] } })
+  }
+  it.each([
+    ["unknown", "No such epic or commit."],
+    ["forbidden", "Your role can't do that."],
+    ["unavailable", "The history can't be reached."],
+    ["a-new-reason", "a-new-reason"],
+  ])("a %s refusal shows its reason, not its JSON", (refusal, reason) => {
+    const raw = JSON.stringify({ id: "", refusal })
+    scene({ update, view }, settled("failed", raw),
+      expect(text(reason)).toExist(),
+      expect(text(raw)).toBeAbsent(),
+    )
+  })
+  it.each([
+    ["an accepted answer", "passed" as const, JSON.stringify({ id: "c1", refusal: null })],
+    ["a failure message", "failed" as const, "Action failed"],
+    ["other JSON with a refusal field", "passed" as const, JSON.stringify({ refusal: "unknown" })],
+  ])("%s stays as it was", (_name, state, result) => {
+    scene({ update, view }, settled(state, result), expect(text(result)).toExist())
+  })
+})

@@ -1,0 +1,55 @@
+import { afterAll, beforeAll, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { serveApi, type Served } from "../test/support/workerd.vibe"
+import { Identity } from "../src/core/roles.vibe"
+import { run, Int, Text } from "./run.vibe"
+
+let api: Served
+const origin = "https://factory.example"
+beforeAll(async () => {
+  api = await runPromise(serveApi({ VIBELANG_ORIGIN: origin, VIBELANG_INITIAL_MAINTAINER_ID: "1", GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only", SESSION_SECRET: "fixture-only-signing-secret-32-chars", SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" }))
+}, 120_000)
+afterAll(async () => { await api?.dispose() })
+
+effect function request(path: string, cookie = "", body?: unknown, incoming = origin) {
+  const client = try HttpClient.HttpClient
+  const req = body === undefined ? HttpClientRequest.get(api.origin + path) : HttpClientRequest.post(api.origin + path).pipe(HttpClientRequest.bodyJsonUnsafe(body))
+  return try client.execute(req.pipe(HttpClientRequest.setHeader("cookie", cookie), HttpClientRequest.setHeader("origin", incoming)))
+}
+
+effect function issue(id: string, expired = false) {
+  const response = try request("/__fixture/issue?id=" + id + "&login=fuzz-" + id + (expired ? "&expired=1" : ""))
+  const body = try response.json
+  return (body as { readonly cookie: string }).cookie
+}
+
+/** The fixture issuer signs/encrypts with the real production session code and SQLite; no OAuth success is simulated. */
+it.live("workerd/session-signatures-and-sign-out", () => run("workerd/session-signatures-and-sign-out", Schema.Struct({ id: Int, expired: Schema.Boolean, tampered: Schema.Boolean, text: Text }), ({ id, expired, tampered, text }) => effect {
+  provide FetchHttpClient.layer {
+    const cookie = try issue(String(id + 100), expired)
+    const before = try (try request("/api/auth/session", tampered ? cookie + "!" + text.replace(/[^\x21-\x7e]/g, "x") : cookie)).json
+    const identity = try Schema.decodeUnknownEffect(Identity)(before)
+    if (expired || tampered) return identity.id === "" && identity.role === "viewer"
+    if (identity.id !== String(id + 100) || identity.role === "viewer") return false
+    const ended = try request("/api/auth/sign-out", cookie, {})
+    const after = try Schema.decodeUnknownEffect(Identity)(try (try request("/api/auth/session", cookie)).json)
+    return ended.status === 204 && after.id === "" && after.role === "viewer"
+  }
+}))
+
+it.live("workerd/grants-use-current-authority", () => run("workerd/grants-use-current-authority", Schema.Struct({ id: Int, role: Schema.Literals(["new", "community", "contributor", "maintainer"]), cross: Schema.Boolean }), ({ id, role, cross }) => effect {
+  provide FetchHttpClient.layer {
+    const target = String(id + 1000)
+    const maintainer = try issue("1")
+    const member = try issue(target)
+    const granted = try request("/api/roles", maintainer, { id: target, role }, cross ? "https://other.example" : origin)
+    if (cross) return granted.status === 403
+    if (granted.status !== 200) return false
+    const current = try Schema.decodeUnknownEffect(Identity)(try (try request("/api/auth/session", member)).json)
+    const repeated = try request("/api/roles", maintainer, { id: target, role })
+    const peer = try request("/api/roles", member, { id: "9000", role: "new" })
+    const demoted = try request("/api/roles", maintainer, { id: target, role: "new" })
+    const stale = try request("/api/roles", member, { id: "9000", role: "contributor" })
+    return current.role === role && repeated.status === 200 && peer.status === (role === "maintainer" ? 200 : 403) && demoted.status === 200 && stale.status === 403
+  }
+}))

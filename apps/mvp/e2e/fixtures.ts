@@ -1,4 +1,5 @@
 import { persistent } from "./persistent"
+import { onlyBeaconFailures, WEB_ANALYTICS_ANNOTATION, WEB_ANALYTICS_BROKEN } from "./browser-analytics.ts"
 import { type APIRequestContext, test as base, expect, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { mkdir, readdir, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
@@ -324,9 +325,14 @@ export const test = base.extend<{ browserLog: Array<string>; spendGuard: void; p
       const failures = crashes.failure === undefined ? [] : [crashes.failure]
       describeCrashes(testInfo, failures)
       expect.soft(failures, failures.join("\n") || "no page crashed").toEqual([])
-      expect.soft(await problems.check(testInfo, log), UNDECLARED).toEqual([])
-      if (!page.isClosed() && crashes.failure === undefined) expect(await spinnersSeen(page), "the page never showed a loading state").toEqual([])
-      if (testInfo.status !== testInfo.expectedStatus) {
+      if (!page.isClosed() && crashes.failure === undefined) expect.soft(await spinnersSeen(page), "the page never showed a loading state").toEqual([])
+      const undeclared = await problems.check(testInfo, log)
+      // Classify only after interactions, crashes, loading states and the complete watcher result. No error is filtered.
+      if (testInfo.status === "passed" && testInfo.annotations.some(each => each.type === WEB_ANALYTICS_ANNOTATION) && onlyBeaconFailures(undeclared)) {
+        test.fail(true, WEB_ANALYTICS_BROKEN)
+      }
+      expect.soft(undeclared, UNDECLARED).toEqual([])
+      if (testInfo.status !== testInfo.expectedStatus || undeclared.length > 0) {
         await testInfo.attach("browser-log", { path: await writeLog(testInfo.outputPath("browser.log"), log), contentType: "text/plain" })
       }
       // Playwright saves the page's video as video.webm beside it once the test ends.

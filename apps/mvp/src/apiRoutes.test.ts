@@ -1,18 +1,20 @@
-import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
+import { sourceText, sourcesUnder } from "../../../packages/repo-targets/test-utils/source-readers.mjs"
 import { apiRoute, routeTemplate } from "./apiRoutes"
 
 const root = fileURLToPath(new URL("..", import.meta.url))
+const twins = join(root, "tests/fixtures/source-readers")
 
-/** Every production .ts file under `directory`: no tests and no test hosts. */
+/** Every production module under `directory`, .ts or .vibe: no tests and no test hosts. */
 const sources = (directory: string): Array<string> =>
-  readdirSync(directory).flatMap((name) => {
-    const path = join(directory, name)
-    if (statSync(path).isDirectory()) return name === "test" || name === "node_modules" ? [] : sources(path)
-    return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) ? [path] : []
-  })
+  sourcesUnder(directory, (path) => /(?:^|\/)test$/.test(path) || /\.test\.[a-z]+$/.test(path)).map((path) => join(directory, path))
+
+/** The /api/ routes a module's code names; a comment may show a route with sample names in it. */
+const routesIn = (file: string): Array<string> =>
+  [...sourceText(file).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").matchAll(/["`](\/api\/[a-z0-9/_-]*)/g)]
+    .map((match) => match[1]!)
 
 describe("routeTemplate", () => {
   it("keeps the app's route words and names every other segment, never a repository, id or name", () => {
@@ -31,19 +33,20 @@ describe("routeTemplate", () => {
     expect(routeTemplate("/api/answers/a-1/x/y")).toBe("/api/answers/:id/:id/:id")
     // The runner audit (decision 0148): route words, never a runner's or repository's name.
     expect(routeTemplate("/api/runners/audit")).toBe("/api/runners/audit")
+    expect(routeTemplate("/api/auth/broker/start")).toBe("/api/auth/broker/start")
+    expect(routeTemplate("/api/auth/broker/exchange")).toBe("/api/auth/broker/exchange")
   })
 
   it("keeps every route the app and ChatApi name as they are", () => {
-    const literal = /["`](\/api\/[a-z0-9/_-]*)/g
-    const routes = new Set(
-      [...sources(join(root, "src")), ...sources(join(root, "worker"))].flatMap((file) =>
-        // Code only: a comment may show a route with sample names in it.
-        [...readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").matchAll(literal)]
-          .map((match) => match[1]!)
-      ),
-    )
+    const routes = new Set([...sources(join(root, "src")), ...sources(join(root, "worker"))].flatMap(routesIn))
     expect(routes.size).toBeGreaterThan(50)
     for (const route of routes) expect(routeTemplate(route), route).toBe(route)
+  })
+
+  it("reads a module converted to VibeLang as it reads its TypeScript twin", () => {
+    expect(sources(join(root, "worker")).some((file) => file.endsWith(".vibe"))).toBe(true)
+    expect(routesIn(join(twins, "vibe/Twin.ts"))).toEqual(["/api/twins/"])
+    expect(routesIn(join(twins, "vibe/Twin.ts"))).toEqual(routesIn(join(twins, "ts/Twin.ts")))
   })
 })
 

@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 71
+bias 6
+null-prototype false
+key 1476823470
+tape jcjrNagd2pMyfBIYnn1w1A
+schedule-key 2499654616
+schedule 
+signature "Died:@smthrs/run-store/RunStoreError"
+path 0
+codec "json"
+value "{\"id\":0,\"text\":\"\\ud800\"}"
+# Died:@smthrs/run-store/RunStoreError
+# {"id":0,"text":"\ud800"}

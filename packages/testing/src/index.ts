@@ -88,3 +88,6 @@ export * as RealCliDriver from "./RealCliDriver.vibe"
 
 /** @since 1.0.0 @category testing */
 export * as TerminalRecording from "./TerminalRecording.vibe"
+
+/** Filesystem corpus tooling for feedback-guided fuzz suites. */
+export * as FuzzCorpus from "./internal/fuzz.ts"

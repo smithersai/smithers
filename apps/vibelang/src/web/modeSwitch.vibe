@@ -1,0 +1,11 @@
+import { otherMode } from "./startupDecision.vibe"
+// The Live/Mock switch in the chat's and the history's top bar (ruling VL-13: the whole app works in mock mode, and a
+// person can switch to it from the page). The switch is a link: it loads the page with `?agent=mock` or `?agent=live`,
+// and startup saves the choice so it survives reloads (startup.vibe, historyStartup.vibe).
+import type { Html, HtmlBuilder } from "foldkit/html"
+
+/** The mode this page runs, and a click switches to the other. */
+export function modeSwitch<M>(mode: "mock" | "live", h: HtmlBuilder<M>): Html {
+  const other = otherMode(mode)
+  return h.a([h.Class("vl-pill vl-mode"), h.DataAttribute("mode", mode), h.Href(`?agent=${other}`), h.AriaLabel(mode === "mock" ? "Mock mode: switch to live" : "Live mode: switch to Mock")], [mode === "mock" ? "Mock" : "Live"])
+}

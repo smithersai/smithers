@@ -1,0 +1,54 @@
+// The fuzz suite's own reports only: Vitest V8 and Chromium V8, with source maps checked against this checkout.
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+// @ts-expect-error The pinned Istanbul tool ships no declarations; its used interface is defined below.
+import coverageApi from "istanbul-lib-coverage"
+// @ts-expect-error The pinned Istanbul tool ships no declarations.
+import reportApi from "istanbul-lib-report"
+// @ts-expect-error The pinned Istanbul tool ships no declarations.
+import untypedReports from "istanbul-reports"
+import { mergeByPosition, type FileCoverageJSON } from "../test/support/coverageUnion.ts"
+
+interface Count { readonly total: number; readonly covered: number; readonly pct: number | "Unknown" }
+interface CoverageMap {
+  merge(input: unknown): void
+  filter(keep: (file: string) => boolean): void
+  files(): ReadonlyArray<string>
+  fileCoverageFor(file: string): { toSummary(): Readonly<Record<"lines" | "branches" | "functions" | "statements", Count>> }
+}
+const createCoverageMap = (coverageApi as { createCoverageMap(input: unknown): CoverageMap }).createCoverageMap
+const createContext = (reportApi as { createContext(input: { dir: string; coverageMap: CoverageMap }): unknown }).createContext
+const reports = untypedReports as { create(format: string): { execute(context: unknown): void } }
+
+error CoverageFailed { message: string }
+
+export effect function main() {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try path.fromFileUrl(new URL("../", import.meta.url))
+  const inputs: Array<Record<string, FileCoverageJSON>> = []
+  for (const directory of ["coverage/fuzz-unit", "coverage/fuzz-browser"]) {
+    const source = try fs.readFileString(path.join(root, directory, "coverage-final.json"))
+    inputs.push(try Effect.try(() => JSON.parse(source) as Record<string, FileCoverageJSON>))
+  }
+  // Node's statement structure is the gate; Chromium credits it only at identical source ranges (0015).
+  const coverage = try Effect.try(() => createCoverageMap(mergeByPosition(inputs[0]!, inputs.slice(1))))
+  try Effect.try(() => coverage.filter((file) => file.startsWith(root) && /\/(?:src|worker)\/.*\.vibe$/.test(file) && file !== path.join(root, "worker/Api.vibe")))
+  const directory = path.join(root, "coverage/fuzz")
+  try fs.makeDirectory(directory, { recursive: true })
+  try fs.writeFileString(path.join(directory, "coverage-final.json"), JSON.stringify(coverage))
+  const context = try Effect.try(() => createContext({ dir: directory, coverageMap: coverage }))
+  for (const format of ["text", "json-summary", "html", "lcovonly"]) try Effect.try(() => reports.create(format as "text").execute(context))
+  let missed = 0
+  for (const file of coverage.files()) {
+    const summary = coverage.fileCoverageFor(file).toSummary()
+    for (const metric of ["lines", "branches", "functions", "statements"] as const) {
+      if (summary[metric].pct === 100) continue
+      missed++
+      try Console.error(`${path.relative(root, file)} ${metric}: ${summary[metric].covered}/${summary[metric].total}`)
+    }
+  }
+  if (missed > 0) throw new CoverageFailed({ message: `${missed} fuzz-only per-file coverage gates failed` })
+}
+
+NodeRuntime.runMain(Effect.provide(main(), NodeServices.layer))

@@ -1,0 +1,20 @@
+import { describe, expect, it } from "@effect/vitest"
+import { nextTourCounter } from "../src/core/flowDecision.vibe"
+
+describe("private tour step identities", () => {
+  for (const before of [0n, 1n, 9007199254740990n, 9007199254740991n, 9007199254740992n, 18446744073709551616n]) {
+    it(`increments the exact private integer ${before}`, () => {
+      const next = nextTourCounter(before)
+      expect(typeof next).toBe("bigint")
+      expect(next - before).toBe(1n)
+      expect(next).toBeGreaterThan(before)
+    })
+  }
+  it("keeps consecutive visit and hold identities distinct beyond the native number limit", () => {
+    const first = nextTourCounter(9007199254740991n)
+    const second = nextTourCounter(first)
+    expect(second).toBeGreaterThan(first)
+    expect(`vibelang/tour/step/${first}/1`).not.toBe(`vibelang/tour/step/${second}/1`)
+    expect(`vibelang/tour/read/0/${first}`).not.toBe(`vibelang/tour/read/0/${second}`)
+  })
+})

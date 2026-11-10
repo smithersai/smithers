@@ -1,0 +1,7 @@
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
+import { serveAuthBroker } from "../test/support/workerd.vibe"
+NodeRuntime.runMain(scoped(effect {
+  const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
+  try Console.log("AUTH_BROKER_READY " + host.origin)
+  try Effect.never
+}))

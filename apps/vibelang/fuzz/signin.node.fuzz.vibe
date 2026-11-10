@@ -1,0 +1,106 @@
+// `login` and `logout` against a scripted server on a real socket, through the shared GitHub adapter and the real
+// durable session host. Each endpoint's answer is fuzzed; no secret may reach a message.
+import { it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { readPending, readSession, writePending, writeSession } from "../src/surfaces/session.vibe"
+import { signIn, signOutSurface } from "../src/surfaces/signin.vibe"
+import { run } from "./run.vibe"
+
+const DEVICE_CODE = "private-device-code"
+const TOKEN = "private-access-token"
+const COOKIE = "vibelang-session=private-cookie"
+const Answer = Schema.Literals(["ok", "refused", "garbage", "wrong-shape"])
+const Grant = Schema.Literals(["authorization_pending", "slow_down", "access_denied", "expired_token", "authorized", "garbage"])
+const Input = Schema.Struct({
+  route: Answer, device: Schema.Literals(["ok", "refused", "garbage"]), exchange: Answer, session: Schema.Literals(["ok", "not-agent", "signed-out", "refused", "garbage"]), revoke: Schema.Literals(["ok", "refused"]),
+  grants: Schema.Array(Grant).check(Schema.isMaxLength(4)),
+  stored: Schema.Boolean, pending: Schema.Literals(["none", "due", "later", "elsewhere"]),
+  origin: Schema.Literals(["server", "foreign-http", "path", "not-a-url"]),
+  wait: Schema.Boolean,
+  actions: Schema.Array(Schema.Literals(["login", "logout"])).check(Schema.isMinLength(1), Schema.isMaxLength(4)),
+})
+const FORBIDDEN = [DEVICE_CODE, TOKEN, COOKIE, "private-cookie"]
+const live = Layer.succeed(Factory, { mode: "live" } as unknown as Factory["Service"])
+const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status })
+const text = (body: string) => HttpServerResponse.text(body, { status: 200 })
+
+/** Live sign-in over any server behaviour: typed failures only, secrets stay private, and a logout clears local state. */
+it.live("signin/device-flow", () => run("signin/device-flow", Input, (input) => scoped(effect {
+  provide NodeServices.layer, NodeHttpServer.layerTest, live {
+    const address = (try HttpServer.HttpServer).address
+    const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+    // A waiting login polls until a terminal answer, so it gets one at once.
+    const wait = input.wait && input.pending !== "later" && input.actions.length === 1
+    const grants = wait ? ["authorized" as const] : [...input.grants]
+    try HttpServer.serveEffect(effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      const path = new URL(request.url, origin).pathname
+      if (path === "/api/auth/device" && request.method === "GET") return input.route === "ok" ? json({ clientId: "fixture-client" }) : input.route === "refused" ? json({}, 503) : input.route === "garbage" ? text("{") : json({ clientId: 7 })
+      if (path === "/api/auth/device") return input.exchange === "ok" ? json({ cookie: COOKIE, login: "ada" }) : input.exchange === "refused" ? json({}, 403) : input.exchange === "garbage" ? text("{") : json({ cookie: 1 })
+      if (path === "/login/device/code") return input.device === "ok" ? json({ device_code: DEVICE_CODE, user_code: "ABCD-EFGH", verification_uri: origin + "/device", expires_in: 600, interval: 0 }) : input.device === "refused" ? json({}, 500) : text("{")
+      if (path === "/login/oauth/access_token") {
+        const grant = grants.shift() ?? "authorization_pending"
+        return grant === "authorized" ? json({ access_token: TOKEN, token_type: "bearer", scope: "read:user" }) : grant === "garbage" ? text("{") : json({ error: grant, interval: 7 })
+      }
+      if (path === "/api/auth/session") return input.session === "ok" ? json({ id: "1", agent: true }) : input.session === "not-agent" ? json({ id: "1" }) : input.session === "signed-out" ? json({ id: "" }) : input.session === "refused" ? json({}, 401) : text("{")
+      if (path === "/api/auth/sign-out") return input.revoke === "ok" ? HttpServerResponse.empty({ status: 204 }) : json({}, 500)
+      return json({}, 404)
+    })
+    const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    const factory = input.origin === "server" ? origin : input.origin === "foreign-http" ? "http://example.invalid" : input.origin === "path" ? `${origin}/sub` : "not a url"
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_FACTORY_URL: factory, VIBELANG_GITHUB_WEB: origin, XDG_CONFIG_HOME: directory })) {
+      if (input.stored) try writeSession({ origin, cookie: COOKIE, login: "ada" })
+      if (input.pending !== "none") try writePending({ origin: input.pending === "elsewhere" ? "https://elsewhere.invalid" : origin, clientId: "fixture-client", deviceCode: DEVICE_CODE, userCode: "OLDC-ODE1", verificationUri: origin + "/device", intervalSeconds: 0, expiresAt: Date.now() + 600_000, nextPollAt: input.pending === "later" ? Date.now() + 600_000 : 0 })
+      for (const action of input.actions) {
+        if (action === "logout") {
+          const out = try Effect.result(signOutSurface())
+          if (out._tag === "Failure" && out.failure._tag !== "SignInFailed") return false
+          if (out._tag === "Failure" && FORBIDDEN.some((secret) => out.failure.message.includes(secret))) return false
+          if ((try readPending()) !== undefined) return false
+          if (out._tag === "Success" && (try readSession()) !== undefined) return false
+          continue
+        }
+        const answer = try Effect.result(signIn({ wait }))
+        if (answer._tag === "Failure") {
+          if (answer.failure._tag !== "SignInFailed" || FORBIDDEN.some((secret) => answer.failure.message.includes(secret))) return false
+          if (answer.failure.message === "Sign-in declined." && (try readPending()) !== undefined) return false
+          continue
+        }
+        const printed = JSON.stringify(answer.success)
+        if (FORBIDDEN.some((secret) => printed.includes(secret))) return false
+        if (answer.success.status === "signed-in") {
+          // A signed-in answer offers no device code, even when a flow for another server stays pending.
+          if (answer.success.login === "" || answer.success.userCode !== "" || answer.success.verificationUri !== "") return false
+          const left = try readPending()
+          if (!input.stored && left !== undefined && left.origin === origin) return false
+        }
+      }
+      return true
+    }
+  }
+})))
+
+/** Mock mode signs in as the fixture person with no server at all, and a sign-out forgets that. */
+it.live("signin/mock-mode", () => run("signin/mock-mode", Schema.Array(Schema.Literals(["login", "logout"])).check(Schema.isMaxLength(6)), (actions) => scoped(effect {
+  provide NodeServices.layer, mockFactoryFor() {
+    const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory })) {
+      let inside = false
+      for (const action of actions) {
+        if (action === "login") {
+          const answer = try signIn({ wait: false })
+          if (answer.status !== "signed-in" || answer.login === "") return false
+          inside = true
+        } else {
+          if ((try signOutSurface()).signedOut !== inside) return false
+          inside = false
+        }
+      }
+      return true
+    }
+  }
+})))

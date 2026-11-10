@@ -16,6 +16,7 @@ export const orphan = "orphan"
 /** Kills the child once its `Test` body is running. */
 export const killDuringTest = async (filename: string): Promise<void> => {
   const child: ChildProcessWithoutNullStreams = ChildProcesses.spawn(process.execPath, [
+    ChildProcesses.vibeImport,
     fixture,
     filename,
     orphan,

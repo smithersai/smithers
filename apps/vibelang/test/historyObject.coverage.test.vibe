@@ -1,0 +1,157 @@
+// worker/HistoryObject.vibe on its in-memory object storage: the chunked store, the principal seams, the chat
+// reader's failure mapping, durable writes with operation replay, and the one-time bootstrap.
+import { describe, expect, it } from "@effect/vitest"
+import * as HistoryObject from "../worker/HistoryObject.vibe"
+import { outlineOf } from "../src/history/pages.vibe"
+import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+import type { Event, History } from "../src/history/mythical.vibe"
+import { VIEWER, type Principal } from "../src/history/roles.vibe"
+import type { MainLog } from "../src/history/flows.vibe"
+import { Refused, Unavailable } from "../src/history/MythicalHistory.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+
+/** A small history: The compiler (m1 "one", m3 "three"), then Docs (m2 "two"), all landed. */
+function small(): History {
+  const commits = ["fix(compiler): one", "docs: two", "fix(compiler): three"].map((description, index) => ({
+    sha: `${index + 1}`.padStart(12, "0"),
+    change: "",
+    description,
+    parents: index === 0 ? [] : [`${index}`.padStart(12, "0")],
+  }))
+  return replay(intentsOf(seedOf("o/r", commits, []))).history
+}
+
+const maintainer: Principal = { role: "maintainer", name: "Ada", agent: false }
+
+/** A main with nothing to fold. */
+const emptyMain: MainLog.Shape = { since: () => succeed([]) }
+
+/** `tag:detail` of the Refused or Unavailable a read or write fails with, or `ok`. */
+effect function failureOf<A>(work: A!(Refused | Unavailable)) {
+  return work.pipe(Effect.map(() => "ok")) catch (error) => error._tag + ":" + (error._tag === "Refused" ? error.refusal : error.reason)
+}
+
+describe("the history store", () => {
+  it.effect("stores the base in chunks and the events by seq", () => effect {
+    const storage = try Effect.try(() => objectStorage())
+    const store = HistoryObject.storeOver(storage)
+    const empty = try store.load()
+    const history = small()
+    try store.seed(history)
+    const loaded = try store.load()
+    const event: Event = { type: "EpicOpened", seq: history.seq + 1, id: "e9", title: "Later" }
+    try store.append(event)
+    const since = try store.since(history.seq)
+    const everything = try store.load()
+    try Effect.try(() => {
+      expect(empty).toEqual({ base: undefined, events: [] })
+      expect(loaded.base?.seq).toBe(history.seq)
+      expect(loaded.base?.commits.length).toBe(history.commits.length)
+      expect(since).toEqual([event])
+      expect(everything.events).toEqual([event])
+      expect([...storage.kv.keys()].filter((key) => key.startsWith("base/")).length).toBeGreaterThan(0)
+    })
+  })
+
+  it.effect("decodes the shipped bootstrapped history", () => effect {
+    const history = try HistoryObject.seeded()
+    try Effect.try(() => expect(history.commits.length).toBeGreaterThan(0))
+  })
+})
+
+describe("the principal seams and the chat reader", () => {
+  it.effect("answers the default principals until 0019's policy lands", () => effect {
+    try Effect.try(() => {
+      expect(HistoryObject.principalOf(undefined)).toEqual(VIEWER)
+      expect(HistoryObject.CHAT_AGENT).toEqual({ ...VIEWER, agent: true })
+    })
+  })
+
+  it.effect("reads real pages through the object, decoding each by its schema", () => effect {
+    const outline = outlineOf(small())
+    const reader = HistoryObject.readerOver(
+      (request) => request.what === "outline" ? succeed(outline) : succeed({ nope: true }),
+      () => succeed({ id: "m9", folded: 0, refusal: null }),
+    )
+    const read = try reader.outline()
+    const wrongShape = try failureOf(reader.commit("m1"))
+    const noted = try reader.note("m1", "tried", "it failed", "op-1")
+    try Effect.try(() => {
+      expect(read).toEqual(outline)
+      expect(wrongShape).toBe("Unavailable:history is not the protocol")
+      expect(noted).toBeUndefined()
+    })
+  })
+
+  it.effect("maps an unreachable object and a refused write", () => effect {
+    const unreachable = HistoryObject.readerOver(
+      () => fail(new Unreachable({ what: "history" })),
+      () => fail(new Unreachable({ what: "history" })),
+    )
+    const refusing = HistoryObject.readerOver(
+      () => fail(new Unreachable({ what: "history" })),
+      () => succeed({ id: "", folded: 0, refusal: "forbidden" }),
+    )
+    const gone = try failureOf(unreachable.outline())
+    const planned = try failureOf(refusing.plan({ how: "append", epic: "", newEpic: "", target: "", title: "t", task: "d" }, "op-1"))
+    const acted = try failureOf(refusing.start("m1", "lane", "op-2"))
+    try Effect.try(() => {
+      expect(gone).toBe("Unavailable:history unreachable")
+      expect(planned).toBe("Refused:forbidden")
+      expect(acted).toBe("Refused:forbidden")
+    })
+  })
+})
+
+describe("durable writes", () => {
+  it.live("runs each write as a durable execution, replaying an operation's recorded answer", () => effect {
+    const storage = (try Effect.try(() => objectStorage())) as unknown as Storage
+    const sequencer = try HistoryObject.history(storage)
+    const body = { how: "append", epic: "", newEpic: "Docs", target: "", title: "a task", task: "do it" }
+    const planned = try HistoryObject.write("host", storage, sequencer, emptyMain, maintainer, "plan", body, "op-1")
+    const replayed = try HistoryObject.write("host", storage, sequencer, emptyMain, maintainer, "plan", body, "op-1")
+    const another = try HistoryObject.write("host", storage, sequencer, emptyMain, maintainer, "plan", { ...body, title: "second task" })
+    const history = try sequencer.read()
+    try Effect.try(() => {
+      expect(planned.refusal).toBeNull()
+      expect(planned.id).not.toBe("")
+      expect(replayed).toEqual(planned)
+      expect(another.refusal).toBeNull()
+      expect(another.id).not.toBe(planned.id)
+      expect(history.commits.filter((commit) => commit.title === "a task")).toHaveLength(1)
+    })
+  }, 60_000)
+
+  it.live("walks a task to approved and folds an empty main, as the maintainer", () => effect {
+    const storage = (try Effect.try(() => objectStorage())) as unknown as Storage
+    const sequencer = try HistoryObject.history(storage)
+    const planned = try HistoryObject.write("host", storage, sequencer, emptyMain, maintainer, "plan", { how: "append", epic: "", newEpic: "Docs", target: "", title: "land me", task: "do it" })
+    const started = try HistoryObject.write("host", storage, sequencer, emptyMain, maintainer, "start", { id: planned.id, lane: "coverage" })
+    const noted = try HistoryObject.write("host", storage, sequencer, emptyMain, maintainer, "note", { id: planned.id, section: "tried", text: "it works" })
+    const approved = try HistoryObject.write("host", storage, sequencer, emptyMain, maintainer, "approve", { id: planned.id })
+    const folded = try HistoryObject.write("host", storage, sequencer, emptyMain, maintainer, "fold", {})
+    const history = try sequencer.read()
+    const landed = history.commits.find((commit) => commit.id === planned.id)
+    try Effect.try(() => {
+      expect([started.refusal, noted.refusal, approved.refusal]).toEqual([null, null, null])
+      expect(folded).toEqual({ id: "", folded: 0, refusal: null })
+      expect(landed?.state).toBe("approved")
+    })
+  }, 60_000)
+
+  it.live("refuses a viewer's write, and the first start's bootstrap runs once", () => effect {
+    const storage = (try Effect.try(() => objectStorage())) as unknown as Storage
+    const sequencer = try HistoryObject.history(storage)
+    const refused = try HistoryObject.write("host", storage, sequencer, emptyMain, VIEWER, "plan", { how: "append", epic: "", newEpic: "", target: "", title: "t", task: "d" })
+    const first = try HistoryObject.bootstrap("host", storage, sequencer, emptyMain)
+    const again = try HistoryObject.bootstrap("host", storage, sequencer, emptyMain)
+    const bootstrapped = try sequencer.read()
+    try Effect.try(() => {
+      expect(refused.refusal).toBe("forbidden")
+      expect(first).toBe(again)
+      expect(bootstrapped.commits.length).toBeGreaterThan(0)
+    })
+  }, 60_000)
+})

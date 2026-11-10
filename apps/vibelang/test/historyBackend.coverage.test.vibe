@@ -1,0 +1,105 @@
+// Compile the real mock before clocked backend choices; cold transformation is not backend latency.
+import "../src/history/MockMythical.vibe"
+import { expect, it } from "@effect/vitest"
+import { BrowserMythical, HistoryBackend } from "../src/web/historyBackend.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { heldHealth } from "./support/heldHealth.vibe"
+
+const principal = { role: "maintainer" as const, name: "Ada", agent: false }
+const planned = { how: "append" as const, epic: "", newEpic: "Coverage boundary", target: "", title: "docs: boundary", task: "t" }
+
+it.effect("one history backend choice gates callers; cancelling one leaves selection and ordered writes intact", () => effect {
+  const health = try heldHealth()
+  provide BrowserMythical("http://startup.test", false, principal).pipe(Layer.provide(health.layer)) {
+    const client = try Mythical
+    const backend = try HistoryBackend
+    const cancelled = fork client.outline()
+    const accepted = fork client.plan(planned)
+    try TestClock.adjust("0 millis")
+    try Effect.try(() => {
+      expect(client.mode).toBe("pending")
+      expect(accepted.pollUnsafe()).toBeUndefined()
+      expect(health.snapshot()).toEqual({ calls: 1, settled: false, cancelled: false })
+    })
+    try Fiber.interrupt(cancelled)
+    try health.release("mock")
+    const mode = try backend.ready
+    const id = join accepted
+    const before = try client.outline()
+    const followed = fork Stream.runCollect(client.events(before.seq).pipe(Stream.take(1)))
+    try client.start(id, "coverage")
+    const events = join followed
+    try client.note(id, "evidence", "The browser backend preserves the public lifecycle.")
+    try client.approve(id)
+    const folded = try client.fold()
+    const after = try client.commit(id)
+    const page = try client.epic(before.epics[before.epics.length - 1]!.id, 0)
+    const matches = try client.search("docs: boundary")
+    try Effect.try(() => {
+      expect(mode).toBe("mock")
+      expect(client.mode).toBe("mock")
+      expect(folded).toBe(1)
+      expect(page.commits.some((entry) => entry.id === id)).toBe(true)
+      expect(matches.commits.some((entry) => entry.id === id)).toBe(true)
+      expect(after.commit).toMatchObject({ state: "landed", lane: "", task: "" })
+      expect(Array.from(events)[0]).toMatchObject({ type: "Started", id, lane: "coverage" })
+      expect(health.snapshot()).toEqual({ calls: 1, settled: true, cancelled: false })
+    })
+  }
+}, 30_000)
+
+it.effect("the exact health deadline chooses mock, cancels health and ignores a later live answer", () => effect {
+  const health = try heldHealth()
+  provide BrowserMythical("http://startup.test", false, principal).pipe(Layer.provide(health.layer)) {
+    const client = try Mythical
+    const backend = try HistoryBackend
+    const selected = fork backend.ready
+    try TestClock.adjust("2999 millis")
+    try Effect.try(() => expect(client.mode).toBe("pending"))
+    try TestClock.adjust("1 millis")
+    const mode = join selected
+    try health.release("live")
+    const history = try client.outline()
+    try Effect.try(() => {
+      expect(mode).toBe("mock")
+      expect(client.mode).toBe("mock")
+      expect(history.epics.length).toBeGreaterThan(0)
+      expect(health.snapshot()).toEqual({ calls: 1, settled: false, cancelled: true })
+    })
+  }
+}, 30_000)
+
+it.effect("forced mock never probes health; disposing an unresolved selection cancels its request", () => effect {
+  const health = try heldHealth()
+  provide BrowserMythical("http://startup.test", true, principal).pipe(Layer.provide(health.layer)) {
+    const mode = try (try HistoryBackend).ready
+    try Effect.try(() => {
+      expect(mode).toBe("mock")
+      expect(health.snapshot().calls).toBe(0)
+    })
+  }
+  try scoped(effect {
+    const context = try Layer.build(BrowserMythical("http://startup.test", false, principal).pipe(Layer.provide(health.layer)))
+    try TestClock.adjust("0 millis")
+    try Effect.try(() => expect(Context.get(context, Mythical).mode).toBe("pending"))
+  })
+  try health.release("live")
+  try TestClock.adjust("5 seconds")
+  try Effect.try(() => expect(health.snapshot()).toEqual({ calls: 1, settled: false, cancelled: true }))
+}, 30_000)
+
+it.effect("live selection forwards reads and preserves its choice after a protocol failure", () => effect {
+  const health = try heldHealth()
+  provide BrowserMythical("http://startup.test", false, principal).pipe(Layer.provide(health.layer)) {
+    const client = try Mythical
+    try health.release("live")
+    const mode = try (try HistoryBackend).ready
+    const failure = client.outline() catch (error) => error.reason
+    try Effect.try(() => {
+      expect(mode).toBe("live")
+      expect(client.mode).toBe("live")
+      expect(failure).toBe("history outline is not the protocol")
+      expect(health.snapshot()).toEqual({ calls: 2, settled: true, cancelled: false })
+    })
+  }
+})

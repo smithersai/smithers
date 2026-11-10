@@ -1,5 +1,7 @@
 # 0003. One state machine across browser and server
 
+**Extended by [0021](0021-wiki.md):** people and the agent share `PaneOpened` for wiki pages. A person opening has an empty entry id; an agent tool still requires its streaming entry.
+
 **Status:** accepted, 2026-11-07. **Rulings:** VL-8, VL-12.
 
 **Decision.** A conversation is one state machine (`src/core/conversation.vibe`), VibeLang with no Effect code:
@@ -15,6 +17,9 @@ intent ──decide──▶ event #seq ──apply──▶ conversation       
   `ReplyStarted` and its projected entry preserve that post id; malformed starts only advance the replay cursor.
 - `RestartReply` (event `ReplyRestarted`) empties the streaming reply's text when the agent's model call retries, so
   the next attempt streams from nothing; only the reply that streams can restart (0010).
+- A tour (0014) is an agent entry that answers no post: `StartTour` (event `TourStarted`) opens it while the agent
+  is idle, it streams and settles as a reply does, `OpenPane` (event `PaneOpened`) sets the conversation's `pane`
+  only while it streams, and `EndTour` (event `TourEnded`) ends only a tour, keeping its text.
 - `apply` is shared: every copy applies the same numbered events in order. A stale event changes nothing; the next one
   always advances `seq`.
 - `receive` adds a client's view: posts it sent that no event has confirmed (`pending`), and `gap` when an event

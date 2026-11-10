@@ -1,0 +1,65 @@
+// @vitest-environment node
+// Native runtime counterpart to content-host: real workerd storage and durable recovery.
+import { it, expect } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { IssuesState } from "../src/core/issueSchemas.vibe"
+import { WikiState } from "../src/core/wikiSchemas.vibe"
+import { serveIssuesHost, serveWikiHost, type Served } from "../test/support/workerd.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const input = { op: "read", key: "read", number: 42, parent: 38, title: "Measured", text: "Keep the body", assignee: "VibeLang agent", example: "const n = 1", prior: "Effect" }
+
+effect function read(server: Served, path: string) {
+  const response = try (try HttpClient.HttpClient).get(server.origin + path)
+  try Effect.try(() => expect(response.status).toBe(200))
+  return try response.json
+}
+effect function post(server: Served, path: string, body: unknown, role = "maintainer") {
+  const response = try (try HttpClient.HttpClient).execute(HttpClientRequest.post(server.origin + path).pipe(HttpClientRequest.setHeader("x-fixture-role", role), HttpClientRequest.bodyJsonUnsafe(body)))
+  return { status: response.status, body: try response.json }
+}
+
+it("workerd content journals and paid failures recover without duplicate writes", async ({ bench }) => {
+  const result = await workload(bench, "content-workerd", "async", () => runPromise(scoped(effect {
+    provide FetchHttpClient.layer {
+      const issues = try acquireRelease(serveIssuesHost(), server => promise(server.dispose))
+      const first = try post(issues, "/api/issues", { ...input, op: "commit", key: "commit" })
+      const again = try post(issues, "/api/issues", { ...input, op: "commit", key: "commit" })
+      const committed = try Schema.decodeUnknownEffect(IssuesState)(first.body)
+      const charged = try read(issues, "/meter")
+      const recovered = try read(issues, "/recovery")
+      try Effect.try(() => {
+        expect([first.status, again.status]).toEqual([200, 200])
+        expect(again.body).toEqual(first.body)
+        expect(committed.items.find(item => item.number === 42)).toMatchObject({ number: 42, parent: 38, task: "Queued", assignee: "VibeLang agent", comments: 6 })
+        expect(charged).toEqual({ first: 18, replay: 18, spent: 36, recovered: 18 })
+        expect(recovered).toEqual({ completedStatus: "completed", savedKey: "partial-child", savedStatus: "failed", ownerBound: true, first: "Failure", failedReplay: "Failure", edited: "Failure", recovered: committed.seq + 3, replay: committed.seq + 3, writes: 1, linked: true })
+      })
+      const wiki = try acquireRelease(serveWikiHost(), server => promise(server.dispose))
+      const observed = try Schema.decodeUnknownEffect(WikiState)(try read(wiki, "/api/wiki?page=roadmap"))
+      const base = observed.pages.find(page => page.id === "roadmap")!.source
+      const draft = try post(wiki, "/api/wiki", { op: "draft", page: "roadmap", base: "", text: "Native benchmark", key: "draft" }, "contributor")
+      const drafted = try Schema.decodeUnknownEffect(WikiState)(draft.body)
+      const reread = try Schema.decodeUnknownEffect(WikiState)(try read(wiki, "/api/wiki?page=roadmap"))
+      // A maintainer cannot see another person's private draft.
+      const request = { op: "propose", page: "roadmap", base, text: drafted.draft!.text, key: "proposal" }
+      const proposed = try post(wiki, "/api/wiki", request, "contributor")
+      const replay = try post(wiki, "/api/wiki", request, "contributor")
+      const denied = try post(wiki, "/api/wiki", { ...request, op: "save", key: "denied" }, "contributor")
+      const after = try Schema.decodeUnknownEffect(WikiState)(try read(wiki, "/api/wiki?page=roadmap"))
+      const runs = try read(wiki, "/runs")
+      try Effect.try(() => {
+        expect([draft.status, proposed.status, replay.status, denied.status]).toEqual([200, 200, 200, 403])
+        expect(drafted.draft).toEqual({ page: "roadmap", text: base.trimEnd() + "\n\nNative benchmark\n" })
+        expect(reread.draft).toBeUndefined()
+        expect(replay.body).toEqual(proposed.body)
+        expect(Schema.decodeUnknownSync(WikiState)(proposed.body).review).toBe("https://github.com/smithersai/vibelang/pull/1001")
+        expect(after.pages).toEqual(observed.pages)
+        const rows = Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ run_id: Schema.String, status: Schema.String })))(runs)
+        expect(rows.filter(run => run.run_id.includes("/propose/"))).toHaveLength(1)
+        expect(rows.every(run => run.status === "completed")).toBe(true)
+      })
+    }
+  }))).run(slow)
+  await runPromise(artifact("content-workerd", "Vitest built-in bench; each of three unwarmed samples starts fresh real workerd issue and wiki hosts. HTTP/SQLite commitments replay once; paid failed drafts charge once; partial write retryFrom adopts exactly one original child. Wiki draft privacy, contributor proposal/replay, forbidden Save, unchanged Markdown and one completed proposal journal row checked. Bundling, server lifecycle and assertions included.", ["Existing unshipped host supplies product fixture identities/repository; typed faulty Effect services exercise paid failures and partial recovery. No real GitHub write, OAuth or Container. Whole fresh-host corpus cost includes bundling and startup; it is not per-request latency or model inference."], result))
+})

@@ -1,0 +1,24 @@
+// Opt in only against a deployment with a real Cloudflare Container binding and an authenticated Contributor session.
+import { describe, expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+const origin = Option.getOrUndefined(runSync(Config.option(Config.String("VIBELANG_SANDBOX_TEST_URL"))))
+const cookie = Option.getOrUndefined(runSync(Config.option(Config.Redacted("VIBELANG_SANDBOX_TEST_COOKIE"))))
+describe.skipIf(origin === undefined || cookie === undefined)("real Cloudflare Container (requires VIBELANG_SANDBOX_TEST_URL and authenticated VIBELANG_SANDBOX_TEST_COOKIE; otherwise no binding is available)", () => {
+  it.live("write → Stop → Start → read on the deployed container through Factory flows", () => effect {
+    const client = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
+    const authorized = HttpClient.mapRequest(client, (request) => HttpClientRequest.setHeader(request, "cookie", Redacted.value(cookie!)))
+    provide LiveFactory(origin!).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, authorized))) {
+      const factory = try Factory
+      const conversation = `container-${Date.now()}`
+      const first = try factory.startSandbox(conversation, `start-${Date.now()}`)
+      try factory.sandboxCommand(conversation, "write", "printf saved > keep.txt", first.generation)
+      try factory.stopSandbox(conversation, "stop-1", first.generation)
+      const second = try factory.startSandbox(conversation, "start-2")
+      const bytes = try factory.sandboxCommand(conversation, "read", "cat keep.txt", second.generation)
+      try factory.stopSandbox(conversation, "stop-2", second.generation)
+      try Effect.try(() => { expect(bytes).toBe("saved"); expect(second.generation).toBe(first.generation + 1) })
+    }
+  }, 240000)
+})

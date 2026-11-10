@@ -1,0 +1,27 @@
+// Per-person allowance objects, bound only when the deployment supplies a container image. Policy resolution is a
+// server-only service (0019); until the roles lane supplies it, every live request remains Viewer.
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import { SandboxMachine, machineLive, type MachineShape } from "./SandboxMachine.vibe"
+import { accountObject, gatewayOf, noIdentity, SandboxGateway, SandboxIdentity, type AccountShape } from "./accountObject.vibe"
+import { signedOutGateway } from "./SandboxHttp.vibe"
+
+export { accountObject, gatewayOf, identityFromPolicy, noIdentity, SandboxGateway, SandboxIdentity } from "./accountObject.vibe"
+export type { AccountShape } from "./accountObject.vibe"
+export class SandboxAccount extends Cloudflare.DurableObject<SandboxAccount, AccountShape>()("VibelangSandboxAccount") {}
+const accountLive = SandboxAccount.make(effect {
+  const state = try Cloudflare.DurableObjectState
+  const namespace = (try SandboxMachine) as Cloudflare.DurableObject<MachineShape>
+  const identity = try SandboxIdentity
+  return accountObject(state, namespace, identity)
+})
+
+/** Container bindings are absent entirely when no image digest was configured. */
+export const gatewayWithIdentity = Layer.unwrap(effect {
+  const image = try Effect.orDie(Config.option(Config.String("VIBELANG_SANDBOX_IMAGE")))
+  if (Option.isNone(image)) return Layer.succeed(SandboxGateway, { gateway: signedOutGateway })
+  return Layer.effect(SandboxGateway, effect {
+    const namespace = (try SandboxAccount) as Cloudflare.DurableObject<AccountShape>
+    return gatewayOf(namespace, try SandboxIdentity)
+  }).pipe(Layer.provide(accountLive), Layer.provide(machineLive))
+})
+export const gatewayLive = gatewayWithIdentity.pipe(Layer.provide(noIdentity))

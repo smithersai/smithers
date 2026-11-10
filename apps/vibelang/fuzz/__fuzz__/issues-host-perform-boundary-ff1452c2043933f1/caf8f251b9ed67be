@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 3
+bias 3
+null-prototype false
+key 985659722
+tape AAAAAAAAAAD5____AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKOyYsAF8k7cHhBpOg
+schedule-key 4198252580
+schedule 
+signature "ReturnedFalse"
+path 1
+codec "json"
+value "{\"op\":\"read\",\"role\":\"viewer\",\"signedOut\":true,\"noToken\":false,\"number\":0,\"parent\":0,\"blank\":false,\"blankKey\":false,\"bogus\":false,\"demote\":false,\"assignee\":\"VibeLang agent\",\"withWriter\":false,\"authorizeFails\":false}"
+# ReturnedFalse
+# {"op":"read","role":"viewer","signedOut":true,"noToken":false,"number":0,"parent":0,"blank":false,"blankKey":false,"bogus":false,"demote":false,"assignee":"VibeLang agent","withWriter":false,"authorizeFails":false}

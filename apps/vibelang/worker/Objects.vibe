@@ -1,23 +1,32 @@
+import { initialDispatch, probeDispatch, finishDispatch } from "./liveDispatchDecision.vibe"
 // What each Durable Object runs, whoever hosts it: the Alchemy objects the API Worker deploys (Api.vibe) and the plain
 // ones the workerd test runs (test/workerd/worker.vibe). Both hosts hand it the object's own storage and the budget's
 // caller, so they run the same code.
 //
-//   Conversation (one per conversation)   the sequencer; each post's flow, run in the request that posts it; and the
-//                                         reply flow of the post it answers now: its intent and alarm
-//                                         (`ExecutionObject`). Every journal lives in the object's SQLite.
+//   Conversation (one per conversation)   the sequencer; each post's flow, and each start or end of a tour, run in
+//                                         the request that asks; and the reply flow of the post it answers now, or
+//                                         its tour's flow: its intent and alarm (`ExecutionObject`). Every journal
+//                                         lives in the object's SQLite.
 //   Budget (one per UTC day)              the day's token ledger
 //
 // A conversation answers one post at a time, so one execution per object is enough, and the flow's steps reach the
 // sequencer in the same object. When a reply settles its execution is forgotten at the next alarm, which then starts
 // the next unanswered post's.
 import { WebCrypto } from "@smthrs/crypto"
-import { FlowRuntime } from "@smthrs/flow"
+import { FlowRuntime, type Flow } from "@smthrs/flow"
 import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
-import { Post, postRegistration, Posts, Reply } from "../src/core/flows.vibe"
+import { SecureRandom } from "effect/crypto"
+import { PostBody } from "../src/core/wire.vibe"
+import { PauseTour, ResumeTour, SeekTour, OpenWiki, wikiRegistration, EndTour, Post, postRegistration, Posts, Reply, StartTour, Tour, tourRegistration, Tours } from "../src/core/flows.vibe"
 import * as Budget from "./Budget.vibe"
 import { ledgerOver, logOver, type KeyValue } from "./ObjectStorage.vibe"
+import type { HistoryReader } from "../src/history/tools.vibe"
+import { HistoryTools } from "./HistoryTools.vibe"
 import { ChatModel, registration, Replies, Spend } from "./Reply.vibe"
 import * as Sequencer from "./Sequencer.vibe"
+import { unanswered } from "../src/core/flows.vibe"
+import type { Refusal } from "../src/core/decide.vibe"
+import { tourAgentRegistration } from "./Tour.vibe"
 
 /** A conversation object's storage: key-value for the log and the execution's intent, SQLite for the engine. */
 export type Storage = KeyValue & ObjectDatabase.Storage
@@ -25,6 +34,11 @@ export type Storage = KeyValue & ObjectDatabase.Storage
 /** The reply flow's execution for `post`. Its object is the conversation's, so the post alone names it. */
 export function executionIdOf(post: string): string {
   return `reply/${post}`
+}
+
+/** The tour's flow execution for tour `tour`. */
+export function tourExecutionIdOf(tour: string): string {
+  return `tour/${tour}`
 }
 
 const dispatchedKey = (post: string) => `dispatched/${post}`
@@ -48,17 +62,33 @@ export function executionStorage(storage: KeyValue): ExecutionObject.Storage {
 function dispatcher(storage: KeyValue): Sequencer.Dispatch {
   const executions = executionStorage(storage)
   return {
+    tour: effect (tour: string) => {
+      const executionId = tourExecutionIdOf(tour)
+      if ((try promise(() => storage.get(dispatchedKey(executionId)))) !== undefined) return
+      const intent = try Effect.orDie(ExecutionObject.intent(Tour, { executionId, payload: { tour } }))
+      const started = try Effect.match(ExecutionObject.start(executions, intent, Effect.void), {
+        onFailure: () => false,
+        onSuccess: () => true,
+      })
+      try Effect.logInfo("vibelang.dispatch").pipe(Effect.annotateLogs({ outcome: started ? "started" : "waiting", tour }))
+      if (started) try promise(() => storage.put(dispatchedKey(executionId), true))
+    },
     start: effect (posts: ReadonlyArray<string>) => {
-      for (const post of posts) {
-        if ((try promise(() => storage.get(dispatchedKey(post)))) !== undefined) continue
+      let scan = initialDispatch()
+      while (scan.phase === "scan") {
+        const current = posts[scan.index]
+        const marked = current === undefined ? false : (try promise(() => storage.get(dispatchedKey(current)))) !== undefined
+        scan = probeDispatch(scan, posts, marked)
+        if (scan.phase !== "attempt") continue
+        const post = scan.post
         const intent = try Effect.orDie(ExecutionObject.intent(Reply, { executionId: executionIdOf(post), payload: { post } }))
         const started = try Effect.match(ExecutionObject.start(executions, intent, Effect.void), {
           onFailure: () => false,
           onSuccess: () => true,
         })
-        try Effect.logInfo("vibelang.dispatch").pipe(Effect.annotateLogs({ outcome: started ? "started" : "waiting", post }))
-        if (started) try promise(() => storage.put(dispatchedKey(post), true))
-        return
+        scan = finishDispatch(scan, started)
+        try Effect.logInfo("vibelang.dispatch").pipe(Effect.annotateLogs({ outcome: scan.started ? "started" : "waiting", post }))
+        if (scan.started) try promise(() => storage.put(dispatchedKey(post), true))
       }
     },
   }
@@ -79,11 +109,99 @@ export function postsOf(sequencer: Sequencer.Sequencer): Posts.Shape {
   return { record: sequencer.post, dispatch: sequencer.ensureDispatched }
 }
 
-/** A post flow's execution: one per request, so a repeated client id meets the sequencer's `duplicate` as before. */
-export effect function postExecutionId() {
-  provide WebCrypto.layer {
-    return `post/${try (try SecureRandom.SecureRandom).uuidV4()}`
+/** The sequencer as a tour's steps reach it: record, dispatch, end, open, say, settle and wait for the end. */
+export function toursOf(sequencer: Sequencer.Sequencer, wake: () => void!! = () => Effect.void): Tours.Shape {
+  return {
+    current: () => Effect.map(sequencer.snapshot(), state => state.walkthrough ?? null),
+    drive: sequencer.drive,
+    control: sequencer.controlTour,
+    start: sequencer.startTour,
+    dispatch: sequencer.ensureDispatched,
+    end: sequencer.endTour,
+    wake,
+    running: sequencer.running,
+    open: sequencer.open,
+    say: sequencer.say,
+    finish: (tour) => sequencer.finishTour(tour, ""),
+    ended: sequencer.ended,
   }
+}
+
+/** A post or tour flow's execution: one per request, so a repeated client id meets the sequencer's `duplicate` as before. */
+export effect function postExecutionId(prefix = "post") {
+  provide WebCrypto.layer {
+    return `${prefix}/${try (try SecureRandom.SecureRandom).uuidV4()}`
+  }
+}
+
+/**
+ * Settled engine runs in an object's own SQLite are forgotten a day after they finish (review 2026-11-08 P1,
+ * `CloudflareRuntime.Options.retention`): a day outlasts any retried execution id, since a re-executed tool call
+ * resumes within minutes, and a meter, read, post or tour execution names a fresh random id a caller never re-asks.
+ */
+export const EXECUTION_RETENTION: CloudflareRuntime.Retention = { olderThanMs: 86_400_000 }
+
+/** Resume a parked reading hold after Escape, then let the object's normal alarm settle the tour. */
+effect function wakeTour(hostId: string, storage: Storage) {
+  // Wake the execution the object holds, even if another tour was accepted after the ended event.
+  const raw = try promise(() => storage.get<string>(ExecutionObject.intentKey))
+  if (raw === undefined) return
+  const intent = try Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionObject.Intent))(raw)
+  if (intent.flow !== Tour._tag) return
+  const executionId = intent.executionId
+  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Tour._tag, retention: EXECUTION_RETENTION }, Layer.empty).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+  provide runtime {
+    const engine = try FlowRuntime.FlowRuntime
+    const state = engine.poll(Tour, executionId) catch () => undefined
+    // Running includes the interval after the body's interrupt but before its Suspended receipt. Persist the wake
+    // there too, so the parking alarm cannot overwrite Escape's wake with the future reading deadline.
+    if (state !== undefined && (Option.isNone(state) || state.value._tag === "Suspended")) try engine.resume(Tour, executionId)
+  }
+  try ExecutionObject.wake(executionStorage(storage))
+}
+
+/**
+ * Runs a person's Learn more as a `vibelang/StartTour` execution in the request, as a post is (0011): it answers once
+ * the tour is recorded and its flow dispatched. `null` once recorded, else the sequencer's refusal.
+ */
+export effect function tour(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer) {
+  // A post's reply that was dispatched but has not started holds this object's one execution, and its start would
+  // wait on a tour accepted now while the tour waits on it. Learn more is busy until that question is answered.
+  const held = try promise(() => storage.get(ExecutionObject.intentKey))
+  if (held !== undefined && unanswered(try sequencer.snapshot()).length > 0) {
+    try Effect.logInfo("vibelang.tour.start").pipe(Effect.annotateLogs({ outcome: "busy", reason: "reply-waiting" }))
+    const busy: Refusal = "busy"
+    return busy
+  }
+  return try asked(hostId, storage, sequencer, StartTour, "start-tour")
+}
+
+/** Runs a person's Escape as a `vibelang/EndTour` execution in the request: `null` once ended, else the refusal. */
+export effect function endTour(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer) {
+  return try asked(hostId, storage, sequencer, EndTour, "end-tour")
+}
+
+export effect function controlTour(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, action: "pause" | "resume" | "seek", step: number) {
+  const executionId = try postExecutionId("control-tour")
+  const flow = action === "pause" ? PauseTour : action === "resume" ? ResumeTour : SeekTour
+  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: flow._tag, retention: EXECUTION_RETENTION }, tourRegistration).pipe(
+    Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(Tours, toursOf(sequencer, () => Effect.orDie(wakeTour(hostId, storage))))),
+  )
+  return try Effect.orDie(Effect.provide(effect { const engine = try FlowRuntime.FlowRuntime; return try (action === "pause" ? engine.execute(PauseTour, { executionId, payload: {} }) : action === "resume" ? engine.execute(ResumeTour, { executionId, payload: {} }) : engine.execute(SeekTour, { executionId, payload: { step } })) }, runtime))
+}
+
+effect function asked(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, flow: typeof StartTour | typeof EndTour, prefix: string) {
+  const executionId = try postExecutionId(prefix)
+  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: flow._tag, retention: EXECUTION_RETENTION }, tourRegistration).pipe(
+    Layer.provide(ObjectDatabase.layer(storage)),
+    Layer.provide(Layer.succeed(Tours, toursOf(sequencer, () => Effect.orDie(wakeTour(hostId, storage))))),
+  )
+  return try Effect.orDie(effect {
+    provide runtime {
+      const engine = try FlowRuntime.FlowRuntime
+      return try engine.execute(flow, { executionId, payload: {} })
+    }
+  })
 }
 
 /**
@@ -91,20 +209,22 @@ export effect function postExecutionId() {
  * posts it (0011): it answers once the post is recorded and its reply dispatched, never after the model. `null` once
  * recorded, else the sequencer's refusal.
  */
-export effect function post(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, clientId: string, name: string, text: string) {
+export effect function post(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, clientId: string, name: string, text: string, owner?: string) {
+  // HTTP decodes PostBody first; malformed direct host calls leave storage untouched.
+  if (!Schema.is(PostBody)({ clientId, name, text })) return "invalid"
   const executionId = try postExecutionId()
-  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Post._tag }, postRegistration).pipe(
+  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Post._tag, retention: EXECUTION_RETENTION }, postRegistration).pipe(
     Layer.provide(ObjectDatabase.layer(storage)),
     Layer.provide(Layer.succeed(Posts, postsOf(sequencer))),
   )
   // The engine's store failing to open is a defect, as the log failing to write is: the post was not answered.
-  return try Effect.orDie(execute(runtime, executionId, { clientId, name, text }))
+  return try Effect.orDie(execute(runtime, executionId, { clientId, name, text, ...(owner === undefined ? {} : { owner }) }))
 }
 
 effect function execute<E>(
   runtime: Layer.Layer<FlowRuntime.FlowRuntime, E>,
   executionId: string,
-  payload: { readonly clientId: string; readonly name: string; readonly text: string },
+  payload: { readonly clientId: string; readonly name: string; readonly text: string; readonly owner?: string },
 ) {
   provide runtime {
     const engine = try FlowRuntime.FlowRuntime
@@ -124,7 +244,7 @@ export function repliesOf(sequencer: Sequencer.Sequencer): Replies.Shape {
   }
 }
 
-/** A reply execution starts no child flow and hands off to no round, so routing anything is a defect. */
+/** A reply or tour execution starts no child flow and hands off to no round, so routing anything is a defect. */
 export const unrouted: ExecutionObject.Router = {
   start: (intent) => die(new Error(`vibelang/Reply routed a start of ${intent.executionId}`)),
   wake: (executionId) => die(new Error(`vibelang/Reply routed a wake of ${executionId}`)),
@@ -143,22 +263,76 @@ export effect function alarm(
   sequencer: Sequencer.Sequencer,
   spend: Spend.Shape,
   model: ChatModel.Shape,
+  history: HistoryReader,
 ) {
-  const services = Layer.mergeAll(
-    Layer.succeed(Replies, repliesOf(sequencer)),
-    Layer.succeed(Spend, spend),
-    Layer.succeed(ChatModel, model),
-  )
   const outcome = try ExecutionObject.alarm(executionStorage(storage), {
-    flows: [Reply],
-    runtime: (intent) =>
-      CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow }, registration).pipe(
-        Layer.provide(ObjectDatabase.layer(storage)),
-        Layer.provide(services),
-      ),
+    flows: [Reply, Tour],
+    runtime: (intent) => executionLayer(hostId, storage, sequencer, intent, { spend, model, history }),
     router: unrouted,
     settledRetentionMs: SETTLED_RETENTION_MS,
   })
   try sequencer.ensureDispatched()
   return outcome
+}
+
+interface ExecutionServices { readonly spend: Spend.Shape; readonly model: ChatModel.Shape; readonly history: HistoryReader }
+export service ActiveExecution { readonly services: ExecutionServices }
+function executionLayer(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, intent: ExecutionObject.Intent, active: ExecutionServices) {
+  const services = Layer.mergeAll(
+    Layer.succeed(HistoryTools, { history: active.history }),
+    Layer.succeed(Replies, repliesOf(sequencer)),
+    Layer.succeed(Tours, toursOf(sequencer)),
+    Layer.succeed(Spend, active.spend), Layer.succeed(ChatModel, active.model),
+  )
+  return CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow, retention: EXECUTION_RETENTION }, Layer.mergeAll(registration, tourAgentRegistration)).pipe(
+    Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(services),
+  )
+}
+
+/** One SDK host per action-object incarnation: cancellation interrupts the active drive and survives reload. */
+export function executionHost(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, admit?: () => boolean!!) {
+  return ExecutionObject.make(executionStorage(storage), {
+    flows: [Reply, Tour], router: unrouted, settledRetentionMs: SETTLED_RETENTION_MS,
+    runtime: (intent) => Layer.unwrap(effect { return executionLayer(hostId, storage, sequencer, intent, (try ActiveExecution).services) }),
+    canStart: admit,
+    afterAlarm: sequencer.ensureDispatched(),
+  })
+}
+
+/** A cancelled intent may have been refused before the SDK admitted any execution row. */
+export effect function existingReceipt<A, E, R>(storage: Storage, poll: Option.Option<Flow.Result<A, E>>!FlowRuntime.FlowExecutionNotFound!R) {
+  return try withSpan(effect {
+    return poll catch effect (error) => {
+      const cancelled = try promise(() => storage.get<number>(ExecutionObject.cancelledKey))
+      if (cancelled === undefined) throw error
+      try Metric.update(Metric.withAttributes(Metric.counter("vibelang_action_receipts", { incremental: true }), { outcome: "unadmitted-cancelled" }), 1)
+      try Effect.logInfo("vibelang.action.receipt").pipe(Effect.annotateLogs({ outcome: "unadmitted-cancelled" }))
+      return Option.none()
+    }
+  }, "vibelang.action.receipt")
+}
+
+/** Read the existing SDK journal result; alarm settlement also includes failed and cancelled executions. */
+export effect function executionResult(hostId: string, storage: Storage, intent: ExecutionObject.Intent) {
+  const runtime = CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow }, Layer.empty).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+  return try Effect.orDie(Effect.provide(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    if (intent.flow === Reply._tag) return try existingReceipt(storage, engine.poll(Reply, intent.executionId))
+    return try existingReceipt(storage, engine.poll(Tour, intent.executionId))
+  }, runtime))
+}
+
+
+/** The same wiki flow as the mock and agent tools, journaled in the conversation object's store. */
+export effect function openWiki(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, page: string) {
+  const executionId = try postExecutionId("wiki")
+  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: OpenWiki._tag }, wikiRegistration).pipe(
+    Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(Tours, toursOf(sequencer))),
+  )
+  const opened = try Effect.orDie(effect {
+    provide runtime {
+      return try (try FlowRuntime.FlowRuntime).execute(OpenWiki, { executionId, payload: { page } })
+    }
+  })
+  return opened ? null : "empty"
 }

@@ -34,3 +34,9 @@ export * as BunHost from "./BunHost.ts"
  * SQLite driver and this package's Host bundle.
  */
 export * as BunRuntime from "./BunRuntime.ts"
+
+/** Electrobun window and native folder-picker services; FFI is loaded only when its layer is built. */
+export * as BunDesktop from "./BunDesktop.vibe"
+
+/** Scoped Effect HTTP server for a Bun host's loopback API. */
+export * as BunServer from "./BunServer.vibe"

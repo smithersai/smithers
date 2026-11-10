@@ -1,0 +1,76 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { HttpClient, HttpClientError, HttpClientResponse, HttpServerResponse } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
+import { LiveMythical } from "../src/history/LiveMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+it("typed transport failure latency", async ({ bench }) => {
+  const result = await workload(bench, "transport-fault-matrix", "async", async () => {
+    for (const [status, text] of [[0, ""], [503, ""], [200, "{"], [200, "{}"], [409, "{"], [409, "{}"]] as const) {
+      const broken = HttpClient.make((request) => status === 0
+        ? fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+        : succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(text, { status })))))
+      await runPromise(effect {
+        provide HttpClient.HttpClient = broken {
+          provide LiveFactory("http://fault.invalid") {
+            const factory = try Factory
+            const calls = [
+              ["health", () => Effect.asVoid(health("http://fault.invalid"))],
+              ["read", () => Effect.asVoid(factory.read("home", 0))],
+              ["events", () => Stream.runDrain(factory.events("home", 0))],
+              ["post", () => factory.post("home", "a", "Bench", "Measured")],
+              ["tour", () => factory.tour("home")],
+              ["end tour", () => factory.endTour("home")],
+              ["sandbox", () => Effect.asVoid(factory.sandbox("home"))],
+              ["sandbox start", () => Effect.asVoid(factory.startSandbox("home", "fault-start"))],
+              ["sandbox stop", () => Effect.asVoid(factory.stopSandbox("home", "fault-stop", 1))],
+              ["terminal", () => Effect.asVoid(factory.sandboxCommand("home", "fault-command", "pwd", 1))],
+            ] as const
+            for (const [name, call] of calls) {
+              const outcome = call() catch (error) => ({ tag: error._tag, reason: error._tag === "Unavailable" ? error.reason : error.refusal })
+              // Successful writes ignore unused bodies; successful empty SSE ends without an event.
+              if (status === 200 && ["post", "tour", "end tour", "events"].includes(name)) {
+                try Effect.try(() => expect(outcome).toBeUndefined())
+              } else {
+                const reason = status === 0 ? `${name} unreachable`
+                  : status === 409 && ["post", "tour", "end tour", "sandbox start", "sandbox stop", "terminal"].includes(name) ? `refusal is not ${text === "{" ? "JSON" : "the protocol"}`
+                  : status !== 200 ? `${name} answered ${status}`
+                  : `${name} is not ${text === "{" ? "JSON" : "the protocol"}`
+                try Effect.try(() => expect(outcome).toEqual({ tag: "Unavailable", reason }))
+              }
+            }
+          }
+          provide LiveMythical("http://fault.invalid") {
+            const history = try Mythical
+            const calls = [
+              ["history outline", () => Effect.asVoid(history.outline())],
+              ["history epic", () => Effect.asVoid(history.epic("e1", 0))],
+              ["history commit", () => Effect.asVoid(history.commit("m1"))],
+              ["history search", () => Effect.asVoid(history.search("Measured"))],
+              ["history events", () => Stream.runDrain(history.events(0))],
+              ["plan", () => Effect.asVoid(history.plan({ how: "append", epic: "e1", newEpic: "", target: "", title: "Measured", task: "" }))],
+              ["start", () => history.start("m1", "bench")],
+              ["note", () => history.note("m1", "evidence", "Measured")],
+              ["approve", () => history.approve("m1")],
+              ["fold", () => Effect.asVoid(history.fold())],
+            ] as const
+            for (const [name, call] of calls) {
+              const outcome = call() catch (error) => ({ tag: error._tag, reason: error._tag === "Unavailable" ? error.reason : error.refusal })
+              const reason = status === 0 ? `${name} unreachable`
+                : name === "history events" ? status === 200 ? "" : `${name} answered ${status}`
+                : name.startsWith("history ") ? status === 200 ? `${name} is not ${text === "{" ? "JSON" : "the protocol"}` : `${name} answered ${status}`
+                : `${name} is not ${text === "" || text === "{" ? "JSON" : "the protocol"}`
+              if (name === "history events" && status === 200) try Effect.try(() => expect(outcome).toBeUndefined())
+              else if ((status === 409 && text === "{}" || status === 503) && !name.startsWith("history ")) try Effect.try(() => expect(outcome).toEqual({ tag: "Unavailable", reason: `${name} refusal is not the protocol` }))
+              else try Effect.try(() => expect(outcome).toEqual({ tag: "Unavailable", reason }))
+            }
+          }
+        }
+      })
+    }
+  }).run(quick)
+  await runPromise(artifact("transport", "Vitest built-in bench; inject a faulty Effect HttpClient into the actual Factory and Mythical adapters. Measure all chat/history/sandbox/terminal operations across transport errors, status failures, malformed JSON/protocol; exact safe typed error checked, no response body leaks.", ["Deliberate faulty service, no request interception; failure handling overhead without network latency. Successful transport paths run through real workerd."], result))
+})
