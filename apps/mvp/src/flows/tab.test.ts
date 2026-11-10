@@ -10,6 +10,7 @@
 import { build } from "esbuild"
 import { isBuiltin } from "node:module"
 import { join, relative } from "node:path"
+import vibelang from "vibelang-unplugin/esbuild"
 import { createServer } from "vite"
 import { describe, expect, test } from "vitest"
 
@@ -58,7 +59,7 @@ const reached = async (entry: string): Promise<ReadonlyArray<string>> => {
             return isBuiltin(args.path) ? { path: args.path, external: true } : undefined
           })
         },
-      }],
+      }, vibelang()],
     })
   } finally {
     await vite.close()
