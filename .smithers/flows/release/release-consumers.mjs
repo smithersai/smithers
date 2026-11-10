@@ -712,10 +712,11 @@ export const runQuickstartConsumer = async (
 
 /**
  * An application on an Effect outside the supported range is told so at
- * install time. The refused version is the last release candidate, which is
- * what a project that followed the earlier exact pin still declares.
+ * install time. The refused version defaults to the last release candidate,
+ * which is what a project that followed the earlier exact pin still declares;
+ * the matrix also passes the registry's latest Effect when the range excludes it.
  */
-export const refuseUnsupportedEffect = async (manager, registryUrl, entries) => {
+export const refuseUnsupportedEffect = async (manager, registryUrl, entries, effect = UNSUPPORTED_EFFECT_VERSION) => {
   const firstParty = candidateVersion(entries)
   const consumer = await mkdtemp(join(tmpdir(), "smithers-k-unsupported-effect-" + manager + "-"))
   try {
@@ -725,7 +726,7 @@ export const refuseUnsupportedEffect = async (manager, registryUrl, entries) => 
       JSON.stringify({
         private: true,
         packageManager: releasePackageManager,
-        dependencies: { "@smthrs/database": firstParty, effect: UNSUPPORTED_EFFECT_VERSION }
+        dependencies: { "@smthrs/database": firstParty, effect }
       })
     )
     await successful(manager, ["--version"], consumer)
@@ -735,12 +736,12 @@ export const refuseUnsupportedEffect = async (manager, registryUrl, entries) => 
       ...consumerCacheFlags(manager),
       ...(manager === "npm" ? ["--strict-peer-deps", "--no-audit", "--no-fund"] : ["--strict-peer-dependencies"])
     ], consumer)
-    assert.notEqual(result.exit, 0, "effect@" + UNSUPPORTED_EFFECT_VERSION + " must be refused")
+    assert.notEqual(result.exit, 0, "effect@" + effect + " must be refused")
     assert.equal(result.signal, null)
     assert.match(result.output, manager === "npm" ? /ERESOLVE/ : /ERR_PNPM_PEER_DEP_ISSUES/)
     assert.match(result.output, literally(SUPPORTED_EFFECT_RANGE))
-    assert.match(result.output, literally(UNSUPPORTED_EFFECT_VERSION))
-    return { manager, exit: result.exit, effect: UNSUPPORTED_EFFECT_VERSION, range: SUPPORTED_EFFECT_RANGE }
+    assert.match(result.output, literally(effect))
+    return { manager, exit: result.exit, effect, range: SUPPORTED_EFFECT_RANGE }
   } finally {
     await rm(consumer, { recursive: true, force: true })
   }
@@ -763,7 +764,17 @@ export const runConsumerMatrix = async (directory, entries, {
     // serves it now (#3839). Today's release is read once for both managers.
     const node = profiles.find((profile) => profile.name === "node")
     const latestEffect = node === undefined && !quickstart ? undefined : await latestEffectVersion()
-    const latest = node === undefined ? [] : [onEffect(node, latestEffect, "latest")]
+    // The exact peer excludes every later Effect patch (#4238). When the registry
+    // has moved past the supported range, the Node profile cannot install on its
+    // latest, so the gate proves a strict install refuses that release instead.
+    const latestExcluded = node !== undefined && !satisfies(latestEffect, SUPPORTED_EFFECT_RANGE)
+    if (latestExcluded) {
+      console.warn(
+        "effect@latest is " + latestEffect + ", outside the supported range " + SUPPORTED_EFFECT_RANGE +
+          "; checking that a strict install refuses it (#4238)"
+      )
+    }
+    const latest = node === undefined || latestExcluded ? [] : [onEffect(node, latestEffect, "latest")]
     for (const manager of managers) {
       for (const profile of [...profiles, ...latest]) {
         try {
@@ -781,6 +792,15 @@ export const runConsumerMatrix = async (directory, entries, {
         failures.push(error)
         console.error(error.message)
       }
+      if (latestExcluded) {
+        try {
+          results.push({ unsupported: await refuseUnsupportedEffect(manager, registry.url, entries, latestEffect) })
+        } catch (cause) {
+          const error = new Error(manager + " latest Effect outside the range: " + cause.message, { cause })
+          failures.push(error)
+          console.error(error.message)
+        }
+      }
       if (quickstart) {
         try {
           results.push({ quickstart: await runQuickstartConsumer(manager, undefined, { env, latestEffect }) })
@@ -795,6 +815,7 @@ export const runConsumerMatrix = async (directory, entries, {
       consumerMatrix: {
         profilesPassed: results.filter((result) => result.profile !== undefined).length,
         effectLatest: latest[0]?.effect ?? null,
+        effectLatestRefused: latestExcluded ? latestEffect : null,
         unsupportedEffectRefusals: results.filter((result) => result.unsupported !== undefined).length,
         quickstartsPassed: results.filter((result) => result.quickstart !== undefined).length,
         quickstartEffect: [...new Set(results.flatMap((result) => result.quickstart?.effect ?? []))],
