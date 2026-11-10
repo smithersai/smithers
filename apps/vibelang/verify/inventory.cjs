@@ -178,9 +178,13 @@ function inventorySource(file, source) {
   walk(result.ast);
   return rows;
 }
+/** The production sources the inventory enumerates, never generated output. */
+function sourceFiles() {
+  // Build output is not source: `pnpm wiki:build` writes the gitignored src/assets/wiki.generated.vibe (data only).
+  return ['src', 'worker', 'scripts'].flatMap(d => scan(path.join(app, d))).filter(file => !file.endsWith('.generated.vibe'));
+}
 function main() {
-  const rows = ['src', 'worker', 'scripts'].flatMap(d => scan(path.join(app, d)))
-    .flatMap(file => inventorySource(file, fs.readFileSync(file, 'utf8')));
+  const rows = sourceFiles().flatMap(file => inventorySource(file, fs.readFileSync(file, 'utf8')));
   const table = `<!-- inventory:start -->\n${rows.length} executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.\n\n| File and line | Function | Class | Proof or reason |\n| --- | --- | --- | --- |\n${rows.map(row => `| \`${row.file}:${row.line}\` | \`${row.label}\` | ${row.category} | ${row.why} |`).join('\n')}\n<!-- inventory:end -->`;
   const before = fs.readFileSync(decision, 'utf8');
   if (!/<!-- inventory:start -->[\s\S]*?<!-- inventory:end -->/.test(before)) throw Error('Missing inventory markers');
@@ -189,5 +193,5 @@ function main() {
   else if (before !== after) { console.error('Function inventory is stale: node verify/inventory.cjs --write'); process.exitCode = 1; }
   console.log(`${rows.length} executable functions, callbacks and effect blocks inventoried`);
 }
-module.exports = { inventorySource };
+module.exports = { inventorySource, sourceFiles };
 if (require.main === module) main();

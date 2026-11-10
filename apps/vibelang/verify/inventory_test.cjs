@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { test } = require('node:test');
-const { inventorySource } = require('./inventory.cjs');
+const { inventorySource, sourceFiles } = require('./inventory.cjs');
 const app = path.resolve(__dirname, '..');
 
 test('non-ASCII prefixes retain exact original function and callback lines', () => {
@@ -53,4 +53,14 @@ test('membership and numeric predicates are decisions, while native DOM work is 
     { label: 'safe', category: 'pure logic' },
     { label: 'focus', category: 'effectful shell' },
   ]);
+});
+
+test('build output is not source: a generated module never enters the inventory', () => {
+  // `pnpm wiki:build` (run by typecheck and test) writes the gitignored src/assets/wiki.generated.vibe, megabytes of
+  // data whose AST once overflowed the compiler pipe, so the inventory failed after any build.
+  const generated = path.join(app, 'src/assets/wiki.generated.vibe');
+  const files = sourceFiles();
+  if (fs.existsSync(generated)) assert.equal(files.includes(generated), false);
+  assert.equal(files.some(file => file.endsWith('.generated.vibe')), false);
+  assert.ok(files.includes(path.join(app, 'src/core/flows.vibe')));
 });
