@@ -63,6 +63,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0030](decisions/0030-read-deadlines-and-object-health.md) | Bounded issue/wiki reads, inspectable object startup and safe journal-decode failures; amended 2026-11-10 (lane vl-startup-hang): objects start under Alchemy's bridge, health names the start-up step |
 | [0031](decisions/0031-public-reads.md) | Signed-out GitHub reads go through smithers.sh's App, cached with ETags and served stale when GitHub refuses; the site holds no GitHub token (lane vl-public-reads) |
 | smithers.sh `apps/mvp/docs/decisions/0165-hosted-site-github-delegation.md`, "Revocation and the authorization" | GitHub's page after sign-out cycles is its ten-new-tokens-an-hour prompt, not our revocations; sign-out keeps revoking, the connection survives (lane vl-github-authz) |
+| [smithers.sh closed-scope check](roadmap.md) | apps/mvp cold scope check: admission and real terminal pump run; `github.reconcile.admission` and `github_reconcile_admissions` observe entry (lane vl-mvp-closed-scope) |
 
 ## Layout
 

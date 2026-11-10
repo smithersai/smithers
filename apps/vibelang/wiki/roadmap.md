@@ -61,6 +61,12 @@ brick                                   state         proof
   store at v7. This stack uses its own store, `smithers-vibelang-state` (infra/Stack.vibe). Moving apps/mvp to beta.85
   migrates the default store, so that deploy and the migration happen together.
 - **`@smthrs/ui-css`** holds `@smthrs/ui`'s framework-free CSS so React and Foldkit share one stylesheet.
+- **smithers.sh closed-scope check (lane vl-mvp-closed-scope, 2026-11-10): done.** Cold `alchemy dev` checks with and
+  without `17ebb33a`'s bridge hunk ran both reconcile admissions and the actual terminal pump. Reconcile admission is
+  joined inside the request; pumps and socket renewal/expiry use the object's own scope. The terminal check uses a
+  real tmux fixture because the local rootless Docker forge gateway refused its connection. The next smithers.sh
+  deploy adds `github.reconcile.admission` (span and log) and `github_reconcile_admissions` (counter), with fixed names
+  and no payload, and retains the shared bridge fix. Full receipts and scope audit are in the lane report on nyc-01.
 
 - Brick 2 policy and shared authentication: decision [0019](decisions/0019-sign-in-and-roles.md); lane vl-roles.
 - **vl-fuzzpkg, in progress:** `@smthrs/fuzz` landed at 100%. Fuzz-only coverage is 90.9% of lines and 81.9% of branches at the ninth session, below the 100% goal; `worker/apiObjects.vibe` is at 100%. Fixed from its findings: a wiki read while GitHub fails answers at the engine's 5-second deadline, and a reply whose Budget, Accounts or History object is unreachable fails visibly at its 5-minute deadline. The eighth 30-minute campaign found nothing. Open: `src/web/main.vibe` (741/815 branches), unbounded draft spends, Alchemy's `.make` bodies (decision 0015).
