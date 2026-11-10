@@ -28,7 +28,8 @@ export default defineConfig(({ mode }) => ({
     maxWorkers: 2,
     include: mode === "workerd" ? [WORKERD] : ["test/**/*.test.{ts,vibe,mjs}"],
     exclude: mode === "workerd" ? configDefaults.exclude : [...configDefaults.exclude, WORKERD],
-    ...(mode === "workerd" ? { testTimeout: 120_000, hookTimeout: 120_000 } : {}),
+    // A measured run's Workers carry Istanbul counters and start slower (test/support/workerd.vibe `deadline`).
+    ...(mode === "workerd" ? { testTimeout: 120_000 * (process.env.WORKERD_COVERAGE === "1" ? 5 : 1), hookTimeout: 120_000 * (process.env.WORKERD_COVERAGE === "1" ? 5 : 1) } : {}),
     coverage: {
       provider: "v8",
       autoAttachSubprocess: true,
@@ -36,7 +37,9 @@ export default defineConfig(({ mode }) => ({
       reporter: ["text", "json", "json-summary", "html", "lcov"],
       reportsDirectory: mode === "workerd" ? "coverage/workerd" : "coverage/unit",
       reportOnFailure: true,
-      thresholds: { perFile: true, lines: 100, branches: 100, functions: 100, statements: 100 },
+      // The workerd suite's 100% gate runs after Vitest, once each workerd isolate's counters join this Node report
+      // (test/workerdCoverageGate.vibe, 0016); Node's side alone counts all Worker execution as missing.
+      ...(mode === "workerd" ? {} : { thresholds: { perFile: true, lines: 100, branches: 100, functions: 100, statements: 100 } }),
     },
     // Transform the Effect adapter so Vite can deduplicate its Vitest peer with the running CLI.
     server: { deps: { inline: ["foldkit", "@effect/vitest"] } },

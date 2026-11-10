@@ -95,6 +95,10 @@ brick                                   state         proof
 
 - **Marketing media (vl-media, 0026):** splash and empty-chat assets remain; VL-31 supersedes the former per-stop Tour placements; designer source preserved in `designs/media/`; browser loading, reduced motion, native failure and phone checks. Lead deploys.
 
+- **Coverage inside workerd (0016, vl-coverage-workerd): measured, not at 100%.** `pnpm test:workerd:coverage` joins
+  each workerd isolate's Istanbul counters with Node's V8 report by source position: 44.88% lines, 29.46% branches
+  (Node alone: 13.01%, 4.64%). 137 of 160 files remain below 100%.
+
 - **Benchmarks (0017, vl-bench): not done.** Hosted-broker main `ca292c70`: 54 files / 128 behavior checks pass; independent source-profile coverage is 5,827/7,036 src/worker lines (82.82%), with 95 files below strict thresholds. Twenty added groups, explicit sync/async runner controls and validated local/live observations are retained. No unit/fuzz counters, src/worker exclusions or tolerance changes. Exact future Container/GitHub/OAuth/deployed-API cases remain in 0017.
 
 - **Both acceptance gates (0027, lane vl-gates): implemented locally.** Maintainer-person VIP approval; Astra, Sol, Fable and Opus same-revision LGTM/A- or better specification acceptance; keep acceptance on edits and retain prior reset history, real flows, proofs/mutations, scenes, browser and workerd routes. Lead deploys.

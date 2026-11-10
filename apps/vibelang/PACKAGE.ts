@@ -116,6 +116,16 @@ const workerd = Smithers.Shell.Test({
   sandbox: { network: "loopback" }
 })
 
+/** The workerd suite's source coverage: Node's V8 report joined with each workerd isolate's counters (0016). */
+const workerdCoverage = Smithers.Shell.Test({
+  summary: "Measure the workerd suite inside workerd and in Node; fail below 100% lines, branches, functions or statements.",
+  shell: "cd apps/vibelang && pnpm test:workerd:coverage",
+  data: sources,
+  timeout: "30m",
+  sandbox: { network: "loopback" },
+  exclusive: true
+})
+
 /**
  * `pnpm verify`: every marked production contract, proved by Dafny, plus the complete source inventory.
  *
@@ -191,4 +201,4 @@ const fuzzCoverage = Smithers.Shell.Test({
   exclusive: true
 })
 
-export const Package = Smithers.Package({ targets: { typecheck, test, coverage, browserCoverage, workerd, verify, verifyBroken, bench, benchCoverage, benchLive, fuzz, fuzzCoverage } })
+export const Package = Smithers.Package({ targets: { typecheck, test, coverage, browserCoverage, workerd, workerdCoverage, verify, verifyBroken, bench, benchCoverage, benchLive, fuzz, fuzzCoverage } })

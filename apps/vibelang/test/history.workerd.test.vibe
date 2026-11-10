@@ -9,7 +9,7 @@ import { LiveMythical } from "../src/history/LiveMythical.vibe"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
 import { PAGE } from "../src/history/pages.vibe"
 import { CommitPage, EpicPage, Matches, Outline } from "../src/history/schemas.vibe"
-import { serveApi, type Served } from "./support/workerd.vibe"
+import { deadline, serveApi, type Served } from "./support/workerd.vibe"
 
 const platform = Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer)
 
@@ -23,7 +23,7 @@ effect function at(origin: string, path: string, body?: string) {
 
 describe("the History object in local workerd", () => {
   let api: Served | undefined
-  beforeAll(async () => { api = await runPromise(serveApi()) }, 120_000)
+  beforeAll(async () => { api = await runPromise(serveApi()) }, deadline(120_000))
   afterAll(async () => { await api?.dispose() })
 
   it.live("loads VibeLang's bootstrapped history on its first start, as a flow, once", () => effect {

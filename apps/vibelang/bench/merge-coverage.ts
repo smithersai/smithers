@@ -22,7 +22,7 @@ import { dirname, isAbsolute, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parseAstAsync } from "vite"
 import astV8ToIstanbul from "ast-v8-to-istanbul"
-import { sourceCoverage } from "../test/support/workerdCoverage.ts"
+import { workerdEvidence } from "../test/support/workerdCoverage.ts"
 import { mergeByPosition, metrics, normalizeEndColumns, type FileCoverageJSON } from "../test/support/coverageUnion.ts"
 
 const require = createRequire(import.meta.url)
@@ -49,24 +49,6 @@ const sourceFile = (file: string) =>
   !/\/dist\/assets\/rolldown-runtime-[^/]*\.js$/.test(file)
 
 const workerdDir = "coverage/bench/workerd-raw"
-
-async function workerdEvidence(): Promise<CoverageMap> {
-  const merged = libCoverage.createCoverageMap()
-  if (!existsSync(workerdDir)) return merged
-  for (const name of readdirSync(workerdDir).filter((name) => name.endsWith(".json"))) {
-    // Each module's counters carry the VibeLang compiler's own map, the one Vitest's V8 remap uses (0017).
-    const dump = JSON.parse(readFileSync(`${workerdDir}/${name}`, "utf8")) as { coverage: Record<string, unknown> }
-    const sourceLevel = await sourceCoverage(dump.coverage)
-    const filtered = libCoverage.createCoverageMap()
-    for (const file of sourceLevel.files()) {
-      if (!file.endsWith(".vibe")) continue
-      if (!file.startsWith(`${appRoot}/src/`) && !file.startsWith(`${appRoot}/worker/`) && !file.startsWith(`${appRoot}/infra/`) && !file.startsWith(`${appRoot}/scripts/`)) continue
-      filtered.merge({ [file]: normalizeEndColumns(sourceLevel.fileCoverageFor(file).toJSON() as unknown as FileCoverageJSON, readFileSync(file, "utf8")) })
-    }
-    merged.merge(filtered)
-  }
-  return merged
-}
 
 interface ScriptCoverage {
   readonly url: string
@@ -126,7 +108,7 @@ async function main() {
   const vitestFinal = "coverage/bench/coverage-final.json"
   if (!existsSync(vitestFinal)) throw new Error("coverage/bench/coverage-final.json missing: run vitest coverage first")
   const base = libCoverage.createCoverageMap(JSON.parse(readFileSync(vitestFinal, "utf8")))
-  const evidences: ReadonlyArray<CoverageMap> = [await workerdEvidence(), await chromiumEvidence()]
+  const evidences: ReadonlyArray<Pick<CoverageMap, "files" | "toJSON">> = [await workerdEvidence(workerdDir, appRoot), await chromiumEvidence()]
 
   const vitest: Record<string, FileCoverageJSON> = {}
   for (const file of base.files()) {

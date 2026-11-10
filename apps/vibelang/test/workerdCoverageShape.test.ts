@@ -8,6 +8,9 @@ import { expect, it } from "vitest"
 import { build } from "esbuild"
 import vibelang from "vibelang-unplugin/esbuild"
 import { fileURLToPath } from "node:url"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { instrumentModules, sourceCoverage } from "./support/workerdCoverage.ts"
 
 const fixture = fileURLToPath(new URL("./support/coverageShape.vibe", import.meta.url))
@@ -30,4 +33,21 @@ it("workerd evidence locates a namespace call at its source column", async () =>
   const body = Object.entries(source.statementMap).filter(([, loc]) => loc.start.line === 2)
   expect(body.map(([, loc]) => loc.start.column)).toContain(line.indexOf("Effect.runSync"))
   expect(body.every(([id]) => source.s[id]! > 0)).toBe(true)
+}, 240_000)
+
+it("a measured module that does not compile reports the compiler's diagnostics", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "workerd-coverage-"))
+  const broken = join(directory, "broken.vibe")
+  await writeFile(broken, 'export const answer: number = "text"\n')
+  await writeFile(join(directory, "tsconfig.json"), JSON.stringify({ include: ["*.vibe"], compilerOptions: { strict: true } }))
+  try {
+    const built = build({
+      entryPoints: [broken], bundle: true, write: false, format: "esm", platform: "browser", target: "es2022",
+      logLevel: "silent", plugins: [instrumentModules(vibelang({ root: directory }), (file) => file === broken)],
+    })
+    await expect(built).rejects.toThrow(/TS2322/)
+    await expect(built).rejects.not.toThrow(/without a source map/)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 }, 240_000)

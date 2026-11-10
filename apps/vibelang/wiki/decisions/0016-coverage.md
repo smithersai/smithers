@@ -58,10 +58,13 @@ observes line 4 uncovered and its expected-failure marker is gone; the minified 
 was changed as a workaround. Will's decision is required before the upstream change; a fix must have a regression
 and land through VibeLang's merge queue.
 
-Precise coverage could not be enabled on the installed workerd **1.20261019.1** inspector, directly or through Miniflare: Runtime enables and a real fetch answers 200, but
-Profiler.startPreciseCoverage reports `Profiler is not enabled`; takePreciseCoverage reports no started collection.
-`pnpm test:workerd --coverage` in the prototype measures Node clients and surface subprocesses only. Worker execution
-remains uncredited. Two real-model tests remain opt-in without an authorized configured model credential.
+V8 precise coverage cannot be enabled on the installed workerd **1.20261019.1** inspector, directly or through
+Miniflare: workerd's own CDP dispatch consumes `Profiler.enable` to create its CPU profiler and never forwards it to
+V8's Profiler agent (`src/workerd/io/worker.c++`, case `PROFILER_ENABLE`, tag `v1.20261019.1`), so
+`Profiler.startPreciseCoverage` reports `Profiler is not enabled`. That is workerd's design, not this app's defect.
+`pnpm test:workerd --coverage` alone still measures Node clients and surface subprocesses only;
+`pnpm test:workerd:coverage` measures inside workerd with Istanbul counters ("Coverage inside workerd" below). Two
+real-model tests remain opt-in without an authorized configured model credential.
 
 VibeLang 0.0.12 also loses service-Shape methods on object spread (TS2741, compiler exit 2). Minimal reproduction and
 the blocked reply-recovery decorator test are under `~/vl/vibelang-bugs/service-shape-spread/`. No workaround or
@@ -600,7 +603,7 @@ The unit gate still fails below 100%. No file below is excluded and no threshold
 | Path | Needs | Test that covers it once available |
 | --- | --- | --- |
 | `worker/SandboxMachine.vibe`, Container paths of `worker/SandboxAccounts.vibe` | A real Container binding. Live sandboxes wait on Will's yes/no (Containers spend). No scripted Container namespace. | `test/sandbox.container.workerd.test.vibe`, opt-in on `VIBELANG_SANDBOX_TEST_URL` and `VIBELANG_SANDBOX_TEST_COOKIE`, skipped with that reason |
-| `worker/Api.vibe` | Workerd isolate coverage. Its Durable Object wiring runs only in workerd, and a Node run would need scripted namespaces. | `pnpm test:workerd`, once VibeLang 0.0.13 is on npm with the source-map fix (`f5d37aa764af`) and workerd reports precise coverage |
+| `worker/Api.vibe` | Its Durable Object wiring runs only in workerd, and a Node run would need scripted namespaces. Workerd execution is now measured (`pnpm test:workerd:coverage`), but the workerd test host cannot load this module: Alchemy's entry is Node deploy code (`test/workerd/worker.vibe`). | A host that loads the Alchemy classes in workerd, or `test/workerd/bench-api.vibe`'s bodies measured by this suite |
 | `worker/SpecificationReviewers.vibe` | Stays unbound by decision 0027. | None until it is bound |
 | `worker/VipDraft.vibe`, model paths of `worker/Reply.vibe` | A model credential reference in the environment. | `test/live.workerd.test.vibe` covers Reply, opt-in on `CEREBRAS_API_KEY`. `test/vipDraft.test.vibe` covers `VipDraft`, opt-in on the same key |
 | GitHub read, write, VIP proposal and label paths of `worker/Issues.vibe` (`githubHost`) | Real GitHub needs the GitHub test token for the test repository. Since 2026-11-10 the delegated tests run these paths against the in-memory GitHub `fuzz/issues-node-fake.vibe` (see "`worker/Issues.vibe`, `worker/Wiki.vibe`" below); whether such a protocol fake may stand in on a happy path awaits Will's ruling (vl-review-tests finding 3). | `test/issues.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
@@ -960,3 +963,102 @@ CLI case starts two processes instead of three. `commands.vibe` and `sessionFlow
 | `src/history/tools.vibe:93` | The implicit no-match path after an exhaustive `match`; no type-correct value reaches it. VibeLang reproduction `coverage-exhaustive-match` (nyc-01 `~/vl/vibelang-bugs/`); an emitted-output change needs Will |
 | `src/history/mythical.vibe:562` | `rank < 0` after the epic check; kept for the history machine's Dafny proof |
 | `src/history/flows.vibe:213` | The provider writes a negative count (`[70, -21]`) for the implicit else; plain JS and in-process VibeLang controls count correctly. Reproduction `coverage-negative-branch`, for the provider patch's owner |
+
+## Coverage inside workerd (lane vl-coverage-workerd, 2026-11-10)
+
+`pnpm test:workerd:coverage` (PACKAGE target `workerdCoverage`, exclusive like the other coverage gates) measures the
+code that runs inside workerd. V8's precise coverage is unavailable there (see "Measurement blockers"), so the
+benchmark lane's Istanbul counters (0017) now serve this suite too:
+
+```
+.vibe ──vibelang esbuild plugin──▶ module JS + compiler map ──Istanbul instrumenter (input map = compiler map)──▶ bundle
+  workerd isolate runs the bundle; on dispose, Runtime.evaluate reads globalThis.__coverage__ ──▶ coverage/workerd/workerd-raw/
+  istanbul-lib-source-maps remaps each module's counters to .vibe through its own compiler map
+Vitest V8 (Node side) ──▶ coverage/workerd/coverage-final.json
+  test/workerdCoverageGate.vibe: Node's structure is the gate; workerd hits credit it by source start
+  (test/support/coverageUnion.ts, vl-fuzz2's merge); a file Node never ran is gated on workerd's structure
+  ──▶ coverage/workerd/merged/{coverage-final,per-file,summary}.json, 100% per file on all four metrics
+```
+
+`WORKERD_COVERAGE=1` selects measurement in `test/support/workerd.vibe` (`BENCH_COVERAGE` still selects the
+benchmark's directory); every host writes its counters when it stops, and before a `reload` replaces its isolate. Each
+dump's name is unique per process, so two suite workers stopping the same Worker in one millisecond keep both. A
+measured Worker builds about 30% slower (88 s against 68 s for the API Worker on the shared host) and its bundle grows
+from 18 MB to 30 MB, so a measured run scales every suite deadline by five (`deadline` in
+`test/support/workerd.vibe`). The collection stage no longer applies Vitest's thresholds in `workerd` mode; the gate
+applies them after the merge. VibeLang's maps needed no change: the compiler's per-module map locates statements at
+the same source starts in both runtimes (`test/workerdCoverageShape.test.ts`).
+
+Proof: `test/workerdCoverage.workerd.test.vibe` runs `test/support/coverageObject.vibe`'s Durable Object in local
+workerd with only that module measured. An even number credits the even answer's line and not the odd one's; an odd
+number moves the credit; both credit both; an even number, a reload and an odd number credit both across two dumps.
+
+Bug fixed: `instrumentModules` replaced a module's compiler diagnostics with "compiled without a source map", because
+the VibeLang plugin answers a failed compile with its errors and a stub module. It now passes the errors to esbuild.
+Regression: the second case in `test/workerdCoverageShape.test.ts` (red on the old wrapper, green now).
+
+Bug fixed: `Served.reload` replaces the isolate, so a measured Worker lost every count from before the reload. It
+now dumps first. Regression: the reload case in `test/workerdCoverage.workerd.test.vibe` (red without the dump: one
+dump, the even answer uncredited).
+
+Measured on `main` at `d28aa766` plus this change, in one `pnpm test:workerd:coverage` run: before is that run's
+Node-only report (what `pnpm test:workerd --coverage` reports), after is the merged gate. Same 160-file roster; all 15
+suite files pass. The merged denominators are Node's to within five functions and one statement, where a file Node
+never ran takes workerd's structure.
+
+| Workerd suite | Lines | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| Node only | 13.01% (998/7671) | 4.64% (378/8143) | 6.91% (201/2907) | 10.8% (1058/9794) |
+| Node and workerd | 44.88% (3443/7671) | 29.46% (2399/8143) | 33.51% (976/2912) | 40.29% (3947/9795) |
+
+98 files carry workerd execution; 137 of 160 stay below 100%, so the gate exits 1. Every `worker/` file, before →
+after (the lane report `~/vl/vl-coverage-workerd.REPORT.md` on nyc-01 holds all 160):
+
+| File | Lines | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| `worker/Accounts.vibe` | 0 → 83.71 | 0 → 71.86 | 0 → 71.23 | 0 → 76.05 |
+| `worker/ActionDirectory.vibe` | 0 → 100 | 0 → 76.92 | 0 → 100 | 0 → 96.15 |
+| `worker/ActionIdentity.vibe` | 0 → 71.42 | 0 → 55 | 0 → 42.85 | 0 → 61.11 |
+| `worker/ActionRuns.vibe` | 0 → 86.66 | 0 → 62.28 | 0 → 77.77 | 0 → 76.82 |
+| `worker/ActionsHttp.vibe` | 0 → 97.56 | 0 → 82.1 | 0 → 70 | 0 → 81.96 |
+| `worker/AgentModel.vibe` | 0 → 100 | 100 → 100 | 0 → 100 | 0 → 100 |
+| `worker/Api.vibe` | 0 → 0 | 100 → 100 | 0 → 0 | 0 → 0 |
+| `worker/Budget.vibe` | 0 → 90.9 | 0 → 73.68 | 0 → 100 | 0 → 87.5 |
+| `worker/GitHubDelegate.vibe` | 0 → 100 | 0 → 75 | 0 → 100 | 0 → 83.33 |
+| `worker/HistoryActions.vibe` | 0 → 54.54 | 0 → 21.05 | 0 → 81.81 | 0 → 54.05 |
+| `worker/HistoryObject.vibe` | 0 → 91.52 | 0 → 100 | 0 → 75 | 0 → 87.83 |
+| `worker/HistoryTools.vibe` | 25 → 62.5 | 100 → 100 | 0 → 50 | 25 → 62.5 |
+| `worker/Http.vibe` | 0 → 97.84 | 0 → 80 | 0 → 60.86 | 0 → 86.5 |
+| `worker/Issues.vibe` | 0 → 72.12 | 0 → 49.32 | 0 → 69.84 | 0 → 62.53 |
+| `worker/MainLog.vibe` | 0 → 11.62 | 0 → 0 | 0 → 8.33 | 0 → 8.33 |
+| `worker/ObjectStartup.vibe` | 0 → 82.6 | 0 → 63.15 | 0 → 66.66 | 0 → 81.03 |
+| `worker/ObjectStorage.vibe` | 0 → 100 | 0 → 100 | 0 → 100 | 0 → 100 |
+| `worker/Objects.vibe` | 0 → 88.39 | 0 → 71.42 | 0 → 86.88 | 0 → 85.81 |
+| `worker/Reply.vibe` | 10.86 → 81.15 | 0 → 56.79 | 5.26 → 78.94 | 9.43 → 78.61 |
+| `worker/SandboxAccounts.vibe` | 0 → 0 | 0 → 0 | 100 → 100 | 0 → 0 |
+| `worker/SandboxHttp.vibe` | 0 → 80 | 0 → 58.82 | 0 → 60 | 0 → 64.28 |
+| `worker/SandboxMachine.vibe` | 0 → 0 | 100 → 100 | 100 → 100 | 0 → 0 |
+| `worker/SandboxTools.vibe` | 18.18 → 45.45 | 0 → 50 | 0 → 40 | 16.66 → 50 |
+| `worker/Sandboxes.vibe` | 0 → 100 | 0 → 100 | 0 → 100 | 0 → 100 |
+| `worker/Sequencer.vibe` | 0.84 → 83.05 | 0 → 51.61 | 0 → 88.63 | 0.71 → 79.28 |
+| `worker/SpecificationReviewers.vibe` | 0 → 16.12 | 0 → 0 | 0 → 0 | 0 → 11.9 |
+| `worker/Tour.vibe` | 0 → 50 | 100 → 100 | 0 → 0 | 0 → 50 |
+| `worker/Unreachable.vibe` | 100 → 100 | 100 → 100 | 100 → 100 | 100 → 100 |
+| `worker/VipDraft.vibe` | 0 → 60 | 0 → 30 | 0 → 12.5 | 0 → 48.78 |
+| `worker/Wiki.vibe` | 0 → 29.65 | 0 → 20.43 | 0 → 14 | 0 → 24.05 |
+| `worker/WikiDraft.vibe` | 0 → 12.5 | 0 → 0 | 0 → 0 | 0 → 9.09 |
+| `worker/WikiTools.vibe` | 11.11 → 22.22 | 0 → 16.66 | 16.66 → 33.33 | 15.38 → 23.07 |
+| `worker/accountObject.vibe` | 0 → 0 | 0 → 0 | 0 → 0 | 0 → 0 |
+| `worker/agentContext.vibe` | 100 → 100 | 100 → 100 | 100 → 100 | 100 → 100 |
+| `worker/apiObjects.vibe` | 0 → 28.77 | 0 → 19.71 | 0 → 22.34 | 0 → 29.76 |
+| `worker/budgetDecision.vibe` | 0 → 100 | 0 → 80 | 0 → 100 | 0 → 83.33 |
+| `worker/index.vibe` | 0 → 92.3 | 0 → 78.94 | 0 → 100 | 0 → 82.35 |
+| `worker/liveDispatchDecision.vibe` | 0 → 100 | 0 → 50 | 0 → 100 | 0 → 63.63 |
+| `worker/machineObject.vibe` | 0 → 0 | 0 → 0 | 0 → 0 | 0 → 0 |
+| `worker/replyProgressDecision.vibe` | 5.88 → 52.94 | 0 → 31.25 | 10 → 50 | 4.54 → 54.54 |
+| `worker/replyReasons.vibe` | 0 → 85.71 | 0 → 58.33 | 0 → 100 | 0 → 58.33 |
+
+`worker/Api.vibe`, `worker/accountObject.vibe` and `worker/machineObject.vibe` stay at 0%: the suite's hosts never load
+them. `test/coldStartup.workerd.test.vibe` runs `worker/Api.vibe` under `alchemy dev`, whose bundle carries no
+counters. `worker/SandboxMachine.vibe` and `worker/SandboxAccounts.vibe` need a Container binding; `worker/WikiDraft.vibe`
+and `worker/SpecificationReviewers.vibe` need a model. These are test gaps for the coverage lanes, not exclusions.

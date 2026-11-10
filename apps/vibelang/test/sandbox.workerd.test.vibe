@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { serveApi, type Served } from "./support/workerd.vibe"
+import { deadline, serveApi, type Served } from "./support/workerd.vibe"
 
 describe("sandbox HTTP boundary in real workerd", () => {
   let api: Served | undefined
-  beforeAll(async () => { api = await runPromise(serveApi()) }, 120000)
+  beforeAll(async () => { api = await runPromise(serveApi()) }, deadline(120000))
   afterAll(async () => { await api?.dispose() })
   it.live("shows signed-out state and ignores a forged role on compute requests", () => effect {
     provide FetchHttpClient.layer {

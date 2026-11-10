@@ -3,7 +3,7 @@ import { expect, it } from "@effect/vitest"
 import { HttpClient, HttpClientRequest, FetchHttpClient } from "effect/http"
 import { Actions } from "../src/actions/Actions.vibe"
 import { LiveActions } from "../src/actions/LiveActions.vibe"
-import { serveApi, type Served } from "./support/workerd.vibe"
+import { deadline, serveApi, type Served } from "./support/workerd.vibe"
 
 function live(origin: string) { return LiveActions(origin).pipe(Layer.provide(FetchHttpClient.layer)) }
 effect function settled(id: string) {
@@ -11,7 +11,7 @@ effect function settled(id: string) {
 }
 describe("registered actions on real workerd SQLite and alarms", () => {
   let api: Served | undefined
-  beforeAll(async () => { api = await runPromise(serveApi({ ACTION_FAULT: "fail" })) }, 120_000)
+  beforeAll(async () => { api = await runPromise(serveApi({ ACTION_FAULT: "fail" })) }, deadline(120_000))
   afterAll(async () => { await api?.dispose() })
   it.live("lists real declarations and filters viewer commands through the live API", () => effect {
     provide live(api!.origin) {
@@ -53,7 +53,7 @@ describe("actions use signed sessions and current grants at durable boundaries",
     ACTION_FAULT: "hold", VIBELANG_ORIGIN: "https://factory.example", VIBELANG_INITIAL_MAINTAINER_ID: "1",
     GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
     SESSION_SECRET: "fixture-only-signing-secret-32-chars", SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-  })) }, 120_000)
+  })) }, deadline(120_000))
   afterAll(async () => { await api?.dispose() })
   async function request(url: string, options: { readonly method?: "GET" | "POST" | "DELETE"; readonly headers?: Record<string, string>; readonly body?: string } = {}) {
     return await runPromise(Effect.provide(effect {
@@ -107,7 +107,7 @@ describe("actions use signed sessions and current grants at durable boundaries",
     expect(runs.find(run => run.id === "achild")?.state).toBe("passed")
     const chat = await (await request(api.origin + "/api/conversations/action-achild")).json() as { readonly entries: ReadonlyArray<{ readonly author: string; readonly done: boolean; readonly error: string }> }
     expect(chat.entries.find(entry => entry.author === "agent")).toMatchObject({ done: true, error: "Cancelled" })
-  }, 20_000)
+  }, deadline(20_000))
   it("rejects reused ids with different inputs and checks demotion before replayed receipts", async () => {
     const maintainer = await issue("1", "will")
     const person = await issue("19", "joss")
@@ -122,7 +122,7 @@ describe("actions use signed sessions and current grants at durable boundaries",
     const rerun = await write("/api/actions/runs/areplay/rerun", person, { id: "astale" })
     const cancel = await write("/api/actions/runs/areplay", person, {}, "DELETE")
     expect([stale.status, rerun.status, cancel.status]).toEqual([403, 403, 403])
-  }, 20_000)
+  }, deadline(20_000))
   it("rearms a queued history request after the host failed before engine admission", async () => {
     const maintainer = await issue("1", "will")
     const person = await issue("20", "mina")
@@ -135,6 +135,6 @@ describe("actions use signed sessions and current grants at durable boundaries",
     const retry = await write("/api/actions/runs", person, body)
     expect(retry.status).toBe(202)
     await until("arecover", runs => runs.some(run => run.id === "arecover" && run.state === "passed"))
-  }, 20_000)
+  }, deadline(20_000))
 
 })

@@ -13,7 +13,7 @@ import { Factory } from "../src/core/Factory.vibe"
 import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
 import { AgentBackend, BrowserFactory } from "../src/web/backend.vibe"
 import { dayOf, REASONS } from "../worker/Reply.vibe"
-import { modelKey, room, serveApi, type Served } from "./support/workerd.vibe"
+import { deadline, modelKey, room, serveApi, type Served } from "./support/workerd.vibe"
 
 /** The live Factory at `origin`, over this process's fetch. */
 function live(origin: string) {
@@ -50,7 +50,7 @@ effect function untilSettled(conversation: string, replies: number, after = 0) {
 
 describe("the live Factory in local workerd, with no model key", () => {
   let api: Served | undefined
-  beforeAll(async () => { api = await runPromise(serveApi()) }, 120_000)
+  beforeAll(async () => { api = await runPromise(serveApi()) }, deadline(120_000))
   afterAll(async () => { await api?.dispose() })
 
   it.live("says it is live, and a post's reply runs as a durable flow that fails, saying the agent has no model", () => effect {
@@ -182,7 +182,7 @@ describe("the live Factory in local workerd, with no model key", () => {
         expect(snapshot.entries[0]!.text).toBe(WALKTHROUGH[0]!.subtitle)
       })
     }
-  }, 30_000)
+  }, deadline(30_000))
 
   it.live("refuses blank, repeated and oversized posts with the sequencer's reasons", () => effect {
     provide live(api!.origin) {
@@ -206,7 +206,7 @@ describe("the live Factory in local workerd, with no model key", () => {
 
 describe("the live Factory in local workerd, with the day's budget spent", () => {
   let api: Served | undefined
-  beforeAll(async () => { api = await runPromise(serveApi({ CHAT_DAILY_TOKENS: "0", CEREBRAS_API_KEY: "unused-key" })) }, 120_000)
+  beforeAll(async () => { api = await runPromise(serveApi({ CHAT_DAILY_TOKENS: "0", CEREBRAS_API_KEY: "unused-key" })) }, deadline(120_000))
   afterAll(async () => { await api?.dispose() })
 
   it.live("refuses the reply before any model call, saying the budget is spent", () => effect {
@@ -233,7 +233,7 @@ const UNANSWERED = { SMITHERS_MODEL_KEY_UNANSWERED: "unused-key", SMITHERS_MODEL
 
 describe("the live Factory in local workerd, with a model nobody answers", () => {
   let api: Served | undefined
-  beforeAll(async () => { api = await runPromise(serveApi({ CHAT_MODEL: UNREACHABLE_MODEL, ...UNANSWERED })) }, 120_000)
+  beforeAll(async () => { api = await runPromise(serveApi({ CHAT_MODEL: UNREACHABLE_MODEL, ...UNANSWERED })) }, deadline(120_000))
   afterAll(async () => { await api?.dispose() })
 
   it.live("runs the reply on smithers.sh's agent, which fails saying the model is unavailable", () => effect {
@@ -248,7 +248,7 @@ describe("the live Factory in local workerd, with a model nobody answers", () =>
         expect(runs.map((run) => run.run_id)).toContain("reply/m1")
       })
     }
-  }, 300_000)
+  }, deadline(300_000))
 
   it.live("ending the tour while its agent waits on the model stops the agent's flow, and the next post is answered", () => effect {
     const origin = api!.origin
@@ -277,7 +277,7 @@ describe("the live Factory in local workerd, with a model nobody answers", () =>
         expect(runs.find((run) => run.run_id === "tour/t1")?.status).toBe("completed")
       })
     }
-  }, 300_000)
+  }, deadline(300_000))
 })
 
 /** The day's charge keys in the shared budget object, from the test host's window. */
@@ -290,7 +290,7 @@ effect function chargeKeys(origin: string, day: string) {
 
 describe("the live Factory in local workerd, two conversations in one day", () => {
   let api: Served | undefined
-  beforeAll(async () => { api = await runPromise(serveApi({ CHAT_MODEL: UNREACHABLE_MODEL, ...UNANSWERED })) }, 120_000)
+  beforeAll(async () => { api = await runPromise(serveApi({ CHAT_MODEL: UNREACHABLE_MODEL, ...UNANSWERED })) }, deadline(120_000))
   afterAll(async () => { await api?.dispose() })
 
   it.live("charges each conversation's first reply under its own key, though both replies are r1", () => effect {
@@ -310,12 +310,12 @@ describe("the live Factory in local workerd, two conversations in one day", () =
         expect(keys).not.toContain("reply/r1")
       })
     }
-  }, 300_000)
+  }, deadline(300_000))
 })
 
 describe.skipIf(modelKey === undefined)("the live Factory with the real model (opt in: CEREBRAS_API_KEY)", () => {
   let api: Served | undefined
-  beforeAll(async () => { api = await runPromise(serveApi({ CEREBRAS_API_KEY: modelKey ?? "" })) }, 120_000)
+  beforeAll(async () => { api = await runPromise(serveApi({ CEREBRAS_API_KEY: modelKey ?? "" })) }, deadline(120_000))
   afterAll(async () => { await api?.dispose() })
 
   it.live("streams an answer that finishes with VibeLang in it", () => effect {
@@ -331,7 +331,7 @@ describe.skipIf(modelKey === undefined)("the live Factory with the real model (o
         expect(reply.text).toContain("service")
       })
     }
-  }, 180_000)
+  }, deadline(180_000))
 
   it.live("answers about the mythical history from its tool, vibelang/history/show", () => effect {
     provide live(api!.origin) {
@@ -346,7 +346,7 @@ describe.skipIf(modelKey === undefined)("the live Factory with the real model (o
         expect(reply.text).toContain("The compiler")
       })
     }
-  }, 180_000)
+  }, deadline(180_000))
 
 
 })

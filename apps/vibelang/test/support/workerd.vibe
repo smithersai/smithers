@@ -11,15 +11,46 @@ import { dumpWorkerdCoverage, instrumentModules } from "./workerdCoverage.ts"
 /** esbuild or Miniflare failed to bundle or start a Worker. */
 error WorkerdFailed { cause: unknown }
 
+/**
+ * A suite's deadline in milliseconds. A measured run (`WORKERD_COVERAGE`) bundles and parses Istanbul counters into
+ * every Worker, which takes about 30% longer to build and grows the bundle workerd parses from 18 MB to 30 MB; its
+ * deadlines are five times longer, so the suite measures what it runs instead of timing out.
+ */
+export const deadline = (milliseconds: number) => runSync(Config.withDefault(Config.Boolean("WORKERD_COVERAGE"), false)) ? milliseconds * 5 : milliseconds
+
 /** The model key the opt-in real-model case uses; unset, that case skips. */
 export const modelKey = Option.getOrUndefined(runSync(Config.option(Config.String("CEREBRAS_API_KEY"))))
+
+/**
+ * A measured Worker: the bundled modules `instrumented` selects carry Istanbul counters, and the isolate's counters are
+ * written under `directory` when the Worker stops. workerd's inspector keeps V8's Profiler domain to itself, so
+ * counters are the only execution evidence from inside workerd (0016, 0017).
+ */
+export interface Measure {
+  readonly directory: string
+  readonly instrumented: (file: string) => boolean
+}
 
 /** What a Worker's bundle is: its ES module, and the `.wasm` files it imports, by module name. */
 interface Bundle {
   readonly module: string
   readonly wasm: ReadonlyArray<{ readonly name: string; readonly path: string }>
-  /** Built for the coverage command: the app's own modules carry Istanbul counters (0017). */
-  readonly coverage: boolean
+  readonly measure: Measure | undefined
+}
+
+/**
+ * The command's measurement of the app's own modules: `BENCH_COVERAGE` for the benchmark gate (0017),
+ * `WORKERD_COVERAGE` for the workerd suite's gate (`pnpm test:workerd:coverage`, 0016), otherwise none.
+ */
+effect function configuredMeasure() {
+  const bench = try Config.withDefault(Config.Boolean("BENCH_COVERAGE"), false)
+  const suite = try Config.withDefault(Config.Boolean("WORKERD_COVERAGE"), false)
+  const app = try (try Path.Path).fromFileUrl(new URL("../../", import.meta.url))
+  const instrumented = (file: string) => file.startsWith(app) && /^(src|worker|infra|scripts)\/.*\.vibe$/.test(file.slice(app.length))
+  const measure: Measure | undefined = bench ? { directory: "coverage/bench/workerd-raw", instrumented }
+    : suite ? { directory: "coverage/workerd/workerd-raw", instrumented }
+    : undefined
+  return measure
 }
 
 /**
@@ -27,7 +58,7 @@ interface Bundle {
  * modules left to it. A `#quickjs.wasm` import (`@smthrs/harness/QuickJSWorkerd`) stays a module of its own, as
  * Cloudflare's bundlers upload it: workerd compiles WebAssembly only from a module, never from bytes.
  */
-effect function bundle(relative: string) {
+effect function bundle(relative: string, measure: Measure | undefined) {
   const path = try (try Path.Path).fromFileUrl(new URL(relative, import.meta.url))
   const wasm: Array<{ readonly name: string; readonly path: string }> = []
   const wasmModules = {
@@ -41,18 +72,15 @@ effect function bundle(relative: string) {
       })
     },
   }
-  const coverage = try Config.withDefault(Config.Boolean("BENCH_COVERAGE"), false)
-  const app = try (try Path.Path).fromFileUrl(new URL("../../", import.meta.url))
-  const appSource = (file: string) => file.startsWith(app) && /^(src|worker|infra|scripts)\/.*\.vibe$/.test(file.slice(app.length))
   const result = try tryPromise({
     try: () => build({
       entryPoints: [path], bundle: true, write: false, format: "esm", platform: "browser", target: "es2022",
       conditions: ["workerd", "worker", "browser"], external: ["node:*", "cloudflare:*"], logLevel: "silent",
-      plugins: [coverage ? instrumentModules(vibelang(), appSource) : vibelang(), wasmModules as never],
+      plugins: [measure === undefined ? vibelang() : instrumentModules(vibelang(), measure.instrumented), wasmModules as never],
     }),
     catch: (cause) => new WorkerdFailed({ cause }),
   })
-  const bundled: Bundle = { module: result.outputFiles[0]!.text, wasm, coverage }
+  const bundled: Bundle = { module: result.outputFiles[0]!.text, wasm, measure }
   return bundled
 }
 
@@ -74,22 +102,28 @@ export interface Served {
   readonly fetch: (request: Request) => Promise<Response>
 }
 
-effect function listen(config: Record<string, unknown>, port = 0, coverage = false) {
+effect function listen(config: Record<string, unknown>, port: number, measure: Measure | undefined) {
   const options = { host: "127.0.0.1", port, workers: [{ config }] } as ConstructorParameters<typeof Miniflare>[0]
-  if (coverage) options.inspectorPort = 0
+  if (measure !== undefined) options.inspectorPort = 0
   const worker = try Effect.try({ try: () => new Miniflare(options), catch: (cause) => new WorkerdFailed({ cause }) })
   const url = try tryPromise({ try: () => worker.ready, catch: (cause) => new WorkerdFailed({ cause }) })
   const name = String(config.name)
   const served: Served = {
     origin: url.origin,
     reload: async (env) => {
+      // Reloading replaces the isolate and its counters; a measured worker keeps what ran so far.
+      if (measure !== undefined) await dumpWorkerdCoverage(worker, name, measure.directory)
       const changed = { ...config, env: { ...(config.env as Record<string, unknown>), ...Object.fromEntries(Object.entries(env).map(([name, value]) => [name, { type: "text", value }])) } }
       await worker.setOptions({ ...options, workers: [{ config: changed }] } as ConstructorParameters<typeof Miniflare>[0])
     },
     dispose: async () => {
-      // Coverage mode: the worker's accumulated counters are execution evidence; dump before the isolate is gone.
-      if (coverage) await dumpWorkerdCoverage(worker, name, "coverage/bench/workerd-raw")
-      await worker.dispose()
+      // A measured worker's accumulated counters are execution evidence: dump before the isolate is gone. A failed
+      // dump still stops workerd, and still fails the suite.
+      try {
+        if (measure !== undefined) await dumpWorkerdCoverage(worker, name, measure.directory)
+      } finally {
+        await worker.dispose()
+      }
     },
     fetch: async (request) => {
       const response = await worker.dispatchFetch(request.url, { method: request.method, headers: Object.fromEntries(request.headers), ...(request.method === "GET" || request.method === "HEAD" ? {} : { body: await request.text() }) })
@@ -106,7 +140,7 @@ let apiBundle: Bundle | undefined
 /** The API Worker with `env` as its configuration: the deployment's Config, as text bindings. */
 export effect function serveApi(env: Readonly<Record<string, string>> = {}, port = 0) {
   provide NodeServices.layer {
-    apiBundle ??= try bundle("../workerd/worker.vibe")
+    apiBundle ??= try bundle("../workerd/worker.vibe", try configuredMeasure())
     const modules = try modulesOf(apiBundle)
     return try listen({
       name: "api",
@@ -130,14 +164,14 @@ export effect function serveApi(env: Readonly<Record<string, string>> = {}, port
         SandboxLedger: { type: "durable-object", storage: "sqlite" },
         ActionIndex: { type: "durable-object", storage: "sqlite" },
       },
-    }, port, apiBundle.coverage)
+    }, port, apiBundle.measure)
   }
 }
 
 /** The site Worker with no API Worker bound: the mock deployment. */
 export effect function serveSite(withAssets = false) {
   provide NodeServices.layer {
-    const bundled = try bundle("../../worker/index.vibe")
+    const bundled = try bundle("../../worker/index.vibe", try configuredMeasure())
     const modules = try modulesOf(bundled)
     return try listen({
       name: "site",
@@ -147,7 +181,7 @@ export effect function serveSite(withAssets = false) {
         env: { ASSETS: { type: "assets" } },
       } : {}),
       manifest: { mainModule: "worker.js", modules },
-    }, 0, bundled.coverage)
+    }, 0, bundled.measure)
   }
 }
 
@@ -162,28 +196,28 @@ export effect function room(name: string) {
 /** The wiki fixture repository on the persistent engine in real workerd SQLite. */
 export effect function serveWikiHost() {
   provide NodeServices.layer {
-    const bundled = try bundle("../workerd/wiki.vibe")
+    const bundled = try bundle("../workerd/wiki.vibe", try configuredMeasure())
     const modules = try modulesOf(bundled)
     return try listen({
       name: "wiki", compatibilityDate: "2026-10-01", compatibilityFlags: ["nodejs_compat"],
       manifest: { mainModule: "worker.js", modules },
       env: { WIKI: { type: "durable-object", worker: "wiki", exportName: "WikiObject" } },
       exports: { WikiObject: { type: "durable-object", storage: "sqlite" } },
-    }, 0, bundled.coverage)
+    }, 0, bundled.measure)
   }
 }
 
 /** The issue fixture mode on the persistent engine in real workerd SQLite. */
 export effect function serveIssuesHost() {
   provide NodeServices.layer {
-    const bundled = try bundle("../workerd/issues.vibe")
+    const bundled = try bundle("../workerd/issues.vibe", try configuredMeasure())
     const modules = try modulesOf(bundled)
     return try listen({
       name: "issues", compatibilityDate: "2026-10-01", compatibilityFlags: ["nodejs_compat"],
       manifest: { mainModule: "worker.js", modules },
       env: { ISSUES: { type: "durable-object", worker: "issues", exportName: "IssuesObject" } },
       exports: { IssuesObject: { type: "durable-object", storage: "sqlite" } },
-    }, 0, bundled.coverage)
+    }, 0, bundled.measure)
   }
 }
 
@@ -192,7 +226,7 @@ let authBrokerBundle: Bundle | undefined
 /** Both production auth hosts, on distinct local origins, plus a GitHub service fixture. Never shipped. */
 export effect function serveAuthBroker() {
   provide NodeServices.layer {
-    const bundled = authBrokerBundle ??= try bundle("../workerd/authbroker.vibe")
+    const bundled = authBrokerBundle ??= try bundle("../workerd/authbroker.vibe", try configuredMeasure())
     return try listen({
       name: "authbroker", compatibilityDate: "2026-10-01", compatibilityFlags: ["nodejs_compat"],
       manifest: { mainModule: "worker.js", modules: try modulesOf(bundled) },
@@ -202,14 +236,14 @@ export effect function serveAuthBroker() {
         CONNECTION: { type: "durable-object", worker: "authbroker", exportName: "HostedConnection" },
       },
       exports: { HostedBroker: { type: "durable-object", storage: "sqlite" }, HostedSite: { type: "durable-object", storage: "sqlite" }, HostedConnection: { type: "durable-object", storage: "sqlite" } },
-    }, 0, bundled.coverage)
+    }, 0, bundled.measure)
   }
 }
 
 /** The production sandbox objects on an in-memory Container, never part of the deployed Worker (0017). */
 export effect function serveSandboxObjects() {
   provide NodeServices.layer {
-    const bundled = try bundle("../workerd/bench-sandbox.vibe")
+    const bundled = try bundle("../workerd/bench-sandbox.vibe", try configuredMeasure())
     return try listen({
       name: "bench-sandbox", compatibilityDate: "2026-10-01", compatibilityFlags: ["nodejs_compat"],
       manifest: { mainModule: "worker.js", modules: try modulesOf(bundled) },
@@ -218,14 +252,14 @@ export effect function serveSandboxObjects() {
         ACCOUNT: { type: "durable-object", worker: "bench-sandbox", exportName: "AccountHost" },
       },
       exports: { MachineHost: { type: "durable-object", storage: "sqlite" }, AccountHost: { type: "durable-object", storage: "sqlite" } },
-    }, 0, bundled.coverage)
+    }, 0, bundled.measure)
   }
 }
 
 /** worker/Api.vibe's production bodies on workerd; `bindings` supplies the Worker's text configuration. */
 export effect function serveApiObjects(bindings: Readonly<Record<string, string>>) {
   provide NodeServices.layer {
-    const bundled = try bundle("../workerd/bench-api.vibe")
+    const bundled = try bundle("../workerd/bench-api.vibe", try configuredMeasure())
     const objects = ["Conversation", "Budget", "ProjectAccounts", "History", "ActionIndex"]
     const names: Readonly<Record<string, string>> = { Conversation: "CONVERSATION", Budget: "BUDGET", ProjectAccounts: "ACCOUNTS", History: "HISTORY", ActionIndex: "ACTION_INDEX" }
     return try listen({
@@ -236,33 +270,54 @@ export effect function serveApiObjects(bindings: Readonly<Record<string, string>
         ...Object.fromEntries(objects.map((exportName) => [names[exportName]!, { type: "durable-object", worker: "bench-api", exportName }])),
       },
       exports: Object.fromEntries(objects.map((name) => [name, { type: "durable-object", storage: "sqlite" }])),
-    }, 0, bundled.coverage)
+    }, 0, bundled.measure)
   }
 }
 
 /** Production draft/review agents against a benchmark-owned model endpoint, never part of the deployed Worker. */
 export effect function serveDraftsBenchmark(bindings: Readonly<Record<string, string>>) {
   provide NodeServices.layer {
-    const bundled = try bundle("../workerd/bench-drafts.vibe")
+    const bundled = try bundle("../workerd/bench-drafts.vibe", try configuredMeasure())
     const modules = try modulesOf(bundled)
     return try listen({
       name: "bench-drafts", compatibilityDate: "2026-10-01", compatibilityFlags: ["nodejs_compat"],
       manifest: { mainModule: "worker.js", modules },
       env: { ...Object.fromEntries(Object.entries(bindings).map(([name, text]) => [name, { type: "text", value: text }])), DRAFTS: { type: "durable-object", worker: "bench-drafts", exportName: "DraftsObject" } },
       exports: { DraftsObject: { type: "durable-object", storage: "sqlite" } },
-    }, 0, bundled.coverage)
+    }, 0, bundled.measure)
+  }
+}
+
+/** The coverage fixture's measured bundle, built once per suite file; only the dump directory differs per Worker. */
+let coverageObjectBundle: Bundle | undefined
+
+/**
+ * test/support/coverageObject.vibe's Durable Object, only its own module measured into `directory`: the proof that
+ * workerd's counters follow what a test runs (test/workerdCoverage.workerd.test.vibe).
+ */
+export effect function serveCoverageObject(directory: string) {
+  provide NodeServices.layer {
+    const fixture = try (try Path.Path).fromFileUrl(new URL("./coverageObject.vibe", import.meta.url))
+    const measure: Measure = { directory, instrumented: (file) => file === fixture }
+    coverageObjectBundle ??= try bundle("./coverageObject.vibe", measure)
+    return try listen({
+      name: "coverage-object", compatibilityDate: "2026-10-01",
+      manifest: { mainModule: "worker.js", modules: try modulesOf(coverageObjectBundle) },
+      env: { TALLY: { type: "durable-object", worker: "coverage-object", exportName: "Tally" } },
+      exports: { Tally: { type: "durable-object", storage: "sqlite" } },
+    }, 0, measure)
   }
 }
 
 /** Cutover/rollback over the same real Durable Object SQLite and key-value store. */
 export effect function serveConnectfixHost() {
   provide NodeServices.layer {
-    const bundled = try bundle("../workerd/connectfix.vibe")
+    const bundled = try bundle("../workerd/connectfix.vibe", try configuredMeasure())
     return try listen({
       name: "connectfix", compatibilityDate: "2026-10-01", compatibilityFlags: ["nodejs_compat"],
       manifest: { mainModule: "worker.js", modules: try modulesOf(bundled) },
       env: { PHASE: { type: "text", value: "seed" }, ACCOUNTS: { type: "durable-object", worker: "connectfix", exportName: "ProjectAccounts" } },
       exports: { ProjectAccounts: { type: "durable-object", storage: "sqlite" } },
-    })
+    }, 0, bundled.measure)
   }
 }

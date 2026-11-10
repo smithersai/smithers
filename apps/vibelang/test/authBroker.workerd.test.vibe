@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { serveAuthBroker } from "./support/workerd.vibe"
+import { deadline, serveAuthBroker } from "./support/workerd.vibe"
 import { brokerConnect, brokerSignIn } from "./support/brokerWorld.vibe"
 import { GitHub } from "@smthrs/integrations"
 
@@ -49,7 +49,7 @@ it.live("runs both apps' durable auth hosts in workerd, binding both browser coo
     expect(journal).not.toMatch(/fixture-token|code_verifier|broker_return|\bada\b/)
     expect(handoff).not.toMatch(/fixture-token|ada/)
   })
-}), 120_000)
+}), deadline(120_000))
 
 
 /** Complete both production hosts over HTTP; GitHub is an injected token service, never interception. */
@@ -86,7 +86,7 @@ it.live("workerd: twelve broker sign-ins preserve the kept token under GitHub's 
       expect(journal).not.toMatch(/fixture-token|fixture-refresh|code_verifier|\bada\b/)
     })
   }
-}), 120_000)
+}), deadline(120_000))
 
 it.live("workerd: exhausted revocation retries count failure without failing sign-in", () => scoped(effect {
   const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
@@ -108,7 +108,7 @@ it.live("workerd: exhausted revocation retries count failure without failing sig
       expect(JSON.stringify(logs)).not.toMatch(/fixture-token|fixture-refresh|code_verifier|\bada\b/)
     })
   }
-}), 120_000)
+}), deadline(120_000))
 
 
 
@@ -168,7 +168,7 @@ it.live("connects through smithers.sh, writes once as the person, and every revo
       expect(brokerOrigin).not.toBe(host.origin)
     })
   }
-}), 120_000)
+}), deadline(120_000))
 
 /** The broker object's settled and running engine executions. */
 effect function executions(broker: string) {
@@ -196,7 +196,7 @@ it.live("workerd: a request the broker refuses before writing creates no executi
     expect(refused.map((response) => response.status)).toEqual([400, 400, 400, 400, 400])
     expect(after).toBe(before)
   })
-}), 120_000)
+}), deadline(120_000))
 
 it.live("workerd: a slow GitHub exchange in one callback holds no other person's sign-in", () => scoped(effect {
   const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
@@ -222,4 +222,4 @@ it.live("workerd: a slow GitHub exchange in one callback holds no other person's
     expect(otherAtBroker.status).toBe(303)
     expect(released.status).toBe(303)
   })
-}), 120_000)
+}), deadline(120_000))
