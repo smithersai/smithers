@@ -173,6 +173,75 @@ bounds every field by `causeMessageLimit`. The `JjError` constructor and the
 journal decoder reject an over-length field; `jjErrorCause` is the supported
 projection and truncates each field to fit.
 
+## @smthrs/jj/Repository
+
+A git repository's objects and refs as a service, for a flow that publishes
+history rather than snapshots a working copy. It runs no process and no `git`
+command: a hosting adapter answers it (`GitHub.GitDatabase` in
+[`@smthrs/integrations`](/docs/reference/api/integrations/)), or the memory adapter here. The root
+re-exports the module as the `Repository` namespace.
+
+```ts
+import * as Repository from "@smthrs/jj/Repository"
+import * as Effect from "effect/Effect"
+
+const publish = Effect.gen(function*() {
+  const repo = yield* Repository.Repository
+  const blob = yield* repo.writeBlob("hello\n")
+  const tree = yield* repo.writeTree([{ name: "a.txt", mode: "100644", oid: blob }])
+  const who = { name: "History", email: "history@example.invalid", seconds: 1794009600 }
+  const commit = yield* repo.writeCommit({ tree, parents: [], author: who, committer: who, message: "first\n" })
+  const [current] = yield* repo.readRefs(["refs/heads/mythical"])
+  // Moves only if the ref still holds what was read; otherwise `conflict`.
+  yield* repo.updateRefs({
+    operation: "publish/1",
+    updates: [{ ref: "refs/heads/mythical", before: current!.oid, after: commit }]
+  })
+}).pipe(Effect.provide(Repository.layerMemory()))
+```
+
+| Method                    | Signature                                           | Meaning                                                                                                                                 |
+| ------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `readBlob(oid)`           | `Effect<string, RepositoryError>`                   | A blob's content as UTF-8.                                                                                                              |
+| `writeBlob(text)`         | `Effect<ObjectId, RepositoryError>`                 | Writes `text` as UTF-8 and answers its git id.                                                                                          |
+| `readTree(oid)`           | `Effect<ReadonlyArray<TreeEntry>, RepositoryError>` | One tree level, in git's order.                                                                                                         |
+| `writeTree(entries)`      | `Effect<ObjectId, RepositoryError>`                 | Writes one tree level; names are unique and hold no `/`.                                                                                |
+| `readCommit(revision)`    | `Effect<CommitHeader, RepositoryError>`             | `{ oid, tree, parents, message }` for a full id or a hex prefix of 4 or more digits naming exactly one commit (`invalid` when several). |
+| `writeCommit(commit)`     | `Effect<ObjectId, RepositoryError>`                 | Writes `{ tree, parents, author, committer, message }`; people are `{ name, email, seconds }`, always UTC.                              |
+| `readRefs(refs)`          | `Effect<ReadonlyArray<RefValue>, RepositoryError>`  | `{ ref, oid }` for each ref asked, `oid` `null` when it does not exist.                                                                 |
+| `updateRefs(transaction)` | `Effect<void, RepositoryError>`                     | `{ operation, updates: [{ ref, before, after }] }`: moves every ref or none, each only from its `before`. `null` means absent.          |
+
+**Ids are planned, then checked.** `hashBlob`, `hashTree` and `hashCommit`
+compute an object's id exactly as git does (SHA-1 of `<kind> <length>\0<body>`,
+through WebCrypto), so a caller can name every object of a publication before
+writing any. Every write answers the object's id, an adapter refuses an answer
+that is not that id (`requireAnswer`), and writing an object twice writes it once.
+
+**Refs move only by compare-and-swap.** `updateRefs` has no unconditional form:
+each update states the value the ref must hold now, and `before` equal to
+`after` checks a ref without moving it. One transaction moves 1 to
+`MAX_REF_UPDATES` (25) distinct refs under `refs/`. An adapter that cannot apply
+the transaction atomically, or cannot check an old value, fails `unsupported`;
+it never moves the refs one request at a time. `refs/notes/<name>` is a ref like
+any other, pointing at a commit whose tree maps each annotated commit's full id
+to a blob, as `git notes` writes it.
+
+| Export                                                                                                                                | Meaning                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Repository`                                                                                                                          | The service key, `"@smthrs/jj/Repository"`; durable identity.                                                                                                                         |
+| `make(impl)`                                                                                                                          | Brands an implementation as the service.                                                                                                                                              |
+| `makeMemory(options?)`, `layerMemory(options?)`                                                                                       | Objects and refs in memory, hashed as git hashes them, refs moved in one synchronous turn. `options.commits` holds commits by a given id with only a tree, as a shallow import would. |
+| `makeUnsupported(reason)`, `layerUnsupported(reason)`                                                                                 | Every call fails `unsupported` with `reason`: a host that cannot write, or where writing is switched off.                                                                             |
+| `hashBlob`, `hashTree`, `hashCommit`, `hashObject`, `encodeTree`, `encodeCommit`                                                      | Git's object ids and bodies. A tree sorts as git sorts it: bytewise, a tree's name read as if it ended in `/`, written with mode `40000`.                                             |
+| `requireObjectId`, `requireRevision`, `requireEntries`, `requireCommit`, `requireRefs`, `requireTransaction`, `requireAnswer`         | The checks every adapter runs before a request, each failing `invalid`.                                                                                                               |
+| `isObjectId`, `isRefName`, `EMPTY_TREE`, `MAX_REF_UPDATES`                                                                            | Predicates and constants.                                                                                                                                                             |
+| `ObjectId`, `Mode`, `TreeEntry`, `Person`, `CommitObject`, `CommitHeader`, `RefValue`, `RefUpdate`, `RefTransaction`, `MemoryOptions` | Types.                                                                                                                                                                                |
+| `RepositoryErrorCode`, `RepositoryError`, `repositoryError`, `isRepositoryError`                                                      | `unsupported`, `conflict` (with the `refs` that differed), `not_found`, `invalid`, `unavailable`. The tag `"@smthrs/jj/RepositoryError"` is durable identity.                         |
+
+Feature detection is by error code, as for `Jj`. `unavailable` from a write
+means its outcome is unknown until read back; `conflict` from `updateRefs`
+means nothing moved.
+
 ## Implementations
 
 Implementations are **not** root exports. The root is the portable contract and
@@ -543,8 +612,8 @@ rename, which is the shape of jj's tempfile-persist path.
 
 ## Durable identity
 
-The tag key `@smthrs/jj/Jj` and the error `_tag` `@smthrs/jj/JjError` are
-durable identity: step keys digest the resolved service set, and `JjError`
+The tag keys `@smthrs/jj/Jj` and `@smthrs/jj/Repository` and the error `_tag`s
+`@smthrs/jj/JjError` and `@smthrs/jj/RepositoryError` are durable identity: step keys digest the resolved service set, and `JjError`
 round-trips through the journal, so renaming either invalidates recorded runs.
 [test/index.test.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/test/index.test.ts)
 pins both. See [Content addressing](/docs/concepts/content-addressing/).
@@ -554,6 +623,7 @@ pins both. See [Content addressing](/docs/concepts/content-addressing/).
 | Entry point                       | Bundles for a browser                  |
 | --------------------------------- | -------------------------------------- |
 | `@smthrs/jj`                      | Yes. Contract, error, and no-op layer. |
+| `@smthrs/jj/Repository`           | Yes. WebCrypto only.                   |
 | `@smthrs/jj/browser/BrowserJj`    | Yes.                                   |
 | `@smthrs/jj/browser/WasiPreview1` | Yes.                                   |
 | `@smthrs/jj/browser/WasiFs`       | Yes. Types only, and imports nothing.  |

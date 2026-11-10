@@ -29,6 +29,7 @@ describe("@smthrs/jj barrel", () => {
         "make",
         "makeNoop",
         "RepositoryMutation",
+        "Repository",
         "isGitLockContention"
       ].sort()
     )
@@ -40,6 +41,8 @@ describe("@smthrs/jj barrel", () => {
    */
   it("pins the identity strings the step-key digest depends on", () => {
     expect(Jj.key).toBe("@smthrs/jj/Jj")
+    expect(Index.Repository.Repository.key).toBe("@smthrs/jj/Repository")
+    expect(Index.Repository.repositoryError("invalid", "m", "d")._tag).toBe("@smthrs/jj/RepositoryError")
     expect(Index.RepositoryMutation.key).toBe("@smthrs/jj/RepositoryMutation")
     expect(new Index.JjError({ code: "unknown", message: "x" })._tag).toBe("@smthrs/jj/JjError")
   })

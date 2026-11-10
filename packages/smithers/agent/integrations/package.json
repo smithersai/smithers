@@ -508,7 +508,8 @@
     "@smthrs/notifications": "1.0.0-rc.17",
     "@smthrs/canonical": "1.0.0-rc.17",
     "@smthrs/plan": "1.0.0-rc.17",
-    "vibelang-runtime": "0.0.12"
+    "vibelang-runtime": "0.0.12",
+    "@smthrs/jj": "1.0.0-rc.17"
   },
   "peerDependencies": {
     "effect": "4.1.1"

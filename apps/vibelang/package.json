@@ -45,6 +45,7 @@
     "@smthrs/flow": "workspace:*",
     "@smthrs/harness": "workspace:*",
     "@smthrs/integrations": "workspace:*",
+    "@smthrs/jj": "workspace:*",
     "@smthrs/model": "workspace:*",
     "@smthrs/model-host": "workspace:*",
     "@smthrs/plan": "workspace:*",

@@ -629,6 +629,26 @@ idempotent.
 | `PullRequest`, `PullEnd`, `PullBase`, `PullCommit`, `Review` | schemas                                                                                                                  | GitHub's JSON narrowed to the fields Smithers reads. A listing's missing merge and size fields decode as `false`, `null` or `0`.                                                                                                                                                                                                                                                                              |
 | `MergeMethod`, `UpdateMethod`, `ReviewEvent`, `Merged`       | types                                                                                                                    | `squash`, `merge`, `rebase`; `merge`, `rebase`; the review events; `{ sha, merged }`.                                                                                                                                                                                                                                                                                                                         |
 
+### GitHub.GitDatabase
+
+A GitHub repository as `@smthrs/jj`'s `Repository` service: objects through the
+Git database REST API, refs through GraphQL.
+
+| Export  | Signature                                                                        | Notes                                                                                                                                                                                                                                                                                                 |
+| ------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `make`  | `(owner, repo) => Effect<Repository.Repository, IntegrationError, GitHubClient>` | `POST`/`GET /repos/{owner}/{repo}/git/blobs`, `git/trees`, `git/commits`. Each write's id is hashed locally first and GitHub's answer must match (`invalid` otherwise); dates are sent in UTC, so GitHub stores the commit hashed and does not sign it. The empty tree is answered without a request. |
+| `layer` | `(owner, repo) => Layer<Repository.Repository, IntegrationError, GitHubClient>`  | `make` as a layer.                                                                                                                                                                                                                                                                                    |
+
+`readRefs` is one GraphQL query. `updateRefs` is GraphQL's `updateRefs`
+mutation, which GitHub applies atomically and only when every ref holds its
+`beforeOid`; each update is sent with `force: true`, because the old value is the
+fence. GitHub answers a stale `beforeOid` with a generic error, so after any
+failure the refs are read back: a ref off its old value is `conflict`, every ref
+at its new value is success, every ref unmoved is `unavailable` and safe to
+retry. A GitHub without the mutation fails `unsupported`. A short revision
+resolves through GraphQL `object(expression:)`. 404 maps to `not_found`, 422 to
+`invalid`, anything else to `unavailable`.
+
 ### GitHub.Refs
 
 Branch refs. Nothing here moves an existing ref, so nothing can force one.

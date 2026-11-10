@@ -30,7 +30,7 @@ step reversible, and nothing that merely happens to be a jj subcommand:
 | `revert(revision)`               | Applies the reverse of one change and reports the paths that changed.    |
 | `opRestore(operationId)`         | Restores the whole repository to a jj operation.                         |
 
-There is no `commit`, no `push`, no `log`. Adding one would mean every backend
+There is no `commit`, no `push`, no `log` on `Jj`. Adding one would mean every backend
 owes an answer for it, including the WebAssembly build in a browser tab, so the
 contract stays at what a reversible step actually needs. Everything above is
 what [`@smthrs/time-travel`](/api/time-travel) uses to fork a run into a lane
@@ -125,3 +125,19 @@ one invalidates recorded runs.
 [test/index.test.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/test/index.test.ts)
 pins both for exactly that reason. See
 [Content addressing](/docs/concepts/content-addressing/).
+
+## Publishing history is a second service
+
+A flow that publishes history, such as a curated `mythical` bookmark with its
+notes, writes commits whose trees it chose and moves several refs together.
+That is not a working-copy operation, so it is not on `Jj`: it is
+[`@smthrs/jj/Repository`](../api.md#smthrsjjrepository), a git repository's
+objects and refs, answered by a hosting adapter or by memory, with no process
+and no `git` command.
+
+Its one write to refs is a compare-and-swap over all of them. Two publishers
+that read the same refs cannot both win, and a publisher whose read is stale
+moves nothing, because every update carries the value it expects. An adapter
+that cannot promise that fails `unsupported` rather than pushing the refs one
+at a time, which would leave a bookmark and its notes disagreeing after a
+crash between the two.

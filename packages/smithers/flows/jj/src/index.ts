@@ -19,3 +19,5 @@
  */
 
 export * from "./Jj.ts"
+
+export * as Repository from "./Repository.ts"

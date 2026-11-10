@@ -34,6 +34,7 @@ describe("integration product scope", () => {
       "Contents",
       "Delegation",
       "DelegationPolicy",
+      "GitDatabase",
       "GitHubClient",
       "IssueChanges",
       "Issues",

@@ -47,6 +47,12 @@ export * as Config from "./github/Config.ts"
 export * as Contents from "./github/Contents.ts"
 
 /**
+ * @category constructors
+ * @since 1.0.0
+ */
+export * as GitDatabase from "./github/GitDatabase.ts"
+
+/**
  * @category services
  * @since 1.0.0
  */

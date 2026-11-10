@@ -963,6 +963,9 @@ importers:
       '@smthrs/integrations':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/integrations
+      '@smthrs/jj':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/jj
       '@smthrs/model':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/model
@@ -2490,6 +2493,9 @@ importers:
       '@smthrs/flow':
         specifier: 1.0.0-rc.17
         version: link:../../flows/flow
+      '@smthrs/jj':
+        specifier: 1.0.0-rc.17
+        version: link:../../flows/jj
       '@smthrs/notifications':
         specifier: 1.0.0-rc.17
         version: link:../../notifications
