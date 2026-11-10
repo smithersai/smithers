@@ -2,7 +2,7 @@
 import { it } from "@effect/vitest"
 import { Model, Message, update } from "../src/web/main.vibe"
 import { backend, Backend, Role } from "./web-backends.vibe"
-import { run, Finding, Int } from "./run.vibe"
+import { run, Finding, Int, TextOrBoundary } from "./run.vibe"
 import { gesture, pump, Step, tab } from "./web-tab.vibe"
 
 it.live("web/commands-from-any-model", () => run("web/commands-from-any-model", Schema.Struct({ model: Model, message: Message, backend: Backend, role: Role, repeat: Int }), ({ model, message, backend: kind, role }) => Effect.provide(effect {
@@ -31,3 +31,53 @@ it.live("web/guided-commands", () => run("web/guided-commands", Guided, ({ sessi
   }
   return true
 }, backend(kind, role))))
+
+// Gestures while a request is still out: the few that start a request, and the ones a person makes before it answers.
+const InFlightOp = Schema.Literals(["wiki-save", "wiki-no-change", "edit-wiki", "wiki-draft", "edit-text", "save-wiki", "cancel-edit", "escape", "post", "retry", "choose", "sandboxes", "start-sandbox", "submit-terminal", "issues", "issue-ui"])
+const InFlight = Schema.Struct({ session: Int, role: Role, steps: Schema.Array(Schema.Struct({ op: InFlightOp, n: Int, text: TextOrBoundary, hold: Schema.Boolean })).check(Schema.isMinLength(1), Schema.isMaxLength(12)) })
+
+/** How many Escapes met a wiki save still out, so a witness proves the check below ran. */
+const escapes = { whileSaving: 0 }
+
+/** Escape never discards a wiki edit that is being saved, and every held request still answers. */
+function inFlight({ session: id, role, steps }: typeof InFlight.Type) {
+  return Effect.provide(effect {
+    const session = tab({ session: `f${id}`, mode: "mock", name: "Guest" })
+    try session.settle
+    try session.send(try Effect.try(() => Message.ResolvedMode({ mode: "mock" })))
+    try session.send(try Effect.try(() => Message.ChoseIdentity({ role })))
+    for (const step of steps) {
+      const saving = session.model().wikiEdit?.submission
+      if (step.op === "escape") {
+        // Read the screen Escape leaves before the save answers.
+        try session.hold(try Effect.try(() => Message.PressedEscape()))
+        if (saving !== undefined) {
+          escapes.whileSaving += 1
+          if (session.model().wikiEdit?.submission !== saving) return false
+        }
+        if (!step.hold) try session.settle
+        continue
+      }
+      const messages = gesture(session.model(), step)
+      for (const [index, message] of messages.entries()) {
+        if (step.hold && index === messages.length - 1) try session.hold(message)
+        else {
+          try session.send(message)
+          try pump(session)
+        }
+      }
+    }
+    try session.settle
+    return true
+  }, backend("mock", role))
+}
+
+/** A maintainer saves a page, presses Escape and edits again while the save is out, then the save answers. */
+const SAVE_THEN_ESCAPE: typeof InFlight.Type = { session: 0, role: "maintainer", steps: [{ op: "wiki-save", n: 0, text: "x", hold: true }, { op: "escape", n: 0, text: "", hold: true }, { op: "edit-wiki", n: 0, text: "", hold: false }] }
+
+it.live("web/in-flight", () => effect {
+  try run("web/in-flight", InFlight, inFlight)
+  const before = escapes.whileSaving
+  if (!(try inFlight(SAVE_THEN_ESCAPE))) throw new Finding({ report: "web/in-flight: Escape discarded a wiki edit being saved" })
+  if (escapes.whileSaving === before) throw new Finding({ report: "web/in-flight: the witness never pressed Escape during a save" })
+})

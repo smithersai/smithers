@@ -407,3 +407,14 @@ Fixed in the tenth session (the lead's call): the wiki draft, VIP draft and spec
 ### Eighth campaign
 
 Seed 20261115, `FUZZ_BUDGET=20 seconds`, 05:50:18 to 06:24:57 UTC (34.7 minutes). Exit 0: 177 receipts, 33,019,349 executions, none at zero, none falsified; browser phase 5 passed. `web/screen-answers` ran 369 executions. Log: `~/vl/vl-fuzzpkg.campaign8.log`.
+
+## Status, 2026-11-10 (tenth session)
+
+### `src/web/main.vibe`: in-flight screens
+
+The ninth session's reading of the 74 arms was wrong about the `??` defaults: arbitrary Models omit optional fields, so both arms of most defaults are already reached. Most missing arms are screens a person meets while a request is still out. Every gesture target settled each gesture's Commands at once, so no target ever pressed Escape or edited while a wiki save was out.
+
+- `tab.hold` (`fuzz/web-tab.vibe`) accepts a Message and leaves its Commands in flight; the next settled step answers them.
+- `web/in-flight` (`fuzz/commands.fuzz.vibe`): a signed-in mock tab, up to 12 gestures from 16 ops that start or meet a request, each optionally holding its last Message, with the event stream pumped after each settled gesture. Property: Escape never discards a wiki edit being saved (read before the save answers), and every held Command still answers with a declared Message. A fixed witness (save, Escape, edit while the save is out) runs after the fuzzed budget and must reach that check. Mutation check: Escape's `none` arm returning without the editor is found by the witness.
+- New arms in `src/web/main.vibe` against `web/guided-commands` at the same seed and budget: Escape's `none` arm, a submit while busy (`SubmittedWikiEdit`'s retry request), an editor opened while a save is out, a page the editor refuses, and the save's completion arms (lines 380, 383, 455, 463 to 465, 473, 607, 709, 939, 944, 948, 974 to 976).
+- Holding gestures in `web/guided-commands` too was measured and dropped: at about 50 executions per 20 seconds it reached no new arm.

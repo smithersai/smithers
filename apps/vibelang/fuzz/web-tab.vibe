@@ -41,6 +41,11 @@ export function tab(flags: Flags) {
       if (invalid !== undefined) throw new Finding({ report: `${message._tag}: left an invalid Model: ${invalid}` })
       try settle
     },
+    /** Accepts `message` and leaves its Commands in flight, as the runtime does while a request is out. */
+    hold: effect (message: Message) => {
+      const invalid = accept(message)
+      if (invalid !== undefined) throw new Finding({ report: `${message._tag}: left an invalid Model: ${invalid}` })
+    },
   }
 }
 
