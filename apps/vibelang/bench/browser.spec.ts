@@ -58,8 +58,9 @@ async function collectBrowserCoverage(context: BrowserContext, page: Page, baseU
 }
 
 // A first visit to "/" starts the tour 1.2 s after load. These workloads drive the page themselves, so each visit is
-// marked toured, as the e2e specs do; otherwise the tour's overlay takes a click that comes later than 1.2 s.
-test.beforeEach(async ({ page }) => { await page.addInitScript(() => localStorage.setItem("vibelang:toured", "yes")) })
+// marked toured, as the e2e specs do; otherwise the tour's overlay takes a click that comes later than 1.2 s. A tab
+// whose session holds `bench:first-visit` is the arms workload's measured first visit, so it stays unmarked.
+test.beforeEach(async ({ page }) => { await page.addInitScript(() => { if (sessionStorage.getItem("bench:first-visit") !== "yes") localStorage.setItem("vibelang:toured", "yes") }) })
 
 test("first render, Command-K and per-keystroke browser latency", async ({ browser, baseURL }) => {
   const samples = []
@@ -849,10 +850,7 @@ test("tour controls, resize, Actions panel arms, slash keys, Escape arms and wik
   const bar = page.getByRole("region", { name: "Walkthrough" })
   try {
     // A returning person, until the last step clears storage to measure a first visit.
-    await page.addInitScript(() => {
-      localStorage.setItem("vibelang:tour-sound", "off")
-      if (sessionStorage.getItem("bench:first-visit") !== "yes") localStorage.setItem("vibelang:toured", "yes")
-    })
+    await page.addInitScript(() => localStorage.setItem("vibelang:tour-sound", "off"))
     await page.goto(`${baseURL}/?agent=mock&role=contributor`)
     await time("tour-start", async () => {
       await page.getByRole("button", { name: "Learn more", exact: true }).click()
