@@ -54,6 +54,14 @@ describe("deciding", () => {
   it("accepts a task at the length limit", () => {
     expect(decide(small, { type: "Amend", id: "m1", task: "t".repeat(MAX_TITLE) })).toMatchObject({ ok: true })
   })
+  it("plans before a commit only while that commit's rank is a position: a negative one is refused", () => {
+    // No history `apply` builds holds a negative rank, but `decide` takes any history and promises a position >= 0.
+    const first = small.commits[0]!
+    const plan = { type: "Plan" as const, id: "m9", epic: first.epic, title: "nine", task: "", before: first.id }
+    const at = (rank: number): History => ({ ...small, commits: [{ ...first, rank }, ...small.commits.slice(1)] })
+    expect(decide(at(0), plan)).toMatchObject({ ok: true, event: { type: "Planned", rank: 0 } })
+    expect(decide(at(-1), plan)).toEqual({ ok: false, refusal: "unknown" })
+  })
 })
 
 describe("lookups of an id that is not there", () => {
