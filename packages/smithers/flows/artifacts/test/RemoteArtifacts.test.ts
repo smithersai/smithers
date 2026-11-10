@@ -21,7 +21,7 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Layer from "effect/Layer"
 import { TestClock } from "effect/testing"
 import * as Tracer from "effect/Tracer"
-import * as ArtifactStore from "../src/ArtifactStore.ts"
+import * as ArtifactStore from "../src/ArtifactStore.vibe"
 import * as RemoteArtifacts from "../src/RemoteArtifacts.vibe"
 import { bytes, sha256, text, withCrypto } from "./Crypto.ts"
 

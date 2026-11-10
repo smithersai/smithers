@@ -55,7 +55,7 @@
 
 import * as HttpClient from "effect/http/HttpClient"
 import * as Layer from "effect/Layer"
-import * as ArtifactStore from "./ArtifactStore.ts"
+import * as ArtifactStore from "./ArtifactStore.vibe"
 
 module throwing {
   import * as Duration from "effect/Duration"
@@ -68,7 +68,7 @@ module throwing {
   import * as Option from "effect/Option"
   import * as Schema from "effect/Schema"
   import * as Stream from "effect/Stream"
-  import * as ArtifactStore from "./ArtifactStore.ts"
+  import * as ArtifactStore from "./ArtifactStore.vibe"
 
   /**
    * How eagerly a composition materializes shared blobs into its local store.

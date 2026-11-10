@@ -8,8 +8,8 @@ import * as Layer from "effect/Layer"
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import * as ArtifactBackupLease from "../src/ArtifactBackupLease.vibe"
-import * as ArtifactStore from "../src/ArtifactStore.ts"
-import * as ArtifactSweep from "../src/ArtifactSweep.ts"
+import * as ArtifactStore from "../src/ArtifactStore.vibe"
+import * as ArtifactSweep from "../src/ArtifactSweep.vibe"
 import { hostPath } from "./HostPath.ts"
 
 const payload = new TextEncoder().encode("cross-process-artifact")

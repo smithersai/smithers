@@ -158,7 +158,7 @@ export const withLease = (fs, directory, effect, failure) => {
                     // A backup whose heartbeat lapsed has its marker reaped by whoever
                     // noticed, so `NotFound` is the ordinary end of a slow lease, not a
                     // fault: there is nothing left to release and nothing left to leak.
-                    // The sibling release in `internal/ArtifactLocks.ts` classifies the
+                    // The sibling release in `internal/ArtifactLocks.vibe` classifies the
                     // same cause the same way.
                     , (cause) => isReason(cause, "NotFound") ? Effect.void : Effect.fail(cause)), failure);
                     $do3 = Effect_1.gen(function* () { return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), (cause) => {

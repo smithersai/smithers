@@ -6,7 +6,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import type { Digest } from "./ArtifactStore.ts"
+import type { Digest } from "./ArtifactStore.vibe"
 import { ArtifactStoreError } from "./ArtifactStoreError.vibe"
 
 /**

@@ -11,7 +11,7 @@ import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
-import * as FileLease from "../src/FileLease.ts"
+import * as FileLease from "../src/FileLease.vibe"
 
 const platformError = (tag: PlatformError.SystemErrorTag, method: string): PlatformError.PlatformError =>
   PlatformError.systemError({ _tag: tag, module: "test", method })

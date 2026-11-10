@@ -41,9 +41,9 @@ const securityReview = Smithers.SecurityReview({
         "A put dedupe hit that trusts an existing blob without re-hashing it."
       ],
       paths: [
-        "src/FileSystemArtifactStore.ts",
+        "src/FileSystemArtifactStore.vibe",
         "src/RemoteArtifacts.vibe",
-        "src/CombinedArtifacts.ts",
+        "src/CombinedArtifacts.vibe",
         "src/measureBytes.vibe"
       ]
     },
@@ -59,10 +59,10 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/validateDigest.vibe",
-        "src/FileSystemArtifactStore.ts",
-        "src/ArtifactSweep.ts",
+        "src/FileSystemArtifactStore.vibe",
+        "src/ArtifactSweep.vibe",
         "src/RemoteArtifacts.vibe",
-        "src/internal/ArtifactLocks.ts"
+        "src/internal/ArtifactLocks.vibe"
       ]
     },
     {
@@ -76,10 +76,10 @@ const securityReview = Smithers.SecurityReview({
         "ArtifactPath.guard treating a readlink failure other than NotFound or EINVAL as 'not a link'."
       ],
       paths: [
-        "src/FileSystemArtifactStore.ts",
-        "src/ArtifactSweep.ts",
+        "src/FileSystemArtifactStore.vibe",
+        "src/ArtifactSweep.vibe",
         "src/internal/ArtifactPath.vibe",
-        "src/internal/ArtifactLocks.ts"
+        "src/internal/ArtifactLocks.vibe"
       ]
     },
     {
@@ -92,7 +92,7 @@ const securityReview = Smithers.SecurityReview({
         "sweepOrphanedTemps removing an entry younger than staleScratchMs or whose mtime is unknown.",
         "remove deleting without the ifUnmodifiedSinceMs fence or without ArtifactBackupLease.unlessActive under required coordination."
       ],
-      paths: ["src/ArtifactSweep.ts", "src/FileSystemArtifactStore.ts", "src/ArtifactBackupLease.vibe"]
+      paths: ["src/ArtifactSweep.vibe", "src/FileSystemArtifactStore.vibe", "src/ArtifactBackupLease.vibe"]
     },
     {
       id: "lease-ownership",
@@ -104,7 +104,7 @@ const securityReview = Smithers.SecurityReview({
         "reclaim renaming a lock without winning the wx claim file and re-reading the same stale generation.",
         "A lock or claim path derived from unsanitized owner text."
       ],
-      paths: ["src/FileLease.ts", "src/internal/ArtifactLocks.ts", "src/ArtifactBackupLease.vibe"]
+      paths: ["src/FileLease.vibe", "src/internal/ArtifactLocks.vibe", "src/ArtifactBackupLease.vibe"]
     },
     {
       id: "remote-endpoint-credentials",
@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
         "A header value with CR or LF accepted at construction.",
         "A request sent through the ambient HttpClient without refusing 3xx, so a cache redirect to another origin or to http: replays the configured credential headers there."
       ],
-      paths: ["src/RemoteArtifacts.vibe", "src/CombinedArtifacts.ts"]
+      paths: ["src/RemoteArtifacts.vibe", "src/CombinedArtifacts.vibe"]
     },
     {
       id: "remote-response-bounds",

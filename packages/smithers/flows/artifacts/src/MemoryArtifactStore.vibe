@@ -5,7 +5,7 @@
  * @since 1.0.0-rc.0
  */
 
-import type { Service } from "./ArtifactStore.ts"
+import type { Service } from "./ArtifactStore.vibe"
 import { ArtifactMissing } from "./ArtifactStoreError.vibe"
 import * as ArtifactStoreMetrics from "./ArtifactStoreMetrics.vibe"
 import { measureBytes } from "./measureBytes.vibe"

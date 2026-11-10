@@ -47,8 +47,8 @@
       "default": "./.vibelang/js/src/ArtifactBackupLease.js"
     },
     "./ArtifactStore": {
-      "types": "./src/ArtifactStore.ts",
-      "vibelang-source": "./src/ArtifactStore.ts",
+      "types": "./.vibe/declarations/src/ArtifactStore.d.vibe.ts",
+      "vibelang-source": "./src/ArtifactStore.vibe",
       "default": "./.vibelang/js/src/ArtifactStore.js"
     },
     "./ArtifactStoreMetrics": {
@@ -57,18 +57,18 @@
       "default": "./.vibelang/js/src/ArtifactStoreMetrics.js"
     },
     "./ArtifactSweep": {
-      "types": "./src/ArtifactSweep.ts",
-      "vibelang-source": "./src/ArtifactSweep.ts",
+      "types": "./.vibe/declarations/src/ArtifactSweep.d.vibe.ts",
+      "vibelang-source": "./src/ArtifactSweep.vibe",
       "default": "./.vibelang/js/src/ArtifactSweep.js"
     },
     "./CombinedArtifacts": {
-      "types": "./src/CombinedArtifacts.ts",
-      "vibelang-source": "./src/CombinedArtifacts.ts",
+      "types": "./.vibe/declarations/src/CombinedArtifacts.d.vibe.ts",
+      "vibelang-source": "./src/CombinedArtifacts.vibe",
       "default": "./.vibelang/js/src/CombinedArtifacts.js"
     },
     "./FileLease": {
-      "types": "./src/FileLease.ts",
-      "vibelang-source": "./src/FileLease.ts",
+      "types": "./.vibe/declarations/src/FileLease.d.vibe.ts",
+      "vibelang-source": "./src/FileLease.vibe",
       "default": "./.vibelang/js/src/FileLease.js"
     },
     "./RemoteArtifacts": {

@@ -11,7 +11,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as PlatformError from "effect/PlatformError"
-import * as ArtifactStore from "../src/ArtifactStore.ts"
+import * as ArtifactStore from "../src/ArtifactStore.vibe"
 import { bytes, sha256, text, withCrypto } from "./Crypto.ts"
 
 const artifact = "an in-memory artifact"

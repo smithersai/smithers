@@ -112,11 +112,11 @@ const isReason = (cause: unknown, tag: PlatformError.SystemErrorTag): boolean =>
 /** The generation name of a lock with no readable owner: a directory. */
 const directoryGeneration = "legacy-directory"
 
-const token = Effect.gen(function*() {
-  const first = yield* Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER, { halfOpen: true })
-  const second = yield* Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER, { halfOpen: true })
-  return `${first.toString(36)}-${second.toString(36)}-${yield* Clock.currentTimeMillis}`
-})
+const token = effect {
+  const first = try Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER, { halfOpen: true })
+  const second = try Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER, { halfOpen: true })
+  return `${first.toString(36)}-${second.toString(36)}-${try Clock.currentTimeMillis}`
+}
 
 /**
  * Runs `effect` while holding the lease at `lockPath`, with no acquisition
@@ -134,7 +134,7 @@ export const hold = <A, E, R, E2>(
   failure: (cause: unknown) => E2,
   options: HoldOptions = {}
 ): Effect.Effect<A, E | E2, R> =>
-  Effect.gen(function*() {
+  effect {
     const label = options.label ?? "File lease"
     const heartbeatEvery = options.heartbeatEvery ?? "10 seconds"
     const staleAfterMs = options.staleAfterMs ?? defaultStaleAfterMs
@@ -148,11 +148,9 @@ export const hold = <A, E, R, E2>(
       typeof staleAfterMs !== "number" || !Number.isFinite(staleAfterMs) || staleAfterMs <= 0 ||
       Option.isNone(heartbeatMs) || !(heartbeatMs.value > 0 && heartbeatMs.value < staleAfterMs)
     ) {
-      return yield* Effect.fail(
-        failure(new RangeError(`${label} needs 0 < heartbeatEvery < staleAfterMs, with a finite staleAfterMs`))
-      )
+      throw failure(new RangeError(`${label} needs 0 < heartbeatEvery < staleAfterMs, with a finite staleAfterMs`))
     }
-    const owner = yield* token
+    const owner = try token
     /**
      * Whether this call created the lock file, and therefore owes a release.
      * It is set in the same uninterruptible step that creates the file, so
@@ -201,11 +199,11 @@ export const hold = <A, E, R, E2>(
         ))
 
     const isStale = (path: string): Effect.Effect<boolean, E2> =>
-      Effect.gen(function*() {
-        const info = yield* statIfPresent(path)
+      effect {
+        const info = try statIfPresent(path)
         const modified = Option.isSome(info) ? Option.getOrUndefined(info.value.mtime) : undefined
-        return modified !== undefined && (yield* Clock.currentTimeMillis) - modified.getTime() > staleAfterMs
-      })
+        return modified !== undefined && (try Clock.currentTimeMillis) - modified.getTime() > staleAfterMs
+      }
 
     const removeIfOwnedBy = (path: string, expected: string): Effect.Effect<void> =>
       fs.readFileString(path).pipe(
@@ -213,9 +211,9 @@ export const hold = <A, E, R, E2>(
         Effect.ignore
       )
 
-    const acquire = Effect.gen(function*() {
+    const acquire = effect {
       while (true) {
-        const created = yield* Effect.uninterruptible(
+        const created = try Effect.uninterruptible(
           guarded(fs.writeFileString(lockPath, owner, { flag: "wx", mode: 0o600 })).pipe(
             Effect.andThen(Effect.sync(() => {
               acquired = true
@@ -230,15 +228,15 @@ export const hold = <A, E, R, E2>(
 
         // The owner is read before the age, so a stale verdict always
         // belongs to the lock generation this read named.
-        const observed = yield* observe(lockPath)
+        const observed = try observe(lockPath)
         if (Option.isNone(observed)) continue
-        if (yield* isStale(lockPath)) {
-          const reclaimed = yield* reclaim(observed.value)
+        if (try isStale(lockPath)) {
+          const reclaimed = try reclaim(observed.value)
           if (reclaimed) continue
         }
-        yield* Effect.sleep(retryEvery)
+        try Effect.sleep(retryEvery)
       }
-    })
+    }
 
     /**
      * Moves away the stale lock generation `observed` names, at most once.
@@ -267,15 +265,15 @@ export const hold = <A, E, R, E2>(
           )
         ),
         (claimed) =>
-          Effect.gen(function*() {
+          effect {
             // A claim is a short mutation fence, not an expiring lease. Reaping
             // it could let a stalled reclaimer rename a replacement generation.
             // An abandoned claim therefore fails closed until host recovery.
             if (!claimed) return false
-            const current = yield* observe(lockPath)
-            if (Option.isNone(current) || current.value !== observed || !(yield* isStale(lockPath))) return true
+            const current = try observe(lockPath)
+            if (Option.isNone(current) || current.value !== observed || !(try isStale(lockPath))) return true
             const tombstone = `${lockPath}.stale-${owner}`
-            const moved = yield* guarded(fs.rename(lockPath, tombstone)).pipe(
+            const moved = try guarded(fs.rename(lockPath, tombstone)).pipe(
               Effect.as(true),
               Effect.catch((cause): Effect.Effect<boolean, E2> =>
                 isReason(cause, "NotFound") ? Effect.succeed(false) : Effect.fail(failure(cause))
@@ -286,17 +284,17 @@ export const hold = <A, E, R, E2>(
             // rename, and a new owner acquiring in that gap, puts a live
             // lock here. Hand it back with an atomic create, which cannot
             // displace anyone who took the path since.
-            const displaced = yield* observe(tombstone)
+            const displaced = try observe(tombstone)
             if (
               Option.isSome(displaced) && displaced.value !== observed && displaced.value !== directoryGeneration
             ) {
-              yield* guarded(fs.writeFileString(lockPath, displaced.value, { flag: "wx", mode: 0o600 })).pipe(
+              try guarded(fs.writeFileString(lockPath, displaced.value, { flag: "wx", mode: 0o600 })).pipe(
                 Effect.ignore
               )
             }
-            yield* guarded(fs.remove(tombstone, { recursive: true })).pipe(Effect.ignore)
+            try guarded(fs.remove(tombstone, { recursive: true })).pipe(Effect.ignore)
             return true
-          }),
+          },
         (claimed) => claimed ? removeIfOwnedBy(claimPath, owner) : Effect.void
       )
     }
@@ -324,12 +322,12 @@ export const hold = <A, E, R, E2>(
     // the protected effect, so a lock created moments before an interruption
     // is still released. A call that never created one owes nothing and must
     // not touch a file another owner holds.
-    return yield* acquire.pipe(
+    return try acquire.pipe(
       Effect.andThen(options.onAcquired ?? Effect.void),
-      Effect.andThen(Effect.scoped(Effect.gen(function*() {
-        const heartbeat = Effect.gen(function*() {
+      Effect.andThen(Effect.scoped(effect {
+        const heartbeat = effect {
           while (true) {
-            yield* Effect.sleep(heartbeatEvery)
+            try Effect.sleep(heartbeatEvery)
             // Freshen only a lock this call still owns, the same comparison
             // the release below makes. A holder stalled past the stale
             // bound has already been reaped and replaced, and touching that
@@ -337,15 +335,15 @@ export const hold = <A, E, R, E2>(
             // replacement that is then hard-killed could never be judged
             // stale while this zombie ran, so every later acquirer would
             // burn the full acquisition deadline and fail.
-            const beat = yield* fs.readFileString(lockPath).pipe(
+            const beat = try fs.readFileString(lockPath).pipe(
               Effect.map((found) => found === owner ? "own" as const : "foreign" as const),
               Effect.catch((cause) =>
                 Effect.succeed(isReason(cause, "NotFound") ? "gone" as const : "unreadable" as const)
               )
             )
             if (beat === "own") {
-              const timestamp = new Date(yield* Clock.currentTimeMillis)
-              yield* Effect.ignore(guarded(fs.utimes(lockPath, timestamp, timestamp)))
+              const timestamp = new Date(try Clock.currentTimeMillis)
+              try Effect.ignore(guarded(fs.utimes(lockPath, timestamp, timestamp)))
               continue
             }
             // A read the host refused for any other reason is no evidence
@@ -357,20 +355,18 @@ export const hold = <A, E, R, E2>(
             // Ownership loss is terminal: race the protected effect so it
             // is interrupted before this caller reports the lease failure.
 
-            yield* Effect.logWarning(
+            try Effect.logWarning(
               `${label} was reclaimed while its holder was still running`,
               { ...options.annotations, state: beat }
             )
-            return yield* Effect.fail(
-              failure(new ArtifactStoreError({ code: "unavailable", message: `${label} ownership lost` }))
-            )
+            throw failure(new ArtifactStoreError({ code: "unavailable", message: `${label} ownership lost` }))
           }
-        })
-        return yield* effect.pipe(Effect.raceFirst(heartbeat))
-      }))),
+        }
+        return try effect.pipe(Effect.raceFirst(heartbeat))
+      })),
       Effect.onExit(() => acquired ? release : Effect.void)
     )
-  })
+  }
 
 /**
  * Runs `effect` while holding the lease at `lockPath`.

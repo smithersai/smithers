@@ -9,7 +9,7 @@ import * as Logger from "effect/Logger"
 import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import { TestClock } from "effect/testing"
-import * as ArtifactLocks from "../src/internal/ArtifactLocks.ts"
+import * as ArtifactLocks from "../src/internal/ArtifactLocks.vibe"
 
 const digest = "0".repeat(64)
 const directory = ".objects"

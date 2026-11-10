@@ -5,9 +5,9 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import * as ArtifactStore from "../src/ArtifactStore.ts"
+import * as ArtifactStore from "../src/ArtifactStore.vibe"
 import * as ArtifactStoreError from "../src/ArtifactStoreError.vibe"
-import * as FileSystemArtifactStore from "../src/FileSystemArtifactStore.ts"
+import * as FileSystemArtifactStore from "../src/FileSystemArtifactStore.vibe"
 import * as Artifacts from "../src/index.vibe"
 import { measureBytes } from "../src/measureBytes.vibe"
 import * as MemoryArtifactStore from "../src/MemoryArtifactStore.vibe"

@@ -27,8 +27,8 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import * as ArtifactBackupLease from "./ArtifactBackupLease.vibe"
-import * as ArtifactStore from "./ArtifactStore.ts"
-import * as ArtifactLocks from "./internal/ArtifactLocks.ts"
+import * as ArtifactStore from "./ArtifactStore.vibe"
+import * as ArtifactLocks from "./internal/ArtifactLocks.vibe"
 import * as ArtifactPath from "./internal/ArtifactPath.vibe"
 
 /**
@@ -186,20 +186,20 @@ export const makeFileSystem = (
   const coordination = options.coordination ?? "required"
   const blobPath = (digest: string): string => `${directory}/${digest.slice(0, 2)}/${digest}`
 
-  const inventory: Service["inventory"] = Effect.gen(function*() {
+  const inventory: Service["inventory"] = effect {
     // A store that never published anything has no directory; that is an
     // empty inventory, not a failure.
-    const checkRoot = yield* ArtifactPath.guard(fs, directory).pipe(Effect.mapError(hostFailure))
-    const parents = yield* fs.readDirectory(directory).pipe(
+    const checkRoot = try ArtifactPath.guard(fs, directory).pipe(Effect.mapError(hostFailure))
+    const parents = try fs.readDirectory(directory).pipe(
       Effect.catch((cause) => isNotFound(cause) ? Effect.succeed([] as Array<string>) : Effect.fail(hostFailure(cause)))
     )
     const entries: Array<string> = []
     for (const parent of parents) {
       if (!/^[0-9a-f]{2}$/.test(parent)) continue
-      yield* checkRoot.pipe(Effect.mapError(hostFailure))
-      const safe = yield* ArtifactPath.guard(fs, `${directory}/${parent}`).pipe(Effect.option)
+      try checkRoot.pipe(Effect.mapError(hostFailure))
+      const safe = try ArtifactPath.guard(fs, `${directory}/${parent}`).pipe(Effect.option)
       if (Option.isNone(safe)) continue
-      const children = yield* fs.readDirectory(`${directory}/${parent}`).pipe(
+      const children = try fs.readDirectory(`${directory}/${parent}`).pipe(
         Effect.catch((cause) =>
           isNotFound(cause) ? Effect.succeed([] as Array<string>) : Effect.fail(hostFailure(cause))
         )
@@ -213,8 +213,8 @@ export const makeFileSystem = (
       const digest = entry.slice(separator + 1)
       return /^[0-9a-f]{64}$/.test(digest) && fan === digest.slice(0, 2)
     })
-    const blobs = yield* Effect.forEach(candidates, (entry) =>
-      Effect.gen(function*() {
+    const blobs = try Effect.forEach(candidates, (entry) =>
+      effect {
         const separator = entry.indexOf("/")
         const fan = entry.slice(0, separator)
         const digest = entry.slice(separator + 1)
@@ -222,11 +222,11 @@ export const makeFileSystem = (
         // removed between the listing and here simply is not in the
         // inventory, and one whose mtime the host cannot report offers no
         // age evidence, so the sweep must never judge it.
-        const info = yield* Effect.gen(function*() {
-          yield* checkRoot
-          yield* Effect.asVoid(ArtifactPath.guard(fs, `${directory}/${fan}`))
-          yield* Effect.asVoid(ArtifactPath.guard(fs, `${directory}/${entry}`, "File"))
-          return yield* fs.stat(`${directory}/${entry}`)
+        const info = try (effect {
+          try checkRoot
+          try Effect.asVoid(ArtifactPath.guard(fs, `${directory}/${fan}`))
+          try Effect.asVoid(ArtifactPath.guard(fs, `${directory}/${entry}`, "File"))
+          return try fs.stat(`${directory}/${entry}`)
         }).pipe(Effect.option)
         if (Option.isNone(info) || info.value.type !== "File") return undefined
         const mtime = Option.getOrUndefined(info.value.mtime)
@@ -236,30 +236,28 @@ export const makeFileSystem = (
           modifiedAtMs: mtime.getTime(),
           sizeBytes: Number(info.value.size)
         }
-      }), { concurrency: 16 })
+      }, { concurrency: 16 })
     return blobs.filter((blob) => blob !== undefined)
-  })
+  }
 
   const remove: Service["remove"] = Effect.fn("ArtifactSweep.remove")((digest, removeOptions) =>
-    Effect.gen(function*() {
-      const validated = yield* ArtifactStore.validateDigest(digest)
+    effect {
+      const validated = try ArtifactStore.validateDigest(digest)
       const bound = removeOptions?.ifUnmodifiedSinceMs
       // NaN fails every comparison, so the fence below would read it as "not
       // modified since" and delete a blob a concurrent put just freshened.
       if (bound !== undefined && (typeof bound !== "number" || Number.isNaN(bound))) {
-        return yield* Effect.fail(
-          new ArtifactStore.ArtifactStoreError({
-            code: "invalid_configuration",
-            message: "invalid sweep option: ifUnmodifiedSinceMs"
-          })
-        )
+        throw new ArtifactStore.ArtifactStoreError({
+          code: "invalid_configuration",
+          message: "invalid sweep option: ifUnmodifiedSinceMs"
+        })
       }
-      yield* Effect.annotateCurrentSpan({ digest: validated })
-      const checkRoot = yield* ArtifactPath.guard(fs, directory).pipe(Effect.mapError(hostFailure))
-      const checkParent = yield* ArtifactPath.guard(fs, `${directory}/${validated.slice(0, 2)}`).pipe(
+      try Effect.annotateCurrentSpan({ digest: validated })
+      const checkRoot = try ArtifactPath.guard(fs, directory).pipe(Effect.mapError(hostFailure))
+      const checkParent = try ArtifactPath.guard(fs, `${directory}/${validated.slice(0, 2)}`).pipe(
         Effect.mapError(hostFailure)
       )
-      return yield* ArtifactLocks.withDigest(
+      return try ArtifactLocks.withDigest(
         fs,
         directory,
         validated,
@@ -273,23 +271,23 @@ export const makeFileSystem = (
       )
 
       function removeBlob(): Effect.Effect<boolean, ArtifactStore.ArtifactStoreError> {
-        return Effect.gen(function*() {
+        return effect {
           const path = blobPath(validated)
-          yield* checkRoot.pipe(Effect.mapError(hostFailure))
-          yield* checkParent.pipe(Effect.mapError(hostFailure))
-          const checkBlob = yield* ArtifactPath.guard(fs, path, "File").pipe(Effect.mapError(hostFailure))
+          try checkRoot.pipe(Effect.mapError(hostFailure))
+          try checkParent.pipe(Effect.mapError(hostFailure))
+          const checkBlob = try ArtifactPath.guard(fs, path, "File").pipe(Effect.mapError(hostFailure))
           if (bound !== undefined) {
-            const info = yield* fs.stat(path).pipe(Effect.option)
+            const info = try fs.stat(path).pipe(Effect.option)
             // Already gone is a completed deletion, and an unmeasurable mtime is
             // no proof of age: both refuse rather than delete.
             if (Option.isNone(info)) return false
             const mtime = Option.getOrUndefined(info.value.mtime)
             if (mtime === undefined || mtime.getTime() > bound) return false
           }
-          yield* checkRoot.pipe(Effect.mapError(hostFailure))
-          yield* checkParent.pipe(Effect.mapError(hostFailure))
-          yield* checkBlob.pipe(Effect.mapError(hostFailure))
-          return yield* fs.remove(path).pipe(
+          try checkRoot.pipe(Effect.mapError(hostFailure))
+          try checkParent.pipe(Effect.mapError(hostFailure))
+          try checkBlob.pipe(Effect.mapError(hostFailure))
+          return try fs.remove(path).pipe(
             Effect.as(true),
             // The blob may have been removed between the fence and here; only a
             // refusal over bytes that still exist is a host failure.
@@ -300,9 +298,9 @@ export const makeFileSystem = (
               )
             )
           )
-        })
+        }
       }
-    })
+    }
   )
 
   return { inventory, remove }

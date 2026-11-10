@@ -25,7 +25,7 @@ import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import * as ArtifactStore from "./ArtifactStore.ts"
+import * as ArtifactStore from "./ArtifactStore.vibe"
 import * as ArtifactStoreMetrics from "./ArtifactStoreMetrics.vibe"
 import * as RemoteArtifacts from "./RemoteArtifacts.vibe"
 
@@ -108,7 +108,7 @@ type LocalRead =
 export const make = (
   options: Options
 ): Effect.Effect<RemoteArtifacts.Service, ArtifactStore.ArtifactStoreError> =>
-  Effect.gen(function*() {
+  effect {
     const { local, remote } = options
     const parsedUploadTimeout = Duration.fromInput(options.uploadTimeout ?? defaultUploadTimeout)
     if (
@@ -116,12 +116,10 @@ export const make = (
       !Number.isFinite(Duration.toMillis(parsedUploadTimeout.value)) ||
       Duration.toMillis(parsedUploadTimeout.value) <= 0
     ) {
-      return yield* Effect.fail(
-        new ArtifactStore.ArtifactStoreError({
-          code: "invalid_configuration",
-          message: "invalid combined artifact option: uploadTimeout"
-        })
-      )
+      throw new ArtifactStore.ArtifactStoreError({
+        code: "invalid_configuration",
+        message: "invalid combined artifact option: uploadTimeout"
+      })
     }
     const uploadTimeout = parsedUploadTimeout.value
     const parsedWriteBackTimeout = Duration.fromInput(options.writeBackTimeout ?? defaultUploadTimeout)
@@ -130,22 +128,18 @@ export const make = (
       !Number.isFinite(Duration.toMillis(parsedWriteBackTimeout.value)) ||
       Duration.toMillis(parsedWriteBackTimeout.value) <= 0
     ) {
-      return yield* Effect.fail(
-        new ArtifactStore.ArtifactStoreError({
-          code: "invalid_configuration",
-          message: "invalid combined artifact option: writeBackTimeout"
-        })
-      )
+      throw new ArtifactStore.ArtifactStoreError({
+        code: "invalid_configuration",
+        message: "invalid combined artifact option: writeBackTimeout"
+      })
     }
     const writeBackTimeout = parsedWriteBackTimeout.value
     const downloadPolicy = options.downloadPolicy ?? RemoteArtifacts.downloadPolicyOf(remote) ?? "all"
     if (!Schema.is(RemoteArtifacts.DownloadPolicy)(downloadPolicy)) {
-      return yield* Effect.fail(
-        new ArtifactStore.ArtifactStoreError({
-          code: "invalid_configuration",
-          message: "invalid combined artifact option: downloadPolicy"
-        })
-      )
+      throw new ArtifactStore.ArtifactStoreError({
+        code: "invalid_configuration",
+        message: "invalid combined artifact option: downloadPolicy"
+      })
     }
     /**
      * In-flight uploads, keyed by digest. Two settles in one process that spill
@@ -164,16 +158,16 @@ export const make = (
     const lastWarnedAt = new Map<"put" | "write_back", number>()
     const dropped =
       (operation: "put" | "write_back") => (error: ArtifactStore.ArtifactStoreError | Cause.TimeoutError) =>
-        Effect.gen(function*() {
-          yield* Metric.update(ArtifactStoreMetrics.remoteFailure[operation], 1)
-          const now = yield* Clock.currentTimeMillis
+        effect {
+          try Metric.update(ArtifactStoreMetrics.remoteFailure[operation], 1)
+          const now = try Clock.currentTimeMillis
           const last = lastWarnedAt.get(operation)
           if (last !== undefined && now - last < droppedWarningIntervalMs) return
           lastWarnedAt.set(operation, now)
-          yield* Effect.logWarning("Combined artifact transfer dropped").pipe(
+          try Effect.logWarning("Combined artifact transfer dropped").pipe(
             Effect.annotateLogs({ operation, reason: reasonOf(error) })
           )
-        })
+        }
     const uploadInterrupted = (): ArtifactStore.ArtifactStoreError =>
       new ArtifactStore.ArtifactStoreError({
         code: "unavailable",
@@ -190,10 +184,10 @@ export const make = (
         // otherwise orphan the entry, and every later `put` of the digest would
         // join a deferred nobody will ever complete.
         return Effect.uninterruptibleMask((restore) =>
-          Effect.gen(function*() {
-            const deferred = yield* Deferred.make<ArtifactStore.Digest, ArtifactStore.ArtifactStoreError>()
+          effect {
+            const deferred = try Deferred.make<ArtifactStore.Digest, ArtifactStore.ArtifactStoreError>()
             uploads.set(digest, deferred)
-            return yield* restore(remote.put(bytes)).pipe(
+            return try restore(remote.put(bytes)).pipe(
               Effect.onExit((exit) => {
                 uploads.delete(digest)
                 // An interrupted upload resolves the deferred with a typed
@@ -207,18 +201,18 @@ export const make = (
                   : Deferred.done(deferred, exit)
               })
             )
-          })
+          }
         )
       })
 
     const put: ArtifactStore.Service["put"] = Effect.fn("CombinedArtifacts.put")((bytes: Uint8Array) =>
       Effect.flatMap(ArtifactStore.snapshotBytes(bytes), (snapshot) =>
-        Effect.gen(function*() {
+        effect {
           // Local first, and its digest is the answer: the local tier is the one
           // this machine's replays resolve against, so a remote tier that is down
           // must not stop an artifact from being recorded locally.
-          const digest = yield* local.put(snapshot)
-          yield* Effect.annotateCurrentSpan({ digest })
+          const digest = try local.put(snapshot)
+          try Effect.annotateCurrentSpan({ digest })
           // Which means the upload is opportunistic, and a refusal is dropped
           // rather than propagated. Failing here would fail whatever produced the
           // bytes — a step's `settle`, say — because a *cache* was unreachable,
@@ -230,26 +224,26 @@ export const make = (
           // keeps it opportunistic in time as well: a remote that stalls instead
           // of refusing must not hold the local answer hostage, so the upload is
           // interrupted after `uploadTimeout` and abandoned like any refusal.
-          yield* uploadOnce(digest, snapshot).pipe(
+          try uploadOnce(digest, snapshot).pipe(
             Effect.timeout(uploadTimeout),
             Effect.asVoid,
             Effect.catch(dropped("put"))
           )
           return digest
-        }))
+        })
     )
 
     const get: ArtifactStore.Service["get"] = Effect.fn("CombinedArtifacts.get")((digest: string) =>
       Effect.flatMap(ArtifactStore.validateDigest(digest), (validated) =>
-        Effect.gen(function*() {
-          yield* Effect.annotateCurrentSpan({ digest: validated })
+        effect {
+          try Effect.annotateCurrentSpan({ digest: validated })
           // A local miss AND local corruption fall through to the remote tier,
           // and they are kept apart because they earn different write-backs. A
           // local `ArtifactStoreError` deliberately does NOT fall through: a
           // host that refused the read has not answered the question, and
           // silently paying the network for it would hide a broken local tier
           // behind a working shared one.
-          const cached = yield* local.get(validated).pipe(
+          const cached = try local.get(validated).pipe(
             Effect.map((bytes): LocalRead => ({ _tag: "hit", bytes })),
             Effect.catchTags({
               "@smthrs/artifacts/ArtifactMissing": () => Effect.succeed<LocalRead>({ _tag: "miss" }),
@@ -257,7 +251,7 @@ export const make = (
             })
           )
           if (cached._tag === "hit") return cached.bytes
-          const fetched = yield* remote.get(validated)
+          const fetched = try remote.get(validated)
           // `minimal` reads through without materializing: the caller gets the
           // bytes, the local tier stays exactly as small as it was, and the next
           // read pays the network again. Corruption is the exception every
@@ -272,43 +266,46 @@ export const make = (
             // cost the next read a round trip rather than fail this one. A
             // stalled write is interrupted at the deadline so it cannot hold
             // the verified remote answer indefinitely.
-            yield* local.put(fetched).pipe(
+            try local.put(fetched).pipe(
               Effect.timeout(writeBackTimeout),
               Effect.asVoid,
               Effect.catch(dropped("write_back"))
             )
           }
           return fetched
-        }))
+        })
     )
 
     const has: ArtifactStore.Service["has"] = Effect.fn("CombinedArtifacts.has")((digest: string) =>
-      Effect.flatMap(ArtifactStore.validateDigest(digest), (validated) =>
-        Effect.annotateCurrentSpan({ digest: validated }).pipe(
-          Effect.andThen(
-            Effect.flatMap(
-              local.has(validated),
-              (present) => present ? Effect.succeed(true) : remote.has(validated)
+      Effect.flatMap(
+        ArtifactStore.validateDigest(digest),
+        (validated) =>
+          Effect.annotateCurrentSpan({ digest: validated }).pipe(
+            Effect.andThen(
+              Effect.flatMap(
+                local.has(validated),
+                (present) => present ? Effect.succeed(true) : remote.has(validated)
+              )
             )
           )
-        ))
+      )
     )
 
     const findMissing: ArtifactStore.Service["findMissing"] = Effect.fn("CombinedArtifacts.findMissing")(
       (digests: Iterable<string>) =>
-        Effect.gen(function*() {
+        effect {
           // The iterable is materialized once: it may be single-pass, and both the
           // annotation and the local probe need it.
           const requested = [...new Set(digests)]
           const validated: Array<ArtifactStore.Digest> = []
           for (const digest of requested) {
-            validated.push(yield* ArtifactStore.validateDigest(digest))
+            validated.push(try ArtifactStore.validateDigest(digest))
           }
           // Missing means missing from BOTH tiers, and the remote probe is asked
           // only about what the local tier could not answer — one network round
           // trip, over the smallest possible set. The result stays a subset of the
           // input because each stage filters the previous stage's output.
-          return yield* Effect.annotateCurrentSpan({ count: validated.length }).pipe(
+          return try Effect.annotateCurrentSpan({ count: validated.length }).pipe(
             Effect.andThen(
               Effect.flatMap(
                 local.findMissing(validated),
@@ -317,11 +314,11 @@ export const make = (
               )
             )
           )
-        })
+        }
     )
 
     return { put, get, has, findMissing, downloadPolicy }
-  })
+  }
 
 /**
  * The two tiers as effects, plus the options {@link make} takes.

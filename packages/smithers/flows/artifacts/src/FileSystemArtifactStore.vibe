@@ -14,10 +14,10 @@ import * as Option from "effect/Option"
 import type * as Path from "effect/Path"
 import * as PlatformError from "effect/PlatformError"
 import * as Random from "effect/Random"
-import type { Service } from "./ArtifactStore.ts"
+import type { Service } from "./ArtifactStore.vibe"
 import { ArtifactCorruption, ArtifactMissing, ArtifactStoreError } from "./ArtifactStoreError.vibe"
 import * as ArtifactStoreMetrics from "./ArtifactStoreMetrics.vibe"
-import * as ArtifactLocks from "./internal/ArtifactLocks.ts"
+import * as ArtifactLocks from "./internal/ArtifactLocks.vibe"
 import * as ArtifactPath from "./internal/ArtifactPath.vibe"
 import { measureBytes } from "./measureBytes.vibe"
 import { snapshotBytes } from "./snapshotBytes.vibe"
@@ -183,31 +183,31 @@ export const makeFileSystem = (
    * `ArtifactGc.gc()` call in `@smthrs/engine-store`, never folded in here.
    */
   let sweepDone = false
-  const sweepOrphanedTemps = Effect.gen(function*() {
+  const sweepOrphanedTemps = (effect {
     if (sweepDone) return
     sweepDone = true
-    const checkRoot = yield* ArtifactPath.guard(fs, directory)
-    const parents = yield* fs.readDirectory(directory)
-    const now = yield* Clock.currentTimeMillis
+    const checkRoot = try ArtifactPath.guard(fs, directory)
+    const parents = try fs.readDirectory(directory)
+    const now = try Clock.currentTimeMillis
     for (const parent of parents) {
       if (!/^[0-9a-f]{2}$/.test(parent) && parent !== ArtifactLocks.directoryName) continue
       const parentPath = `${directory}/${parent}`
-      yield* checkRoot
-      const checkParent = yield* ArtifactPath.guard(fs, parentPath).pipe(Effect.option)
+      try checkRoot
+      const checkParent = try ArtifactPath.guard(fs, parentPath).pipe(Effect.option)
       if (Option.isNone(checkParent)) continue
-      const entries = yield* fs.readDirectory(parentPath).pipe(Effect.orElseSucceed(() => [] as Array<string>))
+      const entries = try fs.readDirectory(parentPath).pipe(Effect.orElseSucceed(() => [] as Array<string>))
       for (const entry of entries) {
         if (entry.includes("/") || entry.includes("\\") || !isScratch(`${parent}/${entry}`)) continue
         const orphanPath = `${parentPath}/${entry}`
-        yield* Effect.gen(function*() {
-          const checkFile = yield* ArtifactPath.guard(fs, orphanPath, "File")
-          const info = yield* fs.stat(orphanPath)
+        try (effect {
+          const checkFile = try ArtifactPath.guard(fs, orphanPath, "File")
+          const info = try fs.stat(orphanPath)
           const mtime = Option.getOrUndefined(info.mtime)
           if (mtime === undefined || now - mtime.getTime() < staleScratchMs) return
-          yield* checkRoot
-          yield* checkParent.value
-          yield* checkFile
-          yield* fs.remove(orphanPath)
+          try checkRoot
+          try checkParent.value
+          try checkFile
+          try fs.remove(orphanPath)
         }).pipe(Effect.ignore)
       }
     }
@@ -232,44 +232,44 @@ export const makeFileSystem = (
   // Repeat the whole ancestry even on dedupe: an existing directory may have
   // been created by an interrupted publication in another store or process.
   // Syncing objects also persists the lock directory created by withDigest.
-  const syncDirectoryAncestry = Effect.gen(function*() {
+  const syncDirectoryAncestry = effect {
     let current = directory
     while (true) {
-      yield* syncPath(current, "r")
+      try syncPath(current, "r")
       const parent = platformPath.dirname(current)
       if (parent === current) return
       current = parent
     }
-  })
+  }
 
   const put: Service["put"] = Effect.fn("ArtifactStore.put")((bytes: Uint8Array) =>
     Effect.flatMap(
       snapshotBytes(bytes),
       (snapshot) =>
         Effect.flatMap(measureBytes(snapshot), (digest) =>
-          Effect.gen(function*() {
-            yield* Effect.asVoid(ArtifactPath.guard(fs, directory).pipe(Effect.mapError(hostFailure)))
-            yield* fs.makeDirectory(directory, { recursive: true, mode: directoryMode }).pipe(
+          effect {
+            try Effect.asVoid(ArtifactPath.guard(fs, directory).pipe(Effect.mapError(hostFailure)))
+            try fs.makeDirectory(directory, { recursive: true, mode: directoryMode }).pipe(
               Effect.mapError(hostFailure)
             )
-            const checkRoot = yield* ArtifactPath.guard(fs, directory).pipe(Effect.mapError(hostFailure))
-            return yield* ArtifactLocks.withDigest(
+            const checkRoot = try ArtifactPath.guard(fs, directory).pipe(Effect.mapError(hostFailure))
+            return try ArtifactLocks.withDigest(
               fs,
               directory,
               digest,
-              Effect.gen(function*() {
-                yield* Effect.annotateCurrentSpan({ digest })
+              effect {
+                try Effect.annotateCurrentSpan({ digest })
                 const blob = fanout(directory, digest)
-                yield* checkRoot.pipe(Effect.mapError(hostFailure))
-                yield* Effect.asVoid(ArtifactPath.guard(fs, blob.parent).pipe(Effect.mapError(hostFailure)))
-                yield* fs.makeDirectory(blob.parent, { mode: directoryMode, recursive: true }).pipe(
+                try checkRoot.pipe(Effect.mapError(hostFailure))
+                try Effect.asVoid(ArtifactPath.guard(fs, blob.parent).pipe(Effect.mapError(hostFailure)))
+                try fs.makeDirectory(blob.parent, { mode: directoryMode, recursive: true }).pipe(
                   Effect.mapError(hostFailure)
                 )
-                const checkParent = yield* ArtifactPath.guard(fs, blob.parent).pipe(Effect.mapError(hostFailure))
-                const checkBlob = yield* ArtifactPath.guard(fs, blob.path, "File", undefined, "allow").pipe(
+                const checkParent = try ArtifactPath.guard(fs, blob.parent).pipe(Effect.mapError(hostFailure))
+                const checkBlob = try ArtifactPath.guard(fs, blob.path, "File", undefined, "allow").pipe(
                   Effect.mapError(hostFailure)
                 )
-                const stored = yield* fs.exists(blob.path).pipe(Effect.mapError(hostFailure))
+                const stored = try fs.exists(blob.path).pipe(Effect.mapError(hostFailure))
                 // Existence alone is not validity: a truncated blob left by a crashing
                 // writer or by disk corruption would otherwise be trusted forever at
                 // write time while `get` digest-verifies and refuses — a permanent
@@ -285,7 +285,7 @@ export const makeFileSystem = (
                 // Re-verifying costs a constant factor, never a new asymptote: a `put`
                 // already pays one O(blob size) hash to measure its own input.
                 let verified = stored &&
-                  (yield* fs.readFile(blob.path).pipe(
+                  (try fs.readFile(blob.path).pipe(
                     Effect.flatMap((existing) => Effect.map(measureBytes(existing), (measured) => measured === digest)),
                     Effect.catch(() => Effect.succeed(false))
                   ))
@@ -301,12 +301,12 @@ export const makeFileSystem = (
                   // git's freshen-versus-prune race; a failed freshen over a blob that
                   // VANISHED — a sweep won it — falls through to the atomic rewrite
                   // below, healing the address.
-                  const now = yield* Clock.currentTimeMillis
+                  const now = try Clock.currentTimeMillis
                   const timestamp = new Date(now)
-                  yield* checkRoot.pipe(Effect.mapError(hostFailure))
-                  yield* checkParent.pipe(Effect.mapError(hostFailure))
-                  yield* checkBlob.pipe(Effect.mapError(hostFailure))
-                  const alive = yield* fs.utimes(blob.path, timestamp, timestamp).pipe(
+                  try checkRoot.pipe(Effect.mapError(hostFailure))
+                  try checkParent.pipe(Effect.mapError(hostFailure))
+                  try checkBlob.pipe(Effect.mapError(hostFailure))
+                  const alive = try fs.utimes(blob.path, timestamp, timestamp).pipe(
                     Effect.as(true),
                     Effect.catch(() => fs.exists(blob.path).pipe(Effect.catch(() => Effect.succeed(true))))
                   )
@@ -314,8 +314,8 @@ export const makeFileSystem = (
                     verified = false
                   }
                   if (verified) {
-                    yield* syncPath(blob.path, "r+")
-                    yield* syncPath(blob.parent, "r")
+                    try syncPath(blob.path, "r+")
+                    try syncPath(blob.parent, "r")
                   }
                 }
                 if (!verified) {
@@ -325,13 +325,13 @@ export const makeFileSystem = (
                   // the same fanout directory (so the rename never crosses a filesystem)
                   // and is renamed into place; an existing blob is rewritten only when
                   // its bytes no longer match its address.
-                  yield* sweepOrphanedTemps
-                  yield* Effect.scoped(Effect.gen(function*() {
+                  try sweepOrphanedTemps
+                  try Effect.scoped(effect {
                     for (let attempt = 0; attempt < 16; attempt++) {
-                      yield* checkRoot
-                      yield* checkParent
-                      const tempPath = `${blob.path}.tmp-${yield* freshTempToken}-${attempt}`
-                      const file = yield* fs.open(tempPath, { flag: "wx", mode: fileMode }).pipe(
+                      try checkRoot
+                      try checkParent
+                      const tempPath = `${blob.path}.tmp-${try freshTempToken}-${attempt}`
+                      const file = try fs.open(tempPath, { flag: "wx", mode: fileMode }).pipe(
                         Effect.map(Option.some),
                         Effect.catch((cause) =>
                           cause.reason._tag === "AlreadyExists"
@@ -342,41 +342,39 @@ export const makeFileSystem = (
                       if (Option.isNone(file)) continue
                       // Install cleanup only after exclusive acquisition. Never unlink
                       // a colliding entry, which may belong to another writer.
-                      const checkTemp = yield* ArtifactPath.guard(fs, tempPath, "File", yield* file.value.stat)
-                      yield* Effect.gen(function*() {
-                        if (snapshot.byteLength > 0) yield* file.value.writeAll(snapshot)
-                        yield* durability === "best-effort" ? Effect.ignore(file.value.sync) : file.value.sync
-                        yield* checkRoot
-                        yield* checkParent
-                        yield* checkTemp
-                        yield* fs.rename(tempPath, blob.path)
-                        yield* syncPath(blob.parent, "r")
+                      const checkTemp = try ArtifactPath.guard(fs, tempPath, "File", try file.value.stat)
+                      try (effect {
+                        if (snapshot.byteLength > 0) try file.value.writeAll(snapshot)
+                        try (durability === "best-effort" ? Effect.ignore(file.value.sync) : file.value.sync)
+                        try checkRoot
+                        try checkParent
+                        try checkTemp
+                        try fs.rename(tempPath, blob.path)
+                        try syncPath(blob.parent, "r")
                       }).pipe(Effect.onError(() =>
-                        Effect.gen(function*() {
-                          yield* checkRoot
-                          yield* checkParent
-                          yield* checkTemp
-                          yield* fs.remove(tempPath)
+                        (effect {
+                          try checkRoot
+                          try checkParent
+                          try checkTemp
+                          try fs.remove(tempPath)
                         }).pipe(Effect.ignore)
                       ))
                       return
                     }
-                    return yield* Effect.fail(
-                      new ArtifactStoreError({
-                        code: "unavailable",
-                        message: "artifact scratch creation exhausted collision retries"
-                      })
-                    )
-                  })).pipe(Effect.mapError(hostFailure))
+                    throw new ArtifactStoreError({
+                      code: "unavailable",
+                      message: "artifact scratch creation exhausted collision retries"
+                    })
+                  }).pipe(Effect.mapError(hostFailure))
                 }
-                yield* syncDirectoryAncestry
-                yield* Metric.update(ArtifactStoreMetrics.puts, 1)
+                try syncDirectoryAncestry
+                try Metric.update(ArtifactStoreMetrics.puts, 1)
                 return digest
-              }),
+              },
               hostFailure,
               coordination
             )
-          }))
+          })
     )
   )
 
@@ -388,24 +386,24 @@ export const makeFileSystem = (
    * all three and refuses an observed replacement.
    */
   const guardBlob = (blob: { readonly parent: string; readonly path: string }) =>
-    Effect.gen(function*() {
-      const checkRoot = yield* ArtifactPath.guard(fs, directory)
-      const checkParent = yield* ArtifactPath.guard(fs, blob.parent)
-      const checkFile = yield* ArtifactPath.guard(fs, blob.path, "File")
-      return Effect.gen(function*() {
-        yield* checkRoot
-        yield* checkParent
-        yield* checkFile
+    (effect {
+      const checkRoot = try ArtifactPath.guard(fs, directory)
+      const checkParent = try ArtifactPath.guard(fs, blob.parent)
+      const checkFile = try ArtifactPath.guard(fs, blob.path, "File")
+      return (effect {
+        try checkRoot
+        try checkParent
+        try checkFile
       }).pipe(Effect.mapError(hostFailure))
     }).pipe(Effect.mapError(hostFailure))
 
   const get: Service["get"] = Effect.fn("ArtifactStore.get")((digest: string) =>
-    Effect.gen(function*() {
-      const validated = yield* validateDigest(digest)
-      yield* Effect.annotateCurrentSpan({ digest: validated })
+    effect {
+      const validated = try validateDigest(digest)
+      try Effect.annotateCurrentSpan({ digest: validated })
       const blob = fanout(directory, validated)
-      const checkBlob = yield* guardBlob(blob)
-      const bytes = yield* fs.readFile(blob.path).pipe(
+      const checkBlob = try guardBlob(blob)
+      const bytes = try fs.readFile(blob.path).pipe(
         Effect.catch((cause): Effect.Effect<Uint8Array, ArtifactMissing | ArtifactStoreError> => {
           const missing = new ArtifactMissing({ code: "artifact_missing", digest: validated })
           if (isNotFound(cause)) return Effect.fail(missing)
@@ -417,40 +415,38 @@ export const makeFileSystem = (
           )
         })
       )
-      yield* checkBlob
-      const measured = yield* measureBytes(bytes)
+      try checkBlob
+      const measured = try measureBytes(bytes)
       if (measured !== validated) {
-        return yield* Effect.fail(
-          new ArtifactCorruption({
-            code: "artifact_corruption",
-            recordedDigest: validated,
-            measuredDigest: measured
-          })
-        )
+        throw new ArtifactCorruption({
+          code: "artifact_corruption",
+          recordedDigest: validated,
+          measuredDigest: measured
+        })
       }
-      yield* Metric.update(ArtifactStoreMetrics.gets, 1)
+      try Metric.update(ArtifactStoreMetrics.gets, 1)
       return bytes
-    })
+    }
   )
 
   const has: Service["has"] = Effect.fn("ArtifactStore.has")((digest: string) =>
-    Effect.gen(function*() {
-      const validated = yield* validateDigest(digest)
-      yield* Effect.annotateCurrentSpan({ digest: validated })
+    effect {
+      const validated = try validateDigest(digest)
+      try Effect.annotateCurrentSpan({ digest: validated })
       const blob = fanout(directory, validated)
-      yield* Effect.asVoid(guardBlob(blob))
-      return yield* fs.exists(blob.path).pipe(Effect.mapError(hostFailure))
-    })
+      try Effect.asVoid(guardBlob(blob))
+      return try fs.exists(blob.path).pipe(Effect.mapError(hostFailure))
+    }
   )
 
   const findMissing: Service["findMissing"] = Effect.fn("ArtifactStore.findMissing")((digests: Iterable<string>) =>
-    Effect.gen(function*() {
+    effect {
       const requested = [...new Set(digests)]
-      yield* Effect.annotateCurrentSpan({ count: requested.length })
-      yield* Effect.forEach(requested, validateDigest, { discard: true })
-      const present = yield* Effect.forEach(requested, has, { concurrency: 16 })
+      try Effect.annotateCurrentSpan({ count: requested.length })
+      try Effect.forEach(requested, validateDigest, { discard: true })
+      const present = try Effect.forEach(requested, has, { concurrency: 16 })
       return requested.filter((_, index) => !present[index])
-    })
+    }
   )
 
   return { put, get, has, findMissing }

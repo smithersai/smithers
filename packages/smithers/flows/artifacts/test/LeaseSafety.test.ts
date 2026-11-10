@@ -13,9 +13,9 @@ import * as Path from "effect/Path"
 import * as PlatformError from "effect/PlatformError"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
-import * as ArtifactStore from "../src/ArtifactStore.ts"
-import * as ArtifactSweep from "../src/ArtifactSweep.ts"
-import * as FileLease from "../src/FileLease.ts"
+import * as ArtifactStore from "../src/ArtifactStore.vibe"
+import * as ArtifactSweep from "../src/ArtifactSweep.vibe"
+import * as FileLease from "../src/FileLease.vibe"
 import { bytes, sha256 } from "./Crypto.ts"
 
 const onNode = <A, E>(

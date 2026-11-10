@@ -26,7 +26,7 @@ import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import { TestClock } from "effect/testing"
 import { posix } from "node:path"
-import * as ArtifactStore from "../src/ArtifactStore.ts"
+import * as ArtifactStore from "../src/ArtifactStore.vibe"
 import { bytes, sha256, text, withCrypto } from "./Crypto.ts"
 import { hostPath } from "./HostPath.ts"
 

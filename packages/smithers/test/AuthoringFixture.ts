@@ -32,7 +32,7 @@ import { Effect, FileSystem, Layer, Schema } from "effect"
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import * as ArtifactStore from "../flows/artifacts/src/ArtifactStore.ts"
+import * as ArtifactStore from "../flows/artifacts/src/ArtifactStore.vibe"
 
 /**
  * The flow the scripted author writes, named the way discovery names it: by

@@ -25,7 +25,7 @@ import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
 import type { ArtifactCorruption, ArtifactMissing, ArtifactStoreError } from "./ArtifactStoreError.vibe"
-import { type FileSystemOptions, makeFileSystem } from "./FileSystemArtifactStore.ts"
+import { type FileSystemOptions, makeFileSystem } from "./FileSystemArtifactStore.vibe"
 import { makeMemory } from "./MemoryArtifactStore.vibe"
 import { makeNoop } from "./NoopArtifactStore.vibe"
 
@@ -35,7 +35,7 @@ export {
   ArtifactStoreError,
   ArtifactStoreErrorCode
 } from "./ArtifactStoreError.vibe"
-export { defaultDirectory, type FileSystemOptions, makeFileSystem } from "./FileSystemArtifactStore.ts"
+export { defaultDirectory, type FileSystemOptions, makeFileSystem } from "./FileSystemArtifactStore.vibe"
 export { measureBytes } from "./measureBytes.vibe"
 export { makeMemory } from "./MemoryArtifactStore.vibe"
 export { makeNoop } from "./NoopArtifactStore.vibe"
@@ -128,9 +128,9 @@ export class ArtifactStore extends Context.Service<ArtifactStore, Service>()("@s
 export const layerFileSystem = (
   options: FileSystemOptions = {}
 ): Layer.Layer<ArtifactStore, never, FileSystem.FileSystem | Path.Path> =>
-  Layer.effect(ArtifactStore)(Effect.gen(function*() {
-    return makeFileSystem(yield* FileSystem.FileSystem, yield* Path.Path, options)
-  }))
+  Layer.effect(ArtifactStore)(effect {
+    return makeFileSystem(try FileSystem.FileSystem, try Path.Path, options)
+  })
 
 /**
  * Provides an in-memory artifact store.

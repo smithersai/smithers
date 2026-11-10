@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as ArtifactBackupLease from "../../src/ArtifactBackupLease.vibe"
-import * as ArtifactStore from "../../src/ArtifactStore.ts"
+import * as ArtifactStore from "../../src/ArtifactStore.vibe"
 import { hostPath } from "../HostPath.ts"
 
 const [mode, directory, digest] = process.argv.slice(2)

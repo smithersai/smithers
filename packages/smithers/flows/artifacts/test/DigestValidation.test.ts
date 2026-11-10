@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
-import * as ArtifactStore from "../src/ArtifactStore.ts"
+import * as ArtifactStore from "../src/ArtifactStore.vibe"
 import { bytes, sha256 } from "./Crypto.ts"
 
 const errorOf = (exit: Exit.Exit<unknown, unknown>): ArtifactStore.ArtifactStoreError => {

@@ -8,7 +8,7 @@
 import { Sha256 } from "@smthrs/crypto"
 import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
-import type { Digest } from "./ArtifactStore.ts"
+import type { Digest } from "./ArtifactStore.vibe"
 import { ArtifactStoreError } from "./ArtifactStoreError.vibe"
 
 const digestFailure = (cause: unknown): ArtifactStoreError =>

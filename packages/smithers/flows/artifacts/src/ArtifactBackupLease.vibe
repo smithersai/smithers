@@ -14,7 +14,7 @@
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
-import * as ArtifactLocks from "./internal/ArtifactLocks.ts"
+import * as ArtifactLocks from "./internal/ArtifactLocks.vibe"
 
 import { ArtifactStoreError } from "./ArtifactStoreError.vibe"
 
@@ -194,7 +194,7 @@ export const withLease = effect <A, E, R, E2>(
             // A backup whose heartbeat lapsed has its marker reaped by whoever
             // noticed, so `NotFound` is the ordinary end of a slow lease, not a
             // fault: there is nothing left to release and nothing left to leak.
-            // The sibling release in `internal/ArtifactLocks.ts` classifies the
+            // The sibling release in `internal/ArtifactLocks.vibe` classifies the
             // same cause the same way.
             |> Effect.catch(%, (cause): void!PlatformError.PlatformError =>
               isReason(cause, "NotFound") ? Effect.void : Effect.fail(cause)
