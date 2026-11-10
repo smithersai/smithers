@@ -17,8 +17,8 @@ import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import * as ArtifactSync from "../src/ArtifactSync.vibe"
-import * as CachePublication from "../src/internal/CachePublication.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as CachePublication from "../src/internal/CachePublication.vibe"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import { sha256, withCrypto } from "./Sha256.ts"
 
 const encoder = new TextEncoder()

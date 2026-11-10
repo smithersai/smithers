@@ -6,7 +6,7 @@ import { CacheStore } from "@smthrs/step-cache"
 import { Effect, Layer, Option } from "effect"
 import { EventTypes } from "../src/EventTypes.ts"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 

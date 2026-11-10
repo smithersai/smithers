@@ -356,7 +356,7 @@ Their partial index excludes settled and unrequested admissions; cleanup has
 no admission grace and still requires workspace admission and ownership fencing.
 `limit` must be zero or a positive safe integer; other values defect with `RangeError`.
 
-[src/DurableEngineState.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/DurableEngineState.ts)
+[src/DurableEngineState.vibe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/DurableEngineState.vibe)
 
 Durable deferreds, clocks, waiting rows, and the run parent DAG. This package
 owns deferred and clock state for 1.0. A successful mutation means the row is
@@ -534,7 +534,7 @@ failures in the service error channel.
 
 ## StepBoundary
 
-[src/StepBoundary.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/StepBoundary.ts)
+[src/StepBoundary.vibe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/StepBoundary.vibe)
 
 The declared read and write sets of a step, measured before and after it runs.
 The declaration itself, `FileBoundary` with `readSet`, `writeSet`, `removes`,
@@ -625,7 +625,7 @@ Full model: [Step boundaries](./concepts/step-boundaries.md).
 
 ## StepSandbox
 
-[src/StepSandbox.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/StepSandbox.ts)
+[src/StepSandbox.vibe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/StepSandbox.vibe)
 
 Scope-safe acquisition of one isolated workspace per step.
 
@@ -641,7 +641,7 @@ Scope-safe acquisition of one isolated workspace per step.
 
 ## WorkspaceSandbox
 
-[src/WorkspaceSandbox.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/WorkspaceSandbox.ts)
+[src/WorkspaceSandbox.vibe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/WorkspaceSandbox.vibe)
 
 The functional workspace transaction: a sealed action's body runs in an isolated
 workspace and returns its writes rather than performing them.
@@ -1411,7 +1411,7 @@ Full observation, listing, lag, retention, and cursor contract:
 
 ## DisasterRecovery
 
-[src/DisasterRecovery.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/DisasterRecovery.ts)
+[src/DisasterRecovery.vibe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/DisasterRecovery.vibe)
 
 Hot backup, verification, restore, and restore-time fencing.
 

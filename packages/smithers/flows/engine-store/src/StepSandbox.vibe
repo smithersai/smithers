@@ -14,8 +14,8 @@ import type * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import type * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
-import * as StepBoundary from "./StepBoundary.ts"
-import * as WorkspaceSandbox from "./WorkspaceSandbox.ts"
+import * as StepBoundary from "./StepBoundary.vibe"
+import * as WorkspaceSandbox from "./WorkspaceSandbox.vibe"
 
 /**
  * A hermetic body attempted to read a path outside its declared read set.
@@ -39,7 +39,7 @@ export class UndeclaredRead extends Schema.TaggedError<UndeclaredRead>()(
  * @since 0.1.0
  */
 export interface Service {
-  readonly open: Effect.Effect<WorkspaceSandbox.Service, StepBoundary.UnsupportedBoundary>
+  readonly open: WorkspaceSandbox.Service!StepBoundary.UnsupportedBoundary
 }
 
 /**

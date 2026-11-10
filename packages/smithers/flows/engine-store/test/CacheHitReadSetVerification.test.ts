@@ -23,7 +23,7 @@ import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as EngineStoreMetrics from "../src/EngineStoreMetrics.vibe"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { runPromise, sha256, withCrypto } from "./Sha256.ts"
 

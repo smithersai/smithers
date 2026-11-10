@@ -575,9 +575,9 @@ export const makeFileSystem = (
   const maxTotalInlineBytes = options.maxTotalInlineBytes ?? defaultMaxTotalInlineBytes
   // Stat tuples are not content identities: a same-size rewrite can preserve
   // mtime, device, and inode on every supported filesystem.
-  const readDigestFrom = Effect.fn("StepBoundary.readDigest")(function*(host: FileSystem.FileSystem, path: string) {
-    const bytes = yield* host.readFile(path)
-    const digest = yield* Schema.decodeUnknownEffect(Sha256)(bytes).pipe(Effect.orDie)
+  const readDigestFrom = Effect.fn("StepBoundary.readDigest")(effect (host: FileSystem.FileSystem, path: string) => {
+    const bytes = try host.readFile(path)
+    const digest = try Schema.decodeUnknownEffect(Sha256)(bytes).pipe(Effect.orDie)
     return { digest, bytes } satisfies MeasuredDigest
   })
   // Declared paths are workspace-relative. A confined filesystem resolves them
@@ -592,9 +592,9 @@ export const makeFileSystem = (
   const readDigest = (path: string) => readDigestFrom(fs, hostPath(path))
   const batch = KernelFileSystem.batch(fs)
   const measurements = Effect.fn("StepBoundary.measurements")(
-    function*(paths: ReadonlyArray<string>, content: boolean) {
+    effect (paths: ReadonlyArray<string>, content: boolean) => {
       if (batch === undefined) {
-        return yield* Effect.forEach(paths, (path) =>
+        return try Effect.forEach(paths, (path) =>
           readDigest(path).pipe(
             Effect.map((value): BatchedDigest => ({
               digest: value.digest,
@@ -607,7 +607,7 @@ export const makeFileSystem = (
       }
       const values: Array<BatchedDigest | undefined> = []
       for (let offset = 0; offset < paths.length; offset += batch.maxSize) {
-        const response = yield* batch.execute(
+        const response = try batch.execute(
           paths.slice(offset, offset + batch.maxSize).map((path) => ({
             operation: "digest",
             path: hostPath(path),
@@ -615,13 +615,13 @@ export const makeFileSystem = (
           }))
         ).pipe(Effect.mapError(hostFailure))
         for (const entry of [...response.entries].sort((a, b) => a.index - b.index)) {
-          const measured = yield* Effect.fromResult(entry.result).pipe(
+          const measured = try Effect.fromResult(entry.result).pipe(
             Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)),
             Effect.mapError(hostFailure)
           )
           if (measured === undefined) values.push(undefined)
           else if (measured.operation !== "digest") {
-            return yield* Effect.fail(hostFailure(new Error("host returned a non-digest batch result")))
+            throw hostFailure(new Error("host returned a non-digest batch result"))
           } else values.push({ ...measured, digest: measured.digest as ArtifactStore.Digest })
         }
       }
@@ -651,15 +651,15 @@ export const makeFileSystem = (
   // dotfiles under Node's matcher, so trusting them silently emptied every
   // workspace-relative expansion and let a tree replay delete dotfiles the
   // producer wrote.
-  const expandGlob = Effect.fn("StepBoundary.expandGlob")(function*(glob: FileSet.Glob) {
-    return yield* FileEnumeration.expandGlob(fs, glob, enumeration).pipe(Effect.mapError(hostFailure))
+  const expandGlob = Effect.fn("StepBoundary.expandGlob")(effect (glob: FileSet.Glob) => {
+    return try FileEnumeration.expandGlob(fs, glob, enumeration).pipe(Effect.mapError(hostFailure))
   })
-  const treeEntries = Effect.fn("StepBoundary.treeEntries")(function*(
+  const treeEntries = Effect.fn("StepBoundary.treeEntries")(effect (
     host: FileSystem.FileSystem,
     path: string,
     resolution: FileEnumeration.EnumerationOptions
-  ) {
-    return yield* FileEnumeration.entriesUnder(host, path, resolution).pipe(Effect.mapError(hostFailure))
+  ) => {
+    return try FileEnumeration.entriesUnder(host, path, resolution).pipe(Effect.mapError(hostFailure))
   })
   // Replay writes and deletes what evidence names, so the lexical check alone
   // is not a boundary: a symlink planted on a lexically valid path would carry
@@ -669,7 +669,7 @@ export const makeFileSystem = (
   // path is refused rather than followed. `prepare` and `settle` only read,
   // and keep the caller's filesystem, rooted through `hostPath`.
   const replayRoot = KernelFileSystem.confinedRoot(fs) ?? options.root ?? "."
-  const replayHost: Effect.Effect<FileSystem.FileSystem, UnsupportedBoundary> = KernelFileSystem.isConfinable(fs)
+  const replayHost: FileSystem.FileSystem!UnsupportedBoundary = KernelFileSystem.isConfinable(fs)
     ? KernelFileSystem.confined(fs, replayRoot).pipe(
       Effect.provideService(Path.Path, platformPath),
       Effect.mapError(hostFailure)
@@ -682,15 +682,15 @@ export const makeFileSystem = (
       })
     )
   const capture = Effect.fn("StepBoundary.capture")(
-    function*(path: string, inlineBudget: number, measured: BatchedDigest | undefined) {
-      yield* Effect.annotateCurrentSpan({ path })
+    effect (path: string, inlineBudget: number, measured: BatchedDigest | undefined) => {
+      try Effect.annotateCurrentSpan({ path })
       // As in `measure`: the read reports absence itself, so the output is
       // captured in one host call rather than an `exists` probe plus a read.
       if (measured === undefined) {
         return { output: { path, digest: null } satisfies MaterializedOutput, inlinedBytes: 0 }
       }
       const bytes = measured.bytes
-      if (bytes === undefined) return yield* Effect.fail(hostFailure(new Error("host omitted requested batch content")))
+      if (bytes === undefined) throw hostFailure(new Error("host omitted requested batch content"))
       const digest = measured.digest
       // Inline only while both bounds hold (issue #122): the per-output bound
       // and the settle-wide aggregate budget the caller threads through.
@@ -710,30 +710,28 @@ export const makeFileSystem = (
       // property that used to live here — atomic publication, verify-once
       // dedupe, healing rewrite of a corrupt address — is now the store's, and
       // is tested there (`@smthrs/artifacts`).
-      const stored = yield* artifacts.put(bytes).pipe(Effect.mapError(artifactFailure))
+      const stored = try artifacts.put(bytes).pipe(Effect.mapError(artifactFailure))
       if (stored !== digest) {
-        return yield* Effect.fail(
-          new BoundaryCorruption({
-            code: "boundary_corruption",
-            path,
-            recordedDigest: `${stored}`,
-            measuredDigest: digest
-          })
-        )
+        throw new BoundaryCorruption({
+          code: "boundary_corruption",
+          path,
+          recordedDigest: `${stored}`,
+          measuredDigest: digest
+        })
       }
       return { output: { path, digest, sizeBytes: bytes.length } satisfies MaterializedOutput, inlinedBytes: 0 }
     }
   )
-  const materialize = Effect.fn("StepBoundary.materialize")(function*(
+  const materialize = Effect.fn("StepBoundary.materialize")(effect (
     host: FileSystem.FileSystem,
     output: MaterializedOutput
-  ) {
-    yield* Effect.annotateCurrentSpan({ path: output.path })
+  ) => {
+    try Effect.annotateCurrentSpan({ path: output.path })
     // The filesystem is the cheapest source of truth for a warm workspace.
     // Probe before decoding inline bytes or consulting the artifact store; a
     // transient probe refusal merely forfeits the optimization and the
     // ordinary materialization path retains its existing typed failures.
-    const current = yield* measure(output.path, host).pipe(
+    const current = try measure(output.path, host).pipe(
       Effect.map((digest) => digest !== absentDigest && digest === output.digest),
       Effect.catch(() => Effect.succeed(false))
     )
@@ -746,26 +744,24 @@ export const makeFileSystem = (
         // tampered durable row, classified exactly like a digest mismatch so
         // the caller routes it to the Inconsistency receiver instead of
         // retrying it as a transient host refusal (issue #159).
-        return yield* Effect.fail(inlineCorruption(output.path, `${output.digest}`))
+        throw inlineCorruption(output.path, `${output.digest}`)
       }
       bytes = decoded.success
       // Inline evidence is verified here because nothing else can: the bytes
       // travel inside the row rather than at a content address. A referenced
       // artifact is verified by the store on the way out, so the check below
       // would be a second read+hash of the same bytes.
-      const measured = yield* Schema.decodeUnknownEffect(Sha256)(bytes).pipe(Effect.orDie)
+      const measured = try Schema.decodeUnknownEffect(Sha256)(bytes).pipe(Effect.orDie)
       if (measured !== output.digest) {
-        return yield* Effect.fail(
-          new BoundaryCorruption({
-            code: "boundary_corruption",
-            path: output.path,
-            recordedDigest: `${output.digest}`,
-            measuredDigest: measured
-          })
-        )
+        throw new BoundaryCorruption({
+          code: "boundary_corruption",
+          path: output.path,
+          recordedDigest: `${output.digest}`,
+          measuredDigest: measured
+        })
       }
     } else {
-      bytes = yield* artifacts.get(`${output.digest}`).pipe(
+      bytes = try artifacts.get(`${output.digest}`).pipe(
         Effect.catchTags({
           // A reference this host cannot resolve is not a host refusal: a
           // shared artifact tier may still hold it, so the caller gets a
@@ -796,14 +792,14 @@ export const makeFileSystem = (
     // `writeFile` does not create parents (issue #107).
     const parent = parentDirectory(output.path)
     if (parent !== undefined) {
-      yield* host.makeDirectory(parent, { recursive: true }).pipe(Effect.mapError(hostFailure))
+      try host.makeDirectory(parent, { recursive: true }).pipe(Effect.mapError(hostFailure))
     }
-    yield* host.writeFile(output.path, bytes).pipe(Effect.mapError(hostFailure))
+    try host.writeFile(output.path, bytes).pipe(Effect.mapError(hostFailure))
   })
   return make({
-    prepare: Effect.fn("StepBoundary.prepare")(function*(descriptor) {
+    prepare: Effect.fn("StepBoundary.prepare")(effect (descriptor) => {
       const boundary = FileBoundarySnapshot.make(descriptor)
-      yield* Effect.annotateCurrentSpan({
+      try Effect.annotateCurrentSpan({
         reads: boundary.readSet.length,
         boundaryMode: boundary.boundaryMode
       })
@@ -816,10 +812,10 @@ export const makeFileSystem = (
       const paths: Array<string> = []
       for (const entry of boundary.readSet) {
         if (FileSet.isGlob(entry)) {
-          paths.push(...yield* expandGlob(entry))
+          paths.push(...try expandGlob(entry))
         } else paths.push(entry.path)
       }
-      const measured = yield* measurements(paths, false)
+      const measured = try measurements(paths, false)
       for (const [index, path] of paths.entries()) {
         readSnapshot.push({ path, digest: measured[index]?.digest ?? absentDigest })
       }
@@ -829,8 +825,8 @@ export const makeFileSystem = (
         readSnapshot: Object.freeze(readSnapshot.map((entry) => Object.freeze({ ...entry })))
       })
     }),
-    settle: Effect.fn("StepBoundary.settle")(function*(prepared) {
-      yield* Effect.annotateCurrentSpan({
+    settle: Effect.fn("StepBoundary.settle")(effect (prepared) => {
+      try Effect.annotateCurrentSpan({
         writes: prepared.descriptor.writeSet.length,
         boundaryMode: prepared.descriptor.boundaryMode
       })
@@ -852,7 +848,7 @@ export const makeFileSystem = (
         )
       const undeclared: Array<string> = []
       const checkedReads = prepared.readSnapshot.filter((entry) => !declaredCovers(entry.path))
-      const currentReads = yield* measurements(checkedReads.map((entry) => entry.path), false)
+      const currentReads = try measurements(checkedReads.map((entry) => entry.path), false)
       for (const [index, entry] of checkedReads.entries()) {
         if ((currentReads[index]?.digest ?? absentDigest) !== entry.digest) undeclared.push(entry.path)
       }
@@ -867,9 +863,9 @@ export const makeFileSystem = (
       const treeMembers: Array<{ readonly path: string; readonly files: ReadonlyArray<string> }> = []
       for (const entry of prepared.descriptor.writeSet) {
         if (typeof entry === "string") outputPaths.push(entry)
-        else if (entry._tag === "Glob") outputPaths.push(...yield* expandGlob(entry))
+        else if (entry._tag === "Glob") outputPaths.push(...try expandGlob(entry))
         else {
-          const files = (yield* treeEntries(fs, entry.path, enumeration)).files
+          const files = (try treeEntries(fs, entry.path, enumeration)).files
           outputPaths.push(...files)
           treeMembers.push({ path: entry.path, files })
         }
@@ -880,7 +876,7 @@ export const makeFileSystem = (
       // Digest-only preflight bounds content batches by bytes as well as path
       // count. Both measurements share the guarded host's pinned root identity;
       // a rewrite between them is a refusal, never mismatched cached content.
-      const sizes = batch === undefined ? undefined : yield* measurements(sortedPaths, false)
+      const sizes = batch === undefined ? undefined : try measurements(sortedPaths, false)
       for (let offset = 0; offset < sortedPaths.length;) {
         let end = offset
         let responseBytes = 256
@@ -893,13 +889,13 @@ export const makeFileSystem = (
           end++
         }
         const group = sortedPaths.slice(offset, end)
-        const contents = yield* measurements(group, true)
+        const contents = try measurements(group, true)
         for (const [index, path] of group.entries()) {
           const measured = contents[index]
           if (sizes !== undefined && measured?.digest !== sizes[offset + index]?.digest) {
-            return yield* Effect.fail(hostFailure(new Error(`output changed during measurement: ${path}`)))
+            throw hostFailure(new Error(`output changed during measurement: ${path}`))
           }
-          const output = yield* capture(path, maxTotalInlineBytes - inlinedBytes, measured)
+          const output = try capture(path, maxTotalInlineBytes - inlinedBytes, measured)
           // `capture` reports the bytes it actually inlined (zero for a
           // digest-only reference), so the aggregate budget never has to
           // re-derive them from the row it just built.
@@ -931,7 +927,7 @@ export const makeFileSystem = (
         )
         trees.push({
           path: tree.path,
-          identity: yield* Schema.decodeUnknownEffect(DerivedKey)({ kind: "tree-artifact", files: pairs }).pipe(
+          identity: try Schema.decodeUnknownEffect(DerivedKey)({ kind: "tree-artifact", files: pairs }).pipe(
             Effect.orDie
           )
         })
@@ -939,30 +935,24 @@ export const makeFileSystem = (
       // Through `DerivedKey` — the repo's one hashing chokepoint — so the identity is
       // a digest of the RFC 8785 canonical form rather than of whatever
       // `JSON.stringify` happened to emit for this shape.
-      const diffIdentity = yield* Schema.decodeUnknownEffect(DerivedKey)({
+      const diffIdentity = try Schema.decodeUnknownEffect(DerivedKey)({
         kind: "diff-identity",
         outputs: outputs.map((output) => [output.path, output.digest]),
         trees
       }).pipe(Effect.orDie)
-      yield* Effect.annotateCurrentSpan({ diffIdentity })
+      try Effect.annotateCurrentSpan({ diffIdentity })
       if (prepared.descriptor.boundaryMode === "hard") {
         if (undeclared.length > 0) {
-          return yield* Effect.fail(
-            new UndeclaredWrite({ code: "undeclared_write", paths: undeclared, diffIdentity })
-          )
+          throw new UndeclaredWrite({ code: "undeclared_write", paths: undeclared, diffIdentity })
         }
         // A declared output that was never produced is a defect, not evidence
         // (Bazel's `checkOutputs`). Recording it would cache `digest: null`,
         // which every later `replayOutputs` reads as "delete this path".
         if (missing.length > 0) {
-          return yield* Effect.fail(
-            new MissingDeclaredOutput({ code: "missing_declared_output", paths: missing, diffIdentity })
-          )
+          throw new MissingDeclaredOutput({ code: "missing_declared_output", paths: missing, diffIdentity })
         }
         if (surviving.length > 0) {
-          return yield* Effect.fail(
-            new SurvivingDeclaredRemoval({ code: "surviving_declared_removal", paths: surviving, diffIdentity })
-          )
+          throw new SurvivingDeclaredRemoval({ code: "surviving_declared_removal", paths: surviving, diffIdentity })
         }
       }
       return {
@@ -985,19 +975,17 @@ export const makeFileSystem = (
           : {})
       }
     }),
-    replayOutputs: Effect.fn("StepBoundary.replayOutputs")(function*(evidence) {
-      yield* Effect.annotateCurrentSpan({ diffIdentity: evidence.diffIdentity })
+    replayOutputs: Effect.fn("StepBoundary.replayOutputs")(effect (evidence) => {
+      try Effect.annotateCurrentSpan({ diffIdentity: evidence.diffIdentity })
       const decoded = Schema.decodeUnknownResult(MaterializedOutputs)(evidence.declaredOutputs)
       if (decoded._tag === "Failure") {
         // Evidence recorded by a different boundary implementation carries
         // no materializable outputs; refusing is honest — the caller's
         // dispatch path falls back to a real execution or fails visibly.
-        return yield* Effect.fail(
-          new UnsupportedBoundary({
-            code: "unsupported_boundary",
-            message: "the recorded boundary evidence carries no materializable outputs"
-          })
-        )
+        throw new UnsupportedBoundary({
+          code: "unsupported_boundary",
+          message: "the recorded boundary evidence carries no materializable outputs"
+        })
       }
       // Replay writes and DELETES whatever the evidence names, so a path is
       // honored only in the coordinate system declarations are written in.
@@ -1009,16 +997,14 @@ export const makeFileSystem = (
         ...decoded.success.outputs.map((output) => output.path)
       ].filter((path) => !FileSet.workspaceRelative(path))
       if (foreign.length > 0) {
-        return yield* Effect.fail(
-          new UnsupportedBoundary({
-            code: "unsupported_boundary",
-            message: `the recorded boundary evidence names paths outside the workspace: ${foreign.join(", ")}`
-          })
-        )
+        throw new UnsupportedBoundary({
+          code: "unsupported_boundary",
+          message: `the recorded boundary evidence names paths outside the workspace: ${foreign.join(", ")}`
+        })
       }
       // Before any mutation: a host that cannot be confined refuses the whole
       // replay, and the caller falls back to a real execution.
-      const host = yield* replayHost
+      const host = try replayHost
       const emptyDirectoryCandidates = new Set<string>()
       for (const tree of decoded.success.trees ?? []) {
         const prefix = `${tree.path}/`.replace(/\/{2,}$/g, "/")
@@ -1027,9 +1013,9 @@ export const makeFileSystem = (
             .map((output) => output.path)
             .filter((path) => path.startsWith(prefix))
         )
-        const entries = yield* treeEntries(host, tree.path, {})
+        const entries = try treeEntries(host, tree.path, {})
         for (const path of entries.files) {
-          if (!recorded.has(path)) yield* host.remove(path).pipe(Effect.mapError(hostFailure))
+          if (!recorded.has(path)) try host.remove(path).pipe(Effect.mapError(hostFailure))
         }
         for (const directory of entries.directories) emptyDirectoryCandidates.add(directory)
       }
@@ -1039,9 +1025,9 @@ export const makeFileSystem = (
           // and a removal that finds it already gone has done its job. The
           // `exists` call that used to precede it was a second host call — a
           // second process on the confined host — for the same answer.
-          yield* host.remove(output.path, { force: true }).pipe(Effect.mapError(hostFailure))
+          try host.remove(output.path, { force: true }).pipe(Effect.mapError(hostFailure))
         } else {
-          yield* materialize(host, output)
+          try materialize(host, output)
         }
       }
       // Remove only directories proven empty after pruning and
@@ -1051,8 +1037,8 @@ export const makeFileSystem = (
         right.length - left.length || compareText(left, right)
       )
       for (const directory of directories) {
-        const entries = yield* host.readDirectory(directory).pipe(Effect.mapError(hostFailure))
-        if (entries.length === 0) yield* host.remove(directory).pipe(Effect.mapError(hostFailure))
+        const entries = try host.readDirectory(directory).pipe(Effect.mapError(hostFailure))
+        if (entries.length === 0) try host.remove(directory).pipe(Effect.mapError(hostFailure))
       }
     })
   })
@@ -1087,13 +1073,13 @@ export const layer: Layer.Layer<
   FileSystem.FileSystem | Path.Path | ArtifactStore.ArtifactStore
 > = Layer.effect(
   StepBoundary,
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const platformPath = yield* Path.Path
-    const artifacts = yield* ArtifactStore.ArtifactStore
-    const workspace = yield* Effect.serviceOption(KernelWorkspace)
+  effect {
+    const fs = try FileSystem.FileSystem
+    const platformPath = try Path.Path
+    const artifacts = try ArtifactStore.ArtifactStore
+    const workspace = try Effect.serviceOption(KernelWorkspace)
     return makeFileSystem(fs, platformPath, artifacts, workspace._tag === "Some" ? { root: workspace.value.root } : {})
-  })
+  }
 )
 
 const hostWithoutFileSystem = (): UnsupportedBoundary =>
@@ -1184,16 +1170,16 @@ const unsupported = (): UnsupportedBoundary =>
 export const layerTest = (options: TestOptions = {}): Layer.Layer<Service> => {
   const diffIdentity = options.diffIdentity ?? "test-diff"
   const service = make({
-    prepare: Effect.fn("StepBoundary.prepare")(function*(descriptor) {
-      if (options.supported === false) return yield* Effect.fail(unsupported())
+    prepare: Effect.fn("StepBoundary.prepare")(effect (descriptor) => {
+      if (options.supported === false) throw unsupported()
       return {
         descriptor,
         readSnapshot: options.readSnapshot ?? exactReads(descriptor)
       }
     }),
-    settle: Effect.fn("StepBoundary.settle")(function*(prepared) {
-      if (options.supported === false) return yield* Effect.fail(unsupported())
-      if (options.failure !== undefined) return yield* Effect.fail(options.failure)
+    settle: Effect.fn("StepBoundary.settle")(effect (prepared) => {
+      if (options.supported === false) throw unsupported()
+      if (options.failure !== undefined) throw options.failure
       return {
         declaredOutputs: options.declaredOutputs ?? { paths: prepared.descriptor.writeSet },
         diffIdentity,
@@ -1202,9 +1188,9 @@ export const layerTest = (options: TestOptions = {}): Layer.Layer<Service> => {
         ...(options.deviation === undefined ? {} : { deviation: options.deviation })
       }
     }),
-    replayOutputs: Effect.fn("StepBoundary.replayOutputs")(function*(evidence) {
-      if (options.supported === false) return yield* Effect.fail(unsupported())
-      yield* Effect.sync(() => {
+    replayOutputs: Effect.fn("StepBoundary.replayOutputs")(effect (evidence) => {
+      if (options.supported === false) throw unsupported()
+      try Effect.sync(() => {
         options.onReplay?.(evidence)
       })
     })

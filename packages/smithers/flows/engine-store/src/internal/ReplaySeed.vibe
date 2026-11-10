@@ -26,8 +26,8 @@ import type { AttemptStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Semaphore from "effect/Semaphore"
-import type * as DurableEngineState from "../DurableEngineState.ts"
-import * as AttemptProbe from "./AttemptProbe.ts"
+import type * as DurableEngineState from "../DurableEngineState.vibe"
+import * as AttemptProbe from "./AttemptProbe.vibe"
 
 /**
  * One round's seed.
@@ -92,7 +92,7 @@ export const make = (rows: ReadonlyArray<AttemptStore.Attempt> | undefined): See
  * @since 1.0.0
  * @category constructors
  */
-export const once = (read: Effect.Effect<Seed>): Effect.Effect<Seed> => {
+export const once = (read: Seed!!): Seed!! => {
   const permit = Semaphore.makeUnsafe(1)
   let seed: Seed | undefined
   return permit.withPermit(Effect.suspend(() =>

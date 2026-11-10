@@ -8,7 +8,7 @@ import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import * as FileSet from "@smthrs/plan/FileSet"
 import * as Schema from "effect/Schema"
-import type * as StepBoundary from "../StepBoundary.ts"
+import type * as StepBoundary from "../StepBoundary.vibe"
 
 const Outputs = Schema.Struct({
   outputs: Schema.Array(Schema.Struct({ path: Schema.String, digest: Schema.NullOr(ArtifactStore.Digest) })),

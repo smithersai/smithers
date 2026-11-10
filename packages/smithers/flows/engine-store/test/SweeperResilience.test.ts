@@ -55,9 +55,9 @@ vi.mock("../src/internal/RunCoordinator.vibe", async (importOriginal) => {
       )
   }
 })
-import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as DurableEngineState from "../src/DurableEngineState.vibe"
 import * as EngineStore from "../src/EngineStore.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 
 const jj = Jj.make({
   snapshot: () =>

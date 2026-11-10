@@ -8,7 +8,7 @@ import { Effect, Exit, FileSystem, Latch, Layer, PlatformError } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import * as PlanScheduler from "../src/PlanScheduler.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { runPromise } from "./Sha256.ts"
 

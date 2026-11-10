@@ -58,13 +58,13 @@
       "default": "./.vibelang/js/src/CacheSync.js"
     },
     "./DisasterRecovery": {
-      "types": "./src/DisasterRecovery.ts",
-      "vibelang-source": "./src/DisasterRecovery.ts",
+      "types": "./.vibe/declarations/src/DisasterRecovery.d.vibe.ts",
+      "vibelang-source": "./src/DisasterRecovery.vibe",
       "default": "./.vibelang/js/src/DisasterRecovery.js"
     },
     "./DurableEngineState": {
-      "types": "./src/DurableEngineState.ts",
-      "vibelang-source": "./src/DurableEngineState.ts",
+      "types": "./.vibe/declarations/src/DurableEngineState.d.vibe.ts",
+      "vibelang-source": "./src/DurableEngineState.vibe",
       "default": "./.vibelang/js/src/DurableEngineState.js"
     },
     "./EngineStore": {
@@ -163,8 +163,8 @@
       "default": "./.vibelang/js/src/SelectionStore.js"
     },
     "./StepBoundary": {
-      "types": "./src/StepBoundary.ts",
-      "vibelang-source": "./src/StepBoundary.ts",
+      "types": "./.vibe/declarations/src/StepBoundary.d.vibe.ts",
+      "vibelang-source": "./src/StepBoundary.vibe",
       "default": "./.vibelang/js/src/StepBoundary.js"
     },
     "./StepLogs": {
@@ -183,8 +183,8 @@
       "default": "./.vibelang/js/src/StepCacheFold.js"
     },
     "./StepSandbox": {
-      "types": "./src/StepSandbox.ts",
-      "vibelang-source": "./src/StepSandbox.ts",
+      "types": "./.vibe/declarations/src/StepSandbox.d.vibe.ts",
+      "vibelang-source": "./src/StepSandbox.vibe",
       "default": "./.vibelang/js/src/StepSandbox.js"
     },
     "./WakeBus": {
@@ -193,8 +193,8 @@
       "default": "./.vibelang/js/src/WakeBus.js"
     },
     "./WorkspaceSandbox": {
-      "types": "./src/WorkspaceSandbox.ts",
-      "vibelang-source": "./src/WorkspaceSandbox.ts",
+      "types": "./.vibe/declarations/src/WorkspaceSandbox.d.vibe.ts",
+      "vibelang-source": "./src/WorkspaceSandbox.vibe",
       "default": "./.vibelang/js/src/WorkspaceSandbox.js"
     },
     "./index": {

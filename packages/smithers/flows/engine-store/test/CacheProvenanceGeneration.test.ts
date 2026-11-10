@@ -26,7 +26,7 @@ import * as Option from "effect/Option"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as OwnerIdentity from "../src/OwnerIdentity.vibe"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { key, sha256, withCrypto } from "./Sha256.ts"
 

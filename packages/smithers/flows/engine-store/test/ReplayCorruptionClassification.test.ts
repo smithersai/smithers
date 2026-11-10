@@ -37,9 +37,9 @@ import { join } from "node:path"
 import * as EngineStoreMetrics from "../src/EngineStoreMetrics.vibe"
 import * as Inconsistency from "../src/Inconsistency.vibe"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
-import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
+import * as WorkspaceSandbox from "../src/WorkspaceSandbox.vibe"
 import { runPromise, sha256, withCrypto } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "corruption-host", pid: 91, nonce: "corruption-process" }

@@ -8,8 +8,8 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Option from "effect/Option"
-import { prunedPrefixScanLimit } from "../src/internal/AttemptProbe.ts"
-import * as ReplaySeed from "../src/internal/ReplaySeed.ts"
+import { prunedPrefixScanLimit } from "../src/internal/AttemptProbe.vibe"
+import * as ReplaySeed from "../src/internal/ReplaySeed.vibe"
 
 const row = (stepKeyDigest: string, attempt: number, state = "succeeded"): AttemptStore.Attempt => ({
   runId: "run",

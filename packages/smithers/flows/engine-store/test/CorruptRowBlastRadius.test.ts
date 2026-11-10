@@ -29,7 +29,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as DurableEngineState from "../src/DurableEngineState.vibe"
 import * as Migrations from "../src/Migrations.vibe"
 import { withCrypto } from "./Sha256.ts"
 

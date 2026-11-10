@@ -30,11 +30,11 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { randomUUID } from "node:crypto"
 import { connect } from "node:net"
 import { describe, expect, it } from "vitest"
-import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as DurableEngineState from "../src/DurableEngineState.vibe"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as Migrations from "../src/Migrations.vibe"
 import * as OwnerIdentity from "../src/OwnerIdentity.vibe"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import { withCrypto } from "./Sha256.ts"
 
 /** The compose Postgres (`apps/mvp/docker-compose.yml`), which the compose PgBouncer fronts. */

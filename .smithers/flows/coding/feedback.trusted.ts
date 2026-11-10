@@ -3,7 +3,7 @@
 // `Effect.try`, and with no listed classes every exception is a defect, as a throw inside `Effect.gen` was before.
 import { trusted } from "vibelang-runtime"
 import * as Digest from "@smthrs/core/Digest"
-import * as RunLifecycle from "../../../packages/smithers/flows/engine-store/src/internal/RunLifecycle.ts"
+import * as RunLifecycle from "../../../packages/smithers/flows/engine-store/src/internal/RunLifecycle.vibe"
 import { receiptMatches as receiptMatchesImpl } from "./schema.ts"
 import { recalled as recalledImpl } from "./workflow.vibe"
 

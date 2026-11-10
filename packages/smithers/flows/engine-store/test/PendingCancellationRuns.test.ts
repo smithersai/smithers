@@ -3,7 +3,7 @@ import * as Dialect from "@smthrs/database/Dialect"
 import { Cause, Effect, Exit, Layer, Option } from "effect"
 import * as Arr from "effect/Array"
 import { SqlClient } from "effect/sql/SqlClient"
-import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as DurableEngineState from "../src/DurableEngineState.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 
 const views = new Map<string, DurableEngineState.MemoryRunView>([

@@ -16,7 +16,7 @@ import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as AttemptAdmission from "../src/internal/AttemptAdmission.vibe"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 

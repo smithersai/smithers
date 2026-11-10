@@ -15,9 +15,9 @@ import * as JournalRecords from "../src/internal/JournalRecords.vibe"
 import * as PlanInputStore from "../src/PlanInputStore.vibe"
 import * as PlanMergeStore from "../src/PlanMergeStore.vibe"
 import * as PlanScheduler from "../src/PlanScheduler.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
-import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
+import * as WorkspaceSandbox from "../src/WorkspaceSandbox.vibe"
 import { runPromise } from "./Sha256.ts"
 
 const owner = { hostId: "merge-recovery", pid: 17, nonce: "merge-recovery" }

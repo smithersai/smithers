@@ -9,7 +9,7 @@ import { RunStore } from "@smthrs/run-store"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as EngineStore from "../src/EngineStore.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 

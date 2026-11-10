@@ -16,7 +16,7 @@ import { Cause, Effect, Exit, Layer, Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as NodeJournal from "../src/internal/NodeJournal.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { runPromise } from "./Sha256.ts"
 

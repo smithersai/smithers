@@ -4,9 +4,9 @@ import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
-import * as SandboxedExecution from "../src/internal/SandboxedExecution.ts"
-import * as StepSandbox from "../src/StepSandbox.ts"
-import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
+import * as SandboxedExecution from "../src/internal/SandboxedExecution.vibe"
+import * as StepSandbox from "../src/StepSandbox.vibe"
+import * as WorkspaceSandbox from "../src/WorkspaceSandbox.vibe"
 import { sha256, withCrypto } from "./Sha256.ts"
 
 const decoder = new TextDecoder()

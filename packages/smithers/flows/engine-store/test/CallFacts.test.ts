@@ -6,7 +6,7 @@ import { AttemptStore, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import { Clock, Context, Effect, Exit, Layer, Option, Schema, Stream } from "effect"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import { fixture, onFile } from "./ExecutionSnapshotFixture.ts"
 import { sha256 } from "./Sha256.ts"
 

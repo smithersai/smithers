@@ -17,9 +17,9 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import type * as FileSystem from "effect/FileSystem"
 import * as Schema from "effect/Schema"
-import * as StepBoundary from "../StepBoundary.ts"
-import * as StepSandbox from "../StepSandbox.ts"
-import * as WorkspaceSandbox from "../WorkspaceSandbox.ts"
+import * as StepBoundary from "../StepBoundary.vibe"
+import * as StepSandbox from "../StepSandbox.vibe"
+import * as WorkspaceSandbox from "../WorkspaceSandbox.vibe"
 
 /**
  * An isolated execution whose diff bundle is now on the host.
@@ -104,15 +104,15 @@ export const execute = (options: {
    * the sandbox's own surfaces are named here: they are what `execute` seeds,
    * and naming them keeps a caller from having to launder the type.
    */
-  readonly workflow: Effect.Effect<unknown, unknown, WorkspaceSandbox.Workspace | FileSystem.FileSystem>
+  readonly workflow: unknown!unknown!(WorkspaceSandbox.Workspace | FileSystem.FileSystem)
   readonly maxRebases?: number | undefined
 }): Effect.Effect<Settlement, unknown, (EffectDigest.Digest | SecureRandom.SecureRandom)> => {
   const maxRebases = options.maxRebases ?? defaultMaxRebases
   const attempt = (
     rebases: number
   ): Effect.Effect<Settlement, unknown, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
-    Effect.gen(function*() {
-      const executed = yield* options.sandbox.execute({
+    effect {
+      const executed = try options.sandbox.execute({
         descriptor: options.descriptor,
         workflow: options.workflow
       })
@@ -121,39 +121,35 @@ export const execute = (options: {
         // output, its files, and its queued effects are not on the shape at
         // all; only the violations and the provenance identifying them are.
         const paths = executed.violations.map((violation) => violation.resource.id)
-        const identity = yield* bundleIdentity(
+        const identity = try bundleIdentity(
           executed.provenance.outputs.map((output) => [output.resource.id, undefined, output.digest])
         )
         if (executed.violations.some((violation) => violation.kind === "undeclared-read")) {
-          return yield* Effect.fail(
-            new StepSandbox.UndeclaredRead({
-              code: "undeclared_read",
-              paths: executed.violations
-                .filter((violation) => violation.kind === "undeclared-read")
-                .map((violation) => violation.resource.id),
-              diffIdentity: identity
-            })
-          )
-        }
-        return yield* Effect.fail(
-          new StepBoundary.UndeclaredWrite({
-            code: "undeclared_write",
-            paths,
+          throw new StepSandbox.UndeclaredRead({
+            code: "undeclared_read",
+            paths: executed.violations
+              .filter((violation) => violation.kind === "undeclared-read")
+              .map((violation) => violation.resource.id),
             diffIdentity: identity
           })
-        )
+        }
+        throw new StepBoundary.UndeclaredWrite({
+          code: "undeclared_write",
+          paths,
+          diffIdentity: identity
+        })
       }
-      const identity = yield* bundleIdentity(
+      const identity = try bundleIdentity(
         executed.result.files.map((change) => [change.path, change.beforeDigest, change.afterDigest])
       )
-      const applied = yield* options.sandbox.materialize(executed).pipe(Effect.exit)
+      const applied = try options.sandbox.materialize(executed).pipe(Effect.exit)
       if (Exit.isFailure(applied)) {
         // Only a conflict is rebaseable: it says the base moved, which a fresh
         // execution answers. A host or artifact refusal says the copy-back
         // itself cannot be performed, and re-running the body would not help.
         return conflicted(applied.cause) && rebases < maxRebases
-          ? yield* attempt(rebases + 1)
-          : yield* Effect.failCause(applied.cause)
+          ? try attempt(rebases + 1)
+          : try Effect.failCause(applied.cause)
       }
       return {
         result: executed.result.output,
@@ -163,6 +159,6 @@ export const execute = (options: {
         deviations: executed.violations.map((violation) => violation.resource.id),
         rebases
       }
-    })
+    }
   return attempt(0)
 }

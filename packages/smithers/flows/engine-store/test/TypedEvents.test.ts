@@ -11,7 +11,7 @@ import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as AttemptLifecycle from "../src/internal/AttemptLifecycle.vibe"
 import * as ResultEnvelope from "../src/internal/ResultEnvelope.vibe"
 import * as TypedEvents from "../src/internal/TypedEvents.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 

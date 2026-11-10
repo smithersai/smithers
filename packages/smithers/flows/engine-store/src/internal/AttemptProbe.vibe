@@ -14,7 +14,7 @@
 import type { AttemptStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
-import type * as DurableEngineState from "../DurableEngineState.ts"
+import type * as DurableEngineState from "../DurableEngineState.vibe"
 
 /**
  * How long a pruned leading run of attempt numbers the survivor scan
@@ -57,15 +57,15 @@ export const probeAttempts = (
   survivors: DurableEngineState.Service["attemptSurvivors"],
   runId: string,
   stepKeyDigest: string
-): Effect.Effect<Option.Option<DurableEngineState.AttemptSurvivors>> =>
-  Effect.gen(function*() {
+): Option.Option<DurableEngineState.AttemptSurvivors>!! =>
+  effect {
     if (survivors !== undefined) {
-      return tolerated(yield* survivors(runId, stepKeyDigest))
+      return tolerated(try survivors(runId, stepKeyDigest))
     }
     let earliest = Option.none<AttemptStore.Attempt>()
     let attempt = 1
     for (; attempt <= prunedPrefixScanLimit; attempt++) {
-      const row = yield* attemptStore.get({ runId, stepKeyDigest, attempt }).pipe(Effect.orDie)
+      const row = try attemptStore.get({ runId, stepKeyDigest, attempt }).pipe(Effect.orDie)
       if (Option.isSome(row)) {
         earliest = row
         break
@@ -74,7 +74,7 @@ export const probeAttempts = (
     if (Option.isNone(earliest)) return Option.none()
     let latest = attempt
     for (let next = attempt + 1;; next++) {
-      const row = yield* attemptStore.get({ runId, stepKeyDigest, attempt: next }).pipe(Effect.orDie)
+      const row = try attemptStore.get({ runId, stepKeyDigest, attempt: next }).pipe(Effect.orDie)
       if (Option.isNone(row)) break
       latest = next
     }
@@ -83,7 +83,7 @@ export const probeAttempts = (
       earliestStartedAtMs: earliest.value.startedAtMs,
       latest
     })
-  })
+  }
 
 /**
  * The survivors of one action key's attempt rows, given in attempt order: the

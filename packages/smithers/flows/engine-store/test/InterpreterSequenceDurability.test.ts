@@ -9,7 +9,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
 import * as EngineStore from "../src/EngineStore.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { runPromise } from "./Sha256.ts"
 

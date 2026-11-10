@@ -16,6 +16,7 @@ const glob = (entry) => Object.freeze({
  *
  * @category constructors
  * @since 1.0.0
+ * @throws {never}
  */
 export const make = (boundary) => Object.freeze({
     readSet: freeze(boundary.readSet.map((entry) => FileSet.isGlob(entry) ? glob(entry) : Object.freeze({ path: entry.path, digest: entry.digest }))),

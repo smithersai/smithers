@@ -17,9 +17,9 @@ import * as Tracer from "effect/Tracer"
 import { describe, expect, it } from "vitest"
 import * as EngineStoreMetrics from "../src/EngineStoreMetrics.vibe"
 import * as PlanScheduler from "../src/PlanScheduler.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
-import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
+import * as WorkspaceSandbox from "../src/WorkspaceSandbox.vibe"
 import { runPromise } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "metrics-host", pid: 17, nonce: "metrics-process" }

@@ -8,7 +8,7 @@ import { Deferred, Effect, Fiber, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as Migrations from "../src/Migrations.vibe"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import { withCrypto } from "./Sha256.ts"
 
 const stores = Layer.mergeAll(

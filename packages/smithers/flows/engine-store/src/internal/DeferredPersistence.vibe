@@ -16,9 +16,9 @@ import * as FiberMap from "effect/FiberMap"
 import * as Option from "effect/Option"
 import * as Schedule from "effect/Schedule"
 import type * as Scope from "effect/Scope"
-import * as DurableEngineState from "../DurableEngineState.ts"
+import * as DurableEngineState from "../DurableEngineState.vibe"
 import * as JournalRecords from "./JournalRecords.vibe"
-import * as StateTransaction from "./StateTransaction.ts"
+import * as StateTransaction from "./StateTransaction.vibe"
 
 /**
  * Reasons passed to the single claim-gated resume scheduler.
@@ -45,7 +45,7 @@ export interface Dependencies {
     executionId: string,
     reason: ResumeReason,
     sourceId?: string | undefined
-  ) => Effect.Effect<void>
+  ) => void!!
   /**
    * Redispatch policy for a durable clock whose fire failed. Defaults to
    * {@link defaultFireRetryPolicy}; a composition supplies its own the way
@@ -78,36 +78,32 @@ export interface DeferredDoneOptions {
 export interface Service {
   readonly deferredResult: (
     deferred: DurableDeferred.Any
-  ) => Effect.Effect<
-    Option.Option<Exit.Exit<unknown, unknown>>,
-    never,
-    FlowRuntime.FlowInstance
-  >
-  readonly deferredDone: (options: DeferredDoneOptions) => Effect.Effect<void>
+  ) => Option.Option<Exit.Exit<unknown, unknown>>!never!FlowRuntime.FlowInstance
+  readonly deferredDone: (options: DeferredDoneOptions) => void!!
   readonly deferredDoneIfWaiting: (
     options: DeferredDoneOptions & {
       readonly reason: string
       readonly token: string
     }
-  ) => Effect.Effect<FlowRuntime.DeferredDoneIfWaitingOutcome>
+  ) => FlowRuntime.DeferredDoneIfWaitingOutcome!!
   readonly scheduleClock: (
     flow: Flow.Any,
     options: {
       readonly executionId: string
       readonly clock: DurableClock.DurableClock
     }
-  ) => Effect.Effect<void>
+  ) => void!!
   /**
    * Re-arms pending clocks and re-schedules unconsumed completions, scoped to
    * one flow and, when `executionId` is given, to that execution alone.
    */
-  readonly sweepDue: (flowName?: string, executionId?: string) => Effect.Effect<void>
+  readonly sweepDue: (flowName?: string, executionId?: string) => void!!
   /**
    * {@link Service.sweepDue} for every flow in `flowNames` at once, with one
    * read of the pending clocks and one of the unconsumed completions however
    * many flows it names: what one recovery for many registrations does.
    */
-  readonly sweepFlows: (flowNames: ReadonlySet<string>, executionId?: string) => Effect.Effect<void>
+  readonly sweepFlows: (flowNames: ReadonlySet<string>, executionId?: string) => void!!
 }
 
 const clockKey = (row: DurableEngineState.ClockAddress): string =>
@@ -152,14 +148,10 @@ export const defaultFireRetryPolicy: FireRetryPolicy = Schedule.min([
  */
 export const make = (
   dependencies: Dependencies
-): Effect.Effect<
-  Service,
-  never,
-  DurableEngineState.DurableEngineState | Journal.Journal | Scope.Scope
-> =>
-  Effect.gen(function*() {
-    const state = yield* DurableEngineState.DurableEngineState
-    const journal = yield* Journal.Journal
+): Service!never!(DurableEngineState.DurableEngineState | Journal.Journal | Scope.Scope) =>
+  effect {
+    const state = try DurableEngineState.DurableEngineState
+    const journal = try Journal.Journal
     /**
      * The package's ordered state-and-journal boundary: engine state first,
      * the journal's write transaction inside it. See
@@ -170,7 +162,7 @@ export const make = (
     // schema and waited for every other run's writers, on every wait a run
     // parks on: 51 schema-wide writes in ten lanes' 7 minutes (2026-11-01).
     const transactState = StateTransaction.make(state, journal)
-    const timers = yield* FiberMap.make<string>()
+    const timers = try FiberMap.make<string>()
     const fireRetryPolicy = dependencies.fireRetryPolicy ?? defaultFireRetryPolicy
 
     // The durable channel commits inside `emitDurable`; the flush that
@@ -192,19 +184,19 @@ export const make = (
       options: DeferredDoneOptions,
       reason: ResumeReason = "deferred",
       expectedWaiting?: { readonly reason: string; readonly token: string } | undefined,
-      alongside: Effect.Effect<void> = Effect.void
-    ): Effect.Effect<FlowRuntime.DeferredDoneIfWaitingOutcome> =>
-      Effect.gen(function*() {
-        const completedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+      alongside: void!! = Effect.void
+    ): FlowRuntime.DeferredDoneIfWaitingOutcome!! =>
+      effect {
+        const completedAtMs = try Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         // The completion row and the record describing it commit as one unit:
         // a crash between them left a resumable deferred the journal never
         // announced. The lossy flush below stays outside — it waits on the
         // journal's writer fiber, which would deadlock against the write
         // transaction this holds.
-        const admission = yield* transactState(
-          Effect.gen(function*() {
+        const admission = try transactState(
+          effect {
             if (expectedWaiting !== undefined) {
-              const waiting = yield* state.waiting(options.executionId)
+              const waiting = try state.waiting(options.executionId)
               if (
                 Option.isNone(waiting) ||
                 waiting.value.reason !== expectedWaiting.reason ||
@@ -213,7 +205,7 @@ export const make = (
                 return { _tag: "NotWaiting" as const }
               }
             }
-            const completion = yield* state.completeDeferred({
+            const completion = try state.completeDeferred({
               flowName: options.flowName,
               executionId: options.executionId,
               deferredName: options.deferredName,
@@ -231,7 +223,7 @@ export const make = (
             // admission `emitDurableUnfenced` exists for. The record names the
             // row and the digests of its value; the value stays in the row,
             // because the journal is redacted and replayed (issue #72).
-            yield* journal.emitDurableUnfenced(
+            try journal.emitDurableUnfenced(
               JournalRecords.deferredCompleted({
                 runId: options.executionId,
                 lineageId: FlowEngine.Lineage.root(options.executionId),
@@ -248,42 +240,42 @@ export const make = (
                 metadataDigest: completion.digest.metadata
               })
             ).pipe(Effect.orDie)
-            yield* alongside
+            try alongside
             return { _tag: "Admitted" as const, completion }
-          }),
+          },
           { partition: options.executionId }
         ).pipe(Effect.orDie)
         if (admission._tag === "NotWaiting") return "NotWaiting"
         if (admission._tag === "NotFound") {
           // A token can name an execution that was never started; no run can
           // be waiting on it, so nothing is journaled or resumed.
-          yield* Effect.logWarning("engine-store.deferred.unknown-run").pipe(
+          try Effect.logWarning("engine-store.deferred.unknown-run").pipe(
             Effect.annotateLogs({ flow: options.flowName, executionId: options.executionId })
           )
           return "NotWaiting"
         }
         const row = admission.completion.row
-        yield* flushLossy
-        yield* dependencies.scheduleResume(
+        try flushLossy
+        try dependencies.scheduleResume(
           row.flowName,
           row.executionId,
           reason
         )
         return admission.completion._tag
-      })
+      }
 
     const completeDeferred = (
       options: DeferredDoneOptions,
       reason: ResumeReason = "deferred"
-    ): Effect.Effect<void> => persistDeferred(options, reason).pipe(Effect.asVoid)
+    ): void!! => persistDeferred(options, reason).pipe(Effect.asVoid)
 
-    const fireClock = (row: DurableEngineState.ClockRow): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        const completedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+    const fireClock = (row: DurableEngineState.ClockRow): void!! =>
+      effect {
+        const completedAtMs = try Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         // The clock completes in the deferred's transaction, and its record
         // with it: a completion the journal never recorded is a clock a
         // rebuilt deadline index would arm again (issue #2037).
-        yield* persistDeferred(
+        try persistDeferred(
           {
             flowName: row.flowName,
             executionId: row.executionId,
@@ -303,9 +295,9 @@ export const make = (
               completed._tag === "Completed" ? emitClockCompleted(completed.row, completedAtMs) : Effect.void
           )
         )
-      })
+      }
 
-    const armClock = (row: DurableEngineState.ClockRow): Effect.Effect<void> =>
+    const armClock = (row: DurableEngineState.ClockRow): void!! =>
       // A replayed sleep re-schedules its clock and gets the existing row
       // back. A fired clock whose completion stands is not armed again: firing
       // it would re-admit that completion and wake the run, whose replay would
@@ -318,12 +310,12 @@ export const make = (
           Effect.flatMap((fired) => fired ? Effect.void : armTimer(row))
         )
 
-    const armTimer = (row: DurableEngineState.ClockRow): Effect.Effect<void> =>
-      Effect.gen(function*() {
+    const armTimer = (row: DurableEngineState.ClockRow): void!! =>
+      (effect {
         // A timer may start after its registering fiber has yielded. Resolve
         // the remaining delay in that timer, against the persisted deadline.
-        const nowMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
-        yield* fireClock(row).pipe(
+        const nowMs = try Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+        try fireClock(row).pipe(
           // A failed fire (journal emit/flush defect included) must not kill
           // the one-shot timer fiber: expose the full cause and redispatch
           // with backoff until the fire is durably acked.
@@ -341,7 +333,7 @@ export const make = (
     const emitClockCompleted = (
       row: DurableEngineState.ClockAddress,
       completedAtMs: number
-    ): Effect.Effect<void> =>
+    ): void!! =>
       journal.emitDurableUnfenced(
         JournalRecords.clockCompletedFor(
           dependencies.journalSource,
@@ -358,7 +350,7 @@ export const make = (
      */
     const emitClockScheduled = (
       row: DurableEngineState.ClockRow
-    ): Effect.Effect<void> =>
+    ): void!! =>
       journal.emitDurableUnfenced(
         JournalRecords.clockScheduled({
           runId: row.executionId,
@@ -379,20 +371,20 @@ export const make = (
     /** Re-announces an already persisted clock row (the sweep path). */
     const recordClockScheduled = (
       row: DurableEngineState.ClockRow
-    ): Effect.Effect<void> => emitClockScheduled(row).pipe(Effect.andThen(flushLossy))
+    ): void!! => emitClockScheduled(row).pipe(Effect.andThen(flushLossy))
 
     const scheduleClock: Service["scheduleClock"] = Effect.fn("DeferredPersistence.scheduleClock")((
       flow,
       options
     ) =>
-      Effect.gen(function*() {
-        const nowMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+      effect {
+        const nowMs = try Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         // The clock row and its schedule record commit as one unit, so a
         // crash between them can no longer arm a durable timer the journal
         // never announced (or announce one that was rolled back).
-        const scheduled = yield* transactState(
-          Effect.gen(function*() {
-            const scheduled = yield* state.scheduleClock({
+        const scheduled = try transactState(
+          effect {
+            const scheduled = try state.scheduleClock({
               flowName: flow._tag,
               executionId: options.executionId,
               clockName: options.clock.name,
@@ -400,14 +392,14 @@ export const make = (
               dueAtMs: nowMs + Duration.toMillis(options.clock.duration),
               completedAtMs: null
             }, dependencies.owner)
-            yield* emitClockScheduled(scheduled.row)
+            try emitClockScheduled(scheduled.row)
             return scheduled
-          }),
+          },
           { partition: options.executionId }
         ).pipe(Effect.orDie)
-        yield* flushLossy
-        yield* armClock(scheduled.row)
-      })
+        try flushLossy
+        try armClock(scheduled.row)
+      }
     )
 
     /** Re-announces and re-arms each pending clock row. */
@@ -439,52 +431,55 @@ export const make = (
       )
 
     const sweepDue: Service["sweepDue"] = Effect.fn("DeferredPersistence.sweepDue")((flowName, executionId) =>
-      Effect.gen(function*() {
-        yield* rearm(
-          yield* state.pendingClocks({
+      effect {
+        try rearm(
+          try state.pendingClocks({
             ...(flowName === undefined ? {} : { flowName }),
             ...(executionId === undefined ? {} : { executionId })
           })
         )
-        if (flowName !== undefined) yield* reschedule(yield* state.completedDeferreds(flowName, executionId))
-      })
+        if (flowName !== undefined) try reschedule(try state.completedDeferreds(flowName, executionId))
+      }
     )
 
     const sweepFlows: Service["sweepFlows"] = Effect.fn("DeferredPersistence.sweepFlows")((flowNames, executionId) =>
-      Effect.gen(function*() {
-        const rows = yield* state.pendingClocks(executionId === undefined ? {} : { executionId })
-        yield* rearm(rows.filter((row) => flowNames.has(row.flowName)))
-        const completions = yield* state.completedDeferreds(undefined, executionId)
-        yield* reschedule(completions.filter((address) => flowNames.has(address.flowName)))
-      })
+      effect {
+        const rows = try state.pendingClocks(executionId === undefined ? {} : { executionId })
+        try rearm(rows.filter((row) => flowNames.has(row.flowName)))
+        const completions = try state.completedDeferreds(undefined, executionId)
+        try reschedule(completions.filter((address) => flowNames.has(address.flowName)))
+      }
     )
 
     return {
-      deferredResult: Effect.fn("DeferredPersistence.deferredResult")(function*(deferred) {
-        const instance = yield* FlowRuntime.FlowInstance
+      deferredResult: Effect.fn("DeferredPersistence.deferredResult")(effect (deferred) => {
+        const instance = try FlowRuntime.FlowInstance
         const address = {
           flowName: instance.flow._tag,
           executionId: instance.executionId,
           deferredName: deferred.name
         }
-        const row = yield* state.deferred(address)
+        const row = try state.deferred(address)
         if (Option.isSome(row)) {
           // Keep the result for replay, but stop registration from waking a
           // run that already observed it and may now be parked on another wait.
           // The first consumption is recorded in the same transaction.
-          const consumedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
-          yield* transactState(
+          const consumedAtMs = try Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+          try transactState(
             Effect.flatMap(state.consumeDeferred(address, consumedAtMs), (consumed) =>
               consumed
                 ? journal.emitDurableUnfenced(
-                  JournalRecords.deferredConsumed({
-                    runId: address.executionId,
-                    lineageId: FlowEngine.Lineage.root(address.executionId),
-                    sourceId: `${dependencies.journalSource}:deferred-consumed:${
-                      JSON.stringify([address.flowName, address.executionId, address.deferredName])
-                    }`,
-                    sourceSeq: 0
-                  }, { ...address, consumedAtMs })
+                  JournalRecords.deferredConsumed(
+                    {
+                      runId: address.executionId,
+                      lineageId: FlowEngine.Lineage.root(address.executionId),
+                      sourceId: `${dependencies.journalSource}:deferred-consumed:${
+                        JSON.stringify([address.flowName, address.executionId, address.deferredName])
+                      }`,
+                      sourceSeq: 0
+                    },
+                    { ...address, consumedAtMs }
+                  )
                 ).pipe(Effect.asVoid)
                 : Effect.void),
             { partition: address.executionId }
@@ -503,4 +498,4 @@ export const make = (
       sweepDue,
       sweepFlows
     }
-  })
+  }

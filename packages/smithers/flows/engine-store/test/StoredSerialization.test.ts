@@ -11,7 +11,7 @@ import { Cause, Effect, Exit, Layer, Schema, SchemaTransformation } from "effect
 import * as RpcSerialization from "effect/rpc/RpcSerialization"
 import * as EngineStore from "../src/EngineStore.ts"
 import { UnstorableSerialization } from "../src/Errors.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 

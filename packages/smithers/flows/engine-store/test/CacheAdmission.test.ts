@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import type { Action } from "@smthrs/flow"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import * as Admission from "../src/internal/CacheAdmission.ts"
-import type * as StepBoundary from "../src/StepBoundary.ts"
+import type * as StepBoundary from "../src/StepBoundary.vibe"
 
 const hard: FileBoundary = { boundaryMode: "hard", readSet: [], writeSet: ["output.txt"] }
 const declarations: ReadonlyArray<FileBoundary | undefined> = [

@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import { SqlClient } from "effect/sql/SqlClient"
-import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as DurableEngineState from "../src/DurableEngineState.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 

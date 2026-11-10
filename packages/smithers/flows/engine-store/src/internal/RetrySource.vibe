@@ -27,7 +27,7 @@ import { EngineEvent, type Journal, JournalEvent } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import type { AttemptRef } from "../DurableEngineState.ts"
+import type { AttemptRef } from "../DurableEngineState.vibe"
 import { EventTypes } from "../EventTypes.ts"
 import * as EffectRecords from "./EffectRecords.ts"
 
@@ -224,12 +224,12 @@ export const foldWhole = (records: Iterable<Observed>): Seed => seedBefore(facts
 const pageSize = 1_000
 
 /** Reads every record the fold needs from `runId`'s journal, a page at a time. */
-const read = (journal: Journal.Service, runId: string): Effect.Effect<Array<Observed>, Journal.JournalError> =>
-  Effect.gen(function*() {
+const read = (journal: Journal.Service, runId: string): Array<Observed>!Journal.JournalError =>
+  effect {
     const records: Array<Observed> = []
     let after: JournalEvent.Seq | undefined
     while (true) {
-      const page = yield* journal.entries({
+      const page = try journal.entries({
         runId: JournalEvent.RunId.make(runId),
         eventTypes: [...eventTypes],
         limit: pageSize,
@@ -242,7 +242,7 @@ const read = (journal: Journal.Service, runId: string): Effect.Effect<Array<Obse
       if (!page.hasMore || last === undefined) return records
       after = last.seq
     }
-  })
+  }
 
 /**
  * Reads the source execution's journal and folds what a retry from `step`
@@ -255,7 +255,7 @@ export const resolve = (
   journal: Journal.Service,
   runId: string,
   step: string
-): Effect.Effect<Resolution, Journal.JournalError> => Effect.map(read(journal, runId), (records) => fold(records, step))
+): Resolution!Journal.JournalError => Effect.map(read(journal, runId), (records) => fold(records, step))
 
 /**
  * Reads a run's journal and folds the whole run as a seed.
@@ -263,5 +263,5 @@ export const resolve = (
  * @since 1.0.0
  * @category constructors
  */
-export const resolveWhole = (journal: Journal.Service, runId: string): Effect.Effect<Seed, Journal.JournalError> =>
+export const resolveWhole = (journal: Journal.Service, runId: string): Seed!Journal.JournalError =>
   Effect.map(read(journal, runId), foldWhole)

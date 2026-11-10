@@ -15,10 +15,10 @@ import { Clock, Effect, Fiber, FileSystem, Layer, Option } from "effect"
 import { join } from "node:path"
 import * as PlanMergeStore from "../../src/PlanMergeStore.vibe"
 import * as PlanScheduler from "../../src/PlanScheduler.ts"
-import * as StepBoundary from "../../src/StepBoundary.ts"
-import * as StepSandbox from "../../src/StepSandbox.ts"
+import * as StepBoundary from "../../src/StepBoundary.vibe"
+import * as StepSandbox from "../../src/StepSandbox.vibe"
 import * as TestStores from "../../src/test/TestStores.ts"
-import * as WorkspaceSandbox from "../../src/WorkspaceSandbox.ts"
+import * as WorkspaceSandbox from "../../src/WorkspaceSandbox.vibe"
 
 const [root, mode, frontier] = process.argv.slice(2)
 if (!root || !["crash", "resume"].includes(mode) || !["intent", "completion"].includes(frontier)) {

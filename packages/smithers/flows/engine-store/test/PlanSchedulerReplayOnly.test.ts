@@ -12,7 +12,7 @@ import { AttemptStore, RunStore } from "@smthrs/run-store"
 import { Clock, Effect, Exit, Layer, Option, Schema } from "effect"
 import * as PlanScheduler from "../src/PlanScheduler.ts"
 import * as ReplayOnly from "../src/ReplayOnly.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 

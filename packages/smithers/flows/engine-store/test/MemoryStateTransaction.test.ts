@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
-import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as DurableEngineState from "../src/DurableEngineState.vibe"
 
 // The memory twin's transaction bookkeeping, which the rest of the suite
 // reaches without pinning.

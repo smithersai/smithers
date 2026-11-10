@@ -31,7 +31,7 @@ import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 
 /**
  * The production boundary now needs an `ArtifactStore` as well as a

@@ -13,7 +13,7 @@ import * as Schema from "effect/Schema"
 import * as Errors from "../src/Errors.ts"
 import * as Inconsistency from "../src/Inconsistency.vibe"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 

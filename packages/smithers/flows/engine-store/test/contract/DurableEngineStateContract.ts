@@ -14,7 +14,7 @@ import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Option from "effect/Option"
 import { expectTypeOf } from "vitest"
-import type * as DurableEngineState from "../../src/DurableEngineState.ts"
+import type * as DurableEngineState from "../../src/DurableEngineState.vibe"
 
 export interface HarnessContext {
   readonly state: DurableEngineState.Service

@@ -21,6 +21,7 @@ const glob = (entry: FileSet.Glob): FileSet.Glob =>
  *
  * @category constructors
  * @since 1.0.0
+ * @throws {never}
  */
 export const make = (boundary: FileBoundary): FileBoundary =>
   Object.freeze({

@@ -7,7 +7,7 @@
 import type { Action } from "@smthrs/flow"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import * as FileSet from "@smthrs/plan/FileSet"
-import type * as StepBoundary from "../StepBoundary.ts"
+import type * as StepBoundary from "../StepBoundary.vibe"
 
 /** Reasons an existing declaration cannot name reusable results.
  * @category models

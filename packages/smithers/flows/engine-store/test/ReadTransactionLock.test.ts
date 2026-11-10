@@ -19,7 +19,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { expect, it } from "vitest"
-import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as DurableEngineState from "../src/DurableEngineState.vibe"
 import * as Migrations from "../src/Migrations.vibe"
 
 it("reads one snapshot while another connection holds the write lock; a write transaction cannot", async () => {

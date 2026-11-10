@@ -110,8 +110,8 @@ import * as PlanInputStore from "../src/PlanInputStore.vibe"
 import * as PlanMergeStore from "../src/PlanMergeStore.vibe"
 import * as Reconciliation from "../src/Reconciliation.vibe"
 import * as Selection from "../src/Selection.vibe"
-import * as StepBoundary from "../src/StepBoundary.ts"
-import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
+import * as WorkspaceSandbox from "../src/WorkspaceSandbox.vibe"
 
 /**
  * The evaluation outcomes: Skyframe's `EvaluationState` adapted to a

@@ -48,7 +48,7 @@ import * as FileSystem from "effect/FileSystem"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as ArtifactRoots from "./internal/ArtifactRoots.ts"
+import * as ArtifactRoots from "./internal/ArtifactRoots.vibe"
 
 /**
  * The database file name inside a backup directory and a restored store
@@ -376,13 +376,13 @@ const checkFileSize = (
   method: string,
   path: string,
   limit: number
-): Effect.Effect<void, DisasterRecoveryError> =>
-  Effect.gen(function*() {
-    const info = yield* fs.stat(path).pipe(Effect.mapError(ioFailure(method, `stating ${path}`)))
-    if (info.size <= BigInt(limit)) return
+): void!DisasterRecoveryError =>
+  effect {
+    const info = try fs.stat(path).pipe(Effect.mapError(ioFailure(method, `stating ${path}`)))
+    if (info.size <= try Effect.orDie(Effect.try({ try: () => BigInt(limit), catch: (error) => error }))) return
     const message = `${path} is ${info.size} bytes, which exceeds the ${limit}-byte file limit`
-    return yield* Effect.fail(error(method, "io", message, new RangeError(message)))
-  })
+    throw error(method, "io", message, new RangeError(message))
+  }
 
 /**
  * Admits a target directory that does not exist yet — created recursively —
@@ -392,30 +392,28 @@ const ensureEmptyDirectory = (
   fs: FileSystem.FileSystem,
   method: string,
   directory: string
-): Effect.Effect<void, DisasterRecoveryError> =>
-  Effect.gen(function*() {
-    const present = yield* fs.exists(directory).pipe(Effect.mapError(ioFailure(method, `probing ${directory}`)))
+): void!DisasterRecoveryError =>
+  effect {
+    const present = try fs.exists(directory).pipe(Effect.mapError(ioFailure(method, `probing ${directory}`)))
     if (!present) {
-      return yield* fs.makeDirectory(directory, { recursive: true }).pipe(
+      return try fs.makeDirectory(directory, { recursive: true }).pipe(
         Effect.mapError(ioFailure(method, `creating ${directory}`))
       )
     }
-    const entries = yield* fs.readDirectory(directory).pipe(
+    const entries = try fs.readDirectory(directory).pipe(
       Effect.mapError(ioFailure(method, `listing ${directory}`))
     )
     if (entries.length > 0) {
-      return yield* Effect.fail(
-        error(method, "not_empty", `${directory} already holds ${entries.length} entries`, directory)
-      )
+      throw error(method, "not_empty", `${directory} already holds ${entries.length} entries`, directory)
     }
-  })
+  }
 
 /**
  * Removes every entry of a directory this module filled after admitting it
  * empty, leaving the directory reusable for a retry. Cleanup is best effort;
  * the caller reports the original failure.
  */
-const discardEntries = (fs: FileSystem.FileSystem, directory: string): Effect.Effect<void> =>
+const discardEntries = (fs: FileSystem.FileSystem, directory: string): void!! =>
   fs.readDirectory(directory).pipe(
     Effect.flatMap((entries) =>
       Effect.forEach(
@@ -445,7 +443,7 @@ const blobPath = (directory: string, digest: string): string => `${directory}/${
 const appliedMigrations = (
   sql: SqlClient.SqlClient,
   method: string
-): Effect.Effect<Array<AppliedMigration>, DisasterRecoveryError> =>
+): Array<AppliedMigration>!DisasterRecoveryError =>
   sql<{ readonly migration_id: number; readonly name: string }>`
     SELECT migration_id, name FROM flows_migrations ORDER BY migration_id ASC
   `.withoutTransform.pipe(
@@ -461,15 +459,15 @@ interface SnapshotState {
 /** Reads every artifact root from the frozen database, never the live one. */
 const inspectSnapshot = (
   sql: SqlClient.SqlClient
-): Effect.Effect<SnapshotState, DisasterRecoveryError> =>
-  Effect.gen(function*() {
-    const migrations = yield* appliedMigrations(sql, "backup")
-    const cacheRows = yield* sql<{ readonly meta_json: string }>`
+): SnapshotState!DisasterRecoveryError =>
+  effect {
+    const migrations = try appliedMigrations(sql, "backup")
+    const cacheRows = try sql<{ readonly meta_json: string }>`
       SELECT meta_json FROM flows_step_cache
     `.withoutTransform.pipe(
       Effect.mapError(sqlFailure("backup", "reading artifact roots from snapshot step cache"))
     )
-    const attemptRows = yield* sql<{
+    const attemptRows = try sql<{
       readonly checkpoint_json: string | null
       readonly meta_json: string
     }>`
@@ -482,25 +480,25 @@ const inspectSnapshot = (
       error("backup", "snapshot_incomplete", cause.message, cause.cause)
     for (const row of cacheRows) {
       for (
-        const digest of yield* ArtifactRoots.rootDigests("flows_step_cache", row.meta_json).pipe(
+        const digest of try ArtifactRoots.rootDigests("flows_step_cache", row.meta_json).pipe(
           Effect.mapError(decodeFailure)
         )
       ) artifactRoots.add(digest)
     }
     for (const row of attemptRows) {
       for (
-        const digest of yield* ArtifactRoots.rootDigests("flows_attempts", row.meta_json).pipe(
+        const digest of try ArtifactRoots.rootDigests("flows_attempts", row.meta_json).pipe(
           Effect.mapError(decodeFailure)
         )
       ) artifactRoots.add(digest)
       for (
-        const digest of yield* ArtifactRoots.checkpointDigests(row.checkpoint_json).pipe(
+        const digest of try ArtifactRoots.checkpointDigests(row.checkpoint_json).pipe(
           Effect.mapError(decodeFailure)
         )
       ) artifactRoots.add(digest)
     }
     return { migrations, artifactRoots }
-  })
+  }
 
 /** Reads and decodes the manifest a backup directory must carry. */
 const readManifest = (
@@ -509,22 +507,20 @@ const readManifest = (
   backupDirectory: string,
   maxFileSizeBytes: number
 ): Effect.Effect<BackupManifest, DisasterRecoveryError, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
-  Effect.gen(function*() {
+  effect {
     const path = `${backupDirectory}/${manifestFileName}`
-    const present = yield* fs.exists(path).pipe(Effect.mapError(ioFailure(method, `probing ${path}`)))
+    const present = try fs.exists(path).pipe(Effect.mapError(ioFailure(method, `probing ${path}`)))
     if (!present) {
-      return yield* Effect.fail(
-        error(method, "missing_file", `${path} does not exist — the backup is incomplete or not a backup`, path)
-      )
+      throw error(method, "missing_file", `${path} does not exist — the backup is incomplete or not a backup`, path)
     }
-    yield* checkFileSize(fs, method, path, maxFileSizeBytes)
-    const text = yield* fs.readFileString(path).pipe(Effect.mapError(ioFailure(method, `reading ${path}`)))
-    return yield* Schema.decodeUnknownEffect(ManifestFromJsonString)(text).pipe(
+    try checkFileSize(fs, method, path, maxFileSizeBytes)
+    const text = try fs.readFileString(path).pipe(Effect.mapError(ioFailure(method, `reading ${path}`)))
+    return try Schema.decodeUnknownEffect(ManifestFromJsonString)(text).pipe(
       Effect.mapError((cause) =>
         error(method, "invalid_manifest", `${path} does not decode as a backup manifest`, cause)
       )
     )
-  })
+  }
 
 /** Reads a backup file and refuses bytes that no longer hash to the manifest. */
 const checkedFile = (
@@ -534,21 +530,19 @@ const checkedFile = (
   expected: string,
   maxFileSizeBytes: number
 ): Effect.Effect<Uint8Array, DisasterRecoveryError, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
-  Effect.gen(function*() {
-    const present = yield* fs.exists(path).pipe(Effect.mapError(ioFailure(method, `probing ${path}`)))
+  effect {
+    const present = try fs.exists(path).pipe(Effect.mapError(ioFailure(method, `probing ${path}`)))
     if (!present) {
-      return yield* Effect.fail(error(method, "missing_file", `${path} does not exist`, path))
+      throw error(method, "missing_file", `${path} does not exist`, path)
     }
-    yield* checkFileSize(fs, method, path, maxFileSizeBytes)
-    const bytes = yield* fs.readFile(path).pipe(Effect.mapError(ioFailure(method, `reading ${path}`)))
-    const measured = yield* measure(bytes)
+    try checkFileSize(fs, method, path, maxFileSizeBytes)
+    const bytes = try fs.readFile(path).pipe(Effect.mapError(ioFailure(method, `reading ${path}`)))
+    const measured = try measure(bytes)
     if (measured !== expected) {
-      return yield* Effect.fail(
-        error(method, "digest_mismatch", `${path} hashes to ${measured}, the manifest records ${expected}`, path)
-      )
+      throw error(method, "digest_mismatch", `${path} hashes to ${measured}, the manifest records ${expected}`, path)
     }
     return bytes
-  })
+  }
 
 /**
  * Captures a hot backup of the live store into an empty directory.
@@ -574,68 +568,62 @@ const checkedFile = (
  */
 export const backup = <R = never, E = never>(
   options: BackupOptions<R, E>
-): Effect.Effect<
-  BackupManifest,
-  DisasterRecoveryError | E,
-  SqlClient.SqlClient | FileSystem.FileSystem | (EffectDigest.Digest | SecureRandom.SecureRandom) | R
-> =>
-  Effect.gen(function*() {
+): BackupManifest!(DisasterRecoveryError | E)!(SqlClient.SqlClient | FileSystem.FileSystem | (EffectDigest.Digest | SecureRandom.SecureRandom) | R) =>
+  (effect {
     const limit = fileSizeLimit("backup", options)
-    if (typeof limit !== "number") return yield* Effect.fail(limit)
+    if (typeof limit !== "number") throw limit
     const maxFileSizeBytes = limit
-    const sql = yield* Effect.service(SqlClient.SqlClient)
-    const fs = yield* FileSystem.FileSystem
-    const createdAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
-    yield* ensureEmptyDirectory(fs, "backup", options.directory)
+    const sql = try Effect.service(SqlClient.SqlClient)
+    const fs = try FileSystem.FileSystem
+    const createdAtMs = try Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+    try ensureEmptyDirectory(fs, "backup", options.directory)
 
-    const capture = Effect.gen(function*() {
+    const capture = effect {
       const databasePath = `${options.directory}/${databaseFileName}`
-      yield* sql`VACUUM INTO ${databasePath}`.pipe(
+      try sql`VACUUM INTO ${databasePath}`.pipe(
         Effect.mapError(sqlFailure("backup", `snapshotting the database into ${databasePath}`))
       )
-      const snapshot = yield* Effect.flatMap(
+      const snapshot = try Effect.flatMap(
         Effect.service(SqlClient.SqlClient),
         inspectSnapshot
       ).pipe(Effect.provide(options.snapshotDatabaseLayer(databasePath)))
       // Opening the frozen file may normalize SQLite journal metadata, so its
       // manifest digest is measured only after the inspection connection closes.
-      yield* checkFileSize(fs, "backup", databasePath, maxFileSizeBytes)
-      const databaseBytes = yield* fs.readFile(databasePath).pipe(
+      try checkFileSize(fs, "backup", databasePath, maxFileSizeBytes)
+      const databaseBytes = try fs.readFile(databasePath).pipe(
         Effect.mapError(ioFailure("backup", `reading ${databasePath} back`))
       )
-      const sha256 = yield* measure(databaseBytes)
+      const sha256 = try measure(databaseBytes)
 
       const artifacts: Array<ArtifactEntry> = []
       const captured = new Set<string>()
       if (options.objectsDirectory !== undefined) {
         const objectsDirectory = options.objectsDirectory
-        const entries = yield* fs.readDirectory(objectsDirectory, { recursive: true }).pipe(
+        const entries = try fs.readDirectory(objectsDirectory, { recursive: true }).pipe(
           Effect.mapError(ioFailure("backup", `listing ${objectsDirectory}`))
         )
         for (const entry of [...entries].sort()) {
           const digest = blobEntry(entry)
           if (digest === undefined) continue
           const source = blobPath(objectsDirectory, digest)
-          yield* checkFileSize(fs, "backup", source, maxFileSizeBytes)
-          const bytes = yield* fs.readFile(source).pipe(
+          try checkFileSize(fs, "backup", source, maxFileSizeBytes)
+          const bytes = try fs.readFile(source).pipe(
             Effect.mapError(ioFailure("backup", `reading ${source}`))
           )
-          const measured = yield* measure(bytes)
+          const measured = try measure(bytes)
           if (measured !== digest) {
-            return yield* Effect.fail(
-              error(
-                "backup",
-                "artifact_corruption",
-                `${source} hashes to ${measured}; repair the store before backing it up`,
-                source
-              )
+            throw error(
+              "backup",
+              "artifact_corruption",
+              `${source} hashes to ${measured}; repair the store before backing it up`,
+              source
             )
           }
           const target = blobPath(`${options.directory}/${objectsDirectoryName}`, digest)
-          yield* fs.makeDirectory(`${options.directory}/${objectsDirectoryName}/${digest.slice(0, 2)}`, {
+          try fs.makeDirectory(`${options.directory}/${objectsDirectoryName}/${digest.slice(0, 2)}`, {
             recursive: true
           }).pipe(Effect.mapError(ioFailure("backup", `creating the objects directory for ${digest}`)))
-          yield* fs.writeFile(target, bytes).pipe(Effect.mapError(ioFailure("backup", `writing ${target}`)))
+          try fs.writeFile(target, bytes).pipe(Effect.mapError(ioFailure("backup", `writing ${target}`)))
           artifacts.push({ digest: measured, sizeBytes: bytes.length })
           captured.add(measured)
         }
@@ -643,13 +631,11 @@ export const backup = <R = never, E = never>(
 
       const missing = [...snapshot.artifactRoots].filter((digest) => !captured.has(digest)).sort()
       if (missing.length > 0) {
-        return yield* Effect.fail(
-          error(
-            "backup",
-            "snapshot_incomplete",
-            `the frozen database references ${missing.length} artifact blobs absent from the backup`,
-            { missing }
-          )
+        throw error(
+          "backup",
+          "snapshot_incomplete",
+          `the frozen database references ${missing.length} artifact blobs absent from the backup`,
+          { missing }
         )
       }
 
@@ -669,13 +655,13 @@ export const backup = <R = never, E = never>(
       if (manifestBytes.byteLength > maxFileSizeBytes) {
         const message =
           `${manifestPath} is ${manifestBytes.byteLength} bytes, which exceeds the ${maxFileSizeBytes}-byte file limit`
-        return yield* Effect.fail(error("backup", "io", message, new RangeError(message)))
+        throw error("backup", "io", message, new RangeError(message))
       }
-      yield* fs.writeFile(manifestPath, manifestBytes).pipe(
+      try fs.writeFile(manifestPath, manifestBytes).pipe(
         Effect.mapError(ioFailure("backup", `writing ${manifestFileName}`))
       )
       return manifest
-    })
+    }
 
     // The directory was empty when the capture began, so everything in it is
     // this capture's: the snapshot, any SQLite sidecar the inspection
@@ -683,7 +669,7 @@ export const backup = <R = never, E = never>(
     // leaves the directory reusable for a retry.
     const discardPartial = discardEntries(fs, options.directory)
 
-    return yield* (options.objectsDirectory === undefined
+    return try (options.objectsDirectory === undefined
       ? capture
       : ArtifactBackupLease.withLease(
         fs,
@@ -701,16 +687,16 @@ export const backup = <R = never, E = never>(
  * @since 0.1.0
  * @category operations
  */
-export const verify = Effect.fn("DisasterRecovery.verify")(function*(
+export const verify = Effect.fn("DisasterRecovery.verify")(effect (
   backupDirectory: string,
   options: FileSizeOptions = {}
-) {
+) => {
   const limit = fileSizeLimit("verify", options)
-  if (typeof limit !== "number") return yield* Effect.fail(limit)
+  if (typeof limit !== "number") throw limit
   const maxFileSizeBytes = limit
-  const fs = yield* FileSystem.FileSystem
-  const manifest = yield* readManifest(fs, "verify", backupDirectory, maxFileSizeBytes)
-  yield* checkedFile(
+  const fs = try FileSystem.FileSystem
+  const manifest = try readManifest(fs, "verify", backupDirectory, maxFileSizeBytes)
+  try checkedFile(
     fs,
     "verify",
     `${backupDirectory}/${manifest.database.file}`,
@@ -718,7 +704,7 @@ export const verify = Effect.fn("DisasterRecovery.verify")(function*(
     maxFileSizeBytes
   )
   for (const entry of manifest.artifacts) {
-    yield* checkedFile(
+    try checkedFile(
       fs,
       "verify",
       blobPath(`${backupDirectory}/${objectsDirectoryName}`, entry.digest),
@@ -736,8 +722,8 @@ const writeRestoredStore = (
   manifest: BackupManifest,
   maxFileSizeBytes: number
 ): Effect.Effect<RestoredStore, DisasterRecoveryError, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
-  Effect.gen(function*() {
-    const databaseBytes = yield* checkedFile(
+  effect {
+    const databaseBytes = try checkedFile(
       fs,
       "restore",
       `${options.backupDirectory}/${manifest.database.file}`,
@@ -745,40 +731,40 @@ const writeRestoredStore = (
       maxFileSizeBytes
     )
     const databaseFile = `${options.targetDirectory}/${databaseFileName}`
-    yield* fs.writeFile(databaseFile, databaseBytes).pipe(
+    try fs.writeFile(databaseFile, databaseBytes).pipe(
       Effect.mapError(ioFailure("restore", `writing ${databaseFile}`))
     )
 
     const objectsDirectory = `${options.targetDirectory}/${objectsDirectoryName}`
     for (const entry of manifest.artifacts) {
-      const bytes = yield* checkedFile(
+      const bytes = try checkedFile(
         fs,
         "restore",
         blobPath(`${options.backupDirectory}/${objectsDirectoryName}`, entry.digest),
         entry.digest,
         maxFileSizeBytes
       )
-      yield* fs.makeDirectory(`${objectsDirectory}/${entry.digest.slice(0, 2)}`, { recursive: true }).pipe(
+      try fs.makeDirectory(`${objectsDirectory}/${entry.digest.slice(0, 2)}`, { recursive: true }).pipe(
         Effect.mapError(ioFailure("restore", `creating the objects directory for ${entry.digest}`))
       )
-      yield* fs.writeFile(blobPath(objectsDirectory, entry.digest), bytes).pipe(
+      try fs.writeFile(blobPath(objectsDirectory, entry.digest), bytes).pipe(
         Effect.mapError(ioFailure("restore", `writing the blob for ${entry.digest}`))
       )
     }
 
-    const restoredAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+    const restoredAtMs = try Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
     const marker = {
       formatVersion: 1,
       restoredAtMs,
       backupCreatedAtMs: manifest.createdAtMs,
       databaseSha256: manifest.database.sha256
     }
-    yield* fs.writeFileString(
+    try fs.writeFileString(
       `${options.targetDirectory}/${restoredMarkerFileName}`,
       `${JSON.stringify(marker, null, 2)}\n`
     ).pipe(Effect.mapError(ioFailure("restore", `writing ${restoredMarkerFileName}`)))
     return { databaseFile, objectsDirectory, manifest } satisfies RestoredStore
-  })
+  }
 
 /**
  * Restores a verified backup into an empty target directory.
@@ -795,18 +781,18 @@ const writeRestoredStore = (
  * @since 0.1.0
  * @category operations
  */
-export const restore = Effect.fn("DisasterRecovery.restore")(function*(options: RestoreOptions) {
+export const restore = Effect.fn("DisasterRecovery.restore")(effect (options: RestoreOptions) => {
   const limit = fileSizeLimit("restore", options)
-  if (typeof limit !== "number") return yield* Effect.fail(limit)
+  if (typeof limit !== "number") throw limit
   const maxFileSizeBytes = limit
-  const fs = yield* FileSystem.FileSystem
-  const manifest = yield* readManifest(fs, "restore", options.backupDirectory, maxFileSizeBytes)
-  yield* ensureEmptyDirectory(fs, "restore", options.targetDirectory)
+  const fs = try FileSystem.FileSystem
+  const manifest = try readManifest(fs, "restore", options.backupDirectory, maxFileSizeBytes)
+  try ensureEmptyDirectory(fs, "restore", options.targetDirectory)
 
   // The target was empty when the copy began, so everything in it is this
   // restore's. A refused blob or a failed write removes the partial store, so
   // nothing store-shaped is left to compose over and a retry can reuse it.
-  return yield* Effect.onError(
+  return try Effect.onError(
     writeRestoredStore(fs, options, manifest, maxFileSizeBytes),
     () => discardEntries(fs, options.targetDirectory)
   )
@@ -840,30 +826,28 @@ export const restore = Effect.fn("DisasterRecovery.restore")(function*(options: 
  * @since 0.1.0
  * @category operations
  */
-export const fence = Effect.fn("DisasterRecovery.fence")(function*(manifest: BackupManifest) {
-  const sql = yield* Effect.service(SqlClient.SqlClient)
-  const writer = yield* DurableWriter
-  const applied = yield* appliedMigrations(sql, "fence")
+export const fence = Effect.fn("DisasterRecovery.fence")(effect (manifest: BackupManifest) => {
+  const sql = try Effect.service(SqlClient.SqlClient)
+  const writer = try DurableWriter
+  const applied = try appliedMigrations(sql, "fence")
   const expected = manifest.database.migrations
   const key = (migration: AppliedMigration): string => `${migration.migrationId}:${migration.name}`
   // IDs identify migrations within their reserved blocks. Compare historical
   // identities independently so additions in lower blocks cannot shift them.
   const appliedById = new Map(applied.map((migration) => [migration.migrationId, migration.name]))
   if (expected.some((migration) => appliedById.get(migration.migrationId) !== migration.name)) {
-    return yield* Effect.fail(
-      error(
-        "fence",
-        "schema_mismatch",
-        `the restored database applied [${applied.map(key).join(", ")}] but the manifest records [${
-          expected.map(key).join(", ")
-        }]`,
-        { applied, expected }
-      )
+    throw error(
+      "fence",
+      "schema_mismatch",
+      `the restored database applied [${applied.map(key).join(", ")}] but the manifest records [${
+        expected.map(key).join(", ")
+      }]`,
+      { applied, expected }
     )
   }
-  return yield* writer.write(
-    Effect.gen(function*() {
-      const claims = yield* sql<{ readonly run_id: string }>`
+  return try writer.write(
+    effect {
+      const claims = try sql<{ readonly run_id: string }>`
         UPDATE flows_runs
         SET
           claim_host_id = NULL,
@@ -873,7 +857,7 @@ export const fence = Effect.fn("DisasterRecovery.fence")(function*(manifest: Bac
         WHERE claim_host_id IS NOT NULL
         RETURNING run_id
       `.withoutTransform
-      const running = yield* sql<{ readonly run_id: string }>`
+      const running = try sql<{ readonly run_id: string }>`
         UPDATE flows_runs
         SET
           status = 'suspended',
@@ -887,9 +871,9 @@ export const fence = Effect.fn("DisasterRecovery.fence")(function*(manifest: Bac
         WHERE status = 'running'
         RETURNING run_id
       `.withoutTransform
-      yield* sql`DELETE FROM flows_consensus_leases`.withoutTransform
+      try sql`DELETE FROM flows_consensus_leases`.withoutTransform
       return { clearedClaims: claims.length, suspendedRuns: running.length } satisfies FenceSummary
-    })
+    }
   ).pipe(Effect.mapError(sqlFailure("fence", "invalidating the persisted fences")))
 })
 
@@ -908,20 +892,16 @@ export const fence = Effect.fn("DisasterRecovery.fence")(function*(manifest: Bac
  */
 export const restoreAndFence = <R = never, E = never>(
   options: RestoreAndFenceOptions<R, E>
-): Effect.Effect<
-  FencedRestoredStore,
-  DisasterRecoveryError | E,
-  FileSystem.FileSystem | (EffectDigest.Digest | SecureRandom.SecureRandom) | R
-> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const restored = yield* restore(options)
+): FencedRestoredStore!(DisasterRecoveryError | E)!(FileSystem.FileSystem | (EffectDigest.Digest | SecureRandom.SecureRandom) | R) =>
+  effect {
+    const fs = try FileSystem.FileSystem
+    const restored = try restore(options)
     // A refused fence leaves a database that still carries pre-backup owner
     // fences beside a `restored.json` marker. Remove the whole restore so no
     // engine can adopt it and the operator can retry into the same target.
-    const summary = yield* fence(restored.manifest).pipe(
+    const summary = try fence(restored.manifest).pipe(
       Effect.provide(options.databaseLayer(restored.databaseFile)),
       Effect.onError(() => discardEntries(fs, options.targetDirectory))
     )
     return { ...restored, fence: summary } satisfies FencedRestoredStore
-  })
+  }

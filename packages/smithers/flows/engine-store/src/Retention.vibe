@@ -9,7 +9,7 @@
  * with a dry run available before anything is deleted.
  *
  * This module is the public surface. The operation lives in
- * `internal/RetentionOps.ts` beside the other modules that read this package's
+ * `internal/RetentionOps.vibe` beside the other modules that read this package's
  * own tables, so `internal/` is never imported by a consumer — the same split
  * `Errors.ts` uses. {@link retain} and {@link layer} are that operation: one
  * bounded pass over the engine ladder, inside one `journal.transact`.

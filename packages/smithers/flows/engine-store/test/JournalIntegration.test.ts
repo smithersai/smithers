@@ -5,7 +5,7 @@ import { Jj } from "@smthrs/kernel"
 import { type Ownership, RunStore } from "@smthrs/run-store"
 import { Effect, Layer } from "effect"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 

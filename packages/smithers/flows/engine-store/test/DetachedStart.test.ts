@@ -15,7 +15,7 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as EngineStore from "../src/EngineStore.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 

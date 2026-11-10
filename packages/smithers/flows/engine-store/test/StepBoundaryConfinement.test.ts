@@ -21,7 +21,7 @@ import * as Layer from "effect/Layer"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import { sha256, withCrypto } from "./Sha256.ts"
 import { win32Host } from "./Win32Host.ts"
 

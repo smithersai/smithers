@@ -100,8 +100,8 @@ import * as PlanMergeStore from "./PlanMergeStore.vibe"
 import * as Reconciliation from "./Reconciliation.vibe"
 import * as ReplayOnly from "./ReplayOnly.ts"
 import * as Selection from "./Selection.vibe"
-import * as StepBoundary from "./StepBoundary.ts"
-import * as WorkspaceSandbox from "./WorkspaceSandbox.ts"
+import * as StepBoundary from "./StepBoundary.vibe"
+import * as WorkspaceSandbox from "./WorkspaceSandbox.vibe"
 
 /**
  * The evaluation outcomes: Skyframe's `EvaluationState` adapted to a

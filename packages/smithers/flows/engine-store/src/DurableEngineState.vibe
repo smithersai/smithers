@@ -26,7 +26,7 @@ import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
-import * as AttemptProbe from "./internal/AttemptProbe.ts"
+import * as AttemptProbe from "./internal/AttemptProbe.vibe"
 import * as EngineStateSchema from "./internal/EngineStateSchema.vibe"
 import { compareText } from "./internal/Ordering.ts"
 import type { OnParentExit } from "./RunState.ts"
@@ -42,7 +42,7 @@ export interface PendingRunCursor {
   readonly createdAtMs: number
 }
 
-const pendingCancellationLimit = (limit: number): Effect.Effect<void> =>
+const pendingCancellationLimit = (limit: number): void!! =>
   Number.isSafeInteger(limit) && limit >= 0
     ? Effect.void
     : Effect.die(new RangeError("Pending cancellation limit must be a non-negative safe integer"))
@@ -477,26 +477,26 @@ export type RecordRunParentOutcome =
  * @category models
  */
 export interface Service {
-  readonly deferred: (address: DeferredAddress) => Effect.Effect<Option.Option<DeferredRow>>
+  readonly deferred: (address: DeferredAddress) => Option.Option<DeferredRow>!!
   /**
    * Marks an existing result observed without removing its replay evidence.
    * Returns whether this call consumed it: false when there is no result or
    * it was already consumed.
    */
-  readonly consumeDeferred: (address: DeferredAddress, consumedAtMs: number) => Effect.Effect<boolean>
-  readonly completeDeferred: (row: DeferredRow) => Effect.Effect<CompleteDeferredOutcome>
-  readonly clock: (address: ClockAddress) => Effect.Effect<Option.Option<ClockRow>>
+  readonly consumeDeferred: (address: DeferredAddress, consumedAtMs: number) => boolean!!
+  readonly completeDeferred: (row: DeferredRow) => CompleteDeferredOutcome!!
+  readonly clock: (address: ClockAddress) => Option.Option<ClockRow>!!
   /**
    * Schedules a clock while the execution is running under the supplied owner.
    * An existing clock wins unchanged, even after ownership is lost. If no
    * clock exists and the ownership fence fails, the effect self-interrupts.
    */
-  readonly scheduleClock: (row: ClockRow, owner: OwnerId) => Effect.Effect<ScheduleClockOutcome>
+  readonly scheduleClock: (row: ClockRow, owner: OwnerId) => ScheduleClockOutcome!!
   readonly completeClock: (
     address: ClockAddress,
     completedAtMs: number
-  ) => Effect.Effect<CompleteClockOutcome>
-  readonly dueClocks: (nowMs: number) => Effect.Effect<ReadonlyArray<ClockRow>>
+  ) => CompleteClockOutcome!!
+  readonly dueClocks: (nowMs: number) => ReadonlyArray<ClockRow>!!
   /**
    * Completes every uncompleted clock row of one run in a single statement.
    *
@@ -512,7 +512,7 @@ export interface Service {
   readonly completeRunClocks: (
     executionId: string,
     completedAtMs: number
-  ) => Effect.Effect<ReadonlyArray<ClockRow>>
+  ) => ReadonlyArray<ClockRow>!!
   /**
    * Lists uncompleted clock rows scoped to an execution or flow, with no
    * due-time bound. Suspension-reason derivation and registration-time
@@ -527,9 +527,9 @@ export interface Service {
   readonly pendingClocks: (scope: {
     readonly executionId?: string
     readonly flowName?: string
-  }) => Effect.Effect<ReadonlyArray<ClockRow>>
+  }) => ReadonlyArray<ClockRow>!!
   /** Whether one execution has an unconsumed completion or a due clock. */
-  readonly hasDueWake: (executionId: string, nowMs: number) => Effect.Effect<boolean>
+  readonly hasDueWake: (executionId: string, nowMs: number) => boolean!!
   /**
    * Lists unconsumed completed deferred addresses for registration-time wake recovery:
    * `flowName`'s, or every flow's when it is `undefined`, as one recovery for
@@ -545,7 +545,7 @@ export interface Service {
   readonly completedDeferreds: (
     flowName: string | undefined,
     executionId?: string
-  ) => Effect.Effect<ReadonlyArray<DeferredAddress>>
+  ) => ReadonlyArray<DeferredAddress>!!
   /**
    * Records the waiting-reason payload for a parked run, fenced to the
    * current owner so a stale process cannot park a run it no longer runs.
@@ -554,16 +554,16 @@ export interface Service {
     runId: string,
     waiting: Waiting,
     owner: OwnerId
-  ) => Effect.Effect<ParkOutcome>
+  ) => ParkOutcome!!
   /**
    * Clears a run's waiting payload on wake or resume. Idempotent: waking a
    * run that is not waiting reports `NotWaiting` rather than failing.
    */
-  readonly wake: (runId: string) => Effect.Effect<WakeOutcome>
+  readonly wake: (runId: string) => WakeOutcome!!
   /**
    * Reads the current waiting payload for a run, if any.
    */
-  readonly waiting: (runId: string) => Effect.Effect<Option.Option<WaitingRow>>
+  readonly waiting: (runId: string) => Option.Option<WaitingRow>!!
   /**
    * Reads the waiting payloads of a run AND of every execution beneath it.
    *
@@ -597,7 +597,7 @@ export interface Service {
   readonly waitingTree: (
     runId: string,
     options?: WaitingTreeOptions | undefined
-  ) => Effect.Effect<ReadonlyArray<WaitingRow>>
+  ) => ReadonlyArray<WaitingRow>!!
   /**
    * Lists parked runs matching an optional reason/due-before filter, ordered
    * for sweeper consumption (earliest wake first, untimed waits last, then
@@ -605,7 +605,7 @@ export interface Service {
    */
   readonly waitingRuns: (
     filter?: WaitingRunsFilter
-  ) => Effect.Effect<ReadonlyArray<WaitingRow>>
+  ) => ReadonlyArray<WaitingRow>!!
   /** Pending admissions ordered by creation, strictly after and through optional cursors. */
   readonly pendingRuns: (
     flowName: string,
@@ -613,20 +613,20 @@ export interface Service {
     after?: PendingRunCursor | undefined,
     through?: PendingRunCursor | undefined,
     eligibleBeforeMs?: number | undefined
-  ) => Effect.Effect<ReadonlyArray<PendingRunCursor>>
+  ) => ReadonlyArray<PendingRunCursor>!!
   /** Latest pending admission, bounding one finite recovery scan cycle. */
   readonly pendingRunTail: (
     flowName: string,
     eligibleBeforeMs?: number | undefined
-  ) => Effect.Effect<Option.Option<PendingRunCursor>>
+  ) => Option.Option<PendingRunCursor>!!
   /** Pending cancellation requests in bounded creation order; limit is zero or a positive safe integer. */
   readonly pendingCancellationRuns: (
     limit: number,
     after?: PendingRunCursor | undefined,
     through?: PendingRunCursor | undefined
-  ) => Effect.Effect<ReadonlyArray<PendingRunCursor>>
+  ) => ReadonlyArray<PendingRunCursor>!!
   /** Latest pending cancellation, bounding one finite cleanup scan cycle. */
-  readonly pendingCancellationTail: () => Effect.Effect<Option.Option<PendingRunCursor>>
+  readonly pendingCancellationTail: () => Option.Option<PendingRunCursor>!!
   /**
    * Lists the runs whose row is `running` with a heartbeat strictly older
    * than `staleBeforeMs`, each with that heartbeat — an owner that stopped heartbeating without
@@ -643,7 +643,7 @@ export interface Service {
   readonly staleRunningRuns: (
     staleBeforeMs: number,
     limit?: number | undefined
-  ) => Effect.Effect<ReadonlyArray<StaleRunningRow>>
+  ) => ReadonlyArray<StaleRunningRow>!!
   /**
    * Copies the step attempts `attempts` of execution `from` into execution
    * `to` as recorded, and answers how many rows it wrote. A retry from a step
@@ -659,7 +659,7 @@ export interface Service {
       readonly from: string
       readonly to: string
       readonly attempts: ReadonlyArray<AttemptRef>
-    }) => Effect.Effect<number>)
+    }) => number!!)
     | undefined
   /**
    * The surviving attempt rows for an action key, in one range read: the
@@ -676,7 +676,7 @@ export interface Service {
     | ((
       runId: string,
       stepKeyDigest: string
-    ) => Effect.Effect<Option.Option<AttemptSurvivors>>)
+    ) => Option.Option<AttemptSurvivors>!!)
     | undefined
   /**
    * Durably records a parent edge in the run DAG, first-writer-wins per
@@ -695,7 +695,7 @@ export interface Service {
   readonly recordRunParent: (
     childId: string,
     parentId: string
-  ) => Effect.Effect<RecordRunParentOutcome, RunParentCycleError>
+  ) => RecordRunParentOutcome!RunParentCycleError
   /**
    * Removes every parent edge touching a run — both the edges naming it as
    * child and the edges naming it as parent. The cleanup half of run
@@ -703,11 +703,11 @@ export interface Service {
    * retention) must call this so `runParents` and the cycle walk stop
    * seeing edges of runs that no longer exist.
    */
-  readonly removeRunParentsForRun: (runId: string) => Effect.Effect<void>
+  readonly removeRunParentsForRun: (runId: string) => void!!
   /**
    * Lists the durably recorded parent edges of a run, oldest first.
    */
-  readonly runParents: (childId: string) => Effect.Effect<ReadonlyArray<RunParentEdge>>
+  readonly runParents: (childId: string) => ReadonlyArray<RunParentEdge>!!
   /**
    * Lists the durably recorded child edges of a run, oldest first.
    *
@@ -719,7 +719,7 @@ export interface Service {
    * Served by the
    * `flows_run_parents_parent_idx` index.
    */
-  readonly runChildren: (parentId: string) => Effect.Effect<ReadonlyArray<RunParentEdge>>
+  readonly runChildren: (parentId: string) => ReadonlyArray<RunParentEdge>!!
   /**
    * Runs `effect` inside one storage write transaction, so a caller can make
    * several store operations atomic — the run driver wraps the parent-edge
@@ -749,7 +749,7 @@ export interface Service {
    * under an enclosing `transaction` on the same fiber.
    */
   readonly transaction: <A, E, R>(
-    effect: Effect.Effect<A, E, R>,
+    effect: A!E!R,
     options?: {
       /**
        * Receives an idempotent memory commit effect. A coordinating durable
@@ -759,7 +759,7 @@ export interface Service {
        * external boundary, returning successfully commits as usual. SQL owns
        * its commit boundary and does not need this callback.
        */
-      readonly onCommit?: ((commit: Effect.Effect<void>) => void) | undefined
+      readonly onCommit?: ((commit: void!!) => void) | undefined
       /**
        * The execution whose rows the transaction reads and changes, when it
        * touches no other's: it then waits only for that execution's writers
@@ -768,7 +768,7 @@ export interface Service {
        */
       readonly partition?: string | undefined
     }
-  ) => Effect.Effect<A, E, R>
+  ) => A!E!R
   /**
    * Runs `effect` as one read snapshot: every read in it agrees with the
    * others, and it takes neither the writer permit nor the store's write lock.
@@ -782,7 +782,7 @@ export interface Service {
    *
    * @since 1.0.0
    */
-  readonly readTransaction: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
+  readonly readTransaction: <A, E, R>(effect: A!E!R) => A!E!R
 }
 
 /**
@@ -863,10 +863,10 @@ const decodeWaitingRequest = (value: string | null | undefined): { readonly requ
   }
 }
 
-const decodeWaitingRow = (input: unknown): Effect.Effect<WaitingRow> => decodeWaitingRowResult(input).pipe(Effect.orDie)
+const decodeWaitingRow = (input: unknown): WaitingRow!! => decodeWaitingRowResult(input).pipe(Effect.orDie)
 
 /** {@link decodeWaitingRow} with its parse failure left in the error channel. */
-const decodeWaitingRowResult = (input: unknown): Effect.Effect<WaitingRow, unknown> =>
+const decodeWaitingRowResult = (input: unknown): WaitingRow!unknown! =>
   Schema.decodeUnknownEffect(WaitingDatabaseRow)(input).pipe(
     Effect.map((row) => ({
       runId: row.runId,
@@ -886,11 +886,10 @@ const RunParentDatabaseRow = Schema.Struct({
 
 type RunParentDatabaseRow = typeof RunParentDatabaseRow.Type
 
-const decodeRunParentEdge = (input: unknown): Effect.Effect<RunParentEdge> =>
-  decodeRunParentEdgeResult(input).pipe(Effect.orDie)
+const decodeRunParentEdge = (input: unknown): RunParentEdge!! => decodeRunParentEdgeResult(input).pipe(Effect.orDie)
 
 /** {@link decodeRunParentEdge} with its parse failure left in the error channel. */
-const decodeRunParentEdgeResult = (input: unknown): Effect.Effect<RunParentEdge, unknown> =>
+const decodeRunParentEdgeResult = (input: unknown): RunParentEdge!unknown! =>
   Schema.decodeUnknownEffect(RunParentDatabaseRow)(input)
 
 /**
@@ -904,8 +903,8 @@ const decodeRunParentEdgeResult = (input: unknown): Effect.Effect<RunParentEdge,
 const findCyclePath = (
   childId: string,
   parentId: string,
-  parentsOf: (id: string) => Effect.Effect<ReadonlyArray<string>>
-): Effect.Effect<ReadonlyArray<string> | undefined> =>
+  parentsOf: (id: string) => ReadonlyArray<string>!!
+): (ReadonlyArray<string> | undefined)!! =>
   Effect.suspend(() => {
     if (parentId === childId) {
       return Effect.succeed<ReadonlyArray<string> | undefined>([childId])
@@ -914,18 +913,18 @@ const findCyclePath = (
     const walk = (
       current: string,
       chain: ReadonlyArray<string>
-    ): Effect.Effect<ReadonlyArray<string> | undefined> =>
-      Effect.gen(function*() {
-        const parents = yield* parentsOf(current)
+    ): (ReadonlyArray<string> | undefined)!! =>
+      effect {
+        const parents = try parentsOf(current)
         for (const parent of parents) {
           if (parent === childId) return [...chain, parent].reverse()
           if (seen.has(parent)) continue
           seen.add(parent)
-          const found = yield* walk(parent, [...chain, parent])
+          const found = try walk(parent, [...chain, parent])
           if (found !== undefined) return found
         }
         return undefined
-      })
+      }
     return walk(parentId, [parentId])
   })
 
@@ -942,20 +941,20 @@ const deferredDigest = (row: {
 })
 
 /** The digests of a memory completion row, over the text the SQL store would keep. */
-const memoryDigest = (row: DeferredRow): Effect.Effect<DeferredDigest> =>
-  Effect.gen(function*() {
-    const exitJson = yield* encodeJson(row.exit, "exit")
-    const metadataJson = row.metadata === undefined ? null : yield* encodeJson(row.metadata, "metadata")
+const memoryDigest = (row: DeferredRow): DeferredDigest!! =>
+  effect {
+    const exitJson = try encodeJson(row.exit, "exit")
+    const metadataJson = row.metadata === undefined ? null : try encodeJson(row.metadata, "metadata")
     return deferredDigest({ exitJson, metadataJson })
-  })
+  }
 
-const encodeJson = (value: unknown, field: string): Effect.Effect<string> =>
+const encodeJson = (value: unknown, field: string): string!! =>
   Schema.encodeEffect(UnknownFromJsonString)(value).pipe(
     Effect.mapError((cause) => new EngineStateFault({ reason: "value_not_serializable", field, cause })),
     Effect.orDie
   )
 
-const decodeJson = (value: string, field: string): Effect.Effect<unknown> =>
+const decodeJson = (value: string, field: string): unknown!! =>
   Schema.decodeUnknownEffect(UnknownFromJsonString)(value).pipe(
     Effect.mapError((cause) => new EngineStateFault({ reason: "value_not_decodable", field, cause })),
     Effect.orDie
@@ -1005,7 +1004,7 @@ const restoreJsonExit = (value: unknown): unknown => {
   return Exit.failCause(Cause.fromReasons(reasons))
 }
 
-const decodeDeferredRow = (input: unknown): Effect.Effect<DeferredRow> =>
+const decodeDeferredRow = (input: unknown): DeferredRow!! =>
   Schema.decodeUnknownEffect(DeferredDatabaseRow)(input).pipe(
     Effect.orDie,
     Effect.flatMap((row) =>
@@ -1027,10 +1026,10 @@ const decodeDeferredRow = (input: unknown): Effect.Effect<DeferredRow> =>
     )
   )
 
-const decodeClockRow = (input: unknown): Effect.Effect<ClockRow> => decodeClockRowResult(input).pipe(Effect.orDie)
+const decodeClockRow = (input: unknown): ClockRow!! => decodeClockRowResult(input).pipe(Effect.orDie)
 
 /** {@link decodeClockRow} with its parse failure left in the error channel. */
-const decodeClockRowResult = (input: unknown): Effect.Effect<ClockRow, unknown> =>
+const decodeClockRowResult = (input: unknown): ClockRow!unknown! =>
   Schema.decodeUnknownEffect(ClockDatabaseRow)(input).pipe(
     Effect.map((row) => ({
       flowName: row.flowName,
@@ -1112,23 +1111,23 @@ const decodeSweep = <A>(
   rows: ReadonlyArray<Record<string, unknown>>,
   kind: string,
   keyOf: (row: Record<string, unknown>) => string,
-  decode: (row: Record<string, unknown>) => Effect.Effect<A, unknown>
-): Effect.Effect<ReadonlyArray<A>> =>
-  Effect.gen(function*() {
+  decode: (row: Record<string, unknown>) => A!unknown!
+): ReadonlyArray<A>!! =>
+  effect {
     const decoded: Array<A> = []
     for (const row of rows) {
-      const result = yield* Effect.result(decode(row))
+      const result = try Effect.result(decode(row))
       if (Result.isSuccess(result)) {
         decoded.push(result.success)
         continue
       }
-      yield* Effect.logWarning(
+      try Effect.logWarning(
         `engine-store: skipping a malformed ${kind} row ${keyOf(row)}`,
         result.failure
       )
     }
     return decoded
-  })
+  }
 
 /**
  * Demotes a write boundary's storage failures to defects, reason by reason.
@@ -1172,8 +1171,7 @@ interface Database {
   readonly transactionGate: Semaphore.Semaphore
 }
 
-const selectDeferred = (db: Database, address: DeferredAddress) =>
-  db.sql<DeferredDatabaseRow>`
+const selectDeferred = (db: Database, address: DeferredAddress) => db.sql<DeferredDatabaseRow>`
       SELECT
         flow_name AS "flowName",
         execution_id AS "executionId",
@@ -1187,8 +1185,7 @@ const selectDeferred = (db: Database, address: DeferredAddress) =>
         AND deferred_name = ${address.deferredName}
     `
 
-const selectClock = (db: Database, address: ClockAddress) =>
-  db.sql<ClockDatabaseRow>`
+const selectClock = (db: Database, address: ClockAddress) => db.sql<ClockDatabaseRow>`
       SELECT
         flow_name AS "flowName",
         execution_id AS "executionId",
@@ -1238,20 +1235,20 @@ const completeDeferred = (db: Database): Service["completeDeferred"] =>
   Effect.fn(
     "DurableEngineState.completeDeferred"
   )((row) =>
-    Effect.gen(function*() {
-      const exitJson = yield* encodeJson(row.exit, "exit")
+    effect {
+      const exitJson = try encodeJson(row.exit, "exit")
       const metadataJson = row.metadata === undefined
         ? null
-        : yield* encodeJson(row.metadata, "metadata")
-      return yield* writeRun(
+        : try encodeJson(row.metadata, "metadata")
+      return try writeRun(
         db,
         row.executionId,
-        Effect.gen(function*() {
+        effect {
           // The row's foreign key names the run; refuse before the insert so
           // an unknown execution is an outcome, not a constraint defect.
-          const run = yield* db.sql`SELECT 1 FROM flows_runs WHERE run_id = ${row.executionId}`
+          const run = try db.sql`SELECT 1 FROM flows_runs WHERE run_id = ${row.executionId}`
           if (run.length === 0) return { _tag: "NotFound" as const }
-          const inserted = yield* db.sql<DeferredDatabaseRow>`
+          const inserted = try db.sql<DeferredDatabaseRow>`
             INSERT INTO flows_deferred_completions (
               flow_name,
               execution_id,
@@ -1279,22 +1276,22 @@ const completeDeferred = (db: Database): Service["completeDeferred"] =>
           if (inserted[0] !== undefined) {
             return {
               _tag: "Completed" as const,
-              row: yield* decodeDeferredRow(inserted[0]),
+              row: try decodeDeferredRow(inserted[0]),
               digest: deferredDigest(inserted[0])
             }
           }
-          const existing = yield* selectDeferred(db, row)
+          const existing = try selectDeferred(db, row)
           if (existing[0] === undefined) {
-            return yield* Effect.die(new EngineStateFault({ reason: "deferred_completion_missing" }))
+            return try Effect.die(new EngineStateFault({ reason: "deferred_completion_missing" }))
           }
           return {
             _tag: "Existing" as const,
-            row: yield* decodeDeferredRow(existing[0]),
+            row: try decodeDeferredRow(existing[0]),
             digest: deferredDigest(existing[0])
           }
-        })
+        }
       ).pipe(Effect.orDie)
-    })
+    }
   )
 
 const clock = (db: Database): Service["clock"] =>
@@ -1314,8 +1311,8 @@ const scheduleClock = (db: Database): Service["scheduleClock"] =>
     writeRun(
       db,
       row.executionId,
-      Effect.gen(function*() {
-        const inserted = yield* db.sql<ClockDatabaseRow>`
+      effect {
+        const inserted = try db.sql<ClockDatabaseRow>`
           INSERT INTO flows_clock_deadlines (
             flow_name,
             execution_id,
@@ -1352,18 +1349,18 @@ const scheduleClock = (db: Database): Service["scheduleClock"] =>
         if (inserted[0] !== undefined) {
           return {
             _tag: "Scheduled" as const,
-            row: yield* decodeClockRow(inserted[0])
+            row: try decodeClockRow(inserted[0])
           }
         }
-        const existing = yield* selectClock(db, row)
+        const existing = try selectClock(db, row)
         if (existing[0] !== undefined) {
           return {
             _tag: "Existing" as const,
-            row: yield* decodeClockRow(existing[0])
+            row: try decodeClockRow(existing[0])
           }
         }
-        return yield* Effect.interrupt
-      })
+        return try Effect.interrupt
+      }
     ).pipe(Effect.orDie)
   )
 
@@ -1375,8 +1372,8 @@ const completeClock = (db: Database): Service["completeClock"] =>
     writeRun(
       db,
       address.executionId,
-      Effect.gen(function*() {
-        const updated = yield* db.sql<ClockDatabaseRow>`
+      effect {
+        const updated = try db.sql<ClockDatabaseRow>`
           UPDATE flows_clock_deadlines
           SET completed_at_ms = ${completedAtMs}
           WHERE flow_name = ${address.flowName}
@@ -1394,17 +1391,17 @@ const completeClock = (db: Database): Service["completeClock"] =>
         if (updated[0] !== undefined) {
           return {
             _tag: "Completed" as const,
-            row: yield* decodeClockRow(updated[0])
+            row: try decodeClockRow(updated[0])
           }
         }
-        const existing = yield* selectClock(db, address)
+        const existing = try selectClock(db, address)
         return existing[0] === undefined
           ? { _tag: "NotFound" as const }
           : {
             _tag: "AlreadyCompleted" as const,
-            row: yield* decodeClockRow(existing[0])
+            row: try decodeClockRow(existing[0])
           }
-      })
+      }
     ).pipe(Effect.orDie)
   )
 
@@ -1569,8 +1566,7 @@ const completeRunClocks = (db: Database): Service["completeRunClocks"] =>
     )
   )
 
-const selectWaiting = (db: Database, runId: string) =>
-  db.sql<WaitingDatabaseRow>`
+const selectWaiting = (db: Database, runId: string) => db.sql<WaitingDatabaseRow>`
       SELECT
         run_id AS "runId",
         waiting_reason AS "waitingReason",
@@ -1587,8 +1583,8 @@ const park = (db: Database): Service["park"] =>
     writeRun(
       db,
       runId,
-      Effect.gen(function*() {
-        const updated = yield* db.sql<WaitingDatabaseRow>`
+      effect {
+        const updated = try db.sql<WaitingDatabaseRow>`
           UPDATE flows_runs
           SET
             waiting_reason = ${waiting.reason},
@@ -1609,8 +1605,8 @@ const park = (db: Database): Service["park"] =>
         if (updated[0] === undefined) {
           return { _tag: "NotFound" as const }
         }
-        return { _tag: "Parked" as const, row: yield* decodeWaitingRow(updated[0]) }
-      })
+        return { _tag: "Parked" as const, row: try decodeWaitingRow(updated[0]) }
+      }
     ).pipe(Effect.orDie)
   )
 
@@ -1619,16 +1615,16 @@ const wake = (db: Database): Service["wake"] =>
     writeRun(
       db,
       runId,
-      Effect.gen(function*() {
-        const before = yield* selectWaiting(db, runId)
+      effect {
+        const before = try selectWaiting(db, runId)
         if (before[0] === undefined) {
-          const existing = yield* db.sql<{ runId: string }>`
+          const existing = try db.sql<{ runId: string }>`
             SELECT run_id AS "runId" FROM flows_runs WHERE run_id = ${runId}
           `
           return existing[0] === undefined ? { _tag: "NotFound" as const } : { _tag: "NotWaiting" as const }
         }
-        const row = yield* decodeWaitingRow(before[0])
-        yield* db.sql`
+        const row = try decodeWaitingRow(before[0])
+        try db.sql`
           UPDATE flows_runs
           SET
             waiting_reason = NULL,
@@ -1639,7 +1635,7 @@ const wake = (db: Database): Service["wake"] =>
             AND waiting_reason IS NOT NULL
         `
         return { _tag: "Woken" as const, row }
-      })
+      }
     ).pipe(Effect.orDie)
   )
 
@@ -1783,7 +1779,7 @@ const pendingRows = (
   through?: PendingRunCursor,
   descending = false,
   eligibleBeforeMs?: number
-): Effect.Effect<ReadonlyArray<PendingRunCursor>> =>
+): ReadonlyArray<PendingRunCursor>!! =>
   db.sql<{ readonly runId: string; readonly createdAtMs: number | bigint | string }>`
       SELECT run_id AS "runId", created_at_ms AS "createdAtMs" FROM flows_runs
         ${Dialect.isPostgres(db.sql) ? db.sql`` : db.sql`INDEXED BY flows_runs_listing_3`}
@@ -1791,17 +1787,17 @@ const pendingRows = (
         AND ${eligibleBeforeMs === undefined ? db.sql`TRUE` : db.sql`created_at_ms < ${eligibleBeforeMs}`}
         AND execution_flow = ${flowName}
         AND ${
-    after === undefined ? db.sql`TRUE` : db.sql`(
+          after === undefined ? db.sql`TRUE` : db.sql`(
           created_at_ms > ${after.createdAtMs}
           OR (created_at_ms = ${after.createdAtMs} AND run_id > ${after.runId})
         )`
-  }
+        }
         AND ${
-    through === undefined ? db.sql`TRUE` : db.sql`(
+          through === undefined ? db.sql`TRUE` : db.sql`(
           created_at_ms < ${through.createdAtMs}
           OR (created_at_ms = ${through.createdAtMs} AND run_id <= ${through.runId})
         )`
-  }
+        }
       ORDER BY ${descending ? db.sql`created_at_ms DESC, run_id DESC` : db.sql`created_at_ms, run_id`}
       LIMIT ${limit ?? (Dialect.isPostgres(db.sql) ? null : -1)}
     `.pipe(
@@ -1832,20 +1828,20 @@ const pendingCancellationRows = (
   after?: PendingRunCursor,
   through?: PendingRunCursor,
   descending = false
-): Effect.Effect<ReadonlyArray<PendingRunCursor>> =>
+): ReadonlyArray<PendingRunCursor>!! =>
   pendingCancellationLimit(limit).pipe(
     Effect.andThen(db.sql<{ readonly runId: string; readonly createdAtMs: number | bigint | string }>`
       SELECT run_id AS "runId", created_at_ms AS "createdAtMs" FROM flows_runs
         ${Dialect.isPostgres(db.sql) ? db.sql`` : db.sql`INDEXED BY flows_runs_pending_cancel_idx`}
       WHERE status = 'pending' AND cancel_requested_at_ms IS NOT NULL
         AND ${
-      after === undefined ? db.sql`TRUE` : db.sql`(created_at_ms, run_id) > (${after.createdAtMs}, ${after.runId})`
-    }
+          after === undefined ? db.sql`TRUE` : db.sql`(created_at_ms, run_id) > (${after.createdAtMs}, ${after.runId})`
+        }
         AND ${
-      through === undefined
-        ? db.sql`TRUE`
-        : db.sql`(created_at_ms, run_id) <= (${through.createdAtMs}, ${through.runId})`
-    }
+          through === undefined
+            ? db.sql`TRUE`
+            : db.sql`(created_at_ms, run_id) <= (${through.createdAtMs}, ${through.runId})`
+        }
       ORDER BY ${descending ? db.sql`created_at_ms DESC, run_id DESC` : db.sql`created_at_ms, run_id`}
       LIMIT ${limit}
     `.pipe(
@@ -1950,8 +1946,7 @@ const copyAttempts = (db: Database): NonNullable<Service["copyAttempts"]> =>
     ).pipe(Effect.orDie, Effect.map((rows) => rows.length))
   })
 
-const selectRunParent = (db: Database, childId: string, parentId: string) =>
-  db.sql<RunParentDatabaseRow>`
+const selectRunParent = (db: Database, childId: string, parentId: string) => db.sql<RunParentDatabaseRow>`
       SELECT
         child_id AS "childId",
         parent_id AS "parentId",
@@ -1961,7 +1956,7 @@ const selectRunParent = (db: Database, childId: string, parentId: string) =>
         AND parent_id = ${parentId}
     `
 
-const parentIdsOf = (db: Database, id: string): Effect.Effect<ReadonlyArray<string>> =>
+const parentIdsOf = (db: Database, id: string): ReadonlyArray<string>!! =>
   db.sql<RunParentDatabaseRow>`
       SELECT
         child_id AS "childId",
@@ -1997,19 +1992,18 @@ const recordRunParent = (db: Database): Service["recordRunParent"] =>
   )
 
 /** Whether any run has `id` as its parent. */
-const hasRunChildren = (db: Database, id: string): Effect.Effect<boolean> =>
+const hasRunChildren = (db: Database, id: string): boolean!! =>
   db.sql`SELECT 1 FROM flows_run_parents WHERE parent_id = ${id} LIMIT 1`.pipe(
     Effect.orDie,
     Effect.map((rows) => rows.length > 0)
   )
 
 /** Inserts an edge; `true` unless the pair was there already. */
-const insertRunParentRow = (db: Database, childId: string, parentId: string) =>
-  // MAX(seq)+1 reads what has committed. Every writer of an edge holds its
-  // child's partition and its parent's, or the whole schema, so the seq rises
-  // along each child's edges and along each parent's, which is the order the
-  // readers page by; two unrelated edges may share one.
-  db.sql<RunParentDatabaseRow>`
+const insertRunParentRow = (db: Database, childId: string, parentId: string) => // MAX(seq)+1 reads what has committed. Every writer of an edge holds its
+// child's partition and its parent's, or the whole schema, so the seq rises
+// along each child's edges and along each parent's, which is the order the
+// readers page by; two unrelated edges may share one.
+db.sql<RunParentDatabaseRow>`
     INSERT INTO flows_run_parents (child_id, parent_id, seq)
     SELECT ${childId}, ${parentId}, COALESCE(MAX(seq), 0) + 1
     FROM flows_run_parents
@@ -2023,13 +2017,13 @@ const insertRunParentRow = (db: Database, childId: string, parentId: string) =>
 
 /** The outcome of an insert that found its pair already written by another. */
 const existingRunParent = (db: Database, childId: string, parentId: string) =>
-  Effect.gen(function*() {
-    const existing = yield* selectRunParent(db, childId, parentId)
+  effect {
+    const existing = try selectRunParent(db, childId, parentId)
     if (existing[0] === undefined) {
-      return yield* Effect.die(new EngineStateFault({ reason: "run_parent_edge_missing" }))
+      return try Effect.die(new EngineStateFault({ reason: "run_parent_edge_missing" }))
     }
-    return { _tag: "Existing" as const, edge: yield* decodeRunParentEdge(existing[0]) }
-  })
+    return { _tag: "Existing" as const, edge: try decodeRunParentEdge(existing[0]) }
+  }
 
 /**
  * Inserts an edge whose child has no children, in its child's and its parent's
@@ -2055,13 +2049,13 @@ const existingRunParent = (db: Database, childId: string, parentId: string) =>
 const insertLeafRunParent = (db: Database, childId: string, parentId: string) =>
   db.writer.write(
     db.writer.write(
-      Effect.gen(function*() {
-        if (yield* hasRunChildren(db, childId)) return yield* insertCheckedRunParent(db, childId, parentId)
-        const inserted = yield* insertRunParentRow(db, childId, parentId)
+      effect {
+        if (try hasRunChildren(db, childId)) return try insertCheckedRunParent(db, childId, parentId)
+        const inserted = try insertRunParentRow(db, childId, parentId)
         return inserted[0] === undefined
-          ? yield* existingRunParent(db, childId, parentId)
-          : { _tag: "Recorded" as const, edge: yield* decodeRunParentEdge(inserted[0]) }
-      }),
+          ? try existingRunParent(db, childId, parentId)
+          : { _tag: "Recorded" as const, edge: try decodeRunParentEdge(inserted[0]) }
+      },
       { partition: parentId }
     ),
     { partition: childId }
@@ -2081,13 +2075,13 @@ const insertLeafRunParent = (db: Database, childId: string, parentId: string) =>
  */
 const insertCheckedRunParent = (db: Database, childId: string, parentId: string) =>
   db.writer.write(
-    Effect.gen(function*() {
-      const inserted = yield* insertRunParentRow(db, childId, parentId)
-      if (inserted[0] === undefined) return yield* existingRunParent(db, childId, parentId)
-      const cycle = yield* findCyclePath(childId, parentId, (id) => parentIdsOf(db, id))
-      if (cycle !== undefined) return yield* Effect.fail(new RunParentCycleError({ path: cycle }))
-      return { _tag: "Recorded" as const, edge: yield* decodeRunParentEdge(inserted[0]) }
-    })
+    effect {
+      const inserted = try insertRunParentRow(db, childId, parentId)
+      if (inserted[0] === undefined) return try existingRunParent(db, childId, parentId)
+      const cycle = try findCyclePath(childId, parentId, (id) => parentIdsOf(db, id))
+      if (cycle !== undefined) throw new RunParentCycleError({ path: cycle })
+      return { _tag: "Recorded" as const, edge: try decodeRunParentEdge(inserted[0]) }
+    }
   ).pipe(
     Effect.catch((error) => error instanceof RunParentCycleError ? Effect.fail(error) : Effect.die(error))
   )
@@ -2112,7 +2106,7 @@ const removeRunParentsForRun = (db: Database): Service["removeRunParentsForRun"]
  * the shared `flows_run_source` revision through the run row's trigger, an
  * atomic increment its row lock keeps correct.
  */
-const writeRun = <A, E, R>(db: Database, executionId: string, body: Effect.Effect<A, E, R>) =>
+const writeRun = <A, E, R>(db: Database, executionId: string, body: A!E!R) =>
   db.writer.write(body, { partition: executionId })
 
 /**
@@ -2127,9 +2121,9 @@ const writeRun = <A, E, R>(db: Database, executionId: string, body: Effect.Effec
  */
 const writeBody = <A, E, R>(
   db: Database,
-  body: Effect.Effect<A, E, R>,
+  body: A!E!R,
   partition?: string | undefined
-): Effect.Effect<A, E, R> =>
+): A!E!R =>
   db.writer.write(body, { partition }).pipe(
     Effect.catchCause((cause) => {
       if (cause.reasons.length === 1) {
@@ -2145,29 +2139,29 @@ const writeBody = <A, E, R>(
 /** Takes the store's transaction gate, then writes `effect`, releasing the gate at COMMIT. */
 const gatedWrite = <A, E, R>(
   db: Database,
-  effect: Effect.Effect<A, E, R>,
+  effect: A!E!R,
   partition?: string | undefined
-): Effect.Effect<A, E, R> =>
+): A!E!R =>
   Effect.uninterruptibleMask((restore) =>
-    Effect.gen(function*() {
-      yield* restore(db.transactionGate.take(1))
+    effect {
+      try restore(db.transactionGate.take(1))
       let released = false
       const release = Effect.suspend(() => {
         if (released) return Effect.void
         released = true
         return db.transactionGate.release(1).pipe(Effect.asVoid)
       })
-      return yield* restore(writeBody(
+      return try restore(writeBody(
         db,
-        Effect.gen(function*() {
+        effect {
           // Release at COMMIT, before publication can read through another
           // transaction. A failed write instead releases in ensuring below.
-          yield* afterCommit(release, db.sql)
-          return yield* effect
-        }),
+          try afterCommit(release, db.sql)
+          return try effect
+        },
         partition
       )).pipe(Effect.ensuring(release))
-    })
+    }
   )
 
 /** Runs `effect` in one write transaction; a nested one joins the enclosing transaction. */
@@ -2180,11 +2174,11 @@ const transaction = (db: Database): Service["transaction"] => (effect, options) 
         : gatedWrite(db, effect, options?.partition)
   )
 
-const readTransaction = (db: Database): Service["readTransaction"] => <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+const readTransaction = (db: Database): Service["readTransaction"] => <A, E, R>(effect: A!E!R) =>
   Dialect.readTransaction(db.sql, effect).pipe(
     // BEGIN or COMMIT failing is the store's failure, never the body's.
     Effect.catchIf((error): error is SqlError.SqlError => SqlError.isSqlError(error), (error) => Effect.die(error))
-  ) as Effect.Effect<A, E, R>
+  ) as A!E!R
 
 const runParents = (db: Database): Service["runParents"] =>
   Effect.fn("DurableEngineState.runParents")((childId) =>
@@ -2233,15 +2227,15 @@ const runChildren = (db: Database): Service["runChildren"] =>
  * @since 0.1.0
  * @category constructors
  */
-export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* Effect.service(SqlClient.SqlClient)
-  const writer = yield* DurableWriter
+export const make: Service!never!(DurableWriter | SqlClient.SqlClient) = effect {
+  const sql = try Effect.service(SqlClient.SqlClient)
+  const writer = try DurableWriter
 
   // Engine-store-owned storage created outside the journal migration
   // (issues #40/#41/#79/#81). The statements, their rationale, and
   // the dialects each is known to accept live in one machine-readable
   // inventory so the pg-porting plan cannot omit them (issue #92).
-  yield* EngineStateSchema.apply(sql, writer)
+  try EngineStateSchema.apply(sql, writer)
 
   const db: Database = { sql, writer, transactionGate: Semaphore.makeUnsafe(1) }
   return DurableEngineState.of({
@@ -2275,7 +2269,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     transaction: transaction(db),
     readTransaction: readTransaction(db)
   })
-})
+}
 
 /**
  * Provides database-backed durable engine state.
@@ -2363,7 +2357,7 @@ interface Memory {
   readonly transactionDepth: Map<number, number>
 }
 
-const snapshotDeferred = (row: DeferredRow): Effect.Effect<DeferredRow> =>
+const snapshotDeferred = (row: DeferredRow): DeferredRow!! =>
   Schema.decodeUnknownEffect(DeferredRow)(row).pipe(
     Effect.orDie,
     Effect.flatMap((decoded) =>
@@ -2387,7 +2381,7 @@ const snapshotDeferred = (row: DeferredRow): Effect.Effect<DeferredRow> =>
     )
   )
 
-const snapshotClock = (row: ClockRow): Effect.Effect<ClockRow> =>
+const snapshotClock = (row: ClockRow): ClockRow!! =>
   Schema.decodeUnknownEffect(ClockRow)(row).pipe(
     Effect.orDie,
     Effect.map((decoded) => ({ ...decoded }))
@@ -2479,10 +2473,10 @@ const pendingMemoryRows = (
 
 const memoryDeferred = (memory: Memory): Service["deferred"] =>
   Effect.fn("DurableEngineState.deferred")((address) =>
-    Effect.gen(function*() {
+    effect {
       const row = memory.deferreds.get(deferredKey(address))
-      return row === undefined ? Option.none() : Option.some(yield* snapshotDeferred(row))
-    })
+      return row === undefined ? Option.none() : Option.some(try snapshotDeferred(row))
+    }
   )
 
 const memoryConsumeDeferred = (memory: Memory): Service["consumeDeferred"] =>
@@ -2500,55 +2494,55 @@ const memoryConsumeDeferred = (memory: Memory): Service["consumeDeferred"] =>
 
 const memoryCompleteDeferred = (memory: Memory): Service["completeDeferred"] =>
   Effect.fn("DurableEngineState.completeDeferred")((row) =>
-    Effect.gen(function*() {
+    effect {
       // Mirrors SQL: an unknown run takes no completion.
       if (!runView(memory, row.executionId, undefined).exists) return { _tag: "NotFound" as const }
-      const stored = yield* snapshotDeferred(row)
+      const stored = try snapshotDeferred(row)
       const key = deferredKey(stored)
       const existing = memory.deferreds.get(key)
       if (existing !== undefined) {
         return {
           _tag: "Existing" as const,
-          row: yield* snapshotDeferred(existing),
-          digest: yield* memoryDigest(existing)
+          row: try snapshotDeferred(existing),
+          digest: try memoryDigest(existing)
         }
       }
       memory.deferreds.set(key, stored)
       return {
         _tag: "Completed" as const,
-        row: yield* snapshotDeferred(stored),
-        digest: yield* memoryDigest(stored)
+        row: try snapshotDeferred(stored),
+        digest: try memoryDigest(stored)
       }
-    })
+    }
   )
 
 const memoryClock = (memory: Memory): Service["clock"] =>
   Effect.fn("DurableEngineState.clock")((address) =>
-    Effect.gen(function*() {
+    effect {
       const row = memory.clocks.get(clockKey(address))
-      return row === undefined ? Option.none() : Option.some(yield* snapshotClock(row))
-    })
+      return row === undefined ? Option.none() : Option.some(try snapshotClock(row))
+    }
   )
 
 const memoryScheduleClock = (memory: Memory): Service["scheduleClock"] =>
   Effect.fn("DurableEngineState.scheduleClock")((row, owner) =>
-    Effect.gen(function*(): Generator<Effect.Effect<unknown>, ScheduleClockOutcome, never> {
+    effect {
       // Mirrors the SQL fence: creation requires the presented owner to
       // currently run the execution; a lost fence surfaces as
       // self-interruption, an existing row wins regardless.
-      const stored = yield* snapshotClock(row)
+      const stored = try snapshotClock(row)
       const key = clockKey(stored)
       const existing = memory.clocks.get(key)
       if (existing !== undefined) {
-        return { _tag: "Existing" as const, row: yield* snapshotClock(existing) }
+        return { _tag: "Existing" as const, row: try snapshotClock(existing) }
       }
       const view = runView(memory, stored.executionId, owner)
       if (!view.exists || !view.running || !view.owned) {
-        return yield* Effect.interrupt
+        return try Effect.interrupt
       }
       memory.clocks.set(key, stored)
-      return { _tag: "Scheduled" as const, row: yield* snapshotClock(stored) }
-    })
+      return { _tag: "Scheduled" as const, row: try snapshotClock(stored) }
+    }
   )
 
 const memoryCompleteClock = (memory: Memory): Service["completeClock"] =>
@@ -2629,7 +2623,8 @@ const memoryHasDueWake = (memory: Memory): Service["hasDueWake"] => (executionId
   Effect.sync(() =>
     Array.from(memory.deferreds.values()).some((row) =>
       row.executionId === executionId && !memory.consumedDeferreds.has(deferredKey(row))
-    ) || Array.from(memory.clocks.values()).some((row) =>
+    ) ||
+    Array.from(memory.clocks.values()).some((row) =>
       row.executionId === executionId && row.completedAtMs === null && row.dueAtMs <= nowMs
     )
   )
@@ -2854,7 +2849,7 @@ const memoryRecordRunParent = (memory: Memory): Service["recordRunParent"] =>
     // A single synchronous step mirrors the SQL transaction: the cycle
     // check and the insert are atomic — no fiber can interleave between
     // them, and a rejected edge is never observable (issues #54/#55/#56).
-    Effect.suspend((): Effect.Effect<RecordRunParentOutcome, RunParentCycleError> => {
+    Effect.suspend((): RecordRunParentOutcome!RunParentCycleError => {
       const parents = memory.parentEdges.get(childId) ?? new Map<string, number>()
       const existing = parents.get(parentId)
       if (existing !== undefined) {
@@ -2911,7 +2906,7 @@ const memoryRunChildren = (memory: Memory): Service["runChildren"] =>
     })
   )
 /** Runs one operation under the memory state's permit, unless its fiber is inside a transaction. */
-const guard = <A, E, R>(memory: Memory, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+const guard = <A, E, R>(memory: Memory, effect: A!E!R): A!E!R =>
   Effect.flatMap(
     Effect.fiberId,
     (fiberId) => (memory.transactionDepth.get(fiberId) ?? 0) > 0 ? effect : memory.gate.withPermit(effect)
@@ -2946,7 +2941,7 @@ const restoreMemory = (memory: Memory, before: ReturnType<typeof snapshotMemory>
  * Leaves a fiber's transaction, once: lowers its depth and, when the
  * transaction is the outermost, releases the permit.
  */
-const leaveTransaction = (memory: Memory, fiberId: number, nested: boolean): Effect.Effect<void> => {
+const leaveTransaction = (memory: Memory, fiberId: number, nested: boolean): void!! => {
   let closed = false
   return Effect.suspend(() => {
     if (closed) return Effect.void
@@ -2965,9 +2960,9 @@ const leaveTransaction = (memory: Memory, fiberId: number, nested: boolean): Eff
 const memoryTransaction = (memory: Memory): Service["transaction"] => (effect, options) =>
   Effect.flatMap(Effect.fiberId, (fiberId) =>
     Effect.uninterruptibleMask((restore) =>
-      Effect.gen(function*() {
+      effect {
         const nested = (memory.transactionDepth.get(fiberId) ?? 0) > 0
-        if (!nested) yield* restore(memory.gate.take(1))
+        if (!nested) try restore(memory.gate.take(1))
         const before = snapshotMemory(memory)
         memory.transactionDepth.set(fiberId, (memory.transactionDepth.get(fiberId) ?? 0) + 1)
         let committed = false
@@ -2975,7 +2970,7 @@ const memoryTransaction = (memory: Memory): Service["transaction"] => (effect, o
         const commit = Effect.sync(() => {
           committed = true
         }).pipe(Effect.andThen(close))
-        return yield* Effect.sync(() => options?.onCommit?.(commit)).pipe(
+        return try Effect.sync(() => options?.onCommit?.(commit)).pipe(
           Effect.andThen(restore(effect)),
           Effect.catchCause((cause) =>
             Effect.sync(() => {
@@ -2984,7 +2979,7 @@ const memoryTransaction = (memory: Memory): Service["transaction"] => (effect, o
           ),
           Effect.ensuring(close)
         )
-      })
+      }
     ))
 
 /** The memory state's operations, each unguarded: the caller holds the gate. */

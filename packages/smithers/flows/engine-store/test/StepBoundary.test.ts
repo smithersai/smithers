@@ -13,7 +13,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import { TestClock } from "effect/testing"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 
 /**
  * The production boundary now needs an `ArtifactStore` as well as a
@@ -1436,7 +1436,7 @@ describe("StepBoundary stays importable from a browser bundle (issue #114)", () 
     const fs = await import("node:fs/promises")
     const url = await import("node:url")
     const source = await fs.readFile(
-      url.fileURLToPath(new URL("../src/StepBoundary.ts", import.meta.url)),
+      url.fileURLToPath(new URL("../src/StepBoundary.vibe", import.meta.url)),
       "utf8"
     )
     expect(source).not.toMatch(/from "node:/)

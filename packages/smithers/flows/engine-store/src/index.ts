@@ -26,13 +26,13 @@ export * as CacheSync from "./CacheSync.vibe"
  * @since 0.1.0
  * @category operations
  */
-export * as DisasterRecovery from "./DisasterRecovery.ts"
+export * as DisasterRecovery from "./DisasterRecovery.vibe"
 
 /**
  * @since 0.1.0
  * @category services
  */
-export * as DurableEngineState from "./DurableEngineState.ts"
+export * as DurableEngineState from "./DurableEngineState.vibe"
 
 /**
  * @since 0.1.0
@@ -115,7 +115,7 @@ export * as SelectionStore from "./SelectionStore.vibe"
  * @since 0.1.0
  * @category services
  */
-export * as StepBoundary from "./StepBoundary.ts"
+export * as StepBoundary from "./StepBoundary.vibe"
 
 /**
  * @category folds
@@ -133,7 +133,7 @@ export * as StepCacheFold from "./StepCacheFold.vibe"
  * @since 0.1.0
  * @category services
  */
-export * as StepSandbox from "./StepSandbox.ts"
+export * as StepSandbox from "./StepSandbox.vibe"
 
 /**
  * @since 0.1.0
@@ -145,7 +145,7 @@ export * as WakeBus from "./WakeBus.ts"
  * @since 0.1.0
  * @category services
  */
-export * as WorkspaceSandbox from "./WorkspaceSandbox.ts"
+export * as WorkspaceSandbox from "./WorkspaceSandbox.vibe"
 
 /**
  * @since 0.1.0
@@ -211,4 +211,4 @@ export { EventTypes } from "./EventTypes.ts"
  * @since 1.0.0
  * @category operations
  */
-export * as ExecutionFacts from "./ExecutionFacts.ts"
+export * as ExecutionFacts from "./ExecutionFacts.vibe"

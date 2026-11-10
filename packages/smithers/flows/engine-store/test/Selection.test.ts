@@ -20,7 +20,7 @@ import { vi } from "vitest"
 import * as JournalRecords from "../src/internal/JournalRecords.vibe"
 import * as PlanScheduler from "../src/PlanScheduler.ts"
 import * as Selection from "../src/Selection.vibe"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 

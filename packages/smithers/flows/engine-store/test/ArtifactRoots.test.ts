@@ -4,7 +4,7 @@
  */
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import * as ArtifactRoots from "../src/internal/ArtifactRoots.ts"
+import * as ArtifactRoots from "../src/internal/ArtifactRoots.vibe"
 
 const route = <A>(effect: Effect.Effect<A, ArtifactRoots.ArtifactRootDecodeError>) =>
   Effect.runPromise(

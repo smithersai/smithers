@@ -6,7 +6,7 @@ import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Layer, Logger, Metric, References, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as EngineStore from "../src/EngineStore.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 const flow = Flow.make("journal-decode/flow", { payload: {}, success: Schema.Null, body: () => Node.succeed(null) })

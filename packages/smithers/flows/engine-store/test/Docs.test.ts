@@ -158,7 +158,7 @@ describe("source documentation pointers", () => {
   })
 
   it("names the run statuses the schema admits and the real memory transaction", () => {
-    const header = read("DurableEngineState.ts")
+    const header = read("DurableEngineState.vibe")
     expect(header).not.toMatch(/one `waiting` status/)
     expect(header).toContain("`suspended`")
     expect(header).toContain("`waiting_reason`")

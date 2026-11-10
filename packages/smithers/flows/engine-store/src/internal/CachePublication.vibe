@@ -44,16 +44,16 @@ import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as ArtifactSync from "../ArtifactSync.vibe"
 import * as CacheSync from "../CacheSync.vibe"
-import * as StepBoundary from "../StepBoundary.ts"
+import * as StepBoundary from "../StepBoundary.vibe"
 
 /** Resolves the configured protocol, defaulting to the single-tier one. */
-const sync: Effect.Effect<ArtifactSync.Service> = Effect.map(
+const sync: ArtifactSync.Service!! = Effect.map(
   Effect.serviceOption(ArtifactSync.ArtifactSync),
   (configured) => Option.isSome(configured) ? configured.value : ArtifactSync.makeLocal()
 )
 
 /** Resolves the configured entry publisher, defaulting to the single-tier one. */
-const entrySync: Effect.Effect<CacheSync.Service> = Effect.map(
+const entrySync: CacheSync.Service!! = Effect.map(
   Effect.serviceOption(CacheSync.CacheSync),
   (configured) => Option.isSome(configured) ? configured.value : CacheSync.makeLocal()
 )
@@ -85,16 +85,16 @@ export interface Unshareable {
 export const publishArtifacts = (
   evidence: StepBoundary.BoundaryEvidence | undefined
 ): Effect.Effect<Unshareable | undefined, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
-  Effect.gen(function*() {
+  effect {
     if (evidence === undefined) return undefined
     const digests = StepBoundary.referencedDigests(evidence)
     if (digests.length === 0) return undefined
-    const protocol = yield* sync
-    return yield* protocol.publish(digests).pipe(
+    const protocol = try sync
+    return try protocol.publish(digests).pipe(
       Effect.as(undefined),
       Effect.catch((failure) => Effect.succeed<Unshareable>({ stage: "artifacts", message: failure.message }))
     )
-  })
+  }
 
 /**
  * Publishes the recorded entry to the shared step-result tier, reporting a
@@ -109,12 +109,12 @@ export const publishArtifacts = (
  */
 export const publishEntry = (
   entry: CacheStore.CacheEntry
-): Effect.Effect<Unshareable | undefined> =>
-  Effect.gen(function*() {
-    const protocol = yield* entrySync
-    const refused = yield* protocol.publishEntry(entry)
+): (Unshareable | undefined)!! =>
+  effect {
+    const protocol = try entrySync
+    const refused = try protocol.publishEntry(entry)
     return Option.isSome(refused) ? { stage: "entry" as const, message: refused.value.message } : undefined
-  })
+  }
 
 /**
  * Fetches the artifacts a replay could not resolve locally, reporting whether
@@ -126,12 +126,12 @@ export const publishEntry = (
 export const hydrateArtifacts = (
   evidence: StepBoundary.BoundaryEvidence
 ): Effect.Effect<boolean, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
-  Effect.gen(function*() {
+  effect {
     const digests = StepBoundary.referencedDigests(evidence)
     if (digests.length === 0) return false
-    const protocol = yield* sync
-    return yield* protocol.hydrate(digests)
-  })
+    const protocol = try sync
+    return try protocol.hydrate(digests)
+  }
 
 /**
  * The classification a `replayOutputs` failure needs before it can be

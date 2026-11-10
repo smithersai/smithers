@@ -573,7 +573,7 @@ describe("coverage conformance", () => {
       // and are intentionally discarded.
       // FileBoundary rejects upward and absolute removal declarations before
       // they reach the sandbox.
-      "smithers/flows/engine-store/src/WorkspaceSandbox.ts": 1,
+      "smithers/flows/engine-store/src/WorkspaceSandbox.vibe": 1,
       // The inert-JSON reducer that admits an action's persisted value asks
       // the language for guarantees the language already makes: a non-proxy
       // array's `length` is a mandatory own data property holding a uint32,

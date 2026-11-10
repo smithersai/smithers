@@ -10,8 +10,8 @@ import * as SqlConsensus from "@smthrs/journal/SqlConsensus"
 import { appendFile } from "node:fs/promises"
 import { once } from "node:events"
 import * as EngineStore from "../../src/EngineStore.ts"
-import * as StepBoundary from "../../src/StepBoundary.ts"
-import * as StepSandbox from "../../src/StepSandbox.ts"
+import * as StepBoundary from "../../src/StepBoundary.vibe"
+import * as StepSandbox from "../../src/StepSandbox.vibe"
 import * as TestStores from "../../src/test/TestStores.ts"
 
 // Preserve the permit failure before the dispatcher turns a lost fence into

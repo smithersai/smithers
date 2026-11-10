@@ -16,7 +16,7 @@ import * as Cause from "effect/Cause"
 import * as References from "effect/References"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as EffectRecords from "../src/internal/EffectRecords.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 

@@ -20,11 +20,11 @@ import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { TestClock } from "effect/testing"
-import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as DurableEngineState from "../src/DurableEngineState.vibe"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as Migrations from "../src/Migrations.vibe"
 import * as OwnerIdentity from "../src/OwnerIdentity.vibe"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import { withCrypto } from "./Sha256.ts"
 
 const ProbeFlow = Flow.make("AttemptProbeCost/Flow", {

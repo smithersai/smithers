@@ -3,7 +3,7 @@ import { type Ownership, RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 
 export const owner: Ownership.OwnerId = { hostId: "cache-policy", pid: 7, nonce: "lane-c" }
 export const descriptor: ActionPersistence.BoundaryMetadata = { readSet: [], writeSet: [], boundaryMode: "hard" }

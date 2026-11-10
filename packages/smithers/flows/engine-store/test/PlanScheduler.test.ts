@@ -30,9 +30,9 @@ import * as JournalRecords from "../src/internal/JournalRecords.vibe"
 import * as PlanInputStore from "../src/PlanInputStore.vibe"
 import * as PlanScheduler from "../src/PlanScheduler.ts"
 import * as Reconciliation from "../src/Reconciliation.vibe"
-import * as StepBoundary from "../src/StepBoundary.ts"
+import * as StepBoundary from "../src/StepBoundary.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
-import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
+import * as WorkspaceSandbox from "../src/WorkspaceSandbox.vibe"
 import { runPromise, sha256 } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "scheduler-host", pid: 91, nonce: "scheduler-process" }

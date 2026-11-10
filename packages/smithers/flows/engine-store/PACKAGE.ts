@@ -156,7 +156,7 @@ const securityReview = Smithers.SecurityReview({
         "reservedAt comparing `.flows` and `.smithers-workspace-lock` case-sensitively, so `.FLOWS/...` reaches the engine state on a case-insensitive filesystem.",
         "The lease heartbeat's path-based `utimes` being reachable before the confined read proved the lock holds this call's token."
       ],
-      paths: ["src/WorkspaceSandbox.ts", "src/StepSandbox.ts", "src/internal/SandboxedExecution.ts"]
+      paths: ["src/WorkspaceSandbox.vibe", "src/StepSandbox.vibe", "src/internal/SandboxedExecution.vibe"]
     },
     {
       id: "hermetic-read-enforcement",
@@ -169,10 +169,10 @@ const securityReview = Smithers.SecurityReview({
         "Glob coverage in the write-set matcher treating `*` as crossing `/` or `**` as matching outside its prefix."
       ],
       paths: [
-        "src/WorkspaceSandbox.ts",
-        "src/StepSandbox.ts",
-        "src/StepBoundary.ts",
-        "src/internal/SandboxedExecution.ts",
+        "src/WorkspaceSandbox.vibe",
+        "src/StepSandbox.vibe",
+        "src/StepBoundary.vibe",
+        "src/internal/SandboxedExecution.vibe",
         "src/internal/FileBoundarySnapshot.ts"
       ]
     },
@@ -188,7 +188,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/CacheAdmission.ts",
-        "src/internal/CachePublication.ts",
+        "src/internal/CachePublication.vibe",
         "src/internal/CacheOutputPolicy.ts",
         "src/CacheSync.vibe",
         "src/ArtifactSync.vibe",
@@ -206,7 +206,7 @@ const securityReview = Smithers.SecurityReview({
         "`VACUUM INTO` receiving an unparameterized or operator-unchecked path.",
         "A failed backup's cleanup removing entries outside the backup directory it created."
       ],
-      paths: ["src/DisasterRecovery.ts", "scripts/flows-backup.mjs"]
+      paths: ["src/DisasterRecovery.vibe", "scripts/flows-backup.mjs"]
     },
     {
       id: "owner-fencing",
@@ -219,12 +219,12 @@ const securityReview = Smithers.SecurityReview({
         "Restore fencing that leaves any pre-backup claim or running run unsuspended."
       ],
       paths: [
-        "src/DurableEngineState.ts",
+        "src/DurableEngineState.vibe",
         "src/OwnerIdentity.vibe",
         "src/internal/RunDriver.ts",
         "src/internal/AttemptLifecycle.vibe",
         "src/internal/RunCoordinator.vibe",
-        "src/DisasterRecovery.ts"
+        "src/DisasterRecovery.vibe"
       ]
     },
     {
@@ -257,7 +257,7 @@ const securityReview = Smithers.SecurityReview({
         "ExitEncoding decoding an unknown tag as success."
       ],
       paths: [
-        "src/internal/ArtifactRoots.ts",
+        "src/internal/ArtifactRoots.vibe",
         "src/internal/ExitEncoding.vibe",
         "src/internal/ResultEnvelope.vibe",
         "src/internal/JournalRecords.vibe",
@@ -275,7 +275,7 @@ const securityReview = Smithers.SecurityReview({
         "A root enumeration that skips a table or checkpoint column holding digests.",
         "Retention deleting a run that is still running, parked, or referenced by a child run."
       ],
-      paths: ["src/ArtifactGc.vibe", "src/Retention.vibe", "src/internal/RetentionOps.vibe", "src/internal/ArtifactRoots.ts"]
+      paths: ["src/ArtifactGc.vibe", "src/Retention.vibe", "src/internal/RetentionOps.vibe", "src/internal/ArtifactRoots.vibe"]
     },
     {
       id: "wait-token-exposure",
@@ -288,10 +288,10 @@ const securityReview = Smithers.SecurityReview({
         "A resume path that accepts a token without matching it to the run id and current wait."
       ],
       paths: [
-        "src/ExecutionFacts.ts",
+        "src/ExecutionFacts.vibe",
         "src/ExecutionSnapshot.vibe",
         "src/internal/ExecutionSnapshotRead.vibe",
-        "src/DurableEngineState.ts",
+        "src/DurableEngineState.vibe",
         "src/RunCatalogRead.ts",
         "src/RunChangeFeed.vibe",
         "src/internal/TypedEvents.ts",

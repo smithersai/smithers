@@ -8,8 +8,8 @@ import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { TestClock } from "effect/testing"
-import * as DurableEngineState from "../src/DurableEngineState.ts"
-import * as DeferredPersistence from "../src/internal/DeferredPersistence.ts"
+import * as DurableEngineState from "../src/DurableEngineState.vibe"
+import * as DeferredPersistence from "../src/internal/DeferredPersistence.vibe"
 import { withCrypto } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "sweep-test", pid: 3, nonce: "sweep" }

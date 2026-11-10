@@ -9,7 +9,7 @@ import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import { createHash } from "node:crypto"
-import * as WorkspaceSandbox from "../../src/WorkspaceSandbox.ts"
+import * as WorkspaceSandbox from "../../src/WorkspaceSandbox.vibe"
 import { hostPath } from "../HostPath.ts"
 
 const root = process.argv[2]

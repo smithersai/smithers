@@ -7,7 +7,7 @@
 import type { DatabaseError } from "@smthrs/database/DurableWriter"
 import type { Journal } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
-import type * as DurableEngineState from "../DurableEngineState.ts"
+import type * as DurableEngineState from "../DurableEngineState.vibe"
 
 /**
  * Binds one ordered transaction boundary to a pair of stores.
@@ -46,38 +46,39 @@ import type * as DurableEngineState from "../DurableEngineState.ts"
  * @category constructors
  * @since 0.1.0
  */
-export const make = (
-  state: Pick<DurableEngineState.Service, "transaction">,
-  journal: Journal.Service
-) =>
-<A, E, R>(
-  effect: Effect.Effect<A, E, R>,
-  options?: {
-    readonly transact?:
-      | (<B, F, S>(
-        write: Effect.Effect<B, F, S>
-      ) => Effect.Effect<B, F | Journal.JournalError | DatabaseError, S>)
-      | undefined
-    readonly partition?: string | undefined
-  }
-): Effect.Effect<A, E | Journal.JournalError | DatabaseError, R> =>
-  Effect.suspend(() => {
-    let commit = Effect.void
-    let bodyCompleted = false
-    const partition = options?.partition
-    const body = Effect.gen(function*() {
-      yield* journal.whenCommitted(Effect.suspend(() => bodyCompleted ? commit : Effect.void))
-      const value = yield* effect
-      bodyCompleted = true
-      return value
-    })
-    return state.transaction(
-      options?.transact === undefined ? journal.transact(body, { partition }) : options.transact(body),
-      {
-        onCommit: (accept) => {
-          commit = accept
-        },
-        partition
+export const make =
+  (
+    state: Pick<DurableEngineState.Service, "transaction">,
+    journal: Journal.Service
+  ) =>
+  <A, E, R>(
+    effect: A!E!R,
+    options?: {
+      readonly transact?:
+        | (<B, F, S>(
+          write: B!F!S
+        ) => B!(F | Journal.JournalError | DatabaseError)!S)
+        | undefined
+      readonly partition?: string | undefined
+    }
+  ): A!(E | Journal.JournalError | DatabaseError)!R =>
+    Effect.suspend(() => {
+      let commit = Effect.void
+      let bodyCompleted = false
+      const partition = options?.partition
+      const body = effect {
+        try journal.whenCommitted(Effect.suspend(() => bodyCompleted ? commit : Effect.void))
+        const value = try effect
+        bodyCompleted = true
+        return value
       }
-    )
-  })
+      return state.transaction(
+        options?.transact === undefined ? journal.transact(body, { partition }) : options.transact(body),
+        {
+          onCommit: (accept) => {
+            commit = accept
+          },
+          partition
+        }
+      )
+    })
