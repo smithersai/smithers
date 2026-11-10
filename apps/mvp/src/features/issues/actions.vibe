@@ -1,0 +1,470 @@
+import { clearWriteComposer } from "../../admissionSource"
+import {
+  acknowledgeNavigation,
+  admissionReceipt,
+  beginAdmission,
+  identifyAdmission,
+  executionOf,
+  finishAdmission,
+  finishRetainedAdmission,
+  whileAdmitting,
+  forgetAdmission,
+  WriteIntents,
+} from "../../writeAdmission"
+import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { keep } from "./writes"
+import type { Commitment } from "./lifecycle"
+import { AuthStore } from "../auth/store"
+import { FlowDispatch } from "../../flows/dispatch"
+import { repoId } from "../repo/contract"
+import {
+  commentDraftKey,
+  issuePath,
+  MAX_BODY_LENGTH,
+  MAX_TITLE_LENGTH,
+  newDraftKey,
+  newIssuePath,
+  WRITE_ID_NAMESPACE,
+  type TriageDecision,
+} from "./contract"
+import { admissions, pendingActions, reads, submissionFailures } from "#vibelang/emitted/src/features/issues/metrics"
+import { recordShapeRetry } from "./shapeSync"
+import { type Draft, type QueuedWrite, SEARCHED, VIEW } from "./schema"
+import { IssuesStore } from "./store"
+
+// Issue writes resolve after the device retains their intent and admits them to its durable outbox. Public flows
+// join the same write in the background; the outbox owns delivery after this tab closes.
+
+/**
+ * What an issue route calls on a link's hover or focus (the router's intent preload): starts `owner/name`'s issues'
+ * sync without showing a page, so the page the click opens has its rows.
+ */
+export const warm = (owner: string, name: string, number?: number) =>
+  Effect.flatMap(IssuesStore, (store) => Effect.asVoid(store.forRepo(repoId(owner, name), number)))
+
+/** Reconnects this tab's issue shapes after one stopped or failed; the SDK owns retries and resumption. */
+export const reconnectShapes = Effect.flatMap(
+  IssuesStore,
+  (store) => Effect.all([store.routed().reconnect, store.writes.reconnect], { discard: true }),
+)
+
+/** How long a search waits for the next keypress before it asks the route. */
+export const SEARCH_AFTER = "150 millis"
+
+/**
+ * Whether this tab may keep the issues route's answer on repository `id`: it decided this person may read it, and its
+ * list hasn't installed (a direct issue may keep its heading after the list installs). Waits for the repository to open (the route opens it) and for its authority's answer.
+ */
+const keepable = (store: IssuesStore["Service"], id: string, issue: boolean) =>
+  effect {
+    if (issue) {
+      const status = try store.authority(id).pipe(Stream.filter((status) => status !== "unknown"), Stream.runHead)
+      return Option.getOrUndefined(status) === "allowed"
+    }
+    const repo = try store.forRepo(id)
+    const rows = try repo.accessState.rows.pipe(
+      Stream.filter((rows) => rows[0]?.status !== "unknown"),
+      Stream.runHead,
+    )
+    const row = Option.getOrThrow(rows)[0]!
+    return row.status === "allowed" && row.installed !== true
+  }
+
+/** Whether this tab already knows it may not keep an answer on `id`: refused, or its list installed. Never waits. */
+const declined = (store: IssuesStore["Service"], id: string, issue: boolean) =>
+  effect {
+    // The server authorizes the early read now; publication waits for device authority in `keepable` and the gate.
+    // A summary transport failure must not prevent this independent read from answering.
+    if (issue) return false
+    const repo = store.opened(id)
+    if (repo === undefined) return false
+    const row = Option.getOrUndefined(try Stream.runHead(repo.accessState.rows))?.[0]
+    return row !== undefined && row.status !== "unknown" && !(row.status === "allowed" && row.installed !== true)
+  }
+
+/**
+ * A person typed search `q` in a list that hasn't synced yet: the issues route answers it, under the shapes' own rule,
+ * so a search doesn't wait for the whole sync (docs/features/issues.md#the-browser). It asks as soon as the person
+ * stops typing, unless this tab already knows it may not keep the answer, and doesn't wait for the repository to open:
+ * on a cold page that took seconds. It keeps the answer, in memory, only once this tab's own authority on the
+ * repository says it may (decision 0110) and this is still the last search asked. A refusal, another search and another
+ * repository forget it (`forgetSearch`). One log line `issues.search` with the outcome and time; never the search.
+ */
+export const search = (owner: string, name: string, q: string, number?: number) =>
+  effect {
+    const store = try IssuesStore
+    const id = repoId(owner, name)
+    const asked = q.trim()
+    const issue = number !== undefined
+    try store.forgetSearch
+    const generation = store.searches.latest
+    store.searches.repoId = id
+    store.searches.issue = issue
+    if (asked === "") return
+    if (!issue) try Effect.sleep(SEARCH_AFTER)
+    if (store.searches.latest !== generation || (try declined(store, id, issue))) return
+    const startedAt = try Clock.currentTimeMillis
+    const answer = try Effect.result(store.search(owner, name, asked, number))
+    const fields = { durationMs: (try Clock.currentTimeMillis) - startedAt, purpose: issue ? "issue" : "search" }
+    try Metric.update(
+      Metric.withAttributes(reads, {
+        purpose: fields.purpose,
+        outcome: answer._tag === "Failure" ? "failed" : "answered",
+      }),
+      1,
+    )
+    if (answer._tag === "Failure") {
+      return try Effect.logWarning("issues.search").pipe(
+        Effect.annotateLogs({ ...fields, outcome: "failed", status: answer.failure.status ?? 0 }),
+      )
+    }
+    try Effect.logInfo("issues.search").pipe(
+      Effect.annotateLogs({ ...fields, outcome: "answered", count: answer.success.length }),
+    )
+    if (store.searches.latest !== generation || !(try keepable(store, id, issue))) return
+    if (store.searches.latest !== generation) return
+    try Effect.orDie(store.searched.insert({ id: SEARCHED, repoId: id, q: asked, issues: answer.success }))
+  }.pipe(
+    Effect.annotateLogs({ feature: "issues" }),
+    withSpan("issues.read", { attributes: { purpose: number !== undefined ? "issue" : "search" } }),
+  )
+
+/** Restores a URL's list search after navigation, including Back from a direct read that replaced its answer. */
+export const restoreSearch = (owner: string, name: string, q?: string) => effect {
+  const store = try IssuesStore
+  const asked = q?.trim() ?? ""
+  const retained = Option.getOrUndefined(try store.searched.get(SEARCHED))
+  if (!store.searches.issue && retained?.repoId === repoId(owner, name) && retained.q === asked) return
+  // `search` advances the generation before asking, so a late issue response cannot overwrite the restored list.
+  try search(owner, name, asked)
+}
+
+/** The direct page's early heading read, independent of Electric and without a typing debounce. */
+export const readIssue = (owner: string, name: string, number: number) => search(owner, name, `#${number}`, number)
+
+/** A person's Try again on an unavailable direct issue. */
+export const retry = Effect.flatMap(AuthStore, (auth) => auth.askCheck).pipe(
+  Effect.andThen(reconnectShapes),
+  Effect.andThen(recordShapeRetry("issue")),
+)
+
+/**
+ * What the route calls on a navigation: shows `owner/name`'s issues, or, with `number`, that issue; and opens that
+ * repository's issues, its own shapes (decision 0079 slice 1b), once.
+ */
+export const open = (owner: string, name: string, number?: number, writeId?: string | null) =>
+  effect {
+    const store = try IssuesStore
+    const id = repoId(owner, name)
+    try store.forRepo(id, number)
+    try store.route(id, number)
+    // Another repository: what its search answered goes.
+    if (store.searches.repoId !== id) try store.forgetSearch
+    const intents = try Effect.serviceOption(WriteIntents)
+    const resumed = Option.isSome(intents) ? intents.value.resumed.get(`${owner}/${name}`) : undefined
+    if (typeof writeId === "string" && Option.isSome(intents)) {
+      try acknowledgeNavigation(writeId)
+      intents.value.resumed.delete(`${owner}/${name}`)
+    }
+    try store.view.update(VIEW, (row) => {
+      row.owner = owner
+      row.name = name
+      row.repoId = id
+      row.number = number ?? null
+      row.draftKey = number === undefined ? newDraftKey(id) : commentDraftKey(id, number)
+      row.submitting = false
+      delete row.submissionKey
+      delete row.createdWriteId
+      if (number === undefined && writeId === null && resumed !== undefined) row.createdWriteId = resumed
+      delete row.submissionFailed
+    })
+  }.pipe(Effect.orDie)
+
+/** Changes draft `key`, made empty first if the device has none. */
+const changeDraft = (key: string, change: Partial<Omit<Draft, "id">>) =>
+  effect {
+    const { drafts } = try IssuesStore
+    if (Option.isNone(try drafts.get(key))) try drafts.insert({ id: key, title: "", body: "", ...change })
+    else try drafts.update(key, (draft) => void Object.assign(draft, change))
+  }.pipe(Effect.orDie)
+
+export const setNewTitle = (owner: string, name: string, title: string) =>
+  changeDraft(newDraftKey(repoId(owner, name)), { title })
+
+export const setNewBody = (owner: string, name: string, body: string) =>
+  changeDraft(newDraftKey(repoId(owner, name)), { body })
+
+export const setCommentDraft = (owner: string, name: string, number: number, body: string) =>
+  changeDraft(commentDraftKey(repoId(owner, name), number), { body })
+
+/** A new issue's draft as `issue/create` takes it: a title that isn't blank, and both within GitHub's limits. */
+export const newIssueOf = (draft: Draft | undefined) => {
+  const title = draft?.title.trim() ?? ""
+  if (title === "" || title.length > MAX_TITLE_LENGTH || draft!.body.length > MAX_BODY_LENGTH) return undefined
+  return { title, body: draft!.body }
+}
+
+/** A comment's draft as `issue/comment` takes it: not blank, and within GitHub's limit. */
+export const commentBodyOf = (draft: Draft | undefined) => {
+  const body = draft?.body ?? ""
+  return body.trim() === "" || body.length > MAX_BODY_LENGTH ? undefined : body
+}
+
+const setSubmitting = (submitting: boolean) =>
+  Effect.flatMap(
+    IssuesStore,
+    ({ view }) => Effect.orDie(view.update(VIEW, (row) => void (row.submitting = submitting))),
+  )
+
+/** The view's press is on its way already. */
+const submitting = Effect.flatMap(
+  IssuesStore,
+  ({ view }) => Effect.map(view.get(VIEW), (row) => Option.getOrThrow(row).submitting),
+)
+
+/** Retain recoverable intent, await local admission, then join the public flow under the same identity. */
+const admitWrite = (
+  write: Omit<QueuedWrite, "id" | "credential">,
+  joinFlow: (executionId: string) => unknown!unknown,
+  key?: string,
+) =>
+  effect {
+    const store = try IssuesStore
+    const { drafts, view } = store
+    const admission = try beginAdmission(
+      write.op,
+      write as unknown as Readonly<Record<string, unknown>>,
+      undefined,
+      key,
+    )
+    if (Option.isNone(admission)) {
+      try view.update(VIEW, value => {
+        value.submissionFailed = true
+      })
+      return false
+    }
+    const executionId = try executionOf(admission.value)
+    try view.update(VIEW, (row) => {
+      if (key !== undefined) {
+        row.submitting = true
+        row.submissionKey = executionId
+      }
+      delete row.submissionFailed
+    })
+    const id = try Uuid.v5(WRITE_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
+    try identifyAdmission(admission.value, executionId, id)
+    const row = {
+      ...write,
+      id,
+      repoId: repoId(...write.repo.split("/") as [string, string]),
+      queuedAt: try Clock.currentTimeMillis,
+      v: 3 as const,
+    }
+    // A recoverable receipt precedes every asynchronous admission. If this tab closes here, no old tab is needed
+    // to recover the text, and Retry uses this same write identity.
+    const kept = try Effect.result(
+      admissionReceipt(keep(store.requested, row, "not_sent", null), admission.value.commandId, write.op, "recovery"),
+    )
+    const current = Option.getOrThrow(try view.get(VIEW))
+    if (kept._tag === "Failure") {
+      if (key === undefined || current.submissionKey === executionId) {
+        try view.update(VIEW, (value) => {
+          if (key !== undefined) value.submitting = false
+          value.submissionFailed = true
+        })
+      }
+      if (write.op === "issue/comment") {
+        try Metric.update(Metric.withAttributes(submissionFailures, { reason: "storage" }), 1)
+      }
+      try finishAdmission(admission.value, false)
+      try Metric.update(Metric.withAttributes(admissions, { outcome: "storage_failed" }), 1)
+      try Effect.logWarning("issues.write.admission").pipe(
+        Effect.annotateLogs({ feature: "issues", writeId: id, op: row.op, outcome: "storage_failed" }),
+      )
+      return false
+    }
+    if (write.op === "issue/create" && current.submissionKey === executionId) {
+      try view.update(VIEW, (value) => {
+        value.createdWriteId = id
+      })
+    }
+    const { queued } = try store.queue(row)
+    const latest = Option.getOrThrow(try view.get(VIEW))
+    let cleaned = true
+    if (latest.submissionKey === executionId) {
+      if (queued && key !== undefined) {
+        const source = try drafts.get(key)
+        if (
+          Option.isSome(source) && source.value.body === (write.body ?? "")
+          && (write.op !== "issue/create" || source.value.title.trim() === write.title)
+        ) {
+          cleaned = try admissionReceipt(
+            drafts.delete(key).pipe(Effect.flatMap((removed) => removed.persisted)),
+            admission.value.commandId,
+            write.op,
+            "source",
+          ).pipe(Effect.as(true), Effect.orElseSucceed(() => false))
+        }
+      }
+      if (!queued && write.op === "issue/comment") {
+        try view.update(VIEW, (value) => {
+          value.submissionFailed = true
+        })
+      }
+      try setSubmitting(false)
+    }
+    try finishAdmission(admission.value, queued, cleaned)
+    try Metric.update(Metric.withAttributes(admissions, { outcome: queued ? "queued" : "not_admitted" }), 1)
+    try Effect.logInfo("issues.write.admission").pipe(Effect.annotateLogs({
+      feature: "issues",
+      writeId: id,
+      op: row.op,
+      outcome: queued ? "queued" : "not_admitted",
+    }))
+    // The durable outbox already owns delivery. The public flow joins the same write, so engine startup and the
+    // asking tab's lifetime cannot hold admission hostage or create a second issue.
+    if (queued) try joinFlow(executionId).pipe(Effect.ignore, Effect.forkIn(store.scope, { startImmediately: true }))
+    return key !== undefined || queued
+  }
+
+export const create = (owner: string, name: string) => effect {
+  const { drafts } = try IssuesStore
+  const key = newDraftKey(repoId(owner, name))
+  const issue = newIssueOf(Option.getOrUndefined(try drafts.get(key)))
+  if (issue === undefined || (try submitting)) return false
+  const flows = try FlowDispatch
+  const payload = { repo: `${owner}/${name}`, ...issue }
+  return try admitWrite(
+    { ...payload, op: "issue/create", number: 0 },
+    (executionId) => flows.dispatch("issue/create", payload, { door: "button", executionId }),
+    key,
+  )
+}
+
+/** Retry a locally retained admission under its original id; the server and outbox deduplicate it. */
+export const retryWrite = (writeId: string) =>
+  whileAdmitting(
+    writeId,
+    effect {
+      const store = try IssuesStore
+      const held = try store.requested.get(writeId)
+      if (Option.isNone(held) || held.value.status !== "not_sent" || held.value.reason !== null) return
+      const { queued } = try store.queue(held.value)
+      let cleaned = true
+      if (queued) {
+        const row = held.value
+        const key = row.op === "issue/create" ? newDraftKey(row.repoId) : commentDraftKey(row.repoId, row.number)
+        const draft = try store.drafts.get(key)
+        if (
+          Option.isSome(draft) && draft.value.body === row.body
+          && (row.op !== "issue/create" || draft.value.title.trim() === row.title)
+        ) {
+          cleaned = try store.drafts.delete(key).pipe(
+            Effect.flatMap((removed) => removed.persisted),
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          )
+          try store.view.update(VIEW, (view) => {
+            if (view.draftKey === key) delete view.submissionFailed
+          }).pipe(Effect.orDie)
+        }
+      }
+      if (queued) cleaned = (try clearWriteComposer(writeId)) && cleaned
+      try finishRetainedAdmission(writeId, queued, cleaned)
+    },
+  )
+
+/** Comment on issue `number` of `owner/name`: `issue/comment` with its draft. Answers whether it ran. */
+export const comment = (owner: string, name: string, number: number) =>
+  effect {
+    const { drafts, requested } = try IssuesStore
+    const key = commentDraftKey(repoId(owner, name), number)
+    const body = commentBodyOf(Option.getOrUndefined(try drafts.get(key)))
+    if (body === undefined || (try submitting)) return false
+    const recovery = (try requested.toArray).find((row) =>
+      row.op === "issue/comment" && row.repoId === repoId(owner, name) && row.number === number && row.body === body
+      && row.status === "not_sent" && row.reason === null
+    )
+    if (recovery !== undefined) {
+      try retryWrite(recovery.id)
+      return true
+    }
+    const flows = try FlowDispatch
+    const payload = { repo: `${owner}/${name}`, number, body }
+    return try admitWrite(
+      { ...payload, op: "issue/comment", title: "" },
+      (executionId) => flows.dispatch("issue/comment", payload, { door: "button", executionId }),
+      key,
+    )
+  }
+
+/** Every issue outbox operation owns its durable admission before the button's action resolves. */
+const operation = <N extends "issue/triage" | "triage/run" | "triage/enable" | "triage/pause" | "issue/commitment">(
+  op: N,
+  payload: import("../../flows/dispatch").PayloadOf<N>,
+  fields: Partial<QueuedWrite>,
+) => effect {
+  const flows = try FlowDispatch
+  return try admitWrite(
+    { repo: payload.repo, op, title: "", body: "", number: 0, ...fields },
+    (executionId) => flows.dispatch(op, payload, { door: "button", executionId }),
+  )
+}
+
+export const triage = (owner: string, name: string, number: number, decision: TriageDecision) =>
+  operation("issue/triage", { repo: `${owner}/${name}`, number, decision }, { number, decision })
+export const runTriageAgain = (owner: string, name: string, number: number) =>
+  operation("triage/run", { repo: `${owner}/${name}`, number }, { number })
+export const enableTriage = (owner: string, name: string) =>
+  operation("triage/enable", { repo: `${owner}/${name}` }, {})
+export const pauseTriage = (owner: string, name: string) => operation("triage/pause", { repo: `${owner}/${name}` }, {})
+
+/**
+ * Edit (`edit`) or Discard on a write that wasn't sent: Edit puts its text back in its draft first. The write goes from
+ * the device. Answers where its draft is edited: the new-issue form, or the issue's page; nothing for a write the
+ * device doesn't have.
+ */
+const handle = (writeId: string, action: "edit" | "discard") =>
+  effect {
+    const { requested } = try IssuesStore
+    const found = try requested.get(writeId)
+    if (Option.isNone(found)) return undefined
+    const write = found.value
+    if (!(try forgetAdmission(WRITE_ID_NAMESPACE, write.id))) return undefined
+    const [owner, name] = write.repo.split("/") as [string, string]
+    const created = write.op === "issue/create"
+    if (action === "edit") {
+      try (created
+        ? changeDraft(newDraftKey(write.repoId), { title: write.title, body: write.body })
+        : changeDraft(commentDraftKey(write.repoId, write.number), { body: write.body }))
+    }
+    try Effect.ignore(requested.delete(writeId))
+    try Metric.update(Metric.withAttributes(pendingActions, { action }), 1)
+    try Effect.logInfo("issues.pending").pipe(
+      Effect.annotateLogs({ writeId, op: write.op, action, feature: "issues" }),
+    )
+    return created ? newIssuePath(owner, name) : issuePath(owner, name, write.number)
+  }
+
+/** Edit on a write that wasn't sent: its text goes back to its draft. Answers the path where that draft is edited. */
+export const edit = (writeId: string) => handle(writeId, "edit")
+
+/** Discard on a write that wasn't sent: it goes. */
+export const discard = (writeId: string) => Effect.asVoid(handle(writeId, "discard"))
+
+/** A Maintainer's own press; the write is admitted and completed in the durable outbox. */
+export const setCommitment = (
+  owner: string,
+  name: string,
+  number: number,
+  commitment: Commitment,
+  previousWriteId?: string,
+) =>
+  effect {
+    const kept = try operation(
+      "issue/commitment",
+      { repo: `${owner}/${name}`, number, commitment },
+      { number, commitment },
+    )
+    if (kept && previousWriteId !== undefined) try discard(previousWriteId)
+  }

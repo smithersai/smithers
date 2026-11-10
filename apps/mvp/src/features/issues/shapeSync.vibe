@@ -1,0 +1,65 @@
+import { type ElectricCollection } from "@smthrs/effect-electric"
+
+type Event = ElectricCollection.SyncEvent
+type Phase = "starting" | "sent" | "ready" | "failed" | "stopped"
+interface Snapshot {
+  readonly phase: Phase
+  readonly status?: number
+}
+
+/** The first request, a changed status, or a recovery is recorded; identical live polls are suppressed. */
+export const snapshotAfter = (current: Snapshot, event: Event): Snapshot | undefined => {
+  const next: Snapshot = event._tag === "Sent"
+    ? current.phase === "starting" ? { phase: "sent" } : current
+    : event._tag === "Succeeded"
+    ? { phase: "ready" }
+    : event._tag === "Failed"
+    ? { phase: "failed", status: event.status }
+    : { phase: "stopped", status: event.error.status }
+  return next.phase === current.phase && next.status === current.status ? undefined : next
+}
+
+/** First answer and later failures or recoveries of the issue item shape, without repository or row content. */
+export const shapeTransitions = Metric.counter("smithers_issue_shape_transitions", {
+  description: "Meaningful browser issue shape states, by phase",
+  incremental: true,
+})
+
+/** A person's retry of the failed item shapes, by the page they used. */
+export const shapeRetries = Metric.counter("smithers_item_shape_retries", {
+  description: "Person-requested issue or pull shape reconnects",
+  incremental: true,
+})
+
+export const recordShapeRetry = (item: "issue" | "pull") =>
+  effect {
+    try Metric.update(Metric.withAttributes(shapeRetries, { item }), 1)
+    try Effect.logInfo("item.shape.retry").pipe(Effect.annotateLogs({ item }))
+  }.pipe(withSpan("item.shape.retry", { attributes: { item } }))
+
+/** A page stuck on Loading can be matched to its shape's first request and last observed outcome. */
+export const observeShape = (events: Stream.Stream<Event>, name: string, transitions: typeof shapeTransitions) =>
+  effect {
+    const startedAt = try Clock.currentTimeMillis
+    const snapshot = try Ref.make<Snapshot>({ phase: "starting" })
+    try events.pipe(Stream.runForEach((event) => effect {
+      const next = snapshotAfter(try Ref.get(snapshot), event)
+      if (next === undefined) return
+      try Ref.set(snapshot, next)
+      const fields = {
+        phase: next.phase,
+        durationMs: (try Clock.currentTimeMillis) - startedAt,
+        ...(next.status === undefined ? {} : { status: next.status }),
+      }
+      try effect {
+        try Metric.update(Metric.withAttributes(transitions, { phase: next.phase }), 1)
+        try Effect.annotateCurrentSpan(fields)
+        try Effect.logWithLevel(next.phase === "failed" || next.phase === "stopped" ? "Warn" : "Info")(
+          name,
+        ).pipe(Effect.annotateLogs(fields))
+      }.pipe(Effect.withSpan(name))
+    }))
+  }
+
+export const observeIssueShape = (events: Stream.Stream<Event>) =>
+  observeShape(events, "issues.shape.sync", shapeTransitions)

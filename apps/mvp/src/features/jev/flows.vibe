@@ -1,0 +1,116 @@
+import { Action, Flow } from "@smthrs/flow"
+import { Node, Placement } from "@smthrs/plan"
+import {
+  JUDGMENT_OUTCOMES,
+  MAX_CRITERIA,
+  MAX_ITEM_CHARS,
+  MAX_ITEMS,
+  MAX_LABEL_CHARS,
+  MAX_LABELS,
+  MAX_TEXT_CHARS,
+  MIN_LABELS,
+  UNSURE,
+} from "./contract"
+
+// Jev, Smithers' judge, in the agent's hands (docs/features/jev.md): two model-invocable flows of one step each.
+//
+//   app/jev/classify { question, items, labels? } ─ app/jev/classify/judge ─▶ { verdicts }, one per item
+//   app/jev/evaluate { text, criteria }           ─ app/jev/evaluate/judge ─▶ { verdicts }, one per criterion
+//
+// Each step asks every question in one judgment, which is one sealed `ModelStep` through the server's metered model
+// endpoint, role `judge` (decision 0011 §3), so a resumed run never pays for a judgment twice. What the steps run on is
+// injected (src/features/jev/steps.ts), so only an engine's host imports that; the tab holds these declarations.
+
+/** Nonblank text the judge reads, of up to `max` characters, preserved as supplied. */
+const text = (max: number) => Schema.String.check(Schema.isPattern(/\S/), Schema.isMaxLength(max))
+
+/** A list of `min` to `max` texts of 1 to `chars` characters each. */
+const texts = (min: number, max: number, chars: number) =>
+  Schema.Array(text(chars)).check(Schema.isMinLength(min), Schema.isMaxLength(max))
+
+/**
+ * One verdict: `yes`, `no`, a label, or `unsure` when the judge isn't sure enough for one to stand (contract.ts), and
+ * how sure it is, from 0 to 1.
+ */
+export const Verdict = Schema.Struct({ verdict: Schema.String, confidence: Schema.Number })
+export type Verdict = typeof Verdict.Type
+
+/** What a judgment answers: one verdict per item or criterion, in the order they were given. */
+export const Verdicts = Schema.Struct({ verdicts: Schema.Array(Verdict) })
+export type Verdicts = typeof Verdicts.Type
+
+/** The judge couldn't answer, by its failure code: unreachable, out of time, refused, or an answer it couldn't read. */
+export class JudgeFailed extends Schema.TaggedError<JudgeFailed>()("@smthrs/mvp/jev/JudgeFailed", {
+  code: Schema.Literals(JUDGMENT_OUTCOMES.filter((outcome) => outcome !== "judged")),
+}) {}
+
+/** What `app/jev/classify` takes. */
+export const ClassifyPayload = {
+  question: text(MAX_ITEM_CHARS).annotate({
+    description: "The question asked of every item, such as \"Is this a bug report?\"",
+  }),
+  items: texts(1, MAX_ITEMS, MAX_ITEM_CHARS).annotate({
+    description: `The items, 1 to ${MAX_ITEMS}, each the text the judge reads for it`,
+  }),
+  labels: Schema.optional(
+    texts(MIN_LABELS, MAX_LABELS, MAX_LABEL_CHARS).check(
+      Schema.isUnique(),
+      Schema.makeFilter((labels: ReadonlyArray<string>) => !labels.includes(UNSURE)),
+    ).annotate({
+      description:
+        `${MIN_LABELS} to ${MAX_LABELS} distinct labels excluding "unsure" to pick one of for each item; without them, yes or no`,
+    }),
+  ),
+}
+export type ClassifyPayload = Schema.Struct<typeof ClassifyPayload>["Type"]
+
+/** What `app/jev/evaluate` takes. */
+export const EvaluatePayload = {
+  text: text(MAX_TEXT_CHARS).annotate({ description: "The text to judge" }),
+  criteria: texts(1, MAX_CRITERIA, MAX_ITEM_CHARS).annotate({
+    description: `The rubric: 1 to ${MAX_CRITERIA} criteria the text should meet, each asked on its own`,
+  }),
+}
+export type EvaluatePayload = Schema.Struct<typeof EvaluatePayload>["Type"]
+
+/** The step: one judgment of every item. */
+export const ClassifyItems = Action.make("app/jev/classify/judge", {
+  payload: ClassifyPayload,
+  success: Verdicts,
+  error: JudgeFailed,
+})
+
+/** The step: one judgment of the text against every criterion. */
+export const EvaluateText = Action.make("app/jev/evaluate/judge", {
+  payload: EvaluatePayload,
+  success: Verdicts,
+  error: JudgeFailed,
+})
+
+/** `app/jev/classify`: one verdict per item, from Jev. */
+export const Classify = Flow.make("app/jev/classify", {
+  description: "Ask Jev, Smithers' judge, one question about each of several short items: yes or no, or one of the "
+    + "labels you give. Use it whenever the person asks you to sort, group, label, triage, filter or pick from a list "
+    + "of two or more items (which issues are bugs, label each pull request by area, which answers are correct, which "
+    + "messages need a reply), even when they don't name Jev: never decide over a list yourself. Put "
+    + "all the items in one call, and the categories the person names as labels. Answers { verdicts: [{ verdict, "
+    + "confidence }] }, one per item in order: each verdict is \"yes\", \"no\", a label, or \"unsure\" when Jev isn't "
+    + "sure, and its confidence runs from 0 to 1. Answer from each item's verdict: an unsure item stays unsure.",
+  modelInvocable: true,
+  payload: ClassifyPayload,
+  success: Verdicts,
+  error: JudgeFailed,
+  body: Node.capture({ judge: ClassifyItems.name }, (payload) => ClassifyItems.call(payload)),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `app/jev/evaluate`: one verdict per criterion of a rubric, from Jev. */
+export const Evaluate = Flow.make("app/jev/evaluate", {
+  description: "Ask Jev, Smithers' judge, whether one text meets each criterion of a rubric, such as a pull "
+    + "request's description against a checklist. Answers { verdicts }, one per criterion in order: \"yes\", \"no\" "
+    + "or \"unsure\", with its confidence from 0 to 1.",
+  modelInvocable: true,
+  payload: EvaluatePayload,
+  success: Verdicts,
+  error: JudgeFailed,
+  body: Node.capture({ judge: EvaluateText.name }, (payload) => EvaluateText.call(payload)),
+}).annotate(Flow.Placement, Placement.client())

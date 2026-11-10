@@ -1,0 +1,54 @@
+import type { JevFlow, JudgmentOutcome, VerdictCode } from "./contract"
+
+// What Jev counts and logs (docs/features/jev.md#observability): one log line, one count and one span per judgment, and
+// its verdicts counted by code. Counts and codes only: never an item, a question, a label, a text or a criterion.
+
+/** Judgments, by `flow` and `outcome`. */
+export const judgments = Metric.counter("smithers_jev_judgments", {
+  description: "Judgments app/jev/classify and app/jev/evaluate asked Jev for, by flow and outcome",
+  incremental: true,
+})
+
+/** Verdicts, by `flow` and `verdict` (`yes`, `no`, `label`, `unsure`). */
+export const verdicts = Metric.counter("smithers_jev_verdicts", {
+  description: "Verdicts Jev gave, by flow and verdict code",
+  incremental: true,
+})
+
+/** What one judgment record says: its flow, how many items it judged, how it ended, and its verdicts by code. */
+export interface Judgment {
+  readonly flow: JevFlow
+  readonly items: number
+  readonly outcome: JudgmentOutcome
+  readonly codes: ReadonlyArray<VerdictCode>
+  readonly durationMs: number
+}
+
+/** Records one judgment: its counts, the log line `jev.judge` (Warn when it failed) and its outcome on the span. */
+export const recordJudgment = (judgment: Judgment) =>
+  effect {
+    const { flow, items, outcome, codes, durationMs } = judgment
+    const count = (code: VerdictCode) => codes.filter((each) => each === code).length
+    try Metric.update(Metric.withAttributes(judgments, { flow, outcome }), 1)
+    for (const verdict of ["yes", "no", "label", "unsure"] as const) {
+      if (count(verdict) > 0) try Metric.update(Metric.withAttributes(verdicts, { flow, verdict }), count(verdict))
+    }
+    try Effect.annotateCurrentSpan({ "smithers.jev.outcome": outcome })
+    try Effect.logWithLevel(outcome === "judged" ? "Info" : "Warn")("jev.judge").pipe(
+      Effect.annotateLogs({
+        feature: "jev",
+        flow,
+        items,
+        outcome,
+        yes: count("yes"),
+        no: count("no"),
+        labeled: count("label"),
+        unsure: count("unsure"),
+        durationMs,
+      }),
+    )
+  }
+
+/** Runs `effect` inside the span `jev.judge`, with its flow and how many items it judges. */
+export const withJudgeSpan = (flow: JevFlow, items: number) => <A, E, R>(effect: A!E!R) =>
+  Effect.withSpan(effect, "jev.judge", { attributes: { "smithers.jev.flow": flow, "smithers.jev.items": items } })

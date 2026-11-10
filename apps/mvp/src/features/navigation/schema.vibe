@@ -1,0 +1,20 @@
+import { MAX_TO_LENGTH, REFUSALS } from "./contract"
+
+// Navigation's shapes: the flow's payload and answer, and what `app/navigate`'s step and the tab that asked say over the
+// engine's navigation channel (src/features/navigation/contract.ts `navigationChannel`, src/flows/askingTab.ts).
+
+/** Where to go: an app path, or a full URL on the app's own origin. */
+export const To = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_TO_LENGTH))
+
+/** What `app/navigate` answers: the app path it went to, and whether the tab that asked moved. */
+export const Navigated = Schema.Struct({ path: Schema.String, moved: Schema.Boolean })
+export type Navigated = typeof Navigated.Type
+
+/** One of `REFUSALS`. */
+export const Reason = Schema.Literals(REFUSALS)
+
+/** What the step asks the tab that started its request (src/flows/askingTab.ts): go to `path`, or, without one, stay. */
+export const GoCall = Schema.Struct({ path: Schema.optional(Schema.String.check(Schema.isMaxLength(MAX_TO_LENGTH))) })
+
+/** What that tab answers: whether it moved. */
+export const Moved = Schema.Struct({ moved: Schema.Boolean })

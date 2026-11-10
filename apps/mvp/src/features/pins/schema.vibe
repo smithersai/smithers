@@ -1,0 +1,24 @@
+/** One person's pin in one conversation; null is an unpin tombstone, fencing stale retries. */
+export const Pin = Schema.Struct({
+  conversationId: Schema.String,
+  personId: Schema.String,
+  messageId: Schema.NullOr(Schema.String),
+  changedAt: Schema.String,
+})
+export type Pin = typeof Pin.Type
+
+/** Collapse is tab-local presentation state, independent for each pinned message. */
+export const Collapsed = Schema.Struct({ id: Schema.String, collapsed: Schema.Boolean })
+
+/** A durable local intent, retained until Electric shows its timestamp. */
+export const Pending = Schema.Struct({
+  ...Pin.fields,
+  at: Schema.Number,
+  home: Schema.Boolean,
+  failed: Schema.Boolean,
+  awaitAdmission: Schema.Boolean,
+  text: Schema.optional(Schema.String),
+  serverConversationId: Schema.optional(Schema.String),
+  questionAnswerId: Schema.optional(Schema.String),
+})
+export type Pending = typeof Pending.Type

@@ -1,0 +1,11 @@
+// Navigation's usage metric, exported over OTLP with the rest of the browser's telemetry
+// (docs/observability.md#browser). Labels carry the door and the outcome, never a path.
+
+/**
+ * `app/navigate` runs that ended, by `door` (the dispatch's door; `agent` for the agent's call; `unknown` when the tab
+ * that dispatched it is gone) and `outcome` (`navigated`, `refused`, `gone`, `failed`).
+ */
+export const navigations = Metric.counter("smithers_web_navigations", {
+  description: "Navigations app/navigate ran, by door and outcome",
+  incremental: true,
+})

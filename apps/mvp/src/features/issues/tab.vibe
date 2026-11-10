@@ -1,0 +1,25 @@
+import { answerAskingTab } from "../../flows/askingTab"
+import { issuesChannel } from "./contract"
+import { QueueCall } from "./schema"
+import { IssuesStore } from "./store"
+
+// The tab's side of the issue writes (docs/features/issues.md#flows): every tab listens on the engine's issues channel,
+// and only the tab that started a call's request answers it (src/flows/askingTab.ts), putting the write in the device's
+// outbox (`IssuesStore.queue`). Every other tab, and every other device, leaves it alone. Calls are answered one at a
+// time, so a step asking again for a write still being queued finds it queued.
+
+/**
+ * Answers the issues channel of engine `name` for this tab's requests until its scope closes: queues the call's write
+ * and answers whether the outbox took it.
+ */
+export const tabIssues = (host: { readonly name: string }) =>
+  Layer.effectDiscard(
+    effect {
+      const store = try IssuesStore
+      try answerAskingTab({
+        channel: issuesChannel(host.name),
+        input: QueueCall,
+        answer: ({ write }) => Effect.map(store.queue(write), ({ queued }) => ({ queued })),
+      })
+    },
+  )

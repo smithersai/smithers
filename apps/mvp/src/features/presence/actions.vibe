@@ -1,0 +1,132 @@
+import { type PresenceProtocol, PresenceSocket } from "@smthrs/sync"
+import * as Socket from "effect/socket/Socket"
+import { roomRoute } from "../branch/contract"
+import { closes, joins } from "./metrics"
+import { type Participant, ROOM, type Room, type Where } from "./schema"
+import { PresenceStore } from "./store"
+import { decodeWhere, encodeWhere } from "./where"
+
+// What a branch's page does in its room (decision 0013 §4, docs/features/branch-workspace.md#presence): it joins the
+// room when the branch opens, says where the person is as the route moves, and leaves with the page. The socket is
+// `@smthrs/sync`'s `PresenceSocket`, which reconnects by itself; the room's roster goes into the participants
+// collection. A room that closes with no access means the branch was taken away from this person. Presence is never a
+// flow: nothing about it is durable, and a tab that closes simply leaves.
+
+const setRoom = (fields: Partial<Omit<Room, "id">>) =>
+  Effect.flatMap(PresenceStore, ({ room }) => Effect.orDie(room.update(ROOM, (row) => void Object.assign(row, fields))))
+
+const roomNow = Effect.flatMap(PresenceStore, ({ room }) => Effect.map(room.get(ROOM), Option.getOrThrow))
+
+/** The room's socket URL for branch `branchId` on the app's `origin`: `ws:` for `http:`, `wss:` for `https:`. */
+export const roomUrl = (origin: string, branchId: string) => `${origin.replace(/^http/, "ws")}${roomRoute(branchId)}`
+
+/** Makes the participants collection `roster`, `self` marking this tab's own connection. */
+const writeRoster = (roster: ReadonlyArray<PresenceProtocol.Participant>, self: string | undefined) =>
+  effect {
+    const { participants } = try PresenceStore
+    const rows: ReadonlyArray<Participant> = roster.map((participant, order) => ({
+      id: participant.id,
+      principal: participant.principal,
+      name: participant.name,
+      access: participant.access,
+      where: decodeWhere(participant.state),
+      self: participant.id === self,
+      order,
+    }))
+    const keep = new Set(rows.map((row) => row.id))
+    const gone = (try participants.toArray).filter((row) => !keep.has(row.id)).map((row) => row.id)
+    if (gone.length > 0) try Effect.orDie(participants.delete(gone))
+    for (const row of rows) {
+      if (Option.isSome(try participants.get(row.id))) {
+        try Effect.orDie(participants.update(row.id, (draft) => void Object.assign(draft, row)))
+      } else {
+        try Effect.orDie(participants.insert(row))
+      }
+    }
+  }
+
+/** Empties the participants collection. */
+const clearParticipants = effect {
+  const { participants } = try PresenceStore
+  const all = (try participants.toArray).map((row) => row.id)
+  if (all.length > 0) try Effect.orDie(participants.delete(all))
+}
+
+/**
+ * Joins branch `branchId`'s room, unless this tab is in it already: the room's roster fills the participants
+ * collection, and the room's status the room row. A room that closes with no access (1008) is `revoked`; any other
+ * close for good is `closed`. Leaving or joining another room lets go of the socket.
+ */
+export const join = (branchId: string) =>
+  effect {
+    const store = try PresenceStore
+    const room = try roomNow
+    const live = room.status === "connecting" || room.status === "open" || room.status === "offline"
+    if (room.branchId === branchId && live) return
+    try FiberHandle.clear(store.attached)
+    try clearParticipants
+    try setRoom({ branchId, status: "connecting" })
+    const run = Effect.scoped(effect {
+      const connection = try PresenceSocket.connect(roomUrl(store.origin, branchId))
+      try Ref.set(store.connection, connection)
+      const where = try Ref.get(store.where)
+      try connection.set(where === null ? null : encodeWhere(where))
+      const self = try Ref.make<string | undefined>(undefined)
+      const last = try Ref.make<ReadonlyArray<PresenceProtocol.Participant>>([])
+      const roster = connection.roster.pipe(
+        Stream.runForEach((participants) =>
+          Effect.andThen(
+            Ref.set(last, participants),
+            Effect.flatMap(Ref.get(self), (id) => writeRoster(participants, id)),
+          )
+        ),
+      )
+      const status = connection.status.pipe(
+        Stream.takeUntil((status) => status._tag === "Closed"),
+        Stream.runForEach((status) =>
+          effect {
+            switch (status._tag) {
+              case "Connecting":
+                return try setRoom({ status: "connecting" })
+              case "Open":
+                try Ref.set(self, status.self)
+                try writeRoster(try Ref.get(last), status.self)
+                try Metric.update(Metric.withAttributes(joins, { outcome: "joined" }), 1)
+                try Effect.logInfo("presence.join").pipe(Effect.annotateLogs({ outcome: "joined" }))
+                return try setRoom({ status: "open" })
+              case "Offline":
+                return try setRoom({ status: "offline" })
+              case "Closed":
+                try clearParticipants
+                try Metric.update(Metric.withAttributes(closes, { code: String(status.code) }), 1)
+                try Effect.logWarning("presence.closed").pipe(Effect.annotateLogs({ code: status.code }))
+                return try setRoom({ status: status.code === 1008 ? "revoked" : "closed" })
+            }
+          }
+        ),
+      )
+      try Effect.raceFirst(status, roster)
+    }).pipe(
+      Effect.provide(Socket.layerWebSocketConstructorGlobal),
+      Effect.ensuring(Effect.flatMap(PresenceStore, (store) => Ref.set(store.connection, undefined))),
+      Effect.withSpan("presence.join"),
+    )
+    try FiberHandle.run(store.attached, run)
+  }.pipe(Effect.annotateLogs({ feature: "presence" }))
+
+/** Says where this person is on the page: kept, and sent to the room now and on every reconnect. */
+export const at = (where: Where) =>
+  effect {
+    const store = try PresenceStore
+    try Ref.set(store.where, where)
+    const connection = try Ref.get(store.connection)
+    if (connection !== undefined) try connection.set(encodeWhere(where))
+  }
+
+/** Leaves the room: lets go of the socket, and nobody shows. */
+export const leave = effect {
+  const store = try PresenceStore
+  try FiberHandle.clear(store.attached)
+  try clearParticipants
+  try setRoom({ branchId: null, status: "idle" })
+}

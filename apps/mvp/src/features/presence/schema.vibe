@@ -1,0 +1,42 @@
+// Presence's rows (decision 0013 §4, docs/features/branch-workspace.md#presence): where a person is on a branch's page,
+// everyone in the branch's room as this tab last heard, and this tab's place in the room. Nothing here is synced or
+// kept: presence is live, and a closed tab leaves no trace.
+
+/**
+ * Where a person is on a branch's page: its Code view at a path, a file of its working copy in the live editor, or its
+ * Terminal view on a terminal.
+ */
+export const Where = Schema.Union([
+  Schema.Struct({ view: Schema.Literal("code"), path: Schema.String }),
+  Schema.Struct({ view: Schema.Literal("edit"), path: Schema.String }),
+  Schema.Struct({ view: Schema.Literal("terminal"), terminalId: Schema.NullOr(Schema.String) }),
+])
+export type Where = typeof Where.Type
+
+/**
+ * One person in the room, one row per connection: the room's id for it, who they are, whether they may write, where
+ * they are, whether it is this tab, and the room's order.
+ */
+export const Participant = Schema.Struct({
+  id: Schema.String,
+  principal: Schema.String,
+  name: Schema.String,
+  access: Schema.Literals(["read", "write"]),
+  where: Schema.NullOr(Where),
+  self: Schema.Boolean,
+  order: Schema.Number,
+})
+export type Participant = typeof Participant.Type
+
+/**
+ * This tab in its branch's room. One row:
+ * - `idle`: in no room; `connecting`, `open` and `offline` while it holds the room's socket;
+ * - `revoked`: the branch was taken away from this person; `closed`: the room closed for good otherwise.
+ */
+export const ROOM = "room"
+export const Room = Schema.Struct({
+  id: Schema.Literal(ROOM),
+  branchId: Schema.NullOr(Schema.String),
+  status: Schema.Literals(["idle", "connecting", "open", "offline", "revoked", "closed"]),
+})
+export type Room = typeof Room.Type
