@@ -1,17 +1,20 @@
-"""Only real Dafny contract failures in the mutated function count as rejections.
-
-A failed precondition at a call is the callee's domain, not a property of the mutated function's own result: it
-counts only for a mutation whose stated claim is that call (`CALLEE_PRECONDITIONS` in mutation_targets.py)."""
+"""Only a direct own-contract error in the mutated function counts as rejection."""
+import pathlib
 import re
 
-OWN = r'(postcondition could not be proved|(?:loop|this) invariant could not be proved|assertion might not hold)'
-CALL = r'a precondition for this call could not be proved'
+OWN_KINDS={'postcondition','invariant','assertion'}
+TOOL_ERROR=r'(resolution/type errors|timed out|time out|ERROR:|unresolved identifier|destructor .* can only be applied|resource limit|inconclusive|prover exception|out of memory)'
 
-def validate_rejection(result, function, callee_precondition=False):
-    phrase = f'(?:{OWN}|{CALL})' if callee_precondition else OWN
-    if result['exit'] != 4 or not re.search(phrase, result['output']):
-        raise ValueError('not a Dafny contract failure of the mutated function' if re.search(CALL, result['output']) else 'not a Dafny contract failure')
-    if not any(f'function {function} [' in location for location in result['mapped']):
-        raise ValueError('failure outside the mutated function')
-    if re.search(r'(resolution/type errors|timed out|ERROR:|unresolved identifier|destructor .* can only be applied)', result['output']):
+def validate_rejection(result,function):
+    if result['exit']!=4:
+        raise ValueError('not a Dafny contract failure')
+    if re.search(TOOL_ERROR,result['output']):
         raise ValueError('tool error or timeout')
+    target=result.get('dfy')
+    if target is None:
+        raise ValueError('missing generated target')
+    target=pathlib.Path(target).resolve()
+    if not any(d['severity']=='error' and d['kind'] in OWN_KINDS
+               and d['function']==function and pathlib.Path(d['file']).resolve()==target
+               for d in result.get('diagnostics',[])):
+        raise ValueError('no direct own-contract failure in the mutated function')

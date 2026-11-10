@@ -18,7 +18,7 @@ const VIP: IssueRequest = { op: "draft", key: "d1", number: 0, parent: 0, title:
 const PAGE = { page: "roadmap", source: "# Roadmap", ask: "Shorter." }
 const answering = (output: unknown): Scripted => ({ kind: "stream", pieces: [cell(JSON.stringify(output))], prompt: 3, completion: 4 })
 
-/** A day's budget that admits every draft and refuses its first charge: the spend step retries it. */
+/** A day's budget that admits every draft and refuses its first charge, the call's release of the run's hold. */
 function refusingOnce() {
   const log = { charges: 0 }
   const spend: Spend.Shape = {
@@ -42,9 +42,16 @@ effect function parsed(text: string) {
 }
 
 effect function vip(scripts: ReadonlyArray<Scripted>, spend: Spend.Shape) {
-  const model = { model: (try scriptedModel(scripts)).model, unusable: "" }
+  return (try vipCalls(scripts, spend)).answer
+}
+
+/** The VIP writer's answer, and how many requests reached the model. */
+effect function vipCalls(scripts: ReadonlyArray<Scripted>, spend: Spend.Shape) {
+  const scripted = try scriptedModel(scripts)
+  const model = { model: scripted.model, unusable: "" }
   const layer = writer.pipe(Layer.provide(agentLayer), Layer.provide(Layer.succeed(ChatModel, model)), Layer.provide(Layer.succeed(Spend, spend)))
-  return try within(layer, outcome(effect { return try (try VipWriter).draft(VIP) }))
+  const answer = try within(layer, outcome(effect { return try (try VipWriter).draft(VIP) }))
+  return { answer, requests: try scripted.calls }
 }
 
 effect function wiki(scripts: ReadonlyArray<Scripted>, spend: Spend.Shape) {
@@ -57,11 +64,14 @@ it.live("the VIP agent's draft is the answer, charged once; a non-draft or a fai
   const draft = { title: "Tuple patterns", summary: "Match tuples.", example: "case (a, b) -> a", prior: "ML" }
   const accepted = ledger("admit")
   expect(try parsed(try vip([answering(draft)], accepted.spend))).toEqual(draft)
-  expect(accepted.log).toEqual({ admitted: 1, spent: 1 })
+  expect(accepted.log).toEqual({ admitted: 1, spent: 1, calls: 1, tokens: 7, unreported: 0 })
   for (const scripts of [[answering({ title: "only" })], [{ kind: "status", status: 400, code: "invalid" } as const]]) {
     const refused = ledger("admit")
-    expect(try vip(scripts, refused.spend)).toBe("draft")
-    expect(refused.log.spent).toBe(1)
+    const { answer, requests } = try vipCalls(scripts, refused.spend)
+    expect(answer).toBe("draft")
+    // Every request that reached the model is reserved and charged, including the agent's reissues.
+    expect(requests).toBeGreaterThan(0)
+    expect([refused.log.spent, refused.log.calls]).toEqual([1, requests])
   }
 }))
 
@@ -72,16 +82,17 @@ it.live("the wiki agent's draft must be the asked page with text; a failed model
   expect(try wiki([{ kind: "status", status: 400, code: "invalid" }], ledger("admit").spend)).toBe("draft")
   const refused = ledger("refuse")
   expect(try wiki([answering({ page: "roadmap", text: "# Shorter\n" })], refused.spend)).toBe("budget")
-  expect(refused.log).toEqual({ admitted: 1, spent: 0 })
+  expect(refused.log).toEqual({ admitted: 1, spent: 0, calls: 0, tokens: 0, unreported: 0 })
 }))
 
 it.live("both writers retry a charge the ledger refuses once, and still answer", () => scoped(effect {
   const vipBudget = refusingOnce()
   expect(try parsed(try vip([answering({ title: "T", summary: "S", example: "E", prior: "P" })], vipBudget.spend))).toMatchObject({ title: "T" })
-  expect(vipBudget.log.charges).toBe(2)
+  // Refused release, its retry, the call's charge, then the run's settlement.
+  expect(vipBudget.log.charges).toBe(4)
   const wikiBudget = refusingOnce()
   expect(try parsed(try wiki([answering({ page: "roadmap", text: "# R\n" })], wikiBudget.spend))).toEqual({ page: "roadmap", text: "# R\n" })
-  expect(wikiBudget.log.charges).toBe(2)
+  expect(wikiBudget.log.charges).toBe(4)
 }))
 
 it.live("an agent seam without a model refuses no-model when asked directly", () => scoped(effect {

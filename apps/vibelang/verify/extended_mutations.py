@@ -2849,7 +2849,7 @@ cases.extend([('src/web/screenDecision.vibe',
 cases.extend([
  ('src/core/sandboxDecision.vibe', 'sandbox-empty-operation', 'emptySandboxLedger', 'lastOperationId: "", lastRefusal: ""', 'lastOperationId: "wrong", lastRefusal: ""', 'an empty ledger has no completed operation'),
  ('src/core/sandboxDecision.vibe', 'sandbox-empty-refusal', 'emptySandboxLedger', 'lastOperationId: "", lastRefusal: ""', 'lastOperationId: "", lastRefusal: "wrong"', 'an empty ledger has no refusal'),
- ('src/core/sandboxDecision.vibe', 'sandbox-replace-append', 'replaceSandbox', 'if (index < 0) {\n    next.push(replacement)', 'if (index < 0) {\n    next.push(entries[0]!)', 'an insertion appends the exact replacement'),
+ ('src/core/sandboxDecision.vibe', 'sandbox-replace-append', 'replaceSandbox', 'if (index < 0) {\n    next.push(replacement)', 'if (index < 0) {\n    next.push(entries.length > 0 ? entries[0]! : replacement)', 'an insertion appends the exact replacement, not a copy of the first entry'),
  ('src/core/sandboxDecision.vibe', 'sandbox-replace-target', 'replaceSandbox', 'i === index ? replacement : entries[i]!', 'entries[i]!', 'an existing match receives the exact replacement'),
  ('src/core/sandboxDecision.vibe', 'sandbox-conversation-admission', 'decideSandbox', 'intent.type !== "meter" && intent.conversation === ""', 'false', 'non-meter actions require a conversation'),
  ('src/core/sandboxDecision.vibe', 'sandbox-new-id-admission', 'decideSandbox', 'intent.sandboxId === "" || !distinctFrom', 'false || !distinctFrom', 'a new sandbox requires a nonempty identity'),
@@ -5633,3 +5633,24 @@ cases.extend([('src/core/specificationDecision.vibe', *case) for case in [
 ('grade-opus', 'scriptedGrade', 'reviewer === "opus" && ', '', 'only Opus starts at B+'),
 ('grade-first', 'scriptedGrade', ' && previousVerdict === ""', '', 'only the first Opus review is B+'),
 ]])
+
+# Walkthrough drive, pause, resume and seek frames in apply and receive, and canLinkIssues completeness.
+cases.extend([('src/core/conversation.vibe',*case) for case in [
+ ('apply-tour-end-runs', 'apply', 'return { ...next, entries: ended, agent: "idle", replying: "" }', 'return { ...next, entries: ended, agent: "idle", replying: "", runs: [] }', 'events other than action events leave every run'),
+ ('apply-drive-step','apply','drivenWalkthrough(event.step, event.target, event.seq, event.duration, event.at)','drivenWalkthrough(event.step + 1, event.target, event.seq, event.duration, event.at)','a driven walkthrough has the requested stop'),
+ ('apply-drive-target','apply','drivenWalkthrough(event.step, event.target, event.seq, event.duration, event.at)','drivenWalkthrough(event.step, "", event.seq, event.duration, event.at)','a driven walkthrough has its target'),
+ ('apply-drive-duration','apply','drivenWalkthrough(event.step, event.target, event.seq, event.duration, event.at)','drivenWalkthrough(event.step, event.target, event.seq, event.duration + 1, event.at)','a driven walkthrough has the requested reading duration'),
+ ('apply-drive-revision','apply','drivenWalkthrough(event.step, event.target, event.seq, event.duration, event.at)','drivenWalkthrough(event.step, event.target, event.seq + 1, event.duration, event.at)','a driven walkthrough names its numbered event'),
+ ('apply-pause-state','apply','controlledWalkthrough(showing, event.type === "TourPaused", event.seq, event.at)','controlledWalkthrough(showing, event.type === "TourResumed", event.seq, event.at)','pausing and resuming set opposite, exact control states'),
+ ('apply-pause-time','apply','controlledWalkthrough(showing, event.type === "TourPaused", event.seq, event.at)','controlledWalkthrough(showing, event.type === "TourPaused", event.seq, event.at + 1)','the reading clock uses the control event time'),
+ ('apply-seek-step','apply','soughtWalkthrough(showing, event.step, event.seq, event.at)','soughtWalkthrough(showing, event.step + 1, event.seq, event.at)','seeking names the requested stop'),
+ ('apply-seek-remaining','apply','soughtWalkthrough(showing, event.step, event.seq, event.at)','soughtWalkthrough({ ...showing, remaining: 0 }, event.step, event.seq, event.at)','seeking preserves the remaining reading duration'),
+ ('apply-drive-range','apply','event.step > 10','false','invalid driven stop numbers preserve the walkthrough'),
+ ('apply-seek-range','apply','event.step > 11','false','invalid sought stop numbers preserve the walkthrough'),
+ ('receive-walkthrough-frame','receive','return { conversation, pending, gap: false }','return { conversation: { ...conversation, walkthrough: undefined }, pending, gap: false }','unrelated received events preserve the walkthrough'),
+ ('receive-walkthrough-control','receive','return { conversation, pending, gap: false }','return { conversation: event.type === "TourPaused" || event.type === "TourResumed" || event.type === "TourSought" ? { ...conversation, walkthrough: client.conversation.walkthrough } : conversation, pending, gap: false }','received control events apply their new walkthrough'),
+ ('hold-negative','holdRemaining','if (remaining < 0) return 0','if (remaining < 0) return 1','negative reading durations clamp to zero'),
+ ('control-negative','controlledWalkthrough','remaining: showing.paused ? showing.remaining : holdRemaining(showing.remaining, showing.at, at)','remaining: showing.paused ? showing.remaining : showing.remaining < 0 ? showing.remaining : holdRemaining(showing.remaining, showing.at, at)','an unpaused negative duration clamps to zero'),
+]])
+
+cases.append(('src/core/issueGraphDecision.vibe','issues-link-complete','canLinkIssues','return next === 0','return false','a valid bounded parent path which avoids the child must be accepted'))

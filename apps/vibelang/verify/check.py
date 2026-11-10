@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Fresh lsc generation + Dafny verification. Never trusts saved .dfy files."""
 import atexit, concurrent.futures, hashlib, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time
-from sources import production_sources, require_proved, VERIFY, dafny_keywords, dafny_name, enclosing_symbol
+from sources import production_sources, require_proved, proof_dependencies, VERIFY, dafny_keywords, dafny_name
 from proof_additions import add_proof_steps, insertion_names
 from declarations import stage as stage_declarations, copied_imports, declared_imports
-from mutation_targets import POSTCONDITIONS, ASSERTIONS, INVARIANTS, postcondition_line, case_assertion_line, invariant_line, time_limit
+from proof_diagnostics import read_diagnostics
+from mutation_targets import POSTCONDITIONS, ASSERTIONS, INVARIANTS, postcondition_line, case_assertion_line, invariant_line, time_limit, wall_limit
 ROOT=pathlib.Path(__file__).resolve().parent
 APP=pathlib.Path(os.environ.get("VIBELANG_VERIFY_ROOT", str(ROOT.parent))).resolve()
 if len(sys.argv)>1:
@@ -32,9 +33,15 @@ proof_sources.mkdir()
 # A type-only import of a module that is not TypeScript syntax (`import type { Message } from "./main.vibe"`) reads the module's emitted declaration instead,
 # `x.vibe.d.ts` beside the copy, so a proved module can name the types of a module outside the subset (declarations.py).
 declarations={}
+def proof_bytes(path):
+ data=path.read_bytes()
+ expected=dependency_hashes.get(path.resolve())
+ if expected is not None and hashlib.sha256(data).hexdigest()!=expected:
+  raise SystemExit(f'Proof input changed after dependency discovery: {path}')
+ return data
 def stage_imports(original, staged):
  # An import of a proved module is read by LemmaScript for its contracts only: `./x.vibe` resolves to this `x.vibe.ts` copy.
- text=original.read_text()
+ text=proof_bytes(original).decode()
  for spec in declared_imports(text, original.parent):
   declarations[(staged.parent/spec).with_name(pathlib.Path(spec).name+'.d.ts')]=(original.parent/spec).resolve()
  for spec in copied_imports(text, original.parent):
@@ -43,14 +50,20 @@ def stage_imports(original, staged):
   require_proved(dep, PRODUCTION)
   copy.parent.mkdir(parents=True,exist_ok=True)
   if not copy.exists():
-   copy.write_bytes(dep.read_bytes()); stage_imports(dep,copy)
+   copy.write_bytes(proof_bytes(dep)); stage_imports(dep,copy)
 PRODUCTION=production_sources(APP)
+manifest_path=pathlib.Path(os.environ['VERIFY_MUTATION_MANIFEST']).resolve() if os.environ.get('VERIFY_MUTATION_MANIFEST') else None
+manifest=json.loads(manifest_path.read_text()) if manifest_path else {}
+mutant_files=set(selected) if manifest_path else set()
+roots=[APP/item['source'] for item in manifest.values()] if manifest_path else selected
+dependencies,dependency_hashes=proof_dependencies(roots,PRODUCTION)
+selected=list(dict.fromkeys([*selected,*dependencies]))
 shown={}
 files=[]
 for original in selected:
  if original.suffix=='.vibe':
   staged=run/'source'/original.relative_to(APP).with_suffix('.ts')
-  staged.parent.mkdir(parents=True,exist_ok=True); staged.write_bytes(original.read_bytes())
+  staged.parent.mkdir(parents=True,exist_ok=True); staged.write_bytes(proof_bytes(original))
   shown[staged]=original; files.append(staged)
   stage_imports(original, staged)
  else: files.append(original)
@@ -73,7 +86,7 @@ def command(args, cwd, wall_seconds=180):
  except OSError as e: return 127,str(e)+'\n'
 
 def verify(item):
- idx,ts=item; t=time.monotonic(); original=ts.read_bytes(); lines=original.decode().splitlines(); origin=shown.get(ts,ts)
+ idx,ts=item; is_mutation=ts in mutant_files; t=time.monotonic(); original=ts.read_bytes(); lines=original.decode().splitlines(); origin=shown.get(ts,ts)
  # Report function declarations and contract lines even for extraction failures.
  funcs=[(n+1,re.search(r'^\s*(?:export )?function\s+(\w+)',s).group(1)) for n,s in enumerate(lines) if re.search(r'^\s*(?:export )?function\s+(\w+)',s)]
  loc=', '.join(f'{origin}:{n} function {name}' for n,name in funcs) or str(origin)
@@ -87,11 +100,9 @@ def verify(item):
  if code==0:
   text=dfy.read_text() if dfy.exists() else ''
   proof_source=origin.relative_to(APP).as_posix()
-  proof_manifest=os.environ.get('VERIFY_MUTATION_MANIFEST')
-  if proof_manifest:
-   manifest_path=pathlib.Path(proof_manifest).resolve()
+  if is_mutation:
    if ts.parent != manifest_path.parent: raise SystemExit('Proof additions only apply to generated mutants')
-   proof_source=json.loads(manifest_path.read_text())[ts.stem]['source']
+   proof_source=manifest[ts.stem]['source']
   raw=text
   # The checked induction steps belong to this app, not another project that happens to use its file names.
   text=add_proof_steps(raw,proof_source) if APP == ROOT.parent else raw
@@ -116,11 +127,9 @@ def verify(item):
   else:
    flags=['--unicode-char:false','--allow-deprecation'] if 'string-semantics=javascript-utf16' in text else ['--unicode-char:true']
    if 'Std.' in text: flags.append('--standard-libraries')
-   mutations=os.environ.get('VERIFY_MUTATION_MANIFEST')
-   if mutations:
-    mutations=pathlib.Path(mutations).resolve()
-    if ts.parent != mutations.parent: raise SystemExit('Mutation symbol filter only applies to generated mutants')
-    target=json.loads(mutations.read_text())[ts.stem]['function']
+   if is_mutation:
+    if ts.parent != manifest_path.parent: raise SystemExit('Mutation symbol filter only applies to generated mutants')
+    target=manifest[ts.stem]['function']
     flags.extend(['--filter-symbol',target])
     if ts.stem in ASSERTIONS:
      case, clause = ASSERTIONS[ts.stem]
@@ -134,11 +143,12 @@ def verify(item):
      flags.extend(['--isolate-assertions','--filter-position',':'+str(line)])
    # Every assertion in the full conversation and decide relations, and in the conversation replay that imports their
    # contracts, is checked, without a symbol/position filter.
-   isolate = not mutations and origin in {APP/'src/core/conversation.vibe',APP/'src/core/decide.vibe',APP/'src/core/replayDecision.vibe'}
+   isolate = not is_mutation and origin in {APP/'src/core/conversation.vibe',APP/'src/core/decide.vibe',APP/'src/core/replayDecision.vibe'}
    if isolate: flags.append('--isolate-assertions')
-   limit=time_limit(ts.stem,bool(mutations),proof_source)
+   # The isolated relations' wall limit only stops a hung solver; each obligation keeps its own solver limit.
+   limit=time_limit(ts.stem,is_mutation,proof_source)
    # A single isolated file may use two cores; two file workers each use one solver core.
-   c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','2' if isolate and jobs == 1 else '1','--verification-time-limit',str(limit),'--error-limit','0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work,3600 if isolate else max(180,limit+60))
+   c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','2' if isolate and jobs == 1 else '1','--verification-time-limit',str(limit),'--error-limit','1' if is_mutation else '0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work,wall_limit(isolate,is_mutation,limit))
    code=c;out+=o
  if hashlib.sha256(original).hexdigest() != initial_hashes[ts]:
   code=2;out+='ERROR: source changed after strict typechecking started\n'
@@ -147,17 +157,11 @@ def verify(item):
  elapsed=time.monotonic()-t
  # Dafny emits generated locations. Identify enclosing generated symbol, then
  # print its original TS declaration; retain exact generated diagnostic too.
- mapped=[]
- if dfy.exists():
-  dl=dfy.read_text().splitlines()
-  for m in re.finditer(r'[^\n]*\.dfy\((\d+),\d+\): (?:Error|Related location):[^\n]*',out):
-   line=int(m.group(1)); sym=enclosing_symbol(dl,line)
-   if sym:
-    name=re.sub(r'_ensures$', '', sym)
-    for n,fn in funcs:
-     if name==fn or sym==dafny_name(fn,KEYWORDS) or name==dafny_name(fn,KEYWORDS): mapped.append(f'{origin}:{n}: function {fn} [{sym}; generated line {line}]')
+ diagnostics=read_diagnostics(out,dfy.read_text() if dfy.exists() else '',dfy,funcs,KEYWORDS)
+ mapped=[f"{origin}:{d['source_line']}: function {d['function']} [{d['symbol']}; generated line {d['line']}]"
+         for d in diagnostics if d['function'] is not None]
  log=work/(ts.stem+'.output.log');log.write_text(out)
- return {'sha256':hashlib.sha256(original).hexdigest(),'file':str(origin),'exit':code,'seconds':round(elapsed,3),'locations':loc,'mapped':list(dict.fromkeys(mapped)),'output':out,'log':str(log),'dfy':str(dfy)}
+ return {'sha256':hashlib.sha256(original).hexdigest(),'file':str(origin),'exit':code,'seconds':round(elapsed,3),'locations':loc,'mapped':list(dict.fromkeys(mapped)),'output':out,'log':str(log),'dfy':str(dfy),'diagnostics':diagnostics,'mutation':is_mutation}
 
 KEYWORDS=dafny_keywords()
 initial_hashes={p:hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
@@ -171,17 +175,29 @@ if tc_code:
 jobs=int(os.environ.get('CHECK_JOBS','1'))
 if not 1<=jobs<=8: raise SystemExit('CHECK_JOBS must be 1..8')
 results=[]
-with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
- for r in pool.map(verify,enumerate(files)):
-  results.append(r)
-  print(f"{'PASS' if r['exit']==0 else 'FAIL'} {r['locations']} ({r['seconds']:.3f}s)")
-  if r['exit']:
-   for m in r['mapped']: print(m)
-   print(r['output'],end='')
-  else:
-   for line in r['output'].splitlines():
-    if 'finished with' in line: print('  '+line)
-  sys.stdout.flush()
+def report(r):
+ results.append(r)
+ print(f"{'PASS' if r['exit']==0 else 'FAIL'} {r['locations']} ({r['seconds']:.3f}s)")
+ if r['exit']:
+  for m in r['mapped']: print(m)
+  print(r['output'],end='')
+ else:
+  for line in r['output'].splitlines():
+   if 'finished with' in line: print('  '+line)
+ sys.stdout.flush()
+# An imported module's contracts may be assumed while proving a caller only after its own body was freshly proved.
+# Dependency checks run sequentially so a two-core isolated relation never overlaps another Dafny process.
+dependency_items=[item for item in enumerate(files) if manifest_path and item[1] not in mutant_files]
+for item in dependency_items:
+ result=verify(item);report(result)
+ if result['exit']:break
+else:
+ remaining=[item for item in enumerate(files) if item not in dependency_items]
+ with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+  for result in pool.map(verify,remaining):report(result)
+for path,digest in dependency_hashes.items():
+ if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest()!=digest:
+  raise SystemExit(f'FAIL: proof dependency changed during verification: {path}')
 # A late edit or newly marked module invalidates the whole production receipt too.
 if len(sys.argv)==1 and production_sources(APP) != selected:
  raise SystemExit('FAIL: production source set changed during verification')
@@ -190,7 +206,7 @@ for r in results:
  if not original.exists() or hashlib.sha256(original.read_bytes()).hexdigest() != r['sha256']:
   r['exit']=2; r['output']+='ERROR: source changed before verification completed\n'
   print('FAIL: source changed before verification completed: '+r['file'])
-summary={'directory':str(source),'seconds':round(time.monotonic()-started,3),'passed':sum(r['exit']==0 for r in results),'total':len(results),'jobs':jobs,'results':results,'commands':commands}
+summary={'directory':str(source),'seconds':round(time.monotonic()-started,3),'passed':sum(r['exit']==0 for r in results),'total':len(results),'jobs':jobs,'dependencies':[str(p) for p in dependencies],'inputs':{str(p):h for p,h in dependency_hashes.items()},'results':results,'commands':commands}
 (run/'summary.json').write_text(json.dumps(summary,indent=2))
 print(f"{summary['passed']}/{len(results)} files verified in {summary['seconds']:.3f}s; results: {run/'summary.json'}")
 raise SystemExit(0 if summary['passed']==len(results) else 1)

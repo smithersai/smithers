@@ -7,7 +7,7 @@ const ledger = { ...emptySandboxLedger("u", "contributor", 36000, monthOf(bounda
 describe("durable meter's exact integer millisecond boundary", () => {
   it.effect("keeps both sides of a UTC boundary and sums concurrent usage", () => effect {
     const next = try meter(ledger, {}, boundary + 20, 36000)
-    try Effect.try(() => {
+    try Effect.sync(() => {
       expect(next.months[String(ledger.month)]).toBe(29)
       expect(next.months[String(boundary)]).toBe(40)
       expect(next.ledger.usedMilliseconds).toBe(40)
@@ -18,7 +18,7 @@ describe("durable meter's exact integer millisecond boundary", () => {
     const next = try meter(ledger, {}, boundary + 100000, 60)
     const back = try meter(next.ledger, next.months, boundary - 100, 60)
     const forward = try meter(back.ledger, back.months, boundary + 100010, 60)
-    try Effect.try(() => {
+    try Effect.sync(() => {
       expect(next.ledger.usedMilliseconds).toBe(200000)
       expect(back.ledger).toEqual(next.ledger)
       expect(forward.ledger.usedMilliseconds).toBe(200020)
@@ -28,12 +28,12 @@ describe("durable meter's exact integer millisecond boundary", () => {
     const original = { ...ledger, sandboxes: [ledger.sandboxes[0]!], usedMilliseconds: Number.MAX_SAFE_INTEGER - 1 }
     const exact = try meter(original, {}, original.lastMeteredAt + 1, 36000)
     const overflow = try Effect.result(meter(exact.ledger, exact.months, original.lastMeteredAt + 2, 36000))
-    try Effect.try(() => { expect(exact.ledger.usedMilliseconds).toBe(Number.MAX_SAFE_INTEGER); expect(overflow._tag).toBe("Failure"); expect(original.usedMilliseconds).toBe(Number.MAX_SAFE_INTEGER - 1) })
+    try Effect.sync(() => { expect(exact.ledger.usedMilliseconds).toBe(Number.MAX_SAFE_INTEGER); expect(overflow._tag).toBe("Failure"); expect(original.usedMilliseconds).toBe(Number.MAX_SAFE_INTEGER - 1) })
   })
   it.effect("refuses NaN, infinity and invalid Date clocks", () => effect {
     for (const clock of [NaN, Infinity, -1, Number.MAX_SAFE_INTEGER, 8640000000000000]) {
       const result = try Effect.result(millisecondOf(clock))
-      try Effect.try(() => expect(result._tag).toBe("Failure"))
+      try Effect.sync(() => expect(result._tag).toBe("Failure"))
     }
   })
 })

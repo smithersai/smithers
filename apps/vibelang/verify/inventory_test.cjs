@@ -65,8 +65,8 @@ test('a function directly under a //@ verify contract, and its callbacks, are pr
   ]);
 });
 
-test('no function marked //@ verify is labelled unproved, and a restated policy says so', () => {
-  // The review found the proved decide module listed as "Not yet proved" (0018, finding 7); a marked function is proved.
+test('marked checks are not labelled absent, and a restated policy says so', () => {
+  // The review found the proved decide module listed as "Not yet proved" (0018, finding 7); a marked function is checked; its output guarantee still needs a postcondition.
   const unproved = [];
   for (const file of sourceFiles()) {
     const source = fs.readFileSync(file, 'utf8');
@@ -110,7 +110,7 @@ test('build output is not source: a generated module never enters the inventory'
   assert.ok(files.includes(path.join(app, 'src/core/flows.vibe')));
 });
 
-test('a function marked //@ verify reads as proved without a hand-written note; an unmarked one beside it does not', () => {
+test('a marked contract reads as proved, while a marker alone states its missing postcondition', () => {
   // decide.vibe and six other marked modules read "Not yet proved" while `pnpm verify` proved them (vl-audit-vl29).
   const source = '// Fixture.\n//@ verify\n//@ ensures \\result == (a > b)\nexport function more(a: number, b: number) {\n  return [a].some(x => x > b)\n}\n' +
     'export function less(a: number, b: number) { return a < b }\n  //@  verify\nfunction spaced(a: number) { return a > 0 }\n';
@@ -119,10 +119,13 @@ test('a function marked //@ verify reads as proved without a hand-written note; 
   assert.match(why.more, /^Proved/);
   assert.match(why['more/callback@5'], /^Proved/);
   assert.match(why.less, /^Not yet proved/);
-  assert.match(why.spaced, /^Proved/);
+  assert.match(why.spaced, /without a behavioral postcondition/);
   const decide = path.join(app, 'src/core/decide.vibe');
   const row = inventorySource(decide, fs.readFileSync(decide, 'utf8')).find(entry => entry.label === 'decide');
   assert.match(row.why, /^Proved/);
+  const conversation = path.join(app, 'src/core/conversation.vibe');
+  const query = inventorySource(conversation, fs.readFileSync(conversation, 'utf8')).find(entry => entry.label === 'tourWalkthrough');
+  assert.match(query.why, /without a behavioral postcondition/);
 });
 
 test('native SQL, storage and clock calls are effect shells while regexp exec and Map membership stay logic', () => {

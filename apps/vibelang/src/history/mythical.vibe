@@ -675,6 +675,7 @@ export function validRanks(history: History): boolean {
 //@ ensures history.seq < 0 || history.seq >= 9007199254740991 ==> !\result.ok && \result.refusal == "full"
 export function decideWithinCapacity(history: History, intent: Intent): Decision {
   if (history.seq < 0 || history.seq >= 9007199254740991) return refused("full")
+  //@ assert 0 <= history.seq && history.seq < 9007199254740991
   return decide(history, intent)
 }
 
@@ -728,5 +729,6 @@ export function decideWithinCapacity(history: History, intent: Intent): Decision
 //@ ensures 0 <= \result.seq && \result.seq <= 9007199254740991
 export function replayEvent(history: History, event: Event): History {
   if (history.seq === 9007199254740991) return history
+  //@ assert history.seq < 9007199254740991
   return apply(history, event)
 }

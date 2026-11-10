@@ -304,6 +304,7 @@ describe("FlowEngineLike conversions", () => {
 describe("FlowEngineLike.make", () => {
   it("replays a pre-receipt model answer without another provider call", async () => {
     const calls: Array<string> = []
+    let reservations = 0
     const legacy = Schema.Union([
       Schema.Array(ModelEvent.ModelEvent),
       Schema.Struct({ events: Schema.Array(ModelEvent.ModelEvent), error: Schema.optional(ModelError), correction: Schema.optional(Schema.Int) })
@@ -312,11 +313,13 @@ describe("FlowEngineLike.make", () => {
       yield* Action.make({ name: "legacy-model", idempotencyKey: "legacy-model-key", tier: "sealed", success: legacy,
         error: InternalModelStep.Failure, execute: Effect.succeed({ events: [] }) })
       return yield* InternalModelStep.dispatch({ name: "legacy-model", key: "legacy-model-key", request: request("legacy"),
+        reserveCall: () => Effect.sync(() => { reservations++; return "unused" }),
         model: countingModel(calls), retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, jitterRatio: 0, maxAttempts: 1 }) })
     }))
     if (outcome._tag === "failed") throw outcome.error
     expect(completed(outcome)).toMatchObject({ replayed: true, recorded: { events: [] } })
     expect(calls).toEqual([])
+    expect(reservations).toBe(0)
   })
 
   it("counts an unreported unsealed call after known spend, live and recovered", async () => {

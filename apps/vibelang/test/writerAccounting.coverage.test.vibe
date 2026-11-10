@@ -92,7 +92,10 @@ for (const kind of ["wiki", "vip", "specification"] as const) {
       expect(try scripted.calls).toBe(down ? 0 : 1)
       const ceiling = kind === "wiki" ? WIKI_CEILING : kind === "vip" ? VIP_CEILING : REVIEW_CEILING
       expect(spent).toBe(down ? ceiling : 7)
-      expect(charges.size).toBe(1)
+      // One charge for the run's admission, and one receipt for each physical provider call (worker/CallBudget.vibe).
+      const physical = [...charges.keys()].filter((key) => key.startsWith("reply/model/"))
+      expect(physical.length).toBe(try scripted.calls)
+      expect(charges.size - physical.length).toBe(1)
       expect(try promise(() => raw.get("reserved"))).toBe(0)
     }), 60_000)
   }

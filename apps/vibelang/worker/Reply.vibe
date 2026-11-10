@@ -1,3 +1,4 @@
+import { callBudget, INPUT_CEILING } from "./CallBudget.vibe"
 import { WikiDrafting } from "../src/core/WikiWriter.vibe"
 import { beginReply, recordReplyStart, canComposeReply, beginReplyComposition, finishReplyComposition, recordReplySettlement } from "../src/core/flowDecision.vibe"
 import { initialProgress, advanceProgress, completion, type ProgressState } from "./replyProgressDecision.vibe"
@@ -12,7 +13,7 @@ import { promptForm, promptWindow, speaker } from "../src/core/sequenceDecision.
 import { Agent, AgentAction, Budget, EventSink, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
 import { WebCrypto } from "@smthrs/crypto"
 import { Action, Deadline, Interpreter, RetryPolicy } from "@smthrs/flow"
-import { type AgentEvent, DoneText, type FlowBinding } from "@smthrs/harness"
+import { type AgentEvent, DoneText, type FlowBinding, HarnessError } from "@smthrs/harness"
 import * as QuickJSWorkerd from "@smthrs/harness/QuickJSWorkerd"
 import { Evaluator, ModelRequest } from "@smthrs/model"
 import type { HostModel } from "@smthrs/model-host"
@@ -88,15 +89,15 @@ export const MAX_TURNS = 24
 export const MAX_FRAMES = 8
 
 /** The context window the agent compacts against, as smithers.sh's agents do. */
-export const CONTEXT_WINDOW_TOKENS = 32_768
+export const CONTEXT_WINDOW_TOKENS = INPUT_CEILING
 
-/** The most tokens an agent run of `frames` model turns, each writing at most `answer`, uses: what its admission reserves. */
+/** The reservation for `frames` calls with this input allowance and maximum answer. */
 export function ceilingOf(frames: number, answer: number): number {
   return frames * (CONTEXT_WINDOW_TOKENS + answer)
 }
 
-/** A reply's reservation in the day's budget. */
-export const REPLY_CEILING = ceilingOf(MAX_FRAMES, MAX_ANSWER_TOKENS)
+/** The first call's reservation; every physical call, including a reissue, reserves separately. */
+export const REPLY_CEILING = ceilingOf(1, MAX_ANSWER_TOKENS)
 
 /** The seat the agent declares; the host answers it with the deployment's chat model. */
 export const AGENT_SEAT = "agent"
@@ -261,7 +262,7 @@ data Outcome { Answered { text: string }; Failed { reason: string } }
  * inside the engine's write, so it never writes storage itself), and a fiber hands the text to the sequencer as
  * appends, or a restart when the answer started over.
  */
-effect function respond(reply: string, model: HostModel["Service"], turns: ReadonlyArray<Turn>) {
+effect function respond(reply: string, model: HostModel["Service"], turns: ReadonlyArray<Turn>, budget: Budget.Service) {
   const replies = try Replies
   const events = try Queue.unbounded<AgentEvent.AgentEvent | undefined>()
   const progress = try Ref.make(started)
@@ -284,21 +285,21 @@ effect function respond(reply: string, model: HostModel["Service"], turns: Reado
       shown = next.text
     }
   }
-  const answered = try exit(run(reply, model, sink, turns))
+  const answered = try exit(run(reply, model, sink, turns, budget))
   try Queue.offer(events, undefined)
   join streamer
   return { answered, progress: try Ref.get(progress) }
 }
 
 /** One run of the reply agent, with both history and captured pane tools. */
-effect function run(reply: string, model: HostModel["Service"], sink: EventSink.Service, turns: ReadonlyArray<Turn>) {
+effect function run(reply: string, model: HostModel["Service"], sink: EventSink.Service, turns: ReadonlyArray<Turn>, budget: Budget.Service) {
   const tours = try Tours
   const { history } = try HistoryTools
   const sandbox = Option.getOrElse(try Effect.serviceOption(SandboxAgent), () => closed)
   const drafting = Option.getOrUndefined(try Effect.serviceOption(WikiDrafting))
   const tools = try AgentActions
   const actions = tools.actions === undefined ? [] : [actionTools(tools.actions, tools.announce)]
-  provide agentOf(Respond.layer, model, sink, [historyTools(history), sandboxTools(sandbox.factory, sandbox.conversation), wikiTools(reply, tours, drafting), ...actions], REPLY_CALLS), EventSink.EventSink = sink {
+  provide agentOf(Respond.layer, model, sink, [historyTools(history), sandboxTools(sandbox.factory, sandbox.conversation), wikiTools(reply, tours, drafting), ...actions], REPLY_CALLS, budget), EventSink.EventSink = sink {
     const implementation = try Respond.requirement
     return try implementation.action({ turns })
   }
@@ -330,7 +331,8 @@ effect function compose(post: string, reply: string) {
     success: Schema.Array(Turn),
     execute: replies.history(post),
   })
-  const { answered, progress } = try respond(reply, model, turns)
+  const meter = callBudget(try Effect.orDie(Budget.make({})), spend, reply, admission.day, REPLY_CEILING)
+  const { answered, progress } = try respond(reply, model, turns, meter)
   if (Exit.isFailure(answered) && Cause.hasInterrupts(answered.cause)) return try Effect.failCause(answered.cause)
   try Action.make({
     name: "vibelang/reply/spend",
@@ -338,14 +340,15 @@ effect function compose(post: string, reply: string) {
     retryPolicy: patient,
     execute: spend.spend(admission.day, reply, progress.tokens, progress.usageValid && progress.failed === undefined, REPLY_CEILING),
   })
-  const tag = Exit.isFailure(answered) ? tagOf(Cause.squash(answered.cause)) : "answered"
+  const failure = Exit.isFailure(answered) ? Cause.squash(answered.cause) : undefined
+  const tag = failure === undefined ? "answered" : tagOf(failure)
   try Effect.logInfo("vibelang.reply.agent").pipe(Effect.annotateLogs({ outcome: progress.usageValid ? progress.failed ?? tag : "invalid-usage", tokens: progress.tokens }))
   const rawText = Exit.isSuccess(answered) ? answered.value : undefined
   const text = typeof rawText === "string" ? rawText : ""
   const disposition = completion(Exit.isFailure(answered), progress.usageValid, text.trim() !== "")
   if (disposition === "answered") return Outcome.Answered({ text })
   if (disposition === "empty") return Outcome.Failed({ reason: REASONS.empty })
-  return Outcome.Failed({ reason: Exit.isFailure(answered) ? failureReason(tag, progress) : REASONS.failed })
+  return Outcome.Failed({ reason: failure instanceof HarnessError.HarnessError && typeof failure.cause === "object" && failure.cause !== null && "_tag" in failure.cause && failure.cause._tag === "vibelang/DailyBudgetExceeded" ? REASONS.budget : Exit.isFailure(answered) ? failureReason(tag, progress) : REASONS.failed })
 }
 
 /** The reply flow's body: start the reply, compose it, then settle it as finished or failed. */

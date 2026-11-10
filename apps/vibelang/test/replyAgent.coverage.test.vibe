@@ -10,10 +10,10 @@ import { cell, scriptedModel, type Scripted } from "../fuzz/model-server.vibe"
 import { within } from "./support/durableWriters.vibe"
 import { replyWorld } from "./support/replyWorld.vibe"
 
-/** The reply flow answered by `scripts`; `busy` start answers come first, and an `interrupting` history interrupts. */
-effect function world(scripts: ReadonlyArray<Scripted>, busy = 0, interrupting = false) {
+/** The reply flow answered by `scripts`; `busy` start answers come first, an `interrupting` history interrupts, and the day holds `limit` tokens. */
+effect function world(scripts: ReadonlyArray<Scripted>, busy = 0, interrupting = false, limit = 1_000_000) {
   const scripted = try scriptedModel(scripts)
-  return try replyWorld(scripted.model, scripted.calls, busy, interrupting)
+  return try replyWorld(scripted.model, scripted.calls, busy, interrupting, limit)
 }
 
 /** An agent action declaring a seat the reply's agent host doesn't resolve. */
@@ -22,6 +22,24 @@ const Elsewhere = AgentAction.make("test/reply/elsewhere", { payload: {}, output
 const stream = (text: string, prompt = 10, completion = 5): Scripted => ({ kind: "stream", pieces: [text], prompt, completion })
 
 describe("a reply the agent answers", () => {
+  it.live("refuses the next model call when known spend leaves less than its ceiling", () => scoped(effect {
+    const w = try world([stream("```cell\nctx.done(missing);\n```"), stream(cell("\"Must not call\""))], 0, false, REPLY_CEILING)
+    const { entry, ledger, calls } = try w.answer("Hello?")
+    expect(entry).toMatchObject({ done: true, error: REASONS.budget })
+    expect(calls).toBe(1)
+    expect(ledger[Budget.SPENT]).toBe(15)
+    expect(ledger[Budget.RESERVED]).toBe(0)
+  }))
+
+  it.live("adds a later unreported call's ceiling to earlier known usage", () => scoped(effect {
+    const w = try world([stream("```cell\nctx.done(missing);\n```"), { kind: "status", status: 402, code: "insufficient_quota" }])
+    const { entry, ledger, calls } = try w.answer("Hello?")
+    expect(entry).toMatchObject({ done: true, error: REASONS.credit })
+    expect(calls).toBe(2)
+    expect(ledger[Budget.SPENT]).toBe(REPLY_CEILING + 15)
+    expect(ledger[Budget.RESERVED]).toBe(0)
+  }))
+
   it.live("charges the ceiling when a provider call fails without a usage settlement", () => scoped(effect {
     const w = try world([{ kind: "status", status: 402, code: "insufficient_quota" }])
     const { entry, ledger, calls } = try w.answer("Hello?")
@@ -57,8 +75,9 @@ describe("a reply the agent answers", () => {
     expect(entry.done).toBe(false)
     expect(types).not.toContain("ReplyFailed")
     expect(types).not.toContain("ReplyFinished")
-    expect(ledger[Budget.RESERVED]).toBe(REPLY_CEILING)
-    expect(ledger[Budget.SPENT] ?? 0).toBe(0)
+    // The model finished before the history service interrupted the cell.
+    expect(ledger[Budget.RESERVED]).toBe(0)
+    expect(ledger[Budget.SPENT]).toBe(15)
   }))
 
   it.live("waits while another reply streams, then answers", () => scoped(effect {

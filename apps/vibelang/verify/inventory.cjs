@@ -38,6 +38,7 @@ const shellBoundaries = {
   'src/web/backend.vibe': 'Health choice calls proved liveHealth; deadlines, cancellation and layer loading remain runtime behavior.',
   'worker/Http.vibe': 'Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries.',
   'worker/Budget.vibe': 'Admission and settlement run the proved reserve/settle kernel inside the semaphore, so concurrent admissions cannot pass the limit. The semaphore itself, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts); the workerd suite exercises twenty concurrent admissions.',
+  'worker/CallBudget.vibe': 'Runtime provider boundary: each physical invocation reserves independently; durable receipts reconcile usable final usage or the ceiling, including reissues and UTC rollover. SDK replay, UUIDs, Date, receipt codecs and RPC remain runtime boundaries. Behavioral regressions and adapter mutations cover these connections; the integer bound is proved in budgetDecision.vibe.',
   'src/core/sandboxMeter.vibe': 'Each interval\'s accrual and month rollover is the proved meterStep (sandboxDecision.vibe). UTC month boundaries (Date.UTC), bucket storage and the interval loop\'s termination remain host boundaries.',
   'src/core/flows.vibe': 'Tour threads active/ready/one-speaker/terminal state; terminal-event and reading-time policies call flowDecision; unanswered source order and conversation guards call conversation. Private visit/hold counters use proved exact BigInt increments; first-visit, paused-wait, requested seek and reading-clock step choices are proved. Full optional restored-cursor composition, Flow execution, word tokenization, docs regexp and reply-id slice remain unproved.',
   "worker/Sequencer.vibe": "Calls proved conversation/append/start decisions, retained-log replay, ordered model-context selection, the proved sequencerDecision attempt, restart count, finish plan (the reply ends as exactly the model text), settle step, tour speech and entry lookup, and the followDecision replay cut. Stored events are decoded before replay. Locking, log writes before publish, PubSub delivery, event ids from numbers and the read snapshot Set (readonly-set.ts) remain runtime boundaries.",
@@ -86,7 +87,7 @@ const boundaries = {
   'src/web/tourDecision.vibe': 'The tour controls and the event stream connection as proved functions over plain values: pause and resume, back, skip, sound, a late tour end, what a failed tour keeps, auto start and reconnection; 89 executable mutations. `update` reads the model and builds Commands, which remain host boundaries.',
   'src/web/updateDecision.vibe': 'The web update\'s decisions as proved functions over plain values: Escape\'s ladder, the applied event and the step after every message; 83 executable mutations. `update` reads the model and builds Commands, which remain host boundaries.',
   'src/core/decide.vibe': 'The sequencer: every accepted event is the next; a role grant is accepted exactly when canGrant admits it and an authorization exactly when the actor\'s role may take the action, every action, both refused forbidden; accepted action requests copy every field for a fresh id; steps and settlements are numbered exactly for an open run. Imported conversation.vibe contracts are axioms here and proved there.',
-  'src/core/conversation.vibe': 'Production state machine: exact entry/role frames, action-run frames and partial walkthrough frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain.',
+  'src/core/conversation.vibe': 'Production state machine: exact entry/role frames, action-run frames and exact drive, pause, resume and seek walkthrough fields and frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain.',
   'src/core/issueGraphDecision.vibe': 'Proved (0018 fifth lane): from a forest, every issue write the host accepts leads to a forest: positive numbers, every parent the root or an issue, and no issue its own ancestor at any number of links, so no sequence of writes creates a cycle; the bounded first-match ancestor walk, created numbers above every number, and which edit changes a parent. GitHub owns live edges after the same canLinkIssues check.',
   'src/core/replayDecision.vibe': 'Proved (0018 fifth lane): replayLog is exactly the left fold of apply over the log; the live step recordedConversation applies and appends an accepted event, changes nothing on a refusal, and keeps the conversation equal to the replay of its log. Store durability and order, locking and PubSub delivery remain runtime boundaries.',
   'src/history/replayDecision.vibe': 'Proved (0018 fifth lane): replayHistory is exactly the left fold of replayEvent over the journal; the live step recordedHistory moves the history exactly as replaying the accepted event does, and liveHistoryReplays keeps the live history equal to the replay of the journal. Store durability and order, locking and PubSub delivery remain runtime boundaries.',
@@ -270,10 +271,6 @@ function containsEffects(node) {
 // The contract block LemmaScript reads sits directly above its function: `//@` lines, optionally after a doc comment.
 // `pnpm verify` checks every file holding a `//@ verify` directive (verify/sources.py), so such a function is proved.
 const VERIFY = /^[ \t]*\/\/@[ \t]+verify\b/;
-function underVerify(lines, line) {
-  for (let i = line - 2; i >= 0 && /^[ \t]*\/\/@/.test(lines[i]); i--) if (VERIFY.test(lines[i])) return true;
-  return false;
-}
 function inventorySource(file, source) {
   const rel = path.relative(app, file);
   const parsed = spawnSync(path.join(app, 'node_modules/.bin/vibelang'), ['--estree', file],
@@ -282,7 +279,17 @@ function inventorySource(file, source) {
   const result = JSON.parse(parsed.stdout);
   if (result.error || !result.ast) throw Error(`${rel}: compiler parse failed: ${result.error?.message ?? 'missing AST'}`);
   const rows = [];
-  const lines = source.split('\n');
+  // A function whose leading comment block holds LemmaScript's verify directive (VERIFY, the harness's own pattern,
+  // sources.py) is checked by `pnpm verify`, with the callbacks inside it; an `ensures` there makes it a contract.
+  function annotationAt(start, pattern) {
+    const before = source.slice(0, start).split('\n');
+    for (let i = before.length - 2; i >= 0 && (/^[ \t]*\/\//.test(before[i]) || !before[i].trim()); i--) {
+      if (pattern.test(before[i])) return true;
+    }
+    return false;
+  }
+  function markedAt(start) { return annotationAt(start, VERIFY); }
+  function postconditionAt(start) { return annotationAt(start, /^[ \t]*\/\/@[ \t]*ensures\b/); }
   function walk(node, parent, parents = [], provedParent = false) {
     let next = parents;
     let proved = provedParent;
@@ -304,11 +311,12 @@ function inventorySource(file, source) {
       // effect functions do not turn a plain enclosing function into an Effect.
       const header = source.slice(range[0], node.body.range[0]);
       const effectful = /^(?:(?:export|default|static|public|private|protected|override)\s+)*effect\b/.test(header.trim()) || node.async || containsEffects(node.body);
-      proved = provedParent || (parents.length === 0 && underVerify(lines, line));
+      proved = provedParent || (parents.length === 0 && markedAt(range[0]) ? (postconditionAt(range[0]) ? 'contract' : 'wellformedness') : false);
       const category = proved ? 'proved' : effectful ? 'effectful shell' : (containsLogic(node.body) || boundaries[rel] ? 'pure logic' : 'wiring');
       const boundary = boundaries[rel];
       const provedBoundary = proved && boundary && !boundary.startsWith('Proved') ? 'Proved: ' + boundary : boundary;
-      const why = functionBoundaries[`${rel}:${parents[0] ?? name}`] || provedBoundary || shellBoundaries[rel]
+      const limited = proved === 'wellformedness' ? 'Checked without a behavioral postcondition; only emitted body-safety obligations are checked.' : undefined;
+      const why = functionBoundaries[`${rel}:${parents[0] ?? name}`] || limited || provedBoundary || shellBoundaries[rel]
         || (proved ? 'Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`).' : undefined) || (category === 'wiring'
         ? 'Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision.'
         : 'Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof.');

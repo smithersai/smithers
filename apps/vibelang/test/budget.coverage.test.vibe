@@ -6,7 +6,7 @@ effect function ledger() {
   const data = try Ref.make<Readonly<Record<string, number>>>({})
   return {
     data,
-    service: { read: (key: string) => Ref.get(data).pipe(Effect.map((entries) => entries[key])), write: (entries: Readonly<Record<string, number>>) => Ref.update(data, (current) => ({ ...current, ...entries })) },
+    service: { read: (key: string) => Effect.yieldNow.pipe(Effect.andThen(Ref.get(data)), Effect.map((entries) => entries[key])), write: (entries: Readonly<Record<string, number>>) => Ref.update(data, (current) => ({ ...current, ...entries })) },
   }
 }
 
@@ -18,7 +18,7 @@ describe("daily budget", () => {
       const before = try budget.admit("a", 10)
       try budget.spend("a", 4, true, 10)
       const next = try budget.admit("b", 10)
-      try Effect.try(() => {
+      try Effect.sync(() => {
         expect(before).toBe(limit >= 10)
         expect(next).toBe(4 + 10 <= limit)
       })
@@ -34,7 +34,7 @@ describe("daily budget", () => {
     try budget.spend(winners[0]!, 3, true, 10)
     const after = try budget.admit("late", 10)
     const settled = try Ref.get(log.data)
-    try Effect.try(() => {
+    try Effect.sync(() => {
       expect(winners).toHaveLength(3)
       expect(held[Budget.RESERVED]).toBe(30)
       expect(after).toBe(true)
@@ -51,7 +51,7 @@ describe("daily budget", () => {
     const held = try Ref.get(log.data)
     try budget.spend("a", 2, true, 10)
     const charged = try budget.admit("a", 10)
-    try Effect.try(() => {
+    try Effect.sync(() => {
       expect([first, again, charged]).toEqual([true, true, false])
       expect(held[Budget.RESERVED]).toBe(10)
     })
@@ -70,7 +70,7 @@ describe("daily budget", () => {
     try restored.spend("same", 99, true, 10)
     const admitted = try restored.admit("next", 1)
     const final = try Ref.get(log.data)
-    try Effect.try(() => {
+    try Effect.sync(() => {
       expect(data).toMatchObject({ spent: 24, reserved: 0, over: 24, "reply/same": 2, "reply/negative": 10, "reply/second": 2, "reply/silent": 10 })
       expect(final).toEqual(data)
       expect(admitted).toBe(false)

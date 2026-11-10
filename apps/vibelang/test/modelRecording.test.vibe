@@ -15,6 +15,15 @@ import { cell, scriptedModel } from "../fuzz/model-server.vibe"
 import { capped, MODEL_CALLS, recordedModel, SYSTEM_CONTEXT } from "./support/model.vibe"
 import { replyWorld } from "./support/replyWorld.vibe"
 
+/** A ledger with each physical call's id replaced by its order of first appearance. */
+const byCall = (entries: Readonly<Record<string, number>>) => {
+  const ids: string[] = []
+  return Object.fromEntries(Object.entries(entries).map(([key, value]) => [key.replace(/(?<=\/model\/)[0-9a-f-]{36}$/, (id) => {
+    if (!ids.includes(id)) ids.push(id)
+    return `call-${ids.indexOf(id)}`
+  }), value]))
+}
+
 it.live("a reply recorded from the provider replays with the provider gone, and the recording holds no key", () => scoped(effect {
   provide NodeServices.layer {
   const fs = try FileSystem.FileSystem
@@ -39,7 +48,9 @@ it.live("a reply recorded from the provider replays with the provider gone, and 
   })
   expect(replayed.entry).toEqual(live.entry)
   expect(replayed.types).toEqual(live.types)
-  expect(replayed.ledger).toEqual(live.ledger)
+  // Each physical provider call is held and charged under its own call id (worker/CallBudget.vibe), fresh per run; the
+  // replay charges the same calls the same tokens.
+  expect(byCall(replayed.ledger)).toEqual(byCall(live.ledger))
   }
 }), 60_000)
 

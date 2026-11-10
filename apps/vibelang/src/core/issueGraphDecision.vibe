@@ -36,6 +36,7 @@ export function issueAncestorAt(items: ReadonlyArray<IssueRecord>, start: number
 //@ ensures \result ==> child > 0 && parent > 0 && child != parent
 //@ ensures \result ==> exists(i, 0 <= i && i < items.length && items[i].number == child)
 //@ ensures \result ==> exists(k, 0 <= k && k <= items.length + 1 && issueAncestorAt(items, parent, k) == 0 && forall(t, 0 <= t && t < k ==> issueAncestorAt(items, parent, t) != child))
+//@ ensures \result == (child > 0 && parent > 0 && child != parent && exists(i, 0 <= i && i < items.length && items[i].number == child) && exists(k, 0 <= k && k <= items.length + 1 && issueAncestorAt(items, parent, k) == 0 && forall(t, 0 <= t && t < k ==> issueAncestorAt(items, parent, t) != child && exists(i, 0 <= i && i < items.length && items[i].number == issueAncestorAt(items, parent, t)))))
 export function canLinkIssues(items: ReadonlyArray<IssueRecord>, child: number, parent: number): boolean {
   if (parent <= 0 || child <= 0 || child === parent || !items.some((i) => i.number === child)) return false
   let next = parent
@@ -44,6 +45,8 @@ export function canLinkIssues(items: ReadonlyArray<IssueRecord>, child: number, 
     //@ invariant 0 <= steps && steps <= items.length + 1
     //@ invariant next == issueAncestorAt(items, parent, steps)
     //@ invariant forall(k, 0 <= k && k < steps ==> issueAncestorAt(items, parent, k) != child)
+    //@ invariant forall(k, 0 <= k && k < steps ==> issueAncestorAt(items, parent, k) != 0)
+    //@ invariant forall(k, 0 <= k && k < steps ==> exists(i, 0 <= i && i < items.length && items[i].number == issueAncestorAt(items, parent, k)))
     //@ decreases items.length + 1 - steps
     if (next === child) return false
     const found = items.find((i) => i.number === next)

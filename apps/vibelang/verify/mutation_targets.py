@@ -1,14 +1,4 @@
 """Production postconditions selected for expensive negative cases; positive proofs still check every obligation."""
-# Mutations whose claim is that a call stays inside its callee's domain. Only these may be rejected by a failed
-# precondition at that call (mutation_results.py); every other mutation must fail its own function's contract.
-# Dafny assumes a failed precondition afterwards, so such a mutant can fail nothing later: its fault is the call itself.
-CALLEE_PRECONDITIONS = {
-    'history-replay-capacity-gate': 'apply requires a history below capacity; replayEvent must not call it on a full one',
-    'history-capacity-low': 'decide requires a nonnegative sequence; the capacity guard must not call it with one below zero',
-    'history-capacity-high': 'decide requires a sequence below capacity; the capacity guard must not call it at capacity',
-}
-# Exact production clauses, not generated line numbers. Positive verification checks all clauses.
-# Prefix mutations keep whole-function checking because an earlier checked assertion is the earliest failure.
 # Exact production clauses, not generated line numbers. Positive verification checks all clauses.
 # Prefix mutations keep whole-function checking because an earlier checked assertion is the earliest failure.
 POSTCONDITIONS = {'apply-advance': '((res.seq_ == conversation.seq_) || (res.seq_ == (conversation.seq_ + 1)))',
@@ -338,7 +328,8 @@ def postcondition_line(generated, function, contains):
         start=next((i for i,line in enumerate(lines) if re.match(r'(?:ghost )?(?:method|function) '+re.escape(dafny_name(function))+r'(?:<[^>(]*>)?\(',line)),None)
     if start is None: raise ValueError('Missing target function '+function)
     end=next((i for i in range(start+1,len(lines)) if lines[i]=='{'),len(lines))
-    matches=[i+1 for i in range(start,end) if lines[i].lstrip().startswith('ensures ') and contains in lines[i]]
+    parts=(contains,) if isinstance(contains,str) else contains
+    matches=[i+1 for i in range(start,end) if lines[i].lstrip().startswith('ensures ') and all(part in lines[i] for part in parts)]
     if len(matches)!=1: raise ValueError(f'Expected one production postcondition, got {len(matches)}: {contains}')
     return matches[0]
 
@@ -629,6 +620,32 @@ POSTCONDITIONS.update({
     'receive-gap-frame': '((event.seq_ > (client.conversation.seq_ + 1)) ==> ((res.conversation == client.conversation) && (res.pending == client.pending)))',
 })
 
+# Capacity guard mutants must fail the caller's own checked safety assertion, never just a callee precondition.
+ASSERTIONS.update({
+    'history-capacity-low': (None, '((0 <= history.seq_) && (history.seq_ < 9007199254740991))'),
+    'history-capacity-high': (None, '((0 <= history.seq_) && (history.seq_ < 9007199254740991))'),
+    'history-replay-capacity-gate': (None, '(history.seq_ < 9007199254740991)'),
+})
+
+# Dropping the real-commit prefix fails apply's own checked fold assertion, but unisolated the whole apply also times
+# out at 30 s (history group, 2026-11-10), and a run with a timeout never counts. Check that one assertion alone.
+ASSERTIONS.update({name: (None, 'forall i: int :: ((0 <= i) ==> (i < |history.real_|) ==> (real_[i] == history.real_[i]))')
+                   for name in ('history-fold-prefix', 'myth-fold-prefix')})
+
+# Exact walkthrough clauses; several tokens identify one semantic clause without generated line numbers.
+POSTCONDITIONS.update({
+    **{name: ('event.WalkthroughDriven?', 'drivenWalkthrough(') for name in (
+        'apply-drive-step','apply-drive-target','apply-drive-duration','apply-drive-revision')},
+    **{name: ('event.TourPaused?', 'controlledWalkthrough(') for name in ('apply-pause-state','apply-pause-time')},
+    **{name: ('event.TourSought?', 'soughtWalkthrough(') for name in ('apply-seek-step','apply-seek-remaining')},
+    'apply-drive-range': ('event.WalkthroughDriven?', 'event.step > 10', 'res.walkthrough == conversation.walkthrough'),
+    'apply-seek-range': ('event.TourSought?', 'event.step > 11', 'res.walkthrough == conversation.walkthrough'),
+    'receive-walkthrough-frame': '!event.WalkthroughDriven?',
+    'receive-walkthrough-control': ('event.TourPaused?', 'controlledWalkthrough('),
+})
+
+POSTCONDITIONS['issues-link-complete'] = '(res == ('
+
 # A loop invariant the mutant breaks, checked alone: unisolated, the loop's one verification condition carries the
 # imported contract of `apply` and times out instead of failing (replay-skip and replay-order on a 4-vCPU box, 2026-11-10).
 INVARIANTS = {'replay-skip': 'current == replayedLog(initial, events, i)',
@@ -651,7 +668,12 @@ def invariant_line(generated, function, contains):
 # 4-vCPU box and timed out at 30 s under load (2026-11-10); replay-skip timed out the same way. Unnamed mutants keep 30 s,
 # and positive proofs default to 60 s (PROOF_TIME_LIMITS below).
 # receive-field-seq's one rejecting check (a run-append frame in `receive`) timed out at 30 s on a 2-core box (third lane, 2026-11-10).
-TIME_LIMITS = {'replay-order': 120, 'replay-skip': 120, 'receive-field-seq': 120}
+TIME_LIMITS = {'replay-order': 120, 'replay-skip': 120, 'receive-field-seq': 120,
+               # Quantified record-equality counterexamples need the same bounded headroom.
+               'apply-drive-duration': 120, 'apply-drive-revision': 120, 'apply-seek-remaining': 120, 'receive-pending-filter': 120,
+               'apply-drive-range': 120,
+               # Its runs-frame clause timed out at 30 s in one loaded box run and was refuted inside it in others.
+               'apply-tour-end-runs': 120}
 
 # Whole-suite history composition hit 60 s although the same module completed in 38-42 s alone.
 # Positive headroom is module-specific; it never changes a mutant's budget or rejection criteria.
@@ -660,3 +682,11 @@ PROOF_TIME_LIMITS = {'src/history/replayDecision.vibe': 180, 'src/core/conversat
 
 def time_limit(stem, mutation, source=None):
     return TIME_LIMITS.get(stem, 30) if mutation else PROOF_TIME_LIMITS.get(source, 60)
+
+
+# Seconds one Dafny process may run before it is stopped as hung. A stopped process is a tool failure, never a
+# rejection or a proof. `apply`'s targeted walkthrough clauses are checked on every return path, each within its solver
+# limit; eight of them passed 600 s in total on a loaded box (2026-11-10), so a mutant process gets 1,800 s.
+def wall_limit(isolated, mutation, limit):
+    if isolated: return 7200
+    return max(1800 if mutation else 180, limit + 60)

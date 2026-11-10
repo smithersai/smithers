@@ -1,3 +1,4 @@
+import { callBudget } from "./CallBudget.vibe"
 // The agent drafts one feature through its journaled AgentAction, using the existing model host and budget.
 import { AgentAction, EventSink, Budget } from "@smthrs/agent"
 import { Action, FlowRuntime } from "@smthrs/flow"
@@ -7,10 +8,10 @@ import { VipDraft, VipWriter } from "../src/core/VipWriter.vibe"
 import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
 import { agentOf, ChatModel, dayOf, Spend, draftSpend, draftSpendFailed, ceilingOf } from "./Reply.vibe"
-/** The model turns one run takes and the most tokens each writes; their ceiling is what its admission reserves. */
+/** Frame and answer limits; initial admission holds one call, then each physical invocation reserves separately. */
 const VIP_FRAMES = 8
 const VIP_ANSWER_TOKENS = 2048
-export const VIP_CEILING = ceilingOf(VIP_FRAMES, VIP_ANSWER_TOKENS)
+export const VIP_CEILING = ceilingOf(1, VIP_ANSWER_TOKENS)
 
 export const DraftVip = AgentAction.make("vibelang/vip/draft-agent", {
   payload: { title: Schema.String, text: Schema.String, example: Schema.String, prior: Schema.String },
@@ -55,7 +56,7 @@ export const writer = Layer.effect(VipWriter, effect {
       } })
       if (!admission.admitted) throw new IssueFailure({ reason: "budget" })
       // An empty policy is valid, so making the meter cannot fail.
-      const meter = try Effect.orDie(Budget.make({}))
+      const meter = callBudget(try Effect.orDie(Budget.make({})), spend, `vip-draft/${instance.executionId}`, admission.day, VIP_CEILING)
       const result = try Effect.result(agent.run(request, meter))
       const usage = meter.usageOf(instance.executionId) catch effect () => {
         try Effect.logWarning("vibelang.budget.usage").pipe(Effect.annotateLogs({ outcome: "unavailable" }))

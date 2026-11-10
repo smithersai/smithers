@@ -11,12 +11,14 @@ import json, pathlib, re, sys
 from mutation_edit import executable_matches, flatten_imports, function_span
 from declarations import stage as stage_declarations, parses_as_typescript, value_imports
 declarations={}
-from mutation_targets import CALLEE_PRECONDITIONS
 from sources import production_sources, require_proved
 root=pathlib.Path(__file__).resolve().parent
 from extended_mutations import cases as extended_cases
 from web_mutations import cases as web_cases
 from arm_mutations import cases as arm_cases
+# These mutate native adapters and are rejected by behavioral tests, not Dafny.
+# The full verify:broken gate runs both registries and reports their counts separately.
+from runtime_mutations import CASES as runtime_cases
 # The mutation cases: name, function, production text, mutated text, the claim the mutation breaks.
 cases=[
 ('wiki-edits-stale','applyWikiEdits','if (event.seq !== state.seq + 1) return state','if (event.seq === state.seq + 1) return state','a stale wiki observation changes nothing'),
@@ -121,7 +123,6 @@ cases=[
 ('steprun-drop-step', 'stepRun', ': [...run.steps, { key, name, attempt, state, started: at, at }]', ': run.steps', 'a new engine step is appended to its run'),
 ('steprun-passed', 'stepRun', 'return { ...run, state: "running", steps', 'return { ...run, state: "passed", steps', 'a step keeps its run running'),
 ('apply-action-actor', 'apply', 'actor: event.actor, state: "queued"', 'actor: "", state: "queued"', 'a requested run records who asked for it'),
-('apply-tour-end-runs', 'apply', 'return { ...next, entries: ended, agent: "idle", replying: "" }', 'return { ...next, entries: ended, agent: "idle", replying: "", runs: [] }', 'events other than action events leave every run'),
 ('apply-walkthrough-guard', 'apply', 'if (!isTouring(conversation, event.id) || event.step < 1', 'if (event.step < 1', 'only the running tour drives the walkthrough'),
 ('decide-request-copies', 'decide', 'door: intent.door, actor: intent.actor, at: intent.at', 'door: intent.door, actor: "", at: intent.at', 'the requested run event names the requesting actor'),
 ('decide-trace-open', 'decide', '      if (!hasOpenRun(runsOf(conversation), intent.id)) return refused("not-replying")\n      return accepted({ type: "ActionStep"', '      return accepted({ type: "ActionStep"', 'a step is numbered only for an open run'),
@@ -177,6 +178,7 @@ while args:
         if not args: raise SystemExit('--module needs a source path')
         modules.add(args.pop(0))
     else: names.append(arg)
+
 selected=set(names)
 unknown=selected-{name for module,name,*_ in cases}
 if unknown: raise SystemExit('Unknown mutations: '+', '.join(sorted(unknown)))
@@ -224,7 +226,7 @@ for module,name,fn,old,new,claim in cases:
     broken,dependencies=flatten_imports(broken,(root.parent/module).parent)
     (out/f'{name}.ts').write_text(broken)
     stage_dependencies(broken,dependencies,out)
-    manifest[name]={'source':module,'function':fn,'claim':claim,'before':old,'after':new,'callee_precondition':name in CALLEE_PRECONDITIONS}
+    manifest[name]={'source':module,'function':fn,'claim':claim,'before':old,'after':new}
 if modules and not manifest: raise SystemExit('No mutations in: '+', '.join(sorted(modules)))
 # Beside the mutants, not among them: the mutant typecheck reads every .ts under OUT.
 stage_declarations(root.parent, declarations, out.with_name(out.name+'.declarations'))

@@ -1,0 +1,96 @@
+// @vitest-environment node
+import { describe, expect, it } from "@effect/vitest"
+import { Budget } from "@smthrs/agent"
+import { ModelRequest } from "@smthrs/model"
+import * as Daily from "../worker/Budget.vibe"
+import { callBudget } from "../worker/CallBudget.vibe"
+
+const request = ModelRequest.ModelRequest.make({ modelId: "test", system: [], messages: [], tools: [], params: ModelRequest.GenerationParams.make({ maxTokens: 32 }) })
+const unbounded = ModelRequest.ModelRequest.make({ ...request, params: ModelRequest.GenerationParams.make() })
+const ceiling = 32_768 + 32
+
+effect function world(limit: number) {
+  const data = try Ref.make<Readonly<Record<string, number>>>({})
+  const daily = try Daily.make({
+    read: key => Ref.get(data).pipe(Effect.map(entries => entries[key])),
+    write: entries => Ref.update(data, previous => ({ ...previous, ...entries })),
+  }, limit)
+  const ledger = { admit: (_day: string, key: string, cap: number) => daily.admit(key, cap), spend: (_day: string, key: string, used: number, reported: boolean, cap: number) => daily.spend(key, used, reported, cap) }
+  try daily.admit("run", ceiling)
+  const meter = try Effect.orDie(Budget.make({}))
+  return { data, meter: callBudget(meter, ledger, "run", "2026-11-10", ceiling) }
+}
+
+describe("physical model call budgets", () => {
+  it.effect("refuses a provider request with no explicit answer ceiling", () => effect {
+    const { data, meter } = try world(3 * ceiling)
+    const outcome = try Effect.exit(meter.reserveCall!(unbounded))
+    const state = try Ref.get(data)
+    try Effect.sync(() => {
+      expect(Exit.isFailure(outcome)).toBe(true)
+      expect(state[Daily.RESERVED]).toBe(0)
+      expect(state[Daily.SPENT]).toBe(0)
+    })
+  })
+
+  it.effect("settles yesterday's receipt on yesterday's ledger and reserves today's call on today's ledger", () => effect {
+    const data = try Ref.make<Readonly<Record<string, number>>>({})
+    const make = (day: string) => Daily.make({
+      read: key => Ref.get(data).pipe(Effect.map(entries => entries[`${day}/${key}`])),
+      write: entries => Ref.update(data, previous => ({ ...previous, ...Object.fromEntries(Object.entries(entries).map(([key, value]) => [`${day}/${key}`, value])) })),
+    }, 3 * ceiling)
+    const yesterday = try make("yesterday")
+    const today = try make("today")
+    const day = new Date(try Clock.currentTimeMillis).toISOString().slice(0, 10)
+    const select = (value: string) => value === day ? yesterday : today
+    try yesterday.admit("run", ceiling)
+    const ledger = { admit: (value: string, key: string, cap: number) => select(value).admit(key, cap), spend: (value: string, key: string, used: number, valid: boolean, cap: number) => select(value).spend(key, used, valid, cap) }
+    const meter = callBudget(try Effect.orDie(Budget.make({})), ledger, "run", day, ceiling)
+    const first = try meter.reserveCall!(request)
+    try TestClock.adjust("24 hours")
+    try meter.recordCall!(first, { totalTokens: 9 }, true)
+    const second = try meter.reserveCall!(request)
+    try meter.recordCall!(second, { totalTokens: 4 }, true)
+    const state = try Ref.get(data)
+    try Effect.sync(() => {
+      expect(state[`yesterday/${Daily.SPENT}`]).toBe(9)
+      expect(state[`today/${Daily.SPENT}`]).toBe(4)
+      expect(state[`yesterday/${Daily.RESERVED}`]).toBe(0)
+      expect(state[`today/${Daily.RESERVED}`]).toBe(0)
+    })
+  })
+
+  it.effect("reserves each reissue and concurrent call separately before any usage is known", () => effect {
+    const { data, meter } = try world(3 * ceiling)
+    const results = try all(Array.from({ length: 20 }, () => Effect.exit(meter.reserveCall!(request))), { concurrency: "unbounded" })
+    const state = try Ref.get(data)
+    try Effect.sync(() => {
+      expect(results.filter(Exit.isSuccess)).toHaveLength(3)
+      expect(state[Daily.RESERVED]).toBe(3 * ceiling)
+      expect(state[Daily.SPENT]).toBe(0)
+    })
+  })
+
+  for (const [name, usage, settled, expected] of [
+    ["reported total", { totalTokens: 9 }, true, 9],
+    ["reported parts", { inputTokens: 3, outputTokens: 4 }, true, 7],
+    ["explicit zero", { totalTokens: 0 }, true, 0],
+    ["missing usage", {}, true, ceiling],
+    ["incomplete usage", { inputTokens: 3 }, true, ceiling],
+    ["negative usage", { totalTokens: -1 }, true, ceiling],
+    ["invalid component", { totalTokens: 3, outputTokens: NaN }, true, ceiling],
+    ["interrupted stream", { totalTokens: 3 }, false, ceiling],
+  ] as const) {
+    it.effect(`charges ${name} once through its durable receipt`, () => effect {
+      const { data, meter } = try world(3 * ceiling)
+      const receipt = try meter.reserveCall!(request)
+      try meter.recordCall!(receipt, usage, settled)
+      try meter.recordCall!(receipt, usage, settled)
+      const state = try Ref.get(data)
+      try Effect.sync(() => {
+        expect(state[Daily.SPENT]).toBe(expected)
+        expect(state[Daily.RESERVED]).toBe(0)
+      })
+    })
+  }
+})

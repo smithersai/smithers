@@ -142,6 +142,12 @@ class PositiveProofTimeLimits(unittest.TestCase):
         self.assertEqual(time_limit('replay-order', True, 'src/history/replayDecision.vibe'), 120)
         self.assertEqual(time_limit('history-live-stale', True, 'src/history/replayDecision.vibe'), 30)
 
+    def test_conversation_headroom_is_positive_only(self):
+        # One receive obligation of 14,905 timed out at 60 s inside a loaded mutation box (2026-11-10).
+        from mutation_targets import time_limit
+        self.assertEqual(time_limit('conversation', False, 'src/core/conversation.vibe'), 120)
+        self.assertEqual(time_limit('apply-advance', True, 'src/core/conversation.vibe'), 30)
+
     def test_real_invocation_selects_the_positive_budget_by_module_path(self):
         for module, limit in [('src/history/replayDecision.vibe', 180), ('src/core/replayDecision.vibe', 60)]:
             with self.subTest(module=module), tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
@@ -289,6 +295,13 @@ class MutantTimeLimits(unittest.TestCase):
         self.assertEqual(time_limit('replay-order', False), 60)
         self.assertTrue(all(isinstance(v, int) and 30 < v <= 300 for v in TIME_LIMITS.values()))
 
+    def test_the_wall_only_stops_a_hung_process(self):
+        from mutation_targets import wall_limit
+        self.assertEqual(wall_limit(False, True, 30), 1800)
+        self.assertEqual(wall_limit(False, False, 60), 180)
+        self.assertEqual(wall_limit(False, False, 180), 240)
+        self.assertEqual(wall_limit(True, False, 120), 7200)
+
     def test_every_time_limit_names_a_mutation(self):
         from mutation_targets import TIME_LIMITS
         from extended_mutations import cases
@@ -364,49 +377,157 @@ class MutationModuleFilter(unittest.TestCase):
 
 
 class MutationContractFailures(unittest.TestCase):
-    CALL_ONLY = {'exit': 4, 'output': 'Error: a precondition for this call could not be proved',
-                 'mapped': ['source.vibe:12: function replayEvent [replayEvent; generated line 679]']}
+    CALL_ONLY = {'exit': 4, 'dfy': '/proof/target.dfy',
+                 'output': 'target.dfy(20,0): Error: a precondition for this call could not be proved',
+                 'diagnostics': [{'file':'/proof/target.dfy','line':20,'severity':'error','kind':'precondition','function':'replayEvent'}]}
 
-    def test_a_callee_precondition_alone_is_not_a_rejection(self):
+    def test_a_callee_precondition_alone_is_never_a_rejection(self):
         from mutation_results import validate_rejection
-        with self.assertRaises(ValueError): validate_rejection(self.CALL_ONLY, 'replayEvent')
+        with self.assertRaises(ValueError): validate_rejection(self.CALL_ONLY,'replayEvent')
 
-    def test_a_declared_callee_domain_claim_is_rejected_by_that_precondition(self):
-        from mutation_results import validate_rejection
-        validate_rejection(self.CALL_ONLY, 'replayEvent', callee_precondition=True)
-
-    def test_only_named_mutations_claim_a_callee_domain(self):
-        from mutation_targets import CALLEE_PRECONDITIONS
-        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
-            out = pathlib.Path(folder)
-            names = sorted(CALLEE_PRECONDITIONS) + ['decide-blank']
-            result = subprocess.run([sys.executable, str(ROOT / 'mutations.py'), str(out), *names], capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            manifest = json.loads((out / 'manifest.json').read_text())
-            self.assertEqual({name for name, item in manifest.items() if item['callee_precondition']}, set(CALLEE_PRECONDITIONS))
+    def test_manifest_has_no_callee_domain_exceptions(self):
+        with tempfile.TemporaryDirectory(dir=ROOT/'.checks') as folder:
+            out=pathlib.Path(folder)
+            names=['history-capacity-low','history-capacity-high','history-replay-capacity-gate','decide-blank']
+            result=subprocess.run([sys.executable,str(ROOT/'mutations.py'),str(out),*names],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            manifest=json.loads((out/'manifest.json').read_text())
+            self.assertEqual(set(manifest),set(names))
+            self.assertTrue(all('callee_precondition' not in item for item in manifest.values()))
 
     def test_an_import_of_an_unmarked_module_is_refused(self):
         from sources import require_proved
-        production = production_sources(ROOT.parent)
-        require_proved(ROOT.parent / 'src/core/conversation.vibe', production)
-        with self.assertRaises(SystemExit): require_proved(ROOT.parent / 'src/core/Factory.vibe', production)
+        production=production_sources(ROOT.parent)
+        require_proved(ROOT.parent/'src/core/conversation.vibe',production)
+        with self.assertRaises(SystemExit):require_proved(ROOT.parent/'src/core/Factory.vibe',production)
 
-    def test_invalid_union_destructor_cannot_hide_behind_a_postcondition_failure(self):
+    def test_direct_assertion_is_a_rejection_but_related_and_tool_errors_are_not(self):
         from mutation_results import validate_rejection
-        with self.assertRaises(ValueError):
-            validate_rejection({'exit': 4,
-                'output': "Error: destructor 'clientId' can only be applied to datatype values constructed by 'Posted'\nError: a postcondition could not be proved",
-                'mapped': ['function receive [receive]']}, 'receive')
+        result={'exit':4,'dfy':'/proof/target.dfy','output':'target.dfy(20,0): Error: assertion might not hold',
+                'diagnostics':[{'file':'/proof/target.dfy','line':20,'severity':'error','kind':'assertion','function':'wanted'}]}
+        validate_rejection(result,'wanted')
+        for change in [{'exit':0},{'output':result['output']+'; timed out'},
+                       {'output':result['output']+'; 2 resolution/type errors'},
+                       {'output':result['output']+"; destructor 'id' can only be applied to constructor A"},
+                       {'output':result['output']+'; resource limit exceeded'},
+                       {'diagnostics':[{**result['diagnostics'][0],'severity':'related'}]},
+                       {'diagnostics':[{**result['diagnostics'][0],'function':'other'}]}]:
+            with self.assertRaises(ValueError):validate_rejection({**result,**change},'wanted')
 
-    def test_success_tool_failures_and_unrelated_functions_are_never_rejections(self):
+    def test_diagnostic_mapping_uses_the_generated_file_and_direct_error_line(self):
+        from proof_diagnostics import read_diagnostics
+        from sources import dafny_keywords
+        generated='method other()\n{\n}\nmethod wanted()\n{\n}\n'
+        output='library.dfy(5,0): Error: assertion might not hold\n' \
+               'target.dfy(2,0): Error: a postcondition could not be proved\n' \
+               'target.dfy(5,0): Related location: this is the postcondition that could not be proved\n'
+        found=read_diagnostics(output,generated,'/proof/target.dfy',[(1,'other'),(9,'wanted')],dafny_keywords())
+        self.assertEqual([d['function'] for d in found],[None,'other','wanted'])
+        self.assertEqual([d['severity'] for d in found],['error','error','related'])
+
+
+    def test_a_quantified_contract_lemma_failure_is_a_postcondition(self):
+        # mock-actor-key-sep: Dafny reports a failed forall-ensures in the function's contract lemma this way (2026-11-10).
+        from proof_diagnostics import read_diagnostics
+        from sources import dafny_keywords
+        generated='function actorKey(id: string): string\n{ id }\nlemma actorKey_ensures()\n  ensures forall other :: actorKey(other) != ""\n{\n}\n'
+        output='target.dfy(4,32): Error: possible violation of postcondition of forall statement\n'
+        found=read_diagnostics(output,generated,'/proof/target.dfy',[(1,'actorKey')],dafny_keywords())
+        self.assertEqual([(d['function'],d['kind']) for d in found],[('actorKey','postcondition')])
+
+    def test_a_postcondition_of_an_opaque_function_is_its_own_failure(self):
+        # conversation-step-applies: the opaque replay step fails its own postcondition (2026-11-10).
+        from proof_diagnostics import read_diagnostics
+        from sources import dafny_keywords
+        generated='function other(): int\n{ 0 }\nopaque function step(n: int): int\n  ensures step(n) == n\n{\n  n\n}\n'
+        output='target.dfy(6,2): Error: a postcondition could not be proved on this return path\n' \
+               'target.dfy(4,10): Related location: this is the postcondition that could not be proved\n'
+        found=read_diagnostics(output,generated,'/proof/target.dfy',[(1,'other'),(3,'step')],dafny_keywords())
+        self.assertEqual([(d['function'],d['symbol']) for d in found],[('step','step'),('step','step')])
+
+
+class ReviewRegressions(unittest.TestCase):
+    def test_circular_imported_contracts_cannot_justify_each_other(self):
+        from sources import proof_dependencies
+        with tempfile.TemporaryDirectory(dir=ROOT/'.checks') as folder:
+            app=pathlib.Path(folder)
+            left=app/'left.vibe';right=app/'right.vibe'
+            left.write_text('import { right } from "./right.vibe"\n//@ verify\n//@ ensures false\nexport function left(): boolean { return right() }\n')
+            right.write_text('import { left } from "./left.vibe"\n//@ verify\n//@ ensures false\nexport function right(): boolean { return left() }\n')
+            with self.assertRaisesRegex(SystemExit, 'Cyclic proof value imports'):
+                proof_dependencies([left], [left,right])
+
+    def test_unrelated_postcondition_does_not_validate_an_intended_precondition(self):
         from mutation_results import validate_rejection
-        for code, output, mapped in [
-            (0, '0 errors', ['function wanted [wanted]']),
-            (4, 'a postcondition could not be proved; timed out', ['function wanted [wanted]']),
-            (4, 'a postcondition could not be proved; 2 resolution/type errors', ['function wanted [wanted]']),
-            (4, 'a postcondition could not be proved', ['function other [other]']),
-        ]:
-            with self.assertRaises(ValueError): validate_rejection({'exit': code, 'output': output, 'mapped': mapped}, 'wanted')
+        result = {
+            'exit': 4, 'dfy': '/proof/target.dfy',
+            'output': 'target.dfy(8,0): Error: a postcondition could not be proved\n'
+                      'target.dfy(20,0): Error: a precondition for this call could not be proved\n',
+            'mapped': ['source.vibe:1: function other [other; generated line 8]',
+                       'source.vibe:9: function wanted [wanted; generated line 20]'],
+            'diagnostics': [
+                {'file': '/proof/target.dfy', 'line': 8, 'severity': 'error', 'kind': 'postcondition', 'function': 'other'},
+                {'file': '/proof/target.dfy', 'line': 20, 'severity': 'error', 'kind': 'precondition', 'function': 'wanted'},
+            ],
+        }
+        with self.assertRaises(ValueError): validate_rejection(result, 'wanted')
+
+    def test_a_library_error_cannot_be_mapped_into_the_target_by_line_number(self):
+        from mutation_results import validate_rejection
+        result = {
+            'exit': 4, 'dfy': '/proof/target.dfy',
+            'output': 'library.dfy(20,0): Error: a postcondition could not be proved\n',
+            'mapped': ['source.vibe:9: function wanted [wanted; generated line 20]'],
+            'diagnostics': [
+                {'file': '/proof/library.dfy', 'line': 20, 'severity': 'error', 'kind': 'postcondition', 'function': 'wanted'},
+            ],
+        }
+        with self.assertRaises(ValueError): validate_rejection(result, 'wanted')
+
+    def test_a_marked_module_cannot_export_an_unproved_contract(self):
+        from sources import require_proved
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            dependency=pathlib.Path(folder)/'dependency.vibe'
+            dependency.write_text(r'''//@ verify
+//@ ensures \result
+export function proved(): boolean { return true }
+//@ ensures \result
+export function lie(): boolean { return false }
+''')
+            with self.assertRaises(SystemExit): require_proved(dependency, [dependency])
+
+    def test_an_explicit_typescript_caller_cannot_trust_an_unlisted_typescript_contract(self):
+        with tempfile.TemporaryDirectory(dir=ROOT/'.checks') as folder:
+            app=pathlib.Path(folder);(app/'src').mkdir()
+            (app/'tsconfig.json').write_text(json.dumps({'extends':str(ROOT.parent/'tsconfig.json'),'files':[],'include':[]}))
+            (app/'src/library.ts').write_text('//@ ensures \\result\nexport function lie(): boolean { return false }\n')
+            caller=app/'src/caller.ts'
+            caller.write_text("import { lie } from './library.ts'\n//@ verify\n//@ ensures \\result\nexport function trusted(): boolean { return lie() }\n")
+            env={k:v for k,v in os.environ.items() if k!='VERIFY_MUTATION_MANIFEST'}
+            env['VIBELANG_VERIFY_ROOT']=str(app)
+            result=subprocess.run([sys.executable,str(ROOT/'check.py'),str(caller)],capture_output=True,text=True,env=env,timeout=120)
+            self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn('not a marked production module',result.stdout+result.stderr)
+
+    def test_a_selected_caller_cannot_trust_a_false_imported_contract(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            app=pathlib.Path(folder);(app/'src').mkdir()
+            (app/'tsconfig.json').write_text(json.dumps({'extends':str(ROOT.parent/'tsconfig.json'),'files':[],'include':[]}))
+            (app/'src/callee.vibe').write_text(r'''//@ verify
+//@ ensures \result
+export function lie(): boolean { return false }
+''')
+            caller=app/'src/caller.vibe'
+            caller.write_text(r'''import { lie } from "./callee.vibe"
+//@ verify
+//@ ensures \result
+export function trusted(): boolean { return lie() }
+''')
+            env={k:v for k,v in os.environ.items() if k!='VERIFY_MUTATION_MANIFEST'}
+            env['VIBELANG_VERIFY_ROOT']=str(app)
+            result=subprocess.run([sys.executable,str(ROOT/'check.py'),str(caller)],capture_output=True,text=True,env=env,timeout=120)
+            self.assertNotEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn('function lie',result.stdout+result.stderr)
 
 if __name__ == '__main__':
     (ROOT / '.checks').mkdir(exist_ok=True)

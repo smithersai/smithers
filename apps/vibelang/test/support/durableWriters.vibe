@@ -11,16 +11,31 @@ import { Unreachable } from "../../worker/Unreachable.vibe"
 /** The budget's answer to every admission: admitted, refused, or unreachable. */
 export type Admission = "admit" | "refuse" | "fault"
 
-/** A budget answering `admission`, counting admissions and charges. */
+/**
+ * A budget answering `admission`. Like the production ledger, a key is settled once. `admitted` and `spent` count the
+ * run's own keys; `calls`, `tokens` and `unreported` count physical model calls (`model/` keys) and what they were
+ * charged: the reported tokens, or the call's ceiling when it reported nothing usable.
+ */
 export function ledger(admission: Admission) {
-  const log = { admitted: 0, spent: 0 }
+  const log = { admitted: 0, spent: 0, calls: 0, tokens: 0, unreported: 0 }
+  const settled = new Set<string>()
   const spend: Spend.Shape = {
-    admit: () => effect {
-      log.admitted += 1
+    admit: (_day, key) => effect {
+      if (key.startsWith("model/")) log.calls += 1
+      else log.admitted += 1
       if (admission === "fault") throw new Unreachable({ what: "budget" })
       return admission === "admit"
     },
-    spend: () => sync(() => { log.spent += 1 }),
+    spend: (_day, key, tokens, reported, ceiling) => sync(() => {
+      if (settled.has(key)) return
+      settled.add(key)
+      if (!key.startsWith("model/")) {
+        log.spent += 1
+        return
+      }
+      log.tokens += reported ? tokens : ceiling
+      if (!reported) log.unreported += 1
+    }),
   }
   return { log, spend }
 }

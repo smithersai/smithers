@@ -15,16 +15,17 @@ import * as Sequencer from "../../worker/Sequencer.vibe"
 
 /**
  * The reply flow over an in-memory conversation, answered by `model`, which has answered `calls` times; `busy` start
- * answers come first, and an `interrupting` history interrupts whatever reads it, as an engine reset does.
+ * answers come first, an `interrupting` history interrupts whatever reads it, as an engine reset does, and the day's
+ * budget holds `limit` tokens.
  */
-export effect function replyWorld(model: NonNullable<ChatModel.Shape["model"]>, calls: number!! = succeed(0), busy = 0, interrupting = false) {
+export effect function replyWorld(model: NonNullable<ChatModel.Shape["model"]>, calls: number!! = succeed(0), busy = 0, interrupting = false, limit = 1_000_000) {
   const events = try Ref.make<ReadonlyArray<Event>>([])
   const ledger = try Ref.make<Readonly<Record<string, number>>>({})
   const sequencer = try Sequencer.make(
     { read: () => Ref.get(events), write: (event) => Ref.update(events, (events) => [...events, event]) },
     { start: () => Effect.void, tour: () => Effect.void },
   )
-  const budget = try Budget.make({ read: (key) => Ref.get(ledger).pipe(Effect.map((entries) => entries[key])), write: (entries) => Ref.update(ledger, (data) => ({ ...data, ...entries })) }, 1_000_000)
+  const budget = try Budget.make({ read: (key) => Ref.get(ledger).pipe(Effect.map((entries) => entries[key])), write: (entries) => Ref.update(ledger, (data) => ({ ...data, ...entries })) }, limit)
   const real = repliesOf(sequencer)
   let refusals = busy
   // Listed member by member: spreading a service Shape drops its methods in VibeLang 0.0.12 (0016, "Service Shape spread").

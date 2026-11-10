@@ -1,3 +1,4 @@
+import { callBudget } from "./CallBudget.vibe"
 // The agent drafts one wiki edit through its journaled AgentAction, using the existing model host and budget.
 import { AgentAction, EventSink, Budget } from "@smthrs/agent"
 import { Action, FlowRuntime } from "@smthrs/flow"
@@ -7,10 +8,10 @@ import { WikiDraft, WikiWriter } from "../src/core/WikiWriter.vibe"
 import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
 import { agentOf, ChatModel, dayOf, Spend, draftSpend, draftSpendFailed, ceilingOf } from "./Reply.vibe"
-/** The model turns one run takes and the most tokens each writes; their ceiling is what its admission reserves. */
+/** Frame and answer limits; initial admission holds one call, then each physical invocation reserves separately. */
 const WIKI_FRAMES = 8
 const WIKI_ANSWER_TOKENS = 8192
-export const WIKI_CEILING = ceilingOf(WIKI_FRAMES, WIKI_ANSWER_TOKENS)
+export const WIKI_CEILING = ceilingOf(1, WIKI_ANSWER_TOKENS)
 
 export const DraftWiki = AgentAction.make("vibelang/wiki/draft-agent", {
   payload: { page: Schema.String, source: Schema.String, ask: Schema.String },
@@ -57,7 +58,7 @@ export const wikiWriter = Layer.effect(WikiWriter, effect {
       } })
       if (!admission.admitted) throw new WikiFailure({ reason: "budget" })
       // An empty policy is valid, so making the meter cannot fail.
-      const meter = try Effect.orDie(Budget.make({}))
+      const meter = callBudget(try Effect.orDie(Budget.make({})), spend, `wiki-draft/${instance.executionId}`, admission.day, WIKI_CEILING)
       const result = try Effect.result(agent.run(request, meter))
       const usage = meter.usageOf(instance.executionId) catch effect () => {
         try Effect.logWarning("vibelang.budget.usage").pipe(Effect.annotateLogs({ outcome: "unavailable" }))

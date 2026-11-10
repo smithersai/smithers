@@ -303,10 +303,16 @@ describe("the live Factory in local workerd, two conversations in one day", () =
       try factory.post(second, "a", "Ada", "two")
       const settled = try Effect.all([untilSettled(first, 1), untilSettled(second, 1)], { concurrency: "unbounded" })
       const keys = try chargeKeys(origin, dayOf(Date.now()))
+      const parents = keys.filter(key => key.endsWith(":r1"))
       try Effect.try(() => {
         expect(settled[0]!.at(-1)).toMatchObject({ type: "ReplyFailed", id: "r1", reason: REASONS.unavailable })
         expect(settled[1]!.at(-1)).toMatchObject({ type: "ReplyFailed", id: "r1", reason: REASONS.unavailable })
-        expect(keys).toHaveLength(2)
+        expect(parents).toHaveLength(2)
+        // Each unreachable model retries under separate physical receipts;
+        // both conversations retain their own parent and child namespace.
+        const prefixes = parents.map(key => key.slice(0, -2))
+        for (const prefix of prefixes) expect(keys.filter(key => key.startsWith(`${prefix}model/`)).length).toBeGreaterThan(0)
+        expect(keys.every(key => parents.includes(key) || prefixes.some(prefix => key.startsWith(`${prefix}model/`)))).toBe(true)
         expect(keys).not.toContain("reply/r1")
       })
     }

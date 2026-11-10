@@ -1,3 +1,4 @@
+import { callBudget } from "./CallBudget.vibe"
 // Each named reviewer is bound by deployment Config, never by a person-supplied model or verdict.
 import { AgentAction, Budget, EventSink } from "@smthrs/agent"
 import { Action, FlowRuntime } from "@smthrs/flow"
@@ -9,10 +10,10 @@ import { type SpecificationReviewer } from "../src/core/conversation.vibe"
 import { agentOf, dayOf, Spend, draftSpend, draftSpendFailed, ceilingOf } from "./Reply.vibe"
 const ModelRecord = Schema.Struct({ protocol: Schema.String, baseUrl: Schema.optionalKey(Schema.String), path: Schema.optionalKey(Schema.String), modelId: Schema.String, credential: Schema.String, extraBody: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)) })
 export const Verdict = Schema.Struct({ verdict: Schema.Literals(["LGTM", "Changes requested"]), grade: Schema.Literals(["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"]), review: Schema.String })
-/** The model turns one run takes and the most tokens each writes; their ceiling is what its admission reserves. */
+/** Frame and answer limits; initial admission holds one call, then each physical invocation reserves separately. */
 const REVIEW_FRAMES = 8
 const REVIEW_ANSWER_TOKENS = 4096
-export const REVIEW_CEILING = ceilingOf(REVIEW_FRAMES, REVIEW_ANSWER_TOKENS)
+export const REVIEW_CEILING = ceilingOf(1, REVIEW_ANSWER_TOKENS)
 
 const Review = AgentAction.make("vibelang/specification/reviewer", {
   payload: { revision: Schema.Number, text: Schema.String }, output: Verdict, seat: "agent", profile: "conversation", maxFrames: REVIEW_FRAMES,
@@ -43,7 +44,7 @@ export const liveSpecificationReviewers = Layer.effect(SpecificationReviewers, e
       } })
       if (!admission.admitted) throw new IssueFailure({ reason: "budget", unwritten: true })
       // An empty policy is valid, so making the meter cannot fail.
-      const meter = try Effect.orDie(Budget.make({}))
+      const meter = callBudget(try Effect.orDie(Budget.make({})), spend, `specification/${instance.executionId}`, admission.day, REVIEW_CEILING)
       const sink: EventSink.Service = { emit: event => Metric.update(Metric.withAttributes(Metric.counter("vibelang_specification_agent_events", { incremental: true }), { event: event._tag, reviewer }), 1) }
       const result = try Effect.result(effect {
         provide agentOf(Review.layer, model, sink, [], 0, meter), EventSink.EventSink = sink {

@@ -28,8 +28,13 @@ effect function review(reviewer: SpecificationReviewer, config: Record<string, s
 
 /** Deployment config binding `reviewer` to a scripted model answering `scripts`. */
 effect function bound(reviewer: SpecificationReviewer, scripts: ReadonlyArray<Scripted>) {
+  return (try boundCounting(reviewer, scripts)).config
+}
+
+/** `bound`'s config, and how many requests have reached its model. */
+effect function boundCounting(reviewer: SpecificationReviewer, scripts: ReadonlyArray<Scripted>) {
   const scripted = try scriptedModel(scripts)
-  return { ...scripted.values, [`SPEC_REVIEW_${reviewer.toUpperCase()}`]: JSON.stringify(scripted.record) }
+  return { config: { ...scripted.values, [`SPEC_REVIEW_${reviewer.toUpperCase()}`]: JSON.stringify(scripted.record) }, requests: scripted.calls }
 }
 
 describe("a reviewer without a model", () => {
@@ -37,7 +42,7 @@ describe("a reviewer without a model", () => {
     for (const reviewer of REVIEWERS) {
       const { answer, log } = try review(reviewer, {})
       expect(answer).toEqual({ reason: "no-model", unwritten: true })
-      expect(log).toEqual({ admitted: 0, spent: 0 })
+      expect(log).toEqual({ admitted: 0, spent: 0, calls: 0, tokens: 0, unreported: 0 })
     }
   }))
 
@@ -58,15 +63,19 @@ describe("a reviewer with a model", () => {
     for (const reviewer of REVIEWERS) {
       const { answer, log } = try review(reviewer, try bound(reviewer, [verdict({ verdict: "LGTM", grade: "A", review: "Consistent." })]))
       expect(answer).toEqual({ verdict: "LGTM", grade: "A", review: "Consistent.", revision: 3, link: "#review" })
-      expect(log).toEqual({ admitted: 1, spent: 1 })
+      expect(log).toEqual({ admitted: 1, spent: 1, calls: 1, tokens: 5, unreported: 0 })
     }
   }))
 
   it.live("refuses a verdict outside the schema, or a failed model, as review, still charged", () => scoped(effect {
     for (const scripts of [[verdict({ verdict: "Maybe", grade: "A", review: "?" })], [verdict({ verdict: "LGTM", grade: "Z", review: "?" })], [{ kind: "status", status: 400, code: "invalid" } as const]]) {
-      const { answer, log } = try review("fable", try bound("fable", scripts))
+      const model = try boundCounting("fable", scripts)
+      const { answer, log } = try review("fable", model.config)
       expect(answer).toEqual({ reason: "review", unwritten: false })
-      expect(log).toEqual({ admitted: 1, spent: 1 })
+      // Every request that reached the model is reserved and charged, including the agent's reissues.
+      const requests = try model.requests
+      expect(requests).toBeGreaterThan(0)
+      expect([log.admitted, log.spent, log.calls]).toEqual([1, 1, requests])
     }
   }))
 
@@ -85,13 +94,14 @@ describe("a reviewer with a model", () => {
       return result._tag === "Success" ? `${result.success.verdict}:${result.success.revision}` : result.failure.reason
     })
     expect(answer).toBe("Changes requested:2")
-    expect(charges).toBe(2)
+    // Refused release, its retry, the call's charge, then the run's settlement.
+    expect(charges).toBe(4)
   }))
 
   it.live("asks no model when the day's budget refuses or cannot be reached", () => scoped(effect {
     const refused = try review("astra", try bound("astra", [verdict({ verdict: "LGTM", grade: "A", review: "" })]), "refuse")
     expect(refused.answer).toEqual({ reason: "budget", unwritten: true })
-    expect(refused.log).toEqual({ admitted: 1, spent: 0 })
+    expect(refused.log).toEqual({ admitted: 1, spent: 0, calls: 0, tokens: 0, unreported: 0 })
     const unreachable = try review("astra", try bound("astra", [verdict({ verdict: "LGTM", grade: "A", review: "" })]), "fault")
     expect(unreachable.answer).toEqual({ reason: "budget", unwritten: false })
     expect(unreachable.log.spent).toBe(0)
