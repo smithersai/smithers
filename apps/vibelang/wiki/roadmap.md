@@ -106,9 +106,12 @@ brick                                   state         proof
 
 - **Marketing media (vl-media, 0026):** splash and empty-chat assets remain; VL-31 supersedes the former per-stop Tour placements; designer source preserved in `designs/media/`; browser loading, reduced motion, native failure and phone checks. Lead deploys.
 
-- **Coverage inside workerd (0016, vl-coverage-workerd): measured, not at 100%.** `pnpm test:workerd:coverage` joins
-  each workerd isolate's Istanbul counters with Node's V8 report by source position: 44.88% lines, 29.46% branches
-  (Node alone: 13.01%, 4.64%). 137 of 160 files remain below 100%.
+- **Coverage inside workerd (0016, vl-coverage-workerd): measured in every gate, not at 100%.** The workerd suite,
+  unit and fuzz gates join each workerd isolate's Istanbul counters with Node's V8 report by source position;
+  `worker/Api.vibe` runs as Alchemy builds and bridges it. `pnpm test:workerd --coverage` collects and gates both
+  runtimes. Sandbox objects run on real workerd SQLite with a faulty Container service; successful Container
+  execution still needs the authorized binding. Unit: 99.60% lines, 32/163 files below 100%. Fuzz without Chromium:
+  90.97% lines; with diagnostic Chromium credit: 93.29%, 94/163 files below 100% (dated receipts in 0016).
 
 - **Benchmarks (0017, vl-bench): not done.** vl-bench's last receipt: 6,760/7,468 lines (90.52%), 100 files below
   strict thresholds; vl-audit-vl29's merge without Chromium evidence: 109 of 159 files below (2026-11-10). Earlier, hosted-broker main `ca292c70`: 54 files / 128 behavior checks pass; independent source-profile coverage was 5,827/7,036 src/worker lines (82.82%), with 95 files below strict thresholds. Twenty added groups, explicit sync/async runner controls and validated local/live observations are retained. No unit/fuzz counters, src/worker exclusions or tolerance changes. Exact future Container/GitHub/OAuth/deployed-API cases remain in 0017.

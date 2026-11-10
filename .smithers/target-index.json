@@ -48998,7 +48998,7 @@
     "kinds": [
       "test"
     ],
-    "summary": "Measure every .vibe runtime source and fail below 100% lines, branches, functions or statements.",
+    "summary": "Measure every .vibe runtime source in Node and inside workerd; fail below 100% lines, branches, functions or statements.",
     "exclusive": true,
     "cacheable": false,
     "inputs": [

@@ -1,0 +1,41 @@
+// The workerd command's public entry: --coverage measures each isolate and applies the gate after Vitest, including
+// when a test fails. The alias test:workerd:coverage runs this same command (0016).
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ChildProcess } from "effect/process"
+import { gate } from "./support/coverageGate.vibe"
+
+error SuiteFailed { status: number }
+
+export effect function main() {
+  const args = try (try Stdio.Stdio).args
+  // Vitest accepts both the shorthand and dotted option. The last explicit setting wins.
+  const measured = args.reduce((enabled, arg) =>
+    arg === "--coverage" || arg === "--coverage.enabled" || arg === "--coverage=true" || arg === "--coverage.enabled=true" ? true
+      : arg === "--no-coverage" || arg === "--coverage=false" || arg === "--coverage.enabled=false" ? false : enabled, false)
+  const path = try Path.Path
+  const app = path.dirname(try path.fromFileUrl(new URL("../package.json", import.meta.url)))
+  // Keep counter dumps beside this run's report, including Vitest's supported directory override.
+  let directory = "coverage/workerd"
+  for (let at = 0; at < args.length; at += 1) {
+    if (args[at] === "--coverage.reportsDirectory" && args[at + 1] !== undefined) directory = args[++at]!
+    else if (args[at]!.startsWith("--coverage.reportsDirectory=")) directory = args[at]!.slice("--coverage.reportsDirectory=".length)
+  }
+  directory = path.relative(app, path.resolve(app, directory))
+  const status = try withSpan(scoped(effect {
+    try Effect.logInfo("vibelang.workerd.suite").pipe(Effect.annotateLogs({ measured, outcome: "started" }))
+    const child = try ChildProcess.make("pnpm", ["exec", "vitest", "run", "--mode", "workerd", ...args], {
+      cwd: app, stdout: "inherit", stderr: "inherit", extendEnv: true,
+      env: measured ? { WORKERD_COVERAGE: "1", WORKERD_COVERAGE_DIR: path.join(directory, "workerd-raw") } : {},
+    })
+    const status = Number(try child.exitCode)
+    try Metric.update(Metric.counter("vibelang_workerd_suites", { incremental: true }), 1)
+    try Effect.logInfo("vibelang.workerd.suite").pipe(Effect.annotateLogs({ measured, status, outcome: status === 0 ? "passed" : "failed" }))
+    return status
+  }), "vibelang.workerd.suite")
+  // Collection and tests have independent outcomes. Always write the merged report before failing either gate.
+  if (measured) try gate(app, { suite: "workerd suite", node: [path.join(directory, "coverage-final.json")], workerd: [path.join(directory, "workerd-raw")], merged: path.join(directory, "merged") })
+  if (status !== 0) throw new SuiteFailed({ status })
+}
+
+NodeRuntime.runMain(Effect.provide(main(), NodeServices.layer))

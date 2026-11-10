@@ -1,21 +1,27 @@
 import { afterAll, beforeAll, it } from "@effect/vitest"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { serveApi, type Served } from "../test/support/workerd.vibe"
+import { deadline, serveAlchemyApi, serveApi, type Served } from "../test/support/workerd.vibe"
 import { EventSchema } from "../src/core/schemas.vibe"
 import { MAX_POST_BYTES, PostBody, DurableText } from "../src/core/wire.vibe"
 import { run, Int, TextOrBoundary } from "./run.vibe"
 
 let api: Served | undefined
+/** worker/Api.vibe itself, as Alchemy builds and bridges it (test/workerd/api.vibe): the deployed entry's wiring. */
+let deployed: Served | undefined
 beforeAll(async () => {
   api = await runPromise(serveApi({ CHAT_DAILY_TOKENS: "0" }))
   await runPromise(Effect.provide(effect {
     const client = try HttpClient.HttpClient
     try client.execute(HttpClientRequest.post(api!.origin + "/api/conversations/fuzz-stream/posts").pipe(HttpClientRequest.bodyText(JSON.stringify({ clientId: "seed", name: "Guest", text: "hello" }))))
   }, FetchHttpClient.layer))
-}, 600_000)
-afterAll(async () => { await api?.dispose() })
+  deployed = await runPromise(serveAlchemyApi({ CHAT_DAILY_TOKENS: "0" }))
+}, deadline(600_000))
+afterAll(async () => { await Promise.all([api?.dispose(), deployed?.dispose()]) })
 
-it.live("workerd/api-requests", () => run("workerd/api-requests", Schema.Struct({ kind: Int, text: TextOrBoundary, id: Int }), ({ kind, text, id }) => effect {
+const ApiRequest = Schema.Struct({ kind: Int, text: TextOrBoundary, id: Int })
+
+/** One generated request to the API Worker at `origin`; true when its status and refusal are the protocol's. */
+effect function answersRequest(origin: string, { kind, text, id }: typeof ApiRequest.Type) {
   provide FetchHttpClient.layer {
     const client = try HttpClient.HttpClient
     const room = `/api/conversations/fuzz-${id}`
@@ -34,7 +40,7 @@ it.live("workerd/api-requests", () => run("workerd/api-requests", Schema.Struct(
       case 7: path = room + "/tour"; method = kind % 2 ? "POST" : "DELETE"; expected = [200, 409]; break
       default: path = room + "/posts"; method = "POST"; body = "x".repeat(MAX_POST_BYTES + 1); expected = [413]
     }
-    const request = HttpClientRequest.make(method)(api!.origin + path)
+    const request = HttpClientRequest.make(method)(origin + path)
     const response = try client.execute(body === undefined ? request : HttpClientRequest.bodyText(request, body))
     const output = try response.text
     if (!expected.includes(response.status)) return false
@@ -44,7 +50,11 @@ it.live("workerd/api-requests", () => run("workerd/api-requests", Schema.Struct(
     }
     return response.status < 500
   }
-}))
+}
+
+it.live("workerd/api-requests", () => run("workerd/api-requests", ApiRequest, (input) => answersRequest(api!.origin, input)))
+
+it.live("workerd/alchemy-api-requests", () => run("workerd/alchemy-api-requests", ApiRequest, (input) => answersRequest(deployed!.origin, input)))
 
 it.live("workerd/event-stream", () => run("workerd/event-stream", Int, (cursor) => effect {
   provide FetchHttpClient.layer {

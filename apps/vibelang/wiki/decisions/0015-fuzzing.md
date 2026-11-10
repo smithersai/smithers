@@ -80,8 +80,8 @@ existing test tools at monorepo versions, awaiting the VL-5 approval listed in 0
 The retained 0016 reproduction at `~/vl/vibelang-bugs/coverage-source-ranges/` proves the bundled converter can credit
 an unexecuted source return. Browser line/statement results are diagnostic, and a configured 100% gate cannot
 establish the requested coverage until that defect is fixed. No compiler output or source maps were changed as a
-workaround. Workerd's inspector also refuses precise V8 profiling; real workerd request evidence is separate from
-Node coverage of the same shared Worker functions. Real-model happy paths still need an authorized model binding.
+workaround. Workerd's inspector also refuses precise V8 profiling; per-module Istanbul counters now measure those
+requests and merge with Node coverage by source position (0016). Real-model happy paths still need an authorized model binding.
 
 ### Further generated boundary regressions
 
@@ -130,7 +130,7 @@ Seeding returning visitors removed the tour coverage that the race had supplied 
 
 Coverage budget: `pnpm fuzz:coverage` now defaults to 5 seconds per target, because the deadline starts before corpus loading and arbitrary construction. At 250 ms, 12 of 128 targets ran no fresh execution and passed anyway. At 5 seconds none did: 5412/6936 lines (78.02%), 7555/11895 branches (63.51%), load 16. `pnpm fuzz` keeps 250 ms. A target that runs its property zero times now fails with `NoExecution`, naming the budget and the host load (`gate` in `fuzz/run.vibe`, `test/fuzzGate.test.vibe`); `FUZZ_EXECUTIONS=0`, the replay-only mode, still passes. Saved values from before `IssuesUi.connection` replay through `fuzz/issues-corpus.vibe`, which leaves their files unchanged.
 
-Coverage is still bounded by decision 0016's bundled source-range defect and by workerd's refusal of precise V8 profiling. `worker/Api.vibe` remains the only exclusion: Alchemy evaluates it to build the Worker, and request code runs in `Http` and `Objects`.
+Coverage is still bounded by decision 0016's bundled source-range defect. Workerd's refusal of precise V8 profiling no longer bounds it, and `worker/Api.vibe` is no longer excluded: since 2026-11-10 (vl-coverage-workerd) the measured targets stage gives each workerd isolate Istanbul counters, the report stage merges them by source position, and `workerd/alchemy-api-requests` runs `worker/Api.vibe` as Alchemy builds and bridges it (0016, "Unit and fuzz gates inside workerd").
 
 `web/guided-commands`, `web/command-sequences` and `web/commands-from-any-model` run the Commands `update` returns against the real mock Factory and Actions, the same seen as live, a backend without optional services, and a backend that fails every call. Each Command's Message goes back through `update`. Random `Message` unions rarely reach a draft and then a submit: a `PostMessage` mutant survived 10 seconds of `web/command-sequences`, so `web/guided-commands` picks each gesture from what the screen offers and was confirmed to kill that mutant. Both of its findings were oracle errors, kept in the corpus: `IssueUi` carries a free string and `issuesUpdate` casts it, and the view only sends members of the union. The target sends the legal values.
 
@@ -387,7 +387,7 @@ No value is retained in the corpus: both stored values were target findings, rec
 The seventh session's record said Alchemy's runtime was the missing piece. That is wrong. Alchemy has a local runtime: `alchemy dev` (`LocalWorkerProvider` and `LocalContainerProvider` in `@alchemy.run/cloudflare` 2.0.0-beta.85) runs the generated Worker in workerd through `@alchemy.run/cloudflare-runtime/core`, and runs its Containers through a Docker Engine API socket (`DOCKER_HOST`, default `/var/run/docker.sock`). Two pieces are missing for the `SandboxMachine.make`, `SandboxAccount.make` and `gatewayWithIdentity` rows:
 
 1. nyc-01 has no Docker Engine socket. Only the podman CLI is installed, and `podman.socket` is inactive. Enabling it is a local-ops change, not a product change.
-2. `fuzz:coverage` collects V8 coverage of the Node process. These rows would run inside workerd, and nothing collects or merges coverage from workerd. Hosting them would not change the table until workerd's own precise coverage (taken through its inspector and remapped the way `fuzz/browser-reporter.ts` remaps Chromium's) is merged into `coverage/fuzz-unit`.
+2. ~~`fuzz:coverage` collects V8 coverage of the Node process only.~~ Fixed 2026-11-10 (vl-coverage-workerd): a measured targets stage dumps each workerd isolate's Istanbul counters to `coverage/fuzz-unit/workerd-raw`, and `fuzz/coverage.vibe` merges them by source position (0016). Hosting these rows inside workerd now changes the table.
 
 ### Browser targets
 

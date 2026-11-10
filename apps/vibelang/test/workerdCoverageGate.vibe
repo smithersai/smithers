@@ -1,52 +1,14 @@
-// The workerd suite's coverage gate (0016), run by `pnpm test:workerd:coverage` after Vitest. Vitest's V8 provider
-// measures the Node side (the clients and the emitted CLI and MCP processes) into coverage/workerd/coverage-final.json.
-// workerd keeps V8's Profiler domain to itself, so each local workerd isolate's Istanbul counters land in
-// coverage/workerd/workerd-raw (test/support/workerd.vibe). Here those counters credit Vitest's structure by source
-// position (test/support/coverageUnion.ts, the fuzz and benchmark merge); a file Node never ran is gated on workerd's
-// own structure. Every file must reach 100% lines, branches, functions and statements; no file or line is excluded.
+// The workerd suite's coverage gate (0016), run by `pnpm test:workerd:coverage` after Vitest: Vitest's Node report of
+// the suite (its clients and the emitted CLI and MCP processes) credited by each local workerd isolate's counters
+// (test/support/coverageGate.vibe).
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
 import * as NodeServices from "@effect/platform-node/NodeServices"
-import { mergeByPosition, metrics, type FileCoverageJSON } from "./support/coverageUnion.ts"
-import { workerdEvidence } from "./support/workerdCoverage.ts"
-
-/** A report this gate reads is missing or malformed. */
-error Unreadable { cause: unknown }
-
-/** Files below 100% on at least one metric. */
-error BelowFull { files: number }
-
-const kinds = ["lines", "branches", "functions", "statements"] as const
-type Counts = Record<(typeof kinds)[number], number>
-
-/** Percent with two decimals, rounded down so a file short of every unit never reads 100. */
-const percent = (covered: number, total: number) => total === 0 ? 100 : Math.floor((covered / total) * 10000) / 100
+import { gate } from "./support/coverageGate.vibe"
 
 export effect function main() {
-  const fs = try FileSystem.FileSystem
   const path = try Path.Path
   const app = path.dirname(try path.fromFileUrl(new URL("../package.json", import.meta.url)))
-  const text = try fs.readFileString(path.join(app, "coverage/workerd/coverage-final.json"))
-  const node = try Effect.try({ try: () => JSON.parse(text) as Record<string, FileCoverageJSON>, catch: (cause) => new Unreadable({ cause }) })
-  const evidence = try tryPromise({ try: () => workerdEvidence(path.join(app, "coverage/workerd/workerd-raw"), app), catch: (cause) => new Unreadable({ cause }) })
-  const measuredFiles = try Effect.try({ try: () => evidence.files().length, catch: (cause) => new Unreadable({ cause }) })
-  // Istanbul's merge and metrics are untyped JavaScript underneath; a malformed report fails here, typed.
-  const combined = try Effect.try({ try: () => mergeByPosition(node, [evidence.toJSON() as unknown as Record<string, FileCoverageJSON>]), catch: (cause) => new Unreadable({ cause }) })
-  const rows = try Effect.try({ try: () => Object.keys(combined).sort().map((file) => ({ file: path.relative(app, file), ...metrics(combined[file]!) })), catch: (cause) => new Unreadable({ cause }) })
-  const sum = (pick: (row: (typeof rows)[number]) => Counts) => Object.fromEntries(kinds.map((kind) => [kind, rows.reduce((total, row) => total + pick(row)[kind], 0)])) as Counts
-  const total = sum((row) => row.total)
-  const covered = sum((row) => row.covered)
-  const failing = rows.filter((row) => kinds.some((kind) => row.covered[kind] !== row.total[kind]))
-  const merged = path.join(app, "coverage/workerd/merged")
-  try fs.makeDirectory(merged, { recursive: true })
-  try fs.writeFileString(path.join(merged, "coverage-final.json"), JSON.stringify(combined) + "\n")
-  try fs.writeFileString(path.join(merged, "per-file.json"), JSON.stringify(rows, null, 1) + "\n")
-  try fs.writeFileString(path.join(merged, "summary.json"), JSON.stringify({ files: rows.length, workerdFiles: measuredFiles, failing: failing.length, total, covered }, null, 1) + "\n")
-  try Console.log(`workerd suite coverage: ${rows.length} files, ${measuredFiles} measured inside workerd, ${failing.length} below 100%`)
-  for (const kind of kinds) try Console.log(`  ${kind} ${percent(covered[kind], total[kind])}% (${covered[kind]}/${total[kind]})`)
-  for (const row of failing) {
-    try Console.log(`${row.file}: ${kinds.map((kind) => `${kind} ${percent(row.covered[kind], row.total[kind])}%`).join(" ")}`)
-  }
-  if (failing.length > 0) throw new BelowFull({ files: failing.length })
+  try gate(app, { suite: "workerd suite", node: ["coverage/workerd/coverage-final.json"], workerd: ["coverage/workerd/workerd-raw"], merged: "coverage/workerd/merged" })
 }
 
 NodeRuntime.runMain(Effect.provide(main(), NodeServices.layer))

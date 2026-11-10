@@ -37,9 +37,10 @@ export default defineConfig(({ mode }) => ({
       reporter: ["text", "json", "json-summary", "html", "lcov"],
       reportsDirectory: mode === "workerd" ? "coverage/workerd" : "coverage/unit",
       reportOnFailure: true,
-      // The workerd suite's 100% gate runs after Vitest, once each workerd isolate's counters join this Node report
-      // (test/workerdCoverageGate.vibe, 0016); Node's side alone counts all Worker execution as missing.
-      ...(mode === "workerd" ? {} : { thresholds: { perFile: true, lines: 100, branches: 100, functions: 100, statements: 100 } }),
+      // The unit and workerd suites' 100% gates run after Vitest, once each workerd isolate's counters join the Node
+      // reports (`pnpm test:coverage` sets COVERAGE_MERGE; test/support/coverageGate.vibe, 0016); Node's side alone
+      // counts all Worker execution as missing. A bare `vitest run --coverage` keeps the Node-only thresholds.
+      ...(mode === "workerd" || process.env.COVERAGE_MERGE === "1" ? {} : { thresholds: { perFile: true, lines: 100, branches: 100, functions: 100, statements: 100 } }),
     },
     // Transform the Effect adapter so Vite can deduplicate its Vitest peer with the running CLI.
     server: { deps: { inline: ["foldkit", "@effect/vitest"] } },

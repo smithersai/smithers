@@ -69,10 +69,19 @@ and land through VibeLang's merge queue.
 V8 precise coverage cannot be enabled on the installed workerd **1.20261019.1** inspector, directly or through
 Miniflare: workerd's own CDP dispatch consumes `Profiler.enable` to create its CPU profiler and never forwards it to
 V8's Profiler agent (`src/workerd/io/worker.c++`, case `PROFILER_ENABLE`, tag `v1.20261019.1`), so
-`Profiler.startPreciseCoverage` reports `Profiler is not enabled`. That is workerd's design, not this app's defect.
-`pnpm test:workerd --coverage` alone still measures Node clients and surface subprocesses only;
-`pnpm test:workerd:coverage` measures inside workerd with Istanbul counters ("Coverage inside workerd" below). Two
-real-model tests remain opt-in without an authorized configured model credential.
+`Profiler.startPreciseCoverage` reports `Profiler is not enabled`. That is workerd's design, not this app's defect,
+and it no longer blocks any gate: `pnpm test:coverage`, `pnpm test:workerd:coverage` and `pnpm fuzz:coverage` measure
+inside workerd with Istanbul counters ("Coverage inside workerd" and "Unit and fuzz gates inside workerd" below). No
+gate waits for workerd's precise coverage or for VibeLang 0.0.13. `pnpm test:workerd --coverage` enables the counters
+and merged gate automatically; `pnpm test:workerd:coverage` is its alias. A bare `vitest run --coverage` measures Node only. Two real-model tests remain opt-in without an authorized
+configured model credential.
+
+A separate Node subprocess measurement gap remains: `scripts/fuzz-preflight.vibe` executes in its regression test
+but gets zero hits when loaded with `vibelang/register`. The reduced Effect + FileSystem script at
+`~/vl/vibelang-bugs/coverage-register-subprocess/` prints its expected output and passes the real-child assertion;
+direct loading reports 0/5 statements and 0/1 functions, while emitted JavaScript reports 5/5 and 1/1. This is a
+register-loader/Vitest attribution boundary; its exact root cause is not assigned. No app workaround or compiler
+change was applied. It remains counted as uncovered and does not affect per-module workerd counters.
 
 VibeLang 0.0.12 also loses service-Shape methods on object spread (TS2741, compiler exit 2). Minimal reproduction and
 the blocked reply-recovery decorator test are under `~/vl/vibelang-bugs/service-shape-spread/`. No workaround or
@@ -611,7 +620,7 @@ The unit gate still fails below 100%. No file below is excluded and no threshold
 | Path | Needs | Test that covers it once available |
 | --- | --- | --- |
 | `worker/SandboxMachine.vibe`, Container paths of `worker/SandboxAccounts.vibe` | A real Container binding. Live sandboxes wait on Will's yes/no (Containers spend). No scripted Container namespace. | `test/sandbox.container.workerd.test.vibe`, opt-in on `VIBELANG_SANDBOX_TEST_URL` and `VIBELANG_SANDBOX_TEST_COOKIE`, skipped with that reason |
-| `worker/Api.vibe` | Its Durable Object wiring runs only in workerd, and a Node run would need scripted namespaces. Workerd execution is now measured (`pnpm test:workerd:coverage`), but the workerd test host cannot load this module: Alchemy's entry is Node deploy code (`test/workerd/worker.vibe`). | A host that loads the Alchemy classes in workerd, or `test/workerd/bench-api.vibe`'s bodies measured by this suite |
+| `worker/Api.vibe` | Closed 2026-11-10 (vl-coverage-workerd): its wiring runs only in workerd, and the suite now loads it there as Alchemy builds and bridges it (`test/workerd/api.vibe`), measured in the unit and fuzz gates. | `test/alchemyApi.workerd.test.vibe`; fuzz target `workerd/alchemy-api-requests` |
 | `worker/SpecificationReviewers.vibe` | Stays unbound by decision 0027. | None until it is bound |
 | `worker/VipDraft.vibe`, model paths of `worker/Reply.vibe` | A model credential reference in the environment. | `test/live.workerd.test.vibe` covers Reply, opt-in on `CEREBRAS_API_KEY`. `test/vipDraft.test.vibe` covers `VipDraft`, opt-in on the same key |
 | GitHub read, write, VIP proposal and label paths of `worker/Issues.vibe` (`githubHost`) | Real GitHub needs the GitHub test token for the test repository. Since 2026-11-10 the delegated tests run these paths against the in-memory GitHub `fuzz/issues-node-fake.vibe` (see "`worker/Issues.vibe`, `worker/Wiki.vibe`" below); whether such a protocol fake may stand in on a happy path awaits Will's ruling (vl-review-tests finding 3). | `test/issues.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
@@ -1072,9 +1081,8 @@ after (the lane report `~/vl/vl-coverage-workerd.REPORT.md` on nyc-01 holds all 
 | `worker/replyProgressDecision.vibe` | 5.88 → 52.94 | 0 → 31.25 | 10 → 50 | 4.54 → 54.54 |
 | `worker/replyReasons.vibe` | 0 → 85.71 | 0 → 58.33 | 0 → 100 | 0 → 58.33 |
 
-`worker/Api.vibe`, `worker/accountObject.vibe` and `worker/machineObject.vibe` stay at 0%: the suite's hosts never load
-them. `test/coldStartup.workerd.test.vibe` runs `worker/Api.vibe` under `alchemy dev`, whose bundle carries no
-counters. `worker/SandboxMachine.vibe` and `worker/SandboxAccounts.vibe` need a Container binding; `worker/WikiDraft.vibe`
+`worker/Api.vibe`, `worker/accountObject.vibe` and `worker/machineObject.vibe` stayed at 0% in that run: no suite host
+loaded them. The second session loads all three ("Unit and fuzz gates inside workerd"). `worker/SandboxMachine.vibe` and `worker/SandboxAccounts.vibe` need a Container binding; `worker/WikiDraft.vibe`
 and `worker/SpecificationReviewers.vibe` need a model. These are test gaps for the coverage lanes, not exclusions.
 
 ## Measuring every gate (lane vl-gatefix, 2026-11-10)
@@ -1155,7 +1163,7 @@ presented as a current-main 100% result. Corrections from the proof, test-qualit
 | Claim audited | Current statement and evidence |
 | --- | --- |
 | Workerd execution remains uncredited | `pnpm test:workerd:coverage` uses 0017's per-module Istanbul counters; precise V8 coverage is still unavailable. |
-| `worker/Api.vibe` must wait for a VibeLang release and precise workerd coverage | The table above now identifies the Alchemy entry/fixture boundary. Instrumentation exists; loading the appropriate production class bodies is suite work. |
+| `worker/Api.vibe` must wait for a VibeLang release and precise workerd coverage | Closed by vl-coverage-workerd: the unit and fuzz gates load and instrument `worker/Api.vibe` through Alchemy's actual build and bridges ("Unit and fuzz gates inside workerd" below). |
 | Every suite already counts every production source | The fuzz roster now matches `src/`, `worker/`, `scripts/`, `infra/`, including `worker/Api.vibe`; previous totals used smaller rosters. |
 | Sandbox decision proves accrued minutes | 0018 distinguishes the decision's zero-elapsed call site from the actual meter; its separate meter contracts remain proof-lane work. |
 | Marked `decide` is “Not yet proved” | Inventory status reads each function's `//@ verify`; the proof gate checks the marked modules. Custom notes describe scope, not discovery. |
@@ -1756,3 +1764,133 @@ differ, so both denominators are shown. The box also ran Node 24.22.2, below the
 Full raw reports, original-line counters, per-file CSV and experiment/check receipts remain in
 `~/vl/vl-coverage-evidence/session14/`. `workerd-raw.tgz` retains isolate counters. All strict per-file thresholds
 stay at 100%; all known-red targets remain exclusive under the lead's ruling. Whole-app 100% is still unachieved.
+
+## Unit and fuzz gates inside workerd (lane vl-coverage-workerd, 2026-11-10)
+
+The unit and fuzz gates now count execution inside workerd with the same per-module Istanbul counters as the workerd
+suite and the benchmark gate (0017). Nothing waits on workerd's precise coverage or on VibeLang 0.0.13.
+
+```
+pnpm test:coverage
+  vitest run --coverage                      Node suite ──▶ coverage/unit/coverage-final.json  (the structure)
+  vitest run --mode workerd --coverage       Node side  ──▶ coverage/unit/workerd-node/coverage-final.json
+    WORKERD_COVERAGE=1, WORKERD_COVERAGE_DIR  each workerd isolate's counters ──▶ coverage/unit/workerd-raw/
+  test/unitCoverageGate.vibe                 merge by source position (test/support/coverageGate.vibe)
+                                             ──▶ coverage/unit/merged/{coverage-final,per-file,summary}.json, 100% per file
+pnpm fuzz:coverage
+  targets stage: WORKERD_COVERAGE=1, counters ──▶ coverage/fuzz-unit/workerd-raw/   (flow vibelang-fuzz/v8)
+  report stage:  fuzz/coverage.vibe merges Vitest, workerd and Chromium by source position ──▶ coverage/fuzz
+```
+
+`test/support/coverageGate.vibe` is the one gate: the first Node report is the structure, later Node reports and the
+workerd counters credit it by source start (`test/support/coverageUnion.ts`). `test/workerdCoverageGate.vibe` and
+`test/unitCoverageGate.vibe` only name their inputs. `test/workerdSuite.vibe` enables measurement when
+`pnpm test:workerd` receives `--coverage`, then runs the gate even if Vitest fails. `pnpm test:coverage` sets `COVERAGE_MERGE=1`, which turns off
+Vitest's own thresholds; a bare `vitest run --coverage` keeps the Node-only thresholds. The gate runs even when a test
+fails, and the command fails if either Vitest run or the gate fails. PACKAGE target `coverage` now
+allows 60 minutes.
+
+**`worker/Api.vibe` in workerd.** `test/workerd/api.vibe` is the entry Alchemy generates for a Worker
+(`makeEffectVirtualEntry` in `@alchemy.run/cloudflare`): `makeWorkerBridge` and `makeDurableObjectBridge` around
+`worker/Api.vibe`'s default export, one bridge class per Durable Object. esbuild can't bundle it: Alchemy's provider
+graph reaches vite, esbuild, tsx and proxy agents, and only Alchemy's rolldown plugins (unenv) make that graph load in
+workerd. `test/support/alchemyBundle.vibe` therefore builds it with Alchemy's own `WorkerBundle` (the build
+`alchemy dev` and a deploy use), unminified, with VibeLang's rolldown plugin wrapped by `instrumentRolldown`
+(`test/support/workerdCoverage.ts`), the rolldown form of `instrumentModules`. `serveAlchemyApi`
+(`test/support/workerd.vibe`) runs the result in Miniflare with each class bound under its own name, as `alchemy dev`
+binds them. The suite's other hosts keep running the same bodies as plain objects.
+
+- `test/alchemyApi.workerd.test.vibe`: every class finishes starting when the first requests reach them at once, and
+  a post's reply is refused over Alchemy's RPC to the Budget object before any model call. 2 of 2 pass.
+- `test/sandboxObjects.workerd.test.vibe`: `worker/accountObject.vibe` and `worker/machineObject.vibe` in real workerd
+  SQLite through `test/workerd/sandbox-faults.vibe`, with a faulty Container Effect service. It covers generation
+  fences, failed starts, stopped reads, persisted owner checks, and the actual storage alarm. Successful Container
+  execution is not simulated; those paths still need the authorized Container binding.
+- Fuzz: `workerd/alchemy-api-requests` sends `workerd/api-requests`' generated requests to the Alchemy-built Worker,
+  so `worker/Api.vibe` is back in the fuzz denominator (`fuzz.config.ts` and `fuzz/coverage.vibe` no longer exclude it).
+- `test/workerdCoverageShape.test.ts` third case: Alchemy's rolldown build of a measured module puts a namespace call
+  at its source column. Red when `instrumentRolldown` drops the compiler map (`expected [] to include 41`), green with it.
+
+The inherited exploratory run on `4513073e` used the benchmark host's in-memory Container. Its sandbox numbers are
+not final no-mocks evidence. Final validation uses the faulty Container service described above; measurements and
+per-file comparisons are recorded below and in the lane report.
+
+### Public workerd command, measured without successful Container simulation
+
+`pnpm test:workerd --coverage`, on `0b937f1d` plus this lane's change, nyc-01 through `run-heavy`: 18 test files
+passed, 1 skipped; 77 tests passed, 3 skipped. Vitest passed; the merged per-file gate exited 1 with 137 of 162 files
+below 100%. The same run before and after adding its isolate counters:
+
+| Workerd suite | Lines | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| Node only | 12.95% (1004/7749) | 4.62% (380/8209) | 6.85% (201/2932) | 10.75% (1064/9893) |
+| Node and workerd | 47.20% (3658/7749) | 30.53% (2506/8207) | 35.39% (1040/2938) | 42.52% (4207/9892) |
+
+107 files have workerd evidence. Files with no Node execution use the first evidence's structure, which accounts for
+the small denominator differences; complementary shapes are not added together. The three requested modules now run:
+
+| Module | Lines after merge | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| `worker/Api.vibe` | 46/46 | 0/0 | 1/1 | 47/47 |
+| `worker/accountObject.vibe` | 25/48 | 19/35 | 16/39 | 40/79 |
+| `worker/machineObject.vibe` | 30/63 | 39/83 | 11/18 | 43/92 |
+
+The two sandbox modules' successful Container paths stay uncovered in this suite; their faulty service never
+simulates a successful start, command or checkpoint. Every per-file before/after comparison is retained in the lane
+report and `~/vl/cw-evidence/s4/workerd-comparison.md` on nyc-01.
+
+### Unit and fuzz results after the audit roster fixes
+
+Measured on `8c5d65ae` plus this lane. Unit: the fresh Node run passed 238 files / 2066 tests (1 expected failure,
+4 skips). Its own workerd stage, retained from the completed `pnpm test:coverage` run on `4d9ce9fc`, passed 18 files /
+77 tests (3 skips). Every retained module's SHA-256 matches the current source; 37 dumps of the changed generated
+wiki asset and its older Node entry were excluded. No hit or source position was edited. The fresh Node report
+covers the current wiki asset. This preserves 106 files of unchanged unit workerd evidence alongside the new Node
+report; it does not borrow fuzz or benchmark evidence. The merged gate exits 1 for 32 of 163 files.
+
+| Unit | Lines | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| Node only | 99.27% (7712/7768) | 98.20% (8075/8223) | 98.84% (2903/2937) | 98.90% (9811/9920) |
+| Node and retained workerd | 99.60% (7737/7768) | 98.75% (8121/8223) | 99.04% (2909/2937) | 99.28% (9849/9920) |
+
+Unit files whose measured percentages change (the full per-file table is in the lane report):
+
+| File | Lines | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| `src/history/flows.vibe` | 100 → 100 | 92.85 → 100 | 100 → 100 | 100 → 100 |
+| `worker/Accounts.vibe` | 91.66 → 99.03 | 85.87 → 93.07 | 90.41 → 94.52 | 90.93 → 97.44 |
+| `worker/ActionDirectory.vibe` | 100 → 100 | 84.61 → 96.15 | 100 → 100 | 100 → 100 |
+| `worker/ActionIdentity.vibe` | 100 → 100 | 95 → 100 | 100 → 100 | 100 → 100 |
+| `worker/ActionsHttp.vibe` | 100 → 100 | 95.78 → 96.84 | 90 → 90 | 98.36 → 98.36 |
+| `worker/Api.vibe` | 100 → 100 | 100 → 100 | 0 → 100 | 97.87 → 100 |
+| `worker/HistoryActions.vibe` | 90.9 → 90.9 | 78.94 → 84.21 | 81.81 → 81.81 | 86.48 → 86.48 |
+| `worker/Issues.vibe` | 99.66 → 100 | 99.33 → 99.55 | 96.96 → 98.48 | 99.5 → 99.75 |
+| `worker/Objects.vibe` | 99.1 → 100 | 93.61 → 100 | 98.3 → 100 | 99.28 → 100 |
+| `worker/Sequencer.vibe` | 100 → 100 | 96.77 → 98.38 | 100 → 100 | 100 → 100 |
+| `worker/machineObject.vibe` | 98.41 → 98.41 | 68.67 → 78.31 | 100 → 100 | 83.69 → 91.3 |
+
+Fuzz: `E2E_PORT=4542 E2E_SERVER_SECONDS=600 pnpm fuzz:coverage`, default 5-second coverage budget plus the audit's
+per-target floors, through durable flow v8. All 203 Vitest checks in 63 files and all five browser checks passed.
+206 target receipts passed with 4,631,614 recorded executions; `workerd/alchemy-api-requests` ran 182 executions.
+The final report stage exited 1 with 274 metric gates failing across 94 files. For the worker measurement's effect,
+this table compares the same Node report before and after adding only that fuzz run's isolate counters:
+
+| Fuzz, without Chromium | Lines | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| Node only | 90.29% (7014/7768) | 85.51% (7032/8223) | 88.15% (2589/2937) | 88.22% (8747/9914) |
+| Node and workerd | 90.97% (7067/7768) | 85.72% (7049/8223) | 88.25% (2592/2937) | 88.81% (8805/9914) |
+
+Below 100%: 97 → 96 of 163 files. Changed files:
+
+| File | Lines | Branches | Functions | Statements |
+|---|---:|---:|---:|---:|
+| `infra/WorkerBuild.vibe` | 0 → 100 | 100 → 100 | 100 → 100 | 0 → 100 |
+| `worker/Accounts.vibe` | 73.71 → 77.56 | 54.84 → 59.55 | 71.23 → 73.97 | 66.51 → 70.23 |
+| `worker/Api.vibe` | 0 → 84.78 | 100 → 100 | 0 → 100 | 0 → 85.1 |
+| `worker/PublicReads.vibe` | 50 → 58.33 | 50 → 50 | 25 → 25 | 36.84 → 42.1 |
+
+The full fuzz report also merges its Chromium evidence: 7247/7768 lines (93.29%), 7156/8223 branches (87.02%),
+2698/2942 functions (91.70%), 9037/9915 statements (91.14%). Browser line/statement attribution remains diagnostic
+under the retained `coverage-source-ranges` negative control. The Node + workerd comparison above isolates this
+lane's measurement change. Unit and fuzz gates both retain every source in the audit's roster and their 100%
+thresholds. No dependency was added; no upstream compiler or package change was required for workerd measurement.

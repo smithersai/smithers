@@ -18,6 +18,8 @@ export effect function runStage(stage: "prepare" | "build" | "targets" | "browse
     const value = try Config.option(Config.String(name))
     if (Option.isSome(value)) bootstrap[name] = value.value
   }
+  // A measured targets stage gives each workerd isolate Istanbul counters, dumped beside Vitest's report for the report
+  // stage (apps/vibelang/fuzz/coverage.vibe); workerd has no V8 precise coverage (0015, 0016).
   // A lane running beside others names its own browser port; 4501 is the suite's.
   const port = Option.getOrElse(try Config.option(Config.String("E2E_PORT")), () => "4501")
   const argv = stage === "prepare" ? ["exec", "playwright", "install", "chromium"] : stage === "build" ? ["build:surfaces"]
@@ -26,7 +28,7 @@ export effect function runStage(stage: "prepare" | "build" | "targets" | "browse
     : ["exec", "node", "--import=vibelang/register", "fuzz/coverage.vibe"]
   try withSpan(scoped(effect {
     try Effect.logInfo("vibelang.fuzz.phase").pipe(Effect.annotateLogs({ stage, outcome: "started" }))
-    const process = try ChildProcess.make("pnpm", argv, { cwd: root, stdout: "inherit", stderr: "inherit", env: { ...bootstrap, E2E_PORT: port, E2E_4501: port, FUZZ_BUDGET: budget, FUZZ_SEED: seed, ...(settings.executions === undefined ? {} : { FUZZ_EXECUTIONS: String(settings.executions) }), FUZZ_COLLECT_PARTIAL: coverage ? "1" : "0", NODE_OPTIONS: "--import=vibelang/register", PLAYWRIGHT_BROWSERS_PATH: (try Path.Path).join(root, "node_modules/.cache/ms-playwright") }, extendEnv: false })
+    const process = try ChildProcess.make("pnpm", argv, { cwd: root, stdout: "inherit", stderr: "inherit", env: { ...bootstrap, E2E_PORT: port, E2E_4501: port, FUZZ_BUDGET: budget, FUZZ_SEED: seed, ...(settings.executions === undefined ? {} : { FUZZ_EXECUTIONS: String(settings.executions) }), FUZZ_COLLECT_PARTIAL: coverage ? "1" : "0", ...(coverage && stage === "targets" ? { WORKERD_COVERAGE: "1", WORKERD_COVERAGE_DIR: "coverage/fuzz-unit/workerd-raw" } : {}), NODE_OPTIONS: "--import=vibelang/register", PLAYWRIGHT_BROWSERS_PATH: (try Path.Path).join(root, "node_modules/.cache/ms-playwright") }, extendEnv: false })
     const status = Number(try process.exitCode)
     try Metric.update(Metric.counter("vibelang_fuzz_phases", { incremental: true }), 1)
     try Effect.logInfo("vibelang.fuzz.phase").pipe(Effect.annotateLogs({ stage, outcome: status === 0 ? "passed" : "failed", status }))

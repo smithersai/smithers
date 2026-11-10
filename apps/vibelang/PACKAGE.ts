@@ -82,12 +82,15 @@ const test = Smithers.Shell.Test({
   timeout: "20m"
 })
 
-/** Whole-app source coverage, with the same V8 provider and 100% per-file thresholds as the monorepo. */
+/**
+ * Whole-app source coverage, with the same V8 provider and 100% per-file thresholds as the monorepo: the Node suite and
+ * the workerd suite, each workerd isolate measured by Istanbul counters and merged by source position (0016).
+ */
 const coverage = Smithers.Shell.Test({
-  summary: "Measure every .vibe runtime source and fail below 100% lines, branches, functions or statements.",
+  summary: "Measure every .vibe runtime source in Node and inside workerd; fail below 100% lines, branches, functions or statements.",
   shell: "cd apps/vibelang && pnpm test:coverage",
   data: sources,
-  timeout: "30m",
+  timeout: "60m",
   sandbox: { network: "loopback" },
   exclusive: true
 })
