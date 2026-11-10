@@ -105,7 +105,11 @@ const once = (command: string, args: ReadonlyArray<string>, options: RunOptions)
     Effect.provide(NodeServices.layer)
   )
 
-/** The last `lines` lines of `text`, for a failure message. */
+/**
+ * The last `lines` lines of `text`, for a failure message.
+ *
+ * @throws {never}
+ */
 export const tail = (text: string, lines = 5) => text.trim().split("\n").slice(-lines).join("\n")
 
 /** Runs `command` and answers its stdout; a non-zero exit is {@link HostFailed}. */

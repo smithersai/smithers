@@ -17,7 +17,7 @@ import { join } from "node:path"
 import test from "node:test"
 import { promisify } from "node:util"
 import { HostFailed } from "../host.ts"
-import { goCache } from "../land.ts"
+import { goCache } from "../land.vibe"
 import { sh, toolchainEnv } from "../vm.vibe"
 import {
   Adopt,
