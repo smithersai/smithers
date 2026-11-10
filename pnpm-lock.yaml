@@ -33,6 +33,7 @@ pnpmfileChecksum: sha256-WT4I+tYhRao6cP63D8ZRgAv3w9Cn2XcR/8xhNAyhVro=
 patchedDependencies:
   '@alchemy.run/cloudflare@2.0.0-beta.85': 324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c
   '@effect/platform-node-shared@4.1.1': f11285fd8952eb2d7ca73e6b9ceab017441bce6639a32e0eb5042a41b154fb88
+  '@effect/platform-node@4.1.1': 4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026
   '@opentelemetry/otlp-transformer@0.222.0': 13c093166ff9bceab92628849ec4481ec4fa406a081df82cfe8534828ff06777
   '@tanstack/browser-db-sqlite-persistence@0.2.36': 1d7ca6796dd79e259c8f8efc2752c1416adf268a7ef1099709d22e922d1bbed4
   '@tanstack/db-sqlite-persistence-core@0.4.11': ffc626aeba925645449eef10fcd79eea96e76564c9a7de33b2c8a094b855d049
@@ -65,7 +66,7 @@ importers:
         version: 7.29.9(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2)
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@playwright/test':
         specifier: 1.62.1
         version: 1.62.1
@@ -191,7 +192,7 @@ importers:
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@pierre/diffs':
         specifier: 1.5.2
         version: 1.5.2(@shikijs/themes@4.4.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -293,7 +294,7 @@ importers:
         version: 1.62.1
       vibelang-runtime:
         specifier: 0.0.12
-        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
     devDependencies:
       '@eslint/js':
         specifier: 9.39.5
@@ -341,7 +342,7 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@smthrs/agent':
         specifier: workspace:*
         version: link:../../../../packages/smithers/agent
@@ -400,7 +401,7 @@ importers:
     devDependencies:
       '@alchemy.run/cloudflare':
         specifier: 2.0.0-beta.85
-        version: 2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(0d3dc16a956a9e5b6be76fd6414d262d)
+        version: 2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(cdd61734c0b4b3ed17620d57bc2725f6)
       '@smthrs/control':
         specifier: workspace:*
         version: link:../../packages/smithers/control
@@ -409,7 +410,7 @@ importers:
         version: 26.4.1
       alchemy:
         specifier: 2.0.0-beta.85
-        version: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a)
+        version: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546)
       bun-types:
         specifier: ^1.4.0
         version: 1.4.3
@@ -583,17 +584,17 @@ importers:
         version: 3.35.1
       vibelang-runtime:
         specifier: 0.0.12
-        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
     devDependencies:
       '@alchemy.run/cloudflare':
         specifier: 2.0.0-beta.85
-        version: 2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(518f804a5f12917f185e267bd0bfde98)
+        version: 2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(8a3868745be02790b770c6ea21fd85f5)
       '@alchemy.run/neon':
         specifier: 2.0.0-beta.85
-        version: 2.0.0-beta.85(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(hono@4.11.4)
+        version: 2.0.0-beta.85(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(hono@4.11.4)
       '@alchemy.run/test':
         specifier: 2.0.0-beta.85
-        version: 2.0.0-beta.85(@effect/vitest@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
+        version: 2.0.0-beta.85(@effect/vitest@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
       '@cloudflare/vite-plugin':
         specifier: 1.64.0
         version: 1.64.0(@types/node@26.4.1)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(wrangler@4.151.2(@cloudflare/workers-types@5.20261019.1)(@types/node@26.4.1))
@@ -602,7 +603,7 @@ importers:
         version: 5.20261019.1
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@playwright/test':
         specifier: 1.62.1
         version: 1.62.1
@@ -632,7 +633,7 @@ importers:
         version: 6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       alchemy:
         specifier: 2.0.0-beta.85
-        version: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536)
+        version: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346)
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -699,13 +700,13 @@ importers:
     devDependencies:
       '@alchemy.run/cloudflare':
         specifier: 2.0.0-beta.85
-        version: 2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(2f03f0927c22596a5c50afdef18afadf)
+        version: 2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(38e8f31de40fcead6a4bb739779c3145)
       '@astrojs/check':
         specifier: ^0.9.10
         version: 0.9.10(prettier@3.9.6)(typescript@5.9.3)
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
         version: 4.1.1(patch_hash=f11285fd8952eb2d7ca73e6b9ceab017441bce6639a32e0eb5042a41b154fb88)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
@@ -816,7 +817,7 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@opentui/core':
         specifier: 0.5.11
         version: 0.5.11(typescript@5.9.3)(web-tree-sitter@0.25.10)
@@ -985,23 +986,23 @@ importers:
         version: 0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       vibelang-runtime:
         specifier: 0.0.12
-        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
     devDependencies:
       '@alchemy.run/cloudflare':
         specifier: 2.0.0-beta.85
-        version: 2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(0d3dc16a956a9e5b6be76fd6414d262d)
+        version: 2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(cdd61734c0b4b3ed17620d57bc2725f6)
       '@alchemy.run/domain':
         specifier: 2.0.0-beta.85
-        version: 2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(foldkit@0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))
+        version: 2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(foldkit@0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))
       '@alchemy.run/frontend-frameworks':
         specifier: 2.0.0-beta.85
-        version: 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(hono@4.11.4)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+        version: 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(hono@4.11.4)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       '@cloudflare/workers-types':
         specifier: 5.20261019.1
         version: 5.20261019.1
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -1031,7 +1032,7 @@ importers:
         version: 5.0.0(patch_hash=827f88e68b839b3f054e1c0f61dce314b9c876e181da048b24180db19127eaf4)(vitest@5.0.0)
       alchemy:
         specifier: 2.0.0-beta.85
-        version: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a)
+        version: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546)
       ast-v8-to-istanbul:
         specifier: 1.0.5
         version: 1.0.5
@@ -1127,7 +1128,7 @@ importers:
         version: 0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       vibelang-runtime:
         specifier: 0.0.12
-        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
     devDependencies:
       '@effect/vitest':
         specifier: 4.1.1
@@ -1396,7 +1397,7 @@ importers:
     dependencies:
       vibelang-runtime:
         specifier: 0.0.12
-        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2
@@ -1552,7 +1553,7 @@ importers:
     devDependencies:
       '@alchemy.run/cloudflare':
         specifier: 2.0.0-beta.85
-        version: 2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(0d3dc16a956a9e5b6be76fd6414d262d)
+        version: 2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(cdd61734c0b4b3ed17620d57bc2725f6)
       '@smthrs/plan':
         specifier: workspace:*
         version: link:../smithers/flows/plan
@@ -1567,7 +1568,7 @@ importers:
         version: 5.9.3
       vibelang-runtime:
         specifier: 0.0.12
-        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       vibelang-unplugin:
         specifier: 0.0.12
         version: 0.0.12(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.10)(vibelang@0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -1791,7 +1792,7 @@ importers:
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
         version: 4.1.1(patch_hash=f11285fd8952eb2d7ca73e6b9ceab017441bce6639a32e0eb5042a41b154fb88)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
@@ -1921,7 +1922,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -2172,14 +2173,14 @@ importers:
         version: 0.5.1
       vibelang-runtime:
         specifier: 0.0.12
-        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -2291,7 +2292,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -2473,14 +2474,14 @@ importers:
         version: link:../../flows/plan
       vibelang-runtime:
         specifier: 0.0.12
-        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -2892,7 +2893,7 @@ importers:
         version: link:../../flows/plan
       vibelang-runtime:
         specifier: 0.0.12
-        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       yaml:
         specifier: 2.9.0
         version: 2.9.0
@@ -2902,7 +2903,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -2980,7 +2981,7 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@smthrs/agent':
         specifier: workspace:*
         version: link:..
@@ -3051,7 +3052,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -3142,7 +3143,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -3291,7 +3292,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
@@ -3421,7 +3422,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
         version: 4.1.1(patch_hash=f11285fd8952eb2d7ca73e6b9ceab017441bce6639a32e0eb5042a41b154fb88)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
@@ -3472,7 +3473,7 @@ importers:
         version: 0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       vibelang-runtime:
         specifier: 0.0.12
-        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       vibelang-vite:
         specifier: 0.0.12
         version: 0.0.12(vibelang@0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -3491,7 +3492,7 @@ importers:
     devDependencies:
       '@alchemy.run/cloudflare':
         specifier: 2.0.0-beta.85
-        version: 2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(0d3dc16a956a9e5b6be76fd6414d262d)
+        version: 2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(cdd61734c0b4b3ed17620d57bc2725f6)
       '@cloudflare/workers-types':
         specifier: 5.20261019.1
         version: 5.20261019.1
@@ -3506,7 +3507,7 @@ importers:
         version: 5.0.0(patch_hash=827f88e68b839b3f054e1c0f61dce314b9c876e181da048b24180db19127eaf4)(vitest@5.0.0)
       alchemy:
         specifier: 2.0.0-beta.85
-        version: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a)
+        version: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546)
       aws4fetch:
         specifier: 1.0.20
         version: 1.0.20
@@ -3797,7 +3798,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
         version: 4.1.1(patch_hash=f11285fd8952eb2d7ca73e6b9ceab017441bce6639a32e0eb5042a41b154fb88)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
@@ -3894,7 +3895,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -4100,7 +4101,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -4166,7 +4167,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -4292,7 +4293,7 @@ importers:
         version: 0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       vibelang-runtime:
         specifier: 0.0.12
-        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       vibelang-vite:
         specifier: 0.0.12
         version: 0.0.12(vibelang@0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -4325,14 +4326,14 @@ importers:
         version: link:../plan
       vibelang-runtime:
         specifier: 0.0.12
-        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -4447,7 +4448,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/sql-pg':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
@@ -4538,7 +4539,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -4760,7 +4761,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -4836,7 +4837,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -5076,7 +5077,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -5152,7 +5153,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -5261,7 +5262,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -5366,7 +5367,7 @@ importers:
         version: 8.12.4
       vibelang-runtime:
         specifier: 0.0.12
-        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       ws:
         specifier: 8.22.0
         version: 8.22.0
@@ -5379,7 +5380,7 @@ importers:
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
         version: 4.1.1(patch_hash=f11285fd8952eb2d7ca73e6b9ceab017441bce6639a32e0eb5042a41b154fb88)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
@@ -5642,7 +5643,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
         version: 4.1.1(patch_hash=f11285fd8952eb2d7ca73e6b9ceab017441bce6639a32e0eb5042a41b154fb88)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
@@ -5699,7 +5700,7 @@ importers:
         version: 0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       vibelang-runtime:
         specifier: 0.0.12
-        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       vibelang-vite:
         specifier: 0.0.12
         version: 0.0.12(vibelang@0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
@@ -5800,7 +5801,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -6009,7 +6010,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -6103,7 +6104,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -6218,7 +6219,7 @@ importers:
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
         version: 4.1.1(patch_hash=f11285fd8952eb2d7ca73e6b9ceab017441bce6639a32e0eb5042a41b154fb88)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
@@ -6324,7 +6325,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
@@ -6421,7 +6422,7 @@ importers:
         version: 0.87.2
       '@effect/platform-node':
         specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
         version: 4.1.1(patch_hash=f11285fd8952eb2d7ca73e6b9ceab017441bce6639a32e0eb5042a41b154fb88)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
@@ -6773,7 +6774,7 @@ importers:
         version: 5.9.3
       vibelang-runtime:
         specifier: 0.0.12
-        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
 
   packages/smithers/ui/terminal-frame:
     dependencies:
@@ -16594,25 +16595,25 @@ packages:
 
 snapshots:
 
-  '@alchemy.run/acme@2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
+  '@alchemy.run/acme@2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(4c68c3871a5a31be19914d9c320e6688))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
     dependencies:
       '@distilled.cloud/acme': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(4c68c3871a5a31be19914d9c320e6688)
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
 
-  '@alchemy.run/acme@2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
+  '@alchemy.run/acme@2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
     dependencies:
       '@distilled.cloud/acme': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546)
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
 
-  '@alchemy.run/acme@2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(fb781d51e9c49238511d984cb8fa92f0))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
+  '@alchemy.run/acme@2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
     dependencies:
       '@distilled.cloud/acme': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(fb781d51e9c49238511d984cb8fa92f0)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346)
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
 
-  '@alchemy.run/cloudflare-runtime@2.0.0-beta.85(@distilled.cloud/cloudflare@1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(rolldown@1.2.13)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))':
+  '@alchemy.run/cloudflare-runtime@2.0.0-beta.85(@distilled.cloud/cloudflare@1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(rolldown@1.2.13)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))':
     dependencies:
       '@alchemy.run/node-utils': 2.0.0-beta.85
       '@cloudflare/unenv-preset': 2.16.2(unenv@2.0.0-rc.24)(workerd@1.20261026.1)
@@ -16628,7 +16629,7 @@ snapshots:
       yauzl: 3.4.0
     optionalDependencies:
       '@effect/platform-bun': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@effect/platform-node': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/platform-node': 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       rolldown: 1.2.13
       vite: 8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
     transitivePeerDependencies:
@@ -16636,12 +16637,12 @@ snapshots:
       - proxy-agent
       - typescript
 
-  '@alchemy.run/cloudflare@2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(0d3dc16a956a9e5b6be76fd6414d262d)':
+  '@alchemy.run/cloudflare@2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(38e8f31de40fcead6a4bb739779c3145)':
     dependencies:
-      '@alchemy.run/acme': 2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.85(@distilled.cloud/cloudflare@1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(rolldown@1.2.13)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
-      '@alchemy.run/docker': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@alchemy.run/sql': 2.0.0-beta.85(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+      '@alchemy.run/acme': 2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(4c68c3871a5a31be19914d9c320e6688))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.85(@distilled.cloud/cloudflare@1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(rolldown@1.2.13)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      '@alchemy.run/docker': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(4c68c3871a5a31be19914d9c320e6688))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+      '@alchemy.run/sql': 2.0.0-beta.85(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(4c68c3871a5a31be19914d9c320e6688))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@cloudflare/workers-types': 5.20261019.1
       '@distilled.cloud/aws': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@distilled.cloud/aws4signer': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
@@ -16649,17 +16650,17 @@ snapshots:
       '@distilled.cloud/core': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@distilled.cloud/iceberg': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@effect/sql-d1': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(4c68c3871a5a31be19914d9c320e6688)
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
       pathe: 2.0.3
       picomatch: 4.0.7
       rolldown: 1.2.13
       tinyglobby: 0.2.17
     optionalDependencies:
-      '@alchemy.run/domain': 2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(foldkit@0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))
-      '@alchemy.run/frontend-frameworks': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      '@alchemy.run/domain': 2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(4c68c3871a5a31be19914d9c320e6688))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(foldkit@0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))
+      '@alchemy.run/frontend-frameworks': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(astro@7.3.1(@astrojs/markdown-remark@7.3.0(supports-color@10.2.2))(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@26.4.1)(aws4fetch@1.0.20)(ioredis@5.11.1(supports-color@10.2.2))(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       '@effect/platform-bun': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@effect/platform-node': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/platform-node': 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       vite: 8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
     transitivePeerDependencies:
       - '@effect/sql-libsql'
@@ -16671,12 +16672,12 @@ snapshots:
       - proxy-agent
       - typescript
 
-  '@alchemy.run/cloudflare@2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(2f03f0927c22596a5c50afdef18afadf)':
+  '@alchemy.run/cloudflare@2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(8a3868745be02790b770c6ea21fd85f5)':
     dependencies:
-      '@alchemy.run/acme': 2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(fb781d51e9c49238511d984cb8fa92f0))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.85(@distilled.cloud/cloudflare@1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(rolldown@1.2.13)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
-      '@alchemy.run/docker': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(fb781d51e9c49238511d984cb8fa92f0))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@alchemy.run/sql': 2.0.0-beta.85(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(fb781d51e9c49238511d984cb8fa92f0))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+      '@alchemy.run/acme': 2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.85(@distilled.cloud/cloudflare@1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(rolldown@1.2.13)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      '@alchemy.run/docker': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+      '@alchemy.run/sql': 2.0.0-beta.85(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@cloudflare/workers-types': 5.20261019.1
       '@distilled.cloud/aws': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@distilled.cloud/aws4signer': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
@@ -16684,17 +16685,17 @@ snapshots:
       '@distilled.cloud/core': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@distilled.cloud/iceberg': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@effect/sql-d1': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(fb781d51e9c49238511d984cb8fa92f0)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346)
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
       pathe: 2.0.3
       picomatch: 4.0.7
       rolldown: 1.2.13
       tinyglobby: 0.2.17
     optionalDependencies:
-      '@alchemy.run/domain': 2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(fb781d51e9c49238511d984cb8fa92f0))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(foldkit@0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))
-      '@alchemy.run/frontend-frameworks': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(astro@7.3.1(@astrojs/markdown-remark@7.3.0(supports-color@10.2.2))(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@26.4.1)(aws4fetch@1.0.20)(ioredis@5.11.1(supports-color@10.2.2))(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      '@alchemy.run/domain': 2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(foldkit@0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))
+      '@alchemy.run/frontend-frameworks': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(hono@4.11.4)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       '@effect/platform-bun': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@effect/platform-node': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/platform-node': 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       vite: 8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
     transitivePeerDependencies:
       - '@effect/sql-libsql'
@@ -16706,12 +16707,12 @@ snapshots:
       - proxy-agent
       - typescript
 
-  '@alchemy.run/cloudflare@2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(518f804a5f12917f185e267bd0bfde98)':
+  '@alchemy.run/cloudflare@2.0.0-beta.85(patch_hash=324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c)(cdd61734c0b4b3ed17620d57bc2725f6)':
     dependencies:
-      '@alchemy.run/acme': 2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.85(@distilled.cloud/cloudflare@1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(rolldown@1.2.13)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
-      '@alchemy.run/docker': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@alchemy.run/sql': 2.0.0-beta.85(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+      '@alchemy.run/acme': 2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.85(@distilled.cloud/cloudflare@1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(rolldown@1.2.13)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      '@alchemy.run/docker': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+      '@alchemy.run/sql': 2.0.0-beta.85(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@cloudflare/workers-types': 5.20261019.1
       '@distilled.cloud/aws': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@distilled.cloud/aws4signer': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
@@ -16719,17 +16720,17 @@ snapshots:
       '@distilled.cloud/core': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@distilled.cloud/iceberg': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@effect/sql-d1': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546)
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
       pathe: 2.0.3
       picomatch: 4.0.7
       rolldown: 1.2.13
       tinyglobby: 0.2.17
     optionalDependencies:
-      '@alchemy.run/domain': 2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(foldkit@0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))
-      '@alchemy.run/frontend-frameworks': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(hono@4.11.4)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      '@alchemy.run/domain': 2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(foldkit@0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))
+      '@alchemy.run/frontend-frameworks': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       '@effect/platform-bun': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@effect/platform-node': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/platform-node': 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       vite: 8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
     transitivePeerDependencies:
       - '@effect/sql-libsql'
@@ -16741,56 +16742,56 @@ snapshots:
       - proxy-agent
       - typescript
 
-  '@alchemy.run/docker@2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
+  '@alchemy.run/docker@2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(4c68c3871a5a31be19914d9c320e6688))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
     dependencies:
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(4c68c3871a5a31be19914d9c320e6688)
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
       rolldown: 1.2.13
     optionalDependencies:
       '@effect/platform-bun': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
 
-  '@alchemy.run/docker@2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
+  '@alchemy.run/docker@2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
     dependencies:
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546)
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
       rolldown: 1.2.13
     optionalDependencies:
       '@effect/platform-bun': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
 
-  '@alchemy.run/docker@2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(fb781d51e9c49238511d984cb8fa92f0))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
+  '@alchemy.run/docker@2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
     dependencies:
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(fb781d51e9c49238511d984cb8fa92f0)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346)
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
       rolldown: 1.2.13
     optionalDependencies:
       '@effect/platform-bun': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
 
-  '@alchemy.run/domain@2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(foldkit@0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))':
+  '@alchemy.run/domain@2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(4c68c3871a5a31be19914d9c320e6688))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(foldkit@0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))':
     dependencies:
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a)
-      effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
-    optionalDependencies:
-      foldkit: 0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-
-  '@alchemy.run/domain@2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(foldkit@0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))':
-    dependencies:
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(4c68c3871a5a31be19914d9c320e6688)
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
     optionalDependencies:
       foldkit: 0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
     optional: true
 
-  '@alchemy.run/domain@2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(fb781d51e9c49238511d984cb8fa92f0))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(foldkit@0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))':
+  '@alchemy.run/domain@2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(foldkit@0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))':
     dependencies:
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(fb781d51e9c49238511d984cb8fa92f0)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546)
+      effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
+    optionalDependencies:
+      foldkit: 0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+
+  '@alchemy.run/domain@2.0.0-beta.85(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(foldkit@0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))':
+    dependencies:
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346)
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
     optionalDependencies:
       foldkit: 0.170.0(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
     optional: true
 
-  '@alchemy.run/frontend-frameworks@2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(astro@7.3.1(@astrojs/markdown-remark@7.3.0(supports-color@10.2.2))(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@26.4.1)(aws4fetch@1.0.20)(ioredis@5.11.1(supports-color@10.2.2))(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))':
+  '@alchemy.run/frontend-frameworks@2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(astro@7.3.1(@astrojs/markdown-remark@7.3.0(supports-color@10.2.2))(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@26.4.1)(aws4fetch@1.0.20)(ioredis@5.11.1(supports-color@10.2.2))(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))':
     dependencies:
-      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.85(@distilled.cloud/cloudflare@1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(rolldown@1.2.13)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.85(@distilled.cloud/cloudflare@1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(rolldown@1.2.13)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       '@alchemy.run/redis': 2.0.0-beta.85(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@distilled.cloud/aws': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@distilled.cloud/cloudflare': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
@@ -16801,7 +16802,7 @@ snapshots:
       tinyglobby: 0.2.17
     optionalDependencies:
       '@effect/platform-bun': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@effect/platform-node': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/platform-node': 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@vitejs/plugin-react': 6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       astro: 7.3.1(@astrojs/markdown-remark@7.3.0(supports-color@10.2.2))(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@26.4.1)(aws4fetch@1.0.20)(ioredis@5.11.1(supports-color@10.2.2))(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
       vite: 8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
@@ -16811,9 +16812,9 @@ snapshots:
       - typescript
     optional: true
 
-  '@alchemy.run/frontend-frameworks@2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(hono@4.11.4)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))':
+  '@alchemy.run/frontend-frameworks@2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(hono@4.11.4)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))':
     dependencies:
-      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.85(@distilled.cloud/cloudflare@1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(rolldown@1.2.13)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.85(@distilled.cloud/cloudflare@1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(rolldown@1.2.13)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       '@alchemy.run/redis': 2.0.0-beta.85(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@distilled.cloud/aws': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@distilled.cloud/cloudflare': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
@@ -16824,7 +16825,7 @@ snapshots:
       tinyglobby: 0.2.17
     optionalDependencies:
       '@effect/platform-bun': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@effect/platform-node': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/platform-node': 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@vitejs/plugin-react': 6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       hono: 4.11.4
       vite: 8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
@@ -16833,9 +16834,9 @@ snapshots:
       - proxy-agent
       - typescript
 
-  '@alchemy.run/frontend-frameworks@2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))':
+  '@alchemy.run/frontend-frameworks@2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))':
     dependencies:
-      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.85(@distilled.cloud/cloudflare@1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(rolldown@1.2.13)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      '@alchemy.run/cloudflare-runtime': 2.0.0-beta.85(@distilled.cloud/cloudflare@1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(rolldown@1.2.13)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       '@alchemy.run/redis': 2.0.0-beta.85(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@distilled.cloud/aws': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@distilled.cloud/cloudflare': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
@@ -16846,7 +16847,7 @@ snapshots:
       tinyglobby: 0.2.17
     optionalDependencies:
       '@effect/platform-bun': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@effect/platform-node': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/platform-node': 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@vitejs/plugin-react': 6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       vite: 8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
     transitivePeerDependencies:
@@ -16855,17 +16856,17 @@ snapshots:
       - typescript
     optional: true
 
-  '@alchemy.run/neon@2.0.0-beta.85(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(hono@4.11.4)':
+  '@alchemy.run/neon@2.0.0-beta.85(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(hono@4.11.4)':
     dependencies:
-      '@alchemy.run/sql': 2.0.0-beta.85(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+      '@alchemy.run/sql': 2.0.0-beta.85(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@distilled.cloud/aws': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@distilled.cloud/core': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@distilled.cloud/neon': 1.0.0-rc.18(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@neon/functions': 0.11.0(hono@4.11.4)
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346)
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
     optionalDependencies:
-      '@effect/platform-node': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/platform-node': 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
     transitivePeerDependencies:
       - '@effect/sql-libsql'
       - '@effect/sql-mysql2'
@@ -16887,34 +16888,34 @@ snapshots:
       '@types/react': 19.2.18
       react-devtools-core: 7.0.1
 
-  '@alchemy.run/sql@2.0.0-beta.85(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
+  '@alchemy.run/sql@2.0.0-beta.85(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(4c68c3871a5a31be19914d9c320e6688))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
     dependencies:
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(4c68c3871a5a31be19914d9c320e6688)
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
     optionalDependencies:
       '@effect/sql-pg': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
 
-  '@alchemy.run/sql@2.0.0-beta.85(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
+  '@alchemy.run/sql@2.0.0-beta.85(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
     dependencies:
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546)
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
     optionalDependencies:
       '@effect/sql-pg': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
 
-  '@alchemy.run/sql@2.0.0-beta.85(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(fb781d51e9c49238511d984cb8fa92f0))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
+  '@alchemy.run/sql@2.0.0-beta.85(@effect/sql-pg@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))':
     dependencies:
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(fb781d51e9c49238511d984cb8fa92f0)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346)
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
     optionalDependencies:
       '@effect/sql-pg': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
 
-  '@alchemy.run/test@2.0.0-beta.85(@effect/vitest@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)':
+  '@alchemy.run/test@2.0.0-beta.85(@effect/vitest@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0))(alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)':
     dependencies:
       '@effect/platform-bun': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
     optionalDependencies:
       '@effect/vitest': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(vitest@5.0.0)
-      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536)
+      alchemy: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346)
       vitest: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
     transitivePeerDependencies:
       - bufferutil
@@ -18537,7 +18538,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))':
+  '@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))':
     dependencies:
       '@effect/platform-node-shared': 4.1.1(patch_hash=f11285fd8952eb2d7ca73e6b9ceab017441bce6639a32e0eb5042a41b154fb88)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
@@ -21922,7 +21923,7 @@ snapshots:
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
-  alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a):
+  alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(4c68c3871a5a31be19914d9c320e6688):
     dependencies:
       '@alchemy.run/node-utils': 2.0.0-beta.85
       '@alchemy.run/sigil': 0.1.0-alpha.1(@types/react@19.2.18)(react-devtools-core@7.0.1)
@@ -21935,16 +21936,16 @@ snapshots:
       tinyglobby: 0.2.17
       yaml: 2.9.1
     optionalDependencies:
-      '@alchemy.run/frontend-frameworks': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      '@alchemy.run/frontend-frameworks': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(astro@7.3.1(@astrojs/markdown-remark@7.3.0(supports-color@10.2.2))(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@26.4.1)(aws4fetch@1.0.20)(ioredis@5.11.1(supports-color@10.2.2))(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       '@effect/platform-bun': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@effect/platform-node': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/platform-node': 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       vite: 8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
       ws: 8.22.0
     transitivePeerDependencies:
       - '@types/react'
       - react-devtools-core
 
-  alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(b937a68e882feeeb9bd86172390e4536):
+  alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(a9a7c93fd2c13fcdb0cfdc69f9b21546):
     dependencies:
       '@alchemy.run/node-utils': 2.0.0-beta.85
       '@alchemy.run/sigil': 0.1.0-alpha.1(@types/react@19.2.18)(react-devtools-core@7.0.1)
@@ -21957,16 +21958,16 @@ snapshots:
       tinyglobby: 0.2.17
       yaml: 2.9.1
     optionalDependencies:
-      '@alchemy.run/frontend-frameworks': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(hono@4.11.4)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      '@alchemy.run/frontend-frameworks': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       '@effect/platform-bun': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@effect/platform-node': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/platform-node': 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       vite: 8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
       ws: 8.22.0
     transitivePeerDependencies:
       - '@types/react'
       - react-devtools-core
 
-  alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(fb781d51e9c49238511d984cb8fa92f0):
+  alchemy@2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(bf105323ef6e2b00dd3842f401370346):
     dependencies:
       '@alchemy.run/node-utils': 2.0.0-beta.85
       '@alchemy.run/sigil': 0.1.0-alpha.1(@types/react@19.2.18)(react-devtools-core@7.0.1)
@@ -21979,9 +21980,9 @@ snapshots:
       tinyglobby: 0.2.17
       yaml: 2.9.1
     optionalDependencies:
-      '@alchemy.run/frontend-frameworks': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(astro@7.3.1(@astrojs/markdown-remark@7.3.0(supports-color@10.2.2))(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@26.4.1)(aws4fetch@1.0.20)(ioredis@5.11.1(supports-color@10.2.2))(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
+      '@alchemy.run/frontend-frameworks': 2.0.0-beta.85(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(hono@4.11.4)(typescript@5.9.3)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       '@effect/platform-bun': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@effect/platform-node': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/platform-node': 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       vite: 8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)
       ws: 8.22.0
     transitivePeerDependencies:
@@ -27154,13 +27155,13 @@ snapshots:
   vibelang-linux-x64@0.0.12:
     optional: true
 
-  vibelang-runtime@0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)):
+  vibelang-runtime@0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)):
     dependencies:
       effect: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
     optionalDependencies:
       '@effect/platform-browser': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       '@effect/platform-bun': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
-      '@effect/platform-node': 4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@effect/platform-node': 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
 
   vibelang-unplugin@0.0.12(@rsbuild/core@2.2.3(core-js@3.40.0))(@rspack/core@2.2.2(@swc/helpers@0.5.23))(esbuild@0.28.2)(rolldown@1.2.13)(rollup@4.64.10)(vibelang@0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0)):
     dependencies:

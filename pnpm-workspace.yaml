@@ -120,6 +120,10 @@ patchedDependencies:
   effect@4.1.1: patches/effect@4.1.1.patch
   # Native Bun cstrings and a shell-free, private URL opener (desktop decision 0025).
   electrobun@1.18.1: patches/electrobun@1.18.1.patch
+  # platform-node 4.1.1 bases createRequire on a global `__filename` first, which `node --eval` sets to "[eval]", so
+  # requiring its HTTP modules there threw (platform-node/test/EvalRequire.test.ts; the release smoke failed
+  # 1.0.0-rc.17). Delete it when an Effect release reads import.meta.url first (patches/README.md).
+  '@effect/platform-node@4.1.1': patches/@effect__platform-node@4.1.1.patch
 
 minimumReleaseAgeExclude:
   # VibeLang is ours (smithersai/vibelang), so its releases need no waiting
