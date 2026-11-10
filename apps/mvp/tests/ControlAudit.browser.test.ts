@@ -7,6 +7,7 @@ import { trackCloneOffers } from "../e2e/clone-offers"
 import { chromium, webkit } from "playwright"
 import { expect, test } from "vitest"
 import { auditControls, CONTROL_SELECTOR } from "../e2e/control-audit"
+import vibelang from "vibelang-unplugin/esbuild"
 
 for (const engine of [chromium, webkit]) {
   test(`${engine.name()}: a queued list update cannot shift the controls under the audit`, async () => {
@@ -73,7 +74,7 @@ for (const engine of [chromium, webkit]) test(`${engine.name()}: Clone history s
 })
 
 for (const engine of [chromium, webkit]) test(`${engine.name()}: the real Effect logger reaches the applied audit through full console arguments`, async () => {
-  const bundle = await build({ entryPoints: [fileURLToPath(new URL("./fixtures/applied-log.ts", import.meta.url))], bundle: true, write: false, platform: "browser", format: "esm" })
+  const bundle = await build({ plugins: [vibelang()], entryPoints: [fileURLToPath(new URL("./fixtures/applied-log.ts", import.meta.url))], bundle: true, write: false, platform: "browser", format: "esm" })
   const server = createServer((request, response) => {
     response.setHeader("Content-Type", request.url === "/fixture.js" ? "text/javascript" : "text/html")
     response.end(request.url === "/fixture.js" ? bundle.outputFiles[0]!.text : '<main>Issues</main><script type="module" src="/fixture.js"></script>')
