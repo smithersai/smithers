@@ -146,17 +146,17 @@ remain unchanged. The cold-load regression failed before this fixture correction
 sequencer ordering, history pages and lifecycle, cancellation, exact backend deadlines, budget boundaries, model
 configuration and the Alchemy resource graph. The prototype uses the monorepo's V8 provider 5.0.0 and Chromium's
 built-in API. Strict 100% gates remain below target and are not installed on main. Proposed app test-tool declarations
-`@vitest/coverage-v8` 5.0.0 and `ast-v8-to-istanbul` 1.0.5 await Will's VL-5 approval; see [0016](0016-coverage.md).
+`@vitest/coverage-v8` 5.0.0 and `ast-v8-to-istanbul` 1.0.5 approved by Will under VL-34 (2026-11-10); see [0016](0016-coverage.md).
 The benchmark coverage gate adds the monorepo's `istanbul-lib-instrument` 6.0.3, `istanbul-lib-coverage` 3.2.2 and
-`istanbul-lib-source-maps` 5.0.6 as test-only tools for workerd execution evidence (0017); likewise awaiting Will's
-VL-5 approval. No runtime dependency is added.
+`istanbul-lib-source-maps` 5.0.6 as test-only tools for workerd execution evidence (0017); likewise approved by Will under
+VL-34 (2026-11-10). No runtime dependency is added.
 Node cases use the workspace's finite 30-second budget: MCP discovery starts the real stdio server and CLI, whose
 combined cold startup exceeded the implicit five seconds after engine observation landed. The MCP protocol's own
 10-second limit and browser assertions are unchanged; whole-history replay under coverage measured 23.5 seconds.
 
 **Concurrent post acceptance (0017).** The two-follower Factory test checks person order, reply identity and complete scripted answers, contiguous event numbers, and serialized reply starts/finishes. It permits the first reply to start before the second post is accepted; asynchronous module/engine scheduling can select either valid interleaving. The former global entry-name order failed on a real run.
 
-**Sandbox lane tool review (0024).** `@smthrs/fuzz` is the monorepo's existing feedback-fuzz tool, added as a test dependency, awaiting Will's VL-5 approval. Sandbox fuzz uses fixed seeds and a millisecond-by-millisecond clock oracle; the benchmark checks 100 actual mock lifecycle cycles. Neither is a whole-app coverage or live-container performance claim.
+**Sandbox lane tool review (0024).** `@smthrs/fuzz` is the monorepo's existing feedback-fuzz tool, added as a test dependency, approved by Will under VL-34 (2026-11-10). Sandbox fuzz uses fixed seeds and a millisecond-by-millisecond clock oracle; the benchmark checks 100 actual mock lifecycle cycles. Neither is a whole-app coverage or live-container performance claim.
 
 
 
@@ -174,7 +174,7 @@ persisted totals and admission; the final safe charge/replay stays green. Model-
 requested prefix and excludes tour narration. The shared CLI/MCP and sequence policies add 44 rejected mutants.
 
 **Source-map and script controls (0016).** Vitest and `@vitest/coverage-v8` now both use the root's **5.0.0**, including
-its provider patch. The added provider declaration awaits Will's **VL-5 approval**. A child suite with a passing
+its provider patch. The added provider declaration approved by Will under VL-34 (2026-11-10). A child suite with a passing
 assertion must still exit 1 for its unvisited Effect return at original `.vibe` line 4. CLI/MCP and script emissions
 retain maps and inline source text. Generator process tests use a separate ignored compiler-output tree whose maps
 remain available until reporting; they never overwrite the app's generated context or history seed. The seed command
@@ -226,7 +226,7 @@ accepts its final safe event before another intent. The seed helper now uses the
 valid final event remains and the next intent is refused. No dependency is added.
 
 **Desktop (0025).** The native app reuses VibeLang 0.0.12, Vite 8.3.4, Vitest 5.0.0, Effect Vitest 4.1.1,
-esbuild 0.28.2, Playwright 1.62.1, happy-dom 20.13.2 and workspace `@smthrs/std`. These reused tools remain awaiting
+esbuild 0.28.2, Playwright 1.62.1, happy-dom 20.13.2 and workspace `@smthrs/std`. These reused tools are approved under VL-34; previously awaiting
 Will's VL-5 review. Desktop units include a 1,000-case Effect Arbitrary property. Actual Electrobun/GTK/CEF cases
 use a real Effect HTTP model server. Native wrapper coverage runs under V8 against actual foreign APIs through a
 native test transport: no own-code mocks, interception, production exclusions or lowered SDK thresholds.
@@ -250,7 +250,7 @@ A native role regression first reproduced a nonfunctional Mock identity picker a
 
 **Fuzz lane tools (0015).** Existing monorepo test tools `@smthrs/testing`, `@smthrs/platform-node`,
 `ast-v8-to-istanbul` 1.0.5, `istanbul-lib-coverage` ^3.2.2, `istanbul-lib-report` ^3.0.1 and
-`istanbul-reports` ^3.2.0 are added at their monorepo versions, awaiting Will's VL-5 approval.
+`istanbul-reports` ^3.2.0 are added at their monorepo versions, approved by Will under VL-34 (2026-11-10).
 The fuzz runner is a durable Smithers flow using the real Node SQLite host, production step and file boundaries,
 workerd and Chromium on lane port 4501. It never merges unit-suite coverage into fuzz evidence.
 The strict coverage target is explicit, like benchmark qualification; its current failure remains recorded in 0015.
@@ -358,11 +358,11 @@ The complete run's behavioral assertions pass, while its strict coverage qualifi
 ## Tool list: vendored LemmaScript (0018)
 
 `packages/lemmascript` adds `ts-morph` 25.0.1, `tsx`, `typescript` and `@types/node` at their monorepo versions to the lockfile for
-this package. `ts-morph` was already this toolchain's dependency through the npm package. All four are awaiting Will's VL-5 approval.
+this package. `ts-morph` was already this toolchain's dependency through the npm package. All four are approved by Will under VL-34 (2026-11-10).
 
 ## Tool list: hosted auth broker (0029)
 
-MVP now declares the monorepo's existing `vibelang-runtime` 0.0.12 for its new VibeLang Worker modules. This is awaiting Will's VL-5 approval. VibeLang's app already declares it; this lane adds no dependency or test tool there.
+MVP now declares the monorepo's existing `vibelang-runtime` 0.0.12 for its new VibeLang Worker modules. This is approved by Will under VL-34 (2026-11-10). VibeLang's app already declares it; this lane adds no dependency or test tool there.
 
 Benchmark runner controls exercise the real built-in runner: failed-first exact callback counts and serial Promise execution, with explicit sync/async registration (0017). No additional tool is introduced.
 

@@ -159,6 +159,22 @@ All of the following are from Will's message of 2026-11-07, about 00:30 PST, unl
   custom domain) signs in through smithers.sh's existing callback, which hands the session back to the requesting site.
   A general Smithers capability, in the shared auth code. Replaces 0019's per-site callback.
 
+- **VL-34. Test-only tools are approved (answers VL-5's open requests).** Will, 2026-11-10 13:44 PST, asked whether
+  vibelang may add `@vitest/coverage-v8`, `ast-v8-to-istanbul`, the `istanbul-lib` packages, `ts-morph` and `tsx` as
+  dev and test tools: "yes of course". Runtime dependencies still go to Will under VL-5.
+- **VL-35. Tests run real Cloudflare sandboxes.** Will, 2026-11-10 13:44 PST: "yes we should run real cloudflare
+  sandboxes". The sandbox paths are tested against real Cloudflare Containers, not only the mock host.
+- **VL-36. External services in tests: record, replay or pass through.** Will, 2026-11-10 13:44 PST: "The tests should
+  have a record replay pattern for things like that where we can run vs a real github in passthroug, run vs real
+  github recording responses, and replay those responses. Make sure recorded responses don't have important secrets in
+  them though". Three modes chosen by an injected Effect service layer (passthrough, record, replay) for GitHub, and
+  for the model and the sandbox where it fits, built on VibeLang's VIP-71 `Experimental.Test.record`/`replay`, in the
+  SDK when general (SDK-1). Recordings are scrubbed of tokens and other secrets, with a test that fails if one appears.
+  Replaces the open question between in-process fakes and real credentials.
+- **VL-37. VibeLang emits no fallback branch after an exhaustive match.** Will, 2026-11-10 13:44 PST: yes (the compiler
+  change is the fleet lead's). Source-map fixes for coverage are bug fixes and need no ruling (the fleet lead,
+  2026-11-10).
+
 ## Process
 
 - **VL-26. Go fast and in parallel; dogfood at once: the agent through the MCP server, skill or CLI, Will through the
