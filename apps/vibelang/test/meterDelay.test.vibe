@@ -1,0 +1,22 @@
+// Third-lane batch 5 (0018): when the next sandbox meter is due, proved in sandboxDecision as sandboxMeter uses it.
+import { describe, expect, it } from "@effect/vitest"
+import { meterDelay } from "../src/core/sandboxDecision.vibe"
+import { meterDelayMilliseconds, METER_INTERVAL_MILLISECONDS } from "../src/core/sandboxMeter.vibe"
+
+describe("the next meter", () => {
+  it("is due at the first whole millisecond the running sandboxes use up the allowance", () => {
+    expect([meterDelay(90000, 2, 60000), meterDelay(90001, 2, 60000), meterDelay(7, 3, 60000)]).toEqual([45000, 45001, 3])
+  })
+  it("is never due at once, and never more than an interval away", () => {
+    expect([meterDelay(0, 4, 60000), meterDelay(10 ** 12, 1, 60000), meterDelay(60000, 1, 60000)]).toEqual([1, 60000, 60000])
+  })
+  it("counts no running sandbox as one", () => {
+    expect([meterDelay(500, 0, 60000), meterDelay(500, 1, 60000)]).toEqual([500, 500])
+  })
+  it("uses the one-minute interval", () => {
+    expect(meterDelayMilliseconds(10 ** 9, 1)).toBe(METER_INTERVAL_MILLISECONDS)
+    for (const [remaining, running] of [[0, 0], [1, 5], [59999, 1], [120001, 2]] as const) {
+      expect(meterDelayMilliseconds(remaining, running)).toBe(meterDelay(remaining, running, METER_INTERVAL_MILLISECONDS))
+    }
+  })
+})

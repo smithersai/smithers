@@ -34,7 +34,7 @@ brick                                   state         proof
 ```
 
 - **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 2,508 executable items. Seventeen modules carry contracts and 962 current mutant copies match actual Dafny rejections; unproved logic and tool boundaries remain explicit.
-- **Proofs outside the web app (0018, lane vl-proveall3): in progress.** Sequencer, follow and command argument decisions proved; one title-cut defect fixed.
+- **Proofs outside the web app (0018, lane vl-proveall3): in progress.** Proved: sequencer, follow and command arguments; pages, docs paths, prompt form, protocol limits and the session origin; mock chunks, the cookie rule and catalog roles; the bootstrap seed's choices; the sandbox meter delay. Three defects fixed: two surrogate-pair cuts, and a long history search that never showed its matches.
 
 - **Proofs of the web decision modules (0018, lane vl-proveall2): in progress.** Viewport steps and the history page's guards, merge, reads and arm frames are proved; 75 new mutations rejected. Remaining rows name host or tool boundaries.
 

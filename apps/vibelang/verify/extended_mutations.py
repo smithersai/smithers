@@ -5217,3 +5217,10 @@ cases.extend([('src/history/seedDecision.vibe', *case) for case in [
 ('seed-evidence-own', 'evidenceStep', 'if (open && !blank && !ownLine) return "wrap"', 'if (open && !blank) return "wrap"', 'a line of its own never wraps'),
 ('seed-title-read', 'foldedTitle', 'stored === "" ? own : stored', 'stored', 'an empty stored title reads as the commit\'s own'),
 ]])
+# Lane vl-proveall3, batch 5 (0018 "Third-lane batch 5").
+cases.extend([('src/core/sandboxDecision.vibe', *case) for case in [
+('meter-delay-share', 'meterDelay', 'running > 1 ? running : 1', 'running > 1 ? running : 2', 'no running sandbox counts as one'),
+('meter-delay-ceil', 'meterDelay', 'Math.ceil(remaining / share)', 'Math.floor(remaining / share)', 'the meter waits until the allowance is reached'),
+('meter-delay-least', 'meterDelay', 'ceiling < 1 ? 1 : ceiling', 'ceiling', 'a meter is never due at once'),
+('meter-delay-cap', 'meterDelay', 'due > interval ? interval : due', 'due', 'a meter runs at least once an interval'),
+]])

@@ -682,7 +682,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-3104 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+3105 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -1236,6 +1236,7 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/sandboxDecision.vibe:270` | `decideSandbox` | pure logic | Proved sandbox integer kernel, iterative runtime traversals and quantified source-position contracts: exact running counts, interval usage and accumulation, remaining allowance, monotone clocks, refusal precedence, first-match lookup, identity fences and transition frames (0024). Its inputs are whole safe integers: sandboxMeter.vibe normalizes Date and IEEE-754 values before calling it. |
 | `src/core/sandboxDecision.vibe:308` | `applySandbox` | pure logic | Proved sandbox integer kernel, iterative runtime traversals and quantified source-position contracts: exact running counts, interval usage and accumulation, remaining allowance, monotone clocks, refusal precedence, first-match lookup, identity fences and transition frames (0024). Its inputs are whole safe integers: sandboxMeter.vibe normalizes Date and IEEE-754 values before calling it. |
 | `src/core/sandboxDecision.vibe:320` | `leaseMilliseconds` | pure logic | Proved sandbox integer kernel, iterative runtime traversals and quantified source-position contracts: exact running counts, interval usage and accumulation, remaining allowance, monotone clocks, refusal precedence, first-match lookup, identity fences and transition frames (0024). Its inputs are whole safe integers: sandboxMeter.vibe normalizes Date and IEEE-754 values before calling it. |
+| `src/core/sandboxDecision.vibe:335` | `meterDelay` | pure logic | Proved sandbox integer kernel, iterative runtime traversals and quantified source-position contracts: exact running counts, interval usage and accumulation, remaining allowance, monotone clocks, refusal precedence, first-match lookup, identity fences and transition frames (0024). Its inputs are whole safe integers: sandboxMeter.vibe normalizes Date and IEEE-754 values before calling it. |
 | `src/core/sandboxHost.vibe:19` | `generationOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/sandboxHost.vibe:23` | `outputOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/sandboxHost.vibe:42` | `observed` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
@@ -1275,7 +1276,7 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/sandboxMeter.vibe:14` | `monthOf` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/core/sandboxMeter.vibe:18` | `nextMonth` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/sandboxMeter.vibe:24` | `meter` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMeter.vibe:60` | `meterDelayMilliseconds` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMeter.vibe:60` | `meterDelayMilliseconds` | wiring | Calls the proved meter delay (sandboxDecision meterDelay): between 1 ms and one interval, and before the interval exactly the first whole millisecond at which running × elapsed reaches the remaining allowance. |
 | `src/core/sandboxMeter.vibe:64` | `snapshotOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/sandboxMeter.vibe:65` | `snapshotOf/callback@65` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/sandboxMock.vibe:13` | `makeMockSandboxes` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
@@ -3377,22 +3378,22 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `worker/Issues.vibe:312` | `executeIssues/perform/callback@312` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/Issues.vibe:316` | `executeIssues/perform/callback@316` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/Issues.vibe:320` | `executeIssues/perform/callback@320` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Issues.vibe:325` | `executeIssues/perform/callback@320/callback@325` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Issues.vibe:330` | `executeIssues/perform/callback@330` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Issues.vibe:333` | `executeIssues/perform/callback@333` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `worker/Issues.vibe:338` | `executeIssues/runtime` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `worker/Issues.vibe:340` | `executeIssues/callback@340` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Issues.vibe:393` | `executeIssues/callback@393` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Issues.vibe:394` | `executeIssues/callback@394` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Issues.vibe:347` | `executeIssues/callback@347` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Issues.vibe:354` | `executeIssues/callback@347/callback@354` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Issues.vibe:357` | `executeIssues/callback@347/callback@357` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `worker/Issues.vibe:364` | `executeIssues/callback@347/callback@364` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Issues.vibe:366` | `executeIssues/callback@347/callback@366` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Issues.vibe:378` | `executeIssues/callback@347/callback@378` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Issues.vibe:382` | `executeIssues/callback@347/callback@382` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `worker/Issues.vibe:402` | `publicIssues` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Issues.vibe:403` | `publicIssues/current` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Issues.vibe:326` | `executeIssues/perform/callback@320/callback@326` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Issues.vibe:331` | `executeIssues/perform/callback@331` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Issues.vibe:334` | `executeIssues/perform/callback@334` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `worker/Issues.vibe:339` | `executeIssues/runtime` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `worker/Issues.vibe:341` | `executeIssues/callback@341` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Issues.vibe:394` | `executeIssues/callback@394` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Issues.vibe:395` | `executeIssues/callback@395` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Issues.vibe:348` | `executeIssues/callback@348` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Issues.vibe:355` | `executeIssues/callback@348/callback@355` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Issues.vibe:358` | `executeIssues/callback@348/callback@358` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `worker/Issues.vibe:365` | `executeIssues/callback@348/callback@365` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Issues.vibe:367` | `executeIssues/callback@348/callback@367` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Issues.vibe:379` | `executeIssues/callback@348/callback@379` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Issues.vibe:383` | `executeIssues/callback@348/callback@383` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `worker/Issues.vibe:403` | `publicIssues` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Issues.vibe:404` | `publicIssues/current` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/liveDispatchDecision.vibe:11` | `initialDispatch` | pure logic | Proved exact scan cursor and first-unmarked selection, no skipped unmarked post, terminal idempotency and one engine attempt per invocation, including refusal; storage-mark truth and engine execution are host boundaries. |
 | `worker/liveDispatchDecision.vibe:23` | `probeDispatch` | pure logic | Proved exact scan cursor and first-unmarked selection, no skipped unmarked post, terminal idempotency and one engine attempt per invocation, including refusal; storage-mark truth and engine execution are host boundaries. |
 | `worker/liveDispatchDecision.vibe:35` | `finishDispatch` | pure logic | Proved exact scan cursor and first-unmarked selection, no skipped unmarked post, terminal idempotency and one engine attempt per invocation, including refusal; storage-mark truth and engine execution are host boundaries. |
@@ -4138,3 +4139,8 @@ Not proved: `bucketsOf`'s graph walk, `scopeOf`, `sanitize` and the boundary reg
 
 Mutations: 19 in `seedDecision.vibe`.
 
+### Third-lane batch 5: when the next sandbox meter is due
+
+`sandboxDecision.vibe` proves `meterDelay`, which `meterDelayMilliseconds` in `sandboxMeter.vibe` now calls with the one-minute interval. Its contract: the delay is at least 1 ms and at most the interval; below the interval it is at least `remaining / share` and one less is below it, where `share` is the running count or 1 when none runs. So the next meter falls on the first whole millisecond at which running × elapsed reaches the remaining allowance, and a running sandbox never goes a whole interval unmetered.
+
+The contract states the bound as a quotient, not as `\result * share >= remaining`. The two are equivalent for `share >= 1`, but Dafny's default solver settings leave nonlinear arithmetic off, and the gate keeps one setting for every module. Mutations: 4.

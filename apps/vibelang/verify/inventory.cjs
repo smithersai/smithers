@@ -73,6 +73,7 @@ const boundaries = {
 };
 const functionBoundaries = {
   "src/web/actionModel.vibe:completions": "Calls the proved slashMatches (modelDecision): exactly the commands whose text starts with the draft's first word while the menu is open and that word starts with /; none otherwise. Reading the draft's first word is a native regexp outside the proof.",
+  "src/core/sandboxMeter.vibe:meterDelayMilliseconds": "Calls the proved meter delay (sandboxDecision meterDelay): between 1 ms and one interval, and before the interval exactly the first whole millisecond at which running × elapsed reaches the remaining allowance.",
   "src/history/seed.vibe:areaOf": "Calls the proved first area naming the scope (seedDecision areaIndex); the scope regexps stay boundaries (regexp.ts).",
   "src/history/seed.vibe:wholeSentences": "Calls the proved note cut (seedDecision sentenceCut); the sentence-boundary regexps and trimming stay boundaries (regexp.ts).",
   "src/history/seed.vibe:evidenceOf": "Calls the proved evidence paragraph step (seedDecision evidenceStep); the trailer and own-line regexps stay boundaries (regexp.ts).",

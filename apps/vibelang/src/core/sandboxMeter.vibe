@@ -1,5 +1,5 @@
 // UTC/IEEE-754 boundary around the proved integer kernel. Whole milliseconds accrue exactly; display rounds the aggregate.
-import { accumulateUsageMilliseconds, elapsedMilliseconds, intervalUsageMilliseconds, remainingMilliseconds, type SandboxLedger, runningCount } from "./sandboxDecision.vibe"
+import { accumulateUsageMilliseconds, elapsedMilliseconds, intervalUsageMilliseconds, meterDelay, remainingMilliseconds, type SandboxLedger, runningCount } from "./sandboxDecision.vibe"
 import { Unavailable } from "./Factory.vibe"
 
 export interface Metered { readonly ledger: SandboxLedger; readonly months: Readonly<Record<string, number>> }
@@ -58,7 +58,7 @@ export const METER_INTERVAL_MILLISECONDS = 60000
  * `remaining` allowance milliseconds, the first whole millisecond at which running × elapsed reaches it.
  */
 export function meterDelayMilliseconds(remaining: number, running: number): number {
-  return Math.min(METER_INTERVAL_MILLISECONDS, Math.max(1, Math.ceil(remaining / Math.max(1, running))))
+  return meterDelay(remaining, running, METER_INTERVAL_MILLISECONDS)
 }
 
 export function snapshotOf(ledger: SandboxLedger, conversation: string, generation: number, output: string) {

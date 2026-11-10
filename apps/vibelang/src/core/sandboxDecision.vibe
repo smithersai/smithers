@@ -321,3 +321,20 @@ export function leaseMilliseconds(milliseconds: number): number {
   if (milliseconds <= 1000) return 1000
   return milliseconds < 21600000 ? milliseconds : 21600000
 }
+
+/**
+ * When the next meter of `running` sandboxes is due, in whole milliseconds: one `interval` on, or sooner at the first
+ * whole millisecond at which `running` × elapsed reaches the `remaining` allowance; never sooner than 1. No running
+ * sandbox counts as one.
+ */
+//@ verify
+//@ requires 0 <= remaining && 1 <= interval
+//@ ensures 1 <= \result && \result <= interval
+//@ ensures \result < interval ==> \result >= remaining / (running > 1 ? running : 1)
+//@ ensures \result > 1 ==> \result - 1 < remaining / (running > 1 ? running : 1)
+export function meterDelay(remaining: number, running: number, interval: number): number {
+  const share = running > 1 ? running : 1
+  const ceiling = Math.ceil(remaining / share)
+  const due = ceiling < 1 ? 1 : ceiling
+  return due > interval ? interval : due
+}
