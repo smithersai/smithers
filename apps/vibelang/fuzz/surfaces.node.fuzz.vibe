@@ -48,9 +48,14 @@ it.live("surfaces/cli-arguments", () => run("surfaces/cli-arguments", Arguments,
   }
 }))
 
+/** An argument as a shell passes it: argv holds C strings, so no process receives NUL (the saved `"\u0000"` value). */
+function argument(text: string): string {
+  return text.replaceAll("\u0000", "")
+}
+
 it.live("surfaces/cli-rejects-garbage", () => run("surfaces/cli-rejects-garbage", Schema.Tuple([Int, Text]), ([kind, text]) => effect {
   provide platform {
-    const cases = [["--fuzz-unknown-" + text], ["--mock", "read", "--after", "-" + (kind + 1)], ["--mock", "ask"], ["--mock", "ask", " "]]
+    const cases = [["--fuzz-unknown-" + argument(text)], ["--mock", "read", "--after", "-" + (kind + 1)], ["--mock", "ask"], ["--mock", "ask", " "]]
     const result = try processRun(try cliPath(), cases[kind % cases.length]!, { NO_COLOR: "1", VIBELANG_FACTORY: "mock" })
     return result.status === 1 && result.stderr.length > 0 && !result.stderr.includes("[object Object]")
   }
