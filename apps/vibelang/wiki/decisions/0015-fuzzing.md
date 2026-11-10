@@ -287,3 +287,48 @@ Sixth campaign: seed 20261113, 20 seconds per target, 30.2 minutes, 166 receipts
 | `web/commands-from-any-model`: Skip on a Model whose theatre step is not an integer made the mock Factory's `controlTour` die: `SeekTour`'s payload refused the step under `Effect.orDie` | product | the mock refuses a body outside `TourControlBody` with `Unavailable`, as the live Factory reads the Worker's 400. Regression: `test/mockTourControl.test.vibe`, which failed first; the 8.3 MiB value stays out of the corpus |
 | `web/command-bodies`: a live backend with a wiki fault expected the fault | oracle | wiki faults apply only to the mock backend; value in the corpus |
 | `objects/conversation-host` | product, open | the vl-fuzz2 record above |
+
+## Status, 2026-11-10 (eighth session)
+
+`worker/apiObjects.vibe` holds the API Worker's object bodies, which the benchmark lane separated from `worker/Api.vibe`. No target reached it (0/193 lines). `fuzz/api-objects.node.fuzz.vibe` now wires the five bodies to each other in one Node process over `TestNodeRuntime.sqliteObjectStorage()`. Each namespace has the shape of Alchemy's stub: `getByName` throws for an unbound binding, a method call is an Effect, and `fetch` takes the forwarded request. Objects are built on first use, and their storage outlives an incarnation.
+
+| Target | Exercises |
+| --- | --- |
+| `api-objects/world` | A fixed walk, then up to 10 generated steps in a fresh world. The walk runs in both sign-in modes. It sends every route through `apiFetch` as a signed-in person (signed in through the accounts object's own callback) and as a visitor. It runs conversation and action alarms with a scripted model whose one cell calls every bound tool: wiki draft, history show and note, actions list and start. It also covers a host with no default entrypoint, the sandbox identity by trusted props and by cookie, each namespace unbound and unreachable, and the accounts binding lost after an action alarm's fourth call. Oracles: while every namespace is reachable, no defect and no 500. A 503 comes only from an unreachable object, or from an account route with sign-in unconfigured. An accepted post is in its conversation. A fresh incarnation replays the same conversations. Without sign-in, every role is viewer. Every step answers within 5 seconds |
+| `api-objects/budget` | `budgetObject`'s ledger against a model. A reply is admitted while spent is below the limit. Each reply is charged once, at its rounded nonnegative tokens; NaN and the infinities are charged nothing. A total past `Number.MAX_SAFE_INTEGER` is refused and the day stays unchanged. A fresh incarnation agrees. A corrupt stored total (negative, fractional, NaN or infinite) is a defect for both `admit` and `spend` |
+
+One `api-objects/world` execution takes about 15 seconds, mostly the walk, so at the 250 ms default it runs once. `api-objects/budget` runs about 650 executions at 250 ms and about 10,000 at 5 seconds.
+
+Fuzz-only coverage of the two files, at 5 seconds per target:
+
+| File | Lines | Branches | Functions |
+| --- | ---: | ---: | ---: |
+| `worker/apiObjects.vibe` | 193/193 (was 0/193) | 58/59 (was 0/59) | 86/86 |
+| `worker/Budget.vibe` | 22/22 (was 20/22) | 19/19 (was 17/19) | 4/4 |
+
+| Finding | Class | Resolution |
+| --- | --- | --- |
+| A visitor's `GET /api/wiki` while GitHub refuses answers 503 only after 120 seconds. The wiki read's `perform` retries `unavailable` for its 120-second window (`retries` in `src/core/wikiFlows.vibe`) inside the request, and the web client (`src/core/LiveWiki.vibe`) waits with no deadline | product, open, owned by the wiki lane (0021) | Measured at 120,217 ms to a 503 through `serveWiki` and `publicWiki`, with and without a page. Not changed here: a read's retry window is the wiki lane's decision. In the target, GitHub answers 404, which the flow does not retry |
+| An alarm whose Budget, Accounts or History binding is unbound or unreachable does not return. The reply's steps retry `Unreachable` under `patient`, which never expires | design | The target bounds a faulted alarm at 300 ms, or 3 seconds for a binding lost mid-alarm, and requires no defect. A healthy alarm must settle within 5 seconds |
+| The target's first version reached the real `api.github.com`, because `publicWiki` and `publicIssues` provide `FetchHttpClient.layer` themselves | target | The target injects `WikiHost` and `IssueHost` over an in-process GitHub. These are the service seams that `executeWiki` and `executeIssue` read first |
+
+No value is retained in the corpus: both stored values were target findings, recorded under an input schema that has since changed.
+
+### Lines fuzzing cannot execute, continued
+
+`worker/apiObjects.vibe` line 248, the branch where `refusal === null`: the agent's wiki draft succeeding inside an alarm. `Accounts.draftWiki` builds its wiki host inside `executeWiki`, using the request's authority and the `fetch` client that `Accounts.make` captured (`accountsObject` provides `FetchHttpClient.layer`). A Node target can inject only a `WikiHost` built before the request. That host's authority carries no person, so it refuses the draft (`worker/Wiki.vibe` line 81). The seam that would reach this branch: `accountsObject` taking its GitHub client, as `historyObject` already does. The branch stays in the denominator.
+
+### Containers: Alchemy's local runtime
+
+The seventh session's record said Alchemy's runtime was the missing piece. That is wrong. Alchemy has a local runtime: `alchemy dev` (`LocalWorkerProvider` and `LocalContainerProvider` in `@alchemy.run/cloudflare` 2.0.0-beta.85) runs the generated Worker in workerd through `@alchemy.run/cloudflare-runtime/core`, and runs its Containers through a Docker Engine API socket (`DOCKER_HOST`, default `/var/run/docker.sock`). Two pieces are missing for the `SandboxMachine.make`, `SandboxAccount.make` and `gatewayWithIdentity` rows:
+
+1. nyc-01 has no Docker Engine socket. Only the podman CLI is installed, and `podman.socket` is inactive. Enabling it is a local-ops change, not a product change.
+2. `fuzz:coverage` collects V8 coverage of the Node process. These rows would run inside workerd, and nothing collects or merges coverage from workerd. Hosting them would not change the table until workerd's own precise coverage (taken through its inspector and remapped the way `fuzz/browser-reporter.ts` remaps Chromium's) is merged into `coverage/fuzz-unit`.
+
+### Browser targets
+
+The browser targets ran at the sixth campaign's seed (20261113) and budget (20 seconds), on port 4501. All five passed: `browser/random-interactions` 4 executions, `browser/first-visit-tour` 6, `browser/history-navigation-and-work` 5, `browser/accounts-and-authority` 6, and `browser/palette-after-tour-timer`. Playwright exited 1 only because the source-coverage reporter refused to merge (`Source map does not describe this checkout`): the checkout was rebased while the run was in flight. The reporter's check is correct.
+
+### Seventh campaign
+
+Seed 20261114, 20 seconds per target, at `b5f6b215`, from 02:12:54 to 02:50:00 UTC on 2026-11-10 (37.1 minutes). The flow exited 0: 173 receipts and 36,457,699 recorded executions, none at zero, none falsified. The browser phase ran: 5 passed. `objects/conversation-host`, which failed from the default seed in the seventh session, passed with 49 executions. Under the campaign's load, `api-objects/world` ran 1 execution in 20 seconds, and the browser targets ran 1 to 3 each. No new findings. Log: `~/vl/vl-fuzzpkg.campaign7.log` on nyc-01.
