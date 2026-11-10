@@ -1,0 +1,48 @@
+// Scalar policies used by the live directory and the mock action host (0018, third-lane batch 14).
+export type MockState = "passed" | "failed" | "cancelled"
+
+//@ verify
+//@ ensures succeeded && !refusal ==> \result == "passed"
+//@ ensures succeeded && refusal ==> \result == "failed"
+//@ ensures !succeeded && interrupted ==> \result == "cancelled"
+//@ ensures !succeeded && !interrupted ==> \result == "failed"
+export function mockState(succeeded: boolean, refusal: boolean, interrupted: boolean): MockState {
+  if (succeeded) return refusal ? "failed" : "passed"
+  return interrupted ? "cancelled" : "failed"
+}
+
+//@ verify
+//@ ensures \result == (failed ? "Action failed" : "Cancelled")
+export function mockFailureText(failed: boolean): string {
+  return failed ? "Action failed" : "Cancelled"
+}
+
+//@ verify
+//@ ensures \result == (least != "viewer" && owner != person)
+export function ownerRefused(least: string, owner: string, person: string): boolean {
+  return least !== "viewer" && owner !== person
+}
+
+//@ verify
+//@ ensures \result == (door == "agent" ? "agent" : actor)
+export function actionActor(door: string, actor: "person" | "agent"): "person" | "agent" {
+  return door === "agent" ? "agent" : actor
+}
+
+//@ verify
+//@ ensures \result == (filter == "" || flow == filter)
+export function matchingFlow(filter: string, flow: string): boolean {
+  return filter === "" || flow === filter
+}
+
+//@ verify
+//@ ensures \result == (id == source || !indexed)
+export function indexedRun(id: string, source: string | undefined, indexed: boolean): boolean {
+  return id === source || !indexed
+}
+
+//@ verify
+//@ ensures \result == (id == expected)
+export function sameRun(id: string, expected: string): boolean {
+  return id === expected
+}

@@ -1,0 +1,29 @@
+import { describe, expect, it } from "@effect/vitest"
+import { actionActor, indexedRun, matchingFlow, mockFailureText, mockState, ownerRefused, sameRun } from "../src/actions/actionHostDecision.vibe"
+
+describe("action hosts' decisions", () => {
+  it("settles a refusal as failed and only a pure interruption as cancelled", () => {
+    expect([mockState(true, false, false), mockState(true, true, false), mockState(false, false, true), mockState(false, false, false)]).toEqual(["passed", "failed", "cancelled", "failed"])
+    expect(mockState(true, false, true)).toBe("passed")
+    expect(mockState(false, true, true)).toBe("cancelled")
+  })
+  it("keeps failure diagnostics private and distinguishes cancellation", () => {
+    expect([mockFailureText(true), mockFailureText(false)]).toEqual(["Action failed", "Cancelled"])
+  })
+  it("allows viewer work across owners and requires the same owner for writes", () => {
+    expect([ownerRefused("viewer", "old", "new"), ownerRefused("contributor", "old", "new"), ownerRefused("maintainer", "same", "same")]).toEqual([false, true, false])
+  })
+  it("records agent doors as agent actions while retaining a person's button action", () => {
+    expect([actionActor("agent", "person"), actionActor("button", "agent"), actionActor("button", "person")]).toEqual(["agent", "agent", "person"])
+  })
+  it("lists every flow only when the filter is empty", () => {
+    expect([matchingFlow("", "Post"), matchingFlow("Post", "Post"), matchingFlow("Tour", "Post")]).toEqual([true, true, false])
+  })
+  it("lists a run once from its own index and keeps an unindexed child", () => {
+    expect([indexedRun("own", "own", true), indexedRun("child", "parent", true), indexedRun("child", "parent", false)]).toEqual([true, false, true])
+    expect([indexedRun("", undefined, true), indexedRun("", undefined, false)]).toEqual([false, true])
+  })
+  it("reads and follows exactly the requested run", () => {
+    expect([sameRun("a1", "a1"), sameRun("a2", "a1"), sameRun("", "")]).toEqual([true, false, true])
+  })
+})

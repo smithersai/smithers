@@ -13,6 +13,8 @@ import type { HistoryReader } from "../history/tools.vibe"
 import { ActionDevice, deviceRegistration, execute, historyRegistration, prepare, refused } from "./execution.vibe"
 import { Actions, ActionFailure, type Actor, type Door, Run, type Role } from "./Actions.vibe"
 import { allowed, bundled, registration } from "./catalog.vibe"
+import { actionActor, matchingFlow, mockFailureText, mockState, ownerRefused, sameRun } from "./actionHostDecision.vibe"
+import { cancellable } from "../core/actionRunDecision.vibe"
 
 export interface Principal { readonly role?: Role; readonly actor: Actor; readonly conversation?: string }
 const decodeRun = Schema.decodeUnknownEffect(Run)
@@ -46,7 +48,7 @@ export function MockActions(principal: Principal) {
 
     // Every stored run comes from this world's own typed RequestAction, TraceAction and SettleAction, so it decodes.
     effect function read(id: string) {
-      const run = (try Ref.get(state)).runs?.find((run) => run.id === id)
+      const run = (try Ref.get(state)).runs?.find((run) => sameRun(run.id, id))
       if (run === undefined) throw new ActionFailure({ code: "not-found" })
       return try Effect.orDie(decodeRun(run))
     }
@@ -115,13 +117,13 @@ export function MockActions(principal: Principal) {
       const program = effect {
         const person = try authorize(name)
         const owner = invocations.get(id)!.owner
-        if (registration(name).least !== "viewer" && owner !== person.id) throw new ActionFailure({ code: "forbidden" })
+        if (ownerRefused(registration(name).least, owner, person.id)) throw new ActionFailure({ code: "forbidden" })
         return try execute(engine, try prepare(name, payload as Schema.Json, id), id)
       }
       const origin = try orDie(Effect.try(() => RunMetrics.withOrigin({ door, actor: principal.actor })))
       const result = try exit(program.pipe(Effect.provideService(StepTrace.Sink, observer), Effect.provideService(ActionDevice, factory), origin))
-      const status = Exit.isSuccess(result) ? (refused(result.value) ? "failed" : "passed") : Cause.hasInterruptsOnly(result.cause) ? "cancelled" : "failed"
-      const output = Exit.isSuccess(result) ? try Effect.orDie(Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Json))(result.value)) : status === "failed" ? "Action failed" : "Cancelled"
+      const status = mockState(Exit.isSuccess(result), Exit.isSuccess(result) && refused(result.value), Exit.isFailure(result) && Cause.hasInterruptsOnly(result.cause))
+      const output = Exit.isSuccess(result) ? try Effect.orDie(Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Json))(result.value)) : mockFailureText(status === "failed")
       try record({ type: "SettleAction", id, state: status, result: output, at: try Clock.currentTimeMillis })
     }
     effect function start(name: string, input: Schema.Json, door: Door) {
@@ -136,7 +138,7 @@ export function MockActions(principal: Principal) {
       // The run waits until its request is recorded.
       const recorded = try Deferred.make<void>()
       fibers.set(id, try forkIn(Effect.andThen(Deferred.await(recorded), run(id, name, payload, door)), scope))
-      try record({ type: "RequestAction", id, flow: name, door, actor: door === "agent" ? "agent" : principal.actor, at: try Clock.currentTimeMillis }).pipe(Effect.ensuring(Deferred.succeed(recorded, undefined)))
+      try record({ type: "RequestAction", id, flow: name, door, actor: actionActor(door, principal.actor), at: try Clock.currentTimeMillis }).pipe(Effect.ensuring(Deferred.succeed(recorded, undefined)))
       return id
     }
     return {
@@ -153,7 +155,7 @@ export function MockActions(principal: Principal) {
       },
       runs: effect (flow: string) => {
         const runs = (try Ref.get(state)).runs ?? []
-        return try Effect.orDie(Schema.decodeUnknownEffect(Schema.Array(Run))([...runs].reverse().filter((run) => flow === "" || run.flow === flow)))
+        return try Effect.orDie(Schema.decodeUnknownEffect(Schema.Array(Run))([...runs].reverse().filter((run) => matchingFlow(flow, run.flow))))
       },
       read,
       start,
@@ -175,12 +177,12 @@ export function MockActions(principal: Principal) {
       follow: (id: string) => Stream.unwrap(effect {
         const live = try PubSub.subscribe(published)
         const current = try read(id)
-        return Stream.concat(Stream.make(current), Stream.fromSubscription(live).pipe(Stream.filter((run) => run.id === id)))
+        return Stream.concat(Stream.make(current), Stream.fromSubscription(live).pipe(Stream.filter((run) => sameRun(run.id, id))))
       }),
       cancel: effect (id: string) => {
         const current = try read(id)
         try authorize(current.flow)
-        if (current.state !== "queued" && current.state !== "running") return
+        if (!cancellable(current.state)) return
         // start stores each invocation and fiber before it records the request, so a run read here has both.
         const invocation = invocations.get(id)!
         const flow = try orDie(catalog.get(invocation.flow))
