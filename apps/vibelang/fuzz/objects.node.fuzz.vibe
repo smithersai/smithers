@@ -90,18 +90,17 @@ it.live("objects/conversation-host", () => run("objects/conversation-host", Sche
   return true
 }))
 
-const Scenario = Schema.Struct({
-  scenario: Schema.Literals(["post-behind-tour", "seek-behind-reply", "wiki-pages", "routing", "unadmitted-receipt"]),
-  pick: Int, text: TextOrBoundary, admit: Schema.Boolean,
-})
+const OBJECT_SCENARIOS = ["post-behind-tour", "seek-behind-reply", "tour-behind-reply", "wiki-pages", "routing", "unadmitted-receipt"] as const
+const Scenario = Schema.Struct({ pick: Int, text: TextOrBoundary, admit: Schema.Boolean })
 const PAGES = ["index", "rulings", "nope", "", "decisions/0015-fuzzing"]
 
 /**
  * Preludes that reach the object's held-execution states in one execution, instead of waiting for random sequences:
  * a reply dispatched while a tour holds the object, a tour control while a reply holds it, every wiki page answer, the
- * router a reply or tour must never use, and the receipt of an execution never admitted.
+ * router a reply or tour must never use, the receipt of an execution never admitted, and Learn more behind a reply
+ * that has not started.
  */
-it.live("objects/steered-host", () => run("objects/steered-host", Scenario, ({ scenario, pick, text, admit }) => effect {
+const objectScenario = (scenario: typeof OBJECT_SCENARIOS[number], pick: number, text: string, admit: boolean) => scoped(effect {
   const object = try storage()
   const sequencer = try Objects.conversation(object)
   const spend = { admit: () => succeed(admit), spend: () => Effect.void }
@@ -135,6 +134,16 @@ it.live("objects/steered-host", () => run("objects/steered-host", Scenario, ({ s
       if (touring(before) === "" && (try sequencer.snapshot()).seq !== before.seq) throw new Finding({ report: `a seek with no tour wrote an event (post ${posted})` })
       break
     }
+    case "tour-behind-reply": {
+      // The reply is dispatched and holds the object's one execution, but no alarm has started it: a tour accepted
+      // now would wait on that reply while the reply's start waits on the tour.
+      const posted = try bounded("post", Objects.post("conv", object, sequencer, `c${pick}`, "Guest", text))
+      if (posted !== null) break
+      const toured = try bounded("tour", Objects.tour("conv", object, sequencer))
+      if (toured !== "busy") throw new Finding({ report: `a tour behind an unstarted reply answered ${toured}` })
+      if (touring(try sequencer.snapshot()) !== "") throw new Finding({ report: "a refused tour was recorded" })
+      break
+    }
     case "wiki-pages": {
       for (const page of PAGES) {
         const answer = try bounded("wiki", Objects.openWiki("conv", object, sequencer, page))
@@ -161,5 +170,11 @@ it.live("objects/steered-host", () => run("objects/steered-host", Scenario, ({ s
       break
     }
   }
+  return true
+})
+
+// Every execution runs every scenario on fresh storage, so one execution reaches them all whatever the host load.
+it.live("objects/steered-host", () => run("objects/steered-host", Scenario, ({ pick, text, admit }) => effect {
+  for (const scenario of OBJECT_SCENARIOS) try objectScenario(scenario, pick, text, admit)
   return true
 }))

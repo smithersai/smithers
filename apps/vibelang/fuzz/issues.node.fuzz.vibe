@@ -5,12 +5,13 @@ import { TestNodeRuntime } from "@smthrs/platform-node"
 import { GitHub } from "@smthrs/integrations"
 import { issuePermission } from "../src/core/conversation.vibe"
 import { IssueFailure, IssueRequest, IssuesState } from "../src/core/issueSchemas.vibe"
+import { IssueHost } from "../src/core/issueFlows.vibe"
 import { executeIssues, githubHost, issueFailureOf, publicIssues, serveIssues, verifiedVip, IssueAuthority, type Repository } from "../worker/Issues.vibe"
 import { agentLayer, DraftAgent, writer } from "../worker/VipDraft.vibe"
 import { ChatModel, Spend } from "../worker/Reply.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { fakeClient, repo, seed, type Fake } from "./issues-node-fake.vibe"
-import { run, Int } from "./run.vibe"
+import { run, Finding, Int } from "./run.vibe"
 
 // The durable payload contract (DurableText) refuses lone surrogates; direct flow calls hold it.
 const Clean = Schema.String.check(Schema.isMaxLength(120), Schema.isPattern(/^[^\uD800-\uDFFF]*$/))
@@ -268,4 +269,224 @@ it.live("issues/vip-evidence-and-failure-mapping", () => run("issues/vip-evidenc
   if (failure.reason !== expected) return false
   if (input.errorKind === "rate-limited" && failure.retryAfterMillis !== 5000) return false
   return ["unknown", "rate-limited", "unavailable"].includes(expected) ? failure.code === expected : true
+}))
+
+const ISSUE_SCENARIOS = ["validations", "reviews", "resume", "spec", "shapes", "served", "demoted", "refusals", "draft"] as const
+const SteeredIssues = Schema.Struct({
+  pick: Int,
+  title: Schema.Literals(["T", "A title", "Fix the parser"]),
+})
+type Person = { readonly id: string; readonly login: string; readonly role: typeof Role.Type; readonly kind?: "person" | "agent"; readonly connection?: { readonly person: number; readonly delegation: string } }
+const REFUSALS = ["connect", "install", "fork", "forbidden", "unavailable", "unknown", "key_conflict"] as const
+const SERVED: Record<string, number> = { forbidden: 403, "sign-in": 401, connect: 401, missing: 404, unknown: 409, title: 400, fork: 400, install: 400, unavailable: 503, partial: 503 }
+
+/**
+ * Preludes that reach the issue host's validations, reads and journal in one execution instead of waiting for random
+ * sequences. The maintainer is connected, but no delegate is provided (decision 0165): every validation runs on a
+ * real read, and the first GitHub write answers `connect`.
+ */
+const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: number, title: typeof SteeredIssues.Type["title"]) => scoped(effect {
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  const storage = raw as unknown as Storage
+  const fake = seed()
+  // Issue 1 is already issue 3's child, so linking it there again writes nothing.
+  fake.issues.find((issue) => issue.number === 1)!.parent_issue_url = `${repo.api}/repos/o/r/issues/3`
+  const maintainer: Person = { id: "7", login: "fuzz", role: "maintainer", connection: { person: 1, delegation: "fixture-delegation" } }
+  const principal = try Ref.make<Array<Person | undefined>>([])
+  const lost = try Ref.make(0)
+  const authority: IssueAuthority.Shape = {
+    // Each call takes the next scripted principal, then stays on the last one: a role can change mid-request.
+    current: () => Ref.modify(principal, (queue) => queue.length > 1 ? [queue[0], queue.slice(1)] : [queue[0], queue]),
+    lost: () => Ref.update(lost, (n) => n + 1),
+  }
+  const base: IssueRequest = { op: "read", number: 0, parent: 0, title, text: "body", example: "e", prior: "p", assignee: "", key: "" }
+  let count = 0
+  const execute = (patch: Partial<IssueRequest>, as: ReadonlyArray<Person | undefined> = [maintainer], drafts = false) => effect {
+    count += 1
+    try Ref.set(principal, [...as])
+    const program = executeIssues("issues-steered", storage, { ...base, key: `s${pick}-${count}`, ...patch } as IssueRequest, repo).pipe(
+      Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, fakeClient(fake)), Effect.provide(WebCrypto.layer),
+      Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: error._tag })),
+    )
+    return try Effect.result(drafts ? Effect.provide(program, writerLayer(true, true)) : program)
+  }
+  const reasonOf = (result: Result.Result<unknown, IssueFailure>) => result._tag === "Failure" ? result.failure.reason : "ok"
+  const expect = effect (label: string, wanted: string, patch: Partial<IssueRequest>, as: ReadonlyArray<Person | undefined> = [maintainer]) => {
+    const result = try execute(patch, as)
+    if (reasonOf(result) !== wanted) throw new Finding({ report: `${label} answered ${reasonOf(result)}, not ${wanted}` })
+    return result
+  }
+  const complete: Partial<IssueRequest> = { op: "propose", text: "A summary", example: "e", prior: "p" }
+  const writesBefore = fake.writes
+  switch (scenario) {
+    case "validations": {
+      const table: ReadonlyArray<readonly [string, string, Partial<IssueRequest>]> = [
+        ["a blank title", "title", { op: "new", title: "  " }],
+        ["a new issue", "connect", { op: "new" }],
+        ["a split of an unknown issue", "missing", { op: "split", number: 9999 }],
+        ["a split", "connect", { op: "split", number: 1 }],
+        ["an incomplete proposal", "incomplete", { op: "propose", example: " " }],
+        ["a proposal", "connect", complete],
+        ["a comment on an unknown issue", "missing", { op: "comment", number: 9999 }],
+        ["a blank comment", "empty", { op: "comment", number: 1, text: " " }],
+        ["a comment", "connect", { op: "comment", number: 1, text: "A note" }],
+        ["a link to itself", "tree", { op: "link", number: 1, parent: 1 }],
+        ["a link to the current parent", "ok", { op: "link", number: 1, parent: 3 }],
+        ["a new link", "connect", { op: "link", number: 1, parent: 2 }],
+        ["a commitment to a closed issue", "closed", { op: "commit", number: 2, assignee: "fuzz" }],
+        ["a commitment to a stranger", "assignee", { op: "commit", number: 1, assignee: "ghost" }],
+        ["a commitment to the agent", "connect", { op: "commit", number: 1, assignee: "VibeLang agent" }],
+        ["a release", "connect", { op: "uncommit", number: 3 }],
+        ["a decline of a plain issue", "review", { op: "decline", number: 1 }],
+        ["an acceptance in review", "connect", { op: "accept", number: 4 }],
+        ["a decline in review", "connect", { op: "decline", number: 4 }],
+      ]
+      for (const [label, wanted, patch] of table) {
+        const result = try expect(label, wanted, patch)
+        // A refusal before any write marks itself unwritten on a fresh execution, so the person may edit and resend.
+        if (["title", "incomplete", "empty", "tree", "assignee", "closed", "review"].includes(wanted) && (result._tag !== "Failure" || result.failure.unwritten !== true)) throw new Finding({ report: `${label} was not marked unwritten` })
+      }
+      // Every `connect` told the authority the delegation is gone.
+      const connects = table.filter(([, wanted]) => wanted === "connect").length
+      if ((try Ref.get(lost)) !== connects) throw new Finding({ report: `${connects} connect answers told the authority ${try Ref.get(lost)} times` })
+      // An approval needs a named maintainer; a blank login approves nothing.
+      try expect("an acceptance with no login", "forbidden", { op: "accept", number: 4 }, [{ ...maintainer, login: "" }])
+      fake.noMain = true
+      try expect("a proposal with no default branch", "missing", complete)
+      break
+    }
+    case "reviews": {
+      const proposal = fake.issues.find((issue) => issue.number === 4)!
+      proposal.labels = [{ name: "vibelang:accepted" }]
+      // Accepted on GitHub, unapproved here: accepting writes nothing and records this maintainer's approval.
+      const accepted = try expect("an acceptance of an accepted proposal", "ok", { op: "accept", number: 4 })
+      const item = accepted._tag === "Success" ? accepted.success.items.find((entry) => entry.number === 4) : undefined
+      if (item?.vip !== "Accepted" || item.approvedBy !== "fuzz") throw new Finding({ report: "the acceptance recorded no approval" })
+      // The recorded approval, not the label, keeps the proposal accepted on the next read.
+      const reread = try expect("a read after the approval", "ok", { op: "read" })
+      const kept = reread._tag === "Success" ? reread.success.items.find((entry) => entry.number === 4) : undefined
+      if (kept?.vip !== "Accepted" || kept.approvedBy !== "fuzz" || kept.approvedAt !== item.approvedAt) throw new Finding({ report: "the approval receipt was lost on a read" })
+      proposal.labels = [{ name: "vibelang:declined" }]
+      try expect("a decline of a declined open proposal", "connect", { op: "decline", number: 4 })
+      proposal.state = "closed"
+      try expect("a decline of a declined closed proposal", "ok", { op: "decline", number: 4 })
+      break
+    }
+    case "resume": {
+      const key = `w${pick}`
+      const write: Partial<IssueRequest> = { op: "new", key }
+      try expect("a new issue", "connect", write)
+      const resume = (patch: Partial<IssueRequest>) => ({ op: "read" as const, resumeOp: "new", resumeKey: key, ...patch })
+      for (const [label, patch] of [["the root", {}], ["an absent recovery", { resumeRecovery: "r1" }]] as const) {
+        const read = try expect(`resuming ${label}`, "ok", resume(patch))
+        const saved = read._tag === "Success" ? read.success.saved : undefined
+        if (saved?.status !== "failed" || saved.request.key !== key || saved.unwritten) throw new Finding({ report: `resuming ${label} saw ${saved?.status}` })
+      }
+      try expect("a changed payload under a used key", "invalid", { ...write, title: `${title}!` })
+      try expect("the recovery", "connect", { ...write, recovery: "r1" })
+      try expect("the joined recovery", "connect", { ...write, recovery: "r1" })
+      try expect("a recovery with a changed payload", "invalid", { ...write, title: `${title}!`, recovery: "r2" })
+      const recovered = try expect("resuming the recovery", "ok", resume({ resumeRecovery: "r1" }))
+      if (recovered._tag !== "Success" || recovered.success.saved?.status !== "failed") throw new Finding({ report: "the recovery's receipt was lost" })
+      try expect("resuming a key never used", "missing", resume({ resumeKey: `never${pick}` }))
+      try expect("resuming a malformed key", "invalid", resume({ resumeKey: "bad key!" }))
+      try expect("resuming an unknown operation", "invalid", resume({ resumeOp: "bogus" }))
+      try expect("resuming a malformed recovery", "invalid", resume({ resumeRecovery: "bad!" }))
+      try expect("a signed-out resume", "sign-in", resume({}), [undefined])
+      // A write that completed with nothing to change resumes as completed, on the issue it named.
+      try expect("a link to the current parent", "ok", { op: "link", number: 1, parent: 3, key: `l${pick}` })
+      const linked = try expect("resuming the link", "ok", resume({ resumeOp: "link", resumeKey: `l${pick}` }))
+      const saved = linked._tag === "Success" ? linked.success.saved : undefined
+      if (saved?.status !== "completed" || saved.selected !== 1) throw new Finding({ report: `the completed link resumed as ${saved?.status}` })
+      break
+    }
+    case "spec": {
+      const revised = try expect("a specification revision", "ok", { op: "spec-revise", revision: 0, text: `Spec ${pick}.` })
+      if (revised._tag !== "Success" || revised.success.specification?.revision !== 1) throw new Finding({ report: "the revision was not recorded" })
+      try expect("a review with no reviewer model", "no-model", { op: "spec-review", revision: 1, reviewer: "astra" })
+      break
+    }
+    case "shapes": {
+      // GitHub data a read must survive: deleted users, null bodies and assignees, out-of-range parents, task states.
+      fake.issues.push({
+        id: 50, node_id: "node-5", number: 5, title: "Running", body: null, state: "open", state_reason: null, user: null,
+        labels: [{ name: "vibelang:task" }, { name: "vibelang:running" }], comments: 0, created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z", closed_at: null, assignees: [null, { id: 8, login: "vibe-agent" }],
+        parent_issue_url: `${repo.api}/repos/o/r/issues/99999999999999999999`,
+      }, {
+        id: 60, node_id: "node-6", number: 6, title: "Done", body: "", state: "closed", state_reason: null, user: { id: 7, login: "fuzz" },
+        labels: [{ name: "vibelang:task" }], comments: 0, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+        closed_at: "2026-01-02T00:00:00Z", assignees: [{ id: 7, login: "fuzz" }],
+      })
+      fake.comments[1]!.push({ id: 901, node_id: "comment-901", body: null, user: null, created_at: "2026-01-03T00:00:00Z", updated_at: "2026-01-03T00:00:00Z", issue_url: `${repo.api}/repos/o/r/issues/1` })
+      fake.assignable.push({ id: 9, login: "zed" }, { id: 10, login: "abe" })
+      // A project object stored before specifications existed.
+      try promise(() => storage.put("gates/state", { seq: 0, items: [] }))
+      const read = try expect("a read of odd data", "ok", { op: "read", number: 1 })
+      if (read._tag !== "Success") break
+      const state = read.success
+      const running = state.items.find((item) => item.number === 5)
+      const done = state.items.find((item) => item.number === 6)
+      const notes = state.items.find((item) => item.number === 1)?.notes ?? []
+      if (running?.author !== "deleted" || running.body !== "" || running.task !== "Running" || running.assignee !== "vibe-agent" || running.parent !== 0) throw new Finding({ report: "an issue with deleted and null fields read wrongly" })
+      if (done?.task !== "Done") throw new Finding({ report: "a closed task did not read as done" })
+      if (!notes.some((note) => note.event && note.text === "unassigned vibe-agent") || !notes.some((note) => !note.event && note.author === "deleted" && note.text === "")) throw new Finding({ report: "the timeline or a deleted comment was lost" })
+      if ((state.assignees ?? []).map((choice) => choice.login).join(",") !== "vibe-agent,abe,fuzz,zed") throw new Finding({ report: "the agent is not the first assignee choice" })
+      if (state.specification?.revision !== 0) throw new Finding({ report: "a stored state without a specification read one" })
+      fake.endlessReviews = true
+      try expect("a proposal with endless reviews", "partial", { op: "read", number: 4 })
+      fake.endlessReviews = false
+      fake.endlessIssues = true
+      try expect("a connected read of endless issues", "partial", { op: "read" })
+      break
+    }
+    case "served": {
+      const accepted = try Ref.make(0)
+      for (const [index, reason] of Object.keys(SERVED).entries()) for (const outcome of ["failure", "success"] as const) {
+        const unwritten = (pick + index) % 2 === 0
+        const host: IssueHost.Shape = { perform: () => outcome === "success" ? succeed({ seq: 1, items: [] }) : fail(new IssueFailure({ reason, ...(unwritten ? { unwritten: true } : {}) })) }
+        const body = JSON.stringify({ ...base, op: pick % 4 < 2 ? "new" : "comment", number: 1, key: `served-${outcome}-${index}-${pick}` })
+        const web = try HttpClientRequest.toWeb(HttpClientRequest.bodyText(HttpClientRequest.post("https://fuzz.invalid/api/issues"), body))
+        try Ref.set(principal, [maintainer])
+        const response = try Effect.provideService(serveIssues("issues-served", storage, repo, () => Ref.update(accepted, (n) => n + 1)).pipe(
+          Effect.provideService(IssueAuthority, authority), Effect.provideService(IssueHost, host),
+          Effect.provideService(HttpClient.HttpClient, fakeClient(fake)), Effect.provide(WebCrypto.layer),
+        ), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
+        const text = try promise(() => HttpServerResponse.toWeb(response).text())
+        const answer = try Effect.try(() => JSON.parse(text) as { reason?: string; unwritten?: boolean })
+        if (outcome === "failure" && (response.status !== SERVED[reason] || answer.reason !== reason || (answer.unwritten === true) !== unwritten)) throw new Finding({ report: `${reason} was served as ${response.status}` })
+        if (outcome === "success" && (response.status !== 200 || (try Ref.get(accepted)) !== index + 1)) throw new Finding({ report: "an accepted write did not reach the person's callback once" })
+      }
+      break
+    }
+    case "demoted": {
+      // The principal changes between the flow's authorization and the project's own gate.
+      try expect("an acceptance by a person who became an agent", "forbidden", { op: "accept", number: 4 }, [maintainer, { ...maintainer, kind: "agent" }])
+      try expect("a revision by a person who signed out", "forbidden", { op: "spec-revise", revision: 0, text: "Spec." }, [maintainer, undefined])
+      try expect("a revision by a person who became a viewer", "forbidden", { op: "spec-revise", revision: 0, text: "Spec." }, [maintainer, { id: "7", login: "fuzz", role: "viewer" }])
+      break
+    }
+    case "refusals": {
+      // A broker refusal keeps its reason; a key conflict is the caller's invalid request.
+      for (const reason of REFUSALS) {
+        const failure = issueFailureOf({ _tag: "@smthrs/integrations/DelegationRefused", reason })
+        if (failure.reason !== (reason === "key_conflict" ? "invalid" : reason)) throw new Finding({ report: `${reason} became ${failure.reason}` })
+        if ((failure.code !== undefined) !== (reason === "unknown" || reason === "unavailable")) throw new Finding({ report: `${reason} carried the wrong code` })
+      }
+      break
+    }
+    case "draft": {
+      const drafted = try execute({ op: "draft", title: "A proposal", text: "Why", example: "e", prior: "p" }, [maintainer], true)
+      if (drafted._tag !== "Success" || drafted.success.draft?.title !== "A proposal") throw new Finding({ report: `a draft answered ${reasonOf(drafted)}` })
+      break
+    }
+  }
+  if (fake.writes !== writesBefore) throw new Finding({ report: "a maintainer with no delegate wrote to GitHub" })
+  return true
+})
+
+// Every execution runs every scenario on fresh storage, so one execution reaches them all whatever the host load.
+it.live("issues/steered-host", () => run("issues/steered-host", SteeredIssues, ({ pick, title }) => effect {
+  for (const scenario of ISSUE_SCENARIOS) try steeredIssuesScenario(scenario, pick, title)
+  return true
 }))

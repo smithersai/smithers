@@ -208,6 +208,7 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
       { event: "unlabeled", actor: null, label: { name: "old" } },
       { event: "assigned", actor: { id: 7, login: "fuzz" }, assignee: { id: 8, login: "vibe-agent" } },
       { event: "unassigned", assignee: null },
+      { event: "unassigned", actor: { id: 7, login: "fuzz" }, assignee: { id: 8, login: "vibe-agent" } },
       { event: "closed", actor: { id: 7, login: "fuzz" } },
       { event: "reopened", created_at: "2026-01-05T00:00:00Z" },
       { event: "renamed", actor: { id: 7, login: "fuzz" } },

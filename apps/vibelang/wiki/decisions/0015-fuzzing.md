@@ -193,8 +193,8 @@ says `MouseEvent`, so no `MouseEvent` field is read from the init; 21.0.4 has th
 `~/vl/vibelang-bugs/external-happy-dom-wheel-ctrlkey/` on nyc-01 (`node repro.mjs <happy-dom directory>`, exit 1 while
 the defect stands).
 
-Fuzz-only coverage of the lane's files, Vitest V8 with the suite's configuration, the targets that reach them at 5 s
-each (`fuzz:coverage`'s budget), Node and happy-dom, no browser phase:
+Fuzz-only coverage of the lane's files by `pnpm fuzz:coverage` (5 s per target, Node and happy-dom in
+`coverage/fuzz-unit`, merged with Chromium in `coverage/fuzz`), 2026-11-10 on nyc-01 at load 20 to 25:
 
 | File | Lines | Branches |
 | --- | ---: | ---: |
@@ -205,36 +205,43 @@ each (`fuzz:coverage`'s budget), Node and happy-dom, no browser phase:
 | `src/web/viewport.vibe` | 48/48 | 58/58 |
 | `worker/HistoryActions.vibe` | 33/33 | 19/19 |
 | `worker/Sequencer.vibe` | 118/118 | 62/62 |
-| `worker/Wiki.vibe` | 137/172 | 181/234 |
-| `worker/Objects.vibe` | 108/112 | 46/49 |
+| `worker/Objects.vibe` | 111/112 | 47/49 |
 | `worker/ActionRuns.vibe` | 114/117 | 152/168 |
-| `worker/Issues.vibe` | 216/290 | 297/460 |
+| `worker/Wiki.vibe` | 137/172 | 196/234 |
+| `worker/Issues.vibe` | 256/290 | 429/460 |
 
-Remeasured 2026-11-10 by `pnpm fuzz:coverage` at `b938c72d` (`coverage/fuzz-unit`, nyc-01 load 30 to 45). Wiki and
-Issues fell from the first measurement (153/154 and 205/217; 246/271 and 376/440): their journaled-proposal and read
-paths are reached by random sequences only when a 5 s budget affords enough executions, and this run afforded fewer.
-They need steered targets, as `objects/steered-host` did for Objects. The merged `coverage/fuzz` map also
-double-counted the web files: Vite's minified bundle folds `src/web/startupDecision.vibe`'s `if`s into ternaries, so
-Chromium's map has 18 other branches beside Node's 18, and Istanbul's `merge` kept both, reporting 33/36 for a file
-Node alone covers 18/18. Fixed 2026-11-10: `fuzz/coverage.vibe` merges with `test/support/coverageUnion.ts`, the
-benchmark gate's merge (0017) moved into one module. Node's structure is the gate for a file Node executed; Chromium
-credits a statement, function or branch arm only at the identical source range after source maps; a file only
-Chromium executed is gated on Chromium's structure. `test/fuzzCoverage.test.vibe` failed on the old merge. On the
-same two reports the gate's failures fell from 342 to 332. `pnpm test:coverage` has no cross-runtime merge.
+`Objects` is that run's map merged with a rerun of `objects/steered-host` after its `tour-behind-reply` scenario was
+added (108/112 and 46/49 before it). The merged map now reads the same as Node's for every file above. Wiki,
+Issues and Objects no longer depend on load:
+`wiki/steered-host`, `issues/steered-host` and `objects/steered-host` run every scenario in every execution on
+fresh storage, so the first
+execution of a 5 s budget reaches them, and the fuzzer varies only keys, titles and texts. The person is a connected
+maintainer with no `GitHubDelegate` (0165), so every validation runs on a real read and the first GitHub write answers
+`connect`. They check exact answers: Issues' title, missing, incomplete, empty, tree, closed, assignee and review
+refusals marked unwritten; `connect` telling the authority once per answer; an approval recorded on an accepted
+proposal and kept by the next read; resume of a failed, recovered, absent, malformed and completed write; the
+specification gate; a person demoted to an agent, a viewer or signed out mid-request; reads of deleted users, null
+bodies, out-of-range parents and task states; every HTTP failure status; broker refusal mapping. Wiki: recovery
+through `retryFrom` and its join, a changed payload under a used key, an unknown page on a fresh execution, `lost`,
+the host's defaults, `fork` and `install` statuses, broker refusals, and a connected person demoted before the
+first step. Against the same 5 s budget before them: Wiki 137/172 and 181/234, Issues 203/290 and 285/460.
 
 Not reached, with the reason; none is excluded:
 
+- The person's own GitHub writes need a `GitHubDelegate` (decision 0165, skipped): `Wiki` 45-46, 103-160 and 171,
+  `Issues` 142-159 and the steps after each first write (171-175, 184-194, 211-217, 228, 231, 242-243), and the
+  `selected` of a completed creation.
+- An engine or alarm failure that is not a typed refusal, which needs a failing engine store: `ActionRuns` 104-107
+  and 122, `Wiki` 163, 194 and 249, `Issues` 266 and 376. `engine.retryFrom === undefined` (`Wiki` 237, `Issues`
+  345) and a source run without a perform step (`Wiki` 244, `Issues` 352): the Cloudflare runtime always supplies both.
+- Invariant guards no input reaches: `Issues` 50 (`matchAll` always sets `index`), 96 (`verifiedVip` already proved
+  the review number), 311 (`?? ""` after a receipt is found by `approvedBy`), 369 (a run's own payload names its
+  flow, operation and key).
+- A resume while its write is still running (`Issues` 371, 373) needs two requests interleaved in one object.
 - `ActionRuns` 157: `admit` with no stored request. Admission runs from alarms that `ActionRuns.alarm` reaches only
   with a stored request, and nothing deletes it.
-- `ActionRuns` 104-107 and 122, `Issues` 348, `Wiki` 220: an engine or alarm failure that is not a typed refusal. It
-  needs the engine store to fail; a storage adapter whose SQL fails would reach it.
-- `Issues` 317 and `Wiki` 208: `engine.retryFrom === undefined`; the Cloudflare runtime supplies it in every target.
-- `Wiki` 134 and 136, `Issues` 152-174: journaled proposals that need the engine; `wiki/github-host-operations` and
-  `issues/github-host-operations` reach them at long budgets.
 - `Objects` 125: `finish` runs only after the last stop's reading hold elapses in real time, longer than the budget.
   `Objects` 148 and 150: a tour control needs a walkthrough while the object holds no intent, or a reply's.
-- `Objects` 297, remaining `Issues` read paths (50-page cursors, truncated
-  reviews): rare at 5 s; seen in longer runs.
 
 Campaign: seed 20261113, 240 s per target, 14 targets, 28.2 minutes wall on two workers, 19,491,917 executions in 13 receipts
 (`objects/conversation-host` hung and wrote none). Two targets failed and were fixed or recorded: `actions/run-answers` (oracle: a lone surrogate post is `invalid` by
