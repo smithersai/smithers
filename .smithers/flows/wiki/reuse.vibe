@@ -142,32 +142,32 @@ type ReuseOptions = Parameters<typeof operations>[0] & { readonly hostPolicy?: s
 export const reuseOperations = (options: ReuseOptions) => {
   const ops = operations(options)
   const policy = (reviewer: string) =>
-    Effect.gen(function*() {
+    effect {
       // Configured coding hosts fingerprint the code they actually execute. The
       // target repository need not vendor this implementation to describe itself.
       if (options.hostPolicy !== undefined) {
-        if (!options.hostPolicy.trim()) return yield* Effect.fail(fail("Host reviewer policy identity is empty"))
+        if (!options.hostPolicy.trim()) throw fail("Host reviewer policy identity is empty")
         return {
-          policyDigest: yield* digest(canonical({ version: 2, reviewer, hostPolicy: options.hostPolicy })),
+          policyDigest: try digest(canonical({ version: 2, reviewer, hostPolicy: options.hostPolicy })),
           policySources: []
         }
       }
-      const fs = options.fs ?? (yield* FileSystem.FileSystem), path = yield* Path.Path
-      const sources = yield* Effect.forEach(policySources, (file) =>
-        Effect.gen(function*() {
-          const text = yield* fs.readFileString(path.resolve(options.root, file))
+      const fs = options.fs ?? (try FileSystem.FileSystem), path = try Path.Path
+      const sources = try Effect.forEach(policySources, (file) =>
+        effect {
+          const text = try fs.readFileString(path.resolve(options.root, file))
           if (new TextEncoder().encode(text).length > 512_000) {
-            return yield* Effect.fail(fail(`Review policy source is too large: ${file}`))
+            throw fail(`Review policy source is too large: ${file}`)
           }
-          return { path: file, digest: yield* digest(text) }
-        }))
-      return { policyDigest: yield* digest(canonical({ version: 1, reviewer, sources })), policySources: sources }
-    })
+          return { path: file, digest: try digest(text) }
+        })
+      return { policyDigest: try digest(canonical({ version: 1, reviewer, sources })), policySources: sources }
+    }
   const load = (
     { priorRunId, pool, reviewer }: { priorRunId?: string | undefined; pool?: Pool | undefined; reviewer: string }
   ) =>
-    guarded(Effect.gen(function*() {
-      const current = yield* policy(reviewer)
+    guarded(effect {
+      const current = try policy(reviewer)
       if (pool !== undefined) {
         // Select still recaptures every page and revalidates each citation; a
         // pool reviewed under another policy or seat is simply not reused.
@@ -176,23 +176,23 @@ export const reuseOperations = (options: ReuseOptions) => {
         return { ...current, candidates: compatible ? pool.candidates : {} }
       }
       if (priorRunId === undefined) {
-        return yield* Effect.fail(fail("Reusing reviews needs a prior run or a carried pool"))
+        throw fail("Reusing reviews needs a prior run or a carried pool")
       }
-      return yield* loadRun(priorRunId, reviewer, current)
-    }))
+      return try loadRun(priorRunId, reviewer, current)
+    })
   const loadRun = (priorRunId: string, reviewer: string, current: Omit<Pool, "candidates">) =>
-    Effect.gen(function*() {
+    effect {
       const empty: Pool = { ...current, candidates: {} }
-      const runStore = yield* RunStore.RunStore
-      const run = yield* runStore.get(priorRunId)
+      const runStore = try RunStore.RunStore
+      const run = try runStore.get(priorRunId)
       if (!RunStore.isTerminalRunStatus(run.status)) {
-        return yield* Effect.fail(fail("Only a terminal run can supply recorded reviews"))
+        throw fail("Only a terminal run can supply recorded reviews")
       }
-      const journal = yield* Journal.Journal, store = yield* AttemptStore.AttemptStore
+      const journal = try Journal.Journal, store = try AttemptStore.AttemptStore
       const ids = new Map<string, AttemptStore.AttemptId>()
       let after: typeof JournalEvent.Seq.Type | undefined
       for (let count = 0; count < 4096;) {
-        const page = yield* journal.entries({
+        const page = try journal.entries({
           runId: JournalEvent.RunId.make(priorRunId),
           ...(after === undefined ? {} : { after }),
           limit: 512
@@ -200,9 +200,9 @@ export const reuseOperations = (options: ReuseOptions) => {
         count += page.entries.length
         for (const entry of page.entries) {
           if (entry.eventType === EngineEvent.attemptEventType) {
-            const parsed = yield* Schema.decodeUnknownEffect(EngineEvent.AttemptPayload)(entry.payload)
+            const parsed = try Schema.decodeUnknownEffect(EngineEvent.AttemptPayload)(entry.payload)
             if (parsed.executionId !== priorRunId) {
-              return yield* Effect.fail(fail("Recorded attempt belongs to another execution"))
+              throw fail("Recorded attempt belongs to another execution")
             }
             if (parsed.lifecycle.state === "succeeded") {
               const { executionId: runId, stepKeyDigest, attempt } = parsed
@@ -224,10 +224,10 @@ export const reuseOperations = (options: ReuseOptions) => {
         if (!page.hasMore) break
         after = page.entries.at(-1)?.seq
         if (after === undefined || count >= 4096) {
-          return yield* Effect.fail(fail("Prior review journal exceeds the bounded lookup; select a smaller run"))
+          throw fail("Prior review journal exceeds the bounded lookup; select a smaller run")
         }
       }
-      const rows = yield* Effect.forEach([...ids.values()], (id) => store.get(id))
+      const rows = try Effect.forEach([...ids.values()], (id) => store.get(id))
       const captured = new Map<string, string>()
       const candidates: Record<string, typeof Candidate.Type> = {}
       for (const row of rows) {
@@ -243,7 +243,7 @@ export const reuseOperations = (options: ReuseOptions) => {
           for (const source of evidence.sources) {
             if (!current.policySources.some((policySource) => policySource.path === source.path)) continue
             if (
-              (yield* digest(source.text)) !== source.digest ||
+              (try digest(source.text)) !== source.digest ||
               (captured.has(source.path) && captured.get(source.path) !== source.digest)
             ) return empty
             captured.set(source.path, source.digest)
@@ -256,16 +256,18 @@ export const reuseOperations = (options: ReuseOptions) => {
         // The legacy assessor receipt is reusable only when its embedded evidence
         // is internally intact; the destination also recaptures and reassesses it.
         if (
-          (yield* digest(old.value.evidence.markdown)) !== old.value.evidence.contentDigest ||
-          (yield* digest(
-              canonical({
-                policy: 2,
-                spec: old.value.evidence.spec,
-                sources: old.value.evidence.sources.map(({ path, digest }) => ({ path, digest }))
-              })
-            )) !== old.value.evidence.inputDigest ||
-          !(yield* Effect.forEach(old.value.evidence.sources, (source) =>
-            digest(source.text).pipe(Effect.map((hash) => hash === source.digest)))).every(Boolean)
+          (try digest(old.value.evidence.markdown)) !== old.value.evidence.contentDigest ||
+          (try digest(
+            canonical({
+              policy: 2,
+              spec: old.value.evidence.spec,
+              sources: old.value.evidence.sources.map(({ path, digest }) => ({ path, digest }))
+            })
+          )) !== old.value.evidence.inputDigest ||
+          !(try Effect.forEach(
+            old.value.evidence.sources,
+            (source) => digest(source.text).pipe(Effect.map((hash) => hash === source.digest))
+          )).every(Boolean)
         ) {
           continue
         }
@@ -280,7 +282,7 @@ export const reuseOperations = (options: ReuseOptions) => {
         candidates[id] = {
           inputDigest: old.value.evidence.inputDigest,
           contentDigest: old.value.evidence.contentDigest,
-          sectionsDigest: yield* digest(canonical(old.value.evidence.sections)),
+          sectionsDigest: try digest(canonical(old.value.evidence.sections)),
           review: old.value.review,
           reviewer,
           attempt: { runId: priorRunId, stepKeyDigest: row.value.stepKeyDigest, attempt: row.value.attempt },
@@ -288,15 +290,13 @@ export const reuseOperations = (options: ReuseOptions) => {
         }
       }
       if (
-        current.policySources.some((source) =>
-          captured.get(source.path) !== source.digest
-        )
+        current.policySources.some((source) => captured.get(source.path) !== source.digest)
       ) return empty
       return { ...current, candidates }
-    })
+    }
   const select = ({ evidence, pool, reviewer }: { evidence: Evidence; pool: Pool; reviewer: string }) =>
-    guarded(Effect.gen(function*() {
-      const instance = yield* FlowRuntime.FlowInstance
+    guarded(effect {
+      const instance = try FlowRuntime.FlowInstance
       const fresh = (reason: string): typeof Selection.Type => ({
         review: null,
         reason,
@@ -313,10 +313,10 @@ export const reuseOperations = (options: ReuseOptions) => {
         candidate.inputDigest !== evidence.inputDigest || candidate.contentDigest !== evidence.contentDigest ||
         candidate.reviewer !== reviewer
       ) return fresh("page source, prose or reviewer changed")
-      if (candidate.sectionsDigest !== (yield* digest(canonical(evidence.sections)))) {
+      if (candidate.sectionsDigest !== (try digest(canonical(evidence.sections)))) {
         return fresh("review section boundaries changed")
       }
-      const assessment = yield* Effect.result(ops.assess({ evidence, review: candidate.review, reviewer }))
+      const assessment = try Effect.result(ops.assess({ evidence, review: candidate.review, reviewer }))
       if (assessment._tag === "Failure") return fresh("recorded citations fail current validation")
       return {
         review: candidate.review,
@@ -328,7 +328,7 @@ export const reuseOperations = (options: ReuseOptions) => {
           reusedFrom: candidate.attempt
         }
       }
-    }))
+    })
   return {
     policy,
     load,
@@ -338,24 +338,24 @@ export const reuseOperations = (options: ReuseOptions) => {
       const ordered = Object.keys(pages).sort((a, b) => Number(a.slice(5)) - Number(b.slice(5))).map((key) =>
         pages[key]!
       )
-      return guarded(Effect.gen(function*() {
+      return guarded(effect {
         // The policy is identical for every page reviewed through one seat.
         // Capture it once per reviewer inside this action; the writer below
         // still independently recaptures every declared source before output.
         const policies = new Map<string, string>()
         for (const page of ordered) {
           const reviewer = page.reviewer ?? ""
-          if (!policies.has(reviewer)) policies.set(reviewer, (yield* policy(reviewer)).policyDigest)
+          if (!policies.has(reviewer)) policies.set(reviewer, (try policy(reviewer)).policyDigest)
           if (policies.get(reviewer) !== page.provenance.policyDigest) {
-            return yield* Effect.fail(fail("Reviewer policy changed during review"))
+            throw fail("Reviewer policy changed during review")
           }
         }
-        return yield* ops.write(
+        return try ops.write(
           ordered,
           "verified",
           Object.fromEntries(ordered.map((page) => [page.evidence.spec.id, page.provenance]))
         )
-      }))
+      })
     }
   }
 }

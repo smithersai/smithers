@@ -14,7 +14,7 @@ const data = [
     ".smithers/flows/wiki/operations.ts",
     ".smithers/flows/wiki/main.ts",
     ".smithers/flows/wiki/runtime.ts",
-    ".smithers/flows/wiki/reuse.ts",
+    ".smithers/flows/wiki/reuse.vibe",
     ".smithers/flows/wiki/jev-citations.vibe",
     ".smithers/flows/repository/jev-checks.vibe",
     ".smithers/flows/coding/schema.ts",
@@ -94,7 +94,7 @@ const securityReview = S.SecurityReview({
         "loadRun() reading attempts from another execution or a non-terminal run, or picking between two successful receipts for one page.",
         "select() reusing a review when inputDigest, contentDigest, sections, or reviewer changed, or when assess() fails."
       ],
-      paths: ["reuse.ts"]
+      paths: ["reuse.vibe"]
     },
     {
       id: "verification-status-integrity",
@@ -107,7 +107,7 @@ const securityReview = S.SecurityReview({
         "check() accepting a verified pointer without a valid seal (HMAC of artifactDigest under the host key beside, never inside, the output), or write() placing that key where the output writer can read it.",
         "The reviewer label in main.ts taken from SMITHERS_OPENAI_AUTH so a different provider route can reuse a prior approval."
       ],
-      paths: ["operations.ts", "main.ts", "reuse.ts"]
+      paths: ["operations.ts", "main.ts", "reuse.vibe"]
     }
   ]
 })

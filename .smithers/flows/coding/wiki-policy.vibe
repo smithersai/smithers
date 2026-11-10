@@ -2,7 +2,7 @@
  * Fingerprint the review task the running host asks the reviewer to perform,
  * independently of target-repo copies and of the rest of the host build.
  */
-import { policySources } from "../wiki/reuse.ts"
+import { policySources } from "../wiki/reuse.vibe"
 import { maximumBytes, wikiPolicyIdentity } from "./wiki-policy-identity.ts"
 import { policySourcePath } from "./wiki-policy.platform.ts"
 import { decodeStrict } from "./wiki-policy.trusted.ts"

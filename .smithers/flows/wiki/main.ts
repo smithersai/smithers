@@ -71,7 +71,7 @@ if (values.help) {
         import("./flow.ts"),
         import("./runtime.ts")
       ])
-    const incremental = values["reuse-run"] ? await import("./reuse.ts") : undefined
+    const incremental = values["reuse-run"] ? await import("./reuse.vibe") : undefined
     if (incremental && !values.verified) {
       throw new Error("--reuse-run requires --verified and the existing database containing that terminal run")
     }

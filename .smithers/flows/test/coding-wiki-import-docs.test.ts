@@ -25,7 +25,7 @@ import { withDependencyPages } from "../coding/wiki-refresh.vibe"
 import { wikiRefreshRegistration } from "../coding/wiki-route.vibe"
 import CodingWiki from "../coding/wiki/flow.ts"
 import { directory, maxDocBytes } from "../memory/deps.vibe"
-import { Pool } from "../wiki/reuse.ts"
+import { Pool } from "../wiki/reuse.vibe"
 import { WikiError } from "../wiki/schema.vibe"
 
 const tip = "a".repeat(40)

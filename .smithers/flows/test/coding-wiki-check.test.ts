@@ -22,7 +22,7 @@ import { type Check, type Implementation, Receipt, receiptMatches, type Revision
 import { wikiCheckDelegate, wikiCheckLayers, wikiCheckPolicy } from "../coding/wiki-check.ts"
 import { bindWikiRegistry } from "../coding/wiki-registry.vibe"
 import { RunCheck } from "../coding/workflow.vibe"
-import { reuseLayers } from "../wiki/reuse.ts"
+import { reuseLayers } from "../wiki/reuse.vibe"
 import { actionLayers } from "../wiki/runtime.ts"
 import type { PageSpec } from "../wiki/schema.vibe"
 import { ReviewPage } from "../wiki/workflow.vibe"
