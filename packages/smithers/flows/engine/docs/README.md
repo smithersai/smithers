@@ -156,3 +156,8 @@ if you want the whole system rather than the runtime.
   things most programs do next.
 - [Troubleshooting](./troubleshooting.md): every refusal and warning, with the
   fix.
+
+A persisted action outcome rejected by this build's codec fails immediately with
+`JournalDecode.JournalDecodeError` from `@smthrs/flow`. The error and diagnostic contain
+only the declaration's step tag and injected object/code identity. The counter is
+`smithers_journal_decode_failures` by `stepTag` and `boundary`; no recorded outcome is logged.

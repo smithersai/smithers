@@ -139,3 +139,8 @@ export * as StepIdentity from "./Action/StepIdentity.ts"
  * @since 0.1.0
  */
 export * as WaitFor from "./WaitFor.ts"
+
+/** Persisted-step decode failures and safe host identity.
+ * @since 1.0.0
+ */
+export * as JournalDecode from "./JournalDecode.ts"

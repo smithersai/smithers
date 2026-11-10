@@ -379,7 +379,7 @@ for (const target of Postgres.targets) {
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(schema))))
     })
 
-    it.live("a child's alarm costs at most 193 round trips: a lone read of an engine table is one", () => {
+    it.live("a child's alarm costs at most 195 round trips, including both unknown-run guards", () => {
       const schema = Postgres.freshSchema()
       return Effect.gen(function*() {
         const scope = yield* Scope.make()
@@ -393,10 +393,14 @@ for (const target of Postgres.targets) {
         yield* ExecutionObject.start(objects.object(parentId).storage, intent, Effect.void)
         yield* objects.alarm(parentId)
         const childId = [...objects.objects.keys()].find((id) => id !== parentId)!
+        const from = trace.statements.length
         const before = trace.roundTrips()
         yield* objects.alarm(childId)
-        // 276 before a lone read named its schema and consecutive savepoints shared one (2026-11-03).
-        expect(trace.roundTrips() - before).toBeLessThanOrEqual(193)
+        // 276 before schema-qualified lone reads and shared savepoints (2026-11-03). The unknown-run
+        // fix 53466ad8 adds two required existence guards before deferred completion: 193 + 2.
+        expect(trace.statements.slice(from).filter(({ sql }) => /^SELECT 1 FROM flows_runs WHERE/.test(sql)))
+          .toHaveLength(2)
+        expect(trace.roundTrips() - before).toBeLessThanOrEqual(195)
         yield* Scope.close(scope, Exit.void)
       }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(schema))))
     })

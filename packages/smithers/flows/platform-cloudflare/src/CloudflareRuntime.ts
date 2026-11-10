@@ -19,7 +19,7 @@
  */
 
 import { Retention as EngineRetention, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
-import { RunMetrics } from "@smthrs/flow"
+import { JournalDecode, RunMetrics } from "@smthrs/flow"
 import { Runtime } from "@smthrs/flows"
 import { Ownership } from "@smthrs/run-store"
 import * as Clock from "effect/Clock"
@@ -47,6 +47,8 @@ export interface Options {
   readonly hostId: string
   /** The one execution this runtime drives. Every other run is refused. */
   readonly executionId: string
+  /** Deployed source revision, used only in safe decode diagnostics. */
+  readonly codeVersion?: string | undefined
   /** Persisted intent's flow tag; avoids recovery queries for unrelated registrations. */
   readonly flow?: string | undefined
   /**
@@ -190,6 +192,13 @@ const runtime = <Registered, RegistrationError, RegistrationRequirements>(
     registerFlows
   ).pipe(
     Layer.provide(CloudflareHost.layer),
+    Layer.provide(Layer.effect(
+      JournalDecode.Identity,
+      Effect.map(JournalDecode.Identity, (identity) => ({
+        objectId: options.hostId,
+        codeVersion: options.codeVersion ?? identity.codeVersion
+      }))
+    )),
     // Workers Logs are this host's telemetry: the usage lines (`flow.run.*`) go out at Info.
     Layer.provide(RunMetrics.layerInfoLines)
   )

@@ -1,0 +1,51 @@
+/** Safe diagnostics for persisted data that a different build cannot decode.
+ * @since 1.0.0
+ */
+
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import * as Metric from "effect/Metric"
+import * as Schema from "effect/Schema"
+
+/** Host identity captured by the engine, never read from journal payloads.
+ * @category services
+ * @since 1.0.0
+ */
+export const Identity = Context.Reference<{
+  readonly objectId: string
+  readonly codeVersion: string
+}>("@smthrs/flow/JournalDecode/Identity", {
+  defaultValue: () => ({ objectId: "unknown", codeVersion: "unknown" })
+})
+
+/** A stored step cannot be read by this build. Contains no stored value or schema message.
+ * @category errors
+ * @since 1.0.0
+ */
+export class JournalDecodeError extends Schema.TaggedError<JournalDecodeError>()("JournalDecodeError", {
+  stepTag: Schema.String,
+  objectId: Schema.String,
+  codeVersion: Schema.String
+}) {}
+
+/** Decode refusals, attributed only to a declaration's fixed step tag.
+ * @category metrics
+ * @since 1.0.0
+ */
+export const failures = Metric.counter("smithers_journal_decode_failures", { incremental: true })
+
+/** Reports a decode refusal without ever inspecting or rendering the stored payload.
+ * @category diagnostics
+ * @since 1.0.0
+ */
+export const report = (stepTag: string, boundary: "outcome" | "payload" | "state" = "outcome") =>
+  Effect.gen(function*() {
+    const identity = yield* Identity
+    const fields = { stepTag, ...identity }
+    yield* Metric.update(Metric.withAttributes(failures, { stepTag, boundary }), 1)
+    yield* Effect.annotateCurrentSpan(fields)
+    yield* Effect.logError("smithers.journal.decode.failed").pipe(
+      Effect.annotateLogs({ ...fields, boundary, action: stepTag })
+    )
+    return new JournalDecodeError(fields)
+  }).pipe(Effect.withSpan("smithers.journal.decode.failed"))

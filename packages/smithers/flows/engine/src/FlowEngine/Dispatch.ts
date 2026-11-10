@@ -7,7 +7,7 @@
  * @since 0.1.0
  */
 
-import { Action, Fault, Flow, FlowRuntime, RetryPolicy, StepIdentity } from "@smthrs/flow"
+import { Action, Fault, Flow, FlowRuntime, JournalDecode, RetryPolicy, StepIdentity } from "@smthrs/flow"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
@@ -18,7 +18,6 @@ import * as Predicate from "effect/Predicate"
 import * as Result from "effect/Result"
 import * as RpcSerialization from "effect/rpc/RpcSerialization"
 import * as Schema from "effect/Schema"
-import { renderDiagnostic } from "../internal/Diagnostic.ts"
 import { toJsonExit } from "../internal/JsonExit.ts"
 import { actionKey, ActionKeyEncoding, keyEncodings, ordinalScope, uncanonicalKey } from "./ActionKey.ts"
 import type { ActionExecuteOptions, Encoded } from "./Encoded.ts"
@@ -408,14 +407,8 @@ const decodeOutcome = <Success extends Schema.Constraint, Error extends Schema.C
           })))
           : decoded
       ),
-      // `orDie` alone reports only the schema mismatch, never the failure that
-      // actually occurred. Name the action and its recorded exit.
-      Effect.tapError(() =>
-        Effect.annotateLogs(
-          Effect.logError("A recorded action outcome does not match the action's declared schemas"),
-          { action: action.name, exit: renderDiagnostic(toJsonExit(recorded)) }
-        )
-      )
+      // Decode errors can quote private journal data. Emit only the declaration's tag and injected host identity.
+      Effect.catch(() => Effect.flatMap(JournalDecode.report(action.name), Effect.fail))
     )
   )
 }
