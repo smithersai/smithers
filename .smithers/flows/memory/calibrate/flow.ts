@@ -6,7 +6,7 @@ import * as Memory from "@smthrs/agent/Memory"
 import { Action, Flow } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
 import { isAbsolute, relative, resolve, sep } from "node:path"
-import * as Calibrate from "../calibrate.ts"
+import * as Calibrate from "../calibrate.vibe"
 import { LandedFailed } from "../landed.ts"
 import { ThresholdsInvalid } from "../thresholds.vibe"
 

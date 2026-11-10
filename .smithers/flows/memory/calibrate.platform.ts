@@ -1,25 +1,23 @@
-// The platform code of calibrate.vibe: the journal directory on Node's filesystem.
+/** The platform code of calibrate.vibe, which a .vibe file does not use directly (EK4402). */
 import { readdir, readFile } from "node:fs/promises"
-import { basename, join } from "node:path"
+import * as NodePath from "node:path"
 
-/** Every entry under `dir`, subdirectories included, relative to `dir`. */
-export const listJournalEntries = (dir: string): Promise<ReadonlyArray<string>> => readdir(dir, { recursive: true })
+/** Every path under `dir`, subdirectories included, relative to `dir`. */
+export const listRecursive = (dir: string): Promise<Array<string>> => readdir(dir, { recursive: true })
 
-/** One journal file's text. */
-export const readJournal = (path: string): Promise<string> => readFile(path, "utf8")
-
-/**
- * The file name of a journal entry.
- * @throws {never}
- */
-export function journalName(entry: string): string {
-  return basename(entry)
-}
+/** A file's UTF-8 text. */
+export const readText = (path: string): Promise<string> => readFile(path, "utf8")
 
 /**
- * The path of `entry` under `dir`.
+ * The host's path join.
+ *
  * @throws {never}
  */
-export function journalPath(dir: string, entry: string): string {
-  return join(dir, entry)
-}
+export const join = (...parts: Array<string>): string => NodePath.join(...parts)
+
+/**
+ * The host's path basename.
+ *
+ * @throws {never}
+ */
+export const basename = (path: string): string => NodePath.basename(path)
