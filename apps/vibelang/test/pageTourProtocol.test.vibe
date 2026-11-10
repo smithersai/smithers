@@ -5,7 +5,7 @@ import { newClient } from "../src/core/conversation.vibe"
 import { docsPage, replyIdOf, touring } from "../src/core/flows.vibe"
 import { sameOriginRequest, sessionCookie, validTourStep, validWriteLength, writeStatus } from "../src/core/protocolDecision.vibe"
 import { promptForm, speaker } from "../src/core/sequenceDecision.vibe"
-import { docsPath, sameReply } from "../src/core/tourDecision.vibe"
+import { docsPath } from "../src/core/tourDecision.vibe"
 import { clipQuery, pageCount, pageStart } from "../src/history/pageDecision.vibe"
 import { epicPageOf, matchesOf, MAX_QUERY, PAGE } from "../src/history/pages.vibe"
 import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
@@ -82,7 +82,6 @@ describe("the tour and the reply id", () => {
   it("names no tour while none runs, and one reply per post", () => {
     expect(touring(newClient.conversation)).toBe("")
     expect([replyIdOf("m7"), replyIdOf(""), replyIdOf("m")]).toEqual(["r7", "r", "r"])
-    expect([sameReply("m7", "m7"), sameReply("m7", "m8")]).toEqual([true, false])
   })
 })
 

@@ -92,7 +92,7 @@ as an acceptance is.
 
 ## Flows and their least roles
 
-Roles come from `src/history/roles.vibe`: each flow reads its least role from `HISTORY_ROLES` and its caller from the
+Roles come from `src/history/roles.vibe`: each flow reads its least role from the proved `leastRole` and its caller from the
 `Caller` service, the one place to swap for decision 0019's policy interface when it lands. A refused caller gets
 `forbidden`; the history is unchanged.
 

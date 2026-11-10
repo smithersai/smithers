@@ -135,17 +135,6 @@ export function paletteChange(open: boolean): PaletteChange {
   return { palette: open, focus: open ? "palette" : "previous" }
 }
 
-/** Learn more opens or resumes the stream, restarting from the correct conversation cursor. */
-export interface StreamChange { readonly opening: boolean; readonly epoch: number; readonly from: number }
-//@ verify
-//@ requires 0 <= epoch && epoch < 9007199254740991
-//@ ensures \result.opening == (fresh || stream != "open")
-//@ ensures \result.epoch == (\result.opening ? epoch + 1 : epoch)
-//@ ensures \result.from == (fresh ? 0 : \result.opening ? seq : from)
-export function tourStream(fresh: boolean, stream: string, epoch: number, seq: number, from: number): StreamChange {
-  const opening = fresh || stream !== "open"
-  return { opening, epoch: opening ? epoch + 1 : epoch, from: fresh ? 0 : opening ? seq : from }
-}
 
 /** A terminal event is announced once, only when it advances this copy. */
 //@ verify
@@ -191,12 +180,6 @@ export function showSplash(state: ScreenState): ScreenState {
   return { surface: "splash", palette: false, tour: state.tour, tourError: state.tourError, docs: state.docs, following: state.following }
 }
 
-//@ verify
-//@ ensures !\result.tour && \result.docs == "pane"
-//@ ensures \result.surface == state.surface && \result.palette == state.palette && \result.tourError == state.tourError && \result.following == state.following
-export function endScreenTour(state: ScreenState): ScreenState {
-  return { surface: state.surface, palette: state.palette, tour: false, tourError: state.tourError, docs: "pane", following: state.following }
-}
 
 //@ verify
 //@ ensures \result.palette == open
@@ -214,13 +197,6 @@ export function minimizeScreen(state: ScreenState, entries: number, pending: num
   return { surface: "chat", palette: state.palette, tour: state.tour, tourError: state.tourError, docs: state.docs, following: state.following }
 }
 
-//@ verify
-//@ ensures state.tour ==> \result == state
-//@ ensures !state.tour ==> \result.surface == "chat" && !\result.palette && \result.tour && \result.tourError == "" && \result.docs == "max" && \result.following
-export function beginScreenTour(state: ScreenState): ScreenState {
-  if (state.tour) return state
-  return { surface: "chat", palette: false, tour: true, tourError: "", docs: "max", following: true }
-}
 
 //@ verify
 //@ ensures \result.tour == failedTourKeepsControl(reason, touring)

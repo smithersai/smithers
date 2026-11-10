@@ -18,10 +18,6 @@ LEMMA_STEPS = {
         ('lemma restartsBefore_ensures(log: seq<Event>, reply: string, end: int)',
          '  if end > 0 {\n    restartsBefore_ensures(log, reply, end - 1);\n  }\n'),
     ],
-    'src/core/tourDecision.vibe': [
-        ('lemma sameReply_ensures(a: string, b: string)',
-         '  assert a[0] == b[0];\n  assert a == [a[0]] + a[1..];\n  assert b == [b[0]] + b[1..];\n  if replyIdOf(a) == replyIdOf(b) {\n    assert replyIdOf(a)[1..] == a[1..];\n    assert replyIdOf(b)[1..] == b[1..];\n  }\n'),
-    ],
     'src/core/sandboxDecision.vibe': [
         ('lemma runningCountPrefix_ensures(sandboxes: seq<SandboxEntry>, end: int)',
          '  if end > 0 {\n    runningCountPrefix_ensures(sandboxes, end - 1);\n  }\n'),

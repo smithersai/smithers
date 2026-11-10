@@ -14,7 +14,8 @@
 // - A file executed in both keeps its Vitest structure. Cross-runtime hits require identical complete source
 //   ranges (and ordered arm ranges for branches). An enclosing statement or another same-line function cannot
 //   establish execution. Different compiler shapes remain uncovered instead of being guessed (0017).
-// - Lines no benchmark should run are excluded only with their reason recorded here and in decision 0017.
+// - Nothing is excluded: production code the product never runs is deleted, and code only proof contracts call
+//   stays in the denominator, uncovered, until VibeLang has a specification-only function form (decision 0017).
 import { createRequire } from "node:module"
 import { existsSync, readdirSync, readFileSync, mkdirSync, writeFileSync } from "node:fs"
 import { dirname, isAbsolute, resolve } from "node:path"
@@ -46,35 +47,6 @@ const sourceFile = (file: string) =>
   file.startsWith(`${appRoot}/`) && /\.(vibe|js)$/.test(file) &&
   /\/(src|worker|infra|scripts|dist-factory|dist-scripts|dist-script-tests|dist\/assets)\//.test(file) &&
   !/\/dist\/assets\/rolldown-runtime-[^/]*\.js$/.test(file)
-
-// Exclusions: lines no benchmark should run, each with its reason, mirrored in decision 0017.
-const exclusions: ReadonlyArray<{ file: string; lines: ReadonlyArray<number>; reason: string }> = [
-  {
-    file: "scripts/mythical-seed.vibe",
-    lines: [103],
-    reason: "The Refused guard fires only if seedOf violates its contract: intentsOf guarantees decide accepts every seeded intent, and decideWithinCapacity refuses only at 2^53 events. Unreachable from real input.",
-  },
-  {
-    file: "src/core/flowDecision.vibe",
-    lines: [75, 76, 87, 88, 89, 90, 95, 96, 105, 106, 107, 114, 115, 116, 117, 118, 199, 200, 201, 202, 203, 204, 267, 268, 269, 270, 271],
-    reason: "Lines 75-118: the post continuation model (begin, record, canDispatch, dispatch, lawful) has no runtime caller; flows.vibe and the workers never call it, so its proofs (0018) check the model, not the product. Lines 199-204 and 267-271: replyLawful and tourLawful are contract predicates that only //@ ensures clauses name. No runtime code calls any of them.",
-  },
-  {
-    file: "src/core/conversation.vibe",
-    lines: [817, 818, 819, 820, 821, 822, 823],
-    reason: "issueAncestorAt is a specification function: only //@ contracts and loop invariants name it, and the proofs (0018) check it. No runtime code calls it.",
-  },
-  {
-    file: "src/core/tourDecision.vibe",
-    lines: [62, 63],
-    reason: "sameReply has no caller outside its own //@ contract; the proofs (0018) check it. No runtime code calls it.",
-  },
-  {
-    file: "src/web/issueDecision.vibe",
-    lines: [207, 208],
-    reason: "issueKnownAction is a contract predicate: only issueAction's //@ ensures names it, and the proofs (0018) check it. No runtime code calls it.",
-  },
-]
 
 const workerdDir = "coverage/bench/workerd-raw"
 
@@ -141,26 +113,6 @@ async function chromiumEvidence(): Promise<CoverageMap> {
   return merged
 }
 
-function compact(json: FileCoverageJSON): FileCoverageJSON {
-  const statementIds = Object.keys(json.statementMap).sort((x, y) => Number(x) - Number(y))
-  const fnIds = Object.keys(json.fnMap).sort((x, y) => Number(x) - Number(y))
-  const branchIds = Object.keys(json.branchMap).sort((x, y) => Number(x) - Number(y))
-  const out: FileCoverageJSON = { ...json, statementMap: {}, fnMap: {}, branchMap: {}, s: {}, f: {}, b: {} }
-  statementIds.forEach((id, index) => { out.statementMap[index] = json.statementMap[id]!; out.s[index] = json.s[id] ?? 0 })
-  fnIds.forEach((id, index) => { out.fnMap[index] = json.fnMap[id]!; out.f[index] = json.f[id] ?? 0 })
-  branchIds.forEach((id, index) => { out.branchMap[index] = json.branchMap[id]!; out.b[index] = json.b[id] ?? [] })
-  return out
-}
-
-function excludeLines(json: FileCoverageJSON, lines: ReadonlyArray<number>): FileCoverageJSON {
-  const excluded = new Set(lines)
-  const kept: FileCoverageJSON = JSON.parse(JSON.stringify(json))
-  for (const id of Object.keys(kept.statementMap)) if (excluded.has(kept.statementMap[id]!.start.line)) { delete kept.statementMap[id]; delete kept.s[id] }
-  for (const id of Object.keys(kept.fnMap)) if (excluded.has(kept.fnMap[id]!.decl.start.line)) { delete kept.fnMap[id]; delete kept.f[id] }
-  for (const id of Object.keys(kept.branchMap)) if (excluded.has(kept.branchMap[id]!.loc.start.line)) { delete kept.branchMap[id]; delete kept.b[id] }
-  return compact(kept)
-}
-
 function uncoveredLines(json: FileCoverageJSON): Array<number> {
   const lines = new Map<number, number>()
   for (const [id, loc] of Object.entries(json.statementMap)) {
@@ -186,10 +138,8 @@ async function main() {
   const failures: Array<string> = []
   const rows: Array<{ file: string; lines: string; statements: string; functions: string; branches: string; uncovered: string }> = []
   const finalMap: Record<string, FileCoverageJSON> = {}
-  for (const [file, original] of Object.entries(combined).sort()) {
+  for (const [file, json] of Object.entries(combined).sort()) {
     const relative = file.slice(appRoot.length + 1)
-    const exclusion = exclusions.find((candidate) => candidate.file === relative)
-    const json = exclusion === undefined ? original : excludeLines(original, exclusion.lines)
     finalMap[file] = json
     const { total, covered } = metrics(json)
     const percent = (part: number, whole: number) => whole === 0 ? "100" : String(Math.round((part / whole) * 10000) / 100).replace(/\.0+$/, "")

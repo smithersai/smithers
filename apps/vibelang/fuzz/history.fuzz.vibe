@@ -2,9 +2,11 @@ import { it } from "@effect/vitest"
 import * as History from "../src/history/mythical.vibe"
 import * as Codec from "../src/history/schemas.vibe"
 import * as Seed from "../src/history/seed.vibe"
-import { ROLES, HISTORY_ROLES, PEOPLE_ONLY, may, atLeast } from "../src/history/roles.vibe"
+import { ROLES, ACTIONS, may, atLeast } from "../src/history/roles.vibe"
+import { leastRole, peopleOnly } from "../src/history/flowMachine.vibe"
 import { make, memoryStore, trailerOf } from "../src/history/Sequencer.vibe"
 import { run, Steps, TextOrBoundary, Int, same } from "./run.vibe"
+import { seedFrom } from "../test/support/seedFrom.vibe"
 
 function invariant(h: History.History): boolean {
   return h.seq >= 0 && new Set(h.epics.map((e) => e.id)).size === h.epics.length && new Set(h.commits.map((c) => c.id)).size === h.commits.length && new Set(h.real.map((r) => r.sha)).size === h.real.length && h.commits.every((c) => h.epics.some((e) => e.id === c.epic) && h.commits.filter((other) => other.epic === c.epic && other.rank === c.rank).length === 1) && h.real.every((r) => h.commits.some((c) => c.id === r.mythical)) && h.main === (h.real.at(-1)?.sha ?? "")
@@ -64,14 +66,14 @@ it.live("history/codecs", () => run("history/codecs", Schema.Struct({ history: H
   if (decoded._tag === "Failure") return false
   const history = decoded.value
   const event = try Schema.decodeUnknownEffect(Schema.fromJsonString(Codec.HistoryEvent))(JSON.stringify(input.event))
-  const seed = try Schema.decodeUnknownEffect(Codec.SeedJson)(JSON.stringify(input.seed))
+  const seed = try Schema.decodeUnknownEffect(Schema.fromJsonString(Codec.Seed))(JSON.stringify(input.seed))
   return same(history, input.history) && same(event, input.event) && same(seed, input.seed)
 }))
 
 it.live("history/roles", () => run("history/roles", Schema.Struct({ role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]), other: Int, agent: Schema.Boolean, action: Int }), ({ role, other, agent, action }) => {
-  const key = Object.keys(HISTORY_ROLES)[action % 7] as keyof typeof HISTORY_ROLES
+  const key = ACTIONS[action % ACTIONS.length]!
   const least = ROLES[other % ROLES.length]!
-  const expected = ROLES.indexOf(role) >= ROLES.indexOf(HISTORY_ROLES[key]) && !(agent && PEOPLE_ONLY.includes(key))
+  const expected = ROLES.indexOf(role) >= ROLES.indexOf(leastRole(key)) && !(agent && peopleOnly(key))
   return may({ role, name: "Fuzz", agent }, key) === expected && atLeast(role, least) === (ROLES.indexOf(role) >= other % ROLES.length)
 }))
 
@@ -92,7 +94,7 @@ it.live("history/seed-and-buckets", () => run("history/seed-and-buckets", SeedIn
   const seed = Seed.seedOf("fuzz", commits, entries)
   const replay = Seed.replay(Seed.intentsOf(seed))
   if (replay.refused.length > 0 || replay.history.real.length !== commits.length || !invariant(replay.history)) return false
-  const restored = Seed.replay(Seed.intentsOf(Seed.seedFrom("fuzz", replay.history)))
+  const restored = Seed.replay(Seed.intentsOf(seedFrom("fuzz", replay.history)))
   return restored.refused.length === 0 && same(restored.history, replay.history) && seed.real.every((r) => seed.epics.some((e) => e.commits.some((c) => c.id === r.into)))
 }))
 

@@ -1,0 +1,29 @@
+// The inverse of the seed bootstrap, for round-trip checks: the product only bootstraps forward (decision 0020).
+import type { History } from "../../src/history/mythical.vibe"
+import type { Seed } from "../../src/history/seed.vibe"
+
+/**
+ * The seed a bootstrapped `history` was recorded from: its epics with their commits in rank order and their notes,
+ * and main's commits in order. `replay(intentsOf(seedFrom(h))).history` is `h` again for every bootstrapped `h`.
+ */
+export function seedFrom(repository: string, history: History): Seed {
+  const titles = new Map(history.commits.map((commit) => [commit.id, commit.title]))
+  return {
+    repository,
+    main: history.main,
+    epics: history.epics.map((epic) => ({
+      id: epic.id,
+      title: epic.title,
+      commits: history.commits
+        .filter((commit) => commit.epic === epic.id)
+        .sort((a, b) => a.rank - b.rank)
+        .map((commit) => ({ id: commit.id, title: commit.title, notes: commit.notes.map((note) => ({ section: note.section, text: note.text })) })),
+    })),
+    real: history.real.map((real) => ({
+      sha: real.sha,
+      change: real.change,
+      title: real.title === titles.get(real.mythical) ? "" : real.title,
+      into: real.mythical,
+    })),
+  }
+}

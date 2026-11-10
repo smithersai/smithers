@@ -54,11 +54,3 @@ export function replyIdOf(post: string): string {
   return "r" + post.slice(1)
 }
 
-/** Distinct posts with the same first character get distinct replies. */
-//@ verify
-//@ requires a.length > 0 && b.length > 0 && a.charCodeAt(0) == b.charCodeAt(0)
-//@ ensures \result == (a == b)
-//@ ensures replyIdOf(a) == replyIdOf(b) ==> a == b
-export function sameReply(a: string, b: string): boolean {
-  return replyIdOf(a) === replyIdOf(b)
-}

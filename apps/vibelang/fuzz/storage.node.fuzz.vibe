@@ -79,7 +79,7 @@ it.live("storage/history-snapshot", () => run("storage/history-snapshot", Schema
   const after = try store.load()
   const sequencer = try HistoryObject.history(object)
   const state = try sequencer.read()
-  return after.base?.epics[0]?.title === "Epic " + text && after.events.length === 1 && state.seq === 2 && state.epics.length === 2 && HistoryObject.principalOf(undefined).role === "viewer"
+  return after.base?.epics[0]?.title === "Epic " + text && after.events.length === 1 && state.seq === 2 && state.epics.length === 2
 }))
 
 import { MainUnavailable } from "../src/history/flows.vibe"

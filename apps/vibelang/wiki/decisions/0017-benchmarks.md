@@ -80,21 +80,25 @@ it is now scoped as `test/workerd/accounts.vibe` is. Lines 120, 229 and 246 to 2
 reply for a signed-in owner (its role read, an announced agent action, a wiki draft for that owner), and signing in
 needs GitHub (0165). **Web sign-in (2026-11-10).** `bench/accounts-web.bench.vibe` signs a person in through the OAuth callback with an injected GitHub auth service in Node, so `worker/Accounts.vibe`'s callback, session and sign-out lines no longer need a GitHub credential. A signed-in person's `/api/issues` and `/api/wiki` requests stay out of every benchmark: their GitHub steps are durable steps under the `patient` retry policy, and with GitHub unreachable each request stayed open past a 5 s deadline. Complementary hits on exactly matching branch arms may combine; different shapes stay uncovered.
 Executable lines are statement start lines, as in Istanbul; a declaration's hit never executes its whole nested body.
-A line no benchmark should run is excluded only with its reason recorded in `merge-coverage.ts` and here:
-`scripts/mythical-seed.vibe` line 103 (`Refused` guard) is unreachable from real input because `intentsOf`
-guarantees by construction that `decide` accepts every seeded intent and `decideWithinCapacity` refuses only at
-2^53 events.
+**No exclusions (2026-11-10).** The gate excludes no line: a gate is not passed by hiding production code.
+Code nothing in `src/` or `worker/` calls is deleted, each with its reason in its commit: the post continuation model
+in `flowDecision.vibe` (`begin`, `record`, `canDispatch`, `dispatch`, `lawful`, `dispatches`), `sameReply`,
+`planAction`, `tourStream`, `beginScreenTour`, `endScreenTour`, `gatewayLive` and `principalOf`. Test oracles the
+product never calls moved into the tests that use them: `Narration` (`test/walkthrough.test.vibe`), `seedFrom`
+(`test/support/seedFrom.vibe`), `HISTORY_ROLES`, `PEOPLE_ONLY` and `SeedJson` (the fuzzers now use `leastRole`,
+`peopleOnly` and `Schema.fromJsonString(Seed)`). `scriptedReplies` stays: the compile check of every scripted
+answer needs it and the reply table is private; it runs at module load, so it costs no coverage.
 
-Code with no runtime caller (2026-11-10). No benchmark should run what the product never runs:
+These stay counted and uncovered:
 
-- `src/core/flowDecision.vibe` lines 75–118 (excluded lines listed in `merge-coverage.ts`): the post continuation
-  model `begin`, `record`, `canDispatch`, `dispatch` and `lawful`. Nothing in `src/` or `worker/` calls it, so its
-  proofs (0018) check the model, not the product.
-- Contract-only functions, named only by `//@` contracts and loop invariants and checked by the proofs:
-  `replyLawful` and `tourLawful` (`flowDecision.vibe` 199–204, 267–271), `issueAncestorAt` (`conversation.vibe`
-  817–823), `sameReply` (`tourDecision.vibe` 62–63) and `issueKnownAction` (`issueDecision.vibe` 207–208).
+- Functions only proof contracts call, waiting on a VibeLang specification-only function form (a VIP the lead is
+  raising): `replyLawful` and `tourLawful` (`src/core/flowDecision.vibe` 134–140, 202–207), `issueAncestorAt`
+  (`src/core/conversation.vibe` 817–824), `issueKnownAction` (`src/web/issueDecision.vibe` 207–209) and
+  `lawful` (`src/history/flowMachine.vibe` 149–153).
+- `scripts/mythical-seed.vibe` line 103, the `Refused` guard: `intentsOf` guarantees `decide` accepts every seeded
+  intent, so only a `seedOf` defect reaches it.
 
-The denominator includes `src/`, `worker/`, `infra/` and `scripts/`, matching the coverage lane’s source scope and adding the browser bundle solely to collect source-mapped evidence. No production line is excluded by this decision. The 100% benchmark-only coverage requirement remains open until
+The denominator includes `src/`, `worker/`, `infra/` and `scripts/`, matching the coverage lane’s source scope and adding the browser bundle solely to collect source-mapped evidence. No production line is excluded. The 100% benchmark-only coverage requirement remains open until
 its executed per-file report meets it; a configured threshold is not a coverage receipt. See `wiki/benchmarks.md`.
 
 **A found regression in the tests.** The existing Factory concurrency case failed on untouched main as well as this

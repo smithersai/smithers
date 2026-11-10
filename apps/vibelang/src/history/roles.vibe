@@ -1,8 +1,8 @@
 // Who may run each mythical-history flow (wiki/decisions/0020-mythical-history.md; roles VL-21, decision 0019). The
 // roles lane's policy interface replaces `Caller`'s source when it lands; every flow already reads its least role from
-// `HISTORY_ROLES` and the caller from `Caller`, so switching is one change here.
+// the proved `leastRole` and the caller from `Caller`, so switching is one change here.
 
-import { type Action, leastRole, peopleOnly, type Principal, type Role, atLeast as historyAtLeast } from "./flowMachine.vibe"
+import { type Action, type Principal, type Role, atLeast as historyAtLeast } from "./flowMachine.vibe"
 
 // Roles, actions and `may` are the proved flow machine's (flowMachine.vibe); this module names them for the app.
 export type { Action, Principal, Role }
@@ -14,19 +14,7 @@ export const ROLES: ReadonlyArray<Role> = ["viewer", "new", "community", "contri
 /** Every action on the mythical history. */
 export const ACTIONS: ReadonlyArray<Action> = ["show", "append", "retell", "start", "note", "approve", "fold"]
 
-/** Each action's least role, as the proved `leastRole` gives it. */
-export const HISTORY_ROLES: Readonly<Record<Action, Role>> = {
-  show: leastRole("show"),
-  append: leastRole("append"),
-  retell: leastRole("retell"),
-  start: leastRole("start"),
-  note: leastRole("note"),
-  approve: leastRole("approve"),
-  fold: leastRole("fold"),
-}
 
-/** Actions only a person takes, as the proved `peopleOnly` gives them: approve and fold. */
-export const PEOPLE_ONLY: ReadonlyArray<Action> = ACTIONS.filter(peopleOnly)
 
 /** Whether `role` is `least` or above. */
 export function atLeast(role: Role, least: Role): boolean {

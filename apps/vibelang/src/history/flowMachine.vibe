@@ -173,13 +173,6 @@ export function historyStatus(refusal: string): number {
 }
 
 
-//@ verify
-//@ ensures how == "append" ==> \result == "append"
-//@ ensures how != "append" ==> \result == "retell"
-export function planAction(how: "append" | "insert" | "amend"): Action {
-  return how === "append" ? "append" : "retell"
-}
-
 
 //@ verify
 //@ ensures (\result == "accepted") == (status == 200)

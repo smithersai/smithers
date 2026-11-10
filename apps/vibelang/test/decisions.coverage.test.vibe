@@ -12,35 +12,7 @@ import { finishDispatch, initialDispatch, probeDispatch } from "../worker/liveDi
 
 const state: Screen.ScreenState = { surface: "splash", palette: true, tour: false, tourError: "old", docs: "pane", following: false }
 
-describe("post run", () => {
-  it("records once, dispatches once and stays lawful along every path", () => {
-    const accepted = Flow.record(Flow.begin("post"), null)
-    const refused = Flow.record(Flow.begin("tour"), "busy")
-    const sent = Flow.dispatch(accepted)
-    for (const run of [Flow.begin("end"), accepted, refused, sent]) expect(Flow.lawful(run)).toBe(true)
-    expect(Flow.record(accepted, "later")).toBe(accepted)
-    expect(Flow.dispatch(refused)).toBe(refused)
-    expect(Flow.dispatch(sent)).toBe(sent)
-    expect(sent).toMatchObject({ phase: "dispatched", records: 1, dispatches: 1, answer: null })
-  })
-
-  it.each([
-    [{ phase: "begun", records: 1, dispatches: 0, answer: null }],
-    [{ phase: "begun", records: 0, dispatches: 1, answer: null }],
-    [{ phase: "begun", records: 0, dispatches: 0, answer: "x" }],
-    [{ phase: "recorded", records: 0, dispatches: 0, answer: null }],
-    [{ phase: "recorded", records: 1, dispatches: 1, answer: null }],
-    [{ phase: "recorded", records: 1, dispatches: 0, answer: "x" }],
-    [{ phase: "refused", records: 0, dispatches: 0, answer: "x" }],
-    [{ phase: "refused", records: 1, dispatches: 1, answer: "x" }],
-    [{ phase: "refused", records: 1, dispatches: 0, answer: null }],
-    [{ phase: "dispatched", records: 0, dispatches: 1, answer: null }],
-    [{ phase: "dispatched", records: 1, dispatches: 0, answer: null }],
-    [{ phase: "dispatched", records: 1, dispatches: 1, answer: "x" }],
-  ] as const)("rejects the inconsistent counters %j", (run) => {
-    expect(Flow.lawful({ kind: "post", ...run })).toBe(false)
-  })
-
+describe("post dispatch", () => {
   it("finds the first post with no dispatch, or the end", () => {
     expect(Flow.firstUndispatched(["a", "b", "c"], new Set(["a"]))).toBe(1)
     expect(Flow.firstUndispatched(["a"], new Set(["a"]))).toBe(1)
@@ -168,11 +140,6 @@ describe("screen", () => {
     expect(Screen.failScreenTour({ ...state, tour: true, docs: "max" }, "full", false)).toEqual({ ...state, tour: false, tourError: "full", docs: "pane" })
   })
 
-  it("opens a stream from the right cursor", () => {
-    expect(Screen.tourStream(true, "open", 2, 9, 4)).toEqual({ opening: true, epoch: 3, from: 0 })
-    expect(Screen.tourStream(false, "closed", 2, 9, 4)).toEqual({ opening: true, epoch: 3, from: 9 })
-    expect(Screen.tourStream(false, "open", 2, 9, 4)).toEqual({ opening: false, epoch: 2, from: 4 })
-  })
 
   it("gives the palette shortcut precedence over escape", () => {
     expect(Screen.screenKey("k", true, true, false)).toBe("palette")
@@ -182,11 +149,8 @@ describe("screen", () => {
     expect(Screen.screenKey("j", false, true, false)).toBe("")
   })
 
-  it("begins and ends a tour without touching the other projection", () => {
-    const toured = Screen.beginScreenTour(state)
-    expect(toured).toEqual({ surface: "chat", palette: false, tour: true, tourError: "", docs: "max", following: true })
-    expect(Screen.beginScreenTour(toured)).toBe(toured)
-    expect(Screen.endScreenTour(toured)).toEqual({ ...toured, tour: false, docs: "pane" })
+  it("minimizes only a splash with something to show", () => {
+    const toured: Screen.ScreenState = { surface: "chat", palette: false, tour: true, tourError: "", docs: "max", following: true }
     expect(Screen.minimizeScreen(toured, 1, 0, "")).toBe(toured)
     expect(Screen.minimizeScreen(state, 0, 0, "")).toBe(state)
     expect(Screen.minimizeScreen(state, 1, 0, "").surface).toBe("chat")

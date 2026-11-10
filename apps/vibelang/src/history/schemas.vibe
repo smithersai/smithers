@@ -84,8 +84,6 @@ export schema Seed {
   readonly real: ReadonlyArray<SeedReal>
 }
 
-/** A seed as the generator writes it: JSON text. */
-export const SeedJson = Schema.fromJsonString(Seed)
 
 /** Decode the stored JSON snapshot at the storage boundary. */
 export function decodeStoredHistory(json: string) {

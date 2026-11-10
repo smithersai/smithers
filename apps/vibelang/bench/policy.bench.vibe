@@ -2,7 +2,7 @@ import type { TurnInput } from "../src/core/sequenceDecision.vibe"
 import type { AskProgress } from "../src/surfaces/commandDecision.vibe"
 import { it, expect } from "@effect/vitest"
 import { admits, charge } from "../worker/budgetDecision.vibe"
-import { appends, dispatches, endsTourEvent, startAnswer, readingHold } from "../src/core/flowDecision.vibe"
+import { appends, endsTourEvent, startAnswer, readingHold } from "../src/core/flowDecision.vibe"
 import { failureCode, reasonCode } from "../worker/replyReasons.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
@@ -17,8 +17,6 @@ it("durable-flow and budget decisions", async ({ bench }) => {
     expect(admits(2, 1)).toBe(false)
     expect(charge(3, 2, false)).toEqual({ spent: 5, added: 2, write: true })
     expect(charge(3, 2, true)).toEqual({ spent: 3, added: 0, write: false })
-    expect(dispatches(null)).toBe(true)
-    expect(dispatches("empty")).toBe(false)
     expect(appends(2, 2, 3, 3, "x")).toBe(true)
     expect(appends(2, 1, 3, 3, "x")).toBe(false)
     expect(appends(2, 2, 3, 0, "x")).toBe(false)
@@ -88,9 +86,6 @@ it("screen, protocol and scripted-agent decisions", async ({ bench }) => {
     expect(S.failedTourKeepsControl("offline", true)).toBe(false)
     expect(S.paletteChange(true)).toEqual({ palette: true, focus: "palette" })
     expect(S.paletteChange(false)).toEqual({ palette: false, focus: "previous" })
-    expect(S.tourStream(true, "open", 1, 9, 4)).toEqual({ opening: true, epoch: 2, from: 0 })
-    expect(S.tourStream(false, "closed", 1, 9, 4)).toEqual({ opening: true, epoch: 2, from: 9 })
-    expect(S.tourStream(false, "open", 1, 9, 4)).toEqual({ opening: false, epoch: 1, from: 4 })
     for (const kind of ["ReplyFinished", "ReplyFailed", "TourEnded"]) expect(S.completedEvent(1, 2, kind)).toBe(true)
     expect(S.completedEvent(2, 2, "ReplyFinished")).toBe(false)
     expect(S.completedEvent(1, 2, "ReplyDelta")).toBe(false)

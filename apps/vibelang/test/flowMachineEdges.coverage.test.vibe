@@ -1,7 +1,7 @@
 // The history run machine's proof functions (src/history/flowMachine.vibe), asserted at the boundary cases their
 // contracts state: the invariant every reachable run keeps, a plan's action, and the words for each refusal.
 import { describe, expect, it } from "@effect/vitest"
-import { type Action, historyRefusal, initialEpic, lawful, type Phase, planAction, type Principal, type Run } from "../src/history/flowMachine.vibe"
+import { type Action, historyRefusal, initialEpic, lawful, type Phase, type Principal, type Run } from "../src/history/flowMachine.vibe"
 
 const maintainer: Principal = { role: "maintainer", name: "Will", agent: false }
 const viewer: Principal = { role: "viewer", name: "Guest", agent: false }
@@ -36,11 +36,6 @@ describe("a lawful history run", () => {
   })
 })
 
-describe("a plan's action", () => {
-  it.each([["append", "append"], ["insert", "retell"], ["amend", "retell"]] as const)("%s is a %s", (how, action) => {
-    expect(planAction(how)).toBe(action)
-  })
-})
 
 describe("the epic a Plan form opens on", () => {
   it("an append opens on the first epic, or on a new one when there is none", () => {
