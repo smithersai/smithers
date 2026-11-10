@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 6
+bias 2
+null-prototype false
+key 1406717971
+tape j_s29bfdYNseRExSzJ31rGQHalg8OuCgidrPZ4-P_fUcPfp6NxAowHKFdCDshIcMngz4rGqEqxbjnmWfqL_NqDDAHkaTg6q2AjQ9eBnl1KV730L5gHoyZfokiPoZhu_Tefux86VGI-ddDocbr-nqlJyKn5jN_83JhDo1hLvewbJJ792k6rpvs4fFaJ2IbDwLcC1arUN7ayjiekAl-kJsrg
+schedule-key 1039041555
+schedule 
+signature "ReturnedFalse"
+path 1.1.2
+codec "json"
+value "{\"commits\":[{\"sha\":\"\",\"title\":\"\",\"trailer\":null}],\"restart\":false}"
+# ReturnedFalse
+# {"commits":[{"sha":"","title":"","trailer":null}],"restart":false}

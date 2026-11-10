@@ -1,0 +1,66 @@
+// src/history/flows.vibe's Fold and Bootstrap flows on the engine in memory over the real sequencer, reading main
+// from a `MainLog` service that answers a fuzzed list of commits: repeated, already folded, without a sha, and with
+// trailers naming a commit the history has or lacks, ids too long to keep. A fold counts exactly the commits it adds; a
+// second fold over the same main changes nothing (a refused fold plans nothing); a second start's bootstrap loads nothing.
+import { it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { Digest } from "effect/crypto"
+import { Bootstrap, Fold, historyRegistration, MainLog, Stack } from "../src/history/flows.vibe"
+import { MAX_ID, type History } from "../src/history/mythical.vibe"
+import { Caller } from "../src/history/roles.vibe"
+import { make, type MainCommit, memoryStore, stackOf } from "../src/history/Sequencer.vibe"
+import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+import { run, Text } from "./run.vibe"
+
+const maintainer = { role: "maintainer" as const, name: "Ada", agent: false }
+const FOLDED = "1".padStart(12, "0")
+
+function small(): History {
+  const commits = ["fix(compiler): one"].map((description) => ({ sha: FOLDED, change: "", description, parents: [] }))
+  return replay(intentsOf(seedOf("o/r", commits, []))).history
+}
+
+const Commit = Schema.Struct({
+  sha: Schema.Literals([FOLDED, "2".padStart(12, "0"), "3".padStart(12, "0"), "", "f".repeat(MAX_ID + 1)]),
+  change: Schema.optionalKey(Schema.Literals(["c2", "c".repeat(MAX_ID + 1)])),
+  title: Text,
+  trailer: Schema.NullOr(Schema.Literals(["m1", "m404"])),
+})
+const Input = Schema.Struct({ commits: Schema.Array(Commit).check(Schema.isMaxLength(6)), restart: Schema.Boolean })
+
+it.live("history/fold-flows", () => run("history/fold-flows", Input, ({ commits, restart }) => scoped(effect {
+  const main: ReadonlyArray<MainCommit> = commits.map((c) => ({
+    sha: c.sha, change: c.change ?? "", title: c.title || "docs: x", message: (c.title || "docs: x") + (c.trailer === null ? "\n" : `\n\nMythical: ${c.trailer}\n`),
+  }))
+  const sequencer = try make(try memoryStore())
+  const digest = try Effect.provide(Digest.Digest, WebCrypto.layer)
+  const flows = historyRegistration.pipe(
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provide(Layer.mergeAll(
+      Layer.succeed(Stack, stackOf(sequencer, () => Effect.succeed(small()))),
+      Layer.succeed(MainLog, { since: () => Effect.succeed(main) }),
+      Layer.succeed(Caller, { principal: maintainer }),
+    )),
+    Layer.provide(Layer.succeed(Digest.Digest, digest)),
+  )
+  const engine = Context.get(try Layer.build(flows), FlowRuntime.FlowRuntime)
+  const fail = (why: string) => effect { try Console.error(`history/fold-flows: ${why}: ${JSON.stringify({ commits, restart })}`); return false }
+  if (!(try engine.execute(Bootstrap, { executionId: "bootstrap/1", payload: {} }))) return try fail("first bootstrap")
+  const loaded = try sequencer.read()
+  if (restart && ((try engine.execute(Bootstrap, { executionId: "bootstrap/2", payload: {} })) || !same(try sequencer.read(), loaded))) return try fail("second bootstrap")
+  const first = try engine.execute(Fold, { executionId: "fold/1", payload: {} })
+  const folded = try sequencer.read()
+  const fresh = new Set(main.map((c) => c.sha).filter((sha) => sha !== "" && !loaded.real.some((real) => real.sha === sha)))
+  if (first.refusal !== null || folded.real.length !== loaded.real.length + first.folded || first.folded > fresh.size) return try fail(`first fold ${JSON.stringify(first)}`)
+  if (new Set(folded.real.map((real) => real.sha)).size !== folded.real.length) return try fail("duplicate sha")
+  // The same main again: everything in it is folded or refused already.
+  const second = try engine.execute(Fold, { executionId: "fold/2", payload: {} })
+  if (second.refusal === null && second.folded === 0 && same(try sequencer.read(), folded)) return true
+  return try fail(`second fold ${JSON.stringify(second)}`)
+}), undefined, { minimum: "10 seconds" }), 120000)
+
+function same(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}

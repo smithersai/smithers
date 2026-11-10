@@ -5,7 +5,7 @@ import { History as HistorySchema, HistoryEvent } from "./schemas.vibe"
 // keeps its store in memory; the live History object (worker/HistoryObject.vibe) keeps it in its own storage. Nothing
 // here names a host.
 import { recordedHistory, replayHistory } from "./replayDecision.vibe"
-import { type Decision, empty, epicOf, foldTarget, hasSha, type History, type Event, type Intent, MAX_TITLE } from "./mythical.vibe"
+import { type Decision, empty, epicOf, foldTarget, hasSha, type History, type Event, type Intent, MAX_ID, MAX_TITLE } from "./mythical.vibe"
 import type { Stack } from "./flows.vibe"
 import { areaOf } from "./seed.vibe"
 import { epicByTitle, foldTitle, planStep } from "./stackDecision.vibe"
@@ -176,15 +176,17 @@ export effect function make(store: Store) {
     /**
      * Folds one commit of main into the stack: into the commit its `Mythical:` trailer names once a person approved
      * it (or it landed: `foldTarget`, proved), else appended as a new commit to the epic its scope belongs to, opened
-     * at the stack's end when the history has none by that title. A commit already folded answers `duplicate` and
-     * changes nothing.
+     * at the stack's end when the history has none by that title. A commit the fold would refuse (no sha, a sha or
+     * change id too long to keep, or already folded) answers that refusal before anything is planned, and changes nothing.
      */
     fold: (commit: MainCommit) =>
       locked(effect {
         const history = try current()
-        if (hasSha(history.real, commit.sha)) {
-          const already: Answer = { id: "", refusal: "duplicate" }
-          return already
+        // The Fold's own refusals (mythical.vibe `decide`, same order), checked before a commit is planned for it.
+        const refusal = commit.sha === "" ? "empty" : commit.sha.length > MAX_ID || commit.change.length > MAX_ID ? "too-long" : hasSha(history.real, commit.sha) ? "duplicate" : ""
+        if (refusal !== "") {
+          const refused: Answer = { id: "", refusal }
+          return refused
         }
         const title = foldTitle(commit.title, MAX_TITLE)
         let into = foldTarget(history.commits, trailerOf(commit.message))

@@ -1,0 +1,25 @@
+// A fold the history refuses changes nothing (src/history/Sequencer.vibe's fold). A commit of main with no sha, or
+// with a sha or change id longer than the history keeps, used to plan a new mythical commit (and open its epic) before
+// its own fold was refused, leaving that commit planned for ever, one more on each retry (found by
+// fuzz/history-flows.fuzz.vibe, history/fold-flows).
+import { describe, expect, it } from "@effect/vitest"
+import { MAX_ID } from "../src/history/mythical.vibe"
+import { make, memoryStore } from "../src/history/Sequencer.vibe"
+
+describe("a fold the history refuses", () => {
+  it.effect.each([
+    ["has no sha", { sha: "", change: "" }, "empty"],
+    ["has a sha too long to keep", { sha: "a".repeat(MAX_ID + 1), change: "" }, "too-long"],
+    ["has a change id too long to keep", { sha: "s1", change: "c".repeat(MAX_ID + 1) }, "too-long"],
+  ] as const)("plans nothing when the commit %s", ([_name, ids, refusal]) => effect {
+    const sequencer = try make(try memoryStore())
+    const before = try sequencer.read()
+    const first = try sequencer.fold({ ...ids, title: "docs: one", message: "docs: one\n" })
+    const second = try sequencer.fold({ ...ids, title: "docs: one", message: "docs: one\n" })
+    const after = try sequencer.read()
+    try Effect.try(() => {
+      expect([first, second]).toEqual([{ id: "", refusal }, { id: "", refusal }])
+      expect(after).toEqual(before)
+    })
+  })
+})
