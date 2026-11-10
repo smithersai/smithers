@@ -57,6 +57,10 @@ async function collectBrowserCoverage(context: BrowserContext, page: Page, baseU
   }
 }
 
+// A first visit to "/" starts the tour 1.2 s after load. These workloads drive the page themselves, so each visit is
+// marked toured, as the e2e specs do; otherwise the tour's overlay takes a click that comes later than 1.2 s.
+test.beforeEach(async ({ page }) => { await page.addInitScript(() => localStorage.setItem("vibelang:toured", "yes")) })
+
 test("first render, Command-K and per-keystroke browser latency", async ({ browser, baseURL }) => {
   const samples = []
   for (let run = 0; run < 3; run++) {
