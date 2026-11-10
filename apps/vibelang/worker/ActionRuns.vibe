@@ -7,6 +7,7 @@ import { Run, type Role } from "../src/actions/Actions.vibe"
 import { allowed, registration } from "../src/actions/catalog.vibe"
 import { RunRequest } from "../src/actions/wire.vibe"
 import { prepare, refused } from "../src/actions/execution.vibe"
+import { cancellable, historyPassed, isReplyChild, replyChildId, settledResult, settledState, startRuns, startSettles, tourSettles } from "../src/core/actionRunDecision.vibe"
 import { signedOut, type ActionIdentity } from "./ActionIdentity.vibe"
 import * as HistoryActions from "./HistoryActions.vibe"
 import { Post, Tour, Reply } from "../src/core/flows.vibe"
@@ -28,7 +29,7 @@ export effect function traced<A, E, R>(sequencer: Sequencer, request: RunRequest
         const event = try Queue.take(queue)
         if (event === null) return
         const child = event.flow === Reply._tag && request.flow === Post._tag
-        const id = child ? `${request.id}-reply` : request.id
+        const id = child ? replyChildId(request.id) : request.id
         if (child) try sequencer.action({ type: "RequestAction", id, flow: Reply._tag, door: "agent", actor: "agent", at: event.at })
         try sequencer.action({ type: "TraceAction", id, key: event.key, name: event.name, attempt: event.attempt, state: event.state, at: event.at })
       }
@@ -52,7 +53,7 @@ export effect function start(hostId: string, storage: Objects.Storage, sequencer
   const existing = before.find(run => run.id === request.id)
   const conversational = request.flow === Tour._tag || request.flow === Post._tag
   // A host that stopped mid-start leaves its post or tour running: its first step's trace precedes the accepted write.
-  if (existing !== undefined && existing.state !== "queued" && !(conversational && existing.state === "running")) return null
+  if (!startRuns(existing !== undefined, existing?.state ?? "", conversational)) return null
   if (existing !== undefined && conversational) {
     const snapshot = try sequencer.read(0)
     const accepted = request.flow === Tour._tag ? snapshot.entries.some(entry => entry.author === "agent" && !entry.done && entry.inReplyTo === "") : snapshot.entries.some(entry => entry.clientId === request.id)
@@ -77,8 +78,8 @@ export effect function start(hostId: string, storage: Objects.Storage, sequencer
   const origin = try Effect.orDie(Effect.try(() => RunMetrics.withOrigin({ door: request.door, actor: request.actor })))
   const answer = try exit(traced(sequencer, request, origin(operation)))
   const refusal = Exit.isSuccess(answer) ? answer.value : "failed"
-  if (refusal !== null || request.flow === Post._tag) {
-    try sequencer.action({ type: "SettleAction", id: request.id, state: refusal === null ? "passed" : "failed", result: refusal === null ? "null" : "Action failed", at: try Clock.currentTimeMillis })
+  if (startSettles(refusal !== null, request.flow === Post._tag)) {
+    try sequencer.action({ type: "SettleAction", id: request.id, state: settledState(refusal !== null), result: settledResult(refusal !== null), at: try Clock.currentTimeMillis })
   }
   return refusal
 }
@@ -103,7 +104,7 @@ export effect function alarm(hostId: string, storage: Objects.Storage, sequencer
       if (Option.isSome(receipt) && receipt.value._tag === "Complete") {
         const result = receipt.value.exit
         const output = Exit.isSuccess(result) ? try Effect.orDie(Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Json))(result.value)) : "Action failed"
-        try sequencer.action({ type: "SettleAction", id: request.id, state: Exit.isSuccess(result) && !refused(result.value) ? "passed" : "failed", result: output, at: try Clock.currentTimeMillis })
+        try sequencer.action({ type: "SettleAction", id: request.id, state: settledState(!historyPassed(Exit.isSuccess(result), Exit.isSuccess(result) && refused(result.value))), result: output, at: try Clock.currentTimeMillis })
       }
     }
     return outcome
@@ -126,13 +127,13 @@ export effect function alarm(hostId: string, storage: Objects.Storage, sequencer
   const reply = snapshot.entries.find((entry) => entry.author === "agent")
   const done = reply !== undefined && reply.done
   const failed = engineFailed || (reply !== undefined && reply.error !== "")
-  if (request.flow === Tour._tag && (done || failed)) {
-    try sequencer.action({ type: "SettleAction", id: request.id, state: failed ? "failed" : "passed", result: failed ? "Action failed" : "null", at: try Clock.currentTimeMillis })
+  if (request.flow === Tour._tag && tourSettles(done, failed)) {
+    try sequencer.action({ type: "SettleAction", id: request.id, state: settledState(failed), result: settledResult(failed), at: try Clock.currentTimeMillis })
   }
   // The reply the post dispatched is itself a registered, agent-started action.
   if (request.flow === Post._tag && done) {
     for (const run of try read(sequencer)) {
-      if (run.actor === "agent") try sequencer.action({ type: "SettleAction", id: run.id, state: reply.error === "" ? "passed" : "failed", result: reply.error === "" ? "null" : "Action failed", at: try Clock.currentTimeMillis })
+      if (run.actor === "agent") try sequencer.action({ type: "SettleAction", id: run.id, state: settledState(reply.error !== ""), result: settledResult(reply.error !== ""), at: try Clock.currentTimeMillis })
     }
   }
   return result.value
@@ -142,9 +143,9 @@ export effect function cancel(hostId: string, storage: Objects.Storage, sequence
   const run = (try read(sequencer)).find((run) => run.id === id)
   if (run === undefined) return "not-found"
   const request = try promise(() => storage.get<RunRequest>("action/request"))
-  const child = run.flow === Reply._tag && request?.flow === Post._tag && id === `${request.id}-reply`
+  const child = isReplyChild(run.flow === Reply._tag, request?.flow === Post._tag, id, request?.id ?? "")
   if (!allowed(try authority.role(owner), registration(child ? Post._tag : run.flow))) return "forbidden"
-  if (run.state !== "queued" && run.state !== "running") return null
+  if (!cancellable(run.state)) return null
   if (child) {
     try replyHost.cancel()
     const snapshot = try sequencer.read(0)

@@ -1,0 +1,73 @@
+// An action run's own decisions on its Conversation object (wiki/decisions/0023-actions.md, 0018 third-lane batch 11):
+// which runs a repeated start or a cancel may touch, which run is a post's reply, and how a run settles.
+// `worker/ActionRuns.vibe` calls these; storage, the engine, the sequencer and the trace queue stay outside the proof.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
+
+/** The id of the reply a post's run dispatched: the post run's id with `-reply`. */
+//@ verify
+//@ ensures \result == requestId + "-reply"
+export function replyChildId(requestId: string): string {
+  return requestId + "-reply"
+}
+
+/** Whether a run is the reply a post's run dispatched: a reply run under a post request, with that post's child id. */
+//@ verify
+//@ ensures \result == (runIsReply && requestIsPost && id == replyChildId(requestId))
+export function isReplyChild(runIsReply: boolean, requestIsPost: boolean, id: string, requestId: string): boolean {
+  return runIsReply && requestIsPost && id === replyChildId(requestId)
+}
+
+/** Whether a start runs a request: new or queued, or a running post/tour that may need recovery. Terminal runs stay terminal. */
+//@ verify
+//@ ensures \result == (!exists || state == "queued" || (conversational && state == "running"))
+export function startRuns(exists: boolean, state: string, conversational: boolean): boolean {
+  return !exists || state === "queued" || (conversational && state === "running")
+}
+
+/** Whether a cancel may still stop a run: only a queued or running one. */
+//@ verify
+//@ ensures \result == (state == "queued" || state == "running")
+export function cancellable(state: string): boolean {
+  return state === "queued" || state === "running"
+}
+
+/** A settled run's state. */
+export type Settled = "passed" | "failed"
+
+//@ verify
+//@ ensures failed ==> \result == "failed"
+//@ ensures !failed ==> \result == "passed"
+export function settledState(failed: boolean): Settled {
+  return failed ? "failed" : "passed"
+}
+
+/** A settled run's recorded result: a failure says so, without its cause; a success records JSON `null`. */
+//@ verify
+//@ ensures failed ==> \result == "Action failed"
+//@ ensures !failed ==> \result == "null"
+export function settledResult(failed: boolean): string {
+  return failed ? "Action failed" : "null"
+}
+
+/** Whether a start settles its run at once: a refusal always does; a post does, as its reply is its own run. */
+//@ verify
+//@ ensures \result == (refused || post)
+export function startSettles(refused: boolean, post: boolean): boolean {
+  return refused || post
+}
+
+/** Whether a history action passed: it succeeded and its value is not a refusal. */
+//@ verify
+//@ ensures \result == (succeeded && !refusal)
+export function historyPassed(succeeded: boolean, refusal: boolean): boolean {
+  return succeeded && !refusal
+}
+
+/** Whether an alarm settles a tour run: once its reply is done or anything failed. */
+//@ verify
+//@ ensures \result == (done || failed)
+export function tourSettles(done: boolean, failed: boolean): boolean {
+  return done || failed
+}
