@@ -1,0 +1,51 @@
+// @vitest-environment node
+// A person's web sign-in over the Accounts object's real HTTP boundary: the OAuth redirect and callback, their session,
+// the role-event refusals, sign-out, and a GitHub exchange refusal. GitHub is an injected auth service
+// (test/support/accountsWorld.vibe), so no credential is used. Issue and wiki routes are left out: their GitHub steps
+// retry an unreachable GitHub under the durable retry policy (decision 0017).
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { get, github, offline, post, serve, setupWith, signIn } from "../test/support/accountsWorld.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+const manual = FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })))
+
+effect function journey() {
+  const { origin } = try serve(setupWith(github([{ id: 7, login: "ada" }]), "7")).pipe(Effect.provideService(HttpClient.HttpClient, offline))
+  provide manual {
+    const http = try HttpClient.HttpClient
+    const { cookie, callback } = try signIn(http, origin, "7")
+    const session = try (try http.execute(get(origin, "/api/auth/session", cookie))).json
+    const anonymous = (try http.execute(get(origin, "/api/roles/events?after=0"))).status
+    const badAfter = (try http.execute(get(origin, "/api/roles/events?after=abc", cookie))).status
+    const out = (try http.execute(post(origin, "/api/auth/sign-out", {}, cookie))).status
+    const after = try (try http.execute(get(origin, "/api/auth/session", cookie))).json
+    try Effect.try(() => {
+      expect([callback.status, callback.headers["location"]]).toEqual([302, "https://factory.example/"])
+      expect(session).toMatchObject({ id: "7", login: "ada", role: "maintainer", available: true })
+      expect([anonymous, badAfter, out]).toEqual([403, 400, 204])
+      expect(after).toMatchObject({ id: "", role: "viewer" })
+    })
+  }
+}
+
+effect function refused() {
+  const { origin } = try serve(setupWith(github([{ id: 7, login: "ada" }], ["exchange"]), "7")).pipe(Effect.provideService(HttpClient.HttpClient, offline))
+  provide manual {
+    const { callback, cookie } = try signIn(try HttpClient.HttpClient, origin, "7")
+    try Effect.try(() => {
+      expect([callback.status, callback.headers["location"], cookie]).toEqual([302, "https://factory.example/?sign-in=failed", ""])
+    })
+  }
+}
+
+it("a person signs in on the web, is served their session, and signs out", async ({ bench }) => {
+  const result = await workload(bench, "accounts-web-sign-in", "async", () => runPromise(scoped(effect { provide NodeHttpServer.layerTest { try journey() } }))).run(quick)
+  await runPromise(artifact("accounts-web-sign-in", "Vitest built-in bench; the Accounts object on a real loopback server over in-memory object storage, a fresh object per sample. The sign-in redirect, the OAuth callback with the state and code GitHub would carry, the session, anonymous and malformed role-event requests, sign-out and the session after it. Exact statuses, redirect and identity checked.", ["GitHub is an injected auth service: no network, no GitHub latency.", "In-memory storage, not Durable Object SQLite.", "Issue and wiki routes are excluded: their GitHub steps retry an unreachable GitHub."], result))
+})
+
+it("a refused GitHub exchange sends the person back with sign-in failed", async ({ bench }) => {
+  const result = await workload(bench, "accounts-web-refused", "async", () => runPromise(scoped(effect { provide NodeHttpServer.layerTest { try refused() } }))).run(quick)
+  await runPromise(artifact("accounts-web-refused", "Vitest built-in bench; the Accounts object on a real loopback server with an injected GitHub service whose code exchange refuses. The sign-in redirect and a callback answered by the failure redirect with the state cookie cleared and no session.", ["GitHub is an injected auth service.", "In-memory storage."], result))
+})

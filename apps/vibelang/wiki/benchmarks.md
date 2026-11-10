@@ -3293,3 +3293,18 @@ Vitest built-in bench, local.
 **sandbox-faults.** `makeSandboxHost` over an in-memory store with the product in-memory machines and a faulty machine service, TestClock time: a start, a repeated start answered by receipt, a start whose provisioning fails, a start that outlasts the allowance while it provisions, and a clock outside the calendar that stops what runs. Exact refusals, the stops issued and the fail-closed ledger are checked. Limitations: no Durable Object storage or container latency; the 2 s provisioning delay is simulated.
 
 **sandbox-held-command.** Two hosts over one store: the first host's command is held inside the machine, the second runs the same operation and records its answer, and the released first host returns that answer. Limitation: one process stands in for two hosts.
+
+## Web sign-in (2026-11-10, nyc-01)
+
+Vitest built-in bench, local. The Accounts object on a real loopback server over in-memory object storage, a fresh object per sample, with an injected GitHub auth service (`test/support/accountsWorld.vibe`).
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| accounts-web-sign-in | 284.6 | 5 | `2026-11-10T04-47-52.486Z-accounts-web-sign-in.json` |
+| accounts-web-refused | 207.4 | 5 | `2026-11-10T04-47-54.243Z-accounts-web-refused.json` |
+
+**accounts-web-sign-in.** The sign-in redirect, the OAuth callback with the state and code GitHub would carry, the session, anonymous and malformed role-event requests, sign-out and the session after it. Exact statuses, redirect and identity are checked.
+
+**accounts-web-refused.** A GitHub code exchange that refuses: the callback answers with the failure redirect, clears the state cookie and sets no session.
+
+Limitations: GitHub is an injected service, so there is no network or GitHub latency; storage is in memory, not Durable Object SQLite. Issue and wiki routes are excluded because their GitHub steps retry an unreachable GitHub (0017).

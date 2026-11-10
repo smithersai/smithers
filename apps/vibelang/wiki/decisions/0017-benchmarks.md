@@ -78,7 +78,7 @@ entry props) and ProjectAccounts with sign-in configured from fixture-only secre
 configuration without a `Scope`, so `Accounts.configured()` answered `undefined` and the configured branch never ran;
 it is now scoped as `test/workerd/accounts.vibe` is. Lines 120, 229 and 246 to 248 stay uncovered: they run only in a
 reply for a signed-in owner (its role read, an announced agent action, a wiki draft for that owner), and signing in
-needs GitHub (0165). Complementary hits on exactly matching branch arms may combine; different shapes stay uncovered.
+needs GitHub (0165). **Web sign-in (2026-11-10).** `bench/accounts-web.bench.vibe` signs a person in through the OAuth callback with an injected GitHub auth service in Node, so `worker/Accounts.vibe`'s callback, session and sign-out lines no longer need a GitHub credential. A signed-in person's `/api/issues` and `/api/wiki` requests stay out of every benchmark: their GitHub steps are durable steps under the `patient` retry policy, and with GitHub unreachable each request stayed open past a 5 s deadline. Complementary hits on exactly matching branch arms may combine; different shapes stay uncovered.
 Executable lines are statement start lines, as in Istanbul; a declaration's hit never executes its whole nested body.
 A line no benchmark should run is excluded only with its reason recorded in `merge-coverage.ts` and here:
 `scripts/mythical-seed.vibe` line 103 (`Refused` guard) is unreachable from real input because `intentsOf`
