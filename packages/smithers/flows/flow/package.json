@@ -73,8 +73,8 @@
     },
     "./FlowRuntime/*": null,
     "./StepIdentity": {
-      "types": "./src/Action/StepIdentity.ts",
-      "vibelang-source": "./src/Action/StepIdentity.ts",
+      "types": "./.vibe/declarations/src/Action/StepIdentity.d.vibe.ts",
+      "vibelang-source": "./src/Action/StepIdentity.vibe",
       "default": "./.vibelang/js/src/Action/StepIdentity.js"
     },
     "./internal/*": null,
@@ -115,13 +115,13 @@
       "default": "./.vibelang/js/src/Graph.js"
     },
     "./HumanTask": {
-      "types": "./src/HumanTask.ts",
-      "vibelang-source": "./src/HumanTask.ts",
+      "types": "./.vibe/declarations/src/HumanTask.d.vibe.ts",
+      "vibelang-source": "./src/HumanTask.vibe",
       "default": "./.vibelang/js/src/HumanTask.js"
     },
     "./Interpreter": {
-      "types": "./src/Interpreter.ts",
-      "vibelang-source": "./src/Interpreter.ts",
+      "types": "./.vibe/declarations/src/Interpreter.d.vibe.ts",
+      "vibelang-source": "./src/Interpreter.vibe",
       "default": "./.vibelang/js/src/Interpreter.js"
     },
     "./Poll": {

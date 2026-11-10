@@ -17,6 +17,7 @@ export const textFits = (value, maximum) => encodedStringBytes(value, maximum) !
 /** Admits a detached snapshot and gives failures a bounded field path.
  * @private
  * @since 1.0.0
+ * @throws {never}
  */
 export const admit = (input, limits) => {
     const result = BoundedJson.admit(input, limits);
@@ -72,6 +73,7 @@ export function scalarPrefix(value, maximumCodeUnits) {
  *
  * @private
  * @since 1.0.0
+ * @throws {never}
  */
 export const render = (value, maximumCodeUnits) => {
     if (typeof value === "string") {

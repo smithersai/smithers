@@ -24,7 +24,7 @@ The `exports` map declares these subpaths:
 | `@smthrs/flow/FileInput`        | `src/Action/FileInput.ts`        | any      |
 | `@smthrs/flow/Flow`             | `src/Flow/index.ts`              | any      |
 | `@smthrs/flow/FlowRuntime`      | `src/FlowRuntime/index.ts`       | any      |
-| `@smthrs/flow/StepIdentity`     | `src/Action/StepIdentity.ts`     | any      |
+| `@smthrs/flow/StepIdentity`     | `src/Action/StepIdentity.vibe`   | any      |
 | `@smthrs/flow/<Module>`         | `src/<Module>.ts`                | any      |
 
 `<Module>` is one of the top-level modules, each listed explicitly in the `exports` map: `Deadline`, `DurableClock`, `DurableDeferred`, `DurableQueue`, `Fault`, `Graph`, `HumanTask`, `Interpreter`, `Poll`, `RetryPolicy`, `Sleep`, `Stall`, and `WaitFor`. No `./*` wildcard is declared. The `exports` map maps `./internal/*`, `./*/index`, `./Action/*`, `./Flow/*`, and `./FlowRuntime/*` to `null`, so those paths do not resolve.

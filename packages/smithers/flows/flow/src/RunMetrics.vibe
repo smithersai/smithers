@@ -27,7 +27,7 @@ import * as Exit from "effect/Exit"
 import { dual } from "effect/Function"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
-import * as Interpreter from "./Interpreter.ts"
+import * as Interpreter from "./Interpreter.vibe"
 
 /**
  * What started a run: a person's button, slash command, view, composer or key; the

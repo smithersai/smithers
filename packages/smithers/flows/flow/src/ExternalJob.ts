@@ -22,7 +22,7 @@ import { DriveDeadline } from "./FlowRuntime/DriveDeadline.vibe"
 import { FlowInstance } from "./FlowRuntime/FlowInstance.vibe"
 import { FlowRuntime } from "./FlowRuntime/FlowRuntime.vibe"
 import { ExecutionMiddleware } from "./internal/ExecutionMiddleware.vibe"
-import * as Interpreter from "./Interpreter.ts"
+import * as Interpreter from "./Interpreter.vibe"
 import * as Sleep from "./Sleep.vibe"
 
 /**

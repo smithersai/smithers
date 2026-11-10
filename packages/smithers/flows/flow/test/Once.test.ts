@@ -163,6 +163,21 @@ describe("Action.effectKey", () => {
       )
       expect(JSON.stringify(exit)).toContain("EffectKeyUnavailable")
     }))
+
+  effect("dies with the digest's refusal when the name is not well-formed text", () =>
+    Effect.gen(function*() {
+      // An unpaired surrogate cannot be hashed: the key's digest throws, and the dispatch dies with its error.
+      const exit = yield* Effect.exit(
+        Writer.execute({ names: ["a"], text: "x" }, { executionId: "e5" }).pipe(
+          Effect.provide(layerWired(Layer.mergeAll(
+            Write.toLayer(({ text }) => Effect.forEach(["\ud800"], (name) => Action.once(name, write(provider(), text)))),
+            Interpreter.layer(Writer)
+          )))
+        )
+      )
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(JSON.stringify(exit)).toContain("Sha256Error")
+    }))
 })
 
 describe("Action.once", () => {

@@ -184,18 +184,18 @@ export interface AllocationIdentity {
 export const allocationScope = (
   identity: AllocationIdentity
 ): Effect.Effect<string, Schema.SchemaError, EffectDigest.Digest> =>
-  Effect.gen(function*() {
+  effect {
     let scope = `${identity.kind}/${identity.name.length}:${identity.name}`
     if (typeof identity.idempotency === "string") {
-      const digest = yield* Schema.decodeUnknownEffect(Sha256)(identity.idempotency)
+      const digest = try Schema.decodeUnknownEffect(Sha256)(identity.idempotency)
       scope = `${scope}/s:${digest}`
     } else if (identity.idempotency !== undefined) {
-      const key = yield* Schema.decodeUnknownEffect(DerivedKey)({ kind: "declaration", input: identity.idempotency })
+      const key = try Schema.decodeUnknownEffect(DerivedKey)({ kind: "declaration", input: identity.idempotency })
       scope = `${scope}/c:${key}`
     }
     if (identity.site === undefined) return scope
     return `${scope}/g:${identity.site.length}:${identity.site}`
-  })
+  }
 
 /**
  * Derives an invocation key from engine-generated input.

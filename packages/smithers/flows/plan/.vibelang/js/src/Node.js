@@ -460,6 +460,7 @@ export const actionCall = (declaration, action, payload) => internal.makeNode(in
  * @since 0.1.0
  * @category engine
  * @slop
+ * @throws {never}
  */
 export const declaration = (ast) => internal.declaration(ast);
 /**
@@ -486,6 +487,7 @@ export const continuation = (ast) => internal.operation(ast);
  * @since 0.1.0
  * @category engine
  * @slop
+ * @throws {never}
  */
 export const mapper = (ast) => ast._tag === "Map" ? internal.operation(ast) : undefined;
 /**
@@ -499,6 +501,7 @@ export const mapper = (ast) => ast._tag === "Map" ? internal.operation(ast) : un
  * @since 0.1.0
  * @category engine
  * @slop
+ * @throws {never}
  */
 export const predicate = (ast) => ast._tag === "Branch" ? internal.predicate(ast) : undefined;
 /**
@@ -511,6 +514,7 @@ export const predicate = (ast) => ast._tag === "Branch" ? internal.predicate(ast
  * @since 0.1.0
  * @category engine
  * @slop
+ * @throws {never}
  */
 export const catchFilter = (ast) => ast._tag === "Catch" ? internal.filter(ast) : undefined;
 /**

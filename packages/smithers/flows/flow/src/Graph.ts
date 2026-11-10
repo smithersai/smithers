@@ -1856,6 +1856,7 @@ const expandCatch = (builder: Builder, site: Site, ast: Extract<Node.Ast, { read
  *
  * @since 0.1.0
  * @category accessors
+ * @throws {never}
  */
 export const nodes = (graph: Graph): ReadonlyArray<GraphNode> => graph.nodes
 
@@ -1864,6 +1865,7 @@ export const nodes = (graph: Graph): ReadonlyArray<GraphNode> => graph.nodes
  *
  * @since 0.1.0
  * @category accessors
+ * @throws {never}
  */
 export const edges = (graph: Graph): ReadonlyArray<Edge> => graph.edges
 

@@ -148,11 +148,11 @@ const withWrite = <A, E, R>(key: string, body: Effect.Effect<A, E, R>): Effect.E
  * @since 1.0.0
  */
 export const effectKey = (name: string): Effect.Effect<string> =>
-  Effect.gen(function*() {
-    const instance = yield* Effect.serviceOption(FlowInstance)
-    const invocation = yield* CurrentInvocationKey
+  effect {
+    const instance = try Effect.serviceOption(FlowInstance)
+    const invocation = try CurrentInvocationKey
     if (Option.isNone(instance) || invocation === undefined) {
-      return yield* Effect.die(
+      return try Effect.die(
         new EffectKeyUnavailable({
           name,
           message: `Action.once "${name}" ran outside a flow dispatch. A write is keyed by the execution and the ` +
@@ -161,8 +161,12 @@ export const effectKey = (name: string): Effect.Effect<string> =>
         })
       )
     }
-    return digestSync(`${PREIMAGE}\n${instance.value.executionId}\n${invocation}\n${name}`)
-  })
+    // A digest that throws is a defect, as it was inside the generator.
+    return try Effect.orDie(Effect.try({
+      try: () => digestSync(`${PREIMAGE}\n${instance.value.executionId}\n${invocation}\n${name}`),
+      catch: (cause) => cause
+    }))
+  }
 
 /**
  * How {@link once} keys a write.
@@ -239,37 +243,37 @@ export const once = <A, E, R>(
   effect: Keyed<A, E, R>,
   options?: OnceOptions
 ): Effect.Effect<A, E, R> =>
-  Effect.gen(function*() {
-    const key = options?.key ?? (yield* effectKey(name))
+  (effect {
+    const key = options?.key ?? (try effectKey(name))
     // Adoption is read-only and must not wait for a dead incarnation's writer.
     // A miss still enters the gate and checks again before creating anything.
     if (writes.has(key)) {
-      const earlier = yield* effect.find(key)
+      const earlier = try effect.find(key)
       if (Option.isSome(earlier)) {
-        yield* record("adopted")
+        try record("adopted")
         return earlier.value
       }
     }
-    return yield* withWrite(
+    return try withWrite(
       key,
-      Effect.gen(function*() {
-        const earlier = yield* effect.find(key)
+      effect {
+        const earlier = try effect.find(key)
         if (Option.isSome(earlier)) {
-          yield* record("adopted")
+          try record("adopted")
           return earlier.value
         }
-        const made = yield* Effect.result(effect.perform(key))
+        const made = try Effect.result(effect.perform(key))
         if (made._tag === "Success") {
-          yield* record("performed")
+          try record("performed")
           return made.success
         }
-        const landed = yield* Effect.result(effect.find(key))
+        const landed = try Effect.result(effect.find(key))
         if (landed._tag === "Success" && Option.isSome(landed.success)) {
-          yield* record("adopted_after_failure")
+          try record("adopted_after_failure")
           return landed.success.value
         }
-        yield* record("failed")
-        return yield* Effect.fail(made.failure)
-      })
+        try record("failed")
+        throw made.failure
+      }
     )
   }).pipe(Effect.withSpan("Action.once"))

@@ -73,14 +73,14 @@ export * as Graph from "./Graph.ts"
  *
  * @since 0.1.0
  */
-export * as HumanTask from "./HumanTask.ts"
+export * as HumanTask from "./HumanTask.vibe"
 
 /**
  * Execution of a flow body, and the layer that registers it.
  *
  * @since 0.1.0
  */
-export * as Interpreter from "./Interpreter.ts"
+export * as Interpreter from "./Interpreter.vibe"
 
 /**
  * The durable poller: attempts as rounds, waits as durable timers.
@@ -131,7 +131,7 @@ export * as SpanFailure from "./internal/SpanFailure.vibe"
  *
  * @since 0.1.0
  */
-export * as StepIdentity from "./Action/StepIdentity.ts"
+export * as StepIdentity from "./Action/StepIdentity.vibe"
 
 /**
  * The system wait-point action and its implementation layer.

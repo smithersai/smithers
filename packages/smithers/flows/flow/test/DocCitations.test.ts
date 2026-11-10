@@ -14,12 +14,12 @@ const sourceFiles = (dir: string): ReadonlyArray<string> =>
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name)
     if (entry.isDirectory()) return entry.name === "node_modules" ? [] : sourceFiles(path)
-    return /\.tsx?$/.test(entry.name) ? [path] : []
+    return /\.(tsx?|vibe)$/.test(entry.name) ? [path] : []
   })
 
 describe("doc citations in comments", () => {
   it("documents allocationScope's actual typed failure contract", () => {
-    const source = readFileSync(join(packageRoot, "src/Action/StepIdentity.ts"), "utf8")
+    const source = readFileSync(join(packageRoot, "src/Action/StepIdentity.vibe"), "utf8")
     const documentation = source.slice(
       source.indexOf(" * Derives the ordinal allocation scope"),
       source.indexOf("export const allocationScope")

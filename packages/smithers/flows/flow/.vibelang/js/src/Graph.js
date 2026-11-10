@@ -1356,6 +1356,7 @@ const expandCatch = (builder, site, ast) => {
  *
  * @since 0.1.0
  * @category accessors
+ * @throws {never}
  */
 export const nodes = (graph) => graph.nodes;
 /**
@@ -1363,6 +1364,7 @@ export const nodes = (graph) => graph.nodes;
  *
  * @since 0.1.0
  * @category accessors
+ * @throws {never}
  */
 export const edges = (graph) => graph.edges;
 /**

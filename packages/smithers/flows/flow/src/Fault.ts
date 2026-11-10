@@ -16,7 +16,7 @@ import type * as Action from "./Action/Action.vibe"
 import { make as makeAction } from "./Action/make.ts"
 import type { FlowInstance } from "./FlowRuntime/FlowInstance.vibe"
 import type { FlowRuntime } from "./FlowRuntime/FlowRuntime.vibe"
-import type { HumanAnswerInvalid, HumanTaskFailed } from "./HumanTask.ts"
+import type { HumanAnswerInvalid, HumanTaskFailed } from "./HumanTask.vibe"
 import * as RetryPolicy from "./RetryPolicy.vibe"
 
 /**

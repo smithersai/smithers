@@ -798,6 +798,7 @@ export const actionCall = <A = unknown, E = never, R = never>(
  * @since 0.1.0
  * @category engine
  * @slop
+ * @throws {never}
  */
 export const declaration = (
   ast: Extract<Ast, { readonly _tag: "ActionCall" | "FlowCall" }>
@@ -830,6 +831,7 @@ export const continuation = (
  * @since 0.1.0
  * @category engine
  * @slop
+ * @throws {never}
  */
 export const mapper = (ast: Ast): ((value: unknown) => unknown) | undefined =>
   ast._tag === "Map" ? internal.operation(ast) : undefined
@@ -845,6 +847,7 @@ export const mapper = (ast: Ast): ((value: unknown) => unknown) | undefined =>
  * @since 0.1.0
  * @category engine
  * @slop
+ * @throws {never}
  */
 export const predicate = (ast: Ast): ((value: unknown) => boolean) | undefined =>
   ast._tag === "Branch" ? internal.predicate(ast) : undefined
@@ -859,6 +862,7 @@ export const predicate = (ast: Ast): ((value: unknown) => boolean) | undefined =
  * @since 0.1.0
  * @category engine
  * @slop
+ * @throws {never}
  */
 export const catchFilter = (ast: Ast): Schema.Top | undefined => ast._tag === "Catch" ? internal.filter(ast) : undefined
 

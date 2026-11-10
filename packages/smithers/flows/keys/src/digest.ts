@@ -22,5 +22,6 @@ import type { StoredKey } from "./StoredKey.ts"
  * @returns The 64-character lowercase hexadecimal SHA-256 payload.
  * @category accessors
  * @since 1.0.0
+ * @throws {never}
  */
 export const digest = (key: StoredKey): Sha256Digest => key.slice("key1_".length) as Sha256Digest

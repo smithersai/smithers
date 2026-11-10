@@ -112,6 +112,7 @@ const supportedKeywords = [
 /** Truncates a caller-supplied diagnostic while stating exactly what was dropped.
  * @private
  * @since 1.0.0
+ * @throws {never}
  */
 export const truncateDiagnostic = (rendered) => {
     const prefix = BoundedJson.scalarPrefix(rendered, maxDiagnosticChars);

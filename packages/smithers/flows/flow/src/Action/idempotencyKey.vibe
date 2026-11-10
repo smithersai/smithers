@@ -10,7 +10,7 @@ import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import { FlowInstance } from "../FlowRuntime/FlowInstance.vibe"
 import { CurrentAttempt } from "./Context.vibe"
-import * as StepIdentity from "./StepIdentity.ts"
+import * as StepIdentity from "./StepIdentity.vibe"
 
 /**
  * Computes a run-local invocation key for an internal durable operation.

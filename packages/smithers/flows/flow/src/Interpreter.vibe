@@ -64,7 +64,7 @@ import * as Predicate from "effect/Predicate"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import { type Implementation, Implementations, layerImplementations } from "./Action/Implementations.vibe"
-import { type DispatchOutcome, DispatchReport, DispatchSite } from "./Action/StepIdentity.ts"
+import { type DispatchOutcome, DispatchReport, DispatchSite } from "./Action/StepIdentity.vibe"
 import * as DurableDeferred from "./DurableDeferred.vibe"
 import { attenuateCapabilities } from "./Flow/CapabilityCeiling.vibe"
 import type { Any as AnyFlow, AnyStructSchema, AnyWithProps, Flow } from "./Flow/Flow.vibe"
@@ -78,7 +78,7 @@ import { FlowRuntime } from "./FlowRuntime/FlowRuntime.vibe"
 import type * as NodeRecord from "./FlowRuntime/NodeRecord.ts"
 import { annotateWaiting } from "./FlowRuntime/WaitingAnnotation.vibe"
 import * as Graph from "./Graph.ts"
-import * as HumanTask from "./HumanTask.ts"
+import * as HumanTask from "./HumanTask.vibe"
 import * as BoundedJson from "./internal/BoundedJson.ts"
 import { ExecutionMiddleware } from "./internal/ExecutionMiddleware.vibe"
 import { InterpreterError } from "./internal/InterpreterError.vibe"
@@ -318,16 +318,16 @@ export const childExecutionId = (
   calleeTag: string,
   payload: unknown
 ): Effect.Effect<string, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
-  Effect.gen(function*() {
-    const payloadDigest = yield* Schema.decodeUnknownEffect(DerivedKey)(payload).pipe(Effect.orDie)
-    const tupleDigest = yield* Schema.decodeUnknownEffect(DerivedKey)([
+  effect {
+    const payloadDigest = try Schema.decodeUnknownEffect(DerivedKey)(payload).pipe(Effect.orDie)
+    const tupleDigest = try Schema.decodeUnknownEffect(DerivedKey)([
       parentExecutionId,
       nodeId,
       calleeTag,
       payloadDigest
     ]).pipe(Effect.orDie)
     return digest(tupleDigest)
-  })
+  }
 
 /**
  * The largest encoded page of a recorded plan.
@@ -397,18 +397,18 @@ const summarize = (node: Graph.GraphNode): NodeRecord.NodeSummary => {
  *
  * @private
  */
-const planPages = Effect.fnUntraced(function*(
+const planPages = effect (
   flow: string,
   graph: Graph.Graph,
   measure: (record: NodeRecord.NodeRecord) => Effect.Effect<number, never, FlowInstance>,
   root?: RootInput | undefined
-) {
+) => {
   const graphNodes = Graph.nodes(graph)
   const incoming = incomingEdges(graph)
   const pager: Pager = {
     flow,
     measure,
-    identity: yield* planIdentity(flow, graph, root),
+    identity: try planIdentity(flow, graph, root),
     nodeCount: graphNodes.length,
     reserved: graphNodes.reduce(
       (total, node) => total + KeyMaterial.dependencies(node.draft.material).length,
@@ -417,10 +417,10 @@ const planPages = Effect.fnUntraced(function*(
     pages: [],
     current: emptyPage()
   }
-  for (const node of graphNodes) yield* pageNode(pager, node, incoming.get(node.id) ?? [])
+  for (const node of graphNodes) try pageNode(pager, node, incoming.get(node.id) ?? [])
   pager.pages.push(pager.current)
   return pager.pages.map((page, index) => pageRecord(pager, page, index, pager.pages.length))
-})
+}
 
 /** One page of the recorded plan: whole node summaries and the edges it carries. @private */
 interface Page {
@@ -567,17 +567,17 @@ const flush = (pager: Pager): void => {
  * @private
  */
 const admits = <T>(pager: Pager, rest: ReadonlyArray<T>, grow: (take: number) => Page) =>
-  Effect.gen(function*() {
-    if (yield* fits(pager, grow(rest.length))) return rest.length
+  effect {
+    if (try fits(pager, grow(rest.length))) return rest.length
     let low = 0
     let high = rest.length - 1
     while (low < high) {
       const mid = low + Math.ceil((high - low) / 2)
-      if (yield* fits(pager, grow(mid))) low = mid
+      if (try fits(pager, grow(mid))) low = mid
       else high = mid - 1
     }
     return low
-  })
+  }
 
 /**
  * Puts every item somewhere, starting a page whenever the current one is
@@ -594,23 +594,23 @@ const spread = <T>(
   resume: (page: Page) => Page,
   refusal: () => InterpreterError
 ): Effect.Effect<void, InterpreterError, FlowInstance> =>
-  Effect.gen(function*() {
+  effect {
     let rest = items
     let started = false
     while (rest.length > 0) {
-      const take = yield* admits(pager, rest, (count) => onto(pager.current, rest.slice(0, count)))
+      const take = try admits(pager, rest, (count) => onto(pager.current, rest.slice(0, count)))
       if (take > 0) {
         pager.current = onto(pager.current, rest.slice(0, take))
         rest = rest.slice(take)
         started = false
         continue
       }
-      if (started) return yield* refusal()
+      if (started) return try refusal()
       flush(pager)
       pager.current = resume(pager.current)
       started = true
     }
-  })
+  }
 
 /** Adds dependencies to the summary the page seated last. @private */
 const withDependencies = (page: Page, taken: ReadonlyArray<string>): Page => {
@@ -635,11 +635,11 @@ const withEdges = (page: Page, taken: ReadonlyArray<NodeRecord.EdgeSummary>): Pa
  *
  * @private
  */
-const pageNode = Effect.fnUntraced(function*(
+const pageNode = effect (
   pager: Pager,
   node: Graph.GraphNode,
   arriving: ReadonlyArray<NodeRecord.EdgeSummary>
-) {
+) => {
   const summary = summarize(node)
   const bare: NodeRecord.NodeSummary = { ...summary, dependsOn: [] }
   const seat = (page: Page): Page => ({ nodes: [...page.nodes, bare], edges: page.edges })
@@ -650,14 +650,14 @@ const pageNode = Effect.fnUntraced(function*(
       node: node.id,
       message: `Node "${node.id}" and its encoded envelope exceed ${maximumPageBytes} bytes with no dependencies on it`
     })
-  if (!(yield* fits(pager, seat(pager.current)))) {
+  if (!(try fits(pager, seat(pager.current)))) {
     if (pager.current.nodes.length > 0 || pager.current.edges.length > 0) flush(pager)
-    if (!(yield* fits(pager, seat(pager.current)))) return yield* tooLarge()
+    if (!(try fits(pager, seat(pager.current)))) return try tooLarge()
   }
   pager.current = seat(pager.current)
-  yield* spread(pager, summary.dependsOn, withDependencies, seat, tooLarge)
-  yield* spread(pager, arriving, withEdges, (page) => page, tooLarge)
-})
+  try spread(pager, summary.dependsOn, withDependencies, seat, tooLarge)
+  try spread(pager, arriving, withEdges, (page) => page, tooLarge)
+}
 
 /**
  * Interprets a flow body, or a bare node, against real values.
@@ -692,17 +692,17 @@ const interpretWithPolicy = (
   options: Graph.BuildOptions,
   registerReachable?: (flow: AnyWithProps) => Effect.Effect<void>
 ): Effect.Effect<Interpretation, unknown, Services> =>
-  Effect.gen(function*() {
-    const table = yield* Implementations
+  effect {
+    const table = try Implementations
     const name = "_tag" in flowOrNode ? flowOrNode._tag : "node"
-    const graph = yield* Effect.try({
+    const graph = try Effect.try({
       try: () => Graph.build(flowOrNode, payload, options),
       catch: (cause) => buildRefusal(name, cause)
     })
     const fatal = fatalRefusal(name, graph)
-    if (fatal !== undefined) return yield* fatal
-    const runtime = yield* FlowRuntime
-    yield* recordPlan(
+    if (fatal !== undefined) return try fatal
+    const runtime = try FlowRuntime
+    try recordPlan(
       runtime,
       name,
       graph,
@@ -722,23 +722,23 @@ const interpretWithPolicy = (
     // Deferred operations must likewise survive beside every AST, even when
     // the walk would skip their branch or catch arm.
     const unready = unreadyNode(name, graph)
-    if (unready !== undefined) return yield* unready
-    const declarations = yield* resolveDeclarations(name, table, graph, registerReachable)
+    if (unready !== undefined) return try unready
+    const declarations = try resolveDeclarations(name, table, graph, registerReachable)
     const cycle = cycleRefusal(name, graph)
-    if (cycle !== undefined) return yield* cycle
-    const walk = makeWalk(name, runtime, graph, declarations, yield* Scope.make())
+    if (cycle !== undefined) return try cycle
+    const walk = makeWalk(name, runtime, graph, declarations, try Scope.make())
     // Closing the node scope on every exit — value, failure, or the
     // interpretation's own interruption — is the fail-fast half of the
     // ownership model: whatever is still running when the walk ends is
     // interrupted before the interpretation reports, so no execution
     // outlives it.
-    const value = yield* settleNode(walk, options.root ?? "root").pipe(
+    const value = try settleNode(walk, options.root ?? "root").pipe(
       Effect.onExit((exit) => Scope.close(walk.scope, exit)),
       Effect.onExit((exit) => recordSkipped(walk, exit))
     )
     const skipped = walk.nodes.filter((node) => !walk.settled.has(node.id) && !walk.failed.has(node.id))
     return { value, settled: walk.settled, failed: walk.failed, skipped: skipped.map((node) => node.id) }
-  })
+  }
 
 /** An interpreter refusal of `flow` at `node`. @private */
 const refusal = (flow: string, code: InterpreterError["code"], node: string, message: string): InterpreterError =>
@@ -867,22 +867,22 @@ interface Declarations {
  *
  * @private
  */
-const resolveDeclarations = Effect.fnUntraced(function*(
+const resolveDeclarations = effect (
   name: string,
   table: Implementations["Service"],
   graph: Graph.Graph,
   registerReachable: ((flow: AnyWithProps) => Effect.Effect<void>) | undefined
-) {
+) => {
   const declarations: Declarations = { implementations: new Map(), handoffs: new Map(), children: new Map() }
   for (const node of Graph.nodes(graph)) {
     const ast = node.ast
     if (ast._tag === "FlowCall" && (ast.mode === "handoff" || ast.mode === "boundary")) {
-      yield* resolveCallee(name, declarations, node, ast, ast.mode, registerReachable)
+      try resolveCallee(name, declarations, node, ast, ast.mode, registerReachable)
     }
-    if (ast._tag === "ActionCall") yield* resolveImplementation(name, table, declarations, node, ast)
+    if (ast._tag === "ActionCall") try resolveImplementation(name, table, declarations, node, ast)
   }
   return declarations
-})
+}
 
 /** What a handoff or a `.child()` boundary that lost its declaration is refused with. @private */
 const lostCallee = {
@@ -903,34 +903,34 @@ const lostCallee = {
  *
  * @private
  */
-const resolveCallee = Effect.fnUntraced(function*(
+const resolveCallee = effect (
   name: string,
   declarations: Declarations,
   node: Graph.GraphNode,
   ast: Extract<Node.Ast, { readonly _tag: "FlowCall" }>,
   mode: "handoff" | "boundary",
   registerReachable: ((flow: AnyWithProps) => Effect.Effect<void>) | undefined
-) {
+) => {
   const declaration = Node.declaration(ast)
   if (!Predicate.hasProperty(declaration, FlowTypeId)) {
-    return yield* refusal(name, "unsupported_call", node.id, lostCallee[mode](ast.flow, node.id))
+    return try refusal(name, "unsupported_call", node.id, lostCallee[mode](ast.flow, node.id))
   }
   if (mode === "handoff") declarations.handoffs.set(node.id, declaration as unknown as AnyFlow)
   else declarations.children.set(node.id, declaration as unknown as AnyWithProps)
-  if (registerReachable !== undefined) yield* registerReachable(declaration as unknown as AnyWithProps)
-})
+  if (registerReachable !== undefined) try registerReachable(declaration as unknown as AnyWithProps)
+}
 
 /** Resolves an action's implementation, refusing a version it does not attest. @private */
-const resolveImplementation = Effect.fnUntraced(function*(
+const resolveImplementation = effect (
   name: string,
   table: Implementations["Service"],
   declarations: Declarations,
   node: Graph.GraphNode,
   ast: Extract<Node.Ast, { readonly _tag: "ActionCall" }>
-) {
-  const implementation = yield* table.get(ast.action)
+) => {
+  const implementation = try table.get(ast.action)
   if (Option.isNone(implementation)) {
-    return yield* refusal(
+    return try refusal(
       name,
       "unresolved_action",
       node.id,
@@ -942,9 +942,9 @@ const resolveImplementation = Effect.fnUntraced(function*(
     )
   }
   const refused = versionRefusal(name, node, ast, implementation.value)
-  if (refused !== undefined) return yield* refused
+  if (refused !== undefined) return try refused
   declarations.implementations.set(ast.action, implementation.value)
-})
+}
 
 /** The refusal of an implementation whose version the declaration does not admit. @private */
 const versionRefusal = (
@@ -1276,28 +1276,29 @@ const file = (
   })))
 
 /** The record a node settles with. @private */
-const settledRecord = (
-  walk: Walk,
-  id: string,
-  action: string | undefined,
-  dispatches: Dispatches,
-  outcome: NodeRecord.NodeOutcome,
-  value: unknown
-) =>
-(): NodeRecord.NodeRecord => {
-  const childExecutionId = walk.childExecutions.get(id)
-  return {
-    _tag: "NodeSettled",
-    sourceId: `node/${id}/1/settled`,
-    nodeId: id,
-    outcome,
-    attempts: dispatches.attempts,
-    stepKeyDigests: [...dispatches.digests],
-    value,
-    ...(action === undefined ? {} : { action }),
-    ...(childExecutionId === undefined ? {} : { childExecutionId })
+const settledRecord =
+  (
+    walk: Walk,
+    id: string,
+    action: string | undefined,
+    dispatches: Dispatches,
+    outcome: NodeRecord.NodeOutcome,
+    value: unknown
+  ) =>
+  (): NodeRecord.NodeRecord => {
+    const childExecutionId = walk.childExecutions.get(id)
+    return {
+      _tag: "NodeSettled",
+      sourceId: `node/${id}/1/settled`,
+      nodeId: id,
+      outcome,
+      attempts: dispatches.attempts,
+      stepKeyDigests: [...dispatches.digests],
+      value,
+      ...(action === undefined ? {} : { action }),
+      ...(childExecutionId === undefined ? {} : { childExecutionId })
+    }
   }
-}
 
 /**
  * A node whose execution died: its defect annotated with where it arose
@@ -1391,48 +1392,50 @@ const execute = (walk: Walk, node: Graph.GraphNode, deferred: Deferred.Deferred<
  *
  * @private
  */
-const compute: (walk: Walk, node: Graph.GraphNode) => Effect.Effect<unknown, unknown, Services> = Effect.fnUntraced(
-  function*(walk: Walk, node: Graph.GraphNode) {
-    const children = walk.sources.get(node.id) ?? []
-    const ast = node.ast
-    if (ast._tag === "AndThen" && ast.next !== undefined) return yield* settleSequence(walk, children)
-    if (ast._tag === "Branch") return yield* settleBranch(walk, ast, children)
-    if (ast._tag === "Catch") return yield* settleCatch(walk, ast, children)
-    if (ast._tag === "Race") return yield* settleRace(walk, node, ast, children)
-    // Dependency order, from the key material: the same `Ref` and `Pending`
-    // inputs the plan turns into edges, settled before the node that reads
-    // them — and settled CONCURRENTLY, because independent dependencies are
-    // exactly what the scheduler admits under separate permits. Two
-    // execution surfaces disagreeing about concurrency is a correctness
-    // hazard, not just a latency one.
-    yield* Effect.forEach(
-      KeyMaterial.dependencies(node.draft.material).filter((dependency) => !walk.failed.has(dependency)),
-      (dependency) => settleNode(walk, dependency),
-      { concurrency: "unbounded", discard: true }
-    )
-    switch (ast._tag) {
-      case "ActionCall":
-        return yield* runAction(walk, node, ast)
-      case "Succeed":
-        return resolve(walk, node.payload)
-      case "Fail":
-        // The typed error channel, from a constant the plan already holds.
-        // An enclosing catch observes it exactly as it observes an action's
-        // failure, and an uncaught one is the body's typed failure.
-        return yield* Effect.fail(resolve(walk, node.payload))
-      case "Map": {
-        const transform = Node.mapper(ast)!
-        return transform(yield* settleNode(walk, children[0]!))
-      }
-      case "All":
-        return yield* combine(walk, ast, children)
-      case "AndThen":
-        return yield* settleNode(walk, children[1]!)
-      case "FlowCall":
-        return yield* settleCall(walk, node, ast, children)
+const compute: (walk: Walk, node: Graph.GraphNode) => Effect.Effect<unknown, unknown, Services> = effect (
+  walk: Walk,
+  node: Graph.GraphNode
+) => {
+  const children = walk.sources.get(node.id) ?? []
+  const ast = node.ast
+  if (ast._tag === "AndThen" && ast.next !== undefined) return try settleSequence(walk, children)
+  if (ast._tag === "Branch") return try settleBranch(walk, ast, children)
+  if (ast._tag === "Catch") return try settleCatch(walk, ast, children)
+  if (ast._tag === "Race") return try settleRace(walk, node, ast, children)
+  // Dependency order, from the key material: the same `Ref` and `Pending`
+  // inputs the plan turns into edges, settled before the node that reads
+  // them — and settled CONCURRENTLY, because independent dependencies are
+  // exactly what the scheduler admits under separate permits. Two
+  // execution surfaces disagreeing about concurrency is a correctness
+  // hazard, not just a latency one.
+  try Effect.forEach(
+    KeyMaterial.dependencies(node.draft.material).filter((dependency) => !walk.failed.has(dependency)),
+    (dependency) => settleNode(walk, dependency),
+    { concurrency: "unbounded", discard: true }
+  )
+  switch (ast._tag) {
+    case "ActionCall":
+      return try runAction(walk, node, ast)
+    case "Succeed":
+      return resolve(walk, node.payload)
+    case "Fail":
+      // The typed error channel, from a constant the plan already holds.
+      // An enclosing catch observes it exactly as it observes an action's
+      // failure, and an uncaught one is the body's typed failure.
+      throw resolve(walk, node.payload)
+    case "Map": {
+      const transform = Node.mapper(ast)!
+      const settled = try settleNode(walk, children[0]!)
+      return try sync(() => transform(settled))
     }
+    case "All":
+      return try combine(walk, ast, children)
+    case "AndThen":
+      return try settleNode(walk, children[1]!)
+    case "FlowCall":
+      return try settleCall(walk, node, ast, children)
   }
-)
+}
 
 /**
  * An explicit sequence: a success boundary for the WHOLE next subtree.
@@ -1453,15 +1456,16 @@ const settleSequence = (walk: Walk, children: ReadonlyArray<string>) =>
  *
  * @private
  */
-const settleBranch = Effect.fnUntraced(function*(
+const settleBranch = effect (
   walk: Walk,
   ast: Extract<Node.Ast, { readonly _tag: "Branch" }>,
   children: ReadonlyArray<string>
-) {
+) => {
   const decide = Node.predicate(ast)!
-  const subject = yield* settleNode(walk, children[0]!)
-  return yield* settleNode(walk, decide(subject) ? children[1]! : children[2]!)
-})
+  const subject = try settleNode(walk, children[0]!)
+  const taken = try sync(() => decide(subject))
+  return try settleNode(walk, taken ? children[1]! : children[2]!)
+}
 
 /**
  * A catch: the recovery arm runs on a typed failure of the protected node
@@ -1504,22 +1508,22 @@ const settleCatch = (
  *
  * @private
  */
-const settleRace = Effect.fnUntraced(function*(
+const settleRace = effect (
   walk: Walk,
   node: Graph.GraphNode,
   ast: Extract<Node.Ast, { readonly _tag: "Race" }>,
   children: ReadonlyArray<string>
-) {
+) => {
   const members = new Set(children)
-  yield* Effect.forEach(
+  try Effect.forEach(
     KeyMaterial.dependencies(node.draft.material).filter((dependency) =>
       !members.has(dependency) && !walk.failed.has(dependency)
     ),
     (dependency) => settleNode(walk, dependency),
     { concurrency: "unbounded", discard: true }
   )
-  return yield* join(walk, node, ast, children)
-})
+  return try settleJoin(walk, node, ast, children)
+}
 
 /**
  * Runs an action with the implementation the pre-pass resolved, which
@@ -1547,17 +1551,17 @@ const runAction = (walk: Walk, node: Graph.GraphNode, ast: Extract<Node.Ast, { r
  *
  * @private
  */
-const combine = Effect.fnUntraced(function*(
+const combine = effect (
   walk: Walk,
   ast: Extract<Node.Ast, { readonly _tag: "All" }>,
   children: ReadonlyArray<string>
-) {
+) => {
   const members = Object.keys(ast.nodes)
-  const values = yield* Effect.forEach(members, (_, index) => settleNode(walk, children[index]!), {
+  const values = try Effect.forEach(members, (_, index) => settleNode(walk, children[index]!), {
     concurrency: "unbounded"
   })
   return dataRecord(members.map((member, index) => [member, values[index]]))
-})
+}
 
 /**
  * A flow call: a handoff settles as the next round's outcome, a `.child()`
@@ -1598,17 +1602,17 @@ const settleCall = (
  *
  * @private
  */
-const handOff = Effect.fnUntraced(function*(
+const handOff = effect (
   walk: Walk,
   node: Graph.GraphNode,
   ast: Extract<Node.Ast, { readonly _tag: "FlowCall" }>
-) {
+) => {
   const declaration = walk.declarations.handoffs.get(node.id)!
-  const payload = yield* Effect.flatMap(
+  const payload = try (Effect.flatMap(
     Effect.orDie(declaration.payloadSchema.makeEffect(resolve(walk, node.payload) as never)),
     (decoded) => Effect.orDie(payloadSnapshot(declaration.payloadSchema, decoded))
-  ) as unknown as Effect.Effect<unknown, never, Services>
-  const ceiling = (yield* attenuateCapabilities(node.capabilityCeilings)(CapabilitySet.current)).groups
+  ) as unknown as Effect.Effect<unknown, never, Services>)
+  const ceiling = (try attenuateCapabilities(node.capabilityCeilings)(CapabilitySet.current)).groups
   const outcome = {
     _tag: "To",
     flow: ast.flow,
@@ -1617,7 +1621,7 @@ const handOff = Effect.fnUntraced(function*(
   } satisfies Outcome.To<unknown>
   markOutcome(outcome, "To")
   return outcome
-})
+}
 
 /**
  * The real boundary of `docs/guides/run-a-child-flow.md`: an ordinary child
@@ -1633,19 +1637,19 @@ const handOff = Effect.fnUntraced(function*(
  *
  * @private
  */
-const runChild = Effect.fnUntraced(function*(walk: Walk, node: Graph.GraphNode) {
+const runChild = effect (walk: Walk, node: Graph.GraphNode) => {
   const declaration = walk.declarations.children.get(node.id)!
-  const instance = yield* FlowInstance
+  const instance = try FlowInstance
   const childPayload = resolve(walk, node.payload)
-  const executionId = yield* (Effect.flatMap(
+  const executionId = try (Effect.flatMap(
     Effect.orDie(payloadPreimage(declaration.payloadSchema, childPayload)),
     (preimage) => childExecutionId(instance.executionId, node.id, declaration._tag, preimage)
   ) as unknown as Effect.Effect<string, never, Services>)
   walk.childExecutions.set(node.id, executionId)
-  return yield* (declaration.execute(childPayload, { executionId }) as Effect.Effect<unknown, unknown, Services>).pipe(
+  return try (declaration.execute(childPayload, { executionId }) as Effect.Effect<unknown, unknown, Services>).pipe(
     attenuateCapabilities(node.capabilityCeilings)
   )
-})
+}
 
 /**
  * Everything the walk never reached, recorded once the walk is over.
@@ -1766,21 +1770,21 @@ const decide = (
  *
  * @private
  */
-const join = Effect.fnUntraced(function*(
+const settleJoin = effect (
   walk: Walk,
   node: Graph.GraphNode,
   ast: Extract<Node.Ast, { readonly _tag: "Race" }>,
   children: ReadonlyArray<string>
-) {
+) => {
   const journal = DurableDeferred.make(`join/${node.id}`, { success: JoinDecision })
-  const instance = yield* FlowInstance
+  const instance = try FlowInstance
   // A join is not a wait: reading its record must not consume the waiting
   // classification a parked sibling declared.
-  const recorded = yield* walk.runtime.deferredResult(journal).pipe(
+  const recorded = try walk.runtime.deferredResult(journal).pipe(
     Effect.provideService(FlowInstance, { ...instance })
   )
   if (Option.isSome(recorded) && Exit.isSuccess(recorded.value)) {
-    return yield* replayJoin(walk, node, ast, children, recorded.value.value)
+    return try replayJoin(walk, node, ast, children, recorded.value.value)
   }
   const journalDecision = (decision: JoinDecision) =>
     walk.runtime.deferredDone(journal, {
@@ -1789,37 +1793,37 @@ const join = Effect.fnUntraced(function*(
       deferredName: journal.name,
       exit: Exit.succeed(decision)
     })
-  return yield* raceJoin(walk, node, ast, children, journalDecision)
-})
+  return try raceJoin(walk, node, ast, children, journalDecision)
+}
 
 /** Settles a join from its journal: the members it decided on, and nothing of its losers. @private */
-const replayJoin = Effect.fnUntraced(function*(
+const replayJoin = effect (
   walk: Walk,
   node: Graph.GraphNode,
   ast: Extract<Node.Ast, { readonly _tag: "Race" }>,
   children: ReadonlyArray<string>,
   record: JoinDecision
-) {
+) => {
   const members = Object.keys(ast.nodes)
   const decided = "members" in record ? record.members : record
   const opened = "members" in record ? record.children : []
   const indices = decided.map((member) => members.indexOf(member))
   const mismatch = journalMismatch(walk, node, decided, indices, opened)
-  if (mismatch !== undefined) return yield* mismatch
-  yield* cancelChildren(walk, opened)
+  if (mismatch !== undefined) return try mismatch
+  try cancelChildren(walk, opened)
   // The losers are never demanded, so nothing of theirs starts again.
-  const exits = yield* Effect.forEach(indices, (index) => Effect.exit(settleNode(walk, children[index]!)), {
+  const exits = try Effect.forEach(indices, (index) => Effect.exit(settleNode(walk, children[index]!)), {
     concurrency: "unbounded"
   })
   const verdict = replayedVerdict(ast, members, indices, exits)
-  if (verdict !== undefined) return yield* verdict
-  return yield* refusal(
+  if (verdict !== undefined) return try verdict
+  return try refusal(
     walk.name,
     "join_mismatch",
     node.id,
     `Join at "${node.id}" replayed members ${JSON.stringify(decided)} without reaching its verdict.`
   )
-})
+}
 
 /** The refusal of a journal that names members or losing children this join no longer holds. @private */
 const journalMismatch = (
@@ -1889,34 +1893,34 @@ interface JoinRace {
  *
  * @private
  */
-const raceJoin = Effect.fnUntraced(function*(
+const raceJoin = effect (
   walk: Walk,
   node: Graph.GraphNode,
   ast: Extract<Node.Ast, { readonly _tag: "Race" }>,
   children: ReadonlyArray<string>,
   journalDecision: (decision: JoinDecision) => Effect.Effect<void>
-) {
+) => {
   const members = Object.keys(ast.nodes)
   const race: JoinRace = { outcomes: [], verdict: undefined, journaled: false, over: Deferred.makeUnsafe<void>() }
   const watch = (index: number) =>
     Effect.exit(settleNode(walk, children[index]!)).pipe(
       Effect.flatMap((exit) => Effect.sync(() => observe(race, ast, members, index, exit)))
     )
-  yield* Effect.raceFirst(
+  try Effect.raceFirst(
     Effect.forEach(children, (_, index) => watch(index), { concurrency: "unbounded", discard: true }),
     Deferred.await(race.over)
   )
   const verdict = race.verdict
   // Every member ended interrupted: the join cannot decide in this round, and
   // the walk parks or ends with it.
-  if (verdict === undefined) return yield* Effect.interrupt
+  if (verdict === undefined) return try Effect.interrupt
   const decided = race.outcomes.map((outcome) => outcome.member)
   const losers = children.filter((_, index) => !decided.includes(members[index]!))
-  yield* Effect.uninterruptible(
+  try Effect.uninterruptible(
     stopLosers(walk, node.id, losers, decided, race.journaled ? journalDecision : undefined)
   )
-  return yield* verdict
-})
+  return try verdict
+}
 
 /**
  * Stops the work of a decided join's losers: requests interruption of their
@@ -1925,27 +1929,27 @@ const raceJoin = Effect.fnUntraced(function*(
  *
  * @private
  */
-const stopLosers = Effect.fnUntraced(function*(
+const stopLosers = effect (
   walk: Walk,
   joinId: string,
   losers: ReadonlyArray<string>,
   decided: ReadonlyArray<string>,
   journalDecision: ((decision: JoinDecision) => Effect.Effect<void>) | undefined
-) {
+) => {
   const { childRuns, fibers } = losingWork(walk, joinId, losers)
   // Request interruption before the journal write can yield: otherwise a
   // loser can open work absent from the cancellation snapshot.
   // The interruption is requested, not awaited: a loser's finalizers may wait
   // on work that only settles after the join returns, and the node scope
   // awaits every fiber when the walk ends anyway.
-  yield* Effect.withFiber((current) =>
+  try Effect.withFiber((current) =>
     Effect.sync(() => {
       for (const fiber of fibers) fiber.interruptUnsafe(current.id)
     })
   )
-  if (journalDecision !== undefined) yield* journalDecision({ members: decided, children: childRuns })
-  yield* cancelChildren(walk, childRuns)
-})
+  if (journalDecision !== undefined) try journalDecision({ members: decided, children: childRuns })
+  try cancelChildren(walk, childRuns)
+}
 
 /**
  * The work of the members a join no longer waits for: their running node
@@ -2068,15 +2072,15 @@ const settleOutcome = (value: unknown): Effect.Effect<unknown, never, FlowInstan
     case "Done":
       return Effect.succeed(value.value)
     case "To":
-      return Effect.gen(function*() {
-        const instance = yield* FlowInstance
-        const current = yield* CapabilitySet.current
+      return effect {
+        const instance = try FlowInstance
+        const current = try CapabilitySet.current
         instance.handoff = new Handoff({
           flow: value.flow,
           payload: value.payload,
           capabilityCeilings: [...current.groups, ...(value.capabilityCeilings ?? [])]
         })
-      })
+      }
     case "Park":
       return Effect.andThen(
         annotateWaiting(value.reason),
@@ -2185,15 +2189,15 @@ const makeLayer = <
   | Error["DecodingServices"]
   | Error["EncodingServices"]
 > =>
-  Layer.effectDiscard(Effect.gen(function*() {
-    const runtime = yield* FlowRuntime
+  Layer.effectDiscard(effect {
+    const runtime = try FlowRuntime
     const registered = reachable ?? new Set<AnyWithProps>()
     if (registered.has(flow)) return
     // Lazy registration can be skipped by an independent live owner. Recheck
     // on later executions so releasing that owner permits fresh admission.
     if (!ifAbsent) registered.add(flow)
-    const scope = yield* Effect.scope
-    const context = yield* Effect.context<Services | Scope.Scope>()
+    const scope = try Effect.scope
+    const context = try Effect.context<Services | Scope.Scope>()
     const implementations = Context.get(context, Implementations)
     // Keep discovered declarations in the host registration scope, rather
     // than the executing parent's scope: handoffs outlive that parent.
@@ -2213,7 +2217,7 @@ const makeLayer = <
         Effect.asVoid
       ) as Effect.Effect<void>
     const middleware = Context.get(flow.annotations, ExecutionMiddleware)
-    yield* runtime.register(
+    try runtime.register(
       flow,
       ((payload: Payload["Type"]) => {
         const body = Effect.flatMap(
@@ -2224,13 +2228,13 @@ const makeLayer = <
         // table when entering this flow as a child; retain dynamic execution
         // services while restoring this flow's registered implementations.
         const interpreted = middleware === undefined ? body : middleware.wrap(payload, body)
-        const hosted = options.onHeartbeat === undefined ? interpreted : Effect.gen(function*() {
-          const instance = yield* FlowInstance
+        const hosted = options.onHeartbeat === undefined ? interpreted : effect {
+          const instance = try FlowInstance
           instance.heartbeat = options.onHeartbeat!(instance.executionId)
-          return yield* interpreted.pipe(Effect.ensuring(Effect.sync(() => {
+          return try interpreted.pipe(Effect.ensuring(Effect.sync(() => {
             instance.heartbeat = undefined
           })))
-        })
+        }
         return hosted.pipe(Effect.provideService(Implementations, implementations))
       }) as (payload: Payload["Type"], executionId: string) => Effect.Effect<
         Success["Type"],
@@ -2239,7 +2243,7 @@ const makeLayer = <
       >,
       { ifAbsent }
     )
-  }))
+  })
 
 /**
  * Composes one flow and its implementation layers around one isolated registry.

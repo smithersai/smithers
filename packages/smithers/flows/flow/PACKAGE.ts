@@ -204,7 +204,7 @@ const securityReview = Smithers.SecurityReview({
         "WaitFor accepting a token whose flowName or executionId differs from the running instance, or accepting both token and name.",
         "TokenParsed.FromString accepting a JSON array whose members are not exactly three strings."
       ],
-      paths: ["src/DurableDeferred.vibe", "src/WaitFor.vibe", "src/HumanTask.ts"]
+      paths: ["src/DurableDeferred.vibe", "src/WaitFor.vibe", "src/HumanTask.vibe"]
     },
     {
       id: "queue-item-trust",
@@ -228,7 +228,7 @@ const securityReview = Smithers.SecurityReview({
         "A JSON Schema walk that recurses without the maxSchemaDepth or maxSchemaNodes bound, or follows $ref.",
         "A rejection reason retained longer than maxRetainedRejectionChars or echoing the whole answer."
       ],
-      paths: ["src/HumanTask.ts", "src/internal/JsonSchemaSubset.ts", "src/internal/BoundedJson.ts"]
+      paths: ["src/HumanTask.vibe", "src/internal/JsonSchemaSubset.ts", "src/internal/BoundedJson.ts"]
     },
     {
       id: "execution-identity-collision",
@@ -240,7 +240,7 @@ const securityReview = Smithers.SecurityReview({
         "A digest input that omits the callee tag, node id, parent execution id, or canonical payload.",
         "A structural node id or placeholder that enters a hashed value non-canonically (key order, undefined vs missing)."
       ],
-      paths: ["src/Interpreter.ts", "src/Graph.ts"]
+      paths: ["src/Interpreter.vibe", "src/Graph.ts"]
     },
     {
       id: "recorded-content-reuse",
@@ -248,11 +248,11 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A code change or a tampered journal row replays a stale or forged action result into a later execution as if it were computed now.",
       lookFor: [
-        "A sealed action with an idempotency key dispatched without the implementationVersion refusal in Interpreter.ts.",
+        "A sealed action with an idempotency key dispatched without the implementationVersion refusal in Interpreter.vibe.",
         "A replayed or cached value handed to downstream nodes without decoding through the action's success schema.",
         "A replaying registration path (layerWithImplementations or its callers) that defaults callbackIdentity to \"process-local\" instead of \"stable\"."
       ],
-      paths: ["src/Interpreter.ts", "src/Graph.ts", "src/Action/Implementations.vibe"]
+      paths: ["src/Interpreter.vibe", "src/Graph.ts", "src/Action/Implementations.vibe"]
     },
     {
       id: "graph-payload-bounds",
@@ -264,7 +264,7 @@ const securityReview = Smithers.SecurityReview({
         "A comparison or placement loop that is not capped by maxComparisonPairs, maxPlacementDepth, or maxPlacementMembers.",
         "A node record larger than maximumPageBytes written to the journal instead of refused."
       ],
-      paths: ["src/Graph.ts", "src/Interpreter.ts"]
+      paths: ["src/Graph.ts", "src/Interpreter.vibe"]
     },
     {
       id: "wait-and-retry-bounds",

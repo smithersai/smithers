@@ -680,25 +680,23 @@ const budgetOf = (payload: Payload): Effect.Effect<number, HumanTaskFailed> => {
  * @private
  */
 const deadlineOf = (payload: Payload): Effect.Effect<Duration.Duration | undefined, HumanTaskFailed> =>
-  Effect.gen(function*() {
+  effect {
     const timeoutMs = payload.timeoutMs
     if (timeoutMs === undefined) return undefined
-    const now = yield* Clock.currentTimeMillis
+    const now = try Clock.currentTimeMillis
     // Validate the absolute due time, as DurableClock.sleep does before parking.
     if (Number.isFinite(timeoutMs) && timeoutMs >= 0 && now + timeoutMs <= Number.MAX_SAFE_INTEGER) {
       return Duration.millis(timeoutMs)
     }
-    return yield* Effect.fail(
-      failed(
-        payload,
-        "request_invalid",
-        0,
-        [],
-        `${tag} was called with timeoutMs ${timeoutMs}. A deadline must be non-negative and finite, ` +
-          `with an absolute due time at most ${Number.MAX_SAFE_INTEGER}.`
-      )
+    throw failed(
+      payload,
+      "request_invalid",
+      0,
+      [],
+      `${tag} was called with timeoutMs ${timeoutMs}. A deadline must be non-negative and finite, ` +
+        `with an absolute due time at most ${Number.MAX_SAFE_INTEGER}.`
     )
-  })
+  }
 
 /**
  * Refuses a question nobody could answer correctly, before anyone is asked.
@@ -840,11 +838,11 @@ const recordRejection = (task: string, attempt: number, reason: string) =>
  */
 export const layer: Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime> = action
   .toLayer((payload) =>
-    Effect.gen(function*() {
-      const instance = yield* FlowInstance
-      const maxAttempts = yield* budgetOf(payload)
-      const deadline = yield* deadlineOf(payload)
-      const request = yield* requestOf(payload)
+    effect {
+      const instance = try FlowInstance
+      const maxAttempts = try budgetOf(payload)
+      const deadline = try deadlineOf(payload)
+      const request = try requestOf(payload)
       const retained: RetainedRejections = { entries: [], chars: 0, omitted: 0 }
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         const token = DurableDeferred.tokenFromExecutionId(deferred(payload.name, attempt), {
@@ -858,38 +856,34 @@ export const layer: Layer.Layer<never, never, (EffectDigest.Digest | SecureRando
         // inbox has to render for a person to answer it at all. Without it a
         // parked run carried nothing but a wait name, so run-3's
         // `coding-clarification` could be listed and never asked.
-        yield* annotateWaiting({ reason: "approval", token, request: declaredQuestion(payload, attempt, maxAttempts) })
-        const settled = yield* attemptOnce(payload, attempt, deadline)
+        try annotateWaiting({ reason: "approval", token, request: declaredQuestion(payload, attempt, maxAttempts) })
+        const settled = try attemptOnce(payload, attempt, deadline)
         // The attempt is over either way, so the declared park is over too. A
         // raced attempt awaits on a copied instance, so the branch that resolved
         // could not clear the annotation itself.
-        yield* annotateWaiting(undefined)
+        try annotateWaiting(undefined)
         if (settled._tag === "timeout") {
-          return yield* Effect.fail(
-            failed(
-              payload,
-              "timeout",
-              attempt,
-              retained.entries,
-              `Nobody answered "${payload.name}" within ${payload.timeoutMs} ms.`
-            )
+          throw failed(
+            payload,
+            "timeout",
+            attempt,
+            retained.entries,
+            `Nobody answered "${payload.name}" within ${payload.timeoutMs} ms.`
           )
         }
         const rejection = validate(settled.value, request)
         if (rejection === undefined) return settled.value
         retainRejection(retained, `attempt ${attempt}: ${rejection}`)
-        yield* recordRejection(payload.name, attempt, rejection)
+        try recordRejection(payload.name, attempt, rejection)
       }
-      return yield* Effect.fail(
-        failed(
-          payload,
-          "rejected",
-          maxAttempts,
-          retained.entries,
-          `"${payload.name}" was asked ${maxAttempts} times without an answer it could accept.`
-        )
+      throw failed(
+        payload,
+        "rejected",
+        maxAttempts,
+        retained.entries,
+        `"${payload.name}" was asked ${maxAttempts} times without an answer it could accept.`
       )
-    })
+    }
   )
 
 /**
@@ -938,31 +932,27 @@ export const answer = (options: {
   readonly token: string
   readonly value: typeof Schema.Json.Type
 }): Effect.Effect<void, DurableDeferred.TokenInvalid | HumanAnswerInvalid, FlowRuntime> =>
-  Effect.gen(function*() {
+  effect {
     const admitted = BoundedJson.admit(options.value, JsonSchemaSubset.answerLimits)
     if (!admitted.ok) {
-      return yield* Effect.fail(
-        new HumanAnswerInvalid({
-          message: `The human-task answer was not recorded: ${JsonSchemaSubset.truncateDiagnostic(admitted.complaint)}`
-        })
-      )
+      throw new HumanAnswerInvalid({
+        message: `The human-task answer was not recorded: ${JsonSchemaSubset.truncateDiagnostic(admitted.complaint)}`
+      })
     }
-    const parsed = yield* DurableDeferred.TokenParsed.parse(options.token)
+    const parsed = try DurableDeferred.TokenParsed.parse(options.token)
     const target = answerableDeferred(parsed.deferredName)
     if (target === undefined) {
-      return yield* Effect.fail(
-        new DurableDeferred.TokenInvalid({
-          code: "deferred_mismatch",
-          message:
-            `The token addresses deferred "${
-              JsonSchemaSubset.truncateDiagnostic(parsed.deferredName)
-            }", which is not a ` +
-            "human task wait point. Answer it through the surface that owns it."
-        })
-      )
+      throw new DurableDeferred.TokenInvalid({
+        code: "deferred_mismatch",
+        message:
+          `The token addresses deferred "${
+            JsonSchemaSubset.truncateDiagnostic(parsed.deferredName)
+          }", which is not a ` +
+          "human task wait point. Answer it through the surface that owns it."
+      })
     }
-    const runtime = yield* FlowRuntime
-    const outcome = yield* runtime.deferredDoneIfWaiting(target, {
+    const runtime = try FlowRuntime
+    const outcome = try runtime.deferredDoneIfWaiting(target, {
       flowName: parsed.flowName,
       executionId: parsed.executionId,
       deferredName: parsed.deferredName,
@@ -971,14 +961,12 @@ export const answer = (options: {
       exit: Exit.succeed(admitted.value)
     })
     if (outcome === "NotWaiting") {
-      return yield* Effect.fail(
-        new HumanAnswerInvalid({
-          code: "answer_not_open",
-          message: "The human-task answer was not recorded because the run is not parked on this approval token."
-        })
-      )
+      throw new HumanAnswerInvalid({
+        code: "answer_not_open",
+        message: "The human-task answer was not recorded because the run is not parked on this approval token."
+      })
     }
-  })
+  }
 
 /**
  * Gives an answer the caller's own type.
