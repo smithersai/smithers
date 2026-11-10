@@ -331,10 +331,11 @@ fails every GET, `dropAfterLink` fails the GETs after a sub-issue link, and `hid
 
 Fuzz-only coverage of this lane's files, all 63 Node fuzz files at 5 s (63 files, 202 targets, exit 0):
 `worker/ActionRuns.vibe` 120/120 lines, 178/178 branches; `worker/Issues.vibe` 298/298, 452/453; `worker/Wiki.vibe`
-175/175, 233/234; `Objects`, `Sequencer`, `HistoryActions` and the five view files 100%. The two open arms are one
-guard, `retryFrom`'s `step === undefined` (`Issues` 374, `Wiki` 251): a failed execution the engine inspects always
-records its `perform` step, and the engine's `RunInspection` is built inside `executeIssues`/`executeWiki`, so no
-injected service reaches it. It stays as the guard for an engine that breaks that invariant.
+175/175, 233/234; `Objects`, `Sequencer`, `HistoryActions` and the five view files 100%. The two open arms were one
+guard, `retryFrom`'s `step === undefined` (`Issues` 375, `Wiki` 251). A store that lost the run's step events reaches
+it: `faultyStore`'s `lose(pattern)` answers a matching read with no rows, as a store restored from an older copy
+does, and the `store` scenarios of `issues/steered-host` and `wiki/steered-host` lose `RunInspection.inspect`'s node
+events before a recovery, which answers `unavailable`; healed, the recovery retries the write (2026-11-10).
 
 `test/entry.coverage.test.vibe` failed about half its runs with an unhandled teardown error: `src/web/entry.vibe`
 started the page with `Runtime.run` and kept no handle. It now starts it with `Runtime.embed` and exports the handle;

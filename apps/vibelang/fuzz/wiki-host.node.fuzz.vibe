@@ -401,6 +401,10 @@ const steeredScenario = (scenario: typeof WIKI_SCENARIOS[number], pick: number, 
         if (reasonOf(failed) !== "unavailable") throw new Finding({ report: `${label} answered ${reasonOf(failed)}` })
       }
       store.fail()
+      // The store lost the run's step events: no proposal step to retry from, and the recovery is unavailable.
+      store.lose(/WHERE run_id = \? AND event_type IN/)
+      if (reasonOf(try execute({ ...proposal, recovery: "r1" })) !== "unavailable") throw new Finding({ report: "a recovery whose steps were lost was not unavailable" })
+      store.lose()
       if (reasonOf(try execute({ ...proposal, recovery: "r1" })) !== "connect") throw new Finding({ report: "the healed recovery did not retry the proposal" })
       break
     }
