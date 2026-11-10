@@ -1,0 +1,27 @@
+// @vitest-environment node
+// Ruling VL-36: a committed recording of a real service never holds a credential. Every file under test/recordings is
+// scanned with the recorder's own credential rules, so a hand edit or a recording made before a rule existed fails CI.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import { HttpRecording } from "@smthrs/testing"
+
+it.effect("no committed recording holds a credential, and each one replays", () => effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const directory = try path.fromFileUrl(new URL("./recordings/", import.meta.url))
+    const files = (try fs.readDirectory(directory)).filter((name) => name.endsWith(".json")).sort()
+    expect(files.length).toBeGreaterThan(0)
+    const found: Array<string> = []
+    for (const name of files) {
+      const file = path.join(directory, name)
+      const text = try fs.readFileString(file)
+      for (const rule of HttpRecording.scan(text)) found.push(`${name}: ${rule}`)
+      // jj refuses to snapshot a new file over 1 MiB; a recording that large records more than its test needs.
+      expect(new TextEncoder().encode(text).length, name).toBeLessThan(1024 * 1024)
+      const recording = try HttpRecording.load(file)
+      expect(recording.exchanges.length, name).toBeGreaterThan(0)
+    }
+    expect(found).toEqual([])
+  }
+})

@@ -1,0 +1,59 @@
+// Real GitHub in a test, by ruling VL-36: replay a committed recording (the default), record one, or pass through.
+//
+//   pnpm vitest run test/x.test.vibe                                       replay: no token, no network
+//   VIBE_GITHUB=record GITHUB_TEST_TOKEN=... pnpm vitest run test/x...     record: real GitHub, writes test/recordings/x.json
+//   VIBE_GITHUB=passthrough GITHUB_TEST_TOKEN=... pnpm vitest run ...      real GitHub, nothing written
+//
+// A run that writes writes only to the test repository, as the smithers.sh GitHub App's installation on
+// codeplanesmithers. The recording holds no token: @smthrs/testing's HttpRecording scrubs it and refuses a file that
+// still matches a credential shape, and test/recordings.test.vibe scans every committed recording.
+import { FetchHttpClient, HttpClient } from "effect/http"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { HttpRecording } from "@smthrs/testing"
+
+/** The only repository a recording run writes to. */
+export const TEST_REPOSITORY = { owner: "codeplanesmithers", name: "smithers-vibelang-e2e", id: 1443081815, api: "https://api.github.com" } as const
+/** Who GitHub says wrote what a recording run created: the App's installation, not a person. */
+export const TEST_AUTHOR = "smitherspreviewrelease[bot]"
+/** A person the test repository can assign: its owner. */
+export const TEST_ASSIGNEE = "codeplanesmithers"
+
+export const mode: HttpRecording.Mode = runSync(Config.schema(HttpRecording.Mode, "VIBE_GITHUB").pipe(Config.withDefault("replay" as const)))
+const token = runSync(Config.option(Config.Redacted("GITHUB_TEST_TOKEN")))
+
+/** The file a test's recording lives in, beside the tests. (A template literal here is a Vite asset glob.) */
+export effect function recordingPath(name: string) {
+  const url = new URL("../recordings/" + name + ".json", import.meta.url)
+  return try Effect.provide(Effect.flatMap(Path.Path, (path) => path.fromFileUrl(url)), NodeServices.layer)
+}
+
+/** GitHub's `since` is when a flow was admitted, which differs on every run; the recording keys it out. */
+const normalize = (request: HttpRecording.RecordedRequest): HttpRecording.RecordedRequest => ({ ...request, url: request.url.replace(/([?&]since=)[^&]*/, "$1run") })
+
+/** The link fields a reader of GitHub's answers uses; every other `*_url` is hypermedia nothing reads. */
+const READ_LINKS = new Set(["html_url", "parent_issue_url", "repository_url", "issue_url", "target_url", "details_url"])
+/** Fields of GitHub's answers that no reader decodes (checked against the integration's schemas, 2026-11-10). */
+const UNREAD = new Set(["reactions", "closed_by", "issue_dependencies_summary", "issue_field_values", "active_lock_reason", "gravatar_id", "user_view_type", "site_admin"])
+/**
+ * GitHub's REST answers without hypermedia links and fields nothing reads: three quarters of an issue list. A field a
+ * reader needs fails the recording run, which hands the code the pruned answer too.
+ */
+function prune(body: unknown): unknown {
+  if (Array.isArray(body)) return body.map(prune)
+  if (typeof body !== "object" || body === null) return body
+  return Object.fromEntries(Object.entries(body).filter(([key]) => !UNREAD.has(key) && (!key.endsWith("_url") || READ_LINKS.has(key))).map(([key, value]) => [key, prune(value)]))
+}
+
+/**
+ * GitHub for one test: the client its requests go through, the token they carry (a placeholder on replay, which no
+ * request reaches GitHub with), and the run's label, fresh when GitHub is real and the recorded one on replay.
+ */
+export effect function github(name: string) {
+  const path = try recordingPath(name)
+  if (mode !== "replay" && Option.isNone(token)) return try Effect.die(new Error(`VIBE_GITHUB=${mode} needs GITHUB_TEST_TOKEN for ${TEST_REPOSITORY.owner}/${TEST_REPOSITORY.name}`))
+  const label = mode === "replay" ? (try HttpRecording.load(path)).label ?? name : `${name}-${try Clock.currentTimeMillis}`
+  const live = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
+  const client = try HttpRecording.make({ mode, path, live, label, normalize, prune, secrets: Option.isSome(token) ? [token.value] : [] })
+  try Effect.logInfo("github test client").pipe(Effect.annotateLogs({ mode, recording: name }))
+  return { client, label, token: Option.getOrElse(token, () => Redacted.make("replay-sends-no-token")) }
+}

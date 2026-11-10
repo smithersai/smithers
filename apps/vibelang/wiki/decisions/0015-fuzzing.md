@@ -473,7 +473,8 @@ below was checked by breaking the code, seeing the test fail, and restoring it.
   naming the budget and host load; `FUZZ_EXECUTIONS=0` replay still passes. At load 128 it failed
   `issues/steered-host` at 5 seconds, which passed at 60 seconds with one execution.
 - **No target reaches the network.** `history/github-public-read` left the suite; `test/mainLog.github.test.vibe`
-  reads real GitHub only with `GITHUB_TEST_TOKEN`.
+  replays a recording of real GitHub and records again only with `VIBE_GITHUB=record` and `GITHUB_TEST_TOKEN`
+  ([0032](0032-record-replay.md)). Fuzz targets keep the in-memory GitHub: a recording cannot hold generated requests.
 - **Named answers.** `sandbox/host-recovery`, `api-objects/world`, `web/subscriptions`, `wiki/tools`,
   `history/page-paths`, `reply/failure-tags`, `http/doors`, `actions/history-host`, `web/arbitrary-update`,
   `history/arbitrary-update` and `history/view-models` now require the expected outcome; the api-workerd bench reads one

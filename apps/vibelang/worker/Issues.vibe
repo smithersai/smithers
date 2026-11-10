@@ -88,6 +88,17 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
       pages += 1
       if (cursor !== null && pages >= 50) throw new IssueFailure({ reason: "partial" })
     } while (cursor !== null)
+    // GitHub's issue list trails a write by seconds; the issue's own read does not (recorded on real GitHub, VL-36).
+    // The selected issue is read by itself and stands in for its listed copy, so a write's answer shows the write.
+    if (number > 0) {
+      const own = try Effect.result(Effect.flatMap(GitHub.GitHubClient.GitHubClient, (api) => api.request("GET", `/repos/${repo.owner}/${repo.name}/issues/${number}`, undefined)))
+      if (own._tag === "Failure" && issueFailureOf(own.failure).reason !== "missing") throw issueFailureOf(own.failure)
+      if (own._tag === "Success") {
+        const at = raw.findIndex((value) => (value as { readonly number?: unknown } | null)?.number === number)
+        if (at === -1) raw.push(own.success)
+        else raw[at] = own.success
+      }
+    }
     const items: Array<IssueRecord> = []
     const reviewers: Array<string> = []
     for (const value of raw) {

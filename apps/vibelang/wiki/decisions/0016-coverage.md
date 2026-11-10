@@ -628,8 +628,8 @@ The unit gate still fails below 100%. No file below is excluded and no threshold
 | `worker/Api.vibe` | Closed 2026-11-10 (vl-coverage-workerd): its wiring runs only in workerd, and the suite now loads it there as Alchemy builds and bridges it (`test/workerd/api.vibe`), measured in the unit and fuzz gates. | `test/alchemyApi.workerd.test.vibe`; fuzz target `workerd/alchemy-api-requests` |
 | `worker/SpecificationReviewers.vibe` | Stays unbound by decision 0027. | None until it is bound |
 | `worker/VipDraft.vibe`, model paths of `worker/Reply.vibe` | A model credential reference in the environment. | `test/live.workerd.test.vibe` covers Reply, opt-in on `CEREBRAS_API_KEY`. `test/vipDraft.test.vibe` covers `VipDraft`, opt-in on the same key |
-| GitHub read, write, VIP proposal and label paths of `worker/Issues.vibe` (`githubHost`) | Real GitHub needs the GitHub test token for the test repository. Since 2026-11-10 the delegated tests run these paths against the in-memory GitHub `fuzz/issues-node-fake.vibe` (see "`worker/Issues.vibe`, `worker/Wiki.vibe`" below); whether such a protocol fake may stand in on a happy path awaits Will's ruling (vl-review-tests finding 3). | `test/issues.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
-| GitHub write paths of `worker/Wiki.vibe` | A real GitHub token for the test repository. | `test/wikiEdit.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
+| GitHub read, write, VIP proposal and label paths of `worker/Issues.vibe` (`githubHost`) | Covered. The happy paths replay real GitHub through smithers.sh's delegation (`test/issues.github.test.vibe`, recordings `issues.json` and `issues-proposal.json`, [0032](0032-record-replay.md)); the fault cases stay on the in-memory GitHub as wrapped client services. | `test/issues.github.test.vibe` (replay, no token) |
+| GitHub write paths of `worker/Wiki.vibe` | A real GitHub token for the test repository, until the wiki test moves to the delegation and a recording ([0032](0032-record-replay.md), remaining). | `test/wikiEdit.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
 
 ## Lane vl-coverage2 (2026-11-09)
 
@@ -788,9 +788,8 @@ drafts, retries and resumes, and the HTTP routes' store failures.
   `match.index` default, the review rechecks `verifiedVip` already made and Wiki's final `invalid` branch.
 - **Found, kept:** a journal that cannot record a step's attempt makes the engine interrupt the run
   (`EngineStore.actionExecute`), so the request ends interrupted rather than answering `unavailable`. That is
-  engine-store's lease handling, outside this app; the wiki test pins it. `test/issues.github.test.vibe`, the opt-in
-  real-GitHub test, still authenticates with a token on the principal and cannot write since decision 0165; it is
-  skipped without `GITHUB_TEST_TOKEN`.
+  engine-store's lease handling, outside this app; the wiki test pins it. `test/issues.github.test.vibe` now runs the
+  issues flow through the delegation on a recording of real GitHub, on every run ([0032](0032-record-replay.md)).
 
 **`worker/Reply.vibe`, `worker/ActionRuns.vibe` (2026-11-10).** Whole suite at `5540b9b2` → over every unit test that
 imports each file. Reply: statements 144/157 → 157/157, branches 63/81 → 80/81, functions 18/18, lines → 100%.
