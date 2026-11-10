@@ -9,6 +9,13 @@ the coverage commands. `pnpm e2e` measures and reports Chromium coverage without
 person asks for them, no wildcard selects them, and they stay red until every file reaches 100%. Exclusive is the
 same pattern as `benchCoverage` and `fuzzCoverage`. Exclusive is not a threshold change: both gates hold 100%.
 
+## Known-red gates stay opt-in (the lead's call, 2026-11-10)
+
+`coverage`, `browserCoverage`, `benchCoverage` and `fuzzCoverage` stay `exclusive: true` while they are red: a
+person runs them by name and a wildcard `smthrs test` skips them. Each joins the default gate in the commit that makes
+it pass, by removing its `exclusive: true` in that commit. Every gate keeps its 100% per-file thresholds meanwhile.
+`workerdCoverage` follows the same rule. The lead decided this for the lane; it does not go to Will.
+
 ## Landed behavior
 
 The new tests exercise sequencer replay, ordering and reply attempts; real loopback HTTP and product mock flows;
