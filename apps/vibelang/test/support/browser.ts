@@ -220,4 +220,5 @@ export function clickButton(label: string): void {
 export function pageText(): string {
   return document.body.textContent ?? ""
 }
-
+/** The number of child nodes of the first element matching `css`, or undefined when none matches. */
+export function childCount(css: string): number | undefined { return document.querySelector(css)?.childNodes.length }

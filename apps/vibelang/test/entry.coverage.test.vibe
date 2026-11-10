@@ -1,17 +1,25 @@
 // The browser entry module, imported as the page loads it: /history starts the mythical history's page and every
-// other path starts the chat. Each import runs the real startup on Happy DOM's window, forced to the mock agent.
+// other path starts the chat. Each import runs the real startup on Happy DOM's window, forced to the mock agent, and
+// each test stops the page it started through the module's handle, so no timer or log outlives the test.
 import { expect, it } from "@effect/vitest"
 import { vi } from "vitest"
-import { container, fullLocation, hasAsk, remove, setLocation, textOf } from "./support/browser.ts"
+import { childCount, container, fullLocation, hasAsk, remove, setLocation, textOf } from "./support/browser.ts"
 
-/** Loads entry.vibe afresh at `address` into a page with a #root, until `started` holds. */
+/** Loads entry.vibe afresh at `address` into a page with a #root, until `started` holds; stops it on scope close. */
 effect function loadedAt(address: string, started: () => void) {
   const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
   const before = try sync(fullLocation)
   try addFinalizer(() => sync(() => setLocation(before)))
   try Effect.try(() => { const root = node.ownerDocument.createElement("div"); root.id = "root"; node.append(root); setLocation(address) })
-  try promise(async () => { vi.resetModules(); await import("../src/web/entry.vibe") })
+  const entry = try promise(async () => { vi.resetModules(); return await import("../src/web/entry.vibe") })
+  try addFinalizer(() => promise(() => stopped(entry.app)))
   try promise(() => vi.waitFor(started, { timeout: 15_000, interval: 50 }))
+}
+
+/** Disposes the page and waits until its teardown has emptied #root. */
+async function stopped(app: { readonly dispose: () => void }) {
+  app.dispose()
+  await vi.waitFor(() => expect(childCount("#root")).toBe(0), { timeout: 15_000, interval: 20 })
 }
 
 it.live("/history starts the history page", () => scoped(effect {
@@ -21,4 +29,11 @@ it.live("/history starts the history page", () => scoped(effect {
 
 it.live("any other path starts the chat", () => scoped(effect {
   try loadedAt("/?agent=mock", () => expect(hasAsk()).toBe(true))
+}))
+
+it.live("the page's handle stops it and empties #root", () => scoped(effect {
+  try loadedAt("/?agent=mock", () => expect(hasAsk()).toBe(true))
+  const entry = try promise(() => import("../src/web/entry.vibe"))
+  try promise(() => stopped(entry.app))
+  try Effect.try(() => expect(hasAsk()).toBe(false))
 }))
