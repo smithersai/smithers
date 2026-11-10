@@ -22,8 +22,12 @@ const Grant = Schema.Struct({
   repository: Schema.String, repositoryId: Schema.Number, scopes: Schema.Array(Schema.Literals(["issues", "proposals"])),
   paths: Schema.Array(Schema.String), branchPrefix: Schema.String, labelPrefix: Schema.String,
 })
-const Sites = Schema.Array(Schema.Struct({ origin: Schema.String, secret: Schema.String.check(Schema.isMinLength(32)), grants: Schema.optional(Schema.Array(Grant)) }))
-/** `grants` is optional so a site with none signs in and holds no delegation scope. */
+const Read = Schema.Struct({ repository: Schema.String, repositoryId: Schema.Number })
+const Sites = Schema.Array(Schema.Struct({ origin: Schema.String, secret: Schema.String.check(Schema.isMinLength(32)), grants: Schema.optional(Schema.Array(Grant)), reads: Schema.optional(Schema.Array(Read)) }))
+/**
+ * `grants` is optional so a site with none signs in and holds no delegation scope. `reads` lists the public repositories
+ * its signed-out visitors read through the App (worker/PublicReads.vibe).
+ */
 export const decodeSites = Schema.decodeUnknownEffect(Schema.fromJsonString(Sites))
 
 export effect function configured() {

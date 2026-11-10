@@ -2,6 +2,7 @@ import { GitHub } from "@smthrs/integrations"
 import * as AuthBroker from "./AuthBroker.vibe"
 import * as GitHubConnection from "./GitHubConnection.vibe"
 import * as GitHubConnectionsPage from "./GitHubConnectionsPage.vibe"
+import * as PublicReads from "./PublicReads.vibe"
 import { withRequestRay } from "./RequestRay.ts"
 // ChatApi's program (worker/ChatApi.ts): everything ChatApi serves and hosts. worker/ChatApi.ts loads this module when
 // the Worker first builds its program, not when Cloudflare starts the Worker, so its modules are evaluated then and
@@ -14,7 +15,7 @@ import { CiJob } from "@smthrs/sandbox"
 import { RuntimeContext } from "alchemy"
 import * as Output from "alchemy/Output"
 import { Cause, Effect, Layer, Option, Predicate, Redacted } from "effect"
-import { FetchHttpClient, HttpServerRequest } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpServerRequest } from "effect/http"
 import { HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
@@ -217,6 +218,9 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const connectionObjects = yield* GitHubConnection.GitHubConnection
     // Read once: the delegation route checks a call's signature against these sites before it addresses an object.
     const connectionSetup = yield* GitHubConnection.configured().pipe(Effect.orDie)
+    // Signed-out reads for hosted sites through the App (decision 0165, public reads): stateless, before any object.
+    const publicReadHttp = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer))
+    const publicReadSetup = yield* PublicReads.configured().pipe(Effect.provideService(HttpClient.HttpClient, publicReadHttp), Effect.orDie)
     const signIn = yield* SignIn.make(database, options).pipe(Effect.provide(FetchHttpClient.layer))
     // Repositories (docs/features/repo.md): cloning into Code Storage, the `repositories` shape, reads at a commit,
     // cached in this Worker's Cache API, and what GitHub says of a repository, kept in Postgres for every data center.
@@ -468,6 +472,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           return yield* brokerObjects.getByName("hosted").fetch(brokerRequest).pipe(Effect.provideService(RuntimeContext, runtime))
         }
         if (GitHub.Delegation.handles(brokerRequest.url)) return yield* GitHubConnection.route(connectionObjects, connectionSetup).pipe(Effect.provideService(RuntimeContext, runtime))
+        if (GitHub.PublicRead.handles(brokerRequest.url)) return yield* PublicReads.route(publicReadSetup, publicReadHttp)
         const checks = Layer.succeed(SignIn.RoleChecks, yield* roleChecks)
         const starter = yield* flowStarter
         return yield* runnerAdmin.admit(

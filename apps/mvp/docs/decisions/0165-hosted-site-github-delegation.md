@@ -134,3 +134,43 @@ Open, for the production smoke test:
 1. GitHub documents no event-specific field naming who revoked. The handler reads `sender.id`, ignores the `ghost` placeholder, and relies on a 401 otherwise. Confirm a real delivery.
 2. That a person's fork with a selected-repository install accepts `createCommitOnBranch` and the upstream pull.
 3. That ten further sign-ins leave the stored token usable, and whether a refresh counts as a new token toward the ten.
+
+## Addendum: public reads (2026-11-10, lane vl-public-reads)
+
+**Why.** vibelang read GitHub with no credential and shared the 60-per-hour anonymous limit with every Cloudflare tenant on its egress address. On 2026-11-10 at 04:12 PST a signed-out `GET /api/wiki?page=index` logged `rate-limited` and answered 503; `/api/issues` the same. A hosted site still holds no GitHub credential, so a signed-out visitor's reads go through smithers.sh too.
+
+```
+browser ─▶ site object ── cache hit, fresh ─────────────────────────▶ answer
+                 │ miss or older than 30 s: If-None-Match
+                 ▼
+            POST /api/auth/broker/public-read ─▶ ChatApi: signature, scope
+                                                   │ installation token for the repository
+                                                   ▼
+                                                 GitHub GET ── 304 ─▶ cached copy, revalidated
+                                                            ── 200 ─▶ store, answer
+                                                            ── 403/429 limit, 5xx, unreachable ─▶ cached copy, stale
+```
+
+**The request.** `POST https://smithers.sh/api/auth/broker/public-read` with `{ origin, request, payload }`. `request` is the site key's signature, under the purpose `broker_public_read`, of `{ audience, route, origin, digest, expires }`; `payload` is `{ path, etag? }`. A delegation signature (`broker_delegation`) never verifies here, nor this one there. No person, delegation or Durable Object takes part. smithers.sh checks, in order: POST, body at most 8 KiB read within 3 seconds, a registry origin, the signature, audience, route, origin, an expiry within 60 seconds, and the digest. An unsigned request costs one HMAC and touches no storage and no GitHub. A replay within 60 seconds repeats a public GET; no nonce is kept.
+
+**The scope.** A registry entry gains `reads: [{ repository, repositoryId }]`, separate from a person's write `grants`. `PublicReadPolicy.readable` admits a GET of `/repos/<owner>/<name>` or one of its read collections (`issues`, `pulls`, `contents`, `git/ref`, `git/matching-refs`, `branches`, `commits`, `assignees`) for a listed repository, with safe path segments and a plain query. An entry that fails validation (not `owner/name`, no positive id) disables public reads with `github.public_read.config` `invalid_read`; it never widens them. The token is an installation token minted for that repository id alone with read permissions (contents, issues, pull requests, metadata). Before first use smithers.sh reads `/repos/<owner>/<name>` with it: a different id refuses `forbidden` (finding 5's transfer case), and a private repository refuses `forbidden`, so a registry mistake cannot publish private code. A token is held per isolate until 5 minutes before expiry.
+
+**The answer.** GitHub's status and body pass through with `etag`, `link`, `content-type`, `retry-after` and `x-ratelimit-*`, marked `x-smithers-public-read: github`. smithers.sh's own refusals carry `x-smithers-refusal: forbidden | unavailable` and a JSON `{ reason }`. The site trusts a status only when marked: a smithers.sh that does not serve the route yet answers its own 404, which must not read as GitHub's and drop a copy.
+
+**The cache.** The site keeps each read in its object's storage, keyed by a digest of the URL: status 200, body (at most 1 MiB), `etag`, `link`, `content-type`, and when GitHub last confirmed it. A copy confirmed within 30 seconds answers without a request. An older one is revalidated with `If-None-Match`; a 304 costs no rate limit and refreshes the confirmation time. A 404 drops the copy. Every unmarked answer and every refusal counts as a failure.
+
+| GitHub or smithers.sh answers | With a copy | Without one |
+| --- | --- | --- |
+| 200 | store, answer | store, answer |
+| 304 | answer, confirmed now | not possible: no `If-None-Match` was sent |
+| 404 | drop, answer 404 (`missing`) | 404 (`missing`) |
+| 403 or 429 with `x-ratelimit-remaining: 0` or `retry-after` | copy, stale | `rate-limited` |
+| 401, 5xx, refusal, unmarked answer, unreachable | copy, stale | `unavailable` |
+
+A stale answer carries `stale: <ms since epoch when GitHub last confirmed it>` on `/api/wiki` and `/api/issues`. The panes show the copy as they show a fresh one; a visible mark waits for a designer's state. Reads by a connected person still go through their delegation and their own limit (0165 "As built"). The History object's commit reads use the same client; `GITHUB_TOKEN` is gone from vibelang.
+
+**Observability.** smithers.sh counts `smithers_github_public_reads{outcome}` (`ok`, `not_modified`, `missing`, `rate_limited`, `forbidden`, `unavailable`) and logs `github.public_read` with the outcome only. The site counts `smithers_github_read_cache{outcome}` (`fresh`, `revalidated`, `stored`, `stale`, `dropped`, `too_large`, `miss_failed`). No path, body, token or person is logged.
+
+**Trust limit.** A compromised site can read the public repositories its entry lists, at the installation's rate limit, which smithers.sh's own reads of those repositories share. It reaches no private repository, no other repository and no write. Registry removal stops it at the next deploy.
+
+**Deploy contract.** ChatApi: `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY` (already bound), and `reads` on vibelang's `HOSTED_AUTH_SITES` entry: `smithersai/vibelang` and `smithersai/smithers` with their ids. Without the App or with an invalid `reads` entry, the route answers 503 `unavailable` and the site serves its copies, stale. vibelang: `AUTH_BROKER_SITE_SECRET` (already bound); without it the site reads anonymously, still cached. Deploy smithers.sh first: a site that deploys first serves only copies it already holds, and a fresh object answers `unavailable` until smithers.sh serves the route.

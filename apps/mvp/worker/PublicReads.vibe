@@ -1,0 +1,64 @@
+// Signed-out GitHub reads for hosted sites (decision 0165, public reads): a site's signed GET of a repository its
+// registry entry lists, answered with the App's installation token for that repository alone.
+import { GitHub } from "@smthrs/integrations"
+import { HttpClient, HttpServerResponse } from "effect/http"
+import { decodeSites } from "./GitHubConnection.vibe"
+import * as GitHubConfig from "./github/Config.ts"
+
+export interface Setup {
+  readonly origin: string
+  readonly sites: ReadonlyArray<GitHub.PublicRead.Site>
+  readonly token: GitHub.PublicRead.Token
+  readonly api: string
+}
+
+/** Fixed vocabulary only. */
+const disabled = (outcome: "no_registry" | "invalid_read" | "no_app") => Effect.logWarning("github.public_read.config").pipe(Effect.annotateLogs({ outcome }))
+
+/**
+ * `HOSTED_AUTH_SITES` with each site's `reads`, the broker's origin, and the App (`GITHUB_APP_ID`,
+ * `GITHUB_APP_PRIVATE_KEY`, `GITHUB_API_URL`). Undefined, and the route answers 503, when any is missing or any `reads`
+ * entry fails `DelegationPolicy.validRead`: a registry mistake disables public reads and never widens them.
+ */
+export effect function configured() {
+  const sites = try Config.option(Config.Redacted("HOSTED_AUTH_SITES"))
+  const origin = try Config.option(Config.String("AUTH_BROKER_ORIGIN"))
+  const domain = try Config.option(Config.String("APP_DOMAIN"))
+  // Alchemy must see the App's reads while planning, including when public reads are disabled.
+  const app = GitHubConfig.configured catch () => Option.none<GitHubConfig.GitHubApp>()
+  const home = Option.getOrElse(origin, () => Option.isSome(domain) ? "https://" + domain.value : "")
+  if (Option.isNone(sites) || !GitHub.Auth.Broker.canonicalOrigin(home)) return undefined
+  const decoded = decodeSites(Redacted.value(sites.value)) catch () => undefined
+  if (decoded === undefined) {
+    try disabled("no_registry")
+    return undefined
+  }
+  if (!decoded.every((site) => (site.reads ?? []).every(GitHub.DelegationPolicy.validRead))) {
+    try disabled("invalid_read")
+    return undefined
+  }
+  if (Option.isNone(app)) {
+    try disabled("no_app")
+    return undefined
+  }
+  const auth = GitHub.AppAuth.make({ appId: app.value.appId, privateKey: app.value.privateKey, apiBaseUrl: app.value.apiBaseUrl }) catch () => undefined
+  if (auth === undefined) {
+    try disabled("no_app")
+    return undefined
+  }
+  const setup: Setup = {
+    origin: home,
+    sites: decoded.map((site) => ({ origin: site.origin, secret: Redacted.make(site.secret), reads: site.reads ?? [] })),
+    token: GitHub.PublicRead.installations(auth, try HttpClient.HttpClient, app.value.apiBaseUrl),
+    api: app.value.apiBaseUrl,
+  }
+  return setup
+}
+
+/** ChatApi's public-read route. No Durable Object, storage or person is involved, before or after the signature. */
+export function route(setup: Setup | undefined, github: HttpClient.HttpClient) {
+  if (setup === undefined) {
+    return succeed(HttpServerResponse.jsonUnsafe({ reason: "unavailable" }, { status: 503, headers: { "cache-control": "no-store", [GitHub.PublicRead.REFUSAL]: "unavailable" } }))
+  }
+  return GitHub.PublicRead.route({ origin: setup.origin, sites: setup.sites, token: setup.token, github, api: setup.api })
+}
