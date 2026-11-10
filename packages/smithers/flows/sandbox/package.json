@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/sandbox",
   "type": "module",
-  "version": "1.0.0-rc.16",
+  "version": "1.0.0-rc.17",
   "license": "MIT",
   "smthrs": {
     "group": "engine"
@@ -459,19 +459,19 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/flow": "1.0.0-rc.16",
-    "@smthrs/jj": "1.0.0-rc.16",
-    "@smthrs/kernel": "1.0.0-rc.16",
+    "@smthrs/flow": "1.0.0-rc.17",
+    "@smthrs/jj": "1.0.0-rc.17",
+    "@smthrs/kernel": "1.0.0-rc.17",
     "@smthrs/plan": "workspace:*",
     "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
-    "@smthrs/engine": "1.0.0-rc.16",
+    "@smthrs/engine": "1.0.0-rc.17",
     "@effect/language-service": "0.87.2",
     "@effect/platform-node": "4.1.1",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
-    "@smthrs/std": "1.0.0-rc.16",
+    "@smthrs/std": "1.0.0-rc.17",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
@@ -489,8 +489,8 @@
     "vibelang": "0.0.14-pre.6279f9f9fbfc",
     "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0",
-    "@smthrs/platform-node": "1.0.0-rc.16",
-    "@smthrs/platform-bun": "1.0.0-rc.16"
+    "@smthrs/platform-node": "1.0.0-rc.17",
+    "@smthrs/platform-bun": "1.0.0-rc.17"
   },
   "peerDependencies": {
     "effect": "4.1.1"

@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/capability",
   "type": "module",
-  "version": "1.0.0-rc.16",
+  "version": "1.0.0-rc.17",
   "license": "MIT",
   "smthrs": {
     "group": "engine"
@@ -172,7 +172,7 @@
     "effect": "4.1.1"
   },
   "dependencies": {
-    "@smthrs/canonical": "1.0.0-rc.16",
+    "@smthrs/canonical": "1.0.0-rc.17",
     "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   }
 }

@@ -1,6 +1,6 @@
 // Playwright discovers browser specs only by JS/TS extension.
-import { expect, test } from "@playwright/test"
-const wiki = (page: import("@playwright/test").Page) => page.getByRole("region", { name: "Wiki", exact: true })
+import { expect, test } from "./coverage"
+const wiki = (page: import("./coverage").Page) => page.getByRole("region", { name: "Wiki", exact: true })
 
 for (const level of ["maintainer", "contributor"] as const) {
   test(`${level} reviews Markdown and opens their own change`, async ({ page }, info) => {

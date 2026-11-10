@@ -27,7 +27,7 @@
     "bench:coverage": "pnpm build:surfaces && pnpm build:scripts && BENCH_COVERAGE=1 vitest run --config bench/coverage.config.ts --coverage && node bench/merge-coverage.ts",
     "bench:live": "BENCH_LIVE=1 playwright test --config bench/playwright.config.ts",
     "bench:browser": "BENCH_LIVE=0 playwright test --config bench/playwright.config.ts",
-    "fuzz": "node --import=vibelang/register scripts/fuzz-preflight.vibe && pnpm --workspace-root exec node --import=vibelang/register .smithers/flows/vibelang-fuzz/main.vibe",
+    "fuzz": "pnpm build:scripts && node dist-scripts/fuzz-preflight.js && pnpm --workspace-root exec node --import=vibelang/register .smithers/flows/vibelang-fuzz/main.vibe",
     "fuzz:coverage": "FUZZ_COVERAGE=1 pnpm fuzz",
     "test:coverage": "pnpm build && pnpm build:surfaces && pnpm build:scripts && { COVERAGE_MERGE=1 vitest run --coverage; unit=$?; COVERAGE_MERGE=1 WORKERD_COVERAGE=1 WORKERD_COVERAGE_DIR=coverage/unit/workerd-raw vitest run --mode workerd --coverage --coverage.reportsDirectory=coverage/unit/workerd-node; workerd=$?; node --import=vibelang/register test/unitCoverageGate.vibe && exit $((unit > workerd ? unit : workerd)); }",
     "e2e:coverage": "E2E_COVERAGE_GATE=1 playwright test",

@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/patterns",
   "type": "module",
-  "version": "1.0.0-rc.16",
+  "version": "1.0.0-rc.17",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -475,14 +475,14 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/flow": "1.0.0-rc.16",
-    "@smthrs/plan": "1.0.0-rc.16"
+    "@smthrs/flow": "1.0.0-rc.17",
+    "@smthrs/plan": "1.0.0-rc.17"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
-    "@smthrs/core": "1.0.0-rc.16",
+    "@smthrs/core": "1.0.0-rc.17",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

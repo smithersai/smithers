@@ -22,7 +22,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261019.1",
-    "@smthrs/build-cli": "1.0.0-rc.16",
+    "@smthrs/build-cli": "1.0.0-rc.17",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "alchemy": "2.0.0-beta.85",
@@ -38,8 +38,8 @@
     "@alchemy.run/cloudflare": "2.0.0-beta.85"
   },
   "dependencies": {
-    "@smthrs/canonical": "1.0.0-rc.16",
-    "@smthrs/targets": "1.0.0-rc.16",
+    "@smthrs/canonical": "1.0.0-rc.17",
+    "@smthrs/targets": "1.0.0-rc.17",
     "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   }
 }

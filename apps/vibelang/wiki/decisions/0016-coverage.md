@@ -76,12 +76,17 @@ gate waits for workerd's precise coverage or for VibeLang 0.0.13. `pnpm test:wor
 and merged gate automatically; `pnpm test:workerd:coverage` is its alias. A bare `vitest run --coverage` measures Node only. Two real-model tests remain opt-in without an authorized
 configured model credential.
 
-A separate Node subprocess measurement gap remains: `scripts/fuzz-preflight.vibe` executes in its regression test
-but gets zero hits when loaded with `vibelang/register`. The reduced Effect + FileSystem script at
-`~/vl/vibelang-bugs/coverage-register-subprocess/` prints its expected output and passes the real-child assertion;
-direct loading reports 0/5 statements and 0/1 functions, while emitted JavaScript reports 5/5 and 1/1. This is a
-register-loader/Vitest attribution boundary; its exact root cause is not assigned. No app workaround or compiler
-change was applied. It remains counted as uncovered and does not affect per-module workerd counters.
+A script run in a child process is credited only when the child runs compiler-emitted JavaScript. Vitest 5.0.0
+cannot read what a custom loader such as `vibelang/register` executed: `transformFile` (vitest
+`dist/chunks/index.B89dZ0-N.js`, its own `TODO` says "custom --import=module.registerHooks need to be transformed as
+well somehow") strips types from `.ts` and reads every other extension raw, so a subprocess `.vibe` reaches the
+provider as VibeLang source and is dropped on a parse error. That is Vitest's limit, not VibeLang's: the loader runs
+the program correctly. `scripts/fuzz-preflight.vibe` therefore builds into `dist-scripts/` like
+`scripts/agent-context.vibe` (`tsconfig.scripts.json`), `pnpm fuzz` runs `dist-scripts/fuzz-preflight.js`, and
+`test/fuzzPreflight.test.vibe` runs that same file: 0/16 lines before, 16/16 lines, 4/4 branches, 3/3 functions and
+18/18 statements after (2026-11-10, focused run). New process-boundary tests run the emitted script, never
+`node --import=vibelang/register` on a measured source. Reproductions: `~/vl/vibelang-bugs/coverage-native-loader/`
+and `coverage-register-subprocess/`.
 
 VibeLang 0.0.12 also loses service-Shape methods on object spread (TS2741, compiler exit 2). Minimal reproduction and
 the blocked reply-recovery decorator test are under `~/vl/vibelang-bugs/service-shape-spread/`. No workaround or
@@ -1242,6 +1247,8 @@ program and plain JavaScript control isolate the problem: two real subprocess as
 gets zero while the provider reports a parse error at raw effect syntax. Reproduction and controls:
 `~/vl/vibelang-bugs/coverage-native-loader/`. Exact-executable and source-map config probes do not fix it and were
 reverted. This is a collection gap; no compiler behavior or provider code was changed. The zero stays in the gate.
+Resolved later the same day: the cause is Vitest's subprocess transform, and the script now runs as emitted JavaScript
+(the subprocess paragraph above).
 
 | File | Lines | Branches | Functions | Statements |
 | --- | ---: | ---: | ---: | ---: |
@@ -1804,8 +1811,10 @@ binds them. The suite's other hosts keep running the same bodies as plain object
   a post's reply is refused over Alchemy's RPC to the Budget object before any model call. 2 of 2 pass.
 - `test/sandboxObjects.workerd.test.vibe`: `worker/accountObject.vibe` and `worker/machineObject.vibe` in real workerd
   SQLite through `test/workerd/sandbox-faults.vibe`, with a faulty Container Effect service. It covers generation
-  fences, failed starts, stopped reads, persisted owner checks, and the actual storage alarm. Successful Container
-  execution is not simulated; those paths still need the authorized Container binding.
+  fences, failed starts, stopped reads, persisted owner checks, and the actual storage alarm. The request path picks
+  how the Container fails: a start that returns while the box never runs, a box whose setup command exits 1 and whose
+  checkpoint fails, and a destroy that leaves it running (the machine reports `checkpoint-failed` once it stops).
+  No command ever succeeds; successful start, command and checkpoint paths still need the authorized Container binding.
 - Fuzz: `workerd/alchemy-api-requests` sends `workerd/api-requests`' generated requests to the Alchemy-built Worker,
   so `worker/Api.vibe` is back in the fuzz denominator (`fuzz.config.ts` and `fuzz/coverage.vibe` no longer exclude it).
 - `test/workerdCoverageShape.test.ts` third case: Alchemy's rolldown build of a measured module puts a namespace call
@@ -1838,6 +1847,11 @@ the small denominator differences; complementary shapes are not added together. 
 The two sandbox modules' successful Container paths stay uncovered in this suite; their faulty service never
 simulates a successful start, command or checkpoint. Every per-file before/after comparison is retained in the lane
 report and `~/vl/cw-evidence/s4/workerd-comparison.md` on nyc-01.
+
+The fault modes (third session) raised `worker/machineObject.vibe` in the same command on `5e37278e` plus that change
+from 30/63 lines, 39/83 branches, 11/18 functions and 43/92 statements to 39/63, 47/83, 12/18 and 56/92: the start
+that never comes up, the failed setup, the failed checkpoint and the stuck destroy now run in workerd. 19 files / 81
+tests passed (1 file, 3 tests skipped); the gate exits 1 with 140 of 164 files below 100%.
 
 ### Unit and fuzz results after the audit roster fixes
 
@@ -1894,3 +1908,13 @@ The full fuzz report also merges its Chromium evidence: 7247/7768 lines (93.29%)
 under the retained `coverage-source-ranges` negative control. The Node + workerd comparison above isolates this
 lane's measurement change. Unit and fuzz gates both retain every source in the audit's roster and their 100%
 thresholds. No dependency was added; no upstream compiler or package change was required for workerd measurement.
+
+## Every browser check carries evidence (vl-coverage, 2026-11-10)
+
+Chromium coverage is a Playwright fixture (`e2e/coverage.ts`): only a spec that imports `test` from `./coverage`
+collects it. `e2e/wikiEdit.spec.ts` and `e2e/authbroker.spec.ts` imported `@playwright/test`, so their 5 checks per
+project ran and passed while the report credited none of their code. In the last full snapshot `beginWikiEdit`,
+`wikiEditScreen` and `knownWikiSource` (`src/web/main.vibe`) read 0 calls although the edit checks ran them. Both specs
+now use the fixture. A focused dark-project run of the two: 6 passed, all with evidence, and the three functions read
+called. The reporter now names every executed check without evidence (`missingEvidence`), and `pnpm e2e:coverage`
+fails on one (`gateFailed`, `test/browserCoverageEvidence.test.vibe`), so a new spec can't hide its code again.

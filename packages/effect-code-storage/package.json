@@ -73,7 +73,7 @@
   "devDependencies": {
     "@effect/language-service": "0.87.2",
     "@eslint/js": "9.39.5",
-    "@smthrs/flow": "1.0.0-rc.16",
+    "@smthrs/flow": "1.0.0-rc.17",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

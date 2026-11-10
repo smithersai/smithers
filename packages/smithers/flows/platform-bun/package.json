@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/platform-bun",
   "type": "module",
-  "version": "1.0.0-rc.16",
+  "version": "1.0.0-rc.17",
   "license": "MIT",
   "smthrs": {
     "group": "engine",
@@ -141,10 +141,10 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/database": "1.0.0-rc.16",
-    "@smthrs/jj": "1.0.0-rc.16",
-    "@smthrs/kernel": "1.0.0-rc.16",
-    "@smthrs/sandbox": "1.0.0-rc.16",
+    "@smthrs/database": "1.0.0-rc.17",
+    "@smthrs/jj": "1.0.0-rc.17",
+    "@smthrs/kernel": "1.0.0-rc.17",
+    "@smthrs/sandbox": "1.0.0-rc.17",
     "@types/ws": "8.18.2",
     "redis": "6.2.1",
     "undici": "8.12.4",
@@ -152,7 +152,7 @@
     "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "peerDependencies": {
-    "@smthrs/platform-node": "1.0.0-rc.16",
+    "@smthrs/platform-node": "1.0.0-rc.17",
     "effect": "4.1.1",
     "electrobun": "1.18.1"
   },
@@ -164,9 +164,9 @@
     "@effect/sql-pg": "4.1.1",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
-    "@smthrs/artifacts": "1.0.0-rc.16",
-    "@smthrs/flows": "1.0.0-rc.16",
-    "@smthrs/platform-node": "1.0.0-rc.16",
+    "@smthrs/artifacts": "1.0.0-rc.17",
+    "@smthrs/flows": "1.0.0-rc.17",
+    "@smthrs/platform-node": "1.0.0-rc.17",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

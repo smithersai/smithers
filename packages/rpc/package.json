@@ -33,7 +33,7 @@
     "lint": "eslint src --max-warnings=0 && dprint check"
   },
   "dependencies": {
-    "@smthrs/canonical": "1.0.0-rc.16",
+    "@smthrs/canonical": "1.0.0-rc.17",
     "string-width": "7.2.0",
     "zod": "4.6.7",
     "yjs": "13.6.32"

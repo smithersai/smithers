@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/jj",
   "type": "module",
-  "version": "1.0.0-rc.16",
+  "version": "1.0.0-rc.17",
   "license": "MIT",
   "smthrs": {
     "group": "engine"
@@ -214,8 +214,8 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/capability": "1.0.0-rc.16",
-    "@smthrs/canonical": "1.0.0-rc.16",
+    "@smthrs/capability": "1.0.0-rc.17",
+    "@smthrs/canonical": "1.0.0-rc.17",
     "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {

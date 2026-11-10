@@ -1,5 +1,5 @@
 // Stays .ts: Playwright collects browser tests by JS/TS extension only.
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./coverage"
 const origins: Record<string, string> = JSON.parse(process.env.AUTH_BROKER_TEST_ORIGINS!)
 test("signs in through smithers' callback and returns a local session with no token in any URL", async ({ page, context }, testInfo) => {
   const origin = origins[testInfo.project.name]!

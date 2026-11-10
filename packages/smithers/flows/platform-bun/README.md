@@ -23,7 +23,7 @@ package is that object for a process running on Bun.
 ## Install
 
 ```bash
-bun add @smthrs/platform-bun@1.0.0-rc.16 effect
+bun add @smthrs/platform-bun@1.0.0-rc.17 effect
 ```
 
 `@smthrs/platform-node` and `effect` are required peers, as `package.json`

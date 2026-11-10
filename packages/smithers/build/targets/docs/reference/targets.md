@@ -14,8 +14,8 @@ directly. Both packages are on npm under the `next` tag.
 ```json
 {
   "devDependencies": {
-    "@smthrs/build-cli": "1.0.0-rc.16",
-    "@smthrs/targets": "1.0.0-rc.16",
+    "@smthrs/build-cli": "1.0.0-rc.17",
+    "@smthrs/targets": "1.0.0-rc.17",
     "effect": "4.1.1"
   }
 }

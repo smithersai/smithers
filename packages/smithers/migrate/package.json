@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/migrate",
   "type": "module",
-  "version": "1.0.0-rc.16",
+  "version": "1.0.0-rc.17",
   "license": "MIT",
   "smthrs": {
     "group": "agent",
@@ -517,18 +517,18 @@
     "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "optionalDependencies": {
-    "@smthrs/agent": "1.0.0-rc.16",
-    "@smthrs/core": "1.0.0-rc.16",
-    "@smthrs/engine": "1.0.0-rc.16",
-    "@smthrs/flow": "1.0.0-rc.16",
-    "@smthrs/harness": "1.0.0-rc.16",
-    "@smthrs/journal": "1.0.0-rc.16",
-    "@smthrs/kernel": "1.0.0-rc.16",
-    "@smthrs/model": "1.0.0-rc.16",
-    "@smthrs/plan": "1.0.0-rc.16",
-    "@smthrs/platform-node": "1.0.0-rc.16",
-    "@smthrs/registry": "1.0.0-rc.16",
-    "@smthrs/canonical": "1.0.0-rc.16"
+    "@smthrs/agent": "1.0.0-rc.17",
+    "@smthrs/core": "1.0.0-rc.17",
+    "@smthrs/engine": "1.0.0-rc.17",
+    "@smthrs/flow": "1.0.0-rc.17",
+    "@smthrs/harness": "1.0.0-rc.17",
+    "@smthrs/journal": "1.0.0-rc.17",
+    "@smthrs/kernel": "1.0.0-rc.17",
+    "@smthrs/model": "1.0.0-rc.17",
+    "@smthrs/plan": "1.0.0-rc.17",
+    "@smthrs/platform-node": "1.0.0-rc.17",
+    "@smthrs/registry": "1.0.0-rc.17",
+    "@smthrs/canonical": "1.0.0-rc.17"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

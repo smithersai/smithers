@@ -11,7 +11,7 @@ import { ActionIdentity } from "../worker/ActionIdentity.vibe"
 import { eventStream } from "../worker/Http.vibe"
 import * as Runs from "../worker/ActionRuns.vibe"
 import { world, history } from "../test/support/actionObjects.vibe"
-import { run, Int } from "./run.vibe"
+import { run, Int, Text } from "./run.vibe"
 
 const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
 const Flow = Schema.Literals(["vibelang/history/show", "vibelang/history/Plan", "vibelang/Tour", "vibelang/Post", "unknown/flow", "\ud800"])
@@ -196,6 +196,25 @@ it.live("actions/live-faults", () => run("actions/live-faults", Fault, (input) =
       if (input.call === "follow" && input.status !== 200) return answer === "unavailable"
       if (ok && input.body === "valid" && input.call !== "command" && input.call !== "follow") return answer === "ok"
       return answer === "ok" || CODES.has(answer)
+    }
+  }
+}))
+
+/** A followed run's event stream also carries another run's events; follow yields only the followed run. A run id
+ * that is not well-formed text is refused as input before any request. */
+it.live("actions/live-follow-stream", () => run("actions/live-follow-stream", Text, (text) => effect {
+  const id = "a" + text
+  const requested = (seq: number, run: string) => `data: ${JSON.stringify({ type: "ActionRequested", seq, id: run, flow: "f", door: "button", actor: "person", at: seq })}\n\n`
+  let sent = 0
+  const client = HttpClient.make((request) => {
+    sent += 1
+    return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(requested(1, "b" + text) + requested(2, id), { status: 200 }))))
+  })
+  provide Layer.succeed(HttpClient.HttpClient, client) {
+    provide LiveActions("https://a.test") {
+      const runs = Effect.map(Stream.runCollect((try Actions).follow(id)), (each) => Array.from(each)) catch (error) => error.code
+      if (!id.isWellFormed()) return runs === "input" && sent === 0
+      return typeof runs !== "string" && runs.length === 1 && runs[0]!.id === id && runs[0]!.state === "queued"
     }
   }
 }))

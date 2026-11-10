@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/memory",
   "type": "module",
-  "version": "1.0.0-rc.16",
+  "version": "1.0.0-rc.17",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -390,10 +390,10 @@
     "test:matrix": "node ../../flows/database/scripts/test-matrix.mjs"
   },
   "dependencies": {
-    "@smthrs/core": "1.0.0-rc.16",
-    "@smthrs/database": "1.0.0-rc.16",
-    "@smthrs/flow": "1.0.0-rc.16",
-    "@smthrs/patterns": "1.0.0-rc.16",
+    "@smthrs/core": "1.0.0-rc.17",
+    "@smthrs/database": "1.0.0-rc.17",
+    "@smthrs/flow": "1.0.0-rc.17",
+    "@smthrs/patterns": "1.0.0-rc.17",
     "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {

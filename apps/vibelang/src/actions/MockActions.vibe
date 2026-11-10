@@ -40,6 +40,9 @@ export function MockActions(principal: Principal) {
     const gate = try Semaphore.make(1)
     const published = try acquireRelease(PubSub.unbounded<Run>(), PubSub.shutdown)
     const invocations = new Map<string, { readonly flow: string; readonly conversation: string; readonly input: Schema.Json; readonly owner: string }>()
+    // Each run's own fiber, stored before its request is recorded: a cancel interrupts it, so a run cancelled before
+    // its flow starts never starts it. Kept like its invocation.
+    const fibers = new Map<string, Fiber.Fiber<void>>()
 
     // Every stored run comes from this world's own typed RequestAction, TraceAction and SettleAction, so it decodes.
     effect function read(id: string) {
@@ -108,8 +111,6 @@ export function MockActions(principal: Principal) {
     const engine = Context.get(try Layer.buildWithScope(registrationLayer, scope), FlowRuntime.FlowRuntime)
 
     effect function run(id: string, name: string, payload: object, door: Door) {
-      const before = try orDie(read(id))
-      if (before.state === "cancelled") return
       const flow = try orDie(catalog.get(name))
       const program = effect {
         const person = try authorize(name)
@@ -126,16 +127,16 @@ export function MockActions(principal: Principal) {
     effect function start(name: string, input: Schema.Json, door: Door) {
       // The role first, as live checks it: an unknown flow is never runnable, so it is forbidden, not missing.
       const person = try authorize(name)
-      const found = catalog.get(name) catch () => undefined
-      if (found === undefined) throw new ActionFailure({ code: "not-found" })
       if (scope.state._tag === "Closed") throw new ActionFailure({ code: "closed" })
       const next = try Ref.updateAndGet(ids, (id) => id + 1)
       const id = `a${next}`
       try prepare(name, input, id)
       const payload = input !== null && typeof input === "object" && !Array.isArray(input) ? input : {}
       invocations.set(id, { input, flow: name, owner: person.id, conversation: (principal.conversation ?? `action-${id}`) })
-      try record({ type: "RequestAction", id, flow: name, door, actor: door === "agent" ? "agent" : principal.actor, at: try Clock.currentTimeMillis })
-      try forkIn(run(id, name, payload, door), scope)
+      // The run waits until its request is recorded.
+      const recorded = try Deferred.make<void>()
+      fibers.set(id, try forkIn(Effect.andThen(Deferred.await(recorded), run(id, name, payload, door)), scope))
+      try record({ type: "RequestAction", id, flow: name, door, actor: door === "agent" ? "agent" : principal.actor, at: try Clock.currentTimeMillis }).pipe(Effect.ensuring(Deferred.succeed(recorded, undefined)))
       return id
     }
     return {
@@ -180,9 +181,11 @@ export function MockActions(principal: Principal) {
         const current = try read(id)
         try authorize(current.flow)
         if (current.state !== "queued" && current.state !== "running") return
-        // start records each invocation before its run, so a run read here always has one.
+        // start stores each invocation and fiber before it records the request, so a run read here has both.
         const invocation = invocations.get(id)!
         const flow = try orDie(catalog.get(invocation.flow))
+        // The run's fiber first, so a flow not started yet never starts; then the engine's execution, if it started.
+        try Fiber.interrupt(fibers.get(id)!)
         // The in-memory engine keeps no durable cancellation record, so its interrupt never fails.
         try Effect.orDie(engine.interrupt(flow, id))
         if (invocation.flow === Tour._tag) factory.endTour(invocation.conversation) catch () => undefined

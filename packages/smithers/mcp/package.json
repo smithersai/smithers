@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@smthrs/mcp",
   "type": "module",
-  "version": "1.0.0-rc.16",
+  "version": "1.0.0-rc.17",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -163,12 +163,12 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/canonical": "1.0.0-rc.16",
-    "@smthrs/capability": "1.0.0-rc.16",
-    "@smthrs/core": "1.0.0-rc.16",
-    "@smthrs/harness": "1.0.0-rc.16",
-    "@smthrs/journal": "1.0.0-rc.16",
-    "@smthrs/kernel": "1.0.0-rc.16",
+    "@smthrs/canonical": "1.0.0-rc.17",
+    "@smthrs/capability": "1.0.0-rc.17",
+    "@smthrs/core": "1.0.0-rc.17",
+    "@smthrs/harness": "1.0.0-rc.17",
+    "@smthrs/journal": "1.0.0-rc.17",
+    "@smthrs/kernel": "1.0.0-rc.17",
     "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
@@ -176,11 +176,11 @@
     "@effect/platform-node": "4.1.1",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
-    "@smthrs/agent": "1.0.0-rc.16",
-    "@smthrs/flow": "1.0.0-rc.16",
-    "@smthrs/flows": "1.0.0-rc.16",
-    "@smthrs/model": "1.0.0-rc.16",
-    "@smthrs/registry": "1.0.0-rc.16",
+    "@smthrs/agent": "1.0.0-rc.17",
+    "@smthrs/flow": "1.0.0-rc.17",
+    "@smthrs/flows": "1.0.0-rc.17",
+    "@smthrs/model": "1.0.0-rc.17",
+    "@smthrs/registry": "1.0.0-rc.17",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
@@ -197,7 +197,7 @@
     "vibelang": "0.0.14-pre.6279f9f9fbfc",
     "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0",
-    "@smthrs/platform-node": "1.0.0-rc.16"
+    "@smthrs/platform-node": "1.0.0-rc.17"
   },
   "peerDependencies": {
     "effect": "4.1.1"
