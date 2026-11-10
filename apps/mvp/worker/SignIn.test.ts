@@ -1370,3 +1370,54 @@ test("a forged sign-out cookie revokes nobody, and a signed run without a sessio
   expect(write.status).toBe(401)
   expect(app.snapshot()).toContainEqual(expect.objectContaining({ id: "smithers_run_credentials", attributes: expect.objectContaining({ op: "verify", outcome: "ended" }) }))
 })
+
+describe("GitHub's page at the callback (decision 0165)", () => {
+  const consent = (h: Awaited<ReturnType<typeof signInHarness>>, attributes: Record<string, string>) =>
+    h.snapshot()
+      .filter((entry) => entry.id === "smithers_auth_github_consent" && Object.entries(attributes).every(([key, value]) => entry.attributes?.[key] === value))
+      .reduce((sum, entry) => sum + (entry.state as { readonly count: number }).count, 0)
+
+  test("records whether GitHub showed a page, and whether smithers.sh revoked the person's token since their last sign-in", async () => {
+    const h = await signInHarness(runtime)
+    const first = await h.signInAs()
+    expect(consent(h, { page: "skipped", after_revocation: "no", hourly_tokens: "under_limit", path: "sign_in" })).toBe(1)
+    const [session] = await sessionRows()
+    const signedOut = await h.fetch("/api/auth/sign-out", {
+      method: "POST",
+      headers: { origin: "http://smithers.test", cookie: cookie(first.cookies), [DEVICE_PERSON_HEADER]: session!.personId },
+    })
+    expect(signedOut.status).toBe(204)
+    // The sign-out flow revokes the token at GitHub and finishes its cleanup row.
+    await query(sql => sql`UPDATE github_token_cleanups SET sealed_access = NULL, sealed_refresh = NULL, finished_at = now() WHERE session_id = ${session!.id}`)
+    // Signing in again, the browser arrives from GitHub's own page: GitHub asked after our revocation.
+    const started = await h.start()
+    const { code, state } = h.github.approve(started.location)
+    const stateCookies = Object.fromEntries(Object.entries(started.cookies).map(([name, set]) => [name, set.value]))
+    const answered = await h.fetch(`/api/auth/callback?${new URLSearchParams({ code, state })}`, {
+      headers: { cookie: cookie(stateCookies), referer: new URL(started.location).origin + "/" },
+    })
+    expect(answered.status).toBe(303)
+    expect(consent(h, { page: "shown", after_revocation: "yes", hourly_tokens: "under_limit", path: "sign_in" })).toBe(1)
+    // A third sign-in in another browser, with the second session live: nothing revoked since the last sign-in.
+    await h.signInAs()
+    expect(consent(h, { page: "skipped", after_revocation: "no", hourly_tokens: "under_limit", path: "sign_in" })).toBe(2)
+    expect(h.span("auth.github.consent")).toHaveLength(3)
+    expect(h.line("auth.github.consent").map((line) => line.annotations)).toContainEqual(expect.objectContaining({ page: "shown", after_revocation: "yes", hourly_tokens: "under_limit", path: "sign_in" }))
+  })
+
+  test("at GitHub's hourly limit the bucket says so; a history that fails to read never fails sign-in", async () => {
+    const h = await signInHarness(runtime)
+    for (let i = 0; i < 11; i++) await h.signInAs()
+    // The tenth and eleventh follow nine and ten sign-ins in the hour: GitHub's limit.
+    expect(consent(h, { page: "skipped", after_revocation: "no", hourly_tokens: "at_limit", path: "sign_in" })).toBe(2)
+    await query(sql => sql`ALTER TABLE github_token_cleanups RENAME TO github_token_cleanups_hidden`)
+    try {
+      const { response } = await h.signInAs()
+      expect(response.status).toBe(303)
+      expect(response.headers.get("location")).not.toMatch(/sign-in=failed/)
+      expect(h.line("auth.github.consent").at(-1)!.annotations).toMatchObject({ outcome: "failed" })
+    } finally {
+      await query(sql => sql`ALTER TABLE github_token_cleanups_hidden RENAME TO github_token_cleanups`)
+    }
+  })
+})

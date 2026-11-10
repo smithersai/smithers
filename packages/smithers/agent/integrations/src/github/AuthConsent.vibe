@@ -1,0 +1,64 @@
+// Whether GitHub showed a person one of its own pages before a sign-in callback, and what this app did to that
+// person's tokens before it (smithers.sh decision 0165, "Revocation and the authorization"). Production compares how
+// often GitHub asks after one of our revocations with how often it asks otherwise, and with GitHub's hourly limit.
+import type * as Auth from "./Auth.vibe"
+
+/** Fixed names. Attributes are fixed vocabulary: never a person, a URL, a code or a token. */
+export const SPAN = "auth.github.consent"
+export const LOG = "auth.github.consent"
+export const COUNTER = "smithers_auth_github_consent"
+/**
+ * GitHub's hourly limit: past "ten tokens created per hour" for one person, GitHub shows its re-authorization prompt
+ * instead ("Creating multiple tokens for OAuth apps",
+ * https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps). Measured twice on
+ * production (smithers.sh decision 0165): the page came at the tenth token in an hour, so after nine.
+ */
+export const HOURLY_TOKENS = 9
+export const HOUR = 3_600_000
+/** Sign-in callbacks by `page`, `after_revocation`, `hourly_tokens` and `path`. */
+export const counter = Metric.counter(COUNTER, { incremental: true, description: "Sign-in callbacks, by whether GitHub showed a page, after one of our revocations or not" })
+
+/** `shown`: the browser left a GitHub page (its authorize page, or its own sign-in) for the callback. */
+export type Page = "shown" | "skipped"
+/** Which callback: smithers.sh's own sign-in, a hosted site's sign-in through the broker, or Connect GitHub. */
+export type Path = "sign_in" | "hosted_sign_in" | "connect"
+
+/** GitHub's web origin, as the service's own authorize URL names it, so an injected GitHub is recognized too. */
+export function githubOrigin(github: Auth.GitHubAuth["Service"]): string {
+  try {
+    return new URL(github.authorizeUrl({ state: "s", codeChallenge: "c", redirectUri: "https://callback.invalid/" })).origin
+  } catch {
+    return ""
+  }
+}
+
+/**
+ * `shown` when the callback request's `Referer` has GitHub's origin. GitHub's pages send an origin referrer to another
+ * origin; a redirect GitHub answers without a page keeps the referrer of the page that started sign-in (or none), so
+ * it reads `skipped`. GitHub's own sign-in page reads `shown` too: the signal is "a GitHub page", not "the consent".
+ */
+export function pageOf(referer: string | undefined, origin: string): Page {
+  if (referer === undefined || origin === "") return "skipped"
+  try {
+    return new URL(referer).origin === origin ? "shown" : "skipped"
+  } catch {
+    return "skipped"
+  }
+}
+
+/** The bucket the counter records for `issued` tokens in the hour before: `at_limit` once GitHub would ask again. */
+export function hourlyBucket(issued: number): "under_limit" | "at_limit" {
+  return issued >= HOURLY_TOKENS ? "at_limit" : "under_limit"
+}
+
+/**
+ * Records one callback: `page`, whether this app revoked one of the person's tokens since their previous sign-in
+ * (`afterRevocation`), and how many tokens this app had issued them in the hour before (`hourlyTokens`).
+ */
+export effect function observe(fields: { readonly page: Page; readonly afterRevocation: boolean; readonly hourlyTokens: number; readonly path: Path }) {
+  const attributes = { page: fields.page, after_revocation: fields.afterRevocation ? "yes" : "no", hourly_tokens: hourlyBucket(fields.hourlyTokens), path: fields.path }
+  try withSpan(effect {
+    try Metric.update(Metric.withAttributes(counter, attributes), 1)
+    try Effect.logInfo(LOG).pipe(Effect.annotateLogs(attributes))
+  }, SPAN, { attributes })
+}

@@ -380,6 +380,24 @@ export const ownerOf = (tokenDigest: string) => Effect.gen(function* () {
   return Option.map(Option.fromNullishOr(row), (found) => found.personId)
 })
 
+/**
+ * What smithers.sh did to person `personId`'s GitHub tokens before session `sessionId` signed in: whether it revoked one
+ * since the person's previous sign-in started (`afterRevocation`), and how many other sign-ins, each a new token, it
+ * issued them in the hour before (`hourlyTokens`). Feeds only `GitHub.Auth.Consent.observe` (decision 0165).
+ */
+export const tokenHistory = (personId: string, sessionId: string) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const [row] = yield* sql<{ readonly afterRevocation: boolean; readonly hourlyTokens: number }>`
+    SELECT EXISTS (
+      SELECT 1 FROM github_token_cleanups c JOIN sessions s ON s.id = c.session_id
+      WHERE s.person_id = ${personId} AND c.finished_at IS NOT NULL AND c.finished_at >= coalesce(
+        (SELECT max(started_at) FROM sessions WHERE person_id = ${personId} AND id <> ${sessionId}), '-infinity'::timestamptz)
+    ) AS "afterRevocation",
+    (SELECT count(*)::int FROM sessions WHERE person_id = ${personId} AND id <> ${sessionId}
+      AND started_at > clock_timestamp() - interval '1 hour') AS "hourlyTokens"`
+  return { afterRevocation: row?.afterRevocation === true, hourlyTokens: row?.hourlyTokens ?? 0 }
+})
+
 /** The live session `id`, as a run credential minted under it names it: none once it ended. */
 export const findLiveById = (id: string, verifiedKey?: string) => findLiveBy((sql) => sql`s.id = ${id}`, verifiedKey)
 

@@ -345,3 +345,6 @@ export const withUserAgent = <A, E, R>(program: A!E!R) =>
 
 /** Hosted-site sign-in through this app's registered callback. */
 export * as Broker from "./AuthBroker.vibe"
+
+/** Whether GitHub showed a page before a callback, after one of our revocations or not. */
+export * as Consent from "./AuthConsent.vibe"

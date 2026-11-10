@@ -138,3 +138,14 @@ refresh-token invalidation for [authorization revocation](https://docs.github.co
 and for [refresh-token rotation](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens#about-user-access-tokens-that-expire);
 these are different operations. The injected ten-token service models pair deletion; it is not live evidence of
 GitHub's unspecified single-token refresh cascade.
+
+`Auth.Consent` records, at each callback, whether GitHub showed the person one of its own pages first. `pageOf`
+reads the callback's `Referer`: GitHub's pages send their origin to another origin, while a redirect GitHub answers
+without a page keeps the referrer of the page that started sign-in. GitHub's own sign-in page reads `shown` too.
+`observe` adds one to `smithers_auth_github_consent` and writes the span and log `auth.github.consent`, all with
+fixed attributes: `page` (`shown`, `skipped`), `after_revocation` (`yes` when this app revoked one of the person's
+tokens since their previous sign-in), `hourly_tokens` (`under_limit`, `at_limit`: nine or more tokens issued in the
+hour before; GitHub's [limit of ten new tokens an hour](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#creating-multiple-tokens-for-oauth-apps)
+showed its authorization page at the tenth on production) and `path` (`sign_in`, `hosted_sign_in`, `connect`). The broker
+calls it from `callback`, keeping a sealed per-person history (`person/` records, 30 days) of its own issues and
+revocations; it passes the request's `Referer` as `callback`'s fourth argument.

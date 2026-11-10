@@ -725,6 +725,15 @@ from the rule against Cloudflare in portable flows. This lane does not deploy th
 
 The shared `httpPolicy` is registered through Alchemy `Telemetry.layer` for ChatApi and HostedAuthBroker, so the HTTP tracer redacts query values before exporting spans. Proxy/native access logs must also omit OAuth query values and callback/exchange bodies.
 
+### GitHub's page at the callback
+
+Each successful callback, ordinary or brokered, records whether GitHub showed the person one of its own pages
+before it, and whether smithers.sh had revoked one of their tokens since their previous sign-in:
+`smithers_auth_github_consent` and the span and log `auth.github.consent`
+([observability](../observability.md)). It answers from production whether our revocations bring GitHub's
+authorization page back ([decision 0165](../decisions/0165-hosted-site-github-delegation.md#revocation-and-the-authorization)).
+A failure to read the history logs `outcome: failed` and never fails sign-in.
+
 ### Tokens from a failed callback
 
 Ordinary successful sign-in stores its encrypted GitHub pair for later API calls. If a callback fails after the

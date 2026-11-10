@@ -441,13 +441,14 @@ ChatApi's sign-in routes and sessions ([sign-in.md](features/sign-in.md), `worke
 
 A callback's `reason`: `not_configured`, `method`, `state_mismatch` (the state isn't this browser's), `replayed` (its sign-in already finished), `expired` (over 10 minutes), `denied` (the person declined on GitHub), `invalid` (no code), `unreadable` (the sealed verifier didn't open), `sign_out_not_started` (the host didn't record the sign-out of the session this browser held, so GitHub's code was never redeemed), `<step>_<reason>` for GitHub (`exchange_rejected`, `user_unavailable`, `permission_misconfigured`, …), `database`, or `error` (a defect, by its name).
 
-Spans: `auth.sign_in`, `auth.callback`, `auth.handoff`, `auth.arrive`, `auth.sign_out`, `auth.session` and `auth.resolve` (internal, each request that reads the session cookie); `auth.role_check` and `auth.revoke_token` with `smithers.auth.session_id` and `smithers.auth.step`; `GitHubClient.request` (`@smthrs/integrations`) for GitHub's REST calls, the revocation's `DELETE` among them; `OAuthToken.request` (`@smthrs/integrations`) with `oauth.provider` for the code and refresh exchanges; and the SQL statements, placeholders only.
+Spans: `auth.sign_in`, `auth.callback` (with `auth.github.consent` inside a sign-in that succeeded), `auth.handoff`, `auth.arrive`, `auth.sign_out`, `auth.session` and `auth.resolve` (internal, each request that reads the session cookie); `auth.role_check` and `auth.revoke_token` with `smithers.auth.session_id` and `smithers.auth.step`; `GitHubClient.request` (`@smthrs/integrations`) for GitHub's REST calls, the revocation's `DELETE` among them; `OAuthToken.request` (`@smthrs/integrations`) with `oauth.provider` for the code and refresh exchanges; and the SQL statements, placeholders only.
 
 | Metric | Kind | Attributes | Log field |
 |---|---|---|---|
 | `smithers_auth_requests` | counter | `route` (`sign_in`, `callback`, `handoff`, `arrive`, `sign_out`, `session`), `outcome`, `reason` (`none` unless refused or failed) | the route's line |
 | `smithers_auth_role_checks` | counter | `step` and `outcome`: a step's outcome above, or `failed` | `auth.role_check` `step`, `outcome` |
 | `smithers_auth_token_revocations` | counter | `step` and `outcome`: a step's outcome above, or `failed` | `auth.revoke_token` `step`, `outcome` |
+| `smithers_auth_github_consent` | counter | `page` (`shown`: the callback's `Referer` is GitHub's, `skipped`), `after_revocation` (`yes`: smithers.sh revoked one of the person's tokens since their previous sign-in), `hourly_tokens` (`at_limit`: nine or more sign-ins in the hour before, where GitHub asks again; `under_limit`), `path` (`sign_in`; the broker's `hosted_sign_in`, `connect`) | `auth.github.consent`, same fields; Warn `outcome: failed`, `errorCode` when the history didn't read (sign-in goes on) |
 
 **Run credentials** ([sign-in.md](features/sign-in.md#run-credentials)): who acted, as which `act`. No record carries a token, a payload or content; a run is its execution id.
 
