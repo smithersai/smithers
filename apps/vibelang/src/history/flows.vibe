@@ -3,21 +3,24 @@
 // these declarations: the live one on the engine in the History object (worker/HistoryObject.vibe), the mock one on
 // the engine in memory (MockMythical.vibe).
 //
-//   vibelang/history/Plan        record        a task planned onto the stack: append                    contributor
-//                                              insert or amend                                           maintainer
-//   vibelang/history/Start       record        a planned commit is worked in a lane                      contributor
-//   vibelang/history/Note        record        what a rebase would lose: tried, evidence, superseded     contributor
-//   vibelang/history/Approve     record        a person approves the worked commit to land               maintainer, people only
-//   vibelang/history/Fold        main ─▶ fold per commit   main's new commits map onto the stack     maintainer, people only
-//   vibelang/history/Bootstrap   load          the first start loads the bootstrapped history          its host only
-//   vibelang/history/show        (a read)      the agent reads the history                               viewer
+//   vibelang/history/Plan        authorize ─▶ record   a task planned onto the stack: append           contributor
+//                                                      insert or amend (`retell`)                      maintainer
+//   vibelang/history/Start       authorize ─▶ record   a planned commit is worked in a lane            contributor
+//   vibelang/history/Note        authorize ─▶ record   what a rebase would lose                        contributor
+//   vibelang/history/Approve     authorize ─▶ record   a person approves the worked commit to land     maintainer, people only
+//   vibelang/history/Fold        authorize ─▶ main ─▶ read ─▶ commits (fold/<sha> each)                maintainer, people only
+//   vibelang/history/Bootstrap   load                  the first start loads the bootstrapped history  its host only
+//   vibelang/history/show        authorize ─▶ read     the agent reads the history (tools.vibe)        viewer
 //
-// The steps reach the history's one state machine (mythical.vibe) through `Stack`. The order of each flow's steps is
-// the proved flow machine's (flowMachine.vibe): `authorized` journals its `Run`, and a record step runs only when
-// `canRecord` says so; nothing here decides anything.
-import { Action as Step, Flow, FlowRuntime } from "@smthrs/flow"
+// Each flow's body is its named steps, one declared action per step: `vibelang/history/<action>/authorize` journals the
+// caller's `Run`, and `…/record` runs only when the proved flow machine's `canRecord` says so (flowMachine.vibe).
+// Plan's action is `append` or `retell` (an insert or an amend), so its body branches on `how` first. A host supplies
+// the steps' implementations: the History object and the mock reach the sequencer through `Stack`
+// (`historyRegistration`); the action host reaches the history through its `HistoryReader`
+// (src/actions/execution.vibe). Every host's authorize step reads who asks from `Caller`.
+import { Action as Step, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { authorize, begin, canRecord, record, historySignature, planAction, type Run } from "./flowMachine.vibe"
+import { authorize, begin, canRecord, historySignature, type Run } from "./flowMachine.vibe"
 import type { History } from "./mythical.vibe"
 import { type Action, ACTIONS, Caller, type Principal, ROLES } from "./roles.vibe"
 import type { Answer, MainCommit, PlanRequest } from "./Sequencer.vibe"
@@ -30,10 +33,12 @@ export const FoldAnswer = Schema.Struct({ folded: Schema.Number, refusal: Schema
 
 schema MainCommitSchema { readonly sha: string; readonly change: string; readonly title: string; readonly message: string }
 
+const PrincipalSchema = Schema.Struct({ role: Schema.Literals(ROLES), name: Schema.String, agent: Schema.Boolean })
+
 /** A flow's run as its authorize step journals it (flowMachine.vibe `Run`). */
 const RunSchema = Schema.Struct({
   action: Schema.Literals(ACTIONS),
-  principal: Schema.Struct({ role: Schema.Literals(ROLES), name: Schema.String, agent: Schema.Boolean }),
+  principal: PrincipalSchema,
   phase: Schema.Literals(["begun", "authorized", "forbidden", "recorded"]),
   records: Schema.Number,
 })
@@ -75,62 +80,102 @@ export function signature(principal: Principal): string {
   return historySignature(principal.name, principal.agent)
 }
 
-/** The flow's run once the caller asked to take `action`: a journaled step, so a refusal is on the record as an acceptance is. */
-effect function authorized(action: Action) {
-  const caller = try Caller
-  const run: Run = try Step.make({ name: `vibelang/history/${action}/authorize`, success: RunSchema, execute: effect {
-    const principal = caller.current === undefined ? caller.principal : try caller.current()
-    return authorize(begin(action, principal))
-  } })
-  return run
-}
-
-/** Runs `write` as the flow's journaled record step when the machine lets the run record; else `forbidden`. */
-effect function guarded(action: Action, write: (principal: Principal) => Answer!!) {
-  const run = try authorized(action)
-  if (!canRecord(run)) {
-    try counted(action, "forbidden")
-    const forbidden: Answer = { id: "", refusal: "forbidden" }
-    return forbidden
-  }
-  const answer = try Step.make({ name: `vibelang/history/${action}/record`, success: HistoryAnswer, execute: write(run.principal) })
-  try counted(action, answer.refusal ?? "accepted")
-  return answer
-}
+/** The answer of a write its caller may not make. */
+const FORBIDDEN: Answer = { id: "", refusal: "forbidden" }
 
 const How = Schema.Literals(["append", "insert", "amend"])
 const SectionSchema = Schema.Literals(["tried", "evidence", "superseded"])
+const planFields = { how: How, epic: Schema.String, newEpic: Schema.String, target: Schema.String, title: Schema.String, task: Schema.String }
+const startFields = { id: Schema.String, lane: Schema.String }
+const noteFields = { id: Schema.String, section: SectionSchema, text: Schema.String }
+const approveFields = { id: Schema.String }
+
+// ── the steps ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The caller's run of an append, journaled; its record step runs only when the run may record. */
+export const AuthorizeAppend = Step.make("vibelang/history/append/authorize", { payload: {}, success: RunSchema })
+export const AuthorizeRetell = Step.make("vibelang/history/retell/authorize", { payload: {}, success: RunSchema })
+export const AuthorizeStart = Step.make("vibelang/history/start/authorize", { payload: {}, success: RunSchema })
+export const AuthorizeNote = Step.make("vibelang/history/note/authorize", { payload: {}, success: RunSchema })
+export const AuthorizeApprove = Step.make("vibelang/history/approve/authorize", { payload: {}, success: RunSchema })
+export const AuthorizeFold = Step.make("vibelang/history/fold/authorize", { payload: {}, success: RunSchema })
+export const AuthorizeShow = Step.make("vibelang/history/show/authorize", { payload: {}, success: RunSchema })
+
+/** A write as the authorized `principal`: the commit it wrote, or the sequencer's refusal. */
+export const RecordAppend = Step.make("vibelang/history/append/record", { payload: { ...planFields, principal: PrincipalSchema }, success: HistoryAnswer })
+export const RecordRetell = Step.make("vibelang/history/retell/record", { payload: { ...planFields, principal: PrincipalSchema }, success: HistoryAnswer })
+export const RecordStart = Step.make("vibelang/history/start/record", { payload: { ...startFields, principal: PrincipalSchema }, success: HistoryAnswer })
+export const RecordNote = Step.make("vibelang/history/note/record", { payload: { ...noteFields, principal: PrincipalSchema }, success: HistoryAnswer })
+export const RecordApprove = Step.make("vibelang/history/approve/record", { payload: { ...approveFields, principal: PrincipalSchema }, success: HistoryAnswer })
+
+/** The last commit of main the history folded. */
+export const FoldMain = Step.make("vibelang/history/fold/main", { payload: {}, success: Schema.String })
+/** main's commits after `main`, oldest first; `available` is false when main could not be read. */
+export const FoldRead = Step.make("vibelang/history/fold/read", {
+  payload: { main: Schema.String },
+  success: Schema.Struct({ available: Schema.Boolean, commits: Schema.Array(MainCommitSchema) }),
+})
+/** Folds each commit in order, each its own journaled `vibelang/history/fold/<sha>` step, so a resumed fold never folds one twice. */
+export const FoldCommits = Step.make("vibelang/history/fold/commits", { payload: { commits: Schema.Array(MainCommitSchema) }, success: FoldAnswer })
+/** Loads the bootstrapped history into an empty store: `false` when the history has any event. */
+export const LoadBootstrap = Step.make("vibelang/history/bootstrap/load", { payload: {}, success: Schema.Boolean })
+
+// ── the flows ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export const Plan = Flow.make("vibelang/history/Plan", {
   description: "Plans a task onto VibeLang's mythical history: `append` adds a commit at the end of `epic` (or of a new epic titled `newEpic`), `insert` adds it just before the commit `target`, `amend` reopens the landed commit `target` for the task. Answers the commit's id.",
   modelInvocable: true,
-  payload: { how: How, epic: Schema.String, newEpic: Schema.String, target: Schema.String, title: Schema.String, task: Schema.String },
+  payload: planFields,
   success: HistoryAnswer,
-  body: () => Node.succeed({ id: "", refusal: null }),
+  body: Node.capture({}, (payload) => Node.succeed(payload.how).pipe(Node.branch({
+    if: Node.capture({}, (how) => how === "append"),
+    then: () => AuthorizeAppend.call({}).pipe(Node.branch({
+      if: Node.capture({}, (run) => canRecord(run)),
+      then: (run) => RecordAppend.call({ ...payload, principal: run.principal }),
+      else: () => Node.succeed(FORBIDDEN),
+    })),
+    else: () => AuthorizeRetell.call({}).pipe(Node.branch({
+      if: Node.capture({}, (run) => canRecord(run)),
+      then: (run) => RecordRetell.call({ ...payload, principal: run.principal }),
+      else: () => Node.succeed(FORBIDDEN),
+    })),
+  }))),
 })
 
 export const Start = Flow.make("vibelang/history/Start", {
   description: "Starts work on the planned mythical commit `id` in the lane `lane`.",
   modelInvocable: true,
-  payload: { id: Schema.String, lane: Schema.String },
+  payload: startFields,
   success: HistoryAnswer,
-  body: () => Node.succeed({ id: "", refusal: null }),
+  body: Node.capture({}, (payload) => AuthorizeStart.call({}).pipe(Node.branch({
+    if: Node.capture({}, (run) => canRecord(run)),
+    then: (run) => RecordStart.call({ ...payload, principal: run.principal }),
+    else: () => Node.succeed(FORBIDDEN),
+  }))),
 })
 
 export const Note = Flow.make("vibelang/history/Note", {
   description: "Adds a note to the mythical commit `id`: `tried` for an attempt that failed or was abandoned, `evidence` for proof it works, `superseded` for an intent an amend replaced.",
   modelInvocable: true,
-  payload: { id: Schema.String, section: SectionSchema, text: Schema.String },
+  payload: noteFields,
   success: HistoryAnswer,
-  body: () => Node.succeed({ id: "", refusal: null }),
+  body: Node.capture({}, (payload) => AuthorizeNote.call({}).pipe(Node.branch({
+    if: Node.capture({}, (run) => canRecord(run)),
+    then: (run) => RecordNote.call({ ...payload, principal: run.principal }),
+    else: () => Node.succeed(FORBIDDEN),
+  }))),
 })
 
 export const Approve = Flow.make("vibelang/history/Approve", {
   description: "A person approves the worked mythical commit `id` to land on main through the merge queue.",
   modelInvocable: false,
-  payload: { id: Schema.String },
+  payload: approveFields,
   success: HistoryAnswer,
-  body: () => Node.succeed({ id: "", refusal: null }),
+  body: Node.capture({}, (payload) => AuthorizeApprove.call({}).pipe(Node.branch({
+    if: Node.capture({}, (run) => canRecord(run)),
+    then: (run) => RecordApprove.call({ ...payload, principal: run.principal }),
+    else: () => Node.succeed(FORBIDDEN),
+  }))),
 })
 
 export const Fold = Flow.make("vibelang/history/Fold", {
@@ -138,7 +183,15 @@ export const Fold = Flow.make("vibelang/history/Fold", {
   modelInvocable: false,
   payload: {},
   success: FoldAnswer,
-  body: () => Node.succeed({ folded: 0, refusal: null }),
+  body: Node.capture({}, () => AuthorizeFold.call({}).pipe(Node.branch({
+    if: Node.capture({}, (run) => canRecord(run)),
+    then: () => FoldMain.call({}).pipe(Node.bindPlanned(Node.capture({}, (main) => FoldRead.call({ main }))), Node.branch({
+      if: Node.capture({}, (read) => read.available),
+      then: (read) => FoldCommits.call({ commits: read.commits }),
+      else: () => Node.succeed({ folded: 0, refusal: "unavailable" }),
+    })),
+    else: () => Node.succeed({ folded: 0, refusal: "forbidden" }),
+  }))),
 })
 
 export const Bootstrap = Flow.make("vibelang/history/Bootstrap", {
@@ -146,81 +199,91 @@ export const Bootstrap = Flow.make("vibelang/history/Bootstrap", {
   modelInvocable: false,
   payload: {},
   success: Schema.Boolean,
-  body: () => Node.succeed(false),
+  body: Node.capture({}, () => LoadBootstrap.call({})),
 })
 
-/** Plan's body. */
-export effect function planned(request: PlanRequest) {
-  const stack = try Stack
-  return try guarded(planAction(request.how), () => stack.plan(request))
+// ── the steps' implementations ───────────────────────────────────────────────────────────────────────────────────────
+
+/** An authorize step's implementation, on every host: the caller's run of `action`, authorized or forbidden. */
+export function authorizer(action: Action) {
+  return () => withSpan(effect {
+    const caller = try Caller
+    const principal = caller.current === undefined ? caller.principal : try caller.current()
+    const run = authorize(begin(action, principal))
+    if (!canRecord(run)) try counted(action, "forbidden")
+    return run
+  }, `vibelang.history.${action}.authorize`)
 }
 
-/** Start's body. */
-export effect function started(id: string, lane: string) {
-  const stack = try Stack
-  return try guarded("start", () => stack.start(id, lane))
+/** A record step's implementation over the sequencer: `write`'s answer, counted by its outcome. */
+function recorder<P>(action: Action, write: (stack: Stack.Shape, payload: P) => Answer!!) {
+  return (payload: P) => withSpan(effect {
+    const answer = try write(try Stack, payload)
+    try counted(action, answer.refusal ?? "accepted")
+    return answer
+  }, `vibelang.history.${action}.record`)
 }
 
-/** Note's body. */
-export effect function noted(id: string, section: "tried" | "evidence" | "superseded", text: string) {
-  const stack = try Stack
-  return try guarded("note", (principal) => stack.note(id, section, text, signature(principal)))
+/** The plan a Plan's record step asks for. */
+export function planOf(payload: PlanRequest): PlanRequest {
+  return { how: payload.how, epic: payload.epic, newEpic: payload.newEpic, target: payload.target, title: payload.title, task: payload.task }
 }
 
-/** Approve's body: only a person, never the agent. */
-export effect function approved(id: string) {
-  const stack = try Stack
-  return try guarded("approve", (principal) => stack.approve(id, principal.name))
-}
-
-/**
- * Fold's body: read main after the history's last folded commit, then fold each new commit in main's order, each its
- * own journaled step, so a resumed fold never folds one twice.
- */
-export effect function folded() {
-  let run = try authorized("fold")
-  if (!canRecord(run)) {
-    try counted("fold", "forbidden")
-    return { folded: 0, refusal: "forbidden" }
-  }
-  const stack = try Stack
-  const log = try MainLog
-  const main = try Step.make({ name: "vibelang/history/fold/main", success: Schema.String, execute: Effect.map(stack.read(), (history) => history.main) })
-  const read = try Step.make({
-    name: "vibelang/history/fold/read",
-    success: Schema.NullOr(Schema.Array(MainCommitSchema)),
-    execute: effect { return log.since(main) catch () => null },
-  })
-  if (read === null) {
+/** Fold's read step: main after `main`, or unavailable when it could not be read. */
+effect function readMain(main: string) {
+  const commits = (try MainLog).since(main) catch () => null
+  if (commits === null) {
     try counted("fold", "unavailable")
-    return { folded: 0, refusal: "unavailable" }
+    return { available: false, commits: [] }
   }
+  return { available: true, commits }
+}
+
+/** Fold's fold step: each commit in main's order, each its own journaled step. */
+effect function foldCommits(commits: ReadonlyArray<MainCommit>) {
+  const stack = try Stack
   let count = 0
-  for (const commit of read) {
-    if (!canRecord(run)) break
+  for (const commit of commits) {
     const answer = try Step.make({ name: `vibelang/history/fold/${commit.sha}`, success: HistoryAnswer, execute: stack.fold(commit) })
-    run = record(run)
     if (answer.refusal === null) count++
   }
   try counted("fold", count === 0 ? "current" : "folded")
   return { folded: count, refusal: null }
 }
 
-/** Bootstrap's body: load the bootstrapped history once. */
-export effect function bootstrapped() {
-  const stack = try Stack
-  const loaded = try Step.make({ name: "vibelang/history/bootstrap/load", success: Schema.Boolean, execute: stack.bootstrap() })
+/** Bootstrap's load step. */
+effect function loadBootstrap() {
+  const loaded = try (try Stack).bootstrap()
   try counted("bootstrap", loaded ? "loaded" : "exists")
   return loaded
 }
 
-/** Registers every history flow with the engine; their steps reach the sequencer through `Stack`. */
-export const historyRegistration = Layer.effectDiscard(effect {
-  const engine = try FlowRuntime.FlowRuntime
-  try engine.register(Plan, (payload) => withSpan(planned(payload), "vibelang.history.plan"))
-  try engine.register(Start, (payload) => withSpan(started(payload.id, payload.lane), "vibelang.history.start"))
-  try engine.register(Note, (payload) => withSpan(noted(payload.id, payload.section, payload.text), "vibelang.history.note"))
-  try engine.register(Approve, (payload) => withSpan(approved(payload.id), "vibelang.history.approve"))
-  try engine.register(Fold, () => withSpan(folded(), "vibelang.history.fold"))
-  try engine.register(Bootstrap, () => withSpan(bootstrapped(), "vibelang.history.bootstrap"))
-})
+/** Registers every history flow with the engine; their steps reach the sequencer through `Stack`, who asks through `Caller`. */
+export const historyRegistration = Layer.mergeAll(
+  Interpreter.layerWithImplementations(Plan, Layer.mergeAll(
+    AuthorizeAppend.toLayer(authorizer("append")),
+    AuthorizeRetell.toLayer(authorizer("retell")),
+    RecordAppend.toLayer(recorder("append", (stack, payload: PlanRequest) => stack.plan(planOf(payload)))),
+    RecordRetell.toLayer(recorder("retell", (stack, payload: PlanRequest) => stack.plan(planOf(payload)))),
+  )),
+  Interpreter.layerWithImplementations(Start, Layer.mergeAll(
+    AuthorizeStart.toLayer(authorizer("start")),
+    RecordStart.toLayer(recorder("start", (stack, payload: { readonly id: string; readonly lane: string }) => stack.start(payload.id, payload.lane))),
+  )),
+  Interpreter.layerWithImplementations(Note, Layer.mergeAll(
+    AuthorizeNote.toLayer(authorizer("note")),
+    RecordNote.toLayer(recorder("note", (stack, payload: { readonly id: string; readonly section: "tried" | "evidence" | "superseded"; readonly text: string; readonly principal: Principal }) =>
+      stack.note(payload.id, payload.section, payload.text, signature(payload.principal)))),
+  )),
+  Interpreter.layerWithImplementations(Approve, Layer.mergeAll(
+    AuthorizeApprove.toLayer(authorizer("approve")),
+    RecordApprove.toLayer(recorder("approve", (stack, payload: { readonly id: string; readonly principal: Principal }) => stack.approve(payload.id, payload.principal.name))),
+  )),
+  Interpreter.layerWithImplementations(Fold, Layer.mergeAll(
+    AuthorizeFold.toLayer(authorizer("fold")),
+    FoldMain.toLayer(() => withSpan(effect { return (try (try Stack).read()).main }, "vibelang.history.fold.main")),
+    FoldRead.toLayer(({ main }) => withSpan(readMain(main), "vibelang.history.fold.read")),
+    FoldCommits.toLayer(({ commits }) => withSpan(foldCommits(commits), "vibelang.history.fold.commits")),
+  )),
+  Interpreter.layerWithImplementations(Bootstrap, LoadBootstrap.toLayer(() => withSpan(loadBootstrap(), "vibelang.history.bootstrap.load"))),
+)

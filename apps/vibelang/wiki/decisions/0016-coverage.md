@@ -664,10 +664,24 @@ parked across the deploy) is untested.
 (`worker/ActionDirectory.vibe`) is `vibelang/actions/index` then `vibelang/actions/start`, and `vibelang/actions/Cancel`
 is `vibelang/actions/cancel`; the steps act on the request admitted at the door, so a replay's JSON conflict check
 compares identical bytes. `vibelang/Session` (`src/surfaces/sessionFlow.vibe`) branches on its payload to
-`vibelang/session/login`, `…/poll` or `…/logout`. The seven history flows (`src/history/flows.vibe`, `tools.vibe`) still
-have placeholder bodies: Plan, Start, Note and show also run on the action host (`src/actions/execution.vibe`,
-`worker/HistoryActions.vibe`), which calls the history through `HistoryReader` and has no `Caller` principal to journal
-the history's `authorize` step. Closing them needs that principal on the action host.
+`vibelang/session/login`, `…/poll` or `…/logout`. 
+
+**History flow bodies and the action host's caller (2026-11-10).** The seven history flows (`src/history/flows.vibe`,
+`tools.vibe`) are now their steps too. Every write is `vibelang/history/<action>/authorize`, then, through a
+`Node.branch` on the proved `canRecord`, `…/record`; a forbidden run answers `forbidden` with no other step. Plan
+branches on `how` first, so an append journals `append/…` and an insert or amend `retell/…`, the names it journaled
+before. Fold is `fold/authorize`, `fold/main`, `fold/read`, then `fold/commits`, which keeps one inline
+`fold/<sha>` step per commit. Bootstrap is `bootstrap/load`; show is `show/authorize` then `show/read`. The action host
+(`src/actions/execution.vibe`) implements the same steps: its authorize step reads `Caller`, as the History object's
+does, and its record step asks the history through `HistoryReader`, which checks again; the old `…/call` step is gone.
+The live host's `Caller` is `ActionRuns.callerOf`: the owner, name and actor the door stored from 0019's session, at
+the owner's current grant each time a step asks; the payload never names it. Mock actions use the world's current
+person. `test/historyCaller.coverage.test.vibe` runs Plan, Start, Note and show on the live host and pins their steps.
+Its second case failed on main before this change (`refusal: "unknown"`: a contributor's insert reached the history
+as its maintainer); it now stops at `retell/authorize` with `forbidden` and writes nothing. In the mock, the history
+runs the same flow in memory inside the record step, so a mock action's trace shows the history's own authorize and
+record after the host's. `Node.bindPlanned`'s callback needs `Node.capture`, or the engine refuses the graph as
+process-local. Resuming a history run journaled before this change is untested.
 
 **A reply-started tour stayed parked (fixed 2026-11-09).** A reply refused `busy` by a tour accepted after its
 dispatch ran that tour as its own child execution. Ending the tour woke only the tour the answer loop started, so the

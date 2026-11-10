@@ -20,6 +20,8 @@ const inputOf = (flow: string, variant: number): Schema.Json => {
     default: return {}
   }
 }
+/** The run's caller, as the door identifies it: this world's maintainer. */
+const MAINTAINER = { principal: { role: "maintainer" as const, name: "Ada", agent: false } }
 const Input = Schema.Struct({ flow: Schema.Literals(FLOWS), variant: Int, admit: Schema.Boolean, alarms: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 })), cancel: Schema.Boolean })
 
 /** A flow the host does not run is input; one it runs settles to a receipt, and once it holds an execution it is busy. */
@@ -41,7 +43,7 @@ it.live("actions/history-host", () => run("actions/history-host", Input, (input)
       if (runs && started !== null) throw new Finding({ report: `${input.flow} answered ${started}` })
       if (runs && (try host.start({ ...body, id: "other" })) !== "busy") throw new Finding({ report: "a second run started while one is held" })
       let settled = false
-      for (let turn = 0; turn < input.alarms; turn++) settled = (try host.alarm(product))._tag === "Settled" || settled
+      for (let turn = 0; turn < input.alarms; turn++) settled = (try host.alarm(product, MAINTAINER))._tag === "Settled" || settled
       if (input.cancel) {
         const cancelled = host.cancel() catch () => "refused"
         if (cancelled !== undefined && cancelled !== "refused") throw new Finding({ report: "cancel answered a value" })

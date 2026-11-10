@@ -10,6 +10,7 @@ import { prepare, refused } from "../src/actions/execution.vibe"
 import { signedOut, type ActionIdentity } from "./ActionIdentity.vibe"
 import * as HistoryActions from "./HistoryActions.vibe"
 import { Post, Tour, Reply } from "../src/core/flows.vibe"
+import type { Caller } from "../src/history/roles.vibe"
 import type { ChatModel, Spend } from "./Reply.vibe"
 import * as Objects from "./Objects.vibe"
 import type { Sequencer } from "./Sequencer.vibe"
@@ -80,11 +81,21 @@ export effect function start(hostId: string, storage: Objects.Storage, sequencer
   return refusal
 }
 
-export effect function alarm(hostId: string, storage: Objects.Storage, sequencer: Sequencer, spend: Spend.Shape, model: ChatModel.Shape, history: import("../src/history/tools.vibe").HistoryReader, historyHost = HistoryActions.make(hostId, storage), replyHost = Objects.executionHost(hostId, storage, sequencer)) {
+/**
+ * Who runs a history action: the person the door identified (`owner`, `name` and `actor` come from 0019's session, never
+ * the payload), at the role their current grant gives them each time a step asks.
+ */
+export function callerOf(request: RunRequest, authority: Pick<ActionIdentity.Shape, "role">): Caller.Shape {
+  const owner = request.owner ?? ""
+  const current = effect () => ({ role: try Effect.orDie(authority.role(owner)), name: request.name ?? "Guest", agent: request.actor === "agent" })
+  return { principal: { role: "viewer", name: request.name ?? "Guest", agent: request.actor === "agent" }, current }
+}
+
+export effect function alarm(hostId: string, storage: Objects.Storage, sequencer: Sequencer, spend: Spend.Shape, model: ChatModel.Shape, history: import("../src/history/tools.vibe").HistoryReader, historyHost = HistoryActions.make(hostId, storage), replyHost = Objects.executionHost(hostId, storage, sequencer), authority: Pick<ActionIdentity.Shape, "role"> = signedOut) {
   const request = (try promise(() => storage.get("action/request"))) as RunRequest | undefined
   if (request === undefined) return try Objects.alarm(hostId, storage, sequencer, spend, model, history)
   if (request.flow !== Tour._tag && request.flow !== Post._tag) {
-    const outcome = try traced(sequencer, request, historyHost.alarm(history))
+    const outcome = try traced(sequencer, request, historyHost.alarm(history, callerOf(request, authority)))
     if (outcome._tag === "Settled") {
       const receipt: Option.Option<Flow.Result<unknown, unknown>> = try Effect.orDie(historyHost.receipt(request))
       if (Option.isSome(receipt) && receipt.value._tag === "Complete") {
@@ -169,6 +180,6 @@ export function make(hostId: string, storage: Objects.Storage, sequencer: Sequen
   return {
     start: (request: RunRequest, role: Role) => start(hostId, storage, sequencer, request, role, history, authority),
     cancel: (id: string, role: Role, owner = "") => cancel(hostId, storage, sequencer, id, role, history, authority, owner, reply),
-    alarm: (spend: Spend.Shape, model: ChatModel.Shape, reader: import("../src/history/tools.vibe").HistoryReader) => alarm(hostId, storage, sequencer, spend, model, reader, history, reply),
+    alarm: (spend: Spend.Shape, model: ChatModel.Shape, reader: import("../src/history/tools.vibe").HistoryReader) => alarm(hostId, storage, sequencer, spend, model, reader, history, reply, authority),
   }
 }

@@ -1,4 +1,4 @@
-// Each conversation flow's body is its named steps, one declared action per step (src/core/flows.vibe). A host supplies
+// Each conversation and history flow's body is its named steps, one declared action per step (src/core/flows.vibe). A host supplies
 // only the steps' implementations; executing a flow on the engine runs exactly those steps, in order, with the payloads
 // the body passes, and answers what they answered. The step names are what the journal, the Actions pane, spans and
 // metrics show, so this file pins them.
@@ -13,6 +13,13 @@ import {
   SandboxStopAction, SeekTour, SignalTour, StartTour, Tour, WakeTour,
 } from "../src/core/flows.vibe"
 import { Refused } from "../src/core/Factory.vibe"
+import {
+  Approve, AuthorizeAppend, AuthorizeApprove, AuthorizeFold, AuthorizeNote, AuthorizeRetell, AuthorizeShow, AuthorizeStart,
+  Bootstrap, Fold, FoldCommits, FoldMain, FoldRead, LoadBootstrap, Note, Plan, RecordAppend, RecordApprove, RecordNote,
+  RecordRetell, RecordStart, Start,
+} from "../src/history/flows.vibe"
+import type { Action as HistoryAction, Principal } from "../src/history/roles.vibe"
+import { ReadShow, Show } from "../src/history/tools.vibe"
 
 const snapshot = { id: "s1", generation: 2, sequence: 1, status: "running" as const, role: "maintainer" as const, allowance: 60, used: 0, remaining: 60, resetAt: 0, output: "" }
 const walkthrough = { step: 2, target: "#home", paused: true, revision: 4, remaining: 1000, at: 0 }
@@ -159,6 +166,112 @@ describe("each flow's body is its named steps", () => {
         { conversation: "c", operationId: "o1" }, { conversation: "c", operationId: "o2", generation: 2 },
         { conversation: "c", operationId: "o3", command: "ls", generation: 2 }, {},
       ])
+    })
+  }))
+})
+
+describe("each history flow's body is its named steps", () => {
+  const ada: Principal = { role: "maintainer", name: "Ada", agent: false }
+  const runOf = (action: HistoryAction, phase: "authorized" | "forbidden") => ({ action, principal: ada, phase, records: 0 })
+  const plan = { how: "append" as const, epic: "e1", newEpic: "", target: "", title: "T", task: "" }
+  const written = { id: "m1", refusal: null }
+  const forbidden = { id: "", refusal: "forbidden" }
+
+  it.effect("the step names are the ones the journal and the Actions pane show", () => effect {
+    try Effect.try(() => expect([
+      AuthorizeAppend.name, RecordAppend.name, AuthorizeRetell.name, RecordRetell.name, AuthorizeStart.name, RecordStart.name,
+      AuthorizeNote.name, RecordNote.name, AuthorizeApprove.name, RecordApprove.name, AuthorizeFold.name, FoldMain.name,
+      FoldRead.name, FoldCommits.name, LoadBootstrap.name, AuthorizeShow.name, ReadShow.name,
+    ]).toEqual([
+      "vibelang/history/append/authorize", "vibelang/history/append/record", "vibelang/history/retell/authorize",
+      "vibelang/history/retell/record", "vibelang/history/start/authorize", "vibelang/history/start/record",
+      "vibelang/history/note/authorize", "vibelang/history/note/record", "vibelang/history/approve/authorize",
+      "vibelang/history/approve/record", "vibelang/history/fold/authorize", "vibelang/history/fold/main",
+      "vibelang/history/fold/read", "vibelang/history/fold/commits", "vibelang/history/bootstrap/load",
+      "vibelang/history/show/authorize", "vibelang/history/show/read",
+    ]))
+  })
+
+  it.effect("a write records as the principal its authorize step authorized, and a forbidden one records nothing", () => scoped(effect {
+    effect function run(phase: "authorized" | "forbidden") {
+      const r = try recorder()
+      const layer = Layer.mergeAll(
+        Interpreter.layerWithImplementations(Plan, Layer.mergeAll(
+          AuthorizeAppend.toLayer(r.step("append/authorize", runOf("append", phase))), RecordAppend.toLayer(r.step("append/record", written)),
+          AuthorizeRetell.toLayer(r.step("retell/authorize", runOf("retell", phase))), RecordRetell.toLayer(r.step("retell/record", written)),
+        )),
+        Interpreter.layerWithImplementations(Start, Layer.mergeAll(AuthorizeStart.toLayer(r.step("start/authorize", runOf("start", phase))), RecordStart.toLayer(r.step("start/record", written)))),
+        Interpreter.layerWithImplementations(Note, Layer.mergeAll(AuthorizeNote.toLayer(r.step("note/authorize", runOf("note", phase))), RecordNote.toLayer(r.step("note/record", written)))),
+        Interpreter.layerWithImplementations(Approve, Layer.mergeAll(AuthorizeApprove.toLayer(r.step("approve/authorize", runOf("approve", phase))), RecordApprove.toLayer(r.step("approve/record", written)))),
+      )
+      const answers = try onEngine(layer, (engine) => Effect.all([
+        engine.execute(Plan, { executionId: "append/1", payload: plan }),
+        engine.execute(Plan, { executionId: "insert/1", payload: { ...plan, how: "insert" } }),
+        engine.execute(Plan, { executionId: "amend/1", payload: { ...plan, how: "amend" } }),
+        engine.execute(Start, { executionId: "start/1", payload: { id: "m1", lane: "l" } }),
+        engine.execute(Note, { executionId: "note/1", payload: { id: "m1", section: "tried", text: "x" } }),
+        engine.execute(Approve, { executionId: "approve/1", payload: { id: "m1" } }),
+      ]))
+      return { answers, steps: try Ref.get(r.seen) }
+    }
+    const yes = try run("authorized")
+    const no = try run("forbidden")
+    try Effect.try(() => {
+      expect(yes.answers).toEqual([written, written, written, written, written, written])
+      expect(yes.steps).toEqual([
+        ["append/authorize", {}], ["append/record", { ...plan, principal: ada }],
+        ["retell/authorize", {}], ["retell/record", { ...plan, how: "insert", principal: ada }],
+        ["retell/authorize", {}], ["retell/record", { ...plan, how: "amend", principal: ada }],
+        ["start/authorize", {}], ["start/record", { id: "m1", lane: "l", principal: ada }],
+        ["note/authorize", {}], ["note/record", { id: "m1", section: "tried", text: "x", principal: ada }],
+        ["approve/authorize", {}], ["approve/record", { id: "m1", principal: ada }],
+      ])
+      expect(no.answers).toEqual([forbidden, forbidden, forbidden, forbidden, forbidden, forbidden])
+      expect(no.steps).toEqual([["append/authorize", {}], ["retell/authorize", {}], ["retell/authorize", {}], ["start/authorize", {}], ["note/authorize", {}], ["approve/authorize", {}]])
+    })
+  }))
+
+  it.effect("a fold reads main only once authorized, and folds only what it could read", () => scoped(effect {
+    const commit = { sha: "abc", change: "", title: "T", message: "M" }
+    effect function run(phase: "authorized" | "forbidden", available: boolean) {
+      const r = try recorder()
+      const layer = Interpreter.layerWithImplementations(Fold, Layer.mergeAll(
+        AuthorizeFold.toLayer(r.step("authorize", runOf("fold", phase))),
+        FoldMain.toLayer(r.step("main", "f0")),
+        FoldRead.toLayer(r.step("read", { available, commits: available ? [commit] : [] })),
+        FoldCommits.toLayer(r.step("commits", { folded: 1, refusal: null })),
+      ))
+      const answer = try onEngine(layer, (engine) => engine.execute(Fold, { executionId: "fold/1", payload: {} }))
+      return { answer, steps: try Ref.get(r.seen) }
+    }
+    const folded = try run("authorized", true)
+    const unavailable = try run("authorized", false)
+    const refused = try run("forbidden", true)
+    try Effect.try(() => {
+      expect(folded.answer).toEqual({ folded: 1, refusal: null })
+      expect(folded.steps).toEqual([["authorize", {}], ["main", {}], ["read", { main: "f0" }], ["commits", { commits: [commit] }]])
+      expect(unavailable.answer).toEqual({ folded: 0, refusal: "unavailable" })
+      expect(unavailable.steps).toEqual([["authorize", {}], ["main", {}], ["read", { main: "f0" }]])
+      expect(refused.answer).toEqual({ folded: 0, refusal: "forbidden" })
+      expect(refused.steps).toEqual([["authorize", {}]])
+    })
+  }))
+
+  it.effect("Bootstrap is its load step, and show reads after its authorize step", () => scoped(effect {
+    const r = try recorder()
+    const outline = { seq: 0, main: "", epics: [], open: [] }
+    const layer = Layer.mergeAll(
+      Interpreter.layerWithImplementations(Bootstrap, LoadBootstrap.toLayer(r.step("load", true))),
+      Interpreter.layerWithImplementations(Show, Layer.mergeAll(AuthorizeShow.toLayer(r.step("show/authorize", runOf("show", "authorized"))), ReadShow.toLayer(r.step("show/read", outline)))),
+    )
+    const answers = try onEngine(layer, (engine) => Effect.all([
+      engine.execute(Bootstrap, { executionId: "bootstrap/1", payload: {} }),
+      engine.execute(Show, { executionId: "show/1", payload: { what: "outline" } }),
+    ]))
+    const steps = try Ref.get(r.seen)
+    try Effect.try(() => {
+      expect(answers).toEqual([true, outline])
+      expect(steps).toEqual([["load", {}], ["show/authorize", {}], ["show/read", { what: "outline" }]])
     })
   }))
 })
