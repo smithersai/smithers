@@ -4,7 +4,7 @@
 // The deployed S5b trial and its limits are recorded in decision 0114; edge collapse is not emulated in workerd.
 import { Effect } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import { admit } from "./ElectricAccess.ts"
+import { admit } from "#vibelang/emitted/infra/ElectricAccess"
 import { isLive } from "./ElectricAwake.ts"
 import { relay, tableOf } from "./ElectricRelay.ts"
 

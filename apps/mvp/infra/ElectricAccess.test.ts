@@ -2,7 +2,7 @@
 // the gateway's own settings: no public URL, so ChatApi's service binding is the only way in.
 import { HttpServerRequest } from "effect/http"
 import { describe, expect, test } from "vitest"
-import { admit } from "./ElectricAccess.ts"
+import { admit } from "./ElectricAccess.vibe"
 import * as ElectricGateway from "./ElectricGateway.ts"
 
 const GATEWAY = "http://electric-gateway"

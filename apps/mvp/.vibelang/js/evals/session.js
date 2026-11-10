@@ -15,7 +15,7 @@
 //   default with a key its provider rejects, so every call is a real refusal before any output.
 import { openBudget } from "../bench/cerebras-load/budget.js";
 import { guardedModel } from "../bench/cerebras-load/guard.js";
-import { candidateConfig, refusalConfig } from "./candidate";
+import { candidateConfig, refusalConfig } from "./candidate.js";
 import { openProviderResource, waitForDispatch } from "./session-lifecycle.js";
 import { afterAll } from "vitest";
 import { HostModel } from "@smthrs/model-host";
@@ -23,10 +23,10 @@ import { EgressHttpClient } from "@smthrs/platform-node";
 import { ConfigProvider, Effect, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 import { DEFAULT_CHAT_MODEL } from "../worker/ModelRoles.js";
-import { answerRow, openAgent } from "../src/test/agent";
-import { openDevice } from "../src/test/device";
-import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source";
-import { tokenCap } from "./report";
+import { answerRow, openAgent } from "../src/test/agent.js";
+import { openDevice } from "../src/test/device.js";
+import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source.js";
+import { tokenCap } from "./report.js";
 /** How long one answer may take, asks and flow drafts included, before the trial counts it unanswered. */
 export const ANSWER_WITHIN_MS = 4 * 60_000;
 /** How often a trial looks for a question the agent asked. */

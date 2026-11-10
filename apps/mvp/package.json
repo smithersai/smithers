@@ -327,6 +327,11 @@
       "vibelang-source": "./infra/SignIn.vibe",
       "default": "./.vibelang/js/infra/SignIn.js"
     },
+    "#vibelang/emitted/infra/ElectricAccess": {
+      "types": "./infra/ElectricAccess.d.vibe.ts",
+      "vibelang-source": "./infra/ElectricAccess.vibe",
+      "default": "./.vibelang/js/infra/ElectricAccess.js"
+    },
     "#vibelang/emitted/worker/CloudRuns": {
       "types": "./worker/CloudRuns.d.vibe.ts",
       "vibelang-source": "./worker/CloudRuns.vibe",

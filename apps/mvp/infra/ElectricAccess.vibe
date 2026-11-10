@@ -5,6 +5,7 @@
 // authorized the person and fixed the shape. Electric runs without a secret of its own: its container has no way in but
 // this gateway (docs/infrastructure.md).
 import { HttpServerRequest } from "effect/http"
+import { getRequest } from "./ElectricAccess.platform.ts"
 
 /** The gateway's answer to one request: refused with a status before the container starts, or let through. */
 export type Admission =
@@ -18,5 +19,5 @@ export type Admission =
 export const admit = (request: HttpServerRequest.HttpServerRequest): Admission => {
   const url = new URL(request.originalUrl, "http://electric")
   if (request.method !== "GET" || url.pathname !== "/v1/shape") return { _tag: "Refused", status: 404 }
-  return { _tag: "Admitted", request: HttpServerRequest.fromWeb(new Request(url, { method: "GET", headers: request.headers })) }
+  return { _tag: "Admitted", request: HttpServerRequest.fromWeb(getRequest(url, request.headers)) }
 }
