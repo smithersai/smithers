@@ -204,11 +204,18 @@ each (`fuzz:coverage`'s budget), Node and happy-dom, no browser phase:
 | `src/web/viewDecision.vibe` | 22/22 | 52/52 |
 | `src/web/viewport.vibe` | 48/48 | 58/58 |
 | `worker/HistoryActions.vibe` | 33/33 | 19/19 |
-| `worker/Sequencer.vibe` | 119/119 | 67/68 |
-| `worker/Wiki.vibe` | 153/154 | 205/217 |
-| `worker/Objects.vibe` | 102/108 | 41/46 |
-| `worker/ActionRuns.vibe` | 114/117 | 150/168 |
-| `worker/Issues.vibe` | 246/271 | 376/440 |
+| `worker/Sequencer.vibe` | 118/118 | 62/62 |
+| `worker/Wiki.vibe` | 137/172 | 181/234 |
+| `worker/Objects.vibe` | 108/112 | 46/49 |
+| `worker/ActionRuns.vibe` | 114/117 | 152/168 |
+| `worker/Issues.vibe` | 216/290 | 297/460 |
+
+Remeasured 2026-11-10 by `pnpm fuzz:coverage` at `b938c72d` (`coverage/fuzz-unit`, nyc-01 load 30 to 45). Wiki and
+Issues fell from the first measurement (153/154 and 205/217; 246/271 and 376/440): their journaled-proposal and read
+paths are reached by random sequences only when a 5 s budget affords enough executions, and this run afforded fewer.
+They need steered targets, as `objects/steered-host` did for Objects. The merged `coverage/fuzz` map also
+double-counts the web files: Chromium's map gives `src/web/startupDecision.vibe` 36 branches against Node's 18, and
+istanbul's merge keeps both sets, so the report gate shows 33/36 for a file Node alone covers 18/18.
 
 Not reached, with the reason; none is excluded:
 
@@ -219,7 +226,9 @@ Not reached, with the reason; none is excluded:
 - `Issues` 317 and `Wiki` 208: `engine.retryFrom === undefined`; the Cloudflare runtime supplies it in every target.
 - `Wiki` 134 and 136, `Issues` 152-174: journaled proposals that need the engine; `wiki/github-host-operations` and
   `issues/github-host-operations` reach them at long budgets.
-- `Sequencer` 71's second arm, `Objects` 146-148 and 297, remaining `Issues` read paths (50-page cursors, truncated
+- `Objects` 125: `finish` runs only after the last stop's reading hold elapses in real time, longer than the budget.
+  `Objects` 148 and 150: a tour control needs a walkthrough while the object holds no intent, or a reply's.
+- `Objects` 297, remaining `Issues` read paths (50-page cursors, truncated
   reviews): rare at 5 s; seen in longer runs.
 
 Campaign: seed 20261113, 240 s per target, 14 targets, 28.2 minutes wall on two workers, 19,491,917 executions in 13 receipts
