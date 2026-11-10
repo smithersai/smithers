@@ -79,4 +79,24 @@ describe("the fixture wiki host", () => {
       expect(proposals).toHaveLength(1)
     })
   }))
+
+  it.effect("after a restart, the same key first sent with changed text or for another page is a conflict", () => scoped(effect {
+    const store = try makeWikiStore()
+    const first = try makeWikiFactory("maintainer", store)
+    const source = (id: string) => effect { return (try first.read(id)).pages.find((page) => page.id === id)!.source }
+    const roadmap = try source("roadmap")
+    const index = try source("index")
+    const text = roadmap + "\nOne more line.\n"
+    try first.act({ op: "propose", page: "roadmap", base: roadmap, text, key: "p1" })
+    // Each restart has a fresh engine, so the request reaches the repository, which remembers the key.
+    const changed = try Effect.flip((try makeWikiFactory("maintainer", store)).act({ op: "propose", page: "roadmap", base: roadmap, text: roadmap + "\nAnother line.\n", key: "p1" }))
+    // The same text, proposed for another page under the same key.
+    const moved = try Effect.flip((try makeWikiFactory("maintainer", store)).act({ op: "propose", page: "index", base: index, text, key: "p1" }))
+    const proposals = try Ref.get(store.proposals)
+    try Effect.try(() => {
+      expect(changed).toMatchObject({ reason: "conflict", unwritten: true })
+      expect(moved).toMatchObject({ reason: "conflict", unwritten: true })
+      expect(proposals).toHaveLength(1)
+    })
+  }))
 })

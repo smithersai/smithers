@@ -79,3 +79,10 @@ it("an image that failed to load leaves the empty chat without its figure", () =
   scene({ update, view }, given(chat), expect(selector(`img[src="${card}"]`)).toExist())
   scene({ update, view }, given({ ...chat, failedMedia: [card] }), expect(selector(`img[src="${card}"]`)).toBeAbsent())
 })
+
+it("after the tour ends, the tour status says the person has control", () => {
+  scene({ update, view }, given({ ...chat, tour: false, toured: true }),
+    expect(role("status", { name: "Tour" })).toHaveText("Tour ended. You have control."),
+    expect(selector(".vl-theatre-bar")).toBeAbsent(),
+  )
+})

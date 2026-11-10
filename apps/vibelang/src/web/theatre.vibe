@@ -1,7 +1,7 @@
 import { theatreSelector, speechAction, audioIdentity, theatreOutcome, theatreFocusIndex } from "./theatreDecision.vibe"
 // Browser presentation is an injected Effect service. No speech or storage host globals enter the flow or view.
 import { ExperimentalBrowserDocument, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
-import { WALKTHROUGH } from "../core/walkthroughSteps.vibe"
+import { WALKTHROUGH, walkthroughStop } from "../core/walkthroughSteps.vibe"
 export interface Box { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 export service TourPresentation {
   present(state: { readonly step: number; readonly sound: boolean; readonly active: boolean; readonly paused: boolean; readonly finish?: boolean }): void!!
@@ -46,7 +46,7 @@ export const presentationFromHost = Layer.effect(TourPresentation, effect {
         else if (action === "speak") {
           speech?.cancel()
           const Constructor = (window as Window & { SpeechSynthesisUtterance: new (text: string) => SpeechSynthesisUtterance }).SpeechSynthesisUtterance
-          if (Constructor && speech) speech.speak(new Constructor(WALKTHROUGH[state.step - 1]?.voice ?? ""))
+          if (Constructor && speech) speech.speak(new Constructor(walkthroughStop(state.step).voice))
         }
       })
       const outcome = theatreOutcome(state.active, state.paused, state.sound)

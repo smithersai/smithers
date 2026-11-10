@@ -13,3 +13,8 @@ export const WALKTHROUGH: ReadonlyArray<WalkthroughStep> = [
   { target: "sandbox-pane", subtitle: "Contributors get a sandbox: a real machine, metered in minutes each month.", voice: "Contributors get a sandbox — a real machine of their own, metered in minutes each month.", duration: 12000 },
   { target: "finish", subtitle: "That's the factory. Ask me anything — or sign in to file your first issue.", voice: "That's the factory. Ask me anything — or sign in, and file your first issue.", duration: 12000 },
 ]
+/** The nearest tour stop, clamped to the first or last; NaN selects the first. */
+export function walkthroughStop(step: number): WalkthroughStep {
+  const whole = Number.isNaN(step) ? 1 : Math.round(step)
+  return WALKTHROUGH[Math.min(Math.max(whole, 1), WALKTHROUGH.length) - 1]!
+}

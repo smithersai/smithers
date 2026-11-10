@@ -48,6 +48,13 @@ describe("a reply in the chat", () => {
     )
   })
 
+  it("draws a heading with its own anchor, so a link can open it", () => {
+    const headed: Model = { ...home, surface: "chat", client: receive(receive(started, { type: "ReplyDelta", seq: 3, id: "r1", text: "## Install steps\n\nRun the installer." }), { type: "ReplyFinished", seq: 4, id: "r1" }) }
+    scene({ update, view }, given(headed),
+      expect(role("heading", { name: "Install steps" })).toHaveAttr("id", "install-steps"),
+    )
+  })
+
   it("draws a Markdown link with its target", () => {
     scene({ update, view }, given(replied),
       expect(role("link", { name: "the guide" })).toHaveAttr("href", "https://vibelang.smithers.sh/docs/intro"),

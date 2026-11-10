@@ -37,6 +37,8 @@ it.live("builds the wiki command's links, metadata and suite receipts determinis
       "designs/index.md": "# Design directory\n",
       "designs/detail.md": "# Detail\n\n[Parent](../rulings.md)\n",
       "decisions/0000-no-header.md": "Ruling: VL-2 VL-2 VL-7\nPlain document, with no heading, status or date.\n",
+      "decisions/0001-no-rulings-line.md": "# Plain\n\nThis follows VL-5.\n",
+      "decisions/0002-no-ruling-named.md": "# Open\n\nRulings: none yet\n",
       "decisions/0015-fuzzing.md": "# Fuzzing\n\n**Status:** package landed\n**Rulings:** VL-14, VL-29.\n2026-11-07\n",
       "decisions/0016-coverage.md": "# Coverage\n\n**Status:** in progress\nRuling: VL-29\n[Design](../designs/)\n",
       "decisions/0018-proofs.md": "# Proofs\n\nStatus: superseded\nRulings: VL-9\n",
@@ -62,7 +64,7 @@ it.live("builds the wiki command's links, metadata and suite receipts determinis
     try Effect.try(() => {
       expect(built.status, built.stderr).toBe(0)
       expect(again.status, again.stderr).toBe(0)
-      expect(built.stdout).toContain("wiki: 10 pages")
+      expect(built.stdout).toContain("wiki: 12 pages")
       expect(repeated).toBe(source)
       expect(pages.map(page => page.id)).toEqual(Object.keys(input).filter(file => file.endsWith(".md")).concat("decisions.md").sort().map(file => file.slice(0, -3)))
       const home = pages.find(page => page.id === "index")!
@@ -71,6 +73,9 @@ it.live("builds the wiki command's links, metadata and suite receipts determinis
       expect(pages.find(page => page.id === "designs/detail")!.html).toContain('href="/wiki/rulings"')
       expect(pages.find(page => page.id === "designs/index")!.label).toBe("Designs")
       expect(pages.find(page => page.id === "decisions/0000-no-header")).toMatchObject({ title: "decisions/0000-no-header", label: "0000 no-header", rulings: ["VL-2", "VL-7"], status: "Accepted", date: "" })
+      // With no Rulings line, the rulings come from the decision's opening; a Rulings line that names none gives none.
+      expect(pages.find(page => page.id === "decisions/0001-no-rulings-line")!.rulings).toEqual(["VL-5"])
+      expect(pages.find(page => page.id === "decisions/0002-no-ruling-named")!.rulings).toEqual([])
       expect(pages.find(page => page.id === "decisions/0015-fuzzing")).toMatchObject({ rulings: ["VL-14", "VL-29"], date: "2026-11-07" })
       expect(pages.find(page => page.id === "decisions/0018-proofs")!.status).toBe("Replaced")
       const decisions = pages.find(page => page.id === "decisions")!

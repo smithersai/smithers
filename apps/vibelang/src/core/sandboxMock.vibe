@@ -10,7 +10,8 @@ import { makeSandboxHost, type Machines, type SandboxState, type Receipt } from 
 import { mockPolicy, type SandboxPolicy } from "./sandboxPolicy.vibe"
 import type { Role } from "./sandboxDecision.vibe"
 
-export effect function makeMockSandboxes(role: Role, policy: Layer.Layer<SandboxPolicy> = mockPolicy(role)) {
+/** `engine` is the flow engine the sandbox flows run on; tests pass a faulty one to drive engine failures. */
+export effect function makeMockSandboxes(role: Role, policy: Layer.Layer<SandboxPolicy> = mockPolicy(role), engine: Layer.Layer<FlowRuntime.FlowRuntime> = FlowEngine.layerMemory) {
   const random = try Effect.provide(SecureRandom.SecureRandom, WebCrypto.layer)
   effect function execution(prefix: string) { return `${prefix}/${try random.uuidV4()}` }
   const state = try Ref.make<SandboxState | undefined>(undefined)
@@ -19,13 +20,13 @@ export effect function makeMockSandboxes(role: Role, policy: Layer.Layer<Sandbox
   const receipts = new Map<string, Receipt>()
   const machines = memoryMachines()
   const host = try Effect.provide(makeSandboxHost({ read: () => Ref.get(state), receipt: (id) => succeed(receipts.get(id)), write: (next, receipt) => sync(() => { if (receipt) receipts.set(receipt.request.operationId, receipt) }).pipe(Effect.andThen(Ref.set(state, next))), alarm: (at) => Ref.set(armed, at) }, machines), policy)
-  const runtime = sandboxRegistration.pipe(
-    Layer.provideMerge(FlowEngine.layerMemory),
+  const registered = sandboxRegistration.pipe(
+    Layer.provideMerge(engine),
     Layer.provide(Layer.succeed(SandboxHost, host)),
     Layer.provide(WebCrypto.layer),
   )
-  const context = try Layer.build(runtime)
-  const engine = Context.get(context, FlowRuntime.FlowRuntime)
+  const context = try Layer.build(registered)
+  const runtime = Context.get(context, FlowRuntime.FlowRuntime)
   // The real clock's alarm is a scoped fiber in product mock mode, never a backend or model. It meters only when the
   // host's alarm is due, as the live object's storage alarm does, so an idle page runs no flow.
   let ticks = 0
@@ -33,17 +34,17 @@ export effect function makeMockSandboxes(role: Role, policy: Layer.Layer<Sandbox
     try sleep("1 second")
     const at = try Ref.get(armed)
     if (at === null || at > (try Clock.currentTimeMillis)) return
-    try Effect.ignore(engine.execute(SandboxMeter, { executionId: `meter/${++ticks}`, payload: {} }))
+    try Effect.ignore(runtime.execute(SandboxMeter, { executionId: `meter/${++ticks}`, payload: {} }))
   }))
 
   const service: Pick<Factory.Shape, "sandbox" | "startSandbox" | "stopSandbox" | "sandboxCommand"> = {
     sandbox: effect (conversation) => {
-      try Effect.mapError(engine.execute(SandboxMeter, { executionId: `read/${++ticks}`, payload: {} }), (error) => error._tag === "Refused" || error._tag === "Unavailable" ? error : new Unavailable({ reason: "sandbox-flow" }))
+      try Effect.mapError(runtime.execute(SandboxMeter, { executionId: `read/${++ticks}`, payload: {} }), (error) => error._tag === "Refused" || error._tag === "Unavailable" ? error : new Unavailable({ reason: "sandbox-flow" }))
       return try host.snapshot(conversation)
     },
-    startSandbox: effect (conversation, operationId) => { return try Effect.mapError(engine.execute(SandboxStart, { executionId: try execution("start"), payload: { conversation, operationId } }), (error) => error._tag === "Refused" || error._tag === "Unavailable" ? error : new Unavailable({ reason: "sandbox-flow" })) },
-    stopSandbox: effect (conversation, operationId, generation) => { return try Effect.mapError(engine.execute(SandboxStop, { executionId: try execution("stop"), payload: { conversation, operationId, generation } }), (error) => error._tag === "Refused" || error._tag === "Unavailable" ? error : new Unavailable({ reason: "sandbox-flow" })) },
-    sandboxCommand: effect (conversation, operationId, command, generation) => { return try Effect.mapError(engine.execute(SandboxCommand, { executionId: try execution("command"), payload: { conversation, operationId, command, generation } }), (error) => error._tag === "Refused" || error._tag === "Unavailable" ? error : new Unavailable({ reason: "sandbox-flow" })) },
+    startSandbox: effect (conversation, operationId) => { return try Effect.mapError(runtime.execute(SandboxStart, { executionId: try execution("start"), payload: { conversation, operationId } }), (error) => error._tag === "Refused" || error._tag === "Unavailable" ? error : new Unavailable({ reason: "sandbox-flow" })) },
+    stopSandbox: effect (conversation, operationId, generation) => { return try Effect.mapError(runtime.execute(SandboxStop, { executionId: try execution("stop"), payload: { conversation, operationId, generation } }), (error) => error._tag === "Refused" || error._tag === "Unavailable" ? error : new Unavailable({ reason: "sandbox-flow" })) },
+    sandboxCommand: effect (conversation, operationId, command, generation) => { return try Effect.mapError(runtime.execute(SandboxCommand, { executionId: try execution("command"), payload: { conversation, operationId, command, generation } }), (error) => error._tag === "Refused" || error._tag === "Unavailable" ? error : new Unavailable({ reason: "sandbox-flow" })) },
   }
   return service
 }
