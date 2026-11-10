@@ -259,3 +259,11 @@ Fuzz-only at `6386c557` plus the targets below: 6052/7232 lines (83.68%), 6167/8
 `worker/Reply.vibe` line 356: `canSettleReply(run)` is always true there. `flowDecision.vibe`'s contracts take a run from `beginReply` through a `done` start, `beginReplyComposition` and `finishReplyComposition` to phase `ready` with one start, one composition and no settlement, which is exactly `canSettleReply`; an earlier refusal returns at line 340 and a compose failure is caught or re-raised as an interruption first. No input reaches the false branch. It stays in the denominator, recorded here.
 
 The Alchemy rows above were tried under the repository's workerd host. A module importing `worker/SandboxMachine.vibe`, bundled with `test/support/workerd.vibe`'s esbuild settings, fails with 113 unresolved Node built-ins from 27 deploy-time packages that `@alchemy.run/cloudflare` imports, among them esbuild, vite, workerd, tsx, yargs, jiti and five proxy agents. Bundled or not, `.make` only hands its constructor to Alchemy's `Worker` service (`Worker.export`); lines 11 to 13 and 12 to 15 run when Alchemy's generated Worker instantiates the object, and 22 to 25 when `gatewayWithIdentity` builds with an image. Miniflare 5 can host a Container (`containerEngine`); the missing piece is Alchemy's runtime, not workerd.
+
+Sixth campaign: seed 20261113, 20 seconds per target, 30.2 minutes, 166 receipts, 36,291,681 recorded executions, none with zero executions, at `46478e05`. Vitest: 163 passed, 3 failed; the flow stopped before the browser phase.
+
+| Finding | Class | Resolution |
+| --- | --- | --- |
+| `web/commands-from-any-model`: Skip on a Model whose theatre step is not an integer made the mock Factory's `controlTour` die: `SeekTour`'s payload refused the step under `Effect.orDie` | product | the mock refuses a body outside `TourControlBody` with `Unavailable`, as the live Factory reads the Worker's 400. Regression: `test/mockTourControl.test.vibe`, which failed first; the 8.3 MiB value stays out of the corpus |
+| `web/command-bodies`: a live backend with a wiki fault expected the fault | oracle | wiki faults apply only to the mock backend; value in the corpus |
+| `objects/conversation-host` | product, open | the vl-fuzz2 record above |
