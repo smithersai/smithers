@@ -2053,3 +2053,36 @@ change was open): `fixtureErrorReason` answers `unavailable` for
 it. Four mutation cases in `verify/extended_mutations.py` cover both. Two
 hand mutations each fail 3 of 16 unit cases (`issueFixtureDecision`,
 `factoryEngineFaults`); `WikiFactory` keeps the same mapping inline.
+
+## Closed sandbox boundaries (lane vl-coverage2, 2026-11-10)
+
+The production closed SandboxAgent service now runs through all three real
+FlowBinding tools in the unit suite. Each answers forbidden. The signedOut
+policy is also exercised through sandbox creation: an explicit contributor
+role hint cannot override it, and no generation or allowance is consumed.
+Changing either refusal or signed-out authority deliberately made its new
+assertion fail (two failed / two passed); sources were restored.
+
+All three signed-out HTTP writes answer 403. A streaming body with no
+Content-Length answers 413, and a faulty body stream answers 400. These are
+Effect HTTP requests, with the failing stream injected at the body service;
+there is no intercepted request, credential, external write, or new double.
+
+The private sandbox-tool declaration helper receives only SandboxStart,
+SandboxStop and SandboxCommand, all of which have descriptions. Its unused
+name fallback was deleted. worker/Tour.vibe's spoken wrapper had no callers:
+both deployed and workerd objects import tourAgentRegistration instead.
+Deleted the wrapper, its unused imports and the unused test import.
+
+Scoped unit coverage (Vitest/coverage-v8 5.0.0, the existing .vibe source maps):
+
+| File | Before lines / functions / statements / branches | After |
+| --- | --- | --- |
+| worker/SandboxTools.vibe | 8/11; 7/10; 9/12; 1/2 | 11/11; 10/10; 12/12; 0/0 |
+| src/core/sandboxPolicy.vibe | 2/2; 2/3; 3/4; 0/0 | 2/2; 3/3; 4/4; 0/0 |
+| worker/Tour.vibe | 1/2; 0/1; 1/2; 0/0 | 1/1; 0/0; 1/1; 0/0 |
+| worker/SandboxHttp.vibe | 28/30; 7/10; 39/42; 33/34 | 30/30; 10/10; 42/42; 34/34 |
+
+All four files pass all four 100% thresholds together: 20 tests across four
+files, 44/44 lines, 23/23 functions, 59/59 statements and 34/34 branches.
+No coverage exclusions, new dependency or VibeLang semantics change.

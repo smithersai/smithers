@@ -3,7 +3,9 @@ import { Cell } from "@smthrs/harness"
 import { Factory } from "../src/core/Factory.vibe"
 import { mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { SandboxCommand, SandboxStart, SandboxStop } from "../src/core/flows.vibe"
-import { sandboxTools } from "../worker/SandboxTools.vibe"
+import { closed, sandboxTools } from "../worker/SandboxTools.vibe"
+import { makeMockSandboxes } from "../src/core/sandboxMock.vibe"
+import { signedOut } from "../src/core/sandboxPolicy.vibe"
 
 function call(name: string, input: Schema.Json, ordinal: number): Cell.Call {
   return new Cell.Call({ flowName: name, input, capabilities: [], effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }, placement: Option.none(), identity: new Cell.CallIdentity({ session: "reply", frame: 0, cell: "cell", ordinal, declaration: "flow", layers: [] }) })
@@ -36,3 +38,31 @@ it.live("the agent's tool cannot spend a Viewer's allowance", () => effect {
     try Effect.try(() => { expect(result.outcome).toBe("failure"); expect(current.status).toBe("stopped"); expect(current.used).toBe(0) })
   }
 })
+
+it.live("an agent without a resolved principal receives forbidden from every bound sandbox tool", () => effect {
+  const bindings = try sandboxTools(closed.factory, closed.conversation).bindings()
+  const inputs: Array<Schema.Json> = [{}, { generation: 1 }, { generation: 1, command: "echo denied" }]
+  try Effect.try(() => {
+    expect(bindings).toHaveLength(3)
+    for (const binding of bindings) expect(binding.descriptor.description).toMatch(/\S/)
+  })
+  for (let index = 0; index < bindings.length; index++) {
+    const binding = bindings[index]!
+    const result = try binding.run(call(binding.descriptor.name, inputs[index]!, index))
+    try Effect.try(() => expect(result).toMatchObject({
+      outcome: "failure",
+      code: "flow_failed",
+      message: `Flow ${binding.descriptor.name} failed: forbidden`,
+    }))
+  }
+})
+
+it.live("the default signed-out policy wins over a contributor role hint and grants no sandbox", () => scoped(effect {
+  const sandboxes = try makeMockSandboxes("contributor", signedOut)
+  const result = try Effect.result(sandboxes.startSandbox("closed", "closed-start"))
+  const state = try sandboxes.sandbox("closed")
+  try Effect.try(() => {
+    expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "Refused", refusal: "forbidden" } })
+    expect(state).toMatchObject({ status: "stopped", used: 0, generation: 0 })
+  })
+}))
