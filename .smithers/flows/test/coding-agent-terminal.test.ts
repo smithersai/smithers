@@ -13,7 +13,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import * as CodingTerminal from "../coding/agentTerminal.ts"
+import * as CodingTerminal from "../coding/agentTerminal.vibe"
 
 const fakeClient = `#!/usr/bin/env node
 const fs = require("node:fs")

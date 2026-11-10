@@ -9,7 +9,7 @@ import { StdError } from "@smthrs/std/StdError"
 
 /**
  * Completion must arrive from a supervisor control channel, never by parsing
- * PTY output. The installed provider (.smithers/flows/coding/agentTerminal.ts) runs each
+ * PTY output. The installed provider (.smithers/flows/coding/agentTerminal.vibe) runs each
  * command in its own registered PTY session, so the session's exit is the
  * command's exit and no bytes from an ended command can enter the next one.
  * Completion follows drained output. The provider owns session transport and

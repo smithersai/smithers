@@ -1,6 +1,5 @@
 /** Private native receipt contracts shared by the Effect adapter and browser projections. */
 import * as Fault from "@smthrs/flow/Fault"
-import { Schema } from "effect"
 
 export const ChangeId = Schema.String.check(Schema.isPattern(/^[k-z]{32}$/))
 const CommitId = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/))

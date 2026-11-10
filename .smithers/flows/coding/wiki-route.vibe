@@ -3,7 +3,7 @@ import { Interpreter } from "@smthrs/flow"
 import { importDeclared, installPages } from "../memory/deps.vibe"
 import { type PageSpec, WikiError } from "../wiki/schema.vibe"
 import { CodingError } from "./schema.ts"
-import { ImportDocs, InstallDependencyPages, ReadPublishedWiki, readPublishedWiki } from "./wiki-refresh.ts"
+import { ImportDocs, InstallDependencyPages, ReadPublishedWiki, readPublishedWiki } from "./wiki-refresh.vibe"
 import CodingWiki from "./wiki/flow.ts"
 
 export const wikiRefreshRegistration = (options: {

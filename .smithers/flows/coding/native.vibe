@@ -21,8 +21,8 @@ import {
   SourcePublication,
   StackCandidate,
   StackProposal
-} from "./native-schema.ts"
-export * from "./native-schema.ts"
+} from "./native-schema.vibe"
+export * from "./native-schema.vibe"
 import { decodeFinal, decodeStream, digest, helperPath } from "./native.trusted.ts"
 
 /** An invocation identity, never an atomic change identity. Use a durable flow

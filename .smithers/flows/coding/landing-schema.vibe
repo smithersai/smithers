@@ -1,5 +1,5 @@
 /** Private receipt projections of Plue's existing landing service. Browser safe. */
-import { ChangeId, Resolved, SourcePublication } from "./native-schema.ts"
+import { ChangeId, Resolved, SourcePublication } from "./native-schema.vibe"
 import { Plan, Receipt } from "./schema.ts"
 
 const CommitId = Resolved.fields.commitId

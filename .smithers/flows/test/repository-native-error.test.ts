@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { NativeCodingError } from "../coding/native-schema.ts"
+import { NativeCodingError } from "../coding/native-schema.vibe"
 import { retainedStepError } from "../repository/jobs.vibe"
 
 test("a native file conflict retains its validated recovery receipt in the durable step result", () => {

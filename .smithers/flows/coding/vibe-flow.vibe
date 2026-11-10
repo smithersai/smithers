@@ -1,7 +1,6 @@
 /** The third pass over a validated request: admit, clean, retain, then append or open a GitHub pull request. */
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Schema } from "effect"
 import { AdmitVibe } from "./vibe-admission.vibe"
 import { CleanVibeHistory } from "./vibe-cleanup.vibe"
 import { LandVibe, LandVibeError } from "./vibe-landing.vibe"

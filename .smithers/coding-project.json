@@ -196,19 +196,19 @@
       "document": ".smithers/wiki/pages/coding-request.md",
       "inputs": [
         ".smithers/flows/coding/request.md",
-        ".smithers/flows/coding/request-flow.ts",
+        ".smithers/flows/coding/request-flow.vibe",
         ".smithers/flows/coding/request.vibe",
         ".smithers/flows/coding/prototype/flow.ts"
       ],
       "excerpts": {
-        ".smithers/flows/coding/request-flow.ts": [
+        ".smithers/flows/coding/request-flow.vibe": [
           {
-            "start": 15,
-            "end": 58
+            "start": 14,
+            "end": 57
           },
           {
-            "start": 73,
-            "end": 247
+            "start": 72,
+            "end": 253
           }
         ],
         ".smithers/flows/coding/request.md": [

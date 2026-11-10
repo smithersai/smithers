@@ -7,7 +7,7 @@ import {
   LocalPull,
   MergeOutcome
 } from "./landing-schema.vibe"
-import { SourcePublication, StackProposal } from "./native-schema.ts"
+import { SourcePublication, StackProposal } from "./native-schema.vibe"
 import { Receipt, RequestResult, Result, Revision } from "./schema.ts"
 
 export const VibeInput = Schema.Struct({ requestExecutionId: Schema.NonEmptyString.check(Schema.isMaxLength(1024)) })

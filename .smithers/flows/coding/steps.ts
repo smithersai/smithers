@@ -13,9 +13,9 @@
  * from the bundled modules it names.
  */
 export { CheckCommand } from "./checks.vibe"
-export { default as Request } from "./request-flow.ts"
+export { default as Request } from "./request-flow.vibe"
 export { RequestInput, StackBase } from "./schema.ts"
 export { TodoBoundary } from "./todo-pause.vibe"
 export { TodoDelivery, TodoReview } from "./todo.vibe"
-export { default as Vibe, VibeError } from "./vibe-flow.ts"
+export { default as Vibe, VibeError } from "./vibe-flow.vibe"
 export { VibeDelivered } from "./vibe-schema.vibe"

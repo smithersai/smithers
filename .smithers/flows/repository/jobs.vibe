@@ -2,7 +2,7 @@
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import { Action, DurableClock, DurableDeferred, Flow, FlowRuntime, HumanTask, Interpreter, WaitFor } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { FileRecovery } from "../coding/native-schema.ts"
+import { FileRecovery } from "../coding/native-schema.vibe"
 import { CodingError } from "../coding/schema.ts"
 import { CiPolicy } from "./ci-policy.ts"
 import { AssertBudget, currentExecutionId, StartBudget } from "./inspection.vibe"

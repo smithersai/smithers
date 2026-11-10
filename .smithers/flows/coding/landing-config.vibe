@@ -1,6 +1,6 @@
 /** Consume the existing provisioned repository credential at the executable boundary. */
 import type { Options } from "./landing.vibe"
-import { SourcePublication } from "./native-schema.ts"
+import { SourcePublication } from "./native-schema.vibe"
 import { CodingError } from "./schema.ts"
 
 const Binding = Schema.Struct({

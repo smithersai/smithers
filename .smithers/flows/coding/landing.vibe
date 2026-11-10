@@ -26,7 +26,7 @@ import {
   type StackPublicationInput,
   StackState
 } from "./landing-schema.vibe"
-import { ChangeId, Resolved, SourcePublication } from "./native-schema.ts"
+import { ChangeId, Resolved, SourcePublication } from "./native-schema.vibe"
 import { CodingError } from "./schema.ts"
 import type { VibeCleanup } from "./vibe-schema.vibe"
 

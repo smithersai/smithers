@@ -2,7 +2,6 @@
 import { Action, Flow, HumanTask } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
-import { Schema } from "effect"
 import { isDependencyPage } from "../memory/deps.vibe"
 import { CorrectPlan } from "./correction.vibe"
 import { PrepareRequest } from "./preparation.ts"
@@ -11,7 +10,7 @@ import { AdmitSource } from "./source-admission.vibe"
 import { admitStackBase } from "./stack.vibe"
 import { FeedbackReceipt, ReceiveFeedback } from "./steering.vibe"
 import { RouteRequest, StampRoute } from "./todo-route.vibe"
-import { InstallDependencyPages } from "./wiki-refresh.ts"
+import { InstallDependencyPages } from "./wiki-refresh.vibe"
 
 export const maximumPlanningPasses = 8
 const RequestError = Schema.Union([PrepareRequest.errorSchema, CorrectPlan.errorSchema])
@@ -145,32 +144,35 @@ export const Coordinate: CoordinateFlow = Flow.make("coding/CoordinateRequest", 
                         () => RefusePlan.call({ message: "The predicted Change plan was denied." })
                       )
                     }).pipe(
-                      Node.bindPlanned(Node.capture({}, (plan) =>
-                        CorrectPlan.child({ plan, maxRounds: cursor.maxRounds }).pipe(
-                          Node.bindPlanned(Node.capture({}, (outcome) =>
-                            Node.succeed(outcome).pipe(
-                              Node.andThen(
-                                ReceiveFeedback.call({ boundary: "after-correction", revision: cursor.revision }).pipe(
-                                  Node.branch({
-                                    if: Node.capture({}, (receipt) => receipt.messages.length > 0),
-                                    then: Node.capture(
-                                      {},
-                                      (receipt) =>
-                                        MergeFeedback.call({ cursor, receipt, advance: true }).pipe(
-                                          Node.bindPlanned(Node.capture({}, (next) => Coordinate.to(next)))
-                                        )
-                                    ),
-                                    else: Node.capture({}, () =>
-                                      Flow.done({
-                                        plan,
-                                        outcome,
-                                        ...(cursor.requestRoute === undefined ? {} : { route: cursor.requestRoute })
-                                      }))
-                                  })
+                      Node.bindPlanned(
+                        Node.capture({}, (plan) =>
+                          CorrectPlan.child({ plan, maxRounds: cursor.maxRounds }).pipe(
+                            Node.bindPlanned(Node.capture({}, (outcome) =>
+                              Node.succeed(outcome).pipe(
+                                Node.andThen(
+                                  ReceiveFeedback.call({ boundary: "after-correction", revision: cursor.revision })
+                                    .pipe(
+                                      Node.branch({
+                                        if: Node.capture({}, (receipt) => receipt.messages.length > 0),
+                                        then: Node.capture(
+                                          {},
+                                          (receipt) =>
+                                            MergeFeedback.call({ cursor, receipt, advance: true }).pipe(
+                                              Node.bindPlanned(Node.capture({}, (next) => Coordinate.to(next)))
+                                            )
+                                        ),
+                                        else: Node.capture({}, () =>
+                                          Flow.done({
+                                            plan,
+                                            outcome,
+                                            ...(cursor.requestRoute === undefined ? {} : { route: cursor.requestRoute })
+                                          }))
+                                      })
+                                    )
                                 )
-                              )
-                            )))
-                        )))
+                              )))
+                          ))
+                      )
                     ))
                 })
               )
@@ -231,15 +233,19 @@ export default Flow.make("coding/Request", {
               )
             ),
             Node.andThen(RouteRequest.child({ prompt: input.prompt, feedback })),
-            Node.bindPlanned(Node.capture({}, (routed) =>
-              Node.all({ routed: Node.succeed(routed), result: implement(routed.feedback, routed.route) }).pipe(
-                Node.map(Node.capture({}, ({ result, routed }) => ({ ...result, route: routed.route }))),
-                Node.catch({
-                  error: CodingError,
-                  onFailure: Node.capture({}, (error) =>
-                    StampRoute.call({ error, route: routed.route }))
-                })
-              )))
+            Node.bindPlanned(
+              Node.capture(
+                {},
+                (routed) =>
+                  Node.all({ routed: Node.succeed(routed), result: implement(routed.feedback, routed.route) }).pipe(
+                    Node.map(Node.capture({}, ({ result, routed }) => ({ ...result, route: routed.route }))),
+                    Node.catch({
+                      error: CodingError,
+                      onFailure: Node.capture({}, (error) => StampRoute.call({ error, route: routed.route }))
+                    })
+                  )
+              )
+            )
           ))
       )
     )

@@ -12,9 +12,8 @@
 import type * as StandardFlows from "@smthrs/agent/StandardFlows"
 import * as Bash from "@smthrs/std/Bash"
 import { StdError } from "@smthrs/std/StdError"
-import { Effect, Fiber, Stream } from "effect"
 import { ChildProcess, type ChildProcessSpawner } from "effect/process"
-import { existsSync } from "node:fs"
+import { machineAgent } from "./agentTerminal.platform.ts"
 
 /** The installed client and the agent-only socket it dials (spec §9.5.3). */
 export const CLIENT = "/opt/smithers/bin/smithers-machined"
@@ -144,9 +143,9 @@ export const port = (
         channel.end(body)
         return channel.iterate()
       }
-      const program = Effect.scoped(
-        Effect.gen(function*() {
-          const child = yield* spawner.spawn(
+      const program = scoped(
+        effect {
+          const child = try spawner.spawn(
             ChildProcess.make(client, ["client", "pty"], {
               stdin: Stream.make(new TextEncoder().encode(body))
             })
@@ -154,29 +153,29 @@ export const port = (
           // Cancellation is the client's SIGTERM: it kills the command's
           // process group, closes the session and confirms an empty cgroup.
           const cancel = () => {
-            Effect.runFork(Effect.ignore(child.kill({ killSignal: "SIGTERM" })))
+            runFork(ignore(child.kill({ killSignal: "SIGTERM" })))
           }
           if (signal.aborted) cancel()
           else signal.addEventListener("abort", cancel, { once: true })
-          const errors = yield* Effect.forkChild(
+          const errors = fork (
             Stream.runFold(
               child.stderr,
               () => "",
               (text, bytes) => text.length > MAX_STDERR ? text : text + new TextDecoder().decode(bytes)
             )
           )
-          yield* Stream.runForEach(child.stdout, (bytes) =>
-            Effect.sync(() => {
+          try Stream.runForEach(child.stdout, (bytes) =>
+            sync(() => {
               for (let at = 0; at < bytes.byteLength; at += MAX_FRAME) {
                 channel.push({ kind: "output", bytes: bytes.subarray(at, at + MAX_FRAME) })
               }
             }))
-          yield* child.exitCode
+          try child.exitCode
           signal.removeEventListener("abort", cancel)
-          return parseStatus(yield* Fiber.join(errors))
-        })
+          return parseStatus(join errors)
+        }
       )
-      last = Effect.runPromise(program).then(
+      last = runPromise(program).then(
         (status) => {
           if (status !== undefined && "exit" in status) {
             channel.push({ kind: "exit", code: status.exit })
@@ -216,5 +215,4 @@ export const port = (
  */
 export const installed = (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"]
-): StandardFlows.TerminalPort | undefined =>
-  existsSync(CLIENT) && existsSync(SOCKET) && process.getuid?.() === 19999 ? port(spawner) : undefined
+): StandardFlows.TerminalPort | undefined => machineAgent(CLIENT, SOCKET) ? port(spawner) : undefined
