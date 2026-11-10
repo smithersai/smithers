@@ -3350,6 +3350,52 @@ history to one day's steps; the per-open decode itself is a `@smthrs/journal` co
 Limitations: node:sqlite in memory, and the fixture prepares every statement on each call; all steps fall within one
 day, so retention deletes nothing in this benchmark; wall time is observational.
 
+## Tour repeat, failed replies and the agent's history tools (2026-11-10, nyc-01)
+
+Vitest built-in bench, local. Load average 115 to 140 during the runs.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| action-tour-repeat | 1,177.7 | 3 | `2026-11-10T11-37-26.712Z-action-tour-repeat.json` |
+| reply-outcomes | 7,106.5 | 3 | `2026-11-10T11-33-47.014Z-reply-outcomes.json` |
+| agent-history-tools | 3,863.8 | 3 | `2026-11-10T11-35-45.227Z-agent-history-tools.json` |
+
+**action-tour-repeat** (`bench/action-tour-repeat.bench.vibe`). The production action index and per-run hosts over
+node:sqlite object storage, a fresh world per sample. A maintainer starts Tour, then starts the same request again
+before its alarm: the second press joins the running tour. One running Tour run and one open guide entry are
+checked. A press that finds its tour accepted but still queued (`worker/ActionRuns.vibe` 54-61) needs a crash between
+admission and the run's start, so it stays uncovered.
+
+**reply-outcomes** (`bench/reply-outcomes.bench.vibe`). The API Worker's production objects in workerd with the
+deterministic model service. Two posts per sample: the model answers "Bench empty." with an empty result and "Bench
+throws." with a cell that throws. Each reply ends in ReplyFailed with the person's reason ("The model returned no
+answer.", "The agent failed. Try again.") and a done agent entry carrying it.
+
+**agent-history-tools** (`bench/agent-history.bench.vibe`). Same host. For "Bench history." the model's cell reads the
+outline, the first epic's page, that page's first commit and a search for its title, then calls Plan and Note. Each
+page is checked against the one before it; both writes are refused `forbidden` for a signed-out guest.
+
+Limitations: deterministic model, so no inference latency; objects reach each other by fetch, not Alchemy RPC; the
+guest's Plan and Note measure their refusal, not a history write; the tour itself does not run in action-tour-repeat.
+
+## Issues and wiki with GitHub unreachable (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/accounts-offline.bench.vibe`. Load average about 120.
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| accounts-github-offline | 11,689.8 | 3 | `2026-11-10T12-22-14.023Z-accounts-github-offline.json` |
+
+The Accounts object on a loopback server over in-memory storage, with GitHub an offline HttpClient. Each sample seeds
+an abandoned sign-in row, starts a sign-in (which clears it), signs a person in, then sends their GET and POST
+`/api/issues` and `/api/wiki` without a GitHub connection. Both reads answer 503 "unavailable" after about 6 s each,
+which is most of the sample; the issue write answers 401 `connect`; the wiki save answers 401 `connect`, marked
+unwritten, and keeps the person's draft. The bound replaces the earlier finding that these reads stayed open past 5 s
+and held server shutdown (decision 0030).
+
+Limitations: no GitHub latency or answer; in-memory storage; the person has no GitHub connection, so writes stop
+before GitHub.
+
 ## CLI startup (2026-11-10, nyc-01)
 
 Vitest built-in bench, local, `bench/cli-startup.bench.vibe`. Five emitted CLI processes per command, no warmup, each

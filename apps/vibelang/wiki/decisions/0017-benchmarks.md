@@ -296,3 +296,18 @@ step after 10 and 150 earlier ones (226 against 429 ms): every step opens a jour
 events. `462049cc` gave Accounts' steps `EXECUTION_RETENTION`, the one-day retention every other object already used,
 which bounds that history to a day's steps; `test/accountsRetention.test.vibe` pins it.
 
+**Actions, replies and history tools (2026-11-10, lane vl-bench2).** `bench/action-tour-repeat.bench.vibe` presses
+Tour twice before its alarm on the production action hosts; the second press finds the tour running (`ActionRuns`
+line 53), so the accepted-but-queued recovery at lines 54-61 stays uncovered. The deterministic model service (`bench/fixtures.vibe`)
+gains three phrases: "Bench empty." (an empty answer), "Bench throws." (a cell that throws) and "Bench history." (a cell
+that pages an epic, a commit and a search, then calls Plan and Note). `bench/reply-outcomes.bench.vibe` and
+`bench/agent-history.bench.vibe` post them to the API Worker's objects in workerd. Cancelling a post's reply while
+it runs stays uncovered (`worker/ActionRuns.vibe` 145-148): the reply runs within the alarm that dispatches it, so
+cancelling it mid-run needs a model held mid-answer.
+
+**Issues and wiki with GitHub unreachable (2026-11-10, lane vl-bench2).** Decision 0030 bounds a signed-in person's
+issue and wiki reads, so `bench/accounts-offline.bench.vibe` now sends them with GitHub an offline HttpClient, an
+injected faulty service: each read answers "unavailable" in about 6 s, and writes without a connection answer
+`connect`. The exclusion of these routes from every benchmark above no longer applies to their refusal paths; their
+GitHub success paths still wait for a GitHub credential.
+
