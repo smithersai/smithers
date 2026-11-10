@@ -27,7 +27,7 @@ import * as Semaphore from "effect/Semaphore"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import * as AttemptProbe from "./internal/AttemptProbe.ts"
-import * as EngineStateSchema from "./internal/EngineStateSchema.ts"
+import * as EngineStateSchema from "./internal/EngineStateSchema.vibe"
 import { compareText } from "./internal/Ordering.ts"
 import type { OnParentExit } from "./RunState.ts"
 

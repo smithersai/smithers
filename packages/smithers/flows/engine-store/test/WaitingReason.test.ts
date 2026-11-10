@@ -7,7 +7,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import { withCrypto } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = {

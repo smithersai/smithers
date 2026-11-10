@@ -9,7 +9,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
-import * as ProvenanceSlot from "../src/internal/ProvenanceSlot.ts"
+import * as ProvenanceSlot from "../src/internal/ProvenanceSlot.vibe"
 
 const runId = "provenance-slot"
 const sourceId = "cache:digest-1:expired:recorded-run:7"

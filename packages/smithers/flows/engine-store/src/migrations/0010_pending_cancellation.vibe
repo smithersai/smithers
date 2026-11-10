@@ -13,8 +13,8 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0
  */
-export const pendingCancellation: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`CREATE INDEX flows_runs_pending_cancel_idx ON flows_runs (created_at_ms, run_id)
+export const pendingCancellation: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
+  try sql`CREATE INDEX flows_runs_pending_cancel_idx ON flows_runs (created_at_ms, run_id)
     WHERE status = 'pending' AND cancel_requested_at_ms IS NOT NULL`
-})
+}

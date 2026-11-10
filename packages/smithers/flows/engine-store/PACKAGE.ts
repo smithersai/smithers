@@ -237,7 +237,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/migrations/**",
-        "src/internal/EngineStateSchema.ts",
+        "src/internal/EngineStateSchema.vibe",
         "src/internal/RunListing.ts",
         "src/Selection.vibe",
         "src/SelectionStore.vibe",
@@ -261,7 +261,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/ExitEncoding.ts",
         "src/internal/ResultEnvelope.vibe",
         "src/internal/JournalRecords.ts",
-        "src/internal/CopiedRecord.ts",
+        "src/internal/CopiedRecord.vibe",
         "src/internal/ExecutionSnapshotRead.ts"
       ]
     },

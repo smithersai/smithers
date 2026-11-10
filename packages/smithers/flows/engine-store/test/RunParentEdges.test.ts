@@ -7,7 +7,7 @@ import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import { withCrypto } from "./Sha256.ts"
 
 const migratedDatabase = Layer.provideMerge(Migrations.layer, TestDatabase.layer)

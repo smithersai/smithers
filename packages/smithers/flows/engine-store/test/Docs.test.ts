@@ -33,7 +33,7 @@ describe("documentation contracts", () => {
     // script's own procedure. Citations are backticked; quoted paths in
     // tests are fixtures, not citations.
     const files = ["src/", "scripts/", "test/"].flatMap((directory) =>
-      sourceFiles(new URL(directory, packageRoot), [".ts", ".mjs"])
+      sourceFiles(new URL(directory, packageRoot), [".ts", ".vibe", ".mjs"])
     )
     const dangling = files.flatMap((file) =>
       [...readFileSync(file, "utf8").matchAll(/`((?:packages\/[\w./-]+\/)?docs\/[\w./-]+\.mdx?)`/g)]
@@ -125,7 +125,7 @@ describe("documentation contracts", () => {
 
 describe("source documentation pointers", () => {
   const sourceDir = new URL("../src/", import.meta.url)
-  const sources = readdirSync(sourceDir).filter((name) => name.endsWith(".ts"))
+  const sources = readdirSync(sourceDir).filter((name) => name.endsWith(".ts") || name.endsWith(".vibe"))
   const read = (name: string): string => readFileSync(new URL(name, sourceDir), "utf8")
 
   it("every relative docs pointer in a public module resolves to a file", () => {

@@ -8,7 +8,7 @@ import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import { join } from "node:path"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import { withCrypto } from "./Sha256.ts"
 import { tempDirectory } from "./TempDirectory.ts"
 

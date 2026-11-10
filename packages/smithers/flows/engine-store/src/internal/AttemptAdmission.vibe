@@ -46,7 +46,7 @@ export interface Service {
    */
   readonly withPermit: (
     key: string
-  ) => <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
+  ) => <A, E, R>(effect: A!E!R) => A!E!R
 }
 
 /**
@@ -67,10 +67,10 @@ export const makeUnsafe = (): Service => {
   const owners = Layer.makeMemoMapUnsafe()
   return {
     withPermit: (key) => (effect) =>
-      Effect.scoped(Effect.gen(function*() {
-        const services = yield* Layer.buildWithMemoMap(layer, owners, yield* Scope.Scope)
-        const lock = yield* RcMap.get(Context.get(services, Locks), key)
-        return yield* lock.withPermit(effect)
-      }))
+      Effect.scoped(effect {
+        const services = try Layer.buildWithMemoMap(layer, owners, try Scope.Scope)
+        const lock = try RcMap.get(Context.get(services, Locks), key)
+        return try lock.withPermit(effect)
+      })
   }
 }

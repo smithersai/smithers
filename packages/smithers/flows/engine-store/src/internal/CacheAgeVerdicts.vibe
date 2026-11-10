@@ -24,9 +24,9 @@ export const make = (runId: string) => {
   return (
     journal: Journal.Service,
     keyDigest: string
-  ): Effect.Effect<JournalEvent.Entry | undefined, Journal.JournalError> =>
-    Semaphore.withPermit(gate)(Effect.gen(function*() {
-      const currentGeneration = journal.generation === undefined ? 0 : (yield* journal.generation(id)).generation
+  ): (JournalEvent.Entry | undefined)!Journal.JournalError! =>
+    Semaphore.withPermit(gate)(effect {
+      const currentGeneration = journal.generation === undefined ? 0 : (try journal.generation(id)).generation
       if (source !== journal || generation !== currentGeneration) {
         source = journal
         generation = currentGeneration
@@ -34,15 +34,13 @@ export const make = (runId: string) => {
         verdicts.clear()
       }
       while (true) {
-        const page = yield* journal.entries({ runId: id, limit: 128, ...after === undefined ? {} : { after } })
+        const page = try journal.entries({ runId: id, limit: 128, ...after === undefined ? {} : { after } })
         const next = page.entries.at(-1)?.seq
         if (
           (page.hasMore && next === undefined) ||
           (next !== undefined && after !== undefined && next <= after)
         ) {
-          return yield* Effect.fail(
-            new Journal.JournalError({ code: "read_failed", message: "cache history cursor did not advance" })
-          )
+          throw new Journal.JournalError({ code: "read_failed", message: "cache history cursor did not advance" })
         }
         for (const entry of page.entries) {
           const producerKey = /^cache:([^:]+):ttl:/.exec(entry.sourceId)?.[1]
@@ -57,5 +55,5 @@ export const make = (runId: string) => {
         after = next ?? after
         if (!page.hasMore) return verdicts.get(keyDigest)
       }
-    }))
+    })
 }

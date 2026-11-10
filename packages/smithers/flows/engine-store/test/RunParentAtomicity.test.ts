@@ -35,7 +35,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import { withCrypto } from "./Sha256.ts"
 
 const AtomicFlow = Flow.make("RunParentAtomicity/Test", {

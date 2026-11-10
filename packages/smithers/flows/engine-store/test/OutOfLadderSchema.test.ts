@@ -22,8 +22,8 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
-import * as EngineStateSchema from "../src/internal/EngineStateSchema.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as EngineStateSchema from "../src/internal/EngineStateSchema.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 import { withCrypto } from "./Sha256.ts"
 
 const migratedDatabase = Layer.provideMerge(Migrations.layer, TestDatabase.layer)

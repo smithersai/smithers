@@ -1677,7 +1677,7 @@ Full guide: [Observe engine metrics](./guides/observe-engine-metrics.md).
 
 ## Migrations
 
-[src/Migrations.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/Migrations.ts)
+[src/Migrations.vibe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/Migrations.vibe)
 
 | Export  | Signature                     | Meaning                                                                                                                    |
 | ------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------- |

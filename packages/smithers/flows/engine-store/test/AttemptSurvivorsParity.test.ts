@@ -16,7 +16,7 @@ import * as Option from "effect/Option"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as AttemptProbe from "../src/internal/AttemptProbe.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import { withCrypto } from "./Sha256.ts"
 
 const owner: Ownership.OwnerId = { hostId: "survivor-parity", pid: 1, nonce: "owner" }

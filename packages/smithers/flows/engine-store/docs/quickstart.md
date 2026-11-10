@@ -192,7 +192,7 @@ console.log(await Effect.runPromise(main("./.quickstart/.flows/engine.db", "./.q
 ```
 
 The assembled program is
-[`examples/quickstart.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/examples/quickstart.ts);
+[`examples/quickstart.vibe`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/examples/quickstart.vibe);
 the package's test suite runs it on every change.
 
 ## What just happened

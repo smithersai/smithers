@@ -20,9 +20,9 @@ export const make = (action: unknown, runId: string) => {
   return {
     annotated,
     settled: (outcome: unknown) =>
-      Effect.gen(function*() {
+      effect {
         if (!annotated) return undefined
-        const fact = yield* Schema.decodeUnknownEffect(StepFact.Fact)(outcome).pipe(Effect.orDie)
+        const fact = try Schema.decodeUnknownEffect(StepFact.Fact)(outcome).pipe(Effect.orDie)
         const step = fact.step
         return new JournalEvent.Input({
           runId: JournalEvent.RunId.make(runId),
@@ -31,6 +31,6 @@ export const make = (action: unknown, runId: string) => {
           eventType: StepFact.eventType,
           payload: fact
         })
-      })
+      }
   }
 }

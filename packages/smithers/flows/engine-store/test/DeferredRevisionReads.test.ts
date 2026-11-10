@@ -17,7 +17,7 @@ import * as RunStoreMigrations from "@smthrs/run-store/Migrations"
 import { Context, Duration, Effect, Fiber, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as ExecutionSnapshot from "../src/ExecutionSnapshot.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as RunChangeFeed from "../src/RunChangeFeed.vibe"
 import { state } from "./ExecutionSnapshotFixture.ts"
 

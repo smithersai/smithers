@@ -16,7 +16,7 @@
 
 import type { Journal, JournalEvent } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
-import * as CacheAgeHistory from "./CacheAgeHistory.ts"
+import * as CacheAgeHistory from "./CacheAgeHistory.vibe"
 
 const identity = ["keyDigest", "action", "recordedRunId", "recordedEventSeq"] as const
 
@@ -34,19 +34,19 @@ export const accept = (options: {
   readonly runId: string
   readonly record: JournalEvent.Input
   readonly conflict: Journal.JournalError
-}): Effect.Effect<void, Journal.JournalError> =>
-  Effect.gen(function*() {
+}): void!Journal.JournalError =>
+  effect {
     const { conflict, journal, record } = options
     const sourceSeq = record.sourceSeq ?? 0
-    const entry = yield* CacheAgeHistory.find(
+    const entry = try CacheAgeHistory.find(
       journal,
       options.runId,
       (candidate) => candidate.sourceId === record.sourceId && Number(candidate.sourceSeq) === Number(sourceSeq)
     )
-    if (entry === undefined || entry.eventType !== record.eventType) return yield* Effect.fail(conflict)
+    if (entry === undefined || entry.eventType !== record.eventType) throw conflict
     const attempted = record.payload
     const occupying = entry.payload
-    if (!isRecord(attempted) || !isRecord(occupying)) return yield* Effect.fail(conflict)
+    if (!isRecord(attempted) || !isRecord(occupying)) throw conflict
     const same = identity.every((field) => !(field in attempted) || attempted[field] === occupying[field])
-    return same ? undefined : yield* Effect.fail(conflict)
-  })
+    if (!same) throw conflict
+  }

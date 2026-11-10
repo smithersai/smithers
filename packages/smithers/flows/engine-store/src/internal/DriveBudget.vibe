@@ -41,9 +41,9 @@ export interface DriveBudget {
    * Runs one step under the budget: at once while the budget lasts, or held
    * forever once it is spent, until the drive's release interrupts it.
    */
-  readonly step: <A, E, R>(step: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
+  readonly step: <A, E, R>(step: A!E!R) => A!E!R
   /** Completes once a step is held and none is running: the drive yields. */
-  readonly spent: Effect.Effect<void>
+  readonly spent: void!!
 }
 
 /**

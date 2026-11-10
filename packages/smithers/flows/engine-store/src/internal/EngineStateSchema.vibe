@@ -83,13 +83,15 @@ export const statements: ReadonlyArray<Statement> = [
  * @since 0.1.0
  * @category constructors
  */
-export const apply = (sql: SqlClient.SqlClient, writer: WriterService): Effect.Effect<void> =>
+export const apply = (sql: SqlClient.SqlClient, writer: WriterService): void!! =>
   // A read-only observer reads the schema it finds and installs nothing.
   isReadOnly(sql) ? Effect.void : Effect.forEach(
     statements,
     (statement) =>
-      Effect.flatMap(installed(sql, statement), (found) =>
-        found ? Effect.void : writer.write(sql.unsafe(statement.ddl)).pipe(Effect.orDie)),
+      Effect.flatMap(
+        installed(sql, statement),
+        (found) => found ? Effect.void : writer.write(sql.unsafe(statement.ddl)).pipe(Effect.orDie)
+      ),
     { discard: true }
   )
 
@@ -100,7 +102,7 @@ export const apply = (sql: SqlClient.SqlClient, writer: WriterService): Effect.E
  * execution's writes. SQLite answers `false` and runs the idempotent
  * statement, as before.
  */
-const installed = (sql: SqlClient.SqlClient, statement: Statement): Effect.Effect<boolean> =>
+const installed = (sql: SqlClient.SqlClient, statement: Statement): boolean!! =>
   sql.onDialectOrElse({
     pg: () =>
       sql<{ readonly found: boolean }>`SELECT to_regclass(${statement.name}) IS NOT NULL AS found`.pipe(

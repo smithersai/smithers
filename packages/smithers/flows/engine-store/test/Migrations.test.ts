@@ -4,7 +4,7 @@ import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 
 interface SqliteMasterRow {
   readonly name: string

@@ -4,7 +4,7 @@
  *
  * A backup captures the whole SQLite database — journal, run store, step
  * cache, engine state, and the out-of-ladder objects created by
- * `internal/EngineStateSchema.ts` — with `VACUUM INTO`, which reads one
+ * `internal/EngineStateSchema.vibe` — with `VACUUM INTO`, which reads one
  * consistent snapshot under WAL while writers stay live. The content-addressed
  * artifact blobs are copied beside it, digest-verified, after the database
  * snapshot: results reference artifacts only after publication

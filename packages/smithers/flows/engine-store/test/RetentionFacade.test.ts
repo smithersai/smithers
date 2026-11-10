@@ -18,7 +18,7 @@ import * as Effect from "effect/Effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import * as RetentionOps from "../src/internal/RetentionOps.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as Retention from "../src/Retention.ts"
 
 const migrated = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>

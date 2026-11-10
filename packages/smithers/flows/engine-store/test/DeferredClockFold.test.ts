@@ -28,7 +28,7 @@ import * as DeferredClockFold from "../src/DeferredClockFold.ts"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import { EventTypes } from "../src/EventTypes.ts"
 import * as DeferredPersistence from "../src/internal/DeferredPersistence.ts"
-import { deferredClockFacts } from "../src/migrations/0009_deferred_clock_facts.ts"
+import { deferredClockFacts } from "../src/migrations/0009_deferred_clock_facts.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 

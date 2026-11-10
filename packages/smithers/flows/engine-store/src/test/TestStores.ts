@@ -4,7 +4,7 @@
  * The stores split into `@smthrs/journal`, `@smthrs/run-store`, and
  * `@smthrs/step-cache`, each with its own in-memory test layer. An engine
  * needs all of them over ONE database, which is what this layer builds:
- * the composed migration sets from `../Migrations.ts` run first, then the four
+ * the composed migration sets from `../Migrations.vibe` run first, then the four
  * services bind to the same in-memory SQLite connection.
  *
  * Governing design: `packages/smithers/flows/journal/docs/README.md`.
@@ -25,7 +25,7 @@ import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as DurableEngineState from "../DurableEngineState.ts"
-import * as Migrations from "../Migrations.ts"
+import * as Migrations from "../Migrations.vibe"
 import * as OwnerIdentity from "../OwnerIdentity.ts"
 import * as PlanInputStore from "../PlanInputStore.ts"
 import * as PlanMergeStore from "../PlanMergeStore.ts"

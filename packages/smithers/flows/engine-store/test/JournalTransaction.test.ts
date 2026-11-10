@@ -20,7 +20,7 @@ import { Effect, Layer, PubSub } from "effect"
 import type * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 
 const runId = (value: string): RunId => value as RunId
 const sourceId = (value: string): SourceId => value as SourceId

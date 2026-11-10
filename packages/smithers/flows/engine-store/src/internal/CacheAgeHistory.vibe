@@ -8,14 +8,14 @@ import { FlowEngine } from "@smthrs/engine"
 import type { Journal, JournalEvent } from "@smthrs/journal"
 import type { RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
-import { find, prove } from "./CopiedRecord.ts"
+import { find, prove } from "./CopiedRecord.vibe"
 
 /**
  * Paged journal lookup shared with copied-record validation.
  * @category accessors
  * @since 1.0.0-rc.0
  */
-export { find } from "./CopiedRecord.ts"
+export { find } from "./CopiedRecord.vibe"
 
 const fieldsEqual = (value: unknown, expected: unknown): boolean => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false
@@ -37,22 +37,21 @@ export const copiedVerdict = (options: {
   readonly runId: string
   readonly decision: JournalEvent.Input
   readonly conflict: Journal.JournalError
-}): Effect.Effect<"admitted" | "expired", Journal.JournalError> =>
-  Effect.gen(function*() {
+}): ("admitted" | "expired")!Journal.JournalError! =>
+  effect {
     const { journal, conflict, decision } = options
     const source = (entry: JournalEvent.Entry) =>
       entry.sourceId === decision.sourceId && entry.sourceSeq === decision.sourceSeq
-    const entry = yield* find(journal, options.runId, source)
-    if (entry === undefined) return yield* Effect.fail(conflict)
+    const entry = try find(journal, options.runId, source)
+    if (entry === undefined) throw conflict
     const payload = entry.payload as { readonly verdict?: unknown } | null
     const verdict = payload?.verdict
-    if (verdict !== "admitted" && verdict !== "expired") return yield* Effect.fail(conflict)
+    if (verdict !== "admitted" && verdict !== "expired") throw conflict
     const expected = { ...decision.payload as Readonly<Record<string, unknown>>, verdict }
     if (entry.eventType !== decision.eventType || !fieldsEqual(entry.payload, expected)) {
-      return yield* Effect.fail(conflict)
+      throw conflict
     }
-    const original = yield* prove({ ...options, entry, same: fieldsEqual })
-    return fieldsEqual(original.record.meta, { lineageId: FlowEngine.Lineage.root(original.ancestor) })
-      ? verdict
-      : yield* Effect.fail(conflict)
-  })
+    const original = try prove({ ...options, entry, same: fieldsEqual })
+    if (!fieldsEqual(original.record.meta, { lineageId: FlowEngine.Lineage.root(original.ancestor) })) throw conflict
+    return verdict
+  }

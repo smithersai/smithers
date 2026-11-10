@@ -10,17 +10,17 @@
  */
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import * as Migrations from "../src/Migrations.ts"
-import * as Initial from "../src/migrations/0001_initial.ts"
-import * as SelectionStore from "../src/migrations/0002_selection_store.ts"
-import * as PlanInputs from "../src/migrations/0003_plan_inputs.ts"
-import * as PlanEnvironment from "../src/migrations/0004_plan_environment.ts"
-import * as PlanMerges from "../src/migrations/0005_plan_merges.ts"
-import * as ExecutionListing from "../src/migrations/0006_execution_listing.ts"
-import * as RunParentSequence from "../src/migrations/0007_run_parent_sequence.ts"
-import * as DeferredConsumption from "../src/migrations/0008_deferred_consumption.ts"
-import * as DeferredClockFacts from "../src/migrations/0009_deferred_clock_facts.ts"
-import * as PendingCancellation from "../src/migrations/0010_pending_cancellation.ts"
+import * as Migrations from "../src/Migrations.vibe"
+import * as Initial from "../src/migrations/0001_initial.vibe"
+import * as SelectionStore from "../src/migrations/0002_selection_store.vibe"
+import * as PlanInputs from "../src/migrations/0003_plan_inputs.vibe"
+import * as PlanEnvironment from "../src/migrations/0004_plan_environment.vibe"
+import * as PlanMerges from "../src/migrations/0005_plan_merges.vibe"
+import * as ExecutionListing from "../src/migrations/0006_execution_listing.vibe"
+import * as RunParentSequence from "../src/migrations/0007_run_parent_sequence.vibe"
+import * as DeferredConsumption from "../src/migrations/0008_deferred_consumption.vibe"
+import * as DeferredClockFacts from "../src/migrations/0009_deferred_clock_facts.vibe"
+import * as PendingCancellation from "../src/migrations/0010_pending_cancellation.vibe"
 
 describe("migration modules", () => {
   it("registers an Effect for every migration in the set", () => {

@@ -5,7 +5,7 @@
  * The stores split into `@smthrs/journal`, `@smthrs/run-store`, and
  * `@smthrs/step-cache`, each with its own in-memory test layer. An engine
  * needs all of them over ONE database, which is what this layer builds:
- * the composed migration sets from `../Migrations.ts` run first, then the four
+ * the composed migration sets from `../Migrations.vibe` run first, then the four
  * services bind to the same in-memory SQLite connection.
  *
  * Governing design: `packages/smithers/flows/journal/docs/README.md`.

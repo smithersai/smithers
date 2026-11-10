@@ -29,7 +29,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join, normalize, sep } from "node:path"
 import * as DisasterRecovery from "../src/DisasterRecovery.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 

@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as ExecutionSnapshot from "../src/ExecutionSnapshot.ts"
 import * as Read from "../src/internal/ExecutionSnapshotRead.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as RunCatalogRead from "../src/RunCatalogRead.ts"
 
 describe("bounded execution observation SQL", () => {

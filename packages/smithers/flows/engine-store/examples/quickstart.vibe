@@ -104,16 +104,16 @@ export interface QuickstartResult {
  *
  * @param filename - The SQLite database file to create or open.
  * @param root - The workspace root; artifacts land under `<root>/.flows/objects`.
- * @returns Both flow results and the number of step-body executions.
- * @throws A defect when the composition, migrations, or either run fails.
+ * @returns Both flow results and the number of step-body executions; the
+ * Promise rejects with a defect when the composition, migrations, or either run fails.
  * @since 1.0.0
  * @category examples
  */
 export const quickstart = (filename: string, root: string): Promise<QuickstartResult> => {
-  const program = Effect.gen(function*() {
-    const fileSystem = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    yield* fileSystem.makeDirectory(path.dirname(filename), { recursive: true })
+  const program = (effect {
+    const fileSystem = try FileSystem.FileSystem
+    const path = try Path.Path
+    try fileSystem.makeDirectory(path.dirname(filename), { recursive: true })
     let executions = 0
 
     const implementation = Measure.toLayer(() =>
@@ -126,14 +126,14 @@ export const quickstart = (filename: string, root: string): Promise<QuickstartRe
       Layer.provideMerge(Action.layerImplementations)
     )
 
-    const first = yield* Effect.scoped(
+    const first = try Effect.scoped(
       Analyse.execute({}, { executionId: "analyse-1" }).pipe(
         Effect.provide(flow.pipe(Layer.provideMerge(engine(filename, root, "worker-a"))))
       )
     )
 
     // A second engine over the same file: a different process, in effect.
-    const second = yield* Effect.scoped(
+    const second = try Effect.scoped(
       Analyse.execute({}, { executionId: "analyse-1" }).pipe(
         Effect.provide(flow.pipe(Layer.provideMerge(engine(filename, root, "worker-b"))))
       )

@@ -14,16 +14,18 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 0.1.0
  */
-export const selectionStore: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
+export const selectionStore: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
 
-  yield* sql`CREATE TABLE flows_selection_suspected_edges (
+  try sql`CREATE TABLE flows_selection_suspected_edges (
     scope TEXT NOT NULL CHECK (length(scope) > 0),
     affects TEXT NOT NULL CHECK (length(affects) > 0),
     confidence DOUBLE PRECISION NOT NULL CHECK (
       ${
-    sql.literal(Dialect.isPostgres(sql) ? "TRUE" : "(typeof(confidence) = 'real' OR typeof(confidence) = 'integer')")
-  } AND
+        sql.literal(
+          Dialect.isPostgres(sql) ? "TRUE" : "(typeof(confidence) = 'real' OR typeof(confidence) = 'integer')"
+        )
+      } AND
       confidence >= 0 AND
       confidence <= 1
     ),
@@ -35,4 +37,4 @@ export const selectionStore: Effect.Effect<void, unknown, SqlClient.SqlClient> =
     evidence_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql`evidence_json`)}),
     PRIMARY KEY (scope, affects)
   )`
-})
+}

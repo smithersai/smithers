@@ -8,7 +8,7 @@ import * as SqlJournal from "@smthrs/journal/SqlJournal"
 import { Deferred, Effect, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 
 const runId = (value: string): RunId => value as RunId
 const sourceId = (value: string): SourceId => value as SourceId

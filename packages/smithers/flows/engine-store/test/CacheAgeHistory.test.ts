@@ -3,8 +3,8 @@ import { Journal, JournalEvent } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
-import * as History from "../src/internal/CacheAgeHistory.ts"
-import * as Verdicts from "../src/internal/CacheAgeVerdicts.ts"
+import * as History from "../src/internal/CacheAgeHistory.vibe"
+import * as Verdicts from "../src/internal/CacheAgeVerdicts.vibe"
 
 const payload = {
   keyDigest: "key",

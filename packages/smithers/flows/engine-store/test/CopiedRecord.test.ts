@@ -3,7 +3,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import { Effect } from "effect"
-import * as CopiedRecord from "../src/internal/CopiedRecord.ts"
+import * as CopiedRecord from "../src/internal/CopiedRecord.vibe"
 
 const conflict = new Journal.JournalError({ code: "idempotency_conflict", message: "occupied producer slot" })
 const payload = { runId: "parent", nested: [{ b: 2, a: 1 }] }

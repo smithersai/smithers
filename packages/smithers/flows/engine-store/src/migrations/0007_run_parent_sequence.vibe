@@ -13,7 +13,7 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0
  */
-export const runParentSequence: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`CREATE INDEX flows_run_parents_seq_idx ON flows_run_parents (seq)`
-})
+export const runParentSequence: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
+  try sql`CREATE INDEX flows_run_parents_seq_idx ON flows_run_parents (seq)`
+}

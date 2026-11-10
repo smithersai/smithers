@@ -103,8 +103,8 @@
       "default": "./.vibelang/js/src/Inconsistency.js"
     },
     "./Migrations": {
-      "types": "./src/Migrations.ts",
-      "vibelang-source": "./src/Migrations.ts",
+      "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
+      "vibelang-source": "./src/Migrations.vibe",
       "default": "./.vibelang/js/src/Migrations.js"
     },
     "./OwnerIdentity": {

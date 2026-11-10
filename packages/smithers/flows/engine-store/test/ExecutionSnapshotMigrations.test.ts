@@ -7,8 +7,8 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as ExecutionSnapshot from "../src/ExecutionSnapshot.ts"
-import * as Migrations from "../src/Migrations.ts"
-import { executionListing } from "../src/migrations/0006_execution_listing.ts"
+import * as Migrations from "../src/Migrations.vibe"
+import { executionListing } from "../src/migrations/0006_execution_listing.vibe"
 import { onFile, state } from "./ExecutionSnapshotFixture.ts"
 
 describe("execution snapshot migration ladder", () => {

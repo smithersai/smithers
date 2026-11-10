@@ -46,22 +46,25 @@ const optionalTime = (value: number | string | null): number | null => value ===
  * @category migrations
  * @since 1.0.0
  */
-export const deferredClockFacts: Effect.Effect<void, unknown, SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
+export const deferredClockFacts: void!unknown!SqlClient.SqlClient = effect {
+  const sql = try SqlClient.SqlClient
   const recorded = new Set<string>()
-  const events = yield* sql<{ readonly run_id: string; readonly event_type: string; readonly payload_json: string }>`
+  const events = try sql<{ readonly run_id: string; readonly event_type: string; readonly payload_json: string }>`
     SELECT run_id, event_type, payload_json FROM flows_journal_events
     WHERE ${
-    sql.in("event_type", [
-      EventTypes.clockScheduled,
-      EventTypes.clockCompleted,
-      EventTypes.deferredCompleted,
-      EventTypes.deferredConsumed
-    ])
-  }
+      sql.in("event_type", [
+        EventTypes.clockScheduled,
+        EventTypes.clockCompleted,
+        EventTypes.deferredCompleted,
+        EventTypes.deferredConsumed
+      ])
+    }
   `
   for (const event of events) {
-    const payload = JSON.parse(event.payload_json) as Record<string, unknown>
+    const payload = try Effect.orDie(Effect.try({
+      try: () => JSON.parse(event.payload_json) as Record<string, unknown>,
+      catch: (error) => error
+    }))
     const name = event.event_type === EventTypes.clockScheduled || event.event_type === EventTypes.clockCompleted
       ? payload.clockName
       : payload.deferredName
@@ -75,32 +78,32 @@ export const deferredClockFacts: Effect.Effect<void, unknown, SqlClient.SqlClien
     emittedAtMs: number,
     payload: Readonly<Record<string, unknown>>
   ) =>
-    Effect.gen(function*() {
+    effect {
       const identity = JSON.stringify([eventType, payload.flowName, executionId, name])
       if (recorded.has(identity)) return
       recorded.add(identity)
       let seq = next.get(executionId)
       if (seq === undefined) {
-        const rows = yield* sql<{ readonly next: number | string | null }>`
+        const rows = try sql<{ readonly next: number | string | null }>`
           SELECT MAX(seq) + 1 AS next FROM flows_journal_events WHERE run_id = ${executionId}
         `
         seq = Number(rows[0]?.next ?? 0)
       }
       next.set(executionId, seq + 1)
       const sourceId = `flows.engine.backfill:${JournalEvent.contentDigest(identity)}`
-      yield* sql`
+      try sql`
         INSERT INTO flows_journal_events (
           run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json
         ) VALUES (
           ${executionId},
           ${seq},
           ${
-        JournalEvent.makeEventId(
-          executionId as JournalEvent.RunId,
-          sourceId as JournalEvent.SourceId,
-          0 as JournalEvent.SourceSeq
-        )
-      },
+            JournalEvent.makeEventId(
+              executionId as JournalEvent.RunId,
+              sourceId as JournalEvent.SourceId,
+              0 as JournalEvent.SourceSeq
+            )
+          },
           ${sourceId},
           ${0},
           ${emittedAtMs},
@@ -109,9 +112,9 @@ export const deferredClockFacts: Effect.Effect<void, unknown, SqlClient.SqlClien
           ${JSON.stringify({ lineageId: FlowEngine.Lineage.root(executionId) })}
         )
       `
-    })
+    }
 
-  const clocks = yield* sql<ClockRow>`
+  const clocks = try sql<ClockRow>`
     SELECT flow_name, execution_id, clock_name, deferred_name, due_at_ms, completed_at_ms
     FROM flows_clock_deadlines
     ORDER BY execution_id, flow_name, clock_name
@@ -119,7 +122,7 @@ export const deferredClockFacts: Effect.Effect<void, unknown, SqlClient.SqlClien
   for (const clock of clocks) {
     const dueAtMs = Number(clock.due_at_ms)
     const completedAtMs = optionalTime(clock.completed_at_ms)
-    yield* append(EventTypes.clockScheduled, clock.execution_id, clock.clock_name, completedAtMs ?? dueAtMs, {
+    try append(EventTypes.clockScheduled, clock.execution_id, clock.clock_name, completedAtMs ?? dueAtMs, {
       flowName: clock.flow_name,
       executionId: clock.execution_id,
       clockName: clock.clock_name,
@@ -127,7 +130,7 @@ export const deferredClockFacts: Effect.Effect<void, unknown, SqlClient.SqlClien
       dueAtMs
     })
     if (completedAtMs !== null) {
-      yield* append(EventTypes.clockCompleted, clock.execution_id, clock.clock_name, completedAtMs, {
+      try append(EventTypes.clockCompleted, clock.execution_id, clock.clock_name, completedAtMs, {
         flowName: clock.flow_name,
         executionId: clock.execution_id,
         clockName: clock.clock_name,
@@ -135,7 +138,7 @@ export const deferredClockFacts: Effect.Effect<void, unknown, SqlClient.SqlClien
       })
     }
   }
-  const deferreds = yield* sql<DeferredRow>`
+  const deferreds = try sql<DeferredRow>`
     SELECT flow_name, execution_id, deferred_name, exit_json, metadata_json, completed_at_ms, consumed_at_ms
     FROM flows_deferred_completions
     ORDER BY execution_id, flow_name, deferred_name
@@ -143,7 +146,7 @@ export const deferredClockFacts: Effect.Effect<void, unknown, SqlClient.SqlClien
   for (const deferred of deferreds) {
     const completedAtMs = Number(deferred.completed_at_ms)
     const consumedAtMs = optionalTime(deferred.consumed_at_ms)
-    yield* append(EventTypes.deferredCompleted, deferred.execution_id, deferred.deferred_name, completedAtMs, {
+    try append(EventTypes.deferredCompleted, deferred.execution_id, deferred.deferred_name, completedAtMs, {
       flowName: deferred.flow_name,
       executionId: deferred.execution_id,
       deferredName: deferred.deferred_name,
@@ -152,7 +155,7 @@ export const deferredClockFacts: Effect.Effect<void, unknown, SqlClient.SqlClien
       metadataDigest: deferred.metadata_json === null ? null : JournalEvent.contentDigest(deferred.metadata_json)
     })
     if (consumedAtMs !== null) {
-      yield* append(EventTypes.deferredConsumed, deferred.execution_id, deferred.deferred_name, consumedAtMs, {
+      try append(EventTypes.deferredConsumed, deferred.execution_id, deferred.deferred_name, consumedAtMs, {
         flowName: deferred.flow_name,
         executionId: deferred.execution_id,
         deferredName: deferred.deferred_name,
@@ -160,4 +163,4 @@ export const deferredClockFacts: Effect.Effect<void, unknown, SqlClient.SqlClien
       })
     }
   }
-})
+}
