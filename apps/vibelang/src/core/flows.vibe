@@ -124,9 +124,9 @@ export function docsPage(path: string): string | undefined {
 
 /** The conversation's sequencer, as the tour's steps reach it. */
 export service Tours {
-  current?(): (Walkthrough | null)!!
-  drive?(tour: string, step: number, target: string, duration: number): Walkthrough!!
-  control?(action: "pause" | "resume" | "seek", step: number): { readonly tour: string; readonly previous: number; readonly state: Walkthrough | null; readonly refusal: Refusal | null }!!
+  current(): (Walkthrough | null)!!
+  drive(tour: string, step: number, target: string, duration: number): Walkthrough!!
+  control(action: "pause" | "resume" | "seek", step: number): { readonly tour: string; readonly previous: number; readonly state: Walkthrough | null; readonly refusal: Refusal | null }!!
 
   /** Runs `decide` and `apply` on a new tour and stores its event: `null` once recorded, else the refusal. */
   start(): (Refusal | null)!!
@@ -307,12 +307,10 @@ export const SeekTour = Flow.make("vibelang/tour/seek", {
   payload: { step: Schema.Int }, success: PostAnswer, body: Node.capture({}, (payload) => signalled(RecordSeek.call(payload))),
 })
 
-/** A control's record step: the sequencer's answer, counted by outcome. A host without controls refuses. */
+/** A control's record step: the sequencer's answer, counted by outcome. */
 export effect function controlTour(action: "pause" | "resume" | "seek", step: number) {
   const tours = try Tours
-  const result = tours.control === undefined
-    ? { tour: "", previous: 0, state: null, refusal: "not-replying" as const }
-    : try tours.control(action, step)
+  const result = try tours.control(action, step)
   try counted(action, result.refusal ?? "accepted")
   return result
 }
@@ -329,9 +327,8 @@ export effect function signalTour(tour: string, previous: number, state: Walkthr
 /** Both hosts run the designer's exact script. Each visit has a journal identity, including back/skip. */
 export effect function walk(tour: string) {
   const tours = try Tours
-  if (tours.drive === undefined) return
   const restored = try Action.make({ name: "vibelang/tour/restore", success: Schema.NullOr(Walkthrough), execute: effect {
-    const saved = try (tours.current?.() ?? succeed(null))
+    const saved = try tours.current()
     return saved === null || saved.paused ? saved : { ...saved, remaining: holdRemaining(saved.remaining, saved.at, try Clock.currentTimeMillis) }
   } })
   let step = restored?.step ?? 1
@@ -339,7 +336,7 @@ export effect function walk(tour: string) {
   while (step <= WALKTHROUGH.length) {
     const stop = WALKTHROUGH[step - 1]!
     let state = Continuation.firstTourVisit(visit) && restored !== null && restored.target !== "" ? restored : try Action.make({ name: `vibelang/tour/step/${visit}/${step}`, success: Walkthrough, execute: withSpan(effect {
-      const state = try tours.drive!(tour, step, stop.target, Math.max(stop.duration, readingMillis(stop.subtitle)))
+      const state = try tours.drive(tour, step, stop.target, Math.max(stop.duration, readingMillis(stop.subtitle)))
       try counted("drive", String(step))
       return state
     }, "vibelang.tour.drive") })

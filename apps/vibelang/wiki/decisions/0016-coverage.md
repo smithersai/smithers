@@ -2086,3 +2086,51 @@ Scoped unit coverage (Vitest/coverage-v8 5.0.0, the existing .vibe source maps):
 All four files pass all four 100% thresholds together: 20 tests across four
 files, 44/44 lines, 23/23 functions, 59/59 statements and 34/34 branches.
 No coverage exclusions, new dependency or VibeLang semantics change.
+
+## Worker recovery boundaries (lane vl-coverage2, 2026-11-10)
+
+History's reader now plans, starts and notes over its real SQLite engine and
+sequencer, then decodes the resulting epic and search pages. A faulty act
+service answers unavailable without exposing its transport detail. The
+history run host refuses another workflow, preserves an existing intent
+when busy, and drives its default admission to a recorded receipt.
+
+The three model writers also run on the real Cloudflare SQLite runtime.
+Each healthy control calls the local scripted model once and records its
+actual seven-token charge. An accounting-read outage during the writer
+answers budget, makes no model call and writes no charge. The faulty read
+service heals after the writer's answer so the engine can persist that
+answer; an unavailable outcome journal is a different boundary. No request
+is intercepted, and no new dependency or protocol double was added.
+
+Five deliberately incorrect mappings made five new assertions fail, while
+four healthy controls passed. Restoring the sources passes all nine new
+tests. Together with the existing action, writer and deadline cases, 71
+tests pass / one skips across twelve files, and all five sources reach 100%
+for lines, functions, statements and branches:
+
+| File | Before lines / functions / statements / branches | After |
+| --- | --- | --- |
+| worker/HistoryObject.vibe | 57/59; 29/32; 71/74; 15/15 | 59/59; 32/32; 74/74; 15/15 |
+| worker/HistoryActions.vibe | 30/33; 9/11; 32/37; 15/19 | 33/33; 11/11; 37/37; 19/19 |
+| worker/VipDraft.vibe | 30/30; 7/8; 40/41; 10/10 | 30/30; 8/8; 41/41; 10/10 |
+| worker/WikiDraft.vibe | 32/32; 7/8; 43/44; 14/14 | 32/32; 8/8; 44/44; 14/14 |
+| worker/SpecificationReviewers.vibe | 31/31; 8/9; 41/42; 8/8 | 31/31; 9/9; 42/42; 8/8 |
+
+The grouped receipt covers 185/185 lines, 68/68 functions, 238/238 statements
+and 66/66 branches. The existing 100% thresholds remain unchanged.
+
+## Complete tour hosts (lane vl-coverage2, 2026-11-10)
+
+Both production implementations of Tours (MockFactory and Objects.toursOf)
+already provide current, drive and control. Every binding uses one of these
+complete implementations. These methods are now required; the unused
+partial-host fallbacks and corresponding non-null assertion were deleted.
+Existing tour, flow-body and wiki-tool behavior remains covered.
+
+The remaining narration-refusal guard stays. A new fault decorator for it
+is retained outside the app's test glob because compiler 0.0.12 drops the
+methods in a service Shape spread (service-method-spread reproduction).
+Upstream baf0d9a0f54c9335d1e6061be7f4947b507d8da1 already fixes that
+rejection on vibe, with positive and negative controls; it was not on green
+main at this check. No compiler replacement or app workaround was added.
