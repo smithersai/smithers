@@ -3307,7 +3307,19 @@ Vitest built-in bench, local. The Accounts object on a real loopback server over
 
 **accounts-web-refused.** A GitHub code exchange that refuses: the callback answers with the failure redirect, clears the state cookie and sets no session.
 
-Limitations: GitHub is an injected service, so there is no network or GitHub latency; storage is in memory, not Durable Object SQLite. Issue and wiki routes are excluded because their GitHub steps retry an unreachable GitHub (0017).
+Limitations: GitHub is an injected service, so there is no network or GitHub latency; storage is in memory, not Durable Object SQLite. Issue and wiki routes are measured in the next section.
+
+## Signed-in issue and wiki routes (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, 11:08–11:11 UTC, load average 149–163 on 32 cores. The Accounts object on a real loopback server over in-memory object storage, a fresh object per sample, after web sign-in (`bench/issues-wiki-web.bench.vibe`).
+
+| Workload | Mean ms | Samples | Artifact |
+| --- | ---: | ---: | --- |
+| issues-wiki-web | 3,961.3 | 5 | `2026-11-10T11-11-19.879Z-issues-wiki-web.json` |
+
+**issues-wiki-web.** Sign-in, the issue list, a new issue, a comment, a wiki page read, a Save and the same Save again, through the durable issue and wiki flows with the product's injectable `IssueHost` (in memory) and `WikiHost` (the fixture repository). Exact statuses, role, issue fields, page source and the idempotent Save's review link are checked. Per request, 7 samples with warmup: 56–1,240 ms.
+
+Limitations: injected services, so no GitHub latency (GitHub unreachable is `accounts-github-offline`); in-memory storage, not Durable Object SQLite; the person has not connected GitHub, so Connect GitHub paths and a connected person's write retry window are not measured (0165). The shared host was 5× oversubscribed, so wall times are observations, not a baseline.
 
 ## Broker sign-in and Connect GitHub (2026-11-10, nyc-01)
 

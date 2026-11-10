@@ -1,0 +1,71 @@
+// @vitest-environment node
+// A signed-in person's issue and wiki routes over the Accounts object's real HTTP boundary (worker/Accounts.vibe,
+// worker/Issues.vibe, worker/Wiki.vibe). GitHub sign-in is the injected auth service of test/support/accountsWorld.vibe,
+// and the journey injects the product's own IssueHost and WikiHost services. The same routes with GitHub unreachable
+// are bench/accounts-offline.bench.vibe.
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { IssueHost } from "../src/core/issueFlows.vibe"
+import { WikiHost } from "../src/core/wikiFlows.vibe"
+import { fixtureWikiHost, makeWikiStore } from "../src/core/WikiFactory.vibe"
+import { get, github, offline, post, serve, setupWith, signIn } from "../test/support/accountsWorld.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+const manual = FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })))
+const issue = { op: "new", number: 0, parent: 0, title: "Benchmark task", text: "Measure it", assignee: "", example: "", prior: "", key: "new-1" }
+const ADA = { id: "7", login: "ada", role: "maintainer" as const }
+
+/** The issue service answers each write with one open issue carrying the request's fields. */
+const issues: IssueHost.Shape = {
+  perform: (request) => succeed({
+    seq: 1,
+    items: request.op === "read" ? [] : [{
+      number: 7, githubId: 7001, title: request.title, body: request.text, author: "ada", age: "now", state: "open",
+      labels: [], parent: request.parent, task: "", assignee: request.assignee, vip: "", review: "", path: "", comments: request.op === "comment" ? 1 : 0, notes: [],
+    }],
+    selected: request.op === "read" ? 0 : 7,
+  }),
+}
+
+effect function timed(http: HttpClient.HttpClient, request: Parameters<HttpClient.HttpClient["execute"]>[0]) {
+  const start = try Clock.currentTimeMillis
+  const response = try http.execute(request)
+  const body = try response.json
+  return { status: response.status, body: body as Record<string, unknown>, ms: (try Clock.currentTimeMillis) - start }
+}
+
+effect function journey() {
+  const wiki = try fixtureWikiHost(effect () => ADA, try makeWikiStore())
+  provide Layer.succeed(IssueHost, issues), Layer.succeed(WikiHost, wiki) {
+    const { origin } = try serve(setupWith(github([{ id: 7, login: "ada" }]), "7")).pipe(Effect.provideService(HttpClient.HttpClient, offline))
+    provide manual {
+      const http = try HttpClient.HttpClient
+      const { cookie } = try signIn(http, origin, "7")
+      const read = try timed(http, get(origin, "/api/issues", cookie))
+      const created = try timed(http, post(origin, "/api/issues", issue, cookie))
+      const commented = try timed(http, post(origin, "/api/issues", { ...issue, op: "comment", number: 7, key: "comment-1" }, cookie))
+      const page = try timed(http, get(origin, "/api/wiki?page=index", cookie))
+      const source = ((page.body.pages ?? []) as ReadonlyArray<{ id: string; source: string }>).find((entry) => entry.id === "index")?.source ?? ""
+      const edit = { op: "save", page: "index", base: source, text: source + "\nMeasured.\n", key: "save-1" }
+      const saved = try timed(http, post(origin, "/api/wiki", edit, cookie))
+      const again = try timed(http, post(origin, "/api/wiki", edit, cookie))
+      try Effect.try(() => {
+        expect([read.status, created.status, commented.status, page.status, saved.status, again.status]).toEqual([200, 200, 200, 200, 200, 200])
+        expect(read.body).toMatchObject({ role: "maintainer", connected: false, items: [] })
+        expect(created.body).toMatchObject({ role: "maintainer", selected: 7, items: [{ number: 7, title: "Benchmark task", body: "Measure it" }] })
+        expect(commented.body).toMatchObject({ selected: 7, items: [{ number: 7, comments: 1 }] })
+        expect(source.length).toBeGreaterThan(0)
+        expect(saved.body.review).toMatch(/^https:\/\/github\.com\/smithersai\/vibelang\/pull\/\d+$/)
+        expect(again.body.review).toBe(saved.body.review)
+      })
+      return { issuesReadMs: read.ms, issueNewMs: created.ms, issueCommentMs: commented.ms, wikiReadMs: page.ms, wikiSaveMs: saved.ms, wikiSaveAgainMs: again.ms }
+    }
+  }
+}
+
+it("a signed-in person reads and writes issues and the wiki", async ({ bench }) => {
+  const samples: Array<unknown> = []
+  const result = await workload(bench, "issues-wiki-web", "async", async () => { samples.push(await runPromise(scoped(effect { provide NodeHttpServer.layerTest { return try journey() } }))) }).run(quick)
+  await runPromise(artifact("issues-wiki-web", "Vitest built-in bench; the Accounts object on a real loopback server over in-memory object storage, a fresh object per sample. Web sign-in, then the issue list, a new issue, a comment, a wiki page read, a Save and the same Save again, each through the durable issue and wiki flows. Exact statuses, role, issue fields, page source and the review link of the idempotent Save checked. Per-request milliseconds recorded per sample, warmup included.", ["IssueHost and WikiHost are the product's injectable services: the issue service answers in memory and the wiki is the product fixture repository. No GitHub latency.", "In-memory storage, not Durable Object SQLite.", "The person has not connected GitHub; Connect GitHub paths are out of scope (0165)."], { result, samples }))
+}, 120_000)

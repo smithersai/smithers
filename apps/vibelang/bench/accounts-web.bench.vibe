@@ -1,8 +1,8 @@
 // @vitest-environment node
 // A person's web sign-in over the Accounts object's real HTTP boundary: the OAuth redirect and callback, their session,
 // the role-event refusals, sign-out, and a GitHub exchange refusal. GitHub is an injected auth service
-// (test/support/accountsWorld.vibe), so no credential is used. Issue and wiki routes are left out: their GitHub steps
-// retry an unreachable GitHub under the durable retry policy (decision 0017).
+// (test/support/accountsWorld.vibe), so no credential is used. A signed-in person's issue and wiki routes are
+// measured in bench/issues-wiki-web.bench.vibe.
 import { it, expect } from "@effect/vitest"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { FetchHttpClient, HttpClient } from "effect/http"
@@ -42,7 +42,7 @@ effect function refused() {
 
 it("a person signs in on the web, is served their session, and signs out", async ({ bench }) => {
   const result = await workload(bench, "accounts-web-sign-in", "async", () => runPromise(scoped(effect { provide NodeHttpServer.layerTest { try journey() } }))).run(quick)
-  await runPromise(artifact("accounts-web-sign-in", "Vitest built-in bench; the Accounts object on a real loopback server over in-memory object storage, a fresh object per sample. The sign-in redirect, the OAuth callback with the state and code GitHub would carry, the session, anonymous and malformed role-event requests, sign-out and the session after it. Exact statuses, redirect and identity checked.", ["GitHub is an injected auth service: no network, no GitHub latency.", "In-memory storage, not Durable Object SQLite.", "Issue and wiki routes are excluded: their GitHub steps retry an unreachable GitHub."], result))
+  await runPromise(artifact("accounts-web-sign-in", "Vitest built-in bench; the Accounts object on a real loopback server over in-memory object storage, a fresh object per sample. The sign-in redirect, the OAuth callback with the state and code GitHub would carry, the session, anonymous and malformed role-event requests, sign-out and the session after it. Exact statuses, redirect and identity checked.", ["GitHub is an injected auth service: no network, no GitHub latency.", "In-memory storage, not Durable Object SQLite.", "Issue and wiki routes are measured in issues-wiki-web."], result))
 })
 
 it("a refused GitHub exchange sends the person back with sign-in failed", async ({ bench }) => {
