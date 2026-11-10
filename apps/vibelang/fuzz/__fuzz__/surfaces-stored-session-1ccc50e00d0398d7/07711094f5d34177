@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 16
+bias 4
+null-prototype false
+key 1882183106
+tape WGlbgw1dDBZWEplkTXV7cg
+schedule-key 3638507498
+schedule 
+signature "ReturnedFalse"
+path 0
+codec "json"
+value "{\"to\":\"userinfo\",\"path\":\"\",\"stored\":\"other-origin\"}"
+# ReturnedFalse
+# {"to":"userinfo","path":"","stored":"other-origin"}

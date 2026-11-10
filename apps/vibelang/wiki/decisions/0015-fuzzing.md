@@ -601,6 +601,31 @@ pair (`history/sequencer-operations`), a live failure code replaced by `unavaila
 query read from the wrong parameter (`history/wire-paths`), and GitHub's slow-down interval ignored
 (`signin/steered`, after steering its interval above five seconds). Each target failed.
 
+### Second session
+
+`c0c76516` reads a mythical trailer from the trailer paragraph only, and `b362b0bd` makes mock actions refuse an
+unknown flow `forbidden`, as live does; both are in the tables above. A fresh fuzz-only run of the whole suite at
+`b362b0bd` (5 s per target, Node and happy-dom, exit 0, 256 targets) measured the three directories at 1564/1566
+lines and 1146/1166 branches over 37 files: `seedDecision.vibe` is new (25/25, 39/40) and other lanes moved lines.
+Three new scenarios then reached 4 more arms, measured on their own files: 1150/1166.
+
+| Target | File | Exercises | Arm reached |
+| --- | --- | --- | --- |
+| `surfaces/stored-session` | `fuzz/surfaces-backend.node.fuzz.vibe` | `withStoredSession` on addresses that start with the origin's text but name another origin (a longer port, user info before another host), another scheme or host, the bare origin and its paths, under every stored session; the oracle compares WHATWG `URL` origins | `backend` 57 |
+| `history/seed-entries` | `fuzz/history-seed.fuzz.vibe` | queue entries that carry up to three titles: the commits one landed entry carried form one mythical commit, any other commit is its own | `seed` 348, `seedDecision` 69 |
+| `history/sequencer-operations` | `fuzz/history-sequencer.fuzz.vibe` | a trailer paragraph with a continuation line | `Sequencer` 75 |
+
+Mutants, each caught and restored: `sameOriginRequest` without its `/` (`surfaces/stored-session`), the entry join
+removed (`history/seed-entries`), continuation lines refused (`history/sequencer-operations`). Each target's
+counterexample against its mutant stays in `fuzz/__fuzz__/` as a boundary value, with the harness's own
+`"\ud800"` path (`encodeURIComponent` throws on a lone surrogate; the target encodes UTF-8 bytes).
+
+What is left: 2 lines and 16 arms. Unchanged from the list above: `MockActions` 68, 102, 112, 117; `mythical` 377,
+411 (the lines), 562; `signin` 101, 173; `mcp` 36, 38; `flows` 248, 257; `commands` 351; `history/tools` 93;
+`LiveActions` 66; `seed` 437 (formerly 444). New: `MockActions` 130, the catalog lookup after the role check, now
+reached only if the catalog lacks a flow the registry marks runnable. Covered or removed since the list above:
+`backend` 61 and 83, `catalog` 23, `MockActions` 33, `MockMythical` 78, `schemas` 92, `seed` 355.
+
 ## Measurable on any machine (lane vl-gatefix, 2026-11-10)
 
 - `surfaces/cli-arguments` and `surfaces/mcp-arguments` spawn a process per execution: replay and the first execution

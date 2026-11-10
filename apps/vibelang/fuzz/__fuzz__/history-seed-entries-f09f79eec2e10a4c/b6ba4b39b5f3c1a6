@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 61
+bias 5
+null-prototype false
+key 2883004307
+tape RXYUyH3usUZusAU7OdPQGe0R9PoQ9gfKRWGC0GCFkdGe0lzzEccTPOaSukcyhFlzhfw7tCI2CBO03t9jFE2_PwowZA3FjxjzJHxW3mvMbcu5lrOo
+schedule-key 1193462528
+schedule 
+signature "ReturnedFalse"
+path 3.3.7
+codec "json"
+value "{\"commits\":[0,2],\"entries\":[{\"state\":\"landed\",\"titles\":[0,2]}]}"
+# ReturnedFalse
+# {"commits":[0,2],"entries":[{"state":"landed","titles":[0,2]}]}

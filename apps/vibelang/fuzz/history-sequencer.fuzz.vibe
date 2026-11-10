@@ -13,7 +13,7 @@ const Op = Schema.Union([
   Schema.Struct({ op: Schema.Literal("plan"), how: Schema.Literals(["append", "insert", "amend"]), epic: Int, newEpic: Schema.Literals(["", "Fuzz", "long"]), target: Int, title: Title }),
   Schema.Struct({ op: Schema.Literal("approve"), target: Int }),
   Schema.Struct({ op: Schema.Literal("start"), target: Int }),
-  Schema.Struct({ op: Schema.Literal("fold"), sha: Int, title: Title, trailer: Schema.Literals(["none", "named", "unknown", "squash", "quoted"]), target: Int }),
+  Schema.Struct({ op: Schema.Literal("fold"), sha: Int, title: Title, trailer: Schema.Literals(["none", "named", "unknown", "squash", "quoted", "continued"]), target: Int }),
   Schema.Struct({ op: Schema.Literal("bootstrap"), seed: Schema.Literals(["empty", "epic", "full"]) }),
 ])
 
@@ -72,6 +72,7 @@ it.live("history/sequencer-operations", () => run("history/sequencer-operations"
         // paragraph, so neither names a commit.
         const body = step.trailer === "squash" ? `\n\n* a\n\nMythical: ${named}\n\n* b\n\nCo-Authored-By: Ada <ada@example.com>\n`
           : step.trailer === "quoted" ? `\n\nThe plan said\nMythical: ${named}\nof another change.\n`
+          : step.trailer === "continued" ? `\n\nBody.\n\nCo-Authored-By: Ada\n  <ada@example.com>\nMythical: ${named}\n`
           : step.trailer === "none" ? "" : `\n\nMythical: ${step.trailer === "named" ? named : "m999"}\n`
         const message = step.title + body
         const answer = try sequencer.fold({ sha, change: "", title: step.title, message })
@@ -84,7 +85,7 @@ it.live("history/sequencer-operations", () => run("history/sequencer-operations"
         // Folded into the commit its trailer names only when that commit was approved or landed; else a new commit
         // appended to the epic of its scope's area.
         // Only the trailer paragraph names a commit; a title alone (even `Mythical: m1`) never does.
-        const named_ = step.trailer === "named" ? named : step.trailer === "unknown" ? "m999" : ""
+        const named_ = step.trailer === "named" || step.trailer === "continued" ? named : step.trailer === "unknown" ? "m999" : ""
         const target = before.commits.find((c) => c.id === named_)
         const intoNamed = target !== undefined && (target.state === "approved" || target.state === "landed")
         if (intoNamed ? answer.id !== target.id : after.epics.find((e) => e.id === into.epic)?.title !== areaOf(into.title)) return false

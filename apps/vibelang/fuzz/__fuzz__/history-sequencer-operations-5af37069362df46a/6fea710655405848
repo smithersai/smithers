@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 35
+bias 3
+null-prototype false
+key 2394790482
+tape vnNL9Eu6d8EMIubWI-daZ7jLR7PxbddF6sC2R-VQEfx6avmewPX1pSyMRnXYk1DZeL-rOaR83sDkh9WIdRjam7YHzesVx5bXYVSybJtjq0WfdDhMqqMcDxDqEaLM0GQ2hEj91EvuEeTB0XO4e2mpHO0Vmb5VuMkAD-a_tZEbmXmKfFBc6yRj9irXe6Fhxl6KlqE6Lu26pg8QvuWFndPU22s6bzFKQzm16tKsu6s0JN-uJnZnibQkPfXFsb5J7MOHk_eSJgXuNPxuV9dxWZ5VBo8uVDAVRQF8zYrXq4eyCtoCRuZb76fyfm8YAKi55_g6rlLm9bq8yNL3drCq2JRjhwiT8eXh-95reg6UA0wqA8_VY7j8whm67Mqcy4WGDmj23ahRkpg42vygMM_OPgLxtpTna9XWmCilvLCLob7kFJRaNz2ZeU9RdspZLglFPy0CpTda6qK3rwsDLB7FglhETjsOoxR85PN51pw2b4bFkJOLAfOEpAsNDH7pStmMIRF_cX6yeeH3XUUt9bMmjyTjjB4C5U8gb_ECylqVQaJtV8JhZv-nTVqYrYir19X1DIHDr-LawV08wp5Y-ED3TUUxAVs4tT2b1hG7q02Tdw
+schedule-key 951120712
+schedule 
+signature "ReturnedFalse"
+path 2.2.4.5.5.5.5.5.6.9
+codec "json"
+value "[{\"op\":\"fold\",\"sha\":0,\"title\":\"\\u0000\",\"trailer\":\"squash\",\"target\":0},{\"op\":\"fold\",\"sha\":14,\"title\":\"\\ud800\",\"trailer\":\"continued\",\"target\":16},{\"op\":\"bootstrap\",\"seed\":\"epic\"},{\"op\":\"bootstrap\",\"seed\":\"full\"},{\"op\":\"fold\",\"sha\":20,\"title\":\"feat(wiki): 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\",\"trailer\":\"squash\",\"target\":1},{\"op\":\"plan\",\"how\":\"amend\",\"epic\":28,\"newEpic\":\"\",\"target\":13,\"title\":\"feat(wiki): 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\"},{\"op\":\"plan\",\"how\":\"amend\",\"epic\":15,\"newEpic\":\"\",\"target\":1,\"title\":\"toString\"},{\"op\":\"fold\",\"sha\":26,\"title\":\"docs: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀\",\"trailer\":\"squash\",\"target\":0},{\"op\":\"approve\",\"target\":14}]"
+# ReturnedFalse
+# [{"op":"fold","sha":0,"title":"\u0000","trailer":"squash","target":0},{"op":"fold","sha":14,"title":"\ud800","trailer":"continued","target":16},{"op":"bootstrap","seed":"epic"},{"op":"bootstrap","seed":"full"},{"op":"fold","sha":20,"title":"feat(wiki): 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀","trailer":"squash","target":1},{"op":"plan","how":"amend","epic":28,"newEpic":"","target":13,"title":"feat(wiki): 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"},{"op":"plan","how":"amend","epic":15,"newEpic":"","target":1,"title":"toString"},{"op":"fold","sha":26,"title":"docs: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀","trailer":"squash","target":0},{"op":"approve","target":14}]

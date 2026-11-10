@@ -4,15 +4,15 @@ import { it } from "@effect/vitest"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
-import { HttpClient, HttpClientResponse, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { HttpClient, HttpClientRequest, HttpClientResponse, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Factory } from "../src/core/Factory.vibe"
 import { Actions } from "../src/actions/Actions.vibe"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
-import { backend, notDeployed, personClient, unreachable } from "../src/surfaces/backend.vibe"
+import { backend, notDeployed, personClient, unreachable, withStoredSession } from "../src/surfaces/backend.vibe"
 import { writeSession } from "../src/surfaces/session.vibe"
 import { cliPath, serverPath } from "../test/surface-host.vibe"
 import { node, run as processRun } from "../test/support/processes.vibe"
-import { run } from "./run.vibe"
+import { run, Text } from "./run.vibe"
 
 const COOKIE = "vibelang-session=fuzz.cookie-1"
 const OTHER = "vibelang-session=other.cookie-2"
@@ -127,3 +127,43 @@ it.live("surfaces/person-client", () => run("surfaces/person-client", Schema.Str
   const [own, foreign, unsigned] = seen
   return own?.cookie === cookie && own.origin === origin && foreign?.cookie === "" && foreign.origin === "" && unsigned?.cookie === ""
 }))
+
+const ORIGIN = "http://127.0.0.1:4000"
+const STORED = "vibelang-session=fuzz.stored-1"
+// Addresses that start with the origin's text but name another origin (a longer port, user info before another host),
+// another scheme or host, the bare origin, and the origin's own paths.
+const Target = Schema.Struct({
+  to: Schema.Literals(["own", "bare", "port", "userinfo", "scheme", "other"]),
+  path: Text,
+  stored: Schema.Literals(["none", "same", "other-origin", "bad-cookie", "no-home"]),
+})
+
+/**
+ * A stored session goes only to its own origin: a request whose parsed origin is another never carries a cookie or the
+ * origin header, and the origin's own paths carry the stored cookie when it was stored for that origin and is valid.
+ */
+it.live("surfaces/stored-session", () => run("surfaces/stored-session", Target, ({ to, path, stored }) => scoped(effect {
+  provide NodeServices.layer {
+    const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    // Every byte percent-encoded: any text is a path, a lone surrogate too (TextEncoder writes U+FFFD for it).
+    const tail = Array.from(new TextEncoder().encode(path), (byte) => `%${byte.toString(16).padStart(2, "0")}`).join("")
+    const url = to === "own" ? `${ORIGIN}/${tail}` : to === "bare" ? ORIGIN : to === "port" ? `${ORIGIN}1/${tail}`
+      : to === "userinfo" ? `${ORIGIN}@elsewhere.invalid/${tail}` : to === "scheme" ? `https://127.0.0.1:4000/${tail}`
+      : `https://elsewhere.invalid/${tail}`
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown(stored === "no-home" ? {} : { XDG_CONFIG_HOME: directory })) {
+      if (stored === "same" || stored === "other-origin" || stored === "bad-cookie") try writeSession({
+        origin: stored === "other-origin" ? "http://127.0.0.1:5000" : ORIGIN, cookie: stored === "bad-cookie" ? "session=<script>" : STORED, login: "ada",
+      })
+      const request = try withStoredSession(HttpClientRequest.get(url), ORIGIN)
+      const cookie = request.headers["cookie"]
+      const origin = request.headers["origin"]
+      const expected = stored === "same" ? STORED : ""
+      // Never a cookie to another parsed origin, whatever the address's text starts with.
+      if (cookie !== undefined && cookie !== "" && new URL(request.url).origin !== ORIGIN) return false
+      if (to === "own") return cookie === expected && origin === ORIGIN
+      // The bare origin is its own origin: carried or untouched, never another cookie.
+      if (to === "bare") return (cookie === undefined && origin === undefined) || (cookie === expected && origin === ORIGIN)
+      return cookie === undefined && origin === undefined
+    }
+  }
+})))

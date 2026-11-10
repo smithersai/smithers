@@ -2,7 +2,7 @@
 // merge's side commits bucketed with it, a seed's intents replayed (an unknown one refused).
 import { it } from "@effect/vitest"
 import { MAX_NOTE } from "../src/history/mythical.vibe"
-import { bucketsOf, endsSentence, intentsOf, replay, wholeSentences, type RawCommit } from "../src/history/seed.vibe"
+import { bucketsOf, endsSentence, intentsOf, replay, seedOf, wholeSentences, type QueueEntry, type RawCommit } from "../src/history/seed.vibe"
 import { run, Int } from "./run.vibe"
 
 const Sentence = Schema.Struct({ words: Schema.Array(Schema.Literals(["Fix", "the", "parser", "Then", "A1", "ok", "(x)"])).check(Schema.isMinLength(1), Schema.isMaxLength(40)), end: Schema.Literals([".", "!", "?", ".)", "", ","]) })
@@ -53,4 +53,30 @@ it.live("history/seed-replay", () => run("history/seed-replay", Schema.Struct({ 
   const intents = intentsOf(seed)
   const replayed = replay(extra ? [...intents, { type: "Start", id: "m-missing", lane: "x" }] : intents)
   return replayed.history.real[0]?.title === (titled ? "Real" : "First") && replayed.refused.length === (extra ? 1 : 0)
+}))
+
+const PLAIN = ["feat(fuzz): a", "fix(compiler): b", "docs: c", "feat: d"]
+const Pick = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 }))
+const Entries = Schema.Struct({
+  commits: Schema.Array(Pick).check(Schema.isMinLength(1), Schema.isMaxLength(10)),
+  entries: Schema.Array(Schema.Struct({
+    state: Schema.Literals(["landed", "rejected", "running"]),
+    titles: Schema.Array(Pick).check(Schema.isMinLength(1), Schema.isMaxLength(3)),
+  })).check(Schema.isMaxLength(5)),
+})
+
+/**
+ * The commits one landed entry carried form one mythical commit, even under different titles; a commit no landed entry
+ * carried is its own (0020). Under each title, a commit of main claims the oldest landed entry with that title that no
+ * earlier commit with that title claimed.
+ */
+it.live("history/seed-entries", () => run("history/seed-entries", Entries, ({ commits, entries }) => {
+  const raw: Array<RawCommit> = commits.map((pick, at) => ({ sha: `c${at}`, change: "", description: PLAIN[pick]!, parents: at === 0 ? [] : [`c${at - 1}`] }))
+  const queue: Array<QueueEntry> = entries.map((entry, at) => ({ id: `q${at}`, lane: "fuzz", state: entry.state, reason: "", gate: "", titles: entry.titles.map((pick) => PLAIN[pick]!) }))
+  const seed = seedOf("fuzz", raw, queue)
+  const open = new Map(PLAIN.map((title) => [title, queue.filter((entry) => entry.state === "landed" && entry.titles.includes(title)).map((entry) => entry.id)]))
+  const claimed = raw.map((commit) => open.get(commit.description)!.shift())
+  const into = new Map(seed.real.map((real) => [real.sha, real.into]))
+  if (seed.real.length !== raw.length || into.size !== raw.length || replay(intentsOf(seed)).refused.length > 0) return false
+  return raw.every((a, i) => raw.every((b, j) => i === j || (into.get(a.sha) === into.get(b.sha)) === (claimed[i] !== undefined && claimed[i] === claimed[j])))
 }))
