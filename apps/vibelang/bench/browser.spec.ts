@@ -333,6 +333,16 @@ test("history navigation, planning, notes, approval and folding", async ({ page,
       await expect(page.getByRole("button", { name: /The compiler/ })).toBeVisible({ timeout: 30000 })
       await expect(page.getByText("Mock", { exact: true })).toBeVisible()
     })
+    await time("history-epic-keyboard", async () => {
+      const header = page.getByRole("button", { name: /The compiler/ })
+      await header.focus()
+      await page.keyboard.press("Enter")
+      await expect(header).toHaveAttribute("aria-expanded", "true")
+      await page.keyboard.press("a")
+      await expect(header).toHaveAttribute("aria-expanded", "true")
+      await page.keyboard.press(" ")
+      await expect(header).toHaveAttribute("aria-expanded", "false")
+    })
     await time("history-expand-epic", async () => {
       await page.getByRole("button", { name: /The compiler/ }).click()
       await expect(page.getByRole("list", { name: "The compiler" }).getByRole("link")).toHaveCount(50)
@@ -384,6 +394,17 @@ test("history navigation, planning, notes, approval and folding", async ({ page,
       await expect(page.getByRole("list", { name: "Matching commits" }).getByRole("link").first()).toBeVisible()
     })
     await page.getByRole("searchbox", { name: "Filter commits" }).fill("")
+    await time("history-plan-new-epic", async () => {
+      await page.getByRole("button", { name: "Plan work", exact: true }).click()
+      const dialog = page.getByRole("dialog", { name: "Plan work" })
+      await dialog.getByLabel("Epic", { exact: true }).selectOption({ label: "New epic…" })
+      await dialog.getByLabel("New epic", { exact: true }).fill("Benchmark epic")
+      await expect(dialog.getByLabel("New epic", { exact: true })).toHaveValue("Benchmark epic")
+      await dialog.getByLabel("Epic", { exact: true }).selectOption({ label: "The compiler" })
+      await expect(dialog.getByLabel("New epic", { exact: true })).toHaveCount(0)
+      await page.keyboard.press("Escape")
+      await expect(dialog).toHaveCount(0)
+    })
     await time("history-plan", async () => {
       await page.getByRole("button", { name: "Plan work", exact: true }).click()
       const dialog = page.getByRole("dialog", { name: "Plan work" })
@@ -430,9 +451,25 @@ test("history navigation, planning, notes, approval and folding", async ({ page,
       await expect(page.getByRole("button", { name: "Plan work", exact: true })).toHaveCount(0)
       await expect(page.getByRole("button", { name: "Fold", exact: true })).toHaveCount(0)
     })
+    if (coverage) await coverage()
+    await time("history-return-visit", async () => {
+      // No ?agent= now: the page keeps the mock mode the earlier visit stored.
+      expect(await page.evaluate(() => localStorage.getItem("vibelang.agent"))).toBe("mock")
+      await page.goto(`${baseURL}/history`)
+      await expect(page.getByRole("button", { name: /The compiler/ })).toBeVisible({ timeout: 30000 })
+      await expect(page.getByText("Mock", { exact: true })).toBeVisible()
+    })
+    await time("history-no-choice", async () => {
+      // Nothing stored and no query: the page asks /api/health, which this local build does not serve, and shows the mock.
+      await page.evaluate(() => localStorage.removeItem("vibelang.agent"))
+      await page.goto(`${baseURL}/history`)
+      await expect(page.getByRole("button", { name: /The compiler/ })).toBeVisible({ timeout: 30000 })
+      await expect(page.getByText("Mock", { exact: true })).toBeVisible()
+      expect(await page.evaluate(() => localStorage.getItem("vibelang.agent"))).toBeNull()
+    })
   } finally {
     try { if (coverage) await coverage() } finally {
-      await save("history-browser-actions", { origin: baseURL, timings }, ["One serial Chromium journey over the full committed history and real MockMythical durable flows. Bootstrap, scripted work and automation included; no percentile. Fold changes only the product mock, never a real repository. Viewer UI omits writes; live writes are benchmarked as actual workerd refusals."])
+      await save("history-browser-actions", { origin: baseURL, timings }, ["One serial Chromium journey over the full committed history and real MockMythical durable flows. Bootstrap, scripted work and automation included; no percentile. Fold changes only the product mock, never a real repository. Viewer UI omits writes; live writes are benchmarked as actual workerd refusals. The last two steps reopen /history with no query: first the stored mock choice decides the mode, then, with nothing stored, the failed local /api/health check falls back to the mock."])
     }
   }
 })
@@ -632,6 +669,25 @@ test("wiki edit, Save, Propose, cancellation and reviewed agent draft", async ({
     await page.getByRole("button", { name: "Wiki", exact: true }).click()
     await wiki.getByRole("link", { name: "Roadmap", exact: true }).first().click()
     const editor = wiki.getByRole("textbox", { name: "Edit Roadmap", exact: true })
+    await time("wiki-find-page", async () => {
+      const find = wiki.getByRole("textbox", { name: "Find a page", exact: true })
+      await find.fill("roadmap")
+      await expect(wiki.getByRole("navigation", { name: "Wiki pages" }).getByRole("link", { name: "Roadmap", exact: true })).toBeVisible()
+      await find.fill("no such page")
+      await expect(wiki).toContainText('No pages match "no such page"')
+      await find.fill("")
+      await expect(wiki.getByRole("heading", { level: 1 }).first()).toContainText("Roadmap")
+    })
+    await picker.selectOption("maintainer")
+    await time("wiki-save-unchanged", async () => {
+      await wiki.getByRole("button", { name: "Edit", exact: true }).click()
+      await expect(editor).toBeFocused()
+      await wiki.getByRole("button", { name: "Save", exact: true }).click()
+      await expect(wiki.getByRole("alert")).toHaveText("No changes.")
+      await expect(editor).toBeVisible()
+      await page.keyboard.press("Escape")
+      await expect(editor).toHaveCount(0)
+    })
     for (const role of ["maintainer", "contributor"] as const) {
       await picker.selectOption(role)
       let source = ""

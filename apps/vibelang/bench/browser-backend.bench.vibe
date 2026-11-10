@@ -1,0 +1,31 @@
+// The browser backend's account and action doors no screen calls yet: an agent sign-in, participation and a typed command.
+import { it, expect } from "@effect/vitest"
+import { FetchHttpClient } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { Actions } from "../src/actions/Actions.vibe"
+import { BrowserFactory } from "../src/web/backend.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+it("browser backend: agent sign-in, participation and a typed command in mock mode", async ({ bench }) => {
+  const seen: Array<{ agent: boolean; agentRole: string; flow: string; door: string; participant: string }> = []
+  const result = await workload(bench, "browser-backend-doors", "async", async () => {
+    await runPromise(scoped(effect {
+      provide BrowserFactory("http://benchmark.invalid", true, "maintainer").pipe(Layer.provide(FetchHttpClient.layer)) {
+        const factory = try Factory
+        const actions = try Actions
+        const accounts = factory.accounts!
+        const agent = try accounts.signInAgent()
+        try accounts.choose("maintainer")
+        const id = try actions.command('/plan {"how":"append","epic":"","newEpic":"Benchmark","target":"","title":"Measure","task":"Check"}', "slash")
+        const run = try actions.read(id)
+        try accounts.choose("new")
+        try accounts.participated(undefined)
+        const participant = try accounts.current()
+        seen.push({ agent: agent.agent === true, agentRole: agent.role, flow: run.flow, door: run.door, participant: participant.role })
+      }
+    }))
+  }).run(quick)
+  expect(seen.length).toBeGreaterThan(0)
+  for (const each of seen) expect(each).toEqual({ agent: true, agentRole: "maintainer", flow: "vibelang/history/Plan", door: "slash", participant: "community" })
+  await runPromise(artifact("browser-backend-doors", "Vitest built-in bench; the real BrowserFactory forced to product mock mode with MockAccounts and MockActions, a new scoped backend each callback. Signs the maintainer's agent in, returns to the person, types a /plan command, reads its run, then picks a new person and records participation. Checked every callback: an agent identity with the maintainer role, a Plan run started from the slash door, and the new person promoted to community.", ["No screen calls these doors yet; this measures the backend selection and delegation the browser ships, plus mock account and action work. Backend construction and assertions included; no network, model or layout."], { seen: seen.length, result }))
+})

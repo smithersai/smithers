@@ -1,0 +1,71 @@
+// The history page's own subscription when the history service fails: the outline read, then the followed events.
+import { it, expect } from "@effect/vitest"
+import { vi } from "vitest"
+import { Runtime } from "foldkit"
+import { Mythical, Unavailable } from "../src/history/MythicalHistory.vibe"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { HistoryFlags, HistoryModel, init, subscriptions, update } from "../src/web/historyApp.vibe"
+import { view } from "../src/web/historyView.vibe"
+import { container, remove } from "../test/support/browser.ts"
+import { plannedHistory } from "./fixtures.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const flags = { mode: "mock" as const, role: "maintainer" as const, hash: "" }
+const outage = new Unavailable({ reason: "closed" })
+
+/** The product mock history, whose first outline read and every event stream fail as an outage does. */
+function failing(counts: { outlines: number; follows: number }) {
+  return Layer.effect(Mythical, effect {
+    const real = try Mythical
+    const service: Mythical.Shape = {
+      mode: real.mode,
+      outline: () => { counts.outlines += 1; return counts.outlines === 1 ? Effect.fail(outage) : real.outline() },
+      epic: (id, from) => real.epic(id, from),
+      commit: (id) => real.commit(id),
+      search: (query) => real.search(query),
+      events: () => { counts.follows += 1; return Stream.fail(outage) },
+      plan: (request, operation) => real.plan(request, operation),
+      start: (id, lane, operation) => real.start(id, lane, operation),
+      note: (id, section, text, operation) => real.note(id, section, text, operation),
+      approve: (id) => real.approve(id),
+      fold: () => real.fold(),
+    }
+    return service
+  }).pipe(Layer.provide(MockMythical({ role: "maintainer", name: "Benchmark", agent: false }, () => succeed(plannedHistory(10)))))
+}
+
+it("history page: outline outage, Retry, then a lost event stream", async ({ bench }) => {
+  const runs: Array<{ outlines: number; follows: number; failedScreen: boolean; recovered: boolean }> = []
+  const result = await workload(bench, "history-stream-faults", "async", async () => {
+    const counts = { outlines: 0, follows: 0 }
+    const seen: { model: HistoryModel } = { model: init(flags).model }
+    let failedScreen = false
+    await runPromise(scoped(effect {
+      const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+      const program = try Effect.try(() => Runtime.makeApplication({
+        Model: HistoryModel, Flags: HistoryFlags, init, update,
+        view: (model, h) => { seen.model = model; return view(model, h) },
+        subscriptions: subscriptions(node.ownerDocument.defaultView!), resources: failing(counts), container: node,
+      }))
+      try acquireRelease(sync(() => Runtime.embed(program, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+      // Foldkit patches the container element itself, so the page is read from the document.
+      const page = node.ownerDocument.body
+      try promise(() => vi.waitFor(() => expect(page.querySelector("[role='alert']")?.textContent).toContain("Couldn't load the history."), { timeout: 10000 }))
+      failedScreen = seen.model.status === "failed"
+      try Effect.try(() => (Array.from(page.querySelectorAll("button")).find((button) => button.textContent === "Retry") as HTMLButtonElement).click())
+      try promise(() => vi.waitFor(() => { expect(seen.model.status).toBe("ready"); expect(counts.follows).toBe(1) }, { timeout: 10000 }))
+      try sleep("50 millis")
+      try Effect.try(() => {
+        expect(counts.outlines).toBe(2)
+        expect(seen.model.status).toBe("ready")
+        expect(seen.model.outline.epics.length).toBeGreaterThan(0)
+        expect(page.querySelector("[role='alert']")).toBeNull()
+        expect(page.textContent).not.toContain("No mythical history yet.")
+      })
+    }))
+    runs.push({ ...counts, failedScreen, recovered: seen.model.status === "ready" })
+  }).run(slow)
+  expect(runs.length).toBeGreaterThan(0)
+  for (const run of runs) expect(run).toEqual({ outlines: 2, follows: 1, failedScreen: true, recovered: true })
+  await runPromise(artifact("history-stream-faults", "Vitest built-in bench, happy-dom with the actual history page: Foldkit runtime, update, view and subscriptions over the product MockMythical seeded with a 10-commit planned history. A typed faulty Mythical layer fails the first outline read and every event stream with Unavailable. Each sample waits for the failed screen, presses Retry, and waits until the outline is shown and the event stream has failed once. Checked: two outline reads, one followed stream, the failed screen first, then the list with no alert. New scoped runtime each sample; 3 samples.", ["DOM runtime, no layout or paint. The outage is an injected Effect service, not a dropped connection; observer polling and a 50 ms settle are included."], { runs, result }))
+})
