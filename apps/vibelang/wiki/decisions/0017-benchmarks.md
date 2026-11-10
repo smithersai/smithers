@@ -238,7 +238,7 @@ The rejected browser-command fault overlays reproduce published VibeLang 0.0.12 
 
 **API Worker bodies and GitHub-bound paths (2026-11-09).** `worker/Api.vibe` now holds only Alchemy bindings; the object bodies and fetch handler are `worker/apiObjects.vibe`, imported by `test/workerd/bench-api.vibe`. `bench/api-workerd.bench.vibe` runs them in real workerd SQLite through `apiFetch`, alarms, and a deterministic HTTP model service. Objects reach each other by `fetch`, not Alchemy RPC, and sign-in is unconfigured there. `bench/github-faults.bench.vibe` covers `worker/MainLog.vibe` refusals and a VIP draft through an injected faulty `HttpClient`.
 
-These paths wait for a GitHub test credential and stay in the denominator. A local GitHub fixture would be a mock, so none is used on a happy path:
+These paths wait for a GitHub test credential and stay in the denominator. GitHub doubles do answer some benchmark happy paths: `bench/signin-device.bench.vibe` (GitHub's device endpoints on loopback, `test/support/deviceSignIn.vibe`) and `bench/accounts-web.bench.vibe` (a canned `GitHubAuth`); whether such protocol doubles may stand in on a happy path awaits Will's ruling (vl-review-tests finding 3). The paths below have no double:
 
 | File | Waits for GitHub | Runs without it |
 | --- | --- | --- |

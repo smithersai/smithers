@@ -5,7 +5,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { HttpClient, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { GitHub } from "@smthrs/integrations"
 import { IssueHost } from "../src/core/issueFlows.vibe"
-import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
+import { IssueFailure, IssuesState, type IssueRequest } from "../src/core/issueSchemas.vibe"
 import { VipWriter } from "../src/core/VipWriter.vibe"
 import type { IssueRecord } from "../src/core/conversation.vibe"
 import * as Issues from "../worker/Issues.vibe"
@@ -216,6 +216,20 @@ describe("the durable issues execution", () => {
       expect(forged.items[0]?.approvedBy).toBeUndefined()
       expect(accepted.items[0]).toMatchObject({ vip: "Accepted", approvedBy: "ada" })
       expect(kept.items[0]).toMatchObject({ vip: "Accepted", approvedBy: "ada", approvedAt: accepted.items[0]?.approvedAt })
+    })
+  }, 60_000)
+
+  it.live("an approval stored without its time keeps its approver, and the state still reads", () => effect {
+    // approveVip writes both fields; another writer, or a hand edit, may leave approvedBy alone.
+    const { run, storage } = world(authorityOf(person()), () => [record({ vip: "Accepted" })])
+    try promise(() => storage.put("gates/state", { seq: 0, items: [record({ vip: "Accepted", approvedBy: "will" })] }))
+    const first = try run(asking({ key: "read-untimed-1" }))
+    const second = try run(asking({ key: "read-untimed-2" }))
+    try Effect.try(() => {
+      expect(first.items[0]).toMatchObject({ vip: "Accepted", approvedBy: "will" })
+      expect(Object.keys(first.items[0]!)).not.toContain("approvedAt")
+      expect(Schema.is(IssuesState)(first)).toBe(true)
+      expect(second.items[0]).toMatchObject({ vip: "Accepted", approvedBy: "will" })
     })
   }, 60_000)
 

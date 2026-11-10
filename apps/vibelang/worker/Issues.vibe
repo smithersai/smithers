@@ -321,9 +321,10 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
       // Approval fields from an external projection are not receipts. Do not persist them even while downgrading
       // an accepted label: otherwise the next read would trust those same fields as a local approval.
       const { approvedBy: _approvedBy, approvedAt: _approvedAt, ...projection } = item
-      // approveVip writes approvedBy and approvedAt together.
+      // approveVip writes approvedBy and approvedAt together, but a stored item may hold approvedBy alone (another
+      // writer, or a hand edit): keep the time only when it was stored, so the state still decodes on the next read.
       const receipt = saved.items.find((old): old is typeof old & { approvedBy: string } => old.number === item.number && old.approvedBy !== undefined)
-      return item.vip !== "Accepted" ? projection : receipt === undefined ? { ...projection, vip: "In review" as const } : { ...projection, approvedBy: receipt.approvedBy, approvedAt: receipt.approvedAt! }
+      return item.vip !== "Accepted" ? projection : receipt === undefined ? { ...projection, vip: "In review" as const } : { ...projection, approvedBy: receipt.approvedBy, ...(receipt.approvedAt === undefined ? {} : { approvedAt: receipt.approvedAt }) }
     })
     if (request.op === "accept" && current !== undefined) {
       const at = new Date(try Clock.currentTimeMillis).toISOString()

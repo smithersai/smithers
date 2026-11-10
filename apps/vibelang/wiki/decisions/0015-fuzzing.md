@@ -264,7 +264,7 @@ caller outside the schema reaches stays, and a target drives that caller:
 | `Issues.githubHost`: an operation no branch handles answers `unsupported` | kept, targeted | `IssueOperation` admits `spec-revise` and `spec-review`; `executeIssues` answers them before `githubHost`, but `githubHost` is exported and called directly. `issues/host-perform-boundary` draws both and runs a permitted witness of each every execution: the host refuses after its read with no write. Mutating the refusal to `missing` fails it |
 | `Issues` read: `vip.review` starts with the pull prefix; `vip.number` is a positive safe integer | deleted | `verifiedVip` returns a VIP only after both checks |
 | `Issues.verifiedVip`: `match.index ?? 0` | deleted | `matchAll` yields `RegExpExecArray`, whose `index` is a number |
-| `Issues` receipt: `approvedBy ?? ""` | deleted | the `find` that selects the receipt requires `approvedBy`; a type predicate now carries it. `approvedAt ?? ""` stays: a stored item may hold `approvedBy` without it |
+| `Issues` receipt: `approvedBy ?? ""` | deleted | the `find` that selects the receipt requires `approvedBy`; a type predicate now carries it. A stored item may hold `approvedBy` without `approvedAt`; the mapping keeps `approvedAt` only when stored (it had been deleted as `approvedAt!`, which wrote `approvedAt: undefined` and failed the next read's decode; `test/issuesBoundary.coverage.test.vibe`) |
 
 Reached this session (vl-fuzz2, 2026-11-10), each by a steered scenario that runs every execution:
 

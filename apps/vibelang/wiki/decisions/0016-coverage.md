@@ -603,7 +603,7 @@ The unit gate still fails below 100%. No file below is excluded and no threshold
 | `worker/Api.vibe` | Workerd isolate coverage. Its Durable Object wiring runs only in workerd, and a Node run would need scripted namespaces. | `pnpm test:workerd`, once VibeLang 0.0.13 is on npm with the source-map fix (`f5d37aa764af`) and workerd reports precise coverage |
 | `worker/SpecificationReviewers.vibe` | Stays unbound by decision 0027. | None until it is bound |
 | `worker/VipDraft.vibe`, model paths of `worker/Reply.vibe` | A model credential reference in the environment. | `test/live.workerd.test.vibe` covers Reply, opt-in on `CEREBRAS_API_KEY`. `test/vipDraft.test.vibe` covers `VipDraft`, opt-in on the same key |
-| GitHub read, write, VIP proposal and label paths of `worker/Issues.vibe` (`githubHost`) | Needs the GitHub test token: a real GitHub token for the test repository. No fake GitHub (`test/issuesGithub.coverage.test.vibe` was one and is deleted). | `test/issues.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
+| GitHub read, write, VIP proposal and label paths of `worker/Issues.vibe` (`githubHost`) | Real GitHub needs the GitHub test token for the test repository. Since 2026-11-10 the delegated tests run these paths against the in-memory GitHub `fuzz/issues-node-fake.vibe` (see "`worker/Issues.vibe`, `worker/Wiki.vibe`" below); whether such a protocol fake may stand in on a happy path awaits Will's ruling (vl-review-tests finding 3). | `test/issues.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
 | GitHub write paths of `worker/Wiki.vibe` | A real GitHub token for the test repository. | `test/wikiEdit.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
 
 ## Lane vl-coverage2 (2026-11-09)
@@ -757,7 +757,9 @@ drafts, retries and resumes, and the HTTP routes' store failures.
   the resume's poll mapping a store failure to `missing` (poll answers None for an unknown run, so its failures are
   the store's, now `unavailable` like every other store failure there); the resume's payload decode refusal and its
   op, key and flow recheck (the run id names the op and the key's digest, and only `executeIssues` starts a run
-  there); and the receipt's `approvedAt ?? ""` (`approveVip` writes it with `approvedBy`). `72225ac2` deleted the
+  there); and the receipt's `approvedAt ?? ""` (`approveVip` writes it with `approvedBy`). That deletion was wrong: a stored
+  item may hold `approvedBy` alone, and `approvedAt!` then stored `approvedAt: undefined`, which the next read refused
+  as `protocol`. The mapping now keeps `approvedAt` only when it was stored (vl-test-quality, 2026-11-10). `72225ac2` deleted the
   `match.index` default, the review rechecks `verifiedVip` already made and Wiki's final `invalid` branch.
 - **Found, kept:** a journal that cannot record a step's attempt makes the engine interrupt the run
   (`EngineStore.actionExecute`), so the request ends interrupted rather than answering `unavailable`. That is
