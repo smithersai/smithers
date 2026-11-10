@@ -16,6 +16,7 @@ from sources import production_sources, require_proved
 root=pathlib.Path(__file__).resolve().parent
 from extended_mutations import cases as extended_cases
 from web_mutations import cases as web_cases
+from arm_mutations import cases as arm_cases
 # The mutation cases: name, function, production text, mutated text, the claim the mutation breaks.
 cases=[
 ('wiki-edits-stale','applyWikiEdits','if (event.seq !== state.seq + 1) return state','if (event.seq === state.seq + 1) return state','a stale wiki observation changes nothing'),
@@ -166,6 +167,7 @@ cases += [
 ('src/core/sandboxDecision.vibe', 'meter-step-count', 'meterStep', 'intervalUsageMilliseconds(count, ', 'intervalUsageMilliseconds(1, ', 'every running sandbox accrues the interval'),
 ]
 cases += web_cases
+cases += arm_cases
 if len(sys.argv) < 2: raise SystemExit('Usage: mutations.py OUT [NAME ...] [--module src/x.vibe ...]')
 out=pathlib.Path(sys.argv[1]).resolve()
 args=sys.argv[2:]; modules=set(); names=[]

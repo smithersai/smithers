@@ -1,0 +1,32 @@
+// Decisions that the last inline arms of `update` in main.vibe wrote inline, on plain data (lane vl-proveall4, 0018):
+// the People list arriving, a failed picture or video, and Chat.
+import { type AccountRetry } from "./modelDecision.vibe"
+import { type ScreenState, canMinimize, minimizeScreen } from "./screenDecision.vibe"
+import { showMedia } from "./viewDecision.vibe"
+
+export interface ChatStep { readonly state: ScreenState; readonly focus: boolean }
+
+/** The People list arriving ends only a People retry's wait; a grant or a sign-in that still waits keeps waiting. */
+//@ verify
+//@ ensures retry == "people" ==> !\result
+//@ ensures retry != "people" ==> \result == pending
+export function pendingAfterPeople(retry: AccountRetry, pending: boolean): boolean {
+  return retry === "people" ? false : pending
+}
+
+/** A failed picture or video is remembered after every earlier one, so the page never shows it again. */
+//@ verify
+//@ ensures \result.length == failed.length + 1 && \result[failed.length] == source
+//@ ensures forall(i, 0 <= i && i < failed.length ==> \result[i] == failed[i])
+//@ ensures !showMedia(\result, source)
+export function failedMediaAfter(failed: ReadonlyArray<string>, source: string): ReadonlyArray<string> {
+  return [...failed, source]
+}
+
+/** Chat shrinks the splash into the conversation when there is one, and only then moves focus to the composer. */
+//@ verify
+//@ ensures \result.state == minimizeScreen(state, entries, pending, pane)
+//@ ensures \result.focus == canMinimize(state.surface, entries, pending, pane)
+export function clickedChat(state: ScreenState, entries: number, pending: number, pane: string): ChatStep {
+  return { state: minimizeScreen(state, entries, pending, pane), focus: canMinimize(state.surface, entries, pending, pane) }
+}

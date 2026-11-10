@@ -21,12 +21,14 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Machine from "../core/conversation.vibe"
 import { SandboxSnapshot, EventSchema, Factory } from "../core/Factory.vibe"
 import { Client } from "../core/schemas.vibe"
-import { escapeAction, canMinimize, hasContent, scrollFollow, follows, paletteChange, completedEvent, answerAnnouncement, screenKey, showSplash, setScreenPalette, minimizeScreen, failScreenTour, failedScreenEnd, completeScreenTour, latestScreen, toggleScreenDocs } from "./screenDecision.vibe"
+import { escapeAction, hasContent, scrollFollow, follows, paletteChange, completedEvent, answerAnnouncement, screenKey, showSplash, setScreenPalette, failScreenTour, failedScreenEnd, completeScreenTour, latestScreen, toggleScreenDocs } from "./screenDecision.vibe"
 import { MediaSources, observeMedia } from "./media.vibe"
 import { Identity, viewer } from "../core/roles.vibe"
 import { WikiFailure, WikiRequest } from "../core/wikiSchemas.vibe"
 import * as PaneDecision from "./paneDecision.vibe"
 import * as UpdateDecision from "./updateDecision.vibe"
+import * as ArmDecision from "./armDecision.vibe"
+import * as WikiEditorDecision from "./wikiEditorDecision.vibe"
 import { pages, wikiEditable, wikiPage } from "../core/wiki.vibe"
 import { Navigation } from "foldkit"
 import { Actions, ActionFailure, Registered, Run } from "../actions/Actions.vibe"
@@ -318,7 +320,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
   const next = withCommands(Message.match<Update.Return<Model, Message, Factory | Actions>>(message, {
     ObservedMedia: () => ({ model }),
     LoadedMedia: ({ kind }) => ({ model, commands: [ObserveMedia({ kind, outcome: "loaded" })] }),
-    FailedMedia: ({ src, kind }) => ({ model: { ...model, failedMedia: [...(model.failedMedia ?? []), src] }, commands: [ObserveMedia({ kind, outcome: "failed" })] }),
+    FailedMedia: ({ src, kind }) => ({ model: { ...model, failedMedia: ArmDecision.failedMediaAfter(model.failedMedia ?? [], src) }, commands: [ObserveMedia({ kind, outcome: "failed" })] }),
 
     ResolvedMode: ({ mode }) => ({ model: { ...model, mode }, commands: [LoadAccount({})] }),
     AccountLoaded: ({ identity }) => {
@@ -346,7 +348,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     ClickedSignOut: () => runAccount(model, ModelDecision.clickedSignOut(accountScreen(model))),
     ChoseIdentity: ({ role }) => ({ model, commands: [ChooseIdentity({ role })] }),
     ClickedPeople: () => runAccount(model, ModelDecision.clickedPeople(accountScreen(model))),
-    LoadedPeople: ({ members }) => ({ model: { ...model, account: { ...accountOf(model), members, pending: false } } }),
+    LoadedPeople: ({ members }) => ({ model: { ...model, account: { ...accountOf(model), members, pending: ArmDecision.pendingAfterPeople(accountOf(model).retry, accountOf(model).pending) } } }),
     ClosedPeople: () => runAccount(model, ModelDecision.closedPeople(accountScreen(model))),
     ToggledPeople: () => runAccount(model, ModelDecision.toggledPeople(accountScreen(model))),
     SelectedRole: ({ id, role }) => !ModelDecision.canSelectRole(accountOf(model).identity.role) ? { model } : runAccount(model, ModelDecision.selectedRole(accountScreen(model), id, role)),
@@ -455,7 +457,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     ClickedWikiDraft: ({ page }) => beginWikiEdit(model, page),
     // The store keeps only well-formed text (DurableText): an unpaired surrogate becomes U+FFFD as it is typed, never at save.
     UpdatedWikiEdit: ({ value }) => model.wikiEdit === undefined || !PaneDecision.wikiEditTypes(model.wikiEdit.busy, model.wikiEdit.submission !== undefined) ? { model } : { model: { ...model, wikiEdit: { ...model.wikiEdit, ...PaneDecision.updatedWikiEdit(wikiEditScreen(model.wikiEdit), value.toWellFormed()) } } },
-    CanceledWikiEdit: () => model.wikiEdit === undefined || model.wikiEdit.submission !== undefined ? { model } : { model: { ...model, wikiEdit: undefined } },
+    CanceledWikiEdit: () => WikiEditorDecision.wikiEditCloses(model.wikiEdit !== undefined, model.wikiEdit?.submission !== undefined) ? { model: { ...model, wikiEdit: undefined } } : { model },
     SubmittedWikiEdit: () => {
       const editing = model.wikiEdit
       if (editing === undefined) return { model }
@@ -463,16 +465,17 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       const op = PaneDecision.wikiSubmitPlan(editing.busy, editing.text, editing.base, Machine.wikiPermission(role, "save"), Machine.wikiPermission(role, "propose"))
       if (op === "ignore" || op === "refuse") return { model }
       if (op === "no-changes") return { model: { ...model, wikiEdit: { ...editing, ...PaneDecision.noWikiChanges(wikiEditScreen(editing)) } } }
-      const serial = (model.wikiSerial ?? 0) + 1
-      const request: WikiRequest = editing.submission === undefined ? { op, page: editing.page, base: editing.base, text: editing.text, key: `${model.session}-wiki-${serial}` } : { ...editing.submission, recovery: `${model.session}-wiki-retry-${serial}` }
-      return { model: { ...model, wikiSerial: serial, wikiEdit: { ...editing, ...PaneDecision.submittingWikiEdit(wikiEditScreen(editing)), submission: request } }, commands: [SubmitWikiEdit({ request, serial: model.wikiEditRequest ?? 0 })] }
+      const serial = model.wikiSerial ?? 0
+      const step = WikiEditorDecision.submittedWikiEdit(wikiEditScreen(editing), op, serial, editing.submission !== undefined, wikiDraft(editing.submission), `${model.session}-wiki-${serial + 1}`, `${model.session}-wiki-retry-${serial + 1}`)
+      const request = wikiRequest(step.submission)
+      return { model: { ...model, wikiSerial: step.serial, wikiEdit: { ...editing, ...step.editing, submission: request } }, commands: [SubmitWikiEdit({ request, serial: model.wikiEditRequest ?? 0 })] }
     },
     BeganWikiEdit: ({ request, page, source, draft, stale }) => {
       const editing = model.wikiEdit
       if (editing === undefined || !PaneDecision.wikiBeginApplies(editing.busy, Machine.currentWikiEditor(page, request, editing.page, model.wikiEditRequest ?? 0))) return { model }
       return { model: { ...model, wikiEdit: { ...editing, ...PaneDecision.beganWikiEdit(wikiEditScreen(editing), source, draft), ...(stale === undefined ? {} : { stale }) } }, commands: [FocusWikiEditor({})] }
     },
-    CompletedWikiEdit: ({ request, page, source, revision, review }) => model.wikiEdit === undefined || !Machine.currentWikiEditor(page, request, model.wikiEdit.page, model.wikiEditRequest ?? 0) ? { model } : ({ model: { ...model, wikiEdit: undefined, wikiPages: [...(model.wikiPages ?? []).filter((observed) => observed.id !== page), { id: page, source, revision }], ...(review === "" ? {} : { wikiReview: { page, url: review } }) } }),
+    CompletedWikiEdit: ({ request, page, source, revision, review }) => model.wikiEdit === undefined || !Machine.currentWikiEditor(page, request, model.wikiEdit.page, model.wikiEditRequest ?? 0) ? { model } : ({ model: { ...model, wikiEdit: undefined, wikiPages: WikiEditorDecision.savedWikiPages(model.wikiPages ?? [], page, source, revision), ...(WikiEditorDecision.wikiReviewLinks(review) ? { wikiReview: { page, url: review } } : {}) } }),
     FailedWikiEdit: ({ request, reason, unwritten }) => {
       if (model.wikiEdit === undefined || !PaneDecision.wikiEditFailureApplies(request, model.wikiEditRequest ?? null)) return { model }
       const step = PaneDecision.failedWikiEdit(wikiEditScreen(model.wikiEdit), PaneDecision.wikiEditErrorText(reason), unwritten === true)
@@ -771,8 +774,8 @@ function openPalette(model: Model, open: boolean): Update.Return<Model, Message,
 
 /** Shrink the maximized splash back into the chat's first pane and focus the composer; otherwise nothing changes. */
 function minimizeSplash(model: Model): Update.Return<Model, Message, Factory | Actions> {
-  if (!canMinimize(model.surface, model.client.conversation.entries.length, model.client.pending.length, model.client.conversation.pane)) return { model }
-  return { model: { ...model, ...minimizeScreen(model, model.client.conversation.entries.length, model.client.pending.length, model.client.conversation.pane) }, commands: [FocusComposer({})] }
+  const step = ArmDecision.clickedChat(model, model.client.conversation.entries.length, model.client.pending.length, model.client.conversation.pane)
+  return step.focus ? { model: { ...model, ...step.state }, commands: [FocusComposer({})] } : { model }
 }
 
 /** Whether there is a conversation to go back to. */
@@ -938,16 +941,13 @@ function knownWikiSource(model: Model, page: string): string {
 /** Minimal failure text; the request and its flow carry the detail. */
 /** Edit by role (0019, 0021): the editor opens on the shown page; a chat draft review opens its page first. */
 function beginWikiEdit(model: Model, draft?: string): Update.Return<Model, Message, Factory> {
-  if (model.wikiEdit?.submission !== undefined) return visitWiki(model, model.wikiEdit.page)
   const role = accountOf(model).identity.role
   const page = draft ?? wikiPage(model.client.conversation.pane)?.id
-  if (page === undefined) return { model }
-  if (draft === undefined ? !Machine.wikiPermission(role, "save") && !Machine.wikiPermission(role, "propose") : !Machine.wikiPermission(role, "draft")) return { model }
-  if (!wikiEditable(page)) return { model }
-  const source = knownWikiSource(model, page)
-  const request = (model.wikiEditRequest ?? 0) + 1
-  const editing = { page, base: source, text: source, busy: false, error: "" }
-  if (draft === undefined) return { model: { ...model, wikiEdit: editing, wikiEditRequest: request }, commands: [OpenWikiEditor({ page, request })] }
+  const plan = WikiEditorDecision.wikiBeginPlan(model.wikiEdit?.submission !== undefined, page !== undefined, draft !== undefined, Machine.wikiPermission(role, "save"), Machine.wikiPermission(role, "propose"), Machine.wikiPermission(role, "draft"), page !== undefined && wikiEditable(page))
+  if (plan === "reopen") return visitWiki(model, model.wikiEdit!.page)
+  if (plan === "none" || page === undefined) return { model }
+  const { editing, request } = WikiEditorDecision.openedWikiEditor(page, knownWikiSource(model, page), model.wikiEditRequest ?? 0)
+  if (plan === "open") return { model: { ...model, wikiEdit: editing, wikiEditRequest: request }, commands: [OpenWikiEditor({ page, request })] }
   const visit = visitWiki(model, page)
   return { model: { ...visit.model, wikiEdit: editing, wikiEditRequest: request }, commands: [...visit.commands, OpenWikiEditor({ page, request })] }
 }
@@ -1343,6 +1343,18 @@ function sandboxResult(model: Model): PaneDecision.SandboxResult {
 function wikiEditScreen(editing: NonNullable<Model["wikiEdit"]>): PaneDecision.WikiEditScreen {
   const { page, base, text, busy, error } = editing
   return { page, base, text, busy, error }
+}
+
+/** A waiting submission as plain data for the proved submit step; none reads as an empty draft the step never sends. */
+function wikiDraft(request: WikiRequest | undefined): WikiEditorDecision.WikiDraft {
+  if (request === undefined) return { op: "save", page: "", base: "", text: "", key: "", recovery: "" }
+  return { op: request.op, page: request.page, base: request.base, text: request.text, key: request.key, recovery: request.recovery ?? "" }
+}
+
+/** The proved submission as the request the flow takes: an empty recovery key is no recovery key. */
+function wikiRequest(draft: WikiEditorDecision.WikiDraft): WikiRequest {
+  const { recovery, ...request } = draft
+  return recovery === "" ? request : { ...request, recovery }
 }
 
 function minuteNotice(notice: PaneDecision.SandboxNotice, id: string, remaining: number, kept: string): string {

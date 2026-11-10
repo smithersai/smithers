@@ -42,6 +42,8 @@ brick                                   state         proof
 
 - **Proofs of the web decision modules (0018, lane vl-proveall2): in progress.** Viewport steps and the history page's guards, merge, reads and arm frames are proved; 75 new mutations rejected. Remaining rows name host or tool boundaries.
 
+- **Proofs of update's helpers and last inline arms (0018, lane vl-proveall4): in progress.** Wiki editor, People list, failed media and Chat arms proved, 30 mutations rejected; translation helpers checked by property tests; one product defect fixed.
+
 - **CLI and MCP sign-in (VL-26): implemented; lead deploys.** 0028: `login`/`logout` run GitHub's device flow through the shared
   integrations auth; the server names the agent's posts `<login> (agent)`, carries the person's role and refuses it
   approve, fold and merge. Journaled native flows, private shared settings and a persistent MCP host are covered. Live sign-in waits on device flow enabled on the GitHub OAuth app (the lane report).

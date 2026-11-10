@@ -1,0 +1,49 @@
+// The arms of the browser program's update that lane vl-proveall4 moved onto proved decisions (0018): what each one
+// changes, and the product defects their proofs found.
+import { describe, expect, it } from "@effect/vitest"
+import { accountOf, init, Message, type Model, update } from "../src/web/main.vibe"
+
+const flags = { session: "u", mode: "mock" as const, name: "Guest" }
+const home = init(flags).model
+const chat: Model = { ...home, surface: "chat" }
+const maintainer: Model = { ...chat, account: { ...accountOf(chat), identity: { id: "1", login: "person-1", role: "maintainer" }, people: "pane" } }
+const member = (id: string) => ({ id, login: `person-${id}`, role: "community" as const })
+
+describe("People's list arriving", () => {
+  it("stores the list and ends a people retry's wait", () => {
+    const failed: Model = { ...maintainer, account: { ...accountOf(maintainer), retry: "people", error: "Couldn't load people." } }
+    const retried = update(failed, Message.RetriedAccount()).model
+    expect(accountOf(retried).pending).toBe(true)
+    const loaded = update(retried, Message.LoadedPeople({ members: [member("2")] })).model
+    expect(accountOf(loaded).members).toEqual([member("2")])
+    expect(accountOf(loaded).pending).toBe(false)
+  })
+  it("leaves a grant waiting: a list refreshed by someone else's grant does not re-enable Confirm", () => {
+    const chosen = update(maintainer, Message.SelectedRole({ id: "2", role: "contributor" })).model
+    const confirming = update(chosen, Message.ConfirmedRole()).model
+    expect(accountOf(confirming).pending).toBe(true)
+    const refreshed = update(confirming, Message.LoadedPeople({ members: [member("2"), member("3")] })).model
+    expect(accountOf(refreshed).members).toEqual([member("2"), member("3")])
+    expect(accountOf(refreshed).pending).toBe(true)
+    expect(accountOf(refreshed).target).toBe("2")
+  })
+  it("leaves a sign-in waiting", () => {
+    const signingIn = update(chat, Message.ClickedSignIn()).model
+    expect(accountOf(signingIn).pending).toBe(true)
+    expect(accountOf(update(signingIn, Message.LoadedPeople({ members: [] })).model).pending).toBe(true)
+  })
+})
+
+describe("the wiki editor's submission", () => {
+  const editing = { page: "index", base: "a", text: "b", busy: false, error: "" }
+  it("sends a first submission with no recovery key, and a repeat with the same key and a new recovery key", () => {
+    const first = update({ ...maintainer, wikiEdit: editing, wikiEditRequest: 2 }, Message.SubmittedWikiEdit())
+    const sent = first.model.wikiEdit?.submission
+    expect(sent).toEqual({ op: "save", page: "index", base: "a", text: "b", key: "u-wiki-1" })
+    expect(first.commands?.[0]).toMatchObject({ name: "SubmitWikiEdit", args: { request: sent, serial: 2 } })
+    const failed = update(first.model, Message.FailedWikiEdit({ request: 2, reason: "unavailable" })).model
+    const again = update(failed, Message.SubmittedWikiEdit()).model
+    expect(again.wikiSerial).toBe(2)
+    expect(again.wikiEdit?.submission).toEqual({ ...sent, recovery: "u-wiki-retry-2" })
+  })
+})

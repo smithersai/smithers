@@ -1,0 +1,90 @@
+// The wiki editor's arms of `update` in main.vibe that paneDecision.vibe does not cover, on plain data (lane vl-proveall4, 0018):
+// opening an editor, cancelling it, what a submission sends, and what a saved page leaves in the list.
+import { type WikiEditScreen, submittingWikiEdit } from "./paneDecision.vibe"
+
+export type WikiBeginPlan = "reopen" | "none" | "open" | "open-draft"
+export type WikiSaveOp = "save" | "propose"
+export type WikiOp = "read" | "save" | "propose" | "draft"
+/** A submission as plain data; `recovery` is `""` when the request carries none. */
+export interface WikiDraft { readonly op: WikiOp; readonly page: string; readonly base: string; readonly text: string; readonly key: string; readonly recovery: string }
+export interface WikiEditorOpen { readonly editing: WikiEditScreen; readonly request: number }
+export interface WikiSubmitStep { readonly serial: number; readonly editing: WikiEditScreen; readonly submission: WikiDraft }
+export interface WikiPage { readonly id: string; readonly source: string; readonly revision: string }
+
+/**
+ * Edit, or a chat draft's review. A submission still waiting reopens its own page, never a second editor. Edit opens on
+ * the shown page for a role that can save or propose; a draft review opens its page for a role that can draft; a page
+ * outside the editable wiki opens nothing.
+ */
+//@ verify
+//@ ensures submitted ==> \result == "reopen"
+//@ ensures !submitted && !hasPage ==> \result == "none"
+//@ ensures !submitted && hasPage && !draft && !canSave && !canPropose ==> \result == "none"
+//@ ensures !submitted && hasPage && draft && !canDraft ==> \result == "none"
+//@ ensures !submitted && hasPage && !editable ==> \result == "none"
+//@ ensures !submitted && hasPage && editable && !draft && (canSave || canPropose) ==> \result == "open"
+//@ ensures !submitted && hasPage && editable && draft && canDraft ==> \result == "open-draft"
+export function wikiBeginPlan(submitted: boolean, hasPage: boolean, draft: boolean, canSave: boolean, canPropose: boolean, canDraft: boolean, editable: boolean): WikiBeginPlan {
+  if (submitted) return "reopen"
+  if (!hasPage) return "none"
+  if (draft ? !canDraft : !canSave && !canPropose) return "none"
+  if (!editable) return "none"
+  return draft ? "open-draft" : "open"
+}
+
+/** A new editor starts from the page's known source, unchanged, idle and without a failure, under the next request number. */
+//@ verify
+//@ ensures \result == { editing: { page: page, base: source, text: source, busy: false, error: "" }, request: request + 1 }
+export function openedWikiEditor(page: string, source: string, request: number): WikiEditorOpen {
+  return { editing: { page, base: source, text: source, busy: false, error: "" }, request: request + 1 }
+}
+
+/** Cancel closes an editor only while no submission waits for its answer, so that answer still finds its editor. */
+//@ verify
+//@ ensures \result == (open && !submitted)
+export function wikiEditCloses(open: boolean, submitted: boolean): boolean {
+  return open && !submitted
+}
+
+/**
+ * A submission takes the next serial and starts the wait. The first sends the editor's page, base and text under a fresh
+ * key. A repeat sends the waiting submission unchanged, its key included, so the server sees the same write; only its
+ * recovery key is new.
+ */
+//@ verify
+//@ ensures \result.serial == serial + 1
+//@ ensures \result.editing == { ...editing, busy: true, error: "" }
+//@ ensures !waiting ==> \result.submission == { op: op, page: editing.page, base: editing.base, text: editing.text, key: freshKey, recovery: "" }
+//@ ensures waiting ==> \result.submission == { ...submission, recovery: retryKey }
+export function submittedWikiEdit(editing: WikiEditScreen, op: WikiSaveOp, serial: number, waiting: boolean, submission: WikiDraft, freshKey: string, retryKey: string): WikiSubmitStep {
+  const sent: WikiDraft = waiting ? { ...submission, recovery: retryKey } : { op, page: editing.page, base: editing.base, text: editing.text, key: freshKey, recovery: "" }
+  return { serial: serial + 1, editing: submittingWikiEdit(editing), submission: sent }
+}
+
+/** A saved page replaces what was known of it: every other known page stays, and the saved one comes last, once. */
+//@ verify
+//@ ensures \result.length >= 1 && \result[\result.length - 1] == { id: page, source: source, revision: revision }
+//@ ensures forall(i, 0 <= i && i < \result.length - 1 ==> \result[i].id != page)
+//@ ensures forall(j, 0 <= j && j < pages.length && pages[j].id != page ==> \result.includes(pages[j]))
+//@ ensures forall(i, 0 <= i && i < \result.length - 1 ==> pages.includes(\result[i]))
+export function savedWikiPages(pages: ReadonlyArray<WikiPage>, page: string, source: string, revision: string): ReadonlyArray<WikiPage> {
+  let kept: ReadonlyArray<WikiPage> = []
+  let j = 0
+  while (j < pages.length) {
+    //@ invariant 0 <= j && j <= pages.length
+    //@ invariant forall(i, 0 <= i && i < kept.length ==> kept[i].id != page)
+    //@ invariant forall(k, 0 <= k && k < j && pages[k].id != page ==> kept.includes(pages[k]))
+    //@ invariant forall(i, 0 <= i && i < kept.length ==> pages.includes(kept[i]))
+    //@ decreases pages.length - j
+    if (pages[j]!.id !== page) kept = [...kept, pages[j]!]
+    j++
+  }
+  return [...kept, { id: page, source, revision }]
+}
+
+/** A saved page links its review only when the save opened one. */
+//@ verify
+//@ ensures \result == (review != "")
+export function wikiReviewLinks(review: string): boolean {
+  return review !== ""
+}
