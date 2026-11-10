@@ -184,7 +184,7 @@ describe("mock-mode actions", () => {
       const missing = try Effect.flip(actions.command("/plan"))
       try Effect.try(() => {
         expect(none).toEqual([])
-        expect([unknown, read, rerun, malformed, missing].map(code)).toEqual(["not-found", "not-found", "not-found", "input", "input"])
+        expect([unknown, read, rerun, malformed, missing].map(code)).toEqual(["forbidden", "not-found", "not-found", "input", "input"])
       })
     }
   }))

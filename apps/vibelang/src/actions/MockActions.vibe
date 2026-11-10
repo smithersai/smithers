@@ -124,9 +124,10 @@ export function MockActions(principal: Principal) {
       try record({ type: "SettleAction", id, state: status, result: output, at: try Clock.currentTimeMillis })
     }
     effect function start(name: string, input: Schema.Json, door: Door) {
+      // The role first, as live checks it: an unknown flow is never runnable, so it is forbidden, not missing.
+      const person = try authorize(name)
       const found = catalog.get(name) catch () => undefined
       if (found === undefined) throw new ActionFailure({ code: "not-found" })
-      const person = try authorize(name)
       if (scope.state._tag === "Closed") throw new ActionFailure({ code: "closed" })
       const next = try Ref.updateAndGet(ids, (id) => id + 1)
       const id = `a${next}`

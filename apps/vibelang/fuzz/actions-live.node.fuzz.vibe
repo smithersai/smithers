@@ -92,8 +92,8 @@ it.live("actions/live-client", () => run("actions/live-client", Live, (input) =>
             const answer = try Effect.result(client.start(step.flow, value, "button"))
             if (answer._tag === "Failure") {
               if (!CODES.has(answer.failure.code)) return false
-              // The server checks the role before the catalog: an unknown flow is forbidden to a non-maintainer.
-              if (step.flow === "unknown/flow" && !["forbidden", "not-found"].includes(answer.failure.code)) return false
+              // The server checks the role before the catalog: an unknown flow is never runnable, so it is forbidden.
+              if (step.flow === "unknown/flow" && answer.failure.code !== "forbidden") return false
             } else ids.push(answer.success)
             break
           }

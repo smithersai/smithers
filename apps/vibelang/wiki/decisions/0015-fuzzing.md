@@ -504,7 +504,7 @@ takes a few minutes longer.
 
 | Finding | Kind | Resolution |
 | --- | --- | --- |
-| The live server answers an unknown flow `forbidden` to a non-maintainer; the mock answers `not-found` | oracle | The server checks the role before the catalog. Both are typed refusals and the catalog is public, so the target accepts either. Mock and live differ here |
+| The live server answers an unknown flow `forbidden`; the mock answered `not-found` | product (VL-13) | An unknown flow is never runnable, and live checks the role first. `MockActions.start` now authorizes before reading the catalog. `test/actionsMockLive.test.vibe` runs the same start against both backends for every role: red (`not-found`), then green; both targets now require `forbidden` |
 | Empty terminal output read as an unreadable answer | oracle | `ls` in a fresh sandbox prints nothing; only a refusal must be a sentence |
 | A backend without accounts was expected to run history actions | oracle | Its actor is a viewer; only a tour is a viewer's |
 | A tour action started while a reply ran failed | oracle | The conversation answers the tour `busy` (vl-fuzz2's deadlock fix); tours run before the post |

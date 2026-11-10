@@ -128,7 +128,7 @@ function steered(input: typeof Input.Type) {
     if (refused._tag === "Success") check("refused write fails", (try followed(actions, refused.success)).at(-1)?.state === "failed")
     else check("refused write is forbidden", refused.failure.code === "forbidden" && !contributor)
     check("bad input", (try code(actions.start("vibelang/history/Plan", [1, 2], "button"))) === (contributor ? "input" : "forbidden"))
-    check("unknown flow", (try code(actions.start("unknown/flow", {}, "button"))) === "not-found")
+    check("unknown flow", (try code(actions.start("unknown/flow", {}, "button"))) === "forbidden")
     check("missing run", (try code(actions.read("a-missing"))) === "not-found" && (try code(actions.rerun("a-missing"))) === "not-found" && (try code(actions.cancel("a-missing"))) === "not-found")
 
     // Sandbox actions run on this person's own factory: start, a command in that generation, stop.
