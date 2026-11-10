@@ -396,3 +396,10 @@ deployed failures and remaining person/Container boundaries.
 Worker source receipt on c5bbf81b: 82 benchmark files passed / 174 cases, one opt-in skip and a cached old-RPC failure superseded by a passing corrected API-only collection. Exact-source merged worker lines are 2,201/2,374 (92.71%); src+worker 7,355/7,716 (95.32%). All four 100% thresholds remain red for 112 files. Later main changes need a fresh full receipt; no dependency or tool was added.
 
 Final compatibility on 479f05a3 passes typecheck, 242 unit files / 2,105 cases (one expected failure, four skips), and nine benchmark files / 22 cases (one opt-in skip). Expanded issue/wiki stale-copy checks pass separately timed and instrumented after the anonymous quota reset. No new dependency or tool. The overall strict coverage receipt remains explicitly based on c5bbf81b.
+
+**Outside-web proof kernels (0018, third-lane batches 6–12).** Behavioral suites pin Issues failure/key/status
+classification, history page totals and search, mock reply precedence and actor isolation, wiki request/edit
+precedence, action-run recovery and mock-device commands/leases. Executable mutations alter each production guard
+or output while keeping its contracts. LemmaScript fixtures require actual proof failures for false Unicode casing
+and length claims, and successful proofs for ASCII mappings and quantifier-like parameter names. No dependency is added.
+The app proof harness limits isolated production relations to two solver cores; negatives retain two one-core workers.

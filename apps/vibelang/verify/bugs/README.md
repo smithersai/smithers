@@ -25,7 +25,7 @@ operations encountered while inventorying the app. Every source strictly typeche
 LemmaScript emission or Dafny resolution. They do not count as rejected executable mutations. Decision 0018 names
 which production behavior each leaves unproved and the retained host reproduction directory.
 
-`unicode-case.ts` demonstrates incorrect ASCII-only Unicode casing in the backend; `event-key.ts` retains the
+`unicode-case.ts` shows a correct non-ASCII casing contract the backend cannot prove (casing is exact only on ASCII strings, so no false casing claim proves either); `event-key.ts` retains the
 production fixed-width storage-key contract that number conversion/padding cannot currently lower. Both have
 strictly checked receipts under the host reproduction directories named in 0018.
 

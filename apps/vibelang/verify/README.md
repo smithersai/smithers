@@ -40,7 +40,7 @@ Expensive negatives select exact production postconditions using `mutation_targe
 or duplicate a selected clause fail closed. Select the earliest broken contract: an earlier assumed postcondition or
 checked assertion can hide a later failure in an isolated check. A few prefix and delta-field mutations select that exact earlier assertion within its function or named switch case;
 missing or duplicate functions, cases and clauses fail closed. Other cases retain whole-function checks. A surviving mutation fails the gate. Positive checks verify every
-contract, without symbol or position filters. The conversation and `decide` modules isolate every assertion with eight solver
+contract, without symbol or position filters. The conversation and `decide` modules isolate every assertion with two solver
 workers, a 60-second limit per batch and a 3,600-second process limit; other positives retain one core and a
 180-second process limit. [Dafny assertion batching](https://dafny.org/latest/HowToFAQ/FAQSplitHere) changes how
 obligations are grouped, never which obligations are checked. Its reported assertion-batch count is not comparable
