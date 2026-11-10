@@ -69,6 +69,12 @@ function long(count: number): History {
 }
 
 describe("pages of a history", () => {
+  it("keeps rank order when a stored commit's epic is absent", () => {
+    const before = long(2)
+    const history: History = { ...before, commits: [{ ...before.commits[1]!, epic: "e9" }, before.commits[0]!] }
+    expect(outlineOf(history).open.map((head) => head.id)).toEqual(["m1", "m2"])
+  })
+
   it.effect("put back together are the whole stack, and the outline's counts are the history's", () =>
     holds(histories, (history) => {
       const outline = outlineOf(history)

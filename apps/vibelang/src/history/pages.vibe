@@ -7,7 +7,7 @@
 //   commit <id>              one commit in full: its notes and the real commits it folds
 //   search <text>            commits whose title has the text (or whose id it is), at most `MATCHES`
 import type { Commit, CommitState, History, Real } from "./mythical.vibe"
-import { clipQuery, pageCount, pageStart } from "./pageDecision.vibe"
+import { clipQuery, found, pageCount, pageStart, pageOrder, totalOf, totals, unlanded } from "./pageDecision.vibe"
 
 /** A mythical commit as a list shows it: no notes, only how many it has and how many real commits it folds. */
 export interface Head {
@@ -79,9 +79,7 @@ export const MAX_QUERY = 200
 
 /** How many real commits fold into each mythical commit. */
 function foldCounts(history: History): Map<string, number> {
-  const counts = new Map<string, number>()
-  for (const real of history.real) counts.set(real.mythical, (counts.get(real.mythical) ?? 0) + 1)
-  return counts
+  return totals(history.real.map((real) => real.mythical), history.real.map(() => 1))
 }
 
 function headOf(commit: Commit, folds: Map<string, number>): Head {
@@ -94,29 +92,30 @@ function headOf(commit: Commit, folds: Map<string, number>): Head {
     task: commit.task,
     lane: commit.lane,
     notes: commit.notes.length,
-    folds: folds.get(commit.id) ?? 0,
+    folds: totalOf(folds, commit.id),
   }
 }
 
-/** Every commit in stack order: epics in order, ranks inside each. */
+/** Every commit in stack order; a stored unknown epic keeps the earlier rank-only fallback. */
 function stacked(history: History): ReadonlyArray<Commit> {
   const order = new Map(history.epics.map((epic, index) => [epic.id, index]))
-  return [...history.commits].sort((a, b) => order.get(a.epic)! - order.get(b.epic)! || a.rank - b.rank)
+  return [...history.commits].sort((a, b) => {
+    const epicA = order.get(a.epic)
+    const epicB = order.get(b.epic)
+    return pageOrder(epicA !== undefined, epicA ?? 0, a.rank, epicB !== undefined, epicB ?? 0, b.rank)
+  })
 }
 
 export function outlineOf(history: History): Outline {
   const folds = foldCounts(history)
-  const commits = new Map<string, number>()
-  const folded = new Map<string, number>()
-  for (const commit of history.commits) {
-    commits.set(commit.epic, (commits.get(commit.epic) ?? 0) + 1)
-    folded.set(commit.epic, (folded.get(commit.epic) ?? 0) + (folds.get(commit.id) ?? 0))
-  }
+  const epics = history.commits.map((commit) => commit.epic)
+  const commits = totals(epics, history.commits.map(() => 1))
+  const folded = totals(epics, history.commits.map((commit) => totalOf(folds, commit.id)))
   return {
     seq: history.seq,
     main: history.main,
-    epics: history.epics.map((epic) => ({ id: epic.id, title: epic.title, commits: commits.get(epic.id) ?? 0, folds: folded.get(epic.id) ?? 0 })),
-    open: stacked(history).filter((commit) => commit.state !== "landed").map((commit) => headOf(commit, folds)),
+    epics: history.epics.map((epic) => ({ id: epic.id, title: epic.title, commits: totalOf(commits, epic.id), folds: totalOf(folded, epic.id) })),
+    open: stacked(history).filter((commit) => unlanded(commit.state)).map((commit) => headOf(commit, folds)),
   }
 }
 
@@ -142,8 +141,8 @@ export function matchesOf(history: History, query: string): Matches {
   const needle = clipped.trim().toLowerCase()
   if (needle === "") return { seq: history.seq, query: clipped, commits: [] }
   const folds = foldCounts(history)
-  const found = stacked(history).filter((commit) => commit.id === needle || commit.title.toLowerCase().includes(needle))
-  return { seq: history.seq, query: clipped, commits: found.slice(0, pageCount(found.length, 0, MATCHES)).map((commit) => headOf(commit, folds)) }
+  const hits = stacked(history).filter((commit) => found(commit.id, commit.title.toLowerCase(), needle))
+  return { seq: history.seq, query: clipped, commits: hits.slice(0, pageCount(hits.length, 0, MATCHES)).map((commit) => headOf(commit, folds)) }
 }
 
 /** What answers `request`. */

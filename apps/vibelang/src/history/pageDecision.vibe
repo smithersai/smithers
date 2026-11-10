@@ -1,6 +1,7 @@
-// How the mythical history is read by page (wiki/decisions/0020-mythical-history.md, 0018 third-lane batch 2): where a
-// page starts, how many commits it holds, and how a long search is clipped. `pages.vibe` answers with these, and the
-// history page compares a search's answer with the same clip.
+// How the mythical history is read by page (wiki/decisions/0020-mythical-history.md, 0018 third-lane batches 2 and 7):
+// where a page starts, how many commits it holds, how a long search is clipped, how the outline totals each key, the
+// stack order, which commits are open, and which a search finds. `pages.vibe` answers with these, and the history page
+// compares a search's answer with the same clip.
 //
 // VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
 // file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript.
@@ -44,4 +45,72 @@ export function pageCount(total: number, start: number, size: number): number {
 export function clipQuery(query: string, max: number): string {
   if (query.length <= max) return query
   return query.slice(0, pairCut(query, max))
+}
+
+/** The sum of `amounts[i]` over the first `n` positions `i` whose key is `key`. */
+//@ verify
+//@ requires keys.length == amounts.length
+//@ requires 0 <= n && n <= keys.length
+//@ decreases n
+export function sumOf(keys: ReadonlyArray<string>, amounts: ReadonlyArray<number>, key: string, n: number): number {
+  if (n <= 0) return 0
+  return sumOf(keys, amounts, key, n - 1) + (keys[n - 1] === key ? amounts[n - 1]! : 0)
+}
+
+/** Each key's total: the sum of the amounts at its positions. A key that never occurs is absent, and totals 0. */
+//@ verify
+//@ requires keys.length == amounts.length
+//@ ensures forall(k: string, (\result.has(k) ? \result.get(k) : 0) == sumOf(keys, amounts, k, keys.length))
+//@ ensures forall(i, 0 <= i && i < keys.length ==> \result.has(keys[i]))
+//@ ensures forall(k: string, \result.has(k) ==> exists(i, 0 <= i && i < keys.length && keys[i] == k))
+export function totals(keys: ReadonlyArray<string>, amounts: ReadonlyArray<number>): Map<string, number> {
+  const sums = new Map<string, number>()
+  for (let i = 0; i < keys.length; i++) {
+    //@ invariant 0 <= i && i <= keys.length
+    //@ invariant forall(k: string, (sums.has(k) ? sums.get(k) : 0) == sumOf(keys, amounts, k, i))
+    //@ invariant forall(j, 0 <= j && j < i ==> sums.has(keys[j]))
+    //@ invariant forall(k: string, sums.has(k) ==> exists(j, 0 <= j && j < i && keys[j] == k))
+    sums.set(keys[i]!, (sums.get(keys[i]!) ?? 0) + amounts[i]!)
+  }
+  return sums
+}
+
+/** A key's total, 0 for a key `totals` lacks. */
+//@ verify
+//@ ensures \result == (sums.has(key) ? sums.get(key) : 0)
+export function totalOf(sums: Map<string, number>, key: string): number {
+  return sums.get(key) ?? 0
+}
+
+/** Stack order: by epic position, then by rank inside an epic. Negative when `a` comes first, 0 for the same place. */
+//@ verify
+//@ ensures (\result < 0) == (epicA < epicB || (epicA == epicB && rankA < rankB))
+//@ ensures (\result == 0) == (epicA == epicB && rankA == rankB)
+//@ ensures (\result > 0) == (epicA > epicB || (epicA == epicB && rankA > rankB))
+export function stackOrder(epicA: number, rankA: number, epicB: number, rankB: number): number {
+  return epicA !== epicB ? epicA - epicB : rankA - rankB
+}
+
+/** Known epics sort by position then rank; an absent epic keeps the original rank-only fallback. */
+//@ verify
+//@ ensures knownA && knownB ==> \result == stackOrder(epicA, rankA, epicB, rankB)
+//@ ensures !knownA || !knownB ==> \result == stackOrder(0, rankA, 0, rankB)
+export function pageOrder(knownA: boolean, epicA: number, rankA: number, knownB: boolean, epicB: number, rankB: number): number {
+  if (!knownA || !knownB) return stackOrder(0, rankA, 0, rankB)
+  return stackOrder(epicA, rankA, epicB, rankB)
+}
+
+/** Whether a commit is work not landed, which the outline lists. */
+//@ verify
+//@ ensures \result == (state != "landed")
+export function unlanded(state: string): boolean {
+  return state !== "landed"
+}
+
+/** Whether a search finds a commit: a nonempty needle that is its id or occurs in its lowered title. */
+//@ verify
+//@ ensures needle == "" ==> !\result
+//@ ensures needle != "" ==> \result == (id == needle || loweredTitle.includes(needle))
+export function found(id: string, loweredTitle: string, needle: string): boolean {
+  return needle !== "" && (id === needle || loweredTitle.includes(needle))
 }

@@ -6,7 +6,7 @@ import { docsPage, replyIdOf, touring } from "../src/core/flows.vibe"
 import { sameOriginRequest, sessionCookie, validTourStep, validWriteLength, writeStatus } from "../src/core/protocolDecision.vibe"
 import { promptForm, speaker } from "../src/core/sequenceDecision.vibe"
 import { docsPath } from "../src/core/tourDecision.vibe"
-import { clipQuery, pageCount, pageStart } from "../src/history/pageDecision.vibe"
+import { clipQuery, found, pageCount, pageStart, stackOrder, totalOf, totals, unlanded } from "../src/history/pageDecision.vibe"
 import { epicPageOf, matchesOf, MAX_QUERY, PAGE } from "../src/history/pages.vibe"
 import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
 import { HistoryMessage, init, update } from "../src/web/historyApp.vibe"
@@ -112,5 +112,23 @@ describe("the CLI's session", () => {
     expect(sessionCookie("https://a.sh", "https://a.sh", true, "c=1")).toBe("c=1")
     expect(sessionCookie("https://b.sh", "https://a.sh", true, "c=1")).toBe("")
     expect(sessionCookie("https://a.sh", "https://a.sh", false, "c=1")).toBe("")
+  })
+})
+
+describe("the history outline, stack order and search (third-lane batch 7)", () => {
+  it("totals each key's amounts, and reads a key it never saw as 0", () => {
+    const sums = totals(["e1", "e2", "e1", "e1"], [2, 5, 0, 3])
+    expect([totalOf(sums, "e1"), totalOf(sums, "e2"), totalOf(sums, "e3")]).toEqual([5, 5, 0])
+    expect([...sums.keys()].sort()).toEqual(["e1", "e2"])
+    expect(totalOf(totals([], []), "e1")).toBe(0)
+  })
+  it("orders by epic position, then rank", () => {
+    expect([stackOrder(0, 9, 1, 0) < 0, stackOrder(1, 0, 0, 9) > 0, stackOrder(1, 2, 1, 3) < 0, stackOrder(1, 3, 1, 2) > 0, stackOrder(1, 2, 1, 2)]).toEqual([true, true, true, true, 0])
+  })
+  it("lists only work not landed", () => {
+    expect(["planned", "working", "approved", "landed"].map(unlanded)).toEqual([true, true, true, false])
+  })
+  it("finds a commit by its id or its lowered title, and never for an empty search", () => {
+    expect([found("m1", "fix(compiler): one", "m1"), found("m1", "fix(compiler): one", "one"), found("m1", "fix(compiler): one", "ONE"), found("m1", "fix(compiler): one", ""), found("", "", "")]).toEqual([true, true, false, false, false])
   })
 })
