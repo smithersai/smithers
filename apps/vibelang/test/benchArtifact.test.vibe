@@ -1,0 +1,53 @@
+// @vitest-environment node
+// A benchmark artifact names the commit it measured, from the checkout or, in a packed tree with no jj checkout (a
+// run-heavy box), from BENCH_REVISION.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { revision } from "../bench/artifact.vibe"
+import { run } from "./support/processes.vibe"
+
+const commit = "0123456789abcdef0123456789abcdef01234567"
+
+effect function revisionWith(cwd: string, values: Record<string, string>) {
+  provide ConfigProvider.layer(ConfigProvider.fromUnknown(values)) { return try revision(cwd) }
+}
+
+describe("bench artifact revision", () => {
+  it.live("a packed tree takes BENCH_REVISION", () => effect {
+    provide NodeServices.layer {
+      try scoped(effect {
+        const outside = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+        const found = try revisionWith(outside, { BENCH_REVISION: ` ${commit}\n` })
+        try Effect.try(() => expect(found).toBe(commit))
+      })
+    }
+  })
+
+  it.live("a packed tree without BENCH_REVISION, or with a malformed one, is refused", () => effect {
+    provide NodeServices.layer {
+      try scoped(effect {
+        const outside = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+        for (const values of [{}, { BENCH_REVISION: "main" }]) {
+          const refused = try (revisionWith(outside, values) |> Effect.flip(%))
+          try Effect.try(() => expect(refused._tag).toBe("MetadataUnavailable"))
+        }
+      })
+    }
+  })
+
+  it.live("a checkout's own commit wins over BENCH_REVISION", () => effect {
+    provide NodeServices.layer {
+      try scoped(effect {
+        // Its own checkout: the suite itself may run from a packed tree with none (a run-heavy box).
+        const checkout = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+        const init = try run("jj", ["git", "init"], {}, checkout)
+        try Effect.try(() => expect(init.status, init.stderr).toBe(0))
+        const local = try run("jj", ["log", "--no-graph", "-r", "@", "-T", "commit_id"], {}, checkout)
+        try Effect.try(() => expect(local.status, local.stderr).toBe(0))
+        const found = try revisionWith(checkout, { BENCH_REVISION: commit })
+        try Effect.try(() => expect(found).toBe(local.stdout.trim()))
+        try Effect.try(() => expect(found).toMatch(/^[0-9a-f]{40}$/))
+      })
+    }
+  })
+})

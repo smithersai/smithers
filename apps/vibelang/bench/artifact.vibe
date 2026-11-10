@@ -2,10 +2,22 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { run } from "../test/support/processes.vibe"
 
-error MetadataUnavailable { reason: string }
+export error MetadataUnavailable { reason: string }
 
 export const quick = { time: 100, warmupTime: 30, iterations: 5, warmupIterations: 2 }
 export const slow = { time: 0, warmup: false, iterations: 3 }
+
+/**
+ * The commit measured: the jj checkout's `@` at `cwd`, or, where there is no checkout (a packed tree on a run-heavy box),
+ * `BENCH_REVISION`. Either must be a 40-hex commit id.
+ */
+export effect function revision(cwd: string) {
+  const local = run("jj", ["log", "--no-graph", "-r", "@", "-T", "commit_id"], {}, cwd) catch () => undefined
+  const commit = local !== undefined && local.status === 0 ? local.stdout.trim() : (try Config.withDefault(Config.String("BENCH_REVISION"), "")).trim()
+  if (!/^[0-9a-f]{40}$/.test(commit)) throw new MetadataUnavailable({ reason: "revision" })
+  try logInfo("vibelang.bench.revision").pipe(Effect.annotateLogs({ source: local !== undefined && local.status === 0 ? "jj" : "BENCH_REVISION" }))
+  return commit
+}
 
 export effect function artifact(name: string, method: string, limitations: ReadonlyArray<string>, measurements: unknown) {
   provide NodeServices.layer {
@@ -20,14 +32,13 @@ export effect function artifact(name: string, method: string, limitations: Reado
       const pkg = try fs.readFileString(`node_modules/${dependency}/package.json`)
       versions[dependency] = (try Effect.try(() => JSON.parse(pkg))).version
     }
-    const revision = try run("jj", ["log", "--no-graph", "-r", "@", "-T", "commit_id"])
+    const commit = try revision(".")
     if (machine.status !== 0 || machine.stdout.trim() === "") throw new MetadataUnavailable({ reason: "machine" })
     if (runtime.status !== 0) throw new MetadataUnavailable({ reason: "runtime" })
-    if (revision.status !== 0 || !/^[0-9a-f]{40}$/.test(revision.stdout.trim())) throw new MetadataUnavailable({ reason: "revision" })
     try fs.makeDirectory("bench/results", { recursive: true })
     const record = {
       schema: 1, instrumented, name, timestamp: stamp, timezone: "UTC", machine: machine.stdout.trim(),
-      runtime: try Effect.try(() => JSON.parse(runtime.stdout)), versions, revision: revision.stdout.trim(),
+      runtime: try Effect.try(() => JSON.parse(runtime.stdout)), versions, revision: commit,
       method, limitations, measurements,
     }
     try fs.writeFileString(`bench/results/${stamp.replaceAll(":", "-")}-${name}.json`, JSON.stringify(record, null, 2) + "\n", { flag: "wx" })

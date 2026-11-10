@@ -15,9 +15,9 @@ function textOf(output: Stream.Stream<Uint8Array, PlatformError.PlatformError>) 
 }
 
 /** Runs `command` with `args` to its exit, reading both outputs as it goes; `env` adds to this process's environment. */
-export effect function run(command: string, args: ReadonlyArray<string>, env: Readonly<Record<string, string>> = {}) {
+export effect function run(command: string, args: ReadonlyArray<string>, env: Readonly<Record<string, string>> = {}, cwd?: string) {
   return try scoped(effect {
-    const process = try ChildProcess.make(command, args, { env, extendEnv: true })
+    const process = try ChildProcess.make(command, args, { env, extendEnv: true, ...(cwd === undefined ? {} : { cwd }) })
     const [stdout, stderr, status] = try.all [textOf(process.stdout), textOf(process.stderr), process.exitCode]
     const finished: Finished = { status: Number(status), stdout, stderr }
     return finished

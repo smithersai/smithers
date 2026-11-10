@@ -10,7 +10,9 @@ import { resolve } from "node:path"
 export async function save(name: string, measurements: unknown, limitations: string[], options: { live: boolean; deploymentRevision: string | null; build?: { kind: string; minified: boolean }; method?: string }) {
   const { live, deploymentRevision } = options
   const timestamp = new Date().toISOString()
-  const revision = (await promisify(execFile)("jj", ["log", "--no-graph", "-r", "@", "-T", "commit_id"], { timeout: 30000 })).stdout.trim()
+  // Packed measurement trees have no jj checkout; retain the commit supplied by the packing host.
+  const local = await promisify(execFile)("jj", ["log", "--no-graph", "-r", "@", "-T", "commit_id"], { timeout: 30000 }).then((result) => result.stdout.trim(), () => undefined)
+  const revision = local ?? (process.env.BENCH_REVISION ?? "").trim()
   if (!/^[0-9a-f]{40}$/.test(revision)) throw new Error("Benchmark source revision is unavailable")
   const versions: Record<string, string> = {}
   for (const name of ["@playwright/test", "vibelang", "effect", "vitest"]) versions[name] = JSON.parse(await readFile(`node_modules/${name}/package.json`, "utf8")).version
