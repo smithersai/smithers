@@ -38,6 +38,7 @@ tests read are unchanged except for the patches listed below.
 | String casing is exact on ASCII strings and unconstrained on non-ASCII strings; false Unicode value/length claims must fail (`string-case*.ts`) | Offered upstream later |
 | Array-valued `flatMap` callbacks use the existing ordered map and one-level flatten model, including a literal callback’s index and receiver/name hygiene (`flat-map.ts`) | Offered upstream later |
 | Contract arrays may spread array values between literal groups, preserving their order through the executable array-concat IR (`spec-array-spread.ts`) | Offered upstream later |
+| `Math.max(a, b)`/`Math.min(a, b)` with a `real` operand compare as reals, and an integer branch of a real conditional is lifted to `real` (`real-minmax.ts`) | Offered upstream later |
 
 Each patch is offered back upstream later. Will decides any GitHub contribution.
 

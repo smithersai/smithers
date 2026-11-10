@@ -123,6 +123,9 @@ function resolveTsType(tsType: string, overrides: Map<string, string>, varName?:
 /** Infer a conditional's result type after its branches have been resolved or
  *  contextually coerced. A void branch is the source-level null/undefined arm. */
 function conditionalResultTy(thenTy: Ty, elseTy: Ty): Ty {
+  // A real branch and an integral branch make a real conditional; lowering lifts the integral branch.
+  const integral = (t: Ty) => t.kind === "int" || t.kind === "nat";
+  if ((thenTy.kind === "real" && integral(elseTy)) || (elseTy.kind === "real" && integral(thenTy))) return { kind: "real" };
   let ty = thenTy.kind !== "unknown" ? thenTy : elseTy;
   if (thenTy.kind === "void" && elseTy.kind !== "void" && elseTy.kind !== "unknown") {
     ty = { kind: "optional", inner: elseTy };

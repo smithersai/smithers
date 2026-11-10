@@ -77,7 +77,7 @@ fi
 npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/optional-binder-collisions.ts"
 
 # Object spreads of conditionals and field subsets, and exhaustive tagged-message tables.
-for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread empty-string-union safe-slice-suffix map-index real-field generic-record quantifier-names; do
+for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread empty-string-union safe-slice-suffix map-index real-field generic-record quantifier-names real-minmax; do
   cp "tools/fixtures/$name.ts" "$fixture_dir/$name.ts"
   npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name.ts"
 done
@@ -194,6 +194,10 @@ cp tools/fixtures/generic-record-wrong.ts "$fixture_dir/generic-record-wrong.ts"
 expect_failure \
   "a generic record verified a replaced element as kept" \
   npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/generic-record-wrong.ts"
+cp tools/fixtures/real-minmax-wrong.ts "$fixture_dir/real-minmax-wrong.ts"
+expect_proof_failure \
+  "a real clamp verified above its floor" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/real-minmax-wrong.ts"
 cp tools/fixtures/tagged-match-missing-arm.ts "$fixture_dir/tagged-match-missing-arm.ts"
 expect_failure \
   "a non-exhaustive handler table was read as a tagged match" \

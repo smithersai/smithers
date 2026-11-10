@@ -651,6 +651,8 @@ function emitExpr(e: Expr): string {
       if (e.fn === "MathAbs") needPreamble("MathAbs");
       if (e.fn === "MathMin") needPreamble("MathMin");
       if (e.fn === "MathMax") needPreamble("MathMax");
+      if (e.fn === "MathMinReal") needPreamble("MathMinReal");
+      if (e.fn === "MathMaxReal") needPreamble("MathMaxReal");
       if (e.fn === "MaxOfSeq") { needPreamble("MathMax"); needPreamble("MaxOfSeq"); }
       if (e.fn === "MinOfSeq") { needPreamble("MathMin"); needPreamble("MinOfSeq"); }
       if (e.fn === "Perm") needPreamble("Perm");
@@ -1471,6 +1473,8 @@ const STRING_REPEAT = `function StringRepeat(s: string, n: int): string
 
 const MATH_MIN = `function MathMin(a: int, b: int): int { if a <= b then a else b }`;
 const MATH_MAX = `function MathMax(a: int, b: int): int { if a >= b then a else b }`;
+const MATH_MIN_REAL = `function MathMinReal(a: real, b: real): real { if a <= b then a else b }`;
+const MATH_MAX_REAL = `function MathMaxReal(a: real, b: real): real { if a >= b then a else b }`;
 
 const MAX_OF_SEQ = `function MaxOfSeq(s: seq<int>): int
   requires |s| > 0
@@ -1609,6 +1613,8 @@ const PREAMBLE_CODE: [string, string | (() => string)][] = [
   ["MathAbs", MATH_ABS],
   ["MathMin", MATH_MIN],
   ["MathMax", MATH_MAX],
+  ["MathMinReal", MATH_MIN_REAL],
+  ["MathMaxReal", MATH_MAX_REAL],
   ["MaxOfSeq", MAX_OF_SEQ],
   ["MinOfSeq", MIN_OF_SEQ],
   ["Perm", PERM],

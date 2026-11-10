@@ -829,10 +829,15 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
       if (e.fn.kind === "field" && e.fn.obj.kind === "var" && e.fn.obj.name === "Math") {
         if (e.fn.field === "abs" && e.args.length === 1)
           return { kind: "app", fn: "MathAbs", args: [lowerExpr(e.args[0], binds)] };
-        if (e.fn.field === "min" && e.args.length === 2)
-          return { kind: "app", fn: "MathMin", args: e.args.map(a => lowerExpr(a, binds)) };
-        if (e.fn.field === "max" && e.args.length === 2)
-          return { kind: "app", fn: "MathMax", args: e.args.map(a => lowerExpr(a, binds)) };
+        if ((e.fn.field === "min" || e.fn.field === "max") && e.args.length === 2) {
+          const name = e.fn.field === "min" ? "MathMin" : "MathMax";
+          // A real operand makes the comparison real: lift integral operands and use the real helper.
+          if (_opts.backend === "dafny" && e.args.some(a => a.ty.kind === "real")) {
+            const lift = (a: TExpr): Expr => isIntegral(a.ty) ? { kind: "toReal", expr: lowerExpr(a, binds) } : lowerExpr(a, binds);
+            return { kind: "app", fn: `${name}Real`, args: e.args.map(lift) };
+          }
+          return { kind: "app", fn: name, args: e.args.map(a => lowerExpr(a, binds)) };
+        }
       }
       // Math.ceil(x): CeilReal on real args, identity on int
       if (e.fn.kind === "field" && e.fn.field === "ceil" && e.fn.obj.kind === "var" && e.fn.obj.name === "Math" && e.args.length === 1) {
@@ -1058,6 +1063,10 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
       if (e.ty.kind === "optional") {
         thenExpr = wrapOptionalBranch(thenExpr, e.then);
         elseExpr = wrapOptionalBranch(elseExpr, e.else);
+      }
+      if (e.ty.kind === "real") {
+        if (isIntegral(e.then.ty)) thenExpr = { kind: "toReal", expr: thenExpr };
+        if (isIntegral(e.else.ty)) elseExpr = { kind: "toReal", expr: elseExpr };
       }
       return { kind: "if", cond, then: thenExpr, else: elseExpr };
     }
