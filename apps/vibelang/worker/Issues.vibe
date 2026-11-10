@@ -29,6 +29,12 @@ export effect function issueWriteKey(repo: Repository, actor: string, request: I
   const logical = JSON.stringify(["vibelang/issues/v1", repo.owner, repo.name, actor, request.op, request.key, name])
   return try (try Digest.Digest).digestHex(Digest.sha256, new TextEncoder().encode(logical))
 }
+/**
+ * A new issue's search for its own marker starts when its request was admitted (`Once.issue`), less five minutes for
+ * clock skew, never at 1970: 1,000 older issues would truncate it and refuse every create. The time is part of the
+ * signed operation, so every attempt of one request must name the same one (`executeIssues` stores it by request).
+ */
+export const admittedNow = Effect.map(DateTime.now, (now) => DateTime.formatIso(DateTime.subtract(now, { minutes: 5 })))
 export const TASK_LABEL = "vibelang:task"
 const ACCEPTED = "vibelang:accepted"
 const DECLINED = "vibelang:declined"
@@ -60,7 +66,7 @@ export function issueFailureOf(error: unknown): IssueFailure {
   return new IssueFailure({ reason, ...(["unknown", "rate-limited", "unavailable"].includes(reason) ? { code: reason } : {}), ...(typeof details?.retryAfterMillis === "number" ? { retryAfterMillis: details.retryAfterMillis } : {}) })
 }
 
-export effect function githubHost(repo: Repository = repository, observe?: (items: ReadonlyArray<IssueRecord>) => import("../src/core/conversation.vibe").IssuesState!IssueFailure, fresh: () => boolean = () => false): IssueHost.Shape!never!(IssueAuthority | HttpClient.HttpClient) {
+export effect function githubHost(repo: Repository = repository, observe?: (items: ReadonlyArray<IssueRecord>) => import("../src/core/conversation.vibe").IssuesState!IssueFailure, fresh: () => boolean = () => false, admitted: () => string!IssueFailure = () => admittedNow): IssueHost.Shape!never!(IssueAuthority | HttpClient.HttpClient) {
   const authority = try IssueAuthority
   const http = try HttpClient.HttpClient
   const writer = try Effect.serviceOption(VipWriter)
@@ -127,7 +133,6 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
         if (request.op === "read") return try read(request.number)
         if (actor === undefined || request.key === "") throw new IssueFailure({ reason: "sign-in" })
         if (request.op !== "draft" && actor.connection === undefined) throw new IssueFailure({ reason: "connect" })
-        const since = "1970-01-01T00:00:00.000Z"
         // A logical write keeps its marker when SDK retryFrom creates a new execution.
         const key = (name: string) => issueWriteKey(repo, actor.id, request, name)
         const repository = `${repo.owner}/${repo.name}`
@@ -164,7 +169,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
         if (["new", "split", "propose"].includes(request.op) && request.title.trim() === "") throw new IssueFailure({ reason: "title" })
         if (request.op === "new" || request.op === "split") {
           if (request.op === "split" && issue === undefined) throw new IssueFailure({ reason: "missing" })
-          const made = try Action.once("issue", permitted({ kind: "issue.create", repository, title: request.title.trim(), body: request.text, since }), { key: try key("issue") })
+          const made = try Action.once("issue", permitted({ kind: "issue.create", repository, title: request.title.trim(), body: request.text, since: try admitted() }), { key: try key("issue") })
           if (request.op === "split") {
             const current = try GitHub.IssueChanges.get(repo.owner, repo.name, made.number!)
             if (current.parent_issue_url !== `${repo.api}/repos/${repo.owner}/${repo.name}/issues/${request.number}`) try written("link", { kind: "issue.link", repository, parent: request.number, child: made.id! })
@@ -187,7 +192,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           const pull = try Action.once("review", permitted({ kind: "pull.create", repository, head: `${actor.login}:${branch.name!}`, base: upstream.default_branch, title: `VIP: ${request.title.trim()}`, body: document }), { key: try key("review") })
           const review = `https://github.com/${repo.owner}/${repo.name}/pull/${pull.number!}`
           const body = `${vipIssueBody(request)}\n<!-- vibelang:vip path=${path} review=${review} -->`
-          const made = try Action.once("vip-issue", permitted({ kind: "issue.create", repository, title: request.title.trim(), body, since }), { key: try key("vip-issue") })
+          const made = try Action.once("vip-issue", permitted({ kind: "issue.create", repository, title: request.title.trim(), body, since: try admitted() }), { key: try key("vip-issue") })
           const observed = try read(made.number!)
           if (!observed.items.some(issue => issue.number === made.number && issue.vip !== "")) throw new IssueFailure({ reason: "unavailable", code: "unavailable" })
           return { ...observed, selected: made.number! }
@@ -280,6 +285,16 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
   if ((payload.op === "accept" || payload.op === "decline") && actor?.kind === "agent") throw new IssueFailure({ reason: "forbidden" })
   try authorizeIssue(actor?.role ?? "viewer", payload.op)
   const flow = issueFlows.find((f) => f._tag === `vibelang/issues/${payload.op}`)!
+  const executionId = try issueExecutionId(actor?.id ?? "public", payload.op, payload.key)
+  /** One admission time per request, whichever execution or retry asks. */
+  const admitted = effect () => {
+    const name = "issues/admitted/" + executionId
+    const known = try promise(() => storage.get(name))
+    if (typeof known === "string") return known
+    const since = try admittedNow
+    try promise(() => storage.put(name, since))
+    return since
+  }
   let fresh = false
   const injected = try Effect.serviceOption(IssueHost)
   const issueHost = Option.isSome(injected) ? injected.value : try githubHost(repo, effect (items) => {
@@ -288,7 +303,7 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
     const next = applyIssues({ seq, items: [] }, { type: "IssuesObserved", seq: seq + 1, items })
     try promise(() => storage.put("issues/revision", next.seq))
     return next
-  }, () => fresh)
+  }, () => fresh, admitted)
   // The project object owns gate receipts; public GitHub labels cannot invent a person's approval.
   const host: IssueHost.Shape = { perform: effect (request) => {
     const current = try authority.current()
@@ -318,7 +333,6 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
     try promise(() => storage.put("gates/state", result))
     return result
   } }
-  const executionId = try issueExecutionId(actor?.id ?? "public", payload.op, payload.key)
   if (payload.recovery !== undefined && !/^[A-Za-z0-9-]{1,100}$/.test(payload.recovery)) throw new IssueFailure({ reason: "invalid" })
   const { recovery, ...original } = payload
   const runtime = (id: string) => Layer.merge(CloudflareRuntime.layer({ hostId, executionId: id, flow: flow._tag }, issueRegistration), RunInspection.layerWith({ flows: issueFlows })).pipe(Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(IssueHost, host)))

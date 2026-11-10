@@ -16,6 +16,7 @@ import type { Storage } from "../worker/Objects.vibe"
 import { API, fakeClient, forked, repo, seed, type Fake } from "../fuzz/issues-node-fake.vibe"
 import { delegated, reach } from "../fuzz/delegated.vibe"
 import { faultyStore } from "../fuzz/faulty-store.ts"
+import type { GitHub } from "@smthrs/integrations"
 
 type State = typeof IssuesState.Type
 type Op = IssueRequest["op"]
@@ -40,6 +41,9 @@ effect function world(options: { readonly authorize?: boolean } = {}) {
     return answer === undefined ? inner.execute(request) : succeed(HttpClientResponse.fromWeb(request, answer))
   })
   const site = try delegated(github, reach())
+  /** Every operation the site hands its delegate, in order. */
+  const operations: Array<GitHub.DelegationPolicy.Operation> = []
+  const delegate: typeof site.delegate = { ...site.delegate, keyed: (person, delegation, operation) => { operations.push(operation); return site.delegate.keyed(person, delegation, operation) } }
   const caller = try Ref.make<Caller | undefined>({ role: "maintainer" })
   const lost = try Ref.make(0)
   const principal = (who: Caller | undefined): Principal | undefined => who === undefined ? undefined : { id: "7", login: who.login ?? "fuzz", role: who.role, ...(who.kind === undefined ? {} : { kind: who.kind }), ...(who.connected === false ? {} : { connection: site.connection }) }
@@ -53,7 +57,7 @@ effect function world(options: { readonly authorize?: boolean } = {}) {
   }
   const provided = <A, E, R>(program: A!E!R) => program.pipe(
     Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, site.http),
-    Effect.provideService(GitHubDelegate, site.delegate), Effect.provide(WebCrypto.layer),
+    Effect.provideService(GitHubDelegate, delegate), Effect.provide(WebCrypto.layer),
   )
   let keys = 0
   /** The durable flow, as HTTP, the CLI and the agent's tool run it. */
@@ -65,7 +69,7 @@ effect function world(options: { readonly authorize?: boolean } = {}) {
   /** The host alone, off the engine: reads and the refusals before a journaled write. */
   const perform = (request: Partial<IssueRequest>) => Effect.exit(provided((host.perform as (request: IssueRequest) => State!IssueFailure)({ ...blank, ...request })))
   return {
-    fake, site, store, caller, lost, act, perform, authority, provided,
+    fake, site, store, caller, lost, act, perform, authority, provided, operations,
     fault: (next: Fault) => { fault = next },
     /** From the `from`-th identity lookup of the next call on, `caller` asks instead. */
     turn: effect (from: number, next: Caller | undefined) => {
@@ -434,5 +438,19 @@ describe("issues through smithers.sh's delegation", () => {
       const response = try publicIssues("issues-public", w.store.storage).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, try ask(method, path)))
       expect(response.status).toBe(status)
     }
+  }))
+  it.live("a new issue searches for its marker from its admission, and a retried attempt keeps that time", () => scoped(effect {
+    const w = try world()
+    const before = try Clock.currentTimeMillis
+    w.fake.forbiddenNext = true
+    expect(failed(try w.act("new", { title: "Large repository", text: "b", key: "n1" }))?.reason).toBe("forbidden")
+    const retried = succeeded(try w.act("new", { title: "Large repository", text: "b", key: "n1", recovery: "r1" }))
+    const after = try Clock.currentTimeMillis
+    const since = w.operations.flatMap((operation) => operation.kind === "issue.create" ? [operation.since] : [])
+    expect(retried.items.filter((entry) => entry.title === "Large repository")).toHaveLength(1)
+    expect(since.length).toBeGreaterThan(1)
+    expect(new Set(since).size).toBe(1)
+    expect(Date.parse(since[0]!)).toBeGreaterThanOrEqual(before - 300_000)
+    expect(Date.parse(since[0]!)).toBeLessThanOrEqual(after)
   }))
 })
