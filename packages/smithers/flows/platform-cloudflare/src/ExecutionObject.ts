@@ -24,7 +24,7 @@
 import { canonicalize } from "@smthrs/canonical"
 import { DatabaseMetrics } from "@smthrs/database"
 import { type DurableEngineState, EngineStore, WakeBus } from "@smthrs/engine-store"
-import { type Flow, FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow"
+import { Flow, FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow"
 import { JournalMetrics } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import * as Clock from "effect/Clock"
@@ -386,7 +386,9 @@ const idsOf = (raw: string | undefined): Effect.Effect<Readonly<Record<string, s
   )
 
 /**
- * Builds an intent, encoding the payload with the flow's own JSON codec.
+ * Builds an intent, encoding the payload as its identity snapshot
+ * (`Flow.payloadSnapshot`: sets and maps sorted, then the flow's own JSON
+ * codec), so equal payloads persist equal intents (VIP-44).
  *
  * @category constructors
  * @since 1.0.0
@@ -395,7 +397,7 @@ export const intent = <F extends Flow.Any>(
   flow: F,
   options: { readonly executionId: string; readonly payload: Flow.PayloadSchema<F>["Type"] }
 ): Effect.Effect<Intent, Schema.SchemaError, Flow.PayloadSchema<F>["EncodingServices"]> =>
-  Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))(options.payload).pipe(
+  Flow.payloadSnapshot(flow.payloadSchema, options.payload).pipe(
     Effect.flatMap((payload) =>
       Effect.gen(function*() {
         // The caller's door and actor kind, kept for the run's usage metrics.

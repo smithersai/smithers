@@ -616,3 +616,19 @@ describe("ExecutionObject without a database", () => {
       expect(refused).toBeInstanceOf(Schema.SchemaError)
     }))
 })
+
+describe("ExecutionObject.intent payload identity (VIP-44)", () => {
+  const Tagged = Flow.make("cloudflare-test/Tagged", {
+    payload: { tags: Schema.ReadonlySet(Schema.String) },
+    success: Schema.Number,
+    body: () => Node.succeed(1)
+  })
+
+  it.effect("persists equal sets as one sorted payload", () =>
+    Effect.gen(function*() {
+      const left = yield* ExecutionObject.intent(Tagged, { executionId: "t", payload: { tags: new Set(["b", "a"]) } })
+      const right = yield* ExecutionObject.intent(Tagged, { executionId: "t", payload: { tags: new Set(["a", "b"]) } })
+      expect(left.payload).toEqual({ tags: ["a", "b"] })
+      expect(right.payload).toEqual(left.payload)
+    }))
+})

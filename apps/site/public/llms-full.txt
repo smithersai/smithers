@@ -17494,7 +17494,11 @@ colliding.
 
 [src/RunState.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/RunState.ts)
 
-The versioned state envelope stored in each run row.
+The versioned state envelope stored in each run row. `payload` is the flow's
+identity snapshot (`Flow.payloadSnapshot`: every `Set` and `Map` sorted, then
+the flow's JSON codec). Admission compares it with an existing row's, so equal
+sets in any insertion order join one run, and a handoff's next round is stored
+the same way.
 
 | Export         | Shape                                                                                                                                  |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -34691,8 +34695,10 @@ const intent: <F extends Flow.Any>(
 ) => Effect.Effect<ExecutionObject.Intent, Schema.SchemaError, Flow.PayloadSchema<F>["EncodingServices"]>
 ```
 
-Builds an intent, encoding the payload with the flow's own JSON codec, the one
-`alarm` decodes it with. Fails with `SchemaError` for a payload the schema
+Builds an intent, encoding the payload as its identity snapshot
+(`Flow.payloadSnapshot`: every `Set` and `Map` sorted, then the flow's own JSON
+codec, the one `alarm` decodes it with), so equal payloads store equal intents
+and the same intent again is recognized whatever a set's insertion order. Fails with `SchemaError` for a payload the schema
 refuses or an empty execution id.
 
 ### `ExecutionObject.Intent`

@@ -316,6 +316,29 @@ describe("the explicit payload-derived execution-id source", () => {
       )
     }))
 
+  effect("joins equal sets in one run under the derived source", () => {
+    let invoked = 0
+    const layer = layerWired(
+      Layer.mergeAll(
+        Echo.toLayer(({ value }) =>
+          Effect.sync(() => {
+            invoked++
+            return value
+          })
+        ),
+        Interpreter.layer(Release)
+      )
+    )
+    return Effect.gen(function*() {
+      expect(yield* Release.execute({ tags: new Set(["a", "b"]), owners: new Map() })).toBe("a,b")
+      expect(yield* Release.execute({ tags: new Set(["b", "a"]), owners: new Map() })).toBe("a,b")
+      expect(invoked).toBe(1)
+    }).pipe(
+      Effect.provide(layer),
+      Effect.provide(Flow.layerExecutionIds(Flow.derived))
+    )
+  })
+
   derivedEffect("dies before engine invocation when the payload has no canonical form", () => {
     const Unreached = Action.make("ExecutionId/unreached", {
       payload: { value: Schema.String },

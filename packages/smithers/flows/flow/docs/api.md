@@ -74,6 +74,19 @@ Identity has three sources, consulted in this order:
 
 `layerExecutionIds(source)` replaces the third. Install `derived` when equal payloads deliberately name one piece of work; it sorts every `Set` and `Map` in the payload before encoding, so equal collections derive one id; callers that name an `executionId` and flows that declare an `idempotencyKey` are unaffected, because both are decided before the source is consulted.
 
+### Payload identity
+
+Every durable site that hashes or compares a flow payload goes through one of two functions, so none can skip the collection sort (VIP-44, durable values):
+
+| Function                         | Returns                                                                              | Used by                                                                                                 |
+| -------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `payloadSnapshot(schema, value)` | `sortCollections(value)` encoded with `Schema.toCodecJson(schema)`, as `Schema.Json` | `derived` execution ids, a handoff's next-round payload, engine-store run admission, Cloudflare intents |
+| `payloadPreimage(schema, value)` | `value` itself when it holds no `Set` or `Map`, else its `payloadSnapshot`           | child execution ids, the recorded plan's root input                                                     |
+
+Both fail with the schema's `SchemaError`, including one an injected encoding service raises. A payload that holds no set or map hashes and stores exactly as before, so released ids and rows are unchanged. Decoding a snapshot gives the value a body sees, so the hash covers what the body runs on.
+
+An authored node payload (`.call`, `.child`, `.to`, an action call) is still JSON-mirrored by `@smthrs/plan` and refuses a `Set` or `Map` before any hash; collections reach a flow only through its own payload.
+
 `ExecutionIdRequired` is a defect, not a typed failure. The opt-in derived source raises it when the payload has no canonical form, for example a non-finite number, a lone surrogate, or a cycle. `Flow.executionId(payload)` likewise dies when the payload fails the flow's own payload schema, where `Flow.execute` fails with a typed `Schema.SchemaError` instead. Precompute an id with `executionId` only for a payload you have already validated.
 
 ### Results

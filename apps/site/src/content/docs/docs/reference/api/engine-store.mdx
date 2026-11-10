@@ -1698,7 +1698,11 @@ colliding.
 
 [src/RunState.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/RunState.ts)
 
-The versioned state envelope stored in each run row.
+The versioned state envelope stored in each run row. `payload` is the flow's
+identity snapshot (`Flow.payloadSnapshot`: every `Set` and `Map` sorted, then
+the flow's JSON codec). Admission compares it with an existing row's, so equal
+sets in any insertion order join one run, and a handoff's next round is stored
+the same way.
 
 | Export         | Shape                                                                                                                                  |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |

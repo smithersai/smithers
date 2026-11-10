@@ -16,7 +16,6 @@
  * @since 0.1.0
  */
 
-import { sortCollections } from "@smthrs/canonical"
 import { Sha256 } from "@smthrs/crypto"
 import { DerivedKey } from "@smthrs/keys"
 import * as Context from "effect/Context"
@@ -27,6 +26,7 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { ExecutionIdRequired } from "./ExecutionIdRequired.ts"
 import type { Any } from "./Flow.ts"
+import { payloadSnapshot } from "./PayloadIdentity.ts"
 
 /**
  * Mints the execution id of an invocation that named none.
@@ -50,8 +50,9 @@ export interface ExecutionIdSource {
 }
 
 /**
- * The canonical key of an invocation: `sortCollections`, the flow's own payload
- * codec, then RFC 8785, then SHA-256.
+ * The canonical key of an invocation: the payload's identity snapshot
+ * ({@link payloadSnapshot}: `sortCollections`, then the flow's own payload
+ * codec), then RFC 8785, then SHA-256.
  *
  * The sort comes first because `Schema.ReadonlySet` and `Schema.ReadonlyMap`
  * encode in insertion order and RFC 8785 keeps array order, so equal sets
@@ -74,11 +75,7 @@ const canonicalKey = <W extends Any>(
   ExecutionIdRequired,
   (EffectDigest.Digest | SecureRandom.SecureRandom) | W["payloadSchema"]["EncodingServices"]
 > =>
-  (Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))(sortCollections(payload)) as Effect.Effect<
-    unknown,
-    unknown,
-    W["payloadSchema"]["EncodingServices"]
-  >).pipe(
+  payloadSnapshot(flow.payloadSchema, payload).pipe(
     Effect.flatMap((encoded) => Schema.decodeUnknownEffect(DerivedKey)(encoded)),
     Effect.mapError(() => new ExecutionIdRequired({ flowName: flow._tag }))
   )

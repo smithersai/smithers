@@ -108,3 +108,40 @@ describe("durable public execute identity refusal (#3371)", () => {
     }
   }
 })
+
+describe("payload identity under insertion order (VIP-44)", () => {
+  const tagged = Flow.make("DurableIdentityConflict/tagged", {
+    payload: { tags: Schema.ReadonlySet(Schema.String), owners: Schema.ReadonlyMap(Schema.String, Schema.Number) },
+    success: Schema.Number,
+    body: () => Node.succeed(1)
+  })
+
+  it.effect("admits equal sets and maps as one invocation and stores them sorted", () =>
+    withCrypto(
+      Effect.scoped(Effect.gen(function*() {
+        const store = yield* RunStore.RunStore
+        const engine = yield* FlowRuntime.FlowRuntime
+        yield* engine.register(tagged, () => Effect.succeed(1))
+        yield* tagged.execute(
+          { tags: new Set(["b", "a"]), owners: new Map([["y", 2], ["x", 1]]) },
+          { executionId: "tagged", discard: true }
+        )
+        const before = yield* store.get("tagged")
+        const exit = yield* Effect.exit(tagged.execute(
+          { tags: new Set(["a", "b"]), owners: new Map([["x", 1], ["y", 2]]) },
+          { executionId: "tagged", discard: true }
+        ))
+        expect(Exit.isSuccess(exit)).toBe(true)
+        expect(yield* store.get("tagged")).toEqual(before)
+        expect(JSON.parse(before!.stateJson).payload).toEqual({ tags: ["a", "b"], owners: [["x", 1], ["y", 2]] })
+
+        const different = yield* Effect.exit(tagged.execute(
+          { tags: new Set(["a"]), owners: new Map() },
+          { executionId: "tagged", discard: true }
+        ))
+        expect(Exit.isFailure(different) && different.cause.reasons.find(Cause.isFailReason)?.error).toBeInstanceOf(
+          FlowEngine.ExecutionIdentityConflict
+        )
+      })).pipe(Effect.provide(layer), Effect.scoped)
+    ))
+})

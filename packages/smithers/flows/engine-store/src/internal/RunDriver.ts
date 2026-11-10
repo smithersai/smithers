@@ -2041,18 +2041,17 @@ const encodeResult = (
 ): Effect.Effect<ExitEncoding.EncodedResult> => ExitEncoding.encode(flow, result)
 
 /**
- * Re-encodes a handoff payload through the target flow's own codec, so the
- * bytes the next round's row holds are the bytes `ensureRun` would write
- * for the same invocation.
+ * Re-encodes a handoff payload as the target flow's identity snapshot
+ * (`Flow.payloadSnapshot`), so the bytes the next round's row holds are the
+ * bytes `ensureRun` would write for the same invocation.
  */
 const normalizePayload = (
   flow: Flow.Any,
   payload: unknown
 ): Effect.Effect<unknown> => {
-  const codec = Schema.toCodecJson(flow.payloadSchema)
-  return (Schema.decodeUnknownEffect(codec)(payload).pipe(
+  return (Schema.decodeUnknownEffect(Schema.toCodecJson(flow.payloadSchema))(payload).pipe(
     Effect.orDie,
-    Effect.flatMap((decoded) => Schema.encodeEffect(codec)(decoded)),
+    Effect.flatMap((decoded) => Flow.payloadSnapshot(flow.payloadSchema, decoded)),
     Effect.orDie
   ) as Effect.Effect<unknown>)
 }
@@ -3667,11 +3666,12 @@ type Origin = NonNullable<RunState["origin"]>
  */
 const ensureRun = (driver: Driver, flow: Flow.Any, options: Admission): Effect.Effect<void, FlowCycleDetected> =>
   Effect.gen(function*() {
-    const payload = yield* (Schema.encodeEffect(
-      Schema.toCodecJson(flow.payloadSchema)
-    )(
-      options.payload
-    ).pipe(Effect.orDie) as Effect.Effect<unknown>)
+    // The identity snapshot (VIP-44): an existing row is the same invocation
+    // only when its stored payload equals this one, so sets and maps are sorted
+    // exactly as the derived execution id sorts them.
+    const payload = yield* (Flow.payloadSnapshot(flow.payloadSchema, options.payload).pipe(
+      Effect.orDie
+    ) as Effect.Effect<unknown>)
     // The caller's door and actor kind, kept with the run for its usage
     // metrics. A run this call creates is counted once its row commits.
     const requestedOrigin = yield* RunMetrics.CurrentOrigin
