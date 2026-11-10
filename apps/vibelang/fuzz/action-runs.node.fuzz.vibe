@@ -6,6 +6,10 @@ import { ActionDevice } from "../src/actions/execution.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import * as Runs from "../worker/ActionRuns.vibe"
+import { ExecutionObject } from "@smthrs/platform-cloudflare"
+import { Post, Tour } from "../src/core/flows.vibe"
+import { Show } from "../src/history/tools.vibe"
+import type { RunRequest } from "../src/actions/wire.vibe"
 import * as Objects from "../worker/Objects.vibe"
 import { world, request, history } from "../test/support/actionObjects.vibe"
 import { objectStorage } from "../test/support/objectStorage.ts"
@@ -169,6 +173,196 @@ it.live("actions/held-replies", () => run("actions/held-replies", Text, (text) =
       try Fiber.join(running)
       try alarms(cancelled)
       try ended("cancelled", cancelled.sequencer, "Cancelled", "cancelled")
+    }
+  }
+  return true
+})))
+
+/** Run objects whose services fail or hold once: the object's storage, the conversation's settle write, a reply's start. */
+interface Steer {
+  intentWrites: number
+  /** Reads of the held execution's intent: `skip` succeed, then `fail` reject. */
+  intentReads: { skip: number; fail: number }
+  cancelledReads: number
+  settles: number
+  /** The tour's spoken steps that die before the conversation hears them. */
+  says: number
+  readonly hold?: { readonly entered: Deferred.Deferred<void>; readonly release: Deferred.Deferred<void> }
+}
+const steeredObject = (id: string, authority: Parameters<typeof Runs.make>[3], steer: Steer) => effect {
+  const raw = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+  const storage = new Proxy(raw, {
+    get: (target, name) => {
+      if (name === "put") return (key: string, value: unknown) => {
+        if (key === ExecutionObject.intentKey && steer.intentWrites > 0) {
+          steer.intentWrites -= 1
+          return Promise.reject(new Error("injected intent write failure"))
+        }
+        return target.put(key, value)
+      }
+      if (name === "get") return (key: string) => {
+        if (key === ExecutionObject.cancelledKey && steer.cancelledReads > 0) {
+          steer.cancelledReads -= 1
+          return Promise.reject(new Error("injected admission read failure"))
+        }
+        if (key === ExecutionObject.intentKey && steer.intentReads.skip > 0) steer.intentReads.skip -= 1
+        else if (key === ExecutionObject.intentKey && steer.intentReads.fail > 0) {
+          steer.intentReads.fail -= 1
+          return Promise.reject(new Error("injected intent read failure"))
+        }
+        return target.get(key)
+      }
+      const member = Reflect.get(target, name) as unknown
+      return typeof member === "function" ? (member as (...args: ReadonlyArray<unknown>) => unknown).bind(target) : member
+    },
+  })
+  const sequencer = try Objects.conversation(storage)
+  const hold = steer.hold
+  const faulty: typeof sequencer = {
+    ...sequencer,
+    action: (intent) => {
+      if (intent.type !== "SettleAction" || steer.settles === 0) return sequencer.action(intent)
+      steer.settles -= 1
+      return Effect.die(new Error("conversation log unavailable"))
+    },
+    say: (tour, text) => {
+      if (steer.says === 0) return sequencer.say(tour, text)
+      steer.says -= 1
+      return Effect.die(new Error("tour voice unavailable"))
+    },
+    start: (post) => hold === undefined ? sequencer.start(post) : Deferred.succeed(hold.entered, undefined).pipe(Effect.andThen(Deferred.await(hold.release)), Effect.andThen(sequencer.start(post))),
+  }
+  return { storage, sequencer, host: Runs.make(id, storage, faulty, authority) }
+}
+
+/**
+ * Every execution runs each state the random runs reach only by chance: a post with no text, a history run behind a
+ * dispatched reply, a run with no owner, a tour whose dispatch or admission fails, a tour ended by Escape, a post
+ * started again after its settle write failed, and a reply cancelled before its agent entry exists.
+ */
+it.live("actions/steered-runs", () => run("actions/steered-runs", Text, (text) => scoped(effect {
+  const w = try world()
+  provide MockFactory, history {
+    const device = try Factory
+    try device.accounts!.choose("maintainer")
+    const product = try Mythical
+    provide ActionDevice = device {
+      const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify(`Answer: ${text}`))], prompt: 3, completion: 4 }])
+      const model = { model: scripted.model, unusable: "" }
+      type Steered = { readonly storage: Objects.Storage; readonly sequencer: Parameters<typeof Runs.read>[0]; readonly host: ReturnType<typeof Runs.make> }
+      const state = effect (object: Steered, id: string) => (try Runs.read(object.sequencer)).find((row) => row.id === id)?.state
+      const alarms = effect (object: Steered, count: number) => {
+        for (let turn = 0; turn < count; turn++) {
+          const outcome = try exit(object.host.alarm(w.spend, model, product))
+          if (outcome._tag === "Failure") throw new Finding({ report: `alarm ${turn} failed with healthy services` })
+        }
+      }
+      const fresh = (id: string, steer: Partial<Steer> = {}) => steeredObject(id, w.authority, { intentWrites: 0, intentReads: { skip: 0, fail: 0 }, cancelledReads: 0, settles: 0, says: 0, ...steer })
+
+      // A post with no text passes the catalog as an empty post; the run answers input and records nothing.
+      const textless = try fresh("textless")
+      const bare = try textless.host.start(request("textless", Post._tag, {}, w.person.id), "maintainer")
+      if (bare !== "input" || (try state(textless, "textless")) !== "failed" || (try textless.sequencer.read(0)).entries.length !== 0) throw new Finding({ report: `a post with no text answered ${bare}` })
+
+      // A dispatched reply holds the object's one execution: a history run started now is busy, and its run fails.
+      const crowded = try fresh("crowded")
+      if ((try Objects.post("crowded", crowded.storage, crowded.sequencer, "c1", "Guest", "Question")) !== null) throw new Finding({ report: "a first post was refused" })
+      const behind = try crowded.host.start(request("crowded", Show._tag, {}, w.person.id), "maintainer")
+      if (behind !== "busy" || (try state(crowded, "crowded")) !== "failed") throw new Finding({ report: `a history run behind a reply answered ${behind}` })
+
+      // A door that names no one runs the owner as Guest (every door names the person; ActionRuns.start is public).
+      const anonymous = try fresh("anonymous")
+      const unnamed: RunRequest = { id: "anonymous", flow: Show._tag, input: {}, door: "agent", actor: "agent", owner: w.person.id }
+      const shown = try anonymous.host.start(unnamed, "maintainer")
+      if (shown !== null) throw new Finding({ report: `an unnamed history run answered ${shown}` })
+      try alarms(anonymous, 2)
+      if ((try state(anonymous, "anonymous")) !== "passed") throw new Finding({ report: `an unnamed history run is ${try state(anonymous, "anonymous")}` })
+
+      // The tour is recorded, then its dispatch's intent write fails: the start answers failed, and so does its run.
+      const orphan = try fresh("orphan", { intentWrites: 1 })
+      const orphaned = try orphan.host.start(request("orphan", Tour._tag, {}, w.person.id), "maintainer")
+      if (orphaned !== "failed" || (try state(orphan, "orphan")) !== "failed") throw new Finding({ report: `a tour whose dispatch failed answered ${orphaned}` })
+
+      // Escape ends a running tour action; the next alarm settles its run passed.
+      const walked = try fresh("walked")
+      if ((try walked.host.start(request("walked", Tour._tag, {}, w.person.id), "maintainer")) !== null) throw new Finding({ report: "a tour action was refused" })
+      try alarms(walked, 1)
+      if ((try Objects.endTour("walked", walked.storage, walked.sequencer)) !== null) throw new Finding({ report: "Escape was refused" })
+      // Ended but not yet settled, the tour's run is still running: the same start again answers and changes nothing.
+      const repeated = try walked.host.start(request("walked", Tour._tag, {}, w.person.id), "maintainer")
+      if (repeated !== null || (try state(walked, "walked")) !== "running") throw new Finding({ report: `a tour started again after Escape answered ${repeated}` })
+      try alarms(walked, 2)
+      if ((try state(walked, "walked")) !== "passed") throw new Finding({ report: `a tour ended by Escape is ${try state(walked, "walked")}` })
+
+      // The tour's admission read fails: its drive retries, the alarm settles nothing, and the next alarm admits it.
+      const stalled = try fresh("stalled", { cancelledReads: 1 })
+      if ((try stalled.host.start(request("stalled", Tour._tag, {}, w.person.id), "maintainer")) !== null) throw new Finding({ report: "a tour action was refused" })
+      const retried = try exit(stalled.host.alarm(w.spend, model, product))
+      if (retried._tag !== "Success" || retried.value._tag !== "Retrying") throw new Finding({ report: `an alarm whose admission read failed ended ${retried._tag === "Failure" ? String(Cause.squash(retried.cause)).slice(0, 120) : retried.value._tag}` })
+      if ((try state(stalled, "stalled")) !== "running") throw new Finding({ report: `a tour whose drive retries is ${try state(stalled, "stalled")}` })
+      try alarms(stalled, 1)
+      if ((try Objects.endTour("stalled", stalled.storage, stalled.sequencer)) !== null) throw new Finding({ report: "Escape was refused" })
+      try alarms(stalled, 1)
+      if ((try state(stalled, "stalled")) !== "passed") throw new Finding({ report: `a tour that recovered is ${try state(stalled, "stalled")}` })
+
+      // The drive's own intent read fails: the alarm fails with that cause and settles nothing, as the platform retries it.
+      const reads = { skip: 0, fail: 0 }
+      const dropped = try fresh("dropped", { intentReads: reads })
+      if ((try dropped.host.start(request("dropped", Tour._tag, {}, w.person.id), "maintainer")) !== null) throw new Finding({ report: "a tour action was refused" })
+      // The alarm reads the intent once itself, then its drive reads it.
+      reads.skip = 1
+      reads.fail = 1
+      const died = try exit(dropped.host.alarm(w.spend, model, product))
+      if (died._tag !== "Failure" || !String(Cause.squash(died.cause)).includes("injected intent read failure")) throw new Finding({ report: `an alarm whose intent read failed ended ${died._tag === "Failure" ? String(Cause.squash(died.cause)).slice(0, 120) : died.value._tag}` })
+      if ((try state(dropped, "dropped")) !== "running") throw new Finding({ report: `a tour whose alarm failed is ${try state(dropped, "dropped")}` })
+      try alarms(dropped, 1)
+      if ((try Objects.endTour("dropped", dropped.storage, dropped.sequencer)) !== null) throw new Finding({ report: "Escape was refused" })
+      try alarms(dropped, 1)
+      if ((try state(dropped, "dropped")) !== "passed") throw new Finding({ report: `a tour that recovered is ${try state(dropped, "dropped")}` })
+
+      // A signed-out visitor's tour names no owner or person: it runs at the viewer role, and Escape ends it passed.
+      const visitor = try fresh("visitor")
+      const visiting: RunRequest = { id: "visitor", flow: Tour._tag, input: {}, door: "button", actor: "person" }
+      if ((try visitor.host.start(visiting, "viewer")) !== null) throw new Finding({ report: "a visitor's tour was refused" })
+      try alarms(visitor, 1)
+      if ((try Objects.endTour("visitor", visitor.storage, visitor.sequencer)) !== null) throw new Finding({ report: "Escape was refused" })
+      try alarms(visitor, 1)
+      if ((try state(visitor, "visitor")) !== "passed") throw new Finding({ report: `a visitor's tour is ${try state(visitor, "visitor")}` })
+
+      // The tour's first spoken step dies: its execution fails, and the tour and its run end failed.
+      const hoarse = try fresh("hoarse", { says: 1 })
+      if ((try hoarse.host.start(request("hoarse", Tour._tag, {}, w.person.id), "maintainer")) !== null) throw new Finding({ report: "a tour action was refused" })
+      try alarms(hoarse, 3)
+      const hoarseEntry = (try hoarse.sequencer.read(0)).entries.find((entry) => entry.author === "agent")
+      if (hoarseEntry?.done !== true || hoarseEntry.error !== "Action failed" || (try state(hoarse, "hoarse")) !== "failed") throw new Finding({ report: `a tour whose step died is ${try state(hoarse, "hoarse")}` })
+
+      // The post is recorded, then its run's settle write fails: started again, the post is not recorded twice and passes.
+      const resettled = try fresh("resettled", { settles: 1 })
+      const asked = request("resettled", Post._tag, { text: "Question" }, w.person.id)
+      if ((try exit(resettled.host.start(asked, "maintainer")))._tag !== "Failure") throw new Finding({ report: "a post whose settle write failed answered" })
+      const again = try resettled.host.start(asked, "maintainer")
+      const posts = (try resettled.sequencer.read(0)).entries.filter((entry) => entry.clientId === "resettled").length
+      if (again !== null || posts !== 1 || (try state(resettled, "resettled")) !== "passed") throw new Finding({ report: `a post started again answered ${again} with ${posts} posts, its run ${try state(resettled, "resettled")}` })
+
+      // A latch holds the reply before its agent entry exists; cancelling its run then cancels a reply that never spoke.
+      const hold = { entered: try Deferred.make<void>(), release: try Deferred.make<void>() }
+      const early = try fresh("early", { hold })
+      // Its door names no person, so the post is signed Guest.
+      const nameless: RunRequest = { id: "early", flow: Post._tag, input: { text: "Question" }, door: "button", actor: "person", owner: w.person.id }
+      if ((try early.host.start(nameless, "maintainer")) !== null) throw new Finding({ report: "a post was refused" })
+      if ((try early.sequencer.read(0)).entries.find((entry) => entry.clientId === "early")?.name !== "Guest") throw new Finding({ report: "a nameless post was not signed Guest" })
+      const replying = try Effect.forkScoped(Effect.exit(early.host.alarm(w.spend, model, product)))
+      try Deferred.await(hold.entered)
+      const child = try state(early, "early-reply")
+      if (child === "running") {
+        const cancelled = try early.host.cancel("early-reply", "maintainer", w.person.id)
+        if (cancelled !== null) throw new Finding({ report: `cancelling a reply before it spoke answered ${cancelled}` })
+      }
+      try Deferred.succeed(hold.release, undefined)
+      try Fiber.join(replying)
+      try alarms(early, 2)
+      const spoke = (try early.sequencer.read(0)).entries.filter((entry) => entry.author === "agent" && !entry.done)
+      if (child !== "running" || spoke.length !== 0 || (try state(early, "early-reply")) !== "cancelled") throw new Finding({ report: `a reply cancelled before it spoke: run was ${child}, is ${try state(early, "early-reply")}, ${spoke.length} entries running` })
     }
   }
   return true

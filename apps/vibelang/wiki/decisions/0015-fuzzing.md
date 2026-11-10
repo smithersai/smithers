@@ -251,8 +251,12 @@ Not reached, with the reason; none is excluded:
   352, `Wiki` 244): the Cloudflare runtime always supplies both.
 - Invariant guards no input reaches: `Issues` 369 (a run's own payload names its flow, operation and key). It reads
   stored data, so it stays; only a store that rewrites a recorded payload reaches it.
-- `ActionRuns` 157: `admit` with no stored request. Admission runs from alarms that `ActionRuns.alarm` reaches only
-  with a stored request, and nothing deletes it.
+- `ActionRuns`: `admit` no longer answers `false` for a missing request; it decodes the stored `RunRequest` or dies.
+  `canStart` runs only inside `host.alarm()`, which `ActionRuns.alarm` calls only after it read that request, and
+  nothing deletes it. `callerOf`'s `request.owner ?? ""` stays as the signed-out default: every history flow needs
+  at least contributor and `role("")` is viewer, so `start` refuses an unowned history run before storing it.
+  `cancel`'s `cancel-failed`: `ExecutionObject.cancel` fails only when the engine's interrupt fails
+  (`CancelRequestFailed`), and a store write failure is a defect by engine-store's contract.
 - `Objects` 155: the tour's poll failing during a control's wake.
 
 Guards removed or targeted (vl-fuzz2, 2026-11-10). A guard the request schema provably excludes is deleted; one a
@@ -281,11 +285,24 @@ Reached this session (vl-fuzz2, 2026-11-10), each by a steered scenario that run
 | `wiki/steered-host` `delegated` | the same, with an `authorize` and a kept draft | `Wiki` 103, 135, 137, 147 (main advanced past the base), 157 (the review replaces the kept text), 171 (the fallback read) |
 | `objects/steered-host` `tour-during-reply` | the same latch | a tour while the reply runs is `busy`; after it, a tour is accepted behind the reply and ending it reaches `Objects` 150 (the wake finds the reply's intent); the alarms then end the tour and the reply |
 | `objects/steered-host` `tour-dispatch-fault` | the object's storage rejects the held execution's intent write once | `Objects` 148: the tour is recorded and its dispatch dies, so no execution holds the object; Escape wakes nothing, ends the tour, and the alarms leave the agent idle with its entry done. Mutating the missing-intent return to a defect fails it |
+| `actions/steered-runs` | each run object gets its own faulty storage or sequencer; every execution runs every case | a post with no text answers `input`; a history run behind a dispatched reply is `busy`; a run whose door names no person runs as Guest; a tour whose dispatch write fails answers `failed`; Escape, a repeated start before the settling alarm, and a signed-out visitor's tour; a tour whose admission read fails (`Retrying`) and one whose drive's intent read fails, both recovering on the next alarm; a tour whose spoken step dies ends failed; a post whose settle write failed, started again; a reply cancelled before its agent entry exists (latched `start`) |
 
 A defect in a history tool or in the ledger's `spend` does not fail the reply execution: the agent sandbox and the
 reply's composition catch both, and the reply ends "The agent failed. Try again." Only the reply's own sequencer
 writes (`start`, `finish`, `fail`) fail it. A reply's run row exists only once an alarm starts the reply, so a cancel
 before that answers `not-found`. `actions/run-answers` also takes an optional `settle: "dies-once"` per run.
+
+Findings of `actions/steered-runs` (vl-fuzz2, 2026-11-10), both product bugs in `worker/ActionRuns.vibe`; the
+target's value stays in `fuzz/__fuzz__/actions-steered-runs-335f8cfe50a08d6e/`:
+
+- A post whose run's settle write failed after the post was recorded stayed `running` forever: the same start again
+  answered `null` without settling it. Another lane found and fixed the same bug at the same time (`b22298a3`, "recover
+  a post or tour whose host stopped mid-start", with its regression tests); its fix is kept, and this target's
+  `resettled` case now passes on it.
+- An alarm whose drive failed or retried died reading a receipt: `ExecutionObject` turns an admission failure into
+  `Retrying`, and `alarm` then polled an execution never admitted (`FlowExecutionNotFound`), hiding the drive's cause.
+  A drive that died outside the retry wrapper hit the same read. `alarm` now rethrows a failed drive before any
+  settlement and reads no receipt for a retrying one. Mutating either change back fails the target.
 
 The fuzz gate's Chromium merge now credits by source start, and the browser build is unminified (decision 0016,
 "Chromium merge").
