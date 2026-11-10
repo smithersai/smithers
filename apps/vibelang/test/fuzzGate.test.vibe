@@ -23,3 +23,22 @@ it.live("run passes a target that executed, and FUZZ_EXECUTIONS=0 replays withou
   try run("gate/fed", Schema.Int, (n) => Number.isInteger(n)).pipe(config({ FUZZ_BUDGET: "200 millis", FUZZ_SEED: "1" }))
   try run("gate/replay", Schema.Int, () => false).pipe(config({ FUZZ_BUDGET: "200 millis", FUZZ_SEED: "1", FUZZ_EXECUTIONS: "0" }))
 }, 30_000)
+
+/** The receipt a run leaves for `name`, as `run` writes it. */
+effect function receipt(name: string) {
+  provide NodeServices.layer {
+    const text = try (try FileSystem.FileSystem).readFileString(`fuzz-results/${name}.json`)
+    return try Effect.try(() => JSON.parse(text) as { readonly budget: number; readonly elapsedMs: number; readonly stats: { readonly executions: number } })
+  }
+}
+
+// A target whose saved failures take longer to replay than a short budget declares a floor, so it still searches.
+it.live("a target's minimum budget outlasts a shorter FUZZ_BUDGET, and a longer FUZZ_BUDGET still wins", () => effect {
+  try run("gate/floor", Schema.Int, (n) => Number.isInteger(n), undefined, { minimum: "400 millis" }).pipe(config({ FUZZ_BUDGET: "1 millis", FUZZ_SEED: "1" }))
+  const floored = try receipt("gate--floor")
+  expect(floored.budget).toBe(400)
+  expect(floored.elapsedMs).toBeGreaterThanOrEqual(400)
+  expect(floored.stats.executions).toBeGreaterThan(0)
+  try run("gate/floor", Schema.Int, (n) => Number.isInteger(n), undefined, { minimum: "400 millis" }).pipe(config({ FUZZ_BUDGET: "600 millis", FUZZ_SEED: "1" }))
+  expect((try receipt("gate--floor")).budget).toBe(600)
+}, 30_000)

@@ -8,7 +8,7 @@ import { Reply, touring } from "../src/core/flows.vibe"
 import { wikiPath } from "../src/core/wiki.vibe"
 import type { HistoryReader } from "../src/history/tools.vibe"
 import * as Objects from "../worker/Objects.vibe"
-import { run, same, Finding, Int, TextOrBoundary } from "./run.vibe"
+import { run, same, Finding, Int, TextOrBoundary, REPLAY_FLOOR } from "./run.vibe"
 
 const unavailable = () => fail(new Unavailable({ reason: "injected history failure" }))
 const history: HistoryReader = { outline: unavailable, epic: unavailable, commit: unavailable, search: unavailable, plan: unavailable, start: unavailable, note: unavailable }
@@ -244,4 +244,4 @@ const objectScenario = (scenario: typeof OBJECT_SCENARIOS[number], pick: number,
 it.live("objects/steered-host", () => run("objects/steered-host", Scenario, ({ pick, text, admit }) => effect {
   for (const scenario of OBJECT_SCENARIOS) try objectScenario(scenario, pick, text, admit)
   return true
-}))
+}, undefined, { minimum: REPLAY_FLOOR }))

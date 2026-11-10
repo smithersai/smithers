@@ -6,7 +6,7 @@ import { Factory } from "../src/core/Factory.vibe"
 import { Post, Tour } from "../src/core/flows.vibe"
 import * as Runs from "../worker/ActionRuns.vibe"
 import { world, request, history } from "../test/support/actionObjects.vibe"
-import { run, Int } from "./run.vibe"
+import { run, Int, REPLAY_FLOOR } from "./run.vibe"
 
 const FLOWS = [Post._tag, Tour._tag, "vibelang/history/Plan", "vibelang/sandbox/start", "vibelang/no-such-flow"] as const
 const states = ["queued", "running", "passed", "failed", "cancelled"]
@@ -82,4 +82,4 @@ it.live("actions/object-lifecycles", () => run("actions/object-lifecycles", Inpu
       return true
     }
   }
-}))
+}, undefined, { minimum: REPLAY_FLOOR }))
