@@ -175,19 +175,17 @@ export const occurrencesBetween = (
  * @since 0.1.0
  */
 export const parse = (expression: string, timezone?: string): Effect.Effect<Cron, TriggerError> =>
-  Effect.gen(function*() {
+  effect {
     const parsed = EffectCron.parse(expression, timezone)
     if (Result.isFailure(parsed)) {
-      return yield* Effect.fail(
-        new TriggerError({ code: "invalid_cron", message: parsed.failure.message, cause: parsed.failure })
-      )
+      throw new TriggerError({ code: "invalid_cron", message: parsed.failure.message, cause: parsed.failure })
     }
     const cron: Cron = {
       expression,
       ...(timezone === undefined ? {} : { timezone }),
       value: parsed.success
     }
-    const now = yield* Clock.currentTimeMillis
-    yield* next(cron, new Date(now))
+    const now = try Clock.currentTimeMillis
+    try next(cron, new Date(now))
     return cron
-  })
+  }

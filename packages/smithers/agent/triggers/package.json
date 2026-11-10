@@ -53,13 +53,13 @@
       "default": "./.vibelang/js/src/Channel.js"
     },
     "./Cron": {
-      "types": "./src/Cron.ts",
-      "vibelang-source": "./src/Cron.ts",
+      "types": "./.vibe/declarations/src/Cron.d.vibe.ts",
+      "vibelang-source": "./src/Cron.vibe",
       "default": "./.vibelang/js/src/Cron.js"
     },
     "./DispatchReader": {
-      "types": "./src/DispatchReader.ts",
-      "vibelang-source": "./src/DispatchReader.ts",
+      "types": "./.vibe/declarations/src/DispatchReader.d.vibe.ts",
+      "vibelang-source": "./src/DispatchReader.vibe",
       "default": "./.vibelang/js/src/DispatchReader.js"
     },
     "./Overlap": {

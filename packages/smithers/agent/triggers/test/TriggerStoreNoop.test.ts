@@ -204,8 +204,8 @@ describe("package boundaries", () => {
       default: "./.vibelang/js/src/TriggerStore.js"
     })
     expect(exports["./DispatchReader"]).toEqual({
-      types: "./src/DispatchReader.ts",
-      "vibelang-source": "./src/DispatchReader.ts",
+      types: "./.vibe/declarations/src/DispatchReader.d.vibe.ts",
+      "vibelang-source": "./src/DispatchReader.vibe",
       default: "./.vibelang/js/src/DispatchReader.js"
     })
     expect(exports["./test/TestTriggers"]).toEqual({
